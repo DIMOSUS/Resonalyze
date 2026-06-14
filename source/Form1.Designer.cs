@@ -52,6 +52,8 @@ namespace Resonalyze
             buttonImpOpt = new Button();
             buttonNoise = new Button();
             buttonAutocorrelation = new Button();
+            buttonSave = new Button();
+            buttonLoad = new Button();
             overlays.SuspendLayout();
             overlayPanel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)numericUpDown1).BeginInit();
@@ -60,12 +62,13 @@ namespace Resonalyze
             // buttonRecord
             // 
             buttonRecord.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonRecord.BackColor = Color.FromArgb(255, 255, 192);
             buttonRecord.Location = new Point(1114, 12);
             buttonRecord.Name = "buttonRecord";
             buttonRecord.Size = new Size(100, 23);
             buttonRecord.TabIndex = 0;
             buttonRecord.Text = "Start";
-            buttonRecord.UseVisualStyleBackColor = true;
+            buttonRecord.UseVisualStyleBackColor = false;
             buttonRecord.Click += buttonRecord_Click;
             // 
             // plotView1
@@ -312,12 +315,36 @@ namespace Resonalyze
             buttonAutocorrelation.UseVisualStyleBackColor = true;
             buttonAutocorrelation.Click += buttonGetAutocorrelation_Click;
             // 
+            // buttonSave
+            // 
+            buttonSave.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonSave.Location = new Point(1114, 41);
+            buttonSave.Name = "buttonSave";
+            buttonSave.Size = new Size(67, 23);
+            buttonSave.TabIndex = 18;
+            buttonSave.Text = "Save";
+            buttonSave.UseVisualStyleBackColor = true;
+            buttonSave.Click += buttonSave_Click;
+            // 
+            // buttonLoad
+            // 
+            buttonLoad.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonLoad.Location = new Point(1187, 41);
+            buttonLoad.Name = "buttonLoad";
+            buttonLoad.Size = new Size(67, 23);
+            buttonLoad.TabIndex = 19;
+            buttonLoad.Text = "Load";
+            buttonLoad.UseVisualStyleBackColor = true;
+            buttonLoad.Click += buttonLoad_Click;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(50, 50, 50);
             ClientSize = new Size(1264, 729);
+            Controls.Add(buttonLoad);
+            Controls.Add(buttonSave);
             Controls.Add(buttonAutocorrelation);
             Controls.Add(buttonNoise);
             Controls.Add(buttonImpOpt);
@@ -371,5 +398,7 @@ namespace Resonalyze
         private Button buttonImpOpt;
         private Button buttonNoise;
         private Button buttonAutocorrelation;
+        private Button buttonSave;
+        private Button buttonLoad;
     }
 }

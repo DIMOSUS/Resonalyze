@@ -84,6 +84,8 @@ namespace Resonalyze
             Overlays = new OverlayCollection(this, overlays, plotView1);
 
             expSweepMeasurement.Init(12, 44100, 24, 1.0, Chanels.Mono);
+            frezeButton(buttonSave, true);
+            frezeButton(buttonLoad, false);
 
             expSweepMeasurement.CompleteNotify += (bool Succes) =>
             {
@@ -91,14 +93,21 @@ namespace Resonalyze
                 {
                     return;
                 }
-                BeginInvoke((MethodInvoker)delegate {
+                BeginInvoke((MethodInvoker)delegate
+                {
                     if (Succes)
                     {
                         buttonRecord.Text = "Ready";
+                        buttonRecord.BackColor = Color.FromArgb(192, 255, 192);
+                        frezeButton(buttonSave, false);
+                        frezeButton(buttonLoad, false);
                     }
                     else
                     {
                         buttonRecord.Text = expSweepMeasurement.LastError == null ? "Aborted" : "Error";
+                        buttonRecord.BackColor = Color.FromArgb(255, 192, 192);
+                        frezeButton(buttonSave, true);
+                        frezeButton(buttonLoad, false);
                     }
                 });
             };
@@ -171,6 +180,9 @@ namespace Resonalyze
             {
                 buttonRecord.Text = "Running...";
                 _ = expSweepMeasurement.RunAsync();
+                buttonRecord.BackColor = Color.FromArgb(192, 255, 255);
+                frezeButton(buttonSave, true);
+                frezeButton(buttonLoad, true);
             }
         }
 
@@ -196,7 +208,7 @@ namespace Resonalyze
             int steps = 1000;
             for (int i = 1; i < steps; i++)
             {
-                double frequence = GraphPlotter.Log10ToFrequence(i / (steps - 1.0), 20, 20000);
+                double frequence = DataHelper.Log10ToFrequence(i / (steps - 1.0), 20, 20000);
 
                 data.Add(new (frequence, Calibration.dBCorrection(frequence)));
             }
@@ -287,7 +299,7 @@ namespace Resonalyze
             if (expSweepMeasurement.ImpulseResponce != null && !expSweepMeasurement.InProgress)
             {
                 var model = new PlotModel { Title = "Fourier Waterfall" };
-                
+
                 model.Axes.Add(new LinearAxis
                 {
                     Position = AxisPosition.Left,
@@ -679,6 +691,124 @@ namespace Resonalyze
             noiseGraphTimer.Dispose();
             expSweepMeasurement.Dispose();
             noiseMeasurement.Dispose();
+        }
+
+        private async void buttonSave_Click(object sender, EventArgs e)
+        {
+            if (expSweepMeasurement.ImpulseResponce != null && !expSweepMeasurement.InProgress)
+            {
+                using var dialog = new SaveFileDialog
+                {
+                    AddExtension = true,
+                    DefaultExt = "json",
+                    Filter = "Resonalyze impulse response (*.json)|*.json|All files (*.*)|*.*",
+                    FileName = $"Resonalyze-IR-{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.json",
+                    InitialDirectory = Environment.GetFolderPath(
+                        Environment.SpecialFolder.MyDocuments),
+                    RestoreDirectory = true,
+                    Title = "Save impulse response"
+                };
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                frezeButton(buttonSave, true);
+                frezeButton(buttonLoad, true);
+                try
+                {
+                    ImpulseResponseFile file =
+                        ImpulseResponseFile.Capture(expSweepMeasurement);
+                    await file.SaveAsync(dialog.FileName);
+                }
+                catch (Exception exception)
+                {
+                    MessageBox.Show(
+                        this,
+                        $"Failed to save the impulse response.\r\n\r\n{exception.Message}",
+                        "Save failed",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                }
+                finally
+                {
+                    frezeButton(buttonSave, false);
+                    frezeButton(buttonLoad, false);
+                }
+            }
+        }
+
+        private async void buttonLoad_Click(object sender, EventArgs e)
+        {
+            if (!expSweepMeasurement.InProgress)
+            {
+                using var dialog = new OpenFileDialog
+                {
+                    CheckFileExists = true,
+                    Filter = "Resonalyze impulse response (*.json)|*.json|All files (*.*)|*.*",
+                    InitialDirectory = Environment.GetFolderPath(
+                        Environment.SpecialFolder.MyDocuments),
+                    Multiselect = false,
+                    RestoreDirectory = true,
+                    Title = "Load impulse response"
+                };
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                frezeButton(buttonSave, true);
+                frezeButton(buttonLoad, true);
+                try
+                {
+                    ImpulseResponseFile file =
+                        await ImpulseResponseFile.LoadAsync(dialog.FileName);
+                    expSweepMeasurement.RestoreImpulseResponse(
+                        file.Octaves,
+                        file.SampleRate,
+                        file.Bits,
+                        file.SweepDurationSeconds,
+                        file.PlayChannel,
+                        file.GetImpulseResponse(),
+                        file.MaxMagnitudeIndex);
+
+                    buttonRecord.Text = "Loaded";
+                    buttonRecord.BackColor = Color.FromArgb(192, 255, 192);
+                    buttonIR_Click(this, EventArgs.Empty);
+                }
+                catch (Exception exception)
+                {
+                    MessageBox.Show(
+                        this,
+                        $"Failed to load the impulse response.\r\n\r\n{exception.Message}",
+                        "Load failed",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                }
+                finally
+                {
+                    frezeButton(
+                        buttonSave,
+                        expSweepMeasurement.ImpulseResponce == null);
+                    frezeButton(buttonLoad, false);
+                }
+            }
+        }
+
+        private void frezeButton(Button b, bool freze)
+        {
+            if (freze)
+            {
+                b.Enabled = false;
+                b.BackColor = Color.LightGray;
+                b.ForeColor = Color.DarkGray;
+            }
+            else
+            {
+                b.BackColor = SystemColors.Control;
+                b.ForeColor = SystemColors.ControlText;
+                b.Enabled = true;
+            }
         }
     }
 }

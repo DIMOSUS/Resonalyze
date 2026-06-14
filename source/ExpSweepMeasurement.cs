@@ -107,6 +107,44 @@ namespace Resonalyze
             return exponentialSineSweep.SweepSamples * Log(harmonic) / Log(Pow(2, Octaves));
         }
 
+        public void RestoreImpulseResponse(
+            int octaves,
+            int sampleRate,
+            int bits,
+            double sweepDurationSeconds,
+            Chanels playChannel,
+            Complex[] impulseResponse,
+            int maxMagnitudeIndex)
+        {
+            ThrowIfDisposed();
+            ArgumentNullException.ThrowIfNull(impulseResponse);
+            if (InProgress)
+            {
+                throw new InvalidOperationException(
+                    "Cannot load an impulse response while a measurement is running.");
+            }
+            if (impulseResponse.Length == 0)
+            {
+                throw new ArgumentException(
+                    "Impulse response cannot be empty.",
+                    nameof(impulseResponse));
+            }
+            if ((uint)maxMagnitudeIndex >= (uint)impulseResponse.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maxMagnitudeIndex));
+            }
+
+            Init(
+                octaves,
+                sampleRate,
+                bits,
+                sweepDurationSeconds,
+                playChannel);
+            ImpulseResponce = impulseResponse.ToArray();
+            MaxMagnitudeInd = maxMagnitudeIndex;
+            LastError = null;
+        }
+
         private async Task<bool> RunCoreAsync(CancellationToken cancellationToken)
         {
             ExponentialSineSweep sweep = exponentialSineSweep!;

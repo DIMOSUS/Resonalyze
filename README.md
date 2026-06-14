@@ -34,7 +34,7 @@ installation. SHA-256 checksum files are provided with every release.
 ## Highlights
 
 - Exponential sine sweep measurement
-- Impulse response
+- Impulse response with JSON save/load
 - Frequency response
 - Harmonic distortion and THD+N
 - Phase response
@@ -87,12 +87,20 @@ installation. SHA-256 checksum files are provided with every release.
 
 ## Requirements
 
+To run a release build:
+
+- Windows 10 or later
+- A working playback and recording device
+- A suitable loopback, microphone, or other measurement connection
+
+The self-contained release archives include the required .NET runtime.
+
+To build Resonalyze from source:
+
 - Windows 10 or later
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - Visual Studio 2026 with the **.NET desktop development** workload, or the
   .NET CLI
-- A working playback and recording device
-- A suitable loopback, microphone, or other measurement connection
 
 Use conservative playback levels when connecting physical equipment. Begin
 with the output level turned down and verify the signal path before starting a
@@ -114,10 +122,10 @@ dotnet build source/Resonalyze.sln --configuration Release
 dotnet run --project source/Resonalyze.csproj
 ```
 
-Run the deterministic DSP test suite with:
+Run all application and deterministic DSP tests with:
 
 ```powershell
-dotnet test tests/Resonalyze.Dsp.Tests/Resonalyze.Dsp.Tests.csproj -c Release
+dotnet test source/Resonalyze.sln -c Release
 ```
 
 The Release executable is generated at:
@@ -135,10 +143,42 @@ source/bin/Release/net10.0-windows/Resonalyze.exe
 4. Start a recording to generate and capture the exponential sine sweep.
 5. Select the required analysis view.
 6. Adjust smoothing, windows, offsets, and display options as needed.
+7. Use **Save** to preserve the captured impulse response for later analysis
+   or comparison.
 
 For acoustic measurements, microphone placement and room conditions strongly
 affect the result. For electrical loopback measurements, make sure signal
 levels and impedances are safe for both devices.
+
+## Saving and Loading Impulse Responses
+
+After a sweep measurement completes, click **Save** to store the current
+impulse response. Resonalyze proposes a timestamped file name such as:
+
+```text
+Resonalyze-IR-2026-06-15_14-30-00.json
+```
+
+Files are saved as indented, human-readable JSON. Each file contains:
+
+- Format and schema version
+- Save time in UTC
+- Sample rate and bit depth
+- Sweep octave count and duration
+- Playback channel
+- Impulse-response peak index
+- Real and, when present, imaginary sample values
+
+Click **Load** to open a previously saved response. Resonalyze validates the
+file before using it, restores the associated measurement metadata, and opens
+the **Impulse Response** view. All analyses derived from an impulse response,
+including frequency response, phase, group delay, waterfall, Burst Decay, and
+autocorrelation, can then be generated without repeating the measurement.
+
+Saving and loading are disabled while a measurement is running. The current
+file format identifier is `resonalyze-impulse-response`, version `1`. Files are
+intended to remain readable by people, but editing sample arrays manually may
+make a file invalid or produce misleading analysis results.
 
 ## Calibration
 
@@ -162,6 +202,10 @@ Resonalyze/
 |   `-- Resonalyze.csproj
 |-- dsp/                    Reusable signal-processing library
 |   `-- Resonalyze.Dsp.csproj
+|-- tests/
+|   |-- Resonalyze.App.Tests/  File-format and application tests
+|   `-- Resonalyze.Dsp.Tests/  Synthetic DSP tests
+|-- .github/workflows/      CI builds and automated tagged releases
 |-- global.json             Pinned .NET SDK version
 `-- README.md
 ```
@@ -181,13 +225,11 @@ impulse processing, phase analysis, and group-delay calculation.
 
 ## Roadmap
 
-- Automated tests for the DSP library
-- Cleaner nullable-reference annotations
 - Audio-device selection and diagnostics
-- Measurement session save/load
+- Complete measurement-session save/load
 - Plot and raw-data export
 - Improved calibration workflow
-- Packaged releases with versioned installers
+- Versioned Windows installer
 
 ## Contributing
 

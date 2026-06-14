@@ -4,6 +4,7 @@ namespace Resonalyze
 {
     public sealed class SoundRecorder : IDisposable
     {
+        private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(3);
         private readonly object sync = new();
         private readonly List<SampleWaiter> sampleWaiters = new();
         private WaveInEvent? waveSource;
@@ -114,7 +115,21 @@ namespace Resonalyze
             {
                 recordingStopped?.TrySetResult(true);
             }
-            await stoppedTask.ConfigureAwait(false);
+
+            try
+            {
+                await stoppedTask.WaitAsync(StopTimeout).ConfigureAwait(false);
+            }
+            catch (TimeoutException exception)
+            {
+                throw new TimeoutException(
+                    $"The audio input did not stop within {StopTimeout.TotalSeconds:0} seconds.",
+                    exception);
+            }
+            finally
+            {
+                DetachAndDisposeSource(source);
+            }
         }
 
         public float[][] GetSamplesSnapshot()
@@ -230,11 +245,27 @@ namespace Resonalyze
 
         private void StopAndDisposeSource()
         {
-            WaveInEvent? source = waveSource;
-            waveSource = null;
+            WaveInEvent? source;
+            lock (sync)
+            {
+                source = waveSource;
+            }
             if (source == null)
             {
                 return;
+            }
+
+            DetachAndDisposeSource(source);
+        }
+
+        private void DetachAndDisposeSource(WaveInEvent source)
+        {
+            lock (sync)
+            {
+                if (ReferenceEquals(waveSource, source))
+                {
+                    waveSource = null;
+                }
             }
 
             source.DataAvailable -= ReceiveData;

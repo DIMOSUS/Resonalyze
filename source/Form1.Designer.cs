@@ -307,7 +307,7 @@
             this.buttonNoise.Name = "buttonNoise";
             this.buttonNoise.Size = new System.Drawing.Size(100, 23);
             this.buttonNoise.TabIndex = 16;
-            this.buttonNoise.Text = "Noise";
+            this.buttonNoise.Text = "Live Spectrum";
             this.buttonNoise.UseVisualStyleBackColor = true;
             this.buttonNoise.Click += new System.EventHandler(this.buttonNoise_Click);
             // 

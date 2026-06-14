@@ -218,7 +218,10 @@ namespace Resonalyze
                 for (int i = 0; i < ResampleSlices.Count; i++)
                 {
                     var slice = ResampleSlices[i];
-                    ScreenPoint corner = Lerp(p4, p0, (slice.SliceOffset - timeWindowStart) / timeWindow);
+                    double timePosition = timeWindow == 0
+                        ? 0
+                        : (slice.SliceOffset - timeWindowStart) / timeWindow;
+                    ScreenPoint corner = Lerp(p4, p0, timePosition);
 
                     List<ScreenPoint> points = new List<ScreenPoint> { };
                     List<OxyColor> colors = new List<OxyColor> { };
@@ -383,6 +386,12 @@ namespace Resonalyze
             int window = GenerateOptions.Window;
             int step = GenerateOptions.Step;
             int sliceCount = GenerateOptions.SliceCount;
+            if (step == 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(GenerateOptions.Step),
+                    "Waterfall step cannot be zero.");
+            }
             int windowFuncOffset = step >= 0 ? GenerateOptions.LeftTukeyWindow : window - GenerateOptions.RightTukeyWindow;
 
             double leftTukeyWindow = (double)GenerateOptions.LeftTukeyWindow / window * 2.0;

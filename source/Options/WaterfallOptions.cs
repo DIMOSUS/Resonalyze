@@ -14,6 +14,7 @@ namespace Resonalyze.Options
     public partial class WaterfallOptions : Form
     {
         ExpSweepMeasurement expSweepMeasurement;
+        private decimal lastNonZeroStep = 4;
 
         public WaterfallOptions()
         {
@@ -28,7 +29,8 @@ namespace Resonalyze.Options
 
             numericWindow.Value = waterfallGenerateOptions.Window;
             numericSlices.Value = waterfallGenerateOptions.SliceCount;
-            numericStep.Value = waterfallGenerateOptions.Step;
+            lastNonZeroStep = waterfallGenerateOptions.Step == 0 ? 1 : waterfallGenerateOptions.Step;
+            numericStep.Value = lastNonZeroStep;
             numericCaptureTime.Value = (decimal)CalcCapturedTime;
 
             numericLeftWindow.Value = waterfallGenerateOptions.LeftTukeyWindow;
@@ -66,6 +68,13 @@ namespace Resonalyze.Options
 
         private void numericStep_ValueChanged(object sender, EventArgs e)
         {
+            if (numericStep.Value == 0)
+            {
+                numericStep.Value = lastNonZeroStep > 0 ? -1 : 1;
+                return;
+            }
+
+            lastNonZeroStep = numericStep.Value;
             numericCaptureTime.Value = (decimal)CalcCapturedTime;
         }
 

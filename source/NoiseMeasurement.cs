@@ -1,6 +1,7 @@
 using MathNet.Numerics.IntegralTransforms;
 using NAudio.Wave;
 using System.Numerics;
+using System.Threading.Channels;
 
 namespace Resonalyze
 {
@@ -11,6 +12,7 @@ namespace Resonalyze
         private SoundRecorder? soundRecorder;
         private CancellationTokenSource? cancellationTokenSource;
         private Task<bool>? measurementTask;
+        private ChannelWriter<float[]>? sequenceWriter;
         private double[]? accumulatedData;
         private int sequencesCounter;
         private volatile bool inProgress;
@@ -124,6 +126,16 @@ namespace Resonalyze
             RawSourceWaveStream stream = signal.rawSourceWaveStream[(int)PlayCanels];
             bool success = false;
             using var player = new WaveOutEvent();
+            var sequenceChannel = Channel.CreateBounded<float[]>(
+                new BoundedChannelOptions(8)
+                {
+                    SingleReader = true,
+                    SingleWriter = true,
+                    AllowSynchronousContinuations = false,
+                    FullMode = BoundedChannelFullMode.DropOldest
+                });
+            Volatile.Write(ref sequenceWriter, sequenceChannel.Writer);
+            Task processingTask = ProcessSequencesAsync(sequenceChannel.Reader, cancellationToken);
 
             try
             {
@@ -148,6 +160,19 @@ namespace Resonalyze
             }
             finally
             {
+                Interlocked.Exchange(ref sequenceWriter, null)?.TryComplete();
+                try
+                {
+                    await processingTask.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception exception)
+                {
+                    LastError ??= exception;
+                }
+
                 player.Stop();
                 try
                 {
@@ -209,6 +234,21 @@ namespace Resonalyze
         }
 
         private void ProcessSequence(float[] sequence)
+        {
+            Volatile.Read(ref sequenceWriter)?.TryWrite(sequence);
+        }
+
+        private async Task ProcessSequencesAsync(
+            ChannelReader<float[]> reader,
+            CancellationToken cancellationToken)
+        {
+            await foreach (float[] sequence in reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+            {
+                AccumulateSequence(sequence);
+            }
+        }
+
+        private void AccumulateSequence(float[] sequence)
         {
             Complex[] spectrum = new Complex[SequenceLength];
             for (int i = 0; i < SequenceLength; i++)

@@ -81,7 +81,7 @@ installation. SHA-256 checksum files are provided with every release.
 
 ### Real-time noise response
 
-![Noise response plot](noise.jpg)
+![Live Spectrum plot](noise.jpg)
 
 </details>
 

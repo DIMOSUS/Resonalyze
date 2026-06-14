@@ -213,7 +213,8 @@ namespace Resonalyze
                 throw new InvalidOperationException("No audio samples were recorded.");
             }
 
-            int fftLength = (int)Pow(2, Ceiling(Log2(Max(recorded.Length, sweep.InverseFiltere.Length))));
+            int convolutionLength = checked(recorded.Length + sweep.InverseFiltere.Length - 1);
+            int fftLength = NextPowerOfTwo(convolutionLength);
             Complex[] input = new Complex[fftLength];
             Complex[] inverseFilter = new Complex[fftLength];
 
@@ -234,21 +235,41 @@ namespace Resonalyze
             }
             Fourier.Inverse(input, FourierOptions.Matlab);
 
+            var impulseResponse = new Complex[convolutionLength];
             double normalization = 2.0 / sweep.InverseFiltere.Length;
             double maxMagnitude = 0;
             int maxMagnitudeIndex = 0;
-            for (int i = 0; i < input.Length; i++)
+            for (int i = 0; i < impulseResponse.Length; i++)
             {
-                input[i] = new Complex(input[i].Real * normalization, 0);
-                if (input[i].Magnitude > maxMagnitude)
+                impulseResponse[i] = new Complex(input[i].Real * normalization, 0);
+                if (impulseResponse[i].Magnitude > maxMagnitude)
                 {
-                    maxMagnitude = input[i].Magnitude;
+                    maxMagnitude = impulseResponse[i].Magnitude;
                     maxMagnitudeIndex = i;
                 }
             }
 
-            ImpulseResponce = input;
+            ImpulseResponce = impulseResponse;
             MaxMagnitudeInd = maxMagnitudeIndex;
+        }
+
+        private static int NextPowerOfTwo(int value)
+        {
+            if (value <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value));
+            }
+
+            int result = 1;
+            while (result < value)
+            {
+                if (result > int.MaxValue / 2)
+                {
+                    throw new InvalidOperationException("The recorded signal is too long to process.");
+                }
+                result <<= 1;
+            }
+            return result;
         }
 
         private void ThrowIfDisposed()

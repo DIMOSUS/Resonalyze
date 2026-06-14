@@ -27,7 +27,7 @@ namespace Resonalyze
         GroupDelay,
         CumulativeSpectrumDecay,
         BurstDecay,
-        Noise,
+        LiveSpectrum,
         Autocorrelation
     }
 
@@ -113,7 +113,7 @@ namespace Resonalyze
                 BeginInvoke((MethodInvoker)delegate
                 {
                     noiseGraphTimer.Stop();
-                    buttonNoise.Text = "Noise (Stoped)";
+                    buttonNoise.Text = "Live Spectrum";
                 });
             };
 
@@ -534,10 +534,10 @@ namespace Resonalyze
         private async void buttonNoise_Click(object sender, EventArgs e)
         {
             bool wasRunning = noiseMeasurement.InProgress;
-            await ChangeModeAsync(Mode.FrequencyResponse);
+            await ChangeModeAsync(Mode.LiveSpectrum);
             double[]? finalSnapshot = wasRunning ? noiseMeasurement.GetAccDataSnapshot() : null;
 
-            var model = new PlotModel { Title = "Noise Frequency Response" };
+            var model = new PlotModel { Title = "Live Spectrum" };
 
             model.Axes.Add(new LogarithmicAxis
             {
@@ -575,7 +575,7 @@ namespace Resonalyze
                 return;
             }
 
-            buttonNoise.Text = "Noise (Running)";
+            buttonNoise.Text = "Live Spectrum (Running)";
             _ = noiseMeasurement.RunAsync();
             noiseGraphTimer.Start();
         }
@@ -584,7 +584,7 @@ namespace Resonalyze
         {
             double[]? snapshot = noiseMeasurement.GetAccDataSnapshot();
             PlotModel? model = plotView1.Model;
-            if (snapshot == null || model?.Title != "Noise Frequency Response")
+            if (snapshot == null || model?.Title != "Live Spectrum")
             {
                 return;
             }
@@ -610,7 +610,7 @@ namespace Resonalyze
             var series = new LineSeries
             {
                 Color = OxyColor.FromRgb(255, 0, 127),
-                Title = "Noise"
+                Title = "Live Spectrum"
             };
             series.Points.AddRange(data);
             return series;

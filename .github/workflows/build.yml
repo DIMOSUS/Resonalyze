@@ -29,3 +29,6 @@ jobs:
 
       - name: Build
         run: dotnet build source/Resonalyze.sln --configuration Release --no-restore
+
+      - name: Test DSP
+        run: dotnet test tests/Resonalyze.Dsp.Tests/Resonalyze.Dsp.Tests.csproj --configuration Release --no-build --no-restore

@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Resonalyze", "Resonalyze.cs
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Resonalyze.Dsp", "..\dsp\Resonalyze.Dsp.csproj", "{D18DE790-B57C-49E6-B1AD-AE71EC2DDC76}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Resonalyze.Dsp.Tests", "..\tests\Resonalyze.Dsp.Tests\Resonalyze.Dsp.Tests.csproj", "{88B0B44C-A50A-4EE7-8F84-AFE9002EE950}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{D18DE790-B57C-49E6-B1AD-AE71EC2DDC76}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D18DE790-B57C-49E6-B1AD-AE71EC2DDC76}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D18DE790-B57C-49E6-B1AD-AE71EC2DDC76}.Release|Any CPU.Build.0 = Release|Any CPU
+		{88B0B44C-A50A-4EE7-8F84-AFE9002EE950}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{88B0B44C-A50A-4EE7-8F84-AFE9002EE950}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{88B0B44C-A50A-4EE7-8F84-AFE9002EE950}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{88B0B44C-A50A-4EE7-8F84-AFE9002EE950}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

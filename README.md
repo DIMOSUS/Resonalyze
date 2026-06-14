@@ -114,6 +114,12 @@ dotnet build source/Resonalyze.sln --configuration Release
 dotnet run --project source/Resonalyze.csproj
 ```
 
+Run the deterministic DSP test suite with:
+
+```powershell
+dotnet test tests/Resonalyze.Dsp.Tests/Resonalyze.Dsp.Tests.csproj -c Release
+```
+
 The Release executable is generated at:
 
 ```text

@@ -1,236 +1,234 @@
-﻿using NAudio.Wave;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Channels;
-using System.Threading.Tasks;
+using NAudio.Wave;
 
-namespace Resonalyze
+namespace Resonalyze;
+
+public enum PlaybackChannel : byte
 {
-    public enum Chanels : byte
+    Mono = 0,
+    Left = 1,
+    Right = 2,
+    Stereo = 3
+}
+
+/// <summary>
+/// Generates an exponential sine sweep and its amplitude-compensated inverse filter.
+/// </summary>
+public sealed class ExponentialSineSweep : IDisposable
+{
+    private MemoryStream[] memoryStreams = Array.Empty<MemoryStream>();
+    private RawSourceWaveStream[] sourceStreams = Array.Empty<RawSourceWaveStream>();
+    private bool disposed;
+
+    public float[] SweepData { get; private set; } = Array.Empty<float>();
+    public float[] InverseFilter { get; private set; } = Array.Empty<float>();
+    public float[] Frequencies { get; private set; } = Array.Empty<float>();
+    public byte[][] SweepByteData { get; private set; } = Array.Empty<byte[]>();
+    public int SampleRate { get; private set; }
+    public int SweepSamples { get; private set; }
+    public int BitsPerSample { get; private set; }
+    public int Octaves { get; private set; }
+    public double RequestedDuration { get; private set; }
+
+    public double CalculateDuration(double requestedDuration)
     {
-        Mono = 0,
-        Left = 1,
-        Right = 2,
-        Stereo = 3,
-        Count = 4
+        ValidateGenerationParameters(Octaves, requestedDuration, BitsPerSample, SampleRate);
+
+        double frequencyRatio = Math.Pow(2.0, Octaves);
+        double logarithmicRatio = Math.Log(frequencyRatio);
+        double targetLength = SampleRate * requestedDuration;
+        double phaseFactor = (Math.PI / frequencyRatio) / logarithmicRatio;
+
+        // Quantizing the phase count makes the sweep end at a full cycle. This reduces
+        // the discontinuity at the boundary without changing the requested duration materially.
+        double cycleCount = Math.Max(
+            1,
+            Math.Round(phaseFactor * targetLength / (2.0 * Math.PI)));
+        double exactLength = cycleCount * 2.0 * Math.PI / phaseFactor;
+
+        return Math.Max(1, (int)Math.Round(exactLength)) / (double)SampleRate;
     }
 
-    public sealed class ExponentialSineSweep : IDisposable
+    public void FillData(
+        int octaves,
+        double requestedDuration,
+        int bitsPerSample = 24,
+        int sampleRate = 44_100)
     {
-        private bool disposed;
-        public float[] SweepData
-        {
-            get; private set;
-        } = Array.Empty<float>();
+        ThrowIfDisposed();
+        ValidateGenerationParameters(octaves, requestedDuration, bitsPerSample, sampleRate);
 
-        public float[] InverseFiltere
-        {
-            get; private set;
-        } = Array.Empty<float>();
+        Octaves = octaves;
+        BitsPerSample = bitsPerSample;
+        SampleRate = sampleRate;
+        RequestedDuration = requestedDuration;
 
-        public float[] Frequence
-        {
-            get; private set;
-        } = Array.Empty<float>();
+        double frequencyRatio = Math.Pow(2.0, octaves);
+        double logarithmicRatio = Math.Log(frequencyRatio);
+        double phaseFactor = (Math.PI / frequencyRatio) / logarithmicRatio;
+        double targetLength = sampleRate * requestedDuration;
+        double cycleCount = Math.Max(
+            1,
+            Math.Round(phaseFactor * targetLength / (2.0 * Math.PI)));
+        double exactLength = cycleCount * 2.0 * Math.PI / phaseFactor;
+        int sampleCount = Math.Max(1, (int)Math.Round(exactLength));
 
-        public byte[][] SweepByteData
-        {
-            get; private set;
-        } = Array.Empty<byte[]>();
+        SweepSamples = sampleCount;
+        SweepData = new float[sampleCount];
+        InverseFilter = new float[sampleCount];
+        Frequencies = new float[sampleCount];
 
-        public int SampleRate
+        double octaveLength = sampleCount / (double)octaves;
+        for (int i = 0; i < sampleCount; i++)
         {
-            get; private set;
+            double exponentialPosition = Math.Exp(i / (double)sampleCount * logarithmicRatio);
+            Frequencies[i] =
+                (float)(sampleRate / 2.0 / frequencyRatio * (exactLength / sampleCount) * exponentialPosition);
+            SweepData[i] =
+                (float)Math.Sin(phaseFactor * exactLength * exponentialPosition) *
+                (float)Math.Min(i / octaveLength, 1.0);
         }
 
-        /// <summary>
-        /// Number of sweep samples
-        /// </summary>
-        public int SweepSamples
+        // Time reversal performs the deconvolution. The exponential envelope compensates
+        // for the sweep spending progressively less time per hertz at high frequencies.
+        double inverseScale = octaves * Math.Log(2.0) / (1.0 - Math.Pow(2.0, -octaves));
+        double perSampleDecay = Math.Pow(2.0, octaves / (double)sampleCount);
+        for (int i = 0; i < sampleCount; i++)
         {
-            get; private set;
+            InverseFilter[i] =
+                (float)(SweepData[sampleCount - i - 1] * Math.Pow(perSampleDecay, -i) * inverseScale);
         }
 
-        public int ChanelsCount
+        BuildPlaybackStreams();
+    }
+
+    public RawSourceWaveStream GetStream(PlaybackChannel channel)
+    {
+        ThrowIfDisposed();
+        if (!Enum.IsDefined(channel))
         {
-            get; private set;
+            throw new ArgumentOutOfRangeException(nameof(channel));
         }
 
-        public int BitsPerSample
+        return sourceStreams[(int)channel];
+    }
+
+    private void BuildPlaybackStreams()
+    {
+        DisposeStreams();
+        int channelModeCount = Enum.GetValues<PlaybackChannel>().Length;
+        SweepByteData = new byte[channelModeCount][];
+        memoryStreams = new MemoryStream[channelModeCount];
+        sourceStreams = new RawSourceWaveStream[channelModeCount];
+
+        foreach (PlaybackChannel channel in Enum.GetValues<PlaybackChannel>())
         {
-            get; private set;
-        }
+            int outputChannelCount = channel == PlaybackChannel.Mono ? 1 : 2;
+            int bytesPerSample = BitsPerSample / 8;
+            int maxValue = int.MaxValue >> (32 - BitsPerSample);
+            byte[] data = new byte[SweepSamples * bytesPerSample * outputChannelCount];
 
-        public int Octaves
-        {
-            get; private set;
-        }
-
-        public double DesireDuration
-        {
-            get; private set;
-        }
-
-        public MemoryStream[] memoryStream
-        {
-            get; private set;
-        } = Array.Empty<MemoryStream>();
-
-        public RawSourceWaveStream[] rawSourceWaveStream
-        {
-            get; private set;
-        } = Array.Empty<RawSourceWaveStream>();
-
-        public double CalcDuration(double desireDuration)
-        {
-            double P2 = Math.Pow(2.0, Octaves);
-            double LogP2 = Math.Log(P2);
-
-            double targetLen = SampleRate * desireDuration;
-
-            double constFactor = (Math.PI / P2) / LogP2;
-
-            double M = Math.Max(1, Math.Round((constFactor * targetLen) / (Math.PI * 2)));
-
-            double L = (M * Math.PI * 2) / constFactor;
-
-            return Math.Max(1, (int)Math.Round(L)) / (double)SampleRate;
-        }
-
-        public void FillData(int octaves, double desireDuration, int bitsPerSample = 24, int sampleRate = 44100)
-        {
-            if (disposed)
+            for (int sampleIndex = 0; sampleIndex < SweepSamples; sampleIndex++)
             {
-                throw new ObjectDisposedException(nameof(ExponentialSineSweep));
-            }
-            if (bitsPerSample != 16 &&
-                bitsPerSample != 24)
-            {
-                throw new Exception("Unsupported");
+                int sample = (int)(SweepData[sampleIndex] * maxValue);
+                sample *= (int)Math.Pow(256, 4 - bytesPerSample);
+                byte[] bytes = BitConverter.GetBytes(sample);
+                WriteSample(data, sampleIndex, bytes, bytesPerSample, outputChannelCount, channel);
             }
 
-            Octaves = octaves;
-            BitsPerSample = bitsPerSample;
-            SampleRate = sampleRate;
-            DesireDuration = desireDuration;
-
-            double P2 = Math.Pow(2, octaves);
-            double LogP2 = Math.Log(P2);
-
-            double targetLen = sampleRate * desireDuration;
-
-            double constFactor = (Math.PI / P2) / LogP2;
-
-            double M = Math.Max(1, Math.Round((constFactor * targetLen) / (Math.PI * 2)));
-
-            double L = (M * Math.PI * 2) / constFactor;
-
-            int N = Math.Max(1, (int)Math.Round(L));
-
-            SweepSamples = N;
-
-            SweepData = new float[N];
-            InverseFiltere = new float[N];
-            Frequence = new float[N];
-
-            double ocraveLen = N / (double)octaves;
-
-            for (int i = 0; i < N; i++)
-            {
-                double logPow = Math.Pow(Math.E, (double)i / N * LogP2);
-                Frequence[i] = (float)((sampleRate / 2 / P2) * (L / N) * logPow);
-
-                SweepData[i] = (float)Math.Sin(constFactor * L * logPow) * (float)Math.Min(i / ocraveLen, 1.0);
-            }
-
-            for (int i = 0; i < N; i++)
-            {
-                InverseFiltere[i] = (float)(SweepData[N - i - 1] *
-                    Math.Pow(Math.Pow(2, octaves / (double)N), -i) *
-                    (octaves * Math.Log(2) / (1 - Math.Pow(2, -octaves))));
-            }
-
-            DisposeStreams();
-            SweepByteData = new byte[(int)Chanels.Count][];
-            memoryStream = new MemoryStream[(int)Chanels.Count];
-            rawSourceWaveStream = new RawSourceWaveStream[(int)Chanels.Count];
-
-            for (int c = 0; c < (int)Chanels.Count; c++)
-            {
-                ChanelsCount = (Chanels)c == Chanels.Mono ? 1 : 2;
-                int bytesPerSample = bitsPerSample / 8;
-                int maxVal = Int32.MaxValue >> (32 - bitsPerSample);
-
-                SweepByteData[c] = new byte[SweepSamples * bytesPerSample * ChanelsCount];
-
-                for (int n = 0; n < SweepSamples; n++)
-                {
-                    int sample = (int)(SweepData[n] * maxVal);
-
-                    sample *= (int)Math.Pow(256, (4 - bytesPerSample));
-
-                    var bytes = BitConverter.GetBytes(sample);
-
-                    if ((Chanels)c == Chanels.Mono)
-                    {
-                        for (int b = 0; b < bytesPerSample; b++)
-                        {
-                            int byteOffset = n * bytesPerSample;
-                            SweepByteData[c][byteOffset + b] = bytes[b + (4 - bytesPerSample)];
-                        }
-                    }
-                    else
-                    {
-                        for (int b = 0; b < bytesPerSample; b++)
-                        {
-                            int byteOffset = n * bytesPerSample * ChanelsCount;
-
-                            if ((Chanels)c == Chanels.Left || (Chanels)c == Chanels.Stereo)
-                            {
-                                SweepByteData[c][byteOffset + b] = bytes[b + (4 - bytesPerSample)];
-                            }
-                            if ((Chanels)c == Chanels.Right || (Chanels)c == Chanels.Stereo)
-                            {
-                                SweepByteData[c][byteOffset + bytesPerSample + b] = bytes[b + (4 - bytesPerSample)];
-                            }
-                        }
-                    }
-                }
-
-                memoryStream[c] = new MemoryStream(SweepByteData[c]);
-                rawSourceWaveStream[c] = new RawSourceWaveStream(memoryStream[c], new WaveFormat(SampleRate, BitsPerSample, ChanelsCount));
-            }
+            int channelIndex = (int)channel;
+            SweepByteData[channelIndex] = data;
+            memoryStreams[channelIndex] = new MemoryStream(data, writable: false);
+            sourceStreams[channelIndex] = new RawSourceWaveStream(
+                memoryStreams[channelIndex],
+                new WaveFormat(SampleRate, BitsPerSample, outputChannelCount));
         }
+    }
 
-        public void Dispose()
+    private static void WriteSample(
+        byte[] destination,
+        int sampleIndex,
+        byte[] source,
+        int bytesPerSample,
+        int channelCount,
+        PlaybackChannel channel)
+    {
+        int frameOffset = sampleIndex * bytesPerSample * channelCount;
+        int sourceOffset = 4 - bytesPerSample;
+
+        if (channel == PlaybackChannel.Mono)
         {
-            if (disposed)
-            {
-                return;
-            }
-            disposed = true;
-            DisposeStreams();
-            GC.SuppressFinalize(this);
+            Array.Copy(source, sourceOffset, destination, frameOffset, bytesPerSample);
+            return;
         }
 
-        private void DisposeStreams()
+        if (channel is PlaybackChannel.Left or PlaybackChannel.Stereo)
         {
-            if(memoryStream != null)
-            {
-                foreach(var ms in memoryStream)
-                {
-                    ms?.Dispose();
-                }
-            }
-            if (rawSourceWaveStream != null)
-            {
-                foreach (var rsws in rawSourceWaveStream)
-                {
-                    rsws?.Dispose();
-                }
-            }
+            Array.Copy(source, sourceOffset, destination, frameOffset, bytesPerSample);
         }
+        if (channel is PlaybackChannel.Right or PlaybackChannel.Stereo)
+        {
+            Array.Copy(
+                source,
+                sourceOffset,
+                destination,
+                frameOffset + bytesPerSample,
+                bytesPerSample);
+        }
+    }
+
+    private static void ValidateGenerationParameters(
+        int octaves,
+        double requestedDuration,
+        int bitsPerSample,
+        int sampleRate)
+    {
+        if (octaves <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(octaves));
+        }
+        if (!double.IsFinite(requestedDuration) || requestedDuration <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(requestedDuration));
+        }
+        if (bitsPerSample is not (16 or 24))
+        {
+            throw new NotSupportedException($"Unsupported sample size: {bitsPerSample} bits.");
+        }
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+    }
+
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+    }
+
+    private void DisposeStreams()
+    {
+        foreach (RawSourceWaveStream stream in sourceStreams)
+        {
+            stream.Dispose();
+        }
+        foreach (MemoryStream stream in memoryStreams)
+        {
+            stream.Dispose();
+        }
+
+        sourceStreams = Array.Empty<RawSourceWaveStream>();
+        memoryStreams = Array.Empty<MemoryStream>();
+    }
+
+    public void Dispose()
+    {
+        if (disposed)
+        {
+            return;
+        }
+
+        disposed = true;
+        DisposeStreams();
+        GC.SuppressFinalize(this);
     }
 }

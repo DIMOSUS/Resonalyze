@@ -1,27 +1,27 @@
+using System.Diagnostics.Metrics;
+using System.Drawing.Drawing2D;
+using System.Numerics;
+using System.Threading;
+using System.Windows.Forms;
+using System.Xml.Linq;
+using MathNet.Numerics;
+using MathNet.Numerics.IntegralTransforms;
+using MathNet.Numerics.Providers.LinearAlgebra;
+using NAudio.CoreAudioApi;
 using NAudio.Wave;
+using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.Series;
-using OxyPlot;
-using System.Numerics;
-using System.Diagnostics.Metrics;
-using MathNet.Numerics.IntegralTransforms;
 using OxyPlot.WindowsForms;
-using System.Drawing.Drawing2D;
-using System.Windows.Forms;
-using NAudio.CoreAudioApi;
-using Resonalyze.Options;
-using MathNet.Numerics.Providers.LinearAlgebra;
-using MathNet.Numerics;
-using System.Threading;
-using System.Xml.Linq;
 using Resonalyze.Dsp;
+using Resonalyze.Options;
 
 namespace Resonalyze
 {
     public enum Mode : int
     {
         None = 0,
-        ImpulseResponce,
+        ImpulseResponse,
         FrequencyResponse,
         PhaseResponse,
         GroupDelay,
@@ -35,59 +35,56 @@ namespace Resonalyze
     {
         public Mode CurrentMode { get; private set; }
 
-        public OverlayCollection Overlays;
-
-        ExpSweepMeasurement expSweepMeasurement = new ExpSweepMeasurement();
-        NoiseMeasurement noiseMeasurement = new NoiseMeasurement();
-        readonly System.Windows.Forms.Timer noiseGraphTimer = new() { Interval = 100 };
-        bool closingPrepared;
-        bool resourcesDisposed;
-
-        CalibrationFile Calibration = new CalibrationFile(
+        private readonly OverlayCollection overlayCollection;
+        private readonly ExpSweepMeasurement expSweepMeasurement = new();
+        private readonly NoiseMeasurement noiseMeasurement = new();
+        private readonly System.Windows.Forms.Timer noiseGraphTimer = new() { Interval = 100 };
+        private readonly CalibrationFile calibration = new(
             Path.Combine(AppContext.BaseDirectory, "calibration.txt"));
-
-        WterfallGenerateOptions waterfallGenOptions = new WterfallGenerateOptions()
+        private readonly WaterfallGenerateOptions waterfallGenOptions = new()
         {
             WaterfallMode = WaterfallMode.Fourier,
         };
-        WterfallGenerateOptions burstDecayGenOptions = new WterfallGenerateOptions()
+        private readonly WaterfallGenerateOptions burstDecayGenOptions = new()
         {
             WaterfallMode = WaterfallMode.BurstDecay,
             Window = 1024,
             LeftTukeyWindow = 8,
             RightTukeyWindow = 128,
-            SmothInvOctaves = 6,
+            SmoothingInverseOctaves = 6,
         };
 
-        FRGenerateOptions fRGenOptions = new FRGenerateOptions();
-        FRGenerateOptions pRGenOptions = new FRGenerateOptions()
+        private readonly FrequencyResponseOptions frequencyResponseOptions = new();
+        private readonly FrequencyResponseOptions phaseResponseOptions = new()
         {
             Window = 2048,
             LeftTukeyWindow = 16,
             RightTukeyWindow = 256,
-            SmothInvOctaves = 12,
+            SmoothingInverseOctaves = 12,
             Offset = 0,
         };
-        FRGenerateOptions gDGenOptions = new FRGenerateOptions()
+        private readonly FrequencyResponseOptions groupDelayOptions = new()
         {
             Window = 2048,
             LeftTukeyWindow = 16,
             RightTukeyWindow = 256,
-            SmothInvOctaves = 12,
+            SmoothingInverseOctaves = 12,
             Offset = 0,
         };
-        IRGenerateOptions iRGenerateOptions = new IRGenerateOptions();
+        private readonly ImpulseResponseOptions impulseResponseOptions = new();
+        private bool closingPrepared;
+        private bool resourcesDisposed;
 
         public Form1()
         {
             InitializeComponent();
-            Overlays = new OverlayCollection(this, overlays, plotView1);
+            overlayCollection = new OverlayCollection(this, overlays, plotView1);
 
-            expSweepMeasurement.Init(12, 44100, 24, 1.0, Chanels.Mono);
-            frezeButton(buttonSave, true);
-            frezeButton(buttonLoad, false);
+            expSweepMeasurement.Init(12, 44100, 24, 1.0, PlaybackChannel.Mono);
+            SetButtonFrozen(buttonSave, true);
+            SetButtonFrozen(buttonLoad, false);
 
-            expSweepMeasurement.CompleteNotify += (bool Succes) =>
+            expSweepMeasurement.Completed += (bool success) =>
             {
                 if (IsDisposed || !IsHandleCreated)
                 {
@@ -95,25 +92,25 @@ namespace Resonalyze
                 }
                 BeginInvoke((MethodInvoker)delegate
                 {
-                    if (Succes)
+                    if (success)
                     {
                         buttonRecord.Text = "Ready";
                         buttonRecord.BackColor = Color.FromArgb(192, 255, 192);
-                        frezeButton(buttonSave, false);
-                        frezeButton(buttonLoad, false);
+                        SetButtonFrozen(buttonSave, false);
+                        SetButtonFrozen(buttonLoad, false);
                     }
                     else
                     {
                         buttonRecord.Text = expSweepMeasurement.LastError == null ? "Aborted" : "Error";
                         buttonRecord.BackColor = Color.FromArgb(255, 192, 192);
-                        frezeButton(buttonSave, true);
-                        frezeButton(buttonLoad, false);
+                        SetButtonFrozen(buttonSave, true);
+                        SetButtonFrozen(buttonLoad, false);
                     }
                 });
             };
 
-            noiseMeasurement.Init(44100, 24, 60, Chanels.Mono, 2048);
-            noiseMeasurement.CompleteNotify += (bool Succes) =>
+            noiseMeasurement.Init(44100, 24, 60, PlaybackChannel.Mono, 2048);
+            noiseMeasurement.Completed += (bool success) =>
             {
                 if (IsDisposed || !IsHandleCreated)
                 {
@@ -129,12 +126,6 @@ namespace Resonalyze
             noiseGraphTimer.Tick += NoiseGraphTimer_Tick;
             FormClosing += Form1_FormClosing;
             buttonFR_Click(this, new EventArgs());
-            /*
-            var enumerator = new MMDeviceEnumerator();
-            foreach (var wasapi in enumerator.EnumerateAudioEndPoints(DataFlow.All, DeviceState.All))
-            {
-                Console.WriteLine($"{wasapi.DataFlow} {wasapi.FriendlyName} {wasapi.DeviceFriendlyName} {wasapi.State}");
-            }*/
         }
 
         public async Task ChangeModeAsync(Mode mode)
@@ -159,7 +150,7 @@ namespace Resonalyze
             }
             else
             {
-                Overlays.Prepare(mode);
+                overlayCollection.Prepare(mode);
 
                 overlays.Enabled = true;
             }
@@ -181,8 +172,8 @@ namespace Resonalyze
                 buttonRecord.Text = "Running...";
                 _ = expSweepMeasurement.RunAsync();
                 buttonRecord.BackColor = Color.FromArgb(192, 255, 255);
-                frezeButton(buttonSave, true);
-                frezeButton(buttonLoad, true);
+                SetButtonFrozen(buttonSave, true);
+                SetButtonFrozen(buttonLoad, true);
             }
         }
 
@@ -192,32 +183,14 @@ namespace Resonalyze
 
             var model = new PlotModel { Title = "Frequency Response" };
 
-            if (expSweepMeasurement.ImpulseResponce != null && !expSweepMeasurement.InProgress)
+            if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
             {
-                var series = DataHelper.GetSpectrum(expSweepMeasurement, fRGenOptions, Calibration);
+                var series = DataHelper.GetSpectrum(expSweepMeasurement, frequencyResponseOptions, calibration);
                 foreach (var s in series)
                 {
                     model.Series.Add(s);
                 }
             }
-
-            /*
-            LineSeries LS = new LineSeries();
-            List<DataPoint> data = new List<DataPoint> { };
-
-            int steps = 1000;
-            for (int i = 1; i < steps; i++)
-            {
-                double frequence = DataHelper.Log10ToFrequence(i / (steps - 1.0), 20, 20000);
-
-                data.Add(new (frequence, Calibration.dBCorrection(frequence)));
-            }
-
-            LS.Points.AddRange(data);
-            LS.Color = OxyColor.FromRgb(255, 0, 127);
-            LS.Title = "Micro";
-            model.Series.Add(LS);
-            */
 
             model.Axes.Add(new LogarithmicAxis
             {
@@ -245,7 +218,7 @@ namespace Resonalyze
 
             plotView1.Model = model;
 
-            Overlays.Show(CurrentMode);
+            overlayCollection.Show(CurrentMode);
         }
 
         private async void buttonPR_Click(object sender, EventArgs e)
@@ -254,10 +227,10 @@ namespace Resonalyze
 
             var model = new PlotModel { Title = "Phase Response" };
 
-            if (expSweepMeasurement.ImpulseResponce != null && !expSweepMeasurement.InProgress)
+            if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
             {
                 var series = DataHelper.GetPhase(expSweepMeasurement,
-                    pRGenOptions.Window, pRGenOptions.LeftTukeyWindow, pRGenOptions.RightTukeyWindow, pRGenOptions.Offset, pRGenOptions.SmothInvOctaves, pRGenOptions.Unwrap);
+                    phaseResponseOptions.Window, phaseResponseOptions.LeftTukeyWindow, phaseResponseOptions.RightTukeyWindow, phaseResponseOptions.Offset, phaseResponseOptions.SmoothingInverseOctaves, phaseResponseOptions.Unwrap);
                 foreach (var s in series)
                 {
                     model.Series.Add(s);
@@ -289,14 +262,14 @@ namespace Resonalyze
 
             plotView1.Model = model;
 
-            Overlays.Show(CurrentMode);
+            overlayCollection.Show(CurrentMode);
         }
 
         private async void buttonWaterfall_Click(object sender, EventArgs e)
         {
             await ChangeModeAsync(Mode.CumulativeSpectrumDecay);
 
-            if (expSweepMeasurement.ImpulseResponce != null && !expSweepMeasurement.InProgress)
+            if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
             {
                 var model = new PlotModel { Title = "Fourier Waterfall" };
 
@@ -325,8 +298,8 @@ namespace Resonalyze
                     new LinearColorAxis
                     {
                         Position = AxisPosition.Left,
-                        Minimum = waterfallGenOptions.dBRange,
-                        Maximum = -waterfallGenOptions.dBRange,
+                        Minimum = waterfallGenOptions.DbRange,
+                        Maximum = -waterfallGenOptions.DbRange,
                         //Palette = OxyPalettes.Jet(64),
                         Palette = OxyPalette.Interpolate(512, OxyColors.DarkBlue, OxyColors.Cyan, OxyColors.Yellow, OxyColors.Orange, OxyColors.DarkRed, OxyColors.White, OxyColors.White, OxyColors.White, OxyColors.White),
                         HighColor = OxyColors.Black
@@ -351,9 +324,9 @@ namespace Resonalyze
 
             var model = new PlotModel { Title = "Group Delay" };
 
-            if (expSweepMeasurement.ImpulseResponce != null && !expSweepMeasurement.InProgress)
+            if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
             {
-                var series = DataHelper.GetGroupDelay(expSweepMeasurement, gDGenOptions.Window, gDGenOptions.LeftTukeyWindow, gDGenOptions.RightTukeyWindow, gDGenOptions.Offset, gDGenOptions.SmothInvOctaves);
+                var series = DataHelper.GetGroupDelay(expSweepMeasurement, groupDelayOptions.Window, groupDelayOptions.LeftTukeyWindow, groupDelayOptions.RightTukeyWindow, groupDelayOptions.Offset, groupDelayOptions.SmoothingInverseOctaves);
                 foreach (var s in series)
                 {
                     model.Series.Add(s);
@@ -384,14 +357,14 @@ namespace Resonalyze
 
             plotView1.Model = model;
 
-            Overlays.Show(CurrentMode);
+            overlayCollection.Show(CurrentMode);
         }
 
         private async void buttonBurstDecay_Click(object sender, EventArgs e)
         {
             await ChangeModeAsync(Mode.CumulativeSpectrumDecay);
 
-            if (expSweepMeasurement.ImpulseResponce != null && !expSweepMeasurement.InProgress)
+            if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
             {
                 var model = new PlotModel { Title = "Burst Decay" };
 
@@ -420,8 +393,8 @@ namespace Resonalyze
                     new LinearColorAxis
                     {
                         Position = AxisPosition.Left,
-                        Minimum = burstDecayGenOptions.dBRange,
-                        Maximum = -burstDecayGenOptions.dBRange,
+                        Minimum = burstDecayGenOptions.DbRange,
+                        Maximum = -burstDecayGenOptions.DbRange,
                         //Palette = OxyPalettes.Jet(64),
                         Palette = OxyPalette.Interpolate(512, OxyColors.DarkBlue, OxyColors.Cyan, OxyColors.Yellow, OxyColors.Orange, OxyColors.DarkRed, OxyColors.White, OxyColors.White, OxyColors.White, OxyColors.White),
                         HighColor = OxyColors.Black
@@ -442,13 +415,13 @@ namespace Resonalyze
 
         private async void buttonIR_Click(object sender, EventArgs e)
         {
-            await ChangeModeAsync(Mode.ImpulseResponce);
+            await ChangeModeAsync(Mode.ImpulseResponse);
 
-            var model = new PlotModel { Title = "Impulse Responce" };
+            var model = new PlotModel { Title = "Impulse Response" };
 
-            if (expSweepMeasurement.ImpulseResponce != null && !expSweepMeasurement.InProgress)
+            if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
             {
-                var series = DataHelper.GetImpulse(expSweepMeasurement, iRGenerateOptions);
+                var series = DataHelper.GetImpulse(expSweepMeasurement, impulseResponseOptions);
                 foreach (var s in series)
                 {
                     model.Series.Add(s);
@@ -467,7 +440,7 @@ namespace Resonalyze
 
             plotView1.Model = model;
 
-            Overlays.Show(CurrentMode);
+            overlayCollection.Show(CurrentMode);
         }
 
         private void buttonRecordOpt_Click(object sender, EventArgs e)
@@ -495,10 +468,10 @@ namespace Resonalyze
         private void buttonFROpt_Click(object sender, EventArgs e)
         {
             FROptions opt = new FROptions();
-            opt.Init(expSweepMeasurement, fRGenOptions);
+            opt.Init(expSweepMeasurement, frequencyResponseOptions);
             if (opt.ShowDialog() == DialogResult.OK)
             {
-                opt.SetOptions(fRGenOptions);
+                opt.SetOptions(frequencyResponseOptions);
             }
         }
 
@@ -516,30 +489,30 @@ namespace Resonalyze
         private void buttonGDOpt_Click(object sender, EventArgs e)
         {
             GDOpt opt = new GDOpt();
-            opt.Init(expSweepMeasurement, gDGenOptions);
+            opt.Init(expSweepMeasurement, groupDelayOptions);
             if (opt.ShowDialog() == DialogResult.OK)
             {
-                opt.SetOptions(gDGenOptions);
+                opt.SetOptions(groupDelayOptions);
             }
         }
 
         private void buttonPROpt_Click(object sender, EventArgs e)
         {
             PROpt opt = new PROpt();
-            opt.Init(expSweepMeasurement, pRGenOptions);
+            opt.Init(expSweepMeasurement, phaseResponseOptions);
             if (opt.ShowDialog() == DialogResult.OK)
             {
-                opt.SetOptions(pRGenOptions);
+                opt.SetOptions(phaseResponseOptions);
             }
         }
 
         private void buttonImpOpt_Click(object sender, EventArgs e)
         {
             IROpt opt = new IROpt();
-            opt.Init(expSweepMeasurement, iRGenerateOptions);
+            opt.Init(expSweepMeasurement, impulseResponseOptions);
             if (opt.ShowDialog() == DialogResult.OK)
             {
-                opt.SetOptions(iRGenerateOptions);
+                opt.SetOptions(impulseResponseOptions);
             }
         }
 
@@ -547,7 +520,7 @@ namespace Resonalyze
         {
             bool wasRunning = noiseMeasurement.InProgress;
             await ChangeModeAsync(Mode.LiveSpectrum);
-            double[]? finalSnapshot = wasRunning ? noiseMeasurement.GetAccDataSnapshot() : null;
+            double[]? finalSnapshot = wasRunning ? noiseMeasurement.GetAccumulatedSpectrumSnapshot() : null;
 
             var model = new PlotModel { Title = "Live Spectrum" };
 
@@ -583,7 +556,7 @@ namespace Resonalyze
                 {
                     model.Series.Add(BuildNoiseSeries(finalSnapshot));
                 }
-                Overlays.Show(CurrentMode);
+                overlayCollection.Show(CurrentMode);
                 return;
             }
 
@@ -594,7 +567,7 @@ namespace Resonalyze
 
         private void NoiseGraphTimer_Tick(object? sender, EventArgs e)
         {
-            double[]? snapshot = noiseMeasurement.GetAccDataSnapshot();
+            double[]? snapshot = noiseMeasurement.GetAccumulatedSpectrumSnapshot();
             PlotModel? model = plotView1.Model;
             if (snapshot == null || model?.Title != "Live Spectrum")
             {
@@ -615,10 +588,10 @@ namespace Resonalyze
             for (int i = 1; i < binCount; i++)
             {
                 double frequency = i * ((double)noiseMeasurement.SampleRate / length);
-                data.Add(new DataPoint(frequency, DataHelper.ADCtoPdB(accumulatedData[i]) - 21.0));
+                data.Add(new DataPoint(frequency, DataHelper.AmplitudeToDecibels(accumulatedData[i]) - 21.0));
             }
 
-            data = DataHelper.LogarithmicResample(data, 20, 20000, 1024, Calibration, 1.0 / 6.0);
+            data = DataHelper.LogarithmicResample(data, 20, 20000, 1024, calibration, 1.0 / 6.0);
             var series = new LineSeries
             {
                 Color = OxyColor.FromRgb(255, 0, 127),
@@ -634,9 +607,9 @@ namespace Resonalyze
 
             var model = new PlotModel { Title = "Autocorrelation" };
 
-            if (expSweepMeasurement.ImpulseResponce != null && !expSweepMeasurement.InProgress)
+            if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
             {
-                var series = DataHelper.GetAutocorrelation(expSweepMeasurement, iRGenerateOptions);
+                var series = DataHelper.GetAutocorrelation(expSweepMeasurement, impulseResponseOptions);
                 foreach (var s in series)
                 {
                     model.Series.Add(s);
@@ -656,7 +629,7 @@ namespace Resonalyze
 
             plotView1.Model = model;
 
-            Overlays.Show(CurrentMode);
+            overlayCollection.Show(CurrentMode);
         }
 
         private async void Form1_FormClosing(object? sender, FormClosingEventArgs e)
@@ -695,7 +668,7 @@ namespace Resonalyze
 
         private async void buttonSave_Click(object sender, EventArgs e)
         {
-            if (expSweepMeasurement.ImpulseResponce != null && !expSweepMeasurement.InProgress)
+            if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
             {
                 using var dialog = new SaveFileDialog
                 {
@@ -713,8 +686,8 @@ namespace Resonalyze
                     return;
                 }
 
-                frezeButton(buttonSave, true);
-                frezeButton(buttonLoad, true);
+                SetButtonFrozen(buttonSave, true);
+                SetButtonFrozen(buttonLoad, true);
                 try
                 {
                     ImpulseResponseFile file =
@@ -732,8 +705,8 @@ namespace Resonalyze
                 }
                 finally
                 {
-                    frezeButton(buttonSave, false);
-                    frezeButton(buttonLoad, false);
+                    SetButtonFrozen(buttonSave, false);
+                    SetButtonFrozen(buttonLoad, false);
                 }
             }
         }
@@ -757,8 +730,8 @@ namespace Resonalyze
                     return;
                 }
 
-                frezeButton(buttonSave, true);
-                frezeButton(buttonLoad, true);
+                SetButtonFrozen(buttonSave, true);
+                SetButtonFrozen(buttonLoad, true);
                 try
                 {
                     ImpulseResponseFile file =
@@ -770,7 +743,7 @@ namespace Resonalyze
                         file.SweepDurationSeconds,
                         file.PlayChannel,
                         file.GetImpulseResponse(),
-                        file.MaxMagnitudeIndex);
+                        file.PeakIndex);
 
                     buttonRecord.Text = "Loaded";
                     buttonRecord.BackColor = Color.FromArgb(192, 255, 192);
@@ -787,27 +760,27 @@ namespace Resonalyze
                 }
                 finally
                 {
-                    frezeButton(
+                    SetButtonFrozen(
                         buttonSave,
-                        expSweepMeasurement.ImpulseResponce == null);
-                    frezeButton(buttonLoad, false);
+                        expSweepMeasurement.ImpulseResponse == null);
+                    SetButtonFrozen(buttonLoad, false);
                 }
             }
         }
 
-        private void frezeButton(Button b, bool freze)
+        private static void SetButtonFrozen(Button button, bool frozen)
         {
-            if (freze)
+            if (frozen)
             {
-                b.Enabled = false;
-                b.BackColor = Color.LightGray;
-                b.ForeColor = Color.DarkGray;
+                button.Enabled = false;
+                button.BackColor = Color.LightGray;
+                button.ForeColor = Color.DarkGray;
             }
             else
             {
-                b.BackColor = SystemColors.Control;
-                b.ForeColor = SystemColors.ControlText;
-                b.Enabled = true;
+                button.BackColor = SystemColors.Control;
+                button.ForeColor = SystemColors.ControlText;
+                button.Enabled = true;
             }
         }
     }

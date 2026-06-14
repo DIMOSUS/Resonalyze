@@ -17,8 +17,8 @@ public sealed class ImpulseResponseFileTests
             Bits = 24,
             Octaves = 10,
             SweepDurationSeconds = 1.5,
-            PlayChannel = Chanels.Left,
-            MaxMagnitudeIndex = 1,
+            PlayChannel = PlaybackChannel.Left,
+            PeakIndex = 1,
             RealSamples = [0.25, 1.0, -0.5],
             ImaginarySamples = [0, 0.125, 0]
         };
@@ -29,6 +29,7 @@ public sealed class ImpulseResponseFileTests
 
             string json = await File.ReadAllTextAsync(path);
             Assert.Contains("\"format\": \"resonalyze-impulse-response\"", json);
+            Assert.Contains("\"maxMagnitudeIndex\": 1", json);
             Assert.Contains("\"realSamples\"", json);
 
             ImpulseResponseFile loaded = await ImpulseResponseFile.LoadAsync(path);
@@ -39,8 +40,8 @@ public sealed class ImpulseResponseFileTests
             Assert.Equal(24, loaded.Bits);
             Assert.Equal(10, loaded.Octaves);
             Assert.Equal(1.5, loaded.SweepDurationSeconds);
-            Assert.Equal(Chanels.Left, loaded.PlayChannel);
-            Assert.Equal(1, loaded.MaxMagnitudeIndex);
+            Assert.Equal(PlaybackChannel.Left, loaded.PlayChannel);
+            Assert.Equal(1, loaded.PeakIndex);
             Assert.Equal(
                 [new Complex(0.25, 0), new Complex(1, 0.125), new Complex(-0.5, 0)],
                 samples);

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -23,20 +23,20 @@ namespace Resonalyze.Options
         public void Init(ExpSweepMeasurement expSweepMeasurement)
         {
             this.expSweepMeasurement = expSweepMeasurement;
-            ExponentialSineSweep sweep = expSweepMeasurement.exponentialSineSweep
+            ExponentialSineSweep sweep = expSweepMeasurement.Sweep
                 ?? throw new InvalidOperationException("Sweep measurement is not initialized.");
             numericUpDownSampleRate.Value = expSweepMeasurement.SampleRate;
             numericUpDownBits.Value = expSweepMeasurement.Bits;
-            
-            comboBoxChanel.Items.Clear();
-            for(int i = 0; i < (int)Chanels.Count; i++)
-            {
-                comboBoxChanel.Items.Add(((Chanels)i).ToString());
-            }
-            comboBoxChanel.SelectedIndex = (int)expSweepMeasurement.PlayCanels;
 
-            numericUpDownDesireDuration.Value = (int)(sweep.DesireDuration * 1000.0);
-            numericUpDownComputeDuration.Value = (int)(sweep.CalcDuration(sweep.DesireDuration) * 1000.0);
+            comboBoxChannel.Items.Clear();
+            foreach (PlaybackChannel channel in Enum.GetValues<PlaybackChannel>())
+            {
+                comboBoxChannel.Items.Add(channel.ToString());
+            }
+            comboBoxChannel.SelectedIndex = (int)expSweepMeasurement.PlaybackChannel;
+
+            numericUpDownRequestedDuration.Value = (int)(sweep.RequestedDuration * 1000.0);
+            numericUpDownComputeDuration.Value = (int)(sweep.CalculateDuration(sweep.RequestedDuration) * 1000.0);
             numericUpDownOctaves.Value = expSweepMeasurement.Octaves;
         }
 
@@ -44,23 +44,23 @@ namespace Resonalyze.Options
         {
             int sampleRate = (int)numericUpDownSampleRate.Value;
             int bits = expSweepMeasurement.Bits;
-            Chanels chanels = (Chanels)comboBoxChanel.SelectedIndex;
-            double desireDuration = (double)numericUpDownDesireDuration.Value * 0.001;
+            PlaybackChannel playbackChannel = (PlaybackChannel)comboBoxChannel.SelectedIndex;
+            double requestedDuration = (double)numericUpDownRequestedDuration.Value * 0.001;
             int octaves = (int)numericUpDownOctaves.Value;
 
-            expSweepMeasurement.Init(octaves, sampleRate, bits, desireDuration, chanels);
+            expSweepMeasurement.Init(octaves, sampleRate, bits, requestedDuration, playbackChannel);
         }
 
-        private void numericUpDownDesireDuration_ValueChanged(object sender, EventArgs e)
+        private void numericUpDownRequestedDuration_ValueChanged(object sender, EventArgs e)
         {
-            ExponentialSineSweep? sweep = expSweepMeasurement?.exponentialSineSweep;
+            ExponentialSineSweep? sweep = expSweepMeasurement?.Sweep;
             if (sweep == null)
             {
                 return;
             }
 
             numericUpDownComputeDuration.Value =
-                (int)(sweep.CalcDuration((int)numericUpDownDesireDuration.Value * 0.001) * 1000.0);
+                (int)(sweep.CalculateDuration((int)numericUpDownRequestedDuration.Value * 0.001) * 1000.0);
         }
     }
 }

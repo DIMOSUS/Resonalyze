@@ -1,4 +1,4 @@
-﻿namespace Resonalyze.Options
+namespace Resonalyze.Options
 {
     partial class MeasurementOptions
     {
@@ -30,11 +30,11 @@
         {
             this.label1 = new System.Windows.Forms.Label();
             this.label2 = new System.Windows.Forms.Label();
-            this.comboBoxChanel = new System.Windows.Forms.ComboBox();
+            this.comboBoxChannel = new System.Windows.Forms.ComboBox();
             this.label3 = new System.Windows.Forms.Label();
             this.label4 = new System.Windows.Forms.Label();
             this.label5 = new System.Windows.Forms.Label();
-            this.numericUpDownDesireDuration = new System.Windows.Forms.NumericUpDown();
+            this.numericUpDownRequestedDuration = new System.Windows.Forms.NumericUpDown();
             this.numericUpDownComputeDuration = new System.Windows.Forms.NumericUpDown();
             this.button2 = new System.Windows.Forms.Button();
             this.button1 = new System.Windows.Forms.Button();
@@ -42,7 +42,7 @@
             this.numericUpDownSampleRate = new System.Windows.Forms.NumericUpDown();
             this.numericUpDownBits = new System.Windows.Forms.NumericUpDown();
             this.numericUpDownOctaves = new System.Windows.Forms.NumericUpDown();
-            ((System.ComponentModel.ISupportInitialize)(this.numericUpDownDesireDuration)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.numericUpDownRequestedDuration)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericUpDownComputeDuration)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericUpDownSampleRate)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericUpDownBits)).BeginInit();
@@ -69,13 +69,13 @@
             this.label2.TabIndex = 3;
             this.label2.Text = "Bits";
             // 
-            // comboBoxChanel
+            // comboBoxChannel
             // 
-            this.comboBoxChanel.FormattingEnabled = true;
-            this.comboBoxChanel.Location = new System.Drawing.Point(153, 87);
-            this.comboBoxChanel.Name = "comboBoxChanel";
-            this.comboBoxChanel.Size = new System.Drawing.Size(100, 23);
-            this.comboBoxChanel.TabIndex = 4;
+            this.comboBoxChannel.FormattingEnabled = true;
+            this.comboBoxChannel.Location = new System.Drawing.Point(153, 87);
+            this.comboBoxChannel.Name = "comboBoxChannel";
+            this.comboBoxChannel.Size = new System.Drawing.Size(100, 23);
+            this.comboBoxChannel.TabIndex = 4;
             // 
             // label3
             // 
@@ -85,7 +85,7 @@
             this.label3.Name = "label3";
             this.label3.Size = new System.Drawing.Size(44, 15);
             this.label3.TabIndex = 5;
-            this.label3.Text = "Chanel";
+            this.label3.Text = "Channel";
             // 
             // label4
             // 
@@ -95,7 +95,7 @@
             this.label4.Name = "label4";
             this.label4.Size = new System.Drawing.Size(115, 15);
             this.label4.TabIndex = 7;
-            this.label4.Text = "Desire Duration (ms)";
+            this.label4.Text = "Requested Duration (ms)";
             // 
             // label5
             // 
@@ -107,35 +107,35 @@
             this.label5.TabIndex = 9;
             this.label5.Text = "Compute Duration (ms)";
             // 
-            // numericUpDownDesireDuration
+            // numericUpDownRequestedDuration
             // 
-            this.numericUpDownDesireDuration.BorderStyle = System.Windows.Forms.BorderStyle.None;
-            this.numericUpDownDesireDuration.Increment = new decimal(new int[] {
+            this.numericUpDownRequestedDuration.BorderStyle = System.Windows.Forms.BorderStyle.None;
+            this.numericUpDownRequestedDuration.Increment = new decimal(new int[] {
             500,
             0,
             0,
             0});
-            this.numericUpDownDesireDuration.Location = new System.Drawing.Point(153, 116);
-            this.numericUpDownDesireDuration.Maximum = new decimal(new int[] {
+            this.numericUpDownRequestedDuration.Location = new System.Drawing.Point(153, 116);
+            this.numericUpDownRequestedDuration.Maximum = new decimal(new int[] {
             100000,
             0,
             0,
             0});
-            this.numericUpDownDesireDuration.Minimum = new decimal(new int[] {
+            this.numericUpDownRequestedDuration.Minimum = new decimal(new int[] {
             1,
             0,
             0,
             0});
-            this.numericUpDownDesireDuration.Name = "numericUpDownDesireDuration";
-            this.numericUpDownDesireDuration.Size = new System.Drawing.Size(100, 19);
-            this.numericUpDownDesireDuration.TabIndex = 10;
-            this.numericUpDownDesireDuration.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
-            this.numericUpDownDesireDuration.Value = new decimal(new int[] {
+            this.numericUpDownRequestedDuration.Name = "numericUpDownRequestedDuration";
+            this.numericUpDownRequestedDuration.Size = new System.Drawing.Size(100, 19);
+            this.numericUpDownRequestedDuration.TabIndex = 10;
+            this.numericUpDownRequestedDuration.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
+            this.numericUpDownRequestedDuration.Value = new decimal(new int[] {
             1000,
             0,
             0,
             0});
-            this.numericUpDownDesireDuration.ValueChanged += new System.EventHandler(this.numericUpDownDesireDuration_ValueChanged);
+            this.numericUpDownRequestedDuration.ValueChanged += new System.EventHandler(this.numericUpDownRequestedDuration_ValueChanged);
             // 
             // numericUpDownComputeDuration
             // 
@@ -269,11 +269,11 @@
             this.Controls.Add(this.button2);
             this.Controls.Add(this.button1);
             this.Controls.Add(this.numericUpDownComputeDuration);
-            this.Controls.Add(this.numericUpDownDesireDuration);
+            this.Controls.Add(this.numericUpDownRequestedDuration);
             this.Controls.Add(this.label5);
             this.Controls.Add(this.label4);
             this.Controls.Add(this.label3);
-            this.Controls.Add(this.comboBoxChanel);
+            this.Controls.Add(this.comboBoxChannel);
             this.Controls.Add(this.label2);
             this.Controls.Add(this.label1);
             this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
@@ -282,7 +282,7 @@
             this.Name = "MeasurementOptions";
             this.ShowInTaskbar = false;
             this.Text = "Measurement Options";
-            ((System.ComponentModel.ISupportInitialize)(this.numericUpDownDesireDuration)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.numericUpDownRequestedDuration)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericUpDownComputeDuration)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericUpDownSampleRate)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericUpDownBits)).EndInit();
@@ -295,11 +295,11 @@
         #endregion
         private Label label1;
         private Label label2;
-        private ComboBox comboBoxChanel;
+        private ComboBox comboBoxChannel;
         private Label label3;
         private Label label4;
         private Label label5;
-        private NumericUpDown numericUpDownDesireDuration;
+        private NumericUpDown numericUpDownRequestedDuration;
         private NumericUpDown numericUpDownComputeDuration;
         private Button button2;
         private Button button1;

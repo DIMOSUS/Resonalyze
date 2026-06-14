@@ -1,4 +1,4 @@
-﻿namespace Resonalyze.Options
+namespace Resonalyze.Options
 {
     partial class GDOpt
     {
@@ -30,7 +30,7 @@
         {
             this.label10 = new System.Windows.Forms.Label();
             this.label9 = new System.Windows.Forms.Label();
-            this.numericSmothInvOctaves = new System.Windows.Forms.NumericUpDown();
+            this.numericSmoothingInverseOctaves = new System.Windows.Forms.NumericUpDown();
             this.numericRightWindow = new System.Windows.Forms.NumericUpDown();
             this.numericLeftWindow = new System.Windows.Forms.NumericUpDown();
             this.label5 = new System.Windows.Forms.Label();
@@ -41,7 +41,7 @@
             this.button1 = new System.Windows.Forms.Button();
             this.numericOffset = new System.Windows.Forms.NumericUpDown();
             this.label11 = new System.Windows.Forms.Label();
-            ((System.ComponentModel.ISupportInitialize)(this.numericSmothInvOctaves)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.numericSmoothingInverseOctaves)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericRightWindow)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericLeftWindow)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericWindow)).BeginInit();
@@ -66,27 +66,27 @@
             this.label9.Name = "label9";
             this.label9.Size = new System.Drawing.Size(93, 15);
             this.label9.TabIndex = 40;
-            this.label9.Text = "Smoth (octaves)";
+            this.label9.Text = "Smoothing (octaves)";
             // 
-            // numericSmothInvOctaves
+            // numericSmoothingInverseOctaves
             // 
-            this.numericSmothInvOctaves.BorderStyle = System.Windows.Forms.BorderStyle.None;
-            this.numericSmothInvOctaves.Location = new System.Drawing.Point(214, 86);
-            this.numericSmothInvOctaves.Maximum = new decimal(new int[] {
+            this.numericSmoothingInverseOctaves.BorderStyle = System.Windows.Forms.BorderStyle.None;
+            this.numericSmoothingInverseOctaves.Location = new System.Drawing.Point(214, 86);
+            this.numericSmoothingInverseOctaves.Maximum = new decimal(new int[] {
             48,
             0,
             0,
             0});
-            this.numericSmothInvOctaves.Minimum = new decimal(new int[] {
+            this.numericSmoothingInverseOctaves.Minimum = new decimal(new int[] {
             1,
             0,
             0,
             0});
-            this.numericSmothInvOctaves.Name = "numericSmothInvOctaves";
-            this.numericSmothInvOctaves.Size = new System.Drawing.Size(39, 19);
-            this.numericSmothInvOctaves.TabIndex = 39;
-            this.numericSmothInvOctaves.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
-            this.numericSmothInvOctaves.Value = new decimal(new int[] {
+            this.numericSmoothingInverseOctaves.Name = "numericSmoothingInverseOctaves";
+            this.numericSmoothingInverseOctaves.Size = new System.Drawing.Size(39, 19);
+            this.numericSmoothingInverseOctaves.TabIndex = 39;
+            this.numericSmoothingInverseOctaves.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
+            this.numericSmoothingInverseOctaves.Value = new decimal(new int[] {
             1,
             0,
             0,
@@ -244,7 +244,7 @@
             this.Controls.Add(this.label11);
             this.Controls.Add(this.label10);
             this.Controls.Add(this.label9);
-            this.Controls.Add(this.numericSmothInvOctaves);
+            this.Controls.Add(this.numericSmoothingInverseOctaves);
             this.Controls.Add(this.numericRightWindow);
             this.Controls.Add(this.numericLeftWindow);
             this.Controls.Add(this.label5);
@@ -259,7 +259,7 @@
             this.Name = "GDOpt";
             this.ShowInTaskbar = false;
             this.Text = "Group Delay Options";
-            ((System.ComponentModel.ISupportInitialize)(this.numericSmothInvOctaves)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.numericSmoothingInverseOctaves)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericRightWindow)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericLeftWindow)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericWindow)).EndInit();
@@ -273,7 +273,7 @@
 
         private Label label10;
         private Label label9;
-        private NumericUpDown numericSmothInvOctaves;
+        private NumericUpDown numericSmoothingInverseOctaves;
         private NumericUpDown numericRightWindow;
         private NumericUpDown numericLeftWindow;
         private Label label5;

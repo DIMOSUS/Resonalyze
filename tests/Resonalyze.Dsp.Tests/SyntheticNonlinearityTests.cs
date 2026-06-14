@@ -1,5 +1,5 @@
-using OxyPlot;
 using System.Numerics;
+using OxyPlot;
 
 namespace Resonalyze.Dsp.Tests;
 
@@ -25,10 +25,10 @@ public sealed class SyntheticNonlinearityTests
         }
 
         var measurement = new SyntheticMeasurement(response, SampleRate, maxMagnitudeIndex: 0);
-        List<DataPoint> spectrum = DataHelper.getSequenceData(
+        List<DataPoint> spectrum = DataHelper.GetSpectrumData(
             measurement,
-            Start: 0,
-            Length: TransformLength);
+            start: 0,
+            length: TransformLength);
 
         double fundamentalFrequency = FundamentalBin * SampleRate / (double)TransformLength;
         double secondHarmonicFrequency = 2 * fundamentalFrequency;
@@ -36,7 +36,7 @@ public sealed class SyntheticNonlinearityTests
         double secondHarmonicDb = FindBin(spectrum, secondHarmonicFrequency).Y;
         double measuredSecondHarmonicDbc = secondHarmonicDb - fundamentalDb;
         double expectedRatio = quadraticCoefficient * amplitude / 2.0;
-        double expectedSecondHarmonicDbc = DataHelper.ADCtoPdB(expectedRatio);
+        double expectedSecondHarmonicDbc = DataHelper.AmplitudeToDecibels(expectedRatio);
 
         Assert.InRange(
             measuredSecondHarmonicDbc,

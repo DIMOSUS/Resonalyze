@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -18,22 +18,22 @@ namespace Resonalyze.Options
             InitializeComponent();
         }
 
-        public void Init(ExpSweepMeasurement expSweepMeasurement, FRGenerateOptions fRGenOptions)
+        public void Init(ExpSweepMeasurement expSweepMeasurement, FrequencyResponseOptions frequencyResponseOptions)
         {
-            numericWindow.Value = fRGenOptions.Window;
-            numericLeftWindow.Value = fRGenOptions.LeftTukeyWindow;
-            numericRightWindow.Value = fRGenOptions.RightTukeyWindow;
-            numericSmothInvOctaves.Value = (decimal)fRGenOptions.SmothInvOctaves;
-            checkUseCalibration.Checked = fRGenOptions.UseCalibration;
+            numericWindow.Value = frequencyResponseOptions.Window;
+            numericLeftWindow.Value = frequencyResponseOptions.LeftTukeyWindow;
+            numericRightWindow.Value = frequencyResponseOptions.RightTukeyWindow;
+            numericSmoothingInverseOctaves.Value = (decimal)frequencyResponseOptions.SmoothingInverseOctaves;
+            checkUseCalibration.Checked = frequencyResponseOptions.UseCalibration;
         }
 
-        public void SetOptions(FRGenerateOptions fRGenOptions)
+        public void SetOptions(FrequencyResponseOptions frequencyResponseOptions)
         {
-            fRGenOptions.Window = (int)numericWindow.Value;
-            fRGenOptions.LeftTukeyWindow = (int)numericLeftWindow.Value;
-            fRGenOptions.RightTukeyWindow = (int)numericRightWindow.Value;
-            fRGenOptions.SmothInvOctaves = (double)numericSmothInvOctaves.Value;
-            fRGenOptions.UseCalibration = checkUseCalibration.Checked;
+            frequencyResponseOptions.Window = (int)numericWindow.Value;
+            frequencyResponseOptions.LeftTukeyWindow = (int)numericLeftWindow.Value;
+            frequencyResponseOptions.RightTukeyWindow = (int)numericRightWindow.Value;
+            frequencyResponseOptions.SmoothingInverseOctaves = (double)numericSmoothingInverseOctaves.Value;
+            frequencyResponseOptions.UseCalibration = checkUseCalibration.Checked;
         }
 
         private void numericWindow_ValueChanged(object sender, EventArgs e)

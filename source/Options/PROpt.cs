@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -18,22 +18,22 @@ namespace Resonalyze.Options
             InitializeComponent();
         }
 
-        public void Init(ExpSweepMeasurement expSweepMeasurement, FRGenerateOptions opt)
+        public void Init(ExpSweepMeasurement expSweepMeasurement, FrequencyResponseOptions opt)
         {
             numericWindow.Value = opt.Window;
             numericLeftWindow.Value = opt.LeftTukeyWindow;
             numericRightWindow.Value = opt.RightTukeyWindow;
-            numericSmothInvOctaves.Value = (decimal)opt.SmothInvOctaves;
+            numericSmoothingInverseOctaves.Value = (decimal)opt.SmoothingInverseOctaves;
             numericOffset.Value = (decimal)opt.Offset;
             checkBoxUnwrap.Checked = opt.Unwrap;
         }
 
-        public void SetOptions(FRGenerateOptions opt)
+        public void SetOptions(FrequencyResponseOptions opt)
         {
             opt.Window = (int)numericWindow.Value;
             opt.LeftTukeyWindow = (int)numericLeftWindow.Value;
             opt.RightTukeyWindow = (int)numericRightWindow.Value;
-            opt.SmothInvOctaves = (double)numericSmothInvOctaves.Value;
+            opt.SmoothingInverseOctaves = (double)numericSmoothingInverseOctaves.Value;
             opt.Offset = (int)numericOffset.Value;
             opt.Unwrap = checkBoxUnwrap.Checked;
         }

@@ -1,4 +1,4 @@
-﻿namespace Resonalyze.Options
+namespace Resonalyze.Options
 {
     partial class IROpt
     {
@@ -128,7 +128,7 @@
             this.MinimizeBox = false;
             this.Name = "IROpt";
             this.ShowInTaskbar = false;
-            this.Text = "Impulse Responce Options";
+            this.Text = "Impulse Response Options";
             ((System.ComponentModel.ISupportInitialize)(this.numericLength)).EndInit();
             this.ResumeLayout(false);
             this.PerformLayout();

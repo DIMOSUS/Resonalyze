@@ -4,6 +4,9 @@ using System.Text.Json.Serialization;
 
 namespace Resonalyze;
 
+/// <summary>
+/// Versioned, human-readable representation of a captured impulse response.
+/// </summary>
 public sealed class ImpulseResponseFile
 {
     public const string CurrentFormat = "resonalyze-impulse-response";
@@ -25,8 +28,9 @@ public sealed class ImpulseResponseFile
     public int Bits { get; set; }
     public int Octaves { get; set; }
     public double SweepDurationSeconds { get; set; }
-    public Chanels PlayChannel { get; set; }
-    public int MaxMagnitudeIndex { get; set; }
+    public PlaybackChannel PlayChannel { get; set; }
+    [JsonPropertyName("maxMagnitudeIndex")]
+    public int PeakIndex { get; set; }
     public double[] RealSamples { get; set; } = Array.Empty<double>();
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -35,9 +39,9 @@ public sealed class ImpulseResponseFile
     public static ImpulseResponseFile Capture(ExpSweepMeasurement measurement)
     {
         ArgumentNullException.ThrowIfNull(measurement);
-        Complex[] impulseResponse = measurement.ImpulseResponce
+        Complex[] impulseResponse = measurement.ImpulseResponse
             ?? throw new InvalidOperationException("There is no impulse response to save.");
-        ExponentialSineSweep sweep = measurement.exponentialSineSweep
+        ExponentialSineSweep sweep = measurement.Sweep
             ?? throw new InvalidOperationException("The sweep measurement is not initialized.");
 
         var realSamples = new double[impulseResponse.Length];
@@ -65,9 +69,9 @@ public sealed class ImpulseResponseFile
             SampleRate = measurement.SampleRate,
             Bits = measurement.Bits,
             Octaves = measurement.Octaves,
-            SweepDurationSeconds = sweep.DesireDuration,
-            PlayChannel = measurement.PlayCanels,
-            MaxMagnitudeIndex = measurement.MaxMagnitudeInd,
+            SweepDurationSeconds = sweep.RequestedDuration,
+            PlayChannel = measurement.PlaybackChannel,
+            PeakIndex = measurement.PeakIndex,
             RealSamples = realSamples,
             ImaginarySamples = imaginarySamples
         };
@@ -158,7 +162,7 @@ public sealed class ImpulseResponseFile
         {
             throw new InvalidDataException("The sweep duration is invalid.");
         }
-        if (!Enum.IsDefined(PlayChannel) || PlayChannel == Chanels.Count)
+        if (!Enum.IsDefined(PlayChannel))
         {
             throw new InvalidDataException("The playback channel is invalid.");
         }
@@ -172,7 +176,7 @@ public sealed class ImpulseResponseFile
             throw new InvalidDataException(
                 "Real and imaginary sample arrays have different lengths.");
         }
-        if ((uint)MaxMagnitudeIndex >= (uint)RealSamples.Length)
+        if ((uint)PeakIndex >= (uint)RealSamples.Length)
         {
             throw new InvalidDataException("The peak index is outside the sample array.");
         }

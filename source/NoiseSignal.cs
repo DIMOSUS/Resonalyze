@@ -1,157 +1,150 @@
-﻿using NAudio.Wave;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Channels;
-using System.Threading.Tasks;
+using NAudio.Wave;
 
-namespace Resonalyze
+namespace Resonalyze;
+
+/// <summary>
+/// Generates deterministic broadband noise for repeatable live-spectrum measurements.
+/// </summary>
+public sealed class NoiseSignal : IDisposable
 {
+    private MemoryStream[] memoryStreams = Array.Empty<MemoryStream>();
+    private RawSourceWaveStream[] sourceStreams = Array.Empty<RawSourceWaveStream>();
+    private bool disposed;
 
-    public sealed class NoiseSignal : IDisposable
+    public byte[][] ByteData { get; private set; } = Array.Empty<byte[]>();
+    public int SampleRate { get; private set; }
+    public int Samples { get; private set; }
+    public int BitsPerSample { get; private set; }
+    public double RequestedDuration { get; private set; }
+
+    public void FillData(
+        double requestedDuration,
+        int bitsPerSample = 24,
+        int sampleRate = 44_100)
     {
-        private bool disposed;
-
-        public byte[][] ByteData
+        ThrowIfDisposed();
+        if (!double.IsFinite(requestedDuration) || requestedDuration <= 0)
         {
-            get; private set;
-        } = Array.Empty<byte[]>();
-
-        public int SampleRate
+            throw new ArgumentOutOfRangeException(nameof(requestedDuration));
+        }
+        if (bitsPerSample is not (16 or 24))
         {
-            get; private set;
+            throw new NotSupportedException($"Unsupported sample size: {bitsPerSample} bits.");
+        }
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
         }
 
-        public int ChanelsCount
-        {
-            get; private set;
-        }
+        BitsPerSample = bitsPerSample;
+        SampleRate = sampleRate;
+        RequestedDuration = requestedDuration;
+        Samples = checked((int)(sampleRate * requestedDuration));
 
-        public int Samples
-        {
-            get; private set;
-        }
+        DisposeStreams();
+        int channelModeCount = Enum.GetValues<PlaybackChannel>().Length;
+        ByteData = new byte[channelModeCount][];
+        memoryStreams = new MemoryStream[channelModeCount];
+        sourceStreams = new RawSourceWaveStream[channelModeCount];
 
-        public int BitsPerSample
+        // A fixed seed keeps measurements reproducible and makes regressions diagnosable.
+        var random = new Random(42);
+        foreach (PlaybackChannel channel in Enum.GetValues<PlaybackChannel>())
         {
-            get; private set;
-        }
+            int outputChannelCount = channel == PlaybackChannel.Mono ? 1 : 2;
+            int bytesPerSample = bitsPerSample / 8;
+            int maxValue = int.MaxValue >> (32 - bitsPerSample);
+            byte[] data = new byte[Samples * bytesPerSample * outputChannelCount];
 
-        public double DesireDuration
-        {
-            get; private set;
-        }
-
-        public MemoryStream[] memoryStream
-        {
-            get; private set;
-        } = Array.Empty<MemoryStream>();
-
-        public RawSourceWaveStream[] rawSourceWaveStream
-        {
-            get; private set;
-        } = Array.Empty<RawSourceWaveStream>();
-
-        public void FillData(double desireDuration, int bitsPerSample = 24, int sampleRate = 44100)
-        {
-            if (disposed)
+            for (int sampleIndex = 0; sampleIndex < Samples; sampleIndex++)
             {
-                throw new ObjectDisposedException(nameof(NoiseSignal));
-            }
-            if (bitsPerSample != 16 &&
-                bitsPerSample != 24)
-            {
-                throw new Exception("Unsupported");
+                int sample = (int)((random.NextDouble() - 0.5) * maxValue);
+                sample *= (int)Math.Pow(256, 4 - bytesPerSample);
+                byte[] bytes = BitConverter.GetBytes(sample);
+                WriteSample(data, sampleIndex, bytes, bytesPerSample, outputChannelCount, channel);
             }
 
-            BitsPerSample = bitsPerSample;
-            SampleRate = sampleRate;
-            DesireDuration = desireDuration;
-
-            Samples = (int)(sampleRate * desireDuration);
-
-            DisposeStreams();
-            ByteData = new byte[(int)Chanels.Count][];
-            memoryStream = new MemoryStream[(int)Chanels.Count];
-            rawSourceWaveStream = new RawSourceWaveStream[(int)Chanels.Count];
-
-            Random random= new Random(42);
-
-            for (int c = 0; c < (int)Chanels.Count; c++)
-            {
-                ChanelsCount = (Chanels)c == Chanels.Mono ? 1 : 2;
-                int bytesPerSample = bitsPerSample / 8;
-                int maxVal = Int32.MaxValue >> (32 - bitsPerSample);
-
-                ByteData[c] = new byte[Samples * bytesPerSample * ChanelsCount];
-
-                for (int n = 0; n < Samples; n++)
-                {
-                    int sample = (int)((random.NextDouble() - 0.5) * maxVal);
-
-                    sample *= (int)Math.Pow(256, (4 - bytesPerSample));
-
-                    var bytes = BitConverter.GetBytes(sample);
-
-                    if ((Chanels)c == Chanels.Mono)
-                    {
-                        for (int b = 0; b < bytesPerSample; b++)
-                        {
-                            int byteOffset = n * bytesPerSample;
-                            ByteData[c][byteOffset + b] = bytes[b + (4 - bytesPerSample)];
-                        }
-                    }
-                    else
-                    {
-                        for (int b = 0; b < bytesPerSample; b++)
-                        {
-                            int byteOffset = n * bytesPerSample * ChanelsCount;
-
-                            if ((Chanels)c == Chanels.Left || (Chanels)c == Chanels.Stereo)
-                            {
-                                ByteData[c][byteOffset + b] = bytes[b + (4 - bytesPerSample)];
-                            }
-                            if ((Chanels)c == Chanels.Right || (Chanels)c == Chanels.Stereo)
-                            {
-                                ByteData[c][byteOffset + bytesPerSample + b] = bytes[b + (4 - bytesPerSample)];
-                            }
-                        }
-                    }
-                }
-
-                memoryStream[c] = new MemoryStream(ByteData[c]);
-                rawSourceWaveStream[c] = new RawSourceWaveStream(memoryStream[c], new WaveFormat(SampleRate, BitsPerSample, ChanelsCount));
-            }
+            int channelIndex = (int)channel;
+            ByteData[channelIndex] = data;
+            memoryStreams[channelIndex] = new MemoryStream(data, writable: false);
+            sourceStreams[channelIndex] = new RawSourceWaveStream(
+                memoryStreams[channelIndex],
+                new WaveFormat(SampleRate, BitsPerSample, outputChannelCount));
         }
+    }
 
-        public void Dispose()
+    public RawSourceWaveStream GetStream(PlaybackChannel channel)
+    {
+        ThrowIfDisposed();
+        if (!Enum.IsDefined(channel))
         {
-            if (disposed)
-            {
-                return;
-            }
-            disposed = true;
-            DisposeStreams();
-            GC.SuppressFinalize(this);
+            throw new ArgumentOutOfRangeException(nameof(channel));
         }
 
-        private void DisposeStreams()
+        return sourceStreams[(int)channel];
+    }
+
+    private static void WriteSample(
+        byte[] destination,
+        int sampleIndex,
+        byte[] source,
+        int bytesPerSample,
+        int channelCount,
+        PlaybackChannel channel)
+    {
+        int frameOffset = sampleIndex * bytesPerSample * channelCount;
+        int sourceOffset = 4 - bytesPerSample;
+
+        if (channel == PlaybackChannel.Mono)
         {
-            if(memoryStream != null)
-            {
-                foreach(var ms in memoryStream)
-                {
-                    ms?.Dispose();
-                }
-            }
-            if (rawSourceWaveStream != null)
-            {
-                foreach (var rsws in rawSourceWaveStream)
-                {
-                    rsws?.Dispose();
-                }
-            }
+            Array.Copy(source, sourceOffset, destination, frameOffset, bytesPerSample);
+            return;
         }
+
+        if (channel is PlaybackChannel.Left or PlaybackChannel.Stereo)
+        {
+            Array.Copy(source, sourceOffset, destination, frameOffset, bytesPerSample);
+        }
+        if (channel is PlaybackChannel.Right or PlaybackChannel.Stereo)
+        {
+            Array.Copy(
+                source,
+                sourceOffset,
+                destination,
+                frameOffset + bytesPerSample,
+                bytesPerSample);
+        }
+    }
+
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+    }
+
+    private void DisposeStreams()
+    {
+        foreach (RawSourceWaveStream stream in sourceStreams)
+        {
+            stream.Dispose();
+        }
+        foreach (MemoryStream stream in memoryStreams)
+        {
+            stream.Dispose();
+        }
+
+        sourceStreams = Array.Empty<RawSourceWaveStream>();
+        memoryStreams = Array.Empty<MemoryStream>();
+    }
+
+    public void Dispose()
+    {
+        if (disposed)
+        {
+            return;
+        }
+
+        disposed = true;
+        DisposeStreams();
+        GC.SuppressFinalize(this);
     }
 }

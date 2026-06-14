@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -18,13 +18,13 @@ namespace Resonalyze.Options
             InitializeComponent();
         }
 
-        public void Init(ExpSweepMeasurement expSweepMeasurement, IRGenerateOptions opt)
+        public void Init(ExpSweepMeasurement expSweepMeasurement, ImpulseResponseOptions opt)
         {
             numericLength.Value = opt.Length;
             checkLogarithmic.Checked = opt.Logarithmic;
         }
 
-        public void SetOptions(IRGenerateOptions opt)
+        public void SetOptions(ImpulseResponseOptions opt)
         {
             opt.Length = (int)numericLength.Value;
             opt.Logarithmic = checkLogarithmic.Checked;

@@ -2,6 +2,9 @@ using NAudio.Wave;
 
 namespace Resonalyze
 {
+    /// <summary>
+    /// Captures interleaved PCM input and exposes sample-count based asynchronous waits.
+    /// </summary>
     public sealed class SoundRecorder : IDisposable
     {
         private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(3);
@@ -14,16 +17,15 @@ namespace Resonalyze
         private int sequenceStart;
         private bool disposed;
 
-        public delegate void SequenceReadyHandler(float[] sequence);
-        public event SequenceReadyHandler? SequenceReadyNotify;
+        public event Action<float[]>? SequenceReady;
 
         public int Sequence { get; set; }
         public int ReadSamples { get; private set; }
         public int SampleRate { get; private set; }
         public int Bits { get; private set; }
-        public int Chanels { get; private set; }
+        public int ChannelCount { get; private set; }
 
-        public void Init(int sampleRate, int bits, int chanels)
+        public void Init(int sampleRate, int bits, int channelCount)
         {
             ThrowIfDisposed();
             if (bits is not (16 or 24))
@@ -34,22 +36,22 @@ namespace Resonalyze
             {
                 throw new ArgumentOutOfRangeException(nameof(sampleRate));
             }
-            if (chanels <= 0)
+            if (channelCount <= 0)
             {
-                throw new ArgumentOutOfRangeException(nameof(chanels));
+                throw new ArgumentOutOfRangeException(nameof(channelCount));
             }
 
             StopAndDisposeSource();
             SampleRate = sampleRate;
             Bits = bits;
-            Chanels = chanels;
+            ChannelCount = channelCount;
             ResetBuffers();
         }
 
         public async Task StartRecordingAsync(CancellationToken cancellationToken)
         {
             ThrowIfDisposed();
-            if (SampleRate == 0 || Chanels == 0)
+            if (SampleRate == 0 || ChannelCount == 0)
             {
                 throw new InvalidOperationException("Recorder is not initialized.");
             }
@@ -61,7 +63,7 @@ namespace Resonalyze
             recordingStopped = NewSignal();
             waveSource = new WaveInEvent
             {
-                WaveFormat = new WaveFormat(SampleRate, Bits, Chanels)
+                WaveFormat = new WaveFormat(SampleRate, Bits, ChannelCount)
             };
             waveSource.DataAvailable += ReceiveData;
             waveSource.RecordingStopped += RecordingStopped;
@@ -148,7 +150,7 @@ namespace Resonalyze
         private void ReceiveData(object? sender, WaveInEventArgs args)
         {
             int bytesPerSample = Bits / 8;
-            int bytesPerFrame = bytesPerSample * Chanels;
+            int bytesPerFrame = bytesPerSample * ChannelCount;
             int frameCount = args.BytesRecorded / bytesPerFrame;
             List<float[]> readySequences = new();
 
@@ -157,7 +159,7 @@ namespace Resonalyze
                 for (int frame = 0; frame < frameCount; frame++)
                 {
                     int frameOffset = frame * bytesPerFrame;
-                    for (int channel = 0; channel < Chanels; channel++)
+                    for (int channel = 0; channel < ChannelCount; channel++)
                     {
                         int sampleOffset = frameOffset + channel * bytesPerSample;
                         samples[channel].Add(ReadPcmSample(args.Buffer, sampleOffset, bytesPerSample));
@@ -189,7 +191,7 @@ namespace Resonalyze
             firstBufferReady?.TrySetResult(true);
             foreach (float[] sequence in readySequences)
             {
-                SequenceReadyNotify?.Invoke(sequence);
+                SequenceReady?.Invoke(sequence);
             }
         }
 
@@ -229,8 +231,8 @@ namespace Resonalyze
             {
                 ReadSamples = 0;
                 sequenceStart = 0;
-                samples = new List<float>[Chanels];
-                for (int channel = 0; channel < Chanels; channel++)
+                samples = new List<float>[ChannelCount];
+                for (int channel = 0; channel < ChannelCount; channel++)
                 {
                     samples[channel] = new List<float>(SampleRate);
                 }

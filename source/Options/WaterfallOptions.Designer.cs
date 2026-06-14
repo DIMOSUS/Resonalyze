@@ -1,4 +1,4 @@
-﻿namespace Resonalyze.Options
+namespace Resonalyze.Options
 {
     partial class WaterfallOptions
     {
@@ -45,8 +45,8 @@
             this.label7 = new System.Windows.Forms.Label();
             this.numericCaptureTime = new System.Windows.Forms.NumericUpDown();
             this.label8 = new System.Windows.Forms.Label();
-            this.numericdBRange = new System.Windows.Forms.NumericUpDown();
-            this.numericSmothInvOctaves = new System.Windows.Forms.NumericUpDown();
+            this.numericDbRange = new System.Windows.Forms.NumericUpDown();
+            this.numericSmoothingInverseOctaves = new System.Windows.Forms.NumericUpDown();
             this.label9 = new System.Windows.Forms.Label();
             this.label10 = new System.Windows.Forms.Label();
             this.label11 = new System.Windows.Forms.Label();
@@ -58,8 +58,8 @@
             ((System.ComponentModel.ISupportInitialize)(this.numericSlices)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericStep)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericCaptureTime)).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericdBRange)).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericSmothInvOctaves)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.numericDbRange)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.numericSmoothingInverseOctaves)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericOffset)).BeginInit();
             this.SuspendLayout();
             // 
@@ -328,54 +328,54 @@
             this.label8.TabIndex = 23;
             this.label8.Text = "dB Range";
             // 
-            // numericdBRange
+            // numericDbRange
             // 
-            this.numericdBRange.BorderStyle = System.Windows.Forms.BorderStyle.None;
-            this.numericdBRange.Increment = new decimal(new int[] {
+            this.numericDbRange.BorderStyle = System.Windows.Forms.BorderStyle.None;
+            this.numericDbRange.Increment = new decimal(new int[] {
             10,
             0,
             0,
             0});
-            this.numericdBRange.Location = new System.Drawing.Point(193, 212);
-            this.numericdBRange.Maximum = new decimal(new int[] {
+            this.numericDbRange.Location = new System.Drawing.Point(193, 212);
+            this.numericDbRange.Maximum = new decimal(new int[] {
             10,
             0,
             0,
             -2147483648});
-            this.numericdBRange.Minimum = new decimal(new int[] {
+            this.numericDbRange.Minimum = new decimal(new int[] {
             140,
             0,
             0,
             -2147483648});
-            this.numericdBRange.Name = "numericdBRange";
-            this.numericdBRange.Size = new System.Drawing.Size(60, 19);
-            this.numericdBRange.TabIndex = 24;
-            this.numericdBRange.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
-            this.numericdBRange.Value = new decimal(new int[] {
+            this.numericDbRange.Name = "numericDbRange";
+            this.numericDbRange.Size = new System.Drawing.Size(60, 19);
+            this.numericDbRange.TabIndex = 24;
+            this.numericDbRange.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
+            this.numericDbRange.Value = new decimal(new int[] {
             60,
             0,
             0,
             -2147483648});
             // 
-            // numericSmothInvOctaves
+            // numericSmoothingInverseOctaves
             // 
-            this.numericSmothInvOctaves.BorderStyle = System.Windows.Forms.BorderStyle.None;
-            this.numericSmothInvOctaves.Location = new System.Drawing.Point(214, 237);
-            this.numericSmothInvOctaves.Maximum = new decimal(new int[] {
+            this.numericSmoothingInverseOctaves.BorderStyle = System.Windows.Forms.BorderStyle.None;
+            this.numericSmoothingInverseOctaves.Location = new System.Drawing.Point(214, 237);
+            this.numericSmoothingInverseOctaves.Maximum = new decimal(new int[] {
             48,
             0,
             0,
             0});
-            this.numericSmothInvOctaves.Minimum = new decimal(new int[] {
+            this.numericSmoothingInverseOctaves.Minimum = new decimal(new int[] {
             1,
             0,
             0,
             0});
-            this.numericSmothInvOctaves.Name = "numericSmothInvOctaves";
-            this.numericSmothInvOctaves.Size = new System.Drawing.Size(39, 19);
-            this.numericSmothInvOctaves.TabIndex = 25;
-            this.numericSmothInvOctaves.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
-            this.numericSmothInvOctaves.Value = new decimal(new int[] {
+            this.numericSmoothingInverseOctaves.Name = "numericSmoothingInverseOctaves";
+            this.numericSmoothingInverseOctaves.Size = new System.Drawing.Size(39, 19);
+            this.numericSmoothingInverseOctaves.TabIndex = 25;
+            this.numericSmoothingInverseOctaves.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
+            this.numericSmoothingInverseOctaves.Value = new decimal(new int[] {
             1,
             0,
             0,
@@ -389,7 +389,7 @@
             this.label9.Name = "label9";
             this.label9.Size = new System.Drawing.Size(93, 15);
             this.label9.TabIndex = 26;
-            this.label9.Text = "Smoth (octaves)";
+            this.label9.Text = "Smoothing (octaves)";
             // 
             // label10
             // 
@@ -440,8 +440,8 @@
             this.Controls.Add(this.label11);
             this.Controls.Add(this.label10);
             this.Controls.Add(this.label9);
-            this.Controls.Add(this.numericSmothInvOctaves);
-            this.Controls.Add(this.numericdBRange);
+            this.Controls.Add(this.numericSmoothingInverseOctaves);
+            this.Controls.Add(this.numericDbRange);
             this.Controls.Add(this.label8);
             this.Controls.Add(this.numericCaptureTime);
             this.Controls.Add(this.label7);
@@ -472,8 +472,8 @@
             ((System.ComponentModel.ISupportInitialize)(this.numericSlices)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericStep)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericCaptureTime)).EndInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericdBRange)).EndInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericSmothInvOctaves)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.numericDbRange)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.numericSmoothingInverseOctaves)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericOffset)).EndInit();
             this.ResumeLayout(false);
             this.PerformLayout();
@@ -498,8 +498,8 @@
         private Label label7;
         private NumericUpDown numericCaptureTime;
         private Label label8;
-        private NumericUpDown numericdBRange;
-        private NumericUpDown numericSmothInvOctaves;
+        private NumericUpDown numericDbRange;
+        private NumericUpDown numericSmoothingInverseOctaves;
         private Label label9;
         private Label label10;
         private Label label11;

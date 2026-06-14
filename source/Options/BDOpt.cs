@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -19,7 +19,7 @@ namespace Resonalyze.Options
             InitializeComponent();
         }
 
-        public void Init(ExpSweepMeasurement expSweepMeasurement, WterfallGenerateOptions burstDecayGenOptions)
+        public void Init(ExpSweepMeasurement expSweepMeasurement, WaterfallGenerateOptions burstDecayGenOptions)
         {
             this.expSweepMeasurement = expSweepMeasurement;
 
@@ -31,25 +31,25 @@ namespace Resonalyze.Options
             numericLeftWindow.Value = burstDecayGenOptions.LeftTukeyWindow;
             numericRightWindow.Value = burstDecayGenOptions.RightTukeyWindow;
 
-            numericdBRange.Value = burstDecayGenOptions.dBRange;
+            numericDbRange.Value = burstDecayGenOptions.DbRange;
 
-            numericSmothInvOctaves.Value = (decimal)burstDecayGenOptions.SmothInvOctaves;
+            numericSmoothingInverseOctaves.Value = (decimal)burstDecayGenOptions.SmoothingInverseOctaves;
 
             numericOffset.Value = burstDecayGenOptions.Offset;
 
             numericPeriods.Value = (int)burstDecayGenOptions.Periods;
         }
 
-        public void SetOptions(WterfallGenerateOptions burstDecayGenOptions)
+        public void SetOptions(WaterfallGenerateOptions burstDecayGenOptions)
         {
             burstDecayGenOptions.Window = (int)numericWindow.Value;
 
             burstDecayGenOptions.LeftTukeyWindow = (int)numericLeftWindow.Value;
             burstDecayGenOptions.RightTukeyWindow = (int)numericRightWindow.Value;
 
-            burstDecayGenOptions.dBRange = (int)numericdBRange.Value;
+            burstDecayGenOptions.DbRange = (int)numericDbRange.Value;
 
-            burstDecayGenOptions.SmothInvOctaves = (double)numericSmothInvOctaves.Value;
+            burstDecayGenOptions.SmoothingInverseOctaves = (double)numericSmoothingInverseOctaves.Value;
 
             burstDecayGenOptions.Offset = (int)numericOffset.Value;
 

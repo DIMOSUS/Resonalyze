@@ -1,14 +1,14 @@
-﻿using MathNet.Numerics;
-using NAudio.Gui;
-using OxyPlot;
-using OxyPlot.Series;
-using OxyPlot.WindowsForms;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using MathNet.Numerics;
+using NAudio.Gui;
+using OxyPlot;
+using OxyPlot.Series;
+using OxyPlot.WindowsForms;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement.Button;
 using CheckBox = System.Windows.Forms.CheckBox;
 
@@ -107,7 +107,7 @@ namespace Resonalyze
 
         public void Show(Mode mode)
         {
-            foreach(Overlay overlay in AllOverlays)
+            foreach (Overlay overlay in AllOverlays)
             {
                 if (overlay.Checked)
                 {
@@ -128,7 +128,7 @@ namespace Resonalyze
     {
         public int Index
         {
-            get; private set; 
+            get; private set;
         }
 
         public string Title
@@ -206,7 +206,7 @@ namespace Resonalyze
         {
             if (checkBox.Checked)
             {
-                if(SeriesMode == collection.form.CurrentMode && Title != "" && sourcePoints != null && drawPoints != null)
+                if (SeriesMode == collection.form.CurrentMode && Title != "" && sourcePoints != null && drawPoints != null)
                 {
                     Show();
                 }
@@ -239,7 +239,7 @@ namespace Resonalyze
                     }
 
                     SelectSeries selectSeries = new SelectSeries();
-                    foreach(string title in seriesTitles)
+                    foreach (string title in seriesTitles)
                     {
                         selectSeries.AddOption(title);
                     }
@@ -278,7 +278,7 @@ namespace Resonalyze
 
         private void numericValueChanged(object? sender, EventArgs e)
         {
-            if(sourcePoints != null)
+            if (sourcePoints != null)
             {
                 UpdateDrawPoints();
             }
@@ -351,11 +351,11 @@ namespace Resonalyze
 
                 var color = panel.BackColor;
 
-                LineSeries LS = new LineSeries();
-                LS.Points.AddRange(drawPoints);
-                LS.Color = OxyColor.FromRgb(color.R, color.G, color.B);
-                LS.Title = Title;
-                collection.plotView.Model.Series.Add(LS);
+                var lineSeries = new LineSeries();
+                lineSeries.Points.AddRange(drawPoints);
+                lineSeries.Color = OxyColor.FromRgb(color.R, color.G, color.B);
+                lineSeries.Title = Title;
+                collection.plotView.Model.Series.Add(lineSeries);
 
                 collection.plotView.Model.InvalidatePlot(true);
                 collection.plotView.Refresh();

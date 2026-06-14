@@ -1,10 +1,13 @@
-using MathNet.Numerics.IntegralTransforms;
-using NAudio.Wave;
 using System.Numerics;
 using System.Threading.Channels;
+using MathNet.Numerics.IntegralTransforms;
+using NAudio.Wave;
 
 namespace Resonalyze
 {
+    /// <summary>
+    /// Streams captured noise blocks to a background FFT accumulator.
+    /// </summary>
     public sealed class NoiseMeasurement : IDisposable
     {
         private readonly object stateSync = new();
@@ -18,18 +21,17 @@ namespace Resonalyze
         private volatile bool inProgress;
         private bool disposed;
 
-        public delegate void CompleteHandler(bool success);
-        public event CompleteHandler? CompleteNotify;
+        public event Action<bool>? Completed;
 
-        public NoiseSignal? noiseSignal;
+        private NoiseSignal? signal;
         public bool InProgress => inProgress;
         public int SampleRate { get; private set; }
         public int Bits { get; private set; }
-        public Chanels PlayCanels { get; private set; }
+        public PlaybackChannel PlaybackChannel { get; private set; }
         public int SequenceLength { get; private set; }
         public Exception? LastError { get; private set; }
 
-        public void Init(int sampleRate, int bits, double desireDuration, Chanels playCanels, int sequenceLength = 2048)
+        public void Init(int sampleRate, int bits, double requestedDuration, PlaybackChannel playbackChannel, int sequenceLength = 2048)
         {
             ThrowIfDisposed();
             if (InProgress)
@@ -42,23 +44,23 @@ namespace Resonalyze
             }
 
             SequenceLength = sequenceLength;
-            PlayCanels = playCanels;
+            PlaybackChannel = playbackChannel;
             SampleRate = sampleRate;
             Bits = bits;
 
-            noiseSignal?.Dispose();
-            noiseSignal = new NoiseSignal();
-            noiseSignal.FillData(desireDuration, bits, sampleRate);
+            signal?.Dispose();
+            signal = new NoiseSignal();
+            signal.FillData(requestedDuration, bits, sampleRate);
 
             if (soundRecorder != null)
             {
-                soundRecorder.SequenceReadyNotify -= ProcessSequence;
+                soundRecorder.SequenceReady -= ProcessSequence;
                 soundRecorder.Dispose();
             }
             soundRecorder = new SoundRecorder();
             soundRecorder.Init(sampleRate, bits, 1);
             soundRecorder.Sequence = sequenceLength;
-            soundRecorder.SequenceReadyNotify += ProcessSequence;
+            soundRecorder.SequenceReady += ProcessSequence;
         }
 
         public Task<bool> RunAsync()
@@ -70,7 +72,7 @@ namespace Resonalyze
                 {
                     return measurementTask;
                 }
-                if (noiseSignal == null || soundRecorder == null)
+                if (signal == null || soundRecorder == null)
                 {
                     throw new InvalidOperationException("Measurement is not initialized.");
                 }
@@ -111,7 +113,7 @@ namespace Resonalyze
             }
         }
 
-        public double[]? GetAccDataSnapshot()
+        public double[]? GetAccumulatedSpectrumSnapshot()
         {
             lock (dataSync)
             {
@@ -121,9 +123,9 @@ namespace Resonalyze
 
         private async Task<bool> RunCoreAsync(CancellationToken cancellationToken)
         {
-            NoiseSignal signal = noiseSignal!;
+            NoiseSignal noiseSignal = signal!;
             SoundRecorder recorder = soundRecorder!;
-            RawSourceWaveStream stream = signal.rawSourceWaveStream[(int)PlayCanels];
+            RawSourceWaveStream stream = noiseSignal.GetStream(PlaybackChannel);
             bool success = false;
             using var player = new WaveOutEvent();
             var sequenceChannel = Channel.CreateBounded<float[]>(
@@ -189,7 +191,7 @@ namespace Resonalyze
                 }
                 try
                 {
-                    CompleteNotify?.Invoke(success);
+                    Completed?.Invoke(success);
                 }
                 catch
                 {
@@ -311,10 +313,10 @@ namespace Resonalyze
             cancellationTokenSource?.Dispose();
             if (soundRecorder != null)
             {
-                soundRecorder.SequenceReadyNotify -= ProcessSequence;
+                soundRecorder.SequenceReady -= ProcessSequence;
                 soundRecorder.Dispose();
             }
-            noiseSignal?.Dispose();
+            signal?.Dispose();
             GC.SuppressFinalize(this);
         }
     }

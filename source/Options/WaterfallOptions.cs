@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -21,7 +21,7 @@ namespace Resonalyze.Options
             InitializeComponent();
         }
 
-        public void Init(ExpSweepMeasurement expSweepMeasurement, WterfallGenerateOptions waterfallGenerateOptions)
+        public void Init(ExpSweepMeasurement expSweepMeasurement, WaterfallGenerateOptions waterfallGenerateOptions)
         {
             this.expSweepMeasurement = expSweepMeasurement;
 
@@ -36,14 +36,14 @@ namespace Resonalyze.Options
             numericLeftWindow.Value = waterfallGenerateOptions.LeftTukeyWindow;
             numericRightWindow.Value = waterfallGenerateOptions.RightTukeyWindow;
 
-            numericdBRange.Value = waterfallGenerateOptions.dBRange;
+            numericDbRange.Value = waterfallGenerateOptions.DbRange;
 
-            numericSmothInvOctaves.Value = (decimal)waterfallGenerateOptions.SmothInvOctaves;
+            numericSmoothingInverseOctaves.Value = (decimal)waterfallGenerateOptions.SmoothingInverseOctaves;
 
             numericOffset.Value = waterfallGenerateOptions.Offset;
         }
 
-        public void SetOptions(WterfallGenerateOptions waterfallGenerateOptions)
+        public void SetOptions(WaterfallGenerateOptions waterfallGenerateOptions)
         {
             waterfallGenerateOptions.Window = (int)numericWindow.Value;
             waterfallGenerateOptions.SliceCount = (int)numericSlices.Value;
@@ -52,9 +52,9 @@ namespace Resonalyze.Options
             waterfallGenerateOptions.LeftTukeyWindow = (int)numericLeftWindow.Value;
             waterfallGenerateOptions.RightTukeyWindow = (int)numericRightWindow.Value;
 
-            waterfallGenerateOptions.dBRange = (int)numericdBRange.Value;
+            waterfallGenerateOptions.DbRange = (int)numericDbRange.Value;
 
-            waterfallGenerateOptions.SmothInvOctaves = (double)numericSmothInvOctaves.Value;
+            waterfallGenerateOptions.SmoothingInverseOctaves = (double)numericSmoothingInverseOctaves.Value;
 
             waterfallGenerateOptions.Offset = (int)numericOffset.Value;
         }

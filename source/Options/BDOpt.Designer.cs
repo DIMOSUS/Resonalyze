@@ -1,4 +1,4 @@
-﻿namespace Resonalyze.Options
+namespace Resonalyze.Options
 {
     partial class BDOpt
     {
@@ -30,8 +30,8 @@
         {
             this.label10 = new System.Windows.Forms.Label();
             this.label9 = new System.Windows.Forms.Label();
-            this.numericSmothInvOctaves = new System.Windows.Forms.NumericUpDown();
-            this.numericdBRange = new System.Windows.Forms.NumericUpDown();
+            this.numericSmoothingInverseOctaves = new System.Windows.Forms.NumericUpDown();
+            this.numericDbRange = new System.Windows.Forms.NumericUpDown();
             this.label8 = new System.Windows.Forms.Label();
             this.numericCaptureTime = new System.Windows.Forms.NumericUpDown();
             this.label7 = new System.Windows.Forms.Label();
@@ -49,8 +49,8 @@
             this.label11 = new System.Windows.Forms.Label();
             this.numericPeriods = new System.Windows.Forms.NumericUpDown();
             this.label3 = new System.Windows.Forms.Label();
-            ((System.ComponentModel.ISupportInitialize)(this.numericSmothInvOctaves)).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericdBRange)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.numericSmoothingInverseOctaves)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.numericDbRange)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericCaptureTime)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericWindow)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericSampleRate)).BeginInit();
@@ -78,56 +78,56 @@
             this.label9.Name = "label9";
             this.label9.Size = new System.Drawing.Size(93, 15);
             this.label9.TabIndex = 43;
-            this.label9.Text = "Smoth (octaves)";
+            this.label9.Text = "Smoothing (octaves)";
             // 
-            // numericSmothInvOctaves
+            // numericSmoothingInverseOctaves
             // 
-            this.numericSmothInvOctaves.BorderStyle = System.Windows.Forms.BorderStyle.None;
-            this.numericSmothInvOctaves.Location = new System.Drawing.Point(214, 161);
-            this.numericSmothInvOctaves.Maximum = new decimal(new int[] {
+            this.numericSmoothingInverseOctaves.BorderStyle = System.Windows.Forms.BorderStyle.None;
+            this.numericSmoothingInverseOctaves.Location = new System.Drawing.Point(214, 161);
+            this.numericSmoothingInverseOctaves.Maximum = new decimal(new int[] {
             9,
             0,
             0,
             0});
-            this.numericSmothInvOctaves.Minimum = new decimal(new int[] {
+            this.numericSmoothingInverseOctaves.Minimum = new decimal(new int[] {
             2,
             0,
             0,
             0});
-            this.numericSmothInvOctaves.Name = "numericSmothInvOctaves";
-            this.numericSmothInvOctaves.Size = new System.Drawing.Size(39, 19);
-            this.numericSmothInvOctaves.TabIndex = 42;
-            this.numericSmothInvOctaves.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
-            this.numericSmothInvOctaves.Value = new decimal(new int[] {
+            this.numericSmoothingInverseOctaves.Name = "numericSmoothingInverseOctaves";
+            this.numericSmoothingInverseOctaves.Size = new System.Drawing.Size(39, 19);
+            this.numericSmoothingInverseOctaves.TabIndex = 42;
+            this.numericSmoothingInverseOctaves.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
+            this.numericSmoothingInverseOctaves.Value = new decimal(new int[] {
             2,
             0,
             0,
             0});
             // 
-            // numericdBRange
+            // numericDbRange
             // 
-            this.numericdBRange.BorderStyle = System.Windows.Forms.BorderStyle.None;
-            this.numericdBRange.Increment = new decimal(new int[] {
+            this.numericDbRange.BorderStyle = System.Windows.Forms.BorderStyle.None;
+            this.numericDbRange.Increment = new decimal(new int[] {
             10,
             0,
             0,
             0});
-            this.numericdBRange.Location = new System.Drawing.Point(193, 136);
-            this.numericdBRange.Maximum = new decimal(new int[] {
+            this.numericDbRange.Location = new System.Drawing.Point(193, 136);
+            this.numericDbRange.Maximum = new decimal(new int[] {
             10,
             0,
             0,
             -2147483648});
-            this.numericdBRange.Minimum = new decimal(new int[] {
+            this.numericDbRange.Minimum = new decimal(new int[] {
             140,
             0,
             0,
             -2147483648});
-            this.numericdBRange.Name = "numericdBRange";
-            this.numericdBRange.Size = new System.Drawing.Size(60, 19);
-            this.numericdBRange.TabIndex = 41;
-            this.numericdBRange.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
-            this.numericdBRange.Value = new decimal(new int[] {
+            this.numericDbRange.Name = "numericDbRange";
+            this.numericDbRange.Size = new System.Drawing.Size(60, 19);
+            this.numericDbRange.TabIndex = 41;
+            this.numericDbRange.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
+            this.numericDbRange.Value = new decimal(new int[] {
             60,
             0,
             0,
@@ -408,8 +408,8 @@
             this.Controls.Add(this.label11);
             this.Controls.Add(this.label10);
             this.Controls.Add(this.label9);
-            this.Controls.Add(this.numericSmothInvOctaves);
-            this.Controls.Add(this.numericdBRange);
+            this.Controls.Add(this.numericSmoothingInverseOctaves);
+            this.Controls.Add(this.numericDbRange);
             this.Controls.Add(this.label8);
             this.Controls.Add(this.numericCaptureTime);
             this.Controls.Add(this.label7);
@@ -429,8 +429,8 @@
             this.Name = "BDOpt";
             this.ShowInTaskbar = false;
             this.Text = "Burst Decay Options";
-            ((System.ComponentModel.ISupportInitialize)(this.numericSmothInvOctaves)).EndInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericdBRange)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.numericSmoothingInverseOctaves)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.numericDbRange)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericCaptureTime)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericWindow)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numericSampleRate)).EndInit();
@@ -447,8 +447,8 @@
 
         private Label label10;
         private Label label9;
-        private NumericUpDown numericSmothInvOctaves;
-        private NumericUpDown numericdBRange;
+        private NumericUpDown numericSmoothingInverseOctaves;
+        private NumericUpDown numericDbRange;
         private Label label8;
         private NumericUpDown numericCaptureTime;
         private Label label7;

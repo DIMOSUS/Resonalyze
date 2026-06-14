@@ -1,5 +1,5 @@
-using OxyPlot;
 using System.Numerics;
+using OxyPlot;
 
 namespace Resonalyze.Dsp.Tests;
 
@@ -15,11 +15,11 @@ public sealed class SyntheticDelayTests
         SyntheticMeasurement measurement = CreateDelayedImpulse();
         double[] rectangularWindow = Enumerable.Repeat(1.0, TransformLength).ToArray();
 
-        List<DataPoint> phase = DataHelper.getPhaseSequence(
+        List<DataPoint> phase = DataHelper.GetPhaseData(
             measurement,
-            Offset: 0,
-            Length: TransformLength,
-            windowFunc: rectangularWindow,
+            offset: 0,
+            length: TransformLength,
+            window: rectangularWindow,
             unwrap: true);
 
         List<DataPoint> analysisBand = phase
@@ -46,7 +46,7 @@ public sealed class SyntheticDelayTests
             leftTukeyWindow: 0,
             rightTukeyWindow: 0,
             offset: 0,
-            smothInvOctaves: 96)[0].Points.ToList();
+            smoothingInverseOctaves: 96)[0].Points.ToList();
 
         double expectedDelayMilliseconds = DelaySamples * 1000.0 / SampleRate;
         List<DataPoint> analysisBand = groupDelay

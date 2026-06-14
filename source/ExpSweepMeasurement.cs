@@ -1,11 +1,14 @@
+using System.Numerics;
 using MathNet.Numerics.IntegralTransforms;
 using NAudio.Wave;
 using Resonalyze.Dsp;
-using System.Numerics;
 using static System.Math;
 
 namespace Resonalyze
 {
+    /// <summary>
+    /// Coordinates sweep playback, recording, and FFT-based deconvolution.
+    /// </summary>
     public sealed class ExpSweepMeasurement : IImpulseMeasurement, IDisposable
     {
         private readonly object stateSync = new();
@@ -15,21 +18,20 @@ namespace Resonalyze
         private volatile bool inProgress;
         private bool disposed;
 
-        public delegate void CompleteHandler(bool success);
-        public event CompleteHandler? CompleteNotify;
+        public event Action<bool>? Completed;
 
-        public ExponentialSineSweep? exponentialSineSweep;
-        public Complex[]? ImpulseResponce { get; private set; }
+        public ExponentialSineSweep? Sweep { get; private set; }
+        public Complex[]? ImpulseResponse { get; private set; }
         public bool InProgress => inProgress;
         public int SampleRate { get; private set; }
         public int Octaves { get; private set; }
         public int Bits { get; private set; }
-        public Chanels PlayCanels { get; private set; }
-        public int MaxMagnitudeInd { get; private set; }
+        public PlaybackChannel PlaybackChannel { get; private set; }
+        public int PeakIndex { get; private set; }
         public Exception? LastError { get; private set; }
         public int RecordedSamples => soundRecorder?.ReadSamples ?? 0;
 
-        public void Init(int octaves, int sampleRate, int bits, double desireDuration, Chanels playCanels)
+        public void Init(int octaves, int sampleRate, int bits, double requestedDuration, PlaybackChannel playbackChannel)
         {
             ThrowIfDisposed();
             if (InProgress)
@@ -37,16 +39,16 @@ namespace Resonalyze
                 throw new InvalidOperationException("Cannot reinitialize an active measurement.");
             }
 
-            PlayCanels = playCanels;
+            PlaybackChannel = playbackChannel;
             SampleRate = sampleRate;
             Bits = bits;
             Octaves = octaves;
-            ImpulseResponce = null;
+            ImpulseResponse = null;
             LastError = null;
 
-            exponentialSineSweep?.Dispose();
-            exponentialSineSweep = new ExponentialSineSweep();
-            exponentialSineSweep.FillData(octaves, desireDuration, bits, sampleRate);
+            Sweep?.Dispose();
+            Sweep = new ExponentialSineSweep();
+            Sweep.FillData(octaves, requestedDuration, bits, sampleRate);
 
             soundRecorder?.Dispose();
             soundRecorder = new SoundRecorder();
@@ -62,7 +64,7 @@ namespace Resonalyze
                 {
                     return measurementTask;
                 }
-                if (exponentialSineSweep == null || soundRecorder == null)
+                if (Sweep == null || soundRecorder == null)
                 {
                     throw new InvalidOperationException("Measurement is not initialized.");
                 }
@@ -70,7 +72,7 @@ namespace Resonalyze
                 cancellationTokenSource?.Dispose();
                 cancellationTokenSource = new CancellationTokenSource();
                 inProgress = true;
-                ImpulseResponce = null;
+                ImpulseResponse = null;
                 LastError = null;
                 measurementTask = RunCoreAsync(cancellationTokenSource.Token);
                 return measurementTask;
@@ -100,11 +102,11 @@ namespace Resonalyze
 
         public double HarmonicIROffset(double harmonic)
         {
-            if (exponentialSineSweep == null)
+            if (Sweep == null)
             {
                 return 0;
             }
-            return exponentialSineSweep.SweepSamples * Log(harmonic) / Log(Pow(2, Octaves));
+            return Sweep.SweepSamples * Log(harmonic) / Log(Pow(2, Octaves));
         }
 
         public void RestoreImpulseResponse(
@@ -112,7 +114,7 @@ namespace Resonalyze
             int sampleRate,
             int bits,
             double sweepDurationSeconds,
-            Chanels playChannel,
+            PlaybackChannel playChannel,
             Complex[] impulseResponse,
             int maxMagnitudeIndex)
         {
@@ -140,16 +142,16 @@ namespace Resonalyze
                 bits,
                 sweepDurationSeconds,
                 playChannel);
-            ImpulseResponce = impulseResponse.ToArray();
-            MaxMagnitudeInd = maxMagnitudeIndex;
+            ImpulseResponse = impulseResponse.ToArray();
+            PeakIndex = maxMagnitudeIndex;
             LastError = null;
         }
 
         private async Task<bool> RunCoreAsync(CancellationToken cancellationToken)
         {
-            ExponentialSineSweep sweep = exponentialSineSweep!;
+            ExponentialSineSweep sweep = Sweep!;
             SoundRecorder recorder = soundRecorder!;
-            int channel = (int)PlayCanels;
+            int channel = (int)PlaybackChannel;
             bool success = false;
             using var player = new WaveOutEvent();
 
@@ -158,7 +160,7 @@ namespace Resonalyze
                 await recorder.StartRecordingAsync(cancellationToken).ConfigureAwait(false);
                 int recordingStart = recorder.ReadSamples;
 
-                RawSourceWaveStream stream = sweep.rawSourceWaveStream[channel];
+                RawSourceWaveStream stream = sweep.GetStream(PlaybackChannel);
                 stream.Position = 0;
                 player.Init(stream);
                 await PlayToEndAsync(player, cancellationToken).ConfigureAwait(false);
@@ -197,7 +199,7 @@ namespace Resonalyze
                 }
                 try
                 {
-                    CompleteNotify?.Invoke(success);
+                    Completed?.Invoke(success);
                 }
                 catch
                 {
@@ -251,7 +253,9 @@ namespace Resonalyze
                 throw new InvalidOperationException("No audio samples were recorded.");
             }
 
-            int convolutionLength = checked(recorded.Length + sweep.InverseFiltere.Length - 1);
+            // Zero-padding to the full linear-convolution length prevents circular wraparound
+            // from moving late response energy to the beginning of the impulse response.
+            int convolutionLength = checked(recorded.Length + sweep.InverseFilter.Length - 1);
             int fftLength = NextPowerOfTwo(convolutionLength);
             Complex[] input = new Complex[fftLength];
             Complex[] inverseFilter = new Complex[fftLength];
@@ -260,9 +264,9 @@ namespace Resonalyze
             {
                 input[i] = new Complex(recorded[i], 0);
             }
-            for (int i = 0; i < sweep.InverseFiltere.Length; i++)
+            for (int i = 0; i < sweep.InverseFilter.Length; i++)
             {
-                inverseFilter[i] = new Complex(sweep.InverseFiltere[i], 0);
+                inverseFilter[i] = new Complex(sweep.InverseFilter[i], 0);
             }
 
             Fourier.Forward(input, FourierOptions.Matlab);
@@ -274,7 +278,7 @@ namespace Resonalyze
             Fourier.Inverse(input, FourierOptions.Matlab);
 
             var impulseResponse = new Complex[convolutionLength];
-            double normalization = 2.0 / sweep.InverseFiltere.Length;
+            double normalization = 2.0 / sweep.InverseFilter.Length;
             double maxMagnitude = 0;
             int maxMagnitudeIndex = 0;
             for (int i = 0; i < impulseResponse.Length; i++)
@@ -287,8 +291,8 @@ namespace Resonalyze
                 }
             }
 
-            ImpulseResponce = impulseResponse;
-            MaxMagnitudeInd = maxMagnitudeIndex;
+            ImpulseResponse = impulseResponse;
+            PeakIndex = maxMagnitudeIndex;
         }
 
         private static int NextPowerOfTwo(int value)
@@ -336,7 +340,7 @@ namespace Resonalyze
             }
             cancellationTokenSource?.Dispose();
             soundRecorder?.Dispose();
-            exponentialSineSweep?.Dispose();
+            Sweep?.Dispose();
             GC.SuppressFinalize(this);
         }
     }

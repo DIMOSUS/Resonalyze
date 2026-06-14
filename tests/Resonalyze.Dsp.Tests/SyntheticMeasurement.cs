@@ -12,14 +12,14 @@ internal sealed class SyntheticMeasurement : IImpulseMeasurement
         int maxMagnitudeIndex,
         Func<double, double>? harmonicOffset = null)
     {
-        ImpulseResponce = impulseResponse;
+        ImpulseResponse = impulseResponse;
         SampleRate = sampleRate;
-        MaxMagnitudeInd = maxMagnitudeIndex;
+        PeakIndex = maxMagnitudeIndex;
         this.harmonicOffset = harmonicOffset ?? (_ => 0);
     }
 
-    public Complex[]? ImpulseResponce { get; }
-    public int MaxMagnitudeInd { get; }
+    public Complex[]? ImpulseResponse { get; }
+    public int PeakIndex { get; }
     public int SampleRate { get; }
 
     public double HarmonicIROffset(double harmonic) => harmonicOffset(harmonic);

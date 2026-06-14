@@ -1,19 +1,8 @@
-﻿using OxyPlot.Axes;
-using OxyPlot.Series;
-using OxyPlot;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Reflection;
 using System.Numerics;
 using MathNet.Numerics.IntegralTransforms;
-using NAudio.Mixer;
-using System.Xml.Linq;
-using System.Drawing;
-using MathNet.Numerics;
-using System.Security.Policy;
+using OxyPlot;
+using OxyPlot.Axes;
+using OxyPlot.Series;
 using Resonalyze.Dsp;
 
 namespace Resonalyze
@@ -58,20 +47,20 @@ namespace Resonalyze
         }
     }
 
-    public class Slice
+    public sealed class Slice
     {
-        public List<DataPoint> Data;
-        public double SliceOffset;
-        public double SliceMinValidFrequence;
-        public double Frequence;
-        public int SampleRate;
+        public List<DataPoint> Data { get; set; }
+        public double SliceOffset { get; }
+        public double SliceMinValidFrequency { get; }
+        public double Frequency { get; }
+        public int SampleRate { get; }
 
-        public Slice(List<DataPoint> data, double sliceOffset, double frequence, double sliceMinValidFrequence, int sampleRate)
+        public Slice(List<DataPoint> data, double sliceOffset, double frequency, double sliceMinValidFrequency, int sampleRate)
         {
             Data = data;
             SliceOffset = sliceOffset;
-            SliceMinValidFrequence = sliceMinValidFrequence;
-            Frequence = frequence;
+            SliceMinValidFrequency = sliceMinValidFrequency;
+            Frequency = frequency;
             SampleRate = sampleRate;
         }
     }
@@ -83,32 +72,32 @@ namespace Resonalyze
         BurstDecay
     }
 
-    public class WterfallGenerateOptions
+    public sealed class WaterfallGenerateOptions
     {
-        public int SliceCount = 64;
-        public int Step = 4;
-        public int Window = 4096;
-        public int LeftTukeyWindow = 8;
-        public int RightTukeyWindow = 512;
-        public int dBRange = -60;
-        public double SmothInvOctaves = 6;
-        public int Offset = 0;
-        public WaterfallMode WaterfallMode = WaterfallMode.Fourier;
-        public double Periods = 30;
+        public int SliceCount { get; set; } = 64;
+        public int Step { get; set; } = 4;
+        public int Window { get; set; } = 4096;
+        public int LeftTukeyWindow { get; set; } = 8;
+        public int RightTukeyWindow { get; set; } = 512;
+        public int DbRange { get; set; } = -60;
+        public double SmoothingInverseOctaves { get; set; } = 6;
+        public int Offset { get; set; }
+        public WaterfallMode WaterfallMode { get; set; } = WaterfallMode.Fourier;
+        public double Periods { get; set; } = 30;
     }
 
     public class WaterfallSeries : XYAxisSeries
     {
         public WaterfallSeries()
         {
-            this.TrackerFormatString = "X: {0:0.000}\r\nY: {1:0.000}\r\nIterations: {2}";
-            RawSlices = new List<Slice> { };
-            ResampleSlices = new List<Slice> { };
-            GenerateOptions = new WterfallGenerateOptions();
+            TrackerFormatString = "X: {0:0.000}\r\nY: {1:0.000}\r\nIterations: {2}";
+            RawSlices = new List<Slice>();
+            ResampleSlices = new List<Slice>();
+            GenerateOptions = new WaterfallGenerateOptions();
         }
 
-        public List<Slice> RawSlices;
-        public List<Slice> ResampleSlices;
+        public List<Slice> RawSlices { get; }
+        public List<Slice> ResampleSlices { get; }
 
         /// <summary>
         /// Gets or sets the color axis.
@@ -125,7 +114,7 @@ namespace Resonalyze
 
         public OxyColor BackgroundColor { get; set; }
 
-        public WterfallGenerateOptions GenerateOptions { get; set; }
+        public WaterfallGenerateOptions GenerateOptions { get; set; }
 
         /// <summary>
         /// Gets the point on the series that is nearest the specified point.
@@ -166,10 +155,10 @@ namespace Resonalyze
                 )
                 return;
 
-            LogarithmicClipAxis lcAxis = (LogarithmicClipAxis)XAxis;
+            LogarithmicClipAxis clippedAxis = (LogarithmicClipAxis)XAxis;
 
-            double dbUp = (colorAxis.Minimum + colorAxis.Maximum) * 0.5;
-            double dbDown = colorAxis.Minimum;
+            double upperDb = (colorAxis.Minimum + colorAxis.Maximum) * 0.5;
+            double lowerDb = colorAxis.Minimum;
 
             //        2__________________1
             //       / |                |
@@ -182,7 +171,7 @@ namespace Resonalyze
             ScreenPoint p0 = this.Transform(XAxis.ActualMinimum, YAxis.ActualMinimum);
             ScreenPoint p1 = this.Transform(XAxis.ActualMaximum, YAxis.ActualMaximum);
             ScreenPoint p5 = this.Transform(XAxis.ActualMaximum, (YAxis.ActualMinimum + YAxis.ActualMaximum) * 0.5);
-            ScreenPoint p6 = this.Transform(lcAxis.ClipValue, YAxis.ActualMinimum);
+            ScreenPoint p6 = this.Transform(clippedAxis.ClipValue, YAxis.ActualMinimum);
             double slopeOffset = p5.X - p6.X;
 
             ScreenPoint p4 = new ScreenPoint(p0.X + slopeOffset, p5.Y);
@@ -204,18 +193,18 @@ namespace Resonalyze
             boundLine(p4, p5);
             boundLine(p4, p2);
 
-            double minFr = Math.Round(XAxis.ActualMinimum);
-            double maxFr = Math.Round(InverseTransform(p6).X);
+            double minFrequency = Math.Round(XAxis.ActualMinimum);
+            double maxFrequency = Math.Round(InverseTransform(p6).X);
 
             double dbMin = colorAxis.ActualMinimum;
             double dbMax = (colorAxis.ActualMaximum + colorAxis.ActualMinimum) * 0.5;
             double dbWindow = dbMax - dbMin;
-            double dbSacale = (p0.Y - p3.Y) / dbWindow;
+            double dbScale = (p0.Y - p3.Y) / dbWindow;
 
             if (GenerateOptions.WaterfallMode == WaterfallMode.Fourier)
             {
                 int width = (int)Math.Round(p6.X - p0.X);
-                Resample(minFr, maxFr, width);
+                Resample(minFrequency, maxFrequency, width);
 
                 double timeWindowStart = ResampleSlices[0].SliceOffset;
                 double timeWindow = ResampleSlices[^1].SliceOffset - timeWindowStart;
@@ -241,7 +230,7 @@ namespace Resonalyze
                         colors.Add(ColorAxisExtensions.GetColor(colorAxis, dB));
                         dB = Math.Min(Math.Max(dB, dbMin), dbMax);
 
-                        double dbPixOffset = (dB - dbMin) * dbSacale;
+                        double dbPixOffset = (dB - dbMin) * dbScale;
 
                         double yPos = corner.Y - dbPixOffset;
 
@@ -290,21 +279,21 @@ namespace Resonalyze
             if (GenerateOptions.WaterfallMode == WaterfallMode.BurstDecay)
             {
                 int width = (int)Math.Round(p4.X - p0.X);
-                Resample(minFr, maxFr, width);
+                Resample(minFrequency, maxFrequency, width);
 
                 var lPen = new OxyPen(OxyColor.FromRgb(0, 0, 0), 2, LineStyle.Solid);
 
                 for (int slice = 0; slice < ResampleSlices.Count; slice++)
                 {
-                    double freq = ResampleSlices[slice].Frequence;
-                    double freqInt = DataHelper.FrequenceToLog10(freq, minFr, maxFr);
+                    double freq = ResampleSlices[slice].Frequency;
+                    double frequencyPosition = DataHelper.FrequencyToLogPosition(freq, minFrequency, maxFrequency);
 
                     List<ScreenPoint> upPoints = new List<ScreenPoint> { };
                     List<ScreenPoint> downPoints = new List<ScreenPoint> { };
                     List<OxyColor> colors = new List<OxyColor> { };
 
-                    ScreenPoint cornerUp = Lerp(p4, p5, freqInt);
-                    ScreenPoint cornerDown = Lerp(p0, p6, freqInt);
+                    ScreenPoint cornerUp = Lerp(p4, p5, frequencyPosition);
+                    ScreenPoint cornerDown = Lerp(p0, p6, frequencyPosition);
 
                     for (int pInd = 0; pInd < width; pInd++)
                     {
@@ -315,7 +304,7 @@ namespace Resonalyze
 
                         dB = Math.Min(Math.Max(dB, dbMin), dbMax);
 
-                        double dbPixOffset = (dB - dbMin) * dbSacale;
+                        double dbPixOffset = (dB - dbMin) * dbScale;
 
                         double yPosDown = Lerp(cornerUp, cornerDown, (double)pInd / width).Y;
                         double yPos = yPosDown - dbPixOffset;
@@ -347,7 +336,7 @@ namespace Resonalyze
                 const double labelCount = 5.0;
                 double labelStep = GenerateOptions.Periods / labelCount;
 
-                for(double label = labelStep; label <= GenerateOptions.Periods; label += labelStep)
+                for (double label = labelStep; label <= GenerateOptions.Periods; label += labelStep)
                 {
                     ScreenPoint pos = Lerp(p5, p6, label / GenerateOptions.Periods);
 
@@ -403,7 +392,7 @@ namespace Resonalyze
 
             double leftTukeyWindow = (double)GenerateOptions.LeftTukeyWindow / window * 2.0;
             double rightTukeyWindow = (double)GenerateOptions.RightTukeyWindow / window * 2.0;
-            double[] winFunc = Windowing.TukeyWindow(GenerateOptions.Window, leftTukeyWindow, rightTukeyWindow);
+            double[] windowFunction = Windowing.TukeyWindow(GenerateOptions.Window, leftTukeyWindow, rightTukeyWindow);
 
             if (GenerateOptions.WaterfallMode == WaterfallMode.Fourier)
             {
@@ -412,21 +401,19 @@ namespace Resonalyze
                     RawSlices.Add(new Slice(new List<DataPoint>(), 0, 0, 0, measurement.SampleRate));
                 }
 
-                //for (int slice = 0; slice < sliceCount; slice++)
                 Parallel.For(0, sliceCount, slice =>
                 {
-                    int offset = measurement.MaxMagnitudeInd - windowFuncOffset + slice * step + GenerateOptions.Offset;
+                    int offset = measurement.PeakIndex - windowFuncOffset + slice * step + GenerateOptions.Offset;
 
-                    Complex[] fftSet = DataHelper.ExtractWindow(measurement, offset, window, winFunc);
+                    Complex[] spectrum = DataHelper.ExtractWindow(measurement, offset, window, windowFunction);
 
-                    Fourier.Forward(fftSet, FourierOptions.Matlab);
+                    Fourier.Forward(spectrum, FourierOptions.Matlab);
 
-                    List<DataPoint> data = new List<DataPoint>(fftSet.Length / 2);
-                    for (int i = 1; i < fftSet.Length / 2; i++)
+                    List<DataPoint> data = new List<DataPoint>(spectrum.Length / 2);
+                    for (int i = 1; i < spectrum.Length / 2; i++)
                     {
                         double f = (double)i * ((double)measurement.SampleRate / (double)window);
-                        //if (f >= 20 && f <= 20000)
-                        data.Add(new DataPoint(f, Windowing.ADCtoPdB(fftSet[i].Magnitude)));
+                        data.Add(new DataPoint(f, DataHelper.AmplitudeToDecibels(spectrum[i].Magnitude)));
                     }
 
                     double time;
@@ -441,55 +428,54 @@ namespace Resonalyze
                     RawSlices[slice] = new Slice(data, time, 0, 0, measurement.SampleRate);
                 });
             }
-            
+
             if (GenerateOptions.WaterfallMode == WaterfallMode.BurstDecay)
             {
-                int offset = measurement.MaxMagnitudeInd - GenerateOptions.LeftTukeyWindow + GenerateOptions.Offset;
-                Complex[] fftSet = new Complex[window * 4];
-                DataHelper.ExtractWindow(measurement, offset, window, winFunc).CopyTo(fftSet, 0);
-                Fourier.Forward(fftSet, FourierOptions.Matlab);
+                int offset = measurement.PeakIndex - GenerateOptions.LeftTukeyWindow + GenerateOptions.Offset;
+                Complex[] spectrum = new Complex[window * 4];
+                DataHelper.ExtractWindow(measurement, offset, window, windowFunction).CopyTo(spectrum, 0);
+                Fourier.Forward(spectrum, FourierOptions.Matlab);
 
-                double smothOctaves = 1.0 / GenerateOptions.SmothInvOctaves;
-                double fk = Math.Pow(2.0, 0.5 * smothOctaves);
-                double fftStep = (double)measurement.SampleRate / fftSet.Length;
+                double smoothingOctaves = 1.0 / GenerateOptions.SmoothingInverseOctaves;
+                double frequencyRatio = Math.Pow(2.0, 0.5 * smoothingOctaves);
+                double frequencyStep = (double)measurement.SampleRate / spectrum.Length;
 
-                double initFrequence = 20000;
+                double initFrequency = 20000;
 
-                List<double> freqList = new List<double>(100);
-                while (initFrequence >= fftStep * 4 && initFrequence >= 20)
+                List<double> frequencies = new List<double>(100);
+                while (initFrequency >= frequencyStep * 4 && initFrequency >= 20)
                 {
-                    freqList.Add(initFrequence);
-                    initFrequence /= fk;
+                    frequencies.Add(initFrequency);
+                    initFrequency /= frequencyRatio;
                 }
-                freqList.Reverse();
+                frequencies.Reverse();
 
-                for (int i = 0; i < freqList.Count; i++)
+                for (int i = 0; i < frequencies.Count; i++)
                 {
                     RawSlices.Add(new Slice(new List<DataPoint>(), 0, 0, 0, measurement.SampleRate));
                 }
 
-                //for (int fInd = 0; fInd < freqList.Count; fInd++)
-                Parallel.For(0, freqList.Count, fInd =>
+                Parallel.For(0, frequencies.Count, frequencyIndex =>
                 {
-                    double frequence = freqList[fInd];
+                    double frequency = frequencies[frequencyIndex];
 
-                    double w0 = (frequence / fftStep) * Math.PI * 2.0;
+                    double w0 = (frequency / frequencyStep) * Math.PI * 2.0;
 
-                    double fWin = Math.Pow(2.0, smothOctaves);
+                    double fWin = Math.Pow(2.0, smoothingOctaves);
                     double t = 2.3548 / (w0 * (fWin - 1.0));
 
-                    Complex[] morlet = new Complex[fftSet.Length];
-                    double summ_ = 0;
+                    Complex[] morlet = new Complex[spectrum.Length];
+                    double kernelSum = 0;
                     for (int i = 0; i < morlet.Length; i++)
                     {
                         double w = (i <= morlet.Length / 2 ? i : i - morlet.Length) * Math.PI * 2.0;
                         morlet[i] = new Complex(Math.Exp(-Math.Pow((w - w0), 2.0) * t * t * 0.25), 0);// * (i % 2 > 0 ? -1.0 : 1.0);
-                        summ_ += morlet[i].Magnitude;
+                        kernelSum += morlet[i].Magnitude;
                     }
-                    double norm = morlet.Length / summ_;
+                    double normalization = morlet.Length / kernelSum;
                     for (int i = 0; i < morlet.Length; i++)
                     {
-                        morlet[i] *= fftSet[i] * norm;
+                        morlet[i] *= spectrum[i] * normalization;
                     }
 
                     Fourier.Inverse(morlet, FourierOptions.Matlab);
@@ -501,12 +487,12 @@ namespace Resonalyze
                         data.Add(new DataPoint(i, morlet[i].Magnitude));
                     }
 
-                    RawSlices[fInd] = new Slice(data, 0, frequence, 0, measurement.SampleRate);
+                    RawSlices[frequencyIndex] = new Slice(data, 0, frequency, 0, measurement.SampleRate);
                 });
             }
         }
 
-        public void Resample(double minFr, double maxFr, int width)
+        public void Resample(double minFrequency, double maxFrequency, int width)
         {
             ResampleSlices.Clear();
             if (GenerateOptions.WaterfallMode == WaterfallMode.Fourier)
@@ -517,11 +503,9 @@ namespace Resonalyze
                         new Slice(new List<DataPoint>(), rs.SliceOffset, 0, 0, 0));
                 }
 
-                //for (int i = 0; i < RawSlices.Count; i++)
                 Parallel.For(0, RawSlices.Count, i =>
                 {
-                    //-- TODO Calibration
-                    ResampleSlices[i].Data = DataHelper.LogarithmicResample(RawSlices[i].Data, minFr, maxFr, width, null, 1.0 / GenerateOptions.SmothInvOctaves);
+                    ResampleSlices[i].Data = DataHelper.LogarithmicResample(RawSlices[i].Data, minFrequency, maxFrequency, width, null, 1.0 / GenerateOptions.SmoothingInverseOctaves);
                 });
             }
 
@@ -534,34 +518,33 @@ namespace Resonalyze
                         new Slice(new List<DataPoint>(), 0, 0, 0, RawSlices[slice].SampleRate));
                 }
 
-                //for (int slice = 0; slice < RawSlices.Count; slice++)
                 Parallel.For(0, RawSlices.Count, slice =>
                 {
-                    double SmothSample(double index)
+                    double SmoothSample(double index)
                     {
                         int a = 2;
-                        int cntrInd = (int)Math.Round(index);
+                        int centerIndex = (int)Math.Round(index);
 
-                        double weightAcc = 0;
-                        double resAcc = 0;
+                        double weightSum = 0;
+                        double weightedSum = 0;
 
-                        for (int smpl = Math.Max(cntrInd - a, 0); smpl <= Math.Min(cntrInd + a, RawSlices[slice].Data.Count - 1); smpl++)
+                        for (int sampleIndex = Math.Max(centerIndex - a, 0); sampleIndex <= Math.Min(centerIndex + a, RawSlices[slice].Data.Count - 1); sampleIndex++)
                         {
-                            double weight = DataHelper.LanczosKernel(index - smpl, a);
+                            double weight = DataHelper.LanczosKernel(index - sampleIndex, a);
 
-                            resAcc += RawSlices[slice].Data[smpl].Y * weight;
-                            weightAcc += weight;
+                            weightedSum += RawSlices[slice].Data[sampleIndex].Y * weight;
+                            weightSum += weight;
                         }
-                        if (weightAcc < 0.00001)
+                        if (weightSum < 0.00001)
                         {
                             return 0.0;
-                        }    
-                        return resAcc / weightAcc;
+                        }
+                        return weightedSum / weightSum;
                     }
 
-                    double frequence = RawSlices[slice].Frequence;
+                    double frequency = RawSlices[slice].Frequency;
 
-                    double periodsTime = GenerateOptions.Periods / frequence;
+                    double periodsTime = GenerateOptions.Periods / frequency;
                     double periodsSamples = RawSlices[slice].SampleRate * periodsTime;
 
                     List<DataPoint> data = new List<DataPoint>(width);
@@ -569,12 +552,12 @@ namespace Resonalyze
                     for (int i = 0; i < width; i++)
                     {
                         double interp = (double)i / (double)width;
-                        double sP = interp * periodsSamples;
+                        double samplePosition = interp * periodsSamples;
 
-                        data.Add(new DataPoint(interp * GenerateOptions.Periods, DataHelper.ADCtoPdB(SmothSample(sP))));
+                        data.Add(new DataPoint(interp * GenerateOptions.Periods, DataHelper.AmplitudeToDecibels(SmoothSample(samplePosition))));
                     }
 
-                    ResampleSlices[slice] = new Slice(data, RawSlices[slice].SliceOffset, RawSlices[slice].Frequence, RawSlices[slice].SliceMinValidFrequence, RawSlices[slice].SampleRate);
+                    ResampleSlices[slice] = new Slice(data, RawSlices[slice].SliceOffset, RawSlices[slice].Frequency, RawSlices[slice].SliceMinValidFrequency, RawSlices[slice].SampleRate);
                 });
             }
         }

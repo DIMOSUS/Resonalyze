@@ -1,4 +1,4 @@
-﻿namespace Resonalyze
+namespace Resonalyze
 {
     partial class Form1
     {
@@ -30,329 +30,320 @@
         private void InitializeComponent()
         {
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(Form1));
-            this.buttonRecord = new System.Windows.Forms.Button();
-            this.plotView1 = new OxyPlot.WindowsForms.PlotView();
-            this.buttonFR = new System.Windows.Forms.Button();
-            this.buttonPR = new System.Windows.Forms.Button();
-            this.buttonWaterfall = new System.Windows.Forms.Button();
-            this.buttonGD = new System.Windows.Forms.Button();
-            this.overlays = new System.Windows.Forms.Panel();
-            this.overlayPanel1 = new System.Windows.Forms.Panel();
-            this.numericUpDown1 = new System.Windows.Forms.NumericUpDown();
-            this.checkBox1 = new System.Windows.Forms.CheckBox();
-            this.button6 = new System.Windows.Forms.Button();
-            this.buttonIR = new System.Windows.Forms.Button();
-            this.buttonRecordOpt = new System.Windows.Forms.Button();
-            this.buttonWaterfallOpt = new System.Windows.Forms.Button();
-            this.buttonFROpt = new System.Windows.Forms.Button();
-            this.buttonBurstDecay = new System.Windows.Forms.Button();
-            this.buttonBurstDecayOpt = new System.Windows.Forms.Button();
-            this.buttonGDOpt = new System.Windows.Forms.Button();
-            this.buttonPROpt = new System.Windows.Forms.Button();
-            this.buttonImpOpt = new System.Windows.Forms.Button();
-            this.buttonNoise = new System.Windows.Forms.Button();
-            this.buttonAutocorrelation = new System.Windows.Forms.Button();
-            this.overlays.SuspendLayout();
-            this.overlayPanel1.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.numericUpDown1)).BeginInit();
-            this.SuspendLayout();
+            buttonRecord = new Button();
+            plotView1 = new OxyPlot.WindowsForms.PlotView();
+            buttonFR = new Button();
+            buttonPR = new Button();
+            buttonWaterfall = new Button();
+            buttonGD = new Button();
+            overlays = new Panel();
+            overlayPanel1 = new Panel();
+            numericUpDown1 = new NumericUpDown();
+            checkBox1 = new CheckBox();
+            button6 = new Button();
+            buttonIR = new Button();
+            buttonRecordOpt = new Button();
+            buttonWaterfallOpt = new Button();
+            buttonFROpt = new Button();
+            buttonBurstDecay = new Button();
+            buttonBurstDecayOpt = new Button();
+            buttonGDOpt = new Button();
+            buttonPROpt = new Button();
+            buttonImpOpt = new Button();
+            buttonNoise = new Button();
+            buttonAutocorrelation = new Button();
+            overlays.SuspendLayout();
+            overlayPanel1.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)numericUpDown1).BeginInit();
+            SuspendLayout();
             // 
             // buttonRecord
             // 
-            this.buttonRecord.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.buttonRecord.Location = new System.Drawing.Point(1114, 12);
-            this.buttonRecord.Name = "buttonRecord";
-            this.buttonRecord.Size = new System.Drawing.Size(100, 23);
-            this.buttonRecord.TabIndex = 0;
-            this.buttonRecord.Text = "Start";
-            this.buttonRecord.UseVisualStyleBackColor = true;
-            this.buttonRecord.Click += new System.EventHandler(this.buttonRecord_Click);
+            buttonRecord.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonRecord.Location = new Point(1114, 12);
+            buttonRecord.Name = "buttonRecord";
+            buttonRecord.Size = new Size(100, 23);
+            buttonRecord.TabIndex = 0;
+            buttonRecord.Text = "Start";
+            buttonRecord.UseVisualStyleBackColor = true;
+            buttonRecord.Click += buttonRecord_Click;
             // 
             // plotView1
             // 
-            this.plotView1.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
-            | System.Windows.Forms.AnchorStyles.Left) 
-            | System.Windows.Forms.AnchorStyles.Right)));
-            this.plotView1.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(35)))), ((int)(((byte)(40)))), ((int)(((byte)(80)))));
-            this.plotView1.ForeColor = System.Drawing.Color.White;
-            this.plotView1.Location = new System.Drawing.Point(12, 12);
-            this.plotView1.Name = "plotView1";
-            this.plotView1.PanCursor = System.Windows.Forms.Cursors.Hand;
-            this.plotView1.Size = new System.Drawing.Size(1096, 705);
-            this.plotView1.TabIndex = 1;
-            this.plotView1.Text = "plotView1";
-            this.plotView1.ZoomHorizontalCursor = System.Windows.Forms.Cursors.SizeWE;
-            this.plotView1.ZoomRectangleCursor = System.Windows.Forms.Cursors.SizeNWSE;
-            this.plotView1.ZoomVerticalCursor = System.Windows.Forms.Cursors.SizeNS;
+            plotView1.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            plotView1.BackColor = Color.FromArgb(35, 40, 80);
+            plotView1.ForeColor = Color.White;
+            plotView1.Location = new Point(12, 12);
+            plotView1.Name = "plotView1";
+            plotView1.PanCursor = Cursors.Hand;
+            plotView1.Size = new Size(1096, 705);
+            plotView1.TabIndex = 1;
+            plotView1.Text = "plotView1";
+            plotView1.ZoomHorizontalCursor = Cursors.SizeWE;
+            plotView1.ZoomRectangleCursor = Cursors.SizeNWSE;
+            plotView1.ZoomVerticalCursor = Cursors.SizeNS;
             // 
             // buttonFR
             // 
-            this.buttonFR.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.buttonFR.Location = new System.Drawing.Point(1114, 70);
-            this.buttonFR.Name = "buttonFR";
-            this.buttonFR.Size = new System.Drawing.Size(100, 23);
-            this.buttonFR.TabIndex = 2;
-            this.buttonFR.Text = "Frequency";
-            this.buttonFR.UseVisualStyleBackColor = true;
-            this.buttonFR.Click += new System.EventHandler(this.buttonFR_Click);
+            buttonFR.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonFR.Location = new Point(1114, 128);
+            buttonFR.Name = "buttonFR";
+            buttonFR.Size = new Size(100, 23);
+            buttonFR.TabIndex = 2;
+            buttonFR.Text = "Frequency";
+            buttonFR.UseVisualStyleBackColor = true;
+            buttonFR.Click += buttonFR_Click;
             // 
             // buttonPR
             // 
-            this.buttonPR.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.buttonPR.Location = new System.Drawing.Point(1114, 99);
-            this.buttonPR.Name = "buttonPR";
-            this.buttonPR.Size = new System.Drawing.Size(100, 23);
-            this.buttonPR.TabIndex = 3;
-            this.buttonPR.Text = "Phase";
-            this.buttonPR.UseVisualStyleBackColor = true;
-            this.buttonPR.Click += new System.EventHandler(this.buttonPR_Click);
+            buttonPR.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonPR.Location = new Point(1114, 157);
+            buttonPR.Name = "buttonPR";
+            buttonPR.Size = new Size(100, 23);
+            buttonPR.TabIndex = 3;
+            buttonPR.Text = "Phase";
+            buttonPR.UseVisualStyleBackColor = true;
+            buttonPR.Click += buttonPR_Click;
             // 
             // buttonWaterfall
             // 
-            this.buttonWaterfall.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.buttonWaterfall.Location = new System.Drawing.Point(1114, 157);
-            this.buttonWaterfall.Name = "buttonWaterfall";
-            this.buttonWaterfall.Size = new System.Drawing.Size(100, 23);
-            this.buttonWaterfall.TabIndex = 4;
-            this.buttonWaterfall.Text = "Waterfall";
-            this.buttonWaterfall.UseVisualStyleBackColor = true;
-            this.buttonWaterfall.Click += new System.EventHandler(this.buttonWaterfall_Click);
+            buttonWaterfall.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonWaterfall.Location = new Point(1114, 215);
+            buttonWaterfall.Name = "buttonWaterfall";
+            buttonWaterfall.Size = new Size(100, 23);
+            buttonWaterfall.TabIndex = 4;
+            buttonWaterfall.Text = "Waterfall";
+            buttonWaterfall.UseVisualStyleBackColor = true;
+            buttonWaterfall.Click += buttonWaterfall_Click;
             // 
             // buttonGD
             // 
-            this.buttonGD.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.buttonGD.Location = new System.Drawing.Point(1114, 128);
-            this.buttonGD.Name = "buttonGD";
-            this.buttonGD.Size = new System.Drawing.Size(100, 23);
-            this.buttonGD.TabIndex = 5;
-            this.buttonGD.Text = "Group Delay";
-            this.buttonGD.UseVisualStyleBackColor = true;
-            this.buttonGD.Click += new System.EventHandler(this.buttonGD_Click);
+            buttonGD.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonGD.Location = new Point(1114, 186);
+            buttonGD.Name = "buttonGD";
+            buttonGD.Size = new Size(100, 23);
+            buttonGD.TabIndex = 5;
+            buttonGD.Text = "Group Delay";
+            buttonGD.UseVisualStyleBackColor = true;
+            buttonGD.Click += buttonGD_Click;
             // 
             // overlays
             // 
-            this.overlays.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
-            this.overlays.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
-            this.overlays.Controls.Add(this.overlayPanel1);
-            this.overlays.Location = new System.Drawing.Point(1114, 318);
-            this.overlays.Name = "overlays";
-            this.overlays.Size = new System.Drawing.Size(138, 399);
-            this.overlays.TabIndex = 6;
+            overlays.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            overlays.BorderStyle = BorderStyle.FixedSingle;
+            overlays.Controls.Add(overlayPanel1);
+            overlays.Location = new Point(1114, 376);
+            overlays.Name = "overlays";
+            overlays.Size = new Size(138, 341);
+            overlays.TabIndex = 6;
             // 
             // overlayPanel1
             // 
-            this.overlayPanel1.BackColor = System.Drawing.Color.OrangeRed;
-            this.overlayPanel1.Controls.Add(this.numericUpDown1);
-            this.overlayPanel1.Controls.Add(this.checkBox1);
-            this.overlayPanel1.Controls.Add(this.button6);
-            this.overlayPanel1.Location = new System.Drawing.Point(3, 3);
-            this.overlayPanel1.Name = "overlayPanel1";
-            this.overlayPanel1.Size = new System.Drawing.Size(130, 25);
-            this.overlayPanel1.TabIndex = 3;
+            overlayPanel1.BackColor = Color.OrangeRed;
+            overlayPanel1.Controls.Add(numericUpDown1);
+            overlayPanel1.Controls.Add(checkBox1);
+            overlayPanel1.Controls.Add(button6);
+            overlayPanel1.Location = new Point(3, 3);
+            overlayPanel1.Name = "overlayPanel1";
+            overlayPanel1.Size = new Size(130, 25);
+            overlayPanel1.TabIndex = 3;
             // 
             // numericUpDown1
             // 
-            this.numericUpDown1.BorderStyle = System.Windows.Forms.BorderStyle.None;
-            this.numericUpDown1.Location = new System.Drawing.Point(49, 3);
-            this.numericUpDown1.Maximum = new decimal(new int[] {
-            180,
-            0,
-            0,
-            0});
-            this.numericUpDown1.Minimum = new decimal(new int[] {
-            180,
-            0,
-            0,
-            -2147483648});
-            this.numericUpDown1.Name = "numericUpDown1";
-            this.numericUpDown1.Size = new System.Drawing.Size(43, 19);
-            this.numericUpDown1.TabIndex = 2;
-            this.numericUpDown1.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
+            numericUpDown1.BorderStyle = BorderStyle.None;
+            numericUpDown1.Location = new Point(49, 3);
+            numericUpDown1.Maximum = new decimal(new int[] { 180, 0, 0, 0 });
+            numericUpDown1.Minimum = new decimal(new int[] { 180, 0, 0, int.MinValue });
+            numericUpDown1.Name = "numericUpDown1";
+            numericUpDown1.Size = new Size(43, 19);
+            numericUpDown1.TabIndex = 2;
+            numericUpDown1.TextAlign = HorizontalAlignment.Right;
             // 
             // checkBox1
             // 
-            this.checkBox1.AutoSize = true;
-            this.checkBox1.Location = new System.Drawing.Point(5, 6);
-            this.checkBox1.Name = "checkBox1";
-            this.checkBox1.Size = new System.Drawing.Size(15, 14);
-            this.checkBox1.TabIndex = 0;
-            this.checkBox1.UseVisualStyleBackColor = true;
+            checkBox1.AutoSize = true;
+            checkBox1.Location = new Point(5, 6);
+            checkBox1.Name = "checkBox1";
+            checkBox1.Size = new Size(15, 14);
+            checkBox1.TabIndex = 0;
+            checkBox1.UseVisualStyleBackColor = true;
             // 
             // button6
             // 
-            this.button6.FlatStyle = System.Windows.Forms.FlatStyle.System;
-            this.button6.Location = new System.Drawing.Point(24, 3);
-            this.button6.Name = "button6";
-            this.button6.Size = new System.Drawing.Size(19, 19);
-            this.button6.TabIndex = 1;
-            this.button6.Text = "1";
+            button6.FlatStyle = FlatStyle.System;
+            button6.Location = new Point(24, 3);
+            button6.Name = "button6";
+            button6.Size = new Size(19, 19);
+            button6.TabIndex = 1;
+            button6.Text = "1";
             // 
             // buttonIR
             // 
-            this.buttonIR.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.buttonIR.Location = new System.Drawing.Point(1114, 41);
-            this.buttonIR.Name = "buttonIR";
-            this.buttonIR.Size = new System.Drawing.Size(100, 23);
-            this.buttonIR.TabIndex = 7;
-            this.buttonIR.Text = "Impulse";
-            this.buttonIR.UseVisualStyleBackColor = true;
-            this.buttonIR.Click += new System.EventHandler(this.buttonIR_Click);
+            buttonIR.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonIR.Location = new Point(1114, 99);
+            buttonIR.Name = "buttonIR";
+            buttonIR.Size = new Size(100, 23);
+            buttonIR.TabIndex = 7;
+            buttonIR.Text = "Impulse";
+            buttonIR.UseVisualStyleBackColor = true;
+            buttonIR.Click += buttonIR_Click;
             // 
             // buttonRecordOpt
             // 
-            this.buttonRecordOpt.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.buttonRecordOpt.Font = new System.Drawing.Font("Segoe UI Emoji", 9.75F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point);
-            this.buttonRecordOpt.Image = ((System.Drawing.Image)(resources.GetObject("buttonRecordOpt.Image")));
-            this.buttonRecordOpt.Location = new System.Drawing.Point(1220, 12);
-            this.buttonRecordOpt.Name = "buttonRecordOpt";
-            this.buttonRecordOpt.Size = new System.Drawing.Size(32, 23);
-            this.buttonRecordOpt.TabIndex = 8;
-            this.buttonRecordOpt.UseCompatibleTextRendering = true;
-            this.buttonRecordOpt.UseVisualStyleBackColor = true;
-            this.buttonRecordOpt.Click += new System.EventHandler(this.buttonRecordOpt_Click);
+            buttonRecordOpt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonRecordOpt.Font = new Font("Segoe UI Emoji", 9.75F);
+            buttonRecordOpt.Image = (Image)resources.GetObject("buttonRecordOpt.Image");
+            buttonRecordOpt.Location = new Point(1220, 12);
+            buttonRecordOpt.Name = "buttonRecordOpt";
+            buttonRecordOpt.Size = new Size(32, 23);
+            buttonRecordOpt.TabIndex = 8;
+            buttonRecordOpt.UseCompatibleTextRendering = true;
+            buttonRecordOpt.UseVisualStyleBackColor = true;
+            buttonRecordOpt.Click += buttonRecordOpt_Click;
             // 
             // buttonWaterfallOpt
             // 
-            this.buttonWaterfallOpt.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.buttonWaterfallOpt.Font = new System.Drawing.Font("Segoe UI Emoji", 9.75F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point);
-            this.buttonWaterfallOpt.Image = ((System.Drawing.Image)(resources.GetObject("buttonWaterfallOpt.Image")));
-            this.buttonWaterfallOpt.Location = new System.Drawing.Point(1220, 157);
-            this.buttonWaterfallOpt.Name = "buttonWaterfallOpt";
-            this.buttonWaterfallOpt.Size = new System.Drawing.Size(32, 23);
-            this.buttonWaterfallOpt.TabIndex = 9;
-            this.buttonWaterfallOpt.UseCompatibleTextRendering = true;
-            this.buttonWaterfallOpt.UseVisualStyleBackColor = true;
-            this.buttonWaterfallOpt.Click += new System.EventHandler(this.buttonWaterfallOpt_Click);
+            buttonWaterfallOpt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonWaterfallOpt.Font = new Font("Segoe UI Emoji", 9.75F);
+            buttonWaterfallOpt.Image = (Image)resources.GetObject("buttonWaterfallOpt.Image");
+            buttonWaterfallOpt.Location = new Point(1220, 215);
+            buttonWaterfallOpt.Name = "buttonWaterfallOpt";
+            buttonWaterfallOpt.Size = new Size(32, 23);
+            buttonWaterfallOpt.TabIndex = 9;
+            buttonWaterfallOpt.UseCompatibleTextRendering = true;
+            buttonWaterfallOpt.UseVisualStyleBackColor = true;
+            buttonWaterfallOpt.Click += buttonWaterfallOpt_Click;
             // 
             // buttonFROpt
             // 
-            this.buttonFROpt.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.buttonFROpt.Font = new System.Drawing.Font("Segoe UI Emoji", 9.75F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point);
-            this.buttonFROpt.Image = ((System.Drawing.Image)(resources.GetObject("buttonFROpt.Image")));
-            this.buttonFROpt.Location = new System.Drawing.Point(1220, 69);
-            this.buttonFROpt.Name = "buttonFROpt";
-            this.buttonFROpt.Size = new System.Drawing.Size(32, 23);
-            this.buttonFROpt.TabIndex = 10;
-            this.buttonFROpt.UseCompatibleTextRendering = true;
-            this.buttonFROpt.UseVisualStyleBackColor = true;
-            this.buttonFROpt.Click += new System.EventHandler(this.buttonFROpt_Click);
+            buttonFROpt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonFROpt.Font = new Font("Segoe UI Emoji", 9.75F);
+            buttonFROpt.Image = (Image)resources.GetObject("buttonFROpt.Image");
+            buttonFROpt.Location = new Point(1220, 128);
+            buttonFROpt.Name = "buttonFROpt";
+            buttonFROpt.Size = new Size(32, 23);
+            buttonFROpt.TabIndex = 10;
+            buttonFROpt.UseCompatibleTextRendering = true;
+            buttonFROpt.UseVisualStyleBackColor = true;
+            buttonFROpt.Click += buttonFROpt_Click;
             // 
             // buttonBurstDecay
             // 
-            this.buttonBurstDecay.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.buttonBurstDecay.Location = new System.Drawing.Point(1114, 186);
-            this.buttonBurstDecay.Name = "buttonBurstDecay";
-            this.buttonBurstDecay.Size = new System.Drawing.Size(100, 23);
-            this.buttonBurstDecay.TabIndex = 11;
-            this.buttonBurstDecay.Text = "Burst Decay";
-            this.buttonBurstDecay.UseVisualStyleBackColor = true;
-            this.buttonBurstDecay.Click += new System.EventHandler(this.buttonBurstDecay_Click);
+            buttonBurstDecay.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonBurstDecay.Location = new Point(1114, 244);
+            buttonBurstDecay.Name = "buttonBurstDecay";
+            buttonBurstDecay.Size = new Size(100, 23);
+            buttonBurstDecay.TabIndex = 11;
+            buttonBurstDecay.Text = "Burst Decay";
+            buttonBurstDecay.UseVisualStyleBackColor = true;
+            buttonBurstDecay.Click += buttonBurstDecay_Click;
             // 
             // buttonBurstDecayOpt
             // 
-            this.buttonBurstDecayOpt.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.buttonBurstDecayOpt.Font = new System.Drawing.Font("Segoe UI Emoji", 9.75F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point);
-            this.buttonBurstDecayOpt.Image = ((System.Drawing.Image)(resources.GetObject("buttonBurstDecayOpt.Image")));
-            this.buttonBurstDecayOpt.Location = new System.Drawing.Point(1220, 185);
-            this.buttonBurstDecayOpt.Name = "buttonBurstDecayOpt";
-            this.buttonBurstDecayOpt.Size = new System.Drawing.Size(32, 23);
-            this.buttonBurstDecayOpt.TabIndex = 12;
-            this.buttonBurstDecayOpt.UseCompatibleTextRendering = true;
-            this.buttonBurstDecayOpt.UseVisualStyleBackColor = true;
-            this.buttonBurstDecayOpt.Click += new System.EventHandler(this.buttonBurstDecayOpt_Click);
+            buttonBurstDecayOpt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonBurstDecayOpt.Font = new Font("Segoe UI Emoji", 9.75F);
+            buttonBurstDecayOpt.Image = (Image)resources.GetObject("buttonBurstDecayOpt.Image");
+            buttonBurstDecayOpt.Location = new Point(1220, 244);
+            buttonBurstDecayOpt.Name = "buttonBurstDecayOpt";
+            buttonBurstDecayOpt.Size = new Size(32, 23);
+            buttonBurstDecayOpt.TabIndex = 12;
+            buttonBurstDecayOpt.UseCompatibleTextRendering = true;
+            buttonBurstDecayOpt.UseVisualStyleBackColor = true;
+            buttonBurstDecayOpt.Click += buttonBurstDecayOpt_Click;
             // 
             // buttonGDOpt
             // 
-            this.buttonGDOpt.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.buttonGDOpt.Font = new System.Drawing.Font("Segoe UI Emoji", 9.75F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point);
-            this.buttonGDOpt.Image = ((System.Drawing.Image)(resources.GetObject("buttonGDOpt.Image")));
-            this.buttonGDOpt.Location = new System.Drawing.Point(1220, 128);
-            this.buttonGDOpt.Name = "buttonGDOpt";
-            this.buttonGDOpt.Size = new System.Drawing.Size(32, 23);
-            this.buttonGDOpt.TabIndex = 13;
-            this.buttonGDOpt.UseCompatibleTextRendering = true;
-            this.buttonGDOpt.UseVisualStyleBackColor = true;
-            this.buttonGDOpt.Click += new System.EventHandler(this.buttonGDOpt_Click);
+            buttonGDOpt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonGDOpt.Font = new Font("Segoe UI Emoji", 9.75F);
+            buttonGDOpt.Image = (Image)resources.GetObject("buttonGDOpt.Image");
+            buttonGDOpt.Location = new Point(1220, 186);
+            buttonGDOpt.Name = "buttonGDOpt";
+            buttonGDOpt.Size = new Size(32, 23);
+            buttonGDOpt.TabIndex = 13;
+            buttonGDOpt.UseCompatibleTextRendering = true;
+            buttonGDOpt.UseVisualStyleBackColor = true;
+            buttonGDOpt.Click += buttonGDOpt_Click;
             // 
             // buttonPROpt
             // 
-            this.buttonPROpt.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.buttonPROpt.Font = new System.Drawing.Font("Segoe UI Emoji", 9.75F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point);
-            this.buttonPROpt.Image = ((System.Drawing.Image)(resources.GetObject("buttonPROpt.Image")));
-            this.buttonPROpt.Location = new System.Drawing.Point(1220, 99);
-            this.buttonPROpt.Name = "buttonPROpt";
-            this.buttonPROpt.Size = new System.Drawing.Size(32, 23);
-            this.buttonPROpt.TabIndex = 14;
-            this.buttonPROpt.UseCompatibleTextRendering = true;
-            this.buttonPROpt.UseVisualStyleBackColor = true;
-            this.buttonPROpt.Click += new System.EventHandler(this.buttonPROpt_Click);
+            buttonPROpt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonPROpt.Font = new Font("Segoe UI Emoji", 9.75F);
+            buttonPROpt.Image = (Image)resources.GetObject("buttonPROpt.Image");
+            buttonPROpt.Location = new Point(1220, 157);
+            buttonPROpt.Name = "buttonPROpt";
+            buttonPROpt.Size = new Size(32, 23);
+            buttonPROpt.TabIndex = 14;
+            buttonPROpt.UseCompatibleTextRendering = true;
+            buttonPROpt.UseVisualStyleBackColor = true;
+            buttonPROpt.Click += buttonPROpt_Click;
             // 
             // buttonImpOpt
             // 
-            this.buttonImpOpt.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.buttonImpOpt.Font = new System.Drawing.Font("Segoe UI Emoji", 9.75F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point);
-            this.buttonImpOpt.Image = ((System.Drawing.Image)(resources.GetObject("buttonImpOpt.Image")));
-            this.buttonImpOpt.Location = new System.Drawing.Point(1220, 40);
-            this.buttonImpOpt.Name = "buttonImpOpt";
-            this.buttonImpOpt.Size = new System.Drawing.Size(32, 23);
-            this.buttonImpOpt.TabIndex = 15;
-            this.buttonImpOpt.UseCompatibleTextRendering = true;
-            this.buttonImpOpt.UseVisualStyleBackColor = true;
-            this.buttonImpOpt.Click += new System.EventHandler(this.buttonImpOpt_Click);
+            buttonImpOpt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonImpOpt.Font = new Font("Segoe UI Emoji", 9.75F);
+            buttonImpOpt.Image = (Image)resources.GetObject("buttonImpOpt.Image");
+            buttonImpOpt.Location = new Point(1220, 99);
+            buttonImpOpt.Name = "buttonImpOpt";
+            buttonImpOpt.Size = new Size(32, 23);
+            buttonImpOpt.TabIndex = 15;
+            buttonImpOpt.UseCompatibleTextRendering = true;
+            buttonImpOpt.UseVisualStyleBackColor = true;
+            buttonImpOpt.Click += buttonImpOpt_Click;
             // 
             // buttonNoise
             // 
-            this.buttonNoise.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.buttonNoise.Location = new System.Drawing.Point(1114, 215);
-            this.buttonNoise.Name = "buttonNoise";
-            this.buttonNoise.Size = new System.Drawing.Size(100, 23);
-            this.buttonNoise.TabIndex = 16;
-            this.buttonNoise.Text = "Live Spectrum";
-            this.buttonNoise.UseVisualStyleBackColor = true;
-            this.buttonNoise.Click += new System.EventHandler(this.buttonNoise_Click);
+            buttonNoise.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonNoise.Location = new Point(1114, 273);
+            buttonNoise.Name = "buttonNoise";
+            buttonNoise.Size = new Size(100, 23);
+            buttonNoise.TabIndex = 16;
+            buttonNoise.Text = "Live Spectrum";
+            buttonNoise.UseVisualStyleBackColor = true;
+            buttonNoise.Click += buttonNoise_Click;
             // 
             // buttonAutocorrelation
             // 
-            this.buttonAutocorrelation.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.buttonAutocorrelation.Location = new System.Drawing.Point(1114, 244);
-            this.buttonAutocorrelation.Name = "buttonAutocorrelation";
-            this.buttonAutocorrelation.Size = new System.Drawing.Size(100, 23);
-            this.buttonAutocorrelation.TabIndex = 17;
-            this.buttonAutocorrelation.Text = "Autocorrelation";
-            this.buttonAutocorrelation.UseVisualStyleBackColor = true;
-            this.buttonAutocorrelation.Click += new System.EventHandler(this.buttonGetAutocorrelation_Click);
+            buttonAutocorrelation.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonAutocorrelation.Location = new Point(1114, 302);
+            buttonAutocorrelation.Name = "buttonAutocorrelation";
+            buttonAutocorrelation.Size = new Size(100, 23);
+            buttonAutocorrelation.TabIndex = 17;
+            buttonAutocorrelation.Text = "Autocorrelation";
+            buttonAutocorrelation.UseVisualStyleBackColor = true;
+            buttonAutocorrelation.Click += buttonGetAutocorrelation_Click;
             // 
             // Form1
             // 
-            this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
-            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(50)))), ((int)(((byte)(50)))), ((int)(((byte)(50)))));
-            this.ClientSize = new System.Drawing.Size(1264, 729);
-            this.Controls.Add(this.buttonAutocorrelation);
-            this.Controls.Add(this.buttonNoise);
-            this.Controls.Add(this.buttonImpOpt);
-            this.Controls.Add(this.buttonPROpt);
-            this.Controls.Add(this.buttonGDOpt);
-            this.Controls.Add(this.buttonBurstDecayOpt);
-            this.Controls.Add(this.buttonBurstDecay);
-            this.Controls.Add(this.buttonFROpt);
-            this.Controls.Add(this.buttonWaterfallOpt);
-            this.Controls.Add(this.buttonRecordOpt);
-            this.Controls.Add(this.buttonIR);
-            this.Controls.Add(this.overlays);
-            this.Controls.Add(this.buttonGD);
-            this.Controls.Add(this.buttonWaterfall);
-            this.Controls.Add(this.buttonPR);
-            this.Controls.Add(this.buttonFR);
-            this.Controls.Add(this.plotView1);
-            this.Controls.Add(this.buttonRecord);
-            this.Name = "Form1";
-            this.Text = "Resonalyze";
-            this.overlays.ResumeLayout(false);
-            this.overlayPanel1.ResumeLayout(false);
-            this.overlayPanel1.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.numericUpDown1)).EndInit();
-            this.ResumeLayout(false);
+            AutoScaleDimensions = new SizeF(7F, 15F);
+            AutoScaleMode = AutoScaleMode.Font;
+            BackColor = Color.FromArgb(50, 50, 50);
+            ClientSize = new Size(1264, 729);
+            Controls.Add(buttonAutocorrelation);
+            Controls.Add(buttonNoise);
+            Controls.Add(buttonImpOpt);
+            Controls.Add(buttonPROpt);
+            Controls.Add(buttonGDOpt);
+            Controls.Add(buttonBurstDecayOpt);
+            Controls.Add(buttonBurstDecay);
+            Controls.Add(buttonFROpt);
+            Controls.Add(buttonWaterfallOpt);
+            Controls.Add(buttonRecordOpt);
+            Controls.Add(buttonIR);
+            Controls.Add(buttonGD);
+            Controls.Add(buttonWaterfall);
+            Controls.Add(buttonPR);
+            Controls.Add(buttonFR);
+            Controls.Add(plotView1);
+            Controls.Add(buttonRecord);
+            Controls.Add(overlays);
+            MinimumSize = new Size(1280, 768);
+            Name = "Form1";
+            Text = "Resonalyze";
+            overlays.ResumeLayout(false);
+            overlayPanel1.ResumeLayout(false);
+            overlayPanel1.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)numericUpDown1).EndInit();
+            ResumeLayout(false);
 
         }
 

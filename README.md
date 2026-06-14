@@ -6,6 +6,8 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows)](https://www.microsoft.com/windows)
 [![UI](https://img.shields.io/badge/UI-WinForms-5C2D91)](https://learn.microsoft.com/dotnet/desktop/winforms/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](License.md)
+[![Build](https://github.com/DIMOSUS/Resonalyze/actions/workflows/build.yml/badge.svg)](https://github.com/DIMOSUS/Resonalyze/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/DIMOSUS/Resonalyze?display_name=tag)](https://github.com/DIMOSUS/Resonalyze/releases/latest)
 
 **Resonalyze** is an open-source desktop application for measuring and
 visualizing the acoustic behavior of audio systems, rooms, loudspeakers,
@@ -17,6 +19,17 @@ engineering-focused plots.
 
 > Resonalyze is under active development. Treat its results as diagnostic
 > measurements, not as certified laboratory data.
+
+## Download
+
+Download the latest ready-to-run build from
+[GitHub Releases](https://github.com/DIMOSUS/Resonalyze/releases/latest):
+
+- `Resonalyze-vX.Y.Z-win-x64.zip` for most Windows computers
+- `Resonalyze-vX.Y.Z-win-arm64.zip` for Windows on ARM
+
+The release archives are self-contained and do not require a separate .NET
+installation. SHA-256 checksum files are provided with every release.
 
 ## Highlights
 

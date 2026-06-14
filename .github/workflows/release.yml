@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish ${{ matrix.rid }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rid:
+          - win-x64
+          - win-arm64
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Publish application
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          $publishDirectory = Join-Path $env:RUNNER_TEMP "publish-${{ matrix.rid }}"
+
+          dotnet publish source/Resonalyze.csproj `
+            --configuration Release `
+            --runtime "${{ matrix.rid }}" `
+            --self-contained true `
+            --output $publishDirectory `
+            -p:Version=$version `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false
+
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+          Get-ChildItem $publishDirectory -Filter *.pdb | Remove-Item
+
+          $archive = "Resonalyze-${{ github.ref_name }}-${{ matrix.rid }}.zip"
+          Compress-Archive -Path "$publishDirectory\*" -DestinationPath $archive
+
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $archive" | Set-Content "$archive.sha256" -Encoding ascii
+
+      - name: Upload release files
+        uses: actions/upload-artifact@v7
+        with:
+          name: Resonalyze-${{ matrix.rid }}
+          path: |
+            Resonalyze-${{ github.ref_name }}-${{ matrix.rid }}.zip
+            Resonalyze-${{ github.ref_name }}-${{ matrix.rid }}.zip.sha256
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download release files
+        uses: actions/download-artifact@v8
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" release/* \
+            --repo "${{ github.repository }}" \
+            --title "Resonalyze ${{ github.ref_name }}" \
+            --generate-notes \
+            --verify-tag

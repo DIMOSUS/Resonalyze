@@ -43,7 +43,8 @@ namespace Resonalyze
         bool closingPrepared;
         bool resourcesDisposed;
 
-        CalibrationFile Calibration = new CalibrationFile("calibration.txt");
+        CalibrationFile Calibration = new CalibrationFile(
+            Path.Combine(AppContext.BaseDirectory, "calibration.txt"));
 
         WterfallGenerateOptions waterfallGenOptions = new WterfallGenerateOptions()
         {

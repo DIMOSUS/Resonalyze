@@ -1,0 +1,20 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Build output
+**/bin/
+**/obj/
+
+# Test and coverage output
+TestResults/
+coverage/
+
+# Local tooling
+.idea/
+.vscode/
+
+# Operating system files
+Thumbs.db
+Desktop.ini

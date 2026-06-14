@@ -104,6 +104,7 @@ namespace Resonalyze
             this.TrackerFormatString = "X: {0:0.000}\r\nY: {1:0.000}\r\nIterations: {2}";
             RawSlices = new List<Slice> { };
             ResampleSlices = new List<Slice> { };
+            GenerateOptions = new WterfallGenerateOptions();
         }
 
         public List<Slice> RawSlices;
@@ -114,13 +115,13 @@ namespace Resonalyze
         /// </summary>
         /// <value>The color axis.</value>
         /// <remarks>The Maximum value of the ColorAxis defines the maximum number of iterations.</remarks>
-        public LinearColorAxis ColorAxis { get; protected set; }
+        public LinearColorAxis? ColorAxis { get; protected set; }
 
         /// <summary>
         /// Gets or sets the color axis key.
         /// </summary>
         /// <value>The color axis key.</value>
-        public string ColorAxisKey { get; set; }
+        public string? ColorAxisKey { get; set; }
 
         public OxyColor BackgroundColor { get; set; }
 
@@ -141,9 +142,14 @@ namespace Resonalyze
                 Series = this,
                 DataPoint = p,
                 Position = point,
-                Item = null,
                 Index = -1,
-                Text = StringHelper.Format(this.ActualCulture, this.TrackerFormatString, null, p.X, p.Y, 999)
+                Text = StringHelper.Format(
+                    this.ActualCulture,
+                    this.TrackerFormatString,
+                    string.Empty,
+                    p.X,
+                    p.Y,
+                    999)
             };
         }
 
@@ -155,14 +161,15 @@ namespace Resonalyze
         {
             if (
                 !(XAxis is LogarithmicClipAxis) ||
-                RawSlices.Count < 8
+                RawSlices.Count < 8 ||
+                ColorAxis is not LinearColorAxis colorAxis
                 )
                 return;
 
             LogarithmicClipAxis lcAxis = (LogarithmicClipAxis)XAxis;
 
-            double dbUp = (ColorAxis.Minimum + ColorAxis.Maximum) * 0.5;
-            double dbDown = ColorAxis.Minimum;
+            double dbUp = (colorAxis.Minimum + colorAxis.Maximum) * 0.5;
+            double dbDown = colorAxis.Minimum;
 
             //        2__________________1
             //       / |                |
@@ -200,8 +207,8 @@ namespace Resonalyze
             double minFr = Math.Round(XAxis.ActualMinimum);
             double maxFr = Math.Round(InverseTransform(p6).X);
 
-            double dbMin = ColorAxis.ActualMinimum;
-            double dbMax = (ColorAxis.ActualMaximum + ColorAxis.ActualMinimum) * 0.5;
+            double dbMin = colorAxis.ActualMinimum;
+            double dbMax = (colorAxis.ActualMaximum + colorAxis.ActualMinimum) * 0.5;
             double dbWindow = dbMax - dbMin;
             double dbSacale = (p0.Y - p3.Y) / dbWindow;
 
@@ -231,7 +238,7 @@ namespace Resonalyze
                         double xPos = corner.X + ip;
 
                         double dB = slice.Data[ip].Y;
-                        colors.Add(ColorAxisExtensions.GetColor(ColorAxis, dB));
+                        colors.Add(ColorAxisExtensions.GetColor(colorAxis, dB));
                         dB = Math.Min(Math.Max(dB, dbMin), dbMax);
 
                         double dbPixOffset = (dB - dbMin) * dbSacale;
@@ -304,7 +311,7 @@ namespace Resonalyze
                         double xPos = cornerUp.X - pInd;
 
                         double dB = ResampleSlices[slice].Data[pInd].Y;
-                        colors.Add(ColorAxisExtensions.GetColor(ColorAxis, dB));
+                        colors.Add(ColorAxisExtensions.GetColor(colorAxis, dB));
 
                         dB = Math.Min(Math.Max(dB, dbMin), dbMax);
 
@@ -402,7 +409,7 @@ namespace Resonalyze
             {
                 for (int i = 0; i < sliceCount; i++)
                 {
-                    RawSlices.Add(null);
+                    RawSlices.Add(new Slice(new List<DataPoint>(), 0, 0, 0, measurement.SampleRate));
                 }
 
                 //for (int slice = 0; slice < sliceCount; slice++)
@@ -458,7 +465,7 @@ namespace Resonalyze
 
                 for (int i = 0; i < freqList.Count; i++)
                 {
-                    RawSlices.Add(null);
+                    RawSlices.Add(new Slice(new List<DataPoint>(), 0, 0, 0, measurement.SampleRate));
                 }
 
                 //for (int fInd = 0; fInd < freqList.Count; fInd++)
@@ -506,7 +513,8 @@ namespace Resonalyze
             {
                 foreach (var rs in RawSlices)
                 {
-                    ResampleSlices.Add(new Slice(null, rs.SliceOffset, 0, 0, 0));
+                    ResampleSlices.Add(
+                        new Slice(new List<DataPoint>(), rs.SliceOffset, 0, 0, 0));
                 }
 
                 //for (int i = 0; i < RawSlices.Count; i++)
@@ -522,7 +530,8 @@ namespace Resonalyze
                 ResampleSlices.Clear();
                 for (int slice = 0; slice < RawSlices.Count; slice++)
                 {
-                    ResampleSlices.Add(null);
+                    ResampleSlices.Add(
+                        new Slice(new List<DataPoint>(), 0, 0, 0, RawSlices[slice].SampleRate));
                 }
 
                 //for (int slice = 0; slice < RawSlices.Count; slice++)

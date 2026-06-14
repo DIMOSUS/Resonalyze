@@ -24,28 +24,22 @@ namespace Resonalyze
         {
             this.plotView = plotView;
             this.form = form;
-            Panel overlayPanel1 = null;
-            Button button1 = null;
-            NumericUpDown numericUpDown1 = null;
-            CheckBox checkBox1 = null;
-
-            if (overlays.Controls.Count > 0)
-            {
-                var el = overlays.Controls[0];
-                if (el != null)
-                {
-                    if (el is Panel)
-                    {
-                        overlayPanel1 = (Panel)el;
-                        foreach (var c in overlayPanel1.Controls)
-                        {
-                            if (c is Button) button1 = (Button)c;
-                            if (c is NumericUpDown) numericUpDown1 = (NumericUpDown)c;
-                            if (c is CheckBox) checkBox1 = (CheckBox)c;
-                        }
-                    }
-                }
-            }
+            Panel overlayPanel1 = overlays.Controls
+                .OfType<Panel>()
+                .FirstOrDefault()
+                ?? throw new InvalidOperationException("Overlay template panel is missing.");
+            Button button1 = overlayPanel1.Controls
+                .OfType<Button>()
+                .FirstOrDefault()
+                ?? throw new InvalidOperationException("Overlay template button is missing.");
+            NumericUpDown numericUpDown1 = overlayPanel1.Controls
+                .OfType<NumericUpDown>()
+                .FirstOrDefault()
+                ?? throw new InvalidOperationException("Overlay template offset control is missing.");
+            CheckBox checkBox1 = overlayPanel1.Controls
+                .OfType<CheckBox>()
+                .FirstOrDefault()
+                ?? throw new InvalidOperationException("Overlay template checkbox is missing.");
 
             AllOverlays.Add(new Overlay(overlayPanel1, button1, numericUpDown1, checkBox1, 1, this));
 
@@ -176,15 +170,17 @@ namespace Resonalyze
 
         private void UpdateDrawPoints()
         {
-            drawPoints = new DataPoint[sourcePoints.Length];
+            DataPoint[] points = sourcePoints
+                ?? throw new InvalidOperationException("Overlay source points are not initialized.");
+            drawPoints = new DataPoint[points.Length];
             double offset = (double)numericUpDown.Value;
-            for (int i = 0; i < sourcePoints.Length; i++)
+            for (int i = 0; i < points.Length; i++)
             {
-                drawPoints[i] = new DataPoint(sourcePoints[i].X, sourcePoints[i].Y + offset);
+                drawPoints[i] = new DataPoint(points[i].X, points[i].Y + offset);
             }
         }
 
-        private void panelClick(object sender, EventArgs e)
+        private void panelClick(object? sender, EventArgs e)
         {
             ColorDialog MyDialog = new ColorDialog();
             // Keeps the user from selecting a custom color.
@@ -206,7 +202,7 @@ namespace Resonalyze
             checkBox.CheckedChanged += new EventHandler(checkBoxUpdate);
         }
 
-        private void checkBoxUpdate(object sender, EventArgs e)
+        private void checkBoxUpdate(object? sender, EventArgs e)
         {
             if (checkBox.Checked)
             {
@@ -225,7 +221,7 @@ namespace Resonalyze
             }
         }
 
-        private void buttonClick(object sender, EventArgs e)
+        private void buttonClick(object? sender, EventArgs e)
         {
             if (collection.plotView.Model != null && collection.plotView.Model.Series != null && collection.plotView.Model.Series.Count > 0)
             {
@@ -239,7 +235,7 @@ namespace Resonalyze
                     List<string> seriesTitles = new List<string>();
                     foreach (var series in collection.plotView.Model.Series)
                     {
-                        seriesTitles.Add(series.Title);
+                        seriesTitles.Add(series.Title ?? string.Empty);
                     }
 
                     SelectSeries selectSeries = new SelectSeries();
@@ -258,7 +254,9 @@ namespace Resonalyze
                 if (selection > -1)
                 {
                     var series = collection.plotView.Model.Series[selection];
-                    if (series.Title.IndexOf("Overlay") != 0 && series is LineSeries)
+                    string seriesTitle = series.Title ?? string.Empty;
+                    if (!seriesTitle.StartsWith("Overlay", StringComparison.Ordinal) &&
+                        series is LineSeries)
                     {
                         LineSeries lineSeries = (LineSeries)series;
                         if (lineSeries.Points.Count > 1)
@@ -270,7 +268,7 @@ namespace Resonalyze
                             UpdateDrawPoints();
 
                             SeriesMode = collection.form.CurrentMode;
-                            Title = $"Overlay{Index} {series.Title}";
+                            Title = $"Overlay{Index} {seriesTitle}";
                             Show();
                         }
                     }
@@ -278,7 +276,7 @@ namespace Resonalyze
             }
         }
 
-        private void numericValueChanged(object sender, EventArgs e)
+        private void numericValueChanged(object? sender, EventArgs e)
         {
             if(sourcePoints != null)
             {

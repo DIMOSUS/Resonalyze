@@ -12,7 +12,7 @@ namespace Resonalyze.Options
 {
     public partial class BDOpt : Form
     {
-        ExpSweepMeasurement expSweepMeasurement;
+        private ExpSweepMeasurement? expSweepMeasurement;
 
         public BDOpt()
         {
@@ -56,7 +56,16 @@ namespace Resonalyze.Options
             burstDecayGenOptions.Periods = (double)numericPeriods.Value;
         }
 
-        private double CalcCapturedTime => ((double)numericWindow.Value / (double)(expSweepMeasurement.SampleRate) * 1000.0);
+        private double CalcCapturedTime
+        {
+            get
+            {
+                int sampleRate = expSweepMeasurement?.SampleRate ?? 0;
+                return sampleRate > 0
+                    ? (double)numericWindow.Value / sampleRate * 1000.0
+                    : 0;
+            }
+        }
 
         private void numericWindow_ValueChanged(object sender, EventArgs e)
         {

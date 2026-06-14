@@ -13,7 +13,7 @@ namespace Resonalyze.Options
 {
     public partial class WaterfallOptions : Form
     {
-        ExpSweepMeasurement expSweepMeasurement;
+        private ExpSweepMeasurement? expSweepMeasurement;
         private decimal lastNonZeroStep = 4;
 
         public WaterfallOptions()
@@ -59,7 +59,16 @@ namespace Resonalyze.Options
             waterfallGenerateOptions.Offset = (int)numericOffset.Value;
         }
 
-        private double CalcCapturedTime => (((double)numericSlices.Value * (double)numericStep.Value / (double)(expSweepMeasurement.SampleRate) * 1000.0));
+        private double CalcCapturedTime
+        {
+            get
+            {
+                int sampleRate = expSweepMeasurement?.SampleRate ?? 0;
+                return sampleRate > 0
+                    ? (double)numericSlices.Value * (double)numericStep.Value / sampleRate * 1000.0
+                    : 0;
+            }
+        }
 
         private void numericSlices_ValueChanged(object sender, EventArgs e)
         {

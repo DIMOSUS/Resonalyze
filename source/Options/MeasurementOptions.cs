@@ -13,7 +13,7 @@ namespace Resonalyze.Options
 {
     public partial class MeasurementOptions : Form
     {
-        ExpSweepMeasurement expSweepMeasurement;
+        private ExpSweepMeasurement? expSweepMeasurement;
 
         public MeasurementOptions()
         {
@@ -23,6 +23,8 @@ namespace Resonalyze.Options
         public void Init(ExpSweepMeasurement expSweepMeasurement)
         {
             this.expSweepMeasurement = expSweepMeasurement;
+            ExponentialSineSweep sweep = expSweepMeasurement.exponentialSineSweep
+                ?? throw new InvalidOperationException("Sweep measurement is not initialized.");
             numericUpDownSampleRate.Value = expSweepMeasurement.SampleRate;
             numericUpDownBits.Value = expSweepMeasurement.Bits;
             
@@ -33,8 +35,8 @@ namespace Resonalyze.Options
             }
             comboBoxChanel.SelectedIndex = (int)expSweepMeasurement.PlayCanels;
 
-            numericUpDownDesireDuration.Value = (int)(expSweepMeasurement.exponentialSineSweep.DesireDuration * 1000.0);
-            numericUpDownComputeDuration.Value = (int)(expSweepMeasurement.exponentialSineSweep.CalcDuration(expSweepMeasurement.exponentialSineSweep.DesireDuration) * 1000.0);
+            numericUpDownDesireDuration.Value = (int)(sweep.DesireDuration * 1000.0);
+            numericUpDownComputeDuration.Value = (int)(sweep.CalcDuration(sweep.DesireDuration) * 1000.0);
             numericUpDownOctaves.Value = expSweepMeasurement.Octaves;
         }
 
@@ -51,7 +53,14 @@ namespace Resonalyze.Options
 
         private void numericUpDownDesireDuration_ValueChanged(object sender, EventArgs e)
         {
-            numericUpDownComputeDuration.Value = (int)(expSweepMeasurement.exponentialSineSweep.CalcDuration((int)numericUpDownDesireDuration.Value * 0.001) * 1000.0);
+            ExponentialSineSweep? sweep = expSweepMeasurement?.exponentialSineSweep;
+            if (sweep == null)
+            {
+                return;
+            }
+
+            numericUpDownComputeDuration.Value =
+                (int)(sweep.CalcDuration((int)numericUpDownDesireDuration.Value * 0.001) * 1000.0);
         }
     }
 }

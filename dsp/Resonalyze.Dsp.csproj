@@ -9,6 +9,5 @@
 
   <ItemGroup>
     <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
-    <PackageReference Include="OxyPlot.Core" Version="2.2.0" />
   </ItemGroup>
 </Project>

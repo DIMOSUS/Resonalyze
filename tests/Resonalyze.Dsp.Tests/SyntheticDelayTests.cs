@@ -1,5 +1,4 @@
 using System.Numerics;
-using OxyPlot;
 
 namespace Resonalyze.Dsp.Tests;
 
@@ -15,14 +14,14 @@ public sealed class SyntheticDelayTests
         SyntheticMeasurement measurement = CreateDelayedImpulse();
         double[] rectangularWindow = Enumerable.Repeat(1.0, TransformLength).ToArray();
 
-        List<DataPoint> phase = DataHelper.GetPhaseData(
+        List<SignalPoint> phase = DataHelper.GetPhaseData(
             measurement,
             offset: 0,
             length: TransformLength,
             window: rectangularWindow,
             unwrap: true);
 
-        List<DataPoint> analysisBand = phase
+        List<SignalPoint> analysisBand = phase
             .Where(point => point.X >= 1_000 && point.X <= 18_000)
             .ToList();
         double slope = LinearRegressionSlope(analysisBand);
@@ -40,16 +39,16 @@ public sealed class SyntheticDelayTests
     {
         SyntheticMeasurement measurement = CreateDelayedImpulse();
 
-        List<DataPoint> groupDelay = DataHelper.GetGroupDelay(
+        IReadOnlyList<SignalPoint> groupDelay = DataHelper.GetGroupDelay(
             measurement,
             length: TransformLength,
             leftTukeyWindow: 0,
             rightTukeyWindow: 0,
             offset: 0,
-            smoothingInverseOctaves: 96)[0].Points.ToList();
+            smoothingInverseOctaves: 96).Points;
 
         double expectedDelayMilliseconds = DelaySamples * 1000.0 / SampleRate;
-        List<DataPoint> analysisBand = groupDelay
+        List<SignalPoint> analysisBand = groupDelay
             .Where(point => point.X >= 1_000 && point.X <= 18_000)
             .ToList();
 
@@ -69,7 +68,7 @@ public sealed class SyntheticDelayTests
         return new SyntheticMeasurement(response, SampleRate, maxMagnitudeIndex: 0);
     }
 
-    private static double LinearRegressionSlope(IReadOnlyList<DataPoint> points)
+    private static double LinearRegressionSlope(IReadOnlyList<SignalPoint> points)
     {
         Assert.NotEmpty(points);
 
@@ -78,7 +77,7 @@ public sealed class SyntheticDelayTests
         double numerator = 0;
         double denominator = 0;
 
-        foreach (DataPoint point in points)
+        foreach (SignalPoint point in points)
         {
             double centeredX = point.X - averageX;
             numerator += centeredX * (point.Y - averageY);

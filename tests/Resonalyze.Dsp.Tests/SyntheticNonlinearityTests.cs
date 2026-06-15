@@ -1,5 +1,4 @@
 using System.Numerics;
-using OxyPlot;
 
 namespace Resonalyze.Dsp.Tests;
 
@@ -25,7 +24,7 @@ public sealed class SyntheticNonlinearityTests
         }
 
         var measurement = new SyntheticMeasurement(response, SampleRate, maxMagnitudeIndex: 0);
-        List<DataPoint> spectrum = DataHelper.GetSpectrumData(
+        List<SignalPoint> spectrum = DataHelper.GetSpectrumData(
             measurement,
             start: 0,
             length: TransformLength);
@@ -44,6 +43,6 @@ public sealed class SyntheticNonlinearityTests
             expectedSecondHarmonicDbc + 1e-9);
     }
 
-    private static DataPoint FindBin(IEnumerable<DataPoint> spectrum, double frequency) =>
+    private static SignalPoint FindBin(IEnumerable<SignalPoint> spectrum, double frequency) =>
         spectrum.Single(point => Math.Abs(point.X - frequency) < 1e-9);
 }

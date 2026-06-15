@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using OxyPlot;
 
 namespace Resonalyze.Dsp
 {
@@ -11,7 +10,7 @@ namespace Resonalyze.Dsp
     /// </summary>
     public sealed class CalibrationFile
     {
-        private readonly List<DataPoint> calibration = new();
+        private readonly List<SignalPoint> calibration = new();
 
         public CalibrationFile(string file)
         {
@@ -36,7 +35,7 @@ namespace Resonalyze.Dsp
                         double.TryParse(words[1], NumberStyles.Float, CultureInfo.InvariantCulture, out db);
                     if (valid)
                     {
-                        calibration.Add(new DataPoint(f, DataHelper.DecibelsToAmplitude(db)));
+                        calibration.Add(new SignalPoint(f, DataHelper.DecibelsToAmplitude(db)));
                     }
                 }
             }
@@ -123,7 +122,7 @@ namespace Resonalyze.Dsp
                     (Math.Abs(calibration[frequencyIndex].X - frequency) < halfDeltaFrequency ||
                      Math.Abs(frequencyIndex - corner) < 3))
                 {
-                    DataPoint samplePoint = calibration[frequencyIndex];
+                    SignalPoint samplePoint = calibration[frequencyIndex];
                     double weight = LanczosKernel((frequency - samplePoint.X) / halfDeltaFrequency * a);
                     weightedSum += samplePoint.Y * weight;
                     weightSum += weight;

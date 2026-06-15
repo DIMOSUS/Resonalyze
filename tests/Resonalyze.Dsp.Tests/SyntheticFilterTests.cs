@@ -1,5 +1,4 @@
 using System.Numerics;
-using OxyPlot;
 
 namespace Resonalyze.Dsp.Tests;
 
@@ -19,12 +18,12 @@ public sealed class SyntheticFilterTests
         response[1] = new Complex(0.5, 0);
         var measurement = new SyntheticMeasurement(response, SampleRate, maxMagnitudeIndex: 0);
 
-        List<DataPoint> spectrum = DataHelper.GetSpectrumData(
+        List<SignalPoint> spectrum = DataHelper.GetSpectrumData(
             measurement,
             start: 0,
             length: TransformLength);
 
-        DataPoint measuredPoint = spectrum.Single(point => Math.Abs(point.X - frequency) < 1e-9);
+        SignalPoint measuredPoint = spectrum.Single(point => Math.Abs(point.X - frequency) < 1e-9);
         double expectedMagnitude = Math.Abs(Math.Cos(Math.PI * frequency / SampleRate));
         double expectedDecibels = DataHelper.AmplitudeToDecibels(expectedMagnitude);
 

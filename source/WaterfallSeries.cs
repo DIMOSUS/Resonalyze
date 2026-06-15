@@ -505,7 +505,14 @@ namespace Resonalyze
 
                 Parallel.For(0, RawSlices.Count, i =>
                 {
-                    ResampleSlices[i].Data = DataHelper.LogarithmicResample(RawSlices[i].Data, minFrequency, maxFrequency, width, null, 1.0 / GenerateOptions.SmoothingInverseOctaves);
+                    List<SignalPoint> resampled = DataHelper.LogarithmicResample(
+                        OxyPlotAdapter.ToSignalPoints(RawSlices[i].Data),
+                        minFrequency,
+                        maxFrequency,
+                        width,
+                        null,
+                        1.0 / GenerateOptions.SmoothingInverseOctaves);
+                    ResampleSlices[i].Data = OxyPlotAdapter.ToDataPoints(resampled);
                 });
             }
 

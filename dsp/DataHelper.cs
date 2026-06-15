@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using MathNet.Numerics.IntegralTransforms;
-using OxyPlot;
-using OxyPlot.Series;
 
 namespace Resonalyze.Dsp
 {
@@ -67,7 +65,7 @@ namespace Resonalyze.Dsp
             return result;
         }
 
-        public static List<DataPoint> GetSpectrumData(
+        public static List<SignalPoint> GetSpectrumData(
             IImpulseMeasurement measurement,
             int start,
             int length,
@@ -76,23 +74,22 @@ namespace Resonalyze.Dsp
             Complex[] spectrum = ExtractWindow(measurement, start, length, window);
             Fourier.Forward(spectrum, FourierOptions.Matlab);
 
-            var data = new List<DataPoint>();
+            var data = new List<SignalPoint>();
             for (int i = 1; i < length / 2; i++)
             {
                 double frequency = i * (measurement.SampleRate / (double)length);
-                data.Add(new DataPoint(frequency, AmplitudeToDecibels(spectrum[i].Magnitude)));
+                data.Add(new SignalPoint(frequency, AmplitudeToDecibels(spectrum[i].Magnitude)));
             }
 
             return data;
         }
 
-        public static List<LineSeries> GetSpectrum(
+        public static IReadOnlyList<AnalysisCurve> GetSpectrum(
             IImpulseMeasurement measurement,
             FrequencyResponseOptions frequencyResponseOptions,
             CalibrationFile calibration)
         {
-            List<LineSeries> series = new List<LineSeries> { };
-
+            var curves = new List<AnalysisCurve>();
             int peakIndex = measurement.PeakIndex;
 
             {
@@ -104,14 +101,9 @@ namespace Resonalyze.Dsp
                 int h1Length = frequencyResponseOptions.Window;
                 int h1Start = peakIndex - frequencyResponseOptions.LeftTukeyWindow;
 
-                LineSeries lineSeries = new LineSeries();
                 var data = GetSpectrumData(measurement, h1Start, h1Length, window);
                 data = LogarithmicResample(data, 20, 20000, 1024, frequencyResponseOptions.UseCalibration ? calibration : null, 1.0 / frequencyResponseOptions.SmoothingInverseOctaves);
-
-                lineSeries.Points.AddRange(data);
-                lineSeries.Color = OxyColor.FromRgb(255, 127, 0);
-                lineSeries.Title = "Frequency Response";
-                series.Add(lineSeries);
+                curves.Add(new AnalysisCurve("Frequency Response", data));
             }
 
             for (int h = 2; h < 5; h++)
@@ -128,15 +120,17 @@ namespace Resonalyze.Dsp
                 double rightTukeyWindow = 0.5;
                 double[] window = Windowing.TukeyWindow(hLength, leftTukeyWindow, rightTukeyWindow);
 
-                LineSeries lineSeries = new LineSeries();
-                lineSeries.Title = $"HD{h}";
-
                 var data = GetSpectrumData(measurement, hStart, hLength, window);
                 data = LogarithmicResample(data, 20, 20000, 1024, frequencyResponseOptions.UseCalibration ? calibration : null, 2.0 / frequencyResponseOptions.SmoothingInverseOctaves);
-
-                lineSeries.Points.AddRange(data);
-                lineSeries.Color = OxyColor.FromRgb((byte)(255 - 127 * (h - 2)), 64, (byte)(127 * (h - 2)));
-                series.Add(lineSeries);
+                curves.Add(new AnalysisCurve(
+                    $"HD{h}",
+                    data,
+                    h switch
+                    {
+                        2 => AnalysisCurveKind.SecondHarmonic,
+                        3 => AnalysisCurveKind.ThirdHarmonic,
+                        _ => AnalysisCurveKind.FourthHarmonic
+                    }));
             }
 
             {
@@ -148,20 +142,18 @@ namespace Resonalyze.Dsp
                 double rightTukeyWindow = 0.05;
                 double[] window = Windowing.TukeyWindow(hLength, leftTukeyWindow, rightTukeyWindow);
 
-                LineSeries lineSeries = new LineSeries();
-                lineSeries.Title = "THD+N";
-
                 var data = GetSpectrumData(measurement, hStart, hLength, window);
                 data = LogarithmicResample(data, 20, 20000, 1024, frequencyResponseOptions.UseCalibration ? calibration : null, 2.0 / frequencyResponseOptions.SmoothingInverseOctaves);
-
-                lineSeries.Points.AddRange(data);
-                lineSeries.Color = OxyColor.FromRgb(255, 255, 255);
-                series.Add(lineSeries);
+                curves.Add(new AnalysisCurve(
+                    "THD+N",
+                    data,
+                    AnalysisCurveKind.ThdPlusNoise));
             }
-            return series;
+
+            return curves;
         }
 
-        public static List<DataPoint> GetPhaseData(
+        public static List<SignalPoint> GetPhaseData(
             IImpulseMeasurement measurement,
             int offset,
             int length,
@@ -173,14 +165,14 @@ namespace Resonalyze.Dsp
 
             if (!unwrap)
             {
-                List<DataPoint> wrappedPhase = new List<DataPoint> { };
+                List<SignalPoint> wrappedPhase = new List<SignalPoint> { };
                 for (int i = 1; i < spectrum.Length / 2; i++)
                 {
                     double f = i * (measurement.SampleRate / (double)length);
 
                     double phase = spectrum[i].Phase;
 
-                    wrappedPhase.Add(new DataPoint(f, phase));
+                    wrappedPhase.Add(new SignalPoint(f, phase));
                 }
                 return wrappedPhase;
             }
@@ -188,7 +180,7 @@ namespace Resonalyze.Dsp
             double phaseAccumulator = 0;
             double averagePhase = 0;
 
-            List<DataPoint> dataPreFilt = new List<DataPoint> { };
+            List<SignalPoint> dataPreFilt = new List<SignalPoint> { };
             for (int i = 1; i < spectrum.Length / 2; i++)
             {
                 float f = (float)i * ((float)measurement.SampleRate / length);
@@ -196,7 +188,7 @@ namespace Resonalyze.Dsp
                 double phaseOffset = offset * Math.PI * 2.0 * i / spectrum.Length;
                 double phase = spectrum[i].Phase + phaseAccumulator - phaseOffset;
                 averagePhase += phase;
-                dataPreFilt.Add(new DataPoint(f, phase));
+                dataPreFilt.Add(new SignalPoint(f, phase));
 
                 double s0 = spectrum[i].Phase;
                 double s1 = spectrum[i + 1].Phase;
@@ -217,13 +209,20 @@ namespace Resonalyze.Dsp
 
             for (int i = 0; i < dataPreFilt.Count; i++)
             {
-                dataPreFilt[i] = new DataPoint(dataPreFilt[i].X, dataPreFilt[i].Y - phaseShift);
+                dataPreFilt[i] = new SignalPoint(dataPreFilt[i].X, dataPreFilt[i].Y - phaseShift);
             }
 
             return dataPreFilt;
         }
 
-        public static List<LineSeries> GetPhase(IImpulseMeasurement measurement, int length, int leftTukeyWindow, int rightTukeyWindow, int offset, double smoothingInverseOctaves, bool unwrap)
+        public static AnalysisCurve GetPhase(
+            IImpulseMeasurement measurement,
+            int length,
+            int leftTukeyWindow,
+            int rightTukeyWindow,
+            int offset,
+            double smoothingInverseOctaves,
+            bool unwrap)
         {
             int startOffset = -leftTukeyWindow + offset;
 
@@ -233,67 +232,56 @@ namespace Resonalyze.Dsp
 
             var phaseData = GetPhaseData(measurement, startOffset, length, window, unwrap);
 
-            List<DataPoint> data = new List<DataPoint>(length / 2);
+            List<SignalPoint> data = new List<SignalPoint>(length / 2);
             for (int i = 0; i < phaseData.Count; i++)
             {
-                data.Add(new DataPoint(phaseData[i].X, phaseData[i].Y / Math.PI * 180.0));
+                data.Add(new SignalPoint(phaseData[i].X, phaseData[i].Y / Math.PI * 180.0));
             }
 
-            LineSeries lineSeries = new LineSeries();
-            lineSeries.Points.AddRange(SmoothLinear(data, 1.0 / smoothingInverseOctaves));
-            lineSeries.Color = OxyColor.FromRgb(255, 127, 0);
-            lineSeries.Title = "Phase";
-            List<LineSeries> series = new List<LineSeries> { lineSeries };
-
-            return series;
+            return new AnalysisCurve(
+                "Phase",
+                SmoothLinear(data, 1.0 / smoothingInverseOctaves));
         }
 
-        public static List<LineSeries> GetImpulse(IImpulseMeasurement measurement, ImpulseResponseOptions opt)
+        public static AnalysisCurve GetImpulse(
+            IImpulseMeasurement measurement,
+            ImpulseResponseOptions opt)
         {
-            List<LineSeries> series = new List<LineSeries> { };
-
             int offset = 512;
             int start = measurement.PeakIndex - offset;
 
             int length = offset + opt.Length;
             Complex[] impulse = ExtractWindow(measurement, start, length);
 
-            List<DataPoint> data = new List<DataPoint> { };
+            List<SignalPoint> data = new List<SignalPoint> { };
 
             if (opt.Logarithmic)
             {
                 for (int i = 0; i < length; i++)
                 {
-                    data.Add(new DataPoint(i - offset, AmplitudeToDecibels(impulse[i].Magnitude)));
+                    data.Add(new SignalPoint(i - offset, AmplitudeToDecibels(impulse[i].Magnitude)));
                 }
             }
             else
             {
                 for (int i = 0; i < length; i++)
                 {
-                    data.Add(new DataPoint(i - offset, impulse[i].Real));
+                    data.Add(new SignalPoint(i - offset, impulse[i].Real));
                 }
             }
 
-            LineSeries lineSeries = new LineSeries();
-            lineSeries.Points.AddRange(data);
-            lineSeries.Color = OxyColor.FromRgb(255, 127, 0);
-            lineSeries.Title = "Impulse Response";
-
-            series.Add(lineSeries);
-
-            return series;
+            return new AnalysisCurve("Impulse Response", data);
         }
 
-        public static List<LineSeries> GetAutocorrelation(IImpulseMeasurement measurement, ImpulseResponseOptions opt)
+        public static AnalysisCurve GetAutocorrelation(
+            IImpulseMeasurement measurement,
+            ImpulseResponseOptions opt)
         {
             int offset = 64;
             int length = 2048;
             const float timeWindowMilliseconds = 3.0f;
 
-            List<LineSeries> series = new List<LineSeries> { };
-            LineSeries lineSeries = new LineSeries();
-            List<DataPoint> data = new List<DataPoint> { };
+            List<SignalPoint> data = new List<SignalPoint> { };
 
             int start = measurement.PeakIndex - offset;
             float average = 0;
@@ -349,23 +337,21 @@ namespace Resonalyze.Dsp
                     }
 
                     float timeMs = (k + fractionalStep) / (float)measurement.SampleRate * 1000.0f;
-                    data.Add(new DataPoint(timeMs, denominator > float.Epsilon ? numerator / denominator : 0));
+                    data.Add(new SignalPoint(timeMs, denominator > float.Epsilon ? numerator / denominator : 0));
                 }
             }
 
-            lineSeries.Points.AddRange(data);
-            lineSeries.Color = OxyColor.FromRgb(255, 127, 0);
-            lineSeries.Title = "Autocorrelation";
-
-            series.Add(lineSeries);
-
-            return series;
+            return new AnalysisCurve("Autocorrelation", data);
         }
 
-        public static List<LineSeries> GetGroupDelay(IImpulseMeasurement measurement, int length, int leftTukeyWindow, int rightTukeyWindow, int offset, double smoothingInverseOctaves)
+        public static AnalysisCurve GetGroupDelay(
+            IImpulseMeasurement measurement,
+            int length,
+            int leftTukeyWindow,
+            int rightTukeyWindow,
+            int offset,
+            double smoothingInverseOctaves)
         {
-            List<LineSeries> series = new List<LineSeries> { };
-
             int startOffset = -leftTukeyWindow + offset;
 
             double normalizedLeftWindow = (double)leftTukeyWindow / length * 2.0;
@@ -389,23 +375,19 @@ namespace Resonalyze.Dsp
                 spectrum[i] = spectrum[i].Magnitude > 1e-12 ? timeWeightedSpectrum[i] / spectrum[i] : Complex.Zero;
             }
 
-            List<DataPoint> data = new List<DataPoint> { };
+            List<SignalPoint> data = new List<SignalPoint> { };
             for (int i = 1; i < spectrum.Length; i++)
             {
                 double f = (double)i * ((double)measurement.SampleRate / (double)length);
 
                 double delayMilliseconds =
                     (spectrum[i].Real + startOffset / (double)measurement.SampleRate) * 1000;
-                data.Add(new DataPoint(f, delayMilliseconds));
+                data.Add(new SignalPoint(f, delayMilliseconds));
             }
 
-            LineSeries lineSeries = new LineSeries();
-            lineSeries.Points.AddRange(SmoothLinear(data, 1.0 / smoothingInverseOctaves));
-            lineSeries.Color = OxyColor.FromRgb(255, 127, 0);
-            lineSeries.Title = "Group Delay";
-            series.Add(lineSeries);
-
-            return series;
+            return new AnalysisCurve(
+                "Group Delay",
+                SmoothLinear(data, 1.0 / smoothingInverseOctaves));
         }
 
         public static double LogPositionToFrequency(double x, double start, double stop)
@@ -436,8 +418,8 @@ namespace Resonalyze.Dsp
         /// Resamples linearly spaced FFT bins onto a logarithmic frequency grid.
         /// A Lanczos kernel is used to avoid the aliasing and jagged traces produced by nearest-bin lookup.
         /// </summary>
-        public static List<DataPoint> LogarithmicResample(
-            List<DataPoint> input,
+        public static List<SignalPoint> LogarithmicResample(
+            List<SignalPoint> input,
             double start,
             double stop,
             int steps,
@@ -447,14 +429,14 @@ namespace Resonalyze.Dsp
         {
             if (input.Count < 2)
             {
-                return new List<DataPoint>();
+                return new List<SignalPoint>();
             }
             if (steps < 2)
             {
                 throw new ArgumentOutOfRangeException(nameof(steps));
             }
 
-            List<DataPoint> output = new List<DataPoint>(steps);
+            List<SignalPoint> output = new List<SignalPoint>(steps);
 
             double inputStep = input[1].X - input[0].X;
             double a = 2.0;
@@ -491,7 +473,7 @@ namespace Resonalyze.Dsp
                 return -1;
             }
 
-            DataPoint Sample(int index)
+            SignalPoint Sample(int index)
             {
                 return input[Math.Clamp(index, 0, input.Count - 1)];
             }
@@ -513,7 +495,7 @@ namespace Resonalyze.Dsp
                     sampleIndex <= centerIndex + windowRadius;
                     sampleIndex++)
                 {
-                    DataPoint samplePoint = Sample(sampleIndex);
+                    SignalPoint samplePoint = Sample(sampleIndex);
                     double weight = LanczosKernel((frequency - samplePoint.X) * invHalfDeltaFrequency, a);
 
                     if (dBUnpack)
@@ -539,32 +521,32 @@ namespace Resonalyze.Dsp
 
                 if (calibration != null)
                 {
-                    output.Add(new DataPoint(
+                    output.Add(new SignalPoint(
                         frequency,
                         filteredValue - calibration.GetDecibelCorrection(frequency)));
                 }
                 else
                 {
-                    output.Add(new DataPoint(frequency, filteredValue));
+                    output.Add(new SignalPoint(frequency, filteredValue));
                 }
             }
 
             return output;
         }
 
-        public static List<DataPoint> SmoothLinear(List<DataPoint> input, double smoothingOctaves = 1.0 / 6.0)
+        public static List<SignalPoint> SmoothLinear(List<SignalPoint> input, double smoothingOctaves = 1.0 / 6.0)
         {
             if (input.Count < 2)
             {
-                return new List<DataPoint>(input);
+                return new List<SignalPoint>(input);
             }
 
-            List<DataPoint> output = new List<DataPoint>(input.Count);
+            List<SignalPoint> output = new List<SignalPoint>(input.Count);
 
             double a = 2.0;
             double frequencyRatio = Math.Pow(2.0, smoothingOctaves * 0.5);
 
-            DataPoint Sample(int index)
+            SignalPoint Sample(int index)
             {
                 return input[Math.Clamp(index, 0, input.Count - 1)];
             }
@@ -585,7 +567,7 @@ namespace Resonalyze.Dsp
 
                 for (int sampleIndex = Math.Max(i - win, 0); sampleIndex <= i + win; sampleIndex++)
                 {
-                    DataPoint samplePoint = Sample(sampleIndex);
+                    SignalPoint samplePoint = Sample(sampleIndex);
                     double weight = LanczosKernel((frequency - samplePoint.X) / halfDeltaFrequency, a);
 
                     weightedSum += samplePoint.Y * weight;
@@ -597,7 +579,7 @@ namespace Resonalyze.Dsp
 
                 filteredValue = weightSum > 1e-12 ? weightedSum / weightSum : 0;
 
-                output.Add(new DataPoint(frequency, filteredValue));
+                output.Add(new SignalPoint(frequency, filteredValue));
             }
 
             return output;

@@ -185,10 +185,11 @@ namespace Resonalyze
 
             if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
             {
-                var series = DataHelper.GetSpectrum(expSweepMeasurement, frequencyResponseOptions, calibration);
-                foreach (var s in series)
+                IReadOnlyList<AnalysisCurve> curves =
+                    DataHelper.GetSpectrum(expSweepMeasurement, frequencyResponseOptions, calibration);
+                foreach (AnalysisCurve curve in curves)
                 {
-                    model.Series.Add(s);
+                    model.Series.Add(OxyPlotAdapter.ToLineSeries(curve));
                 }
             }
 
@@ -229,12 +230,9 @@ namespace Resonalyze
 
             if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
             {
-                var series = DataHelper.GetPhase(expSweepMeasurement,
+                AnalysisCurve curve = DataHelper.GetPhase(expSweepMeasurement,
                     phaseResponseOptions.Window, phaseResponseOptions.LeftTukeyWindow, phaseResponseOptions.RightTukeyWindow, phaseResponseOptions.Offset, phaseResponseOptions.SmoothingInverseOctaves, phaseResponseOptions.Unwrap);
-                foreach (var s in series)
-                {
-                    model.Series.Add(s);
-                }
+                model.Series.Add(OxyPlotAdapter.ToLineSeries(curve));
             }
 
             model.Axes.Add(new LogarithmicAxis
@@ -326,11 +324,14 @@ namespace Resonalyze
 
             if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
             {
-                var series = DataHelper.GetGroupDelay(expSweepMeasurement, groupDelayOptions.Window, groupDelayOptions.LeftTukeyWindow, groupDelayOptions.RightTukeyWindow, groupDelayOptions.Offset, groupDelayOptions.SmoothingInverseOctaves);
-                foreach (var s in series)
-                {
-                    model.Series.Add(s);
-                }
+                AnalysisCurve curve = DataHelper.GetGroupDelay(
+                    expSweepMeasurement,
+                    groupDelayOptions.Window,
+                    groupDelayOptions.LeftTukeyWindow,
+                    groupDelayOptions.RightTukeyWindow,
+                    groupDelayOptions.Offset,
+                    groupDelayOptions.SmoothingInverseOctaves);
+                model.Series.Add(OxyPlotAdapter.ToLineSeries(curve));
             }
 
             model.Axes.Add(new LogarithmicAxis
@@ -421,11 +422,9 @@ namespace Resonalyze
 
             if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
             {
-                var series = DataHelper.GetImpulse(expSweepMeasurement, impulseResponseOptions);
-                foreach (var s in series)
-                {
-                    model.Series.Add(s);
-                }
+                AnalysisCurve curve =
+                    DataHelper.GetImpulse(expSweepMeasurement, impulseResponseOptions);
+                model.Series.Add(OxyPlotAdapter.ToLineSeries(curve));
             }
 
             model.Axes.Add(new LinearAxis
@@ -591,13 +590,19 @@ namespace Resonalyze
                 data.Add(new DataPoint(frequency, DataHelper.AmplitudeToDecibels(accumulatedData[i]) - 21.0));
             }
 
-            data = DataHelper.LogarithmicResample(data, 20, 20000, 1024, calibration, 1.0 / 6.0);
+            List<SignalPoint> resampled = DataHelper.LogarithmicResample(
+                OxyPlotAdapter.ToSignalPoints(data),
+                20,
+                20000,
+                1024,
+                calibration,
+                1.0 / 6.0);
             var series = new LineSeries
             {
                 Color = OxyColor.FromRgb(255, 0, 127),
                 Title = "Live Spectrum"
             };
-            series.Points.AddRange(data);
+            series.Points.AddRange(OxyPlotAdapter.ToDataPoints(resampled));
             return series;
         }
 
@@ -609,11 +614,9 @@ namespace Resonalyze
 
             if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
             {
-                var series = DataHelper.GetAutocorrelation(expSweepMeasurement, impulseResponseOptions);
-                foreach (var s in series)
-                {
-                    model.Series.Add(s);
-                }
+                AnalysisCurve curve =
+                    DataHelper.GetAutocorrelation(expSweepMeasurement, impulseResponseOptions);
+                model.Series.Add(OxyPlotAdapter.ToLineSeries(curve));
             }
 
             model.Axes.Add(new LinearAxis

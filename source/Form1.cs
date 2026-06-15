@@ -10,9 +10,6 @@ using MathNet.Numerics.Providers.LinearAlgebra;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using OxyPlot;
-using OxyPlot.Axes;
-using OxyPlot.Series;
-using OxyPlot.WindowsForms;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
 
@@ -38,7 +35,6 @@ namespace Resonalyze
         private readonly OverlayCollection overlayCollection;
         private readonly ExpSweepMeasurement expSweepMeasurement = new();
         private readonly NoiseMeasurement noiseMeasurement = new();
-        private readonly System.Windows.Forms.Timer noiseGraphTimer = new() { Interval = 100 };
         private readonly CalibrationFile calibration = new(
             Path.Combine(AppContext.BaseDirectory, "calibration.txt"));
         private readonly WaterfallGenerateOptions waterfallGenOptions = new()
@@ -72,17 +68,56 @@ namespace Resonalyze
             Offset = 0,
         };
         private readonly ImpulseResponseOptions impulseResponseOptions = new();
+        private readonly PlotModelFactory plotModelFactory;
+        private readonly ModeController modeController;
+        private readonly ChromeTitleBarController titleBarController;
+        private readonly LiveSpectrumController liveSpectrumController;
+        private bool hasCurrentImpulseResponse;
         private bool closingPrepared;
         private bool resourcesDisposed;
 
         public Form1()
         {
             InitializeComponent();
+            titleBarController = new ChromeTitleBarController(
+                this,
+                plotView1,
+                UpdateMaximizedBounds,
+                CreateModeTabActions());
             overlayCollection = new OverlayCollection(this, overlays, plotView1, toolTip1);
+            plotModelFactory = new PlotModelFactory(
+                expSweepMeasurement,
+                noiseMeasurement,
+                calibration,
+                frequencyResponseOptions,
+                phaseResponseOptions,
+                groupDelayOptions,
+                impulseResponseOptions,
+                waterfallGenOptions,
+                burstDecayGenOptions);
+            liveSpectrumController = new LiveSpectrumController(
+                this,
+                noiseMeasurement,
+                plotView1,
+                plotModelFactory,
+                overlays,
+                overlayCollection,
+                () => CurrentMode,
+                () => SelectModeAsync(ModeTab.LiveSpectrum),
+                UpdateOverlayAvailability,
+                UpdateDrawButtonText);
+            modeController = new ModeController(
+                ChangeModeAsync,
+                SetActiveModeTab,
+                overlayCollection.HideAll,
+                DrawSelectedMode,
+                CanDrawCurrentMeasurement,
+                UpdateDrawButtonText);
 
             expSweepMeasurement.Init(12, 44100, 24, 1.0, PlaybackChannel.Mono);
             SetButtonFrozen(buttonSave, true);
             SetButtonFrozen(buttonLoad, false);
+            SetButtonFrozen(buttonDraw, true);
 
             expSweepMeasurement.Completed += (bool success) =>
             {
@@ -96,6 +131,7 @@ namespace Resonalyze
                     {
                         buttonRecord.Text = "Ready";
                         buttonRecord.BackColor = Color.FromArgb(192, 255, 192);
+                        hasCurrentImpulseResponse = true;
                         SetButtonFrozen(buttonSave, false);
                         SetButtonFrozen(buttonLoad, false);
                     }
@@ -103,44 +139,26 @@ namespace Resonalyze
                     {
                         buttonRecord.Text = expSweepMeasurement.LastError == null ? "Aborted" : "Error";
                         buttonRecord.BackColor = Color.FromArgb(255, 192, 192);
+                        hasCurrentImpulseResponse = false;
                         SetButtonFrozen(buttonSave, true);
                         SetButtonFrozen(buttonLoad, false);
                     }
+                    UpdateDrawButtonText();
                 });
             };
 
-            noiseMeasurement.Init(44100, 24, 60, PlaybackChannel.Mono, 2048);
-            noiseMeasurement.Completed += (bool success) =>
-            {
-                if (IsDisposed || !IsHandleCreated)
-                {
-                    return;
-                }
-                BeginInvoke((MethodInvoker)delegate
-                {
-                    noiseGraphTimer.Stop();
-                    buttonNoise.Text = "Live Spectrum";
-                    UpdateOverlayAvailability();
-                });
-            };
-
-            noiseGraphTimer.Tick += NoiseGraphTimer_Tick;
             FormClosing += Form1_FormClosing;
             buttonFR_Click(this, new EventArgs());
         }
 
         public async Task ChangeModeAsync(Mode mode)
         {
-            noiseGraphTimer.Stop();
             if (expSweepMeasurement.InProgress)
             {
                 await expSweepMeasurement.AbortAsync();
             }
 
-            if (noiseMeasurement.InProgress)
-            {
-                await noiseMeasurement.AbortAsync();
-            }
+            await liveSpectrumController.AbortAsync();
 
             CurrentMode = mode;
             plotView1.Model = null;
@@ -150,22 +168,14 @@ namespace Resonalyze
                 overlayCollection.Prepare(mode);
             }
 
-            if (mode == Mode.LiveSpectrum)
-            {
-                overlays.Enabled = false;
-                overlayCollection.HideAll();
-            }
-            else
-            {
-                UpdateOverlayAvailability();
-            }
+            UpdateOverlayAvailability();
         }
 
         private async void buttonRecord_Click(object sender, EventArgs e)
         {
-            if (noiseMeasurement.InProgress)
+            if (liveSpectrumController.InProgress)
             {
-                await noiseMeasurement.AbortAsync();
+                await liveSpectrumController.AbortAsync();
             }
 
             if (expSweepMeasurement.InProgress)
@@ -175,284 +185,136 @@ namespace Resonalyze
             else
             {
                 buttonRecord.Text = "Running...";
+                hasCurrentImpulseResponse = false;
                 _ = expSweepMeasurement.RunAsync();
                 buttonRecord.BackColor = Color.FromArgb(192, 255, 255);
                 SetButtonFrozen(buttonSave, true);
                 SetButtonFrozen(buttonLoad, true);
+                UpdateDrawButtonText();
             }
         }
 
-        private async void buttonFR_Click(object sender, EventArgs e)
+        private async void buttonFR_Click(object sender, EventArgs e) =>
+            await SelectModeAsync(ModeTab.Frequency);
+
+        private async void buttonPR_Click(object sender, EventArgs e) =>
+            await SelectModeAsync(ModeTab.Phase);
+
+        private async void buttonWaterfall_Click(object sender, EventArgs e) =>
+            await SelectModeAsync(ModeTab.Waterfall);
+
+        private async void buttonGD_Click(object sender, EventArgs e) =>
+            await SelectModeAsync(ModeTab.GroupDelay);
+
+        private async void buttonBurstDecay_Click(object sender, EventArgs e) =>
+            await SelectModeAsync(ModeTab.Burst);
+
+        private async void buttonIR_Click(object sender, EventArgs e) =>
+            await SelectModeAsync(ModeTab.Impulse);
+
+        private Task SelectModeAsync(ModeTab tab) =>
+            modeController.SelectAsync(tab);
+
+        private void DrawSelectedMode(bool includeCurves)
         {
-            await ChangeModeAsync(Mode.FrequencyResponse);
-
-            var model = new PlotModel { Title = "Frequency Response" };
-
-            if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
+            switch (modeController.ActiveTab)
             {
-                IReadOnlyList<AnalysisCurve> curves =
-                    DataHelper.GetSpectrum(expSweepMeasurement, frequencyResponseOptions, calibration);
-                foreach (AnalysisCurve curve in curves)
-                {
-                    model.Series.Add(OxyPlotAdapter.ToLineSeries(curve));
-                }
-            }
-
-            model.Axes.Add(new LogarithmicAxis
-            {
-                Position = AxisPosition.Bottom,
-                AbsoluteMinimum = 20,
-                AbsoluteMaximum = 20000,
-                Minimum = 20,
-                Maximum = 20000,
-                IsZoomEnabled = false,
-                MajorGridlineStyle = LineStyle.Solid,
-            });
-
-            model.Axes.Add(new LinearAxis
-            {
-                Position = AxisPosition.Left,
-                AbsoluteMinimum = -120,
-                AbsoluteMaximum = 10,
-                MajorStep = 10,
-                Minimum = -90,
-                Maximum = 0,
-                MajorGridlineStyle = LineStyle.Solid,
-                MinorGridlineStyle = LineStyle.Dot,
-                Title = "dB",
-            });
-
-            plotView1.Model = model;
-
-            overlayCollection.Show(CurrentMode);
-        }
-
-        private async void buttonPR_Click(object sender, EventArgs e)
-        {
-            await ChangeModeAsync(Mode.PhaseResponse);
-
-            var model = new PlotModel { Title = "Phase Response" };
-
-            if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
-            {
-                AnalysisCurve curve = DataHelper.GetPhase(expSweepMeasurement,
-                    phaseResponseOptions.Window, phaseResponseOptions.LeftTukeyWindow, phaseResponseOptions.RightTukeyWindow, phaseResponseOptions.Offset, phaseResponseOptions.SmoothingInverseOctaves, phaseResponseOptions.Unwrap);
-                model.Series.Add(OxyPlotAdapter.ToLineSeries(curve));
-            }
-
-            model.Axes.Add(new LogarithmicAxis
-            {
-                Position = AxisPosition.Bottom,
-                AbsoluteMinimum = 20,
-                AbsoluteMaximum = 20000,
-                Minimum = 20,
-                Maximum = 20000,
-                IsZoomEnabled = false,
-                MajorGridlineStyle = LineStyle.Solid,
-            });
-            model.Axes.Add(new LinearAxis
-            {
-                Position = AxisPosition.Left,
-                AbsoluteMinimum = -720,
-                AbsoluteMaximum = 720,
-                Minimum = -180,
-                Maximum = 180,
-                MajorStep = 45,
-                MajorGridlineStyle = LineStyle.Solid,
-                MinorStep = 15,
-                MinorGridlineStyle = LineStyle.Dot,
-            });
-
-            plotView1.Model = model;
-
-            overlayCollection.Show(CurrentMode);
-        }
-
-        private async void buttonWaterfall_Click(object sender, EventArgs e)
-        {
-            await ChangeModeAsync(Mode.CumulativeSpectrumDecay);
-
-            if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
-            {
-                var model = new PlotModel { Title = "Fourier Waterfall" };
-
-                model.Axes.Add(new LinearAxis
-                {
-                    Position = AxisPosition.Left,
-                    Minimum = -1.0,
-                    Maximum = 1.0,
-                    IsAxisVisible = false,
-                    IsPanEnabled = false,
-                    IsZoomEnabled = false,
-                });
-                var log = new LogarithmicClipAxis
-                {
-                    Position = AxisPosition.Bottom,
-                    Minimum = 20,
-                    Maximum = 60000,
-                    ClipValue = 20000,
-                    IsPanEnabled = false,
-                    IsZoomEnabled = false,
-                    //IsAxisVisible = false
-                };
-                model.Axes.Add(log);
-
-                model.Axes.Add(
-                    new LinearColorAxis
-                    {
-                        Position = AxisPosition.Left,
-                        Minimum = waterfallGenOptions.DbRange,
-                        Maximum = -waterfallGenOptions.DbRange,
-                        //Palette = OxyPalettes.Jet(64),
-                        Palette = OxyPalette.Interpolate(512, OxyColors.DarkBlue, OxyColors.Cyan, OxyColors.Yellow, OxyColors.Orange, OxyColors.DarkRed, OxyColors.White, OxyColors.White, OxyColors.White, OxyColors.White),
-                        HighColor = OxyColors.Black
-                    });
-
-                var waterfall = new WaterfallSeries()
-                {
-                    BackgroundColor = OxyColor.FromRgb(30, 0, 50),
-                    GenerateOptions = waterfallGenOptions,
-                };
-
-                waterfall.FillFourierWaterfallData(expSweepMeasurement);
-
-                model.Series.Add(waterfall);
-                plotView1.Model = model;
+                case ModeTab.Impulse:
+                    DrawImpulseResponse(includeCurves);
+                    break;
+                case ModeTab.Frequency:
+                    DrawFrequencyResponse(includeCurves);
+                    break;
+                case ModeTab.Phase:
+                    DrawPhaseResponse(includeCurves);
+                    break;
+                case ModeTab.GroupDelay:
+                    DrawGroupDelay(includeCurves);
+                    break;
+                case ModeTab.Waterfall:
+                    DrawWaterfall(includeCurves);
+                    break;
+                case ModeTab.Burst:
+                    DrawBurstDecay(includeCurves);
+                    break;
+                case ModeTab.LiveSpectrum:
+                    plotView1.Model = plotModelFactory.CreateLiveSpectrum();
+                    break;
+                case ModeTab.Autocorrelation:
+                    DrawAutocorrelation(includeCurves);
+                    break;
             }
         }
 
-        private async void buttonGD_Click(object sender, EventArgs e)
+        private void DrawFrequencyResponse(bool includeCurves)
         {
-            await ChangeModeAsync(Mode.GroupDelay);
+            plotView1.Model =
+                plotModelFactory.CreateFrequencyResponse(includeCurves);
 
-            var model = new PlotModel { Title = "Group Delay" };
-
-            if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
+            if (includeCurves)
             {
-                AnalysisCurve curve = DataHelper.GetGroupDelay(
-                    expSweepMeasurement,
-                    groupDelayOptions.Window,
-                    groupDelayOptions.LeftTukeyWindow,
-                    groupDelayOptions.RightTukeyWindow,
-                    groupDelayOptions.Offset,
-                    groupDelayOptions.SmoothingInverseOctaves);
-                model.Series.Add(OxyPlotAdapter.ToLineSeries(curve));
-            }
-
-            model.Axes.Add(new LogarithmicAxis
-            {
-                Position = AxisPosition.Bottom,
-                AbsoluteMinimum = 20,
-                AbsoluteMaximum = 20000,
-                Minimum = 20,
-                Maximum = 20000,
-                IsZoomEnabled = false,
-                MajorGridlineStyle = LineStyle.Solid,
-            });
-            model.Axes.Add(new LinearAxis
-            {
-                Position = AxisPosition.Left,
-                AbsoluteMinimum = -20,
-                AbsoluteMaximum = 20,
-                Minimum = -10,
-                Maximum = 10,
-                MajorStep = 1,
-                MajorGridlineStyle = LineStyle.Solid,
-                Title = "ms"
-            });
-
-            plotView1.Model = model;
-
-            overlayCollection.Show(CurrentMode);
-        }
-
-        private async void buttonBurstDecay_Click(object sender, EventArgs e)
-        {
-            await ChangeModeAsync(Mode.CumulativeSpectrumDecay);
-
-            if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
-            {
-                var model = new PlotModel { Title = "Burst Decay" };
-
-                model.Axes.Add(new LinearAxis
-                {
-                    Position = AxisPosition.Left,
-                    Minimum = -1.0,
-                    Maximum = 1.0,
-                    IsAxisVisible = false,
-                    IsPanEnabled = false,
-                    IsZoomEnabled = false,
-                });
-                var log = new LogarithmicClipAxis
-                {
-                    Position = AxisPosition.Bottom,
-                    Minimum = 20,
-                    Maximum = 60000,
-                    ClipValue = 20000,
-                    IsPanEnabled = false,
-                    IsZoomEnabled = false,
-                    //IsAxisVisible = false
-                };
-                model.Axes.Add(log);
-
-                model.Axes.Add(
-                    new LinearColorAxis
-                    {
-                        Position = AxisPosition.Left,
-                        Minimum = burstDecayGenOptions.DbRange,
-                        Maximum = -burstDecayGenOptions.DbRange,
-                        //Palette = OxyPalettes.Jet(64),
-                        Palette = OxyPalette.Interpolate(512, OxyColors.DarkBlue, OxyColors.Cyan, OxyColors.Yellow, OxyColors.Orange, OxyColors.DarkRed, OxyColors.White, OxyColors.White, OxyColors.White, OxyColors.White),
-                        HighColor = OxyColors.Black
-                    });
-
-                var waterfall = new WaterfallSeries()
-                {
-                    BackgroundColor = OxyColor.FromRgb(30, 0, 50),
-                    GenerateOptions = burstDecayGenOptions,
-                };
-
-                waterfall.FillFourierWaterfallData(expSweepMeasurement);
-
-                model.Series.Add(waterfall);
-                plotView1.Model = model;
+                overlayCollection.Show(CurrentMode);
             }
         }
 
-        private async void buttonIR_Click(object sender, EventArgs e)
+        private void DrawPhaseResponse(bool includeCurves)
         {
-            await ChangeModeAsync(Mode.ImpulseResponse);
+            plotView1.Model = plotModelFactory.CreatePhaseResponse(includeCurves);
 
-            var model = new PlotModel { Title = "Impulse Response" };
-
-            if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
+            if (includeCurves)
             {
-                AnalysisCurve curve =
-                    DataHelper.GetImpulse(expSweepMeasurement, impulseResponseOptions);
-                model.Series.Add(OxyPlotAdapter.ToLineSeries(curve));
+                overlayCollection.Show(CurrentMode);
             }
+        }
 
-            model.Axes.Add(new LinearAxis
+        private void DrawWaterfall(bool includeCurves)
+        {
+            plotView1.Model = plotModelFactory.CreateWaterfall(includeCurves);
+        }
+
+        private void DrawGroupDelay(bool includeCurves)
+        {
+            plotView1.Model = plotModelFactory.CreateGroupDelay(includeCurves);
+
+            if (includeCurves)
             {
-                Position = AxisPosition.Bottom,
-                MajorGridlineStyle = LineStyle.Solid,
-            });
-            model.Axes.Add(new LinearAxis
+                overlayCollection.Show(CurrentMode);
+            }
+        }
+
+        private void DrawBurstDecay(bool includeCurves)
+        {
+            plotView1.Model = plotModelFactory.CreateBurstDecay(includeCurves);
+        }
+
+        private void DrawImpulseResponse(bool includeCurves)
+        {
+            plotView1.Model =
+                plotModelFactory.CreateImpulseResponse(includeCurves);
+
+            if (includeCurves)
             {
-                Position = AxisPosition.Left,
-            });
+                overlayCollection.Show(CurrentMode);
+            }
+        }
 
-            plotView1.Model = model;
+        private void DrawAutocorrelation(bool includeCurves)
+        {
+            plotView1.Model =
+                plotModelFactory.CreateAutocorrelation(includeCurves);
 
-            overlayCollection.Show(CurrentMode);
+            if (includeCurves)
+            {
+                overlayCollection.Show(CurrentMode);
+            }
         }
 
         private void buttonRecordOpt_Click(object sender, EventArgs e)
         {
-            MeasurementOptions opt = new MeasurementOptions();
+            using var opt = new MeasurementOptions();
             opt.Init(expSweepMeasurement);
 
-            if (opt.ShowDialog() == DialogResult.OK)
+            if (ShowSettingsDialog(opt) == DialogResult.OK)
             {
                 opt.SetOptions(expSweepMeasurement);
             }
@@ -460,10 +322,10 @@ namespace Resonalyze
 
         private void buttonWaterfallOpt_Click(object sender, EventArgs e)
         {
-            WaterfallOptions opt = new WaterfallOptions();
+            using var opt = new WaterfallOptions();
             opt.Init(expSweepMeasurement, waterfallGenOptions);
 
-            if (opt.ShowDialog() == DialogResult.OK)
+            if (ShowSettingsDialog(opt) == DialogResult.OK)
             {
                 opt.SetOptions(waterfallGenOptions);
             }
@@ -471,9 +333,9 @@ namespace Resonalyze
 
         private void buttonFROpt_Click(object sender, EventArgs e)
         {
-            FROptions opt = new FROptions();
+            using var opt = new FROptions();
             opt.Init(expSweepMeasurement, frequencyResponseOptions);
-            if (opt.ShowDialog() == DialogResult.OK)
+            if (ShowSettingsDialog(opt) == DialogResult.OK)
             {
                 opt.SetOptions(frequencyResponseOptions);
             }
@@ -481,10 +343,10 @@ namespace Resonalyze
 
         private void buttonBurstDecayOpt_Click(object sender, EventArgs e)
         {
-            BDOpt opt = new BDOpt();
+            using var opt = new BDOpt();
             opt.Init(expSweepMeasurement, burstDecayGenOptions);
 
-            if (opt.ShowDialog() == DialogResult.OK)
+            if (ShowSettingsDialog(opt) == DialogResult.OK)
             {
                 opt.SetOptions(burstDecayGenOptions);
             }
@@ -492,9 +354,9 @@ namespace Resonalyze
 
         private void buttonGDOpt_Click(object sender, EventArgs e)
         {
-            GDOpt opt = new GDOpt();
+            using var opt = new GDOpt();
             opt.Init(expSweepMeasurement, groupDelayOptions);
-            if (opt.ShowDialog() == DialogResult.OK)
+            if (ShowSettingsDialog(opt) == DialogResult.OK)
             {
                 opt.SetOptions(groupDelayOptions);
             }
@@ -502,9 +364,9 @@ namespace Resonalyze
 
         private void buttonPROpt_Click(object sender, EventArgs e)
         {
-            PROpt opt = new PROpt();
+            using var opt = new PROpt();
             opt.Init(expSweepMeasurement, phaseResponseOptions);
-            if (opt.ShowDialog() == DialogResult.OK)
+            if (ShowSettingsDialog(opt) == DialogResult.OK)
             {
                 opt.SetOptions(phaseResponseOptions);
             }
@@ -512,88 +374,29 @@ namespace Resonalyze
 
         private void buttonImpOpt_Click(object sender, EventArgs e)
         {
-            IROpt opt = new IROpt();
+            using var opt = new IROpt();
             opt.Init(expSweepMeasurement, impulseResponseOptions);
-            if (opt.ShowDialog() == DialogResult.OK)
+            if (ShowSettingsDialog(opt) == DialogResult.OK)
             {
                 opt.SetOptions(impulseResponseOptions);
             }
         }
 
-        private async void buttonNoise_Click(object sender, EventArgs e)
+        private DialogResult ShowSettingsDialog(Form dialog)
         {
-            bool wasRunning = noiseMeasurement.InProgress;
-            await ChangeModeAsync(Mode.LiveSpectrum);
-            double[]? finalSnapshot = wasRunning ? noiseMeasurement.GetAccumulatedSpectrumSnapshot() : null;
-
-            var model = new PlotModel { Title = "Live Spectrum" };
-
-            model.Axes.Add(new LogarithmicAxis
-            {
-                Position = AxisPosition.Bottom,
-                AbsoluteMinimum = 20,
-                AbsoluteMaximum = 20000,
-                Minimum = 20,
-                Maximum = 20000,
-                IsZoomEnabled = false,
-                MajorGridlineStyle = LineStyle.Solid,
-            });
-
-            model.Axes.Add(new LinearAxis
-            {
-                Position = AxisPosition.Left,
-                AbsoluteMinimum = -120,
-                AbsoluteMaximum = 10,
-                MajorStep = 10,
-                Minimum = -90,
-                Maximum = 0,
-                MajorGridlineStyle = LineStyle.Solid,
-                MinorGridlineStyle = LineStyle.Dot,
-                Title = "dB",
-            });
-
-            plotView1.Model = model;
-
-            if (wasRunning)
-            {
-                if (finalSnapshot != null)
-                {
-                    model.Series.Add(BuildNoiseSeries(finalSnapshot));
-                }
-                UpdateOverlayAvailability();
-                overlayCollection.Show(CurrentMode);
-                return;
-            }
-
-            overlays.Enabled = false;
-            overlayCollection.HideAll();
-            buttonNoise.Text = "Live Spectrum (Running)";
-            _ = noiseMeasurement.RunAsync();
-            noiseGraphTimer.Start();
+            dialog.StartPosition = FormStartPosition.CenterParent;
+            return dialog.ShowDialog(this);
         }
 
-        private void NoiseGraphTimer_Tick(object? sender, EventArgs e)
-        {
-            double[]? snapshot = noiseMeasurement.GetAccumulatedSpectrumSnapshot();
-            PlotModel? model = plotView1.Model;
-            if (snapshot == null || model?.Title != "Live Spectrum")
-            {
-                return;
-            }
-
-            model.Series.Clear();
-            model.Series.Add(BuildNoiseSeries(snapshot));
-            model.InvalidatePlot(true);
-        }
+        private async void buttonNoise_Click(object sender, EventArgs e) =>
+            await SelectModeAsync(ModeTab.LiveSpectrum);
 
         private async void buttonClear_Click(object sender, EventArgs e)
         {
             if (CurrentMode == Mode.LiveSpectrum &&
-                noiseMeasurement.InProgress)
+                liveSpectrumController.InProgress)
             {
-                noiseGraphTimer.Stop();
-                await noiseMeasurement.AbortAsync();
-                buttonNoise.Text = "Live Spectrum";
+                await liveSpectrumController.AbortAsync();
             }
 
             overlayCollection.HideAll();
@@ -615,8 +418,8 @@ namespace Resonalyze
             bool available = OverlayCollection.SupportsMode(CurrentMode);
             if (CurrentMode == Mode.LiveSpectrum)
             {
-                available &= !noiseMeasurement.InProgress &&
-                    !noiseGraphTimer.Enabled;
+                available &= !liveSpectrumController.InProgress &&
+                    !liveSpectrumController.TimerEnabled;
             }
 
             overlays.Enabled = available;
@@ -626,61 +429,137 @@ namespace Resonalyze
             }
         }
 
-        private LineSeries BuildNoiseSeries(double[] accumulatedData)
-        {
-            int length = noiseMeasurement.SequenceLength;
-            int binCount = Math.Min(length / 2, accumulatedData.Length);
-            List<DataPoint> data = new(binCount);
+        private async void buttonGetAutocorrelation_Click(object sender, EventArgs e) =>
+            await SelectModeAsync(ModeTab.Autocorrelation);
 
-            for (int i = 1; i < binCount; i++)
+        private Dictionary<ModeTab, Action> CreateModeTabActions() =>
+            new()
             {
-                double frequency = i * ((double)noiseMeasurement.SampleRate / length);
-                data.Add(new DataPoint(frequency, DataHelper.AmplitudeToDecibels(accumulatedData[i]) - 21.0));
-            }
-
-            List<SignalPoint> resampled = DataHelper.LogarithmicResample(
-                OxyPlotAdapter.ToSignalPoints(data),
-                20,
-                20000,
-                1024,
-                calibration,
-                1.0 / 6.0);
-            var series = new LineSeries
-            {
-                Color = OxyColor.FromRgb(255, 0, 127),
-                Title = "Live Spectrum"
+                [ModeTab.Impulse] = () => buttonIR_Click(this, EventArgs.Empty),
+                [ModeTab.Frequency] = () => buttonFR_Click(this, EventArgs.Empty),
+                [ModeTab.Phase] = () => buttonPR_Click(this, EventArgs.Empty),
+                [ModeTab.GroupDelay] = () => buttonGD_Click(this, EventArgs.Empty),
+                [ModeTab.Waterfall] = () => buttonWaterfall_Click(this, EventArgs.Empty),
+                [ModeTab.Burst] = () => buttonBurstDecay_Click(this, EventArgs.Empty),
+                [ModeTab.LiveSpectrum] = () => buttonNoise_Click(this, EventArgs.Empty),
+                [ModeTab.Autocorrelation] = () =>
+                    buttonGetAutocorrelation_Click(this, EventArgs.Empty)
             };
-            series.Points.AddRange(OxyPlotAdapter.ToDataPoints(resampled));
-            return series;
+
+        private void UpdateMaximizedBounds()
+        {
+            MaximizedBounds = Screen.FromControl(this).WorkingArea;
         }
 
-        private async void buttonGetAutocorrelation_Click(object sender, EventArgs e)
+        private void SetActiveModeTab(ModeTab activeTab)
         {
-            await ChangeModeAsync(Mode.Autocorrelation);
+            titleBarController.SetActiveModeTab(activeTab);
+            UpdateCurrentModeSettingsButton();
+            UpdateDrawButtonText();
+        }
 
-            var model = new PlotModel { Title = "Autocorrelation" };
-
-            if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
+        private void UpdateDrawButtonText()
+        {
+            if (!IsHandleCreated)
             {
-                AnalysisCurve curve =
-                    DataHelper.GetAutocorrelation(expSweepMeasurement, impulseResponseOptions);
-                model.Series.Add(OxyPlotAdapter.ToLineSeries(curve));
+                return;
             }
 
-            model.Axes.Add(new LinearAxis
-            {
-                Position = AxisPosition.Bottom,
-                MajorGridlineStyle = LineStyle.Solid,
-                Title = "ms"
-            });
-            model.Axes.Add(new LinearAxis
-            {
-                Position = AxisPosition.Left,
-            });
+            buttonDraw.Text = modeController.ActiveTab == ModeTab.LiveSpectrum
+                ? liveSpectrumController.InProgress ? "Stop Live" : "Start Live"
+                : "Draw";
+            SetButtonFrozen(buttonDraw, ShouldFreezeDrawButton());
+        }
 
-            plotView1.Model = model;
+        private bool CanDrawCurrentMeasurement() =>
+            hasCurrentImpulseResponse && !expSweepMeasurement.InProgress;
 
-            overlayCollection.Show(CurrentMode);
+        private bool ShouldFreezeDrawButton()
+        {
+            if (modeController.ActiveTab == ModeTab.LiveSpectrum)
+            {
+                return false;
+            }
+
+            return !CanDrawCurrentMeasurement();
+        }
+
+        private void buttonCurrentModeSettings_Click(object sender, EventArgs e)
+        {
+            switch (modeController.ActiveTab)
+            {
+                case ModeTab.Impulse:
+                    buttonImpOpt_Click(sender, e);
+                    break;
+                case ModeTab.Frequency:
+                    buttonFROpt_Click(sender, e);
+                    break;
+                case ModeTab.Phase:
+                    buttonPROpt_Click(sender, e);
+                    break;
+                case ModeTab.GroupDelay:
+                    buttonGDOpt_Click(sender, e);
+                    break;
+                case ModeTab.Waterfall:
+                    buttonWaterfallOpt_Click(sender, e);
+                    break;
+                case ModeTab.Burst:
+                    buttonBurstDecayOpt_Click(sender, e);
+                    break;
+                case ModeTab.LiveSpectrum:
+                case ModeTab.Autocorrelation:
+                    System.Media.SystemSounds.Beep.Play();
+                    break;
+            }
+        }
+
+        private void UpdateCurrentModeSettingsButton()
+        {
+            if (!IsHandleCreated)
+            {
+                return;
+            }
+
+            string modeName = modeController.ActiveTab switch
+            {
+                ModeTab.Impulse => "Impulse",
+                ModeTab.Frequency => "Frequency",
+                ModeTab.Phase => "Phase",
+                ModeTab.GroupDelay => "Group Delay",
+                ModeTab.Waterfall => "Waterfall",
+                ModeTab.Burst => "Burst",
+                ModeTab.LiveSpectrum => "Live Spectrum",
+                ModeTab.Autocorrelation => "Autocorrelation",
+                _ => "Mode"
+            };
+            bool hasSettings = modeController.ActiveTab is not (
+                ModeTab.LiveSpectrum or
+                ModeTab.Autocorrelation);
+            /*
+            buttonCurrentModeSettings.Text = hasSettings
+                ? $"{modeName} Settings..."
+                : "No Settings";*/
+            SetButtonFrozen(buttonCurrentModeSettings, !hasSettings);
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == ChromeTitleBarController.WmNcHitTest &&
+                WindowState != FormWindowState.Maximized)
+            {
+                base.WndProc(ref m);
+                if ((int)m.Result == ChromeTitleBarController.HtClient)
+                {
+                    Point point = PointToClient(
+                        ChromeTitleBarController.GetPointFromLParam(m.LParam));
+                    m.Result = ChromeTitleBarController.GetResizeHitTest(
+                        point,
+                        ClientSize);
+                }
+                return;
+            }
+
+            base.WndProc(ref m);
         }
 
         private async void Form1_FormClosing(object? sender, FormClosingEventArgs e)
@@ -692,10 +571,9 @@ namespace Resonalyze
 
             e.Cancel = true;
             Enabled = false;
-            noiseGraphTimer.Stop();
             await Task.WhenAll(
                 expSweepMeasurement.AbortAsync(),
-                noiseMeasurement.AbortAsync());
+                liveSpectrumController.AbortAsync());
 
             DisposeAppResources();
             closingPrepared = true;
@@ -710,11 +588,8 @@ namespace Resonalyze
             }
 
             resourcesDisposed = true;
-            noiseGraphTimer.Stop();
-            noiseGraphTimer.Tick -= NoiseGraphTimer_Tick;
-            noiseGraphTimer.Dispose();
             expSweepMeasurement.Dispose();
-            noiseMeasurement.Dispose();
+            liveSpectrumController.Dispose();
         }
 
         private async void buttonSave_Click(object sender, EventArgs e)
@@ -739,6 +614,7 @@ namespace Resonalyze
 
                 SetButtonFrozen(buttonSave, true);
                 SetButtonFrozen(buttonLoad, true);
+                SetButtonFrozen(buttonDraw, true);
                 try
                 {
                     ImpulseResponseFile file =
@@ -798,7 +674,8 @@ namespace Resonalyze
 
                     buttonRecord.Text = "Loaded";
                     buttonRecord.BackColor = Color.FromArgb(192, 255, 192);
-                    buttonIR_Click(this, EventArgs.Empty);
+                    hasCurrentImpulseResponse = true;
+                    await SelectModeAsync(ModeTab.Impulse);
                 }
                 catch (Exception exception)
                 {
@@ -815,6 +692,7 @@ namespace Resonalyze
                         buttonSave,
                         expSweepMeasurement.ImpulseResponse == null);
                     SetButtonFrozen(buttonLoad, false);
+                    UpdateDrawButtonText();
                 }
             }
         }
@@ -833,6 +711,22 @@ namespace Resonalyze
                 button.ForeColor = SystemColors.ControlText;
                 button.Enabled = true;
             }
+        }
+
+        private async void buttonDraw_Click(object sender, EventArgs e)
+        {
+            if (modeController.ActiveTab == ModeTab.LiveSpectrum)
+            {
+                await liveSpectrumController.ToggleAsync();
+                return;
+            }
+
+            if (ShouldFreezeDrawButton())
+            {
+                return;
+            }
+
+            DrawSelectedMode(includeCurves: true);
         }
     }
 }

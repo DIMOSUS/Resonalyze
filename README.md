@@ -56,16 +56,16 @@ installation. SHA-256 checksum files are provided with every release.
     <td align="center"><strong>Impulse response</strong></td>
   </tr>
   <tr>
-    <td><img src="fr.jpg" alt="Frequency response plot"></td>
-    <td><img src="impulse.jpg" alt="Impulse response plot"></td>
+    <td><img src="assets/images/fr.jpg" alt="Frequency response plot"></td>
+    <td><img src="assets/images/impulse.jpg" alt="Impulse response plot"></td>
   </tr>
   <tr>
     <td align="center"><strong>Waterfall</strong></td>
     <td align="center"><strong>Burst Decay</strong></td>
   </tr>
   <tr>
-    <td><img src="waterfall.jpg" alt="Waterfall plot"></td>
-    <td><img src="burst.jpg" alt="Burst Decay plot"></td>
+    <td><img src="assets/images/waterfall.jpg" alt="Waterfall plot"></td>
+    <td><img src="assets/images/burst.jpg" alt="Burst Decay plot"></td>
   </tr>
 </table>
 
@@ -74,15 +74,15 @@ installation. SHA-256 checksum files are provided with every release.
 
 ### Phase response
 
-![Phase response plot](phase.jpg)
+![Phase response plot](assets/images/phase.jpg)
 
 ### Group delay
 
-![Group delay plot](gd.jpg)
+![Group delay plot](assets/images/gd.jpg)
 
 ### Live Spectrum
 
-![Live Spectrum plot](noise.jpg)
+![Live Spectrum plot](assets/images/noise.jpg)
 
 </details>
 
@@ -197,9 +197,8 @@ overlays/<AnalysisMode>/overlay-01.json
 ```
 
 For slots 1-10, the checkbox shows or hides the saved curve, the numeric
-control applies a vertical offset, `...` opens the appearance settings, and
-`C` clears only that slot in the current analysis mode. A slot without a saved
-file remains disabled.
+control applies a vertical offset, and `...` opens the settings dialog. A slot
+without a saved file remains disabled.
 
 Slots 11 and 12 are reserved for calculations between any two ordinary
 overlays from slots 1-10. They do not have capture or clear buttons. Instead,
@@ -209,15 +208,16 @@ operation, and configure the result appearance.
 
 Ordinary overlay settings include:
 
-![Ordinary overlay](regular_overlay.jpg)
+![Ordinary overlay](assets/images/regular_overlay.jpg)
 - A user-defined name
 - Line color, thickness, style, and opacity
 - Optional `1/48`, `1/24`, `1/12`, `1/6`, or `1/3` octave smoothing in
   frequency-based views
+- A **Clear** action that removes only that slot in the current analysis mode
 
 Calculated overlay settings additionally include:
 
-![Calculated overlay](calc_overlay.jpg)
+![Calculated overlay](assets/images/calc_overlay.jpg)
 - Two source slots selected from overlays 1-10
 - Operations `A - B`, `B - A`, `A + B`, `(A + B) / 2`, and `|A - B|`
 - Independent octave smoothing applied after the selected operation

@@ -28,233 +28,193 @@ namespace Resonalyze.Options
         /// </summary>
         private void InitializeComponent()
         {
-            this.button2 = new System.Windows.Forms.Button();
-            this.button1 = new System.Windows.Forms.Button();
-            this.label1 = new System.Windows.Forms.Label();
-            this.numericWindow = new System.Windows.Forms.NumericUpDown();
-            this.numericRightWindow = new System.Windows.Forms.NumericUpDown();
-            this.numericLeftWindow = new System.Windows.Forms.NumericUpDown();
-            this.label5 = new System.Windows.Forms.Label();
-            this.label4 = new System.Windows.Forms.Label();
-            this.label10 = new System.Windows.Forms.Label();
-            this.label9 = new System.Windows.Forms.Label();
-            this.numericSmoothingInverseOctaves = new System.Windows.Forms.NumericUpDown();
-            this.checkUseCalibration = new System.Windows.Forms.CheckBox();
-            this.label2 = new System.Windows.Forms.Label();
-            ((System.ComponentModel.ISupportInitialize)(this.numericWindow)).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericRightWindow)).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericLeftWindow)).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericSmoothingInverseOctaves)).BeginInit();
-            this.SuspendLayout();
+            button2 = new Button();
+            button1 = new Button();
+            label1 = new Label();
+            numericWindow = new NumericUpDown();
+            numericRightWindow = new NumericUpDown();
+            numericLeftWindow = new NumericUpDown();
+            label5 = new Label();
+            label4 = new Label();
+            label10 = new Label();
+            label9 = new Label();
+            numericSmoothingInverseOctaves = new NumericUpDown();
+            checkUseCalibration = new CheckBox();
+            label2 = new Label();
+            ((System.ComponentModel.ISupportInitialize)numericWindow).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numericRightWindow).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numericLeftWindow).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numericSmoothingInverseOctaves).BeginInit();
+            SuspendLayout();
             // 
             // button2
             // 
-            this.button2.DialogResult = System.Windows.Forms.DialogResult.Cancel;
-            this.button2.Location = new System.Drawing.Point(153, 237);
-            this.button2.Name = "button2";
-            this.button2.Size = new System.Drawing.Size(100, 23);
-            this.button2.TabIndex = 15;
-            this.button2.Text = "Cancel";
-            this.button2.UseVisualStyleBackColor = true;
+            button2.DialogResult = DialogResult.Cancel;
+            button2.Location = new Point(153, 237);
+            button2.Name = "button2";
+            button2.Size = new Size(100, 23);
+            button2.TabIndex = 15;
+            button2.Text = "Cancel";
+            button2.UseVisualStyleBackColor = true;
             // 
             // button1
             // 
-            this.button1.DialogResult = System.Windows.Forms.DialogResult.OK;
-            this.button1.Location = new System.Drawing.Point(12, 237);
-            this.button1.Name = "button1";
-            this.button1.Size = new System.Drawing.Size(100, 23);
-            this.button1.TabIndex = 14;
-            this.button1.Text = "Ok";
-            this.button1.UseVisualStyleBackColor = true;
+            button1.DialogResult = DialogResult.OK;
+            button1.Location = new Point(12, 237);
+            button1.Name = "button1";
+            button1.Size = new Size(100, 23);
+            button1.TabIndex = 14;
+            button1.Text = "Ok";
+            button1.UseVisualStyleBackColor = true;
             // 
             // label1
             // 
-            this.label1.AutoSize = true;
-            this.label1.ForeColor = System.Drawing.SystemColors.ControlLight;
-            this.label1.Location = new System.Drawing.Point(12, 14);
-            this.label1.Name = "label1";
-            this.label1.Size = new System.Drawing.Size(51, 15);
-            this.label1.TabIndex = 16;
-            this.label1.Text = "Window";
+            label1.AutoSize = true;
+            label1.ForeColor = SystemColors.ControlLight;
+            label1.Location = new Point(12, 14);
+            label1.Name = "label1";
+            label1.Size = new Size(51, 15);
+            label1.TabIndex = 16;
+            label1.Text = "Window";
             // 
             // numericWindow
             // 
-            this.numericWindow.BorderStyle = System.Windows.Forms.BorderStyle.None;
-            this.numericWindow.Location = new System.Drawing.Point(193, 12);
-            this.numericWindow.Maximum = new decimal(new int[] {
-            32768,
-            0,
-            0,
-            0});
-            this.numericWindow.Minimum = new decimal(new int[] {
-            4,
-            0,
-            0,
-            0});
-            this.numericWindow.Name = "numericWindow";
-            this.numericWindow.Size = new System.Drawing.Size(60, 19);
-            this.numericWindow.TabIndex = 17;
-            this.numericWindow.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
-            this.numericWindow.Value = new decimal(new int[] {
-            8192,
-            0,
-            0,
-            0});
-            this.numericWindow.ValueChanged += new System.EventHandler(this.numericWindow_ValueChanged);
+            numericWindow.BorderStyle = BorderStyle.None;
+            numericWindow.Location = new Point(193, 12);
+            numericWindow.Maximum = new decimal(new int[] { 32768, 0, 0, 0 });
+            numericWindow.Minimum = new decimal(new int[] { 4, 0, 0, 0 });
+            numericWindow.Name = "numericWindow";
+            numericWindow.Size = new Size(60, 19);
+            numericWindow.TabIndex = 17;
+            numericWindow.TextAlign = HorizontalAlignment.Right;
+            numericWindow.Value = new decimal(new int[] { 8192, 0, 0, 0 });
+            numericWindow.ValueChanged += numericWindow_ValueChanged;
             // 
             // numericRightWindow
             // 
-            this.numericRightWindow.BorderStyle = System.Windows.Forms.BorderStyle.None;
-            this.numericRightWindow.Location = new System.Drawing.Point(193, 61);
-            this.numericRightWindow.Maximum = new decimal(new int[] {
-            16384,
-            0,
-            0,
-            0});
-            this.numericRightWindow.Name = "numericRightWindow";
-            this.numericRightWindow.Size = new System.Drawing.Size(60, 19);
-            this.numericRightWindow.TabIndex = 21;
-            this.numericRightWindow.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
-            this.numericRightWindow.Value = new decimal(new int[] {
-            256,
-            0,
-            0,
-            0});
+            numericRightWindow.BorderStyle = BorderStyle.None;
+            numericRightWindow.Location = new Point(193, 61);
+            numericRightWindow.Maximum = new decimal(new int[] { 16384, 0, 0, 0 });
+            numericRightWindow.Name = "numericRightWindow";
+            numericRightWindow.Size = new Size(60, 19);
+            numericRightWindow.TabIndex = 21;
+            numericRightWindow.TextAlign = HorizontalAlignment.Right;
+            numericRightWindow.Value = new decimal(new int[] { 256, 0, 0, 0 });
             // 
             // numericLeftWindow
             // 
-            this.numericLeftWindow.BorderStyle = System.Windows.Forms.BorderStyle.None;
-            this.numericLeftWindow.Location = new System.Drawing.Point(193, 36);
-            this.numericLeftWindow.Maximum = new decimal(new int[] {
-            16384,
-            0,
-            0,
-            0});
-            this.numericLeftWindow.Name = "numericLeftWindow";
-            this.numericLeftWindow.Size = new System.Drawing.Size(60, 19);
-            this.numericLeftWindow.TabIndex = 20;
-            this.numericLeftWindow.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
-            this.numericLeftWindow.Value = new decimal(new int[] {
-            256,
-            0,
-            0,
-            0});
+            numericLeftWindow.BorderStyle = BorderStyle.None;
+            numericLeftWindow.Location = new Point(193, 36);
+            numericLeftWindow.Maximum = new decimal(new int[] { 16384, 0, 0, 0 });
+            numericLeftWindow.Name = "numericLeftWindow";
+            numericLeftWindow.Size = new Size(60, 19);
+            numericLeftWindow.TabIndex = 20;
+            numericLeftWindow.TextAlign = HorizontalAlignment.Right;
+            numericLeftWindow.Value = new decimal(new int[] { 256, 0, 0, 0 });
             // 
             // label5
             // 
-            this.label5.AutoSize = true;
-            this.label5.ForeColor = System.Drawing.SystemColors.ControlLight;
-            this.label5.Location = new System.Drawing.Point(12, 60);
-            this.label5.Name = "label5";
-            this.label5.Size = new System.Drawing.Size(116, 15);
-            this.label5.TabIndex = 19;
-            this.label5.Text = "Tukey Window Right";
+            label5.AutoSize = true;
+            label5.ForeColor = SystemColors.ControlLight;
+            label5.Location = new Point(12, 60);
+            label5.Name = "label5";
+            label5.Size = new Size(117, 15);
+            label5.TabIndex = 19;
+            label5.Text = "Tukey Window Right";
             // 
             // label4
             // 
-            this.label4.AutoSize = true;
-            this.label4.ForeColor = System.Drawing.SystemColors.ControlLight;
-            this.label4.Location = new System.Drawing.Point(12, 35);
-            this.label4.Name = "label4";
-            this.label4.Size = new System.Drawing.Size(108, 15);
-            this.label4.TabIndex = 18;
-            this.label4.Text = "Tukey Window Left";
+            label4.AutoSize = true;
+            label4.ForeColor = SystemColors.ControlLight;
+            label4.Location = new Point(12, 35);
+            label4.Name = "label4";
+            label4.Size = new Size(109, 15);
+            label4.TabIndex = 18;
+            label4.Text = "Tukey Window Left";
             // 
             // label10
             // 
-            this.label10.AutoSize = true;
-            this.label10.ForeColor = System.Drawing.SystemColors.ControlLight;
-            this.label10.Location = new System.Drawing.Point(193, 87);
-            this.label10.Name = "label10";
-            this.label10.Size = new System.Drawing.Size(21, 15);
-            this.label10.TabIndex = 30;
-            this.label10.Text = "1 /";
+            label10.AutoSize = true;
+            label10.ForeColor = SystemColors.ControlLight;
+            label10.Location = new Point(193, 87);
+            label10.Name = "label10";
+            label10.Size = new Size(21, 15);
+            label10.TabIndex = 30;
+            label10.Text = "1 /";
             // 
             // label9
             // 
-            this.label9.AutoSize = true;
-            this.label9.ForeColor = System.Drawing.SystemColors.ControlLight;
-            this.label9.Location = new System.Drawing.Point(12, 85);
-            this.label9.Name = "label9";
-            this.label9.Size = new System.Drawing.Size(93, 15);
-            this.label9.TabIndex = 29;
-            this.label9.Text = "Smoothing (octaves)";
+            label9.AutoSize = true;
+            label9.ForeColor = SystemColors.ControlLight;
+            label9.Location = new Point(12, 85);
+            label9.Name = "label9";
+            label9.Size = new Size(117, 15);
+            label9.TabIndex = 29;
+            label9.Text = "Smoothing (octaves)";
             // 
             // numericSmoothingInverseOctaves
             // 
-            this.numericSmoothingInverseOctaves.BorderStyle = System.Windows.Forms.BorderStyle.None;
-            this.numericSmoothingInverseOctaves.Location = new System.Drawing.Point(214, 86);
-            this.numericSmoothingInverseOctaves.Maximum = new decimal(new int[] {
-            48,
-            0,
-            0,
-            0});
-            this.numericSmoothingInverseOctaves.Minimum = new decimal(new int[] {
-            1,
-            0,
-            0,
-            0});
-            this.numericSmoothingInverseOctaves.Name = "numericSmoothingInverseOctaves";
-            this.numericSmoothingInverseOctaves.Size = new System.Drawing.Size(39, 19);
-            this.numericSmoothingInverseOctaves.TabIndex = 28;
-            this.numericSmoothingInverseOctaves.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
-            this.numericSmoothingInverseOctaves.Value = new decimal(new int[] {
-            1,
-            0,
-            0,
-            0});
+            numericSmoothingInverseOctaves.BorderStyle = BorderStyle.None;
+            numericSmoothingInverseOctaves.Location = new Point(214, 86);
+            numericSmoothingInverseOctaves.Maximum = new decimal(new int[] { 48, 0, 0, 0 });
+            numericSmoothingInverseOctaves.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
+            numericSmoothingInverseOctaves.Name = "numericSmoothingInverseOctaves";
+            numericSmoothingInverseOctaves.Size = new Size(39, 19);
+            numericSmoothingInverseOctaves.TabIndex = 28;
+            numericSmoothingInverseOctaves.TextAlign = HorizontalAlignment.Right;
+            numericSmoothingInverseOctaves.Value = new decimal(new int[] { 1, 0, 0, 0 });
             // 
             // checkUseCalibration
             // 
-            this.checkUseCalibration.AutoSize = true;
-            this.checkUseCalibration.ForeColor = System.Drawing.SystemColors.ControlLight;
-            this.checkUseCalibration.Location = new System.Drawing.Point(238, 111);
-            this.checkUseCalibration.Name = "checkUseCalibration";
-            this.checkUseCalibration.Size = new System.Drawing.Size(15, 14);
-            this.checkUseCalibration.TabIndex = 47;
-            this.checkUseCalibration.UseVisualStyleBackColor = true;
+            checkUseCalibration.AutoSize = true;
+            checkUseCalibration.ForeColor = SystemColors.ControlLight;
+            checkUseCalibration.Location = new Point(238, 111);
+            checkUseCalibration.Name = "checkUseCalibration";
+            checkUseCalibration.Size = new Size(15, 14);
+            checkUseCalibration.TabIndex = 47;
+            checkUseCalibration.UseVisualStyleBackColor = true;
             // 
             // label2
             // 
-            this.label2.AutoSize = true;
-            this.label2.ForeColor = System.Drawing.SystemColors.ControlLight;
-            this.label2.Location = new System.Drawing.Point(12, 110);
-            this.label2.Name = "label2";
-            this.label2.Size = new System.Drawing.Size(87, 15);
-            this.label2.TabIndex = 46;
-            this.label2.Text = "Use Calibration";
+            label2.AutoSize = true;
+            label2.ForeColor = SystemColors.ControlLight;
+            label2.Location = new Point(12, 110);
+            label2.Name = "label2";
+            label2.Size = new Size(87, 15);
+            label2.TabIndex = 46;
+            label2.Text = "Use Calibration";
             // 
             // FROptions
             // 
-            this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
-            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(50)))), ((int)(((byte)(50)))), ((int)(((byte)(50)))));
-            this.ClientSize = new System.Drawing.Size(265, 272);
-            this.Controls.Add(this.checkUseCalibration);
-            this.Controls.Add(this.label2);
-            this.Controls.Add(this.label10);
-            this.Controls.Add(this.label9);
-            this.Controls.Add(this.numericSmoothingInverseOctaves);
-            this.Controls.Add(this.numericRightWindow);
-            this.Controls.Add(this.numericLeftWindow);
-            this.Controls.Add(this.label5);
-            this.Controls.Add(this.label4);
-            this.Controls.Add(this.numericWindow);
-            this.Controls.Add(this.label1);
-            this.Controls.Add(this.button2);
-            this.Controls.Add(this.button1);
-            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
-            this.MaximizeBox = false;
-            this.MinimizeBox = false;
-            this.Name = "FROptions";
-            this.ShowInTaskbar = false;
-            this.Text = "Frequency Response Options";
-            ((System.ComponentModel.ISupportInitialize)(this.numericWindow)).EndInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericRightWindow)).EndInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericLeftWindow)).EndInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericSmoothingInverseOctaves)).EndInit();
-            this.ResumeLayout(false);
-            this.PerformLayout();
+            AutoScaleDimensions = new SizeF(7F, 15F);
+            AutoScaleMode = AutoScaleMode.Font;
+            BackColor = Color.FromArgb(50, 50, 50);
+            ClientSize = new Size(265, 272);
+            Controls.Add(checkUseCalibration);
+            Controls.Add(label2);
+            Controls.Add(label10);
+            Controls.Add(label9);
+            Controls.Add(numericSmoothingInverseOctaves);
+            Controls.Add(numericRightWindow);
+            Controls.Add(numericLeftWindow);
+            Controls.Add(label5);
+            Controls.Add(label4);
+            Controls.Add(numericWindow);
+            Controls.Add(label1);
+            Controls.Add(button2);
+            Controls.Add(button1);
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            Name = "FROptions";
+            ShowInTaskbar = false;
+            Text = "Frequency Response Options";
+            ((System.ComponentModel.ISupportInitialize)numericWindow).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numericRightWindow).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numericLeftWindow).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numericSmoothingInverseOctaves).EndInit();
+            ResumeLayout(false);
+            PerformLayout();
 
         }
 

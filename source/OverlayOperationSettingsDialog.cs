@@ -274,6 +274,11 @@ internal sealed class OverlayOperationSettingsDialog : Form
         control.Size = size;
     }
 
+    private void InitializeComponent()
+    {
+
+    }
+
     private static void SelectSlot(
         ComboBox comboBox,
         int slot,

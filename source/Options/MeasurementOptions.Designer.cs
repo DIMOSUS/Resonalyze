@@ -28,267 +28,215 @@ namespace Resonalyze.Options
         /// </summary>
         private void InitializeComponent()
         {
-            this.label1 = new System.Windows.Forms.Label();
-            this.label2 = new System.Windows.Forms.Label();
-            this.comboBoxChannel = new System.Windows.Forms.ComboBox();
-            this.label3 = new System.Windows.Forms.Label();
-            this.label4 = new System.Windows.Forms.Label();
-            this.label5 = new System.Windows.Forms.Label();
-            this.numericUpDownRequestedDuration = new System.Windows.Forms.NumericUpDown();
-            this.numericUpDownComputeDuration = new System.Windows.Forms.NumericUpDown();
-            this.button2 = new System.Windows.Forms.Button();
-            this.button1 = new System.Windows.Forms.Button();
-            this.label6 = new System.Windows.Forms.Label();
-            this.numericUpDownSampleRate = new System.Windows.Forms.NumericUpDown();
-            this.numericUpDownBits = new System.Windows.Forms.NumericUpDown();
-            this.numericUpDownOctaves = new System.Windows.Forms.NumericUpDown();
-            ((System.ComponentModel.ISupportInitialize)(this.numericUpDownRequestedDuration)).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericUpDownComputeDuration)).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericUpDownSampleRate)).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericUpDownBits)).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericUpDownOctaves)).BeginInit();
-            this.SuspendLayout();
+            label1 = new Label();
+            label2 = new Label();
+            comboBoxChannel = new ComboBox();
+            label3 = new Label();
+            label4 = new Label();
+            label5 = new Label();
+            numericUpDownRequestedDuration = new NumericUpDown();
+            numericUpDownComputeDuration = new NumericUpDown();
+            button2 = new Button();
+            button1 = new Button();
+            label6 = new Label();
+            numericUpDownSampleRate = new NumericUpDown();
+            numericUpDownBits = new NumericUpDown();
+            numericUpDownOctaves = new NumericUpDown();
+            ((System.ComponentModel.ISupportInitialize)numericUpDownRequestedDuration).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numericUpDownComputeDuration).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numericUpDownSampleRate).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numericUpDownBits).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numericUpDownOctaves).BeginInit();
+            SuspendLayout();
             // 
             // label1
             // 
-            this.label1.AutoSize = true;
-            this.label1.ForeColor = System.Drawing.SystemColors.ControlLight;
-            this.label1.Location = new System.Drawing.Point(12, 15);
-            this.label1.Name = "label1";
-            this.label1.Size = new System.Drawing.Size(72, 15);
-            this.label1.TabIndex = 1;
-            this.label1.Text = "Sample Rate";
+            label1.AutoSize = true;
+            label1.ForeColor = SystemColors.ControlLight;
+            label1.Location = new Point(12, 15);
+            label1.Name = "label1";
+            label1.Size = new Size(72, 15);
+            label1.TabIndex = 1;
+            label1.Text = "Sample Rate";
             // 
             // label2
             // 
-            this.label2.AutoSize = true;
-            this.label2.ForeColor = System.Drawing.SystemColors.ControlLight;
-            this.label2.Location = new System.Drawing.Point(12, 41);
-            this.label2.Name = "label2";
-            this.label2.Size = new System.Drawing.Size(26, 15);
-            this.label2.TabIndex = 3;
-            this.label2.Text = "Bits";
+            label2.AutoSize = true;
+            label2.ForeColor = SystemColors.ControlLight;
+            label2.Location = new Point(12, 41);
+            label2.Name = "label2";
+            label2.Size = new Size(26, 15);
+            label2.TabIndex = 3;
+            label2.Text = "Bits";
             // 
             // comboBoxChannel
             // 
-            this.comboBoxChannel.FormattingEnabled = true;
-            this.comboBoxChannel.Location = new System.Drawing.Point(153, 87);
-            this.comboBoxChannel.Name = "comboBoxChannel";
-            this.comboBoxChannel.Size = new System.Drawing.Size(100, 23);
-            this.comboBoxChannel.TabIndex = 4;
+            comboBoxChannel.FormattingEnabled = true;
+            comboBoxChannel.Location = new Point(153, 87);
+            comboBoxChannel.Name = "comboBoxChannel";
+            comboBoxChannel.Size = new Size(100, 23);
+            comboBoxChannel.TabIndex = 4;
             // 
             // label3
             // 
-            this.label3.AutoSize = true;
-            this.label3.ForeColor = System.Drawing.SystemColors.ControlLight;
-            this.label3.Location = new System.Drawing.Point(12, 95);
-            this.label3.Name = "label3";
-            this.label3.Size = new System.Drawing.Size(44, 15);
-            this.label3.TabIndex = 5;
-            this.label3.Text = "Channel";
+            label3.AutoSize = true;
+            label3.ForeColor = SystemColors.ControlLight;
+            label3.Location = new Point(12, 95);
+            label3.Name = "label3";
+            label3.Size = new Size(51, 15);
+            label3.TabIndex = 5;
+            label3.Text = "Channel";
             // 
             // label4
             // 
-            this.label4.AutoSize = true;
-            this.label4.ForeColor = System.Drawing.SystemColors.ControlLight;
-            this.label4.Location = new System.Drawing.Point(12, 120);
-            this.label4.Name = "label4";
-            this.label4.Size = new System.Drawing.Size(115, 15);
-            this.label4.TabIndex = 7;
-            this.label4.Text = "Requested Duration (ms)";
+            label4.AutoSize = true;
+            label4.ForeColor = SystemColors.ControlLight;
+            label4.Location = new Point(12, 120);
+            label4.Name = "label4";
+            label4.Size = new Size(138, 15);
+            label4.TabIndex = 7;
+            label4.Text = "Requested Duration (ms)";
             // 
             // label5
             // 
-            this.label5.AutoSize = true;
-            this.label5.ForeColor = System.Drawing.SystemColors.ControlLight;
-            this.label5.Location = new System.Drawing.Point(12, 145);
-            this.label5.Name = "label5";
-            this.label5.Size = new System.Drawing.Size(133, 15);
-            this.label5.TabIndex = 9;
-            this.label5.Text = "Compute Duration (ms)";
+            label5.AutoSize = true;
+            label5.ForeColor = SystemColors.ControlLight;
+            label5.Location = new Point(12, 145);
+            label5.Name = "label5";
+            label5.Size = new Size(133, 15);
+            label5.TabIndex = 9;
+            label5.Text = "Compute Duration (ms)";
             // 
             // numericUpDownRequestedDuration
             // 
-            this.numericUpDownRequestedDuration.BorderStyle = System.Windows.Forms.BorderStyle.None;
-            this.numericUpDownRequestedDuration.Increment = new decimal(new int[] {
-            500,
-            0,
-            0,
-            0});
-            this.numericUpDownRequestedDuration.Location = new System.Drawing.Point(153, 116);
-            this.numericUpDownRequestedDuration.Maximum = new decimal(new int[] {
-            100000,
-            0,
-            0,
-            0});
-            this.numericUpDownRequestedDuration.Minimum = new decimal(new int[] {
-            1,
-            0,
-            0,
-            0});
-            this.numericUpDownRequestedDuration.Name = "numericUpDownRequestedDuration";
-            this.numericUpDownRequestedDuration.Size = new System.Drawing.Size(100, 19);
-            this.numericUpDownRequestedDuration.TabIndex = 10;
-            this.numericUpDownRequestedDuration.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
-            this.numericUpDownRequestedDuration.Value = new decimal(new int[] {
-            1000,
-            0,
-            0,
-            0});
-            this.numericUpDownRequestedDuration.ValueChanged += new System.EventHandler(this.numericUpDownRequestedDuration_ValueChanged);
+            numericUpDownRequestedDuration.BorderStyle = BorderStyle.None;
+            numericUpDownRequestedDuration.Increment = new decimal(new int[] { 500, 0, 0, 0 });
+            numericUpDownRequestedDuration.Location = new Point(153, 116);
+            numericUpDownRequestedDuration.Maximum = new decimal(new int[] { 100000, 0, 0, 0 });
+            numericUpDownRequestedDuration.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
+            numericUpDownRequestedDuration.Name = "numericUpDownRequestedDuration";
+            numericUpDownRequestedDuration.Size = new Size(100, 19);
+            numericUpDownRequestedDuration.TabIndex = 10;
+            numericUpDownRequestedDuration.TextAlign = HorizontalAlignment.Right;
+            numericUpDownRequestedDuration.Value = new decimal(new int[] { 1000, 0, 0, 0 });
+            numericUpDownRequestedDuration.ValueChanged += numericUpDownRequestedDuration_ValueChanged;
             // 
             // numericUpDownComputeDuration
             // 
-            this.numericUpDownComputeDuration.BorderStyle = System.Windows.Forms.BorderStyle.None;
-            this.numericUpDownComputeDuration.Enabled = false;
-            this.numericUpDownComputeDuration.Location = new System.Drawing.Point(153, 141);
-            this.numericUpDownComputeDuration.Maximum = new decimal(new int[] {
-            1316134911,
-            2328,
-            0,
-            0});
-            this.numericUpDownComputeDuration.Name = "numericUpDownComputeDuration";
-            this.numericUpDownComputeDuration.ReadOnly = true;
-            this.numericUpDownComputeDuration.Size = new System.Drawing.Size(100, 19);
-            this.numericUpDownComputeDuration.TabIndex = 11;
-            this.numericUpDownComputeDuration.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
+            numericUpDownComputeDuration.BorderStyle = BorderStyle.None;
+            numericUpDownComputeDuration.Enabled = false;
+            numericUpDownComputeDuration.Location = new Point(153, 141);
+            numericUpDownComputeDuration.Maximum = new decimal(new int[] { 1316134911, 2328, 0, 0 });
+            numericUpDownComputeDuration.Name = "numericUpDownComputeDuration";
+            numericUpDownComputeDuration.ReadOnly = true;
+            numericUpDownComputeDuration.Size = new Size(100, 19);
+            numericUpDownComputeDuration.TabIndex = 11;
+            numericUpDownComputeDuration.TextAlign = HorizontalAlignment.Right;
             // 
             // button2
             // 
-            this.button2.DialogResult = System.Windows.Forms.DialogResult.Cancel;
-            this.button2.Location = new System.Drawing.Point(153, 197);
-            this.button2.Name = "button2";
-            this.button2.Size = new System.Drawing.Size(100, 23);
-            this.button2.TabIndex = 13;
-            this.button2.Text = "Cancel";
-            this.button2.UseVisualStyleBackColor = true;
+            button2.DialogResult = DialogResult.Cancel;
+            button2.Location = new Point(153, 197);
+            button2.Name = "button2";
+            button2.Size = new Size(100, 23);
+            button2.TabIndex = 13;
+            button2.Text = "Cancel";
+            button2.UseVisualStyleBackColor = true;
             // 
             // button1
             // 
-            this.button1.DialogResult = System.Windows.Forms.DialogResult.OK;
-            this.button1.Location = new System.Drawing.Point(12, 197);
-            this.button1.Name = "button1";
-            this.button1.Size = new System.Drawing.Size(100, 23);
-            this.button1.TabIndex = 12;
-            this.button1.Text = "Ok";
-            this.button1.UseVisualStyleBackColor = true;
+            button1.DialogResult = DialogResult.OK;
+            button1.Location = new Point(12, 197);
+            button1.Name = "button1";
+            button1.Size = new Size(100, 23);
+            button1.TabIndex = 12;
+            button1.Text = "Ok";
+            button1.UseVisualStyleBackColor = true;
             // 
             // label6
             // 
-            this.label6.AutoSize = true;
-            this.label6.ForeColor = System.Drawing.SystemColors.ControlLight;
-            this.label6.Location = new System.Drawing.Point(12, 66);
-            this.label6.Name = "label6";
-            this.label6.Size = new System.Drawing.Size(49, 15);
-            this.label6.TabIndex = 15;
-            this.label6.Text = "Octaves";
+            label6.AutoSize = true;
+            label6.ForeColor = SystemColors.ControlLight;
+            label6.Location = new Point(12, 66);
+            label6.Name = "label6";
+            label6.Size = new Size(49, 15);
+            label6.TabIndex = 15;
+            label6.Text = "Octaves";
             // 
             // numericUpDownSampleRate
             // 
-            this.numericUpDownSampleRate.BorderStyle = System.Windows.Forms.BorderStyle.None;
-            this.numericUpDownSampleRate.Enabled = false;
-            this.numericUpDownSampleRate.Location = new System.Drawing.Point(153, 12);
-            this.numericUpDownSampleRate.Maximum = new decimal(new int[] {
-            192000,
-            0,
-            0,
-            0});
-            this.numericUpDownSampleRate.Minimum = new decimal(new int[] {
-            1,
-            0,
-            0,
-            0});
-            this.numericUpDownSampleRate.Name = "numericUpDownSampleRate";
-            this.numericUpDownSampleRate.ReadOnly = true;
-            this.numericUpDownSampleRate.Size = new System.Drawing.Size(100, 19);
-            this.numericUpDownSampleRate.TabIndex = 16;
-            this.numericUpDownSampleRate.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
-            this.numericUpDownSampleRate.Value = new decimal(new int[] {
-            1,
-            0,
-            0,
-            0});
+            numericUpDownSampleRate.BorderStyle = BorderStyle.None;
+            numericUpDownSampleRate.Enabled = false;
+            numericUpDownSampleRate.Location = new Point(153, 12);
+            numericUpDownSampleRate.Maximum = new decimal(new int[] { 192000, 0, 0, 0 });
+            numericUpDownSampleRate.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
+            numericUpDownSampleRate.Name = "numericUpDownSampleRate";
+            numericUpDownSampleRate.ReadOnly = true;
+            numericUpDownSampleRate.Size = new Size(100, 19);
+            numericUpDownSampleRate.TabIndex = 16;
+            numericUpDownSampleRate.TextAlign = HorizontalAlignment.Right;
+            numericUpDownSampleRate.Value = new decimal(new int[] { 1, 0, 0, 0 });
             // 
             // numericUpDownBits
             // 
-            this.numericUpDownBits.BorderStyle = System.Windows.Forms.BorderStyle.None;
-            this.numericUpDownBits.Enabled = false;
-            this.numericUpDownBits.Location = new System.Drawing.Point(153, 37);
-            this.numericUpDownBits.Maximum = new decimal(new int[] {
-            32,
-            0,
-            0,
-            0});
-            this.numericUpDownBits.Minimum = new decimal(new int[] {
-            8,
-            0,
-            0,
-            0});
-            this.numericUpDownBits.Name = "numericUpDownBits";
-            this.numericUpDownBits.ReadOnly = true;
-            this.numericUpDownBits.Size = new System.Drawing.Size(100, 19);
-            this.numericUpDownBits.TabIndex = 17;
-            this.numericUpDownBits.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
-            this.numericUpDownBits.Value = new decimal(new int[] {
-            8,
-            0,
-            0,
-            0});
+            numericUpDownBits.BorderStyle = BorderStyle.None;
+            numericUpDownBits.Enabled = false;
+            numericUpDownBits.Location = new Point(153, 37);
+            numericUpDownBits.Maximum = new decimal(new int[] { 32, 0, 0, 0 });
+            numericUpDownBits.Minimum = new decimal(new int[] { 8, 0, 0, 0 });
+            numericUpDownBits.Name = "numericUpDownBits";
+            numericUpDownBits.ReadOnly = true;
+            numericUpDownBits.Size = new Size(100, 19);
+            numericUpDownBits.TabIndex = 17;
+            numericUpDownBits.TextAlign = HorizontalAlignment.Right;
+            numericUpDownBits.Value = new decimal(new int[] { 8, 0, 0, 0 });
             // 
             // numericUpDownOctaves
             // 
-            this.numericUpDownOctaves.BorderStyle = System.Windows.Forms.BorderStyle.None;
-            this.numericUpDownOctaves.Enabled = false;
-            this.numericUpDownOctaves.Location = new System.Drawing.Point(153, 62);
-            this.numericUpDownOctaves.Minimum = new decimal(new int[] {
-            1,
-            0,
-            0,
-            0});
-            this.numericUpDownOctaves.Name = "numericUpDownOctaves";
-            this.numericUpDownOctaves.ReadOnly = true;
-            this.numericUpDownOctaves.Size = new System.Drawing.Size(100, 19);
-            this.numericUpDownOctaves.TabIndex = 18;
-            this.numericUpDownOctaves.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
-            this.numericUpDownOctaves.Value = new decimal(new int[] {
-            1,
-            0,
-            0,
-            0});
+            numericUpDownOctaves.BorderStyle = BorderStyle.None;
+            numericUpDownOctaves.Enabled = false;
+            numericUpDownOctaves.Location = new Point(153, 62);
+            numericUpDownOctaves.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
+            numericUpDownOctaves.Name = "numericUpDownOctaves";
+            numericUpDownOctaves.ReadOnly = true;
+            numericUpDownOctaves.Size = new Size(100, 19);
+            numericUpDownOctaves.TabIndex = 18;
+            numericUpDownOctaves.TextAlign = HorizontalAlignment.Right;
+            numericUpDownOctaves.Value = new decimal(new int[] { 1, 0, 0, 0 });
             // 
             // MeasurementOptions
             // 
-            this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
-            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(50)))), ((int)(((byte)(50)))), ((int)(((byte)(50)))));
-            this.ClientSize = new System.Drawing.Size(265, 231);
-            this.Controls.Add(this.numericUpDownOctaves);
-            this.Controls.Add(this.numericUpDownBits);
-            this.Controls.Add(this.numericUpDownSampleRate);
-            this.Controls.Add(this.label6);
-            this.Controls.Add(this.button2);
-            this.Controls.Add(this.button1);
-            this.Controls.Add(this.numericUpDownComputeDuration);
-            this.Controls.Add(this.numericUpDownRequestedDuration);
-            this.Controls.Add(this.label5);
-            this.Controls.Add(this.label4);
-            this.Controls.Add(this.label3);
-            this.Controls.Add(this.comboBoxChannel);
-            this.Controls.Add(this.label2);
-            this.Controls.Add(this.label1);
-            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
-            this.MaximizeBox = false;
-            this.MinimizeBox = false;
-            this.Name = "MeasurementOptions";
-            this.ShowInTaskbar = false;
-            this.Text = "Measurement Options";
-            ((System.ComponentModel.ISupportInitialize)(this.numericUpDownRequestedDuration)).EndInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericUpDownComputeDuration)).EndInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericUpDownSampleRate)).EndInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericUpDownBits)).EndInit();
-            ((System.ComponentModel.ISupportInitialize)(this.numericUpDownOctaves)).EndInit();
-            this.ResumeLayout(false);
-            this.PerformLayout();
+            AutoScaleDimensions = new SizeF(7F, 15F);
+            AutoScaleMode = AutoScaleMode.Font;
+            BackColor = Color.FromArgb(50, 50, 50);
+            ClientSize = new Size(265, 231);
+            Controls.Add(numericUpDownOctaves);
+            Controls.Add(numericUpDownBits);
+            Controls.Add(numericUpDownSampleRate);
+            Controls.Add(label6);
+            Controls.Add(button2);
+            Controls.Add(button1);
+            Controls.Add(numericUpDownComputeDuration);
+            Controls.Add(numericUpDownRequestedDuration);
+            Controls.Add(label5);
+            Controls.Add(label4);
+            Controls.Add(label3);
+            Controls.Add(comboBoxChannel);
+            Controls.Add(label2);
+            Controls.Add(label1);
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            Name = "MeasurementOptions";
+            ShowInTaskbar = false;
+            Text = "Measurement Options";
+            ((System.ComponentModel.ISupportInitialize)numericUpDownRequestedDuration).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numericUpDownComputeDuration).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numericUpDownSampleRate).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numericUpDownBits).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numericUpDownOctaves).EndInit();
+            ResumeLayout(false);
+            PerformLayout();
 
         }
 

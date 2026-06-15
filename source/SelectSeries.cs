@@ -15,6 +15,7 @@ namespace Resonalyze
         public SelectSeries()
         {
             InitializeComponent();
+            StartPosition = FormStartPosition.CenterParent;
         }
 
         public void AddOption(string option)

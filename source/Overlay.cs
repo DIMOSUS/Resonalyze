@@ -36,11 +36,11 @@ public sealed class OverlayCollection
             .FirstOrDefault(button => button.Name == "buttonSaveOverlay")
             ?? throw new InvalidOperationException(
                 "Overlay template save button is missing.");
-        Button templateClearButton = templatePanel.Controls
+        Button templateSettingsButton = templatePanel.Controls
             .OfType<Button>()
-            .FirstOrDefault(button => button.Name == "buttonClearOverlay")
+            .FirstOrDefault(button => button.Name == "buttonOverlaySettings1")
             ?? throw new InvalidOperationException(
-                "Overlay template clear button is missing.");
+                "Overlay template settings button is missing.");
         NumericUpDown templateOffset = templatePanel.Controls
             .OfType<NumericUpDown>()
             .FirstOrDefault()
@@ -52,13 +52,10 @@ public sealed class OverlayCollection
             ?? throw new InvalidOperationException(
                 "Overlay template checkbox is missing.");
 
-        Button firstSettingsButton = CreateSettingsButton(1);
-        templatePanel.Controls.Add(firstSettingsButton);
         overlays.Add(new Overlay(
             templatePanel,
             templateSaveButton,
-            templateClearButton,
-            firstSettingsButton,
+            templateSettingsButton,
             templateOffset,
             templateCheckBox,
             1,
@@ -74,7 +71,7 @@ public sealed class OverlayCollection
             Panel panel = CreatePanel(templatePanel, index, random);
             CheckBox checkBox = CreateCheckBox(templateCheckBox, index);
             NumericUpDown offset = CreateOffset(templateOffset, index);
-            Button settingsButton = CreateSettingsButton(index);
+            Button settingsButton = CreateSettingsButton(templateSettingsButton, index);
 
             panel.Controls.Add(checkBox);
             panel.Controls.Add(offset);
@@ -85,15 +82,10 @@ public sealed class OverlayCollection
                 Button saveButton = CreateSaveButton(
                     templateSaveButton,
                     index);
-                Button clearButton = CreateClearButton(
-                    templateClearButton,
-                    index);
                 panel.Controls.Add(saveButton);
-                panel.Controls.Add(clearButton);
                 overlays.Add(new Overlay(
                     panel,
                     saveButton,
-                    clearButton,
                     settingsButton,
                     offset,
                     checkBox,
@@ -114,8 +106,6 @@ public sealed class OverlayCollection
                     Text = "--",
                     TextAlign = ContentAlignment.MiddleCenter
                 };
-                offset.Location = new Point(68, 3);
-                offset.Size = new Size(43, 19);
                 panel.Controls.Add(operationLabel);
                 calculatedOverlays.Add(new CalculatedOverlay(
                     panel,
@@ -288,28 +278,16 @@ public sealed class OverlayCollection
         };
     }
 
-    private static Button CreateClearButton(Button template, int index)
+    private static Button CreateSettingsButton(Button templateSettingsButton, int index)
     {
         return new Button
         {
-            FlatStyle = template.FlatStyle,
-            Location = template.Location,
-            Name = $"buttonClear{index}",
-            Size = template.Size,
-            Text = "C"
-        };
-    }
-
-    private static Button CreateSettingsButton(int index)
-    {
-        return new Button
-        {
-            FlatStyle = FlatStyle.System,
-            Location = new Point(117, 3),
+            FlatStyle = templateSettingsButton.FlatStyle,
+            Location = templateSettingsButton.Location,
             Name = $"buttonOverlaySettings{index}",
-            Size = new Size(26, 19),
-            Text = "...",
-            UseVisualStyleBackColor = true
+            Size = templateSettingsButton.Size,
+            Text = templateSettingsButton.Text,
+            UseVisualStyleBackColor = templateSettingsButton.UseVisualStyleBackColor
         };
     }
 }
@@ -319,7 +297,6 @@ public sealed class Overlay
     private readonly OverlayCollection collection;
     private readonly Panel panel;
     private readonly NumericUpDown offsetControl;
-    private readonly Button clearButton;
     private readonly Button settingsButton;
     private readonly CheckBox checkBox;
     private readonly Color defaultColor;
@@ -336,7 +313,6 @@ public sealed class Overlay
     public Overlay(
         Panel panel,
         Button saveButton,
-        Button clearButton,
         Button settingsButton,
         NumericUpDown offsetControl,
         CheckBox checkBox,
@@ -345,7 +321,6 @@ public sealed class Overlay
         OverlayCollection collection)
     {
         this.panel = panel;
-        this.clearButton = clearButton;
         this.settingsButton = settingsButton;
         this.offsetControl = offsetControl;
         this.checkBox = checkBox;
@@ -357,12 +332,12 @@ public sealed class Overlay
         toolTip.SetToolTip(offsetControl, "Overlay offset");
         toolTip.SetToolTip(checkBox, "Show/Hide overlay");
         toolTip.SetToolTip(saveButton, "Create an overlay based on a curve");
-        toolTip.SetToolTip(clearButton, "Clear overlay");
-        toolTip.SetToolTip(settingsButton, "Overlay name, color and line style");
+        toolTip.SetToolTip(
+            settingsButton,
+            "Overlay name, color, line style and clearing");
 
         checkBox.CheckedChanged += CheckBoxChanged;
         saveButton.Click += SaveButtonClick;
-        clearButton.Click += ClearButtonClick;
         settingsButton.Click += SettingsButtonClick;
         offsetControl.ValueChanged += OffsetValueChanged;
 
@@ -501,7 +476,7 @@ public sealed class Overlay
         collection.NotifyOrdinaryOverlayChanged();
     }
 
-    private void ClearButtonClick(object? sender, EventArgs e)
+    private void ClearOverlay()
     {
         if (SeriesMode != collection.Form.CurrentMode)
         {
@@ -540,6 +515,11 @@ public sealed class Overlay
             smoothingInverseOctaves);
         if (dialog.ShowDialog(collection.Form) != DialogResult.OK)
         {
+            return;
+        }
+        if (dialog.ClearRequested)
+        {
+            ClearOverlay();
             return;
         }
 
@@ -718,7 +698,6 @@ public sealed class Overlay
     private void SetAvailability(bool available)
     {
         checkBox.Enabled = available;
-        clearButton.Enabled = available;
         settingsButton.Enabled = available;
         offsetControl.Enabled = available;
         if (!available)

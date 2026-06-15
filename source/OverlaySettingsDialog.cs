@@ -43,6 +43,7 @@ internal sealed class OverlaySettingsDialog : Form
     public int SmoothingInverseOctaves => supportsSmoothing
         ? (int)smoothingComboBox.SelectedItem!
         : 0;
+    public bool ClearRequested { get; private set; }
 
     private void InitializeDialog()
     {
@@ -134,6 +135,12 @@ internal sealed class OverlaySettingsDialog : Form
             DialogResult.Cancel,
             accent: false);
         cancelButton.Location = new Point(226, buttonY);
+        var clearButton = OverlayDialogControls.CreateDialogButton(
+            "Clear",
+            DialogResult.OK,
+            accent: false);
+        clearButton.Location = new Point(20, buttonY);
+        clearButton.Click += (_, _) => ClearRequested = true;
         var saveButton = OverlayDialogControls.CreateDialogButton(
             "Save",
             DialogResult.OK,
@@ -159,6 +166,7 @@ internal sealed class OverlaySettingsDialog : Form
             styleComboBox,
             opacityTrackBar,
             opacityValueLabel,
+            clearButton,
             cancelButton,
             saveButton
         ]);
@@ -207,6 +215,11 @@ internal sealed class OverlaySettingsDialog : Form
             new Point(x, y),
             Color.FromArgb(185, 190, 200),
             Font));
+    }
+
+    private void InitializeComponent()
+    {
+
     }
 
     private static void ConfigureInput(

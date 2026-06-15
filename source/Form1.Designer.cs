@@ -33,31 +33,19 @@ namespace Resonalyze
             var resources = new System.ComponentModel.ComponentResourceManager(typeof(Form1));
             buttonRecord = new Button();
             plotView1 = new OxyPlot.WindowsForms.PlotView();
-            buttonFR = new Button();
-            buttonPR = new Button();
-            buttonWaterfall = new Button();
-            buttonGD = new Button();
             overlays = new Panel();
             overlayPanel1 = new Panel();
-            buttonClearOverlay = new Button();
+            buttonOverlaySettings1 = new Button();
             numericUpDown1 = new NumericUpDown();
             checkBox1 = new CheckBox();
             buttonSaveOverlay = new Button();
-            buttonIR = new Button();
             buttonRecordOpt = new Button();
-            buttonWaterfallOpt = new Button();
-            buttonFROpt = new Button();
-            buttonBurstDecay = new Button();
-            buttonBurstDecayOpt = new Button();
-            buttonGDOpt = new Button();
-            buttonPROpt = new Button();
-            buttonImpOpt = new Button();
-            buttonNoise = new Button();
-            buttonAutocorrelation = new Button();
             buttonSave = new Button();
             buttonLoad = new Button();
             toolTip1 = new ToolTip(components);
             buttonClear = new Button();
+            buttonCurrentModeSettings = new Button();
+            buttonDraw = new Button();
             overlays.SuspendLayout();
             overlayPanel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)numericUpDown1).BeginInit();
@@ -78,7 +66,7 @@ namespace Resonalyze
             // plotView1
             // 
             plotView1.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            plotView1.BackColor = Color.FromArgb(35, 40, 80);
+            plotView1.BackColor = Color.FromArgb(50, 55, 100);
             plotView1.ForeColor = Color.White;
             plotView1.Location = new Point(12, 12);
             plotView1.Name = "plotView1";
@@ -89,50 +77,6 @@ namespace Resonalyze
             plotView1.ZoomHorizontalCursor = Cursors.SizeWE;
             plotView1.ZoomRectangleCursor = Cursors.SizeNWSE;
             plotView1.ZoomVerticalCursor = Cursors.SizeNS;
-            // 
-            // buttonFR
-            // 
-            buttonFR.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonFR.Location = new Point(1098, 128);
-            buttonFR.Name = "buttonFR";
-            buttonFR.Size = new Size(116, 23);
-            buttonFR.TabIndex = 2;
-            buttonFR.Text = "Frequency";
-            buttonFR.UseVisualStyleBackColor = true;
-            buttonFR.Click += buttonFR_Click;
-            // 
-            // buttonPR
-            // 
-            buttonPR.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonPR.Location = new Point(1098, 157);
-            buttonPR.Name = "buttonPR";
-            buttonPR.Size = new Size(116, 23);
-            buttonPR.TabIndex = 3;
-            buttonPR.Text = "Phase";
-            buttonPR.UseVisualStyleBackColor = true;
-            buttonPR.Click += buttonPR_Click;
-            // 
-            // buttonWaterfall
-            // 
-            buttonWaterfall.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonWaterfall.Location = new Point(1098, 215);
-            buttonWaterfall.Name = "buttonWaterfall";
-            buttonWaterfall.Size = new Size(116, 23);
-            buttonWaterfall.TabIndex = 4;
-            buttonWaterfall.Text = "Waterfall";
-            buttonWaterfall.UseVisualStyleBackColor = true;
-            buttonWaterfall.Click += buttonWaterfall_Click;
-            // 
-            // buttonGD
-            // 
-            buttonGD.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonGD.Location = new Point(1098, 186);
-            buttonGD.Name = "buttonGD";
-            buttonGD.Size = new Size(116, 23);
-            buttonGD.TabIndex = 5;
-            buttonGD.Text = "Group Delay";
-            buttonGD.UseVisualStyleBackColor = true;
-            buttonGD.Click += buttonGD_Click;
             // 
             // overlays
             // 
@@ -147,7 +91,7 @@ namespace Resonalyze
             // overlayPanel1
             // 
             overlayPanel1.BackColor = Color.OrangeRed;
-            overlayPanel1.Controls.Add(buttonClearOverlay);
+            overlayPanel1.Controls.Add(buttonOverlaySettings1);
             overlayPanel1.Controls.Add(numericUpDown1);
             overlayPanel1.Controls.Add(checkBox1);
             overlayPanel1.Controls.Add(buttonSaveOverlay);
@@ -156,19 +100,20 @@ namespace Resonalyze
             overlayPanel1.Size = new Size(146, 25);
             overlayPanel1.TabIndex = 3;
             // 
-            // buttonClearOverlay
+            // buttonOverlaySettings1
             // 
-            buttonClearOverlay.FlatStyle = FlatStyle.System;
-            buttonClearOverlay.Location = new Point(92, 3);
-            buttonClearOverlay.Name = "buttonClearOverlay";
-            buttonClearOverlay.Size = new Size(19, 19);
-            buttonClearOverlay.TabIndex = 3;
-            buttonClearOverlay.Text = "C";
+            buttonOverlaySettings1.FlatStyle = FlatStyle.System;
+            buttonOverlaySettings1.Location = new Point(117, 3);
+            buttonOverlaySettings1.Name = "buttonOverlaySettings1";
+            buttonOverlaySettings1.Size = new Size(26, 19);
+            buttonOverlaySettings1.TabIndex = 21;
+            buttonOverlaySettings1.Text = "...";
+            buttonOverlaySettings1.UseVisualStyleBackColor = true;
             // 
             // numericUpDown1
             // 
             numericUpDown1.BorderStyle = BorderStyle.None;
-            numericUpDown1.Location = new Point(46, 3);
+            numericUpDown1.Location = new Point(72, 3);
             numericUpDown1.Maximum = new decimal(new int[] { 180, 0, 0, 0 });
             numericUpDown1.Minimum = new decimal(new int[] { 180, 0, 0, int.MinValue });
             numericUpDown1.Name = "numericUpDown1";
@@ -190,20 +135,9 @@ namespace Resonalyze
             buttonSaveOverlay.FlatStyle = FlatStyle.System;
             buttonSaveOverlay.Location = new Point(22, 3);
             buttonSaveOverlay.Name = "buttonSaveOverlay";
-            buttonSaveOverlay.Size = new Size(19, 19);
+            buttonSaveOverlay.Size = new Size(44, 19);
             buttonSaveOverlay.TabIndex = 1;
             buttonSaveOverlay.Text = "1";
-            // 
-            // buttonIR
-            // 
-            buttonIR.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonIR.Location = new Point(1098, 99);
-            buttonIR.Name = "buttonIR";
-            buttonIR.Size = new Size(116, 23);
-            buttonIR.TabIndex = 7;
-            buttonIR.Text = "Impulse";
-            buttonIR.UseVisualStyleBackColor = true;
-            buttonIR.Click += buttonIR_Click;
             // 
             // buttonRecordOpt
             // 
@@ -218,121 +152,10 @@ namespace Resonalyze
             buttonRecordOpt.UseVisualStyleBackColor = true;
             buttonRecordOpt.Click += buttonRecordOpt_Click;
             // 
-            // buttonWaterfallOpt
-            // 
-            buttonWaterfallOpt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonWaterfallOpt.Font = new Font("Segoe UI Emoji", 9.75F);
-            buttonWaterfallOpt.Image = (Image)resources.GetObject("buttonWaterfallOpt.Image");
-            buttonWaterfallOpt.Location = new Point(1220, 215);
-            buttonWaterfallOpt.Name = "buttonWaterfallOpt";
-            buttonWaterfallOpt.Size = new Size(32, 23);
-            buttonWaterfallOpt.TabIndex = 9;
-            buttonWaterfallOpt.UseCompatibleTextRendering = true;
-            buttonWaterfallOpt.UseVisualStyleBackColor = true;
-            buttonWaterfallOpt.Click += buttonWaterfallOpt_Click;
-            // 
-            // buttonFROpt
-            // 
-            buttonFROpt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonFROpt.Font = new Font("Segoe UI Emoji", 9.75F);
-            buttonFROpt.Image = (Image)resources.GetObject("buttonFROpt.Image");
-            buttonFROpt.Location = new Point(1220, 128);
-            buttonFROpt.Name = "buttonFROpt";
-            buttonFROpt.Size = new Size(32, 23);
-            buttonFROpt.TabIndex = 10;
-            buttonFROpt.UseCompatibleTextRendering = true;
-            buttonFROpt.UseVisualStyleBackColor = true;
-            buttonFROpt.Click += buttonFROpt_Click;
-            // 
-            // buttonBurstDecay
-            // 
-            buttonBurstDecay.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonBurstDecay.Location = new Point(1098, 244);
-            buttonBurstDecay.Name = "buttonBurstDecay";
-            buttonBurstDecay.Size = new Size(116, 23);
-            buttonBurstDecay.TabIndex = 11;
-            buttonBurstDecay.Text = "Burst Decay";
-            buttonBurstDecay.UseVisualStyleBackColor = true;
-            buttonBurstDecay.Click += buttonBurstDecay_Click;
-            // 
-            // buttonBurstDecayOpt
-            // 
-            buttonBurstDecayOpt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonBurstDecayOpt.Font = new Font("Segoe UI Emoji", 9.75F);
-            buttonBurstDecayOpt.Image = (Image)resources.GetObject("buttonBurstDecayOpt.Image");
-            buttonBurstDecayOpt.Location = new Point(1220, 244);
-            buttonBurstDecayOpt.Name = "buttonBurstDecayOpt";
-            buttonBurstDecayOpt.Size = new Size(32, 23);
-            buttonBurstDecayOpt.TabIndex = 12;
-            buttonBurstDecayOpt.UseCompatibleTextRendering = true;
-            buttonBurstDecayOpt.UseVisualStyleBackColor = true;
-            buttonBurstDecayOpt.Click += buttonBurstDecayOpt_Click;
-            // 
-            // buttonGDOpt
-            // 
-            buttonGDOpt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonGDOpt.Font = new Font("Segoe UI Emoji", 9.75F);
-            buttonGDOpt.Image = (Image)resources.GetObject("buttonGDOpt.Image");
-            buttonGDOpt.Location = new Point(1220, 186);
-            buttonGDOpt.Name = "buttonGDOpt";
-            buttonGDOpt.Size = new Size(32, 23);
-            buttonGDOpt.TabIndex = 13;
-            buttonGDOpt.UseCompatibleTextRendering = true;
-            buttonGDOpt.UseVisualStyleBackColor = true;
-            buttonGDOpt.Click += buttonGDOpt_Click;
-            // 
-            // buttonPROpt
-            // 
-            buttonPROpt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonPROpt.Font = new Font("Segoe UI Emoji", 9.75F);
-            buttonPROpt.Image = (Image)resources.GetObject("buttonPROpt.Image");
-            buttonPROpt.Location = new Point(1220, 157);
-            buttonPROpt.Name = "buttonPROpt";
-            buttonPROpt.Size = new Size(32, 23);
-            buttonPROpt.TabIndex = 14;
-            buttonPROpt.UseCompatibleTextRendering = true;
-            buttonPROpt.UseVisualStyleBackColor = true;
-            buttonPROpt.Click += buttonPROpt_Click;
-            // 
-            // buttonImpOpt
-            // 
-            buttonImpOpt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonImpOpt.Font = new Font("Segoe UI Emoji", 9.75F);
-            buttonImpOpt.Image = (Image)resources.GetObject("buttonImpOpt.Image");
-            buttonImpOpt.Location = new Point(1220, 99);
-            buttonImpOpt.Name = "buttonImpOpt";
-            buttonImpOpt.Size = new Size(32, 23);
-            buttonImpOpt.TabIndex = 15;
-            buttonImpOpt.UseCompatibleTextRendering = true;
-            buttonImpOpt.UseVisualStyleBackColor = true;
-            buttonImpOpt.Click += buttonImpOpt_Click;
-            // 
-            // buttonNoise
-            // 
-            buttonNoise.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonNoise.Location = new Point(1098, 273);
-            buttonNoise.Name = "buttonNoise";
-            buttonNoise.Size = new Size(116, 23);
-            buttonNoise.TabIndex = 16;
-            buttonNoise.Text = "Live Spectrum";
-            buttonNoise.UseVisualStyleBackColor = true;
-            buttonNoise.Click += buttonNoise_Click;
-            // 
-            // buttonAutocorrelation
-            // 
-            buttonAutocorrelation.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonAutocorrelation.Location = new Point(1098, 302);
-            buttonAutocorrelation.Name = "buttonAutocorrelation";
-            buttonAutocorrelation.Size = new Size(116, 23);
-            buttonAutocorrelation.TabIndex = 17;
-            buttonAutocorrelation.Text = "Autocorrelation";
-            buttonAutocorrelation.UseVisualStyleBackColor = true;
-            buttonAutocorrelation.Click += buttonGetAutocorrelation_Click;
-            // 
             // buttonSave
             // 
             buttonSave.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonSave.Location = new Point(1098, 41);
+            buttonSave.Location = new Point(1098, 39);
             buttonSave.Name = "buttonSave";
             buttonSave.Size = new Size(56, 23);
             buttonSave.TabIndex = 18;
@@ -343,49 +166,59 @@ namespace Resonalyze
             // buttonLoad
             // 
             buttonLoad.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonLoad.Location = new Point(1158, 41);
+            buttonLoad.Location = new Point(1158, 39);
             buttonLoad.Name = "buttonLoad";
             buttonLoad.Size = new Size(56, 23);
             buttonLoad.TabIndex = 19;
             buttonLoad.Text = "Load";
             buttonLoad.UseVisualStyleBackColor = true;
             buttonLoad.Click += buttonLoad_Click;
-            //
+            // 
             // buttonClear
-            //
+            // 
             buttonClear.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonClear.Location = new Point(1098, 70);
+            buttonClear.Location = new Point(1098, 126);
             buttonClear.Name = "buttonClear";
             buttonClear.Size = new Size(116, 23);
             buttonClear.TabIndex = 20;
             buttonClear.Text = "Clear";
             buttonClear.UseVisualStyleBackColor = true;
             buttonClear.Click += buttonClear_Click;
-            //
+            // 
+            // buttonCurrentModeSettings
+            // 
+            buttonCurrentModeSettings.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonCurrentModeSettings.Location = new Point(1098, 68);
+            buttonCurrentModeSettings.Name = "buttonCurrentModeSettings";
+            buttonCurrentModeSettings.Size = new Size(116, 23);
+            buttonCurrentModeSettings.TabIndex = 21;
+            buttonCurrentModeSettings.Text = "Mode Settings...";
+            buttonCurrentModeSettings.UseVisualStyleBackColor = true;
+            buttonCurrentModeSettings.Click += buttonCurrentModeSettings_Click;
+            // 
+            // buttonDraw
+            // 
+            buttonDraw.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonDraw.Location = new Point(1098, 97);
+            buttonDraw.Name = "buttonDraw";
+            buttonDraw.Size = new Size(116, 23);
+            buttonDraw.TabIndex = 22;
+            buttonDraw.Text = "Draw";
+            buttonDraw.UseVisualStyleBackColor = true;
+            buttonDraw.Click += buttonDraw_Click;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(50, 50, 50);
             ClientSize = new Size(1264, 729);
+            Controls.Add(buttonDraw);
+            Controls.Add(buttonCurrentModeSettings);
             Controls.Add(buttonClear);
             Controls.Add(buttonLoad);
             Controls.Add(buttonSave);
-            Controls.Add(buttonAutocorrelation);
-            Controls.Add(buttonNoise);
-            Controls.Add(buttonImpOpt);
-            Controls.Add(buttonPROpt);
-            Controls.Add(buttonGDOpt);
-            Controls.Add(buttonBurstDecayOpt);
-            Controls.Add(buttonBurstDecay);
-            Controls.Add(buttonFROpt);
-            Controls.Add(buttonWaterfallOpt);
             Controls.Add(buttonRecordOpt);
-            Controls.Add(buttonIR);
-            Controls.Add(buttonGD);
-            Controls.Add(buttonWaterfall);
-            Controls.Add(buttonPR);
-            Controls.Add(buttonFR);
             Controls.Add(plotView1);
             Controls.Add(buttonRecord);
             Controls.Add(overlays);
@@ -404,30 +237,18 @@ namespace Resonalyze
 
         private Button buttonRecord;
         private OxyPlot.WindowsForms.PlotView plotView1;
-        private Button buttonFR;
-        private Button buttonPR;
-        private Button buttonWaterfall;
-        private Button buttonGD;
         private Panel overlays;
         private Button buttonSaveOverlay;
         private CheckBox checkBox1;
         private NumericUpDown numericUpDown1;
         private Panel overlayPanel1;
-        private Button buttonIR;
         private Button buttonRecordOpt;
-        private Button buttonWaterfallOpt;
-        private Button buttonFROpt;
-        private Button buttonBurstDecay;
-        private Button buttonBurstDecayOpt;
-        private Button buttonGDOpt;
-        private Button buttonPROpt;
-        private Button buttonImpOpt;
-        private Button buttonNoise;
-        private Button buttonAutocorrelation;
         private Button buttonSave;
         private Button buttonLoad;
         private ToolTip toolTip1;
-        private Button buttonClearOverlay;
         private Button buttonClear;
+        private Button buttonOverlaySettings1;
+        private Button buttonCurrentModeSettings;
+        private Button buttonDraw;
     }
 }

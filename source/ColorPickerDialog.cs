@@ -307,6 +307,11 @@ internal sealed class ColorPickerDialog : Form
         return false;
     }
 
+    private void InitializeComponent()
+    {
+
+    }
+
     private static string ToHex(Color color) => $"#{color.R:X2}{color.G:X2}{color.B:X2}";
 }
 

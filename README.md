@@ -209,6 +209,7 @@ operation, and configure the result appearance.
 
 Ordinary overlay settings include:
 
+![Ordinary overlay](regular_overlay.jpg)
 - A user-defined name
 - Line color, thickness, style, and opacity
 - Optional `1/48`, `1/24`, `1/12`, `1/6`, or `1/3` octave smoothing in
@@ -216,6 +217,7 @@ Ordinary overlay settings include:
 
 Calculated overlay settings additionally include:
 
+![Calculated overlay](calc_overlay.jpg)
 - Two source slots selected from overlays 1-10
 - Operations `A - B`, `B - A`, `A + B`, `(A + B) / 2`, and `|A - B|`
 - Independent octave smoothing applied after the selected operation

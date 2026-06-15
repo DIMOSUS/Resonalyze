@@ -78,7 +78,7 @@ namespace Resonalyze
         public Form1()
         {
             InitializeComponent();
-            overlayCollection = new OverlayCollection(this, overlays, plotView1);
+            overlayCollection = new OverlayCollection(this, overlays, plotView1, toolTip1);
 
             expSweepMeasurement.Init(12, 44100, 24, 1.0, PlaybackChannel.Mono);
             SetButtonFrozen(buttonSave, true);

@@ -9,8 +9,11 @@ using NAudio.Gui;
 using OxyPlot;
 using OxyPlot.Series;
 using OxyPlot.WindowsForms;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement.Button;
 using CheckBox = System.Windows.Forms.CheckBox;
+using ToolTip = System.Windows.Forms.ToolTip;
+using Button = System.Windows.Forms.Button;
 
 namespace Resonalyze
 {
@@ -20,7 +23,7 @@ namespace Resonalyze
         public OxyPlot.WindowsForms.PlotView plotView { get; private set; }
         public Form1 form { get; private set; }
 
-        public OverlayCollection(Form1 form, Panel overlays, OxyPlot.WindowsForms.PlotView plotView)
+        public OverlayCollection(Form1 form, Panel overlays, OxyPlot.WindowsForms.PlotView plotView, ToolTip toolTip)
         {
             this.plotView = plotView;
             this.form = form;
@@ -41,7 +44,7 @@ namespace Resonalyze
                 .FirstOrDefault()
                 ?? throw new InvalidOperationException("Overlay template checkbox is missing.");
 
-            AllOverlays.Add(new Overlay(overlayPanel1, button1, numericUpDown1, checkBox1, 1, this));
+            AllOverlays.Add(new Overlay(overlayPanel1, button1, numericUpDown1, checkBox1, 1, toolTip, this));
 
             form.SuspendLayout();
             overlays.SuspendLayout();
@@ -63,8 +66,8 @@ namespace Resonalyze
                 overlayPanel.Controls.Add(numericUpDown);
                 overlayPanel.Controls.Add(checkBox);
                 overlayPanel.Controls.Add(button);
-                overlayPanel.Size = new Size(130, 25);
-                overlayPanel.Location = new Point(3, overlayPanel1.Location.Y + (overlayPanel.Size.Height + overlayPanel1.Margin.Top) * (i - 1));
+                overlayPanel.Size = overlayPanel1.Size;
+                overlayPanel.Location = new Point(overlayPanel1.Location.X, overlayPanel1.Location.Y + (overlayPanel.Size.Height + overlayPanel1.Margin.Top) * (i - 1));
                 overlayPanel.Name = $"overlayPanel{i}";
 
                 //
@@ -94,7 +97,7 @@ namespace Resonalyze
                 overlayPanel.PerformLayout();
 
                 overlays.Controls.Add(overlayPanel);
-                AllOverlays.Add(new Overlay(overlayPanel, button, numericUpDown, checkBox, i, this));
+                AllOverlays.Add(new Overlay(overlayPanel, button, numericUpDown, checkBox, i, toolTip, this));
             }
             overlays.ResumeLayout(false);
             form.ResumeLayout(false);
@@ -151,8 +154,13 @@ namespace Resonalyze
         DataPoint[]? sourcePoints;
         DataPoint[]? drawPoints;
 
-        public Overlay(Panel panel, Button button, NumericUpDown numericUpDown, CheckBox checkBox, int index, OverlayCollection collection)
+        public Overlay(Panel panel, Button button, NumericUpDown numericUpDown, CheckBox checkBox, int index, ToolTip toolTip, OverlayCollection collection)
         {
+            toolTip.SetToolTip(panel, "Select color");
+            toolTip.SetToolTip(numericUpDown, "Overlay offset");
+            toolTip.SetToolTip(checkBox, "Show/Hide overlay");
+            toolTip.SetToolTip(button, "Create a static copy of the curve and display it as an overlay for comparison");
+
             this.panel = panel;
             this.numericUpDown = numericUpDown;
             this.button = button;

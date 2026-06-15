@@ -29,7 +29,8 @@ namespace Resonalyze
         /// </summary>
         private void InitializeComponent()
         {
-            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(Form1));
+            components = new System.ComponentModel.Container();
+            var resources = new System.ComponentModel.ComponentResourceManager(typeof(Form1));
             buttonRecord = new Button();
             plotView1 = new OxyPlot.WindowsForms.PlotView();
             buttonFR = new Button();
@@ -54,6 +55,7 @@ namespace Resonalyze
             buttonAutocorrelation = new Button();
             buttonSave = new Button();
             buttonLoad = new Button();
+            toolTip1 = new ToolTip(components);
             overlays.SuspendLayout();
             overlayPanel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)numericUpDown1).BeginInit();
@@ -400,5 +402,6 @@ namespace Resonalyze
         private Button buttonAutocorrelation;
         private Button buttonSave;
         private Button buttonLoad;
+        private ToolTip toolTip1;
     }
 }

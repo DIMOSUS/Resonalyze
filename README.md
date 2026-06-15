@@ -41,11 +41,12 @@ installation. SHA-256 checksum files are provided with every release.
 - Group delay
 - Fourier waterfall
 - Burst Decay
-- Real-time noise response
+- Live Spectrum using a continuous noise measurement
 - Autocorrelation
 - Microphone calibration correction
-- Multiple plot overlays for visual comparison
-- Configurable FFT windows, smoothing, offsets, timing, and sample parameters
+- Persistent, styled plot overlays with curve arithmetic
+- Configurable FFT windows, smoothing, offsets, sweep timing, and playback
+  channel
 
 ## Gallery
 
@@ -79,7 +80,7 @@ installation. SHA-256 checksum files are provided with every release.
 
 ![Group delay plot](gd.jpg)
 
-### Real-time noise response
+### Live Spectrum
 
 ![Live Spectrum plot](noise.jpg)
 
@@ -90,10 +91,13 @@ installation. SHA-256 checksum files are provided with every release.
 To run a release build:
 
 - Windows 10 or later
-- A working playback and recording device
+- Working Windows playback and recording devices
 - A suitable loopback, microphone, or other measurement connection
 
 The self-contained release archives include the required .NET runtime.
+Resonalyze currently has no in-app audio-device selector; configure the
+intended playback and recording devices in Windows before starting the
+application.
 
 To build Resonalyze from source:
 
@@ -139,7 +143,8 @@ source/bin/Release/net10.0-windows/Resonalyze.exe
 1. Connect the output of the device under test to the selected input, directly
    or through a microphone and appropriate interface.
 2. Start Resonalyze and open the measurement settings.
-3. Confirm sample rate, bit depth, sweep duration, and analysis parameters.
+3. Confirm the displayed sample format, then set the sweep duration, playback
+   channel, and analysis parameters.
 4. Start a recording to generate and capture the exponential sine sweep.
 5. Select the required analysis view.
 6. Adjust smoothing, windows, offsets, and display options as needed.
@@ -180,16 +185,78 @@ file format identifier is `resonalyze-impulse-response`, version `1`. Files are
 intended to remain readable by people, but editing sample arrays manually may
 make a file invalid or produce misleading analysis results.
 
+## Plot Overlays
+
+Each supported overlay view provides ten ordinary overlay slots and two
+calculated overlay slots. Click a numbered button in slots 1-10 to capture one
+of the curves currently shown on the plot. Overlay slots are stored
+automatically as human-readable JSON beside the executable:
+
+```text
+overlays/<AnalysisMode>/overlay-01.json
+```
+
+For slots 1-10, the checkbox shows or hides the saved curve, the numeric
+control applies a vertical offset, `...` opens the appearance settings, and
+`C` clears only that slot in the current analysis mode. A slot without a saved
+file remains disabled.
+
+Slots 11 and 12 are reserved for calculations between any two ordinary
+overlays from slots 1-10. They do not have capture or clear buttons. Instead,
+the row displays the currently selected operation, such as `A-B`, `A+B`,
+`AVG`, or `|A-B|`. Use `...` to select source overlays A and B, choose the
+operation, and configure the result appearance.
+
+Ordinary overlay settings include:
+
+- A user-defined name
+- Line color, thickness, style, and opacity
+- Optional `1/48`, `1/24`, `1/12`, `1/6`, or `1/3` octave smoothing in
+  frequency-based views
+
+Calculated overlay settings additionally include:
+
+- Two source slots selected from overlays 1-10
+- Operations `A - B`, `B - A`, `A + B`, `(A + B) / 2`, and `|A - B|`
+- Independent octave smoothing applied after the selected operation
+
+Octave smoothing is available only for Frequency Response, Phase Response,
+Group Delay, and paused Live Spectrum. Impulse Response and Autocorrelation
+keep their original time-domain samples. Overlay JSON always stores the
+unsmoothed source points, so changing or disabling smoothing is lossless.
+
+Calculated results use the same axes, units, zoom, and vertical pan as the
+ordinary overlays. Operations are applied to displayed Y values after source
+offsets. Consequently, addition and averaging on a decibel plot are
+arithmetic operations on dB coordinates, not physical summation of acoustic
+power.
+
+Overlay files are separated by analysis mode and restored automatically when
+the application starts or the active view changes. Changes to any source
+overlay immediately update visible calculated overlays.
+
+Ordinary overlay files use format `resonalyze-overlay`, version `4`.
+Calculated overlay files use format `resonalyze-overlay-operation`, version
+`2`. Older overlay schema versions are intentionally not loaded.
+
+Overlays are available in the Impulse Response, Frequency Response, Phase
+Response, Group Delay, paused Live Spectrum, and Autocorrelation views. The
+Clear button removes all plotted curves and hides every active overlay without
+deleting its saved JSON file. When Live Spectrum is running, Clear pauses it
+before clearing the plot.
+
 ## Calibration
 
-Frequency-response correction can be loaded from:
+Frequency-response correction is loaded from `calibration.txt` beside
+`Resonalyze.exe`. In a source checkout, edit:
 
 ```text
 source/calibration.txt
 ```
 
-The calibration data is applied during logarithmic resampling when
-**Use Calibration** is enabled in the frequency-response options. Replace the
+The project copies this file to build and publish output automatically. The
+calibration data is applied during logarithmic resampling when **Use
+Calibration** is enabled in the frequency-response options. Replace the
 example data with the correction curve supplied for your microphone or
 measurement chain.
 

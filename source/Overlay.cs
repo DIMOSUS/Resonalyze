@@ -1,376 +1,1210 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
-using MathNet.Numerics;
-using NAudio.Gui;
+using System.Diagnostics;
 using OxyPlot;
 using OxyPlot.Series;
-using OxyPlot.WindowsForms;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement.Button;
 using Button = System.Windows.Forms.Button;
 using CheckBox = System.Windows.Forms.CheckBox;
 using ToolTip = System.Windows.Forms.ToolTip;
 
-namespace Resonalyze
+namespace Resonalyze;
+
+public sealed class OverlayCollection
 {
-    public class OverlayCollection
+    private readonly List<Overlay> overlays = new();
+    private readonly List<CalculatedOverlay> calculatedOverlays = new();
+
+    public OverlayCollection(
+        Form1 form,
+        Panel container,
+        OxyPlot.WindowsForms.PlotView plotView,
+        ToolTip toolTip)
     {
-        List<Overlay> AllOverlays = new List<Overlay>();
-        public OxyPlot.WindowsForms.PlotView plotView { get; private set; }
-        public Form1 form { get; private set; }
+        Form = form;
+        PlotView = plotView;
 
-        public OverlayCollection(Form1 form, Panel overlays, OxyPlot.WindowsForms.PlotView plotView, ToolTip toolTip)
+        toolTip.InitialDelay = 600;
+        toolTip.ReshowDelay = 150;
+        toolTip.AutoPopDelay = 6_000;
+        toolTip.ShowAlways = true;
+
+        Panel templatePanel = container.Controls
+            .OfType<Panel>()
+            .FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                "Overlay template panel is missing.");
+        Button templateSaveButton = templatePanel.Controls
+            .OfType<Button>()
+            .FirstOrDefault(button => button.Name == "buttonSaveOverlay")
+            ?? throw new InvalidOperationException(
+                "Overlay template save button is missing.");
+        Button templateClearButton = templatePanel.Controls
+            .OfType<Button>()
+            .FirstOrDefault(button => button.Name == "buttonClearOverlay")
+            ?? throw new InvalidOperationException(
+                "Overlay template clear button is missing.");
+        NumericUpDown templateOffset = templatePanel.Controls
+            .OfType<NumericUpDown>()
+            .FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                "Overlay template offset control is missing.");
+        CheckBox templateCheckBox = templatePanel.Controls
+            .OfType<CheckBox>()
+            .FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                "Overlay template checkbox is missing.");
+
+        Button firstSettingsButton = CreateSettingsButton(1);
+        templatePanel.Controls.Add(firstSettingsButton);
+        overlays.Add(new Overlay(
+            templatePanel,
+            templateSaveButton,
+            templateClearButton,
+            firstSettingsButton,
+            templateOffset,
+            templateCheckBox,
+            1,
+            toolTip,
+            this));
+
+        form.SuspendLayout();
+        container.SuspendLayout();
+
+        var random = new Random(3);
+        for (int index = 2; index <= OverlayOperationFile.MaximumSlot; index++)
         {
-            this.plotView = plotView;
-            this.form = form;
-            Panel overlayPanel1 = overlays.Controls
-                .OfType<Panel>()
-                .FirstOrDefault()
-                ?? throw new InvalidOperationException("Overlay template panel is missing.");
-            Button button1 = overlayPanel1.Controls
-                .OfType<Button>()
-                .FirstOrDefault()
-                ?? throw new InvalidOperationException("Overlay template button is missing.");
-            NumericUpDown numericUpDown1 = overlayPanel1.Controls
-                .OfType<NumericUpDown>()
-                .FirstOrDefault()
-                ?? throw new InvalidOperationException("Overlay template offset control is missing.");
-            CheckBox checkBox1 = overlayPanel1.Controls
-                .OfType<CheckBox>()
-                .FirstOrDefault()
-                ?? throw new InvalidOperationException("Overlay template checkbox is missing.");
+            Panel panel = CreatePanel(templatePanel, index, random);
+            CheckBox checkBox = CreateCheckBox(templateCheckBox, index);
+            NumericUpDown offset = CreateOffset(templateOffset, index);
+            Button settingsButton = CreateSettingsButton(index);
 
-            AllOverlays.Add(new Overlay(overlayPanel1, button1, numericUpDown1, checkBox1, 1, toolTip, this));
+            panel.Controls.Add(checkBox);
+            panel.Controls.Add(offset);
+            panel.Controls.Add(settingsButton);
 
-            form.SuspendLayout();
-            overlays.SuspendLayout();
-
-            Random r = new Random(3);
-
-            for (int i = 2; i <= 12; i++)
+            if (index <= OverlayFile.MaximumSlotCount)
             {
-                Button button = new Button();
-                CheckBox checkBox = new CheckBox();
-                NumericUpDown numericUpDown = new NumericUpDown();
-                Panel overlayPanel = new Panel();
-
-                overlayPanel.SuspendLayout();
-
-                //
-                overlayPanel.BackColor = Color.FromArgb(r.Next(255), r.Next(255), r.Next(255));
-
-                overlayPanel.Controls.Add(numericUpDown);
-                overlayPanel.Controls.Add(checkBox);
-                overlayPanel.Controls.Add(button);
-                overlayPanel.Size = overlayPanel1.Size;
-                overlayPanel.Location = new Point(overlayPanel1.Location.X, overlayPanel1.Location.Y + (overlayPanel.Size.Height + overlayPanel1.Margin.Top) * (i - 1));
-                overlayPanel.Name = $"overlayPanel{i}";
-
-                //
-                numericUpDown.BorderStyle = System.Windows.Forms.BorderStyle.None;
-                numericUpDown.Location = numericUpDown1.Location;
-                numericUpDown.Maximum = numericUpDown1.Maximum;
-                numericUpDown.Minimum = numericUpDown1.Minimum;
-                numericUpDown.Name = $"numericUpDown{i}";
-                numericUpDown.Size = numericUpDown1.Size;
-                numericUpDown.TextAlign = numericUpDown1.TextAlign;
-                numericUpDown.Value = numericUpDown1.Value;
-
-                //
-                checkBox.AutoSize = checkBox1.AutoSize;
-                checkBox.Location = checkBox1.Location;
-                checkBox.Name = $"checkBox{i}";
-                checkBox.Size = checkBox1.Size;
-
-                //
-                button.FlatStyle = button1.FlatStyle;
-                button.Location = button1.Location;
-                button.Name = $"button{i}";
-                button.Size = button1.Size;
-                button.Text = $"{i}";
-
-                overlayPanel.ResumeLayout(false);
-                overlayPanel.PerformLayout();
-
-                overlays.Controls.Add(overlayPanel);
-                AllOverlays.Add(new Overlay(overlayPanel, button, numericUpDown, checkBox, i, toolTip, this));
-            }
-            overlays.ResumeLayout(false);
-            form.ResumeLayout(false);
-        }
-
-        public void Prepare(Mode mode)
-        {
-
-        }
-
-        public void Show(Mode mode)
-        {
-            foreach (Overlay overlay in AllOverlays)
-            {
-                if (overlay.Checked)
-                {
-                    if (overlay.SeriesMode == mode)
-                    {
-                        overlay.Show();
-                    }
-                    else
-                    {
-                        overlay.Hide();
-                    }
-                }
-            }
-        }
-    }
-
-    public class Overlay
-    {
-        public int Index
-        {
-            get; private set;
-        }
-
-        public string Title
-        {
-            get; private set;
-        }
-        public Mode SeriesMode
-        {
-            get; private set;
-        }
-
-        public bool Checked => checkBox.Checked;
-
-        OverlayCollection collection;
-        Panel panel;
-        NumericUpDown numericUpDown;
-        Button button;
-        CheckBox checkBox;
-
-        DataPoint[]? sourcePoints;
-        DataPoint[]? drawPoints;
-
-        public Overlay(Panel panel, Button button, NumericUpDown numericUpDown, CheckBox checkBox, int index, ToolTip toolTip, OverlayCollection collection)
-        {
-            toolTip.SetToolTip(panel, "Select color");
-            toolTip.SetToolTip(numericUpDown, "Overlay offset");
-            toolTip.SetToolTip(checkBox, "Show/Hide overlay");
-            toolTip.SetToolTip(button, "Create a static copy of the curve and display it as an overlay for comparison");
-
-            this.panel = panel;
-            this.numericUpDown = numericUpDown;
-            this.button = button;
-            this.checkBox = checkBox;
-
-            panel.Click += PanelClick;
-            checkBox.CheckedChanged += new EventHandler(checkBoxUpdate);
-            button.Click += new EventHandler(buttonClick);
-            numericUpDown.ValueChanged += new EventHandler(numericValueChanged);
-            Index = index;
-            this.collection = collection;
-            Title = "";
-            SeriesMode = Mode.None;
-        }
-
-        private void UpdateDrawPoints()
-        {
-            DataPoint[] points = sourcePoints
-                ?? throw new InvalidOperationException("Overlay source points are not initialized.");
-            drawPoints = new DataPoint[points.Length];
-            double offset = (double)numericUpDown.Value;
-            for (int i = 0; i < points.Length; i++)
-            {
-                drawPoints[i] = new DataPoint(points[i].X, points[i].Y + offset);
-            }
-        }
-
-        private void PanelClick(object? sender, EventArgs e)
-        {
-            using var dialog = new ColorPickerDialog(panel.BackColor);
-            if (dialog.ShowDialog(collection.form) != DialogResult.OK)
-            {
-                return;
-            }
-
-            panel.BackColor = dialog.SelectedColor;
-            if (Checked)
-            {
-                Hide();
-                Show();
-            }
-        }
-
-        private void CheckerSet(bool state)
-        {
-            checkBox.CheckedChanged -= new EventHandler(checkBoxUpdate);
-
-            checkBox.Checked = state;
-
-            checkBox.CheckedChanged += new EventHandler(checkBoxUpdate);
-        }
-
-        private void checkBoxUpdate(object? sender, EventArgs e)
-        {
-            if (checkBox.Checked)
-            {
-                if (SeriesMode == collection.form.CurrentMode && Title != "" && sourcePoints != null && drawPoints != null)
-                {
-                    Show();
-                }
-                else
-                {
-                    CheckerSet(false);
-                }
+                Button saveButton = CreateSaveButton(
+                    templateSaveButton,
+                    index);
+                Button clearButton = CreateClearButton(
+                    templateClearButton,
+                    index);
+                panel.Controls.Add(saveButton);
+                panel.Controls.Add(clearButton);
+                overlays.Add(new Overlay(
+                    panel,
+                    saveButton,
+                    clearButton,
+                    settingsButton,
+                    offset,
+                    checkBox,
+                    index,
+                    toolTip,
+                    this));
             }
             else
             {
-                Hide();
+                var operationLabel = new Label
+                {
+                    AutoSize = false,
+                    BackColor = Color.FromArgb(40, 42, 48),
+                    ForeColor = Color.White,
+                    Location = new Point(22, 3),
+                    Name = $"operationLabel{index}",
+                    Size = new Size(43, 19),
+                    Text = "--",
+                    TextAlign = ContentAlignment.MiddleCenter
+                };
+                offset.Location = new Point(68, 3);
+                offset.Size = new Size(43, 19);
+                panel.Controls.Add(operationLabel);
+                calculatedOverlays.Add(new CalculatedOverlay(
+                    panel,
+                    operationLabel,
+                    settingsButton,
+                    offset,
+                    checkBox,
+                    index,
+                    toolTip,
+                    this));
+            }
+
+            panel.ResumeLayout(false);
+            panel.PerformLayout();
+            container.Controls.Add(panel);
+        }
+
+        container.ResumeLayout(false);
+        form.ResumeLayout(false);
+    }
+
+    public OxyPlot.WindowsForms.PlotView PlotView { get; }
+    public Form1 Form { get; }
+
+    public void Prepare(Mode mode)
+    {
+        foreach (Overlay overlay in overlays)
+        {
+            overlay.Prepare(mode);
+        }
+
+        foreach (CalculatedOverlay overlay in calculatedOverlays)
+        {
+            overlay.Prepare(mode);
+        }
+    }
+
+    public void Show(Mode mode)
+    {
+        foreach (Overlay overlay in overlays)
+        {
+            if (overlay.Checked && overlay.SeriesMode == mode)
+            {
+                overlay.Show();
             }
         }
 
-        private void buttonClick(object? sender, EventArgs e)
+        foreach (CalculatedOverlay overlay in calculatedOverlays)
         {
-            if (collection.plotView.Model != null && collection.plotView.Model.Series != null && collection.plotView.Model.Series.Count > 0)
+            if (overlay.Checked && overlay.SeriesMode == mode)
             {
-                int selection = -1;
-                if (collection.plotView.Model.Series.Count == 1)
-                {
-                    selection = 0;
-                }
-                else
-                {
-                    List<string> seriesTitles = new List<string>();
-                    foreach (var series in collection.plotView.Model.Series)
-                    {
-                        seriesTitles.Add(series.Title ?? string.Empty);
-                    }
-
-                    SelectSeries selectSeries = new SelectSeries();
-                    foreach (string title in seriesTitles)
-                    {
-                        selectSeries.AddOption(title);
-                    }
-                    selectSeries.SetSelection(0);
-
-                    if (selectSeries.ShowDialog() == DialogResult.OK)
-                    {
-                        selection = selectSeries.GetSelect();
-                    }
-                }
-
-                if (selection > -1)
-                {
-                    var series = collection.plotView.Model.Series[selection];
-                    string seriesTitle = series.Title ?? string.Empty;
-                    if (!seriesTitle.StartsWith("Overlay", StringComparison.Ordinal) &&
-                        series is LineSeries)
-                    {
-                        LineSeries lineSeries = (LineSeries)series;
-                        if (lineSeries.Points.Count > 1)
-                        {
-                            Clear();
-
-                            sourcePoints = new DataPoint[lineSeries.Points.Count];
-                            lineSeries.Points.CopyTo(sourcePoints);
-                            UpdateDrawPoints();
-
-                            SeriesMode = collection.form.CurrentMode;
-                            Title = $"Overlay{Index} {seriesTitle}";
-                            Show();
-                        }
-                    }
-                }
-            }
-        }
-
-        private void numericValueChanged(object? sender, EventArgs e)
-        {
-            if (sourcePoints != null)
-            {
-                UpdateDrawPoints();
-            }
-            if (checkBox.Checked)
-            {
-                if (SeriesMode == collection.form.CurrentMode && Title != "" && sourcePoints != null && drawPoints != null)
-                {
-                    Hide();
-                    Show();
-                }
-                else
-                {
-                    CheckerSet(false);
-                }
-            }
-        }
-
-        private void SaveToFile()
-        {
-
-        }
-
-        private void LoadFromFile()
-        {
-
-        }
-
-        public void Clear()
-        {
-            Hide();
-
-            sourcePoints = null;
-            drawPoints = null;
-            Title = "";
-        }
-
-        public void Hide()
-        {
-            if (Title != "")
-            {
-                List<OxyPlot.Series.Series> copySeries = new List<OxyPlot.Series.Series>();
-
-                foreach (var series in collection.plotView.Model.Series)
-                {
-                    if (series.Title.IndexOf(Title) != 0)
-                    {
-                        copySeries.Add(series);
-                    }
-                }
-
-                collection.plotView.Model.Series.Clear();
-
-                foreach (var series in copySeries)
-                {
-                    collection.plotView.Model.Series.Add(series);
-                }
-
-                collection.plotView.Model.InvalidatePlot(true);
-                collection.plotView.Refresh();
-
-                CheckerSet(false);
-            }
-        }
-
-        public void Show()
-        {
-            if (Title != "" && sourcePoints != null && drawPoints != null)
-            {
-                CheckerSet(true);
-
-                var color = panel.BackColor;
-
-                var lineSeries = new LineSeries();
-                lineSeries.Points.AddRange(drawPoints);
-                lineSeries.Color = OxyColor.FromRgb(color.R, color.G, color.B);
-                lineSeries.Title = Title;
-                collection.plotView.Model.Series.Add(lineSeries);
-
-                collection.plotView.Model.InvalidatePlot(true);
-                collection.plotView.Refresh();
+                overlay.Show();
             }
         }
     }
+
+    public void HideAll()
+    {
+        foreach (Overlay overlay in overlays)
+        {
+            overlay.Hide();
+        }
+
+        foreach (CalculatedOverlay overlay in calculatedOverlays)
+        {
+            overlay.Hide();
+        }
+    }
+
+    public static bool SupportsMode(Mode mode)
+    {
+        return mode is
+            Mode.ImpulseResponse or
+            Mode.FrequencyResponse or
+            Mode.PhaseResponse or
+            Mode.GroupDelay or
+            Mode.LiveSpectrum or
+            Mode.Autocorrelation;
+    }
+
+    internal IReadOnlyList<OverlaySlotOption> GetOrdinaryOverlayOptions()
+    {
+        return overlays
+            .Where(overlay =>
+                overlay.SeriesMode == Form.CurrentMode &&
+                overlay.HasData)
+            .Select(overlay => new OverlaySlotOption(
+                overlay.Index,
+                overlay.Title))
+            .ToArray();
+    }
+
+    internal bool TryGetOrdinaryOverlay(
+        int slot,
+        out OverlayOperationSource? source)
+    {
+        Overlay? overlay = overlays.FirstOrDefault(
+            candidate =>
+                candidate.Index == slot &&
+                candidate.SeriesMode == Form.CurrentMode);
+        source = overlay?.CreateOperationSource();
+        return source != null;
+    }
+
+    internal void NotifyOrdinaryOverlayChanged()
+    {
+        foreach (CalculatedOverlay overlay in calculatedOverlays)
+        {
+            overlay.RefreshSources();
+        }
+    }
+
+    private static Panel CreatePanel(
+        Panel template,
+        int index,
+        Random random)
+    {
+        return new Panel
+        {
+            BackColor = Color.FromArgb(
+                random.Next(255),
+                random.Next(255),
+                random.Next(255)),
+            Location = new Point(
+                template.Location.X,
+                template.Location.Y +
+                    (template.Size.Height + template.Margin.Top) * (index - 1)),
+            Name = $"overlayPanel{index}",
+            Size = template.Size
+        };
+    }
+
+    private static CheckBox CreateCheckBox(CheckBox template, int index)
+    {
+        return new CheckBox
+        {
+            AutoSize = template.AutoSize,
+            Location = template.Location,
+            Name = $"checkBox{index}",
+            Size = template.Size
+        };
+    }
+
+    private static NumericUpDown CreateOffset(
+        NumericUpDown template,
+        int index)
+    {
+        return new NumericUpDown
+        {
+            BorderStyle = BorderStyle.None,
+            Location = template.Location,
+            Maximum = template.Maximum,
+            Minimum = template.Minimum,
+            Name = $"numericUpDown{index}",
+            Size = template.Size,
+            TextAlign = template.TextAlign,
+            Value = template.Value
+        };
+    }
+
+    private static Button CreateSaveButton(Button template, int index)
+    {
+        return new Button
+        {
+            FlatStyle = template.FlatStyle,
+            Location = template.Location,
+            Name = $"button{index}",
+            Size = template.Size,
+            Text = $"{index}"
+        };
+    }
+
+    private static Button CreateClearButton(Button template, int index)
+    {
+        return new Button
+        {
+            FlatStyle = template.FlatStyle,
+            Location = template.Location,
+            Name = $"buttonClear{index}",
+            Size = template.Size,
+            Text = "C"
+        };
+    }
+
+    private static Button CreateSettingsButton(int index)
+    {
+        return new Button
+        {
+            FlatStyle = FlatStyle.System,
+            Location = new Point(117, 3),
+            Name = $"buttonOverlaySettings{index}",
+            Size = new Size(26, 19),
+            Text = "...",
+            UseVisualStyleBackColor = true
+        };
+    }
 }
+
+public sealed class Overlay
+{
+    private readonly OverlayCollection collection;
+    private readonly Panel panel;
+    private readonly NumericUpDown offsetControl;
+    private readonly Button clearButton;
+    private readonly Button settingsButton;
+    private readonly CheckBox checkBox;
+    private readonly Color defaultColor;
+    private readonly decimal defaultOffset;
+
+    private DataPoint[]? sourcePoints;
+    private DataPoint[]? drawPoints;
+    private bool updatingControls;
+    private double strokeThickness = 2;
+    private OverlayLineStyle lineStyle = OverlayLineStyle.Solid;
+    private int opacityPercent = 100;
+    private int smoothingInverseOctaves;
+
+    public Overlay(
+        Panel panel,
+        Button saveButton,
+        Button clearButton,
+        Button settingsButton,
+        NumericUpDown offsetControl,
+        CheckBox checkBox,
+        int index,
+        ToolTip toolTip,
+        OverlayCollection collection)
+    {
+        this.panel = panel;
+        this.clearButton = clearButton;
+        this.settingsButton = settingsButton;
+        this.offsetControl = offsetControl;
+        this.checkBox = checkBox;
+        this.collection = collection;
+        defaultColor = panel.BackColor;
+        defaultOffset = offsetControl.Value;
+        Index = index;
+
+        toolTip.SetToolTip(offsetControl, "Overlay offset");
+        toolTip.SetToolTip(checkBox, "Show/Hide overlay");
+        toolTip.SetToolTip(saveButton, "Create an overlay based on a curve");
+        toolTip.SetToolTip(clearButton, "Clear overlay");
+        toolTip.SetToolTip(settingsButton, "Overlay name, color and line style");
+
+        checkBox.CheckedChanged += CheckBoxChanged;
+        saveButton.Click += SaveButtonClick;
+        clearButton.Click += ClearButtonClick;
+        settingsButton.Click += SettingsButtonClick;
+        offsetControl.ValueChanged += OffsetValueChanged;
+
+        ResetState();
+    }
+
+    public int Index { get; }
+    public string Title { get; private set; } = "";
+    public Mode SeriesMode { get; private set; }
+    public bool Checked => checkBox.Checked;
+    public bool HasData => sourcePoints is { Length: > 1 };
+
+    public void Prepare(Mode mode)
+    {
+        ResetState();
+        if (mode == Mode.None)
+        {
+            return;
+        }
+
+        try
+        {
+            OverlayFile? file = OverlayFile.Load(mode, Index);
+            if (file != null)
+            {
+                ApplyFile(file);
+            }
+        }
+        catch (Exception exception)
+        {
+            Debug.WriteLine(
+                $"Failed to load overlay slot {Index} for {mode}: {exception}");
+        }
+    }
+
+    public void Show()
+    {
+        PlotModel? model = collection.PlotView.Model;
+        if (model == null || drawPoints == null || Title == "")
+        {
+            return;
+        }
+
+        RemoveSeries(model);
+        SetChecked(true);
+
+        Color color = panel.BackColor;
+        byte alpha = (byte)Math.Round(opacityPercent / 100.0 * 255);
+        var series = new LineSeries
+        {
+            Color = OxyColor.FromArgb(alpha, color.R, color.G, color.B),
+            StrokeThickness = strokeThickness,
+            LineStyle = ToOxyLineStyle(lineStyle),
+            Title = Title,
+            Tag = GetTag()
+        };
+        series.Points.AddRange(drawPoints);
+        model.Series.Add(series);
+        RefreshPlot(model);
+    }
+
+    public void Hide()
+    {
+        PlotModel? model = collection.PlotView.Model;
+        if (model != null)
+        {
+            RemoveSeries(model);
+            RefreshPlot(model);
+        }
+
+        SetChecked(false);
+    }
+
+    internal OverlayOperationSource? CreateOperationSource()
+    {
+        if (drawPoints == null || Title == "")
+        {
+            return null;
+        }
+
+        return new OverlayOperationSource(
+            Index,
+            Title,
+            drawPoints
+                .Select(point => new OverlayPoint(point.X, point.Y))
+                .ToArray());
+    }
+
+    private void SaveButtonClick(object? sender, EventArgs e)
+    {
+        PlotModel? model = collection.PlotView.Model;
+        if (model == null)
+        {
+            return;
+        }
+
+        List<LineSeries> candidates = model.Series
+            .OfType<LineSeries>()
+            .Where(series => series.Tag is not string tag ||
+                !tag.StartsWith("overlay:", StringComparison.Ordinal))
+            .ToList();
+        int selection = SelectSeriesIndex(candidates);
+        if (selection < 0)
+        {
+            return;
+        }
+
+        LineSeries selected = candidates[selection];
+        if (selected.Points.Count < 2)
+        {
+            return;
+        }
+
+        var points = new DataPoint[selected.Points.Count];
+        selected.Points.CopyTo(points);
+        string title = $"Overlay {Index}: {selected.Title ?? string.Empty}";
+        Mode mode = collection.Form.CurrentMode;
+
+        try
+        {
+            CreateFile(mode, title, points).Save();
+        }
+        catch (Exception exception)
+        {
+            ShowStorageError("Overlay could not be saved.", exception);
+            return;
+        }
+
+        Hide();
+        sourcePoints = points;
+        SeriesMode = mode;
+        Title = title;
+        UpdateDrawPoints();
+        SetAvailability(true);
+        Show();
+        collection.NotifyOrdinaryOverlayChanged();
+    }
+
+    private void ClearButtonClick(object? sender, EventArgs e)
+    {
+        if (SeriesMode != collection.Form.CurrentMode)
+        {
+            return;
+        }
+
+        try
+        {
+            OverlayFile.Delete(SeriesMode, Index);
+        }
+        catch (Exception exception)
+        {
+            ShowStorageError("Overlay could not be deleted.", exception);
+            return;
+        }
+
+        Hide();
+        ResetState();
+        collection.NotifyOrdinaryOverlayChanged();
+    }
+
+    private void SettingsButtonClick(object? sender, EventArgs e)
+    {
+        if (!HasData || SeriesMode != collection.Form.CurrentMode)
+        {
+            return;
+        }
+
+        using var dialog = new OverlaySettingsDialog(
+            SeriesMode,
+            Title,
+            panel.BackColor,
+            strokeThickness,
+            lineStyle,
+            opacityPercent,
+            smoothingInverseOctaves);
+        if (dialog.ShowDialog(collection.Form) != DialogResult.OK)
+        {
+            return;
+        }
+
+        bool wasChecked = Checked;
+        Hide();
+        Title = dialog.OverlayName;
+        panel.BackColor = dialog.SelectedColor;
+        strokeThickness = dialog.StrokeThickness;
+        lineStyle = dialog.LineStyle;
+        opacityPercent = dialog.OpacityPercent;
+        smoothingInverseOctaves = dialog.SmoothingInverseOctaves;
+        UpdateDrawPoints();
+        SaveCurrentState();
+
+        if (wasChecked)
+        {
+            Show();
+        }
+        collection.NotifyOrdinaryOverlayChanged();
+    }
+
+    private void OffsetValueChanged(object? sender, EventArgs e)
+    {
+        if (updatingControls || sourcePoints == null)
+        {
+            return;
+        }
+
+        bool wasChecked = Checked;
+        UpdateDrawPoints();
+        SaveCurrentState();
+        if (wasChecked)
+        {
+            Show();
+        }
+        collection.NotifyOrdinaryOverlayChanged();
+    }
+
+    private void CheckBoxChanged(object? sender, EventArgs e)
+    {
+        if (updatingControls)
+        {
+            return;
+        }
+
+        if (checkBox.Checked)
+        {
+            if (HasData && SeriesMode == collection.Form.CurrentMode)
+            {
+                Show();
+            }
+            else
+            {
+                SetChecked(false);
+            }
+        }
+        else
+        {
+            Hide();
+        }
+    }
+
+    private void ApplyFile(OverlayFile file)
+    {
+        sourcePoints = file.Points
+            .Select(point => new DataPoint(point.X, point.Y))
+            .ToArray();
+        SeriesMode = file.Mode;
+        Title = file.Title;
+        strokeThickness = file.StrokeThickness;
+        lineStyle = file.LineStyle;
+        opacityPercent = file.OpacityPercent;
+        smoothingInverseOctaves = file.SmoothingInverseOctaves;
+
+        updatingControls = true;
+        try
+        {
+            offsetControl.Value = (decimal)Math.Clamp(
+                file.Offset,
+                (double)offsetControl.Minimum,
+                (double)offsetControl.Maximum);
+            panel.BackColor = Color.FromArgb(file.ColorArgb);
+        }
+        finally
+        {
+            updatingControls = false;
+        }
+
+        UpdateDrawPoints();
+        SetAvailability(true);
+    }
+
+    private OverlayFile CreateFile(
+        Mode mode,
+        string title,
+        IReadOnlyList<DataPoint> points)
+    {
+        return new OverlayFile
+        {
+            SavedAtUtc = DateTimeOffset.UtcNow,
+            Mode = mode,
+            Slot = Index,
+            Title = title,
+            Offset = (double)offsetControl.Value,
+            ColorArgb = panel.BackColor.ToArgb(),
+            StrokeThickness = strokeThickness,
+            LineStyle = lineStyle,
+            OpacityPercent = opacityPercent,
+            SmoothingInverseOctaves = smoothingInverseOctaves,
+            Points = points
+                .Select(point => new OverlayPoint(point.X, point.Y))
+                .ToArray()
+        };
+    }
+
+    private void SaveCurrentState()
+    {
+        if (sourcePoints == null || SeriesMode == Mode.None || Title == "")
+        {
+            return;
+        }
+
+        try
+        {
+            CreateFile(SeriesMode, Title, sourcePoints).Save();
+        }
+        catch (Exception exception)
+        {
+            ShowStorageError("Overlay changes could not be saved.", exception);
+        }
+    }
+
+    private void UpdateDrawPoints()
+    {
+        if (sourcePoints == null)
+        {
+            drawPoints = null;
+            return;
+        }
+
+        OverlayPoint[] smoothed = OverlayMath.SmoothByOctaves(
+            sourcePoints.Select(point => new OverlayPoint(point.X, point.Y)).ToArray(),
+            smoothingInverseOctaves);
+        double offset = (double)offsetControl.Value;
+        drawPoints = smoothed
+            .Select(point => new DataPoint(point.X, point.Y + offset))
+            .ToArray();
+    }
+
+    private void ResetState()
+    {
+        sourcePoints = null;
+        drawPoints = null;
+        Title = "";
+        SeriesMode = Mode.None;
+        strokeThickness = 2;
+        lineStyle = OverlayLineStyle.Solid;
+        opacityPercent = 100;
+        smoothingInverseOctaves = 0;
+
+        updatingControls = true;
+        try
+        {
+            SetChecked(false);
+            panel.BackColor = defaultColor;
+            offsetControl.Value = defaultOffset;
+        }
+        finally
+        {
+            updatingControls = false;
+        }
+
+        SetAvailability(false);
+    }
+
+    private void SetAvailability(bool available)
+    {
+        checkBox.Enabled = available;
+        clearButton.Enabled = available;
+        settingsButton.Enabled = available;
+        offsetControl.Enabled = available;
+        if (!available)
+        {
+            SetChecked(false);
+        }
+    }
+
+    private void SetChecked(bool value)
+    {
+        updatingControls = true;
+        try
+        {
+            checkBox.Checked = value;
+        }
+        finally
+        {
+            updatingControls = false;
+        }
+    }
+
+    private void RemoveSeries(PlotModel model)
+    {
+        OxyPlot.Series.Series? existing = model.Series.FirstOrDefault(
+            series => Equals(series.Tag, GetTag()));
+        if (existing != null)
+        {
+            model.Series.Remove(existing);
+        }
+    }
+
+    private string GetTag() => $"overlay:{SeriesMode}:{Index}:curve";
+
+    private int SelectSeriesIndex(IReadOnlyList<LineSeries> candidates)
+    {
+        if (candidates.Count == 1)
+        {
+            return 0;
+        }
+        if (candidates.Count == 0)
+        {
+            return -1;
+        }
+
+        using var dialog = new SelectSeries();
+        foreach (LineSeries series in candidates)
+        {
+            dialog.AddOption(series.Title ?? string.Empty);
+        }
+        dialog.SetSelection(0);
+        return dialog.ShowDialog(collection.Form) == DialogResult.OK
+            ? dialog.GetSelect()
+            : -1;
+    }
+
+    private void RefreshPlot(PlotModel model)
+    {
+        model.InvalidatePlot(true);
+        collection.PlotView.Refresh();
+    }
+
+    private static LineStyle ToOxyLineStyle(OverlayLineStyle value)
+    {
+        return value switch
+        {
+            OverlayLineStyle.Dash => LineStyle.Dash,
+            OverlayLineStyle.Dot => LineStyle.Dot,
+            OverlayLineStyle.DashDot => LineStyle.DashDot,
+            _ => LineStyle.Solid
+        };
+    }
+
+    private void ShowStorageError(string message, Exception exception)
+    {
+        MessageBox.Show(
+            collection.Form,
+            $"{message}{Environment.NewLine}{exception.Message}",
+            "Overlay storage",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Error);
+    }
+}
+
+internal sealed class CalculatedOverlay
+{
+    private readonly OverlayCollection collection;
+    private readonly Panel panel;
+    private readonly Label operationLabel;
+    private readonly Button settingsButton;
+    private readonly NumericUpDown offsetControl;
+    private readonly CheckBox checkBox;
+    private readonly Color defaultColor;
+    private readonly decimal defaultOffset;
+
+    private bool configured;
+    private bool updatingControls;
+    private int sourceSlotA;
+    private int sourceSlotB;
+    private OverlayOperation operation = OverlayOperation.AMinusB;
+    private double strokeThickness = 2;
+    private OverlayLineStyle lineStyle = OverlayLineStyle.Dash;
+    private int opacityPercent = 100;
+    private int smoothingInverseOctaves;
+
+    public CalculatedOverlay(
+        Panel panel,
+        Label operationLabel,
+        Button settingsButton,
+        NumericUpDown offsetControl,
+        CheckBox checkBox,
+        int index,
+        ToolTip toolTip,
+        OverlayCollection collection)
+    {
+        this.panel = panel;
+        this.operationLabel = operationLabel;
+        this.settingsButton = settingsButton;
+        this.offsetControl = offsetControl;
+        this.checkBox = checkBox;
+        this.collection = collection;
+        defaultColor = panel.BackColor;
+        defaultOffset = offsetControl.Value;
+        Index = index;
+
+        toolTip.SetToolTip(operationLabel, "Current overlay operation");
+        toolTip.SetToolTip(offsetControl, "Calculated overlay offset");
+        toolTip.SetToolTip(checkBox, "Show/Hide calculated overlay");
+        toolTip.SetToolTip(settingsButton, "Configure calculated overlay");
+
+        checkBox.CheckedChanged += CheckBoxChanged;
+        settingsButton.Click += SettingsButtonClick;
+        offsetControl.ValueChanged += OffsetValueChanged;
+        ResetState();
+    }
+
+    public int Index { get; }
+    public string Title { get; private set; } = "";
+    public Mode SeriesMode { get; private set; }
+    public bool Checked => checkBox.Checked;
+
+    public void Prepare(Mode mode)
+    {
+        ResetState();
+        settingsButton.Enabled = mode != Mode.None;
+        if (mode == Mode.None)
+        {
+            return;
+        }
+
+        SeriesMode = mode;
+        try
+        {
+            OverlayOperationFile? file =
+                OverlayOperationFile.Load(mode, Index);
+            if (file != null)
+            {
+                ApplyFile(file);
+            }
+        }
+        catch (Exception exception)
+        {
+            Debug.WriteLine(
+                $"Failed to load calculated overlay {Index} for {mode}: {exception}");
+        }
+
+        RefreshSources();
+    }
+
+    public void RefreshSources()
+    {
+        bool wasChecked = Checked;
+        bool available = configured &&
+            TryGetSources(out _, out _);
+        checkBox.Enabled = available;
+        offsetControl.Enabled = configured;
+        settingsButton.Enabled = SeriesMode != Mode.None;
+
+        if (!available)
+        {
+            Hide();
+            return;
+        }
+
+        if (wasChecked)
+        {
+            Show();
+        }
+    }
+
+    public void Show()
+    {
+        PlotModel? model = collection.PlotView.Model;
+        if (model == null ||
+            !TryGetSources(out OverlayOperationSource? sourceA, out OverlayOperationSource? sourceB))
+        {
+            SetChecked(false);
+            return;
+        }
+
+        OverlayPoint[] points = OverlayMath.CalculateOperation(
+            sourceA!.Points,
+            sourceB!.Points,
+            operation);
+        points = OverlayMath.SmoothByOctaves(
+            points,
+            smoothingInverseOctaves);
+        if (points.Length < 2)
+        {
+            SetChecked(false);
+            return;
+        }
+
+        RemoveSeries(model);
+        SetChecked(true);
+
+        double offset = (double)offsetControl.Value;
+        Color color = panel.BackColor;
+        byte alpha = (byte)Math.Round(opacityPercent / 100.0 * 255);
+        var series = new LineSeries
+        {
+            Color = OxyColor.FromArgb(alpha, color.R, color.G, color.B),
+            StrokeThickness = strokeThickness,
+            LineStyle = ToOxyLineStyle(lineStyle),
+            Title = Title,
+            Tag = GetTag()
+        };
+        series.Points.AddRange(points.Select(
+            point => new DataPoint(point.X, point.Y + offset)));
+        model.Series.Add(series);
+        RefreshPlot(model);
+    }
+
+    public void Hide()
+    {
+        PlotModel? model = collection.PlotView.Model;
+        if (model != null)
+        {
+            RemoveSeries(model);
+            RefreshPlot(model);
+        }
+        SetChecked(false);
+    }
+
+    private void SettingsButtonClick(object? sender, EventArgs e)
+    {
+        IReadOnlyList<OverlaySlotOption> sources =
+            collection.GetOrdinaryOverlayOptions();
+        if (sources.Count < 2)
+        {
+            MessageBox.Show(
+                collection.Form,
+                "Save at least two ordinary overlays in slots 1-10 first.",
+                "Calculated overlay",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        using var dialog = new OverlayOperationSettingsDialog(
+            SeriesMode,
+            configured ? Title : $"Calculated overlay {Index}",
+            sourceSlotA,
+            sourceSlotB,
+            operation,
+            panel.BackColor,
+            strokeThickness,
+            lineStyle,
+            opacityPercent,
+            smoothingInverseOctaves,
+            sources);
+        if (dialog.ShowDialog(collection.Form) != DialogResult.OK)
+        {
+            return;
+        }
+
+        bool wasChecked = Checked;
+        Hide();
+        Title = dialog.OverlayName;
+        sourceSlotA = dialog.SourceSlotA;
+        sourceSlotB = dialog.SourceSlotB;
+        operation = dialog.Operation;
+        panel.BackColor = dialog.SelectedColor;
+        strokeThickness = dialog.StrokeThickness;
+        lineStyle = dialog.LineStyle;
+        opacityPercent = dialog.OpacityPercent;
+        smoothingInverseOctaves = dialog.SmoothingInverseOctaves;
+        configured = true;
+        operationLabel.Text =
+            OverlayOperationLabels.GetCompactLabel(operation);
+
+        SaveCurrentState();
+        RefreshSources();
+        if (wasChecked && checkBox.Enabled)
+        {
+            Show();
+        }
+    }
+
+    private void OffsetValueChanged(object? sender, EventArgs e)
+    {
+        if (updatingControls || !configured)
+        {
+            return;
+        }
+
+        bool wasChecked = Checked;
+        SaveCurrentState();
+        if (wasChecked)
+        {
+            Show();
+        }
+    }
+
+    private void CheckBoxChanged(object? sender, EventArgs e)
+    {
+        if (updatingControls)
+        {
+            return;
+        }
+
+        if (checkBox.Checked)
+        {
+            Show();
+        }
+        else
+        {
+            Hide();
+        }
+    }
+
+    private bool TryGetSources(
+        out OverlayOperationSource? sourceA,
+        out OverlayOperationSource? sourceB)
+    {
+        bool hasA = collection.TryGetOrdinaryOverlay(
+            sourceSlotA,
+            out sourceA);
+        bool hasB = collection.TryGetOrdinaryOverlay(
+            sourceSlotB,
+            out sourceB);
+        return hasA && hasB && sourceA != null && sourceB != null;
+    }
+
+    private void ApplyFile(OverlayOperationFile file)
+    {
+        configured = true;
+        SeriesMode = file.Mode;
+        Title = file.Title;
+        sourceSlotA = file.SourceSlotA;
+        sourceSlotB = file.SourceSlotB;
+        operation = file.Operation;
+        strokeThickness = file.StrokeThickness;
+        lineStyle = file.LineStyle;
+        opacityPercent = file.OpacityPercent;
+        smoothingInverseOctaves = file.SmoothingInverseOctaves;
+        operationLabel.Text =
+            OverlayOperationLabels.GetCompactLabel(operation);
+
+        updatingControls = true;
+        try
+        {
+            offsetControl.Value = (decimal)Math.Clamp(
+                file.Offset,
+                (double)offsetControl.Minimum,
+                (double)offsetControl.Maximum);
+            panel.BackColor = Color.FromArgb(file.ColorArgb);
+        }
+        finally
+        {
+            updatingControls = false;
+        }
+    }
+
+    private void SaveCurrentState()
+    {
+        if (!configured || SeriesMode == Mode.None)
+        {
+            return;
+        }
+
+        try
+        {
+            new OverlayOperationFile
+            {
+                SavedAtUtc = DateTimeOffset.UtcNow,
+                Mode = SeriesMode,
+                Slot = Index,
+                Title = Title,
+                SourceSlotA = sourceSlotA,
+                SourceSlotB = sourceSlotB,
+                Operation = operation,
+                Offset = (double)offsetControl.Value,
+                ColorArgb = panel.BackColor.ToArgb(),
+                StrokeThickness = strokeThickness,
+                LineStyle = lineStyle,
+                OpacityPercent = opacityPercent,
+                SmoothingInverseOctaves = smoothingInverseOctaves
+            }.Save();
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                collection.Form,
+                $"Calculated overlay could not be saved.{Environment.NewLine}{exception.Message}",
+                "Overlay storage",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+    }
+
+    private void ResetState()
+    {
+        configured = false;
+        Title = "";
+        SeriesMode = Mode.None;
+        sourceSlotA = 0;
+        sourceSlotB = 0;
+        operation = OverlayOperation.AMinusB;
+        strokeThickness = 2;
+        lineStyle = OverlayLineStyle.Dash;
+        opacityPercent = 100;
+        smoothingInverseOctaves = 0;
+        operationLabel.Text = "--";
+
+        updatingControls = true;
+        try
+        {
+            SetChecked(false);
+            panel.BackColor = defaultColor;
+            offsetControl.Value = defaultOffset;
+        }
+        finally
+        {
+            updatingControls = false;
+        }
+
+        checkBox.Enabled = false;
+        offsetControl.Enabled = false;
+        settingsButton.Enabled = false;
+    }
+
+    private void SetChecked(bool value)
+    {
+        updatingControls = true;
+        try
+        {
+            checkBox.Checked = value;
+        }
+        finally
+        {
+            updatingControls = false;
+        }
+    }
+
+    private void RemoveSeries(PlotModel model)
+    {
+        OxyPlot.Series.Series? existing = model.Series.FirstOrDefault(
+            series => Equals(series.Tag, GetTag()));
+        if (existing != null)
+        {
+            model.Series.Remove(existing);
+        }
+    }
+
+    private string GetTag() =>
+        $"overlay:{SeriesMode}:{Index}:calculated";
+
+    private void RefreshPlot(PlotModel model)
+    {
+        model.InvalidatePlot(true);
+        collection.PlotView.Refresh();
+    }
+
+    private static LineStyle ToOxyLineStyle(OverlayLineStyle value)
+    {
+        return value switch
+        {
+            OverlayLineStyle.Dash => LineStyle.Dash,
+            OverlayLineStyle.Dot => LineStyle.Dot,
+            OverlayLineStyle.DashDot => LineStyle.DashDot,
+            _ => LineStyle.Solid
+        };
+    }
+}
+
+internal sealed record OverlayOperationSource(
+    int Slot,
+    string Title,
+    IReadOnlyList<OverlayPoint> Points);

@@ -39,9 +39,10 @@ namespace Resonalyze
             buttonGD = new Button();
             overlays = new Panel();
             overlayPanel1 = new Panel();
+            buttonClearOverlay = new Button();
             numericUpDown1 = new NumericUpDown();
             checkBox1 = new CheckBox();
-            button6 = new Button();
+            buttonSaveOverlay = new Button();
             buttonIR = new Button();
             buttonRecordOpt = new Button();
             buttonWaterfallOpt = new Button();
@@ -56,6 +57,7 @@ namespace Resonalyze
             buttonSave = new Button();
             buttonLoad = new Button();
             toolTip1 = new ToolTip(components);
+            buttonClear = new Button();
             overlays.SuspendLayout();
             overlayPanel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)numericUpDown1).BeginInit();
@@ -65,9 +67,9 @@ namespace Resonalyze
             // 
             buttonRecord.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             buttonRecord.BackColor = Color.FromArgb(255, 255, 192);
-            buttonRecord.Location = new Point(1114, 12);
+            buttonRecord.Location = new Point(1098, 12);
             buttonRecord.Name = "buttonRecord";
-            buttonRecord.Size = new Size(100, 23);
+            buttonRecord.Size = new Size(116, 23);
             buttonRecord.TabIndex = 0;
             buttonRecord.Text = "Start";
             buttonRecord.UseVisualStyleBackColor = false;
@@ -81,7 +83,7 @@ namespace Resonalyze
             plotView1.Location = new Point(12, 12);
             plotView1.Name = "plotView1";
             plotView1.PanCursor = Cursors.Hand;
-            plotView1.Size = new Size(1096, 705);
+            plotView1.Size = new Size(1080, 705);
             plotView1.TabIndex = 1;
             plotView1.Text = "plotView1";
             plotView1.ZoomHorizontalCursor = Cursors.SizeWE;
@@ -91,9 +93,9 @@ namespace Resonalyze
             // buttonFR
             // 
             buttonFR.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonFR.Location = new Point(1114, 128);
+            buttonFR.Location = new Point(1098, 128);
             buttonFR.Name = "buttonFR";
-            buttonFR.Size = new Size(100, 23);
+            buttonFR.Size = new Size(116, 23);
             buttonFR.TabIndex = 2;
             buttonFR.Text = "Frequency";
             buttonFR.UseVisualStyleBackColor = true;
@@ -102,9 +104,9 @@ namespace Resonalyze
             // buttonPR
             // 
             buttonPR.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonPR.Location = new Point(1114, 157);
+            buttonPR.Location = new Point(1098, 157);
             buttonPR.Name = "buttonPR";
-            buttonPR.Size = new Size(100, 23);
+            buttonPR.Size = new Size(116, 23);
             buttonPR.TabIndex = 3;
             buttonPR.Text = "Phase";
             buttonPR.UseVisualStyleBackColor = true;
@@ -113,9 +115,9 @@ namespace Resonalyze
             // buttonWaterfall
             // 
             buttonWaterfall.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonWaterfall.Location = new Point(1114, 215);
+            buttonWaterfall.Location = new Point(1098, 215);
             buttonWaterfall.Name = "buttonWaterfall";
-            buttonWaterfall.Size = new Size(100, 23);
+            buttonWaterfall.Size = new Size(116, 23);
             buttonWaterfall.TabIndex = 4;
             buttonWaterfall.Text = "Waterfall";
             buttonWaterfall.UseVisualStyleBackColor = true;
@@ -124,9 +126,9 @@ namespace Resonalyze
             // buttonGD
             // 
             buttonGD.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonGD.Location = new Point(1114, 186);
+            buttonGD.Location = new Point(1098, 186);
             buttonGD.Name = "buttonGD";
-            buttonGD.Size = new Size(100, 23);
+            buttonGD.Size = new Size(116, 23);
             buttonGD.TabIndex = 5;
             buttonGD.Text = "Group Delay";
             buttonGD.UseVisualStyleBackColor = true;
@@ -137,30 +139,40 @@ namespace Resonalyze
             overlays.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             overlays.BorderStyle = BorderStyle.FixedSingle;
             overlays.Controls.Add(overlayPanel1);
-            overlays.Location = new Point(1114, 376);
+            overlays.Location = new Point(1098, 376);
             overlays.Name = "overlays";
-            overlays.Size = new Size(138, 341);
+            overlays.Size = new Size(154, 341);
             overlays.TabIndex = 6;
             // 
             // overlayPanel1
             // 
             overlayPanel1.BackColor = Color.OrangeRed;
+            overlayPanel1.Controls.Add(buttonClearOverlay);
             overlayPanel1.Controls.Add(numericUpDown1);
             overlayPanel1.Controls.Add(checkBox1);
-            overlayPanel1.Controls.Add(button6);
+            overlayPanel1.Controls.Add(buttonSaveOverlay);
             overlayPanel1.Location = new Point(3, 3);
             overlayPanel1.Name = "overlayPanel1";
-            overlayPanel1.Size = new Size(130, 25);
+            overlayPanel1.Size = new Size(146, 25);
             overlayPanel1.TabIndex = 3;
+            // 
+            // buttonClearOverlay
+            // 
+            buttonClearOverlay.FlatStyle = FlatStyle.System;
+            buttonClearOverlay.Location = new Point(92, 3);
+            buttonClearOverlay.Name = "buttonClearOverlay";
+            buttonClearOverlay.Size = new Size(19, 19);
+            buttonClearOverlay.TabIndex = 3;
+            buttonClearOverlay.Text = "C";
             // 
             // numericUpDown1
             // 
             numericUpDown1.BorderStyle = BorderStyle.None;
-            numericUpDown1.Location = new Point(49, 3);
+            numericUpDown1.Location = new Point(46, 3);
             numericUpDown1.Maximum = new decimal(new int[] { 180, 0, 0, 0 });
             numericUpDown1.Minimum = new decimal(new int[] { 180, 0, 0, int.MinValue });
             numericUpDown1.Name = "numericUpDown1";
-            numericUpDown1.Size = new Size(43, 19);
+            numericUpDown1.Size = new Size(40, 19);
             numericUpDown1.TabIndex = 2;
             numericUpDown1.TextAlign = HorizontalAlignment.Right;
             // 
@@ -173,21 +185,21 @@ namespace Resonalyze
             checkBox1.TabIndex = 0;
             checkBox1.UseVisualStyleBackColor = true;
             // 
-            // button6
+            // buttonSaveOverlay
             // 
-            button6.FlatStyle = FlatStyle.System;
-            button6.Location = new Point(24, 3);
-            button6.Name = "button6";
-            button6.Size = new Size(19, 19);
-            button6.TabIndex = 1;
-            button6.Text = "1";
+            buttonSaveOverlay.FlatStyle = FlatStyle.System;
+            buttonSaveOverlay.Location = new Point(22, 3);
+            buttonSaveOverlay.Name = "buttonSaveOverlay";
+            buttonSaveOverlay.Size = new Size(19, 19);
+            buttonSaveOverlay.TabIndex = 1;
+            buttonSaveOverlay.Text = "1";
             // 
             // buttonIR
             // 
             buttonIR.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonIR.Location = new Point(1114, 99);
+            buttonIR.Location = new Point(1098, 99);
             buttonIR.Name = "buttonIR";
-            buttonIR.Size = new Size(100, 23);
+            buttonIR.Size = new Size(116, 23);
             buttonIR.TabIndex = 7;
             buttonIR.Text = "Impulse";
             buttonIR.UseVisualStyleBackColor = true;
@@ -235,9 +247,9 @@ namespace Resonalyze
             // buttonBurstDecay
             // 
             buttonBurstDecay.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonBurstDecay.Location = new Point(1114, 244);
+            buttonBurstDecay.Location = new Point(1098, 244);
             buttonBurstDecay.Name = "buttonBurstDecay";
-            buttonBurstDecay.Size = new Size(100, 23);
+            buttonBurstDecay.Size = new Size(116, 23);
             buttonBurstDecay.TabIndex = 11;
             buttonBurstDecay.Text = "Burst Decay";
             buttonBurstDecay.UseVisualStyleBackColor = true;
@@ -298,9 +310,9 @@ namespace Resonalyze
             // buttonNoise
             // 
             buttonNoise.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonNoise.Location = new Point(1114, 273);
+            buttonNoise.Location = new Point(1098, 273);
             buttonNoise.Name = "buttonNoise";
-            buttonNoise.Size = new Size(100, 23);
+            buttonNoise.Size = new Size(116, 23);
             buttonNoise.TabIndex = 16;
             buttonNoise.Text = "Live Spectrum";
             buttonNoise.UseVisualStyleBackColor = true;
@@ -309,9 +321,9 @@ namespace Resonalyze
             // buttonAutocorrelation
             // 
             buttonAutocorrelation.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonAutocorrelation.Location = new Point(1114, 302);
+            buttonAutocorrelation.Location = new Point(1098, 302);
             buttonAutocorrelation.Name = "buttonAutocorrelation";
-            buttonAutocorrelation.Size = new Size(100, 23);
+            buttonAutocorrelation.Size = new Size(116, 23);
             buttonAutocorrelation.TabIndex = 17;
             buttonAutocorrelation.Text = "Autocorrelation";
             buttonAutocorrelation.UseVisualStyleBackColor = true;
@@ -320,9 +332,9 @@ namespace Resonalyze
             // buttonSave
             // 
             buttonSave.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonSave.Location = new Point(1114, 41);
+            buttonSave.Location = new Point(1098, 41);
             buttonSave.Name = "buttonSave";
-            buttonSave.Size = new Size(67, 23);
+            buttonSave.Size = new Size(56, 23);
             buttonSave.TabIndex = 18;
             buttonSave.Text = "Save";
             buttonSave.UseVisualStyleBackColor = true;
@@ -331,20 +343,32 @@ namespace Resonalyze
             // buttonLoad
             // 
             buttonLoad.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonLoad.Location = new Point(1187, 41);
+            buttonLoad.Location = new Point(1158, 41);
             buttonLoad.Name = "buttonLoad";
-            buttonLoad.Size = new Size(67, 23);
+            buttonLoad.Size = new Size(56, 23);
             buttonLoad.TabIndex = 19;
             buttonLoad.Text = "Load";
             buttonLoad.UseVisualStyleBackColor = true;
             buttonLoad.Click += buttonLoad_Click;
-            // 
+            //
+            // buttonClear
+            //
+            buttonClear.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonClear.Location = new Point(1098, 70);
+            buttonClear.Name = "buttonClear";
+            buttonClear.Size = new Size(116, 23);
+            buttonClear.TabIndex = 20;
+            buttonClear.Text = "Clear";
+            buttonClear.UseVisualStyleBackColor = true;
+            buttonClear.Click += buttonClear_Click;
+            //
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(50, 50, 50);
             ClientSize = new Size(1264, 729);
+            Controls.Add(buttonClear);
             Controls.Add(buttonLoad);
             Controls.Add(buttonSave);
             Controls.Add(buttonAutocorrelation);
@@ -385,7 +409,7 @@ namespace Resonalyze
         private Button buttonWaterfall;
         private Button buttonGD;
         private Panel overlays;
-        private Button button6;
+        private Button buttonSaveOverlay;
         private CheckBox checkBox1;
         private NumericUpDown numericUpDown1;
         private Panel overlayPanel1;
@@ -403,5 +427,7 @@ namespace Resonalyze
         private Button buttonSave;
         private Button buttonLoad;
         private ToolTip toolTip1;
+        private Button buttonClearOverlay;
+        private Button buttonClear;
     }
 }

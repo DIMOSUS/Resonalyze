@@ -120,6 +120,7 @@ namespace Resonalyze
                 {
                     noiseGraphTimer.Stop();
                     buttonNoise.Text = "Live Spectrum";
+                    UpdateOverlayAvailability();
                 });
             };
 
@@ -144,15 +145,19 @@ namespace Resonalyze
             CurrentMode = mode;
             plotView1.Model = null;
 
-            if (mode == Mode.CumulativeSpectrumDecay)
+            if (OverlayCollection.SupportsMode(mode))
+            {
+                overlayCollection.Prepare(mode);
+            }
+
+            if (mode == Mode.LiveSpectrum)
             {
                 overlays.Enabled = false;
+                overlayCollection.HideAll();
             }
             else
             {
-                overlayCollection.Prepare(mode);
-
-                overlays.Enabled = true;
+                UpdateOverlayAvailability();
             }
         }
 
@@ -555,10 +560,13 @@ namespace Resonalyze
                 {
                     model.Series.Add(BuildNoiseSeries(finalSnapshot));
                 }
+                UpdateOverlayAvailability();
                 overlayCollection.Show(CurrentMode);
                 return;
             }
 
+            overlays.Enabled = false;
+            overlayCollection.HideAll();
             buttonNoise.Text = "Live Spectrum (Running)";
             _ = noiseMeasurement.RunAsync();
             noiseGraphTimer.Start();
@@ -576,6 +584,46 @@ namespace Resonalyze
             model.Series.Clear();
             model.Series.Add(BuildNoiseSeries(snapshot));
             model.InvalidatePlot(true);
+        }
+
+        private async void buttonClear_Click(object sender, EventArgs e)
+        {
+            if (CurrentMode == Mode.LiveSpectrum &&
+                noiseMeasurement.InProgress)
+            {
+                noiseGraphTimer.Stop();
+                await noiseMeasurement.AbortAsync();
+                buttonNoise.Text = "Live Spectrum";
+            }
+
+            overlayCollection.HideAll();
+
+            PlotModel? model = plotView1.Model;
+            if (model == null)
+            {
+                return;
+            }
+
+            model.Series.Clear();
+            model.InvalidatePlot(true);
+            plotView1.Refresh();
+            UpdateOverlayAvailability();
+        }
+
+        private void UpdateOverlayAvailability()
+        {
+            bool available = OverlayCollection.SupportsMode(CurrentMode);
+            if (CurrentMode == Mode.LiveSpectrum)
+            {
+                available &= !noiseMeasurement.InProgress &&
+                    !noiseGraphTimer.Enabled;
+            }
+
+            overlays.Enabled = available;
+            if (!available)
+            {
+                overlayCollection.HideAll();
+            }
         }
 
         private LineSeries BuildNoiseSeries(double[] accumulatedData)

@@ -11,9 +11,9 @@ using OxyPlot.Series;
 using OxyPlot.WindowsForms;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement.Button;
+using Button = System.Windows.Forms.Button;
 using CheckBox = System.Windows.Forms.CheckBox;
 using ToolTip = System.Windows.Forms.ToolTip;
-using Button = System.Windows.Forms.Button;
 
 namespace Resonalyze
 {
@@ -166,7 +166,7 @@ namespace Resonalyze
             this.button = button;
             this.checkBox = checkBox;
 
-            panel.Click += new EventHandler(panelClick);
+            panel.Click += PanelClick;
             checkBox.CheckedChanged += new EventHandler(checkBoxUpdate);
             button.Click += new EventHandler(buttonClick);
             numericUpDown.ValueChanged += new EventHandler(numericValueChanged);
@@ -188,17 +188,20 @@ namespace Resonalyze
             }
         }
 
-        private void panelClick(object? sender, EventArgs e)
+        private void PanelClick(object? sender, EventArgs e)
         {
-            ColorDialog MyDialog = new ColorDialog();
-            // Keeps the user from selecting a custom color.
-            MyDialog.AllowFullOpen = false;
+            using var dialog = new ColorPickerDialog(panel.BackColor);
+            if (dialog.ShowDialog(collection.form) != DialogResult.OK)
+            {
+                return;
+            }
 
-            // Sets the initial color select to the current text color.
-            MyDialog.Color = panel.BackColor;
-
-            if (MyDialog.ShowDialog() == DialogResult.OK)
-                panel.BackColor = MyDialog.Color;
+            panel.BackColor = dialog.SelectedColor;
+            if (Checked)
+            {
+                Hide();
+                Show();
+            }
         }
 
         private void CheckerSet(bool state)

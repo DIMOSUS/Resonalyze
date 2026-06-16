@@ -9,7 +9,12 @@
     <AssemblyName>Resonalyze</AssemblyName>
     <RootNamespace>Resonalyze</RootNamespace>
     <VersionPrefix>0.1.0</VersionPrefix>
+    <ApplicationIcon>logo.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="logo.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="MathNet.Numerics" Version="5.0.0" />

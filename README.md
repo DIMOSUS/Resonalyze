@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/images/logo.png" alt="Resonalyze logo" width="256">
+</p>
+
 # Resonalyze
 
 ### Acoustic Measurement & Analysis

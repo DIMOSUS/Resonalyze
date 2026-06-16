@@ -211,7 +211,7 @@ namespace Resonalyze
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            BackColor = Color.FromArgb(50, 50, 50);
+            BackColor = Color.FromArgb(45, 50, 60);
             ClientSize = new Size(1264, 729);
             Controls.Add(buttonDraw);
             Controls.Add(buttonCurrentModeSettings);
@@ -222,6 +222,7 @@ namespace Resonalyze
             Controls.Add(plotView1);
             Controls.Add(buttonRecord);
             Controls.Add(overlays);
+            Icon = (Icon)resources.GetObject("$this.Icon");
             MinimumSize = new Size(1280, 768);
             Name = "Form1";
             Text = "Resonalyze";

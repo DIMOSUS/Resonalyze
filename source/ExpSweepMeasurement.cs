@@ -27,8 +27,12 @@ namespace Resonalyze
         public int Octaves { get; private set; }
         public int Bits { get; private set; }
         public PlaybackChannel PlaybackChannel { get; private set; }
+        public AudioBackend AudioBackend { get; private set; } = AudioBackend.Wave;
         public int OutputDeviceNumber { get; private set; } = -1;
         public int InputDeviceNumber { get; private set; } = -1;
+        public string? AsioDriverName { get; private set; }
+        public int AsioInputChannelOffset { get; private set; }
+        public int AsioOutputChannelOffset { get; private set; }
         public int PeakIndex { get; private set; }
         public Exception? LastError { get; private set; }
         public int RecordedSamples => soundRecorder?.ReadSamples ?? 0;
@@ -40,7 +44,11 @@ namespace Resonalyze
             double requestedDuration,
             PlaybackChannel playbackChannel,
             int outputDeviceNumber = -1,
-            int inputDeviceNumber = -1)
+            int inputDeviceNumber = -1,
+            AudioBackend audioBackend = AudioBackend.Wave,
+            string? asioDriverName = null,
+            int asioInputChannelOffset = 0,
+            int asioOutputChannelOffset = 0)
         {
             ThrowIfDisposed();
             if (InProgress)
@@ -54,6 +62,10 @@ namespace Resonalyze
             Octaves = octaves;
             OutputDeviceNumber = outputDeviceNumber;
             InputDeviceNumber = inputDeviceNumber;
+            AudioBackend = audioBackend;
+            AsioDriverName = asioDriverName;
+            AsioInputChannelOffset = asioInputChannelOffset;
+            AsioOutputChannelOffset = asioOutputChannelOffset;
             ImpulseResponse = null;
             LastError = null;
 
@@ -154,7 +166,11 @@ namespace Resonalyze
                 sweepDurationSeconds,
                 playChannel,
                 OutputDeviceNumber,
-                InputDeviceNumber);
+                InputDeviceNumber,
+                AudioBackend,
+                AsioDriverName,
+                AsioInputChannelOffset,
+                AsioOutputChannelOffset);
             ImpulseResponse = impulseResponse.ToArray();
             PeakIndex = maxMagnitudeIndex;
             LastError = null;
@@ -166,27 +182,17 @@ namespace Resonalyze
             SoundRecorder recorder = soundRecorder!;
             int channel = (int)PlaybackChannel;
             bool success = false;
-            using var player = new WaveOutEvent
-            {
-                DeviceNumber = OutputDeviceNumber
-            };
 
             try
             {
-                await recorder.StartRecordingAsync(cancellationToken).ConfigureAwait(false);
-                int recordingStart = recorder.ReadSamples;
-
-                RawSourceWaveStream stream = sweep.GetStream(PlaybackChannel);
-                stream.Position = 0;
-                player.Init(stream);
-                await PlayToEndAsync(player, cancellationToken).ConfigureAwait(false);
-                stream.Position = 0;
-
-                int requiredSamples = recordingStart + sweep.SweepSamples + SampleRate;
-                await recorder.WaitForSamplesAsync(requiredSamples, cancellationToken).ConfigureAwait(false);
-                await recorder.StopRecordingAsync().ConfigureAwait(false);
-
-                ProcessImpulseResponse(recorder.GetSamplesSnapshot(), sweep);
+                if (AudioBackend == AudioBackend.Asio)
+                {
+                    await RunAsioAsync(sweep, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    await RunWaveAsync(sweep, recorder, cancellationToken).ConfigureAwait(false);
+                }
                 success = true;
             }
             catch (OperationCanceledException)
@@ -198,7 +204,6 @@ namespace Resonalyze
             }
             finally
             {
-                player.Stop();
                 try
                 {
                     await recorder.StopRecordingAsync().ConfigureAwait(false);
@@ -224,6 +229,56 @@ namespace Resonalyze
             }
 
             return success;
+        }
+
+        private async Task RunWaveAsync(
+            ExponentialSineSweep sweep,
+            SoundRecorder recorder,
+            CancellationToken cancellationToken)
+        {
+            using var player = new WaveOutEvent
+            {
+                DeviceNumber = OutputDeviceNumber
+            };
+            await recorder.StartRecordingAsync(cancellationToken).ConfigureAwait(false);
+            int recordingStart = recorder.ReadSamples;
+
+            RawSourceWaveStream stream = sweep.GetStream(PlaybackChannel);
+            stream.Position = 0;
+            player.Init(stream);
+            await PlayToEndAsync(player, cancellationToken).ConfigureAwait(false);
+            stream.Position = 0;
+
+            int requiredSamples = recordingStart + sweep.SweepSamples + SampleRate;
+            await recorder.WaitForSamplesAsync(requiredSamples, cancellationToken).ConfigureAwait(false);
+            await recorder.StopRecordingAsync().ConfigureAwait(false);
+
+            ProcessImpulseResponse(recorder.GetSamplesSnapshot(), sweep);
+        }
+
+        private async Task RunAsioAsync(
+            ExponentialSineSweep sweep,
+            CancellationToken cancellationToken)
+        {
+            using var session = new AsioFullDuplexSession(
+                AsioDriverName ?? string.Empty,
+                AsioInputChannelOffset,
+                AsioOutputChannelOffset);
+            using FloatArrayWaveStream stream = FloatArrayWaveStream.FromMonoSamples(
+                sweep.SweepData,
+                SampleRate,
+                PlaybackChannel);
+
+            await session.StartAsync(
+                stream,
+                SampleRate,
+                autoStop: false,
+                cancellationToken).ConfigureAwait(false);
+            int requiredSamples = session.ReadSamples + sweep.SweepSamples + SampleRate;
+            await session.WaitForSamplesAsync(requiredSamples, cancellationToken).ConfigureAwait(false);
+            await session.StopAsync().ConfigureAwait(false);
+
+            ProcessImpulseResponse(session.GetSamplesSnapshot(), sweep);
         }
 
         private static async Task PlayToEndAsync(WaveOutEvent player, CancellationToken cancellationToken)

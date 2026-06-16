@@ -39,6 +39,8 @@ installation. SHA-256 checksum files are provided with every release.
 
 - Exponential sine sweep measurement
 - Impulse response with JSON save/load
+- Windows Wave and ASIO audio backends
+- Playback/recording device selection with ASIO channel routing
 - Frequency response
 - Harmonic distortion and THD+N
 - Phase response
@@ -96,12 +98,10 @@ To run a release build:
 
 - Windows 10 or later
 - Working Windows playback and recording devices
+- Optional ASIO driver for low-latency audio interfaces
 - A suitable loopback, microphone, or other measurement connection
 
 The self-contained release archives include the required .NET runtime.
-Resonalyze currently has no in-app audio-device selector; configure the
-intended playback and recording devices in Windows before starting the
-application.
 
 To build Resonalyze from source:
 
@@ -147,8 +147,8 @@ source/bin/Release/net10.0-windows/Resonalyze.exe
 1. Connect the output of the device under test to the selected input, directly
    or through a microphone and appropriate interface.
 2. Start Resonalyze and open the measurement settings.
-3. Confirm the displayed sample format, then set the sweep duration, playback
-   channel, and analysis parameters.
+3. Select the audio backend, devices or ASIO channels, sweep duration,
+   playback channel, and analysis parameters.
 4. Start a recording to generate and capture the exponential sine sweep.
 5. Select the required analysis view.
 6. Adjust smoothing, windows, offsets, and display options as needed.
@@ -158,6 +158,47 @@ source/bin/Release/net10.0-windows/Resonalyze.exe
 For acoustic measurements, microphone placement and room conditions strongly
 affect the result. For electrical loopback measurements, make sure signal
 levels and impedances are safe for both devices.
+
+## Audio Backends
+
+Resonalyze can run measurements through the standard Windows Wave backend or
+through an ASIO driver.
+
+### Wave
+
+Use **Wave** for ordinary Windows playback and recording devices. The
+measurement settings dialog lets you choose the playback device, recording
+device, and playback channel.
+
+### ASIO
+
+Use **ASIO** for audio interfaces that provide a native ASIO driver. The
+measurement settings dialog lets you choose:
+
+- ASIO driver
+- ASIO input channel used for recording
+- ASIO output channel pair used for playback
+- Playback routing inside the selected output pair
+
+ASIO output routing works as follows:
+
+- `Mono` sends the same signal to both channels of the selected output pair
+- `Left` sends the signal only to the first channel of the pair
+- `Right` sends the signal only to the second channel of the pair
+- `Stereo` sends the signal to both channels of the pair
+
+Before applying ASIO settings, Resonalyze checks whether the selected driver
+supports the current sample rate. The dialog also shows available driver
+diagnostics such as playback latency and, when exposed by the driver, frames
+per buffer.
+
+Click **ASIO Control Panel** to open the driver's native control panel. Use it
+to configure driver-level settings such as buffer size, clock source, or sample
+rate when the driver requires those settings outside the application.
+
+ASIO support depends on the installed driver. If a driver is already in use by
+another application or refuses the selected sample rate, Resonalyze reports the
+driver error before starting the measurement.
 
 ## Saving and Loading Impulse Responses
 
@@ -293,12 +334,12 @@ impulse processing, phase analysis, and group-delay calculation.
 - [.NET 10](https://dotnet.microsoft.com/)
 - [Windows Forms](https://learn.microsoft.com/dotnet/desktop/winforms/)
 - [NAudio](https://github.com/naudio/NAudio)
+- [NAudio.Asio](https://www.nuget.org/packages/NAudio.Asio)
 - [Math.NET Numerics](https://numerics.mathdotnet.com/)
 - [OxyPlot](https://oxyplot.github.io/)
 
 ## Roadmap
 
-- Audio-device selection and diagnostics
 - Complete measurement-session save/load
 - Plot and raw-data export
 - Improved calibration workflow

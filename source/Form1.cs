@@ -326,9 +326,21 @@ namespace Resonalyze
 
             if (ShowSettingsDialog(opt) == DialogResult.OK)
             {
-                opt.SetOptions(expSweepMeasurement);
-                liveSpectrumController.ConfigureFrom(expSweepMeasurement);
-                SaveMeasurementSettings();
+                try
+                {
+                    opt.SetOptions(expSweepMeasurement);
+                    liveSpectrumController.ConfigureFrom(expSweepMeasurement);
+                    SaveMeasurementSettings();
+                }
+                catch (InvalidOperationException exception)
+                {
+                    MessageBox.Show(
+                        this,
+                        exception.Message,
+                        "Measurement Options",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                }
             }
         }
 

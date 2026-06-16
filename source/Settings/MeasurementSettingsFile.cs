@@ -6,7 +6,7 @@ namespace Resonalyze;
 
 internal sealed class MeasurementSettingsFile
 {
-    private const int CurrentSchemaVersion = 1;
+    private const int CurrentSchemaVersion = 3;
     private const string FileName = "measurement-settings.json";
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
@@ -105,8 +105,12 @@ internal sealed class MeasurementSettingsFile
         public int Bits { get; set; } = 24;
         public double RequestedDurationSeconds { get; set; } = 1.0;
         public PlaybackChannel PlaybackChannel { get; set; } = PlaybackChannel.Mono;
+        public AudioBackend AudioBackend { get; set; } = AudioBackend.Wave;
         public int OutputDeviceNumber { get; set; } = -1;
         public int InputDeviceNumber { get; set; } = -1;
+        public string? AsioDriverName { get; set; }
+        public int AsioInputChannelOffset { get; set; }
+        public int AsioOutputChannelOffset { get; set; }
 
         public static SweepMeasurementSettings Capture(
             ExpSweepMeasurement measurement) =>
@@ -117,8 +121,12 @@ internal sealed class MeasurementSettingsFile
                 Bits = measurement.Bits,
                 RequestedDurationSeconds = measurement.Sweep?.RequestedDuration ?? 1.0,
                 PlaybackChannel = measurement.PlaybackChannel,
+                AudioBackend = measurement.AudioBackend,
                 OutputDeviceNumber = measurement.OutputDeviceNumber,
-                InputDeviceNumber = measurement.InputDeviceNumber
+                InputDeviceNumber = measurement.InputDeviceNumber,
+                AsioDriverName = measurement.AsioDriverName,
+                AsioInputChannelOffset = measurement.AsioInputChannelOffset,
+                AsioOutputChannelOffset = measurement.AsioOutputChannelOffset
             };
 
         public void ApplyTo(ExpSweepMeasurement measurement)
@@ -136,7 +144,11 @@ internal sealed class MeasurementSettingsFile
                     OutputDeviceNumber),
                 NormalizeDeviceNumber(
                     AudioDeviceCatalog.GetRecordingDevices(),
-                    InputDeviceNumber));
+                    InputDeviceNumber),
+                NormalizeAudioBackend(AudioBackend, AsioDriverName),
+                NormalizeAsioDriverName(AsioDriverName),
+                NormalizeAsioChannelOffset(AsioDriverName, AsioInputChannelOffset, input: true),
+                NormalizeAsioChannelOffset(AsioDriverName, AsioOutputChannelOffset, input: false));
         }
     }
 
@@ -251,6 +263,61 @@ internal sealed class MeasurementSettingsFile
         devices.Any(device => device.DeviceNumber == deviceNumber)
             ? deviceNumber
             : -1;
+
+    private static AudioBackend NormalizeAudioBackend(
+        AudioBackend backend,
+        string? asioDriverName)
+    {
+        if (!Enum.IsDefined(backend))
+        {
+            return AudioBackend.Wave;
+        }
+        if (backend == AudioBackend.Asio &&
+            string.IsNullOrWhiteSpace(NormalizeAsioDriverName(asioDriverName)))
+        {
+            return AudioBackend.Wave;
+        }
+
+        return backend;
+    }
+
+    private static string? NormalizeAsioDriverName(string? asioDriverName)
+    {
+        IReadOnlyList<AsioDeviceInfo> drivers = AsioDeviceCatalog.GetDrivers();
+        if (drivers.Count == 0)
+        {
+            return null;
+        }
+        if (string.IsNullOrWhiteSpace(asioDriverName))
+        {
+            return drivers[0].DriverName;
+        }
+
+        return drivers.Any(driver =>
+            string.Equals(
+                driver.DriverName,
+                asioDriverName,
+                StringComparison.OrdinalIgnoreCase))
+            ? asioDriverName
+            : drivers[0].DriverName;
+    }
+
+    private static int NormalizeAsioChannelOffset(
+        string? asioDriverName,
+        int offset,
+        bool input)
+    {
+        AsioDriverInfo driverInfo = AsioDeviceCatalog.GetDriverInfo(
+            NormalizeAsioDriverName(asioDriverName),
+            sampleRate: 44100);
+        IReadOnlyList<AsioChannelInfo> channels = input
+            ? driverInfo.InputChannels
+            : driverInfo.OutputChannels;
+
+        return channels.Any(channel => channel.Offset == offset)
+            ? offset
+            : 0;
+    }
 
     private static int Clamp(int value, int minimum, int maximum) =>
         Math.Clamp(value, minimum, maximum);

@@ -12,6 +12,7 @@ public sealed class NoiseSignal : IDisposable
     private bool disposed;
 
     public byte[][] ByteData { get; private set; } = Array.Empty<byte[]>();
+    public float[] FloatData { get; private set; } = Array.Empty<float>();
     public int SampleRate { get; private set; }
     public int Samples { get; private set; }
     public int BitsPerSample { get; private set; }
@@ -44,11 +45,17 @@ public sealed class NoiseSignal : IDisposable
         DisposeStreams();
         int channelModeCount = Enum.GetValues<PlaybackChannel>().Length;
         ByteData = new byte[channelModeCount][];
+        FloatData = new float[Samples];
         memoryStreams = new MemoryStream[channelModeCount];
         sourceStreams = new RawSourceWaveStream[channelModeCount];
 
         // A fixed seed keeps measurements reproducible and makes regressions diagnosable.
         var random = new Random(42);
+        for (int sampleIndex = 0; sampleIndex < Samples; sampleIndex++)
+        {
+            FloatData[sampleIndex] = (float)(random.NextDouble() - 0.5);
+        }
+
         foreach (PlaybackChannel channel in Enum.GetValues<PlaybackChannel>())
         {
             int outputChannelCount = channel == PlaybackChannel.Mono ? 1 : 2;
@@ -58,7 +65,7 @@ public sealed class NoiseSignal : IDisposable
 
             for (int sampleIndex = 0; sampleIndex < Samples; sampleIndex++)
             {
-                int sample = (int)((random.NextDouble() - 0.5) * maxValue);
+                int sample = (int)(FloatData[sampleIndex] * maxValue);
                 sample *= (int)Math.Pow(256, 4 - bytesPerSample);
                 byte[] bytes = BitConverter.GetBytes(sample);
                 WriteSample(data, sampleIndex, bytes, bytesPerSample, outputChannelCount, channel);

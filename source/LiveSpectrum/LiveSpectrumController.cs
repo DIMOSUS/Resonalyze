@@ -57,7 +57,11 @@ internal sealed class LiveSpectrumController : IDisposable
             measurementSource.PlaybackChannel,
             2048,
             measurementSource.OutputDeviceNumber,
-            measurementSource.InputDeviceNumber);
+            measurementSource.InputDeviceNumber,
+            measurementSource.AudioBackend,
+            measurementSource.AsioDriverName,
+            measurementSource.AsioInputChannelOffset,
+            measurementSource.AsioOutputChannelOffset);
     }
 
     public async Task ToggleAsync()

@@ -42,15 +42,19 @@ namespace Resonalyze.Options
             numericUpDownSampleRate = new NumericUpDown();
             numericUpDownBits = new NumericUpDown();
             numericUpDownOctaves = new NumericUpDown();
+            labelPlaybackDevice = new Label();
+            comboBoxPlaybackDevice = new ComboBox();
+            labelRecordingDevice = new Label();
+            comboBoxRecordingDevice = new ComboBox();
             ((System.ComponentModel.ISupportInitialize)numericUpDownRequestedDuration).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDownComputeDuration).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDownSampleRate).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDownBits).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDownOctaves).BeginInit();
             SuspendLayout();
-            // 
+            //
             // label1
-            // 
+            //
             label1.AutoSize = true;
             label1.ForeColor = SystemColors.ControlLight;
             label1.Location = new Point(12, 15);
@@ -58,9 +62,9 @@ namespace Resonalyze.Options
             label1.Size = new Size(72, 15);
             label1.TabIndex = 1;
             label1.Text = "Sample Rate";
-            // 
+            //
             // label2
-            // 
+            //
             label2.AutoSize = true;
             label2.ForeColor = SystemColors.ControlLight;
             label2.Location = new Point(12, 41);
@@ -68,17 +72,17 @@ namespace Resonalyze.Options
             label2.Size = new Size(26, 15);
             label2.TabIndex = 3;
             label2.Text = "Bits";
-            // 
+            //
             // comboBoxChannel
-            // 
+            //
             comboBoxChannel.FormattingEnabled = true;
             comboBoxChannel.Location = new Point(153, 87);
             comboBoxChannel.Name = "comboBoxChannel";
             comboBoxChannel.Size = new Size(100, 23);
             comboBoxChannel.TabIndex = 4;
-            // 
+            //
             // label3
-            // 
+            //
             label3.AutoSize = true;
             label3.ForeColor = SystemColors.ControlLight;
             label3.Location = new Point(12, 95);
@@ -86,32 +90,32 @@ namespace Resonalyze.Options
             label3.Size = new Size(51, 15);
             label3.TabIndex = 5;
             label3.Text = "Channel";
-            // 
+            //
             // label4
-            // 
+            //
             label4.AutoSize = true;
             label4.ForeColor = SystemColors.ControlLight;
-            label4.Location = new Point(12, 120);
+            label4.Location = new Point(12, 178);
             label4.Name = "label4";
             label4.Size = new Size(138, 15);
             label4.TabIndex = 7;
             label4.Text = "Requested Duration (ms)";
-            // 
+            //
             // label5
-            // 
+            //
             label5.AutoSize = true;
             label5.ForeColor = SystemColors.ControlLight;
-            label5.Location = new Point(12, 145);
+            label5.Location = new Point(12, 203);
             label5.Name = "label5";
             label5.Size = new Size(133, 15);
             label5.TabIndex = 9;
             label5.Text = "Compute Duration (ms)";
-            // 
+            //
             // numericUpDownRequestedDuration
-            // 
+            //
             numericUpDownRequestedDuration.BorderStyle = BorderStyle.None;
             numericUpDownRequestedDuration.Increment = new decimal(new int[] { 500, 0, 0, 0 });
-            numericUpDownRequestedDuration.Location = new Point(153, 116);
+            numericUpDownRequestedDuration.Location = new Point(153, 174);
             numericUpDownRequestedDuration.Maximum = new decimal(new int[] { 100000, 0, 0, 0 });
             numericUpDownRequestedDuration.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
             numericUpDownRequestedDuration.Name = "numericUpDownRequestedDuration";
@@ -120,41 +124,41 @@ namespace Resonalyze.Options
             numericUpDownRequestedDuration.TextAlign = HorizontalAlignment.Right;
             numericUpDownRequestedDuration.Value = new decimal(new int[] { 1000, 0, 0, 0 });
             numericUpDownRequestedDuration.ValueChanged += numericUpDownRequestedDuration_ValueChanged;
-            // 
+            //
             // numericUpDownComputeDuration
-            // 
+            //
             numericUpDownComputeDuration.BorderStyle = BorderStyle.None;
             numericUpDownComputeDuration.Enabled = false;
-            numericUpDownComputeDuration.Location = new Point(153, 141);
+            numericUpDownComputeDuration.Location = new Point(153, 199);
             numericUpDownComputeDuration.Maximum = new decimal(new int[] { 1316134911, 2328, 0, 0 });
             numericUpDownComputeDuration.Name = "numericUpDownComputeDuration";
             numericUpDownComputeDuration.ReadOnly = true;
             numericUpDownComputeDuration.Size = new Size(100, 19);
             numericUpDownComputeDuration.TabIndex = 11;
             numericUpDownComputeDuration.TextAlign = HorizontalAlignment.Right;
-            // 
+            //
             // button2
-            // 
+            //
             button2.DialogResult = DialogResult.Cancel;
-            button2.Location = new Point(153, 197);
+            button2.Location = new Point(153, 255);
             button2.Name = "button2";
             button2.Size = new Size(100, 23);
             button2.TabIndex = 13;
             button2.Text = "Cancel";
             button2.UseVisualStyleBackColor = true;
-            // 
+            //
             // button1
-            // 
+            //
             button1.DialogResult = DialogResult.OK;
-            button1.Location = new Point(12, 197);
+            button1.Location = new Point(12, 255);
             button1.Name = "button1";
             button1.Size = new Size(100, 23);
             button1.TabIndex = 12;
             button1.Text = "Ok";
             button1.UseVisualStyleBackColor = true;
-            // 
+            //
             // label6
-            // 
+            //
             label6.AutoSize = true;
             label6.ForeColor = SystemColors.ControlLight;
             label6.Location = new Point(12, 66);
@@ -162,9 +166,9 @@ namespace Resonalyze.Options
             label6.Size = new Size(49, 15);
             label6.TabIndex = 15;
             label6.Text = "Octaves";
-            // 
+            //
             // numericUpDownSampleRate
-            // 
+            //
             numericUpDownSampleRate.BorderStyle = BorderStyle.None;
             numericUpDownSampleRate.Enabled = false;
             numericUpDownSampleRate.Location = new Point(153, 12);
@@ -176,9 +180,9 @@ namespace Resonalyze.Options
             numericUpDownSampleRate.TabIndex = 16;
             numericUpDownSampleRate.TextAlign = HorizontalAlignment.Right;
             numericUpDownSampleRate.Value = new decimal(new int[] { 1, 0, 0, 0 });
-            // 
+            //
             // numericUpDownBits
-            // 
+            //
             numericUpDownBits.BorderStyle = BorderStyle.None;
             numericUpDownBits.Enabled = false;
             numericUpDownBits.Location = new Point(153, 37);
@@ -190,9 +194,9 @@ namespace Resonalyze.Options
             numericUpDownBits.TabIndex = 17;
             numericUpDownBits.TextAlign = HorizontalAlignment.Right;
             numericUpDownBits.Value = new decimal(new int[] { 8, 0, 0, 0 });
-            // 
+            //
             // numericUpDownOctaves
-            // 
+            //
             numericUpDownOctaves.BorderStyle = BorderStyle.None;
             numericUpDownOctaves.Enabled = false;
             numericUpDownOctaves.Location = new Point(153, 62);
@@ -203,13 +207,55 @@ namespace Resonalyze.Options
             numericUpDownOctaves.TabIndex = 18;
             numericUpDownOctaves.TextAlign = HorizontalAlignment.Right;
             numericUpDownOctaves.Value = new decimal(new int[] { 1, 0, 0, 0 });
-            // 
+            //
+            // labelPlaybackDevice
+            //
+            labelPlaybackDevice.AutoSize = true;
+            labelPlaybackDevice.ForeColor = SystemColors.ControlLight;
+            labelPlaybackDevice.Location = new Point(12, 120);
+            labelPlaybackDevice.Name = "labelPlaybackDevice";
+            labelPlaybackDevice.Size = new Size(88, 15);
+            labelPlaybackDevice.TabIndex = 19;
+            labelPlaybackDevice.Text = "Playback device";
+            //
+            // comboBoxPlaybackDevice
+            //
+            comboBoxPlaybackDevice.DropDownStyle = ComboBoxStyle.DropDownList;
+            comboBoxPlaybackDevice.FormattingEnabled = true;
+            comboBoxPlaybackDevice.Location = new Point(153, 116);
+            comboBoxPlaybackDevice.Name = "comboBoxPlaybackDevice";
+            comboBoxPlaybackDevice.Size = new Size(260, 23);
+            comboBoxPlaybackDevice.TabIndex = 20;
+            //
+            // labelRecordingDevice
+            //
+            labelRecordingDevice.AutoSize = true;
+            labelRecordingDevice.ForeColor = SystemColors.ControlLight;
+            labelRecordingDevice.Location = new Point(12, 149);
+            labelRecordingDevice.Name = "labelRecordingDevice";
+            labelRecordingDevice.Size = new Size(96, 15);
+            labelRecordingDevice.TabIndex = 21;
+            labelRecordingDevice.Text = "Recording device";
+            //
+            // comboBoxRecordingDevice
+            //
+            comboBoxRecordingDevice.DropDownStyle = ComboBoxStyle.DropDownList;
+            comboBoxRecordingDevice.FormattingEnabled = true;
+            comboBoxRecordingDevice.Location = new Point(153, 145);
+            comboBoxRecordingDevice.Name = "comboBoxRecordingDevice";
+            comboBoxRecordingDevice.Size = new Size(260, 23);
+            comboBoxRecordingDevice.TabIndex = 22;
+            //
             // MeasurementOptions
-            // 
+            //
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(50, 50, 50);
-            ClientSize = new Size(265, 231);
+            ClientSize = new Size(425, 289);
+            Controls.Add(comboBoxRecordingDevice);
+            Controls.Add(labelRecordingDevice);
+            Controls.Add(comboBoxPlaybackDevice);
+            Controls.Add(labelPlaybackDevice);
             Controls.Add(numericUpDownOctaves);
             Controls.Add(numericUpDownBits);
             Controls.Add(numericUpDownSampleRate);
@@ -255,5 +301,9 @@ namespace Resonalyze.Options
         private NumericUpDown numericUpDownSampleRate;
         private NumericUpDown numericUpDownBits;
         private NumericUpDown numericUpDownOctaves;
+        private Label labelPlaybackDevice;
+        private ComboBox comboBoxPlaybackDevice;
+        private Label labelRecordingDevice;
+        private ComboBox comboBoxRecordingDevice;
     }
 }

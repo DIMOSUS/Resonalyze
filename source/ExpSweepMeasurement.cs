@@ -27,11 +27,20 @@ namespace Resonalyze
         public int Octaves { get; private set; }
         public int Bits { get; private set; }
         public PlaybackChannel PlaybackChannel { get; private set; }
+        public int OutputDeviceNumber { get; private set; } = -1;
+        public int InputDeviceNumber { get; private set; } = -1;
         public int PeakIndex { get; private set; }
         public Exception? LastError { get; private set; }
         public int RecordedSamples => soundRecorder?.ReadSamples ?? 0;
 
-        public void Init(int octaves, int sampleRate, int bits, double requestedDuration, PlaybackChannel playbackChannel)
+        public void Init(
+            int octaves,
+            int sampleRate,
+            int bits,
+            double requestedDuration,
+            PlaybackChannel playbackChannel,
+            int outputDeviceNumber = -1,
+            int inputDeviceNumber = -1)
         {
             ThrowIfDisposed();
             if (InProgress)
@@ -43,6 +52,8 @@ namespace Resonalyze
             SampleRate = sampleRate;
             Bits = bits;
             Octaves = octaves;
+            OutputDeviceNumber = outputDeviceNumber;
+            InputDeviceNumber = inputDeviceNumber;
             ImpulseResponse = null;
             LastError = null;
 
@@ -52,7 +63,7 @@ namespace Resonalyze
 
             soundRecorder?.Dispose();
             soundRecorder = new SoundRecorder();
-            soundRecorder.Init(sampleRate, bits, 1);
+            soundRecorder.Init(sampleRate, bits, 1, inputDeviceNumber);
         }
 
         public Task<bool> RunAsync()
@@ -141,7 +152,9 @@ namespace Resonalyze
                 sampleRate,
                 bits,
                 sweepDurationSeconds,
-                playChannel);
+                playChannel,
+                OutputDeviceNumber,
+                InputDeviceNumber);
             ImpulseResponse = impulseResponse.ToArray();
             PeakIndex = maxMagnitudeIndex;
             LastError = null;
@@ -153,7 +166,10 @@ namespace Resonalyze
             SoundRecorder recorder = soundRecorder!;
             int channel = (int)PlaybackChannel;
             bool success = false;
-            using var player = new WaveOutEvent();
+            using var player = new WaveOutEvent
+            {
+                DeviceNumber = OutputDeviceNumber
+            };
 
             try
             {

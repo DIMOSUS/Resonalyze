@@ -14,6 +14,8 @@ namespace Resonalyze.Options
     public partial class MeasurementOptions : Form
     {
         private ExpSweepMeasurement? expSweepMeasurement;
+        private IReadOnlyList<AudioDeviceInfo> playbackDevices = Array.Empty<AudioDeviceInfo>();
+        private IReadOnlyList<AudioDeviceInfo> recordingDevices = Array.Empty<AudioDeviceInfo>();
 
         public MeasurementOptions()
         {
@@ -35,6 +37,20 @@ namespace Resonalyze.Options
             }
             comboBoxChannel.SelectedIndex = (int)expSweepMeasurement.PlaybackChannel;
 
+            playbackDevices = AudioDeviceCatalog.GetPlaybackDevices();
+            comboBoxPlaybackDevice.Items.Clear();
+            comboBoxPlaybackDevice.Items.AddRange(playbackDevices.Cast<object>().ToArray());
+            comboBoxPlaybackDevice.SelectedIndex = AudioDeviceCatalog.FindDeviceIndex(
+                playbackDevices,
+                expSweepMeasurement.OutputDeviceNumber);
+
+            recordingDevices = AudioDeviceCatalog.GetRecordingDevices();
+            comboBoxRecordingDevice.Items.Clear();
+            comboBoxRecordingDevice.Items.AddRange(recordingDevices.Cast<object>().ToArray());
+            comboBoxRecordingDevice.SelectedIndex = AudioDeviceCatalog.FindDeviceIndex(
+                recordingDevices,
+                expSweepMeasurement.InputDeviceNumber);
+
             numericUpDownRequestedDuration.Value = (int)(sweep.RequestedDuration * 1000.0);
             numericUpDownComputeDuration.Value = (int)(sweep.CalculateDuration(sweep.RequestedDuration) * 1000.0);
             numericUpDownOctaves.Value = expSweepMeasurement.Octaves;
@@ -47,8 +63,17 @@ namespace Resonalyze.Options
             PlaybackChannel playbackChannel = (PlaybackChannel)comboBoxChannel.SelectedIndex;
             double requestedDuration = (double)numericUpDownRequestedDuration.Value * 0.001;
             int octaves = (int)numericUpDownOctaves.Value;
+            int outputDeviceNumber = ((AudioDeviceInfo)comboBoxPlaybackDevice.SelectedItem!).DeviceNumber;
+            int inputDeviceNumber = ((AudioDeviceInfo)comboBoxRecordingDevice.SelectedItem!).DeviceNumber;
 
-            expSweepMeasurement.Init(octaves, sampleRate, bits, requestedDuration, playbackChannel);
+            expSweepMeasurement.Init(
+                octaves,
+                sampleRate,
+                bits,
+                requestedDuration,
+                playbackChannel,
+                outputDeviceNumber,
+                inputDeviceNumber);
         }
 
         private void numericUpDownRequestedDuration_ValueChanged(object sender, EventArgs e)

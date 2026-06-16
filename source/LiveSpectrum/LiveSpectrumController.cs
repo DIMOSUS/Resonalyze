@@ -48,6 +48,18 @@ internal sealed class LiveSpectrumController : IDisposable
     public bool InProgress => measurement.InProgress;
     public bool TimerEnabled => timer.Enabled;
 
+    public void ConfigureFrom(ExpSweepMeasurement measurementSource)
+    {
+        measurement.Init(
+            measurementSource.SampleRate,
+            measurementSource.Bits,
+            60,
+            measurementSource.PlaybackChannel,
+            2048,
+            measurementSource.OutputDeviceNumber,
+            measurementSource.InputDeviceNumber);
+    }
+
     public async Task ToggleAsync()
     {
         if (measurement.InProgress)

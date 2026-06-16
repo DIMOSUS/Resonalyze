@@ -72,6 +72,7 @@ namespace Resonalyze
         private readonly ModeController modeController;
         private readonly ChromeTitleBarController titleBarController;
         private readonly LiveSpectrumController liveSpectrumController;
+        private readonly MeasurementSettingsFile measurementSettings;
         private bool hasCurrentImpulseResponse;
         private bool closingPrepared;
         private bool resourcesDisposed;
@@ -79,6 +80,7 @@ namespace Resonalyze
         public Form1()
         {
             InitializeComponent();
+            measurementSettings = MeasurementSettingsFile.LoadOrDefault();
             titleBarController = new ChromeTitleBarController(
                 this,
                 plotView1,
@@ -114,7 +116,15 @@ namespace Resonalyze
                 CanDrawCurrentMeasurement,
                 UpdateDrawButtonText);
 
-            expSweepMeasurement.Init(12, 44100, 24, 1.0, PlaybackChannel.Mono);
+            measurementSettings.ApplyTo(
+                expSweepMeasurement,
+                frequencyResponseOptions,
+                phaseResponseOptions,
+                groupDelayOptions,
+                impulseResponseOptions,
+                waterfallGenOptions,
+                burstDecayGenOptions);
+            liveSpectrumController.ConfigureFrom(expSweepMeasurement);
             SetButtonFrozen(buttonSave, true);
             SetButtonFrozen(buttonLoad, false);
             SetButtonFrozen(buttonDraw, true);
@@ -317,6 +327,8 @@ namespace Resonalyze
             if (ShowSettingsDialog(opt) == DialogResult.OK)
             {
                 opt.SetOptions(expSweepMeasurement);
+                liveSpectrumController.ConfigureFrom(expSweepMeasurement);
+                SaveMeasurementSettings();
             }
         }
 
@@ -328,6 +340,7 @@ namespace Resonalyze
             if (ShowSettingsDialog(opt) == DialogResult.OK)
             {
                 opt.SetOptions(waterfallGenOptions);
+                SaveMeasurementSettings();
             }
         }
 
@@ -338,6 +351,7 @@ namespace Resonalyze
             if (ShowSettingsDialog(opt) == DialogResult.OK)
             {
                 opt.SetOptions(frequencyResponseOptions);
+                SaveMeasurementSettings();
             }
         }
 
@@ -349,6 +363,7 @@ namespace Resonalyze
             if (ShowSettingsDialog(opt) == DialogResult.OK)
             {
                 opt.SetOptions(burstDecayGenOptions);
+                SaveMeasurementSettings();
             }
         }
 
@@ -359,6 +374,7 @@ namespace Resonalyze
             if (ShowSettingsDialog(opt) == DialogResult.OK)
             {
                 opt.SetOptions(groupDelayOptions);
+                SaveMeasurementSettings();
             }
         }
 
@@ -369,6 +385,7 @@ namespace Resonalyze
             if (ShowSettingsDialog(opt) == DialogResult.OK)
             {
                 opt.SetOptions(phaseResponseOptions);
+                SaveMeasurementSettings();
             }
         }
 
@@ -379,7 +396,21 @@ namespace Resonalyze
             if (ShowSettingsDialog(opt) == DialogResult.OK)
             {
                 opt.SetOptions(impulseResponseOptions);
+                SaveMeasurementSettings();
             }
+        }
+
+        private void SaveMeasurementSettings()
+        {
+            measurementSettings.CaptureFrom(
+                expSweepMeasurement,
+                frequencyResponseOptions,
+                phaseResponseOptions,
+                groupDelayOptions,
+                impulseResponseOptions,
+                waterfallGenOptions,
+                burstDecayGenOptions);
+            measurementSettings.Save();
         }
 
         private DialogResult ShowSettingsDialog(Form dialog)

@@ -28,10 +28,19 @@ namespace Resonalyze
         public int SampleRate { get; private set; }
         public int Bits { get; private set; }
         public PlaybackChannel PlaybackChannel { get; private set; }
+        public int OutputDeviceNumber { get; private set; } = -1;
+        public int InputDeviceNumber { get; private set; } = -1;
         public int SequenceLength { get; private set; }
         public Exception? LastError { get; private set; }
 
-        public void Init(int sampleRate, int bits, double requestedDuration, PlaybackChannel playbackChannel, int sequenceLength = 2048)
+        public void Init(
+            int sampleRate,
+            int bits,
+            double requestedDuration,
+            PlaybackChannel playbackChannel,
+            int sequenceLength = 2048,
+            int outputDeviceNumber = -1,
+            int inputDeviceNumber = -1)
         {
             ThrowIfDisposed();
             if (InProgress)
@@ -47,6 +56,8 @@ namespace Resonalyze
             PlaybackChannel = playbackChannel;
             SampleRate = sampleRate;
             Bits = bits;
+            OutputDeviceNumber = outputDeviceNumber;
+            InputDeviceNumber = inputDeviceNumber;
 
             signal?.Dispose();
             signal = new NoiseSignal();
@@ -58,7 +69,7 @@ namespace Resonalyze
                 soundRecorder.Dispose();
             }
             soundRecorder = new SoundRecorder();
-            soundRecorder.Init(sampleRate, bits, 1);
+            soundRecorder.Init(sampleRate, bits, 1, inputDeviceNumber);
             soundRecorder.Sequence = sequenceLength;
             soundRecorder.SequenceReady += ProcessSequence;
         }
@@ -127,7 +138,10 @@ namespace Resonalyze
             SoundRecorder recorder = soundRecorder!;
             RawSourceWaveStream stream = noiseSignal.GetStream(PlaybackChannel);
             bool success = false;
-            using var player = new WaveOutEvent();
+            using var player = new WaveOutEvent
+            {
+                DeviceNumber = OutputDeviceNumber
+            };
             var sequenceChannel = Channel.CreateBounded<float[]>(
                 new BoundedChannelOptions(8)
                 {

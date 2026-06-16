@@ -24,8 +24,13 @@ namespace Resonalyze
         public int SampleRate { get; private set; }
         public int Bits { get; private set; }
         public int ChannelCount { get; private set; }
+        public int InputDeviceNumber { get; private set; } = -1;
 
-        public void Init(int sampleRate, int bits, int channelCount)
+        public void Init(
+            int sampleRate,
+            int bits,
+            int channelCount,
+            int inputDeviceNumber = -1)
         {
             ThrowIfDisposed();
             if (bits is not (16 or 24))
@@ -45,6 +50,7 @@ namespace Resonalyze
             SampleRate = sampleRate;
             Bits = bits;
             ChannelCount = channelCount;
+            InputDeviceNumber = inputDeviceNumber;
             ResetBuffers();
         }
 
@@ -63,6 +69,7 @@ namespace Resonalyze
             recordingStopped = NewSignal();
             waveSource = new WaveInEvent
             {
+                DeviceNumber = InputDeviceNumber,
                 WaveFormat = new WaveFormat(SampleRate, Bits, ChannelCount)
             };
             waveSource.DataAvailable += ReceiveData;

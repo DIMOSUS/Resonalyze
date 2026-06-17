@@ -1,3 +1,5 @@
+using Resonalyze.Dsp;
+
 namespace Resonalyze;
 
 /// <summary>
@@ -5,6 +7,11 @@ namespace Resonalyze;
 /// </summary>
 public static class OverlayMath
 {
+    public static bool SupportsAmplitudeSpace(Mode mode)
+    {
+        return mode is Mode.FrequencyResponse or Mode.LiveSpectrum;
+    }
+
     public static OverlayPoint[] SmoothByOctaves(
         IReadOnlyList<OverlayPoint> points,
         int inverseOctaves)
@@ -73,7 +80,10 @@ public static class OverlayMath
     public static OverlayPoint[] CalculateOperation(
         IReadOnlyList<OverlayPoint> a,
         IReadOnlyList<OverlayPoint> b,
-        OverlayOperation operation)
+        OverlayOperation operation,
+        double blendFrequencyHz = 1_000,
+        double blendWidthOctaves = 1,
+        bool useAmplitudeSpace = false)
     {
         ArgumentNullException.ThrowIfNull(a);
         ArgumentNullException.ThrowIfNull(b);
@@ -86,6 +96,24 @@ public static class OverlayMath
 
         var result = new List<OverlayPoint>(a.Count);
         int bIndex = 0;
+        bool useBlend = operation == OverlayOperation.Blend;
+        double lowerBlend = 0;
+        double upperBlend = 0;
+        if (useBlend)
+        {
+            if (!double.IsFinite(blendFrequencyHz) || blendFrequencyHz <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(blendFrequencyHz));
+            }
+            if (!double.IsFinite(blendWidthOctaves) || blendWidthOctaves <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(blendWidthOctaves));
+            }
+
+            double halfWidth = blendWidthOctaves / 2.0;
+            lowerBlend = blendFrequencyHz / Math.Pow(2.0, halfWidth);
+            upperBlend = blendFrequencyHz * Math.Pow(2.0, halfWidth);
+        }
 
         foreach (OverlayPoint aPoint in a)
         {
@@ -111,7 +139,19 @@ public static class OverlayMath
 
             double position = (aPoint.X - left.X) / (right.X - left.X);
             double bValue = left.Y + (right.Y - left.Y) * position;
-            double value = ApplyOperation(aPoint.Y, bValue, operation);
+            double aValue = aPoint.Y;
+            if (useAmplitudeSpace)
+            {
+                aValue = DataHelper.DecibelsToAmplitude(aValue);
+                bValue = DataHelper.DecibelsToAmplitude(bValue);
+            }
+            double value = useBlend
+                ? ApplyBlend(aPoint.X, aValue, bValue, lowerBlend, upperBlend)
+                : ApplyOperation(aValue, bValue, operation);
+            if (useAmplitudeSpace)
+            {
+                value = DataHelper.AmplitudeToDecibels(value);
+            }
             if (double.IsFinite(value))
             {
                 result.Add(new OverlayPoint(aPoint.X, value));
@@ -135,5 +175,29 @@ public static class OverlayMath
             OverlayOperation.AbsoluteDifference => Math.Abs(a - b),
             _ => double.NaN
         };
+    }
+
+    private static double ApplyBlend(
+        double frequency,
+        double a,
+        double b,
+        double lowerBlend,
+        double upperBlend)
+    {
+        if (frequency <= lowerBlend)
+        {
+            return a;
+        }
+        if (frequency >= upperBlend)
+        {
+            return b;
+        }
+
+        double t = (Math.Log2(frequency) - Math.Log2(lowerBlend)) /
+            (Math.Log2(upperBlend) - Math.Log2(lowerBlend));
+        t = Math.Clamp(t, 0, 1);
+        double crossfade = 0.5 - 0.5 * Math.Cos(Math.PI * t);
+        double blended = a + (b - a) * crossfade;
+        return Math.Clamp(blended, Math.Min(a, b), Math.Max(a, b));
     }
 }

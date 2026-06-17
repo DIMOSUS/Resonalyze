@@ -9,7 +9,7 @@ namespace Resonalyze;
 public sealed class OverlayOperationFile
 {
     public const string CurrentFormat = "resonalyze-overlay-operation";
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 4;
     public const int MinimumSlot = 11;
     public const int MaximumSlot = 12;
 
@@ -31,6 +31,9 @@ public sealed class OverlayOperationFile
     public int SourceSlotA { get; set; }
     public int SourceSlotB { get; set; }
     public OverlayOperation Operation { get; set; } = OverlayOperation.AMinusB;
+    public double BlendFrequencyHz { get; set; } = 1_000;
+    public double BlendWidthOctaves { get; set; } = 1;
+    public bool UseAmplitudeSpace { get; set; }
     public double Offset { get; set; }
     public int ColorArgb { get; set; }
     public double StrokeThickness { get; set; } = 2;
@@ -159,6 +162,24 @@ public sealed class OverlayOperationFile
         {
             throw new InvalidDataException(
                 "The calculated overlay operation is invalid.");
+        }
+        if (Operation == OverlayOperation.Blend)
+        {
+            if (!double.IsFinite(BlendFrequencyHz) || BlendFrequencyHz <= 0)
+            {
+                throw new InvalidDataException(
+                    "The blend crossover frequency is invalid.");
+            }
+            if (!double.IsFinite(BlendWidthOctaves) || BlendWidthOctaves <= 0)
+            {
+                throw new InvalidDataException(
+                    "The blend transition width is invalid.");
+            }
+        }
+        if (UseAmplitudeSpace && !OverlayMath.SupportsAmplitudeSpace(Mode))
+        {
+            throw new InvalidDataException(
+                "Amplitude-space overlay math is not supported in this mode.");
         }
         if (!double.IsFinite(Offset))
         {

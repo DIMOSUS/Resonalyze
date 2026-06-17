@@ -797,6 +797,9 @@ internal sealed class CalculatedOverlay
     private int sourceSlotA;
     private int sourceSlotB;
     private OverlayOperation operation = OverlayOperation.AMinusB;
+    private double blendFrequencyHz = 1_000;
+    private double blendWidthOctaves = 1;
+    private bool useAmplitudeSpace;
     private double strokeThickness = 2;
     private OverlayLineStyle lineStyle = OverlayLineStyle.Dash;
     private int opacityPercent = 100;
@@ -900,7 +903,10 @@ internal sealed class CalculatedOverlay
         OverlayPoint[] points = OverlayMath.CalculateOperation(
             sourceA!.Points,
             sourceB!.Points,
-            operation);
+            operation,
+            blendFrequencyHz,
+            blendWidthOctaves,
+            useAmplitudeSpace);
         points = OverlayMath.SmoothByOctaves(
             points,
             smoothingInverseOctaves);
@@ -962,6 +968,9 @@ internal sealed class CalculatedOverlay
             sourceSlotA,
             sourceSlotB,
             operation,
+            blendFrequencyHz,
+            blendWidthOctaves,
+            useAmplitudeSpace,
             panel.BackColor,
             strokeThickness,
             lineStyle,
@@ -973,12 +982,14 @@ internal sealed class CalculatedOverlay
             return;
         }
 
-        bool wasChecked = Checked;
         Hide();
         Title = dialog.OverlayName;
         sourceSlotA = dialog.SourceSlotA;
         sourceSlotB = dialog.SourceSlotB;
         operation = dialog.Operation;
+        blendFrequencyHz = dialog.BlendFrequencyHz;
+        blendWidthOctaves = dialog.BlendWidthOctaves;
+        useAmplitudeSpace = dialog.UseAmplitudeSpace;
         panel.BackColor = dialog.SelectedColor;
         strokeThickness = dialog.StrokeThickness;
         lineStyle = dialog.LineStyle;
@@ -990,7 +1001,7 @@ internal sealed class CalculatedOverlay
 
         SaveCurrentState();
         RefreshSources();
-        if (wasChecked && checkBox.Enabled)
+        if (checkBox.Enabled)
         {
             Show();
         }
@@ -1049,6 +1060,9 @@ internal sealed class CalculatedOverlay
         sourceSlotA = file.SourceSlotA;
         sourceSlotB = file.SourceSlotB;
         operation = file.Operation;
+        blendFrequencyHz = file.BlendFrequencyHz;
+        blendWidthOctaves = file.BlendWidthOctaves;
+        useAmplitudeSpace = file.UseAmplitudeSpace;
         strokeThickness = file.StrokeThickness;
         lineStyle = file.LineStyle;
         opacityPercent = file.OpacityPercent;
@@ -1089,6 +1103,9 @@ internal sealed class CalculatedOverlay
                 SourceSlotA = sourceSlotA,
                 SourceSlotB = sourceSlotB,
                 Operation = operation,
+                BlendFrequencyHz = blendFrequencyHz,
+                BlendWidthOctaves = blendWidthOctaves,
+                UseAmplitudeSpace = useAmplitudeSpace,
                 Offset = (double)offsetControl.Value,
                 ColorArgb = panel.BackColor.ToArgb(),
                 StrokeThickness = strokeThickness,
@@ -1116,6 +1133,9 @@ internal sealed class CalculatedOverlay
         sourceSlotA = 0;
         sourceSlotB = 0;
         operation = OverlayOperation.AMinusB;
+        blendFrequencyHz = 1_000;
+        blendWidthOctaves = 1;
+        useAmplitudeSpace = false;
         strokeThickness = 2;
         lineStyle = OverlayLineStyle.Dash;
         opacityPercent = 100;

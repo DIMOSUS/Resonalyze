@@ -18,7 +18,10 @@ public sealed class OverlayOperationFileTests
                 Title = "Left minus right",
                 SourceSlotA = 2,
                 SourceSlotB = 7,
-                Operation = OverlayOperation.AMinusB,
+                Operation = OverlayOperation.Blend,
+                BlendFrequencyHz = 1_250,
+                BlendWidthOctaves = 0.75,
+                UseAmplitudeSpace = true,
                 Offset = 1.5,
                 ColorArgb = Color.Aqua.ToArgb(),
                 StrokeThickness = 3,
@@ -40,6 +43,9 @@ public sealed class OverlayOperationFileTests
             Assert.Equal(original.SourceSlotA, loaded.SourceSlotA);
             Assert.Equal(original.SourceSlotB, loaded.SourceSlotB);
             Assert.Equal(original.Operation, loaded.Operation);
+            Assert.Equal(original.BlendFrequencyHz, loaded.BlendFrequencyHz);
+            Assert.Equal(original.BlendWidthOctaves, loaded.BlendWidthOctaves);
+            Assert.Equal(original.UseAmplitudeSpace, loaded.UseAmplitudeSpace);
             Assert.Equal(original.Offset, loaded.Offset);
             Assert.Equal(original.ColorArgb, loaded.ColorArgb);
             Assert.Equal(original.StrokeThickness, loaded.StrokeThickness);
@@ -99,6 +105,59 @@ public sealed class OverlayOperationFileTests
 
             Assert.Throws<ArgumentOutOfRangeException>(
                 () => file.Save(root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Save_RejectsInvalidBlendConfiguration()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var file = new OverlayOperationFile
+            {
+                Mode = Mode.FrequencyResponse,
+                Slot = 11,
+                Title = "Blend",
+                SourceSlotA = 1,
+                SourceSlotB = 2,
+                Operation = OverlayOperation.Blend,
+                BlendFrequencyHz = 0,
+                BlendWidthOctaves = 0,
+                ColorArgb = Color.White.ToArgb()
+            };
+
+            Assert.Throws<InvalidDataException>(() => file.Save(root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Save_RejectsAmplitudeSpaceInUnsupportedMode()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var file = new OverlayOperationFile
+            {
+                Mode = Mode.PhaseResponse,
+                Slot = 11,
+                Title = "Phase",
+                SourceSlotA = 1,
+                SourceSlotB = 2,
+                Operation = OverlayOperation.Sum,
+                UseAmplitudeSpace = true,
+                ColorArgb = Color.White.ToArgb()
+            };
+
+            Assert.Throws<InvalidDataException>(() => file.Save(root));
         }
         finally
         {

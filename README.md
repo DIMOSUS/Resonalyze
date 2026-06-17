@@ -265,6 +265,9 @@ Calculated overlay settings additionally include:
 ![Calculated overlay](assets/images/calc_overlay.jpg)
 - Two source slots selected from overlays 1-10
 - Operations `A - B`, `B - A`, `A + B`, `(A + B) / 2`, and `|A - B|`
+- Blend operation with a user-defined crossover frequency and transition width
+- Optional amplitude-space math for dB-based views, which converts both
+  curves to linear amplitude before the operation and back to dB afterward
 - Independent octave smoothing applied after the selected operation
 
 Octave smoothing is available only for Frequency Response, Phase Response,
@@ -284,7 +287,7 @@ overlay immediately update visible calculated overlays.
 
 Ordinary overlay files use format `resonalyze-overlay`, version `4`.
 Calculated overlay files use format `resonalyze-overlay-operation`, version
-`2`. Older overlay schema versions are intentionally not loaded.
+`4`. Older overlay schema versions are intentionally not loaded.
 
 Overlays are available in the Impulse Response, Frequency Response, Phase
 Response, Group Delay, paused Live Spectrum, and Autocorrelation views. The

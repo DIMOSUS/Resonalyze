@@ -36,6 +36,90 @@ public sealed class OverlayMathTests
     }
 
     [Fact]
+    public void CalculateOperation_BlendCrossfadesAroundCenterFrequency()
+    {
+        OverlayPoint[] a =
+        [
+            new OverlayPoint(1, 10),
+            new OverlayPoint(2, 14),
+            new OverlayPoint(3, 20)
+        ];
+        OverlayPoint[] b =
+        [
+            new OverlayPoint(1, 8),
+            new OverlayPoint(3, 16)
+        ];
+
+        OverlayPoint[] result = OverlayMath.CalculateOperation(
+            a,
+            b,
+            OverlayOperation.Blend,
+            blendFrequencyHz: 2,
+            blendWidthOctaves: 1);
+
+        Assert.Equal(3, result.Length);
+        Assert.Equal(10, result[0].Y, precision: 12);
+        Assert.Equal(13, result[1].Y, precision: 12);
+        Assert.Equal(16, result[2].Y, precision: 12);
+    }
+
+    [Fact]
+    public void CalculateOperation_BlendStaysBetweenSourceCurves()
+    {
+        OverlayPoint[] a =
+        [
+            new OverlayPoint(1, 10),
+            new OverlayPoint(2, 14),
+            new OverlayPoint(3, 20)
+        ];
+        OverlayPoint[] b =
+        [
+            new OverlayPoint(1, 8),
+            new OverlayPoint(3, 16)
+        ];
+
+        OverlayPoint[] result = OverlayMath.CalculateOperation(
+            a,
+            b,
+            OverlayOperation.Blend,
+            blendFrequencyHz: 2,
+            blendWidthOctaves: 1);
+
+        for (int i = 0; i < result.Length; i++)
+        {
+            OverlayPoint point = result[i];
+            double min = Math.Min(a[i].Y, b[0].Y + (b[1].Y - b[0].Y) * ((point.X - b[0].X) / (b[1].X - b[0].X)));
+            double max = Math.Max(a[i].Y, b[0].Y + (b[1].Y - b[0].Y) * ((point.X - b[0].X) / (b[1].X - b[0].X)));
+            Assert.InRange(point.Y, min, max);
+        }
+    }
+
+    [Fact]
+    public void CalculateOperation_UsesAmplitudeSpaceWhenRequested()
+    {
+        double halfAmplitudeDb = Resonalyze.Dsp.DataHelper.AmplitudeToDecibels(0.5);
+        OverlayPoint[] a =
+        [
+            new OverlayPoint(1, halfAmplitudeDb),
+            new OverlayPoint(2, halfAmplitudeDb)
+        ];
+        OverlayPoint[] b =
+        [
+            new OverlayPoint(1, halfAmplitudeDb),
+            new OverlayPoint(2, halfAmplitudeDb)
+        ];
+
+        OverlayPoint[] result = OverlayMath.CalculateOperation(
+            a,
+            b,
+            OverlayOperation.Sum,
+            useAmplitudeSpace: true);
+
+        Assert.Equal(2, result.Length);
+        Assert.All(result, point => Assert.Equal(0, point.Y, precision: 12));
+    }
+
+    [Fact]
     public void CalculateOperation_UsesOnlyOverlappingRange()
     {
         OverlayPoint[] a =

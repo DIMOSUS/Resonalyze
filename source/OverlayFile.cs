@@ -204,7 +204,8 @@ public enum OverlayOperation
     BMinusA,
     Sum,
     Average,
-    AbsoluteDifference
+    AbsoluteDifference,
+    Blend
 }
 
 public static class OverlaySmoothing

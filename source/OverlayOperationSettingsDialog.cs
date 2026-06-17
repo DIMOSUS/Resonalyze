@@ -1,3 +1,5 @@
+using Resonalyze.Dsp;
+
 namespace Resonalyze;
 
 internal sealed class OverlayOperationSettingsDialog : Form
@@ -6,6 +8,11 @@ internal sealed class OverlayOperationSettingsDialog : Form
     private readonly ComboBox sourceAComboBox = new();
     private readonly ComboBox sourceBComboBox = new();
     private readonly ComboBox operationComboBox = new();
+    private readonly Label blendFrequencyLabel = new();
+    private readonly NumericUpDown blendFrequencyInput = new();
+    private readonly Label blendWidthLabel = new();
+    private readonly ComboBox blendWidthInput = new();
+    private readonly CheckBox amplitudeSpaceCheckBox = new();
     private readonly Button colorButton = new();
     private readonly NumericUpDown thicknessInput = new();
     private readonly ComboBox styleComboBox = new();
@@ -13,6 +20,7 @@ internal sealed class OverlayOperationSettingsDialog : Form
     private readonly TrackBar opacityTrackBar = new();
     private readonly Label opacityValueLabel = new();
     private readonly bool supportsSmoothing;
+    private readonly bool supportsAmplitudeSpace;
     private Color selectedColor;
 
     public OverlayOperationSettingsDialog(
@@ -21,6 +29,9 @@ internal sealed class OverlayOperationSettingsDialog : Form
         int sourceSlotA,
         int sourceSlotB,
         OverlayOperation operation,
+        double blendFrequencyHz,
+        double blendWidthOctaves,
+        bool useAmplitudeSpace,
         Color color,
         double strokeThickness,
         OverlayLineStyle lineStyle,
@@ -29,6 +40,7 @@ internal sealed class OverlayOperationSettingsDialog : Form
         IReadOnlyList<OverlaySlotOption> availableSources)
     {
         supportsSmoothing = OverlaySmoothing.SupportsMode(mode);
+        supportsAmplitudeSpace = OverlayMath.SupportsAmplitudeSpace(mode);
         selectedColor = color;
         InitializeDialog(availableSources);
 
@@ -36,12 +48,19 @@ internal sealed class OverlayOperationSettingsDialog : Form
         SelectSlot(sourceAComboBox, sourceSlotA, 0);
         SelectSlot(sourceBComboBox, sourceSlotB, 1);
         operationComboBox.SelectedItem = operation;
+        blendFrequencyInput.Value = (decimal)Math.Clamp(
+            blendFrequencyHz,
+            1,
+            1_000_000);
+        amplitudeSpaceCheckBox.Checked = useAmplitudeSpace;
         thicknessInput.Value = (decimal)Math.Clamp(strokeThickness, 0.5, 10);
         styleComboBox.SelectedItem = lineStyle;
         smoothingComboBox.SelectedItem = smoothingInverseOctaves;
         opacityTrackBar.Value = Math.Clamp(opacityPercent, 10, 100);
+        SelectBlendWidth(blendWidthOctaves);
         UpdateColorButton();
         UpdateOpacityLabel();
+        UpdateBlendControls();
     }
 
     public string OverlayName => nameTextBox.Text.Trim();
@@ -51,6 +70,10 @@ internal sealed class OverlayOperationSettingsDialog : Form
         ((OverlaySlotOption)sourceBComboBox.SelectedItem!).Slot;
     public OverlayOperation Operation =>
         (OverlayOperation)operationComboBox.SelectedItem!;
+    public double BlendFrequencyHz => (double)blendFrequencyInput.Value;
+    public double BlendWidthOctaves =>
+        ((BlendWidthOption)blendWidthInput.SelectedItem!).Octaves;
+    public bool UseAmplitudeSpace => amplitudeSpaceCheckBox.Checked;
     public Color SelectedColor => selectedColor;
     public double StrokeThickness => (double)thicknessInput.Value;
     public OverlayLineStyle LineStyle =>
@@ -67,7 +90,9 @@ internal sealed class OverlayOperationSettingsDialog : Form
 
         AutoScaleMode = AutoScaleMode.Font;
         BackColor = Color.FromArgb(40, 42, 48);
-        ClientSize = new Size(440, supportsSmoothing ? 515 : 455);
+        ClientSize = new Size(
+            440,
+            (supportsSmoothing ? 590 : 530) + (supportsAmplitudeSpace ? 20 : 0));
         Font = new Font("Segoe UI", 9F);
         ForeColor = Color.FromArgb(235, 237, 240);
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -107,6 +132,7 @@ internal sealed class OverlayOperationSettingsDialog : Form
                 args.Value = OverlayOperationLabels.GetLabel(item);
             }
         };
+        operationComboBox.SelectedIndexChanged += (_, _) => UpdateBlendControls();
 
         AddLabel("Color", 202);
         colorButton.Location = new Point(20, 222);
@@ -129,16 +155,52 @@ internal sealed class OverlayOperationSettingsDialog : Form
         ConfigureCombo(styleComboBox, new Point(272, 222), new Size(148, 24));
         styleComboBox.DataSource = Enum.GetValues<OverlayLineStyle>();
 
-        int opacityLabelY = supportsSmoothing ? 330 : 270;
-        int opacityControlY = supportsSmoothing ? 350 : 290;
-        int buttonY = supportsSmoothing ? 465 : 405;
+        blendFrequencyLabel.Text = "Blend frequency";
+        blendFrequencyLabel.Location = new Point(20, 262);
+        blendFrequencyLabel.AutoSize = true;
+        blendFrequencyLabel.ForeColor = Color.FromArgb(185, 190, 200);
+        blendFrequencyLabel.Font = Font;
+        Controls.Add(blendFrequencyLabel);
+        ConfigureComboOrText(blendFrequencyInput, new Point(20, 282), new Size(190, 24));
+        blendFrequencyInput.DecimalPlaces = 1;
+        blendFrequencyInput.Minimum = 1;
+        blendFrequencyInput.Maximum = 1_000_000;
+        blendFrequencyInput.Increment = 1;
+        blendFrequencyInput.ThousandsSeparator = true;
+
+        blendWidthLabel.Text = "Transition width";
+        blendWidthLabel.Location = new Point(230, 262);
+        blendWidthLabel.AutoSize = true;
+        blendWidthLabel.ForeColor = Color.FromArgb(185, 190, 200);
+        blendWidthLabel.Font = Font;
+        Controls.Add(blendWidthLabel);
+        ConfigureCombo(blendWidthInput, new Point(230, 282), new Size(190, 24));
+        blendWidthInput.FormattingEnabled = true;
+        foreach (BlendWidthOption option in OverlayBlendWidthOptions.Options)
+        {
+            blendWidthInput.Items.Add(option);
+        }
+        blendWidthInput.Format += (_, args) =>
+        {
+            if (args.ListItem is BlendWidthOption option)
+            {
+                args.Value = option.Label;
+            }
+        };
+
+        int amplitudeSpaceY = supportsSmoothing ? 382 : 322;
+        int opacityLabelY = supportsSmoothing
+            ? (supportsAmplitudeSpace ? 430 : 390)
+            : (supportsAmplitudeSpace ? 360 : 330);
+        int opacityControlY = opacityLabelY + 20;
+        int buttonY = opacityControlY + 115;
 
         if (supportsSmoothing)
         {
-            AddLabel("Smoothing", 270);
+            AddLabel("Smoothing", 322);
             ConfigureCombo(
                 smoothingComboBox,
-                new Point(20, 290),
+                new Point(20, 342),
                 new Size(400, 24));
             smoothingComboBox.FormattingEnabled = true;
             foreach (int value in OverlaySmoothing.SupportedInverseOctaves)
@@ -153,6 +215,16 @@ internal sealed class OverlayOperationSettingsDialog : Form
                 }
             };
             Controls.Add(smoothingComboBox);
+        }
+
+        if (supportsAmplitudeSpace)
+        {
+            amplitudeSpaceCheckBox.AutoSize = true;
+            amplitudeSpaceCheckBox.Location = new Point(20, amplitudeSpaceY);
+            amplitudeSpaceCheckBox.Text = "Operate in amplitude space";
+            amplitudeSpaceCheckBox.BackColor = Color.Transparent;
+            amplitudeSpaceCheckBox.ForeColor = Color.FromArgb(235, 237, 240);
+            Controls.Add(amplitudeSpaceCheckBox);
         }
 
         AddLabel("Opacity", opacityLabelY);
@@ -185,6 +257,10 @@ internal sealed class OverlayOperationSettingsDialog : Form
             sourceAComboBox,
             sourceBComboBox,
             operationComboBox,
+            blendFrequencyLabel,
+            blendFrequencyInput,
+            blendWidthLabel,
+            blendWidthInput,
             colorButton,
             thicknessInput,
             styleComboBox,
@@ -219,6 +295,26 @@ internal sealed class OverlayOperationSettingsDialog : Form
         {
             sourceBComboBox.Focus();
         }
+    }
+
+    private void UpdateBlendControls()
+    {
+        bool isBlend = operationComboBox.SelectedItem is OverlayOperation op &&
+            op == OverlayOperation.Blend;
+        blendFrequencyLabel.Visible = isBlend;
+        blendFrequencyInput.Visible = isBlend;
+        blendWidthLabel.Visible = isBlend;
+        blendWidthInput.Visible = isBlend;
+    }
+
+    private void SelectBlendWidth(double blendWidthOctaves)
+    {
+        BlendWidthOption? selected = blendWidthInput.Items
+            .Cast<BlendWidthOption>()
+            .FirstOrDefault(option =>
+                Math.Abs(option.Octaves - blendWidthOctaves) < 1e-9);
+        blendWidthInput.SelectedItem = selected
+            ?? blendWidthInput.Items.Cast<object>().FirstOrDefault();
     }
 
     private void ColorButtonClick(object? sender, EventArgs e)
@@ -302,6 +398,24 @@ internal sealed record OverlaySlotOption(int Slot, string Title)
     public override string ToString() => $"{Slot}: {Title}";
 }
 
+internal sealed record BlendWidthOption(double Octaves, string Label)
+{
+    public override string ToString() => Label;
+}
+
+internal static class OverlayBlendWidthOptions
+{
+    public static IReadOnlyList<BlendWidthOption> Options { get; } =
+    [
+        new BlendWidthOption(1, "1/1"),
+        new BlendWidthOption(1.0 / 3.0, "1/3"),
+        new BlendWidthOption(1.0 / 6.0, "1/6"),
+        new BlendWidthOption(1.0 / 12.0, "1/12"),
+        new BlendWidthOption(1.0 / 24.0, "1/24"),
+        new BlendWidthOption(1.0 / 48.0, "1/48")
+    ];
+}
+
 internal static class OverlayOperationLabels
 {
     public static string GetLabel(OverlayOperation operation)
@@ -313,6 +427,7 @@ internal static class OverlayOperationLabels
             OverlayOperation.Sum => "A + B",
             OverlayOperation.Average => "(A + B) / 2",
             OverlayOperation.AbsoluteDifference => "|A - B|",
+            OverlayOperation.Blend => "Blend A/B",
             _ => "Off"
         };
     }
@@ -326,6 +441,7 @@ internal static class OverlayOperationLabels
             OverlayOperation.Sum => "A+B",
             OverlayOperation.Average => "AVG",
             OverlayOperation.AbsoluteDifference => "|A-B|",
+            OverlayOperation.Blend => "XOVR",
             _ => "--"
         };
     }

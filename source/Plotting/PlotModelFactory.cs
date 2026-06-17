@@ -42,7 +42,7 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateFrequencyResponse(bool includeCurves)
     {
-        var model = new PlotModel { Title = "Frequency Response" };
+        var model = new PlotModel { Title = "Frequency Response", TitleFontSize = 14 };
 
         if (CanIncludeImpulseCurves(includeCurves))
         {
@@ -66,7 +66,7 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreatePhaseResponse(bool includeCurves)
     {
-        var model = new PlotModel { Title = "Phase Response" };
+        var model = new PlotModel { Title = "Phase Response", TitleFontSize = 14 };
 
         if (CanIncludeImpulseCurves(includeCurves))
         {
@@ -121,7 +121,7 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateGroupDelay(bool includeCurves)
     {
-        var model = new PlotModel { Title = "Group Delay" };
+        var model = new PlotModel { Title = "Group Delay", TitleFontSize = 14 };
 
         if (CanIncludeImpulseCurves(includeCurves))
         {
@@ -173,7 +173,7 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateImpulseResponse(bool includeCurves)
     {
-        var model = new PlotModel { Title = "Impulse Response" };
+        var model = new PlotModel { Title = "Impulse Response", TitleFontSize = 14 };
 
         if (CanIncludeImpulseCurves(includeCurves))
         {
@@ -198,7 +198,7 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateAutocorrelation(bool includeCurves)
     {
-        var model = new PlotModel { Title = "Autocorrelation" };
+        var model = new PlotModel { Title = "Autocorrelation", TitleFontSize = 14 };
 
         if (CanIncludeImpulseCurves(includeCurves))
         {
@@ -226,7 +226,7 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateLiveSpectrum()
     {
-        var model = new PlotModel { Title = "Live Spectrum" };
+        var model = new PlotModel { Title = "Live Spectrum", TitleFontSize = 14 };
 
         AddFrequencyAxis(model);
         AddDecibelAxis(model);
@@ -269,7 +269,7 @@ internal sealed class PlotModelFactory
         string title,
         WaterfallGenerateOptions options)
     {
-        var model = new PlotModel { Title = title };
+        var model = new PlotModel { Title = title, TitleFontSize = 14 };
 
         model.Axes.Add(new LinearAxis
         {

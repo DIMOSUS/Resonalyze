@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using OxyPlot;
 using OxyPlot.Series;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement.Button;
 using Button = System.Windows.Forms.Button;
 using CheckBox = System.Windows.Forms.CheckBox;
 using ToolTip = System.Windows.Forms.ToolTip;
@@ -242,6 +243,8 @@ public sealed class OverlayCollection
     {
         return new CheckBox
         {
+            BackColor = template.BackColor,
+            FlatStyle = template.FlatStyle,
             AutoSize = template.AutoSize,
             Location = template.Location,
             Name = $"checkBox{index}",
@@ -255,6 +258,8 @@ public sealed class OverlayCollection
     {
         return new NumericUpDown
         {
+            BackColor = template.BackColor,
+            ForeColor = template.ForeColor,
             BorderStyle = BorderStyle.None,
             Location = template.Location,
             Maximum = template.Maximum,
@@ -271,10 +276,14 @@ public sealed class OverlayCollection
         return new Button
         {
             FlatStyle = template.FlatStyle,
+            BackColor = template.BackColor,
+            ForeColor = template.ForeColor,
             Location = template.Location,
             Name = $"button{index}",
             Size = template.Size,
-            Text = $"{index}"
+            Text = $"{index}",
+            UseVisualStyleBackColor = template.UseVisualStyleBackColor,
+            UseCompatibleTextRendering = template.UseCompatibleTextRendering
         };
     }
 
@@ -283,6 +292,8 @@ public sealed class OverlayCollection
         return new Button
         {
             FlatStyle = templateSettingsButton.FlatStyle,
+            BackColor = templateSettingsButton.BackColor,
+            ForeColor = templateSettingsButton.ForeColor,
             Location = templateSettingsButton.Location,
             Name = $"buttonOverlaySettings{index}",
             Size = templateSettingsButton.Size,

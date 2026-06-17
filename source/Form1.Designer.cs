@@ -35,10 +35,10 @@ namespace Resonalyze
             plotView1 = new OxyPlot.WindowsForms.PlotView();
             overlays = new Panel();
             overlayPanel1 = new Panel();
+            buttonSaveOverlay = new Button();
             buttonOverlaySettings1 = new Button();
             numericUpDown1 = new NumericUpDown();
             checkBox1 = new CheckBox();
-            buttonSaveOverlay = new Button();
             buttonRecordOpt = new Button();
             buttonSave = new Button();
             buttonLoad = new Button();
@@ -46,18 +46,22 @@ namespace Resonalyze
             buttonClear = new Button();
             buttonCurrentModeSettings = new Button();
             buttonDraw = new Button();
+            panel1 = new Panel();
             overlays.SuspendLayout();
             overlayPanel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)numericUpDown1).BeginInit();
+            panel1.SuspendLayout();
             SuspendLayout();
             // 
             // buttonRecord
             // 
             buttonRecord.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonRecord.BackColor = Color.FromArgb(255, 255, 192);
-            buttonRecord.Location = new Point(1098, 12);
+            buttonRecord.BackColor = Color.FromArgb(50, 55, 80);
+            buttonRecord.FlatStyle = FlatStyle.Popup;
+            buttonRecord.ForeColor = Color.White;
+            buttonRecord.Location = new Point(3, 3);
             buttonRecord.Name = "buttonRecord";
-            buttonRecord.Size = new Size(116, 23);
+            buttonRecord.Size = new Size(142, 23);
             buttonRecord.TabIndex = 0;
             buttonRecord.Text = "Start";
             buttonRecord.UseVisualStyleBackColor = false;
@@ -71,7 +75,7 @@ namespace Resonalyze
             plotView1.Location = new Point(12, 12);
             plotView1.Name = "plotView1";
             plotView1.PanCursor = Cursors.Hand;
-            plotView1.Size = new Size(1080, 705);
+            plotView1.Size = new Size(1096, 744);
             plotView1.TabIndex = 1;
             plotView1.Text = "plotView1";
             plotView1.ZoomHorizontalCursor = Cursors.SizeWE;
@@ -83,7 +87,7 @@ namespace Resonalyze
             overlays.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             overlays.BorderStyle = BorderStyle.FixedSingle;
             overlays.Controls.Add(overlayPanel1);
-            overlays.Location = new Point(1098, 376);
+            overlays.Location = new Point(1114, 415);
             overlays.Name = "overlays";
             overlays.Size = new Size(154, 341);
             overlays.TabIndex = 6;
@@ -91,28 +95,45 @@ namespace Resonalyze
             // overlayPanel1
             // 
             overlayPanel1.BackColor = Color.OrangeRed;
+            overlayPanel1.Controls.Add(buttonSaveOverlay);
             overlayPanel1.Controls.Add(buttonOverlaySettings1);
             overlayPanel1.Controls.Add(numericUpDown1);
             overlayPanel1.Controls.Add(checkBox1);
-            overlayPanel1.Controls.Add(buttonSaveOverlay);
             overlayPanel1.Location = new Point(3, 3);
             overlayPanel1.Name = "overlayPanel1";
             overlayPanel1.Size = new Size(146, 25);
             overlayPanel1.TabIndex = 3;
             // 
+            // buttonSaveOverlay
+            // 
+            buttonSaveOverlay.BackColor = Color.FromArgb(50, 55, 80);
+            buttonSaveOverlay.FlatStyle = FlatStyle.Popup;
+            buttonSaveOverlay.ForeColor = Color.White;
+            buttonSaveOverlay.Location = new Point(22, 3);
+            buttonSaveOverlay.Name = "buttonSaveOverlay";
+            buttonSaveOverlay.Size = new Size(43, 19);
+            buttonSaveOverlay.TabIndex = 1;
+            buttonSaveOverlay.Text = "1";
+            buttonSaveOverlay.UseCompatibleTextRendering = true;
+            buttonSaveOverlay.UseVisualStyleBackColor = false;
+            // 
             // buttonOverlaySettings1
             // 
-            buttonOverlaySettings1.FlatStyle = FlatStyle.System;
+            buttonOverlaySettings1.BackColor = Color.FromArgb(50, 55, 80);
+            buttonOverlaySettings1.FlatStyle = FlatStyle.Popup;
+            buttonOverlaySettings1.ForeColor = Color.White;
             buttonOverlaySettings1.Location = new Point(117, 3);
             buttonOverlaySettings1.Name = "buttonOverlaySettings1";
             buttonOverlaySettings1.Size = new Size(26, 19);
             buttonOverlaySettings1.TabIndex = 21;
             buttonOverlaySettings1.Text = "...";
-            buttonOverlaySettings1.UseVisualStyleBackColor = true;
+            buttonOverlaySettings1.UseVisualStyleBackColor = false;
             // 
             // numericUpDown1
             // 
+            numericUpDown1.BackColor = Color.FromArgb(50, 55, 80);
             numericUpDown1.BorderStyle = BorderStyle.None;
+            numericUpDown1.ForeColor = Color.White;
             numericUpDown1.Location = new Point(72, 3);
             numericUpDown1.Maximum = new decimal(new int[] { 180, 0, 0, 0 });
             numericUpDown1.Minimum = new decimal(new int[] { 180, 0, 0, int.MinValue });
@@ -124,112 +145,138 @@ namespace Resonalyze
             // checkBox1
             // 
             checkBox1.AutoSize = true;
-            checkBox1.Location = new Point(5, 6);
+            checkBox1.BackColor = Color.White;
+            checkBox1.FlatStyle = FlatStyle.Flat;
+            checkBox1.Location = new Point(5, 7);
             checkBox1.Name = "checkBox1";
-            checkBox1.Size = new Size(15, 14);
+            checkBox1.Size = new Size(12, 11);
             checkBox1.TabIndex = 0;
-            checkBox1.UseVisualStyleBackColor = true;
-            // 
-            // buttonSaveOverlay
-            // 
-            buttonSaveOverlay.FlatStyle = FlatStyle.System;
-            buttonSaveOverlay.Location = new Point(22, 3);
-            buttonSaveOverlay.Name = "buttonSaveOverlay";
-            buttonSaveOverlay.Size = new Size(44, 19);
-            buttonSaveOverlay.TabIndex = 1;
-            buttonSaveOverlay.Text = "1";
+            checkBox1.UseVisualStyleBackColor = false;
             // 
             // buttonRecordOpt
             // 
             buttonRecordOpt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonRecordOpt.BackColor = Color.FromArgb(50, 55, 80);
+            buttonRecordOpt.FlatStyle = FlatStyle.Popup;
             buttonRecordOpt.Font = new Font("Segoe UI Emoji", 9.75F);
-            buttonRecordOpt.Image = (Image)resources.GetObject("buttonRecordOpt.Image");
-            buttonRecordOpt.Location = new Point(1220, 12);
+            buttonRecordOpt.ForeColor = Color.White;
+            buttonRecordOpt.Location = new Point(4, 32);
             buttonRecordOpt.Name = "buttonRecordOpt";
-            buttonRecordOpt.Size = new Size(32, 23);
+            buttonRecordOpt.Size = new Size(141, 24);
             buttonRecordOpt.TabIndex = 8;
+            buttonRecordOpt.Text = "Record Settings";
             buttonRecordOpt.UseCompatibleTextRendering = true;
-            buttonRecordOpt.UseVisualStyleBackColor = true;
+            buttonRecordOpt.UseVisualStyleBackColor = false;
             buttonRecordOpt.Click += buttonRecordOpt_Click;
             // 
             // buttonSave
             // 
             buttonSave.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonSave.Location = new Point(1098, 39);
+            buttonSave.BackColor = Color.FromArgb(50, 55, 80);
+            buttonSave.FlatStyle = FlatStyle.Popup;
+            buttonSave.ForeColor = Color.White;
+            buttonSave.Location = new Point(4, 62);
             buttonSave.Name = "buttonSave";
-            buttonSave.Size = new Size(56, 23);
+            buttonSave.Size = new Size(69, 23);
             buttonSave.TabIndex = 18;
             buttonSave.Text = "Save";
-            buttonSave.UseVisualStyleBackColor = true;
+            toolTip1.SetToolTip(buttonSave, "Save Impulse Response");
+            buttonSave.UseVisualStyleBackColor = false;
             buttonSave.Click += buttonSave_Click;
             // 
             // buttonLoad
             // 
             buttonLoad.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonLoad.Location = new Point(1158, 39);
+            buttonLoad.BackColor = Color.FromArgb(50, 55, 80);
+            buttonLoad.FlatStyle = FlatStyle.Popup;
+            buttonLoad.ForeColor = Color.White;
+            buttonLoad.Location = new Point(76, 62);
             buttonLoad.Name = "buttonLoad";
-            buttonLoad.Size = new Size(56, 23);
+            buttonLoad.Size = new Size(69, 23);
             buttonLoad.TabIndex = 19;
             buttonLoad.Text = "Load";
-            buttonLoad.UseVisualStyleBackColor = true;
+            toolTip1.SetToolTip(buttonLoad, "Load Impulse Response");
+            buttonLoad.UseVisualStyleBackColor = false;
             buttonLoad.Click += buttonLoad_Click;
             // 
             // buttonClear
             // 
             buttonClear.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonClear.Location = new Point(1098, 126);
+            buttonClear.BackColor = Color.FromArgb(50, 55, 80);
+            buttonClear.FlatStyle = FlatStyle.Popup;
+            buttonClear.ForeColor = Color.White;
+            buttonClear.Location = new Point(1118, 168);
             buttonClear.Name = "buttonClear";
-            buttonClear.Size = new Size(116, 23);
+            buttonClear.Size = new Size(150, 23);
             buttonClear.TabIndex = 20;
-            buttonClear.Text = "Clear";
-            buttonClear.UseVisualStyleBackColor = true;
+            buttonClear.Text = "Clear Curves";
+            buttonClear.UseVisualStyleBackColor = false;
             buttonClear.Click += buttonClear_Click;
             // 
             // buttonCurrentModeSettings
             // 
             buttonCurrentModeSettings.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonCurrentModeSettings.Location = new Point(1098, 68);
+            buttonCurrentModeSettings.BackColor = Color.FromArgb(50, 55, 80);
+            buttonCurrentModeSettings.FlatStyle = FlatStyle.Popup;
+            buttonCurrentModeSettings.ForeColor = Color.White;
+            buttonCurrentModeSettings.Location = new Point(1118, 110);
             buttonCurrentModeSettings.Name = "buttonCurrentModeSettings";
-            buttonCurrentModeSettings.Size = new Size(116, 23);
+            buttonCurrentModeSettings.Size = new Size(150, 23);
             buttonCurrentModeSettings.TabIndex = 21;
             buttonCurrentModeSettings.Text = "Mode Settings...";
-            buttonCurrentModeSettings.UseVisualStyleBackColor = true;
+            buttonCurrentModeSettings.UseVisualStyleBackColor = false;
             buttonCurrentModeSettings.Click += buttonCurrentModeSettings_Click;
             // 
             // buttonDraw
             // 
             buttonDraw.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonDraw.Location = new Point(1098, 97);
+            buttonDraw.BackColor = Color.FromArgb(50, 55, 80);
+            buttonDraw.FlatStyle = FlatStyle.Popup;
+            buttonDraw.ForeColor = Color.White;
+            buttonDraw.Location = new Point(1118, 197);
             buttonDraw.Name = "buttonDraw";
-            buttonDraw.Size = new Size(116, 23);
+            buttonDraw.Size = new Size(150, 23);
             buttonDraw.TabIndex = 22;
-            buttonDraw.Text = "Draw";
-            buttonDraw.UseVisualStyleBackColor = true;
+            buttonDraw.Text = "Restore Curves";
+            buttonDraw.UseVisualStyleBackColor = false;
             buttonDraw.Click += buttonDraw_Click;
+            // 
+            // panel1
+            // 
+            panel1.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            panel1.BorderStyle = BorderStyle.FixedSingle;
+            panel1.Controls.Add(buttonRecord);
+            panel1.Controls.Add(buttonRecordOpt);
+            panel1.Controls.Add(buttonSave);
+            panel1.Controls.Add(buttonLoad);
+            panel1.Location = new Point(1118, 12);
+            panel1.Name = "panel1";
+            panel1.Size = new Size(150, 90);
+            panel1.TabIndex = 23;
             // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(1264, 729);
+            ClientSize = new Size(1280, 768);
+            Controls.Add(panel1);
             Controls.Add(buttonDraw);
             Controls.Add(buttonCurrentModeSettings);
             Controls.Add(buttonClear);
-            Controls.Add(buttonLoad);
-            Controls.Add(buttonSave);
-            Controls.Add(buttonRecordOpt);
             Controls.Add(plotView1);
-            Controls.Add(buttonRecord);
             Controls.Add(overlays);
+            FormBorderStyle = FormBorderStyle.None;
             Icon = (Icon)resources.GetObject("$this.Icon");
             MinimumSize = new Size(1280, 768);
             Name = "Form1";
+            StartPosition = FormStartPosition.CenterScreen;
             Text = "Resonalyze";
             overlays.ResumeLayout(false);
             overlayPanel1.ResumeLayout(false);
             overlayPanel1.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)numericUpDown1).EndInit();
+            panel1.ResumeLayout(false);
             ResumeLayout(false);
 
         }
@@ -251,5 +298,6 @@ namespace Resonalyze
         private Button buttonOverlaySettings1;
         private Button buttonCurrentModeSettings;
         private Button buttonDraw;
+        private Panel panel1;
     }
 }

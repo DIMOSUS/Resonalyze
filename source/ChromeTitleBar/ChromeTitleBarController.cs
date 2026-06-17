@@ -293,7 +293,7 @@ internal sealed class ChromeTitleBarController
     {
         button.BackColor = active
             ? Color.FromArgb(64, 116, 255)
-            : Color.FromArgb(42, 45, 54);
+            : Color.FromArgb(50, 55, 80);
         button.FlatAppearance.MouseOverBackColor = active
             ? Color.FromArgb(78, 130, 255)
             : Color.FromArgb(54, 58, 68);

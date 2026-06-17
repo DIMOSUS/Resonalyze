@@ -15,6 +15,7 @@ internal sealed class LiveSpectrumController : IDisposable
     private readonly Func<Task> selectLiveSpectrumAsync;
     private readonly Action updateOverlayAvailability;
     private readonly Action updateDrawButton;
+    private readonly Action updateClearButton;
     private bool disposed;
 
     public LiveSpectrumController(
@@ -27,7 +28,8 @@ internal sealed class LiveSpectrumController : IDisposable
         Func<Mode> getCurrentMode,
         Func<Task> selectLiveSpectrumAsync,
         Action updateOverlayAvailability,
-        Action updateDrawButton)
+        Action updateDrawButton,
+        Action updateClearButton)
     {
         this.owner = owner;
         this.measurement = measurement;
@@ -39,6 +41,7 @@ internal sealed class LiveSpectrumController : IDisposable
         this.selectLiveSpectrumAsync = selectLiveSpectrumAsync;
         this.updateOverlayAvailability = updateOverlayAvailability;
         this.updateDrawButton = updateDrawButton;
+        this.updateClearButton = updateClearButton;
 
         measurement.Init(44100, 24, 60, PlaybackChannel.Mono, 2048);
         measurement.Completed += MeasurementCompleted;
@@ -114,6 +117,7 @@ internal sealed class LiveSpectrumController : IDisposable
         _ = measurement.RunAsync();
         timer.Start();
         updateDrawButton();
+        updateClearButton();
     }
 
     private async Task StopAsync()
@@ -132,6 +136,7 @@ internal sealed class LiveSpectrumController : IDisposable
         updateOverlayAvailability();
         overlayCollection.Show(getCurrentMode());
         updateDrawButton();
+        updateClearButton();
     }
 
     private void TimerTick(object? sender, EventArgs e)
@@ -160,6 +165,7 @@ internal sealed class LiveSpectrumController : IDisposable
             timer.Stop();
             updateOverlayAvailability();
             updateDrawButton();
+            updateClearButton();
         });
     }
 }

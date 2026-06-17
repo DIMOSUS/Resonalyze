@@ -107,7 +107,8 @@ namespace Resonalyze
                 () => CurrentMode,
                 () => SelectModeAsync(ModeTab.LiveSpectrum),
                 UpdateOverlayAvailability,
-                UpdateDrawButtonText);
+                UpdateDrawButtonText,
+                UpdateClearButtonState);
             modeController = new ModeController(
                 ChangeModeAsync,
                 SetActiveModeTab,
@@ -140,7 +141,7 @@ namespace Resonalyze
                     if (success)
                     {
                         buttonRecord.Text = "Ready";
-                        buttonRecord.BackColor = Color.FromArgb(192, 255, 192);
+                        //buttonRecord.BackColor = Color.FromArgb(192, 255, 192);
                         hasCurrentImpulseResponse = true;
                         SetButtonFrozen(buttonSave, false);
                         SetButtonFrozen(buttonLoad, false);
@@ -148,12 +149,19 @@ namespace Resonalyze
                     else
                     {
                         buttonRecord.Text = expSweepMeasurement.LastError == null ? "Aborted" : "Error";
-                        buttonRecord.BackColor = Color.FromArgb(255, 192, 192);
+                        //buttonRecord.BackColor = Color.FromArgb(255, 192, 192);
                         hasCurrentImpulseResponse = false;
                         SetButtonFrozen(buttonSave, true);
                         SetButtonFrozen(buttonLoad, false);
                     }
                     UpdateDrawButtonText();
+
+                    if (success && CurrentMode != Mode.LiveSpectrum)
+                    {
+                        DrawSelectedMode(true);
+                    }
+
+                    UpdateClearButtonState();
                 });
             };
 
@@ -172,6 +180,7 @@ namespace Resonalyze
 
             CurrentMode = mode;
             plotView1.Model = null;
+            UpdateClearButtonState();
 
             if (OverlayCollection.SupportsMode(mode))
             {
@@ -197,7 +206,7 @@ namespace Resonalyze
                 buttonRecord.Text = "Running...";
                 hasCurrentImpulseResponse = false;
                 _ = expSweepMeasurement.RunAsync();
-                buttonRecord.BackColor = Color.FromArgb(192, 255, 255);
+                //buttonRecord.BackColor = Color.FromArgb(192, 255, 255);
                 SetButtonFrozen(buttonSave, true);
                 SetButtonFrozen(buttonLoad, true);
                 UpdateDrawButtonText();
@@ -254,6 +263,8 @@ namespace Resonalyze
                     DrawAutocorrelation(includeCurves);
                     break;
             }
+
+            UpdateClearButtonState();
         }
 
         private void DrawFrequencyResponse(bool includeCurves)
@@ -453,6 +464,7 @@ namespace Resonalyze
             model.Series.Clear();
             model.InvalidatePlot(true);
             plotView1.Refresh();
+            UpdateClearButtonState();
             UpdateOverlayAvailability();
         }
 
@@ -510,8 +522,19 @@ namespace Resonalyze
 
             buttonDraw.Text = modeController.ActiveTab == ModeTab.LiveSpectrum
                 ? liveSpectrumController.InProgress ? "Stop Live" : "Start Live"
-                : "Draw";
+                : "Restore Curves";
             SetButtonFrozen(buttonDraw, ShouldFreezeDrawButton());
+        }
+
+        private void UpdateClearButtonState()
+        {
+            if (!IsHandleCreated)
+            {
+                return;
+            }
+
+            bool hasCurves = plotView1.Model?.Series.Count > 0;
+            SetButtonFrozen(buttonClear, !hasCurves);
         }
 
         private bool CanDrawCurrentMeasurement() =>
@@ -716,7 +739,7 @@ namespace Resonalyze
                         file.PeakIndex);
 
                     buttonRecord.Text = "Loaded";
-                    buttonRecord.BackColor = Color.FromArgb(192, 255, 192);
+                    //buttonRecord.BackColor = Color.FromArgb(192, 255, 192);
                     hasCurrentImpulseResponse = true;
                     await SelectModeAsync(ModeTab.Impulse);
                 }
@@ -745,13 +768,13 @@ namespace Resonalyze
             if (frozen)
             {
                 button.Enabled = false;
-                button.BackColor = Color.LightGray;
-                button.ForeColor = Color.DarkGray;
+                button.BackColor = Color.FromArgb(55, 60, 70);
+                button.ForeColor = Color.FromArgb(120, 125, 135);
             }
             else
             {
-                button.BackColor = SystemColors.Control;
-                button.ForeColor = SystemColors.ControlText;
+                button.BackColor = Color.FromArgb(50,  55,  80);
+                button.ForeColor = Color.FromArgb(255, 255, 255);
                 button.Enabled = true;
             }
         }

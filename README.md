@@ -41,6 +41,7 @@ installation. SHA-256 checksum files are provided with every release.
 - Impulse response with JSON save/load
 - Windows Wave and ASIO audio backends
 - Playback/recording device selection with ASIO channel routing
+- ASIO loopback Time Alignment with sub-sample delay estimation
 - Frequency response
 - Harmonic distortion and THD+N
 - Phase response
@@ -89,6 +90,10 @@ installation. SHA-256 checksum files are provided with every release.
 ### Live Spectrum
 
 ![Live Spectrum plot](assets/images/noise.jpg)
+
+### Time Alignment
+
+![Time Alignment measurement](assets/images/time-alignment.png)
 
 </details>
 
@@ -199,6 +204,54 @@ rate when the driver requires those settings outside the application.
 ASIO support depends on the installed driver. If a driver is already in use by
 another application or refuses the selected sample rate, Resonalyze reports the
 driver error before starting the measurement.
+
+## Time Alignment
+
+The **Time Alignment** mode measures acoustic delay against an ASIO loopback
+reference. It is designed for practical loudspeaker, microphone, and channel
+alignment work where the result has to be more precise than a single audio
+sample.
+
+![Time Alignment measurement](assets/images/time-alignment.png)
+
+Resonalyze plays the same mono exponential sweep used by the ordinary impulse
+response measurement, records the microphone channel and the ASIO loopback
+channel at the same time, and computes the microphone response relative to the
+loopback reference path. This removes the unknown playback latency from the
+measurement and keeps both recorded channels locked to the same hardware clock.
+
+The delay estimator uses a deliberately robust chain:
+
+- frequency-domain relative transfer function between loopback and microphone
+- optional raised-cosine bandpass window around the frequency range of interest
+- analytic-signal envelope of the relative impulse response
+- fractional peak interpolation around the envelope maximum
+
+That last step is the important bit: Resonalyze does not stop at the nearest
+sample. It refines the peak position between samples, which enables
+sub-sample delay estimates such as `87.0 samples` or `1.972 ms` instead of a
+coarse integer-sample result. For time alignment, that is a serious practical
+upgrade: smaller timing adjustments become visible, repeatable, and easier to
+trust.
+
+The mode also reports measurement quality:
+
+- `Excellent`, `Good`, `Fair`, or `Poor` confidence based on peak-to-background
+  envelope ratio
+- microphone peak and RMS levels in dBFS
+- loopback peak and RMS levels in dBFS
+- `CLIP` warning for overloaded microphone input
+- `FULL SCALE` marker for a digital loopback reference running at 0 dBFS
+
+When the bandpass window is enabled, Resonalyze shows a small frequency-domain
+preview of the selected pass band. After the measurement completes, it also
+shows the envelope around the detected peak, making it easy to see whether the
+reported delay comes from a clean dominant peak or from a noisy/ambiguous
+response.
+
+Time Alignment requires an ASIO driver with loopback input channels. Standard
+Windows Wave devices cannot provide a reliable hardware reference input for
+this workflow.
 
 ## Saving and Loading Impulse Responses
 

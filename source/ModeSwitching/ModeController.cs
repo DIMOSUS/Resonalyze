@@ -35,7 +35,7 @@ internal sealed class ModeController
         hideOverlays();
 
         bool includeCurves =
-            tab != ModeTab.LiveSpectrum &&
+            tab is not (ModeTab.LiveSpectrum or ModeTab.TimeAlignment) &&
             canDrawCurrentMeasurement();
         drawSelectedMode(includeCurves);
         updateDrawButton();
@@ -52,6 +52,7 @@ internal sealed class ModeController
             ModeTab.Burst => Mode.CumulativeSpectrumDecay,
             ModeTab.LiveSpectrum => Mode.LiveSpectrum,
             ModeTab.Autocorrelation => Mode.Autocorrelation,
+            ModeTab.TimeAlignment => Mode.TimeAlignment,
             _ => Mode.None
         };
 }

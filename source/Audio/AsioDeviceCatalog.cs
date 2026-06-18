@@ -125,6 +125,16 @@ public static class AsioDeviceCatalog
         return index >= 0 ? index : 0;
     }
 
+    public static bool IsLoopbackChannel(AsioChannelInfo channel)
+    {
+        return channel.Name.Contains(
+                "loopback",
+                StringComparison.OrdinalIgnoreCase) ||
+            channel.Name.Contains(
+                "loop back",
+                StringComparison.OrdinalIgnoreCase);
+    }
+
     public static void ShowControlPanel(string driverName)
     {
         if (string.IsNullOrWhiteSpace(driverName))

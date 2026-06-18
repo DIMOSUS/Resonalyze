@@ -22,21 +22,27 @@ internal sealed class AsioFullDuplexSession : IDisposable
     public AsioFullDuplexSession(
         string driverName,
         int inputChannelOffset,
-        int outputChannelOffset)
+        int outputChannelOffset,
+        int inputChannelCount = 1)
     {
         if (string.IsNullOrWhiteSpace(driverName))
         {
             throw new InvalidOperationException("ASIO driver is not selected.");
         }
+        if (inputChannelCount <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(inputChannelCount));
+        }
 
         this.driverName = driverName;
         this.inputChannelOffset = inputChannelOffset;
         this.outputChannelOffset = outputChannelOffset;
+        ChannelCount = inputChannelCount;
     }
 
     public int Sequence { get; set; }
     public int ReadSamples { get; private set; }
-    public int ChannelCount { get; private set; } = 1;
+    public int ChannelCount { get; }
 
     public async Task StartAsync(
         IWaveProvider playbackProvider,

@@ -10,6 +10,10 @@ using MathNet.Numerics.Providers.LinearAlgebra;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using OxyPlot;
+using OxyPlot.Annotations;
+using OxyPlot.Axes;
+using OxyPlot.Series;
+using OxyPlot.WindowsForms;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
 
@@ -25,7 +29,8 @@ namespace Resonalyze
         CumulativeSpectrumDecay,
         BurstDecay,
         LiveSpectrum,
-        Autocorrelation
+        Autocorrelation,
+        TimeAlignment
     }
 
     public partial class Form1 : Form
@@ -35,6 +40,7 @@ namespace Resonalyze
         private readonly OverlayCollection overlayCollection;
         private readonly ExpSweepMeasurement expSweepMeasurement = new();
         private readonly NoiseMeasurement noiseMeasurement = new();
+        private readonly TimeAlignmentMeasurement timeAlignmentMeasurement = new();
         private readonly CalibrationFile calibration = new(
             Path.Combine(AppContext.BaseDirectory, "calibration.txt"));
         private readonly WaterfallGenerateOptions waterfallGenOptions = new()
@@ -68,11 +74,25 @@ namespace Resonalyze
             Offset = 0,
         };
         private readonly ImpulseResponseOptions impulseResponseOptions = new();
+        private readonly TimeAlignmentOptions timeAlignmentOptions = new();
         private readonly PlotModelFactory plotModelFactory;
         private readonly ModeController modeController;
         private readonly ChromeTitleBarController titleBarController;
         private readonly LiveSpectrumController liveSpectrumController;
         private readonly MeasurementSettingsFile measurementSettings;
+        private readonly Panel timeAlignmentPanel;
+        private readonly ComboBox timeAlignmentDriverComboBox;
+        private readonly ComboBox timeAlignmentMicrophoneComboBox;
+        private readonly ComboBox timeAlignmentLoopbackComboBox;
+        private readonly ComboBox timeAlignmentOutputComboBox;
+        private readonly CheckBox timeAlignmentBandpassCheckBox;
+        private readonly NumericUpDown timeAlignmentBandpassCenterNumeric;
+        private readonly NumericUpDown timeAlignmentBandpassPassOctavesNumeric;
+        private readonly NumericUpDown timeAlignmentBandpassFadeOctavesNumeric;
+        private readonly PlotView timeAlignmentBandpassPlotView;
+        private readonly PlotView timeAlignmentEnvelopePlotView;
+        private readonly Button timeAlignmentStartButton;
+        private readonly Label timeAlignmentStatusLabel;
         private bool hasCurrentImpulseResponse;
         private bool closingPrepared;
         private bool resourcesDisposed;
@@ -80,6 +100,20 @@ namespace Resonalyze
         public Form1()
         {
             InitializeComponent();
+            (
+                timeAlignmentPanel,
+                timeAlignmentDriverComboBox,
+                timeAlignmentMicrophoneComboBox,
+                timeAlignmentLoopbackComboBox,
+                timeAlignmentOutputComboBox,
+                timeAlignmentBandpassCheckBox,
+                timeAlignmentBandpassCenterNumeric,
+                timeAlignmentBandpassPassOctavesNumeric,
+                timeAlignmentBandpassFadeOctavesNumeric,
+                timeAlignmentBandpassPlotView,
+                timeAlignmentEnvelopePlotView,
+                timeAlignmentStartButton,
+                timeAlignmentStatusLabel) = CreateTimeAlignmentPanel();
             measurementSettings = MeasurementSettingsFile.LoadOrDefault();
             titleBarController = new ChromeTitleBarController(
                 this,
@@ -124,11 +158,15 @@ namespace Resonalyze
                 groupDelayOptions,
                 impulseResponseOptions,
                 waterfallGenOptions,
-                burstDecayGenOptions);
+                burstDecayGenOptions,
+                timeAlignmentOptions);
+            ApplyTimeAlignmentOptionsToControls();
+            UpdateTimeAlignmentBandpassPreview();
             liveSpectrumController.ConfigureFrom(expSweepMeasurement);
             SetButtonFrozen(buttonSave, true);
             SetButtonFrozen(buttonLoad, false);
             SetButtonFrozen(buttonDraw, true);
+            timeAlignmentMeasurement.Completed += TimeAlignmentMeasurementCompleted;
 
             expSweepMeasurement.Completed += (bool success) =>
             {
@@ -166,7 +204,547 @@ namespace Resonalyze
             };
 
             FormClosing += Form1_FormClosing;
-            buttonFR_Click(this, new EventArgs());
+            _ = SelectModeAsync(ModeTab.Frequency);
+        }
+
+        private void TimeAlignmentMeasurementCompleted(bool success)
+        {
+            if (IsDisposed || !IsHandleCreated)
+            {
+                return;
+            }
+
+            BeginInvoke((MethodInvoker)delegate
+            {
+                timeAlignmentStartButton.Text = "Start";
+                buttonRecord.Text = success ? "Ready" : timeAlignmentMeasurement.LastError == null ? "Aborted" : "Error";
+
+                if (modeController.ActiveTab == ModeTab.TimeAlignment)
+                {
+                    UpdateTimeAlignmentChannels();
+                }
+
+                if (success)
+                {
+                    double delaySamples = timeAlignmentMeasurement.PeakSample;
+                    double delayMilliseconds = timeAlignmentMeasurement.DelayMilliseconds;
+                    double delayMeters = Math.Abs(delayMilliseconds) * SpeedOfSoundAt20C / 1000.0;
+                    timeAlignmentStatusLabel.Text =
+                        "Measured delay:\r\n" +
+                        $"{delayMilliseconds:0.000} ms\r\n" +
+                        $"{delayMeters:0.000} m (at 20 °C)\r\n" +
+                        $"{delaySamples:0.0} samples\r\n\r\n" +
+                        "Signal Quality:\r\n" +
+                        $"{FormatTimeAlignmentConfidence(timeAlignmentMeasurement.ConfidenceDecibels)} " +
+                        $"({timeAlignmentMeasurement.ConfidenceDecibels:0.0} dB)\r\n" +
+                        FormatTimeAlignmentLevel(
+                            "Mic",
+                            timeAlignmentMeasurement.MicrophonePeakDbFs,
+                            timeAlignmentMeasurement.MicrophoneRmsDbFs,
+                            timeAlignmentMeasurement.MicrophoneClipped,
+                            fullScaleIsNormal: false) +
+                        "\r\n" +
+                        FormatTimeAlignmentLevel(
+                            "Loopback",
+                            timeAlignmentMeasurement.LoopbackPeakDbFs,
+                            timeAlignmentMeasurement.LoopbackRmsDbFs,
+                            timeAlignmentMeasurement.LoopbackClipped,
+                            fullScaleIsNormal: true);
+                    UpdateTimeAlignmentEnvelopePreview();
+                }
+                else if (timeAlignmentMeasurement.LastError != null)
+                {
+                    timeAlignmentStatusLabel.Text = timeAlignmentMeasurement.LastError.Message;
+                    ClearTimeAlignmentEnvelopePreview();
+                }
+                else
+                {
+                    timeAlignmentStatusLabel.Text = "Time-alignment measurement aborted.";
+                    ClearTimeAlignmentEnvelopePreview();
+                }
+            });
+        }
+
+        private static string FormatTimeAlignmentLevel(
+            string label,
+            double peakDbFs,
+            double rmsDbFs,
+            bool clipped,
+            bool fullScaleIsNormal)
+        {
+            string clipText = clipped
+                ? fullScaleIsNormal ? " FULL SCALE" : " CLIP"
+                : string.Empty;
+            return $"{label}: peak {peakDbFs:0.0} dBFS, RMS {rmsDbFs:0.0} dBFS{clipText}";
+        }
+
+        private static string FormatTimeAlignmentConfidence(double confidenceDecibels)
+        {
+            if (confidenceDecibels >= 30)
+            {
+                return "Excellent";
+            }
+            if (confidenceDecibels >= 20)
+            {
+                return "Good";
+            }
+            if (confidenceDecibels >= 10)
+            {
+                return "Fair";
+            }
+
+            return "Poor";
+        }
+
+        private (
+            Panel Panel,
+            ComboBox Driver,
+            ComboBox Microphone,
+            ComboBox Loopback,
+            ComboBox Output,
+            CheckBox BandpassEnabled,
+            NumericUpDown BandpassCenter,
+            NumericUpDown BandpassPassOctaves,
+            NumericUpDown BandpassFadeOctaves,
+            PlotView BandpassPreview,
+            PlotView EnvelopePreview,
+            Button Start,
+            Label Status) CreateTimeAlignmentPanel()
+        {
+            var panel = new Panel
+            {
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                BackColor = Color.FromArgb(40, 44, 54),
+                BorderStyle = BorderStyle.FixedSingle,
+                Location = new Point(24, 24),
+                Size = new Size(980, 695),
+                Visible = false
+            };
+
+            var title = new Label
+            {
+                AutoSize = true,
+                Font = new Font(Font, FontStyle.Bold),
+                ForeColor = Color.White,
+                Location = new Point(18, 18),
+                Text = "Time Alignment"
+            };
+            var description = new Label
+            {
+                AutoSize = true,
+                ForeColor = Color.FromArgb(190, 195, 205),
+                Location = new Point(18, 44),
+                Text = "ASIO loopback measurement: microphone input + loopback reference input."
+            };
+            var help = new Label
+            {
+                AutoSize = false,
+                ForeColor = Color.FromArgb(205, 210, 220),
+                Location = new Point(560, 78),
+                Size = new Size(380, 164),
+                Text =
+                    "What it is for\r\n" +
+                    "Measures acoustic delay relative to the audio interface reference path.\r\n\r\n" +
+                    "How it works\r\n" +
+                    "Resonalyze plays the same mono sweep, records the microphone and ASIO loopback at the same time, then compares the two impulse-response peaks.\r\n\r\n" +
+                    "Why ASIO + loopback\r\n" +
+                    "Both channels must be captured by the same low-latency driver clock. Windows Wave devices do not provide a reliable hardware reference input."
+            };
+
+            ComboBox driver = CreateTimeAlignmentComboBox(180, 78);
+            ComboBox microphone = CreateTimeAlignmentComboBox(180, 112);
+            ComboBox loopback = CreateTimeAlignmentComboBox(180, 146);
+            ComboBox output = CreateTimeAlignmentComboBox(180, 180);
+            CheckBox bandpassEnabled = new()
+            {
+                AutoSize = true,
+                ForeColor = Color.FromArgb(210, 214, 222),
+                Location = new Point(18, 218),
+                Text = "Use bandpass window"
+            };
+            NumericUpDown bandpassCenter =
+                CreateTimeAlignmentNumericUpDown(180, 248, 20, 20_000, 1000, 10);
+            NumericUpDown bandpassPassOctaves =
+                CreateTimeAlignmentNumericUpDown(180, 282, 0, 8, 1, 0.1M);
+            NumericUpDown bandpassFadeOctaves =
+                CreateTimeAlignmentNumericUpDown(180, 316, 0, 8, 0.5M, 0.1M);
+            PlotView bandpassPreview = new()
+            {
+                BackColor = Color.FromArgb(32, 36, 46),
+                Location = new Point(18, 354),
+                Size = new Size(520, 145),
+                Visible = false
+            };
+            PlotView envelopePreview = new()
+            {
+                BackColor = Color.FromArgb(32, 36, 46),
+                Location = new Point(560, 500),
+                Size = new Size(400, 155),
+                Visible = false
+            };
+            Button start = new()
+            {
+                BackColor = Color.FromArgb(50, 55, 80),
+                FlatStyle = FlatStyle.Popup,
+                ForeColor = Color.White,
+                Location = new Point(560, 248),
+                Size = new Size(400, 28),
+                Text = "Start",
+                UseVisualStyleBackColor = false
+            };
+            Label status = new()
+            {
+                AutoSize = false,
+                ForeColor = Color.FromArgb(190, 195, 205),
+                Font = new Font(Font.FontFamily, 11, FontStyle.Bold),
+                Location = new Point(560, 290),
+                Size = new Size(400, 240),
+                Text = "Select an ASIO driver with loopback input channels."
+            };
+
+            panel.Controls.AddRange(
+            [
+                title,
+                description,
+                help,
+                CreateTimeAlignmentLabel("ASIO driver", 82),
+                driver,
+                CreateTimeAlignmentLabel("Microphone input", 116),
+                microphone,
+                CreateTimeAlignmentLabel("Loopback input", 150),
+                loopback,
+                CreateTimeAlignmentLabel("Output pair", 184),
+                output,
+                bandpassEnabled,
+                CreateTimeAlignmentLabel("Center frequency, Hz", 252),
+                bandpassCenter,
+                CreateTimeAlignmentLabel("Pass width, oct", 286),
+                bandpassPassOctaves,
+                CreateTimeAlignmentLabel("Fade width, oct", 320),
+                bandpassFadeOctaves,
+                bandpassPreview,
+                envelopePreview,
+                start,
+                status
+            ]);
+            Controls.Add(panel);
+            panel.BringToFront();
+
+            driver.SelectedIndexChanged += (_, _) =>
+            {
+                UpdateTimeAlignmentChannels();
+                SaveTimeAlignmentSettings();
+            };
+            microphone.SelectedIndexChanged += (_, _) => SaveTimeAlignmentSettings();
+            loopback.SelectedIndexChanged += (_, _) => SaveTimeAlignmentSettings();
+            output.SelectedIndexChanged += (_, _) => SaveTimeAlignmentSettings();
+            bandpassEnabled.CheckedChanged += (_, _) =>
+            {
+                UpdateTimeAlignmentOptionsFromControls();
+                UpdateTimeAlignmentBandpassPreview();
+                timeAlignmentBandpassCenterNumeric.Enabled =
+                    bandpassEnabled.Checked && !timeAlignmentMeasurement.InProgress;
+                timeAlignmentBandpassPassOctavesNumeric.Enabled =
+                    bandpassEnabled.Checked && !timeAlignmentMeasurement.InProgress;
+                timeAlignmentBandpassFadeOctavesNumeric.Enabled =
+                    bandpassEnabled.Checked && !timeAlignmentMeasurement.InProgress;
+                SaveMeasurementSettings();
+            };
+            bandpassCenter.ValueChanged += (_, _) =>
+            {
+                UpdateTimeAlignmentOptionsFromControls();
+                UpdateTimeAlignmentBandpassPreview();
+                SaveMeasurementSettings();
+            };
+            bandpassPassOctaves.ValueChanged += (_, _) =>
+            {
+                UpdateTimeAlignmentOptionsFromControls();
+                UpdateTimeAlignmentBandpassPreview();
+                SaveMeasurementSettings();
+            };
+            bandpassFadeOctaves.ValueChanged += (_, _) =>
+            {
+                UpdateTimeAlignmentOptionsFromControls();
+                UpdateTimeAlignmentBandpassPreview();
+                SaveMeasurementSettings();
+            };
+            start.Click += async (_, _) => await ToggleTimeAlignmentAsync();
+
+            return (
+                panel,
+                driver,
+                microphone,
+                loopback,
+                output,
+                bandpassEnabled,
+                bandpassCenter,
+                bandpassPassOctaves,
+                bandpassFadeOctaves,
+                bandpassPreview,
+                envelopePreview,
+                start,
+                status);
+        }
+
+        private static Label CreateTimeAlignmentLabel(string text, int y) =>
+            new()
+            {
+                AutoSize = true,
+                ForeColor = Color.FromArgb(210, 214, 222),
+                Location = new Point(18, y),
+                Text = text
+            };
+
+        private const double SpeedOfSoundAt20C = 343.2;
+
+        private ComboBox CreateTimeAlignmentComboBox(int x, int y) =>
+            new()
+            {
+                BackColor = Color.FromArgb(55, 60, 72),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                FormattingEnabled = true,
+                Location = new Point(x, y - 4),
+                Size = new Size(360, 23)
+            };
+
+        private static NumericUpDown CreateTimeAlignmentNumericUpDown(
+            int x,
+            int y,
+            decimal minimum,
+            decimal maximum,
+            decimal value,
+            decimal increment) =>
+            new()
+            {
+                BackColor = Color.FromArgb(55, 60, 72),
+                DecimalPlaces = increment < 1 ? 1 : 0,
+                ForeColor = Color.White,
+                Increment = increment,
+                Location = new Point(x, y - 4),
+                Maximum = maximum,
+                Minimum = minimum,
+                Size = new Size(120, 23),
+                Value = value
+            };
+
+        private void ApplyTimeAlignmentOptionsToControls()
+        {
+            timeAlignmentBandpassCheckBox.Checked = timeAlignmentOptions.UseBandpassWindow;
+            timeAlignmentBandpassCenterNumeric.Value =
+                ClampDecimal(timeAlignmentOptions.BandpassCenterHz, timeAlignmentBandpassCenterNumeric);
+            timeAlignmentBandpassPassOctavesNumeric.Value =
+                ClampDecimal(timeAlignmentOptions.BandpassPassOctaves, timeAlignmentBandpassPassOctavesNumeric);
+            timeAlignmentBandpassFadeOctavesNumeric.Value =
+                ClampDecimal(timeAlignmentOptions.BandpassFadeOctaves, timeAlignmentBandpassFadeOctavesNumeric);
+        }
+
+        private void UpdateTimeAlignmentOptionsFromControls()
+        {
+            timeAlignmentOptions.UseBandpassWindow = timeAlignmentBandpassCheckBox.Checked;
+            timeAlignmentOptions.BandpassCenterHz = (double)timeAlignmentBandpassCenterNumeric.Value;
+            timeAlignmentOptions.BandpassPassOctaves = (double)timeAlignmentBandpassPassOctavesNumeric.Value;
+            timeAlignmentOptions.BandpassFadeOctaves = (double)timeAlignmentBandpassFadeOctavesNumeric.Value;
+
+            if (timeAlignmentDriverComboBox.SelectedItem is AsioDeviceInfo driver)
+            {
+                timeAlignmentOptions.AsioDriverName = driver.DriverName;
+            }
+            if (timeAlignmentMicrophoneComboBox.SelectedItem is AsioChannelInfo microphone)
+            {
+                timeAlignmentOptions.MicrophoneInputChannelOffset = microphone.Offset;
+            }
+            if (timeAlignmentLoopbackComboBox.SelectedItem is AsioChannelInfo loopback)
+            {
+                timeAlignmentOptions.LoopbackInputChannelOffset = loopback.Offset;
+            }
+            if (timeAlignmentOutputComboBox.SelectedItem is AsioChannelInfo output)
+            {
+                timeAlignmentOptions.AsioOutputChannelOffset = output.Offset;
+            }
+        }
+
+        private void UpdateTimeAlignmentBandpassPreview()
+        {
+            timeAlignmentBandpassPlotView.Visible = timeAlignmentBandpassCheckBox.Checked;
+            if (!timeAlignmentBandpassCheckBox.Checked)
+            {
+                timeAlignmentBandpassPlotView.Model = null;
+                return;
+            }
+
+            var model = new PlotModel
+            {
+                Background = OxyColor.FromRgb(32, 36, 46),
+                PlotAreaBackground = OxyColor.FromRgb(32, 36, 46),
+                TextColor = OxyColors.White,
+                Title = "Bandpass Window",
+                TitleColor = OxyColors.White,
+                TitleFontSize = 10
+            };
+            model.Axes.Add(new LogarithmicAxis
+            {
+                Position = AxisPosition.Bottom,
+                Minimum = 20,
+                Maximum = Math.Min(20_000, expSweepMeasurement.SampleRate * 0.5),
+                MajorGridlineColor = OxyColor.FromRgb(55, 62, 78),
+                MajorGridlineStyle = LineStyle.Solid,
+                MinorGridlineColor = OxyColor.FromRgb(48, 54, 70),
+                MinorGridlineStyle = LineStyle.Dot,
+                TextColor = OxyColors.White,
+                TicklineColor = OxyColors.White
+            });
+            model.Axes.Add(new LinearAxis
+            {
+                Position = AxisPosition.Left,
+                Minimum = -80,
+                Maximum = 3,
+                MajorStep = 20,
+                MajorGridlineColor = OxyColor.FromRgb(55, 62, 78),
+                MajorGridlineStyle = LineStyle.Solid,
+                MinorGridlineColor = OxyColor.FromRgb(48, 54, 70),
+                MinorGridlineStyle = LineStyle.Dot,
+                TextColor = OxyColors.White,
+                TicklineColor = OxyColors.White,
+                Title = "dB"
+            });
+
+            var series = new LineSeries
+            {
+                Color = OxyColor.FromRgb(255, 210, 80),
+                StrokeThickness = 2
+            };
+            (double f1, double f2, double f3, double f4) = BandpassWindow.BandAround(
+                (double)timeAlignmentBandpassCenterNumeric.Value,
+                (double)timeAlignmentBandpassPassOctavesNumeric.Value,
+                (double)timeAlignmentBandpassFadeOctavesNumeric.Value);
+            const int pointCount = 240;
+            double minLog = Math.Log10(20);
+            double maxLog = Math.Log10(Math.Min(20_000, expSweepMeasurement.SampleRate * 0.5));
+            for (int i = 0; i < pointCount; i++)
+            {
+                double t = i / (double)(pointCount - 1);
+                double frequency = Math.Pow(10.0, minLog + (maxLog - minLog) * t);
+                double weight = BandpassWindow.Weight(frequency, f1, f2, f3, f4);
+                double decibels = weight > 0
+                    ? DataHelper.AmplitudeToDecibels(weight)
+                    : -80;
+                series.Points.Add(new DataPoint(frequency, Math.Max(-80, decibels)));
+            }
+
+            model.Series.Add(series);
+            timeAlignmentBandpassPlotView.Model = model;
+        }
+
+        private void UpdateTimeAlignmentEnvelopePreview()
+        {
+            double[]? envelope = timeAlignmentMeasurement.EnvelopeSamples;
+            if (envelope == null ||
+                envelope.Length == 0 ||
+                timeAlignmentMeasurement.EnvelopePeak <= 0 ||
+                timeAlignmentMeasurement.SampleRate <= 0)
+            {
+                ClearTimeAlignmentEnvelopePreview();
+                return;
+            }
+
+            var model = new PlotModel
+            {
+                Background = OxyColor.FromRgb(32, 36, 46),
+                PlotAreaBackground = OxyColor.FromRgb(32, 36, 46),
+                TextColor = OxyColors.White,
+                Title = "Envelope Around Peak",
+                TitleColor = OxyColors.White,
+                TitleFontSize = 10
+            };
+            model.Axes.Add(new LinearAxis
+            {
+                Position = AxisPosition.Bottom,
+                Minimum = -50,
+                Maximum = 50,
+                MajorStep = 25,
+                MajorGridlineColor = OxyColor.FromRgb(55, 62, 78),
+                MajorGridlineStyle = LineStyle.Solid,
+                MinorGridlineColor = OxyColor.FromRgb(48, 54, 70),
+                MinorGridlineStyle = LineStyle.Dot,
+                TextColor = OxyColors.White,
+                TicklineColor = OxyColors.White,
+                Title = "ms from peak"
+            });
+            model.Axes.Add(new LinearAxis
+            {
+                Position = AxisPosition.Left,
+                Minimum = -80,
+                Maximum = 3,
+                MajorStep = 20,
+                MajorGridlineColor = OxyColor.FromRgb(55, 62, 78),
+                MajorGridlineStyle = LineStyle.Solid,
+                MinorGridlineColor = OxyColor.FromRgb(48, 54, 70),
+                MinorGridlineStyle = LineStyle.Dot,
+                TextColor = OxyColors.White,
+                TicklineColor = OxyColors.White,
+                Title = "dB"
+            });
+
+            var series = new LineSeries
+            {
+                Color = OxyColor.FromRgb(255, 210, 80),
+                StrokeThickness = 2
+            };
+            int radius = Math.Min(
+                envelope.Length / 2,
+                Math.Max(1, (int)Math.Round(timeAlignmentMeasurement.SampleRate * 0.05)));
+            int step = Math.Max(1, radius * 2 / 600);
+            for (int offset = -radius; offset <= radius; offset += step)
+            {
+                int index = WrapIndex(timeAlignmentMeasurement.EnvelopePeakIndex + offset, envelope.Length);
+                double milliseconds = offset * 1000.0 / timeAlignmentMeasurement.SampleRate;
+                double relativeAmplitude = envelope[index] / timeAlignmentMeasurement.EnvelopePeak;
+                double decibels = DataHelper.AmplitudeToDecibels(relativeAmplitude);
+                series.Points.Add(new DataPoint(milliseconds, Math.Max(-80, decibels)));
+            }
+
+            model.Series.Add(series);
+            model.Annotations.Add(new LineAnnotation
+            {
+                Color = OxyColor.FromRgb(255, 96, 96),
+                LineStyle = LineStyle.Dash,
+                StrokeThickness = 1,
+                Type = LineAnnotationType.Vertical,
+                X = 0
+            });
+            timeAlignmentEnvelopePlotView.Model = model;
+            timeAlignmentEnvelopePlotView.Visible = true;
+        }
+
+        private void ClearTimeAlignmentEnvelopePreview()
+        {
+            timeAlignmentEnvelopePlotView.Model = null;
+            timeAlignmentEnvelopePlotView.Visible = false;
+        }
+
+        private static int WrapIndex(int index, int length)
+        {
+            int wrapped = index % length;
+            return wrapped < 0 ? wrapped + length : wrapped;
+        }
+
+        private void SaveTimeAlignmentSettings()
+        {
+            if (measurementSettings == null)
+            {
+                return;
+            }
+
+            UpdateTimeAlignmentOptionsFromControls();
+            SaveMeasurementSettings();
+        }
+
+        private static decimal ClampDecimal(double value, NumericUpDown numeric)
+        {
+            decimal decimalValue = (decimal)value;
+            return Math.Min(numeric.Maximum, Math.Max(numeric.Minimum, decimalValue));
         }
 
         public async Task ChangeModeAsync(Mode mode)
@@ -174,6 +752,10 @@ namespace Resonalyze
             if (expSweepMeasurement.InProgress)
             {
                 await expSweepMeasurement.AbortAsync();
+            }
+            if (timeAlignmentMeasurement.InProgress)
+            {
+                await timeAlignmentMeasurement.AbortAsync();
             }
 
             await liveSpectrumController.AbortAsync();
@@ -192,6 +774,12 @@ namespace Resonalyze
 
         private async void buttonRecord_Click(object sender, EventArgs e)
         {
+            if (CurrentMode == Mode.TimeAlignment)
+            {
+                await ToggleTimeAlignmentAsync();
+                return;
+            }
+
             if (liveSpectrumController.InProgress)
             {
                 await liveSpectrumController.AbortAsync();
@@ -212,27 +800,6 @@ namespace Resonalyze
                 UpdateDrawButtonText();
             }
         }
-
-        private async void buttonFR_Click(object sender, EventArgs e) =>
-            await SelectModeAsync(ModeTab.Frequency);
-
-        private async void buttonPR_Click(object sender, EventArgs e) =>
-            await SelectModeAsync(ModeTab.Phase);
-
-        private async void buttonWaterfall_Click(object sender, EventArgs e) =>
-            await SelectModeAsync(ModeTab.Waterfall);
-
-        private async void buttonGD_Click(object sender, EventArgs e) =>
-            await SelectModeAsync(ModeTab.GroupDelay);
-
-        private async void buttonBurstDecay_Click(object sender, EventArgs e) =>
-            await SelectModeAsync(ModeTab.Burst);
-
-        private async void buttonIR_Click(object sender, EventArgs e) =>
-            await SelectModeAsync(ModeTab.Impulse);
-
-        private Task SelectModeAsync(ModeTab tab) =>
-            modeController.SelectAsync(tab);
 
         private void DrawSelectedMode(bool includeCurves)
         {
@@ -432,7 +999,8 @@ namespace Resonalyze
                 groupDelayOptions,
                 impulseResponseOptions,
                 waterfallGenOptions,
-                burstDecayGenOptions);
+                burstDecayGenOptions,
+                timeAlignmentOptions);
             measurementSettings.Save();
         }
 
@@ -441,9 +1009,6 @@ namespace Resonalyze
             dialog.StartPosition = FormStartPosition.CenterParent;
             return dialog.ShowDialog(this);
         }
-
-        private async void buttonNoise_Click(object sender, EventArgs e) =>
-            await SelectModeAsync(ModeTab.LiveSpectrum);
 
         private async void buttonClear_Click(object sender, EventArgs e)
         {
@@ -484,21 +1049,20 @@ namespace Resonalyze
             }
         }
 
-        private async void buttonGetAutocorrelation_Click(object sender, EventArgs e) =>
-            await SelectModeAsync(ModeTab.Autocorrelation);
+        private Task SelectModeAsync(ModeTab tab) => modeController.SelectAsync(tab);
 
         private Dictionary<ModeTab, Action> CreateModeTabActions() =>
             new()
             {
-                [ModeTab.Impulse] = () => buttonIR_Click(this, EventArgs.Empty),
-                [ModeTab.Frequency] = () => buttonFR_Click(this, EventArgs.Empty),
-                [ModeTab.Phase] = () => buttonPR_Click(this, EventArgs.Empty),
-                [ModeTab.GroupDelay] = () => buttonGD_Click(this, EventArgs.Empty),
-                [ModeTab.Waterfall] = () => buttonWaterfall_Click(this, EventArgs.Empty),
-                [ModeTab.Burst] = () => buttonBurstDecay_Click(this, EventArgs.Empty),
-                [ModeTab.LiveSpectrum] = () => buttonNoise_Click(this, EventArgs.Empty),
-                [ModeTab.Autocorrelation] = () =>
-                    buttonGetAutocorrelation_Click(this, EventArgs.Empty)
+                [ModeTab.Impulse] = () => _ = SelectModeAsync(ModeTab.Impulse),
+                [ModeTab.Frequency] = () => _ = SelectModeAsync(ModeTab.Frequency),
+                [ModeTab.Phase] = () => _ = SelectModeAsync(ModeTab.Phase),
+                [ModeTab.GroupDelay] = () => _ = SelectModeAsync(ModeTab.GroupDelay),
+                [ModeTab.Waterfall] = () => _ = SelectModeAsync(ModeTab.Waterfall),
+                [ModeTab.Burst] = () => _ = SelectModeAsync(ModeTab.Burst),
+                [ModeTab.LiveSpectrum] = () => _ = SelectModeAsync(ModeTab.LiveSpectrum),
+                [ModeTab.Autocorrelation] = () => _ = SelectModeAsync(ModeTab.Autocorrelation),
+                [ModeTab.TimeAlignment] = () => _ = SelectModeAsync(ModeTab.TimeAlignment)
             };
 
         private void UpdateMaximizedBounds()
@@ -511,6 +1075,9 @@ namespace Resonalyze
             titleBarController.SetActiveModeTab(activeTab);
             UpdateCurrentModeSettingsButton();
             UpdateDrawButtonText();
+            PlotViewVisible();
+            OverlayVisible();
+            TimeAlignmentPanelVisible();
         }
 
         private void UpdateDrawButtonText()
@@ -524,6 +1091,203 @@ namespace Resonalyze
                 ? liveSpectrumController.InProgress ? "Stop Live" : "Start Live"
                 : "Restore Curves";
             SetButtonFrozen(buttonDraw, ShouldFreezeDrawButton());
+        }
+
+        private void PlotViewVisible()
+        {
+            plotView1.Visible = modeController.ActiveTab != ModeTab.TimeAlignment;
+        }
+
+        private void OverlayVisible()
+        {
+            overlays.Visible = 
+                modeController.ActiveTab != ModeTab.TimeAlignment &&
+                modeController.ActiveTab != ModeTab.Burst &&
+                modeController.ActiveTab != ModeTab.Waterfall;
+        }
+
+        private void TimeAlignmentPanelVisible()
+        {
+            bool visible = modeController.ActiveTab == ModeTab.TimeAlignment;
+            timeAlignmentPanel.Visible = visible;
+            if (visible)
+            {
+                RefreshTimeAlignmentDrivers();
+            }
+        }
+
+        private void RefreshTimeAlignmentDrivers()
+        {
+            string? preferredDriver =
+                (timeAlignmentDriverComboBox.SelectedItem as AsioDeviceInfo)?.DriverName ??
+                timeAlignmentOptions.AsioDriverName ??
+                expSweepMeasurement.AsioDriverName;
+            IReadOnlyList<AsioDeviceInfo> drivers = AsioDeviceCatalog.GetDrivers();
+            timeAlignmentDriverComboBox.Items.Clear();
+            timeAlignmentDriverComboBox.Items.AddRange(drivers.Cast<object>().ToArray());
+            timeAlignmentDriverComboBox.SelectedIndex =
+                AsioDeviceCatalog.FindDriverIndex(drivers, preferredDriver);
+
+            if (drivers.Count == 0)
+            {
+                timeAlignmentStatusLabel.Text = "ASIO is not available on this system.";
+                SetTimeAlignmentControlsEnabled(false);
+            }
+        }
+
+        private void UpdateTimeAlignmentChannels()
+        {
+            if (timeAlignmentDriverComboBox.SelectedItem is not AsioDeviceInfo driver)
+            {
+                timeAlignmentStatusLabel.Text = "Select an ASIO driver.";
+                SetTimeAlignmentControlsEnabled(false);
+                return;
+            }
+
+            AsioDriverInfo info = AsioDeviceCatalog.GetDriverInfo(
+                driver.DriverName,
+                expSweepMeasurement.SampleRate);
+            AsioChannelInfo[] loopbackInputs = info.InputChannels
+                .Where(AsioDeviceCatalog.IsLoopbackChannel)
+                .ToArray();
+            AsioChannelInfo[] microphoneInputs = info.InputChannels
+                .Where(channel => !AsioDeviceCatalog.IsLoopbackChannel(channel))
+                .ToArray();
+            if (microphoneInputs.Length == 0)
+            {
+                microphoneInputs = info.InputChannels.ToArray();
+            }
+
+            FillChannelComboBox(
+                timeAlignmentMicrophoneComboBox,
+                microphoneInputs,
+                timeAlignmentOptions.MicrophoneInputChannelOffset);
+            FillChannelComboBox(
+                timeAlignmentLoopbackComboBox,
+                loopbackInputs,
+                timeAlignmentOptions.LoopbackInputChannelOffset);
+            FillChannelComboBox(
+                timeAlignmentOutputComboBox,
+                info.OutputChannels,
+                timeAlignmentOptions.AsioOutputChannelOffset);
+
+            bool canRun =
+                string.IsNullOrWhiteSpace(info.ErrorMessage) &&
+                info.SupportsSampleRate &&
+                microphoneInputs.Length > 0 &&
+                loopbackInputs.Length > 0 &&
+                info.OutputChannels.Count > 0;
+            SetTimeAlignmentControlsEnabled(canRun);
+            timeAlignmentStatusLabel.Text = GetTimeAlignmentStatus(info, loopbackInputs.Length, canRun);
+        }
+
+        private static void FillChannelComboBox(
+            ComboBox comboBox,
+            IReadOnlyList<AsioChannelInfo> channels,
+            int preferredOffset)
+        {
+            comboBox.Items.Clear();
+            comboBox.Items.AddRange(channels.Cast<object>().ToArray());
+            comboBox.SelectedIndex = AsioDeviceCatalog.FindChannelIndex(
+                channels,
+                preferredOffset);
+        }
+
+        private string GetTimeAlignmentStatus(
+            AsioDriverInfo info,
+            int loopbackChannelCount,
+            bool canRun)
+        {
+            if (!string.IsNullOrWhiteSpace(info.ErrorMessage))
+            {
+                return info.ErrorMessage;
+            }
+            if (!info.SupportsSampleRate)
+            {
+                return $"{info.DriverName} does not support {expSweepMeasurement.SampleRate} Hz.";
+            }
+            if (loopbackChannelCount == 0)
+            {
+                return "This ASIO driver does not expose loopback input channels.";
+            }
+            return canRun
+                ? "Ready to measure microphone delay against ASIO loopback."
+                : "Select microphone, loopback, and output channels.";
+        }
+
+        private void SetTimeAlignmentControlsEnabled(bool enabled)
+        {
+            timeAlignmentDriverComboBox.Enabled = !timeAlignmentMeasurement.InProgress;
+            timeAlignmentMicrophoneComboBox.Enabled = enabled && !timeAlignmentMeasurement.InProgress;
+            timeAlignmentLoopbackComboBox.Enabled = enabled && !timeAlignmentMeasurement.InProgress;
+            timeAlignmentOutputComboBox.Enabled = enabled && !timeAlignmentMeasurement.InProgress;
+            timeAlignmentBandpassCheckBox.Enabled = !timeAlignmentMeasurement.InProgress;
+            timeAlignmentBandpassCenterNumeric.Enabled =
+                timeAlignmentBandpassCheckBox.Checked && !timeAlignmentMeasurement.InProgress;
+            timeAlignmentBandpassPassOctavesNumeric.Enabled =
+                timeAlignmentBandpassCheckBox.Checked && !timeAlignmentMeasurement.InProgress;
+            timeAlignmentBandpassFadeOctavesNumeric.Enabled =
+                timeAlignmentBandpassCheckBox.Checked && !timeAlignmentMeasurement.InProgress;
+            timeAlignmentStartButton.Enabled = enabled || timeAlignmentMeasurement.InProgress;
+            timeAlignmentStartButton.BackColor = timeAlignmentStartButton.Enabled
+                ? Color.FromArgb(50, 55, 80)
+                : Color.FromArgb(55, 60, 70);
+            timeAlignmentStartButton.ForeColor = timeAlignmentStartButton.Enabled
+                ? Color.White
+                : Color.FromArgb(120, 125, 135);
+        }
+
+        private async Task ToggleTimeAlignmentAsync()
+        {
+            if (timeAlignmentMeasurement.InProgress)
+            {
+                await timeAlignmentMeasurement.AbortAsync();
+                return;
+            }
+
+            if (timeAlignmentDriverComboBox.SelectedItem is not AsioDeviceInfo driver ||
+                timeAlignmentMicrophoneComboBox.SelectedItem is not AsioChannelInfo microphone ||
+                timeAlignmentLoopbackComboBox.SelectedItem is not AsioChannelInfo loopback ||
+                timeAlignmentOutputComboBox.SelectedItem is not AsioChannelInfo output)
+            {
+                System.Media.SystemSounds.Beep.Play();
+                return;
+            }
+
+            try
+            {
+                UpdateTimeAlignmentOptionsFromControls();
+                SaveMeasurementSettings();
+                double duration = expSweepMeasurement.Sweep?.RequestedDuration ?? 1.0;
+                timeAlignmentMeasurement.Init(
+                    expSweepMeasurement.Octaves,
+                    expSweepMeasurement.SampleRate,
+                    expSweepMeasurement.Bits,
+                    duration,
+                    driver.DriverName,
+                    microphone.Offset,
+                    loopback.Offset,
+                    output.Offset,
+                    timeAlignmentOptions);
+
+                timeAlignmentStartButton.Text = "Stop";
+                buttonRecord.Text = "Running...";
+                timeAlignmentStatusLabel.Text = "Measuring time alignment...";
+                ClearTimeAlignmentEnvelopePreview();
+                _ = timeAlignmentMeasurement.RunAsync();
+                SetTimeAlignmentControlsEnabled(false);
+            }
+            catch (Exception exception)
+            {
+                timeAlignmentStatusLabel.Text = exception.Message;
+                MessageBox.Show(
+                    this,
+                    exception.Message,
+                    "Time Alignment",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                SetTimeAlignmentControlsEnabled(true);
+            }
         }
 
         private void UpdateClearButtonState()
@@ -542,6 +1306,11 @@ namespace Resonalyze
 
         private bool ShouldFreezeDrawButton()
         {
+            if (modeController.ActiveTab == ModeTab.TimeAlignment)
+            {
+                return true;
+            }
+
             if (modeController.ActiveTab == ModeTab.LiveSpectrum)
             {
                 return false;
@@ -586,25 +1355,11 @@ namespace Resonalyze
                 return;
             }
 
-            string modeName = modeController.ActiveTab switch
-            {
-                ModeTab.Impulse => "Impulse",
-                ModeTab.Frequency => "Frequency",
-                ModeTab.Phase => "Phase",
-                ModeTab.GroupDelay => "Group Delay",
-                ModeTab.Waterfall => "Waterfall",
-                ModeTab.Burst => "Burst",
-                ModeTab.LiveSpectrum => "Live Spectrum",
-                ModeTab.Autocorrelation => "Autocorrelation",
-                _ => "Mode"
-            };
             bool hasSettings = modeController.ActiveTab is not (
                 ModeTab.LiveSpectrum or
-                ModeTab.Autocorrelation);
-            /*
-            buttonCurrentModeSettings.Text = hasSettings
-                ? $"{modeName} Settings..."
-                : "No Settings";*/
+                ModeTab.Autocorrelation or
+                ModeTab.TimeAlignment);
+
             SetButtonFrozen(buttonCurrentModeSettings, !hasSettings);
         }
 
@@ -639,6 +1394,7 @@ namespace Resonalyze
             Enabled = false;
             await Task.WhenAll(
                 expSweepMeasurement.AbortAsync(),
+                timeAlignmentMeasurement.AbortAsync(),
                 liveSpectrumController.AbortAsync());
 
             DisposeAppResources();
@@ -655,6 +1411,7 @@ namespace Resonalyze
 
             resourcesDisposed = true;
             expSweepMeasurement.Dispose();
+            timeAlignmentMeasurement.Dispose();
             liveSpectrumController.Dispose();
         }
 

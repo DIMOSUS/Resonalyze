@@ -9,5 +9,6 @@ internal enum ModeTab
     Waterfall,
     Burst,
     LiveSpectrum,
-    Autocorrelation
+    Autocorrelation,
+    TimeAlignment
 }

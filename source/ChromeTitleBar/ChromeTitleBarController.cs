@@ -177,11 +177,8 @@ internal sealed class ChromeTitleBarController
         AddModeTab(tabBar, ModeTab.Waterfall, "Waterfall", tabActions);
         AddModeTab(tabBar, ModeTab.Burst, "Burst", tabActions);
         AddModeTab(tabBar, ModeTab.LiveSpectrum, "Live Spectrum", tabActions);
-        AddModeTab(
-            tabBar,
-            ModeTab.Autocorrelation,
-            "Autocorrelation",
-            tabActions);
+        AddModeTab(tabBar, ModeTab.Autocorrelation, "Autocorrelation", tabActions);
+        AddModeTab(tabBar, ModeTab.TimeAlignment, "Time Alignment", tabActions);
     }
 
     private void AddModeTab(

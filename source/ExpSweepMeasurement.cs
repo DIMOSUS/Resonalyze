@@ -327,7 +327,7 @@ namespace Resonalyze
             // Zero-padding to the full linear-convolution length prevents circular wraparound
             // from moving late response energy to the beginning of the impulse response.
             int convolutionLength = checked(recorded.Length + sweep.InverseFilter.Length - 1);
-            int fftLength = NextPowerOfTwo(convolutionLength);
+            int fftLength = DspMath.NextPowerOfTwo(convolutionLength);
             Complex[] input = new Complex[fftLength];
             Complex[] inverseFilter = new Complex[fftLength];
 
@@ -364,25 +364,6 @@ namespace Resonalyze
 
             ImpulseResponse = impulseResponse;
             PeakIndex = maxMagnitudeIndex;
-        }
-
-        private static int NextPowerOfTwo(int value)
-        {
-            if (value <= 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(value));
-            }
-
-            int result = 1;
-            while (result < value)
-            {
-                if (result > int.MaxValue / 2)
-                {
-                    throw new InvalidOperationException("The recorded signal is too long to process.");
-                }
-                result <<= 1;
-            }
-            return result;
         }
 
         private void ThrowIfDisposed()

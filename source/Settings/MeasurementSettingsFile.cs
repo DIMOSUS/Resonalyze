@@ -6,7 +6,7 @@ namespace Resonalyze;
 
 internal sealed class MeasurementSettingsFile
 {
-    private const int CurrentSchemaVersion = 3;
+    private const int CurrentSchemaVersion = 4;
     private const string FileName = "measurement-settings.json";
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
@@ -23,6 +23,7 @@ internal sealed class MeasurementSettingsFile
     public ImpulseResponseSettings ImpulseResponse { get; set; } = new();
     public WaterfallSettings Waterfall { get; set; } = new();
     public WaterfallSettings BurstDecay { get; set; } = new();
+    public TimeAlignmentSettings TimeAlignment { get; set; } = new();
 
     private static string PathOnDisk =>
         Path.Combine(AppContext.BaseDirectory, FileName);
@@ -68,7 +69,8 @@ internal sealed class MeasurementSettingsFile
         FrequencyResponseOptions groupDelay,
         ImpulseResponseOptions impulseResponse,
         WaterfallGenerateOptions waterfall,
-        WaterfallGenerateOptions burstDecay)
+        WaterfallGenerateOptions burstDecay,
+        TimeAlignmentOptions timeAlignment)
     {
         Measurement.ApplyTo(measurement);
         FrequencyResponse.ApplyTo(frequencyResponse);
@@ -77,6 +79,7 @@ internal sealed class MeasurementSettingsFile
         ImpulseResponse.ApplyTo(impulseResponse);
         Waterfall.ApplyTo(waterfall, WaterfallMode.Fourier);
         BurstDecay.ApplyTo(burstDecay, WaterfallMode.BurstDecay);
+        TimeAlignment.ApplyTo(timeAlignment);
     }
 
     public void CaptureFrom(
@@ -86,7 +89,8 @@ internal sealed class MeasurementSettingsFile
         FrequencyResponseOptions groupDelay,
         ImpulseResponseOptions impulseResponse,
         WaterfallGenerateOptions waterfall,
-        WaterfallGenerateOptions burstDecay)
+        WaterfallGenerateOptions burstDecay,
+        TimeAlignmentOptions timeAlignment)
     {
         SchemaVersion = CurrentSchemaVersion;
         Measurement = SweepMeasurementSettings.Capture(measurement);
@@ -96,6 +100,7 @@ internal sealed class MeasurementSettingsFile
         ImpulseResponse = ImpulseResponseSettings.Capture(impulseResponse);
         Waterfall = WaterfallSettings.Capture(waterfall);
         BurstDecay = WaterfallSettings.Capture(burstDecay);
+        TimeAlignment = TimeAlignmentSettings.Capture(timeAlignment);
     }
 
     internal sealed class SweepMeasurementSettings
@@ -254,6 +259,47 @@ internal sealed class MeasurementSettingsFile
             options.Offset = Clamp(Offset, -32768, 32768);
             options.WaterfallMode = requiredMode;
             options.Periods = Math.Clamp(Periods, 1.0, 60.0);
+        }
+    }
+
+    internal sealed class TimeAlignmentSettings
+    {
+        public string? AsioDriverName { get; set; }
+        public int MicrophoneInputChannelOffset { get; set; }
+        public int LoopbackInputChannelOffset { get; set; }
+        public int AsioOutputChannelOffset { get; set; }
+        public bool UseBandpassWindow { get; set; }
+        public double BandpassCenterHz { get; set; } = 1000;
+        public double BandpassPassOctaves { get; set; } = 1;
+        public double BandpassFadeOctaves { get; set; } = 0.5;
+
+        public static TimeAlignmentSettings Capture(
+            TimeAlignmentOptions options) =>
+            new()
+            {
+                AsioDriverName = options.AsioDriverName,
+                MicrophoneInputChannelOffset = options.MicrophoneInputChannelOffset,
+                LoopbackInputChannelOffset = options.LoopbackInputChannelOffset,
+                AsioOutputChannelOffset = options.AsioOutputChannelOffset,
+                UseBandpassWindow = options.UseBandpassWindow,
+                BandpassCenterHz = options.BandpassCenterHz,
+                BandpassPassOctaves = options.BandpassPassOctaves,
+                BandpassFadeOctaves = options.BandpassFadeOctaves
+            };
+
+        public void ApplyTo(TimeAlignmentOptions options)
+        {
+            options.AsioDriverName = NormalizeAsioDriverName(AsioDriverName);
+            options.MicrophoneInputChannelOffset =
+                NormalizeAsioChannelOffset(AsioDriverName, MicrophoneInputChannelOffset, input: true);
+            options.LoopbackInputChannelOffset =
+                NormalizeAsioChannelOffset(AsioDriverName, LoopbackInputChannelOffset, input: true);
+            options.AsioOutputChannelOffset =
+                NormalizeAsioChannelOffset(AsioDriverName, AsioOutputChannelOffset, input: false);
+            options.UseBandpassWindow = UseBandpassWindow;
+            options.BandpassCenterHz = Math.Clamp(BandpassCenterHz, 20.0, 20_000.0);
+            options.BandpassPassOctaves = Math.Clamp(BandpassPassOctaves, 0.0, 8.0);
+            options.BandpassFadeOctaves = Math.Clamp(BandpassFadeOctaves, 0.0, 8.0);
         }
     }
 

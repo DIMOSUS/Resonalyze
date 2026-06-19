@@ -270,6 +270,7 @@ internal sealed class OverlayOperationSettingsDialog : Form
             saveButton
         ]);
 
+        OverlayDialogControls.ApplyRuntimeDpiScale(this);
         ResumeLayout(false);
         PerformLayout();
     }
@@ -368,11 +369,6 @@ internal sealed class OverlayOperationSettingsDialog : Form
         control.ForeColor = Color.White;
         control.Location = location;
         control.Size = size;
-    }
-
-    private void InitializeComponent()
-    {
-
     }
 
     private static void SelectSlot(

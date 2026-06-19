@@ -25,6 +25,8 @@ internal sealed class ChromeTitleBarController
     private readonly Action updateMaximizedBounds;
     private readonly Dictionary<ModeTab, Button> modeTabButtons = new();
     private readonly Panel titleBar;
+    private readonly int titleBarHeight;
+    private readonly float dpiScale;
 
     public ChromeTitleBarController(
         Form form,
@@ -35,6 +37,8 @@ internal sealed class ChromeTitleBarController
         this.form = form;
         this.plotView = plotView;
         this.updateMaximizedBounds = updateMaximizedBounds;
+        dpiScale = GetDpiScale();
+        titleBarHeight = Scale(Height);
 
         form.FormBorderStyle = FormBorderStyle.None;
         updateMaximizedBounds();
@@ -45,7 +49,7 @@ internal sealed class ChromeTitleBarController
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             BackColor = Color.FromArgb(28, 30, 36),
             Location = Point.Empty,
-            Size = new Size(form.ClientSize.Width, Height)
+            Size = new Size(form.ClientSize.Width, titleBarHeight)
         };
         titleBar.MouseDown += TitleBarMouseDown;
 
@@ -136,8 +140,8 @@ internal sealed class ChromeTitleBarController
         {
             if (control == plotView)
             {
-                control.Top += Height;
-                control.Height -= Height;
+                control.Top += titleBarHeight;
+                control.Height -= titleBarHeight;
                 continue;
             }
 
@@ -145,7 +149,7 @@ internal sealed class ChromeTitleBarController
             bool bottomAnchored = control.Anchor.HasFlag(AnchorStyles.Bottom);
             if (topAnchored && !bottomAnchored)
             {
-                control.Top += Height;
+                control.Top += titleBarHeight;
             }
         }
     }
@@ -157,9 +161,9 @@ internal sealed class ChromeTitleBarController
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             BackColor = titleBar.BackColor,
             FlowDirection = FlowDirection.LeftToRight,
-            Location = new Point(8, 6),
+            Location = new Point(Scale(8), Scale(5)),
             Padding = new Padding(0),
-            Size = new Size(form.ClientSize.Width - 156, 34),
+            Size = new Size(form.ClientSize.Width - Scale(156), titleBarHeight - Scale(5)),
             WrapContents = false
         };
         tabBar.MouseDown += TitleBarMouseDown;
@@ -193,9 +197,9 @@ internal sealed class ChromeTitleBarController
             FlatStyle = FlatStyle.Flat,
             Font = new Font(form.Font, FontStyle.Regular),
             ForeColor = Color.FromArgb(220, 224, 232),
-            Height = 28,
-            Margin = new Padding(0, 0, 2, 0),
-            Padding = new Padding(10, 0, 10, 0),
+            Height = Math.Max(Scale(28), TextRenderer.MeasureText(text, form.Font).Height + Scale(8)),
+            Margin = new Padding(0, 0, Scale(2), 0),
+            Padding = new Padding(Scale(10), 0, Scale(10), 0),
             Text = text,
             TextAlign = ContentAlignment.MiddleCenter,
             UseVisualStyleBackColor = false,
@@ -214,14 +218,16 @@ internal sealed class ChromeTitleBarController
         int left,
         EventHandler clickHandler)
     {
+        int legacyRightDistance = form.ClientSize.Width - left - 46;
+        int width = Scale(46);
         Button button = new()
         {
             Anchor = AnchorStyles.Top | AnchorStyles.Right,
             BackColor = titleBar.BackColor,
             FlatStyle = FlatStyle.Flat,
             ForeColor = Color.FromArgb(230, 232, 238),
-            Location = new Point(left, 0),
-            Size = new Size(46, Height),
+            Location = new Point(form.ClientSize.Width - Scale(legacyRightDistance) - width, 0),
+            Size = new Size(width, titleBarHeight),
             Text = text,
             UseVisualStyleBackColor = false
         };
@@ -279,12 +285,21 @@ internal sealed class ChromeTitleBarController
         form.Close();
     }
 
-    private static int GetModeTabWidth(string text) =>
+    private int GetModeTabWidth(string text) =>
         Math.Max(
-            92,
+            Scale(92),
             TextRenderer.MeasureText(
                 text,
-                SystemFonts.MessageBoxFont).Width + 46);
+                form.Font).Width + Scale(46));
+
+    private int Scale(int value) =>
+        (int)Math.Round(value * dpiScale);
+
+    private float GetDpiScale()
+    {
+        using Graphics graphics = form.CreateGraphics();
+        return Math.Max(form.DeviceDpi / 96.0f, graphics.DpiX / 96.0f);
+    }
 
     private static void SetModeTabStyle(Button button, bool active)
     {

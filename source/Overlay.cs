@@ -100,10 +100,11 @@ public sealed class OverlayCollection
                 {
                     AutoSize = false,
                     BackColor = Color.FromArgb(40, 42, 48),
+                    Font = templateSaveButton.Font,
                     ForeColor = Color.White,
-                    Location = new Point(22, 3),
+                    Location = templateSaveButton.Location,
                     Name = $"operationLabel{index}",
-                    Size = new Size(43, 19),
+                    Size = templateSaveButton.Size,
                     Text = "--",
                     TextAlign = ContentAlignment.MiddleCenter
                 };

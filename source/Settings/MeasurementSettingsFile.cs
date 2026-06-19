@@ -272,6 +272,11 @@ internal sealed class MeasurementSettingsFile
         public double BandpassCenterHz { get; set; } = 1000;
         public double BandpassPassOctaves { get; set; } = 1;
         public double BandpassFadeOctaves { get; set; } = 0.5;
+        public TimeAlignmentPeakSearchMode PeakSearchMode { get; set; } =
+            TimeAlignmentPeakSearchMode.FirstArrival;
+        public double FirstPeakThresholdBelowMaxDb { get; set; } = 25;
+        public double FirstPeakMinimumSnrDb { get; set; } = 12;
+        public double PeakSearchWindowMilliseconds { get; set; } = 80;
 
         public static TimeAlignmentSettings Capture(
             TimeAlignmentOptions options) =>
@@ -284,7 +289,11 @@ internal sealed class MeasurementSettingsFile
                 UseBandpassWindow = options.UseBandpassWindow,
                 BandpassCenterHz = options.BandpassCenterHz,
                 BandpassPassOctaves = options.BandpassPassOctaves,
-                BandpassFadeOctaves = options.BandpassFadeOctaves
+                BandpassFadeOctaves = options.BandpassFadeOctaves,
+                PeakSearchMode = options.PeakSearchMode,
+                FirstPeakThresholdBelowMaxDb = options.FirstPeakThresholdBelowMaxDb,
+                FirstPeakMinimumSnrDb = options.FirstPeakMinimumSnrDb,
+                PeakSearchWindowMilliseconds = options.PeakSearchWindowMilliseconds
             };
 
         public void ApplyTo(TimeAlignmentOptions options)
@@ -300,6 +309,15 @@ internal sealed class MeasurementSettingsFile
             options.BandpassCenterHz = Math.Clamp(BandpassCenterHz, 20.0, 20_000.0);
             options.BandpassPassOctaves = Math.Clamp(BandpassPassOctaves, 0.0, 8.0);
             options.BandpassFadeOctaves = Math.Clamp(BandpassFadeOctaves, 0.0, 8.0);
+            options.PeakSearchMode = Enum.IsDefined(PeakSearchMode)
+                ? PeakSearchMode
+                : TimeAlignmentPeakSearchMode.FirstArrival;
+            options.FirstPeakThresholdBelowMaxDb =
+                Math.Clamp(FirstPeakThresholdBelowMaxDb, 1.0, 80.0);
+            options.FirstPeakMinimumSnrDb =
+                Math.Clamp(FirstPeakMinimumSnrDb, 0.0, 80.0);
+            options.PeakSearchWindowMilliseconds =
+                Math.Clamp(PeakSearchWindowMilliseconds, 1.0, 1000.0);
         }
     }
 

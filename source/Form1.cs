@@ -89,6 +89,7 @@ namespace Resonalyze
         private readonly NumericUpDown timeAlignmentBandpassCenterNumeric;
         private readonly NumericUpDown timeAlignmentBandpassPassOctavesNumeric;
         private readonly NumericUpDown timeAlignmentBandpassFadeOctavesNumeric;
+        private readonly ComboBox timeAlignmentPeakSearchModeComboBox;
         private readonly PlotView timeAlignmentBandpassPlotView;
         private readonly PlotView timeAlignmentEnvelopePlotView;
         private readonly Button timeAlignmentStartButton;
@@ -110,6 +111,7 @@ namespace Resonalyze
                 timeAlignmentBandpassCenterNumeric,
                 timeAlignmentBandpassPassOctavesNumeric,
                 timeAlignmentBandpassFadeOctavesNumeric,
+                timeAlignmentPeakSearchModeComboBox,
                 timeAlignmentBandpassPlotView,
                 timeAlignmentEnvelopePlotView,
                 timeAlignmentStartButton,
@@ -237,6 +239,8 @@ namespace Resonalyze
                         "Signal Quality:\r\n" +
                         $"{FormatTimeAlignmentConfidence(timeAlignmentMeasurement.ConfidenceDecibels)} " +
                         $"({timeAlignmentMeasurement.ConfidenceDecibels:0.0} dB)\r\n" +
+                        FormatTimeAlignmentPeakDetection() +
+                        "\r\n" +
                         FormatTimeAlignmentLevel(
                             "Mic",
                             timeAlignmentMeasurement.MicrophonePeakDbFs,
@@ -296,6 +300,16 @@ namespace Resonalyze
             return "Poor";
         }
 
+        private string FormatTimeAlignmentPeakDetection()
+        {
+            string mode = timeAlignmentOptions.PeakSearchMode == TimeAlignmentPeakSearchMode.FirstArrival
+                ? "First arrival"
+                : "Strongest peak";
+            return timeAlignmentMeasurement.PeakSearchFallbackUsed
+                ? "Peak: First arrival fallback to strongest"
+                : $"Peak: {mode}";
+        }
+
         private (
             Panel Panel,
             ComboBox Driver,
@@ -306,6 +320,7 @@ namespace Resonalyze
             NumericUpDown BandpassCenter,
             NumericUpDown BandpassPassOctaves,
             NumericUpDown BandpassFadeOctaves,
+            ComboBox PeakSearchMode,
             PlotView BandpassPreview,
             PlotView EnvelopePreview,
             Button Start,
@@ -317,7 +332,7 @@ namespace Resonalyze
                 BackColor = Color.FromArgb(40, 44, 54),
                 BorderStyle = BorderStyle.FixedSingle,
                 Location = new Point(24, 24),
-                Size = new Size(980, 695),
+                Size = new Size(980, 710),
                 Visible = false
             };
 
@@ -359,26 +374,28 @@ namespace Resonalyze
             {
                 AutoSize = true,
                 ForeColor = Color.FromArgb(210, 214, 222),
-                Location = new Point(18, 218),
+                Location = new Point(18, 252),
                 Text = "Use bandpass window"
             };
             NumericUpDown bandpassCenter =
-                CreateTimeAlignmentNumericUpDown(180, 248, 20, 20_000, 1000, 10);
+                CreateTimeAlignmentNumericUpDown(180, 282, 20, 20_000, 1000, 10);
             NumericUpDown bandpassPassOctaves =
-                CreateTimeAlignmentNumericUpDown(180, 282, 0, 8, 1, 0.1M);
+                CreateTimeAlignmentNumericUpDown(180, 316, 0, 8, 1, 0.1M);
             NumericUpDown bandpassFadeOctaves =
-                CreateTimeAlignmentNumericUpDown(180, 316, 0, 8, 0.5M, 0.1M);
+                CreateTimeAlignmentNumericUpDown(180, 350, 0, 8, 0.5M, 0.1M);
             PlotView bandpassPreview = new()
             {
                 BackColor = Color.FromArgb(32, 36, 46),
-                Location = new Point(18, 354),
+                Location = new Point(18, 388),
                 Size = new Size(520, 145),
                 Visible = false
             };
+            ComboBox peakSearchMode = CreateTimeAlignmentComboBox(180, 218);
+            peakSearchMode.Items.AddRange(["First arrival", "Strongest peak"]);
             PlotView envelopePreview = new()
             {
                 BackColor = Color.FromArgb(32, 36, 46),
-                Location = new Point(560, 500),
+                Location = new Point(560, 530),
                 Size = new Size(400, 155),
                 Visible = false
             };
@@ -398,7 +415,7 @@ namespace Resonalyze
                 ForeColor = Color.FromArgb(190, 195, 205),
                 Font = new Font(Font.FontFamily, 11, FontStyle.Bold),
                 Location = new Point(560, 290),
-                Size = new Size(400, 240),
+                Size = new Size(400, 235),
                 Text = "Select an ASIO driver with loopback input channels."
             };
 
@@ -415,12 +432,14 @@ namespace Resonalyze
                 loopback,
                 CreateTimeAlignmentLabel("Output pair", 184),
                 output,
+                CreateTimeAlignmentLabel("Peak detection", 222),
+                peakSearchMode,
                 bandpassEnabled,
-                CreateTimeAlignmentLabel("Center frequency, Hz", 252),
+                CreateTimeAlignmentLabel("Center frequency, Hz", 286),
                 bandpassCenter,
-                CreateTimeAlignmentLabel("Pass width, oct", 286),
+                CreateTimeAlignmentLabel("Pass width, oct", 320),
                 bandpassPassOctaves,
-                CreateTimeAlignmentLabel("Fade width, oct", 320),
+                CreateTimeAlignmentLabel("Fade width, oct", 354),
                 bandpassFadeOctaves,
                 bandpassPreview,
                 envelopePreview,
@@ -468,6 +487,11 @@ namespace Resonalyze
                 UpdateTimeAlignmentBandpassPreview();
                 SaveMeasurementSettings();
             };
+            peakSearchMode.SelectedIndexChanged += (_, _) =>
+            {
+                UpdateTimeAlignmentOptionsFromControls();
+                SaveMeasurementSettings();
+            };
             start.Click += async (_, _) => await ToggleTimeAlignmentAsync();
 
             return (
@@ -480,6 +504,7 @@ namespace Resonalyze
                 bandpassCenter,
                 bandpassPassOctaves,
                 bandpassFadeOctaves,
+                peakSearchMode,
                 bandpassPreview,
                 envelopePreview,
                 start,
@@ -538,6 +563,10 @@ namespace Resonalyze
                 ClampDecimal(timeAlignmentOptions.BandpassPassOctaves, timeAlignmentBandpassPassOctavesNumeric);
             timeAlignmentBandpassFadeOctavesNumeric.Value =
                 ClampDecimal(timeAlignmentOptions.BandpassFadeOctaves, timeAlignmentBandpassFadeOctavesNumeric);
+            timeAlignmentPeakSearchModeComboBox.SelectedIndex =
+                timeAlignmentOptions.PeakSearchMode == TimeAlignmentPeakSearchMode.StrongestPeak
+                    ? 1
+                    : 0;
         }
 
         private void UpdateTimeAlignmentOptionsFromControls()
@@ -546,6 +575,10 @@ namespace Resonalyze
             timeAlignmentOptions.BandpassCenterHz = (double)timeAlignmentBandpassCenterNumeric.Value;
             timeAlignmentOptions.BandpassPassOctaves = (double)timeAlignmentBandpassPassOctavesNumeric.Value;
             timeAlignmentOptions.BandpassFadeOctaves = (double)timeAlignmentBandpassFadeOctavesNumeric.Value;
+            timeAlignmentOptions.PeakSearchMode =
+                timeAlignmentPeakSearchModeComboBox.SelectedIndex == 1
+                    ? TimeAlignmentPeakSearchMode.StrongestPeak
+                    : TimeAlignmentPeakSearchMode.FirstArrival;
 
             if (timeAlignmentDriverComboBox.SelectedItem is AsioDeviceInfo driver)
             {
@@ -714,6 +747,24 @@ namespace Resonalyze
                 Type = LineAnnotationType.Vertical,
                 X = 0
             });
+            int strongestOffset = NormalizeWrappedOffset(
+                timeAlignmentMeasurement.StrongestEnvelopePeakIndex -
+                timeAlignmentMeasurement.EnvelopePeakIndex,
+                envelope.Length);
+            double strongestMilliseconds =
+                strongestOffset * 1000.0 / timeAlignmentMeasurement.SampleRate;
+            if (Math.Abs(strongestMilliseconds) <= 50 &&
+                Math.Abs(strongestOffset) > 1)
+            {
+                model.Annotations.Add(new LineAnnotation
+                {
+                    Color = OxyColor.FromRgb(140, 170, 255),
+                    LineStyle = LineStyle.Dot,
+                    StrokeThickness = 1,
+                    Type = LineAnnotationType.Vertical,
+                    X = strongestMilliseconds
+                });
+            }
             timeAlignmentEnvelopePlotView.Model = model;
             timeAlignmentEnvelopePlotView.Visible = true;
         }
@@ -728,6 +779,21 @@ namespace Resonalyze
         {
             int wrapped = index % length;
             return wrapped < 0 ? wrapped + length : wrapped;
+        }
+
+        private static int NormalizeWrappedOffset(int offset, int length)
+        {
+            int halfLength = length / 2;
+            if (offset > halfLength)
+            {
+                return offset - length;
+            }
+            if (offset < -halfLength)
+            {
+                return offset + length;
+            }
+
+            return offset;
         }
 
         private void SaveTimeAlignmentSettings()

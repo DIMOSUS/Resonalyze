@@ -33,6 +33,9 @@ public sealed class TimeAlignmentMeasurement : IDisposable
     public double[]? EnvelopeSamples { get; private set; }
     public int EnvelopePeakIndex { get; private set; }
     public double EnvelopePeak { get; private set; }
+    public int StrongestEnvelopePeakIndex { get; private set; }
+    public double StrongestEnvelopePeak { get; private set; }
+    public bool PeakSearchFallbackUsed { get; private set; }
     public double ConfidenceDecibels { get; private set; }
     public double MicrophonePeakDbFs { get; private set; }
     public double MicrophoneRmsDbFs { get; private set; }
@@ -228,17 +231,10 @@ public sealed class TimeAlignmentMeasurement : IDisposable
             1e-12,
             filter);
 
-        var envelope = SignalEnvelope.Envelope(relativeImpulseResponse);
-        double peak = 0;
-        int peakIndex = 0;
-        for (int i = 0; i < envelope.Length; i++)
-        {
-            if (envelope[i] > peak)
-            {
-                peak = envelope[i];
-                peakIndex = i;
-            }
-        }
+        double[] envelope = SignalEnvelope.Envelope(relativeImpulseResponse);
+        PeakSearchResult peakSearchResult = FindPeak(envelope, SampleRate, Options);
+        int peakIndex = peakSearchResult.SelectedIndex;
+        double peak = envelope[peakIndex];
 
         double fractionalOffset = 0;
         if (peakIndex > 0 && peakIndex < (envelope.Length - 1))
@@ -256,6 +252,9 @@ public sealed class TimeAlignmentMeasurement : IDisposable
         EnvelopeSamples = envelope;
         EnvelopePeakIndex = peakIndex;
         EnvelopePeak = peak;
+        StrongestEnvelopePeakIndex = peakSearchResult.StrongestIndex;
+        StrongestEnvelopePeak = peakSearchResult.StrongestPeak;
+        PeakSearchFallbackUsed = peakSearchResult.FallbackUsed;
         double wrappedPeakSample = peakIndex + fractionalOffset;
         PeakSample = ToSignedDelaySamples(wrappedPeakSample, envelope.Length);
         DelayMilliseconds = PeakSample * 1000.0 / SampleRate;
@@ -277,6 +276,112 @@ public sealed class TimeAlignmentMeasurement : IDisposable
         wrappedPeakSample <= length * 0.5
             ? wrappedPeakSample
             : wrappedPeakSample - length;
+
+    private static PeakSearchResult FindPeak(
+        IReadOnlyList<double> envelope,
+        int sampleRate,
+        TimeAlignmentOptions options)
+    {
+        (int strongestIndex, double strongestPeak) = FindStrongestPeak(
+            envelope,
+            sampleRate,
+            options.PeakSearchWindowMilliseconds);
+        if (options.PeakSearchMode == TimeAlignmentPeakSearchMode.StrongestPeak)
+        {
+            return new PeakSearchResult(
+                strongestIndex,
+                strongestIndex,
+                strongestPeak,
+                FallbackUsed: false);
+        }
+
+        int searchEnd = GetSearchEndIndex(
+            envelope.Count,
+            sampleRate,
+            options.PeakSearchWindowMilliseconds);
+        double noiseRms = EstimateEnvelopeNoiseRms(envelope, strongestIndex);
+        double thresholdFromMax = strongestPeak *
+            Math.Pow(10.0, -Math.Abs(options.FirstPeakThresholdBelowMaxDb) / 20.0);
+        double thresholdFromNoise = noiseRms *
+            Math.Pow(10.0, Math.Max(0, options.FirstPeakMinimumSnrDb) / 20.0);
+        double threshold = Math.Max(thresholdFromMax, thresholdFromNoise);
+
+        for (int i = 1; i < searchEnd - 1; i++)
+        {
+            if (envelope[i] < threshold)
+            {
+                continue;
+            }
+            if (envelope[i] >= envelope[i - 1] &&
+                envelope[i] >= envelope[i + 1])
+            {
+                return new PeakSearchResult(
+                    i,
+                    strongestIndex,
+                    strongestPeak,
+                    FallbackUsed: false);
+            }
+        }
+
+        return new PeakSearchResult(
+            strongestIndex,
+            strongestIndex,
+            strongestPeak,
+            FallbackUsed: true);
+    }
+
+    private static (int Index, double Peak) FindStrongestPeak(
+        IReadOnlyList<double> envelope,
+        int sampleRate,
+        double searchWindowMilliseconds)
+    {
+        int searchEnd = GetSearchEndIndex(envelope.Count, sampleRate, searchWindowMilliseconds);
+        double peak = 0;
+        int peakIndex = 0;
+        for (int i = 0; i < searchEnd; i++)
+        {
+            if (envelope[i] > peak)
+            {
+                peak = envelope[i];
+                peakIndex = i;
+            }
+        }
+
+        return (peakIndex, peak);
+    }
+
+    private static int GetSearchEndIndex(
+        int envelopeLength,
+        int sampleRate,
+        double searchWindowMilliseconds)
+    {
+        int requestedSamples = (int)Math.Round(
+            Math.Max(1, searchWindowMilliseconds) * sampleRate / 1000.0);
+        return Math.Clamp(requestedSamples, 3, Math.Max(3, envelopeLength / 2));
+    }
+
+    private static double EstimateEnvelopeNoiseRms(
+        IReadOnlyList<double> envelope,
+        int peakIndex)
+    {
+        int exclusionRadius = Math.Max(8, envelope.Count / 200);
+        double sumSquares = 0;
+        int count = 0;
+        for (int i = 0; i < envelope.Count; i++)
+        {
+            if (Math.Abs(i - peakIndex) <= exclusionRadius)
+            {
+                continue;
+            }
+
+            sumSquares += envelope[i] * envelope[i];
+            count++;
+        }
+
+        return count > 0
+            ? Math.Sqrt(sumSquares / count)
+            : 0;
+    }
 
     private void CaptureSignalLevels(
         IReadOnlyList<double> microphone,
@@ -341,6 +446,9 @@ public sealed class TimeAlignmentMeasurement : IDisposable
         EnvelopeSamples = null;
         EnvelopePeakIndex = 0;
         EnvelopePeak = 0;
+        StrongestEnvelopePeakIndex = 0;
+        StrongestEnvelopePeak = 0;
+        PeakSearchFallbackUsed = false;
         ConfidenceDecibels = 0;
         MicrophonePeakDbFs = 0;
         MicrophoneRmsDbFs = 0;
@@ -375,4 +483,10 @@ public sealed class TimeAlignmentMeasurement : IDisposable
         Sweep?.Dispose();
         GC.SuppressFinalize(this);
     }
+
+    private readonly record struct PeakSearchResult(
+        int SelectedIndex,
+        int StrongestIndex,
+        double StrongestPeak,
+        bool FallbackUsed);
 }

@@ -67,6 +67,7 @@ namespace Resonalyze
         private readonly TimeAlignmentPanelController timeAlignmentController;
         private readonly MainCommandController commandController;
         private readonly MeasurementSettingsFile measurementSettings;
+        private readonly PlotLabelsPanelController plotLabelsPanelController;
         private bool hasCurrentImpulseResponse;
         private bool closingPrepared;
         private bool resourcesDisposed;
@@ -80,7 +81,16 @@ namespace Resonalyze
                 plotView1,
                 UpdateMaximizedBounds,
                 CreateModeTabActions());
-            overlayCollection = new OverlayCollection(this, overlays, plotView1, toolTip1);
+            overlayCollection = new OverlayCollection(
+                this,
+                overlays,
+                plotView1,
+                toolTip1,
+                UpdatePlotLabelsPanel);
+            plotLabelsPanelController = new PlotLabelsPanelController(
+                panelLabels,
+                plotView1,
+                () => CurrentMode);
             plotModelFactory = new PlotModelFactory(
                 expSweepMeasurement,
                 noiseMeasurement,
@@ -102,7 +112,9 @@ namespace Resonalyze
                 () => SelectModeAsync(ModeTab.LiveSpectrum),
                 UpdateOverlayAvailability,
                 UpdateDrawButtonText,
-                UpdateClearButtonState);
+                UpdateRecordButtonForCurrentMode,
+                UpdateClearButtonState,
+                UpdatePlotLabelsPanel);
             modeController = new ModeController(
                 ChangeModeAsync,
                 SetActiveModeTab,
@@ -117,7 +129,6 @@ namespace Resonalyze
                 buttonClear,
                 buttonCurrentModeSettings,
                 () => modeController.ActiveTab,
-                () => liveSpectrumController.InProgress,
                 CanDrawCurrentMeasurement,
                 () => plotView1.Model?.Series.Count > 0,
                 () => IsHandleCreated);
@@ -196,6 +207,7 @@ namespace Resonalyze
             CurrentMode = mode;
             plotView1.Model = null;
             UpdateClearButtonState();
+            UpdatePlotLabelsPanel(force: true);
 
             if (OverlayCollection.SupportsMode(mode))
             {
@@ -210,6 +222,13 @@ namespace Resonalyze
             if (CurrentMode == Mode.TimeAlignment)
             {
                 await timeAlignmentController.ToggleAsync();
+                return;
+            }
+
+            if (CurrentMode == Mode.LiveSpectrum)
+            {
+                await liveSpectrumController.ToggleAsync();
+                UpdateRecordButtonForCurrentMode();
                 return;
             }
 
@@ -301,6 +320,10 @@ namespace Resonalyze
             if (includeCurves && showOverlay)
             {
                 overlayCollection.Show(CurrentMode);
+            }
+            else
+            {
+                UpdatePlotLabelsPanel(force: true);
             }
         }
 
@@ -429,6 +452,7 @@ namespace Resonalyze
             PlotModel? model = plotView1.Model;
             if (model == null)
             {
+                UpdatePlotLabelsPanel(force: true);
                 return;
             }
 
@@ -437,6 +461,7 @@ namespace Resonalyze
             plotView1.Refresh();
             UpdateClearButtonState();
             UpdateOverlayAvailability();
+            UpdatePlotLabelsPanel(force: true);
         }
 
         private void UpdateOverlayAvailability()
@@ -481,14 +506,26 @@ namespace Resonalyze
             titleBarController.SetActiveModeTab(activeTab);
             UpdateCurrentModeSettingsButton();
             UpdateDrawButtonText();
+            UpdateRecordButtonForCurrentMode();
             PlotViewVisible();
             OverlayVisible();
             TimeAlignmentPanelVisible();
+            UpdatePlotLabelsPanel(force: true);
         }
 
         private void UpdateDrawButtonText()
         {
             commandController.UpdateDrawButton();
+        }
+
+        private void UpdateRecordButtonForCurrentMode()
+        {
+            if (modeController.ActiveTab != ModeTab.LiveSpectrum)
+            {
+                return;
+            }
+
+            buttonRecord.Text = liveSpectrumController.InProgress ? "Stop" : "Start";
         }
 
         private void PlotViewVisible()
@@ -512,6 +549,16 @@ namespace Resonalyze
         private void UpdateClearButtonState()
         {
             commandController.UpdateClearButton();
+        }
+
+        private void UpdatePlotLabelsPanel()
+        {
+            plotLabelsPanelController.Refresh();
+        }
+
+        private void UpdatePlotLabelsPanel(bool force)
+        {
+            plotLabelsPanelController.Refresh(force);
         }
 
         private bool CanDrawCurrentMeasurement() =>
@@ -707,12 +754,6 @@ namespace Resonalyze
 
         private async void buttonDraw_Click(object sender, EventArgs e)
         {
-            if (modeController.ActiveTab == ModeTab.LiveSpectrum)
-            {
-                await liveSpectrumController.ToggleAsync();
-                return;
-            }
-
             if (commandController.IsDrawFrozen)
             {
                 return;

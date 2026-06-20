@@ -47,6 +47,7 @@ namespace Resonalyze
             buttonCurrentModeSettings = new Button();
             buttonDraw = new Button();
             panel1 = new Panel();
+            panelLabels = new Panel();
             overlays.SuspendLayout();
             overlayPanel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)numericUpDown1).BeginInit();
@@ -75,7 +76,7 @@ namespace Resonalyze
             plotView1.Location = new Point(12, 12);
             plotView1.Name = "plotView1";
             plotView1.PanCursor = Cursors.Hand;
-            plotView1.Size = new Size(1096, 744);
+            plotView1.Size = new Size(1096, 642);
             plotView1.TabIndex = 1;
             plotView1.Text = "plotView1";
             plotView1.ZoomHorizontalCursor = Cursors.SizeWE;
@@ -254,12 +255,22 @@ namespace Resonalyze
             panel1.Size = new Size(150, 90);
             panel1.TabIndex = 23;
             // 
+            // panelLabels
+            // 
+            panelLabels.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            panelLabels.BorderStyle = BorderStyle.FixedSingle;
+            panelLabels.Location = new Point(12, 660);
+            panelLabels.Name = "panelLabels";
+            panelLabels.Size = new Size(1096, 96);
+            panelLabels.TabIndex = 24;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
             ClientSize = new Size(1280, 768);
+            Controls.Add(panelLabels);
             Controls.Add(panel1);
             Controls.Add(buttonDraw);
             Controls.Add(buttonCurrentModeSettings);
@@ -299,5 +310,6 @@ namespace Resonalyze
         private Button buttonCurrentModeSettings;
         private Button buttonDraw;
         private Panel panel1;
+        private Panel panelLabels;
     }
 }

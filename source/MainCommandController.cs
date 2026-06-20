@@ -8,7 +8,6 @@ internal sealed class MainCommandController
     private readonly Button clearButton;
     private readonly Button modeSettingsButton;
     private readonly Func<ModeTab> getActiveTab;
-    private readonly Func<bool> isLiveSpectrumRunning;
     private readonly Func<bool> canDrawCurrentMeasurement;
     private readonly Func<bool> hasPlotCurves;
     private readonly Func<bool> isHandleCreated;
@@ -20,7 +19,6 @@ internal sealed class MainCommandController
         Button clearButton,
         Button modeSettingsButton,
         Func<ModeTab> getActiveTab,
-        Func<bool> isLiveSpectrumRunning,
         Func<bool> canDrawCurrentMeasurement,
         Func<bool> hasPlotCurves,
         Func<bool> isHandleCreated)
@@ -31,7 +29,6 @@ internal sealed class MainCommandController
         this.clearButton = clearButton;
         this.modeSettingsButton = modeSettingsButton;
         this.getActiveTab = getActiveTab;
-        this.isLiveSpectrumRunning = isLiveSpectrumRunning;
         this.canDrawCurrentMeasurement = canDrawCurrentMeasurement;
         this.hasPlotCurves = hasPlotCurves;
         this.isHandleCreated = isHandleCreated;
@@ -67,9 +64,7 @@ internal sealed class MainCommandController
             return;
         }
 
-        drawButton.Text = getActiveTab() == ModeTab.LiveSpectrum
-            ? isLiveSpectrumRunning() ? "Stop Live" : "Start Live"
-            : "Restore Curves";
+        drawButton.Text = "Restore Curves";
         SetButtonFrozen(drawButton, ShouldFreezeDrawButton());
     }
 
@@ -116,14 +111,9 @@ internal sealed class MainCommandController
 
     private bool ShouldFreezeDrawButton()
     {
-        if (getActiveTab() == ModeTab.TimeAlignment)
+        if (getActiveTab() is ModeTab.LiveSpectrum or ModeTab.TimeAlignment)
         {
             return true;
-        }
-
-        if (getActiveTab() == ModeTab.LiveSpectrum)
-        {
-            return false;
         }
 
         return !canDrawCurrentMeasurement();

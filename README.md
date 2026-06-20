@@ -236,12 +236,16 @@ trust.
 
 The mode also reports measurement quality:
 
-- `Excellent`, `Good`, `Fair`, or `Poor` confidence based on peak-to-background
-  envelope ratio
+- Color-coded `Excellent`, `Good`, `Fair`, or `Poor` confidence based on
+  peak-to-background envelope ratio
 - microphone peak and RMS levels in dBFS
 - loopback peak and RMS levels in dBFS
 - `CLIP` warning for overloaded microphone input
 - `FULL SCALE` marker for a digital loopback reference running at 0 dBFS
+
+The measured time, distance, and sample count are clickable. Click one of
+those result lines to copy just the numeric value to the clipboard, which is
+convenient when pasting delay values into another tool or a spreadsheet.
 
 When the bandpass window is enabled, Resonalyze shows a small frequency-domain
 preview of the selected pass band. After the measurement completes, it also

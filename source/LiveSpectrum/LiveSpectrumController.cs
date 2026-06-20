@@ -1,4 +1,5 @@
 using OxyPlot;
+using OxyPlot.Series;
 
 namespace Resonalyze;
 
@@ -15,7 +16,10 @@ internal sealed class LiveSpectrumController : IDisposable
     private readonly Func<Task> selectLiveSpectrumAsync;
     private readonly Action updateOverlayAvailability;
     private readonly Action updateDrawButton;
+    private readonly Action updateRecordButton;
     private readonly Action updateClearButton;
+    private readonly Action updatePlotLabels;
+    private const string LiveSpectrumTag = "live-spectrum:primary";
     private bool disposed;
 
     public LiveSpectrumController(
@@ -29,7 +33,9 @@ internal sealed class LiveSpectrumController : IDisposable
         Func<Task> selectLiveSpectrumAsync,
         Action updateOverlayAvailability,
         Action updateDrawButton,
-        Action updateClearButton)
+        Action updateRecordButton,
+        Action updateClearButton,
+        Action updatePlotLabels)
     {
         this.owner = owner;
         this.measurement = measurement;
@@ -41,7 +47,9 @@ internal sealed class LiveSpectrumController : IDisposable
         this.selectLiveSpectrumAsync = selectLiveSpectrumAsync;
         this.updateOverlayAvailability = updateOverlayAvailability;
         this.updateDrawButton = updateDrawButton;
+        this.updateRecordButton = updateRecordButton;
         this.updateClearButton = updateClearButton;
+        this.updatePlotLabels = updatePlotLabels;
 
         measurement.Init(44100, 24, 60, PlaybackChannel.Mono, 2048);
         measurement.Completed += MeasurementCompleted;
@@ -87,6 +95,8 @@ internal sealed class LiveSpectrumController : IDisposable
         }
 
         updateDrawButton();
+        updateRecordButton();
+        updatePlotLabels();
     }
 
     public void Dispose()
@@ -113,11 +123,13 @@ internal sealed class LiveSpectrumController : IDisposable
 
         plotView.Model = plotModelFactory.CreateLiveSpectrum();
         overlaysPanel.Enabled = false;
-        overlayCollection.HideAll();
+        overlayCollection.Show(getCurrentMode());
         _ = measurement.RunAsync();
         timer.Start();
         updateDrawButton();
+        updateRecordButton();
         updateClearButton();
+        updatePlotLabels();
     }
 
     private async Task StopAsync()
@@ -129,14 +141,18 @@ internal sealed class LiveSpectrumController : IDisposable
         PlotModel model = plotModelFactory.CreateLiveSpectrum();
         if (finalSnapshot != null)
         {
-            model.Series.Add(plotModelFactory.BuildNoiseSeries(finalSnapshot));
+            LineSeries series = plotModelFactory.BuildNoiseSeries(finalSnapshot);
+            series.Tag = LiveSpectrumTag;
+            model.Series.Add(series);
         }
 
         plotView.Model = model;
         updateOverlayAvailability();
         overlayCollection.Show(getCurrentMode());
         updateDrawButton();
+        updateRecordButton();
         updateClearButton();
+        updatePlotLabels();
     }
 
     private void TimerTick(object? sender, EventArgs e)
@@ -148,9 +164,23 @@ internal sealed class LiveSpectrumController : IDisposable
             return;
         }
 
-        model.Series.Clear();
-        model.Series.Add(plotModelFactory.BuildNoiseSeries(snapshot));
+        RemoveLiveSpectrumSeries(model);
+        LineSeries series = plotModelFactory.BuildNoiseSeries(snapshot);
+        series.Tag = LiveSpectrumTag;
+        model.Series.Add(series);
         model.InvalidatePlot(true);
+        updatePlotLabels();
+    }
+
+    private static void RemoveLiveSpectrumSeries(PlotModel model)
+    {
+        List<OxyPlot.Series.Series> liveSpectrumSeries = model.Series
+            .Where(series => Equals(series.Tag, LiveSpectrumTag))
+            .ToList();
+        foreach (OxyPlot.Series.Series series in liveSpectrumSeries)
+        {
+            model.Series.Remove(series);
+        }
     }
 
     private void MeasurementCompleted(bool success)
@@ -165,7 +195,9 @@ internal sealed class LiveSpectrumController : IDisposable
             timer.Stop();
             updateOverlayAvailability();
             updateDrawButton();
+            updateRecordButton();
             updateClearButton();
+            updatePlotLabels();
         });
     }
 }

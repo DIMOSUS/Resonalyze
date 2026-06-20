@@ -12,15 +12,18 @@ public sealed class OverlayCollection
 {
     private readonly List<Overlay> overlays = new();
     private readonly List<CalculatedOverlay> calculatedOverlays = new();
+    private readonly Action notifyPlotChanged;
 
     public OverlayCollection(
         Form1 form,
         Panel container,
         OxyPlot.WindowsForms.PlotView plotView,
-        ToolTip toolTip)
+        ToolTip toolTip,
+        Action notifyPlotChanged)
     {
         Form = form;
         PlotView = plotView;
+        this.notifyPlotChanged = notifyPlotChanged;
 
         toolTip.InitialDelay = 600;
         toolTip.ReshowDelay = 150;
@@ -162,6 +165,8 @@ public sealed class OverlayCollection
                 overlay.Show();
             }
         }
+
+        notifyPlotChanged();
     }
 
     public void HideAll()
@@ -175,6 +180,8 @@ public sealed class OverlayCollection
         {
             overlay.Hide();
         }
+
+        notifyPlotChanged();
     }
 
     public static bool SupportsMode(Mode mode)
@@ -218,6 +225,26 @@ public sealed class OverlayCollection
         {
             overlay.RefreshSources();
         }
+    }
+
+    internal void NotifyPlotChanged() => notifyPlotChanged();
+
+    internal static string? GetTrackerFormatString(Mode mode)
+    {
+        return mode switch
+        {
+            Mode.FrequencyResponse or Mode.LiveSpectrum =>
+                "{0}\n{2:0.0} Hz\n{4:0.00} dB",
+            Mode.PhaseResponse =>
+                "{0}\n{2:0.0} Hz\n{4:0.0}°",
+            Mode.GroupDelay =>
+                "{0}\n{2:0.0} Hz\n{4:0.000} ms",
+            Mode.ImpulseResponse =>
+                "{0}\n{2:0} sample\n{4:0.00000000}",
+            Mode.Autocorrelation =>
+                "{0}\n{2:0.000} ms\n{4:0.000}",
+            _ => null
+        };
     }
 
     private static Panel CreatePanel(
@@ -406,6 +433,11 @@ public sealed class Overlay
             Title = Title,
             Tag = GetTag()
         };
+        string? trackerFormat = OverlayCollection.GetTrackerFormatString(SeriesMode);
+        if (!string.IsNullOrEmpty(trackerFormat))
+        {
+            series.TrackerFormatString = trackerFormat;
+        }
         series.Points.AddRange(drawPoints);
         model.Series.Add(series);
         RefreshPlot(model);
@@ -769,6 +801,7 @@ public sealed class Overlay
     {
         model.InvalidatePlot(true);
         collection.PlotView.Refresh();
+        collection.NotifyPlotChanged();
     }
 
     private static LineStyle ToOxyLineStyle(OverlayLineStyle value)
@@ -942,6 +975,11 @@ internal sealed class CalculatedOverlay
             Title = Title,
             Tag = GetTag()
         };
+        string? trackerFormat = OverlayCollection.GetTrackerFormatString(SeriesMode);
+        if (!string.IsNullOrEmpty(trackerFormat))
+        {
+            series.TrackerFormatString = trackerFormat;
+        }
         series.Points.AddRange(points.Select(
             point => new DataPoint(point.X, point.Y + offset)));
         model.Series.Add(series);
@@ -1201,6 +1239,7 @@ internal sealed class CalculatedOverlay
     {
         model.InvalidatePlot(true);
         collection.PlotView.Refresh();
+        collection.NotifyPlotChanged();
     }
 
     private static LineStyle ToOxyLineStyle(OverlayLineStyle value)

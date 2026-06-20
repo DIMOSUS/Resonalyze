@@ -40,8 +40,9 @@ installation. SHA-256 checksum files are provided with every release.
 - Exponential sine sweep measurement
 - Impulse response with JSON save/load
 - Windows Wave and ASIO audio backends
-- Playback/recording device selection with ASIO channel routing
-- ASIO loopback Time Alignment with sub-sample delay estimation
+- Playback/recording device selection with backend-specific channel routing
+- Device-aware sample-rate selection from supported rates
+- Wave or ASIO loopback Time Alignment with sub-sample delay estimation
 - Frequency response
 - Harmonic distortion and THD+N
 - Phase response
@@ -152,8 +153,9 @@ source/bin/Release/net10.0-windows/Resonalyze.exe
 1. Connect the output of the device under test to the selected input, directly
    or through a microphone and appropriate interface.
 2. Start Resonalyze and open the measurement settings.
-3. Select the audio backend, devices or ASIO channels, sweep duration,
-   playback channel, and analysis parameters.
+3. Select the audio backend, sample rate, devices or backend-specific input
+   and loopback channels, sweep duration, playback channel, and analysis
+   parameters.
 4. Start a recording to generate and capture the exponential sine sweep.
 5. Select the required analysis view.
 6. Adjust smoothing, windows, offsets, and display options as needed.
@@ -172,8 +174,19 @@ through an ASIO driver.
 ### Wave
 
 Use **Wave** for ordinary Windows playback and recording devices. The
-measurement settings dialog lets you choose the playback device, recording
-device, and playback channel.
+measurement settings dialog lets you choose:
+
+- playback device
+- recording device
+- sample rate from the values supported by the current configuration
+- playback channel
+- microphone input channel (`Left` or `Right`)
+- optional loopback input channel (`Left` or `Right`) when the recording
+  device exposes a stereo input
+
+If the selected Wave recording device does not expose a stereo input, loopback
+capture is unavailable and Resonalyze falls back to ordinary single-channel
+measurement behavior.
 
 ### ASIO
 
@@ -181,7 +194,9 @@ Use **ASIO** for audio interfaces that provide a native ASIO driver. The
 measurement settings dialog lets you choose:
 
 - ASIO driver
-- ASIO input channel used for recording
+- sample rate from the values supported by the selected driver
+- ASIO input channel used for the microphone
+- optional ASIO loopback input channel
 - ASIO output channel pair used for playback
 - Playback routing inside the selected output pair
 
@@ -201,13 +216,18 @@ Click **ASIO Control Panel** to open the driver's native control panel. Use it
 to configure driver-level settings such as buffer size, clock source, or sample
 rate when the driver requires those settings outside the application.
 
+Click **Test ASIO Inputs** to capture a short diagnostic snapshot of the
+available ASIO inputs. This helps verify that the microphone and loopback
+channels are truly separate and are not being mono-summed by the driver or the
+audio-interface control software.
+
 ASIO support depends on the installed driver. If a driver is already in use by
 another application or refuses the selected sample rate, Resonalyze reports the
 driver error before starting the measurement.
 
 ## Time Alignment
 
-The **Time Alignment** mode measures acoustic delay against an ASIO loopback
+The **Time Alignment** mode measures acoustic delay against a loopback
 reference. It is designed for practical loudspeaker, microphone, and channel
 alignment work where the result has to be more precise than a single audio
 sample.
@@ -215,10 +235,11 @@ sample.
 ![Time Alignment measurement](assets/images/time-alignment.png)
 
 Resonalyze plays the same mono exponential sweep used by the ordinary impulse
-response measurement, records the microphone channel and the ASIO loopback
+response measurement, records the microphone channel and the selected loopback
 channel at the same time, and computes the microphone response relative to the
 loopback reference path. This removes the unknown playback latency from the
-measurement and keeps both recorded channels locked to the same hardware clock.
+measurement. With ASIO, both recorded channels also remain locked to the same
+hardware clock, which gives the most repeatable result.
 
 The delay estimator uses a deliberately robust chain:
 
@@ -253,9 +274,15 @@ shows the envelope around the detected peak, making it easy to see whether the
 reported delay comes from a clean dominant peak or from a noisy/ambiguous
 response.
 
-Time Alignment requires an ASIO driver with loopback input channels. Standard
-Windows Wave devices cannot provide a reliable hardware reference input for
-this workflow.
+Time Alignment requires a configured loopback input channel. It works with:
+
+- **ASIO**, which is the recommended path for best timing accuracy
+- **Wave**, if the selected recording device exposes a stereo input and one
+  side can be dedicated to loopback
+
+Wave mode is supported for convenience, but it is less robust than ASIO for
+serious alignment work because the timing path is not as tightly controlled as
+with a dedicated low-latency hardware driver.
 
 ## Saving and Loading Impulse Responses
 
@@ -277,10 +304,12 @@ Files are saved as indented, human-readable JSON. Each file contains:
 - Real and, when present, imaginary sample values
 
 Click **Load** to open a previously saved response. Resonalyze validates the
-file before using it, restores the associated measurement metadata, and opens
-the **Impulse Response** view. All analyses derived from an impulse response,
-including frequency response, phase, group delay, waterfall, Burst Decay, and
-autocorrelation, can then be generated without repeating the measurement.
+file before using it, rejects files below `44100 Hz`, restores the associated
+measurement metadata, and opens the **Impulse Response** view. The loaded
+sample rate is applied back to the current measurement configuration, and all
+analyses derived from an impulse response, including frequency response, phase,
+group delay, waterfall, Burst Decay, and autocorrelation, can then be
+generated without repeating the measurement.
 
 Saving and loading are disabled while a measurement is running. The current
 file format identifier is `resonalyze-impulse-response`, version `1`. Files are

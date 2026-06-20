@@ -68,6 +68,7 @@ namespace Resonalyze
         private readonly MainCommandController commandController;
         private readonly MeasurementSettingsFile measurementSettings;
         private readonly PlotLabelsPanelController plotLabelsPanelController;
+        private readonly InputLevelMeterController inputLevelMeterController;
         private bool hasCurrentImpulseResponse;
         private bool closingPrepared;
         private bool resourcesDisposed;
@@ -75,6 +76,12 @@ namespace Resonalyze
         public Form1()
         {
             InitializeComponent();
+            toolTip1.SetToolTip(
+                inputLevelMeterPanel,
+                "Input level meter.\r\n" +
+                "Numbers are shown as Peak / RMS in dBFS.\r\n" +
+                "The bar shows the filtered RMS level.\r\n" +
+                "The bright vertical marker is Peak Hold.");
             measurementSettings = MeasurementSettingsFile.LoadOrDefault();
             titleBarController = new ChromeTitleBarController(
                 this,
@@ -149,6 +156,12 @@ namespace Resonalyze
                 text => buttonRecord.Text = text,
                 SaveMeasurementSettings,
                 () => modeController.ActiveTab == ModeTab.TimeAlignment);
+            inputLevelMeterController = new InputLevelMeterController(
+                this,
+                inputLevelMeterPanel,
+                expSweepMeasurement,
+                noiseMeasurement,
+                timeAlignmentController.Measurement);
             liveSpectrumController.ConfigureFrom(expSweepMeasurement);
             commandController.Initialize();
 
@@ -646,6 +659,7 @@ namespace Resonalyze
             }
 
             resourcesDisposed = true;
+            inputLevelMeterController.Dispose();
             expSweepMeasurement.Dispose();
             timeAlignmentController.Dispose();
             liveSpectrumController.Dispose();

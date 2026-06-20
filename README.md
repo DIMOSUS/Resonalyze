@@ -43,6 +43,7 @@ installation. SHA-256 checksum files are provided with every release.
 - Playback/recording device selection with backend-specific channel routing
 - Device-aware sample-rate selection from supported rates
 - Wave or ASIO loopback Time Alignment with sub-sample delay estimation
+- Compact Mic/Loop input level meter with Peak, RMS, and Peak Hold
 - Frequency response
 - Harmonic distortion and THD+N
 - Phase response
@@ -157,9 +158,11 @@ source/bin/Release/net10.0-windows/Resonalyze.exe
    and loopback channels, sweep duration, playback channel, and analysis
    parameters.
 4. Start a recording to generate and capture the exponential sine sweep.
-5. Select the required analysis view.
-6. Adjust smoothing, windows, offsets, and display options as needed.
-7. Use **Save** to preserve the captured impulse response for later analysis
+5. Watch the compact input level meter to confirm microphone level, loopback
+   presence, and headroom before trusting the measurement.
+6. Select the required analysis view.
+7. Adjust smoothing, windows, offsets, and display options as needed.
+8. Use **Save** to preserve the captured impulse response for later analysis
    or comparison.
 
 For acoustic measurements, microphone placement and room conditions strongly
@@ -170,6 +173,8 @@ levels and impedances are safe for both devices.
 
 Resonalyze can run measurements through the standard Windows Wave backend or
 through an ASIO driver.
+
+![Measurement settings](assets/images/measurement-options.png)
 
 ### Wave
 
@@ -225,6 +230,21 @@ ASIO support depends on the installed driver. If a driver is already in use by
 another application or refuses the selected sample rate, Resonalyze reports the
 driver error before starting the measurement.
 
+## Input Level Meter
+
+The right-side control column includes a compact two-channel input meter for
+`Mic` and `Loop`. It is designed to stay useful without opening extra dialogs
+while routing, checking loopback, or validating a completed measurement.
+
+- the bar shows a filtered RMS level
+- the bright vertical marker shows Peak Hold
+- the text shows `Peak / RMS` in `dBFS`
+- after a sweep or time-alignment measurement completes, the meter keeps the
+  final levels from the last valid capture instead of dropping back to idle
+
+This makes it easy to spot missing loopback, weak microphone level, overload,
+or an unexpectedly hot reference path before you start analyzing the curves.
+
 ## Time Alignment
 
 The **Time Alignment** mode measures acoustic delay against a loopback
@@ -263,6 +283,10 @@ The mode also reports measurement quality:
 - loopback peak and RMS levels in dBFS
 - `CLIP` warning for overloaded microphone input
 - `FULL SCALE` marker for a digital loopback reference running at 0 dBFS
+
+The compact input level meter remains useful here as well: while the
+measurement is running it shows live microphone and loopback behavior, and
+after completion it preserves the final captured levels from that run.
 
 The measured time, distance, and sample count are clickable. Click one of
 those result lines to copy just the numeric value to the clipboard, which is

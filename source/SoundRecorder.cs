@@ -18,6 +18,7 @@ namespace Resonalyze
         private bool disposed;
 
         public event Action<float[]>? SequenceReady;
+        internal event Action<AudioChannelLevel[]>? LevelsAvailable;
 
         public int Sequence { get; set; }
         public int ReadSamples { get; private set; }
@@ -160,6 +161,8 @@ namespace Resonalyze
             int bytesPerFrame = bytesPerSample * ChannelCount;
             int frameCount = args.BytesRecorded / bytesPerFrame;
             List<float[]> readySequences = new();
+            var peaks = new double[ChannelCount];
+            var sumSquares = new double[ChannelCount];
 
             lock (sync)
             {
@@ -169,7 +172,11 @@ namespace Resonalyze
                     for (int channel = 0; channel < ChannelCount; channel++)
                     {
                         int sampleOffset = frameOffset + channel * bytesPerSample;
-                        samples[channel].Add(ReadPcmSample(args.Buffer, sampleOffset, bytesPerSample));
+                        float sample = ReadPcmSample(args.Buffer, sampleOffset, bytesPerSample);
+                        samples[channel].Add(sample);
+                        double magnitude = Math.Abs(sample);
+                        peaks[channel] = Math.Max(peaks[channel], magnitude);
+                        sumSquares[channel] += sample * sample;
                     }
                     ReadSamples++;
                 }
@@ -196,6 +203,8 @@ namespace Resonalyze
             }
 
             firstBufferReady?.TrySetResult(true);
+            LevelsAvailable?.Invoke(
+                AudioLevelMetering.MeasureChannels(peaks, sumSquares, frameCount));
             foreach (float[] sequence in readySequences)
             {
                 SequenceReady?.Invoke(sequence);

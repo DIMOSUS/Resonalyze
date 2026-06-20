@@ -12,6 +12,7 @@ namespace Resonalyze.Options
 {
     public partial class MeasurementOptions : Form
     {
+        private readonly ToolTip deviceToolTip = new();
         private ExpSweepMeasurement? expSweepMeasurement;
         private IReadOnlyList<AudioDeviceInfo> playbackDevices = Array.Empty<AudioDeviceInfo>();
         private IReadOnlyList<AudioDeviceInfo> recordingDevices = Array.Empty<AudioDeviceInfo>();
@@ -55,6 +56,8 @@ namespace Resonalyze.Options
             comboBoxPlaybackDevice.SelectedIndex = AudioDeviceCatalog.FindDeviceIndex(
                 playbackDevices,
                 expSweepMeasurement.OutputDeviceNumber);
+            ConfigureDropDownWidth(comboBoxPlaybackDevice);
+            UpdateComboBoxToolTip(comboBoxPlaybackDevice);
 
             recordingDevices = AudioDeviceCatalog.GetRecordingDevices();
             comboBoxRecordingDevice.Items.Clear();
@@ -62,6 +65,8 @@ namespace Resonalyze.Options
             comboBoxRecordingDevice.SelectedIndex = AudioDeviceCatalog.FindDeviceIndex(
                 recordingDevices,
                 expSweepMeasurement.InputDeviceNumber);
+            ConfigureDropDownWidth(comboBoxRecordingDevice);
+            UpdateComboBoxToolTip(comboBoxRecordingDevice);
             FillWaveChannelControls(
                 expSweepMeasurement.WaveInputChannelOffset,
                 expSweepMeasurement.WaveLoopbackInputChannelOffset);
@@ -74,6 +79,8 @@ namespace Resonalyze.Options
                 comboBoxAsioDriver.SelectedIndex = AsioDeviceCatalog.FindDriverIndex(
                     asioDrivers,
                     expSweepMeasurement.AsioDriverName);
+                ConfigureDropDownWidth(comboBoxAsioDriver);
+                UpdateComboBoxToolTip(comboBoxAsioDriver);
             }
 
             numericUpDownRequestedDuration.Value = (int)(sweep.RequestedDuration * 1000.0);
@@ -188,6 +195,7 @@ namespace Resonalyze.Options
                 return;
             }
 
+            UpdateComboBoxToolTip(comboBoxPlaybackDevice);
             RefreshSampleRateOptions(GetSelectedSampleRate());
         }
 
@@ -198,6 +206,7 @@ namespace Resonalyze.Options
                 return;
             }
 
+            UpdateComboBoxToolTip(comboBoxRecordingDevice);
             UpdateWaveLoopbackControls();
             RefreshSampleRateOptions(GetSelectedSampleRate());
         }
@@ -220,6 +229,7 @@ namespace Resonalyze.Options
                 return;
             }
 
+            UpdateComboBoxToolTip(comboBoxAsioDriver);
             RefreshSampleRateOptions(GetSelectedSampleRate());
             RefreshAsioDriverInfo(
                 GetSelectedAsioInputChannelOffset(),
@@ -291,6 +301,29 @@ namespace Resonalyze.Options
             labelWaveLoopbackStatus.Enabled = !useAsio;
             labelAsioLoopbackChannel.Enabled = useAsio;
             UpdateWaveLoopbackControls();
+        }
+
+        private void ConfigureDropDownWidth(ComboBox comboBox)
+        {
+            int maxWidth = comboBox.Width;
+            Font font = comboBox.Font ?? Font;
+            using Graphics graphics = comboBox.CreateGraphics();
+            foreach (object item in comboBox.Items)
+            {
+                string text = comboBox.GetItemText(item) ?? string.Empty;
+                int width = TextRenderer.MeasureText(graphics, text, font).Width + SystemInformation.VerticalScrollBarWidth;
+                maxWidth = Math.Max(maxWidth, width);
+            }
+
+            comboBox.DropDownWidth = maxWidth;
+        }
+
+        private void UpdateComboBoxToolTip(ComboBox comboBox)
+        {
+            string text = comboBox.SelectedItem != null
+                ? comboBox.GetItemText(comboBox.SelectedItem) ?? string.Empty
+                : string.Empty;
+            deviceToolTip.SetToolTip(comboBox, text);
         }
 
         private void buttonAsioControlPanel_Click(object sender, EventArgs e)

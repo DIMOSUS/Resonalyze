@@ -243,7 +243,7 @@ namespace Resonalyze.Options
             comboBoxPlaybackDevice.FormattingEnabled = true;
             comboBoxPlaybackDevice.Location = new Point(153, 216);
             comboBoxPlaybackDevice.Name = "comboBoxPlaybackDevice";
-            comboBoxPlaybackDevice.Size = new Size(260, 23);
+            comboBoxPlaybackDevice.Size = new Size(300, 23);
             comboBoxPlaybackDevice.TabIndex = 20;
             comboBoxPlaybackDevice.SelectedIndexChanged += comboBoxPlaybackDevice_SelectedIndexChanged;
             // 
@@ -263,7 +263,7 @@ namespace Resonalyze.Options
             comboBoxRecordingDevice.FormattingEnabled = true;
             comboBoxRecordingDevice.Location = new Point(153, 245);
             comboBoxRecordingDevice.Name = "comboBoxRecordingDevice";
-            comboBoxRecordingDevice.Size = new Size(260, 23);
+            comboBoxRecordingDevice.Size = new Size(300, 23);
             comboBoxRecordingDevice.TabIndex = 22;
             comboBoxRecordingDevice.SelectedIndexChanged += comboBoxRecordingDevice_SelectedIndexChanged;
             // 
@@ -283,7 +283,7 @@ namespace Resonalyze.Options
             comboBoxWaveInputChannel.FormattingEnabled = true;
             comboBoxWaveInputChannel.Location = new Point(153, 274);
             comboBoxWaveInputChannel.Name = "comboBoxWaveInputChannel";
-            comboBoxWaveInputChannel.Size = new Size(260, 23);
+            comboBoxWaveInputChannel.Size = new Size(300, 23);
             comboBoxWaveInputChannel.TabIndex = 39;
             // 
             // labelWaveLoopbackChannel
@@ -302,7 +302,7 @@ namespace Resonalyze.Options
             comboBoxWaveLoopbackChannel.FormattingEnabled = true;
             comboBoxWaveLoopbackChannel.Location = new Point(153, 303);
             comboBoxWaveLoopbackChannel.Name = "comboBoxWaveLoopbackChannel";
-            comboBoxWaveLoopbackChannel.Size = new Size(260, 23);
+            comboBoxWaveLoopbackChannel.Size = new Size(300, 23);
             comboBoxWaveLoopbackChannel.TabIndex = 41;
             comboBoxWaveLoopbackChannel.SelectedIndexChanged += comboBoxWaveLoopbackChannel_SelectedIndexChanged;
             // 
@@ -311,7 +311,7 @@ namespace Resonalyze.Options
             labelWaveLoopbackStatus.ForeColor = SystemColors.ControlLight;
             labelWaveLoopbackStatus.Location = new Point(12, 336);
             labelWaveLoopbackStatus.Name = "labelWaveLoopbackStatus";
-            labelWaveLoopbackStatus.Size = new Size(401, 32);
+            labelWaveLoopbackStatus.Size = new Size(441, 32);
             labelWaveLoopbackStatus.TabIndex = 42;
             labelWaveLoopbackStatus.Text = "-";
             // 
@@ -351,7 +351,7 @@ namespace Resonalyze.Options
             comboBoxAsioDriver.FormattingEnabled = true;
             comboBoxAsioDriver.Location = new Point(153, 361);
             comboBoxAsioDriver.Name = "comboBoxAsioDriver";
-            comboBoxAsioDriver.Size = new Size(260, 23);
+            comboBoxAsioDriver.Size = new Size(300, 23);
             comboBoxAsioDriver.TabIndex = 26;
             comboBoxAsioDriver.SelectedIndexChanged += comboBoxAsioDriver_SelectedIndexChanged;
             // 
@@ -359,7 +359,7 @@ namespace Resonalyze.Options
             // 
             buttonAsioControlPanel.Location = new Point(153, 390);
             buttonAsioControlPanel.Name = "buttonAsioControlPanel";
-            buttonAsioControlPanel.Size = new Size(260, 23);
+            buttonAsioControlPanel.Size = new Size(300, 23);
             buttonAsioControlPanel.TabIndex = 37;
             buttonAsioControlPanel.Text = "ASIO Control Panel";
             buttonAsioControlPanel.UseVisualStyleBackColor = true;
@@ -381,7 +381,7 @@ namespace Resonalyze.Options
             comboBoxAsioInputChannel.FormattingEnabled = true;
             comboBoxAsioInputChannel.Location = new Point(153, 419);
             comboBoxAsioInputChannel.Name = "comboBoxAsioInputChannel";
-            comboBoxAsioInputChannel.Size = new Size(260, 23);
+            comboBoxAsioInputChannel.Size = new Size(300, 23);
             comboBoxAsioInputChannel.TabIndex = 28;
             // 
             // labelAsioOutputChannel
@@ -400,7 +400,7 @@ namespace Resonalyze.Options
             comboBoxAsioOutputChannel.FormattingEnabled = true;
             comboBoxAsioOutputChannel.Location = new Point(153, 448);
             comboBoxAsioOutputChannel.Name = "comboBoxAsioOutputChannel";
-            comboBoxAsioOutputChannel.Size = new Size(260, 23);
+            comboBoxAsioOutputChannel.Size = new Size(300, 23);
             comboBoxAsioOutputChannel.TabIndex = 30;
             // 
             // labelAsioLoopbackChannel
@@ -419,7 +419,7 @@ namespace Resonalyze.Options
             comboBoxAsioLoopbackChannel.FormattingEnabled = true;
             comboBoxAsioLoopbackChannel.Location = new Point(153, 477);
             comboBoxAsioLoopbackChannel.Name = "comboBoxAsioLoopbackChannel";
-            comboBoxAsioLoopbackChannel.Size = new Size(260, 23);
+            comboBoxAsioLoopbackChannel.Size = new Size(300, 23);
             comboBoxAsioLoopbackChannel.TabIndex = 44;
             // 
             // labelAsioSampleRate
@@ -486,7 +486,7 @@ namespace Resonalyze.Options
             // 
             buttonAsioInputProbe.Location = new Point(153, 558);
             buttonAsioInputProbe.Name = "buttonAsioInputProbe";
-            buttonAsioInputProbe.Size = new Size(260, 23);
+            buttonAsioInputProbe.Size = new Size(300, 23);
             buttonAsioInputProbe.TabIndex = 45;
             buttonAsioInputProbe.Text = "Test ASIO Inputs";
             buttonAsioInputProbe.UseVisualStyleBackColor = true;
@@ -497,7 +497,7 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(425, 642);
+            ClientSize = new Size(465, 642);
             Controls.Add(buttonAsioInputProbe);
             Controls.Add(comboBoxAsioLoopbackChannel);
             Controls.Add(labelAsioLoopbackChannel);

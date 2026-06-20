@@ -16,6 +16,7 @@ public sealed class TimeAlignmentMeasurement : IDisposable
     private bool disposed;
 
     public event Action<bool>? Completed;
+    internal event Action<InputLevelMeterSnapshot>? LevelsAvailable;
 
     public ExponentialSineSweep? Sweep { get; private set; }
     public Complex[]? MicrophoneImpulseResponse { get; private set; }
@@ -208,6 +209,11 @@ public sealed class TimeAlignmentMeasurement : IDisposable
             firstInputOffset,
             AsioOutputChannelOffset,
             inputChannelCount);
+        session.LevelsAvailable += channels =>
+            RaiseLevels(
+                channels,
+                MicrophoneInputChannelOffset - firstInputOffset,
+                LoopbackInputChannelOffset - firstInputOffset);
         using FloatArrayWaveStream stream = FloatArrayWaveStream.FromMonoSamples(
             sweep.SweepData,
             SampleRate,
@@ -238,6 +244,11 @@ public sealed class TimeAlignmentMeasurement : IDisposable
             Bits,
             2,
             InputDeviceNumber);
+        recorder.LevelsAvailable += channels =>
+            RaiseLevels(
+                channels,
+                MicrophoneInputChannelOffset,
+                LoopbackInputChannelOffset);
         using var player = new WaveOutEvent
         {
             DeviceNumber = OutputDeviceNumber
@@ -495,6 +506,48 @@ public sealed class TimeAlignmentMeasurement : IDisposable
             MeasureSignalLevel(microphone);
         (LoopbackPeakDbFs, LoopbackRmsDbFs, LoopbackClipped) =
             MeasureSignalLevel(loopback);
+        LevelsAvailable?.Invoke(new InputLevelMeterSnapshot(
+            new InputLevelMeterEntry(
+                true,
+                MicrophonePeakDbFs,
+                MicrophoneRmsDbFs,
+                MicrophoneClipped,
+                false),
+            new InputLevelMeterEntry(
+                true,
+                LoopbackPeakDbFs,
+                LoopbackRmsDbFs,
+                false,
+                LoopbackClipped)));
+    }
+
+    private void RaiseLevels(
+        AudioChannelLevel[] channels,
+        int microphoneChannelIndex,
+        int loopbackChannelIndex)
+    {
+        LevelsAvailable?.Invoke(new InputLevelMeterSnapshot(
+            CreateEntry(channels, microphoneChannelIndex, fullScaleReference: false),
+            CreateEntry(channels, loopbackChannelIndex, fullScaleReference: true)));
+    }
+
+    private static InputLevelMeterEntry CreateEntry(
+        AudioChannelLevel[] channels,
+        int channelIndex,
+        bool fullScaleReference)
+    {
+        if ((uint)channelIndex >= (uint)channels.Length)
+        {
+            return InputLevelMeterEntry.Unavailable;
+        }
+
+        AudioChannelLevel level = channels[channelIndex];
+        return new InputLevelMeterEntry(
+            true,
+            level.PeakDbFs,
+            level.RmsDbFs,
+            !fullScaleReference && level.FullScale,
+            fullScaleReference && level.FullScale);
     }
 
     private static (double PeakDbFs, double RmsDbFs, bool Clipped) MeasureSignalLevel(

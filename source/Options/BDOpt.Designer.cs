@@ -296,7 +296,7 @@ namespace Resonalyze.Options
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            BackColor = Color.FromArgb(50, 50, 50);
+            BackColor = Color.FromArgb(45, 50, 60);
             ClientSize = new Size(264, 291);
             Controls.Add(numericPeriods);
             Controls.Add(label3);

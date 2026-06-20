@@ -73,6 +73,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     }
 
     public bool InProgress => measurement.InProgress;
+    public TimeAlignmentMeasurement Measurement => measurement;
 
     public void SetVisible(bool visible)
     {

@@ -22,6 +22,7 @@ namespace Resonalyze
         private bool disposed;
 
         public event Action<bool>? Completed;
+        internal event Action<InputLevelMeterSnapshot>? LevelsAvailable;
 
         private NoiseSignal? signal;
         public bool InProgress => inProgress;
@@ -78,12 +79,14 @@ namespace Resonalyze
             if (soundRecorder != null)
             {
                 soundRecorder.SequenceReady -= ProcessSequence;
+                soundRecorder.LevelsAvailable -= HandleWaveLevelsAvailable;
                 soundRecorder.Dispose();
             }
             soundRecorder = new SoundRecorder();
             soundRecorder.Init(sampleRate, bits, 1, inputDeviceNumber);
             soundRecorder.Sequence = sequenceLength;
             soundRecorder.SequenceReady += ProcessSequence;
+            soundRecorder.LevelsAvailable += HandleWaveLevelsAvailable;
         }
 
         public Task<bool> RunAsync()
@@ -254,6 +257,7 @@ namespace Resonalyze
                 Sequence = SequenceLength
             };
             session.SequenceReady += ProcessSequence;
+            session.LevelsAvailable += HandleAsioLevelsAvailable;
             try
             {
                 using FloatArrayWaveStream stream = FloatArrayWaveStream.FromMonoSamples(
@@ -271,6 +275,7 @@ namespace Resonalyze
             finally
             {
                 session.SequenceReady -= ProcessSequence;
+                session.LevelsAvailable -= HandleAsioLevelsAvailable;
                 await session.StopAsync().ConfigureAwait(false);
             }
         }
@@ -313,6 +318,31 @@ namespace Resonalyze
         private void ProcessSequence(float[] sequence)
         {
             Volatile.Read(ref sequenceWriter)?.TryWrite(sequence);
+        }
+
+        private void HandleWaveLevelsAvailable(AudioChannelLevel[] channels)
+        {
+            RaiseLevels(channels);
+        }
+
+        private void HandleAsioLevelsAvailable(AudioChannelLevel[] channels)
+        {
+            RaiseLevels(channels);
+        }
+
+        private void RaiseLevels(AudioChannelLevel[] channels)
+        {
+            InputLevelMeterEntry microphone = channels.Length > 0
+                ? new InputLevelMeterEntry(
+                    true,
+                    channels[0].PeakDbFs,
+                    channels[0].RmsDbFs,
+                    channels[0].FullScale,
+                    false)
+                : InputLevelMeterEntry.Unavailable;
+            LevelsAvailable?.Invoke(new InputLevelMeterSnapshot(
+                microphone,
+                InputLevelMeterEntry.Unavailable));
         }
 
         private async Task ProcessSequencesAsync(

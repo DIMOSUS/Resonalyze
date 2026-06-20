@@ -19,6 +19,7 @@ namespace Resonalyze
         private bool disposed;
 
         public event Action<bool>? Completed;
+        internal event Action<InputLevelMeterSnapshot>? LevelsAvailable;
 
         public ExponentialSineSweep? Sweep { get; private set; }
         public Complex[]? ImpulseResponse { get; private set; }
@@ -85,7 +86,11 @@ namespace Resonalyze
             Sweep = new ExponentialSineSweep();
             Sweep.FillData(octaves, requestedDuration, bits, sampleRate);
 
-            soundRecorder?.Dispose();
+            if (soundRecorder != null)
+            {
+                soundRecorder.LevelsAvailable -= HandleWaveLevelsAvailable;
+                soundRecorder.Dispose();
+            }
             soundRecorder = new SoundRecorder();
             int recorderChannelCount = audioBackend == AudioBackend.Wave
                 ? GetRequiredWaveInputChannelCount()
@@ -95,6 +100,7 @@ namespace Resonalyze
                 bits,
                 recorderChannelCount,
                 inputDeviceNumber);
+            soundRecorder.LevelsAvailable += HandleWaveLevelsAvailable;
         }
 
         public Task<bool> RunAsync()
@@ -198,11 +204,15 @@ namespace Resonalyze
             LastError = null;
         }
 
+        private void HandleWaveLevelsAvailable(AudioChannelLevel[] channels)
+        {
+            RaiseLevels(MapWaveLevels(channels));
+        }
+
         private async Task<bool> RunCoreAsync(CancellationToken cancellationToken)
         {
             ExponentialSineSweep sweep = Sweep!;
             SoundRecorder recorder = soundRecorder!;
-            int channel = (int)PlaybackChannel;
             bool success = false;
 
             try
@@ -286,6 +296,7 @@ namespace Resonalyze
                 AsioDriverName ?? string.Empty,
                 AsioInputChannelOffset,
                 AsioOutputChannelOffset);
+            session.LevelsAvailable += HandleAsioLevelsAvailable;
             using FloatArrayWaveStream stream = FloatArrayWaveStream.FromMonoSamples(
                 sweep.SweepData,
                 SampleRate,
@@ -299,8 +310,14 @@ namespace Resonalyze
             int requiredSamples = session.ReadSamples + sweep.SweepSamples + SampleRate;
             await session.WaitForSamplesAsync(requiredSamples, cancellationToken).ConfigureAwait(false);
             await session.StopAsync().ConfigureAwait(false);
+            session.LevelsAvailable -= HandleAsioLevelsAvailable;
 
             ProcessImpulseResponse(session.GetSamplesSnapshot(), sweep);
+        }
+
+        private void HandleAsioLevelsAvailable(AudioChannelLevel[] channels)
+        {
+            RaiseLevels(MapAsioLevels(channels));
         }
 
         private static async Task PlayToEndAsync(WaveOutEvent player, CancellationToken cancellationToken)
@@ -403,6 +420,101 @@ namespace Resonalyze
 
             ImpulseResponse = impulseResponse;
             PeakIndex = maxMagnitudeIndex;
+            RaiseLevels(CreateFinalLevelSnapshot(sampleChannels));
+        }
+
+        private InputLevelMeterSnapshot CreateFinalLevelSnapshot(float[][] sampleChannels)
+        {
+            AudioChannelLevel[] measuredLevels = MeasureRecordedChannels(sampleChannels);
+            return AudioBackend == AudioBackend.Wave
+                ? MapWaveLevels(measuredLevels)
+                : MapAsioLevels(measuredLevels);
+        }
+
+        private InputLevelMeterSnapshot MapWaveLevels(AudioChannelLevel[] channels)
+        {
+            InputLevelMeterEntry microphone = CreateEntry(
+                TryGetLevel(channels, WaveInputChannelOffset),
+                fullScaleReference: false);
+            InputLevelMeterEntry loopback = CreateEntry(
+                WaveLoopbackInputChannelOffset is int loopbackChannel
+                    ? TryGetLevel(channels, loopbackChannel)
+                    : null,
+                fullScaleReference: true);
+            return new InputLevelMeterSnapshot(microphone, loopback);
+        }
+
+        private static InputLevelMeterSnapshot MapAsioLevels(AudioChannelLevel[] channels)
+        {
+            InputLevelMeterEntry microphone = CreateEntry(
+                TryGetLevel(channels, 0),
+                fullScaleReference: false);
+            return new InputLevelMeterSnapshot(
+                microphone,
+                InputLevelMeterEntry.Unavailable);
+        }
+
+        private void RaiseLevels(InputLevelMeterSnapshot snapshot)
+        {
+            LevelsAvailable?.Invoke(snapshot);
+        }
+
+        private static AudioChannelLevel? TryGetLevel(
+            AudioChannelLevel[] channels,
+            int channelIndex)
+        {
+            return (uint)channelIndex < (uint)channels.Length
+                ? channels[channelIndex]
+                : null;
+        }
+
+        private static InputLevelMeterEntry CreateEntry(
+            AudioChannelLevel? level,
+            bool fullScaleReference)
+        {
+            if (level == null)
+            {
+                return InputLevelMeterEntry.Unavailable;
+            }
+
+            AudioChannelLevel value = level.Value;
+            return new InputLevelMeterEntry(
+                true,
+                value.PeakDbFs,
+                value.RmsDbFs,
+                !fullScaleReference && value.FullScale,
+                fullScaleReference && value.FullScale);
+        }
+
+        private static AudioChannelLevel[] MeasureRecordedChannels(float[][] sampleChannels)
+        {
+            var levels = new AudioChannelLevel[sampleChannels.Length];
+            for (int channel = 0; channel < sampleChannels.Length; channel++)
+            {
+                levels[channel] = MeasureRecordedChannel(sampleChannels[channel]);
+            }
+
+            return levels;
+        }
+
+        private static AudioChannelLevel MeasureRecordedChannel(float[] samples)
+        {
+            double peak = 0;
+            double sumSquares = 0;
+            for (int i = 0; i < samples.Length; i++)
+            {
+                double magnitude = Math.Abs(samples[i]);
+                peak = Math.Max(peak, magnitude);
+                sumSquares += samples[i] * samples[i];
+            }
+
+            double rms = samples.Length > 0
+                ? Math.Sqrt(sumSquares / samples.Length)
+                : 0;
+            return new AudioChannelLevel(
+                DataHelper.AmplitudeToDecibels(peak),
+                DataHelper.AmplitudeToDecibels(rms),
+                peak >= 0.999);
         }
 
         private int GetRequiredWaveInputChannelCount()

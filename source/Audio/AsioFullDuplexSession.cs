@@ -19,6 +19,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
     private bool disposed;
 
     public event Action<float[]>? SequenceReady;
+    public event Action<AudioChannelLevel[]>? LevelsAvailable;
 
     public AsioFullDuplexSession(
         string driverName,
@@ -210,6 +211,8 @@ internal sealed class AsioFullDuplexSession : IDisposable
         }
 
         List<float[]> readySequences = new();
+        var peaks = new double[ChannelCount];
+        var sumSquares = new double[ChannelCount];
 
         lock (sync)
         {
@@ -218,10 +221,14 @@ internal sealed class AsioFullDuplexSession : IDisposable
                 for (int channel = 0; channel < ChannelCount; channel++)
                 {
                     int asioChannel = inputChannelOffset + channel;
-                    samples[channel].Add(AsioSampleBufferReader.ReadSample(
+                    float sample = AsioSampleBufferReader.ReadSample(
                         args.InputBuffers[asioChannel],
                         frame,
-                        args.AsioSampleType));
+                        args.AsioSampleType);
+                    samples[channel].Add(sample);
+                    double magnitude = Math.Abs(sample);
+                    peaks[channel] = Math.Max(peaks[channel], magnitude);
+                    sumSquares[channel] += sample * sample;
                 }
                 ReadSamples++;
             }
@@ -248,6 +255,11 @@ internal sealed class AsioFullDuplexSession : IDisposable
         }
 
         firstBufferReady?.TrySetResult(true);
+        LevelsAvailable?.Invoke(
+            AudioLevelMetering.MeasureChannels(
+                peaks,
+                sumSquares,
+                args.SamplesPerBuffer));
         foreach (float[] sequence in readySequences)
         {
             SequenceReady?.Invoke(sequence);

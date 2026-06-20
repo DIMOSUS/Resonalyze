@@ -6,7 +6,7 @@ namespace Resonalyze;
 
 internal sealed class MeasurementSettingsFile
 {
-    private const int CurrentSchemaVersion = 4;
+    private const int CurrentSchemaVersion = 6;
     private const string FileName = "measurement-settings.json";
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
@@ -79,7 +79,7 @@ internal sealed class MeasurementSettingsFile
         ImpulseResponse.ApplyTo(impulseResponse);
         Waterfall.ApplyTo(waterfall, WaterfallMode.Fourier);
         BurstDecay.ApplyTo(burstDecay, WaterfallMode.BurstDecay);
-        TimeAlignment.ApplyTo(timeAlignment);
+        TimeAlignment.ApplyTo(timeAlignment, measurement.SampleRate);
     }
 
     public void CaptureFrom(
@@ -114,7 +114,10 @@ internal sealed class MeasurementSettingsFile
         public int OutputDeviceNumber { get; set; } = -1;
         public int InputDeviceNumber { get; set; } = -1;
         public string? AsioDriverName { get; set; }
+        public int WaveInputChannelOffset { get; set; }
+        public int? WaveLoopbackInputChannelOffset { get; set; }
         public int AsioInputChannelOffset { get; set; }
+        public int? AsioLoopbackInputChannelOffset { get; set; }
         public int AsioOutputChannelOffset { get; set; }
 
         public static SweepMeasurementSettings Capture(
@@ -130,7 +133,10 @@ internal sealed class MeasurementSettingsFile
                 OutputDeviceNumber = measurement.OutputDeviceNumber,
                 InputDeviceNumber = measurement.InputDeviceNumber,
                 AsioDriverName = measurement.AsioDriverName,
+                WaveInputChannelOffset = measurement.WaveInputChannelOffset,
+                WaveLoopbackInputChannelOffset = measurement.WaveLoopbackInputChannelOffset,
                 AsioInputChannelOffset = measurement.AsioInputChannelOffset,
+                AsioLoopbackInputChannelOffset = measurement.AsioLoopbackInputChannelOffset,
                 AsioOutputChannelOffset = measurement.AsioOutputChannelOffset
             };
 
@@ -138,7 +144,7 @@ internal sealed class MeasurementSettingsFile
         {
             measurement.Init(
                 Clamp(Octaves, 1, 32),
-                Clamp(SampleRate, 8000, 384000),
+                Clamp(SampleRate, 44_100, 384_000),
                 Bits is 16 or 24 ? Bits : 24,
                 Math.Clamp(RequestedDurationSeconds, 0.001, 100.0),
                 Enum.IsDefined(PlaybackChannel)
@@ -152,8 +158,22 @@ internal sealed class MeasurementSettingsFile
                     InputDeviceNumber),
                 NormalizeAudioBackend(AudioBackend, AsioDriverName),
                 NormalizeAsioDriverName(AsioDriverName),
-                NormalizeAsioChannelOffset(AsioDriverName, AsioInputChannelOffset, input: true),
-                NormalizeAsioChannelOffset(AsioDriverName, AsioOutputChannelOffset, input: false));
+                NormalizeAsioChannelOffset(
+                    AsioDriverName,
+                    Clamp(SampleRate, 44_100, 384_000),
+                    AsioInputChannelOffset,
+                    input: true),
+                NormalizeAsioChannelOffset(
+                    AsioDriverName,
+                    Clamp(SampleRate, 44_100, 384_000),
+                    AsioOutputChannelOffset,
+                    input: false),
+                NormalizeWaveChannelOffset(WaveInputChannelOffset),
+                NormalizeOptionalWaveChannelOffset(WaveLoopbackInputChannelOffset),
+                NormalizeOptionalAsioChannelOffset(
+                    AsioDriverName,
+                    Clamp(SampleRate, 44_100, 384_000),
+                    AsioLoopbackInputChannelOffset));
         }
     }
 
@@ -296,15 +316,27 @@ internal sealed class MeasurementSettingsFile
                 PeakSearchWindowMilliseconds = options.PeakSearchWindowMilliseconds
             };
 
-        public void ApplyTo(TimeAlignmentOptions options)
+        public void ApplyTo(TimeAlignmentOptions options, int sampleRate)
         {
             options.AsioDriverName = NormalizeAsioDriverName(AsioDriverName);
             options.MicrophoneInputChannelOffset =
-                NormalizeAsioChannelOffset(AsioDriverName, MicrophoneInputChannelOffset, input: true);
+                NormalizeAsioChannelOffset(
+                    AsioDriverName,
+                    sampleRate,
+                    MicrophoneInputChannelOffset,
+                    input: true);
             options.LoopbackInputChannelOffset =
-                NormalizeAsioChannelOffset(AsioDriverName, LoopbackInputChannelOffset, input: true);
+                NormalizeAsioChannelOffset(
+                    AsioDriverName,
+                    sampleRate,
+                    LoopbackInputChannelOffset,
+                    input: true);
             options.AsioOutputChannelOffset =
-                NormalizeAsioChannelOffset(AsioDriverName, AsioOutputChannelOffset, input: false);
+                NormalizeAsioChannelOffset(
+                    AsioDriverName,
+                    sampleRate,
+                    AsioOutputChannelOffset,
+                    input: false);
             options.UseBandpassWindow = UseBandpassWindow;
             options.BandpassCenterHz = Math.Clamp(BandpassCenterHz, 20.0, 20_000.0);
             options.BandpassPassOctaves = Math.Clamp(BandpassPassOctaves, 0.0, 8.0);
@@ -368,12 +400,13 @@ internal sealed class MeasurementSettingsFile
 
     private static int NormalizeAsioChannelOffset(
         string? asioDriverName,
+        int sampleRate,
         int offset,
         bool input)
     {
         AsioDriverInfo driverInfo = AsioDeviceCatalog.GetDriverInfo(
             NormalizeAsioDriverName(asioDriverName),
-            sampleRate: 44100);
+            sampleRate);
         IReadOnlyList<AsioChannelInfo> channels = input
             ? driverInfo.InputChannels
             : driverInfo.OutputChannels;
@@ -382,6 +415,20 @@ internal sealed class MeasurementSettingsFile
             ? offset
             : 0;
     }
+
+    private static int NormalizeWaveChannelOffset(int offset) =>
+        Math.Clamp(offset, 0, 1);
+
+    private static int? NormalizeOptionalWaveChannelOffset(int? offset) =>
+        offset.HasValue ? NormalizeWaveChannelOffset(offset.Value) : null;
+
+    private static int? NormalizeOptionalAsioChannelOffset(
+        string? asioDriverName,
+        int sampleRate,
+        int? offset) =>
+        offset.HasValue
+            ? NormalizeAsioChannelOffset(asioDriverName, sampleRate, offset.Value, input: true)
+            : null;
 
     private static int Clamp(int value, int minimum, int maximum) =>
         Math.Clamp(value, minimum, maximum);

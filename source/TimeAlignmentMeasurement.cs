@@ -1,4 +1,5 @@
 using System.Numerics;
+using NAudio.Wave;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -23,6 +24,10 @@ public sealed class TimeAlignmentMeasurement : IDisposable
     public int SampleRate { get; private set; }
     public int Octaves { get; private set; }
     public int Bits { get; private set; }
+    public AudioBackend AudioBackend { get; private set; } = AudioBackend.Wave;
+    public int OutputDeviceNumber { get; private set; } = -1;
+    public int InputDeviceNumber { get; private set; } = -1;
+    public PlaybackChannel PlaybackChannel { get; private set; }
     public string? AsioDriverName { get; private set; }
     public int MicrophoneInputChannelOffset { get; private set; }
     public int LoopbackInputChannelOffset { get; private set; }
@@ -50,6 +55,10 @@ public sealed class TimeAlignmentMeasurement : IDisposable
         int sampleRate,
         int bits,
         double requestedDuration,
+        AudioBackend audioBackend,
+        int outputDeviceNumber,
+        int inputDeviceNumber,
+        PlaybackChannel playbackChannel,
         string? asioDriverName,
         int microphoneInputChannelOffset,
         int loopbackInputChannelOffset,
@@ -62,18 +71,23 @@ public sealed class TimeAlignmentMeasurement : IDisposable
         {
             throw new InvalidOperationException("Cannot reinitialize an active time-alignment measurement.");
         }
-        if (string.IsNullOrWhiteSpace(asioDriverName))
+        if (audioBackend == AudioBackend.Asio &&
+            string.IsNullOrWhiteSpace(asioDriverName))
         {
             throw new InvalidOperationException("Time Alignment requires an ASIO driver.");
         }
         if (microphoneInputChannelOffset == loopbackInputChannelOffset)
         {
-            throw new InvalidOperationException("Microphone and loopback inputs must use different ASIO channels.");
+            throw new InvalidOperationException("Microphone and loopback inputs must use different channels.");
         }
 
         SampleRate = sampleRate;
         Bits = bits;
         Octaves = octaves;
+        AudioBackend = audioBackend;
+        OutputDeviceNumber = outputDeviceNumber;
+        InputDeviceNumber = inputDeviceNumber;
+        PlaybackChannel = playbackChannel;
         AsioDriverName = asioDriverName;
         MicrophoneInputChannelOffset = microphoneInputChannelOffset;
         LoopbackInputChannelOffset = loopbackInputChannelOffset;
@@ -141,7 +155,14 @@ public sealed class TimeAlignmentMeasurement : IDisposable
         bool success = false;
         try
         {
-            await RunAsioAsync(Sweep!, cancellationToken).ConfigureAwait(false);
+            if (AudioBackend == AudioBackend.Asio)
+            {
+                await RunAsioAsync(Sweep!, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await RunWaveAsync(Sweep!, cancellationToken).ConfigureAwait(false);
+            }
             success = true;
         }
         catch (OperationCanceledException)
@@ -190,7 +211,7 @@ public sealed class TimeAlignmentMeasurement : IDisposable
         using FloatArrayWaveStream stream = FloatArrayWaveStream.FromMonoSamples(
             sweep.SweepData,
             SampleRate,
-            PlaybackChannel.Mono);
+            PlaybackChannel);
 
         await session.StartAsync(
             stream,
@@ -204,11 +225,56 @@ public sealed class TimeAlignmentMeasurement : IDisposable
         float[][] samples = session.GetSamplesSnapshot();
         int microphoneIndex = MicrophoneInputChannelOffset - firstInputOffset;
         int loopbackIndex = LoopbackInputChannelOffset - firstInputOffset;
+        ProcessRecordedChannels(samples, microphoneIndex, loopbackIndex);
+    }
+
+    private async Task RunWaveAsync(
+        ExponentialSineSweep sweep,
+        CancellationToken cancellationToken)
+    {
+        using var recorder = new SoundRecorder();
+        recorder.Init(
+            SampleRate,
+            Bits,
+            2,
+            InputDeviceNumber);
+        using var player = new WaveOutEvent
+        {
+            DeviceNumber = OutputDeviceNumber
+        };
+
+        await recorder.StartRecordingAsync(cancellationToken).ConfigureAwait(false);
+        int recordingStart = recorder.ReadSamples;
+        RawSourceWaveStream stream = sweep.GetStream(PlaybackChannel);
+        stream.Position = 0;
+        player.Init(stream);
+        await PlayToEndAsync(player, cancellationToken).ConfigureAwait(false);
+
+        int requiredSamples = recordingStart + sweep.SweepSamples + SampleRate;
+        await recorder.WaitForSamplesAsync(requiredSamples, cancellationToken).ConfigureAwait(false);
+        await recorder.StopRecordingAsync().ConfigureAwait(false);
+
+        ProcessRecordedChannels(
+            recorder.GetSamplesSnapshot(),
+            MicrophoneInputChannelOffset,
+            LoopbackInputChannelOffset);
+    }
+
+    private void ProcessRecordedChannels(
+        float[][] samples,
+        int microphoneIndex,
+        int loopbackIndex)
+    {
         if ((uint)microphoneIndex >= (uint)samples.Length ||
             (uint)loopbackIndex >= (uint)samples.Length)
         {
-            throw new InvalidOperationException("Recorded ASIO channel snapshot is incomplete.");
+            throw new InvalidOperationException("Recorded channel snapshot is incomplete.");
         }
+        RecordedChannelValidator.EnsureDifferentSignals(
+            samples,
+            microphoneIndex,
+            loopbackIndex,
+            $"{AudioBackend} time alignment");
 
         int fftLength = DspMath.NextPowerOfTwo(
             checked(samples[microphoneIndex].Length * 2));
@@ -258,6 +324,44 @@ public sealed class TimeAlignmentMeasurement : IDisposable
         double wrappedPeakSample = peakIndex + fractionalOffset;
         PeakSample = ToSignedDelaySamples(wrappedPeakSample, envelope.Length);
         DelayMilliseconds = PeakSample * 1000.0 / SampleRate;
+    }
+
+    private static async Task PlayToEndAsync(
+        WaveOutEvent player,
+        CancellationToken cancellationToken)
+    {
+        var stopped = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void PlaybackStopped(object? sender, StoppedEventArgs args)
+        {
+            if (args.Exception != null)
+            {
+                stopped.TrySetException(args.Exception);
+            }
+            else
+            {
+                stopped.TrySetResult(true);
+            }
+        }
+
+        player.PlaybackStopped += PlaybackStopped;
+        using CancellationTokenRegistration registration =
+            cancellationToken.Register(() =>
+            {
+                player.Stop();
+                stopped.TrySetCanceled(cancellationToken);
+            });
+
+        try
+        {
+            player.Play();
+            await stopped.Task.ConfigureAwait(false);
+        }
+        finally
+        {
+            player.PlaybackStopped -= PlaybackStopped;
+        }
     }
 
     private static double FindFractionalPeakOffset(double previous, double center, double next)

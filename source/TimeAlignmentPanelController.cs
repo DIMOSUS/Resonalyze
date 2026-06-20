@@ -19,6 +19,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private readonly Func<bool> isTimeAlignmentActive;
     private readonly TimeAlignmentMeasurement measurement = new();
     private readonly Panel panel;
+    private readonly Label routeSummaryLabel;
     private readonly ComboBox driverComboBox;
     private readonly ComboBox microphoneComboBox;
     private readonly ComboBox loopbackComboBox;
@@ -51,6 +52,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         (
             panel,
+            routeSummaryLabel,
             driverComboBox,
             microphoneComboBox,
             loopbackComboBox,
@@ -77,8 +79,14 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         panel.Visible = visible;
         if (visible)
         {
-            RefreshDrivers();
+            RefreshConfiguration();
         }
+    }
+
+    public void RefreshConfiguration()
+    {
+        UpdateRouteSummary();
+        UpdateBandpassPreview();
     }
 
     public async Task ToggleAsync()
@@ -89,11 +97,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             return;
         }
 
-        if (driverComboBox.SelectedItem is not AsioDeviceInfo driver ||
-            microphoneComboBox.SelectedItem is not AsioChannelInfo microphone ||
-            loopbackComboBox.SelectedItem is not AsioChannelInfo loopback ||
-            outputComboBox.SelectedItem is not AsioChannelInfo output)
+        if (!TryValidateMeasurementRoute(out string routeError))
         {
+            SetStatusText(routeError);
             System.Media.SystemSounds.Beep.Play();
             return;
         }
@@ -108,10 +114,14 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 expSweepMeasurement.SampleRate,
                 expSweepMeasurement.Bits,
                 duration,
-                driver.DriverName,
-                microphone.Offset,
-                loopback.Offset,
-                output.Offset,
+                expSweepMeasurement.AudioBackend,
+                expSweepMeasurement.OutputDeviceNumber,
+                expSweepMeasurement.InputDeviceNumber,
+                expSweepMeasurement.PlaybackChannel,
+                expSweepMeasurement.AsioDriverName,
+                GetConfiguredMicrophoneInputOffset(),
+                GetConfiguredLoopbackInputOffset(),
+                expSweepMeasurement.AsioOutputChannelOffset,
                 options);
 
             startButton.Text = "Stop";
@@ -161,7 +171,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
             if (isTimeAlignmentActive())
             {
-                UpdateChannels();
+                UpdateRouteSummary();
             }
 
             if (success)
@@ -189,6 +199,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private (
         Panel Panel,
+        Label RouteSummary,
         ComboBox Driver,
         ComboBox Microphone,
         ComboBox Loopback,
@@ -228,7 +239,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             AutoSize = true,
             ForeColor = Color.FromArgb(190, 195, 205),
             Location = new Point(18, 44),
-            Text = "ASIO loopback measurement: microphone input + loopback reference input."
+            Text = "Loopback measurement: microphone input + reference input from Record Settings."
         };
         var help = new Label
         {
@@ -240,36 +251,44 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 "What it is for\r\n" +
                 "Measures acoustic delay relative to the audio interface reference path.\r\n\r\n" +
                 "How it works\r\n" +
-                "Resonalyze plays the same mono sweep, records the microphone and ASIO loopback at the same time, then compares the two impulse-response peaks.\r\n\r\n" +
-                "Why ASIO + loopback\r\n" +
-                "Both channels must be captured by the same low-latency driver clock. Windows Wave devices do not provide a reliable hardware reference input."
+                "Resonalyze plays the configured sweep, records microphone and loopback at the same time, then compares the two impulse-response peaks.\r\n\r\n" +
+                "Accuracy note\r\n" +
+                "Wave mode is supported with a stereo input, but ASIO is recommended for best timing accuracy."
         };
 
         ComboBox driver = CreateComboBox(180, 78);
         ComboBox microphone = CreateComboBox(180, 112);
         ComboBox loopback = CreateComboBox(180, 146);
         ComboBox output = CreateComboBox(180, 180);
+        Label routeSummary = new()
+        {
+            AutoSize = false,
+            ForeColor = Color.FromArgb(210, 214, 222),
+            Location = new Point(18, 78),
+            Size = new Size(520, 78),
+            Text = "Configure microphone and loopback channels in Record Settings."
+        };
         CheckBox bandpassEnabled = new()
         {
             AutoSize = true,
             ForeColor = Color.FromArgb(210, 214, 222),
-            Location = new Point(18, 252),
+            Location = new Point(18, 194),
             Text = "Use bandpass window"
         };
         NumericUpDown bandpassCenter =
-            CreateNumericUpDown(180, 282, 20, 20_000, 1000, 10);
+            CreateNumericUpDown(180, 224, 20, 20_000, 1000, 10);
         NumericUpDown bandpassPassOctaves =
-            CreateNumericUpDown(180, 316, 0, 8, 1, 0.1M);
+            CreateNumericUpDown(180, 258, 0, 8, 1, 0.1M);
         NumericUpDown bandpassFadeOctaves =
-            CreateNumericUpDown(180, 350, 0, 8, 0.5M, 0.1M);
+            CreateNumericUpDown(180, 292, 0, 8, 0.5M, 0.1M);
         PlotView bandpassPreview = new()
         {
             BackColor = Color.FromArgb(32, 36, 46),
-            Location = new Point(18, 388),
+            Location = new Point(18, 330),
             Size = new Size(520, 145),
             Visible = false
         };
-        ComboBox peakSearchMode = CreateComboBox(180, 218);
+        ComboBox peakSearchMode = CreateComboBox(180, 160);
         peakSearchMode.Items.AddRange(["First arrival", "Strongest peak"]);
         PlotView envelopePreview = new()
         {
@@ -310,22 +329,15 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             title,
             description,
             help,
-            CreateLabel("ASIO driver", 82),
-            driver,
-            CreateLabel("Microphone input", 116),
-            microphone,
-            CreateLabel("Loopback input", 150),
-            loopback,
-            CreateLabel("Output pair", 184),
-            output,
-            CreateLabel("Peak detection", 222),
+            routeSummary,
+            CreateLabel("Peak detection", 164),
             peakSearchMode,
             bandpassEnabled,
-            CreateLabel("Center frequency, Hz", 286),
+            CreateLabel("Center frequency, Hz", 228),
             bandpassCenter,
-            CreateLabel("Pass width, oct", 320),
+            CreateLabel("Pass width, oct", 262),
             bandpassPassOctaves,
-            CreateLabel("Fade width, oct", 354),
+            CreateLabel("Fade width, oct", 296),
             bandpassFadeOctaves,
             bandpassPreview,
             envelopePreview,
@@ -380,6 +392,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         return (
             newPanel,
+            routeSummary,
             driver,
             microphone,
             loopback,
@@ -420,24 +433,105 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             peakSearchModeComboBox.SelectedIndex == 1
                 ? TimeAlignmentPeakSearchMode.StrongestPeak
                 : TimeAlignmentPeakSearchMode.FirstArrival;
+    }
 
-        if (driverComboBox.SelectedItem is AsioDeviceInfo driver)
+    private void UpdateRouteSummary()
+    {
+        bool canMeasure = TryValidateMeasurementRoute(out string message);
+        routeSummaryLabel.Text = FormatRouteSummary(message);
+        SetControlsEnabled(canMeasure);
+        if (!measurement.InProgress)
         {
-            options.AsioDriverName = driver.DriverName;
-        }
-        if (microphoneComboBox.SelectedItem is AsioChannelInfo microphone)
-        {
-            options.MicrophoneInputChannelOffset = microphone.Offset;
-        }
-        if (loopbackComboBox.SelectedItem is AsioChannelInfo loopback)
-        {
-            options.LoopbackInputChannelOffset = loopback.Offset;
-        }
-        if (outputComboBox.SelectedItem is AsioChannelInfo output)
-        {
-            options.AsioOutputChannelOffset = output.Offset;
+            SetStatusText(canMeasure
+                ? "Ready to measure microphone delay against configured loopback."
+                : message);
         }
     }
+
+    private string FormatRouteSummary(string message)
+    {
+        string backend = expSweepMeasurement.AudioBackend.ToString();
+        string mic = expSweepMeasurement.AudioBackend == AudioBackend.Wave
+            ? FormatWaveChannel(expSweepMeasurement.WaveInputChannelOffset)
+            : FormatAsioChannel(expSweepMeasurement.AsioInputChannelOffset);
+        string loopback = expSweepMeasurement.AudioBackend == AudioBackend.Wave
+            ? expSweepMeasurement.WaveLoopbackInputChannelOffset.HasValue
+                ? FormatWaveChannel(expSweepMeasurement.WaveLoopbackInputChannelOffset.Value)
+                : "None"
+            : expSweepMeasurement.AsioLoopbackInputChannelOffset.HasValue
+                ? FormatAsioChannel(expSweepMeasurement.AsioLoopbackInputChannelOffset.Value)
+                : "None";
+        string warning = expSweepMeasurement.AudioBackend == AudioBackend.Wave
+            ? "\r\nWave mode works, but ASIO is recommended for best timing accuracy."
+            : string.Empty;
+        return $"Backend: {backend}\r\nMic input: {mic}\r\nLoopback input: {loopback}{warning}";
+    }
+
+    private bool TryValidateMeasurementRoute(out string message)
+    {
+        if (expSweepMeasurement.AudioBackend == AudioBackend.Asio)
+        {
+            if (string.IsNullOrWhiteSpace(expSweepMeasurement.AsioDriverName))
+            {
+                message = "Time Alignment requires an ASIO driver or Wave device with loopback.";
+                return false;
+            }
+            if (!expSweepMeasurement.AsioLoopbackInputChannelOffset.HasValue)
+            {
+                message = "Select an ASIO loopback input in Record Settings.";
+                return false;
+            }
+            if (expSweepMeasurement.AsioLoopbackInputChannelOffset.Value ==
+                expSweepMeasurement.AsioInputChannelOffset)
+            {
+                message = "Microphone and loopback inputs must use different ASIO channels.";
+                return false;
+            }
+
+            message = "ASIO route is ready.";
+            return true;
+        }
+
+        if (!expSweepMeasurement.WaveLoopbackInputChannelOffset.HasValue)
+        {
+            message = "Select a Wave loopback input in Record Settings.";
+            return false;
+        }
+        if (expSweepMeasurement.WaveLoopbackInputChannelOffset.Value ==
+            expSweepMeasurement.WaveInputChannelOffset)
+        {
+            message = "Microphone and loopback inputs must use different Wave channels.";
+            return false;
+        }
+        AudioDeviceInfo? device = AudioDeviceCatalog
+            .GetRecordingDevices()
+            .FirstOrDefault(candidate =>
+                candidate.DeviceNumber == expSweepMeasurement.InputDeviceNumber);
+        if (device == null || device.Channels < 2)
+        {
+            message = "Wave Time Alignment requires a selected stereo recording device.";
+            return false;
+        }
+
+        message = "Wave route is ready. ASIO is recommended for best timing accuracy.";
+        return true;
+    }
+
+    private int GetConfiguredMicrophoneInputOffset() =>
+        expSweepMeasurement.AudioBackend == AudioBackend.Wave
+            ? expSweepMeasurement.WaveInputChannelOffset
+            : expSweepMeasurement.AsioInputChannelOffset;
+
+    private int GetConfiguredLoopbackInputOffset() =>
+        expSweepMeasurement.AudioBackend == AudioBackend.Wave
+            ? expSweepMeasurement.WaveLoopbackInputChannelOffset ?? 0
+            : expSweepMeasurement.AsioLoopbackInputChannelOffset ?? 0;
+
+    private static string FormatWaveChannel(int offset) =>
+        offset == 1 ? "Right" : "Left";
+
+    private static string FormatAsioChannel(int offset) =>
+        $"{offset + 1}";
 
     private void RefreshDrivers()
     {

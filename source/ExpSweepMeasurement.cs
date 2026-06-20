@@ -31,7 +31,10 @@ namespace Resonalyze
         public int OutputDeviceNumber { get; private set; } = -1;
         public int InputDeviceNumber { get; private set; } = -1;
         public string? AsioDriverName { get; private set; }
+        public int WaveInputChannelOffset { get; private set; }
+        public int? WaveLoopbackInputChannelOffset { get; private set; }
         public int AsioInputChannelOffset { get; private set; }
+        public int? AsioLoopbackInputChannelOffset { get; private set; }
         public int AsioOutputChannelOffset { get; private set; }
         public int PeakIndex { get; private set; }
         public Exception? LastError { get; private set; }
@@ -48,7 +51,10 @@ namespace Resonalyze
             AudioBackend audioBackend = AudioBackend.Wave,
             string? asioDriverName = null,
             int asioInputChannelOffset = 0,
-            int asioOutputChannelOffset = 0)
+            int asioOutputChannelOffset = 0,
+            int waveInputChannelOffset = 0,
+            int? waveLoopbackInputChannelOffset = null,
+            int? asioLoopbackInputChannelOffset = null)
         {
             ThrowIfDisposed();
             if (InProgress)
@@ -56,7 +62,9 @@ namespace Resonalyze
                 throw new InvalidOperationException("Cannot reinitialize an active measurement.");
             }
 
-            PlaybackChannel = playbackChannel;
+            PlaybackChannel = Enum.IsDefined(playbackChannel)
+                ? playbackChannel
+                : PlaybackChannel.Mono;
             SampleRate = sampleRate;
             Bits = bits;
             Octaves = octaves;
@@ -64,7 +72,11 @@ namespace Resonalyze
             InputDeviceNumber = inputDeviceNumber;
             AudioBackend = audioBackend;
             AsioDriverName = asioDriverName;
+            WaveInputChannelOffset = Math.Clamp(waveInputChannelOffset, 0, 1);
+            WaveLoopbackInputChannelOffset = NormalizeOptionalWaveChannel(
+                waveLoopbackInputChannelOffset);
             AsioInputChannelOffset = asioInputChannelOffset;
+            AsioLoopbackInputChannelOffset = asioLoopbackInputChannelOffset;
             AsioOutputChannelOffset = asioOutputChannelOffset;
             ImpulseResponse = null;
             LastError = null;
@@ -75,7 +87,14 @@ namespace Resonalyze
 
             soundRecorder?.Dispose();
             soundRecorder = new SoundRecorder();
-            soundRecorder.Init(sampleRate, bits, 1, inputDeviceNumber);
+            int recorderChannelCount = audioBackend == AudioBackend.Wave
+                ? GetRequiredWaveInputChannelCount()
+                : 1;
+            soundRecorder.Init(
+                sampleRate,
+                bits,
+                recorderChannelCount,
+                inputDeviceNumber);
         }
 
         public Task<bool> RunAsync()
@@ -170,7 +189,10 @@ namespace Resonalyze
                 AudioBackend,
                 AsioDriverName,
                 AsioInputChannelOffset,
-                AsioOutputChannelOffset);
+                AsioOutputChannelOffset,
+                WaveInputChannelOffset,
+                WaveLoopbackInputChannelOffset,
+                AsioLoopbackInputChannelOffset);
             ImpulseResponse = impulseResponse.ToArray();
             PeakIndex = maxMagnitudeIndex;
             LastError = null;
@@ -318,7 +340,24 @@ namespace Resonalyze
 
         private void ProcessImpulseResponse(float[][] sampleChannels, ExponentialSineSweep sweep)
         {
-            float[] recorded = sampleChannels.Length > 0 ? sampleChannels[0] : Array.Empty<float>();
+            int channelIndex = AudioBackend == AudioBackend.Wave
+                ? WaveInputChannelOffset
+                : 0;
+            if (AudioBackend == AudioBackend.Wave &&
+                sampleChannels.Length > 1 &&
+                (WaveInputChannelOffset > 0 ||
+                    WaveLoopbackInputChannelOffset.HasValue))
+            {
+                RecordedChannelValidator.EnsureDifferentSignals(
+                    sampleChannels,
+                    0,
+                    1,
+                    "Wave measurement");
+            }
+
+            float[] recorded = (uint)channelIndex < (uint)sampleChannels.Length
+                ? sampleChannels[channelIndex]
+                : Array.Empty<float>();
             if (recorded.Length == 0)
             {
                 throw new InvalidOperationException("No audio samples were recorded.");
@@ -364,6 +403,26 @@ namespace Resonalyze
 
             ImpulseResponse = impulseResponse;
             PeakIndex = maxMagnitudeIndex;
+        }
+
+        private int GetRequiredWaveInputChannelCount()
+        {
+            int maxChannelOffset = WaveInputChannelOffset;
+            if (WaveLoopbackInputChannelOffset.HasValue)
+            {
+                maxChannelOffset = Math.Max(
+                    maxChannelOffset,
+                    WaveLoopbackInputChannelOffset.Value);
+            }
+
+            return maxChannelOffset + 1;
+        }
+
+        private static int? NormalizeOptionalWaveChannel(int? offset)
+        {
+            return offset.HasValue
+                ? Math.Clamp(offset.Value, 0, 1)
+                : null;
         }
 
         private void ThrowIfDisposed()

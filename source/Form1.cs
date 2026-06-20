@@ -338,6 +338,7 @@ namespace Resonalyze
                 {
                     opt.SetOptions(expSweepMeasurement);
                     liveSpectrumController.ConfigureFrom(expSweepMeasurement);
+                    timeAlignmentController.RefreshConfiguration();
                     SaveMeasurementSettings();
                 }
                 catch (InvalidOperationException exception)
@@ -727,6 +728,9 @@ namespace Resonalyze
                         file.PlayChannel,
                         file.GetImpulseResponse(),
                         file.PeakIndex);
+                    liveSpectrumController.ConfigureFrom(expSweepMeasurement);
+                    timeAlignmentController.RefreshConfiguration();
+                    SaveMeasurementSettings();
 
                     buttonRecord.Text = "Loaded";
                     //buttonRecord.BackColor = Color.FromArgb(192, 255, 192);

@@ -109,6 +109,28 @@ public static class AsioDeviceCatalog
         }
     }
 
+    public static IReadOnlyList<int> GetSupportedSampleRates(
+        string? driverName,
+        int minimumSampleRate = 44_100)
+    {
+        if (string.IsNullOrWhiteSpace(driverName))
+        {
+            return Array.Empty<int>();
+        }
+
+        try
+        {
+            using var driver = new AsioOut(driverName);
+            return SampleRateCatalog.GetCandidateRates(minimumSampleRate)
+                .Where(driver.IsSampleRateSupported)
+                .ToArray();
+        }
+        catch
+        {
+            return Array.Empty<int>();
+        }
+    }
+
     public static int FindChannelIndex(
         IReadOnlyList<AsioChannelInfo> channels,
         int offset)

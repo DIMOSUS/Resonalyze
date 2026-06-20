@@ -10,6 +10,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
     private readonly string driverName;
     private readonly int inputChannelOffset;
     private readonly int outputChannelOffset;
+    private readonly int driverRecordChannelCount;
     private AsioOut? driver;
     private List<float>[] samples = Array.Empty<List<float>>();
     private TaskCompletionSource<bool>? firstBufferReady;
@@ -33,11 +34,16 @@ internal sealed class AsioFullDuplexSession : IDisposable
         {
             throw new ArgumentOutOfRangeException(nameof(inputChannelCount));
         }
+        if (inputChannelOffset < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(inputChannelOffset));
+        }
 
         this.driverName = driverName;
         this.inputChannelOffset = inputChannelOffset;
         this.outputChannelOffset = outputChannelOffset;
         ChannelCount = inputChannelCount;
+        driverRecordChannelCount = inputChannelOffset + inputChannelCount;
     }
 
     public int Sequence { get; set; }
@@ -64,7 +70,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
         driver = new AsioOut(driverName)
         {
             AutoStop = autoStop,
-            InputChannelOffset = inputChannelOffset,
+            InputChannelOffset = 0,
             ChannelOffset = outputChannelOffset
         };
         if (!driver.IsSampleRateSupported(sampleRate))
@@ -73,7 +79,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
                 $"ASIO driver '{driverName}' does not support {sampleRate} Hz.");
         }
         if (inputChannelOffset < 0 ||
-            inputChannelOffset + ChannelCount > driver.DriverInputChannelCount)
+            driverRecordChannelCount > driver.DriverInputChannelCount)
         {
             throw new InvalidOperationException(
                 $"ASIO input channel {inputChannelOffset + 1} is not available for driver '{driverName}'.");
@@ -87,7 +93,10 @@ internal sealed class AsioFullDuplexSession : IDisposable
 
         driver.AudioAvailable += ReceiveAudio;
         driver.PlaybackStopped += PlaybackStopped;
-        driver.InitRecordAndPlayback(playbackProvider, ChannelCount, sampleRate);
+        driver.InitRecordAndPlayback(
+            playbackProvider,
+            driverRecordChannelCount,
+            sampleRate);
         driver.Play();
 
         using CancellationTokenRegistration registration =
@@ -192,18 +201,27 @@ internal sealed class AsioFullDuplexSession : IDisposable
 
     private void ReceiveAudio(object? sender, AsioAudioAvailableEventArgs args)
     {
-        float[] interleaved = new float[args.SamplesPerBuffer * ChannelCount];
-        args.GetAsInterleavedSamples(interleaved);
+        if (args.InputBuffers.Length < driverRecordChannelCount)
+        {
+            firstBufferReady?.TrySetException(new InvalidOperationException(
+                $"ASIO callback returned {args.InputBuffers.Length} input buffers, " +
+                $"but {driverRecordChannelCount} were expected."));
+            return;
+        }
+
         List<float[]> readySequences = new();
 
         lock (sync)
         {
             for (int frame = 0; frame < args.SamplesPerBuffer; frame++)
             {
-                int frameOffset = frame * ChannelCount;
                 for (int channel = 0; channel < ChannelCount; channel++)
                 {
-                    samples[channel].Add(interleaved[frameOffset + channel]);
+                    int asioChannel = inputChannelOffset + channel;
+                    samples[channel].Add(AsioSampleBufferReader.ReadSample(
+                        args.InputBuffers[asioChannel],
+                        frame,
+                        args.AsioSampleType));
                 }
                 ReadSamples++;
             }

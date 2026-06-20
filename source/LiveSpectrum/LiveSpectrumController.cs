@@ -50,8 +50,6 @@ internal sealed class LiveSpectrumController : IDisposable
         this.updateRecordButton = updateRecordButton;
         this.updateClearButton = updateClearButton;
         this.updatePlotLabels = updatePlotLabels;
-
-        measurement.Init(44100, 24, 60, PlaybackChannel.Mono, 2048);
         measurement.Completed += MeasurementCompleted;
         timer.Tick += TimerTick;
     }

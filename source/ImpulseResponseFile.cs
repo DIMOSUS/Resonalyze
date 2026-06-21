@@ -10,7 +10,7 @@ namespace Resonalyze;
 public sealed class ImpulseResponseFile
 {
     public const string CurrentFormat = "resonalyze-impulse-response";
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 3;
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -29,12 +29,23 @@ public sealed class ImpulseResponseFile
     public int Octaves { get; set; }
     public double SweepDurationSeconds { get; set; }
     public PlaybackChannel PlayChannel { get; set; }
+    public SweepMeasurementMode MeasurementMode { get; set; } =
+        SweepMeasurementMode.SweepDeconvolution;
     [JsonPropertyName("maxMagnitudeIndex")]
     public int PeakIndex { get; set; }
     public double[] RealSamples { get; set; } = Array.Empty<double>();
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double[]? ImaginarySamples { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double[]? SweepDeconvolutionRealSamples { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double[]? SweepDeconvolutionImaginarySamples { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? SweepDeconvolutionPeakIndex { get; set; }
 
     public static ImpulseResponseFile Capture(ExpSweepMeasurement measurement)
     {
@@ -44,23 +55,17 @@ public sealed class ImpulseResponseFile
         ExponentialSineSweep sweep = measurement.Sweep
             ?? throw new InvalidOperationException("The sweep measurement is not initialized.");
 
-        var realSamples = new double[impulseResponse.Length];
-        double[]? imaginarySamples = null;
-        for (int i = 0; i < impulseResponse.Length; i++)
+        (double[] realSamples, double[]? imaginarySamples) =
+            ConvertSamples(impulseResponse, "Impulse response");
+        double[]? sweepRealSamples = null;
+        double[]? sweepImaginarySamples = null;
+        int? sweepPeakIndex = null;
+        if (measurement.MeasurementMode == SweepMeasurementMode.LoopbackTransfer &&
+            measurement.SweepDeconvolutionImpulseResponse is { Length: > 0 } sweepImpulseResponse)
         {
-            Complex sample = impulseResponse[i];
-            if (!double.IsFinite(sample.Real) || !double.IsFinite(sample.Imaginary))
-            {
-                throw new InvalidOperationException(
-                    $"Impulse response sample {i} is not a finite number.");
-            }
-
-            realSamples[i] = sample.Real;
-            if (sample.Imaginary != 0)
-            {
-                imaginarySamples ??= new double[impulseResponse.Length];
-                imaginarySamples[i] = sample.Imaginary;
-            }
+            (sweepRealSamples, sweepImaginarySamples) =
+                ConvertSamples(sweepImpulseResponse, "Sweep deconvolution impulse response");
+            sweepPeakIndex = measurement.SweepDeconvolutionPeakIndex;
         }
 
         return new ImpulseResponseFile
@@ -71,9 +76,13 @@ public sealed class ImpulseResponseFile
             Octaves = measurement.Octaves,
             SweepDurationSeconds = sweep.RequestedDuration,
             PlayChannel = measurement.PlaybackChannel,
+            MeasurementMode = measurement.MeasurementMode,
             PeakIndex = measurement.PeakIndex,
             RealSamples = realSamples,
-            ImaginarySamples = imaginarySamples
+            ImaginarySamples = imaginarySamples,
+            SweepDeconvolutionRealSamples = sweepRealSamples,
+            SweepDeconvolutionImaginarySamples = sweepImaginarySamples,
+            SweepDeconvolutionPeakIndex = sweepPeakIndex
         };
     }
 
@@ -122,14 +131,18 @@ public sealed class ImpulseResponseFile
     {
         Validate();
 
-        var result = new Complex[RealSamples.Length];
-        for (int i = 0; i < result.Length; i++)
-        {
-            result[i] = new Complex(
-                RealSamples[i],
-                ImaginarySamples?[i] ?? 0);
-        }
-        return result;
+        return ToComplexSamples(RealSamples, ImaginarySamples);
+    }
+
+    public Complex[]? GetSweepDeconvolutionImpulseResponse()
+    {
+        Validate();
+
+        return SweepDeconvolutionRealSamples == null
+            ? null
+            : ToComplexSamples(
+                SweepDeconvolutionRealSamples,
+                SweepDeconvolutionImaginarySamples);
     }
 
     private void Validate()
@@ -166,6 +179,10 @@ public sealed class ImpulseResponseFile
         {
             throw new InvalidDataException("The playback channel is invalid.");
         }
+        if (!Enum.IsDefined(MeasurementMode))
+        {
+            throw new InvalidDataException("The measurement mode is invalid.");
+        }
         if (RealSamples.Length == 0)
         {
             throw new InvalidDataException("The impulse response contains no samples.");
@@ -180,14 +197,89 @@ public sealed class ImpulseResponseFile
         {
             throw new InvalidDataException("The peak index is outside the sample array.");
         }
-
-        for (int i = 0; i < RealSamples.Length; i++)
+        if (MeasurementMode == SweepMeasurementMode.LoopbackTransfer)
         {
-            if (!double.IsFinite(RealSamples[i]) ||
-                (ImaginarySamples != null && !double.IsFinite(ImaginarySamples[i])))
+            if (SweepDeconvolutionRealSamples is not { Length: > 0 })
             {
                 throw new InvalidDataException(
-                    $"Impulse response sample {i} is not a finite number.");
+                    "Loopback transfer files must include sweep deconvolution samples.");
+            }
+            if (!SweepDeconvolutionPeakIndex.HasValue ||
+                (uint)SweepDeconvolutionPeakIndex.Value >=
+                    (uint)SweepDeconvolutionRealSamples.Length)
+            {
+                throw new InvalidDataException(
+                    "The sweep deconvolution peak index is outside the sample array.");
+            }
+        }
+        if (SweepDeconvolutionImaginarySamples != null &&
+            SweepDeconvolutionRealSamples != null &&
+            SweepDeconvolutionImaginarySamples.Length != SweepDeconvolutionRealSamples.Length)
+        {
+            throw new InvalidDataException(
+                "Sweep deconvolution real and imaginary sample arrays have different lengths.");
+        }
+
+        ValidateSamples(RealSamples, ImaginarySamples, "Impulse response");
+        if (SweepDeconvolutionRealSamples != null)
+        {
+            ValidateSamples(
+                SweepDeconvolutionRealSamples,
+                SweepDeconvolutionImaginarySamples,
+                "Sweep deconvolution impulse response");
+        }
+    }
+
+    private static (double[] Real, double[]? Imaginary) ConvertSamples(
+        Complex[] samples,
+        string label)
+    {
+        var realSamples = new double[samples.Length];
+        double[]? imaginarySamples = null;
+        for (int i = 0; i < samples.Length; i++)
+        {
+            Complex sample = samples[i];
+            if (!double.IsFinite(sample.Real) || !double.IsFinite(sample.Imaginary))
+            {
+                throw new InvalidOperationException(
+                    $"{label} sample {i} is not a finite number.");
+            }
+
+            realSamples[i] = sample.Real;
+            if (sample.Imaginary != 0)
+            {
+                imaginarySamples ??= new double[samples.Length];
+                imaginarySamples[i] = sample.Imaginary;
+            }
+        }
+
+        return (realSamples, imaginarySamples);
+    }
+
+    private static Complex[] ToComplexSamples(
+        double[] realSamples,
+        double[]? imaginarySamples)
+    {
+        var result = new Complex[realSamples.Length];
+        for (int i = 0; i < result.Length; i++)
+        {
+            result[i] = new Complex(realSamples[i], imaginarySamples?[i] ?? 0);
+        }
+
+        return result;
+    }
+
+    private static void ValidateSamples(
+        double[] realSamples,
+        double[]? imaginarySamples,
+        string label)
+    {
+        for (int i = 0; i < realSamples.Length; i++)
+        {
+            if (!double.IsFinite(realSamples[i]) ||
+                (imaginarySamples != null && !double.IsFinite(imaginarySamples[i])))
+            {
+                throw new InvalidDataException($"{label} sample {i} is not a finite number.");
             }
         }
     }

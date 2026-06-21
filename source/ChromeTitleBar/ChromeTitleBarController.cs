@@ -161,7 +161,7 @@ internal sealed class ChromeTitleBarController
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             BackColor = titleBar.BackColor,
             FlowDirection = FlowDirection.LeftToRight,
-            Location = new Point(Scale(8), Scale(5)),
+            Location = new Point(Scale(8), Scale(6)),
             Padding = new Padding(0),
             Size = new Size(form.ClientSize.Width - Scale(156), titleBarHeight - Scale(5)),
             WrapContents = false
@@ -199,11 +199,11 @@ internal sealed class ChromeTitleBarController
             ForeColor = Color.FromArgb(220, 224, 232),
             Height = Math.Max(Scale(28), TextRenderer.MeasureText(text, form.Font).Height + Scale(8)),
             Margin = new Padding(0, 0, Scale(2), 0),
-            Padding = new Padding(Scale(10), 0, Scale(10), 0),
             Text = text,
             TextAlign = ContentAlignment.MiddleCenter,
             UseVisualStyleBackColor = false,
-            Width = GetModeTabWidth(text)
+            Width = GetModeTabWidth(text),
+            UseCompatibleTextRendering = true,
         };
         button.FlatAppearance.BorderSize = 0;
         button.Click += (_, _) => tabActions[tab]();
@@ -287,10 +287,10 @@ internal sealed class ChromeTitleBarController
 
     private int GetModeTabWidth(string text) =>
         Math.Max(
-            Scale(92),
+            Scale(70),
             TextRenderer.MeasureText(
                 text,
-                form.Font).Width + Scale(46));
+                form.Font).Width + Scale(12));
 
     private int Scale(int value) =>
         (int)Math.Round(value * dpiScale);
@@ -308,7 +308,7 @@ internal sealed class ChromeTitleBarController
             : Color.FromArgb(50, 55, 80);
         button.FlatAppearance.MouseOverBackColor = active
             ? Color.FromArgb(78, 130, 255)
-            : Color.FromArgb(54, 58, 68);
+            : Color.FromArgb(50, 55, 120);
         button.FlatAppearance.MouseDownBackColor = Color.FromArgb(36, 86, 210);
     }
 }

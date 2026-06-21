@@ -804,22 +804,19 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             $"{confidence} ({measurement.ConfidenceDecibels:0.0} dB)\r\n",
             confidenceColor);
         AppendStatusText(FormatPeakDetection() + "\r\n", Color.FromArgb(220, 225, 235));
-        AppendStatusText(
-            FormatLevel(
-                "Mic",
-                measurement.MicrophonePeakDbFs,
-                measurement.MicrophoneRmsDbFs,
-                measurement.MicrophoneClipped,
-                fullScaleIsNormal: false) + "\r\n",
-            Color.FromArgb(220, 225, 235));
-        AppendStatusText(
-            FormatLevel(
-                "Loopback",
-                measurement.LoopbackPeakDbFs,
-                measurement.LoopbackRmsDbFs,
-                measurement.LoopbackClipped,
-                fullScaleIsNormal: true),
-            Color.FromArgb(220, 225, 235));
+        AppendLevelStatus(
+            "Mic",
+            measurement.MicrophonePeakDbFs,
+            measurement.MicrophoneRmsDbFs,
+            measurement.MicrophoneClipped,
+            fullScaleIsNormal: false);
+        AppendStatusText("\r\n", Color.FromArgb(220, 225, 235));
+        AppendLevelStatus(
+            "Loopback",
+            measurement.LoopbackPeakDbFs,
+            measurement.LoopbackRmsDbFs,
+            measurement.LoopbackClipped,
+            fullScaleIsNormal: true);
         statusTextBox.SelectionStart = 0;
         statusTextBox.SelectionLength = 0;
     }
@@ -884,17 +881,25 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             : $"Peak: {mode}";
     }
 
-    private static string FormatLevel(
+    private void AppendLevelStatus(
         string label,
         double peakDbFs,
         double rmsDbFs,
         bool clipped,
         bool fullScaleIsNormal)
     {
+        Color textColor = Color.FromArgb(220, 225, 235);
         string clipText = clipped
-            ? fullScaleIsNormal ? " FULL SCALE" : " CLIP"
+            ? fullScaleIsNormal ? "" : " CLIP"
             : string.Empty;
-        return $"{label}: peak {peakDbFs:0.0} dBFS, RMS {rmsDbFs:0.0} dBFS{clipText}";
+
+        AppendStatusText(
+            $"{label}: peak {peakDbFs:0.0} dBFS, RMS {rmsDbFs:0.0} dBFS",
+            textColor);
+        if (clipped && !string.IsNullOrEmpty(clipText))
+        {
+            AppendStatusText(clipText, Color.FromArgb(255, 96, 96));
+        }
     }
 
     private static string FormatConfidence(double confidenceDecibels)

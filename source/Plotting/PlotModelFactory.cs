@@ -46,11 +46,7 @@ internal sealed class PlotModelFactory
 
         if (CanIncludeImpulseCurves(includeCurves))
         {
-            IReadOnlyList<AnalysisCurve> curves =
-                DataHelper.GetSpectrum(
-                    expSweepMeasurement,
-                    frequencyResponseOptions,
-                    calibration);
+            IReadOnlyList<AnalysisCurve> curves = CreateFrequencyResponseCurves();
             foreach (AnalysisCurve curve in curves)
             {
                 var series = OxyPlotAdapter.ToLineSeries(curve);
@@ -62,6 +58,40 @@ internal sealed class PlotModelFactory
         AddFrequencyAxis(model);
         AddDecibelAxis(model);
         return model;
+    }
+
+    private IReadOnlyList<AnalysisCurve> CreateFrequencyResponseCurves()
+    {
+        if (expSweepMeasurement.MeasurementMode != SweepMeasurementMode.LoopbackTransfer ||
+            expSweepMeasurement.SweepDeconvolutionImpulseResponse is not { Length: > 0 } sweepIr)
+        {
+            return DataHelper.GetSpectrum(
+                expSweepMeasurement,
+                frequencyResponseOptions,
+                calibration);
+        }
+
+        var curves = new List<AnalysisCurve>();
+        curves.AddRange(DataHelper.GetSpectrum(
+            expSweepMeasurement,
+            frequencyResponseOptions,
+            calibration,
+            includePrimary: true,
+            includeHarmonics: false));
+
+        var harmonicMeasurement = new ImpulseMeasurementView(
+            sweepIr,
+            expSweepMeasurement.SweepDeconvolutionPeakIndex,
+            expSweepMeasurement.SampleRate,
+            expSweepMeasurement.HarmonicIROffset);
+        curves.AddRange(DataHelper.GetSpectrum(
+            harmonicMeasurement,
+            frequencyResponseOptions,
+            calibration,
+            includePrimary: false,
+            includeHarmonics: true));
+
+        return curves;
     }
 
     public PlotModel CreatePhaseResponse(bool includeCurves)
@@ -80,7 +110,7 @@ internal sealed class PlotModelFactory
                 phaseResponseOptions.Unwrap);
 
             var series = OxyPlotAdapter.ToLineSeries(curve);
-            series.TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.0}°";
+            series.TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.0}Р вЂ™Р’В°";
             model.Series.Add(series);
         }
 
@@ -125,8 +155,14 @@ internal sealed class PlotModelFactory
 
         if (CanIncludeImpulseCurves(includeCurves))
         {
+            IImpulseMeasurement measurement = expSweepMeasurement.MeasurementMode == SweepMeasurementMode.LoopbackTransfer
+                ? new ImpulseMeasurementView(
+                    expSweepMeasurement.ImpulseResponse!,
+                    peakIndex: 0,
+                    expSweepMeasurement.SampleRate)
+                : expSweepMeasurement;
             AnalysisCurve curve = DataHelper.GetGroupDelay(
-                expSweepMeasurement,
+                measurement,
                 groupDelayOptions.Window,
                 groupDelayOptions.LeftTukeyWindow,
                 groupDelayOptions.RightTukeyWindow,
@@ -143,8 +179,8 @@ internal sealed class PlotModelFactory
             Position = AxisPosition.Left,
             AbsoluteMinimum = -20,
             AbsoluteMaximum = 20,
-            Minimum = -10,
-            Maximum = 10,
+            Minimum = -5,
+            Maximum = 5,
             MajorStep = 1,
             MajorGridlineStyle = LineStyle.Solid,
             Title = "ms"

@@ -1,5 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
-using MathNet.Numerics.IntegralTransforms;
 using NAudio.Wave;
 using Resonalyze.Dsp;
 using static System.Math;
@@ -23,6 +23,12 @@ namespace Resonalyze
 
         public ExponentialSineSweep? Sweep { get; private set; }
         public Complex[]? ImpulseResponse { get; private set; }
+        public Complex[]? SweepDeconvolutionImpulseResponse { get; private set; }
+        public int SweepDeconvolutionPeakIndex { get; private set; }
+        public float[]? MicrophoneRecordedSamples { get; private set; }
+        public float[]? LoopbackRecordedSamples { get; private set; }
+        public SweepMeasurementMode MeasurementMode { get; private set; } =
+            SweepMeasurementMode.SweepDeconvolution;
         public bool InProgress => inProgress;
         public int SampleRate { get; private set; }
         public int Octaves { get; private set; }
@@ -80,6 +86,11 @@ namespace Resonalyze
             AsioLoopbackInputChannelOffset = asioLoopbackInputChannelOffset;
             AsioOutputChannelOffset = asioOutputChannelOffset;
             ImpulseResponse = null;
+            SweepDeconvolutionImpulseResponse = null;
+            SweepDeconvolutionPeakIndex = 0;
+            MicrophoneRecordedSamples = null;
+            LoopbackRecordedSamples = null;
+            MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
             LastError = null;
 
             Sweep?.Dispose();
@@ -121,6 +132,11 @@ namespace Resonalyze
                 cancellationTokenSource = new CancellationTokenSource();
                 inProgress = true;
                 ImpulseResponse = null;
+                SweepDeconvolutionImpulseResponse = null;
+                SweepDeconvolutionPeakIndex = 0;
+                MicrophoneRecordedSamples = null;
+                LoopbackRecordedSamples = null;
+                MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
                 LastError = null;
                 measurementTask = RunCoreAsync(cancellationTokenSource.Token);
                 return measurementTask;
@@ -164,7 +180,10 @@ namespace Resonalyze
             double sweepDurationSeconds,
             PlaybackChannel playChannel,
             Complex[] impulseResponse,
-            int maxMagnitudeIndex)
+            int maxMagnitudeIndex,
+            SweepMeasurementMode measurementMode = SweepMeasurementMode.SweepDeconvolution,
+            Complex[]? sweepDeconvolutionImpulseResponse = null,
+            int? sweepDeconvolutionPeakIndex = null)
         {
             ThrowIfDisposed();
             ArgumentNullException.ThrowIfNull(impulseResponse);
@@ -200,6 +219,38 @@ namespace Resonalyze
                 WaveLoopbackInputChannelOffset,
                 AsioLoopbackInputChannelOffset);
             ImpulseResponse = impulseResponse.ToArray();
+            if (sweepDeconvolutionImpulseResponse != null)
+            {
+                if (sweepDeconvolutionImpulseResponse.Length == 0)
+                {
+                    throw new ArgumentException(
+                        "Sweep deconvolution impulse response cannot be empty.",
+                        nameof(sweepDeconvolutionImpulseResponse));
+                }
+                if (!sweepDeconvolutionPeakIndex.HasValue ||
+                    (uint)sweepDeconvolutionPeakIndex.Value >=
+                        (uint)sweepDeconvolutionImpulseResponse.Length)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(sweepDeconvolutionPeakIndex));
+                }
+
+                SweepDeconvolutionImpulseResponse = sweepDeconvolutionImpulseResponse.ToArray();
+                SweepDeconvolutionPeakIndex = sweepDeconvolutionPeakIndex.Value;
+            }
+            else
+            {
+                SweepDeconvolutionImpulseResponse =
+                    measurementMode == SweepMeasurementMode.SweepDeconvolution
+                        ? ImpulseResponse.ToArray()
+                        : null;
+                SweepDeconvolutionPeakIndex =
+                    measurementMode == SweepMeasurementMode.SweepDeconvolution
+                        ? maxMagnitudeIndex
+                        : 0;
+            }
+            MicrophoneRecordedSamples = null;
+            LoopbackRecordedSamples = null;
+            MeasurementMode = measurementMode;
             PeakIndex = maxMagnitudeIndex;
             LastError = null;
         }
@@ -292,11 +343,21 @@ namespace Resonalyze
             ExponentialSineSweep sweep,
             CancellationToken cancellationToken)
         {
+            int firstInputOffset = GetAsioCaptureFirstInputOffset();
+            int inputChannelCount = GetRequiredAsioInputChannelCount(firstInputOffset);
+
             using var session = new AsioFullDuplexSession(
                 AsioDriverName ?? string.Empty,
-                AsioInputChannelOffset,
-                AsioOutputChannelOffset);
-            session.LevelsAvailable += HandleAsioLevelsAvailable;
+                firstInputOffset,
+                AsioOutputChannelOffset,
+                inputChannelCount);
+            session.LevelsAvailable += channels => RaiseLevels(
+                MapAsioLevels(
+                    channels,
+                    AsioInputChannelOffset - firstInputOffset,
+                    AsioLoopbackInputChannelOffset.HasValue
+                        ? AsioLoopbackInputChannelOffset.Value - firstInputOffset
+                        : null));
             using FloatArrayWaveStream stream = FloatArrayWaveStream.FromMonoSamples(
                 sweep.SweepData,
                 SampleRate,
@@ -310,14 +371,8 @@ namespace Resonalyze
             int requiredSamples = session.ReadSamples + sweep.SweepSamples + SampleRate;
             await session.WaitForSamplesAsync(requiredSamples, cancellationToken).ConfigureAwait(false);
             await session.StopAsync().ConfigureAwait(false);
-            session.LevelsAvailable -= HandleAsioLevelsAvailable;
 
             ProcessImpulseResponse(session.GetSamplesSnapshot(), sweep);
-        }
-
-        private void HandleAsioLevelsAvailable(AudioChannelLevel[] channels)
-        {
-            RaiseLevels(MapAsioLevels(channels));
         }
 
         private static async Task PlayToEndAsync(WaveOutEvent player, CancellationToken cancellationToken)
@@ -359,7 +414,12 @@ namespace Resonalyze
         {
             int channelIndex = AudioBackend == AudioBackend.Wave
                 ? WaveInputChannelOffset
-                : 0;
+                : AsioInputChannelOffset - GetAsioCaptureFirstInputOffset();
+            int? loopbackIndex = AudioBackend == AudioBackend.Wave
+                ? WaveLoopbackInputChannelOffset
+                : AsioLoopbackInputChannelOffset.HasValue
+                    ? AsioLoopbackInputChannelOffset.Value - GetAsioCaptureFirstInputOffset()
+                    : null;
             if (AudioBackend == AudioBackend.Wave &&
                 sampleChannels.Length > 1 &&
                 (WaveInputChannelOffset > 0 ||
@@ -380,47 +440,62 @@ namespace Resonalyze
                 throw new InvalidOperationException("No audio samples were recorded.");
             }
 
-            // Zero-padding to the full linear-convolution length prevents circular wraparound
-            // from moving late response energy to the beginning of the impulse response.
-            int convolutionLength = checked(recorded.Length + sweep.InverseFilter.Length - 1);
-            int fftLength = DspMath.NextPowerOfTwo(convolutionLength);
-            Complex[] input = new Complex[fftLength];
-            Complex[] inverseFilter = new Complex[fftLength];
+            MicrophoneRecordedSamples = recorded.ToArray();
+            SweepDeconvolutionResult sweepResult = SweepAnalysis.DeconvolveWithInverseFilter(
+                recorded,
+                sweep.InverseFilter,
+                2.0 / sweep.InverseFilter.Length);
+            SweepDeconvolutionImpulseResponse = Array.ConvertAll(
+                sweepResult.ImpulseResponse,
+                x => new Complex(x, 0.0));
+            SweepDeconvolutionPeakIndex = sweepResult.PeakIndex;
 
-            for (int i = 0; i < recorded.Length; i++)
+            if (TryCaptureLoopback(sampleChannels, channelIndex, loopbackIndex, out double[]? relativeIr))
             {
-                input[i] = new Complex(recorded[i], 0);
+                ImpulseResponse = Array.ConvertAll(relativeIr, x => new Complex(x, 0.0));
+                PeakIndex = FindPeakIndex(relativeIr);
+                MeasurementMode = SweepMeasurementMode.LoopbackTransfer;
             }
-            for (int i = 0; i < sweep.InverseFilter.Length; i++)
+            else
             {
-                inverseFilter[i] = new Complex(sweep.InverseFilter[i], 0);
-            }
-
-            Fourier.Forward(input, FourierOptions.Matlab);
-            Fourier.Forward(inverseFilter, FourierOptions.Matlab);
-            for (int i = 0; i < input.Length; i++)
-            {
-                input[i] *= inverseFilter[i];
-            }
-            Fourier.Inverse(input, FourierOptions.Matlab);
-
-            var impulseResponse = new Complex[convolutionLength];
-            double normalization = 2.0 / sweep.InverseFilter.Length;
-            double maxMagnitude = 0;
-            int maxMagnitudeIndex = 0;
-            for (int i = 0; i < impulseResponse.Length; i++)
-            {
-                impulseResponse[i] = new Complex(input[i].Real * normalization, 0);
-                if (impulseResponse[i].Magnitude > maxMagnitude)
-                {
-                    maxMagnitude = impulseResponse[i].Magnitude;
-                    maxMagnitudeIndex = i;
-                }
+                ImpulseResponse = SweepDeconvolutionImpulseResponse.ToArray();
+                PeakIndex = SweepDeconvolutionPeakIndex;
+                MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
             }
 
-            ImpulseResponse = impulseResponse;
-            PeakIndex = maxMagnitudeIndex;
             RaiseLevels(CreateFinalLevelSnapshot(sampleChannels));
+        }
+
+        private bool TryCaptureLoopback(
+            float[][] sampleChannels,
+            int microphoneIndex,
+            int? loopbackIndex,
+            [NotNullWhen(true)] out double[]? relativeIr)
+        {
+            relativeIr = null;
+            LoopbackRecordedSamples = null;
+            if (!loopbackIndex.HasValue ||
+                (uint)microphoneIndex >= (uint)sampleChannels.Length ||
+                (uint)loopbackIndex.Value >= (uint)sampleChannels.Length)
+            {
+                return false;
+            }
+
+            RecordedChannelValidator.EnsureDifferentSignals(
+                sampleChannels,
+                microphoneIndex,
+                loopbackIndex.Value,
+                $"{AudioBackend} loopback transfer");
+
+            LoopbackRecordedSamples = sampleChannels[loopbackIndex.Value].ToArray();
+            double[] loopback = Array.ConvertAll(
+                LoopbackRecordedSamples,
+                sample => (double)sample);
+            double[] microphone = Array.ConvertAll(
+                sampleChannels[microphoneIndex],
+                sample => (double)sample);
+            relativeIr = TransferFunction.ComputeRelativeIr(loopback, microphone);
+            return true;
         }
 
         private InputLevelMeterSnapshot CreateFinalLevelSnapshot(float[][] sampleChannels)
@@ -428,7 +503,12 @@ namespace Resonalyze
             AudioChannelLevel[] measuredLevels = MeasureRecordedChannels(sampleChannels);
             return AudioBackend == AudioBackend.Wave
                 ? MapWaveLevels(measuredLevels)
-                : MapAsioLevels(measuredLevels);
+                : MapAsioLevels(
+                    measuredLevels,
+                    AsioInputChannelOffset - GetAsioCaptureFirstInputOffset(),
+                    AsioLoopbackInputChannelOffset.HasValue
+                        ? AsioLoopbackInputChannelOffset.Value - GetAsioCaptureFirstInputOffset()
+                        : null);
         }
 
         private InputLevelMeterSnapshot MapWaveLevels(AudioChannelLevel[] channels)
@@ -444,14 +524,22 @@ namespace Resonalyze
             return new InputLevelMeterSnapshot(microphone, loopback);
         }
 
-        private static InputLevelMeterSnapshot MapAsioLevels(AudioChannelLevel[] channels)
+        private static InputLevelMeterSnapshot MapAsioLevels(
+            AudioChannelLevel[] channels,
+            int microphoneIndex,
+            int? loopbackIndex)
         {
             InputLevelMeterEntry microphone = CreateEntry(
-                TryGetLevel(channels, 0),
+                TryGetLevel(channels, microphoneIndex),
                 fullScaleReference: false);
+            InputLevelMeterEntry loopback = CreateEntry(
+                loopbackIndex.HasValue
+                    ? TryGetLevel(channels, loopbackIndex.Value)
+                    : null,
+                fullScaleReference: true);
             return new InputLevelMeterSnapshot(
                 microphone,
-                InputLevelMeterEntry.Unavailable);
+                loopback);
         }
 
         private void RaiseLevels(InputLevelMeterSnapshot snapshot)
@@ -528,6 +616,38 @@ namespace Resonalyze
             }
 
             return maxChannelOffset + 1;
+        }
+
+        private int GetAsioCaptureFirstInputOffset()
+        {
+            return AsioLoopbackInputChannelOffset.HasValue
+                ? Math.Min(AsioInputChannelOffset, AsioLoopbackInputChannelOffset.Value)
+                : AsioInputChannelOffset;
+        }
+
+        private int GetRequiredAsioInputChannelCount(int firstInputOffset)
+        {
+            int lastInputOffset = AsioLoopbackInputChannelOffset.HasValue
+                ? Math.Max(AsioInputChannelOffset, AsioLoopbackInputChannelOffset.Value)
+                : AsioInputChannelOffset;
+            return lastInputOffset - firstInputOffset + 1;
+        }
+
+        private static int FindPeakIndex(IReadOnlyList<double> samples)
+        {
+            double maxMagnitude = 0;
+            int peakIndex = 0;
+            for (int i = 0; i < samples.Count; i++)
+            {
+                double magnitude = Math.Abs(samples[i]);
+                if (magnitude > maxMagnitude)
+                {
+                    maxMagnitude = magnitude;
+                    peakIndex = i;
+                }
+            }
+
+            return peakIndex;
         }
 
         private static int? NormalizeOptionalWaveChannel(int? offset)

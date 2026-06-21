@@ -1,7 +1,6 @@
-using System.Numerics;
 using System.Threading.Channels;
-using MathNet.Numerics.IntegralTransforms;
 using NAudio.Wave;
+using Resonalyze.Dsp;
 
 namespace Resonalyze
 {
@@ -357,12 +356,7 @@ namespace Resonalyze
 
         private void AccumulateSequence(float[] sequence)
         {
-            Complex[] spectrum = new Complex[SequenceLength];
-            for (int i = 0; i < SequenceLength; i++)
-            {
-                spectrum[i] = new Complex(sequence[i], 0);
-            }
-            Fourier.Forward(spectrum, FourierOptions.Matlab);
+            double[] magnitudes = SpectrumAnalysis.ComputeMagnitudeSpectrum(sequence);
 
             const double lerpCoefficient = 0.01;
             lock (dataSync)
@@ -371,11 +365,7 @@ namespace Resonalyze
                 {
                     if (sequencesCounter > 2)
                     {
-                        accumulatedData = new double[SequenceLength / 2];
-                        for (int i = 0; i < accumulatedData.Length; i++)
-                        {
-                            accumulatedData[i] = spectrum[i].Magnitude;
-                        }
+                        accumulatedData = magnitudes;
                     }
                 }
                 else
@@ -384,7 +374,7 @@ namespace Resonalyze
                     {
                         accumulatedData[i] =
                             (1 - lerpCoefficient) * accumulatedData[i] +
-                            lerpCoefficient * spectrum[i].Magnitude;
+                            lerpCoefficient * magnitudes[i];
                     }
                 }
                 sequencesCounter++;

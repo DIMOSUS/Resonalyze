@@ -77,7 +77,7 @@ namespace Resonalyze
             plotView1.Location = new Point(12, 12);
             plotView1.Name = "plotView1";
             plotView1.PanCursor = Cursors.Hand;
-            plotView1.Size = new Size(1096, 642);
+            plotView1.Size = new Size(1182, 642);
             plotView1.TabIndex = 1;
             plotView1.Text = "plotView1";
             plotView1.ZoomHorizontalCursor = Cursors.SizeWE;
@@ -89,7 +89,7 @@ namespace Resonalyze
             overlays.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             overlays.BorderStyle = BorderStyle.FixedSingle;
             overlays.Controls.Add(overlayPanel1);
-            overlays.Location = new Point(1114, 415);
+            overlays.Location = new Point(1200, 415);
             overlays.Name = "overlays";
             overlays.Size = new Size(154, 341);
             overlays.TabIndex = 6;
@@ -207,7 +207,7 @@ namespace Resonalyze
             buttonClear.BackColor = Color.FromArgb(50, 55, 80);
             buttonClear.FlatStyle = FlatStyle.Popup;
             buttonClear.ForeColor = Color.White;
-            buttonClear.Location = new Point(1118, 262);
+            buttonClear.Location = new Point(1204, 262);
             buttonClear.Name = "buttonClear";
             buttonClear.Size = new Size(150, 23);
             buttonClear.TabIndex = 20;
@@ -221,7 +221,7 @@ namespace Resonalyze
             buttonCurrentModeSettings.BackColor = Color.FromArgb(50, 55, 80);
             buttonCurrentModeSettings.FlatStyle = FlatStyle.Popup;
             buttonCurrentModeSettings.ForeColor = Color.White;
-            buttonCurrentModeSettings.Location = new Point(1118, 215);
+            buttonCurrentModeSettings.Location = new Point(1204, 215);
             buttonCurrentModeSettings.Name = "buttonCurrentModeSettings";
             buttonCurrentModeSettings.Size = new Size(150, 23);
             buttonCurrentModeSettings.TabIndex = 21;
@@ -235,7 +235,7 @@ namespace Resonalyze
             buttonDraw.BackColor = Color.FromArgb(50, 55, 80);
             buttonDraw.FlatStyle = FlatStyle.Popup;
             buttonDraw.ForeColor = Color.White;
-            buttonDraw.Location = new Point(1118, 291);
+            buttonDraw.Location = new Point(1204, 291);
             buttonDraw.Name = "buttonDraw";
             buttonDraw.Size = new Size(150, 23);
             buttonDraw.TabIndex = 22;
@@ -251,7 +251,7 @@ namespace Resonalyze
             panel1.Controls.Add(buttonRecordOpt);
             panel1.Controls.Add(buttonSave);
             panel1.Controls.Add(buttonLoad);
-            panel1.Location = new Point(1118, 106);
+            panel1.Location = new Point(1204, 106);
             panel1.Name = "panel1";
             panel1.Size = new Size(150, 90);
             panel1.TabIndex = 23;
@@ -262,7 +262,7 @@ namespace Resonalyze
             inputLevelMeterPanel.BackColor = Color.FromArgb(38, 42, 52);
             inputLevelMeterPanel.Font = new Font("Segoe UI", 8.75F, FontStyle.Bold);
             inputLevelMeterPanel.ForeColor = Color.FromArgb(225, 230, 240);
-            inputLevelMeterPanel.Location = new Point(1118, 12);
+            inputLevelMeterPanel.Location = new Point(1204, 12);
             inputLevelMeterPanel.Name = "inputLevelMeterPanel";
             inputLevelMeterPanel.Size = new Size(150, 88);
             inputLevelMeterPanel.TabIndex = 24;
@@ -273,7 +273,7 @@ namespace Resonalyze
             panelLabels.BorderStyle = BorderStyle.FixedSingle;
             panelLabels.Location = new Point(12, 660);
             panelLabels.Name = "panelLabels";
-            panelLabels.Size = new Size(1096, 96);
+            panelLabels.Size = new Size(1182, 96);
             panelLabels.TabIndex = 24;
             // 
             // Form1
@@ -281,7 +281,7 @@ namespace Resonalyze
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(1280, 768);
+            ClientSize = new Size(1366, 768);
             Controls.Add(panelLabels);
             Controls.Add(inputLevelMeterPanel);
             Controls.Add(panel1);
@@ -292,7 +292,7 @@ namespace Resonalyze
             Controls.Add(overlays);
             FormBorderStyle = FormBorderStyle.None;
             Icon = (Icon)resources.GetObject("$this.Icon");
-            MinimumSize = new Size(1280, 768);
+            MinimumSize = new Size(1366, 768);
             Name = "Form1";
             StartPosition = FormStartPosition.CenterScreen;
             Text = "Resonalyze";

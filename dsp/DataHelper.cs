@@ -87,11 +87,14 @@ namespace Resonalyze.Dsp
         public static IReadOnlyList<AnalysisCurve> GetSpectrum(
             IImpulseMeasurement measurement,
             FrequencyResponseOptions frequencyResponseOptions,
-            CalibrationFile calibration)
+            CalibrationFile calibration,
+            bool includePrimary = true,
+            bool includeHarmonics = true)
         {
             var curves = new List<AnalysisCurve>();
             int peakIndex = measurement.PeakIndex;
 
+            if (includePrimary)
             {
                 double leftTukeyWindow = (double)frequencyResponseOptions.LeftTukeyWindow / frequencyResponseOptions.Window * 2.0;
                 double rightTukeyWindow = (double)frequencyResponseOptions.RightTukeyWindow / frequencyResponseOptions.Window * 2.0;
@@ -104,6 +107,11 @@ namespace Resonalyze.Dsp
                 var data = GetSpectrumData(measurement, h1Start, h1Length, window);
                 data = LogarithmicResample(data, 20, 20000, 1024, frequencyResponseOptions.UseCalibration ? calibration : null, 1.0 / frequencyResponseOptions.SmoothingInverseOctaves);
                 curves.Add(new AnalysisCurve("Frequency Response", data));
+            }
+
+            if (!includeHarmonics)
+            {
+                return curves;
             }
 
             for (int h = 2; h < 5; h++)
@@ -160,59 +168,56 @@ namespace Resonalyze.Dsp
             double[] window,
             bool unwrap)
         {
-            Complex[] spectrum = ExtractWindow(measurement, measurement.PeakIndex + offset, length, window);
+            Complex[] spectrum = ExtractWindow(
+                measurement,
+                measurement.PeakIndex + offset,
+                length,
+                window);
+
             Fourier.Forward(spectrum, FourierOptions.Matlab);
 
-            if (!unwrap)
+            int n = spectrum.Length;
+            List<SignalPoint> data = new();
+
+            const double minFrequency = 100;
+
+            double phaseAccumulator = 0.0;
+            double prevWrapped = 0.0;
+
+            for (int i = 1; i < n / 2; i++)
             {
-                List<SignalPoint> wrappedPhase = new List<SignalPoint> { };
-                for (int i = 1; i < spectrum.Length / 2; i++)
+                double f = i * measurement.SampleRate / (double)n;
+
+                // Compensation for window start offset relative to peak.
+                double phaseOffset = Math.Tau * i * offset / n;
+
+                // First compensate, then wrap.
+                double wrapped = spectrum[i].Phase - phaseOffset;
+                wrapped = Math.Atan2(Math.Sin(wrapped), Math.Cos(wrapped));
+
+                if (!unwrap)
                 {
-                    double f = i * (measurement.SampleRate / (double)length);
-
-                    double phase = spectrum[i].Phase;
-
-                    wrappedPhase.Add(new SignalPoint(f, phase));
+                    data.Add(new SignalPoint(f, wrapped));
+                    continue;
                 }
-                return wrappedPhase;
+
+                if (i > 1 && f >= minFrequency)
+                {
+                    double delta = wrapped - prevWrapped;
+
+                    if (delta > Math.PI)
+                        phaseAccumulator -= Math.Tau;
+                    else if (delta < -Math.PI)
+                        phaseAccumulator += Math.Tau;
+                }
+
+                prevWrapped = wrapped;
+
+                double phase = wrapped + phaseAccumulator;
+                data.Add(new SignalPoint(f, phase));
             }
 
-            double phaseAccumulator = 0;
-            double averagePhase = 0;
-
-            List<SignalPoint> dataPreFilt = new List<SignalPoint> { };
-            for (int i = 1; i < spectrum.Length / 2; i++)
-            {
-                float f = (float)i * ((float)measurement.SampleRate / length);
-
-                double phaseOffset = offset * Math.PI * 2.0 * i / spectrum.Length;
-                double phase = spectrum[i].Phase + phaseAccumulator - phaseOffset;
-                averagePhase += phase;
-                dataPreFilt.Add(new SignalPoint(f, phase));
-
-                double s0 = spectrum[i].Phase;
-                double s1 = spectrum[i + 1].Phase;
-
-                if (s1 - s0 > Math.PI)
-                {
-                    phaseAccumulator -= Math.PI * 2;
-                }
-                if (s1 - s0 < -Math.PI)
-                {
-                    phaseAccumulator += Math.PI * 2;
-                }
-            }
-
-            averagePhase /= (double)dataPreFilt.Count;
-
-            double phaseShift = Math.Round(averagePhase / Math.Tau) * Math.Tau;
-
-            for (int i = 0; i < dataPreFilt.Count; i++)
-            {
-                dataPreFilt[i] = new SignalPoint(dataPreFilt[i].X, dataPreFilt[i].Y - phaseShift);
-            }
-
-            return dataPreFilt;
+            return data;
         }
 
         public static AnalysisCurve GetPhase(
@@ -350,44 +355,86 @@ namespace Resonalyze.Dsp
             int leftTukeyWindow,
             int rightTukeyWindow,
             int offset,
-            double smoothingInverseOctaves)
+            double smoothingInverseOctaves,
+            double magnitudeGateDb = -60.0)
         {
             int startOffset = -leftTukeyWindow + offset;
 
             double normalizedLeftWindow = (double)leftTukeyWindow / length * 2.0;
             double normalizedRightWindow = (double)rightTukeyWindow / length * 2.0;
-            double[] window = Windowing.TukeyWindowHalfZeroPadded(length, normalizedLeftWindow, normalizedRightWindow);
 
-            Complex[] windowedImpulse = ExtractWindow(measurement, measurement.PeakIndex + startOffset, length, window);
+            double[] window = Windowing.TukeyWindowHalfZeroPadded(
+                length,
+                normalizedLeftWindow,
+                normalizedRightWindow);
+
+            Complex[] windowedImpulse = ExtractWindow(
+                measurement,
+                measurement.PeakIndex + startOffset,
+                length,
+                window);
+
             Complex[] spectrum = new Complex[length];
             Complex[] timeWeightedSpectrum = new Complex[length];
+
+            double invSampleRate = 1.0 / measurement.SampleRate;
+
             for (int i = 0; i < length; i++)
             {
-                var imp = windowedImpulse[i];
+                Complex imp = windowedImpulse[i];
+
                 spectrum[i] = imp;
-                timeWeightedSpectrum[i] = imp * (double)i / (double)measurement.SampleRate;
+                timeWeightedSpectrum[i] = imp * (i * invSampleRate);
             }
 
             Fourier.Forward(spectrum, FourierOptions.Matlab);
             Fourier.Forward(timeWeightedSpectrum, FourierOptions.Matlab);
-            for (int i = 0; i < length; i++)
+
+            int halfLength = length / 2;
+
+            double maxMagnitude = 0.0;
+            for (int i = 1; i < halfLength; i++)
             {
-                spectrum[i] = spectrum[i].Magnitude > 1e-12 ? timeWeightedSpectrum[i] / spectrum[i] : Complex.Zero;
+                maxMagnitude = Math.Max(maxMagnitude, spectrum[i].Magnitude);
             }
 
-            List<SignalPoint> data = new List<SignalPoint> { };
-            for (int i = 1; i < spectrum.Length; i++)
+            if (maxMagnitude <= 0.0)
             {
-                double f = (double)i * ((double)measurement.SampleRate / (double)length);
+                return new AnalysisCurve("Group Delay", new List<SignalPoint>());
+            }
 
-                double delayMilliseconds =
-                    (spectrum[i].Real + startOffset / (double)measurement.SampleRate) * 1000;
+            double relativeGate = maxMagnitude * Math.Pow(10.0, magnitudeGateDb / 20.0);
+            double absoluteGate = 1e-8;
+            double minMagnitude = Math.Max(relativeGate, absoluteGate);
+
+            List<SignalPoint> data = new();
+
+            double absoluteStartTime = startOffset * invSampleRate;
+
+            for (int i = 1; i < halfLength; i++)
+            {
+                double magnitude = spectrum[i].Magnitude;
+
+                if (magnitude < minMagnitude)
+                {
+                    continue;
+                }
+
+                Complex groupDelay = timeWeightedSpectrum[i] / spectrum[i];
+
+                double f = i * measurement.SampleRate / (double)length;
+
+                double delayMilliseconds = (groupDelay.Real + absoluteStartTime) * 1000.0;
+
                 data.Add(new SignalPoint(f, delayMilliseconds));
             }
 
-            return new AnalysisCurve(
-                "Group Delay",
-                SmoothLinear(data, 1.0 / smoothingInverseOctaves));
+            if (smoothingInverseOctaves > 0.0 && data.Count > 1)
+            {
+                data = SmoothLinear(data, 1.0 / smoothingInverseOctaves);
+            }
+
+            return new AnalysisCurve("Group Delay", data);
         }
 
         public static double LogPositionToFrequency(double x, double start, double stop)

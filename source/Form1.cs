@@ -450,7 +450,16 @@ namespace Resonalyze
 
                 apply(dialog);
                 SaveMeasurementSettings();
+                RefreshCurrentModePlot();
             }
+        }
+
+        private void RefreshCurrentModePlot()
+        {
+            bool includeCurves =
+                modeController.ActiveTab is not (ModeTab.LiveSpectrum or ModeTab.TimeAlignment) &&
+                CanDrawCurrentMeasurement();
+            DrawSelectedMode(includeCurves);
         }
 
         private async void buttonClear_Click(object sender, EventArgs e)
@@ -741,7 +750,10 @@ namespace Resonalyze
                         file.SweepDurationSeconds,
                         file.PlayChannel,
                         file.GetImpulseResponse(),
-                        file.PeakIndex);
+                        file.PeakIndex,
+                        file.MeasurementMode,
+                        file.GetSweepDeconvolutionImpulseResponse(),
+                        file.SweepDeconvolutionPeakIndex);
                     liveSpectrumController.ConfigureFrom(expSweepMeasurement);
                     timeAlignmentController.RefreshConfiguration();
                     SaveMeasurementSettings();

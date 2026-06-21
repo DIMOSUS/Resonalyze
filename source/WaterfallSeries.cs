@@ -1,5 +1,3 @@
-using System.Numerics;
-using MathNet.Numerics.IntegralTransforms;
 using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.Series;
@@ -404,17 +402,8 @@ namespace Resonalyze
                 Parallel.For(0, sliceCount, slice =>
                 {
                     int offset = measurement.PeakIndex - windowFuncOffset + slice * step + GenerateOptions.Offset;
-
-                    Complex[] spectrum = DataHelper.ExtractWindow(measurement, offset, window, windowFunction);
-
-                    Fourier.Forward(spectrum, FourierOptions.Matlab);
-
-                    List<DataPoint> data = new List<DataPoint>(spectrum.Length / 2);
-                    for (int i = 1; i < spectrum.Length / 2; i++)
-                    {
-                        double f = (double)i * ((double)measurement.SampleRate / (double)window);
-                        data.Add(new DataPoint(f, DataHelper.AmplitudeToDecibels(spectrum[i].Magnitude)));
-                    }
+                    List<DataPoint> data = OxyPlotAdapter.ToDataPoints(
+                        DataHelper.GetSpectrumData(measurement, offset, window, windowFunction));
 
                     double time;
                     if (step > 0)
@@ -432,62 +421,28 @@ namespace Resonalyze
             if (GenerateOptions.WaterfallMode == WaterfallMode.BurstDecay)
             {
                 int offset = measurement.PeakIndex - GenerateOptions.LeftTukeyWindow + GenerateOptions.Offset;
-                Complex[] spectrum = new Complex[window * 4];
-                DataHelper.ExtractWindow(measurement, offset, window, windowFunction).CopyTo(spectrum, 0);
-                Fourier.Forward(spectrum, FourierOptions.Matlab);
-
                 double smoothingOctaves = 1.0 / GenerateOptions.SmoothingInverseOctaves;
-                double frequencyRatio = Math.Pow(2.0, 0.5 * smoothingOctaves);
-                double frequencyStep = (double)measurement.SampleRate / spectrum.Length;
+                IReadOnlyList<BurstDecaySlice> slices = WaterfallAnalysis.BuildBurstDecayRawSlices(
+                    measurement,
+                    offset,
+                    window,
+                    windowFunction,
+                    smoothingOctaves);
 
-                double initFrequency = 20000;
-
-                List<double> frequencies = new List<double>(100);
-                while (initFrequency >= frequencyStep * 4 && initFrequency >= 20)
-                {
-                    frequencies.Add(initFrequency);
-                    initFrequency /= frequencyRatio;
-                }
-                frequencies.Reverse();
-
-                for (int i = 0; i < frequencies.Count; i++)
+                for (int i = 0; i < slices.Count; i++)
                 {
                     RawSlices.Add(new Slice(new List<DataPoint>(), 0, 0, 0, measurement.SampleRate));
                 }
 
-                Parallel.For(0, frequencies.Count, frequencyIndex =>
+                Parallel.For(0, slices.Count, frequencyIndex =>
                 {
-                    double frequency = frequencies[frequencyIndex];
-
-                    double w0 = (frequency / frequencyStep) * Math.PI * 2.0;
-
-                    double fWin = Math.Pow(2.0, smoothingOctaves);
-                    double t = 2.3548 / (w0 * (fWin - 1.0));
-
-                    Complex[] morlet = new Complex[spectrum.Length];
-                    double kernelSum = 0;
-                    for (int i = 0; i < morlet.Length; i++)
-                    {
-                        double w = (i <= morlet.Length / 2 ? i : i - morlet.Length) * Math.PI * 2.0;
-                        morlet[i] = new Complex(Math.Exp(-Math.Pow((w - w0), 2.0) * t * t * 0.25), 0);// * (i % 2 > 0 ? -1.0 : 1.0);
-                        kernelSum += morlet[i].Magnitude;
-                    }
-                    double normalization = morlet.Length / kernelSum;
-                    for (int i = 0; i < morlet.Length; i++)
-                    {
-                        morlet[i] *= spectrum[i] * normalization;
-                    }
-
-                    Fourier.Inverse(morlet, FourierOptions.Matlab);
-
-                    List<DataPoint> data = new List<DataPoint>(morlet.Length);
-
-                    for (int i = 0; i < morlet.Length / 2; i++)
-                    {
-                        data.Add(new DataPoint(i, morlet[i].Magnitude));
-                    }
-
-                    RawSlices[frequencyIndex] = new Slice(data, 0, frequency, 0, measurement.SampleRate);
+                    BurstDecaySlice slice = slices[frequencyIndex];
+                    RawSlices[frequencyIndex] = new Slice(
+                        OxyPlotAdapter.ToDataPoints(slice.Data),
+                        0,
+                        slice.Frequency,
+                        0,
+                        measurement.SampleRate);
                 });
             }
         }
@@ -527,44 +482,23 @@ namespace Resonalyze
 
                 Parallel.For(0, RawSlices.Count, slice =>
                 {
-                    double SmoothSample(double index)
-                    {
-                        int a = 2;
-                        int centerIndex = (int)Math.Round(index);
+                    BurstDecaySlice rawSlice = new BurstDecaySlice(
+                        RawSlices[slice].Frequency,
+                        OxyPlotAdapter.ToSignalPoints(RawSlices[slice].Data));
 
-                        double weightSum = 0;
-                        double weightedSum = 0;
+                    List<SignalPoint> resampled = WaterfallAnalysis.ResampleBurstDecaySlice(
+                        rawSlice.Data,
+                        rawSlice.Frequency,
+                        RawSlices[slice].SampleRate,
+                        width,
+                        GenerateOptions.Periods).ToList();
 
-                        for (int sampleIndex = Math.Max(centerIndex - a, 0); sampleIndex <= Math.Min(centerIndex + a, RawSlices[slice].Data.Count - 1); sampleIndex++)
-                        {
-                            double weight = DataHelper.LanczosKernel(index - sampleIndex, a);
-
-                            weightedSum += RawSlices[slice].Data[sampleIndex].Y * weight;
-                            weightSum += weight;
-                        }
-                        if (weightSum < 0.00001)
-                        {
-                            return 0.0;
-                        }
-                        return weightedSum / weightSum;
-                    }
-
-                    double frequency = RawSlices[slice].Frequency;
-
-                    double periodsTime = GenerateOptions.Periods / frequency;
-                    double periodsSamples = RawSlices[slice].SampleRate * periodsTime;
-
-                    List<DataPoint> data = new List<DataPoint>(width);
-
-                    for (int i = 0; i < width; i++)
-                    {
-                        double interp = (double)i / (double)width;
-                        double samplePosition = interp * periodsSamples;
-
-                        data.Add(new DataPoint(interp * GenerateOptions.Periods, DataHelper.AmplitudeToDecibels(SmoothSample(samplePosition))));
-                    }
-
-                    ResampleSlices[slice] = new Slice(data, RawSlices[slice].SliceOffset, RawSlices[slice].Frequency, RawSlices[slice].SliceMinValidFrequency, RawSlices[slice].SampleRate);
+                    ResampleSlices[slice] = new Slice(
+                        OxyPlotAdapter.ToDataPoints(resampled),
+                        RawSlices[slice].SliceOffset,
+                        RawSlices[slice].Frequency,
+                        RawSlices[slice].SliceMinValidFrequency,
+                        RawSlices[slice].SampleRate);
                 });
             }
         }

@@ -42,6 +42,7 @@ installation. SHA-256 checksum files are provided with every release.
 - Windows Wave and ASIO audio backends
 - Playback/recording device selection with backend-specific channel routing
 - Device-aware sample-rate selection from supported rates
+- Optional loopback-referenced sweep processing through a transfer function
 - Wave or ASIO loopback Time Alignment with sub-sample delay estimation
 - Compact Mic/Loop input level meter with Peak, RMS, and Peak Hold
 - Frequency response
@@ -162,6 +163,7 @@ source/bin/Release/net10.0-windows/Resonalyze.exe
    presence, and headroom before trusting the measurement.
 6. Select the required analysis view.
 7. Adjust smoothing, windows, offsets, and display options as needed.
+   The active graph updates immediately after applying mode-specific settings.
 8. Use **Save** to preserve the captured impulse response for later analysis
    or comparison.
 
@@ -175,6 +177,23 @@ Resonalyze can run measurements through the standard Windows Wave backend or
 through an ASIO driver.
 
 ![Measurement settings](assets/images/measurement-options.png)
+
+The microphone input is the primary measurement channel. The loopback input is
+optional for ordinary sweep measurements and required for Time Alignment. When
+loopback is enabled for a sweep measurement, Resonalyze records both channels
+at the same time and computes the main impulse response as a transfer function
+from loopback reference to microphone response. This removes the playback path
+from the primary response plots. Harmonic distortion curves still use the
+ordinary sweep deconvolution response, because the harmonic separation belongs
+to the sweep analysis itself.
+
+Group Delay follows the same rule: when loopback transfer processing is active,
+it is calculated from the loopback-referenced transfer impulse response. In
+that mode the group-delay reference is the start of the transfer IR rather than
+the peak of the ordinary sweep-deconvolution response.
+
+Without loopback, sweep measurements use the classic single-channel
+deconvolution path.
 
 ### Wave
 
@@ -324,8 +343,11 @@ Files are saved as indented, human-readable JSON. Each file contains:
 - Sample rate and bit depth
 - Sweep octave count and duration
 - Playback channel
+- Measurement mode (`SweepDeconvolution` or `LoopbackTransfer`)
 - Impulse-response peak index
 - Real and, when present, imaginary sample values
+- Additional sweep-deconvolution impulse response data for loopback transfer
+  measurements, used to preserve harmonic distortion analysis after loading
 
 Click **Load** to open a previously saved response. Resonalyze validates the
 file before using it, rejects files below `44100 Hz`, restores the associated
@@ -336,7 +358,7 @@ group delay, waterfall, Burst Decay, and autocorrelation, can then be
 generated without repeating the measurement.
 
 Saving and loading are disabled while a measurement is running. The current
-file format identifier is `resonalyze-impulse-response`, version `1`. Files are
+file format identifier is `resonalyze-impulse-response`, version `3`. Files are
 intended to remain readable by people, but editing sample arrays manually may
 make a file invalid or produce misleading analysis results.
 

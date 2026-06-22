@@ -15,6 +15,7 @@ public sealed class OverlayFile
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         AllowTrailingCommas = true,
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
         ReadCommentHandling = JsonCommentHandling.Skip,
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -179,7 +180,7 @@ public sealed class OverlayFile
 
         for (int i = 0; i < Points.Length; i++)
         {
-            if (!double.IsFinite(Points[i].X) || !double.IsFinite(Points[i].Y))
+            if (!double.IsFinite(Points[i].X) || double.IsInfinity(Points[i].Y))
             {
                 throw new InvalidDataException(
                     $"Overlay point {i} contains a non-finite value.");

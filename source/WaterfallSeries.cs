@@ -373,7 +373,7 @@ namespace Resonalyze
                 (1.0 - t) * p0.Y + t * p1.Y);
         }
 
-        public void FillFourierWaterfallData(ExpSweepMeasurement measurement)
+        public void FillFourierWaterfallData(IImpulseMeasurement measurement)
         {
             RawSlices.Clear();
 

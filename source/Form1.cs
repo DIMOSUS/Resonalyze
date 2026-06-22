@@ -82,6 +82,11 @@ namespace Resonalyze
                 "Numbers are shown as Peak / RMS in dBFS.\r\n" +
                 "The bar shows the filtered RMS level.\r\n" +
                 "The bright vertical marker is Peak Hold.");
+            toolTip1.SetToolTip(
+                peakInfo,
+                "Impulse response peak indexes.\r\n" +
+                "Sweep is the peak found after sweep deconvolution.\r\n" +
+                "Transfer is the peak found in the loopback transfer-function IR, when loopback is available.");
             measurementSettings = MeasurementSettingsFile.LoadOrDefault();
             titleBarController = new ChromeTitleBarController(
                 this,
@@ -164,6 +169,7 @@ namespace Resonalyze
                 timeAlignmentController.Measurement);
             liveSpectrumController.ConfigureFrom(expSweepMeasurement);
             commandController.Initialize();
+            UpdatePeakInfo();
 
             expSweepMeasurement.Completed += (bool success) =>
             {
@@ -189,6 +195,7 @@ namespace Resonalyze
                         commandController.SetSaveAvailable(false);
                         commandController.SetLoadAvailable(true);
                     }
+                    UpdatePeakInfo();
                     UpdateDrawButtonText();
 
                     if (success && CurrentMode != Mode.LiveSpectrum)
@@ -258,6 +265,7 @@ namespace Resonalyze
             {
                 buttonRecord.Text = "Running...";
                 hasCurrentImpulseResponse = false;
+                UpdatePeakInfo();
                 _ = expSweepMeasurement.RunAsync();
                 //buttonRecord.BackColor = Color.FromArgb(192, 255, 255);
                 commandController.SetSaveAvailable(false);
@@ -584,6 +592,27 @@ namespace Resonalyze
             plotLabelsPanelController.Refresh(force);
         }
 
+        private void UpdatePeakInfo()
+        {
+            if (expSweepMeasurement.InProgress)
+            {
+                peakInfo.Text = "Peaks: measuring...";
+                return;
+            }
+
+            if (!expSweepMeasurement.HasImpulseResponse)
+            {
+                peakInfo.Text = "Peaks: --/--";
+                return;
+            }
+
+            string transferPeak = expSweepMeasurement.TransferImpulseResponse == null
+                ? "--"
+                : expSweepMeasurement.TransferPeakIndex.ToString();
+            peakInfo.Text =
+                $"Peaks: {expSweepMeasurement.SweepDeconvolutionPeakIndex} / {transferPeak}";
+        }
+
         private bool CanDrawCurrentMeasurement() =>
             hasCurrentImpulseResponse && !expSweepMeasurement.InProgress;
 
@@ -676,7 +705,7 @@ namespace Resonalyze
 
         private async void buttonSave_Click(object sender, EventArgs e)
         {
-            if (expSweepMeasurement.ImpulseResponse != null && !expSweepMeasurement.InProgress)
+            if (expSweepMeasurement.HasImpulseResponse && !expSweepMeasurement.InProgress)
             {
                 using var dialog = new SaveFileDialog
                 {
@@ -749,19 +778,20 @@ namespace Resonalyze
                         file.Bits,
                         file.SweepDurationSeconds,
                         file.PlayChannel,
-                        file.GetImpulseResponse(),
-                        file.PeakIndex,
-                        file.MeasurementMode,
                         file.GetSweepDeconvolutionImpulseResponse(),
-                        file.SweepDeconvolutionPeakIndex);
+                        file.SweepDeconvolutionPeakIndex,
+                        file.MeasurementMode,
+                        file.GetTransferImpulseResponse(),
+                        file.TransferPeakIndex);
                     liveSpectrumController.ConfigureFrom(expSweepMeasurement);
                     timeAlignmentController.RefreshConfiguration();
                     SaveMeasurementSettings();
 
-                    buttonRecord.Text = "Loaded";
+                    //buttonRecord.Text = "Loaded";
                     //buttonRecord.BackColor = Color.FromArgb(192, 255, 192);
                     hasCurrentImpulseResponse = true;
-                    await SelectModeAsync(ModeTab.Impulse);
+                    UpdatePeakInfo();
+                    RefreshCurrentModePlot();
                 }
                 catch (Exception exception)
                 {
@@ -775,8 +805,9 @@ namespace Resonalyze
                 finally
                 {
                     commandController.SetSaveAvailable(
-                        expSweepMeasurement.ImpulseResponse != null);
+                        expSweepMeasurement.HasImpulseResponse);
                     commandController.SetLoadAvailable(true);
+                    UpdatePeakInfo();
                     UpdateDrawButtonText();
                 }
             }

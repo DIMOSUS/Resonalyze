@@ -329,8 +329,8 @@ with a dedicated low-latency hardware driver.
 
 ## Saving and Loading Impulse Responses
 
-After a sweep measurement completes, click **Save** to store the current
-impulse response. Resonalyze proposes a timestamped file name such as:
+After a sweep measurement completes, click **Save** to store the measured
+impulse-response data. Resonalyze proposes a timestamped file name such as:
 
 ```text
 Resonalyze-IR-2026-06-15_14-30-00.json
@@ -344,21 +344,20 @@ Files are saved as indented, human-readable JSON. Each file contains:
 - Sweep octave count and duration
 - Playback channel
 - Measurement mode (`SweepDeconvolution` or `LoopbackTransfer`)
-- Impulse-response peak index
-- Real and, when present, imaginary sample values
-- Additional sweep-deconvolution impulse response data for loopback transfer
-  measurements, used to preserve harmonic distortion analysis after loading
+- Sweep-deconvolution impulse response samples and peak index
+- Optional loopback transfer-function impulse response samples and peak index
+  when loopback was enabled
 
 Click **Load** to open a previously saved response. Resonalyze validates the
 file before using it, rejects files below `44100 Hz`, restores the associated
-measurement metadata, and opens the **Impulse Response** view. The loaded
-sample rate is applied back to the current measurement configuration, and all
-analyses derived from an impulse response, including frequency response, phase,
-group delay, waterfall, Burst Decay, and autocorrelation, can then be
-generated without repeating the measurement.
+measurement metadata, stays in the current analysis view, and redraws it from
+the loaded data. The loaded sample rate is applied back to the current
+measurement configuration, and all analyses derived from an impulse response,
+including frequency response, phase, group delay, waterfall, Burst Decay, and
+autocorrelation, can then be generated without repeating the measurement.
 
 Saving and loading are disabled while a measurement is running. The current
-file format identifier is `resonalyze-impulse-response`, version `3`. Files are
+file format identifier is `resonalyze-impulse-response`, version `4`. Files are
 intended to remain readable by people, but editing sample arrays manually may
 make a file invalid or produce misleading analysis results.
 

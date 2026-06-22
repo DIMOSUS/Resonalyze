@@ -57,6 +57,37 @@ public sealed class OverlayFileTests
     }
 
     [Fact]
+    public void SaveAndLoad_PreservesNaNPointValues()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = CreateMinimalOverlay(Mode.GroupDelay, 3);
+            original.Points =
+            [
+                new OverlayPoint(20, 1),
+                new OverlayPoint(100, double.NaN),
+                new OverlayPoint(1_000, 2)
+            ];
+
+            original.Save(root);
+            string json = File.ReadAllText(
+                OverlayFile.GetPath(Mode.GroupDelay, 3, root));
+            OverlayFile? loaded = OverlayFile.Load(Mode.GroupDelay, 3, root);
+
+            Assert.Contains("\"NaN\"", json);
+            Assert.NotNull(loaded);
+            Assert.True(double.IsNaN(loaded.Points[1].Y));
+            Assert.Equal(original.Points[0], loaded.Points[0]);
+            Assert.Equal(original.Points[2], loaded.Points[2]);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void SlotsWithSameNumber_AreSeparatedByMode()
     {
         string root = CreateTemporaryDirectory();

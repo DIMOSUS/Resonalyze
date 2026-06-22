@@ -290,8 +290,6 @@ namespace Resonalyze.Options
             labelAsioOutputChannel.Enabled = useAsio;
             labelAsioSampleRate.Enabled = useAsio;
             labelAsioSampleRateStatus.Enabled = useAsio;
-            labelAsioFramesPerBuffer.Enabled = useAsio;
-            labelAsioFramesPerBufferValue.Enabled = useAsio;
             labelAsioPlaybackLatency.Enabled = useAsio;
             labelAsioPlaybackLatencyValue.Enabled = useAsio;
             labelPlaybackDevice.Enabled = !useAsio;
@@ -402,7 +400,6 @@ namespace Resonalyze.Options
             {
                 labelAsioSampleRateStatus.Text = asioDriverInfo.ErrorMessage;
                 labelAsioSampleRateStatus.ForeColor = Color.LightSalmon;
-                labelAsioFramesPerBufferValue.Text = "-";
                 labelAsioPlaybackLatencyValue.Text = "-";
                 return;
             }
@@ -414,10 +411,6 @@ namespace Resonalyze.Options
             labelAsioSampleRateStatus.ForeColor = asioDriverInfo.SupportsSampleRate
                 ? Color.LightGreen
                 : Color.LightSalmon;
-            labelAsioFramesPerBufferValue.Text =
-                asioDriverInfo.FramesPerBuffer > 0
-                    ? $"{asioDriverInfo.FramesPerBuffer} frames"
-                    : "-";
             labelAsioPlaybackLatencyValue.Text =
                 asioDriverInfo.PlaybackLatency > 0
                     ? $"{asioDriverInfo.PlaybackLatency} samples"

@@ -61,6 +61,68 @@ public sealed class SyntheticDelayTests
                 expectedDelayMilliseconds + 1e-9));
     }
 
+    [Fact]
+    public void GroupDelay_MarksBinsMoreThanThirtyDecibelsBelowPeakAsNaN()
+    {
+        var response = new Complex[TransformLength];
+        response[0] = Complex.One;
+        response[1] = -Complex.One;
+        var measurement = new SyntheticMeasurement(
+            response,
+            SampleRate,
+            maxMagnitudeIndex: 0);
+
+        IReadOnlyList<SignalPoint> groupDelay = DataHelper.GetGroupDelay(
+            measurement,
+            length: TransformLength,
+            leftTukeyWindow: 0,
+            rightTukeyWindow: 0,
+            offset: 0,
+            smoothingInverseOctaves: 0).Points;
+
+        SignalPoint firstValidPoint =
+            groupDelay.First(point => !double.IsNaN(point.Y));
+
+        Assert.InRange(firstValidPoint.X, 450.0, 550.0);
+        Assert.All(
+            groupDelay.Where(point => point.X < firstValidPoint.X),
+            point => Assert.True(double.IsNaN(point.Y)));
+    }
+
+    [Fact]
+    public void GroupDelay_CanAnalyzeCyclicNegativeDelay()
+    {
+        const int negativeDelaySamples = 24;
+        var response = new Complex[TransformLength];
+        response[^negativeDelaySamples] = Complex.One;
+        var measurement = new SyntheticMeasurement(
+            response,
+            SampleRate,
+            maxMagnitudeIndex: 0);
+
+        IReadOnlyList<SignalPoint> groupDelay = DataHelper.GetGroupDelay(
+            measurement,
+            length: TransformLength,
+            leftTukeyWindow: 128,
+            rightTukeyWindow: 0,
+            offset: 0,
+            smoothingInverseOctaves: 96,
+            wrapWindow: true).Points;
+
+        double expectedDelayMilliseconds = -negativeDelaySamples * 1000.0 / SampleRate;
+        List<SignalPoint> analysisBand = groupDelay
+            .Where(point => point.X >= 1_000 && point.X <= 18_000)
+            .ToList();
+
+        Assert.NotEmpty(analysisBand);
+        Assert.All(
+            analysisBand,
+            point => Assert.InRange(
+                point.Y,
+                expectedDelayMilliseconds - 1e-9,
+                expectedDelayMilliseconds + 1e-9));
+    }
+
     private static SyntheticMeasurement CreateDelayedImpulse()
     {
         var response = new Complex[TransformLength];

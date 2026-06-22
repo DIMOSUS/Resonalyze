@@ -28,6 +28,8 @@ public sealed class ExponentialSineSweep : IDisposable
     public int BitsPerSample { get; private set; }
     public int Octaves { get; private set; }
     public double RequestedDuration { get; private set; }
+    public double ComputedDuration =>
+        SampleRate > 0 ? SweepSamples / (double)SampleRate : 0.0;
 
     public double CalculateDuration(double requestedDuration)
     {

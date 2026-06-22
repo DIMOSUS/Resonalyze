@@ -40,7 +40,12 @@ namespace Resonalyze.Dsp
             return Math.Pow(10.0, decibels / 20.0);
         }
 
-        public static Complex[] ExtractWindow(IImpulseMeasurement measurement, int start, int length, double[]? window = null)
+        public static Complex[] ExtractWindow(
+            IImpulseMeasurement measurement,
+            int start,
+            int length,
+            double[]? window = null,
+            bool wrap = false)
         {
             ArgumentNullException.ThrowIfNull(measurement);
             if (length <= 0)
@@ -55,6 +60,15 @@ namespace Resonalyze.Dsp
             for (int i = 0; i < length; i++)
             {
                 int sourceIndex = start + i;
+                if (wrap)
+                {
+                    sourceIndex %= source.Length;
+                    if (sourceIndex < 0)
+                    {
+                        sourceIndex += source.Length;
+                    }
+                }
+
                 if ((uint)sourceIndex < (uint)source.Length)
                 {
                     result[i] = source[sourceIndex] *
@@ -356,7 +370,8 @@ namespace Resonalyze.Dsp
             int rightTukeyWindow,
             int offset,
             double smoothingInverseOctaves,
-            double magnitudeGateDb = -60.0)
+            double magnitudeGateDb = -30.0,
+            bool wrapWindow = false)
         {
             int startOffset = -leftTukeyWindow + offset;
 
@@ -372,7 +387,8 @@ namespace Resonalyze.Dsp
                 measurement,
                 measurement.PeakIndex + startOffset,
                 length,
-                window);
+                window,
+                wrapWindow);
 
             Complex[] spectrum = new Complex[length];
             Complex[] timeWeightedSpectrum = new Complex[length];
@@ -415,16 +431,16 @@ namespace Resonalyze.Dsp
             {
                 double magnitude = spectrum[i].Magnitude;
 
-                if (magnitude < minMagnitude)
-                {
-                    continue;
-                }
-
                 Complex groupDelay = timeWeightedSpectrum[i] / spectrum[i];
 
                 double f = i * measurement.SampleRate / (double)length;
 
                 double delayMilliseconds = (groupDelay.Real + absoluteStartTime) * 1000.0;
+
+                if (magnitude < minMagnitude)
+                {
+                    delayMilliseconds = double.NaN;
+                }
 
                 data.Add(new SignalPoint(f, delayMilliseconds));
             }
@@ -603,6 +619,12 @@ namespace Resonalyze.Dsp
             for (int i = 0; i < input.Count; i++)
             {
                 var centerPoint = Sample(i);
+                if (!double.IsFinite(centerPoint.Y))
+                {
+                    output.Add(centerPoint);
+                    continue;
+                }
+
                 double frequency = centerPoint.X;
 
                 double halfDeltaFrequency = Math.Max(frequency * (frequencyRatio - 1), fStep * a);
@@ -615,6 +637,11 @@ namespace Resonalyze.Dsp
                 for (int sampleIndex = Math.Max(i - win, 0); sampleIndex <= i + win; sampleIndex++)
                 {
                     SignalPoint samplePoint = Sample(sampleIndex);
+                    if (!double.IsFinite(samplePoint.Y))
+                    {
+                        continue;
+                    }
+
                     double weight = LanczosKernel((frequency - samplePoint.X) / halfDeltaFrequency, a);
 
                     weightedSum += samplePoint.Y * weight;

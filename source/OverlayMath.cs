@@ -34,7 +34,7 @@ public static class OverlayMath
         for (int center = 0; center < points.Count; center++)
         {
             OverlayPoint centerPoint = points[center];
-            if (centerPoint.X <= 0)
+            if (centerPoint.X <= 0 || double.IsNaN(centerPoint.Y))
             {
                 result[center] = centerPoint;
                 continue;
@@ -59,6 +59,11 @@ public static class OverlayMath
             double weightSum = 0;
             for (int sample = left; sample <= right; sample++)
             {
+                if (double.IsNaN(points[sample].Y))
+                {
+                    continue;
+                }
+
                 double distance =
                     Math.Abs(Math.Log2(points[sample].X) - centerOctaves);
                 double weight = 0.5 *
@@ -152,7 +157,7 @@ public static class OverlayMath
             {
                 value = DataHelper.AmplitudeToDecibels(value);
             }
-            if (double.IsFinite(value))
+            if (!double.IsInfinity(value))
             {
                 result.Add(new OverlayPoint(aPoint.X, value));
             }

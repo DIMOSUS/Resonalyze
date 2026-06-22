@@ -64,8 +64,6 @@ namespace Resonalyze.Options
             comboBoxAsioLoopbackChannel = new ComboBox();
             labelAsioSampleRate = new Label();
             labelAsioSampleRateStatus = new Label();
-            labelAsioFramesPerBuffer = new Label();
-            labelAsioFramesPerBufferValue = new Label();
             labelAsioPlaybackLatency = new Label();
             labelAsioPlaybackLatencyValue = new Label();
             buttonAsioInputProbe = new Button();
@@ -442,31 +440,11 @@ namespace Resonalyze.Options
             labelAsioSampleRateStatus.TabIndex = 32;
             labelAsioSampleRateStatus.Text = "-";
             // 
-            // labelAsioFramesPerBuffer
-            // 
-            labelAsioFramesPerBuffer.AutoSize = true;
-            labelAsioFramesPerBuffer.ForeColor = SystemColors.ControlLight;
-            labelAsioFramesPerBuffer.Location = new Point(12, 525);
-            labelAsioFramesPerBuffer.Name = "labelAsioFramesPerBuffer";
-            labelAsioFramesPerBuffer.Size = new Size(100, 15);
-            labelAsioFramesPerBuffer.TabIndex = 33;
-            labelAsioFramesPerBuffer.Text = "Frames per buffer";
-            // 
-            // labelAsioFramesPerBufferValue
-            // 
-            labelAsioFramesPerBufferValue.AutoSize = true;
-            labelAsioFramesPerBufferValue.ForeColor = SystemColors.ControlLight;
-            labelAsioFramesPerBufferValue.Location = new Point(156, 525);
-            labelAsioFramesPerBufferValue.Name = "labelAsioFramesPerBufferValue";
-            labelAsioFramesPerBufferValue.Size = new Size(12, 15);
-            labelAsioFramesPerBufferValue.TabIndex = 34;
-            labelAsioFramesPerBufferValue.Text = "-";
-            // 
             // labelAsioPlaybackLatency
             // 
             labelAsioPlaybackLatency.AutoSize = true;
             labelAsioPlaybackLatency.ForeColor = SystemColors.ControlLight;
-            labelAsioPlaybackLatency.Location = new Point(12, 540);
+            labelAsioPlaybackLatency.Location = new Point(12, 525);
             labelAsioPlaybackLatency.Name = "labelAsioPlaybackLatency";
             labelAsioPlaybackLatency.Size = new Size(95, 15);
             labelAsioPlaybackLatency.TabIndex = 35;
@@ -476,7 +454,7 @@ namespace Resonalyze.Options
             // 
             labelAsioPlaybackLatencyValue.AutoSize = true;
             labelAsioPlaybackLatencyValue.ForeColor = SystemColors.ControlLight;
-            labelAsioPlaybackLatencyValue.Location = new Point(156, 540);
+            labelAsioPlaybackLatencyValue.Location = new Point(156, 525);
             labelAsioPlaybackLatencyValue.Name = "labelAsioPlaybackLatencyValue";
             labelAsioPlaybackLatencyValue.Size = new Size(12, 15);
             labelAsioPlaybackLatencyValue.TabIndex = 36;
@@ -504,8 +482,6 @@ namespace Resonalyze.Options
             Controls.Add(buttonAsioControlPanel);
             Controls.Add(labelAsioPlaybackLatencyValue);
             Controls.Add(labelAsioPlaybackLatency);
-            Controls.Add(labelAsioFramesPerBufferValue);
-            Controls.Add(labelAsioFramesPerBuffer);
             Controls.Add(labelAsioSampleRateStatus);
             Controls.Add(labelAsioSampleRate);
             Controls.Add(comboBoxAsioOutputChannel);
@@ -591,8 +567,6 @@ namespace Resonalyze.Options
         private ComboBox comboBoxAsioLoopbackChannel;
         private Label labelAsioSampleRate;
         private Label labelAsioSampleRateStatus;
-        private Label labelAsioFramesPerBuffer;
-        private Label labelAsioFramesPerBufferValue;
         private Label labelAsioPlaybackLatency;
         private Label labelAsioPlaybackLatencyValue;
         private Button buttonAsioInputProbe;

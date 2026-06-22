@@ -36,12 +36,15 @@ public sealed class TimeAlignmentMeasurement : IDisposable
     public TimeAlignmentOptions Options { get; private set; } = new();
     public double PeakSample { get; private set; }
     public double DelayMilliseconds { get; private set; }
+    public double FirstArrivalPeakSample { get; private set; }
+    public double FirstArrivalDelayMilliseconds { get; private set; }
+    public double StrongestPeakSample { get; private set; }
+    public double StrongestDelayMilliseconds { get; private set; }
     public double[]? EnvelopeSamples { get; private set; }
     public int EnvelopePeakIndex { get; private set; }
     public double EnvelopePeak { get; private set; }
     public int StrongestEnvelopePeakIndex { get; private set; }
     public double StrongestEnvelopePeak { get; private set; }
-    public bool PeakSearchFallbackUsed { get; private set; }
     public double ConfidenceDecibels { get; private set; }
     public double MicrophonePeakDbFs { get; private set; }
     public double MicrophoneRmsDbFs { get; private set; }
@@ -315,15 +318,9 @@ public sealed class TimeAlignmentMeasurement : IDisposable
             CreatePeakSearchOptions(Options));
         int peakIndex = peakSearchResult.SelectedIndex;
         double peak = envelope[peakIndex];
-
-        double fractionalOffset = 0;
-        if (peakIndex > 0 && peakIndex < (envelope.Length - 1))
-        {
-            double y0 = envelope[peakIndex - 1];
-            double y1 = envelope[peakIndex];
-            double y2 = envelope[peakIndex + 1];
-            fractionalOffset = SignalEnvelope.FindFractionalPeakOffset(y0, y1, y2);
-        }
+        double fractionalOffset = FindFractionalOffset(envelope, peakIndex);
+        double strongestFractionalOffset =
+            FindFractionalOffset(envelope, peakSearchResult.StrongestIndex);
 
         ConfidenceDecibels = SignalEnvelope.EstimatePeakConfidenceDecibels(
             envelope,
@@ -334,10 +331,32 @@ public sealed class TimeAlignmentMeasurement : IDisposable
         EnvelopePeak = peak;
         StrongestEnvelopePeakIndex = peakSearchResult.StrongestIndex;
         StrongestEnvelopePeak = peakSearchResult.StrongestPeak;
-        PeakSearchFallbackUsed = peakSearchResult.FallbackUsed;
         double wrappedPeakSample = peakIndex + fractionalOffset;
-        PeakSample = ToSignedDelaySamples(wrappedPeakSample, envelope.Length);
-        DelayMilliseconds = PeakSample * 1000.0 / SampleRate;
+        FirstArrivalPeakSample =
+            ToSignedDelaySamples(wrappedPeakSample, envelope.Length);
+        FirstArrivalDelayMilliseconds =
+            FirstArrivalPeakSample * 1000.0 / SampleRate;
+        StrongestPeakSample = ToSignedDelaySamples(
+            peakSearchResult.StrongestIndex + strongestFractionalOffset,
+            envelope.Length);
+        StrongestDelayMilliseconds = StrongestPeakSample * 1000.0 / SampleRate;
+        PeakSample = FirstArrivalPeakSample;
+        DelayMilliseconds = FirstArrivalDelayMilliseconds;
+    }
+
+    private static double FindFractionalOffset(
+        IReadOnlyList<double> envelope,
+        int peakIndex)
+    {
+        if (peakIndex <= 0 || peakIndex >= envelope.Count - 1)
+        {
+            return 0;
+        }
+
+        double y0 = envelope[peakIndex - 1];
+        double y1 = envelope[peakIndex];
+        double y2 = envelope[peakIndex + 1];
+        return SignalEnvelope.FindFractionalPeakOffset(y0, y1, y2);
     }
 
     private static async Task PlayToEndAsync(
@@ -459,9 +478,7 @@ public sealed class TimeAlignmentMeasurement : IDisposable
     private static PeakSearchOptions CreatePeakSearchOptions(TimeAlignmentOptions options) =>
         new()
         {
-            Mode = options.PeakSearchMode == TimeAlignmentPeakSearchMode.StrongestPeak
-                ? PeakSearchMode.StrongestPeak
-                : PeakSearchMode.FirstArrival,
+            Mode = PeakSearchMode.FirstArrival,
             FirstPeakThresholdBelowMaxDb = options.FirstPeakThresholdBelowMaxDb,
             FirstPeakMinimumSnrDb = options.FirstPeakMinimumSnrDb,
             SearchWindowMilliseconds = options.PeakSearchWindowMilliseconds
@@ -471,12 +488,15 @@ public sealed class TimeAlignmentMeasurement : IDisposable
     {
         PeakSample = 0;
         DelayMilliseconds = 0;
+        FirstArrivalPeakSample = 0;
+        FirstArrivalDelayMilliseconds = 0;
+        StrongestPeakSample = 0;
+        StrongestDelayMilliseconds = 0;
         EnvelopeSamples = null;
         EnvelopePeakIndex = 0;
         EnvelopePeak = 0;
         StrongestEnvelopePeakIndex = 0;
         StrongestEnvelopePeak = 0;
-        PeakSearchFallbackUsed = false;
         ConfidenceDecibels = 0;
         MicrophonePeakDbFs = 0;
         MicrophoneRmsDbFs = 0;

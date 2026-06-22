@@ -149,6 +149,32 @@ public sealed class OverlayMathTests
     }
 
     [Fact]
+    public void CalculateOperation_PreservesNaNGaps()
+    {
+        OverlayPoint[] a =
+        [
+            new OverlayPoint(1, 10),
+            new OverlayPoint(2, double.NaN),
+            new OverlayPoint(3, 20)
+        ];
+        OverlayPoint[] b =
+        [
+            new OverlayPoint(1, 8),
+            new OverlayPoint(3, 16)
+        ];
+
+        OverlayPoint[] result = OverlayMath.CalculateOperation(
+            a,
+            b,
+            OverlayOperation.AMinusB);
+
+        Assert.Equal(3, result.Length);
+        Assert.Equal(2, result[0].Y);
+        Assert.True(double.IsNaN(result[1].Y));
+        Assert.Equal(4, result[2].Y);
+    }
+
+    [Fact]
     public void SmoothByOctaves_PreservesConstantCurve()
     {
         OverlayPoint[] points = CreateLogarithmicPoints(
@@ -172,6 +198,20 @@ public sealed class OverlayMathTests
         Assert.InRange(result[24].Y, 0, 12);
         Assert.True(result[23].Y > 0);
         Assert.True(result[25].Y > 0);
+    }
+
+    [Fact]
+    public void SmoothByOctaves_PreservesNaNGaps()
+    {
+        OverlayPoint[] points = CreateLogarithmicPoints(
+            index => index == 24 ? double.NaN : 10);
+
+        OverlayPoint[] result = OverlayMath.SmoothByOctaves(points, 3);
+
+        Assert.True(double.IsNaN(result[24].Y));
+        Assert.All(
+            result.Where((_, index) => index != 24),
+            point => Assert.Equal(10, point.Y, precision: 12));
     }
 
     [Fact]

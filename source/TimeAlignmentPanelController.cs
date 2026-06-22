@@ -10,6 +10,8 @@ namespace Resonalyze;
 internal sealed class TimeAlignmentPanelController : IDisposable
 {
     private const double SpeedOfSoundAt20C = 343.2;
+    private const int DelayTableFirstColumn = 18;
+    private const int DelayTableSecondColumn = 34;
 
     private readonly Form owner;
     private readonly ExpSweepMeasurement expSweepMeasurement;
@@ -28,11 +30,11 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private readonly NumericUpDown bandpassCenterNumeric;
     private readonly NumericUpDown bandpassPassOctavesNumeric;
     private readonly NumericUpDown bandpassFadeOctavesNumeric;
-    private readonly ComboBox peakSearchModeComboBox;
     private readonly PlotView bandpassPlotView;
     private readonly PlotView envelopePlotView;
     private readonly Button startButton;
     private readonly RichTextBox statusTextBox;
+    private readonly Font resultTableFont;
     private bool disposed;
 
     public TimeAlignmentPanelController(
@@ -49,6 +51,10 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         this.setRecordButtonText = setRecordButtonText;
         this.saveSettings = saveSettings;
         this.isTimeAlignmentActive = isTimeAlignmentActive;
+        resultTableFont = new Font(
+            FontFamily.GenericMonospace,
+            owner.Font.Size,
+            FontStyle.Bold);
 
         (
             panel,
@@ -61,7 +67,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             bandpassCenterNumeric,
             bandpassPassOctavesNumeric,
             bandpassFadeOctavesNumeric,
-            peakSearchModeComboBox,
             bandpassPlotView,
             envelopePlotView,
             startButton,
@@ -156,6 +161,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         disposed = true;
         measurement.Dispose();
+        resultTableFont.Dispose();
     }
 
     private void MeasurementCompleted(bool success)
@@ -177,13 +183,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
             if (success)
             {
-                double delaySamples = measurement.PeakSample;
-                double delayMilliseconds = measurement.DelayMilliseconds;
-                double delayMeters = Math.Abs(delayMilliseconds) * SpeedOfSoundAt20C / 1000.0;
-                SetMeasurementResultStatus(
-                    delayMilliseconds,
-                    delayMeters,
-                    delaySamples);
+                SetMeasurementResultStatus();
                 UpdateEnvelopePreview();
             }
             else if (measurement.LastError != null)
@@ -209,7 +209,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         NumericUpDown BandpassCenter,
         NumericUpDown BandpassPassOctaves,
         NumericUpDown BandpassFadeOctaves,
-        ComboBox PeakSearchMode,
         PlotView BandpassPreview,
         PlotView EnvelopePreview,
         Button Start,
@@ -289,13 +288,11 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             Size = new Size(520, 145),
             Visible = false
         };
-        ComboBox peakSearchMode = CreateComboBox(180, 160);
-        peakSearchMode.Items.AddRange(["First arrival", "Strongest peak"]);
         PlotView envelopePreview = new()
         {
             BackColor = Color.FromArgb(32, 36, 46),
-            Location = new Point(560, 530),
-            Size = new Size(400, 155),
+            Location = new Point(560, 500),
+            Size = new Size(400, 200),
             Visible = false
         };
         Button start = new()
@@ -331,8 +328,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             description,
             help,
             routeSummary,
-            CreateLabel("Peak detection", 164),
-            peakSearchMode,
             bandpassEnabled,
             CreateLabel("Center frequency, Hz", 228),
             bandpassCenter,
@@ -384,11 +379,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             UpdateBandpassPreview();
             saveSettings();
         };
-        peakSearchMode.SelectedIndexChanged += (_, _) =>
-        {
-            UpdateOptionsFromControls();
-            saveSettings();
-        };
         start.Click += async (_, _) => await ToggleAsync();
 
         return (
@@ -402,7 +392,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             bandpassCenter,
             bandpassPassOctaves,
             bandpassFadeOctaves,
-            peakSearchMode,
             bandpassPreview,
             envelopePreview,
             start,
@@ -418,10 +407,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             ClampDecimal(options.BandpassPassOctaves, bandpassPassOctavesNumeric);
         bandpassFadeOctavesNumeric.Value =
             ClampDecimal(options.BandpassFadeOctaves, bandpassFadeOctavesNumeric);
-        peakSearchModeComboBox.SelectedIndex =
-            options.PeakSearchMode == TimeAlignmentPeakSearchMode.StrongestPeak
-                ? 1
-                : 0;
     }
 
     private void UpdateOptionsFromControls()
@@ -430,10 +415,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         options.BandpassCenterHz = (double)bandpassCenterNumeric.Value;
         options.BandpassPassOctaves = (double)bandpassPassOctavesNumeric.Value;
         options.BandpassFadeOctaves = (double)bandpassFadeOctavesNumeric.Value;
-        options.PeakSearchMode =
-            peakSearchModeComboBox.SelectedIndex == 1
-                ? TimeAlignmentPeakSearchMode.StrongestPeak
-                : TimeAlignmentPeakSearchMode.FirstArrival;
     }
 
     private void UpdateRouteSummary()
@@ -441,13 +422,18 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         bool canMeasure = TryValidateMeasurementRoute(out string message);
         routeSummaryLabel.Text = FormatRouteSummary(message);
         SetControlsEnabled(canMeasure);
-        if (!measurement.InProgress)
+        if (!measurement.InProgress &&
+            !HasMeasurementResult())
         {
             SetStatusText(canMeasure
                 ? "Ready to measure microphone delay against configured loopback."
                 : message);
         }
     }
+
+    private bool HasMeasurementResult() =>
+        measurement.EnvelopeSamples is { Length: > 0 } &&
+        measurement.LastError == null;
 
     private string FormatRouteSummary(string message)
     {
@@ -655,6 +641,8 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             Position = AxisPosition.Bottom,
             Minimum = 20,
             Maximum = Math.Min(20_000, expSweepMeasurement.SampleRate * 0.5),
+            AbsoluteMaximum = 20_000,
+            AbsoluteMinimum = 20,
             MajorGridlineColor = OxyColor.FromRgb(55, 62, 78),
             MajorGridlineStyle = LineStyle.Solid,
             MinorGridlineColor = OxyColor.FromRgb(48, 54, 70),
@@ -662,7 +650,10 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             TextColor = OxyColors.White,
             TicklineColor = OxyColors.White
         });
-        model.Axes.Add(CreateDecibelAxis());
+        var dbAxis = CreateDecibelAxis();
+        dbAxis.AbsoluteMinimum = -100;
+        dbAxis.AbsoluteMaximum = 20;
+        model.Axes.Add(dbAxis);
 
         var series = new LineSeries
         {
@@ -703,12 +694,39 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             return;
         }
 
+        int radius = Math.Min(
+            envelope.Length / 2,
+            Math.Max(1, (int)Math.Round(measurement.SampleRate * 0.025)));
+        double minMilliseconds = -radius * 1000.0 / measurement.SampleRate;
+        double maxMilliseconds = radius * 1000.0 / measurement.SampleRate;
+
+        var series = new LineSeries
+        {
+            Color = OxyColor.FromRgb(255, 210, 80),
+            StrokeThickness = 2
+        };
+        int step = Math.Max(1, radius * 2 / 600);
+        double maxDeb = -10000;
+        double minDeb = +10000;
+        for (int offset = -radius; offset <= radius; offset += step)
+        {
+            int index = WrapIndex(measurement.EnvelopePeakIndex + offset, envelope.Length);
+            double milliseconds = offset * 1000.0 / measurement.SampleRate;
+            double relativeAmplitude = envelope[index] / measurement.EnvelopePeak;
+            double decibels = DataHelper.AmplitudeToDecibels(relativeAmplitude);
+            series.Points.Add(new DataPoint(milliseconds, Math.Max(-80, decibels)));
+            maxDeb = Math.Max(maxDeb, decibels);
+            minDeb = Math.Min(minDeb, decibels);
+        }
+
         var model = CreatePreviewPlotModel("Envelope Around Peak");
         model.Axes.Add(new LinearAxis
         {
             Position = AxisPosition.Bottom,
-            Minimum = -50,
-            Maximum = 50,
+            AbsoluteMinimum = minMilliseconds,
+            AbsoluteMaximum = maxMilliseconds,
+            Minimum = minMilliseconds,
+            Maximum = maxMilliseconds,
             MajorStep = 25,
             MajorGridlineColor = OxyColor.FromRgb(55, 62, 78),
             MajorGridlineStyle = LineStyle.Solid,
@@ -718,25 +736,12 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             TicklineColor = OxyColors.White,
             Title = "ms from peak"
         });
-        model.Axes.Add(CreateDecibelAxis());
-
-        var series = new LineSeries
-        {
-            Color = OxyColor.FromRgb(255, 210, 80),
-            StrokeThickness = 2
-        };
-        int radius = Math.Min(
-            envelope.Length / 2,
-            Math.Max(1, (int)Math.Round(measurement.SampleRate * 0.05)));
-        int step = Math.Max(1, radius * 2 / 600);
-        for (int offset = -radius; offset <= radius; offset += step)
-        {
-            int index = WrapIndex(measurement.EnvelopePeakIndex + offset, envelope.Length);
-            double milliseconds = offset * 1000.0 / measurement.SampleRate;
-            double relativeAmplitude = envelope[index] / measurement.EnvelopePeak;
-            double decibels = DataHelper.AmplitudeToDecibels(relativeAmplitude);
-            series.Points.Add(new DataPoint(milliseconds, Math.Max(-80, decibels)));
-        }
+        var dbAxis = CreateDecibelAxis();
+        dbAxis.AbsoluteMaximum = maxDeb + 10;
+        dbAxis.AbsoluteMinimum = minDeb - 10;
+        dbAxis.Maximum = maxDeb + 2;
+        dbAxis.Minimum = minDeb - 2;
+        model.Axes.Add(dbAxis);
 
         model.Series.Add(series);
         model.Annotations.Add(new LineAnnotation
@@ -786,24 +791,17 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         AppendStatusText(text, Color.FromArgb(190, 195, 205));
     }
 
-    private void SetMeasurementResultStatus(
-        double delayMilliseconds,
-        double delayMeters,
-        double delaySamples)
+    private void SetMeasurementResultStatus()
     {
         string confidence = FormatConfidence(measurement.ConfidenceDecibels);
         Color confidenceColor = GetConfidenceColor(confidence);
 
         statusTextBox.Clear();
-        AppendStatusText("Measured delay:\r\n", Color.FromArgb(220, 225, 235));
-        AppendStatusText($"{delayMilliseconds:0.000} ms\r\n", Color.FromArgb(220, 225, 235));
-        AppendStatusText($"{delayMeters:0.000} m (at 20 °C)\r\n", Color.FromArgb(220, 225, 235));
-        AppendStatusText($"{delaySamples:0.0} samples\r\n\r\n", Color.FromArgb(220, 225, 235));
+        AppendDelayTable();
         AppendStatusText("Signal Quality:\r\n", Color.FromArgb(220, 225, 235));
         AppendStatusText(
             $"{confidence} ({measurement.ConfidenceDecibels:0.0} dB)\r\n",
             confidenceColor);
-        AppendStatusText(FormatPeakDetection() + "\r\n", Color.FromArgb(220, 225, 235));
         AppendLevelStatus(
             "Mic",
             measurement.MicrophonePeakDbFs,
@@ -821,12 +819,56 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         statusTextBox.SelectionLength = 0;
     }
 
-    private void AppendStatusText(string text, Color color)
+    private void AppendDelayTable()
+    {
+        double firstArrivalMeters =
+            Math.Abs(measurement.FirstArrivalDelayMilliseconds) * SpeedOfSoundAt20C / 1000.0;
+        double strongestMeters =
+            Math.Abs(measurement.StrongestDelayMilliseconds) * SpeedOfSoundAt20C / 1000.0;
+
+        AppendStatusText(
+            FormatDelayTableLine("Measured delay:", "First Arrival", "Strongest Peak") + "\r\n",
+            Color.FromArgb(220, 225, 235),
+            resultTableFont);
+        AppendStatusText(
+            FormatDelayTableLine(
+                "ms",
+                $"{measurement.FirstArrivalDelayMilliseconds:0.000}",
+                $"{measurement.StrongestDelayMilliseconds:0.000}") + "\r\n",
+            Color.FromArgb(220, 225, 235),
+            resultTableFont);
+        AppendStatusText(
+            FormatDelayTableLine(
+                "meters (at 20 °C)",
+                $"{firstArrivalMeters:0.000}",
+                $"{strongestMeters:0.000}") + "\r\n",
+            Color.FromArgb(220, 225, 235),
+            resultTableFont);
+        AppendStatusText(
+            FormatDelayTableLine(
+                "samples",
+                $"{measurement.FirstArrivalPeakSample:0.0}",
+                $"{measurement.StrongestPeakSample:0.0}") + "\r\n\r\n",
+            Color.FromArgb(220, 225, 235),
+            resultTableFont);
+    }
+
+    private static string FormatDelayTableLine(
+        string label,
+        string firstArrival,
+        string strongestPeak) =>
+        label.PadRight(DelayTableFirstColumn) +
+        firstArrival.PadRight(DelayTableSecondColumn - DelayTableFirstColumn) +
+        strongestPeak;
+
+    private void AppendStatusText(string text, Color color, Font? font = null)
     {
         statusTextBox.SelectionStart = statusTextBox.TextLength;
         statusTextBox.SelectionLength = 0;
         statusTextBox.SelectionColor = color;
+        statusTextBox.SelectionFont = font ?? statusTextBox.Font;
         statusTextBox.AppendText(text);
+        statusTextBox.SelectionFont = statusTextBox.Font;
         statusTextBox.SelectionColor = statusTextBox.ForeColor;
     }
 
@@ -858,27 +900,27 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             return false;
         }
 
-        value = GetFirstToken(statusTextBox.Lines[line]);
-        return value.Length > 0;
+        int lineStart = statusTextBox.GetFirstCharIndexFromLine(line);
+        int column = Math.Max(0, index - lineStart);
+        value = column >= DelayTableSecondColumn
+            ? GetDelayTableValue(statusTextBox.Lines[line], DelayTableSecondColumn)
+            : column >= DelayTableFirstColumn
+                ? GetDelayTableValue(statusTextBox.Lines[line], DelayTableFirstColumn)
+                : string.Empty;
+        return !string.IsNullOrWhiteSpace(value);
     }
 
-    private static string GetFirstToken(string line)
+    private static string GetDelayTableValue(string line, int startColumn)
     {
-        string trimmed = line.Trim();
-        int separatorIndex = trimmed.IndexOf(' ');
-        return separatorIndex < 0
-            ? trimmed
-            : trimmed[..separatorIndex];
-    }
+        if (line.Length <= startColumn)
+        {
+            return string.Empty;
+        }
 
-    private string FormatPeakDetection()
-    {
-        string mode = options.PeakSearchMode == TimeAlignmentPeakSearchMode.FirstArrival
-            ? "First arrival"
-            : "Strongest peak";
-        return measurement.PeakSearchFallbackUsed
-            ? "Peak: First arrival fallback to strongest"
-            : $"Peak: {mode}";
+        int endColumn = startColumn == DelayTableFirstColumn
+            ? Math.Min(DelayTableSecondColumn, line.Length)
+            : line.Length;
+        return line[startColumn..endColumn].Trim();
     }
 
     private void AppendLevelStatus(

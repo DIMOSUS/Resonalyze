@@ -10,7 +10,7 @@ namespace Resonalyze;
 public sealed class ImpulseResponseFile
 {
     public const string CurrentFormat = "resonalyze-impulse-response";
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -31,41 +31,40 @@ public sealed class ImpulseResponseFile
     public PlaybackChannel PlayChannel { get; set; }
     public SweepMeasurementMode MeasurementMode { get; set; } =
         SweepMeasurementMode.SweepDeconvolution;
-    [JsonPropertyName("maxMagnitudeIndex")]
-    public int PeakIndex { get; set; }
-    public double[] RealSamples { get; set; } = Array.Empty<double>();
+    public int SweepDeconvolutionPeakIndex { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public double[]? ImaginarySamples { get; set; }
+    public int? TransferPeakIndex { get; set; }
 
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public double[]? SweepDeconvolutionRealSamples { get; set; }
+    public double[] SweepDeconvolutionRealSamples { get; set; } = Array.Empty<double>();
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double[]? SweepDeconvolutionImaginarySamples { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public int? SweepDeconvolutionPeakIndex { get; set; }
+    public double[]? TransferRealSamples { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double[]? TransferImaginarySamples { get; set; }
 
     public static ImpulseResponseFile Capture(ExpSweepMeasurement measurement)
     {
         ArgumentNullException.ThrowIfNull(measurement);
-        Complex[] impulseResponse = measurement.ImpulseResponse
+        Complex[] sweepImpulseResponse = measurement.SweepDeconvolutionImpulseResponse
             ?? throw new InvalidOperationException("There is no impulse response to save.");
         ExponentialSineSweep sweep = measurement.Sweep
             ?? throw new InvalidOperationException("The sweep measurement is not initialized.");
 
-        (double[] realSamples, double[]? imaginarySamples) =
-            ConvertSamples(impulseResponse, "Impulse response");
-        double[]? sweepRealSamples = null;
-        double[]? sweepImaginarySamples = null;
-        int? sweepPeakIndex = null;
-        if (measurement.MeasurementMode == SweepMeasurementMode.LoopbackTransfer &&
-            measurement.SweepDeconvolutionImpulseResponse is { Length: > 0 } sweepImpulseResponse)
+        (double[] sweepRealSamples, double[]? sweepImaginarySamples) =
+            ConvertSamples(sweepImpulseResponse, "Sweep deconvolution impulse response");
+        double[]? transferRealSamples = null;
+        double[]? transferImaginarySamples = null;
+        int? transferPeakIndex = null;
+        if (measurement.TransferImpulseResponse is { Length: > 0 } transferImpulseResponse)
         {
-            (sweepRealSamples, sweepImaginarySamples) =
-                ConvertSamples(sweepImpulseResponse, "Sweep deconvolution impulse response");
-            sweepPeakIndex = measurement.SweepDeconvolutionPeakIndex;
+            (transferRealSamples, transferImaginarySamples) =
+                ConvertSamples(transferImpulseResponse, "Transfer impulse response");
+            transferPeakIndex = measurement.TransferPeakIndex;
         }
 
         return new ImpulseResponseFile
@@ -74,15 +73,15 @@ public sealed class ImpulseResponseFile
             SampleRate = measurement.SampleRate,
             Bits = measurement.Bits,
             Octaves = measurement.Octaves,
-            SweepDurationSeconds = sweep.RequestedDuration,
+            SweepDurationSeconds = sweep.ComputedDuration,
             PlayChannel = measurement.PlaybackChannel,
             MeasurementMode = measurement.MeasurementMode,
-            PeakIndex = measurement.PeakIndex,
-            RealSamples = realSamples,
-            ImaginarySamples = imaginarySamples,
+            SweepDeconvolutionPeakIndex = measurement.SweepDeconvolutionPeakIndex,
+            TransferPeakIndex = transferPeakIndex,
             SweepDeconvolutionRealSamples = sweepRealSamples,
             SweepDeconvolutionImaginarySamples = sweepImaginarySamples,
-            SweepDeconvolutionPeakIndex = sweepPeakIndex
+            TransferRealSamples = transferRealSamples,
+            TransferImaginarySamples = transferImaginarySamples
         };
     }
 
@@ -127,22 +126,22 @@ public sealed class ImpulseResponseFile
         return file;
     }
 
-    public Complex[] GetImpulseResponse()
+    public Complex[] GetSweepDeconvolutionImpulseResponse()
     {
         Validate();
 
-        return ToComplexSamples(RealSamples, ImaginarySamples);
+        return ToComplexSamples(
+            SweepDeconvolutionRealSamples,
+            SweepDeconvolutionImaginarySamples);
     }
 
-    public Complex[]? GetSweepDeconvolutionImpulseResponse()
+    public Complex[]? GetTransferImpulseResponse()
     {
         Validate();
 
-        return SweepDeconvolutionRealSamples == null
+        return TransferRealSamples == null
             ? null
-            : ToComplexSamples(
-                SweepDeconvolutionRealSamples,
-                SweepDeconvolutionImaginarySamples);
+            : ToComplexSamples(TransferRealSamples, TransferImaginarySamples);
     }
 
     private void Validate()
@@ -183,50 +182,57 @@ public sealed class ImpulseResponseFile
         {
             throw new InvalidDataException("The measurement mode is invalid.");
         }
-        if (RealSamples.Length == 0)
-        {
-            throw new InvalidDataException("The impulse response contains no samples.");
-        }
-        if (ImaginarySamples != null &&
-            ImaginarySamples.Length != RealSamples.Length)
+        if (SweepDeconvolutionRealSamples.Length == 0)
         {
             throw new InvalidDataException(
-                "Real and imaginary sample arrays have different lengths.");
-        }
-        if ((uint)PeakIndex >= (uint)RealSamples.Length)
-        {
-            throw new InvalidDataException("The peak index is outside the sample array.");
-        }
-        if (MeasurementMode == SweepMeasurementMode.LoopbackTransfer)
-        {
-            if (SweepDeconvolutionRealSamples is not { Length: > 0 })
-            {
-                throw new InvalidDataException(
-                    "Loopback transfer files must include sweep deconvolution samples.");
-            }
-            if (!SweepDeconvolutionPeakIndex.HasValue ||
-                (uint)SweepDeconvolutionPeakIndex.Value >=
-                    (uint)SweepDeconvolutionRealSamples.Length)
-            {
-                throw new InvalidDataException(
-                    "The sweep deconvolution peak index is outside the sample array.");
-            }
+                "The sweep deconvolution impulse response contains no samples.");
         }
         if (SweepDeconvolutionImaginarySamples != null &&
-            SweepDeconvolutionRealSamples != null &&
             SweepDeconvolutionImaginarySamples.Length != SweepDeconvolutionRealSamples.Length)
         {
             throw new InvalidDataException(
                 "Sweep deconvolution real and imaginary sample arrays have different lengths.");
         }
+        if ((uint)SweepDeconvolutionPeakIndex >= (uint)SweepDeconvolutionRealSamples.Length)
+        {
+            throw new InvalidDataException(
+                "The sweep deconvolution peak index is outside the sample array.");
+        }
+        if (TransferRealSamples != null &&
+            TransferRealSamples.Length == 0)
+        {
+            throw new InvalidDataException("The transfer impulse response contains no samples.");
+        }
+        if (TransferImaginarySamples != null &&
+            TransferRealSamples != null &&
+            TransferImaginarySamples.Length != TransferRealSamples.Length)
+        {
+            throw new InvalidDataException(
+                "Transfer real and imaginary sample arrays have different lengths.");
+        }
+        if (MeasurementMode == SweepMeasurementMode.LoopbackTransfer &&
+            TransferRealSamples == null)
+        {
+            throw new InvalidDataException(
+                "Loopback transfer files must include transfer impulse response samples.");
+        }
+        if (TransferRealSamples != null &&
+            (!TransferPeakIndex.HasValue ||
+                (uint)TransferPeakIndex.Value >= (uint)TransferRealSamples.Length))
+        {
+            throw new InvalidDataException("The transfer peak index is outside the sample array.");
+        }
 
-        ValidateSamples(RealSamples, ImaginarySamples, "Impulse response");
-        if (SweepDeconvolutionRealSamples != null)
+        ValidateSamples(
+            SweepDeconvolutionRealSamples,
+            SweepDeconvolutionImaginarySamples,
+            "Sweep deconvolution impulse response");
+        if (TransferRealSamples != null)
         {
             ValidateSamples(
-                SweepDeconvolutionRealSamples,
-                SweepDeconvolutionImaginarySamples,
-                "Sweep deconvolution impulse response");
+                TransferRealSamples,
+                TransferImaginarySamples,
+                "Transfer impulse response");
         }
     }
 

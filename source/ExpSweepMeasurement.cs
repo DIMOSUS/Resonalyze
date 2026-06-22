@@ -9,7 +9,7 @@ namespace Resonalyze
     /// <summary>
     /// Coordinates sweep playback, recording, and FFT-based deconvolution.
     /// </summary>
-    public sealed class ExpSweepMeasurement : IImpulseMeasurement, IDisposable
+    public sealed class ExpSweepMeasurement : IDisposable
     {
         private readonly object stateSync = new();
         private SoundRecorder? soundRecorder;
@@ -22,13 +22,15 @@ namespace Resonalyze
         internal event Action<InputLevelMeterSnapshot>? LevelsAvailable;
 
         public ExponentialSineSweep? Sweep { get; private set; }
-        public Complex[]? ImpulseResponse { get; private set; }
         public Complex[]? SweepDeconvolutionImpulseResponse { get; private set; }
         public int SweepDeconvolutionPeakIndex { get; private set; }
+        public Complex[]? TransferImpulseResponse { get; private set; }
+        public int TransferPeakIndex { get; private set; }
         public float[]? MicrophoneRecordedSamples { get; private set; }
         public float[]? LoopbackRecordedSamples { get; private set; }
         public SweepMeasurementMode MeasurementMode { get; private set; } =
             SweepMeasurementMode.SweepDeconvolution;
+        public bool HasImpulseResponse => SweepDeconvolutionImpulseResponse != null;
         public bool InProgress => inProgress;
         public int SampleRate { get; private set; }
         public int Octaves { get; private set; }
@@ -43,7 +45,6 @@ namespace Resonalyze
         public int AsioInputChannelOffset { get; private set; }
         public int? AsioLoopbackInputChannelOffset { get; private set; }
         public int AsioOutputChannelOffset { get; private set; }
-        public int PeakIndex { get; private set; }
         public Exception? LastError { get; private set; }
         public int RecordedSamples => soundRecorder?.ReadSamples ?? 0;
 
@@ -85,9 +86,10 @@ namespace Resonalyze
             AsioInputChannelOffset = asioInputChannelOffset;
             AsioLoopbackInputChannelOffset = asioLoopbackInputChannelOffset;
             AsioOutputChannelOffset = asioOutputChannelOffset;
-            ImpulseResponse = null;
             SweepDeconvolutionImpulseResponse = null;
             SweepDeconvolutionPeakIndex = 0;
+            TransferImpulseResponse = null;
+            TransferPeakIndex = 0;
             MicrophoneRecordedSamples = null;
             LoopbackRecordedSamples = null;
             MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
@@ -131,9 +133,10 @@ namespace Resonalyze
                 cancellationTokenSource?.Dispose();
                 cancellationTokenSource = new CancellationTokenSource();
                 inProgress = true;
-                ImpulseResponse = null;
                 SweepDeconvolutionImpulseResponse = null;
                 SweepDeconvolutionPeakIndex = 0;
+                TransferImpulseResponse = null;
+                TransferPeakIndex = 0;
                 MicrophoneRecordedSamples = null;
                 LoopbackRecordedSamples = null;
                 MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
@@ -179,28 +182,48 @@ namespace Resonalyze
             int bits,
             double sweepDurationSeconds,
             PlaybackChannel playChannel,
-            Complex[] impulseResponse,
-            int maxMagnitudeIndex,
+            Complex[] sweepDeconvolutionImpulseResponse,
+            int sweepDeconvolutionPeakIndex,
             SweepMeasurementMode measurementMode = SweepMeasurementMode.SweepDeconvolution,
-            Complex[]? sweepDeconvolutionImpulseResponse = null,
-            int? sweepDeconvolutionPeakIndex = null)
+            Complex[]? transferImpulseResponse = null,
+            int? transferPeakIndex = null)
         {
             ThrowIfDisposed();
-            ArgumentNullException.ThrowIfNull(impulseResponse);
+            ArgumentNullException.ThrowIfNull(sweepDeconvolutionImpulseResponse);
+            if (transferImpulseResponse == null &&
+                measurementMode == SweepMeasurementMode.LoopbackTransfer)
+            {
+                throw new ArgumentException(
+                    "Transfer impulse response is required for loopback transfer measurements.",
+                    nameof(transferImpulseResponse));
+            }
             if (InProgress)
             {
                 throw new InvalidOperationException(
                     "Cannot load an impulse response while a measurement is running.");
             }
-            if (impulseResponse.Length == 0)
+            if (sweepDeconvolutionImpulseResponse.Length == 0)
             {
                 throw new ArgumentException(
-                    "Impulse response cannot be empty.",
-                    nameof(impulseResponse));
+                    "Sweep deconvolution impulse response cannot be empty.",
+                    nameof(sweepDeconvolutionImpulseResponse));
             }
-            if ((uint)maxMagnitudeIndex >= (uint)impulseResponse.Length)
+            if ((uint)sweepDeconvolutionPeakIndex >=
+                (uint)sweepDeconvolutionImpulseResponse.Length)
             {
-                throw new ArgumentOutOfRangeException(nameof(maxMagnitudeIndex));
+                throw new ArgumentOutOfRangeException(nameof(sweepDeconvolutionPeakIndex));
+            }
+            if (transferImpulseResponse is { Length: 0 })
+            {
+                throw new ArgumentException(
+                    "Transfer impulse response cannot be empty.",
+                    nameof(transferImpulseResponse));
+            }
+            if (transferImpulseResponse != null &&
+                (!transferPeakIndex.HasValue ||
+                    (uint)transferPeakIndex.Value >= (uint)transferImpulseResponse.Length))
+            {
+                throw new ArgumentOutOfRangeException(nameof(transferPeakIndex));
             }
 
             Init(
@@ -218,40 +241,15 @@ namespace Resonalyze
                 WaveInputChannelOffset,
                 WaveLoopbackInputChannelOffset,
                 AsioLoopbackInputChannelOffset);
-            ImpulseResponse = impulseResponse.ToArray();
-            if (sweepDeconvolutionImpulseResponse != null)
-            {
-                if (sweepDeconvolutionImpulseResponse.Length == 0)
-                {
-                    throw new ArgumentException(
-                        "Sweep deconvolution impulse response cannot be empty.",
-                        nameof(sweepDeconvolutionImpulseResponse));
-                }
-                if (!sweepDeconvolutionPeakIndex.HasValue ||
-                    (uint)sweepDeconvolutionPeakIndex.Value >=
-                        (uint)sweepDeconvolutionImpulseResponse.Length)
-                {
-                    throw new ArgumentOutOfRangeException(nameof(sweepDeconvolutionPeakIndex));
-                }
-
-                SweepDeconvolutionImpulseResponse = sweepDeconvolutionImpulseResponse.ToArray();
-                SweepDeconvolutionPeakIndex = sweepDeconvolutionPeakIndex.Value;
-            }
-            else
-            {
-                SweepDeconvolutionImpulseResponse =
-                    measurementMode == SweepMeasurementMode.SweepDeconvolution
-                        ? ImpulseResponse.ToArray()
-                        : null;
-                SweepDeconvolutionPeakIndex =
-                    measurementMode == SweepMeasurementMode.SweepDeconvolution
-                        ? maxMagnitudeIndex
-                        : 0;
-            }
+            SweepDeconvolutionImpulseResponse = sweepDeconvolutionImpulseResponse.ToArray();
+            SweepDeconvolutionPeakIndex = sweepDeconvolutionPeakIndex;
+            TransferImpulseResponse = transferImpulseResponse?.ToArray();
             MicrophoneRecordedSamples = null;
             LoopbackRecordedSamples = null;
             MeasurementMode = measurementMode;
-            PeakIndex = maxMagnitudeIndex;
+            TransferPeakIndex = transferImpulseResponse != null
+                ? transferPeakIndex!.Value
+                : 0;
             LastError = null;
         }
 
@@ -452,14 +450,14 @@ namespace Resonalyze
 
             if (TryCaptureLoopback(sampleChannels, channelIndex, loopbackIndex, out double[]? relativeIr))
             {
-                ImpulseResponse = Array.ConvertAll(relativeIr, x => new Complex(x, 0.0));
-                PeakIndex = FindPeakIndex(relativeIr);
+                TransferImpulseResponse = Array.ConvertAll(relativeIr, x => new Complex(x, 0.0));
+                TransferPeakIndex = FindPeakIndex(relativeIr);
                 MeasurementMode = SweepMeasurementMode.LoopbackTransfer;
             }
             else
             {
-                ImpulseResponse = SweepDeconvolutionImpulseResponse.ToArray();
-                PeakIndex = SweepDeconvolutionPeakIndex;
+                TransferImpulseResponse = null;
+                TransferPeakIndex = 0;
                 MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
             }
 

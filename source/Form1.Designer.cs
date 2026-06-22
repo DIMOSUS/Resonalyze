@@ -49,6 +49,7 @@ namespace Resonalyze
             panel1 = new Panel();
             inputLevelMeterPanel = new InputLevelMeterPanel();
             panelLabels = new Panel();
+            peakInfo = new Label();
             overlays.SuspendLayout();
             overlayPanel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)numericUpDown1).BeginInit();
@@ -207,7 +208,7 @@ namespace Resonalyze
             buttonClear.BackColor = Color.FromArgb(50, 55, 80);
             buttonClear.FlatStyle = FlatStyle.Popup;
             buttonClear.ForeColor = Color.White;
-            buttonClear.Location = new Point(1204, 262);
+            buttonClear.Location = new Point(1204, 279);
             buttonClear.Name = "buttonClear";
             buttonClear.Size = new Size(150, 23);
             buttonClear.TabIndex = 20;
@@ -221,7 +222,7 @@ namespace Resonalyze
             buttonCurrentModeSettings.BackColor = Color.FromArgb(50, 55, 80);
             buttonCurrentModeSettings.FlatStyle = FlatStyle.Popup;
             buttonCurrentModeSettings.ForeColor = Color.White;
-            buttonCurrentModeSettings.Location = new Point(1204, 215);
+            buttonCurrentModeSettings.Location = new Point(1204, 234);
             buttonCurrentModeSettings.Name = "buttonCurrentModeSettings";
             buttonCurrentModeSettings.Size = new Size(150, 23);
             buttonCurrentModeSettings.TabIndex = 21;
@@ -235,7 +236,7 @@ namespace Resonalyze
             buttonDraw.BackColor = Color.FromArgb(50, 55, 80);
             buttonDraw.FlatStyle = FlatStyle.Popup;
             buttonDraw.ForeColor = Color.White;
-            buttonDraw.Location = new Point(1204, 291);
+            buttonDraw.Location = new Point(1204, 308);
             buttonDraw.Name = "buttonDraw";
             buttonDraw.Size = new Size(150, 23);
             buttonDraw.TabIndex = 22;
@@ -251,7 +252,7 @@ namespace Resonalyze
             panel1.Controls.Add(buttonRecordOpt);
             panel1.Controls.Add(buttonSave);
             panel1.Controls.Add(buttonLoad);
-            panel1.Location = new Point(1204, 106);
+            panel1.Location = new Point(1204, 123);
             panel1.Name = "panel1";
             panel1.Size = new Size(150, 90);
             panel1.TabIndex = 23;
@@ -276,12 +277,23 @@ namespace Resonalyze
             panelLabels.Size = new Size(1182, 96);
             panelLabels.TabIndex = 24;
             // 
+            // peakInfo
+            // 
+            peakInfo.AutoSize = true;
+            peakInfo.ForeColor = Color.White;
+            peakInfo.Location = new Point(1204, 103);
+            peakInfo.Name = "peakInfo";
+            peakInfo.Size = new Size(68, 15);
+            peakInfo.TabIndex = 25;
+            peakInfo.Text = "Peaks: --/--";
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
             ClientSize = new Size(1366, 768);
+            Controls.Add(peakInfo);
             Controls.Add(panelLabels);
             Controls.Add(inputLevelMeterPanel);
             Controls.Add(panel1);
@@ -302,6 +314,7 @@ namespace Resonalyze
             ((System.ComponentModel.ISupportInitialize)numericUpDown1).EndInit();
             panel1.ResumeLayout(false);
             ResumeLayout(false);
+            PerformLayout();
 
         }
 
@@ -325,5 +338,6 @@ namespace Resonalyze
         private Panel panel1;
         private InputLevelMeterPanel inputLevelMeterPanel;
         private Panel panelLabels;
+        private Label peakInfo;
     }
 }

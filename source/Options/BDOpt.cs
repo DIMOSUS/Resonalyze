@@ -17,10 +17,23 @@ namespace Resonalyze.Options
         public BDOpt()
         {
             InitializeComponent();
+            numericLeftWindow.ValueChanged += TukeyWindow_ValueChanged;
+            numericRightWindow.ValueChanged += TukeyWindow_ValueChanged;
+            FormClosed += BDOpt_FormClosed;
         }
 
         public void Init(ExpSweepMeasurement expSweepMeasurement, WaterfallGenerateOptions burstDecayGenOptions)
         {
+            if (!ReferenceEquals(this.expSweepMeasurement, expSweepMeasurement))
+            {
+                if (this.expSweepMeasurement != null)
+                {
+                    this.expSweepMeasurement.ImpulseResponseChanged -= ExpSweepMeasurement_ImpulseResponseChanged;
+                }
+
+                expSweepMeasurement.ImpulseResponseChanged += ExpSweepMeasurement_ImpulseResponseChanged;
+            }
+
             this.expSweepMeasurement = expSweepMeasurement;
 
             numericSampleRate.Value = expSweepMeasurement.SampleRate;
@@ -38,6 +51,8 @@ namespace Resonalyze.Options
             numericOffset.Value = burstDecayGenOptions.Offset;
 
             numericPeriods.Value = (int)burstDecayGenOptions.Periods;
+            UpdateTukeyWindowLimits();
+            UpdateIrPreview();
         }
 
         public void SetOptions(WaterfallGenerateOptions burstDecayGenOptions)
@@ -54,6 +69,7 @@ namespace Resonalyze.Options
             burstDecayGenOptions.Offset = (int)numericOffset.Value;
 
             burstDecayGenOptions.Periods = (double)numericPeriods.Value;
+            UpdateIrPreview();
         }
 
         private double CalcCapturedTime
@@ -69,9 +85,64 @@ namespace Resonalyze.Options
 
         private void numericWindow_ValueChanged(object sender, EventArgs e)
         {
-            numericLeftWindow.Maximum = (int)numericWindow.Value / 2;
-            numericRightWindow.Maximum = (int)numericWindow.Value / 2;
+            UpdateTukeyWindowLimits();
             numericCaptureTime.Value = (decimal)CalcCapturedTime;
+            UpdateIrPreview();
+        }
+
+        private void TukeyWindow_ValueChanged(object? sender, EventArgs e)
+        {
+            UpdateTukeyWindowLimits();
+            UpdateIrPreview();
+        }
+
+        private void UpdateTukeyWindowLimits()
+        {
+            TukeyWindowControlHelper.ClampAndUpdateLimits(
+                numericWindow,
+                numericLeftWindow,
+                numericRightWindow);
+        }
+
+        private void UpdateIrPreview()
+        {
+            if (expSweepMeasurement == null)
+            {
+                return;
+            }
+
+            ImpulseWindowPreview.Update(
+                irPlotView,
+                expSweepMeasurement,
+                (int)numericWindow.Value,
+                (int)numericLeftWindow.Value,
+                (int)numericRightWindow.Value,
+                (int)numericOffset.Value,
+                IrPreviewSource.Primary);
+        }
+
+        private void ExpSweepMeasurement_ImpulseResponseChanged()
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            if (IsHandleCreated && InvokeRequired)
+            {
+                BeginInvoke((MethodInvoker)UpdateIrPreview);
+                return;
+            }
+
+            UpdateIrPreview();
+        }
+
+        private void BDOpt_FormClosed(object? sender, FormClosedEventArgs e)
+        {
+            if (expSweepMeasurement != null)
+            {
+                expSweepMeasurement.ImpulseResponseChanged -= ExpSweepMeasurement_ImpulseResponseChanged;
+            }
         }
     }
 }

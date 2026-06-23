@@ -1,6 +1,7 @@
 using System.Windows.Forms;
 using OxyPlot;
 using OxyPlot.Annotations;
+using OxyPlot.Axes;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
 
@@ -72,6 +73,7 @@ namespace Resonalyze
         private readonly MeasurementSettingsFile measurementSettings;
         private readonly PlotLabelsPanelController plotLabelsPanelController;
         private readonly InputLevelMeterController inputLevelMeterController;
+        private readonly DockedModeSettingsHost dockedModeSettingsHost;
         private bool hasCurrentImpulseResponse;
         private bool closingPrepared;
         private bool resourcesDisposed;
@@ -164,6 +166,7 @@ namespace Resonalyze
                 expSweepMeasurement,
                 noiseMeasurement,
                 timeAlignmentController.Measurement);
+            dockedModeSettingsHost = new DockedModeSettingsHost(this, plotView1);
             liveSpectrumController.ConfigureFrom(expSweepMeasurement);
             commandController.Initialize();
             UpdatePeakInfo();
@@ -374,48 +377,54 @@ namespace Resonalyze
 
         private void buttonWaterfallOpt_Click(object sender, EventArgs e)
         {
-            ShowModeOptions(
-                new WaterfallOptions(),
+            ToggleModeOptions(
+                ModeTab.Waterfall,
+                () => new WaterfallOptions(),
                 opt => opt.Init(expSweepMeasurement, waterfallGenOptions),
                 opt => opt.SetOptions(waterfallGenOptions));
         }
 
         private void buttonFROpt_Click(object sender, EventArgs e)
         {
-            ShowModeOptions(
-                new FROptions(),
+            ToggleModeOptions(
+                ModeTab.Frequency,
+                () => new FROptions(),
                 opt => opt.Init(expSweepMeasurement, frequencyResponseOptions),
                 opt => opt.SetOptions(frequencyResponseOptions));
         }
 
         private void buttonBurstDecayOpt_Click(object sender, EventArgs e)
         {
-            ShowModeOptions(
-                new BDOpt(),
+            ToggleModeOptions(
+                ModeTab.Burst,
+                () => new BDOpt(),
                 opt => opt.Init(expSweepMeasurement, burstDecayGenOptions),
                 opt => opt.SetOptions(burstDecayGenOptions));
         }
 
         private void buttonGDOpt_Click(object sender, EventArgs e)
         {
-            ShowModeOptions(
-                new GDOpt(),
+            ToggleModeOptions(
+                ModeTab.GroupDelay,
+                () => new GDOpt(),
                 opt => opt.Init(expSweepMeasurement, groupDelayOptions),
                 opt => opt.SetOptions(groupDelayOptions));
         }
 
         private void buttonPROpt_Click(object sender, EventArgs e)
         {
-            ShowModeOptions(
-                new PROpt(),
+            ToggleModeOptions(
+                ModeTab.Phase,
+                () => new PROpt(),
                 opt => opt.Init(expSweepMeasurement, phaseResponseOptions),
                 opt => opt.SetOptions(phaseResponseOptions));
         }
 
         private void buttonImpOpt_Click(object sender, EventArgs e)
         {
-            ShowModeOptions(
-                new IROpt(),
+            ToggleModeOptions(
+                ModeTab.Impulse,
+                () => new IROpt(),
                 opt => opt.Init(expSweepMeasurement, impulseResponseOptions),
                 opt => opt.SetOptions(impulseResponseOptions));
         }
@@ -440,24 +449,25 @@ namespace Resonalyze
             return dialog.ShowDialog(this);
         }
 
-        private void ShowModeOptions<TDialog>(
-            TDialog dialog,
+        private void ToggleModeOptions<TDialog>(
+            ModeTab tab,
+            Func<TDialog> create,
             Action<TDialog> initialize,
             Action<TDialog> apply)
             where TDialog : Form
         {
-            using (dialog)
-            {
-                initialize(dialog);
-                if (ShowSettingsDialog(dialog) != DialogResult.OK)
+            dockedModeSettingsHost.Toggle(
+                tab,
+                create,
+                initialize,
+                dialog =>
                 {
-                    return;
-                }
-
-                apply(dialog);
-                SaveMeasurementSettings();
-                RefreshCurrentModePlot();
-            }
+                    IReadOnlyList<AxisViewport> axisViewports = CaptureAxisViewports();
+                    apply(dialog);
+                    SaveMeasurementSettings();
+                    RefreshCurrentModePlot();
+                    RestoreAxisViewports(axisViewports);
+                });
         }
 
         private void RefreshCurrentModePlot()
@@ -466,6 +476,51 @@ namespace Resonalyze
                 modeController.ActiveTab is not (ModeTab.LiveSpectrum or ModeTab.TimeAlignment) &&
                 CanDrawCurrentMeasurement();
             DrawSelectedMode(includeCurves);
+        }
+
+        private IReadOnlyList<AxisViewport> CaptureAxisViewports()
+        {
+            PlotModel? model = plotView1.Model;
+            if (model == null)
+            {
+                return Array.Empty<AxisViewport>();
+            }
+
+            var viewports = new List<AxisViewport>(model.Axes.Count);
+            foreach (Axis axis in model.Axes)
+            {
+                viewports.Add(new AxisViewport(
+                    axis.Position,
+                    axis.GetType(),
+                    axis.ActualMinimum,
+                    axis.ActualMaximum));
+            }
+
+            return viewports;
+        }
+
+        private void RestoreAxisViewports(IReadOnlyList<AxisViewport> viewports)
+        {
+            if (viewports.Count == 0 || plotView1.Model == null)
+            {
+                return;
+            }
+
+            foreach (Axis axis in plotView1.Model.Axes)
+            {
+                AxisViewport? viewport = viewports.FirstOrDefault(
+                    item => item.Position == axis.Position &&
+                        item.AxisType == axis.GetType());
+                if (viewport == null)
+                {
+                    continue;
+                }
+
+                axis.Zoom(viewport.Minimum, viewport.Maximum);
+            }
+
+            plotView1.Model.InvalidatePlot(false);
+            plotView1.Refresh();
         }
 
         private async void buttonClear_Click(object sender, EventArgs e)
@@ -525,6 +580,57 @@ namespace Resonalyze
                 [ModeTab.TimeAlignment] = () => _ = SelectModeAsync(ModeTab.TimeAlignment)
             };
 
+        private static bool HasDockedModeSettings(ModeTab tab) =>
+            tab is
+                ModeTab.Impulse or
+                ModeTab.Frequency or
+                ModeTab.Phase or
+                ModeTab.GroupDelay or
+                ModeTab.Waterfall or
+                ModeTab.Burst;
+
+        private void ShowDockedModeSettingsForActiveTab()
+        {
+            switch (modeController.ActiveTab)
+            {
+                case ModeTab.Impulse:
+                    buttonImpOpt_Click(this, EventArgs.Empty);
+                    break;
+                case ModeTab.Frequency:
+                    buttonFROpt_Click(this, EventArgs.Empty);
+                    break;
+                case ModeTab.Phase:
+                    buttonPROpt_Click(this, EventArgs.Empty);
+                    break;
+                case ModeTab.GroupDelay:
+                    buttonGDOpt_Click(this, EventArgs.Empty);
+                    break;
+                case ModeTab.Waterfall:
+                    buttonWaterfallOpt_Click(this, EventArgs.Empty);
+                    break;
+                case ModeTab.Burst:
+                    buttonBurstDecayOpt_Click(this, EventArgs.Empty);
+                    break;
+            }
+        }
+
+        private void SyncDockedModeSettingsOnModeChange()
+        {
+            if (!dockedModeSettingsHost.IsOpen)
+            {
+                return;
+            }
+
+            if (HasDockedModeSettings(modeController.ActiveTab))
+            {
+                ShowDockedModeSettingsForActiveTab();
+            }
+            else
+            {
+                dockedModeSettingsHost.Close();
+            }
+        }
+
         private void UpdateMaximizedBounds()
         {
             MaximizedBounds = Screen.FromControl(this).WorkingArea;
@@ -539,6 +645,7 @@ namespace Resonalyze
             PlotViewVisible();
             OverlayVisible();
             TimeAlignmentPanelVisible();
+            SyncDockedModeSettingsOnModeChange();
             UpdatePlotLabelsPanel();
         }
 
@@ -613,7 +720,7 @@ namespace Resonalyze
             string transferPeak = expSweepMeasurement.TransferImpulseResponse == null
                 ? "--"
                 : expSweepMeasurement.TransferPeakIndex.ToString();
-            string text = expSweepMeasurement.InProgress ? "Peaks: measuring..." : "Transfer IR Peak: " + transferPeak;
+            string text = expSweepMeasurement.InProgress ? "Peaks: measuring..." : "Transfer IR Peak: " + transferPeak + " samples";
             model.Annotations.Add(new OverlayTextAnnotation
             {
                 Tag = PeakInfoAnnotationTag,
@@ -633,31 +740,13 @@ namespace Resonalyze
 
         private void buttonCurrentModeSettings_Click(object sender, EventArgs e)
         {
-            switch (modeController.ActiveTab)
+            if (!HasDockedModeSettings(modeController.ActiveTab))
             {
-                case ModeTab.Impulse:
-                    buttonImpOpt_Click(sender, e);
-                    break;
-                case ModeTab.Frequency:
-                    buttonFROpt_Click(sender, e);
-                    break;
-                case ModeTab.Phase:
-                    buttonPROpt_Click(sender, e);
-                    break;
-                case ModeTab.GroupDelay:
-                    buttonGDOpt_Click(sender, e);
-                    break;
-                case ModeTab.Waterfall:
-                    buttonWaterfallOpt_Click(sender, e);
-                    break;
-                case ModeTab.Burst:
-                    buttonBurstDecayOpt_Click(sender, e);
-                    break;
-                case ModeTab.LiveSpectrum:
-                case ModeTab.Autocorrelation:
-                    System.Media.SystemSounds.Beep.Play();
-                    break;
+                System.Media.SystemSounds.Beep.Play();
+                return;
             }
+
+            ShowDockedModeSettingsForActiveTab();
         }
 
         private void UpdateCurrentModeSettingsButton()
@@ -712,6 +801,7 @@ namespace Resonalyze
             }
 
             resourcesDisposed = true;
+            dockedModeSettingsHost.Dispose();
             inputLevelMeterController.Dispose();
             expSweepMeasurement.Dispose();
             timeAlignmentController.Dispose();
@@ -837,5 +927,11 @@ namespace Resonalyze
 
             DrawSelectedMode(includeCurves: true);
         }
+
+        private sealed record AxisViewport(
+            AxisPosition Position,
+            Type AxisType,
+            double Minimum,
+            double Maximum);
     }
 }

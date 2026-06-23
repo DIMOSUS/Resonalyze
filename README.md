@@ -54,7 +54,8 @@ installation. SHA-256 checksum files are provided with every release.
 - Live Spectrum using a continuous noise measurement
 - Autocorrelation
 - Microphone calibration correction
-- Persistent, styled plot overlays with curve arithmetic
+- Persistent, styled plot overlays with on-plot labels and curve arithmetic
+- Docked, non-modal mode settings with Apply flow and IR/window previews
 - Configurable FFT windows, smoothing, offsets, sweep timing, and playback
   channel
 
@@ -163,13 +164,35 @@ source/bin/Release/net10.0-windows/Resonalyze.exe
    presence, and headroom before trusting the measurement.
 6. Select the required analysis view.
 7. Adjust smoothing, windows, offsets, and display options as needed.
-   The active graph updates immediately after applying mode-specific settings.
+   Mode settings open as a docked, non-modal panel attached to the plot, so
+   the main window stays usable while settings are visible. Press **Apply
+   settings** to update the active graph without closing the panel or resetting
+   the current zoom/pan.
 8. Use **Save** to preserve the captured impulse response for later analysis
    or comparison.
 
 For acoustic measurements, microphone placement and room conditions strongly
 affect the result. For electrical loopback measurements, make sure signal
 levels and impedances are safe for both devices.
+
+## Mode Settings
+
+The **Mode Settings...** button opens settings for the current analysis mode
+as a docked panel aligned to the plot area. The panel has no title bar, can stay
+open while the main window has focus, and automatically switches to the matching
+settings panel when you change modes.
+
+Settings are applied with **Apply settings**. Applying changes redraws the
+current analysis but preserves the visible plot range, which makes it easier to
+tune smoothing, FFT windows, Tukey fades, offsets, and display options without
+losing the area you were inspecting.
+
+Frequency Response, Phase, Group Delay, Waterfall, and Burst settings include a
+compact impulse-window preview where applicable. The preview shows the impulse
+response used by that mode and the selected Tukey window. When loopback transfer
+processing is available, Group Delay previews and analyzes the transfer IR from
+the start of the impulse response; otherwise it falls back to the sweep
+deconvolution IR.
 
 ## Audio Backends
 
@@ -376,6 +399,11 @@ For slots 1-10, the checkbox shows or hides the saved curve, the numeric
 control applies a vertical offset, and `...` opens the settings dialog. A slot
 without a saved file remains disabled.
 
+Visible overlay names are drawn directly over the plot as a compact legend.
+Each entry uses the same color and line style as the curve itself, so exported
+screenshots and day-to-day comparisons remain readable even when many curves
+are active.
+
 Slots 11 and 12 are reserved for calculations between any two ordinary
 overlays from slots 1-10. They do not have capture or clear buttons. Instead,
 the row displays the currently selected operation, such as `A-B`, `A+B`,
@@ -447,6 +475,11 @@ measurement chain.
 Resonalyze/
 |-- source/                 WinForms application and measurement orchestration
 |   |-- Options/            Measurement and visualization settings
+|   |-- Overlays/           Persistent overlay slots and calculated overlays
+|   |-- Plotting/           OxyPlot model creation, annotations, and adapters
+|   |-- Shell/              Main form, title bar, commands, and docked settings
+|   |-- TimeAlignment/      Loopback delay measurement UI and orchestration
+|   |-- Ui/                 Reusable WinForms controls and dialogs
 |   `-- Resonalyze.csproj
 |-- dsp/                    Reusable signal-processing library
 |   `-- Resonalyze.Dsp.csproj

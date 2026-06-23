@@ -378,7 +378,7 @@ namespace Resonalyze.Dsp
             double normalizedLeftWindow = (double)leftTukeyWindow / length * 2.0;
             double normalizedRightWindow = (double)rightTukeyWindow / length * 2.0;
 
-            double[] window = Windowing.TukeyWindowHalfZeroPadded(
+            double[] window = Windowing.TukeyWindow(
                 length,
                 normalizedLeftWindow,
                 normalizedRightWindow);

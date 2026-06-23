@@ -169,7 +169,7 @@ internal sealed class PlotModelFactory
                 groupDelayOptions.Window,
                 groupDelayOptions.LeftTukeyWindow,
                 groupDelayOptions.RightTukeyWindow,
-                groupDelayOptions.Offset,
+                useTransfer ? 0 : groupDelayOptions.Offset,
                 groupDelayOptions.SmoothingInverseOctaves,
                 GroupDelayMagnitudeGateDb,
                 wrapWindow: useTransfer);

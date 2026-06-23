@@ -19,10 +19,23 @@ namespace Resonalyze.Options
         public WaterfallOptions()
         {
             InitializeComponent();
+            numericLeftWindow.ValueChanged += TukeyWindow_ValueChanged;
+            numericRightWindow.ValueChanged += TukeyWindow_ValueChanged;
+            FormClosed += WaterfallOptions_FormClosed;
         }
 
         public void Init(ExpSweepMeasurement expSweepMeasurement, WaterfallGenerateOptions waterfallGenerateOptions)
         {
+            if (!ReferenceEquals(this.expSweepMeasurement, expSweepMeasurement))
+            {
+                if (this.expSweepMeasurement != null)
+                {
+                    this.expSweepMeasurement.ImpulseResponseChanged -= ExpSweepMeasurement_ImpulseResponseChanged;
+                }
+
+                expSweepMeasurement.ImpulseResponseChanged += ExpSweepMeasurement_ImpulseResponseChanged;
+            }
+
             this.expSweepMeasurement = expSweepMeasurement;
 
             numericSampleRate.Value = expSweepMeasurement.SampleRate;
@@ -41,6 +54,8 @@ namespace Resonalyze.Options
             numericSmoothingInverseOctaves.Value = (decimal)waterfallGenerateOptions.SmoothingInverseOctaves;
 
             numericOffset.Value = waterfallGenerateOptions.Offset;
+            UpdateTukeyWindowLimits();
+            UpdateIrPreview();
         }
 
         public void SetOptions(WaterfallGenerateOptions waterfallGenerateOptions)
@@ -57,6 +72,7 @@ namespace Resonalyze.Options
             waterfallGenerateOptions.SmoothingInverseOctaves = (double)numericSmoothingInverseOctaves.Value;
 
             waterfallGenerateOptions.Offset = (int)numericOffset.Value;
+            UpdateIrPreview();
         }
 
         private double CalcCapturedTime
@@ -89,8 +105,63 @@ namespace Resonalyze.Options
 
         private void numericWindow_ValueChanged(object sender, EventArgs e)
         {
-            numericLeftWindow.Maximum = (int)numericWindow.Value / 2;
-            numericRightWindow.Maximum = (int)numericWindow.Value / 2;
+            UpdateTukeyWindowLimits();
+            UpdateIrPreview();
+        }
+
+        private void TukeyWindow_ValueChanged(object? sender, EventArgs e)
+        {
+            UpdateTukeyWindowLimits();
+            UpdateIrPreview();
+        }
+
+        private void UpdateTukeyWindowLimits()
+        {
+            TukeyWindowControlHelper.ClampAndUpdateLimits(
+                numericWindow,
+                numericLeftWindow,
+                numericRightWindow);
+        }
+
+        private void UpdateIrPreview()
+        {
+            if (expSweepMeasurement == null)
+            {
+                return;
+            }
+
+            ImpulseWindowPreview.Update(
+                irPlotView,
+                expSweepMeasurement,
+                (int)numericWindow.Value,
+                (int)numericLeftWindow.Value,
+                (int)numericRightWindow.Value,
+                (int)numericOffset.Value,
+                IrPreviewSource.Primary);
+        }
+
+        private void ExpSweepMeasurement_ImpulseResponseChanged()
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            if (IsHandleCreated && InvokeRequired)
+            {
+                BeginInvoke((MethodInvoker)UpdateIrPreview);
+                return;
+            }
+
+            UpdateIrPreview();
+        }
+
+        private void WaterfallOptions_FormClosed(object? sender, FormClosedEventArgs e)
+        {
+            if (expSweepMeasurement != null)
+            {
+                expSweepMeasurement.ImpulseResponseChanged -= ExpSweepMeasurement_ImpulseResponseChanged;
+            }
         }
     }
 }

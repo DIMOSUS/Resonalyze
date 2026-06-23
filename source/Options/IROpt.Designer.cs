@@ -30,7 +30,6 @@ namespace Resonalyze.Options
         {
             numericLength = new NumericUpDown();
             label1 = new Label();
-            button2 = new Button();
             button1 = new Button();
             checkLogarithmic = new CheckBox();
             label2 = new Label();
@@ -59,25 +58,18 @@ namespace Resonalyze.Options
             label1.TabIndex = 37;
             label1.Text = "Length (samples)";
             // 
-            // button2
-            // 
-            button2.DialogResult = DialogResult.Cancel;
-            button2.Location = new Point(153, 237);
-            button2.Name = "button2";
-            button2.Size = new Size(100, 23);
-            button2.TabIndex = 36;
-            button2.Text = "Cancel";
-            button2.UseVisualStyleBackColor = true;
-            // 
             // button1
             // 
+            button1.BackColor = Color.FromArgb(50, 55, 80);
             button1.DialogResult = DialogResult.OK;
+            button1.FlatStyle = FlatStyle.Popup;
+            button1.ForeColor = Color.White;
             button1.Location = new Point(12, 237);
             button1.Name = "button1";
-            button1.Size = new Size(100, 23);
+            button1.Size = new Size(241, 23);
             button1.TabIndex = 35;
-            button1.Text = "Ok";
-            button1.UseVisualStyleBackColor = true;
+            button1.Text = "Apply settings";
+            button1.UseVisualStyleBackColor = false;
             // 
             // checkLogarithmic
             // 
@@ -109,7 +101,6 @@ namespace Resonalyze.Options
             Controls.Add(label2);
             Controls.Add(numericLength);
             Controls.Add(label1);
-            Controls.Add(button2);
             Controls.Add(button1);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
@@ -127,7 +118,6 @@ namespace Resonalyze.Options
 
         private NumericUpDown numericLength;
         private Label label1;
-        private Button button2;
         private Button button1;
         private CheckBox checkLogarithmic;
         private Label label2;

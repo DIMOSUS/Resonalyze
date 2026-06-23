@@ -19,6 +19,7 @@ namespace Resonalyze
         private bool disposed;
 
         public event Action<bool>? Completed;
+        public event Action? ImpulseResponseChanged;
         internal event Action<InputLevelMeterSnapshot>? LevelsAvailable;
 
         public ExponentialSineSweep? Sweep { get; private set; }
@@ -251,6 +252,7 @@ namespace Resonalyze
                 ? transferPeakIndex!.Value
                 : 0;
             LastError = null;
+            ImpulseResponseChanged?.Invoke();
         }
 
         private void HandleWaveLevelsAvailable(AudioChannelLevel[] channels)
@@ -462,6 +464,7 @@ namespace Resonalyze
             }
 
             RaiseLevels(CreateFinalLevelSnapshot(sampleChannels));
+            ImpulseResponseChanged?.Invoke();
         }
 
         private bool TryCaptureLoopback(

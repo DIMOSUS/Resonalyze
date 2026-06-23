@@ -37,7 +37,6 @@ namespace Resonalyze.Options
             label7 = new Label();
             numericWindow = new NumericUpDown();
             numericSampleRate = new NumericUpDown();
-            button2 = new Button();
             button1 = new Button();
             numericRightWindow = new NumericUpDown();
             numericLeftWindow = new NumericUpDown();
@@ -49,6 +48,7 @@ namespace Resonalyze.Options
             label11 = new Label();
             numericPeriods = new NumericUpDown();
             label3 = new Label();
+            irPlotView = new OxyPlot.WindowsForms.PlotView();
             ((System.ComponentModel.ISupportInitialize)numericSmoothingInverseOctaves).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericDbRange).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericCaptureTime).BeginInit();
@@ -59,9 +59,9 @@ namespace Resonalyze.Options
             ((System.ComponentModel.ISupportInitialize)numericOffset).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericPeriods).BeginInit();
             SuspendLayout();
-            // 
+            //
             // label10
-            // 
+            //
             label10.AutoSize = true;
             label10.ForeColor = SystemColors.ControlLight;
             label10.Location = new Point(193, 162);
@@ -69,9 +69,9 @@ namespace Resonalyze.Options
             label10.Size = new Size(21, 15);
             label10.TabIndex = 44;
             label10.Text = "1 /";
-            // 
+            //
             // label9
-            // 
+            //
             label9.AutoSize = true;
             label9.ForeColor = SystemColors.ControlLight;
             label9.Location = new Point(12, 160);
@@ -79,9 +79,9 @@ namespace Resonalyze.Options
             label9.Size = new Size(117, 15);
             label9.TabIndex = 43;
             label9.Text = "Smoothing (octaves)";
-            // 
+            //
             // numericSmoothingInverseOctaves
-            // 
+            //
             numericSmoothingInverseOctaves.BorderStyle = BorderStyle.None;
             numericSmoothingInverseOctaves.Location = new Point(214, 161);
             numericSmoothingInverseOctaves.Maximum = new decimal(new int[] { 9, 0, 0, 0 });
@@ -91,9 +91,9 @@ namespace Resonalyze.Options
             numericSmoothingInverseOctaves.TabIndex = 42;
             numericSmoothingInverseOctaves.TextAlign = HorizontalAlignment.Right;
             numericSmoothingInverseOctaves.Value = new decimal(new int[] { 2, 0, 0, 0 });
-            // 
+            //
             // numericDbRange
-            // 
+            //
             numericDbRange.BorderStyle = BorderStyle.None;
             numericDbRange.Increment = new decimal(new int[] { 10, 0, 0, 0 });
             numericDbRange.Location = new Point(193, 136);
@@ -104,9 +104,9 @@ namespace Resonalyze.Options
             numericDbRange.TabIndex = 41;
             numericDbRange.TextAlign = HorizontalAlignment.Right;
             numericDbRange.Value = new decimal(new int[] { 60, 0, 0, int.MinValue });
-            // 
+            //
             // label8
-            // 
+            //
             label8.AutoSize = true;
             label8.ForeColor = SystemColors.ControlLight;
             label8.Location = new Point(12, 135);
@@ -114,9 +114,9 @@ namespace Resonalyze.Options
             label8.Size = new Size(57, 15);
             label8.TabIndex = 40;
             label8.Text = "dB Range";
-            // 
+            //
             // numericCaptureTime
-            // 
+            //
             numericCaptureTime.BorderStyle = BorderStyle.None;
             numericCaptureTime.DecimalPlaces = 2;
             numericCaptureTime.Enabled = false;
@@ -128,9 +128,9 @@ namespace Resonalyze.Options
             numericCaptureTime.TabIndex = 39;
             numericCaptureTime.TextAlign = HorizontalAlignment.Right;
             numericCaptureTime.Value = new decimal(new int[] { 4, 0, 0, 0 });
-            // 
+            //
             // label7
-            // 
+            //
             label7.AutoSize = true;
             label7.ForeColor = SystemColors.ControlLight;
             label7.Location = new Point(12, 60);
@@ -138,9 +138,9 @@ namespace Resonalyze.Options
             label7.Size = new Size(106, 15);
             label7.TabIndex = 38;
             label7.Text = "Capture Time (ms)";
-            // 
+            //
             // numericWindow
-            // 
+            //
             numericWindow.BorderStyle = BorderStyle.None;
             numericWindow.Location = new Point(193, 36);
             numericWindow.Maximum = new decimal(new int[] { 32768, 0, 0, 0 });
@@ -151,9 +151,9 @@ namespace Resonalyze.Options
             numericWindow.TextAlign = HorizontalAlignment.Right;
             numericWindow.Value = new decimal(new int[] { 4096, 0, 0, 0 });
             numericWindow.ValueChanged += numericWindow_ValueChanged;
-            // 
+            //
             // numericSampleRate
-            // 
+            //
             numericSampleRate.BorderStyle = BorderStyle.None;
             numericSampleRate.Enabled = false;
             numericSampleRate.Location = new Point(193, 11);
@@ -165,29 +165,22 @@ namespace Resonalyze.Options
             numericSampleRate.TabIndex = 36;
             numericSampleRate.TextAlign = HorizontalAlignment.Right;
             numericSampleRate.Value = new decimal(new int[] { 44100, 0, 0, 0 });
-            // 
-            // button2
-            // 
-            button2.DialogResult = DialogResult.Cancel;
-            button2.Location = new Point(153, 256);
-            button2.Name = "button2";
-            button2.Size = new Size(100, 23);
-            button2.TabIndex = 35;
-            button2.Text = "Cancel";
-            button2.UseVisualStyleBackColor = true;
-            // 
+            //
             // button1
-            // 
+            //
+            button1.BackColor = Color.FromArgb(50, 55, 80);
             button1.DialogResult = DialogResult.OK;
-            button1.Location = new Point(12, 256);
+            button1.FlatStyle = FlatStyle.Popup;
+            button1.ForeColor = Color.White;
+            button1.Location = new Point(12, 542);
             button1.Name = "button1";
-            button1.Size = new Size(100, 23);
+            button1.Size = new Size(240, 23);
             button1.TabIndex = 34;
-            button1.Text = "Ok";
-            button1.UseVisualStyleBackColor = true;
-            // 
+            button1.Text = "Apply settings";
+            button1.UseVisualStyleBackColor = false;
+            //
             // numericRightWindow
-            // 
+            //
             numericRightWindow.BorderStyle = BorderStyle.None;
             numericRightWindow.Location = new Point(193, 111);
             numericRightWindow.Maximum = new decimal(new int[] { 16384, 0, 0, 0 });
@@ -196,9 +189,9 @@ namespace Resonalyze.Options
             numericRightWindow.TabIndex = 33;
             numericRightWindow.TextAlign = HorizontalAlignment.Right;
             numericRightWindow.Value = new decimal(new int[] { 512, 0, 0, 0 });
-            // 
+            //
             // numericLeftWindow
-            // 
+            //
             numericLeftWindow.BorderStyle = BorderStyle.None;
             numericLeftWindow.Location = new Point(193, 86);
             numericLeftWindow.Maximum = new decimal(new int[] { 16384, 0, 0, 0 });
@@ -207,9 +200,9 @@ namespace Resonalyze.Options
             numericLeftWindow.TabIndex = 32;
             numericLeftWindow.TextAlign = HorizontalAlignment.Right;
             numericLeftWindow.Value = new decimal(new int[] { 8, 0, 0, 0 });
-            // 
+            //
             // label5
-            // 
+            //
             label5.AutoSize = true;
             label5.ForeColor = SystemColors.ControlLight;
             label5.Location = new Point(12, 110);
@@ -217,9 +210,9 @@ namespace Resonalyze.Options
             label5.Size = new Size(117, 15);
             label5.TabIndex = 31;
             label5.Text = "Tukey Window Right";
-            // 
+            //
             // label4
-            // 
+            //
             label4.AutoSize = true;
             label4.ForeColor = SystemColors.ControlLight;
             label4.Location = new Point(12, 85);
@@ -227,9 +220,9 @@ namespace Resonalyze.Options
             label4.Size = new Size(109, 15);
             label4.TabIndex = 30;
             label4.Text = "Tukey Window Left";
-            // 
+            //
             // label2
-            // 
+            //
             label2.AutoSize = true;
             label2.ForeColor = SystemColors.ControlLight;
             label2.Location = new Point(12, 35);
@@ -237,9 +230,9 @@ namespace Resonalyze.Options
             label2.Size = new Size(98, 15);
             label2.TabIndex = 29;
             label2.Text = "Window Samples";
-            // 
+            //
             // label1
-            // 
+            //
             label1.AutoSize = true;
             label1.ForeColor = SystemColors.ControlLight;
             label1.Location = new Point(12, 10);
@@ -247,9 +240,9 @@ namespace Resonalyze.Options
             label1.Size = new Size(72, 15);
             label1.TabIndex = 28;
             label1.Text = "Sample Rate";
-            // 
+            //
             // numericOffset
-            // 
+            //
             numericOffset.BorderStyle = BorderStyle.None;
             numericOffset.Location = new Point(193, 186);
             numericOffset.Maximum = new decimal(new int[] { 32768, 0, 0, 0 });
@@ -258,9 +251,9 @@ namespace Resonalyze.Options
             numericOffset.Size = new Size(60, 19);
             numericOffset.TabIndex = 46;
             numericOffset.TextAlign = HorizontalAlignment.Right;
-            // 
+            //
             // label11
-            // 
+            //
             label11.AutoSize = true;
             label11.ForeColor = SystemColors.ControlLight;
             label11.Location = new Point(12, 185);
@@ -268,9 +261,9 @@ namespace Resonalyze.Options
             label11.Size = new Size(39, 15);
             label11.TabIndex = 45;
             label11.Text = "Offset";
-            // 
+            //
             // numericPeriods
-            // 
+            //
             numericPeriods.BorderStyle = BorderStyle.None;
             numericPeriods.Increment = new decimal(new int[] { 10, 0, 0, 0 });
             numericPeriods.Location = new Point(192, 211);
@@ -281,23 +274,36 @@ namespace Resonalyze.Options
             numericPeriods.TabIndex = 48;
             numericPeriods.TextAlign = HorizontalAlignment.Right;
             numericPeriods.Value = new decimal(new int[] { 1, 0, 0, 0 });
-            // 
+            //
             // label3
-            // 
+            //
             label3.AutoSize = true;
             label3.ForeColor = SystemColors.ControlLight;
-            label3.Location = new Point(11, 210);
+            label3.Location = new Point(12, 210);
             label3.Name = "label3";
             label3.Size = new Size(46, 15);
             label3.TabIndex = 47;
             label3.Text = "Periods";
-            // 
+            //
+            // irPlotView
+            //
+            irPlotView.Location = new Point(12, 236);
+            irPlotView.Name = "irPlotView";
+            irPlotView.PanCursor = Cursors.Hand;
+            irPlotView.Size = new Size(241, 300);
+            irPlotView.TabIndex = 49;
+            irPlotView.Text = "plotView1";
+            irPlotView.ZoomHorizontalCursor = Cursors.SizeWE;
+            irPlotView.ZoomRectangleCursor = Cursors.SizeNWSE;
+            irPlotView.ZoomVerticalCursor = Cursors.SizeNS;
+            //
             // BDOpt
-            // 
+            //
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(264, 291);
+            ClientSize = new Size(264, 576);
+            Controls.Add(irPlotView);
             Controls.Add(numericPeriods);
             Controls.Add(label3);
             Controls.Add(numericOffset);
@@ -311,7 +317,6 @@ namespace Resonalyze.Options
             Controls.Add(label7);
             Controls.Add(numericWindow);
             Controls.Add(numericSampleRate);
-            Controls.Add(button2);
             Controls.Add(button1);
             Controls.Add(numericRightWindow);
             Controls.Add(numericLeftWindow);
@@ -350,7 +355,6 @@ namespace Resonalyze.Options
         private Label label7;
         private NumericUpDown numericWindow;
         private NumericUpDown numericSampleRate;
-        private Button button2;
         private Button button1;
         private NumericUpDown numericRightWindow;
         private NumericUpDown numericLeftWindow;
@@ -362,5 +366,6 @@ namespace Resonalyze.Options
         private Label label11;
         private NumericUpDown numericPeriods;
         private Label label3;
+        private OxyPlot.WindowsForms.PlotView irPlotView;
     }
 }

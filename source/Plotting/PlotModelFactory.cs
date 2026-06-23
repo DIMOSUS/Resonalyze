@@ -1,5 +1,6 @@
 using System.Numerics;
 using OxyPlot;
+using OxyPlot.Annotations;
 using OxyPlot.Axes;
 using OxyPlot.Series;
 using Resonalyze.Dsp;
@@ -108,7 +109,7 @@ internal sealed class PlotModelFactory
                 phaseResponseOptions.Unwrap);
 
             var series = OxyPlotAdapter.ToLineSeries(curve);
-            series.TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.0}Р вЂ™Р’В°";
+            series.TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.0}°";
             model.Series.Add(series);
         }
 

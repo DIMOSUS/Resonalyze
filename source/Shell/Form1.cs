@@ -1,5 +1,6 @@
 using System.Windows.Forms;
 using OxyPlot;
+using OxyPlot.Annotations;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
 
@@ -21,6 +22,8 @@ namespace Resonalyze
 
     public partial class Form1 : Form
     {
+        private const string PeakInfoAnnotationTag = "PeakInfoAnnotation";
+
         public Mode CurrentMode { get; private set; }
 
         private readonly OverlayCollection overlayCollection;
@@ -82,11 +85,6 @@ namespace Resonalyze
                 "Numbers are shown as Peak / RMS in dBFS.\r\n" +
                 "The bar shows the filtered RMS level.\r\n" +
                 "The bright vertical marker is Peak Hold.");
-            toolTip1.SetToolTip(
-                peakInfo,
-                "Impulse response peak indexes.\r\n" +
-                "Sweep is the peak found after sweep deconvolution.\r\n" +
-                "Transfer is the peak found in the loopback transfer-function IR, when loopback is available.");
             measurementSettings = MeasurementSettingsFile.LoadOrDefault();
             titleBarController = new ChromeTitleBarController(
                 this,
@@ -100,7 +98,6 @@ namespace Resonalyze
                 toolTip1,
                 UpdatePlotLabelsPanel);
             plotLabelsPanelController = new PlotLabelsPanelController(
-                panelLabels,
                 plotView1,
                 () => CurrentMode);
             plotModelFactory = new PlotModelFactory(
@@ -227,7 +224,7 @@ namespace Resonalyze
             CurrentMode = mode;
             plotView1.Model = null;
             UpdateClearButtonState();
-            UpdatePlotLabelsPanel(force: true);
+            UpdatePlotLabelsPanel();
 
             if (OverlayCollection.SupportsMode(mode))
             {
@@ -337,6 +334,7 @@ namespace Resonalyze
             bool showOverlay)
         {
             plotView1.Model = model;
+            UpdatePeakInfo();
 
             if (includeCurves && showOverlay)
             {
@@ -344,7 +342,7 @@ namespace Resonalyze
             }
             else
             {
-                UpdatePlotLabelsPanel(force: true);
+                UpdatePlotLabelsPanel();
             }
         }
 
@@ -483,7 +481,7 @@ namespace Resonalyze
             PlotModel? model = plotView1.Model;
             if (model == null)
             {
-                UpdatePlotLabelsPanel(force: true);
+                UpdatePlotLabelsPanel();
                 return;
             }
 
@@ -492,7 +490,7 @@ namespace Resonalyze
             plotView1.Refresh();
             UpdateClearButtonState();
             UpdateOverlayAvailability();
-            UpdatePlotLabelsPanel(force: true);
+            UpdatePlotLabelsPanel();
         }
 
         private void UpdateOverlayAvailability()
@@ -541,7 +539,7 @@ namespace Resonalyze
             PlotViewVisible();
             OverlayVisible();
             TimeAlignmentPanelVisible();
-            UpdatePlotLabelsPanel(force: true);
+            UpdatePlotLabelsPanel();
         }
 
         private void UpdateDrawButtonText()
@@ -587,30 +585,47 @@ namespace Resonalyze
             plotLabelsPanelController.Refresh();
         }
 
-        private void UpdatePlotLabelsPanel(bool force)
-        {
-            plotLabelsPanelController.Refresh(force);
-        }
-
         private void UpdatePeakInfo()
         {
-            if (expSweepMeasurement.InProgress)
+            PlotModel? model = plotView1.Model;
+            if (model == null)
             {
-                peakInfo.Text = "Peaks: measuring...";
                 return;
             }
 
-            if (!expSweepMeasurement.HasImpulseResponse)
+            for (int index = model.Annotations.Count - 1; index >= 0; index--)
             {
-                peakInfo.Text = "Peaks: --/--";
+                if (model.Annotations[index] is OverlayTextAnnotation
+                    {
+                        Tag: PeakInfoAnnotationTag
+                    })
+                {
+                    model.Annotations.RemoveAt(index);
+                }
+            }
+
+            if (modeController.ActiveTab is not (ModeTab.Phase or ModeTab.GroupDelay))
+            {
+                model.InvalidatePlot(false);
                 return;
             }
 
             string transferPeak = expSweepMeasurement.TransferImpulseResponse == null
                 ? "--"
                 : expSweepMeasurement.TransferPeakIndex.ToString();
-            peakInfo.Text =
-                $"Peaks: {expSweepMeasurement.SweepDeconvolutionPeakIndex} / {transferPeak}";
+            string text = expSweepMeasurement.InProgress ? "Peaks: measuring..." : "Transfer IR Peak: " + transferPeak;
+            model.Annotations.Add(new OverlayTextAnnotation
+            {
+                Tag = PeakInfoAnnotationTag,
+                Text = text,
+                TextPosition = new DataPoint(0.01, 0),
+                TextFlowDirection = TextFlowDirection.TopDown,
+                FontSize = 12,
+                FontWeight = 700,
+                TextColor = OxyColors.White,
+                TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Left
+            });
+            model.InvalidatePlot(false);
         }
 
         private bool CanDrawCurrentMeasurement() =>

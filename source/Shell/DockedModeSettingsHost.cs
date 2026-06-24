@@ -30,7 +30,7 @@ internal sealed class DockedModeSettingsHost : IDisposable
         ModeTab tab,
         Func<TDialog> create,
         Action<TDialog> initialize,
-        Action<TDialog> apply)
+        Func<TDialog, Task> apply)
         where TDialog : Form
     {
         ObjectDisposedException.ThrowIf(disposed, this);
@@ -104,7 +104,7 @@ internal sealed class DockedModeSettingsHost : IDisposable
         Close();
     }
 
-    private void ConfigureDialog(Form dialog, Action apply)
+    private void ConfigureDialog(Form dialog, Func<Task> apply)
     {
         dialog.StartPosition = FormStartPosition.Manual;
         dialog.FormBorderStyle = FormBorderStyle.None;
@@ -129,7 +129,26 @@ internal sealed class DockedModeSettingsHost : IDisposable
             if (button.DialogResult == DialogResult.OK)
             {
                 button.DialogResult = DialogResult.None;
-                button.Click += (_, _) => apply();
+                button.Click += async (_, _) =>
+                {
+                    if (!button.Enabled)
+                    {
+                        return;
+                    }
+
+                    button.Enabled = false;
+                    try
+                    {
+                        await apply();
+                    }
+                    finally
+                    {
+                        if (!button.IsDisposed)
+                        {
+                            button.Enabled = true;
+                        }
+                    }
+                };
             }
         }
     }

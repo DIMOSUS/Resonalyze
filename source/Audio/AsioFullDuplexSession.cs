@@ -19,6 +19,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
     private bool disposed;
 
     public event Action<float[]>? SequenceReady;
+    public event Action<float[][]>? SequenceChannelsReady;
     public event Action<AudioChannelLevel[]>? LevelsAvailable;
 
     public AsioFullDuplexSession(
@@ -210,7 +211,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
             return;
         }
 
-        List<float[]> readySequences = new();
+        List<float[][]> readySequences = new();
         var peaks = new double[ChannelCount];
         var sumSquares = new double[ChannelCount];
 
@@ -237,8 +238,16 @@ internal sealed class AsioFullDuplexSession : IDisposable
             {
                 while (ReadSamples - sequenceStart >= Sequence)
                 {
-                    float[] sequence = new float[Sequence];
-                    samples[0].CopyTo(sequenceStart, sequence, 0, Sequence);
+                    var sequence = new float[ChannelCount][];
+                    for (int channel = 0; channel < ChannelCount; channel++)
+                    {
+                        sequence[channel] = new float[Sequence];
+                        samples[channel].CopyTo(
+                            sequenceStart,
+                            sequence[channel],
+                            0,
+                            Sequence);
+                    }
                     sequenceStart += Sequence;
                     readySequences.Add(sequence);
                 }
@@ -260,9 +269,10 @@ internal sealed class AsioFullDuplexSession : IDisposable
                 peaks,
                 sumSquares,
                 args.SamplesPerBuffer));
-        foreach (float[] sequence in readySequences)
+        foreach (float[][] sequence in readySequences)
         {
-            SequenceReady?.Invoke(sequence);
+            SequenceReady?.Invoke(sequence[0]);
+            SequenceChannelsReady?.Invoke(sequence);
         }
     }
 

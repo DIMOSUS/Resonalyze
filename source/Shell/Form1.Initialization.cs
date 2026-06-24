@@ -38,6 +38,7 @@ public partial class Form1
             phaseResponseOptions,
             groupDelayOptions,
             impulseResponseOptions,
+            liveSpectrumOptions,
             waterfallGenOptions,
             burstDecayGenOptions);
         LiveSpectrumController createdLiveSpectrumController = new(
@@ -53,7 +54,8 @@ public partial class Form1
             UpdateDrawButtonText,
             UpdateRecordButtonForCurrentMode,
             UpdateClearButtonState,
-            UpdatePlotLabelsPanel);
+            UpdatePlotLabelsPanel,
+            liveSpectrumOptions);
         ModeController createdModeController = new(
             ChangeModeAsync,
             SetActiveModeTab,
@@ -112,6 +114,7 @@ public partial class Form1
             impulseResponseOptions,
             waterfallGenOptions,
             burstDecayGenOptions,
+            liveSpectrumOptions,
             timeAlignmentOptions);
     }
 

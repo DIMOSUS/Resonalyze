@@ -49,13 +49,13 @@ files are provided with every release.
 - Wave or ASIO loopback Time Alignment with sub-sample delay estimation
 - Compact Mic/Loop input level meter with Peak, RMS, and Peak Hold
 - Installed-build auto-update support through a signed NetSparkle appcast
+- Live Spectrum with switchable `Transfer Function` and `Input Spectrum` modes
 - Frequency response
 - Harmonic distortion and THD+N
 - Phase response
 - Group delay
 - Fourier waterfall
 - Burst Decay
-- Live Spectrum using a continuous noise measurement
 - Autocorrelation
 - Microphone calibration correction
 - Persistent, styled plot overlays with on-plot labels and curve arithmetic
@@ -161,6 +161,9 @@ Tagged GitHub releases also produce:
 - an x64 `Setup.exe` installer with uninstall support
 - NetSparkle appcast files used by the installed build for automatic updates
 
+The `build.yml` workflow runs both the application test project and the DSP
+test project on every push to `main` and on pull requests.
+
 ## Measurement Workflow
 
 1. Connect the output of the device under test to the selected input, directly
@@ -203,6 +206,11 @@ response used by that mode and the selected Tukey window. When loopback transfer
 processing is available, Group Delay previews and analyzes the transfer IR from
 the start of the impulse response; otherwise it falls back to the sweep
 deconvolution IR.
+
+Live Spectrum has its own docked settings panel. It lets you choose between
+`Transfer Function` and `Input Spectrum`, enable or disable calibration, and
+select **Sequence Length** from a power-of-two list. That sequence length is
+the FFT block size used by the live analyzer and is stored between sessions.
 
 ## Audio Backends
 
@@ -296,6 +304,34 @@ while routing, checking loopback, or validating a completed measurement.
 
 This makes it easy to spot missing loopback, weak microphone level, overload,
 or an unexpectedly hot reference path before you start analyzing the curves.
+
+## Live Spectrum
+
+The **Live Spectrum** mode supports two operating modes:
+
+- **Transfer Function**
+  Uses the configured loopback channel as a reference and shows the live
+  frequency-domain relationship from loopback to microphone. Because the
+  estimate is referenced to loopback rather than to the microphone alone, it
+  also helps suppress noise and other input-side content that is not correlated
+  with the playback signal.
+- **Input Spectrum**
+  Shows the classic live spectrum of the selected microphone input without a
+  loopback reference.
+
+Transfer Function mode requires a configured loopback input in **Record
+Settings**. It works with either Wave or ASIO as long as microphone and
+loopback are routed to separate channels. If loopback is not configured,
+Resonalyze blocks Transfer Function start and explains what must be fixed.
+
+In practice, this makes the Transfer Function mode more stable than raw input
+spectrum viewing when the room or measurement chain contains unrelated noise.
+It is still not a magic denoiser, but it is the better choice when you want to
+focus on the driven response instead of whatever the microphone happens to hear.
+
+The Live Spectrum settings panel also exposes **Sequence Length**, which is the
+FFT block size used by the live analyzer. Only power-of-two values are offered
+to keep the live FFT path efficient and predictable.
 
 ## Time Alignment
 

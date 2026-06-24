@@ -60,6 +60,7 @@ namespace Resonalyze
             Offset = 0,
         };
         private readonly ImpulseResponseOptions impulseResponseOptions = new();
+        private readonly LiveSpectrumOptions liveSpectrumOptions = new();
         private readonly TimeAlignmentOptions timeAlignmentOptions = new();
         private readonly PlotModelFactory plotModelFactory;
         private readonly ModeController modeController;

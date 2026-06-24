@@ -8,6 +8,12 @@ public partial class Form1
         timeAlignmentController.RefreshConfiguration();
     }
 
+    private async Task ApplyMeasurementConfigurationToControllersAsync()
+    {
+        await liveSpectrumController.ReconfigureFromAsync(expSweepMeasurement);
+        timeAlignmentController.RefreshConfiguration();
+    }
+
     private void SetImpulseResponseAvailability(bool available)
     {
         hasCurrentImpulseResponse = available;

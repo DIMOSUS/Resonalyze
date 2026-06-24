@@ -52,6 +52,7 @@ public partial class Form1
             impulseResponseOptions,
             waterfallGenOptions,
             burstDecayGenOptions,
+            liveSpectrumOptions,
             timeAlignmentOptions);
         measurementSettings.Save();
     }
@@ -73,11 +74,12 @@ public partial class Form1
             tab,
             create,
             initialize,
-            dialog =>
+            async dialog =>
             {
                 IReadOnlyList<AxisViewport> axisViewports = CaptureAxisViewports();
                 apply(dialog);
                 SaveMeasurementSettings();
+                await ApplyMeasurementConfigurationToControllersAsync();
                 RefreshCurrentModePlot();
                 RestoreAxisViewports(axisViewports);
             });

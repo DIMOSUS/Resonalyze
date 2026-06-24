@@ -109,11 +109,15 @@ public partial class Form1
                 SupportsCurveDrawing: false,
                 HasPlotView: true,
                 HasOverlayPanel: true,
-                HasDockedSettings: false,
+                HasDockedSettings: true,
                 ShowsTimeAlignmentPanel: false,
                 ShowOverlayCurves: false,
                 CreatePlotModel: _ => plotModelFactory.CreateLiveSpectrum(),
-                OpenSettings: null),
+                OpenSettings: () => ToggleModeOptions(
+                    ModeTab.LiveSpectrum,
+                    () => new LiveSpectrumOpt(),
+                    opt => opt.Init(liveSpectrumOptions),
+                    opt => opt.SetOptions(liveSpectrumOptions))),
             [ModeTab.Autocorrelation] = new(
                 ModeTab.Autocorrelation,
                 Mode.Autocorrelation,

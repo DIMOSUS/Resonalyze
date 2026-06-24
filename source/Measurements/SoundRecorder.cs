@@ -18,6 +18,7 @@ namespace Resonalyze
         private bool disposed;
 
         public event Action<float[]>? SequenceReady;
+        public event Action<float[][]>? SequenceChannelsReady;
         internal event Action<AudioChannelLevel[]>? LevelsAvailable;
 
         public int Sequence { get; set; }
@@ -160,7 +161,7 @@ namespace Resonalyze
             int bytesPerSample = Bits / 8;
             int bytesPerFrame = bytesPerSample * ChannelCount;
             int frameCount = args.BytesRecorded / bytesPerFrame;
-            List<float[]> readySequences = new();
+            List<float[][]> readySequences = new();
             var peaks = new double[ChannelCount];
             var sumSquares = new double[ChannelCount];
 
@@ -185,8 +186,16 @@ namespace Resonalyze
                 {
                     while (ReadSamples - sequenceStart >= Sequence)
                     {
-                        float[] sequence = new float[Sequence];
-                        samples[0].CopyTo(sequenceStart, sequence, 0, Sequence);
+                        var sequence = new float[ChannelCount][];
+                        for (int channel = 0; channel < ChannelCount; channel++)
+                        {
+                            sequence[channel] = new float[Sequence];
+                            samples[channel].CopyTo(
+                                sequenceStart,
+                                sequence[channel],
+                                0,
+                                Sequence);
+                        }
                         sequenceStart += Sequence;
                         readySequences.Add(sequence);
                     }
@@ -205,9 +214,10 @@ namespace Resonalyze
             firstBufferReady?.TrySetResult(true);
             LevelsAvailable?.Invoke(
                 AudioLevelMetering.MeasureChannels(peaks, sumSquares, frameCount));
-            foreach (float[] sequence in readySequences)
+            foreach (float[][] sequence in readySequences)
             {
-                SequenceReady?.Invoke(sequence);
+                SequenceReady?.Invoke(sequence[0]);
+                SequenceChannelsReady?.Invoke(sequence);
             }
         }
 

@@ -20,6 +20,7 @@ internal sealed class PlotModelFactory
     private readonly FrequencyResponseOptions phaseResponseOptions;
     private readonly FrequencyResponseOptions groupDelayOptions;
     private readonly ImpulseResponseOptions impulseResponseOptions;
+    private readonly LiveSpectrumOptions liveSpectrumOptions;
     private readonly WaterfallGenerateOptions waterfallGenOptions;
     private readonly WaterfallGenerateOptions burstDecayGenOptions;
 
@@ -31,6 +32,7 @@ internal sealed class PlotModelFactory
         FrequencyResponseOptions phaseResponseOptions,
         FrequencyResponseOptions groupDelayOptions,
         ImpulseResponseOptions impulseResponseOptions,
+        LiveSpectrumOptions liveSpectrumOptions,
         WaterfallGenerateOptions waterfallGenOptions,
         WaterfallGenerateOptions burstDecayGenOptions)
     {
@@ -42,6 +44,7 @@ internal sealed class PlotModelFactory
         this.phaseResponseOptions = phaseResponseOptions;
         this.groupDelayOptions = groupDelayOptions;
         this.impulseResponseOptions = impulseResponseOptions;
+        this.liveSpectrumOptions = liveSpectrumOptions;
         this.waterfallGenOptions = waterfallGenOptions;
         this.burstDecayGenOptions = burstDecayGenOptions;
     }
@@ -265,7 +268,10 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateLiveSpectrum()
     {
-        PlotModel model = PlotModelStyle.CreateTitledModel("Live Spectrum");
+        PlotModel model = PlotModelStyle.CreateTitledModel(
+            liveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction
+                ? "Live Transfer Function"
+                : "Live Spectrum");
 
         PlotModelStyle.AddFrequencyAxis(model);
         PlotModelStyle.AddDecibelAxis(model);
@@ -282,8 +288,11 @@ internal sealed class PlotModelFactory
         {
             double frequency =
                 i * ((double)noiseMeasurement.SampleRate / length);
-            double decibels =
-                DataHelper.AmplitudeToDecibels(accumulatedData[i]) - 21.0;
+            double decibels = DataHelper.AmplitudeToDecibels(accumulatedData[i]);
+            if (liveSpectrumOptions.Mode == LiveSpectrumMode.InputSpectrum)
+            {
+                decibels -= 21.0;
+            }
             data.Add(new DataPoint(frequency, decibels));
         }
 
@@ -292,12 +301,14 @@ internal sealed class PlotModelFactory
             20,
             20000,
             1024,
-            calibration,
+            liveSpectrumOptions.UseCalibration ? calibration : null,
             1.0 / 6.0);
         var series = new LineSeries
         {
             Color = OxyColor.FromRgb(255, 0, 127),
-            Title = "Live Spectrum"
+            Title = liveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction
+                ? "Live Transfer Function"
+                : "Live Spectrum"
         };
         series.Points.AddRange(OxyPlotAdapter.ToDataPoints(resampled));
         series.TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB";

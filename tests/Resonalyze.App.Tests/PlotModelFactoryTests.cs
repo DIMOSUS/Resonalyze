@@ -94,6 +94,7 @@ public sealed class PlotModelFactoryTests
             new FrequencyResponseOptions(),
             new FrequencyResponseOptions(),
             new ImpulseResponseOptions(),
+            new LiveSpectrumOptions(),
             new WaterfallGenerateOptions(),
             new WaterfallGenerateOptions());
     }

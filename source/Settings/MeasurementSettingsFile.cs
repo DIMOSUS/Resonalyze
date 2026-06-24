@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Resonalyze.Dsp;
+using Resonalyze.Options;
 
 namespace Resonalyze;
 
@@ -23,6 +24,7 @@ internal sealed class MeasurementSettingsFile
     public ImpulseResponseSettings ImpulseResponse { get; set; } = new();
     public WaterfallSettings Waterfall { get; set; } = new();
     public WaterfallSettings BurstDecay { get; set; } = new();
+    public LiveSpectrumSettings LiveSpectrum { get; set; } = new();
     public TimeAlignmentSettings TimeAlignment { get; set; } = new();
     public string? LastImpulseResponseDirectory { get; set; }
 
@@ -71,6 +73,7 @@ internal sealed class MeasurementSettingsFile
         ImpulseResponseOptions impulseResponse,
         WaterfallGenerateOptions waterfall,
         WaterfallGenerateOptions burstDecay,
+        LiveSpectrumOptions liveSpectrum,
         TimeAlignmentOptions timeAlignment)
     {
         Measurement.ApplyTo(measurement);
@@ -80,6 +83,7 @@ internal sealed class MeasurementSettingsFile
         ImpulseResponse.ApplyTo(impulseResponse);
         Waterfall.ApplyTo(waterfall, WaterfallMode.Fourier);
         BurstDecay.ApplyTo(burstDecay, WaterfallMode.BurstDecay);
+        LiveSpectrum.ApplyTo(liveSpectrum);
         TimeAlignment.ApplyTo(timeAlignment, measurement.SampleRate);
     }
 
@@ -91,6 +95,7 @@ internal sealed class MeasurementSettingsFile
         ImpulseResponseOptions impulseResponse,
         WaterfallGenerateOptions waterfall,
         WaterfallGenerateOptions burstDecay,
+        LiveSpectrumOptions liveSpectrum,
         TimeAlignmentOptions timeAlignment)
     {
         SchemaVersion = CurrentSchemaVersion;
@@ -101,6 +106,7 @@ internal sealed class MeasurementSettingsFile
         ImpulseResponse = ImpulseResponseSettings.Capture(impulseResponse);
         Waterfall = WaterfallSettings.Capture(waterfall);
         BurstDecay = WaterfallSettings.Capture(burstDecay);
+        LiveSpectrum = LiveSpectrumSettings.Capture(liveSpectrum);
         TimeAlignment = TimeAlignmentSettings.Capture(timeAlignment);
     }
 
@@ -280,6 +286,48 @@ internal sealed class MeasurementSettingsFile
             options.Offset = Clamp(Offset, -32768, 32768);
             options.WaterfallMode = requiredMode;
             options.Periods = Math.Clamp(Periods, 1.0, 60.0);
+        }
+    }
+
+    internal sealed class LiveSpectrumSettings
+    {
+        public LiveSpectrumMode Mode { get; set; } = LiveSpectrumMode.TransferFunction;
+        public bool UseCalibration { get; set; } = true;
+        public int SequenceLength { get; set; } = 2048;
+
+        public static LiveSpectrumSettings Capture(
+            LiveSpectrumOptions options) =>
+            new()
+            {
+                Mode = Enum.IsDefined(options.Mode)
+                    ? options.Mode
+                    : LiveSpectrumMode.TransferFunction,
+                UseCalibration = options.UseCalibration,
+                SequenceLength = NormalizeSequenceLength(options.SequenceLength)
+            };
+
+        public void ApplyTo(LiveSpectrumOptions options)
+        {
+            options.Mode = Enum.IsDefined(Mode)
+                ? Mode
+                : LiveSpectrumMode.TransferFunction;
+            options.UseCalibration = UseCalibration;
+            options.SequenceLength = NormalizeSequenceLength(SequenceLength);
+        }
+
+        private static int NormalizeSequenceLength(int sequenceLength)
+        {
+            int[] supported = [256, 512, 1024, 2048, 4096, 8192, 16384];
+            int normalized = supported[0];
+            foreach (int candidate in supported)
+            {
+                if (sequenceLength >= candidate)
+                {
+                    normalized = candidate;
+                }
+            }
+
+            return normalized;
         }
     }
 

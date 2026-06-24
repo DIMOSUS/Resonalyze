@@ -1,6 +1,8 @@
 using System.Threading.Channels;
+using System.Numerics;
 using NAudio.Wave;
 using Resonalyze.Dsp;
+using Resonalyze.Options;
 
 namespace Resonalyze
 {
@@ -14,8 +16,10 @@ namespace Resonalyze
         private SoundRecorder? soundRecorder;
         private CancellationTokenSource? cancellationTokenSource;
         private Task<bool>? measurementTask;
-        private ChannelWriter<float[]>? sequenceWriter;
+        private ChannelWriter<float[][]>? sequenceWriter;
         private double[]? accumulatedData;
+        private Complex[]? accumulatedCrossSpectrum;
+        private double[]? accumulatedReferencePowerSpectrum;
         private int sequencesCounter;
         private volatile bool inProgress;
         private bool disposed;
@@ -33,9 +37,19 @@ namespace Resonalyze
         public int InputDeviceNumber { get; private set; } = -1;
         public string? AsioDriverName { get; private set; }
         public int AsioInputChannelOffset { get; private set; }
+        public int? AsioLoopbackInputChannelOffset { get; private set; }
         public int AsioOutputChannelOffset { get; private set; }
+        public int WaveInputChannelOffset { get; private set; }
+        public int? WaveLoopbackInputChannelOffset { get; private set; }
         public int SequenceLength { get; private set; }
+        public LiveSpectrumOptions LiveSpectrumOptions { get; private set; } = new();
         public Exception? LastError { get; private set; }
+        public bool HasConfiguredLoopback =>
+            AudioBackend == AudioBackend.Wave
+                ? WaveLoopbackInputChannelOffset.HasValue &&
+                    WaveLoopbackInputChannelOffset.Value != WaveInputChannelOffset
+                : AsioLoopbackInputChannelOffset.HasValue &&
+                    AsioLoopbackInputChannelOffset.Value != AsioInputChannelOffset;
 
         public void Init(
             int sampleRate,
@@ -48,7 +62,11 @@ namespace Resonalyze
             AudioBackend audioBackend = AudioBackend.Wave,
             string? asioDriverName = null,
             int asioInputChannelOffset = 0,
-            int asioOutputChannelOffset = 0)
+            int asioOutputChannelOffset = 0,
+            int waveInputChannelOffset = 0,
+            int? waveLoopbackInputChannelOffset = null,
+            int? asioLoopbackInputChannelOffset = null,
+            LiveSpectrumOptions? liveSpectrumOptions = null)
         {
             ThrowIfDisposed();
             if (InProgress)
@@ -69,7 +87,12 @@ namespace Resonalyze
             AudioBackend = audioBackend;
             AsioDriverName = asioDriverName;
             AsioInputChannelOffset = asioInputChannelOffset;
+            AsioLoopbackInputChannelOffset = asioLoopbackInputChannelOffset;
             AsioOutputChannelOffset = asioOutputChannelOffset;
+            WaveInputChannelOffset = Math.Clamp(waveInputChannelOffset, 0, 1);
+            WaveLoopbackInputChannelOffset = NormalizeOptionalWaveChannel(
+                waveLoopbackInputChannelOffset);
+            LiveSpectrumOptions = liveSpectrumOptions ?? new LiveSpectrumOptions();
 
             signal?.Dispose();
             signal = new NoiseSignal();
@@ -77,14 +100,18 @@ namespace Resonalyze
 
             if (soundRecorder != null)
             {
-                soundRecorder.SequenceReady -= ProcessSequence;
+                soundRecorder.SequenceChannelsReady -= ProcessSequenceChannels;
                 soundRecorder.LevelsAvailable -= HandleWaveLevelsAvailable;
                 soundRecorder.Dispose();
             }
             soundRecorder = new SoundRecorder();
-            soundRecorder.Init(sampleRate, bits, 1, inputDeviceNumber);
+            soundRecorder.Init(
+                sampleRate,
+                bits,
+                GetRequiredWaveInputChannelCount(),
+                inputDeviceNumber);
             soundRecorder.Sequence = sequenceLength;
-            soundRecorder.SequenceReady += ProcessSequence;
+            soundRecorder.SequenceChannelsReady += ProcessSequenceChannels;
             soundRecorder.LevelsAvailable += HandleWaveLevelsAvailable;
         }
 
@@ -105,6 +132,8 @@ namespace Resonalyze
                 lock (dataSync)
                 {
                     accumulatedData = null;
+                    accumulatedCrossSpectrum = null;
+                    accumulatedReferencePowerSpectrum = null;
                     sequencesCounter = 0;
                 }
 
@@ -152,8 +181,8 @@ namespace Resonalyze
             SoundRecorder recorder = soundRecorder!;
             RawSourceWaveStream stream = noiseSignal.GetStream(PlaybackChannel);
             bool success = false;
-            var sequenceChannel = Channel.CreateBounded<float[]>(
-                new BoundedChannelOptions(8)
+            var sequenceChannel = Channel.CreateBounded<float[][]>(
+                new BoundedChannelOptions(4)
                 {
                     SingleReader = true,
                     SingleWriter = true,
@@ -250,12 +279,13 @@ namespace Resonalyze
         {
             using var session = new AsioFullDuplexSession(
                 AsioDriverName ?? string.Empty,
-                AsioInputChannelOffset,
-                AsioOutputChannelOffset)
+                GetAsioCaptureFirstInputOffset(),
+                AsioOutputChannelOffset,
+                GetAsioCaptureInputChannelCount())
             {
                 Sequence = SequenceLength
             };
-            session.SequenceReady += ProcessSequence;
+            session.SequenceChannelsReady += ProcessSequenceChannels;
             session.LevelsAvailable += HandleAsioLevelsAvailable;
             try
             {
@@ -273,7 +303,7 @@ namespace Resonalyze
             }
             finally
             {
-                session.SequenceReady -= ProcessSequence;
+                session.SequenceChannelsReady -= ProcessSequenceChannels;
                 session.LevelsAvailable -= HandleAsioLevelsAvailable;
                 await session.StopAsync().ConfigureAwait(false);
             }
@@ -314,7 +344,7 @@ namespace Resonalyze
             }
         }
 
-        private void ProcessSequence(float[] sequence)
+        private void ProcessSequenceChannels(float[][] sequence)
         {
             Volatile.Read(ref sequenceWriter)?.TryWrite(sequence);
         }
@@ -331,34 +361,64 @@ namespace Resonalyze
 
         private void RaiseLevels(AudioChannelLevel[] channels)
         {
-            InputLevelMeterEntry microphone = channels.Length > 0
+            int microphoneIndex = GetMicrophoneSequenceIndex();
+            int? loopbackIndex = GetLoopbackSequenceIndex();
+
+            InputLevelMeterEntry microphone =
+                (uint)microphoneIndex < (uint)channels.Length
                 ? new InputLevelMeterEntry(
                     true,
-                    channels[0].PeakDbFs,
-                    channels[0].RmsDbFs,
-                    channels[0].FullScale,
+                    channels[microphoneIndex].PeakDbFs,
+                    channels[microphoneIndex].RmsDbFs,
+                    channels[microphoneIndex].FullScale,
                     false)
                 : InputLevelMeterEntry.Unavailable;
+            InputLevelMeterEntry loopback =
+                loopbackIndex.HasValue && (uint)loopbackIndex.Value < (uint)channels.Length
+                    ? new InputLevelMeterEntry(
+                        true,
+                        channels[loopbackIndex.Value].PeakDbFs,
+                        channels[loopbackIndex.Value].RmsDbFs,
+                        channels[loopbackIndex.Value].FullScale,
+                        true)
+                    : InputLevelMeterEntry.Unavailable;
             LevelsAvailable?.Invoke(new InputLevelMeterSnapshot(
                 microphone,
-                InputLevelMeterEntry.Unavailable));
+                loopback));
         }
 
         private async Task ProcessSequencesAsync(
-            ChannelReader<float[]> reader,
+            ChannelReader<float[][]> reader,
             CancellationToken cancellationToken)
         {
-            await foreach (float[] sequence in reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+            await foreach (float[][] sequence in reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
                 AccumulateSequence(sequence);
             }
         }
 
-        private void AccumulateSequence(float[] sequence)
+        private void AccumulateSequence(float[][] sequence)
         {
-            double[] magnitudes = SpectrumAnalysis.ComputeMagnitudeSpectrum(sequence);
+            if (LiveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction)
+            {
+                AccumulateTransferSequence(sequence);
+                return;
+            }
+
+            double[] magnitudes =
+                SpectrumAnalysis.ComputeMagnitudeSpectrum(sequence[GetMicrophoneSequenceIndex()]);
 
             const double lerpCoefficient = 0.01;
+            const double outOfRangeLerpCoefficient = 0.2;
+            const int boxFilterRadius = 16;
+            double[] minimums = BuildBoxFilteredExtrema(
+                magnitudes,
+                boxFilterRadius,
+                findMinimum: true);
+            double[] maximums = BuildBoxFilteredExtrema(
+                magnitudes,
+                boxFilterRadius,
+                findMinimum: false);
             lock (dataSync)
             {
                 if (accumulatedData == null)
@@ -372,14 +432,159 @@ namespace Resonalyze
                 {
                     for (int i = 0; i < accumulatedData.Length; i++)
                     {
+                        double history = accumulatedData[i];
+                        double currentLerpCoefficient =
+                            history >= minimums[i] && history <= maximums[i]
+                                ? lerpCoefficient
+                                : outOfRangeLerpCoefficient;
                         accumulatedData[i] =
-                            (1 - lerpCoefficient) * accumulatedData[i] +
-                            lerpCoefficient * magnitudes[i];
+                            (1 - currentLerpCoefficient) * history +
+                            currentLerpCoefficient * magnitudes[i];
                     }
                 }
                 sequencesCounter++;
             }
         }
+
+        private void AccumulateTransferSequence(float[][] sequence)
+        {
+            TransferSpectrumFrame frame = ComputeTransferSpectrumFrame(sequence);
+
+            const double lerpCoefficient = 0.01;
+            lock (dataSync)
+            {
+                if (accumulatedCrossSpectrum == null ||
+                    accumulatedReferencePowerSpectrum == null)
+                {
+                    if (sequencesCounter > 2)
+                    {
+                        accumulatedCrossSpectrum = frame.CrossSpectrum.ToArray();
+                        accumulatedReferencePowerSpectrum =
+                            frame.ReferencePowerSpectrum.ToArray();
+                        accumulatedData = SpectrumAnalysis.ComputeH1MagnitudeSpectrum(
+                            accumulatedCrossSpectrum,
+                            accumulatedReferencePowerSpectrum);
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < accumulatedCrossSpectrum.Length; i++)
+                    {
+                        accumulatedCrossSpectrum[i] =
+                            (1 - lerpCoefficient) * accumulatedCrossSpectrum[i] +
+                            lerpCoefficient * frame.CrossSpectrum[i];
+                        accumulatedReferencePowerSpectrum[i] =
+                            (1 - lerpCoefficient) * accumulatedReferencePowerSpectrum[i] +
+                            lerpCoefficient * frame.ReferencePowerSpectrum[i];
+                    }
+
+                    accumulatedData = SpectrumAnalysis.ComputeH1MagnitudeSpectrum(
+                        accumulatedCrossSpectrum,
+                        accumulatedReferencePowerSpectrum);
+                }
+
+                sequencesCounter++;
+            }
+        }
+
+        private static double[] BuildBoxFilteredExtrema(
+            IReadOnlyList<double> source,
+            int radius,
+            bool findMinimum)
+        {
+            if (radius < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(radius));
+            }
+
+            var filtered = new double[source.Count];
+            for (int i = 0; i < source.Count; i++)
+            {
+                int start = Math.Max(0, i - radius);
+                int end = Math.Min(source.Count - 1, i + radius);
+                double extreme = source[i];
+                for (int j = start; j <= end; j++)
+                {
+                    extreme = findMinimum
+                        ? Math.Min(extreme, source[j])
+                        : Math.Max(extreme, source[j]);
+                }
+
+                filtered[i] = extreme;
+            }
+
+            return filtered;
+        }
+
+        private TransferSpectrumFrame ComputeTransferSpectrumFrame(float[][] sequence)
+        {
+            int microphoneIndex = GetMicrophoneSequenceIndex();
+            int? loopbackIndex = GetLoopbackSequenceIndex();
+            if (!loopbackIndex.HasValue ||
+                (uint)microphoneIndex >= (uint)sequence.Length ||
+                (uint)loopbackIndex.Value >= (uint)sequence.Length)
+            {
+                throw new InvalidOperationException(
+                    "Live transfer function requires a configured loopback input.");
+            }
+
+            return SpectrumAnalysis.ComputeTransferSpectrumFrame(
+                sequence[loopbackIndex.Value],
+                sequence[microphoneIndex]);
+        }
+
+        private int GetRequiredWaveInputChannelCount()
+        {
+            int lastChannel = WaveInputChannelOffset;
+            if (LiveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction &&
+                WaveLoopbackInputChannelOffset.HasValue)
+            {
+                lastChannel = Math.Max(lastChannel, WaveLoopbackInputChannelOffset.Value);
+            }
+
+            return lastChannel + 1;
+        }
+
+        private int GetAsioCaptureFirstInputOffset()
+        {
+            if (LiveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction &&
+                AsioLoopbackInputChannelOffset.HasValue)
+            {
+                return Math.Min(AsioInputChannelOffset, AsioLoopbackInputChannelOffset.Value);
+            }
+
+            return AsioInputChannelOffset;
+        }
+
+        private int GetAsioCaptureInputChannelCount()
+        {
+            int firstInputOffset = GetAsioCaptureFirstInputOffset();
+            int lastInputOffset = AsioInputChannelOffset;
+            if (LiveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction &&
+                AsioLoopbackInputChannelOffset.HasValue)
+            {
+                lastInputOffset = Math.Max(lastInputOffset, AsioLoopbackInputChannelOffset.Value);
+            }
+
+            return lastInputOffset - firstInputOffset + 1;
+        }
+
+        private int GetMicrophoneSequenceIndex() =>
+            AudioBackend == AudioBackend.Wave
+                ? WaveInputChannelOffset
+                : AsioInputChannelOffset - GetAsioCaptureFirstInputOffset();
+
+        private int? GetLoopbackSequenceIndex() =>
+            AudioBackend == AudioBackend.Wave
+                ? WaveLoopbackInputChannelOffset
+                : AsioLoopbackInputChannelOffset.HasValue
+                    ? AsioLoopbackInputChannelOffset.Value - GetAsioCaptureFirstInputOffset()
+                    : null;
+
+        private static int? NormalizeOptionalWaveChannel(int? channel) =>
+            channel.HasValue
+                ? Math.Clamp(channel.Value, 0, 1)
+                : null;
 
         private void ThrowIfDisposed()
         {
@@ -408,7 +613,8 @@ namespace Resonalyze
             cancellationTokenSource?.Dispose();
             if (soundRecorder != null)
             {
-                soundRecorder.SequenceReady -= ProcessSequence;
+                soundRecorder.SequenceChannelsReady -= ProcessSequenceChannels;
+                soundRecorder.LevelsAvailable -= HandleWaveLevelsAvailable;
                 soundRecorder.Dispose();
             }
             signal?.Dispose();

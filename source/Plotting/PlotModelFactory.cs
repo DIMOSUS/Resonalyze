@@ -15,13 +15,13 @@ internal sealed class PlotModelFactory
     private readonly ExpSweepMeasurement expSweepMeasurement;
     private readonly NoiseMeasurement noiseMeasurement;
     private readonly CalibrationFile calibration;
+    private readonly MeasurementPlotContext measurementContext;
     private readonly FrequencyResponseOptions frequencyResponseOptions;
     private readonly FrequencyResponseOptions phaseResponseOptions;
     private readonly FrequencyResponseOptions groupDelayOptions;
     private readonly ImpulseResponseOptions impulseResponseOptions;
     private readonly WaterfallGenerateOptions waterfallGenOptions;
     private readonly WaterfallGenerateOptions burstDecayGenOptions;
-    private string? impulseResponseFileName;
 
     public PlotModelFactory(
         ExpSweepMeasurement expSweepMeasurement,
@@ -37,6 +37,7 @@ internal sealed class PlotModelFactory
         this.expSweepMeasurement = expSweepMeasurement;
         this.noiseMeasurement = noiseMeasurement;
         this.calibration = calibration;
+        measurementContext = new MeasurementPlotContext(expSweepMeasurement);
         this.frequencyResponseOptions = frequencyResponseOptions;
         this.phaseResponseOptions = phaseResponseOptions;
         this.groupDelayOptions = groupDelayOptions;
@@ -47,76 +48,39 @@ internal sealed class PlotModelFactory
 
     public void SetImpulseResponseFileName(string? fileName)
     {
-        impulseResponseFileName = string.IsNullOrWhiteSpace(fileName)
-            ? null
-            : Path.GetFileName(fileName);
+        measurementContext.SetImpulseResponseFileName(fileName);
     }
 
     public PlotModel CreateFrequencyResponse(bool includeCurves)
     {
-        var model = new PlotModel
-        {
-            Title = CreateMeasurementTitle("Frequency Response"),
-            TitleFontSize = 14
-        };
+        PlotModel model = PlotModelStyle.CreateTitledModel(
+            measurementContext.CreateTitle("Frequency Response"));
 
-        if (CanIncludeImpulseCurves(includeCurves))
+        if (measurementContext.CanIncludeCurves(includeCurves))
         {
-            IReadOnlyList<AnalysisCurve> curves = CreateFrequencyResponseCurves();
+            IReadOnlyList<AnalysisCurve> curves = measurementContext.CreateFrequencyResponseCurves(
+                frequencyResponseOptions,
+                calibration);
             foreach (AnalysisCurve curve in curves)
             {
-                var series = OxyPlotAdapter.ToLineSeries(curve);
-                series.TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB";
-                model.Series.Add(series);
+                AddLineSeries(model, curve, "{0}\n{2:0.0} Hz\n{4:0.00} dB");
             }
         }
 
-        AddFrequencyAxis(model);
-        AddDecibelAxis(model);
+        PlotModelStyle.AddFrequencyAxis(model);
+        PlotModelStyle.AddDecibelAxis(model);
         return model;
-    }
-
-    private IReadOnlyList<AnalysisCurve> CreateFrequencyResponseCurves()
-    {
-        IImpulseMeasurement sweepMeasurement = CreateSweepDeconvolutionMeasurement();
-        if (expSweepMeasurement.TransferImpulseResponse is not { Length: > 0 })
-        {
-            return DataHelper.GetSpectrum(
-                sweepMeasurement,
-                frequencyResponseOptions,
-                calibration);
-        }
-
-        var curves = new List<AnalysisCurve>();
-        curves.AddRange(DataHelper.GetSpectrum(
-            sweepMeasurement,
-            frequencyResponseOptions,
-            calibration,
-            includePrimary: true,
-            includeHarmonics: false));
-
-        curves.AddRange(DataHelper.GetSpectrum(
-            sweepMeasurement,
-            frequencyResponseOptions,
-            calibration,
-            includePrimary: false,
-            includeHarmonics: true));
-
-        return curves;
     }
 
     public PlotModel CreatePhaseResponse(bool includeCurves)
     {
-        var model = new PlotModel
-        {
-            Title = CreateMeasurementTitle("Phase Response"),
-            TitleFontSize = 14
-        };
+        PlotModel model = PlotModelStyle.CreateTitledModel(
+            measurementContext.CreateTitle("Phase Response"));
 
-        if (CanIncludeImpulseCurves(includeCurves))
+        if (measurementContext.CanIncludeCurves(includeCurves))
         {
             AnalysisCurve curve = DataHelper.GetPhase(
-                CreatePrimaryMeasurement(),
+                measurementContext.CreatePrimaryMeasurement(),
                 phaseResponseOptions.Window,
                 phaseResponseOptions.LeftTukeyWindow,
                 phaseResponseOptions.RightTukeyWindow,
@@ -124,12 +88,10 @@ internal sealed class PlotModelFactory
                 phaseResponseOptions.SmoothingInverseOctaves,
                 phaseResponseOptions.Unwrap);
 
-            var series = OxyPlotAdapter.ToLineSeries(curve);
-            series.TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.0}\u00B0"; // u00B0 degree char
-            model.Series.Add(series);
+            AddLineSeries(model, curve, "{0}\n{2:0.0} Hz\n{4:0.0}\u00B0");
         }
 
-        AddFrequencyAxis(model);
+        PlotModelStyle.AddFrequencyAxis(model);
         model.Axes.Add(new LinearAxis
         {
             Position = AxisPosition.Left,
@@ -147,11 +109,11 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateWaterfall(bool includeCurves)
     {
-        var model = CreateWaterfallBase(
-            CreateMeasurementTitle("Fourier Waterfall"),
+        PlotModel model = PlotModelStyle.CreateWaterfallModel(
+            measurementContext.CreateTitle("Fourier Waterfall"),
             waterfallGenOptions);
 
-        if (CanIncludeImpulseCurves(includeCurves))
+        if (measurementContext.CanIncludeCurves(includeCurves))
         {
             var waterfall = new WaterfallSeries()
             {
@@ -159,7 +121,7 @@ internal sealed class PlotModelFactory
                 GenerateOptions = waterfallGenOptions,
             };
 
-            waterfall.FillFourierWaterfallData(CreatePrimaryMeasurement());
+            waterfall.FillFourierWaterfallData(measurementContext.CreatePrimaryMeasurement());
             model.Series.Add(waterfall);
         }
 
@@ -168,24 +130,21 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateGroupDelay(bool includeCurves)
     {
-        var model = new PlotModel
-        {
-            Title = CreateMeasurementTitle("Group Delay"),
-            TitleFontSize = 14
-        };
+        PlotModel model = PlotModelStyle.CreateTitledModel(
+            measurementContext.CreateTitle("Group Delay"));
 
         double minimum = +1000;
         double maximum = -1000;
         bool hasValidData = false;
-        if (CanIncludeImpulseCurves(includeCurves))
+        if (measurementContext.CanIncludeCurves(includeCurves))
         {
-            bool useTransfer = expSweepMeasurement.TransferImpulseResponse is { Length: > 0 };
+            bool useTransfer = measurementContext.HasTransferImpulseResponse;
             IImpulseMeasurement measurement = useTransfer
                 ? new ImpulseMeasurementView(
                     expSweepMeasurement.TransferImpulseResponse!,
                     0,
                     expSweepMeasurement.SampleRate)
-                : CreateSweepDeconvolutionMeasurement();
+                : measurementContext.CreateSweepDeconvolutionMeasurement();
             AnalysisCurve curve = DataHelper.GetGroupDelay(
                 measurement,
                 groupDelayOptions.Window,
@@ -195,9 +154,7 @@ internal sealed class PlotModelFactory
                 groupDelayOptions.SmoothingInverseOctaves,
                 GroupDelayMagnitudeGateDb,
                 wrapWindow: useTransfer);
-            var series = OxyPlotAdapter.ToLineSeries(curve);
-            series.TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.000} ms";
-            model.Series.Add(series);
+            AddLineSeries(model, curve, "{0}\n{2:0.0} Hz\n{4:0.000} ms");
 
             for (int i = 0; i < curve.Points.Count; i++)
             {
@@ -211,7 +168,7 @@ internal sealed class PlotModelFactory
             }
         }
 
-        AddFrequencyAxis(model);
+        PlotModelStyle.AddFrequencyAxis(model);
         var msAxis = new LinearAxis
         {
             Position = AxisPosition.Left,
@@ -234,11 +191,11 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateBurstDecay(bool includeCurves)
     {
-        var model = CreateWaterfallBase(
-            CreateMeasurementTitle("Burst Decay"),
+        PlotModel model = PlotModelStyle.CreateWaterfallModel(
+            measurementContext.CreateTitle("Burst Decay"),
             burstDecayGenOptions);
 
-        if (CanIncludeImpulseCurves(includeCurves))
+        if (measurementContext.CanIncludeCurves(includeCurves))
         {
             var waterfall = new WaterfallSeries()
             {
@@ -246,7 +203,7 @@ internal sealed class PlotModelFactory
                 GenerateOptions = burstDecayGenOptions,
             };
 
-            waterfall.FillFourierWaterfallData(CreatePrimaryMeasurement());
+            waterfall.FillFourierWaterfallData(measurementContext.CreatePrimaryMeasurement());
             model.Series.Add(waterfall);
         }
 
@@ -255,19 +212,16 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateImpulseResponse(bool includeCurves)
     {
-        var model = new PlotModel
-        {
-            Title = CreateMeasurementTitle("Impulse Response"),
-            TitleFontSize = 14
-        };
+        PlotModel model = PlotModelStyle.CreateTitledModel(
+            measurementContext.CreateTitle("Impulse Response"));
 
-        if (CanIncludeImpulseCurves(includeCurves))
+        if (measurementContext.CanIncludeCurves(includeCurves))
         {
             AnalysisCurve curve =
-                DataHelper.GetImpulse(CreatePrimaryMeasurement(), impulseResponseOptions);
-            var series = OxyPlotAdapter.ToLineSeries(curve);
-            series.TrackerFormatString = "{0}\n{2:0} sample\n{4:0.00000000}";
-            model.Series.Add(series);
+                DataHelper.GetImpulse(
+                    measurementContext.CreatePrimaryMeasurement(),
+                    impulseResponseOptions);
+            AddLineSeries(model, curve, "{0}\n{2:0} sample\n{4:0.00000000}");
         }
 
         model.Axes.Add(new LinearAxis
@@ -284,21 +238,16 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateAutocorrelation(bool includeCurves)
     {
-        var model = new PlotModel
-        {
-            Title = CreateMeasurementTitle("Autocorrelation"),
-            TitleFontSize = 14
-        };
+        PlotModel model = PlotModelStyle.CreateTitledModel(
+            measurementContext.CreateTitle("Autocorrelation"));
 
-        if (CanIncludeImpulseCurves(includeCurves))
+        if (measurementContext.CanIncludeCurves(includeCurves))
         {
             AnalysisCurve curve =
                 DataHelper.GetAutocorrelation(
-                    CreatePrimaryMeasurement(),
+                    measurementContext.CreatePrimaryMeasurement(),
                     impulseResponseOptions);
-            var series = OxyPlotAdapter.ToLineSeries(curve);
-            series.TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}";
-            model.Series.Add(series);
+            AddLineSeries(model, curve, "{0}\n{2:0.000} ms\n{4:0.000}");
         }
 
         model.Axes.Add(new LinearAxis
@@ -316,10 +265,10 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateLiveSpectrum()
     {
-        var model = new PlotModel { Title = "Live Spectrum", TitleFontSize = 14 };
+        PlotModel model = PlotModelStyle.CreateTitledModel("Live Spectrum");
 
-        AddFrequencyAxis(model);
-        AddDecibelAxis(model);
+        PlotModelStyle.AddFrequencyAxis(model);
+        PlotModelStyle.AddDecibelAxis(model);
         return model;
     }
 
@@ -355,114 +304,13 @@ internal sealed class PlotModelFactory
         return series;
     }
 
-    private PlotModel CreateWaterfallBase(
-        string title,
-        WaterfallGenerateOptions options)
+    private static void AddLineSeries(
+        PlotModel model,
+        AnalysisCurve curve,
+        string trackerFormat)
     {
-        var model = new PlotModel { Title = title, TitleFontSize = 14 };
-
-        model.Axes.Add(new LinearAxis
-        {
-            Position = AxisPosition.Left,
-            Minimum = -1.0,
-            Maximum = 1.0,
-            IsAxisVisible = false,
-            IsPanEnabled = false,
-            IsZoomEnabled = false,
-        });
-        model.Axes.Add(new LogarithmicClipAxis
-        {
-            Position = AxisPosition.Bottom,
-            Minimum = 20,
-            Maximum = 60000,
-            ClipValue = 20000,
-            IsPanEnabled = false,
-            IsZoomEnabled = false,
-        });
-
-        model.Axes.Add(new LinearColorAxis
-        {
-            Position = AxisPosition.Left,
-            Minimum = options.DbRange,
-            Maximum = -options.DbRange,
-            Palette = OxyPalette.Interpolate(
-                512,
-                OxyColors.DarkBlue,
-                OxyColors.Cyan,
-                OxyColors.Yellow,
-                OxyColors.Orange,
-                OxyColors.DarkRed,
-                OxyColors.White,
-                OxyColors.White,
-                OxyColors.White,
-                OxyColors.White),
-            HighColor = OxyColors.Black
-        });
-
-        return model;
-    }
-
-    private string CreateMeasurementTitle(string baseTitle) =>
-        string.IsNullOrWhiteSpace(impulseResponseFileName)
-            ? baseTitle
-            : $"{baseTitle} - {impulseResponseFileName}";
-
-    private bool CanIncludeImpulseCurves(bool includeCurves) =>
-        includeCurves &&
-        expSweepMeasurement.HasImpulseResponse &&
-        !expSweepMeasurement.InProgress;
-
-    private IImpulseMeasurement CreatePrimaryMeasurement()
-    {
-        if (expSweepMeasurement.TransferImpulseResponse is { Length: > 0 } transferIr)
-        {
-            return new ImpulseMeasurementView(
-                transferIr,
-                expSweepMeasurement.TransferPeakIndex,
-                expSweepMeasurement.SampleRate);
-        }
-
-        return CreateSweepDeconvolutionMeasurement();
-    }
-
-    private IImpulseMeasurement CreateSweepDeconvolutionMeasurement()
-    {
-        Complex[] sweepIr = expSweepMeasurement.SweepDeconvolutionImpulseResponse
-            ?? throw new InvalidOperationException("Sweep deconvolution impulse response is not available.");
-        return new ImpulseMeasurementView(
-            sweepIr,
-            expSweepMeasurement.SweepDeconvolutionPeakIndex,
-            expSweepMeasurement.SampleRate,
-            expSweepMeasurement.HarmonicIROffset);
-    }
-
-    private static void AddFrequencyAxis(PlotModel model)
-    {
-        model.Axes.Add(new LogarithmicAxis
-        {
-            Position = AxisPosition.Bottom,
-            AbsoluteMinimum = 20,
-            AbsoluteMaximum = 20000,
-            Minimum = 20,
-            Maximum = 20000,
-            IsZoomEnabled = false,
-            MajorGridlineStyle = LineStyle.Solid,
-        });
-    }
-
-    private static void AddDecibelAxis(PlotModel model)
-    {
-        model.Axes.Add(new LinearAxis
-        {
-            Position = AxisPosition.Left,
-            AbsoluteMinimum = -120,
-            AbsoluteMaximum = 10,
-            MajorStep = 10,
-            Minimum = -90,
-            Maximum = 0,
-            MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineStyle = LineStyle.Dot,
-            Title = "dB",
-        });
+        LineSeries series = OxyPlotAdapter.ToLineSeries(curve);
+        series.TrackerFormatString = trackerFormat;
+        model.Series.Add(series);
     }
 }

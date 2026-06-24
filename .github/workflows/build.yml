@@ -57,5 +57,8 @@ jobs:
       - name: Build
         run: dotnet build source/Resonalyze.sln --configuration Release --no-restore -p:Version="${{ steps.version.outputs.version }}" -p:InformationalVersion="${{ steps.version.outputs.version }}"
 
+      - name: Test App
+        run: dotnet test tests/Resonalyze.App.Tests/Resonalyze.App.Tests.csproj --configuration Release --no-build --no-restore
+
       - name: Test DSP
         run: dotnet test tests/Resonalyze.Dsp.Tests/Resonalyze.Dsp.Tests.csproj --configuration Release --no-build --no-restore

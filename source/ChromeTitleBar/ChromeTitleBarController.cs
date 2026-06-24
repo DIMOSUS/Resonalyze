@@ -455,10 +455,10 @@ internal sealed class ChromeTitleBarController
             return;
         }
 
-        Process.Start(new ProcessStartInfo(url)
-        {
-            UseShellExecute = true
-        });
+        Form? owner = sender is Control control
+            ? control.FindForm()
+            : null;
+        ApplicationUpdateService.ShowUpdateChoice(owner, url);
     }
 
     private int Scale(int value) =>

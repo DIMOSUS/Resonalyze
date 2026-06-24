@@ -8,19 +8,31 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Resonalyze</AssemblyName>
     <RootNamespace>Resonalyze</RootNamespace>
+    <AssemblyTitle>Resonalyze</AssemblyTitle>
+    <Company>DIMOSUS</Company>
+    <Product>Resonalyze</Product>
     <VersionPrefix>0.1.0</VersionPrefix>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ApplicationIcon>logo.ico</ApplicationIcon>
+    <SparklePublicKey Condition="'$(SparklePublicKey)' == ''"></SparklePublicKey>
   </PropertyGroup>
 
   <ItemGroup>
     <Content Include="logo.ico" />
   </ItemGroup>
 
+  <ItemGroup Condition="'$(SparklePublicKey)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>SparklePublicKey</_Parameter1>
+      <_Parameter2>$(SparklePublicKey)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
     <PackageReference Include="NAudio" Version="2.3.0" />
     <PackageReference Include="NAudio.Asio" Version="2.3.0" />
+    <PackageReference Include="NetSparkleUpdater.UI.WinForms" Version="3.0.1" />
     <PackageReference Include="OxyPlot.WindowsForms" Version="2.2.0" />
   </ItemGroup>
 

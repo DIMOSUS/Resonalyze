@@ -91,6 +91,8 @@ jobs:
 
       - name: Publish application
         shell: pwsh
+        env:
+          SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_KEY }}
         run: |
           $version = "${{ steps.version.outputs.version }}"
           $publishDirectory = Join-Path $env:RUNNER_TEMP "publish-${{ matrix.rid }}"
@@ -102,6 +104,7 @@ jobs:
             --output $publishDirectory `
             -p:Version=$version `
             -p:InformationalVersion=$version `
+            -p:SparklePublicKey="$env:SPARKLE_PUBLIC_KEY" `
             -p:PublishSingleFile=true `
             -p:IncludeNativeLibrariesForSelfExtract=true `
             -p:DebugType=None `
@@ -128,12 +131,140 @@ jobs:
             Resonalyze-${{ needs.prepare.outputs.ref_name }}-${{ matrix.rid }}.zip.sha256
           if-no-files-found: error
 
+  setup:
+    needs: prepare
+    name: Build Windows installer
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Publish win-x64 application
+        shell: pwsh
+        env:
+          SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_KEY }}
+        run: |
+          $version = "${{ needs.prepare.outputs.version }}"
+          $publishDirectory = Join-Path $env:RUNNER_TEMP "publish-win-x64"
+
+          dotnet publish source/Resonalyze.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            --output $publishDirectory `
+            -p:Version=$version `
+            -p:InformationalVersion=$version `
+            -p:SparklePublicKey="$env:SPARKLE_PUBLIC_KEY" `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false
+
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+          Get-ChildItem $publishDirectory -Filter *.pdb | Remove-Item
+          "publish_directory=$publishDirectory" >> $env:GITHUB_OUTPUT
+        id: publish
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Install NetSparkle appcast generator
+        shell: pwsh
+        run: dotnet tool install --global NetSparkleUpdater.Tools.AppCastGenerator
+
+      - name: Build Setup.exe
+        shell: pwsh
+        run: |
+          $outputDirectory = Join-Path $env:RUNNER_TEMP "setup"
+          New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
+
+          $setupBaseName = "Resonalyze-Setup-${{ needs.prepare.outputs.ref_name }}-win-x64"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            installer\Resonalyze.iss `
+            "/DAppVersion=${{ needs.prepare.outputs.version }}" `
+            "/DSourceDir=${{ steps.publish.outputs.publish_directory }}" `
+            "/DOutputDir=$outputDirectory" `
+            "/DOutputBaseFilename=$setupBaseName"
+
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+          $setupPath = Join-Path $outputDirectory "$setupBaseName.exe"
+          Copy-Item $setupPath ".\$setupBaseName.exe"
+          $hash = (Get-FileHash ".\$setupBaseName.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $setupBaseName.exe" | Set-Content ".\$setupBaseName.exe.sha256" -Encoding ascii
+
+      - name: Generate NetSparkle appcast
+        shell: pwsh
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_KEY }}
+        run: |
+          $refName = "${{ needs.prepare.outputs.ref_name }}"
+          $setupFile = "Resonalyze-Setup-$refName-win-x64.exe"
+          $appcastDirectory = Join-Path $env:RUNNER_TEMP "appcast"
+          $binaryDirectory = Join-Path $env:RUNNER_TEMP "appcast-binaries"
+          New-Item -ItemType Directory -Force -Path $appcastDirectory | Out-Null
+          New-Item -ItemType Directory -Force -Path $binaryDirectory | Out-Null
+          Copy-Item $setupFile $binaryDirectory
+
+          if ([string]::IsNullOrWhiteSpace($env:SPARKLE_PRIVATE_KEY) -or
+              [string]::IsNullOrWhiteSpace($env:SPARKLE_PUBLIC_KEY)) {
+            throw "SPARKLE_PRIVATE_KEY and SPARKLE_PUBLIC_KEY repository secrets are required for signed updates."
+          }
+
+          netsparkle-generate-appcast `
+            --appcast-output-directory $appcastDirectory `
+            --ext exe `
+            --binaries $binaryDirectory `
+            --file-version "${{ needs.prepare.outputs.version }}" `
+            --product-name "Resonalyze" `
+            --os "windows-x64" `
+            --base-url "https://github.com/${{ github.repository }}/releases/download/$refName" `
+            --link-tag "https://github.com/${{ github.repository }}/releases/latest/download/appcast.xml" `
+            --description-tag "Most recent Resonalyze release." `
+            --human-readable true `
+            --private-key-override "$env:SPARKLE_PRIVATE_KEY" `
+            --public-key-override "$env:SPARKLE_PUBLIC_KEY"
+
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+          Copy-Item (Join-Path $appcastDirectory "appcast.xml") ".\appcast.xml"
+          Copy-Item (Join-Path $appcastDirectory "appcast.xml.signature") ".\appcast.xml.signature"
+
+      - name: Upload setup files
+        uses: actions/upload-artifact@v7
+        with:
+          name: Resonalyze-Setup-win-x64
+          path: |
+            Resonalyze-Setup-${{ needs.prepare.outputs.ref_name }}-win-x64.exe
+            Resonalyze-Setup-${{ needs.prepare.outputs.ref_name }}-win-x64.exe.sha256
+            appcast.xml
+            appcast.xml.signature
+          if-no-files-found: error
+
   release:
     if: ${{ needs.prepare.outputs.create_release == 'true' }}
     name: Create GitHub Release
     needs:
       - prepare
       - publish
+      - setup
     runs-on: ubuntu-latest
 
     steps:

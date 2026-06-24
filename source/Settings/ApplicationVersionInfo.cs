@@ -18,6 +18,14 @@ internal static class ApplicationVersionInfo
             : $"v{version}";
     }
 
+    public static string? GetSparklePublicKey() =>
+        Assembly
+            .GetEntryAssembly()?
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(attribute =>
+                string.Equals(attribute.Key, "SparklePublicKey", StringComparison.Ordinal))?
+            .Value;
+
     public static bool IsOlderThan(string otherVersion)
     {
         string currentRawVersion = GetInformationalVersion();

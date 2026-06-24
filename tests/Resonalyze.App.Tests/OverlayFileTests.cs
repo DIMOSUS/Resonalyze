@@ -88,6 +88,54 @@ public sealed class OverlayFileTests
     }
 
     [Fact]
+    public void Load_IgnoresJsonPropertyOrder()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            string path = OverlayFile.GetPath(Mode.FrequencyResponse, 2, root);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(
+                path,
+                """
+                {
+                  "points": [
+                    { "y": -12.5, "x": 20 },
+                    { "y": -3.0, "x": 1000 }
+                  ],
+                  "smoothingInverseOctaves": 12,
+                  "opacityPercent": 80,
+                  "lineStyle": "Dash",
+                  "strokeThickness": 3.0,
+                  "colorArgb": -16711681,
+                  "offset": -1.5,
+                  "title": "Shuffled overlay",
+                  "slot": 2,
+                  "mode": "FrequencyResponse",
+                  "savedAtUtc": "2026-06-15T10:20:30+00:00",
+                  "version": 4,
+                  "format": "resonalyze-overlay"
+                }
+                """);
+
+            OverlayFile? loaded = OverlayFile.Load(
+                Mode.FrequencyResponse,
+                2,
+                root);
+
+            Assert.NotNull(loaded);
+            Assert.Equal("Shuffled overlay", loaded.Title);
+            Assert.Equal(OverlayLineStyle.Dash, loaded.LineStyle);
+            Assert.Equal(12, loaded.SmoothingInverseOctaves);
+            Assert.Equal([new OverlayPoint(20, -12.5), new OverlayPoint(1_000, -3.0)], loaded.Points);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void SlotsWithSameNumber_AreSeparatedByMode()
     {
         string root = CreateTemporaryDirectory();

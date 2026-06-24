@@ -158,6 +158,52 @@ public sealed class ImpulseResponseFileTests
     }
 
     [Fact]
+    public async Task Load_IgnoresJsonPropertyOrder()
+    {
+        string path = Path.Combine(
+            Path.GetTempPath(),
+            $"resonalyze-ir-{Guid.NewGuid():N}.json");
+        const string json = """
+            {
+              "sweepDeconvolutionRealSamples": [0.25, 1.0, -0.5],
+              "loopbackLevels": {
+                "fullScaleReference": true,
+                "rmsDbFs": -5.4,
+                "peakDbFs": 0.0,
+                "clipped": false
+              },
+              "sweepDeconvolutionPeakIndex": 1,
+              "measurementMode": "SweepDeconvolution",
+              "playChannel": "Right",
+              "sweepDurationSeconds": 1.0,
+              "octaves": 12,
+              "bits": 24,
+              "sampleRate": 48000,
+              "savedAtUtc": "2026-06-15T10:20:30+00:00",
+              "version": 4,
+              "format": "resonalyze-impulse-response"
+            }
+            """;
+
+        try
+        {
+            await File.WriteAllTextAsync(path, json);
+
+            ImpulseResponseFile loaded = await ImpulseResponseFile.LoadAsync(path);
+
+            Assert.Equal(48_000, loaded.SampleRate);
+            Assert.Equal(PlaybackChannel.Right, loaded.PlayChannel);
+            Assert.Equal(1, loaded.SweepDeconvolutionPeakIndex);
+            Assert.NotNull(loaded.LoopbackLevels);
+            Assert.True(loaded.LoopbackLevels.FullScaleReference);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public async Task Load_RejectsUnsupportedVersion()
     {
         string path = Path.Combine(

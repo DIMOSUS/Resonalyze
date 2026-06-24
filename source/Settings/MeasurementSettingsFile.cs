@@ -6,7 +6,7 @@ namespace Resonalyze;
 
 internal sealed class MeasurementSettingsFile
 {
-    private const int CurrentSchemaVersion = 6;
+    private const int CurrentSchemaVersion = 7;
     private const string FileName = "measurement-settings.json";
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
@@ -24,6 +24,7 @@ internal sealed class MeasurementSettingsFile
     public WaterfallSettings Waterfall { get; set; } = new();
     public WaterfallSettings BurstDecay { get; set; } = new();
     public TimeAlignmentSettings TimeAlignment { get; set; } = new();
+    public string? LastImpulseResponseDirectory { get; set; }
 
     private static string PathOnDisk =>
         Path.Combine(AppContext.BaseDirectory, FileName);

@@ -78,7 +78,6 @@ namespace Resonalyze
         private bool closingPrepared;
         private bool resourcesDisposed;
         private bool updateCheckStarted;
-
         public Form1()
         {
             InitializeComponent();
@@ -172,6 +171,7 @@ namespace Resonalyze
             liveSpectrumController.ConfigureFrom(expSweepMeasurement);
             commandController.Initialize();
             UpdatePeakInfo();
+            ApplicationUpdateService.Initialize(this);
 
             expSweepMeasurement.Completed += (bool success) =>
             {
@@ -186,6 +186,7 @@ namespace Resonalyze
                         buttonRecord.Text = "Ready";
                         //buttonRecord.BackColor = Color.FromArgb(192, 255, 192);
                         hasCurrentImpulseResponse = true;
+                        plotModelFactory.SetImpulseResponseFileName(null);
                         commandController.SetSaveAvailable(true);
                         commandController.SetLoadAvailable(true);
                     }
@@ -231,6 +232,9 @@ namespace Resonalyze
                         cancellationTokenSource.Token);
                 if (result?.UpdateAvailable == true && !IsDisposed)
                 {
+                    ApplicationUpdateService.SetDetectedRelease(
+                        result.TagName,
+                        result.ReleaseUrl);
                     titleBarController.SetUpdateAvailable(result.ReleaseUrl);
                 }
             }
@@ -294,6 +298,7 @@ namespace Resonalyze
             {
                 buttonRecord.Text = "Running...";
                 hasCurrentImpulseResponse = false;
+                SetImpulseResponseSourceFile(null);
                 UpdatePeakInfo();
                 _ = expSweepMeasurement.RunAsync();
                 //buttonRecord.BackColor = Color.FromArgb(192, 255, 255);
@@ -505,6 +510,34 @@ namespace Resonalyze
                 modeController.ActiveTab is not (ModeTab.LiveSpectrum or ModeTab.TimeAlignment) &&
                 CanDrawCurrentMeasurement();
             DrawSelectedMode(includeCurves);
+        }
+
+        private void SetImpulseResponseSourceFile(string? path)
+        {
+            plotModelFactory.SetImpulseResponseFileName(path);
+        }
+
+        private string GetImpulseResponseDialogDirectory()
+        {
+            if (!string.IsNullOrWhiteSpace(measurementSettings.LastImpulseResponseDirectory) &&
+                Directory.Exists(measurementSettings.LastImpulseResponseDirectory))
+            {
+                return measurementSettings.LastImpulseResponseDirectory;
+            }
+
+            return Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        }
+
+        private void UpdateLastImpulseResponseDirectory(string filePath)
+        {
+            string? directory = Path.GetDirectoryName(filePath);
+            if (string.IsNullOrWhiteSpace(directory))
+            {
+                return;
+            }
+
+            measurementSettings.LastImpulseResponseDirectory = directory;
+            SaveMeasurementSettings();
         }
 
         private IReadOnlyList<AxisViewport> CaptureAxisViewports()
@@ -850,8 +883,7 @@ namespace Resonalyze
                     DefaultExt = "json",
                     Filter = "Resonalyze impulse response (*.json)|*.json|All files (*.*)|*.*",
                     FileName = $"Resonalyze-IR-{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.json",
-                    InitialDirectory = Environment.GetFolderPath(
-                        Environment.SpecialFolder.MyDocuments),
+                    InitialDirectory = GetImpulseResponseDialogDirectory(),
                     RestoreDirectory = true,
                     Title = "Save impulse response"
                 };
@@ -866,6 +898,9 @@ namespace Resonalyze
                     ImpulseResponseFile file =
                         ImpulseResponseFile.Capture(expSweepMeasurement);
                     await file.SaveAsync(dialog.FileName);
+                    SetImpulseResponseSourceFile(dialog.FileName);
+                    UpdateLastImpulseResponseDirectory(dialog.FileName);
+                    RefreshCurrentModePlot();
                 }
                 catch (Exception exception)
                 {
@@ -892,8 +927,7 @@ namespace Resonalyze
                 {
                     CheckFileExists = true,
                     Filter = "Resonalyze impulse response (*.json)|*.json|All files (*.*)|*.*",
-                    InitialDirectory = Environment.GetFolderPath(
-                        Environment.SpecialFolder.MyDocuments),
+                    InitialDirectory = GetImpulseResponseDialogDirectory(),
                     Multiselect = false,
                     RestoreDirectory = true,
                     Title = "Load impulse response"
@@ -923,7 +957,8 @@ namespace Resonalyze
                     expSweepMeasurement.RestoreLevelSnapshot(file.GetMeterSnapshot());
                     liveSpectrumController.ConfigureFrom(expSweepMeasurement);
                     timeAlignmentController.RefreshConfiguration();
-                    SaveMeasurementSettings();
+                    SetImpulseResponseSourceFile(dialog.FileName);
+                    UpdateLastImpulseResponseDirectory(dialog.FileName);
 
                     //buttonRecord.Text = "Loaded";
                     //buttonRecord.BackColor = Color.FromArgb(192, 255, 192);

@@ -87,6 +87,60 @@ public sealed class OverlayOperationFileTests
     }
 
     [Fact]
+    public void Load_IgnoresJsonPropertyOrder()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            string path = OverlayOperationFile.GetPath(
+                Mode.FrequencyResponse,
+                12,
+                root);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(
+                path,
+                """
+                {
+                  "smoothingInverseOctaves": 6,
+                  "opacityPercent": 75,
+                  "lineStyle": "Dot",
+                  "strokeThickness": 2.5,
+                  "colorArgb": -1,
+                  "offset": 1.25,
+                  "useAmplitudeSpace": true,
+                  "blendWidthOctaves": 0.5,
+                  "blendFrequencyHz": 1200.0,
+                  "operation": "Blend",
+                  "sourceSlotB": 4,
+                  "sourceSlotA": 1,
+                  "title": "Shuffled calculated overlay",
+                  "slot": 12,
+                  "mode": "FrequencyResponse",
+                  "savedAtUtc": "2026-06-15T10:20:30+00:00",
+                  "version": 4,
+                  "format": "resonalyze-overlay-operation"
+                }
+                """);
+
+            OverlayOperationFile? loaded = OverlayOperationFile.Load(
+                Mode.FrequencyResponse,
+                12,
+                root);
+
+            Assert.NotNull(loaded);
+            Assert.Equal("Shuffled calculated overlay", loaded.Title);
+            Assert.Equal(OverlayOperation.Blend, loaded.Operation);
+            Assert.True(loaded.UseAmplitudeSpace);
+            Assert.Equal(1_200.0, loaded.BlendFrequencyHz);
+            Assert.Equal(0.5, loaded.BlendWidthOctaves);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Save_RejectsOrdinarySlot()
     {
         string root = CreateTemporaryDirectory();

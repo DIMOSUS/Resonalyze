@@ -21,6 +21,7 @@ internal sealed class PlotModelFactory
     private readonly ImpulseResponseOptions impulseResponseOptions;
     private readonly WaterfallGenerateOptions waterfallGenOptions;
     private readonly WaterfallGenerateOptions burstDecayGenOptions;
+    private string? impulseResponseFileName;
 
     public PlotModelFactory(
         ExpSweepMeasurement expSweepMeasurement,
@@ -44,9 +45,20 @@ internal sealed class PlotModelFactory
         this.burstDecayGenOptions = burstDecayGenOptions;
     }
 
+    public void SetImpulseResponseFileName(string? fileName)
+    {
+        impulseResponseFileName = string.IsNullOrWhiteSpace(fileName)
+            ? null
+            : Path.GetFileName(fileName);
+    }
+
     public PlotModel CreateFrequencyResponse(bool includeCurves)
     {
-        var model = new PlotModel { Title = "Frequency Response", TitleFontSize = 14 };
+        var model = new PlotModel
+        {
+            Title = CreateMeasurementTitle("Frequency Response"),
+            TitleFontSize = 14
+        };
 
         if (CanIncludeImpulseCurves(includeCurves))
         {
@@ -95,7 +107,11 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreatePhaseResponse(bool includeCurves)
     {
-        var model = new PlotModel { Title = "Phase Response", TitleFontSize = 14 };
+        var model = new PlotModel
+        {
+            Title = CreateMeasurementTitle("Phase Response"),
+            TitleFontSize = 14
+        };
 
         if (CanIncludeImpulseCurves(includeCurves))
         {
@@ -131,7 +147,9 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateWaterfall(bool includeCurves)
     {
-        var model = CreateWaterfallBase("Fourier Waterfall", waterfallGenOptions);
+        var model = CreateWaterfallBase(
+            CreateMeasurementTitle("Fourier Waterfall"),
+            waterfallGenOptions);
 
         if (CanIncludeImpulseCurves(includeCurves))
         {
@@ -150,7 +168,11 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateGroupDelay(bool includeCurves)
     {
-        var model = new PlotModel { Title = "Group Delay", TitleFontSize = 14 };
+        var model = new PlotModel
+        {
+            Title = CreateMeasurementTitle("Group Delay"),
+            TitleFontSize = 14
+        };
 
         double minimum = +1000;
         double maximum = -1000;
@@ -212,7 +234,9 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateBurstDecay(bool includeCurves)
     {
-        var model = CreateWaterfallBase("Burst Decay", burstDecayGenOptions);
+        var model = CreateWaterfallBase(
+            CreateMeasurementTitle("Burst Decay"),
+            burstDecayGenOptions);
 
         if (CanIncludeImpulseCurves(includeCurves))
         {
@@ -231,7 +255,11 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateImpulseResponse(bool includeCurves)
     {
-        var model = new PlotModel { Title = "Impulse Response", TitleFontSize = 14 };
+        var model = new PlotModel
+        {
+            Title = CreateMeasurementTitle("Impulse Response"),
+            TitleFontSize = 14
+        };
 
         if (CanIncludeImpulseCurves(includeCurves))
         {
@@ -256,7 +284,11 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateAutocorrelation(bool includeCurves)
     {
-        var model = new PlotModel { Title = "Autocorrelation", TitleFontSize = 14 };
+        var model = new PlotModel
+        {
+            Title = CreateMeasurementTitle("Autocorrelation"),
+            TitleFontSize = 14
+        };
 
         if (CanIncludeImpulseCurves(includeCurves))
         {
@@ -369,6 +401,11 @@ internal sealed class PlotModelFactory
 
         return model;
     }
+
+    private string CreateMeasurementTitle(string baseTitle) =>
+        string.IsNullOrWhiteSpace(impulseResponseFileName)
+            ? baseTitle
+            : $"{baseTitle} - {impulseResponseFileName}";
 
     private bool CanIncludeImpulseCurves(bool includeCurves) =>
         includeCurves &&

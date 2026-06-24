@@ -474,7 +474,7 @@ namespace Resonalyze.Options
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            BackColor = Color.FromArgb(45, 50, 60);
+            BackColor = UiPalette.AppBackground;
             ClientSize = new Size(465, 642);
             Controls.Add(buttonAsioInputProbe);
             Controls.Add(comboBoxAsioLoopbackChannel);

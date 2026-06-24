@@ -22,10 +22,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private readonly TimeAlignmentMeasurement measurement = new();
     private readonly Panel panel;
     private readonly Label routeSummaryLabel;
-    private readonly ComboBox driverComboBox;
-    private readonly ComboBox microphoneComboBox;
-    private readonly ComboBox loopbackComboBox;
-    private readonly ComboBox outputComboBox;
     private readonly CheckBox bandpassCheckBox;
     private readonly NumericUpDown bandpassCenterNumeric;
     private readonly NumericUpDown bandpassPassOctavesNumeric;
@@ -53,16 +49,12 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         this.isTimeAlignmentActive = isTimeAlignmentActive;
         resultTableFont = new Font(
             FontFamily.GenericMonospace,
-            owner.Font.Size,
+            owner.Font.Size + 4.0f,
             FontStyle.Bold);
 
         (
             panel,
             routeSummaryLabel,
-            driverComboBox,
-            microphoneComboBox,
-            loopbackComboBox,
-            outputComboBox,
             bandpassCheckBox,
             bandpassCenterNumeric,
             bandpassPassOctavesNumeric,
@@ -115,6 +107,14 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             UpdateOptionsFromControls();
             saveSettings();
             double duration = expSweepMeasurement.Sweep?.RequestedDuration ?? 1.0;
+            int microphoneInputChannelOffset = expSweepMeasurement.AudioBackend == AudioBackend.Wave
+                ? expSweepMeasurement.WaveInputChannelOffset
+                : expSweepMeasurement.AsioInputChannelOffset;
+            int loopbackInputChannelOffset = expSweepMeasurement.AudioBackend == AudioBackend.Wave
+                ? expSweepMeasurement.WaveLoopbackInputChannelOffset ??
+                    throw new InvalidOperationException("Wave loopback input is not configured.")
+                : expSweepMeasurement.AsioLoopbackInputChannelOffset ??
+                    throw new InvalidOperationException("ASIO loopback input is not configured.");
             measurement.Init(
                 expSweepMeasurement.Octaves,
                 expSweepMeasurement.SampleRate,
@@ -125,8 +125,8 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 expSweepMeasurement.InputDeviceNumber,
                 expSweepMeasurement.PlaybackChannel,
                 expSweepMeasurement.AsioDriverName,
-                GetConfiguredMicrophoneInputOffset(),
-                GetConfiguredLoopbackInputOffset(),
+                microphoneInputChannelOffset,
+                loopbackInputChannelOffset,
                 expSweepMeasurement.AsioOutputChannelOffset,
                 options);
 
@@ -201,10 +201,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private (
         Panel Panel,
         Label RouteSummary,
-        ComboBox Driver,
-        ComboBox Microphone,
-        ComboBox Loopback,
-        ComboBox Output,
         CheckBox BandpassEnabled,
         NumericUpDown BandpassCenter,
         NumericUpDown BandpassPassOctaves,
@@ -217,105 +213,60 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         int top = GetScaledTitleBarHeight() + 12;
         var newPanel = new Panel
         {
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
             AutoScroll = true,
-            BackColor = Color.FromArgb(40, 44, 54),
+            BackColor = UiPalette.PlotSurfaceMuted,
             BorderStyle = BorderStyle.FixedSingle,
             Location = new Point(12, top),
-            Size = new Size(1096, 706),
+            Size = new Size(1182, 706),
             Visible = false
         };
 
-        var title = new Label
-        {
-            AutoSize = true,
-            Font = new Font(owner.Font, FontStyle.Bold),
-            ForeColor = Color.White,
-            Location = new Point(18, 18),
-            Text = "Time Alignment"
-        };
-        var description = new Label
-        {
-            AutoSize = true,
-            ForeColor = Color.FromArgb(190, 195, 205),
-            Location = new Point(18, 44),
-            Text = "Loopback measurement: microphone input + reference input from Record Settings."
-        };
-        var help = new Label
-        {
-            AutoSize = false,
-            ForeColor = Color.FromArgb(205, 210, 220),
-            Location = new Point(560, 24),
-            Size = new Size(380, 200),
-            Text =
-                "What it is for\r\n" +
-                "Measures acoustic delay relative to the audio interface reference path.\r\n\r\n" +
-                "How it works\r\n" +
-                "Resonalyze plays the configured sweep, records microphone and loopback at the same time, then compares the two impulse-response peaks.\r\n\r\n" +
-                "Accuracy note\r\n" +
-                "Wave mode is supported with a stereo input, but ASIO is recommended for best timing accuracy."
-        };
+        var title = UiStyle.CreateTitleLabel("Time Alignment", new Point(18, 18));
+        var description = UiStyle.CreateInfoLabel(
+            "Loopback measurement: microphone input + reference input from Record Settings.",
+            new Point(18, 44));
+        var help = UiStyle.CreateLabel(
+            "What it is for\r\n" +
+            "Measures acoustic delay relative to the audio interface reference path.\r\n\r\n" +
+            "How it works\r\n" +
+            "Resonalyze plays the configured sweep, records microphone and loopback at the same time, then compares the two impulse-response peaks.\r\n\r\n" +
+            "Accuracy note\r\n" +
+            "Wave mode is supported with a stereo input, but ASIO is recommended for best timing accuracy.",
+            new Point(560, 24),
+            UiPalette.TextSecondaryAlt,
+            owner.Font,
+            autoSize: false);
+        help.Size = new Size(520, 150);
 
-        ComboBox driver = CreateComboBox(180, 78);
-        ComboBox microphone = CreateComboBox(180, 112);
-        ComboBox loopback = CreateComboBox(180, 146);
-        ComboBox output = CreateComboBox(180, 180);
-        Label routeSummary = new()
-        {
-            AutoSize = false,
-            ForeColor = Color.FromArgb(210, 214, 222),
-            Location = new Point(18, 78),
-            Size = new Size(520, 78),
-            Text = "Configure microphone and loopback channels in Record Settings."
-        };
-        CheckBox bandpassEnabled = new()
-        {
-            AutoSize = true,
-            ForeColor = Color.FromArgb(210, 214, 222),
-            Location = new Point(18, 194),
-            Text = "Use bandpass window"
-        };
+        Label routeSummary = UiStyle.CreateLabel(
+            "Configure microphone and loopback channels in Record Settings.",
+            new Point(18, 78),
+            UiPalette.TextHighlight,
+            owner.Font,
+            autoSize: false);
+        routeSummary.Size = new Size(520, 90);
+        CheckBox bandpassEnabled = UiStyle.CreateDarkCheckBox("Use bandpass window", new Point(18, 177));
         NumericUpDown bandpassCenter =
-            CreateNumericUpDown(180, 224, 20, 20_000, 1000, 10);
+            UiStyle.CreateDarkNumericUpDown(new Point(180, 207), new Size(120, 23), 20, 20_000, 1000, 10);
         NumericUpDown bandpassPassOctaves =
-            CreateNumericUpDown(180, 258, 0, 8, 1, 0.1M);
+            UiStyle.CreateDarkNumericUpDown(new Point(180, 241), new Size(120, 23), 0, 8, 1, 0.1M);
         NumericUpDown bandpassFadeOctaves =
-            CreateNumericUpDown(180, 292, 0, 8, 0.5M, 0.1M);
-        PlotView bandpassPreview = new()
-        {
-            BackColor = Color.FromArgb(32, 36, 46),
-            Location = new Point(18, 330),
-            Size = new Size(520, 145),
-            Visible = false
-        };
-        PlotView envelopePreview = new()
-        {
-            BackColor = Color.FromArgb(32, 36, 46),
-            Location = new Point(560, 500),
-            Size = new Size(400, 200),
-            Visible = false
-        };
-        Button start = new()
-        {
-            BackColor = Color.FromArgb(50, 55, 80),
-            FlatStyle = FlatStyle.Popup,
-            ForeColor = Color.White,
-            Location = new Point(560, 248),
-            Size = new Size(400, 28),
-            Text = "Start",
-            UseVisualStyleBackColor = false
-        };
+            UiStyle.CreateDarkNumericUpDown(new Point(180, 275), new Size(120, 23), 0, 8, 0.5M, 0.1M);
+        PlotView bandpassPreview = UiStyle.CreateDarkPreviewPlotView(new Point(18, 313), new Size(520, 200));
+        PlotView envelopePreview = UiStyle.CreateDarkPreviewPlotView(new Point(560, 380), new Size(520, 300));
+        Button start = UiStyle.CreateDarkActionButton("Start", new Point(560, 198), new Size(520, 28));
         StatusRichTextBox status = new()
         {
-            BackColor = Color.FromArgb(40, 44, 54),
+            BackColor = UiPalette.PlotSurfaceMuted,
             BorderStyle = BorderStyle.None,
             DetectUrls = false,
-            ForeColor = Color.FromArgb(190, 195, 205),
+            ForeColor = UiPalette.TextSecondarySoft,
             Font = new Font(owner.Font.FontFamily, 11, FontStyle.Bold),
-            Location = new Point(560, 290),
+            Location = new Point(560, 240),
             ReadOnly = true,
             ScrollBars = RichTextBoxScrollBars.None,
-            Size = new Size(400, 235),
+            Size = new Size(560, 235),
             Text = "Select an ASIO driver with loopback input channels."
         };
         status.UseHandCursorAt = point =>
@@ -329,11 +280,11 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             help,
             routeSummary,
             bandpassEnabled,
-            CreateLabel("Center frequency, Hz", 228),
+            UiStyle.CreateLabel("Center frequency, Hz", new Point(18, 211), UiPalette.TextHighlight, owner.Font),
             bandpassCenter,
-            CreateLabel("Pass width, oct", 262),
+            UiStyle.CreateLabel("Pass width, oct", new Point(18, 245), UiPalette.TextHighlight, owner.Font),
             bandpassPassOctaves,
-            CreateLabel("Fade width, oct", 296),
+            UiStyle.CreateLabel("Fade width, oct", new Point(18, 279), UiPalette.TextHighlight, owner.Font),
             bandpassFadeOctaves,
             bandpassPreview,
             envelopePreview,
@@ -343,15 +294,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         ScaleRuntimeControlTree(newPanel);
         owner.Controls.Add(newPanel);
         newPanel.BringToFront();
-
-        driver.SelectedIndexChanged += (_, _) =>
-        {
-            UpdateChannels();
-            SaveSettingsFromControls();
-        };
-        microphone.SelectedIndexChanged += (_, _) => SaveSettingsFromControls();
-        loopback.SelectedIndexChanged += (_, _) => SaveSettingsFromControls();
-        output.SelectedIndexChanged += (_, _) => SaveSettingsFromControls();
         bandpassEnabled.CheckedChanged += (_, _) =>
         {
             UpdateOptionsFromControls();
@@ -384,10 +326,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         return (
             newPanel,
             routeSummary,
-            driver,
-            microphone,
-            loopback,
-            output,
             bandpassEnabled,
             bandpassCenter,
             bandpassPassOctaves,
@@ -437,21 +375,53 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private string FormatRouteSummary(string message)
     {
-        string backend = expSweepMeasurement.AudioBackend.ToString();
-        string mic = expSweepMeasurement.AudioBackend == AudioBackend.Wave
-            ? FormatWaveChannel(expSweepMeasurement.WaveInputChannelOffset)
-            : FormatAsioChannel(expSweepMeasurement.AsioInputChannelOffset);
-        string loopback = expSweepMeasurement.AudioBackend == AudioBackend.Wave
-            ? expSweepMeasurement.WaveLoopbackInputChannelOffset.HasValue
+        if (expSweepMeasurement.AudioBackend == AudioBackend.Wave)
+        {
+            string playbackDevice = GetWavePlaybackDeviceName(expSweepMeasurement.OutputDeviceNumber);
+            string recordingDevice = GetWaveRecordingDeviceName(expSweepMeasurement.InputDeviceNumber);
+            string mic = FormatWaveChannel(expSweepMeasurement.WaveInputChannelOffset);
+            string loopback = expSweepMeasurement.WaveLoopbackInputChannelOffset.HasValue
                 ? FormatWaveChannel(expSweepMeasurement.WaveLoopbackInputChannelOffset.Value)
-                : "None"
-            : expSweepMeasurement.AsioLoopbackInputChannelOffset.HasValue
-                ? FormatAsioChannel(expSweepMeasurement.AsioLoopbackInputChannelOffset.Value)
                 : "None";
-        string warning = expSweepMeasurement.AudioBackend == AudioBackend.Wave
-            ? "\r\nWave mode works, but ASIO is recommended for best timing accuracy."
-            : string.Empty;
-        return $"Backend: {backend}\r\nMic input: {mic}\r\nLoopback input: {loopback}{warning}";
+            return
+                $"Backend: Wave\r\n" +
+                $"Playback device: {playbackDevice}\r\n" +
+                $"Recording device: {recordingDevice}\r\n" +
+                $"Mic input: {mic}\r\n" +
+                $"Loopback input: {loopback}\r\n" +
+                "Wave mode works, but ASIO is recommended for best timing accuracy.";
+        }
+
+        string driverName = string.IsNullOrWhiteSpace(expSweepMeasurement.AsioDriverName)
+            ? "ASIO"
+            : expSweepMeasurement.AsioDriverName;
+        string asioMic = "Channel " + (expSweepMeasurement.AsioInputChannelOffset + 1);
+        string asioLoopback = expSweepMeasurement.AsioLoopbackInputChannelOffset.HasValue
+            ? "Channel " + (expSweepMeasurement.AsioLoopbackInputChannelOffset.Value + 1)
+            : "None";
+        string asioOutput = "Channel " + (expSweepMeasurement.AsioOutputChannelOffset + 1);
+        if (!string.IsNullOrWhiteSpace(expSweepMeasurement.AsioDriverName))
+        {
+            AsioDriverInfo driverInfo = AsioDeviceCatalog.GetDriverInfo(
+                expSweepMeasurement.AsioDriverName,
+                expSweepMeasurement.SampleRate);
+            asioMic = FormatAsioChannel(
+                driverInfo.InputChannels,
+                expSweepMeasurement.AsioInputChannelOffset);
+            asioLoopback = expSweepMeasurement.AsioLoopbackInputChannelOffset.HasValue
+                ? FormatAsioChannel(
+                    driverInfo.InputChannels,
+                    expSweepMeasurement.AsioLoopbackInputChannelOffset.Value)
+                : "None";
+            asioOutput = FormatAsioChannel(
+                driverInfo.OutputChannels,
+                expSweepMeasurement.AsioOutputChannelOffset);
+        }
+        return
+            $"Backend:   ASIO ({driverName})\r\n" +
+            $"Output:   {asioOutput}\r\n" +
+            $"Mic input:   {asioMic}\r\n" +
+            $"Loopback input:   {asioLoopback}";
     }
 
     private bool TryValidateMeasurementRoute(out string message)
@@ -504,126 +474,19 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         return true;
     }
 
-    private int GetConfiguredMicrophoneInputOffset() =>
-        expSweepMeasurement.AudioBackend == AudioBackend.Wave
-            ? expSweepMeasurement.WaveInputChannelOffset
-            : expSweepMeasurement.AsioInputChannelOffset;
-
-    private int GetConfiguredLoopbackInputOffset() =>
-        expSweepMeasurement.AudioBackend == AudioBackend.Wave
-            ? expSweepMeasurement.WaveLoopbackInputChannelOffset ?? 0
-            : expSweepMeasurement.AsioLoopbackInputChannelOffset ?? 0;
-
-    private static string FormatWaveChannel(int offset) =>
-        offset == 1 ? "Right" : "Left";
-
-    private static string FormatAsioChannel(int offset) =>
-        $"{offset + 1}";
-
-    private void RefreshDrivers()
-    {
-        string? preferredDriver =
-            (driverComboBox.SelectedItem as AsioDeviceInfo)?.DriverName ??
-            options.AsioDriverName ??
-            expSweepMeasurement.AsioDriverName;
-        IReadOnlyList<AsioDeviceInfo> drivers = AsioDeviceCatalog.GetDrivers();
-        driverComboBox.Items.Clear();
-        driverComboBox.Items.AddRange(drivers.Cast<object>().ToArray());
-        driverComboBox.SelectedIndex =
-            AsioDeviceCatalog.FindDriverIndex(drivers, preferredDriver);
-
-        if (drivers.Count == 0)
-        {
-            SetStatusText("ASIO is not available on this system.");
-            SetControlsEnabled(false);
-        }
-    }
-
-    private void UpdateChannels()
-    {
-        if (driverComboBox.SelectedItem is not AsioDeviceInfo driver)
-        {
-            SetStatusText("Select an ASIO driver.");
-            SetControlsEnabled(false);
-            return;
-        }
-
-        AsioDriverInfo info = AsioDeviceCatalog.GetDriverInfo(
-            driver.DriverName,
-            expSweepMeasurement.SampleRate);
-        AsioChannelInfo[] loopbackInputs = info.InputChannels
-            .Where(AsioDeviceCatalog.IsLoopbackChannel)
-            .ToArray();
-        AsioChannelInfo[] microphoneInputs = info.InputChannels
-            .Where(channel => !AsioDeviceCatalog.IsLoopbackChannel(channel))
-            .ToArray();
-        if (microphoneInputs.Length == 0)
-        {
-            microphoneInputs = info.InputChannels.ToArray();
-        }
-
-        FillChannelComboBox(
-            microphoneComboBox,
-            microphoneInputs,
-            options.MicrophoneInputChannelOffset);
-        FillChannelComboBox(
-            loopbackComboBox,
-            loopbackInputs,
-            options.LoopbackInputChannelOffset);
-        FillChannelComboBox(
-            outputComboBox,
-            info.OutputChannels,
-            options.AsioOutputChannelOffset);
-
-        bool canRun =
-            string.IsNullOrWhiteSpace(info.ErrorMessage) &&
-            info.SupportsSampleRate &&
-            microphoneInputs.Length > 0 &&
-            loopbackInputs.Length > 0 &&
-            info.OutputChannels.Count > 0;
-        SetControlsEnabled(canRun);
-        SetStatusText(GetStatus(info, loopbackInputs.Length, canRun));
-    }
-
-    private string GetStatus(
-        AsioDriverInfo info,
-        int loopbackChannelCount,
-        bool canRun)
-    {
-        if (!string.IsNullOrWhiteSpace(info.ErrorMessage))
-        {
-            return info.ErrorMessage;
-        }
-        if (!info.SupportsSampleRate)
-        {
-            return $"{info.DriverName} does not support {expSweepMeasurement.SampleRate} Hz.";
-        }
-        if (loopbackChannelCount == 0)
-        {
-            return "This ASIO driver does not expose loopback input channels.";
-        }
-        return canRun
-            ? "Ready to measure microphone delay against ASIO loopback."
-            : "Select microphone, loopback, and output channels.";
-    }
-
     private void SetControlsEnabled(bool enabled)
     {
-        driverComboBox.Enabled = !measurement.InProgress;
-        microphoneComboBox.Enabled = enabled && !measurement.InProgress;
-        loopbackComboBox.Enabled = enabled && !measurement.InProgress;
-        outputComboBox.Enabled = enabled && !measurement.InProgress;
         bandpassCheckBox.Enabled = !measurement.InProgress;
         bandpassCenterNumeric.Enabled = bandpassCheckBox.Checked && !measurement.InProgress;
         bandpassPassOctavesNumeric.Enabled = bandpassCheckBox.Checked && !measurement.InProgress;
         bandpassFadeOctavesNumeric.Enabled = bandpassCheckBox.Checked && !measurement.InProgress;
         startButton.Enabled = enabled || measurement.InProgress;
         startButton.BackColor = startButton.Enabled
-            ? Color.FromArgb(50, 55, 80)
-            : Color.FromArgb(55, 60, 70);
+            ? UiPalette.ButtonBackground
+            : UiPalette.ButtonDisabledBackground;
         startButton.ForeColor = startButton.Enabled
             ? Color.White
-            : Color.FromArgb(120, 125, 135);
+            : UiPalette.TextMuted;
     }
 
     private void UpdateBandpassPreview()
@@ -788,7 +651,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private void SetStatusText(string text)
     {
         statusTextBox.Clear();
-        AppendStatusText(text, Color.FromArgb(190, 195, 205));
+        AppendStatusText(text, UiPalette.TextSecondarySoft);
     }
 
     private void SetMeasurementResultStatus()
@@ -798,23 +661,10 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         statusTextBox.Clear();
         AppendDelayTable();
-        AppendStatusText("Signal Quality:\r\n", Color.FromArgb(220, 225, 235));
+        AppendStatusText("Signal Quality: ", UiPalette.TextPrimarySoft);
         AppendStatusText(
             $"{confidence} ({measurement.ConfidenceDecibels:0.0} dB)\r\n",
             confidenceColor);
-        AppendLevelStatus(
-            "Mic",
-            measurement.MicrophonePeakDbFs,
-            measurement.MicrophoneRmsDbFs,
-            measurement.MicrophoneClipped,
-            fullScaleIsNormal: false);
-        AppendStatusText("\r\n", Color.FromArgb(220, 225, 235));
-        AppendLevelStatus(
-            "Loopback",
-            measurement.LoopbackPeakDbFs,
-            measurement.LoopbackRmsDbFs,
-            measurement.LoopbackClipped,
-            fullScaleIsNormal: true);
         statusTextBox.SelectionStart = 0;
         statusTextBox.SelectionLength = 0;
     }
@@ -828,28 +678,28 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         AppendStatusText(
             FormatDelayTableLine("Measured delay:", "First Arrival", "Strongest Peak") + "\r\n",
-            Color.FromArgb(220, 225, 235),
+            UiPalette.TextPrimarySoft,
             resultTableFont);
         AppendStatusText(
             FormatDelayTableLine(
                 "ms",
                 $"{measurement.FirstArrivalDelayMilliseconds:0.000}",
                 $"{measurement.StrongestDelayMilliseconds:0.000}") + "\r\n",
-            Color.FromArgb(220, 225, 235),
+            UiPalette.TextPrimarySoft,
             resultTableFont);
         AppendStatusText(
             FormatDelayTableLine(
-                "meters (at 20 \u00B0C)", // u00B0 degree char
+                "meters (20\u00B0C)", // u00B0 degree char
                 $"{firstArrivalMeters:0.000}",
                 $"{strongestMeters:0.000}") + "\r\n",
-            Color.FromArgb(220, 225, 235),
+            UiPalette.TextPrimarySoft,
             resultTableFont);
         AppendStatusText(
             FormatDelayTableLine(
                 "samples",
                 $"{measurement.FirstArrivalPeakSample:0.0}",
                 $"{measurement.StrongestPeakSample:0.0}") + "\r\n\r\n",
-            Color.FromArgb(220, 225, 235),
+            UiPalette.TextPrimarySoft,
             resultTableFont);
     }
 
@@ -923,27 +773,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         return line[startColumn..endColumn].Trim();
     }
 
-    private void AppendLevelStatus(
-        string label,
-        double peakDbFs,
-        double rmsDbFs,
-        bool clipped,
-        bool fullScaleIsNormal)
-    {
-        Color textColor = Color.FromArgb(220, 225, 235);
-        string clipText = clipped
-            ? fullScaleIsNormal ? "" : " CLIP"
-            : string.Empty;
-
-        AppendStatusText(
-            $"{label}: peak {peakDbFs:0.0} dBFS, RMS {rmsDbFs:0.0} dBFS",
-            textColor);
-        if (clipped && !string.IsNullOrEmpty(clipText))
-        {
-            AppendStatusText(clipText, Color.FromArgb(255, 96, 96));
-        }
-    }
-
     private static string FormatConfidence(double confidenceDecibels)
     {
         if (confidenceDecibels >= 45)
@@ -965,10 +794,10 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private static Color GetConfidenceColor(string confidence) =>
         confidence switch
         {
-            "Excellent" => Color.FromArgb(90, 220, 120),
-            "Good" => Color.FromArgb(170, 220, 95),
-            "Fair" => Color.FromArgb(255, 190, 80),
-            _ => Color.FromArgb(255, 110, 110)
+            "Excellent" => UiPalette.SuccessGreen,
+            "Good" => UiPalette.SuccessGreenSoft,
+            "Fair" => UiPalette.WarningAmber,
+            _ => UiPalette.ErrorSoft
         };
 
     private static PlotModel CreatePreviewPlotModel(string title) =>
@@ -998,64 +827,37 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             Title = "dB"
         };
 
-    private static Label CreateLabel(string text, int y) =>
-        new()
-        {
-            AutoSize = true,
-            ForeColor = Color.FromArgb(210, 214, 222),
-            Location = new Point(18, y),
-            Text = text
-        };
-
-    private static ComboBox CreateComboBox(int x, int y) =>
-        new()
-        {
-            BackColor = Color.FromArgb(55, 60, 72),
-            DropDownStyle = ComboBoxStyle.DropDownList,
-            FlatStyle = FlatStyle.Flat,
-            ForeColor = Color.White,
-            FormattingEnabled = true,
-            Location = new Point(x, y - 4),
-            Size = new Size(360, 23)
-        };
-
-    private static NumericUpDown CreateNumericUpDown(
-        int x,
-        int y,
-        decimal minimum,
-        decimal maximum,
-        decimal value,
-        decimal increment) =>
-        new()
-        {
-            BackColor = Color.FromArgb(55, 60, 72),
-            DecimalPlaces = increment < 1 ? 1 : 0,
-            ForeColor = Color.White,
-            Increment = increment,
-            Location = new Point(x, y - 4),
-            Maximum = maximum,
-            Minimum = minimum,
-            Size = new Size(120, 23),
-            Value = value
-        };
-
-    private static void FillChannelComboBox(
-        ComboBox comboBox,
-        IReadOnlyList<AsioChannelInfo> channels,
-        int preferredOffset)
-    {
-        comboBox.Items.Clear();
-        comboBox.Items.AddRange(channels.Cast<object>().ToArray());
-        comboBox.SelectedIndex = AsioDeviceCatalog.FindChannelIndex(
-            channels,
-            preferredOffset);
-    }
-
     private static decimal ClampDecimal(double value, NumericUpDown numeric)
     {
         decimal decimalValue = (decimal)value;
         return Math.Min(numeric.Maximum, Math.Max(numeric.Minimum, decimalValue));
     }
+
+    private static string FormatWaveChannel(int offset) =>
+        offset switch
+        {
+            0 => "1: Left",
+            1 => "2: Right",
+            _ => $"Channel {offset + 1}"
+        };
+
+    private static string FormatAsioChannel(
+        IReadOnlyList<AsioChannelInfo> channels,
+        int offset)
+    {
+        AsioChannelInfo? channel = channels.FirstOrDefault(candidate => candidate.Offset == offset);
+        return channel?.ToString() ?? $"Channel {offset + 1}";
+    }
+
+    private static string GetWavePlaybackDeviceName(int deviceNumber) =>
+        AudioDeviceCatalog.GetPlaybackDevices()
+            .FirstOrDefault(candidate => candidate.DeviceNumber == deviceNumber)
+            ?.Name ?? "Default playback device";
+
+    private static string GetWaveRecordingDeviceName(int deviceNumber) =>
+        AudioDeviceCatalog.GetRecordingDevices()
+            .FirstOrDefault(candidate => candidate.DeviceNumber == deviceNumber)
+            ?.Name ?? "Default recording device";
 
     private static int WrapIndex(int index, int length)
     {

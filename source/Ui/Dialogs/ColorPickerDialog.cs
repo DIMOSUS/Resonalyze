@@ -47,34 +47,18 @@ internal sealed class ColorPickerDialog : Form
     {
         SuspendLayout();
 
-        AutoScaleMode = AutoScaleMode.Font;
-        BackColor = Color.FromArgb(40, 42, 48);
-        ClientSize = new Size(452, 448);
-        Font = new Font("Segoe UI", 9F);
-        ForeColor = Color.FromArgb(235, 237, 240);
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = false;
-        Padding = new Padding(20);
-        ShowIcon = false;
-        ShowInTaskbar = false;
-        StartPosition = FormStartPosition.CenterParent;
-        Text = "Select overlay color";
+        UiStyle.ApplyDarkDialog(this, new Size(452, 448), title: "Select overlay color");
 
-        var title = new Label
-        {
-            AutoSize = true,
-            Font = new Font(Font, FontStyle.Bold),
-            Location = new Point(20, 18),
-            Text = "Overlay color"
-        };
-        var subtitle = new Label
-        {
-            AutoSize = true,
-            ForeColor = Color.FromArgb(165, 170, 180),
-            Location = new Point(20, 42),
-            Text = "Choose a preset or create a custom color."
-        };
+        var title = UiStyle.CreateLabel(
+            "Overlay color",
+            new Point(20, 18),
+            UiPalette.TextPrimary,
+            new Font(Font, FontStyle.Bold));
+        var subtitle = UiStyle.CreateLabel(
+            "Choose a preset or create a custom color.",
+            new Point(20, 42),
+            UiPalette.TextMutedSoft,
+            Font);
 
         var presets = new FlowLayoutPanel
         {
@@ -107,13 +91,9 @@ internal sealed class ColorPickerDialog : Form
         preview.Paint += PreviewPaint;
 
         AddLabel("HEX", 20, 330);
-        hexTextBox.BackColor = Color.FromArgb(55, 58, 65);
-        hexTextBox.BorderStyle = BorderStyle.FixedSingle;
+        UiStyle.ApplyTextBox(hexTextBox, new Point(20, 350), new Size(100, 23));
         hexTextBox.CharacterCasing = CharacterCasing.Upper;
-        hexTextBox.ForeColor = ForeColor;
-        hexTextBox.Location = new Point(20, 350);
         hexTextBox.MaxLength = 7;
-        hexTextBox.Size = new Size(100, 23);
         hexTextBox.TextAlign = HorizontalAlignment.Center;
         hexTextBox.Validated += (_, _) => ApplyHexColor();
         hexTextBox.KeyDown += (_, args) =>
@@ -171,8 +151,7 @@ internal sealed class ColorPickerDialog : Form
             TabStop = false,
             UseVisualStyleBackColor = false
         };
-        button.FlatAppearance.BorderColor = Color.FromArgb(90, 94, 104);
-        button.FlatAppearance.BorderSize = 1;
+        UiStyle.ApplyBorderedSwatch(button, UiPalette.DialogBorderSoft);
         button.Click += (_, _) => SetSelectedColor(color);
         return button;
     }
@@ -189,7 +168,7 @@ internal sealed class ColorPickerDialog : Form
         Controls.Add(new Label
         {
             AutoSize = true,
-            ForeColor = Color.FromArgb(185, 190, 200),
+            ForeColor = UiPalette.TextSecondary,
             Location = new Point(x, y),
             Text = text
         });
@@ -197,33 +176,18 @@ internal sealed class ColorPickerDialog : Form
 
     private static NumericUpDown CreateChannelInput()
     {
-        return new NumericUpDown
+        var input = new NumericUpDown
         {
-            BackColor = Color.FromArgb(55, 58, 65),
-            BorderStyle = BorderStyle.FixedSingle,
-            ForeColor = Color.White,
             Maximum = 255,
-            Size = new Size(72, 23),
             TextAlign = HorizontalAlignment.Center
         };
+        UiStyle.ApplyNumericUpDown(input, Point.Empty, new Size(72, 23));
+        return input;
     }
 
     private static Button CreateDialogButton(string text, DialogResult result, bool accent)
     {
-        var button = new Button
-        {
-            BackColor = accent
-                ? Color.FromArgb(64, 116, 255)
-                : Color.FromArgb(62, 65, 73),
-            DialogResult = result,
-            FlatStyle = FlatStyle.Flat,
-            ForeColor = Color.White,
-            Size = new Size(94, 30),
-            Text = text,
-            UseVisualStyleBackColor = false
-        };
-        button.FlatAppearance.BorderSize = 0;
-        return button;
+        return UiStyle.CreateDialogButton(text, result, accent);
     }
 
     private void SetSelectedColor(Color color, bool updateSpectrum = true)
@@ -282,7 +246,7 @@ internal sealed class ColorPickerDialog : Form
     {
         using var brush = new SolidBrush(SelectedColor);
         args.Graphics.FillRectangle(brush, preview.ClientRectangle);
-        using var pen = new Pen(Color.FromArgb(100, 105, 115));
+        using var pen = new Pen(UiPalette.DialogBorder);
         args.Graphics.DrawRectangle(
             pen,
             0,

@@ -49,19 +49,10 @@ internal sealed class OverlaySettingsDialog : Form
     {
         SuspendLayout();
 
-        AutoScaleMode = AutoScaleMode.Font;
-        BackColor = Color.FromArgb(40, 42, 48);
-        ClientSize = new Size(440, supportsSmoothing ? 360 : 300);
-        Font = new Font("Segoe UI", 9F);
-        ForeColor = Color.FromArgb(235, 237, 240);
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = false;
-        Padding = new Padding(20);
-        ShowIcon = false;
-        ShowInTaskbar = false;
-        StartPosition = FormStartPosition.CenterParent;
-        Text = "Overlay settings";
+        UiStyle.ApplyDarkDialog(
+            this,
+            new Size(440, supportsSmoothing ? 360 : 300),
+            title: "Overlay settings");
 
         AddSectionTitle("Overlay", 18);
         AddLabel("Name", 52);
@@ -71,15 +62,13 @@ internal sealed class OverlaySettingsDialog : Form
         AddLabel("Color", 112);
         colorButton.Location = new Point(20, 132);
         colorButton.Size = new Size(122, 30);
-        colorButton.FlatStyle = FlatStyle.Flat;
-        colorButton.ForeColor = Color.White;
+        UiStyle.ApplySurfaceButton(colorButton, UiPalette.DialogSurfaceMuted);
         colorButton.Click += ColorButtonClick;
 
         AddLabel("Thickness", 112, 162);
         thicknessInput.Location = new Point(162, 132);
         thicknessInput.Size = new Size(90, 24);
-        thicknessInput.BackColor = Color.FromArgb(55, 58, 65);
-        thicknessInput.ForeColor = Color.White;
+        UiStyle.ApplyNumericUpDown(thicknessInput, thicknessInput.Location, thicknessInput.Size);
         thicknessInput.DecimalPlaces = 1;
         thicknessInput.Increment = 0.5m;
         thicknessInput.Minimum = 0.5m;
@@ -88,9 +77,7 @@ internal sealed class OverlaySettingsDialog : Form
         AddLabel("Style", 112, 272);
         styleComboBox.Location = new Point(272, 132);
         styleComboBox.Size = new Size(148, 24);
-        styleComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
-        styleComboBox.BackColor = Color.FromArgb(55, 58, 65);
-        styleComboBox.ForeColor = Color.White;
+        UiStyle.ApplyComboBox(styleComboBox, styleComboBox.Location, styleComboBox.Size);
         styleComboBox.DataSource = Enum.GetValues<OverlayLineStyle>();
 
         int opacityLabelY = supportsSmoothing ? 238 : 178;
@@ -100,11 +87,10 @@ internal sealed class OverlaySettingsDialog : Form
         if (supportsSmoothing)
         {
             AddLabel("Smoothing", 178);
-            ConfigureInput(
+            UiStyle.ApplyComboBox(
                 smoothingComboBox,
                 new Point(20, 198),
                 new Size(400, 24));
-            smoothingComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
             smoothingComboBox.FormattingEnabled = true;
             foreach (int value in OverlaySmoothing.SupportedInverseOctaves)
             {
@@ -192,7 +178,7 @@ internal sealed class OverlaySettingsDialog : Form
         colorButton.Text =
             $"#{selectedColor.R:X2}{selectedColor.G:X2}{selectedColor.B:X2}";
         colorButton.FlatAppearance.BorderColor =
-            Color.FromArgb(100, 105, 115);
+            UiPalette.DialogBorder;
     }
 
     private void UpdateOpacityLabel()
@@ -202,7 +188,7 @@ internal sealed class OverlaySettingsDialog : Form
 
     private void AddSectionTitle(string text, int y)
     {
-        Controls.Add(OverlayDialogControls.CreateLabel(
+        Controls.Add(UiStyle.CreateLabel(
             text,
             new Point(20, y),
             ForeColor,
@@ -211,11 +197,7 @@ internal sealed class OverlaySettingsDialog : Form
 
     private void AddLabel(string text, int y, int x = 20)
     {
-        Controls.Add(OverlayDialogControls.CreateLabel(
-            text,
-            new Point(x, y),
-            Color.FromArgb(185, 190, 200),
-            Font));
+        Controls.Add(UiStyle.CreateLabel(text, new Point(x, y), UiPalette.TextSecondary, Font));
     }
 
     private static void ConfigureInput(
@@ -223,10 +205,7 @@ internal sealed class OverlaySettingsDialog : Form
         Point location,
         Size size)
     {
-        control.BackColor = Color.FromArgb(55, 58, 65);
-        control.ForeColor = Color.White;
-        control.Location = location;
-        control.Size = size;
+        UiStyle.ApplySurfaceInput(control, location, size);
     }
 }
 
@@ -253,20 +232,7 @@ internal static class OverlayDialogControls
         DialogResult result,
         bool accent)
     {
-        var button = new Button
-        {
-            BackColor = accent
-                ? Color.FromArgb(64, 116, 255)
-                : Color.FromArgb(62, 65, 73),
-            DialogResult = result,
-            FlatStyle = FlatStyle.Flat,
-            ForeColor = Color.White,
-            Size = new Size(94, 30),
-            Text = text,
-            UseVisualStyleBackColor = false
-        };
-        button.FlatAppearance.BorderSize = 0;
-        return button;
+        return UiStyle.CreateDialogButton(text, result, accent);
     }
 
     public static Label CreateLabel(
@@ -275,14 +241,7 @@ internal static class OverlayDialogControls
         Color color,
         Font font)
     {
-        return new Label
-        {
-            AutoSize = true,
-            Font = font,
-            ForeColor = color,
-            Location = location,
-            Text = text
-        };
+        return UiStyle.CreateLabel(text, location, color, font);
     }
 
     private static void ScaleControlTree(Control control, float factor)

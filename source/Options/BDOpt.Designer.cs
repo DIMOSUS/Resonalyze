@@ -168,7 +168,7 @@ namespace Resonalyze.Options
             //
             // button1
             //
-            button1.BackColor = Color.FromArgb(50, 55, 80);
+            button1.BackColor = UiPalette.ButtonBackground;
             button1.DialogResult = DialogResult.OK;
             button1.FlatStyle = FlatStyle.Popup;
             button1.ForeColor = Color.White;
@@ -301,7 +301,7 @@ namespace Resonalyze.Options
             //
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            BackColor = Color.FromArgb(45, 50, 60);
+            BackColor = UiPalette.AppBackground;
             ClientSize = new Size(264, 576);
             Controls.Add(irPlotView);
             Controls.Add(numericPeriods);

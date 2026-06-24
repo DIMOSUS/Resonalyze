@@ -102,7 +102,7 @@ public sealed class OverlayCollection
                 var operationLabel = new Label
                 {
                     AutoSize = false,
-                    BackColor = Color.FromArgb(40, 42, 48),
+                    BackColor = UiPalette.DialogBackground,
                     Font = templateSaveButton.Font,
                     ForeColor = Color.White,
                     Location = templateSaveButton.Location,

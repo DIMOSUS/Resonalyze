@@ -62,7 +62,7 @@ internal sealed class PlotLabelsPanelController
             {
                 IsPlotLabelOverlay = true,
                 TextFlowDirection = TextFlowDirection.BottomUp,
-                Text = "━━ " + series.Title ?? string.Empty,
+                Text = "\u2501\u2501 " + series.Title ?? string.Empty,
                 TextPosition = new DataPoint(offset, stringNumber),
                 FontSize = 12,
                 FontWeight = 700,

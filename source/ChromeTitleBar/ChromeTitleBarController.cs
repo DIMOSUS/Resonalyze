@@ -54,7 +54,7 @@ internal sealed class ChromeTitleBarController
         titleBar = new Panel
         {
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-            BackColor = Color.FromArgb(28, 30, 36),
+            BackColor = UiPalette.TitleBarBackground,
             Location = Point.Empty,
             Size = new Size(form.ClientSize.Width, titleBarHeight)
         };
@@ -195,16 +195,16 @@ internal sealed class ChromeTitleBarController
             Anchor = AnchorStyles.Top | AnchorStyles.Right,
             AutoEllipsis = true,
             BackColor = titleBar.BackColor,
-            ForeColor = Color.FromArgb(168, 176, 190),
-            DisabledLinkColor = Color.FromArgb(168, 176, 190),
+            ForeColor = UiPalette.TitleBarText,
+            DisabledLinkColor = UiPalette.TitleBarText,
             Font = new Font(
                 form.Font.FontFamily,
                 Math.Max(8f, form.Font.Size - 0.5f),
                 FontStyle.Regular),
             LinkBehavior = LinkBehavior.NeverUnderline,
-            LinkColor = Color.FromArgb(168, 176, 190),
-            ActiveLinkColor = Color.FromArgb(168, 176, 190),
-            VisitedLinkColor = Color.FromArgb(168, 176, 190),
+            LinkColor = UiPalette.TitleBarText,
+            ActiveLinkColor = UiPalette.TitleBarText,
+            VisitedLinkColor = UiPalette.TitleBarText,
             Location = GetVersionLabelLocation(),
             Size = new Size(versionLabelWidth, titleBarHeight),
             TabStop = false,
@@ -240,18 +240,16 @@ internal sealed class ChromeTitleBarController
         var button = new Button
         {
             AutoSize = false,
-            FlatStyle = FlatStyle.Flat,
             Font = new Font(form.Font, FontStyle.Regular),
-            ForeColor = Color.FromArgb(220, 224, 232),
+            ForeColor = UiPalette.TitleBarTextSoft,
             Height = Math.Max(Scale(28), TextRenderer.MeasureText(text, form.Font).Height + Scale(8)),
             Margin = new Padding(0, 0, Scale(2), 0),
             Text = text,
             TextAlign = ContentAlignment.MiddleCenter,
             UseCompatibleTextRendering = true,
-            UseVisualStyleBackColor = false,
             Width = GetModeTabWidth(text)
         };
-        button.FlatAppearance.BorderSize = 0;
+        UiStyle.ApplySurfaceButton(button, titleBar.BackColor, UiPalette.TitleBarTextSoft);
         button.Click += (_, _) => tabActions[tab]();
 
         modeTabButtons.Add(tab, button);
@@ -269,21 +267,18 @@ internal sealed class ChromeTitleBarController
         Button button = new()
         {
             Anchor = AnchorStyles.Top | AnchorStyles.Right,
-            BackColor = titleBar.BackColor,
-            FlatStyle = FlatStyle.Flat,
-            ForeColor = Color.FromArgb(230, 232, 238),
+            ForeColor = UiPalette.TitleBarTextBright,
             Location = new Point(form.ClientSize.Width - Scale(legacyRightDistance) - width, 0),
             Size = new Size(width, titleBarHeight),
             Text = text,
-            UseVisualStyleBackColor = false
         };
-        button.FlatAppearance.BorderSize = 0;
-        button.FlatAppearance.MouseOverBackColor = text == "✕"
-            ? Color.FromArgb(196, 43, 28)
-            : Color.FromArgb(54, 58, 68);
-        button.FlatAppearance.MouseDownBackColor = text == "✕"
-            ? Color.FromArgb(150, 32, 22)
-            : Color.FromArgb(36, 86, 210);
+        UiStyle.ApplySurfaceButton(button, titleBar.BackColor, UiPalette.TitleBarTextBright);
+        button.FlatAppearance.MouseOverBackColor = text == "\u2715" // X
+            ? UiPalette.AccentBlueWarning
+            : UiPalette.AccentBlueMuted;
+        button.FlatAppearance.MouseDownBackColor = text == "\u2715" // X
+            ? UiPalette.AccentBlueMutedAlt
+            : UiPalette.AccentBlueStrong;
         button.Click += clickHandler;
         titleBar.Controls.Add(button);
     }
@@ -345,8 +340,8 @@ internal sealed class ChromeTitleBarController
     {
         versionLabel.Text = text;
         versionLabel.LinkBehavior = LinkBehavior.HoverUnderline;
-        versionLabel.LinkColor = Color.FromArgb(106, 173, 255);
-        versionLabel.ActiveLinkColor = Color.FromArgb(150, 210, 255);
+        versionLabel.LinkColor = UiPalette.AccentBlueSoft;
+        versionLabel.ActiveLinkColor = UiPalette.AccentBlueSoftHover;
         versionLabel.VisitedLinkColor = versionLabel.LinkColor;
         versionLabel.Links.Clear();
         versionLabel.Links.Add(0, text.Length, releaseUrl);
@@ -403,11 +398,11 @@ internal sealed class ChromeTitleBarController
     private static void SetModeTabStyle(Button button, bool active)
     {
         button.BackColor = active
-            ? Color.FromArgb(64, 116, 255)
-            : Color.FromArgb(50, 55, 80);
+            ? UiPalette.AccentBlue
+            : UiPalette.ButtonBackground;
         button.FlatAppearance.MouseOverBackColor = active
-            ? Color.FromArgb(78, 130, 255)
-            : Color.FromArgb(50, 55, 120);
-        button.FlatAppearance.MouseDownBackColor = Color.FromArgb(36, 86, 210);
+            ? UiPalette.AccentBlueHover
+            : UiPalette.ButtonHoverBackground;
+        button.FlatAppearance.MouseDownBackColor = UiPalette.AccentBlueStrong;
     }
 }

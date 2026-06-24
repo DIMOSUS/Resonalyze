@@ -9,14 +9,14 @@ internal sealed class InputLevelMeterPanel : Control
         TextFormatFlags.EndEllipsis |
         TextFormatFlags.SingleLine |
         TextFormatFlags.VerticalCenter;
-    private static readonly Color SurfaceColor = Color.FromArgb(38, 42, 52);
-    private static readonly Color BorderColor = Color.FromArgb(78, 84, 98);
-    private static readonly Color TrackColor = Color.FromArgb(24, 28, 36);
-    private static readonly Color TextColor = Color.FromArgb(225, 230, 240);
-    private static readonly Color MutedTextColor = Color.FromArgb(128, 135, 150);
-    private static readonly Color PeakHoldColor = Color.FromArgb(248, 248, 252);
-    private static readonly Color FullScaleColor = Color.FromArgb(95, 200, 255);
-    private static readonly Color DimFillColor = Color.FromArgb(80, 86, 100);
+    private static readonly Color SurfaceColor = UiPalette.PlotSurfaceDark;
+    private static readonly Color BorderColor = UiPalette.PlotBorder;
+    private static readonly Color TrackColor = UiPalette.PlotTrack;
+    private static readonly Color TextColor = UiPalette.MeterText;
+    private static readonly Color MutedTextColor = UiPalette.MeterMutedText;
+    private static readonly Color PeakHoldColor = UiPalette.MeterPeakHold;
+    private static readonly Color FullScaleColor = UiPalette.MeterFullScale;
+    private static readonly Color DimFillColor = UiPalette.MeterDimFill;
     private static readonly TimeSpan PeakHoldDuration = TimeSpan.FromMilliseconds(700);
     private static readonly TimeSpan TextUpdateInterval = TimeSpan.FromMilliseconds(500);
     private const double MinimumDecibels = -60;
@@ -158,9 +158,9 @@ internal sealed class InputLevelMeterPanel : Control
 
     private static void DrawTrack(Graphics graphics, Rectangle rectangle, bool active)
     {
-        using var backgroundBrush = new SolidBrush(active ? TrackColor : Color.FromArgb(30, 34, 42));
+        using var backgroundBrush = new SolidBrush(active ? TrackColor : UiPalette.MeterTrackInactive);
         graphics.FillRectangle(backgroundBrush, rectangle);
-        using var borderPen = new Pen(active ? BorderColor : Color.FromArgb(56, 60, 70));
+        using var borderPen = new Pen(active ? BorderColor : UiPalette.MeterBorderInactive);
         graphics.DrawRectangle(borderPen, rectangle);
         DrawScaleTicks(graphics, rectangle, active);
     }
@@ -172,8 +172,8 @@ internal sealed class InputLevelMeterPanel : Control
     {
         Rectangle innerRectangle = Rectangle.Inflate(rectangle, -1, -1);
         Color tickColor = active
-            ? Color.FromArgb(127, 12, 14, 18)
-            : Color.FromArgb(127, 12, 14, 18);
+            ? UiPalette.MeterBand
+            : UiPalette.MeterBand;
         using var tickPen = new Pen(tickColor, 1);
 
         for (int db = (int)MinimumDecibels + 5; db < MaximumDecibels; db += 5)
@@ -188,7 +188,7 @@ internal sealed class InputLevelMeterPanel : Control
         Rectangle rectangle)
     {
         Rectangle innerRectangle = Rectangle.Inflate(rectangle, -1, -1);
-        using var tickPen = new Pen(Color.FromArgb(90, 18, 20, 26), 1);
+        using var tickPen = new Pen(UiPalette.MeterGrid, 1);
 
         for (int db = (int)MinimumDecibels + 5; db < MaximumDecibels; db += 5)
         {
@@ -228,19 +228,19 @@ internal sealed class InputLevelMeterPanel : Control
     {
         if (state.Clipped || state.DisplayedPeakDbFs >= -3)
         {
-            return Color.FromArgb(255, 96, 96);
+            return UiPalette.WarningRed;
         }
         if (state.DisplayedPeakDbFs >= -12)
         {
-            return Color.FromArgb(255, 196, 76);
+            return UiPalette.WarningOrange;
         }
         if (state.DisplayedPeakDbFs >= -24)
         {
-            return Color.FromArgb(136, 224, 112);
+            return UiPalette.SuccessGreenAlt;
         }
 
         return state.Available
-            ? Color.FromArgb(88, 182, 255)
+            ? UiPalette.MeterLowAccent
             : DimFillColor;
     }
 
@@ -252,7 +252,7 @@ internal sealed class InputLevelMeterPanel : Control
         }
 
         return state.Clipped || state.HoldPeakDbFs >= -3
-            ? Color.FromArgb(255, 210, 210)
+            ? UiPalette.ErrorSoftTint
             : PeakHoldColor;
     }
 

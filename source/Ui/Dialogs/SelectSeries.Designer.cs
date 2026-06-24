@@ -65,7 +65,7 @@ namespace Resonalyze
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            BackColor = Color.FromArgb(50, 50, 50);
+            BackColor = UiPalette.DialogBackgroundSoft;
             ClientSize = new Size(219, 80);
             Controls.Add(comboBox1);
             Controls.Add(button2);

@@ -88,21 +88,12 @@ internal sealed class OverlayOperationSettingsDialog : Form
     {
         SuspendLayout();
 
-        AutoScaleMode = AutoScaleMode.Font;
-        BackColor = Color.FromArgb(40, 42, 48);
-        ClientSize = new Size(
-            440,
-            (supportsSmoothing ? 590 : 530) + (supportsAmplitudeSpace ? 20 : 0));
-        Font = new Font("Segoe UI", 9F);
-        ForeColor = Color.FromArgb(235, 237, 240);
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = false;
-        Padding = new Padding(20);
-        ShowIcon = false;
-        ShowInTaskbar = false;
-        StartPosition = FormStartPosition.CenterParent;
-        Text = "Calculated overlay settings";
+        UiStyle.ApplyDarkDialog(
+            this,
+            new Size(
+                440,
+                (supportsSmoothing ? 590 : 530) + (supportsAmplitudeSpace ? 20 : 0)),
+            title: "Calculated overlay settings");
 
         AddLabel("Name", 22);
         ConfigureComboOrText(nameTextBox, new Point(20, 42), new Size(400, 24));
@@ -137,15 +128,13 @@ internal sealed class OverlayOperationSettingsDialog : Form
         AddLabel("Color", 202);
         colorButton.Location = new Point(20, 222);
         colorButton.Size = new Size(122, 30);
-        colorButton.FlatStyle = FlatStyle.Flat;
-        colorButton.ForeColor = Color.White;
+        UiStyle.ApplySurfaceButton(colorButton, UiPalette.DialogSurfaceMuted);
         colorButton.Click += ColorButtonClick;
 
         AddLabel("Thickness", 202, 162);
         thicknessInput.Location = new Point(162, 222);
         thicknessInput.Size = new Size(90, 24);
-        thicknessInput.BackColor = Color.FromArgb(55, 58, 65);
-        thicknessInput.ForeColor = Color.White;
+        UiStyle.ApplyNumericUpDown(thicknessInput, thicknessInput.Location, thicknessInput.Size);
         thicknessInput.DecimalPlaces = 1;
         thicknessInput.Increment = 0.5m;
         thicknessInput.Minimum = 0.5m;
@@ -158,7 +147,7 @@ internal sealed class OverlayOperationSettingsDialog : Form
         blendFrequencyLabel.Text = "Blend frequency";
         blendFrequencyLabel.Location = new Point(20, 262);
         blendFrequencyLabel.AutoSize = true;
-        blendFrequencyLabel.ForeColor = Color.FromArgb(185, 190, 200);
+        blendFrequencyLabel.ForeColor = UiPalette.TextSecondary;
         blendFrequencyLabel.Font = Font;
         Controls.Add(blendFrequencyLabel);
         ConfigureComboOrText(blendFrequencyInput, new Point(20, 282), new Size(190, 24));
@@ -171,7 +160,7 @@ internal sealed class OverlayOperationSettingsDialog : Form
         blendWidthLabel.Text = "Transition width";
         blendWidthLabel.Location = new Point(230, 262);
         blendWidthLabel.AutoSize = true;
-        blendWidthLabel.ForeColor = Color.FromArgb(185, 190, 200);
+        blendWidthLabel.ForeColor = UiPalette.TextSecondary;
         blendWidthLabel.Font = Font;
         Controls.Add(blendWidthLabel);
         ConfigureCombo(blendWidthInput, new Point(230, 282), new Size(190, 24));
@@ -202,7 +191,6 @@ internal sealed class OverlayOperationSettingsDialog : Form
                 smoothingComboBox,
                 new Point(20, 342),
                 new Size(400, 24));
-            smoothingComboBox.FormattingEnabled = true;
             foreach (int value in OverlaySmoothing.SupportedInverseOctaves)
             {
                 smoothingComboBox.Items.Add(value);
@@ -222,8 +210,7 @@ internal sealed class OverlayOperationSettingsDialog : Form
             amplitudeSpaceCheckBox.AutoSize = true;
             amplitudeSpaceCheckBox.Location = new Point(20, amplitudeSpaceY);
             amplitudeSpaceCheckBox.Text = "Operate in amplitude space";
-            amplitudeSpaceCheckBox.BackColor = Color.Transparent;
-            amplitudeSpaceCheckBox.ForeColor = Color.FromArgb(235, 237, 240);
+            amplitudeSpaceCheckBox.ForeColor = UiPalette.TextBright;
             Controls.Add(amplitudeSpaceCheckBox);
         }
 
@@ -334,7 +321,7 @@ internal sealed class OverlayOperationSettingsDialog : Form
         colorButton.Text =
             $"#{selectedColor.R:X2}{selectedColor.G:X2}{selectedColor.B:X2}";
         colorButton.FlatAppearance.BorderColor =
-            Color.FromArgb(100, 105, 115);
+            UiPalette.DialogBorder;
     }
 
     private void UpdateOpacityLabel()
@@ -344,11 +331,7 @@ internal sealed class OverlayOperationSettingsDialog : Form
 
     private void AddLabel(string text, int y, int x = 20)
     {
-        Controls.Add(OverlayDialogControls.CreateLabel(
-            text,
-            new Point(x, y),
-            Color.FromArgb(185, 190, 200),
-            Font));
+        Controls.Add(UiStyle.CreateLabel(text, new Point(x, y), UiPalette.TextSecondary, Font));
     }
 
     private static void ConfigureCombo(
@@ -365,10 +348,7 @@ internal sealed class OverlayOperationSettingsDialog : Form
         Point location,
         Size size)
     {
-        control.BackColor = Color.FromArgb(55, 58, 65);
-        control.ForeColor = Color.White;
-        control.Location = location;
-        control.Size = size;
+        UiStyle.ApplySurfaceInput(control, location, size);
     }
 
     private static void SelectSlot(

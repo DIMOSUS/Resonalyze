@@ -57,7 +57,7 @@ namespace Resonalyze
             // buttonRecord
             // 
             buttonRecord.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonRecord.BackColor = Color.FromArgb(50, 55, 80);
+            buttonRecord.BackColor = UiPalette.ButtonBackground;
             buttonRecord.FlatStyle = FlatStyle.Popup;
             buttonRecord.ForeColor = Color.White;
             buttonRecord.Location = new Point(3, 3);
@@ -71,7 +71,7 @@ namespace Resonalyze
             // plotView1
             // 
             plotView1.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            plotView1.BackColor = Color.FromArgb(50, 55, 100);
+            plotView1.BackColor = UiPalette.PlotSurface;
             plotView1.ForeColor = Color.White;
             plotView1.Location = new Point(12, 12);
             plotView1.Name = "plotView1";
@@ -107,7 +107,7 @@ namespace Resonalyze
             // 
             // buttonSaveOverlay
             // 
-            buttonSaveOverlay.BackColor = Color.FromArgb(50, 55, 100);
+            buttonSaveOverlay.BackColor = UiPalette.PlotSurface;
             buttonSaveOverlay.FlatStyle = FlatStyle.Popup;
             buttonSaveOverlay.ForeColor = Color.White;
             buttonSaveOverlay.Location = new Point(22, 3);
@@ -120,7 +120,7 @@ namespace Resonalyze
             // 
             // buttonOverlaySettings1
             // 
-            buttonOverlaySettings1.BackColor = Color.FromArgb(50, 55, 80);
+            buttonOverlaySettings1.BackColor = UiPalette.ButtonBackground;
             buttonOverlaySettings1.FlatStyle = FlatStyle.Popup;
             buttonOverlaySettings1.ForeColor = Color.White;
             buttonOverlaySettings1.Location = new Point(117, 3);
@@ -132,7 +132,7 @@ namespace Resonalyze
             // 
             // numericUpDown1
             // 
-            numericUpDown1.BackColor = Color.FromArgb(50, 55, 80);
+            numericUpDown1.BackColor = UiPalette.ButtonBackground;
             numericUpDown1.BorderStyle = BorderStyle.None;
             numericUpDown1.ForeColor = Color.White;
             numericUpDown1.Location = new Point(72, 3);
@@ -157,7 +157,7 @@ namespace Resonalyze
             // buttonRecordOpt
             // 
             buttonRecordOpt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonRecordOpt.BackColor = Color.FromArgb(50, 55, 80);
+            buttonRecordOpt.BackColor = UiPalette.ButtonBackground;
             buttonRecordOpt.FlatStyle = FlatStyle.Popup;
             buttonRecordOpt.Font = new Font("Segoe UI Emoji", 9.75F);
             buttonRecordOpt.ForeColor = Color.White;
@@ -173,7 +173,7 @@ namespace Resonalyze
             // buttonSave
             // 
             buttonSave.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonSave.BackColor = Color.FromArgb(50, 55, 80);
+            buttonSave.BackColor = UiPalette.ButtonBackground;
             buttonSave.FlatStyle = FlatStyle.Popup;
             buttonSave.ForeColor = Color.White;
             buttonSave.Location = new Point(4, 62);
@@ -188,7 +188,7 @@ namespace Resonalyze
             // buttonLoad
             // 
             buttonLoad.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonLoad.BackColor = Color.FromArgb(50, 55, 80);
+            buttonLoad.BackColor = UiPalette.ButtonBackground;
             buttonLoad.FlatStyle = FlatStyle.Popup;
             buttonLoad.ForeColor = Color.White;
             buttonLoad.Location = new Point(76, 62);
@@ -203,7 +203,7 @@ namespace Resonalyze
             // buttonClear
             // 
             buttonClear.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonClear.BackColor = Color.FromArgb(50, 55, 80);
+            buttonClear.BackColor = UiPalette.ButtonBackground;
             buttonClear.FlatStyle = FlatStyle.Popup;
             buttonClear.ForeColor = Color.White;
             buttonClear.Location = new Point(1204, 250);
@@ -217,7 +217,7 @@ namespace Resonalyze
             // buttonCurrentModeSettings
             // 
             buttonCurrentModeSettings.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonCurrentModeSettings.BackColor = Color.FromArgb(50, 55, 80);
+            buttonCurrentModeSettings.BackColor = UiPalette.ButtonBackground;
             buttonCurrentModeSettings.FlatStyle = FlatStyle.Popup;
             buttonCurrentModeSettings.ForeColor = Color.White;
             buttonCurrentModeSettings.Location = new Point(1204, 211);
@@ -231,7 +231,7 @@ namespace Resonalyze
             // buttonDraw
             // 
             buttonDraw.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonDraw.BackColor = Color.FromArgb(50, 55, 80);
+            buttonDraw.BackColor = UiPalette.ButtonBackground;
             buttonDraw.FlatStyle = FlatStyle.Popup;
             buttonDraw.ForeColor = Color.White;
             buttonDraw.Location = new Point(1204, 279);
@@ -258,9 +258,9 @@ namespace Resonalyze
             // inputLevelMeterPanel
             // 
             inputLevelMeterPanel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            inputLevelMeterPanel.BackColor = Color.FromArgb(38, 42, 52);
+            inputLevelMeterPanel.BackColor = UiPalette.PlotSurfaceDark;
             inputLevelMeterPanel.Font = new Font("Segoe UI", 8.75F, FontStyle.Bold);
-            inputLevelMeterPanel.ForeColor = Color.FromArgb(225, 230, 240);
+            inputLevelMeterPanel.ForeColor = UiPalette.MeterText;
             inputLevelMeterPanel.Location = new Point(1204, 12);
             inputLevelMeterPanel.Name = "inputLevelMeterPanel";
             inputLevelMeterPanel.Size = new Size(150, 88);
@@ -270,7 +270,7 @@ namespace Resonalyze
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            BackColor = Color.FromArgb(45, 50, 60);
+            BackColor = UiPalette.AppBackground;
             ClientSize = new Size(1366, 768);
             Controls.Add(inputLevelMeterPanel);
             Controls.Add(panel1);

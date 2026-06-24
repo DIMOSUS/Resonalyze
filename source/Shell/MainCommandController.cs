@@ -106,12 +106,12 @@ internal sealed class MainCommandController
         if (frozen)
         {
             button.Enabled = false;
-            button.BackColor = Color.FromArgb(55, 60, 70);
-            button.ForeColor = Color.FromArgb(120, 125, 135);
+            button.BackColor = UiPalette.ButtonDisabledBackground;
+            button.ForeColor = UiPalette.TextMuted;
         }
         else
         {
-            button.BackColor = Color.FromArgb(50, 55, 80);
+            button.BackColor = UiPalette.ButtonBackground;
             button.ForeColor = Color.White;
             button.Enabled = true;
         }
@@ -121,8 +121,8 @@ internal sealed class MainCommandController
     {
         button.Enabled = true;
         button.BackColor = pressed
-            ? Color.FromArgb(40, 45, 68)
-            : Color.FromArgb(50, 55, 80);
+            ? UiPalette.ButtonPressedBackground
+            : UiPalette.ButtonBackground;
         button.ForeColor = Color.White;
         button.Padding = pressed ? new Padding(1, 1, 0, 0) : Padding.Empty;
     }

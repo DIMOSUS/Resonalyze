@@ -49,4 +49,4 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\Resonalyze.exe"; Tasks: deskt
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Run]
-Filename: "{app}\Resonalyze.exe"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Resonalyze.exe"; Description: "Launch {#AppName}"; Flags: nowait postinstall

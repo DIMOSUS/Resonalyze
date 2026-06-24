@@ -32,6 +32,8 @@ internal sealed class ChromeTitleBarController
     private readonly float dpiScale;
     private readonly int windowButtonWidth;
     private int versionLabelWidth;
+    private bool isCustomMaximized;
+    private Rectangle restoreBounds;
 
     public ChromeTitleBarController(
         Form form,
@@ -84,6 +86,8 @@ internal sealed class ChromeTitleBarController
         int msg,
         IntPtr wParam,
         IntPtr lParam);
+
+    public bool IsCustomMaximized => isCustomMaximized;
 
     public void SetActiveModeTab(ModeTab activeTab)
     {
@@ -295,6 +299,11 @@ internal sealed class ChromeTitleBarController
             return;
         }
 
+        if (isCustomMaximized)
+        {
+            RestoreWindowBoundsForDrag(sender, e.Location);
+        }
+
         ReleaseCapture();
         SendMessage(
             form.Handle,
@@ -325,10 +334,76 @@ internal sealed class ChromeTitleBarController
 
     private void ToggleMaximized()
     {
+        if (isCustomMaximized)
+        {
+            RestoreWindowBounds();
+            return;
+        }
+
+        MaximizeToCurrentScreen();
+    }
+
+    private void MaximizeToCurrentScreen()
+    {
+        if (form.WindowState == FormWindowState.Minimized)
+        {
+            return;
+        }
+
+        restoreBounds = form.Bounds;
         updateMaximizedBounds();
-        form.WindowState = form.WindowState == FormWindowState.Maximized
-            ? FormWindowState.Normal
-            : FormWindowState.Maximized;
+        Rectangle workingArea = Screen.FromRectangle(form.Bounds).WorkingArea;
+        isCustomMaximized = true;
+        form.Bounds = workingArea;
+    }
+
+    private void RestoreWindowBounds()
+    {
+        if (!isCustomMaximized)
+        {
+            return;
+        }
+
+        isCustomMaximized = false;
+        if (restoreBounds.Width > 0 &&
+            restoreBounds.Height > 0)
+        {
+            form.Bounds = restoreBounds;
+        }
+    }
+
+    private void RestoreWindowBoundsForDrag(object? sender, Point localPoint)
+    {
+        if (!isCustomMaximized ||
+            restoreBounds.Width <= 0 ||
+            restoreBounds.Height <= 0)
+        {
+            return;
+        }
+
+        Control origin = sender as Control ?? titleBar;
+        Point screenPoint = origin.PointToScreen(localPoint);
+        Rectangle workingArea = Screen.FromPoint(screenPoint).WorkingArea;
+        double horizontalRatio = Math.Clamp(
+            (double)screenPoint.X - form.Left,
+            0,
+            Math.Max(1, form.Width)) / Math.Max(1, form.Width);
+
+        isCustomMaximized = false;
+        int restoredLeft = screenPoint.X - (int)Math.Round(restoreBounds.Width * horizontalRatio);
+        int restoredTop = screenPoint.Y - Math.Max(1, titleBarHeight / 2);
+        restoredLeft = Math.Max(
+            workingArea.Left,
+            Math.Min(restoredLeft, workingArea.Right - restoreBounds.Width));
+        restoredTop = Math.Max(
+            workingArea.Top,
+            Math.Min(restoredTop, workingArea.Bottom - restoreBounds.Height));
+
+        form.Bounds = new Rectangle(
+            restoredLeft,
+            restoredTop,
+            restoreBounds.Width,
+            restoreBounds.Height);
     }
 
     private void CloseWindowClick(object? sender, EventArgs e)

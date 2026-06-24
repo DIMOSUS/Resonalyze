@@ -662,7 +662,10 @@ namespace Resonalyze
 
         private void UpdateMaximizedBounds()
         {
-            MaximizedBounds = Screen.FromControl(this).WorkingArea;
+            Point center = new(
+                Left + Math.Max(1, Width) / 2,
+                Top + Math.Max(1, Height) / 2);
+            MaximizedBounds = Screen.FromPoint(center).WorkingArea;
         }
 
         private void SetActiveModeTab(ModeTab activeTab)
@@ -786,7 +789,7 @@ namespace Resonalyze
         protected override void WndProc(ref Message m)
         {
             if (m.Msg == ChromeTitleBarController.WmNcHitTest &&
-                WindowState != FormWindowState.Maximized)
+                !titleBarController.IsCustomMaximized)
             {
                 base.WndProc(ref m);
                 if ((int)m.Result == ChromeTitleBarController.HtClient)

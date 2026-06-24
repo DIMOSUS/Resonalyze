@@ -888,6 +888,7 @@ namespace Resonalyze
                         file.MeasurementMode,
                         file.GetTransferImpulseResponse(),
                         file.TransferPeakIndex);
+                    expSweepMeasurement.RestoreLevelSnapshot(file.GetMeterSnapshot());
                     liveSpectrumController.ConfigureFrom(expSweepMeasurement);
                     timeAlignmentController.RefreshConfiguration();
                     SaveMeasurementSettings();

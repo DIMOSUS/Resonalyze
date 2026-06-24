@@ -36,6 +36,12 @@ public sealed class ImpulseResponseFile
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? TransferPeakIndex { get; set; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LevelSnapshotFileEntry? MicrophoneLevels { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LevelSnapshotFileEntry? LoopbackLevels { get; set; }
+
     public double[] SweepDeconvolutionRealSamples { get; set; } = Array.Empty<double>();
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -66,6 +72,10 @@ public sealed class ImpulseResponseFile
                 ConvertSamples(transferImpulseResponse, "Transfer impulse response");
             transferPeakIndex = measurement.TransferPeakIndex;
         }
+        LevelSnapshotFileEntry? microphoneLevels =
+            ConvertLevelEntry(measurement.CurrentLevels.Microphone);
+        LevelSnapshotFileEntry? loopbackLevels =
+            ConvertLevelEntry(measurement.CurrentLevels.Loopback);
 
         return new ImpulseResponseFile
         {
@@ -78,6 +88,8 @@ public sealed class ImpulseResponseFile
             MeasurementMode = measurement.MeasurementMode,
             SweepDeconvolutionPeakIndex = measurement.SweepDeconvolutionPeakIndex,
             TransferPeakIndex = transferPeakIndex,
+            MicrophoneLevels = microphoneLevels,
+            LoopbackLevels = loopbackLevels,
             SweepDeconvolutionRealSamples = sweepRealSamples,
             SweepDeconvolutionImaginarySamples = sweepImaginarySamples,
             TransferRealSamples = transferRealSamples,
@@ -142,6 +154,15 @@ public sealed class ImpulseResponseFile
         return TransferRealSamples == null
             ? null
             : ToComplexSamples(TransferRealSamples, TransferImaginarySamples);
+    }
+
+    internal InputLevelMeterSnapshot GetMeterSnapshot()
+    {
+        Validate();
+
+        return new InputLevelMeterSnapshot(
+            ToMeterEntry(MicrophoneLevels),
+            ToMeterEntry(LoopbackLevels));
     }
 
     private void Validate()
@@ -234,6 +255,9 @@ public sealed class ImpulseResponseFile
                 TransferImaginarySamples,
                 "Transfer impulse response");
         }
+
+        ValidateLevelEntry(MicrophoneLevels, nameof(MicrophoneLevels));
+        ValidateLevelEntry(LoopbackLevels, nameof(LoopbackLevels));
     }
 
     private static (double[] Real, double[]? Imaginary) ConvertSamples(
@@ -288,5 +312,57 @@ public sealed class ImpulseResponseFile
                 throw new InvalidDataException($"{label} sample {i} is not a finite number.");
             }
         }
+    }
+
+    private static LevelSnapshotFileEntry? ConvertLevelEntry(InputLevelMeterEntry entry)
+    {
+        if (!entry.Available)
+        {
+            return null;
+        }
+
+        return new LevelSnapshotFileEntry
+        {
+            PeakDbFs = entry.PeakDbFs,
+            RmsDbFs = entry.RmsDbFs,
+            Clipped = entry.Clipped,
+            FullScaleReference = entry.FullScaleReference
+        };
+    }
+
+    private static InputLevelMeterEntry ToMeterEntry(LevelSnapshotFileEntry? entry)
+    {
+        if (entry == null)
+        {
+            return InputLevelMeterEntry.Unavailable;
+        }
+
+        return new InputLevelMeterEntry(
+            true,
+            entry.PeakDbFs,
+            entry.RmsDbFs,
+            entry.Clipped,
+            entry.FullScaleReference);
+    }
+
+    private static void ValidateLevelEntry(LevelSnapshotFileEntry? entry, string label)
+    {
+        if (entry == null)
+        {
+            return;
+        }
+
+        if (!double.IsFinite(entry.PeakDbFs) || !double.IsFinite(entry.RmsDbFs))
+        {
+            throw new InvalidDataException($"{label} contains a non-finite level value.");
+        }
+    }
+
+    public sealed class LevelSnapshotFileEntry
+    {
+        public double PeakDbFs { get; set; }
+        public double RmsDbFs { get; set; }
+        public bool Clipped { get; set; }
+        public bool FullScaleReference { get; set; }
     }
 }

@@ -20,6 +20,18 @@ public sealed class ImpulseResponseFileTests
             PlayChannel = PlaybackChannel.Left,
             MeasurementMode = SweepMeasurementMode.LoopbackTransfer,
             SweepDeconvolutionPeakIndex = 2,
+            MicrophoneLevels = new ImpulseResponseFile.LevelSnapshotFileEntry
+            {
+                PeakDbFs = -6.5,
+                RmsDbFs = -18.25,
+                Clipped = true
+            },
+            LoopbackLevels = new ImpulseResponseFile.LevelSnapshotFileEntry
+            {
+                PeakDbFs = 0.0,
+                RmsDbFs = -5.4,
+                FullScaleReference = true
+            },
             SweepDeconvolutionRealSamples = [0.125, 0.5, 1.0, -0.25],
             TransferPeakIndex = 1,
             TransferRealSamples = [0.25, 1.0, -0.5],
@@ -36,6 +48,8 @@ public sealed class ImpulseResponseFileTests
             Assert.Contains("\"measurementMode\": \"LoopbackTransfer\"", json);
             Assert.Contains("\"sweepDeconvolutionPeakIndex\": 2", json);
             Assert.Contains("\"transferPeakIndex\": 1", json);
+            Assert.Contains("\"microphoneLevels\"", json);
+            Assert.Contains("\"loopbackLevels\"", json);
             Assert.Contains("\"sweepDeconvolutionRealSamples\"", json);
             Assert.Contains("\"transferRealSamples\"", json);
             Assert.True(
@@ -58,6 +72,14 @@ public sealed class ImpulseResponseFileTests
             Assert.Equal(PlaybackChannel.Left, loaded.PlayChannel);
             Assert.Equal(SweepMeasurementMode.LoopbackTransfer, loaded.MeasurementMode);
             Assert.Equal(2, loaded.SweepDeconvolutionPeakIndex);
+            Assert.NotNull(loaded.MicrophoneLevels);
+            Assert.Equal(-6.5, loaded.MicrophoneLevels.PeakDbFs);
+            Assert.Equal(-18.25, loaded.MicrophoneLevels.RmsDbFs);
+            Assert.True(loaded.MicrophoneLevels.Clipped);
+            Assert.NotNull(loaded.LoopbackLevels);
+            Assert.Equal(0.0, loaded.LoopbackLevels.PeakDbFs);
+            Assert.Equal(-5.4, loaded.LoopbackLevels.RmsDbFs);
+            Assert.True(loaded.LoopbackLevels.FullScaleReference);
             Assert.Equal(
                 [
                     new Complex(0.125, 0),
@@ -99,6 +121,40 @@ public sealed class ImpulseResponseFileTests
 
         Assert.NotEqual(measurement.Sweep!.RequestedDuration, file.SweepDurationSeconds);
         Assert.Equal(measurement.Sweep.ComputedDuration, file.SweepDurationSeconds);
+    }
+
+    [Fact]
+    public void Capture_StoresCurrentLevelSnapshot()
+    {
+        using var measurement = new ExpSweepMeasurement();
+        measurement.RestoreImpulseResponse(
+            octaves: 12,
+            sampleRate: 44_100,
+            bits: 24,
+            sweepDurationSeconds: 1.0,
+            playChannel: PlaybackChannel.Right,
+            sweepDeconvolutionImpulseResponse:
+            [
+                Complex.Zero,
+                Complex.One,
+                Complex.Zero
+            ],
+            sweepDeconvolutionPeakIndex: 1);
+        measurement.RestoreLevelSnapshot(
+            new InputLevelMeterSnapshot(
+                new InputLevelMeterEntry(true, -12.3, -20.4, true, false),
+                new InputLevelMeterEntry(true, 0.0, -5.4, false, true)));
+
+        ImpulseResponseFile file = ImpulseResponseFile.Capture(measurement);
+
+        Assert.NotNull(file.MicrophoneLevels);
+        Assert.Equal(-12.3, file.MicrophoneLevels.PeakDbFs);
+        Assert.Equal(-20.4, file.MicrophoneLevels.RmsDbFs);
+        Assert.True(file.MicrophoneLevels.Clipped);
+        Assert.NotNull(file.LoopbackLevels);
+        Assert.Equal(0.0, file.LoopbackLevels.PeakDbFs);
+        Assert.Equal(-5.4, file.LoopbackLevels.RmsDbFs);
+        Assert.True(file.LoopbackLevels.FullScaleReference);
     }
 
     [Fact]

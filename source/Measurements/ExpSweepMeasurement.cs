@@ -48,6 +48,8 @@ namespace Resonalyze
         public int AsioOutputChannelOffset { get; private set; }
         public Exception? LastError { get; private set; }
         public int RecordedSamples => soundRecorder?.ReadSamples ?? 0;
+        internal InputLevelMeterSnapshot CurrentLevels { get; private set; } =
+            InputLevelMeterSnapshot.Empty;
 
         public void Init(
             int octaves,
@@ -95,6 +97,7 @@ namespace Resonalyze
             LoopbackRecordedSamples = null;
             MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
             LastError = null;
+            CurrentLevels = InputLevelMeterSnapshot.Empty;
 
             Sweep?.Dispose();
             Sweep = new ExponentialSineSweep();
@@ -142,6 +145,7 @@ namespace Resonalyze
                 LoopbackRecordedSamples = null;
                 MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
                 LastError = null;
+                CurrentLevels = InputLevelMeterSnapshot.Empty;
                 measurementTask = RunCoreAsync(cancellationTokenSource.Token);
                 return measurementTask;
             }
@@ -253,6 +257,13 @@ namespace Resonalyze
                 : 0;
             LastError = null;
             ImpulseResponseChanged?.Invoke();
+        }
+
+        internal void RestoreLevelSnapshot(InputLevelMeterSnapshot snapshot)
+        {
+            ThrowIfDisposed();
+            CurrentLevels = snapshot;
+            RaiseLevels(snapshot);
         }
 
         private void HandleWaveLevelsAvailable(AudioChannelLevel[] channels)
@@ -463,7 +474,9 @@ namespace Resonalyze
                 MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
             }
 
-            RaiseLevels(CreateFinalLevelSnapshot(sampleChannels));
+            InputLevelMeterSnapshot finalLevels = CreateFinalLevelSnapshot(sampleChannels);
+            CurrentLevels = finalLevels;
+            RaiseLevels(finalLevels);
             ImpulseResponseChanged?.Invoke();
         }
 

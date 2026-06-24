@@ -19,6 +19,7 @@ internal sealed class DockedModeSettingsHost : IDisposable
         this.anchorControl = anchorControl;
 
         owner.LocationChanged += OwnerLayoutChanged;
+        owner.Resize += OwnerLayoutChanged;
         owner.SizeChanged += OwnerLayoutChanged;
         anchorControl.SizeChanged += OwnerLayoutChanged;
     }
@@ -92,6 +93,7 @@ internal sealed class DockedModeSettingsHost : IDisposable
 
         disposed = true;
         owner.LocationChanged -= OwnerLayoutChanged;
+        owner.Resize -= OwnerLayoutChanged;
         owner.SizeChanged -= OwnerLayoutChanged;
         anchorControl.SizeChanged -= OwnerLayoutChanged;
         Close();
@@ -129,13 +131,41 @@ internal sealed class DockedModeSettingsHost : IDisposable
 
     private void PositionDialog()
     {
-        if (activeDialog == null || owner.WindowState == FormWindowState.Minimized)
+        if (activeDialog == null)
         {
             return;
         }
 
+        if (owner.WindowState == FormWindowState.Minimized)
+        {
+            activeDialog.Hide();
+            return;
+        }
+
+        if (!activeDialog.Visible)
+        {
+            activeDialog.Show(owner);
+        }
+
+        activeDialog.Location = HasRoomOutsideOwner(activeDialog)
+            ? GetOutsideOwnerLocation()
+            : GetInsideAnchorLocation(activeDialog);
+    }
+
+    private bool HasRoomOutsideOwner(Form dialog)
+    {
+        Rectangle workingArea = Screen.FromControl(owner).WorkingArea;
+        int availableWidth = workingArea.Right - owner.Bounds.Right;
+        return availableWidth >= dialog.Width;
+    }
+
+    private Point GetOutsideOwnerLocation() =>
+        new(owner.Bounds.Right, owner.Bounds.Top);
+
+    private Point GetInsideAnchorLocation(Form dialog)
+    {
         Point topRight = anchorControl.PointToScreen(new Point(anchorControl.Width, 0));
-        activeDialog.Location = new Point(topRight.X - activeDialog.Width, topRight.Y);
+        return new Point(topRight.X - dialog.Width, topRight.Y);
     }
 
     private void OwnerLayoutChanged(object? sender, EventArgs e)

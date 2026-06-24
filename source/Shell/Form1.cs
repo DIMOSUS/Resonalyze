@@ -73,6 +73,7 @@ namespace Resonalyze
         private readonly PlotLabelsPanelController plotLabelsPanelController;
         private readonly InputLevelMeterController inputLevelMeterController;
         private readonly DockedModeSettingsHost dockedModeSettingsHost;
+        private readonly DockedModeSettingsHost dockedMeasurementSettingsHost;
         private bool hasCurrentImpulseResponse;
         private bool closingPrepared;
         private bool resourcesDisposed;
@@ -94,6 +95,7 @@ namespace Resonalyze
             timeAlignmentController = dependencies.TimeAlignmentController;
             inputLevelMeterController = dependencies.InputLevelMeterController;
             dockedModeSettingsHost = dependencies.DockedModeSettingsHost;
+            dockedMeasurementSettingsHost = dependencies.DockedMeasurementSettingsHost;
             modeDescriptors = CreateModeDescriptors();
             ApplyPersistedSettings();
             WireControllerEvents();

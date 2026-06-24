@@ -45,8 +45,8 @@ public sealed class OverlayCollection
             .FirstOrDefault(button => button.Name == "buttonOverlaySettings1")
             ?? throw new InvalidOperationException(
                 "Overlay template settings button is missing.");
-        NumericUpDown templateOffset = templatePanel.Controls
-            .OfType<NumericUpDown>()
+        DarkNumericUpDown templateOffset = templatePanel.Controls
+            .OfType<DarkNumericUpDown>()
             .FirstOrDefault()
             ?? throw new InvalidOperationException(
                 "Overlay template offset control is missing.");
@@ -74,7 +74,7 @@ public sealed class OverlayCollection
         {
             Panel panel = CreatePanel(templatePanel, index, random);
             CheckBox checkBox = CreateCheckBox(templateCheckBox, index);
-            NumericUpDown offset = CreateOffset(templateOffset, index);
+            DarkNumericUpDown offset = CreateOffset(templateOffset, index);
             Button settingsButton = CreateSettingsButton(templateSettingsButton, index);
 
             panel.Controls.Add(checkBox);
@@ -280,21 +280,23 @@ public sealed class OverlayCollection
         };
     }
 
-    private static NumericUpDown CreateOffset(
-        NumericUpDown template,
+    private static DarkNumericUpDown CreateOffset(
+        DarkNumericUpDown template,
         int index)
     {
-        return new NumericUpDown
+        return new DarkNumericUpDown
         {
             BackColor = template.BackColor,
+            DecimalPlaces = template.DecimalPlaces,
             ForeColor = template.ForeColor,
-            BorderStyle = BorderStyle.None,
+            Increment = template.Increment,
             Location = template.Location,
             Maximum = template.Maximum,
             Minimum = template.Minimum,
             Name = $"numericUpDown{index}",
             Size = template.Size,
             TextAlign = template.TextAlign,
+            ThousandsSeparator = template.ThousandsSeparator,
             Value = template.Value
         };
     }
@@ -326,7 +328,8 @@ public sealed class OverlayCollection
             Name = $"buttonOverlaySettings{index}",
             Size = templateSettingsButton.Size,
             Text = templateSettingsButton.Text,
-            UseVisualStyleBackColor = templateSettingsButton.UseVisualStyleBackColor
+            UseVisualStyleBackColor = templateSettingsButton.UseVisualStyleBackColor,
+            UseCompatibleTextRendering = templateSettingsButton.UseCompatibleTextRendering
         };
     }
 }
@@ -335,7 +338,7 @@ public sealed class Overlay
 {
     private readonly OverlayCollection collection;
     private readonly Panel panel;
-    private readonly NumericUpDown offsetControl;
+    private readonly DarkNumericUpDown offsetControl;
     private readonly Button settingsButton;
     private readonly CheckBox checkBox;
     private readonly Color defaultColor;
@@ -353,7 +356,7 @@ public sealed class Overlay
         Panel panel,
         Button saveButton,
         Button settingsButton,
-        NumericUpDown offsetControl,
+        DarkNumericUpDown offsetControl,
         CheckBox checkBox,
         int index,
         ToolTip toolTip,
@@ -832,7 +835,7 @@ internal sealed class CalculatedOverlay
     private readonly Panel panel;
     private readonly Label operationLabel;
     private readonly Button settingsButton;
-    private readonly NumericUpDown offsetControl;
+    private readonly DarkNumericUpDown offsetControl;
     private readonly CheckBox checkBox;
     private readonly Color defaultColor;
     private readonly decimal defaultOffset;
@@ -854,7 +857,7 @@ internal sealed class CalculatedOverlay
         Panel panel,
         Label operationLabel,
         Button settingsButton,
-        NumericUpDown offsetControl,
+        DarkNumericUpDown offsetControl,
         CheckBox checkBox,
         int index,
         ToolTip toolTip,

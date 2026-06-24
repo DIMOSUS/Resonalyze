@@ -32,9 +32,9 @@ namespace Resonalyze.Options
             button1 = new Button();
             checkUseCalibration = new CheckBox();
             label2 = new Label();
-            modeComboBox = new ComboBox();
+            modeComboBox = new DarkComboBox();
             label3 = new Label();
-            sequenceLengthComboBox = new ComboBox();
+            sequenceLengthComboBox = new DarkComboBox();
             SuspendLayout();
             // 
             // label1
@@ -136,8 +136,8 @@ namespace Resonalyze.Options
         private Button button1;
         private CheckBox checkUseCalibration;
         private Label label2;
-        private ComboBox modeComboBox;
+        private DarkComboBox modeComboBox;
         private Label label3;
-        private ComboBox sequenceLengthComboBox;
+        private DarkComboBox sequenceLengthComboBox;
     }
 }

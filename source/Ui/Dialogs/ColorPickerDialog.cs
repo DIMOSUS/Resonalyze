@@ -29,9 +29,9 @@ internal sealed class ColorPickerDialog : Form
     private readonly HueSlider hueSlider = new();
     private readonly Panel preview = new();
     private readonly TextBox hexTextBox = new();
-    private readonly NumericUpDown redInput = CreateChannelInput();
-    private readonly NumericUpDown greenInput = CreateChannelInput();
-    private readonly NumericUpDown blueInput = CreateChannelInput();
+    private readonly DarkNumericUpDown redInput = CreateChannelInput();
+    private readonly DarkNumericUpDown greenInput = CreateChannelInput();
+    private readonly DarkNumericUpDown blueInput = CreateChannelInput();
     private bool updatingControls;
 
     public ColorPickerDialog(Color initialColor)
@@ -156,7 +156,7 @@ internal sealed class ColorPickerDialog : Form
         return button;
     }
 
-    private void AddChannelControl(string labelText, NumericUpDown input, int x)
+    private void AddChannelControl(string labelText, DarkNumericUpDown input, int x)
     {
         AddLabel(labelText, x, 330);
         input.Location = new Point(x, 350);
@@ -174,9 +174,9 @@ internal sealed class ColorPickerDialog : Form
         });
     }
 
-    private static NumericUpDown CreateChannelInput()
+    private static DarkNumericUpDown CreateChannelInput()
     {
-        var input = new NumericUpDown
+        var input = new DarkNumericUpDown
         {
             Maximum = 255,
             TextAlign = HorizontalAlignment.Center

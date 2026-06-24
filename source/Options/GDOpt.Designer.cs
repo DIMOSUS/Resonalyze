@@ -1,4 +1,4 @@
-namespace Resonalyze.Options
+﻿namespace Resonalyze.Options
 {
     partial class GDOpt
     {
@@ -30,15 +30,15 @@ namespace Resonalyze.Options
         {
             label10 = new Label();
             label9 = new Label();
-            numericSmoothingInverseOctaves = new NumericUpDown();
-            numericRightWindow = new NumericUpDown();
-            numericLeftWindow = new NumericUpDown();
+            numericSmoothingInverseOctaves = new DarkNumericUpDown();
+            numericRightWindow = new DarkNumericUpDown();
+            numericLeftWindow = new DarkNumericUpDown();
             label5 = new Label();
             label4 = new Label();
-            numericWindow = new NumericUpDown();
+            numericWindow = new DarkNumericUpDown();
             label1 = new Label();
             button1 = new Button();
-            numericOffset = new NumericUpDown();
+            numericOffset = new DarkNumericUpDown();
             label11 = new Label();
             irPlotView = new OxyPlot.WindowsForms.PlotView();
             ((System.ComponentModel.ISupportInitialize)numericSmoothingInverseOctaves).BeginInit();
@@ -230,15 +230,15 @@ namespace Resonalyze.Options
 
         private Label label10;
         private Label label9;
-        private NumericUpDown numericSmoothingInverseOctaves;
-        private NumericUpDown numericRightWindow;
-        private NumericUpDown numericLeftWindow;
+        private DarkNumericUpDown numericSmoothingInverseOctaves;
+        private DarkNumericUpDown numericRightWindow;
+        private DarkNumericUpDown numericLeftWindow;
         private Label label5;
         private Label label4;
-        private NumericUpDown numericWindow;
+        private DarkNumericUpDown numericWindow;
         private Label label1;
         private Button button1;
-        private NumericUpDown numericOffset;
+        private DarkNumericUpDown numericOffset;
         private Label label11;
         private OxyPlot.WindowsForms.PlotView irPlotView;
     }

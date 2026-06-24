@@ -4,9 +4,9 @@ internal sealed class OverlaySettingsDialog : Form
 {
     private readonly TextBox nameTextBox = new();
     private readonly Button colorButton = new();
-    private readonly NumericUpDown thicknessInput = new();
-    private readonly ComboBox styleComboBox = new();
-    private readonly ComboBox smoothingComboBox = new();
+    private readonly DarkNumericUpDown thicknessInput = new();
+    private readonly DarkComboBox styleComboBox = new();
+    private readonly DarkComboBox smoothingComboBox = new();
     private readonly TrackBar opacityTrackBar = new();
     private readonly Label opacityValueLabel = new();
     private readonly bool supportsSmoothing;

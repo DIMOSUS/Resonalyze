@@ -30,7 +30,7 @@ namespace Resonalyze
         {
             button1 = new Button();
             button2 = new Button();
-            comboBox1 = new ComboBox();
+            comboBox1 = new DarkComboBox();
             SuspendLayout();
             // 
             // button1
@@ -84,6 +84,6 @@ namespace Resonalyze
 
         private Button button1;
         private Button button2;
-        private ComboBox comboBox1;
+        private DarkComboBox comboBox1;
     }
 }

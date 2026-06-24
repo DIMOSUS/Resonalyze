@@ -7,12 +7,14 @@ internal sealed class MainCommandController
     private readonly Button drawButton;
     private readonly Button clearButton;
     private readonly Button modeSettingsButton;
+    private readonly Button recordSettingsButton;
     private readonly Func<bool> hasActiveModeSettings;
     private readonly Func<bool> supportsManualDraw;
     private readonly Func<bool> canDrawCurrentMeasurement;
     private readonly Func<bool> hasPlotCurves;
     private readonly Func<bool> isHandleCreated;
     private bool modeSettingsPressed;
+    private bool recordSettingsPressed;
 
     public MainCommandController(
         Button saveButton,
@@ -20,6 +22,7 @@ internal sealed class MainCommandController
         Button drawButton,
         Button clearButton,
         Button modeSettingsButton,
+        Button recordSettingsButton,
         Func<bool> hasActiveModeSettings,
         Func<bool> supportsManualDraw,
         Func<bool> canDrawCurrentMeasurement,
@@ -31,6 +34,7 @@ internal sealed class MainCommandController
         this.drawButton = drawButton;
         this.clearButton = clearButton;
         this.modeSettingsButton = modeSettingsButton;
+        this.recordSettingsButton = recordSettingsButton;
         this.hasActiveModeSettings = hasActiveModeSettings;
         this.supportsManualDraw = supportsManualDraw;
         this.canDrawCurrentMeasurement = canDrawCurrentMeasurement;
@@ -101,6 +105,17 @@ internal sealed class MainCommandController
         SetButtonPressed(modeSettingsButton, modeSettingsPressed);
     }
 
+    public void UpdateRecordSettingsButton(bool pressed = false)
+    {
+        if (!isHandleCreated())
+        {
+            return;
+        }
+
+        recordSettingsPressed = pressed;
+        SetButtonPressed(recordSettingsButton, recordSettingsPressed);
+    }
+
     public static void SetButtonFrozen(Button button, bool frozen)
     {
         if (frozen)
@@ -117,7 +132,7 @@ internal sealed class MainCommandController
         }
     }
 
-    private static void SetButtonPressed(Button button, bool pressed)
+    public static void SetButtonPressed(Button button, bool pressed)
     {
         button.Enabled = true;
         button.BackColor = pressed

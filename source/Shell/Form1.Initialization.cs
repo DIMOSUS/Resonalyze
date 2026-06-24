@@ -71,6 +71,7 @@ public partial class Form1
             buttonDraw,
             buttonClear,
             buttonCurrentModeSettings,
+            buttonRecordOpt,
             () => GetActiveModeDescriptor().HasDockedSettings,
             () => GetActiveModeDescriptor().SupportsCurveDrawing,
             CanDrawCurrentMeasurement,
@@ -90,6 +91,7 @@ public partial class Form1
             noiseMeasurement,
             createdTimeAlignmentController.Measurement);
         DockedModeSettingsHost createdDockedModeSettingsHost = new(this, plotView1);
+        DockedModeSettingsHost createdDockedMeasurementSettingsHost = new(this, plotView1);
 
         return new Form1ControllerDependencies(
             createdTitleBarController,
@@ -101,7 +103,8 @@ public partial class Form1
             createdCommandController,
             createdTimeAlignmentController,
             createdInputLevelMeterController,
-            createdDockedModeSettingsHost);
+            createdDockedModeSettingsHost,
+            createdDockedMeasurementSettingsHost);
     }
 
     private void ApplyPersistedSettings()
@@ -121,6 +124,7 @@ public partial class Form1
     private void WireControllerEvents()
     {
         dockedModeSettingsHost.StateChanged += (_, _) => UpdateCurrentModeSettingsButton();
+        dockedMeasurementSettingsHost.StateChanged += (_, _) => UpdateRecordSettingsButton();
         expSweepMeasurement.Completed += HandleMeasurementCompleted;
     }
 
@@ -182,5 +186,6 @@ public partial class Form1
         MainCommandController CommandController,
         TimeAlignmentPanelController TimeAlignmentController,
         InputLevelMeterController InputLevelMeterController,
-        DockedModeSettingsHost DockedModeSettingsHost);
+        DockedModeSettingsHost DockedModeSettingsHost,
+        DockedModeSettingsHost DockedMeasurementSettingsHost);
 }

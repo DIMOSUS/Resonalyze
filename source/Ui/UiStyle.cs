@@ -103,7 +103,7 @@ internal static class UiStyle
         button.FlatAppearance.BorderSize = 1;
     }
 
-    public static void ApplyComboBox(ComboBox comboBox, Point location, Size size, bool dropDownList = true)
+    public static void ApplyComboBox(DarkComboBox comboBox, Point location, Size size, bool dropDownList = true)
     {
         ApplySurfaceInput(comboBox, location, size);
         comboBox.DropDownStyle = dropDownList
@@ -124,25 +124,29 @@ internal static class UiStyle
         input.BorderStyle = BorderStyle.FixedSingle;
     }
 
+    public static void ApplyNumericUpDown(DarkNumericUpDown input, Point location, Size size)
+    {
+        ApplySurfaceInput(input, location, size);
+    }
+
     public static Label CreateTitleLabel(string text, Point location) =>
         CreateLabel(text, location, UiPalette.TextPrimary, new Font("Segoe UI", 9F, FontStyle.Bold));
 
     public static Label CreateInfoLabel(string text, Point location) =>
         CreateLabel(text, location, UiPalette.TextHighlight, new Font("Segoe UI", 9F));
 
-    public static ComboBox CreateDarkComboBox(Point location, Size size) =>
+    public static DarkComboBox CreateDarkComboBox(Point location, Size size) =>
         new()
         {
             BackColor = UiPalette.ControlSurface,
             DropDownStyle = ComboBoxStyle.DropDownList,
-            FlatStyle = FlatStyle.Flat,
             ForeColor = UiPalette.TextPrimary,
             FormattingEnabled = true,
             Location = location,
             Size = size
         };
 
-    public static NumericUpDown CreateDarkNumericUpDown(
+    public static DarkNumericUpDown CreateDarkNumericUpDown(
         Point location,
         Size size,
         decimal minimum,
@@ -150,7 +154,7 @@ internal static class UiStyle
         decimal value,
         decimal increment)
     {
-        return new NumericUpDown
+        return new DarkNumericUpDown
         {
             BackColor = UiPalette.ControlSurface,
             DecimalPlaces = increment < 1 ? 1 : 0,

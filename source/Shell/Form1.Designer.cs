@@ -30,14 +30,13 @@ namespace Resonalyze
         private void InitializeComponent()
         {
             components = new System.ComponentModel.Container();
-            var resources = new System.ComponentModel.ComponentResourceManager(typeof(Form1));
             buttonRecord = new Button();
             plotView1 = new OxyPlot.WindowsForms.PlotView();
             overlays = new Panel();
             overlayPanel1 = new Panel();
             buttonSaveOverlay = new Button();
             buttonOverlaySettings1 = new Button();
-            numericUpDown1 = new NumericUpDown();
+            numericUpDown1 = new DarkNumericUpDown();
             checkBox1 = new CheckBox();
             buttonRecordOpt = new Button();
             buttonSave = new Button();
@@ -50,14 +49,13 @@ namespace Resonalyze
             inputLevelMeterPanel = new InputLevelMeterPanel();
             overlays.SuspendLayout();
             overlayPanel1.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)numericUpDown1).BeginInit();
             panel1.SuspendLayout();
             SuspendLayout();
             // 
             // buttonRecord
             // 
             buttonRecord.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonRecord.BackColor = UiPalette.ButtonBackground;
+            buttonRecord.BackColor = Color.FromArgb(50, 55, 80);
             buttonRecord.FlatStyle = FlatStyle.Popup;
             buttonRecord.ForeColor = Color.White;
             buttonRecord.Location = new Point(3, 3);
@@ -71,7 +69,7 @@ namespace Resonalyze
             // plotView1
             // 
             plotView1.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            plotView1.BackColor = UiPalette.PlotSurface;
+            plotView1.BackColor = Color.FromArgb(50, 55, 100);
             plotView1.ForeColor = Color.White;
             plotView1.Location = new Point(12, 12);
             plotView1.Name = "plotView1";
@@ -107,12 +105,12 @@ namespace Resonalyze
             // 
             // buttonSaveOverlay
             // 
-            buttonSaveOverlay.BackColor = UiPalette.PlotSurface;
+            buttonSaveOverlay.BackColor = Color.FromArgb(50, 55, 100);
             buttonSaveOverlay.FlatStyle = FlatStyle.Popup;
             buttonSaveOverlay.ForeColor = Color.White;
             buttonSaveOverlay.Location = new Point(22, 3);
             buttonSaveOverlay.Name = "buttonSaveOverlay";
-            buttonSaveOverlay.Size = new Size(43, 19);
+            buttonSaveOverlay.Size = new Size(40, 19);
             buttonSaveOverlay.TabIndex = 1;
             buttonSaveOverlay.Text = "1";
             buttonSaveOverlay.UseCompatibleTextRendering = true;
@@ -120,28 +118,33 @@ namespace Resonalyze
             // 
             // buttonOverlaySettings1
             // 
-            buttonOverlaySettings1.BackColor = UiPalette.ButtonBackground;
+            buttonOverlaySettings1.BackColor = Color.FromArgb(50, 55, 80);
             buttonOverlaySettings1.FlatStyle = FlatStyle.Popup;
             buttonOverlaySettings1.ForeColor = Color.White;
-            buttonOverlaySettings1.Location = new Point(117, 3);
+            buttonOverlaySettings1.Location = new Point(121, 3);
             buttonOverlaySettings1.Name = "buttonOverlaySettings1";
-            buttonOverlaySettings1.Size = new Size(26, 19);
+            buttonOverlaySettings1.Size = new Size(21, 19);
             buttonOverlaySettings1.TabIndex = 21;
             buttonOverlaySettings1.Text = "...";
+            buttonOverlaySettings1.UseCompatibleTextRendering = true;
             buttonOverlaySettings1.UseVisualStyleBackColor = false;
             // 
             // numericUpDown1
             // 
-            numericUpDown1.BackColor = UiPalette.ButtonBackground;
-            numericUpDown1.BorderStyle = BorderStyle.None;
+            numericUpDown1.BackColor = Color.FromArgb(50, 55, 80);
+            numericUpDown1.DecimalPlaces = 0;
             numericUpDown1.ForeColor = Color.White;
-            numericUpDown1.Location = new Point(72, 3);
+            numericUpDown1.Increment = new decimal(new int[] { 1, 0, 0, 0 });
+            numericUpDown1.Location = new Point(65, 3);
             numericUpDown1.Maximum = new decimal(new int[] { 180, 0, 0, 0 });
             numericUpDown1.Minimum = new decimal(new int[] { 180, 0, 0, int.MinValue });
+            numericUpDown1.MinimumSize = new Size(36, 19);
             numericUpDown1.Name = "numericUpDown1";
-            numericUpDown1.Size = new Size(40, 19);
+            numericUpDown1.Size = new Size(53, 19);
             numericUpDown1.TabIndex = 2;
             numericUpDown1.TextAlign = HorizontalAlignment.Right;
+            numericUpDown1.ThousandsSeparator = false;
+            numericUpDown1.Value = new decimal(new int[] { 0, 0, 0, 0 });
             // 
             // checkBox1
             // 
@@ -157,7 +160,7 @@ namespace Resonalyze
             // buttonRecordOpt
             // 
             buttonRecordOpt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonRecordOpt.BackColor = UiPalette.ButtonBackground;
+            buttonRecordOpt.BackColor = Color.FromArgb(50, 55, 80);
             buttonRecordOpt.FlatStyle = FlatStyle.Popup;
             buttonRecordOpt.Font = new Font("Segoe UI Emoji", 9.75F);
             buttonRecordOpt.ForeColor = Color.White;
@@ -173,7 +176,7 @@ namespace Resonalyze
             // buttonSave
             // 
             buttonSave.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonSave.BackColor = UiPalette.ButtonBackground;
+            buttonSave.BackColor = Color.FromArgb(50, 55, 80);
             buttonSave.FlatStyle = FlatStyle.Popup;
             buttonSave.ForeColor = Color.White;
             buttonSave.Location = new Point(4, 62);
@@ -188,7 +191,7 @@ namespace Resonalyze
             // buttonLoad
             // 
             buttonLoad.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonLoad.BackColor = UiPalette.ButtonBackground;
+            buttonLoad.BackColor = Color.FromArgb(50, 55, 80);
             buttonLoad.FlatStyle = FlatStyle.Popup;
             buttonLoad.ForeColor = Color.White;
             buttonLoad.Location = new Point(76, 62);
@@ -203,7 +206,7 @@ namespace Resonalyze
             // buttonClear
             // 
             buttonClear.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonClear.BackColor = UiPalette.ButtonBackground;
+            buttonClear.BackColor = Color.FromArgb(50, 55, 80);
             buttonClear.FlatStyle = FlatStyle.Popup;
             buttonClear.ForeColor = Color.White;
             buttonClear.Location = new Point(1204, 250);
@@ -217,7 +220,7 @@ namespace Resonalyze
             // buttonCurrentModeSettings
             // 
             buttonCurrentModeSettings.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonCurrentModeSettings.BackColor = UiPalette.ButtonBackground;
+            buttonCurrentModeSettings.BackColor = Color.FromArgb(50, 55, 80);
             buttonCurrentModeSettings.FlatStyle = FlatStyle.Popup;
             buttonCurrentModeSettings.ForeColor = Color.White;
             buttonCurrentModeSettings.Location = new Point(1204, 211);
@@ -231,7 +234,7 @@ namespace Resonalyze
             // buttonDraw
             // 
             buttonDraw.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonDraw.BackColor = UiPalette.ButtonBackground;
+            buttonDraw.BackColor = Color.FromArgb(50, 55, 80);
             buttonDraw.FlatStyle = FlatStyle.Popup;
             buttonDraw.ForeColor = Color.White;
             buttonDraw.Location = new Point(1204, 279);
@@ -258,9 +261,9 @@ namespace Resonalyze
             // inputLevelMeterPanel
             // 
             inputLevelMeterPanel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            inputLevelMeterPanel.BackColor = UiPalette.PlotSurfaceDark;
+            inputLevelMeterPanel.BackColor = Color.FromArgb(38, 42, 52);
             inputLevelMeterPanel.Font = new Font("Segoe UI", 8.75F, FontStyle.Bold);
-            inputLevelMeterPanel.ForeColor = UiPalette.MeterText;
+            inputLevelMeterPanel.ForeColor = Color.FromArgb(225, 230, 240);
             inputLevelMeterPanel.Location = new Point(1204, 12);
             inputLevelMeterPanel.Name = "inputLevelMeterPanel";
             inputLevelMeterPanel.Size = new Size(150, 88);
@@ -270,7 +273,7 @@ namespace Resonalyze
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            BackColor = UiPalette.AppBackground;
+            BackColor = Color.FromArgb(45, 50, 60);
             ClientSize = new Size(1366, 768);
             Controls.Add(inputLevelMeterPanel);
             Controls.Add(panel1);
@@ -280,7 +283,6 @@ namespace Resonalyze
             Controls.Add(plotView1);
             Controls.Add(overlays);
             FormBorderStyle = FormBorderStyle.None;
-            Icon = (Icon)resources.GetObject("$this.Icon");
             MinimumSize = new Size(1366, 768);
             Name = "Form1";
             StartPosition = FormStartPosition.CenterScreen;
@@ -288,7 +290,6 @@ namespace Resonalyze
             overlays.ResumeLayout(false);
             overlayPanel1.ResumeLayout(false);
             overlayPanel1.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)numericUpDown1).EndInit();
             panel1.ResumeLayout(false);
             ResumeLayout(false);
 
@@ -301,7 +302,6 @@ namespace Resonalyze
         private Panel overlays;
         private Button buttonSaveOverlay;
         private CheckBox checkBox1;
-        private NumericUpDown numericUpDown1;
         private Panel overlayPanel1;
         private Button buttonRecordOpt;
         private Button buttonSave;
@@ -313,5 +313,6 @@ namespace Resonalyze
         private Button buttonDraw;
         private Panel panel1;
         private InputLevelMeterPanel inputLevelMeterPanel;
+        private DarkNumericUpDown numericUpDown1;
     }
 }

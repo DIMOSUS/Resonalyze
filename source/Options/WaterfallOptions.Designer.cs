@@ -1,4 +1,4 @@
-namespace Resonalyze.Options
+﻿namespace Resonalyze.Options
 {
     partial class WaterfallOptions
     {
@@ -32,24 +32,24 @@ namespace Resonalyze.Options
             label2 = new Label();
             label4 = new Label();
             label5 = new Label();
-            numericLeftWindow = new NumericUpDown();
-            numericRightWindow = new NumericUpDown();
+            numericLeftWindow = new DarkNumericUpDown();
+            numericRightWindow = new DarkNumericUpDown();
             button1 = new Button();
             label6 = new Label();
-            numericSampleRate = new NumericUpDown();
-            numericWindow = new NumericUpDown();
-            numericSlices = new NumericUpDown();
-            numericStep = new NumericUpDown();
+            numericSampleRate = new DarkNumericUpDown();
+            numericWindow = new DarkNumericUpDown();
+            numericSlices = new DarkNumericUpDown();
+            numericStep = new DarkNumericUpDown();
             label3 = new Label();
             label7 = new Label();
-            numericCaptureTime = new NumericUpDown();
+            numericCaptureTime = new DarkNumericUpDown();
             label8 = new Label();
-            numericDbRange = new NumericUpDown();
-            numericSmoothingInverseOctaves = new NumericUpDown();
+            numericDbRange = new DarkNumericUpDown();
+            numericSmoothingInverseOctaves = new DarkNumericUpDown();
             label9 = new Label();
             label10 = new Label();
             label11 = new Label();
-            numericOffset = new NumericUpDown();
+            numericOffset = new DarkNumericUpDown();
             irPlotView = new OxyPlot.WindowsForms.PlotView();
             ((System.ComponentModel.ISupportInitialize)numericLeftWindow).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericRightWindow).BeginInit();
@@ -378,24 +378,24 @@ namespace Resonalyze.Options
         private Label label2;
         private Label label4;
         private Label label5;
-        private NumericUpDown numericLeftWindow;
-        private NumericUpDown numericRightWindow;
+        private DarkNumericUpDown numericLeftWindow;
+        private DarkNumericUpDown numericRightWindow;
         private Button button1;
         private Label label6;
-        private NumericUpDown numericSampleRate;
-        private NumericUpDown numericWindow;
-        private NumericUpDown numericSlices;
-        private NumericUpDown numericStep;
+        private DarkNumericUpDown numericSampleRate;
+        private DarkNumericUpDown numericWindow;
+        private DarkNumericUpDown numericSlices;
+        private DarkNumericUpDown numericStep;
         private Label label3;
         private Label label7;
-        private NumericUpDown numericCaptureTime;
+        private DarkNumericUpDown numericCaptureTime;
         private Label label8;
-        private NumericUpDown numericDbRange;
-        private NumericUpDown numericSmoothingInverseOctaves;
+        private DarkNumericUpDown numericDbRange;
+        private DarkNumericUpDown numericSmoothingInverseOctaves;
         private Label label9;
         private Label label10;
         private Label label11;
-        private NumericUpDown numericOffset;
+        private DarkNumericUpDown numericOffset;
         private OxyPlot.WindowsForms.PlotView irPlotView;
     }
 }

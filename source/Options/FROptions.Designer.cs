@@ -1,4 +1,4 @@
-namespace Resonalyze.Options
+﻿namespace Resonalyze.Options
 {
     partial class FROptions
     {
@@ -30,14 +30,14 @@ namespace Resonalyze.Options
         {
             button1 = new Button();
             label1 = new Label();
-            numericWindow = new NumericUpDown();
-            numericRightWindow = new NumericUpDown();
-            numericLeftWindow = new NumericUpDown();
+            numericWindow = new DarkNumericUpDown();
+            numericRightWindow = new DarkNumericUpDown();
+            numericLeftWindow = new DarkNumericUpDown();
             label5 = new Label();
             label4 = new Label();
             label10 = new Label();
             label9 = new Label();
-            numericSmoothingInverseOctaves = new NumericUpDown();
+            numericSmoothingInverseOctaves = new DarkNumericUpDown();
             checkUseCalibration = new CheckBox();
             label2 = new Label();
             irPlotView = new OxyPlot.WindowsForms.PlotView();
@@ -226,14 +226,14 @@ namespace Resonalyze.Options
         #endregion
         private Button button1;
         private Label label1;
-        private NumericUpDown numericWindow;
-        private NumericUpDown numericRightWindow;
-        private NumericUpDown numericLeftWindow;
+        private DarkNumericUpDown numericWindow;
+        private DarkNumericUpDown numericRightWindow;
+        private DarkNumericUpDown numericLeftWindow;
         private Label label5;
         private Label label4;
         private Label label10;
         private Label label9;
-        private NumericUpDown numericSmoothingInverseOctaves;
+        private DarkNumericUpDown numericSmoothingInverseOctaves;
         private CheckBox checkUseCalibration;
         private Label label2;
         private OxyPlot.WindowsForms.PlotView irPlotView;

@@ -5,18 +5,18 @@ namespace Resonalyze;
 internal sealed class OverlayOperationSettingsDialog : Form
 {
     private readonly TextBox nameTextBox = new();
-    private readonly ComboBox sourceAComboBox = new();
-    private readonly ComboBox sourceBComboBox = new();
-    private readonly ComboBox operationComboBox = new();
+    private readonly DarkComboBox sourceAComboBox = new();
+    private readonly DarkComboBox sourceBComboBox = new();
+    private readonly DarkComboBox operationComboBox = new();
     private readonly Label blendFrequencyLabel = new();
-    private readonly NumericUpDown blendFrequencyInput = new();
+    private readonly DarkNumericUpDown blendFrequencyInput = new();
     private readonly Label blendWidthLabel = new();
-    private readonly ComboBox blendWidthInput = new();
+    private readonly DarkComboBox blendWidthInput = new();
     private readonly CheckBox amplitudeSpaceCheckBox = new();
     private readonly Button colorButton = new();
-    private readonly NumericUpDown thicknessInput = new();
-    private readonly ComboBox styleComboBox = new();
-    private readonly ComboBox smoothingComboBox = new();
+    private readonly DarkNumericUpDown thicknessInput = new();
+    private readonly DarkComboBox styleComboBox = new();
+    private readonly DarkComboBox smoothingComboBox = new();
     private readonly TrackBar opacityTrackBar = new();
     private readonly Label opacityValueLabel = new();
     private readonly bool supportsSmoothing;
@@ -335,7 +335,7 @@ internal sealed class OverlayOperationSettingsDialog : Form
     }
 
     private static void ConfigureCombo(
-        ComboBox comboBox,
+        DarkComboBox comboBox,
         Point location,
         Size size)
     {
@@ -352,7 +352,7 @@ internal sealed class OverlayOperationSettingsDialog : Form
     }
 
     private static void SelectSlot(
-        ComboBox comboBox,
+        DarkComboBox comboBox,
         int slot,
         int fallbackIndex)
     {

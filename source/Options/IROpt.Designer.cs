@@ -1,4 +1,4 @@
-namespace Resonalyze.Options
+﻿namespace Resonalyze.Options
 {
     partial class IROpt
     {
@@ -28,7 +28,7 @@ namespace Resonalyze.Options
         /// </summary>
         private void InitializeComponent()
         {
-            numericLength = new NumericUpDown();
+            numericLength = new DarkNumericUpDown();
             label1 = new Label();
             button1 = new Button();
             checkLogarithmic = new CheckBox();
@@ -116,7 +116,7 @@ namespace Resonalyze.Options
 
         #endregion
 
-        private NumericUpDown numericLength;
+        private DarkNumericUpDown numericLength;
         private Label label1;
         private Button button1;
         private CheckBox checkLogarithmic;

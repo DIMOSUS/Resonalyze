@@ -3,9 +3,9 @@ namespace Resonalyze.Options;
 internal static class TukeyWindowControlHelper
 {
     public static void ClampAndUpdateLimits(
-        NumericUpDown window,
-        NumericUpDown left,
-        NumericUpDown right)
+        DarkNumericUpDown window,
+        DarkNumericUpDown left,
+        DarkNumericUpDown right)
     {
         decimal windowLength = window.Value;
 

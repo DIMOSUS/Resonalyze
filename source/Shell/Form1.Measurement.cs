@@ -93,27 +93,37 @@ public partial class Form1
 
     private void buttonRecordOpt_Click(object sender, EventArgs e)
     {
-        using var opt = new MeasurementOptions();
-        opt.Init(expSweepMeasurement);
-
-        if (ShowSettingsDialog(opt) == DialogResult.OK)
+        if (dockedMeasurementSettingsHost.IsOpen)
         {
-            try
-            {
-                opt.SetOptions(expSweepMeasurement);
-                ApplyMeasurementConfigurationToControllers();
-                SaveMeasurementSettings();
-            }
-            catch (InvalidOperationException exception)
-            {
-                MessageBox.Show(
-                    this,
-                    exception.Message,
-                    "Measurement Options",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
-            }
+            dockedMeasurementSettingsHost.Close();
+            return;
         }
+
+        dockedModeSettingsHost.Close();
+        dockedMeasurementSettingsHost.Toggle(
+            ModeTab.Impulse,
+            () => new MeasurementOptions(),
+            dialog => dialog.Init(expSweepMeasurement),
+            async dialog =>
+            {
+                try
+                {
+                    dialog.SetOptions(expSweepMeasurement);
+                    ApplyMeasurementConfigurationToControllers();
+                    SaveMeasurementSettings();
+                }
+                catch (InvalidOperationException exception)
+                {
+                    MessageBox.Show(
+                        this,
+                        exception.Message,
+                        "Measurement Options",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                }
+
+                await Task.CompletedTask;
+            });
     }
 
     private async void buttonDraw_Click(object sender, EventArgs e)

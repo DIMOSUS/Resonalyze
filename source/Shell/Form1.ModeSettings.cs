@@ -38,6 +38,7 @@ public partial class Form1
 
     private void OpenModeSettings(ModeTab tab)
     {
+        dockedMeasurementSettingsHost.Close();
         ModeDescriptor descriptor = GetModeDescriptor(tab);
         descriptor.OpenSettings?.Invoke();
     }
@@ -176,6 +177,11 @@ public partial class Form1
     private void UpdateCurrentModeSettingsButton()
     {
         commandController.UpdateModeSettingsButton(dockedModeSettingsHost.IsOpen);
+    }
+
+    private void UpdateRecordSettingsButton()
+    {
+        commandController.UpdateRecordSettingsButton(dockedMeasurementSettingsHost.IsOpen);
     }
 
     private sealed record AxisViewport(

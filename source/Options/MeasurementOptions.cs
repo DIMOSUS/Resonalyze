@@ -301,7 +301,7 @@ namespace Resonalyze.Options
             UpdateWaveLoopbackControls();
         }
 
-        private void ConfigureDropDownWidth(ComboBox comboBox)
+        private void ConfigureDropDownWidth(DarkComboBox comboBox)
         {
             int maxWidth = comboBox.Width;
             Font font = comboBox.Font ?? Font;
@@ -316,7 +316,7 @@ namespace Resonalyze.Options
             comboBox.DropDownWidth = maxWidth;
         }
 
-        private void UpdateComboBoxToolTip(ComboBox comboBox)
+        private void UpdateComboBoxToolTip(DarkComboBox comboBox)
         {
             string text = comboBox.SelectedItem != null
                 ? comboBox.GetItemText(comboBox.SelectedItem) ?? string.Empty
@@ -506,7 +506,7 @@ namespace Resonalyze.Options
         }
 
         private static int FindInputChannelOptionIndex(
-            ComboBox comboBox,
+            DarkComboBox comboBox,
             int? offset)
         {
             for (int i = 0; i < comboBox.Items.Count; i++)

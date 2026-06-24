@@ -23,9 +23,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private readonly Panel panel;
     private readonly Label routeSummaryLabel;
     private readonly CheckBox bandpassCheckBox;
-    private readonly NumericUpDown bandpassCenterNumeric;
-    private readonly NumericUpDown bandpassPassOctavesNumeric;
-    private readonly NumericUpDown bandpassFadeOctavesNumeric;
+    private readonly DarkNumericUpDown bandpassCenterNumeric;
+    private readonly DarkNumericUpDown bandpassPassOctavesNumeric;
+    private readonly DarkNumericUpDown bandpassFadeOctavesNumeric;
     private readonly PlotView bandpassPlotView;
     private readonly PlotView envelopePlotView;
     private readonly Button startButton;
@@ -202,9 +202,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         Panel Panel,
         Label RouteSummary,
         CheckBox BandpassEnabled,
-        NumericUpDown BandpassCenter,
-        NumericUpDown BandpassPassOctaves,
-        NumericUpDown BandpassFadeOctaves,
+        DarkNumericUpDown BandpassCenter,
+        DarkNumericUpDown BandpassPassOctaves,
+        DarkNumericUpDown BandpassFadeOctaves,
         PlotView BandpassPreview,
         PlotView EnvelopePreview,
         Button Start,
@@ -247,11 +247,11 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             autoSize: false);
         routeSummary.Size = new Size(520, 90);
         CheckBox bandpassEnabled = UiStyle.CreateDarkCheckBox("Use bandpass window", new Point(18, 177));
-        NumericUpDown bandpassCenter =
+        DarkNumericUpDown bandpassCenter =
             UiStyle.CreateDarkNumericUpDown(new Point(180, 207), new Size(120, 23), 20, 20_000, 1000, 10);
-        NumericUpDown bandpassPassOctaves =
+        DarkNumericUpDown bandpassPassOctaves =
             UiStyle.CreateDarkNumericUpDown(new Point(180, 241), new Size(120, 23), 0, 8, 1, 0.1M);
-        NumericUpDown bandpassFadeOctaves =
+        DarkNumericUpDown bandpassFadeOctaves =
             UiStyle.CreateDarkNumericUpDown(new Point(180, 275), new Size(120, 23), 0, 8, 0.5M, 0.1M);
         PlotView bandpassPreview = UiStyle.CreateDarkPreviewPlotView(new Point(18, 313), new Size(520, 200));
         PlotView envelopePreview = UiStyle.CreateDarkPreviewPlotView(new Point(560, 380), new Size(520, 300));
@@ -827,7 +827,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             Title = "dB"
         };
 
-    private static decimal ClampDecimal(double value, NumericUpDown numeric)
+    private static decimal ClampDecimal(double value, DarkNumericUpDown numeric)
     {
         decimal decimalValue = (decimal)value;
         return Math.Min(numeric.Maximum, Math.Max(numeric.Minimum, decimalValue));

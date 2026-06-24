@@ -8,6 +8,8 @@ internal sealed class ModeController
     private readonly Action<bool> drawSelectedMode;
     private readonly Func<bool> canDrawCurrentMeasurement;
     private readonly Action updateDrawButton;
+    private readonly Func<ModeTab, Mode> getMode;
+    private readonly Func<ModeTab, bool> supportsCurveDrawing;
 
     public ModeController(
         Func<Mode, Task> changeModeAsync,
@@ -15,7 +17,9 @@ internal sealed class ModeController
         Action hideOverlays,
         Action<bool> drawSelectedMode,
         Func<bool> canDrawCurrentMeasurement,
-        Action updateDrawButton)
+        Action updateDrawButton,
+        Func<ModeTab, Mode> getMode,
+        Func<ModeTab, bool> supportsCurveDrawing)
     {
         this.changeModeAsync = changeModeAsync;
         this.activeTabChanged = activeTabChanged;
@@ -23,36 +27,21 @@ internal sealed class ModeController
         this.drawSelectedMode = drawSelectedMode;
         this.canDrawCurrentMeasurement = canDrawCurrentMeasurement;
         this.updateDrawButton = updateDrawButton;
+        this.getMode = getMode;
+        this.supportsCurveDrawing = supportsCurveDrawing;
     }
 
     public ModeTab ActiveTab { get; private set; } = ModeTab.Frequency;
 
     public async Task SelectAsync(ModeTab tab)
     {
-        await changeModeAsync(GetMode(tab));
+        await changeModeAsync(getMode(tab));
         ActiveTab = tab;
         activeTabChanged(tab);
         hideOverlays();
 
-        bool includeCurves =
-            tab is not (ModeTab.LiveSpectrum or ModeTab.TimeAlignment) &&
-            canDrawCurrentMeasurement();
+        bool includeCurves = supportsCurveDrawing(tab) && canDrawCurrentMeasurement();
         drawSelectedMode(includeCurves);
         updateDrawButton();
     }
-
-    public static Mode GetMode(ModeTab tab) =>
-        tab switch
-        {
-            ModeTab.Impulse => Mode.ImpulseResponse,
-            ModeTab.Frequency => Mode.FrequencyResponse,
-            ModeTab.Phase => Mode.PhaseResponse,
-            ModeTab.GroupDelay => Mode.GroupDelay,
-            ModeTab.Waterfall => Mode.CumulativeSpectrumDecay,
-            ModeTab.Burst => Mode.CumulativeSpectrumDecay,
-            ModeTab.LiveSpectrum => Mode.LiveSpectrum,
-            ModeTab.Autocorrelation => Mode.Autocorrelation,
-            ModeTab.TimeAlignment => Mode.TimeAlignment,
-            _ => Mode.None
-        };
 }

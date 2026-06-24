@@ -7,7 +7,8 @@ internal sealed class MainCommandController
     private readonly Button drawButton;
     private readonly Button clearButton;
     private readonly Button modeSettingsButton;
-    private readonly Func<ModeTab> getActiveTab;
+    private readonly Func<bool> hasActiveModeSettings;
+    private readonly Func<bool> supportsManualDraw;
     private readonly Func<bool> canDrawCurrentMeasurement;
     private readonly Func<bool> hasPlotCurves;
     private readonly Func<bool> isHandleCreated;
@@ -19,7 +20,8 @@ internal sealed class MainCommandController
         Button drawButton,
         Button clearButton,
         Button modeSettingsButton,
-        Func<ModeTab> getActiveTab,
+        Func<bool> hasActiveModeSettings,
+        Func<bool> supportsManualDraw,
         Func<bool> canDrawCurrentMeasurement,
         Func<bool> hasPlotCurves,
         Func<bool> isHandleCreated)
@@ -29,7 +31,8 @@ internal sealed class MainCommandController
         this.drawButton = drawButton;
         this.clearButton = clearButton;
         this.modeSettingsButton = modeSettingsButton;
-        this.getActiveTab = getActiveTab;
+        this.hasActiveModeSettings = hasActiveModeSettings;
+        this.supportsManualDraw = supportsManualDraw;
         this.canDrawCurrentMeasurement = canDrawCurrentMeasurement;
         this.hasPlotCurves = hasPlotCurves;
         this.isHandleCreated = isHandleCreated;
@@ -87,10 +90,7 @@ internal sealed class MainCommandController
         }
 
         modeSettingsPressed = pressed;
-        bool hasSettings = getActiveTab() is not (
-            ModeTab.LiveSpectrum or
-            ModeTab.Autocorrelation or
-            ModeTab.TimeAlignment);
+        bool hasSettings = hasActiveModeSettings();
 
         if (!hasSettings)
         {
@@ -129,7 +129,7 @@ internal sealed class MainCommandController
 
     private bool ShouldFreezeDrawButton()
     {
-        if (getActiveTab() is ModeTab.LiveSpectrum or ModeTab.TimeAlignment)
+        if (!supportsManualDraw())
         {
             return true;
         }

@@ -29,11 +29,14 @@ engineering-focused plots.
 Download the latest ready-to-run build from
 [GitHub Releases](https://github.com/DIMOSUS/Resonalyze/releases/latest):
 
+- `Resonalyze-Setup-vX.Y.Z-win-x64.exe` for the recommended installed build
 - `Resonalyze-vX.Y.Z-win-x64.zip` for most Windows computers
 - `Resonalyze-vX.Y.Z-win-arm64.zip` for Windows on ARM
 
-The release archives are self-contained and do not require a separate .NET
-installation. SHA-256 checksum files are provided with every release.
+The `.zip` builds are self-contained portable packages and do not require a
+separate .NET installation. The installer adds shortcuts, uninstall support,
+and automatic in-app updates for the installed x64 build. SHA-256 checksum
+files are provided with every release.
 
 ## Highlights
 
@@ -45,6 +48,7 @@ installation. SHA-256 checksum files are provided with every release.
 - Optional loopback-referenced sweep processing through a transfer function
 - Wave or ASIO loopback Time Alignment with sub-sample delay estimation
 - Compact Mic/Loop input level meter with Peak, RMS, and Peak Hold
+- Installed-build auto-update support through a signed NetSparkle appcast
 - Frequency response
 - Harmonic distortion and THD+N
 - Phase response
@@ -150,6 +154,12 @@ The Release executable is generated at:
 ```text
 source/bin/Release/net10.0-windows/Resonalyze.exe
 ```
+
+Tagged GitHub releases also produce:
+
+- portable self-contained `.zip` packages for `win-x64` and `win-arm64`
+- an x64 `Setup.exe` installer with uninstall support
+- NetSparkle appcast files used by the installed build for automatic updates
 
 ## Measurement Workflow
 
@@ -350,6 +360,30 @@ Wave mode is supported for convenience, but it is less robust than ASIO for
 serious alignment work because the timing path is not as tightly controlled as
 with a dedicated low-latency hardware driver.
 
+## Installer and Updates
+
+Resonalyze supports two release styles:
+
+- **Portable `.zip` builds**
+  Extract and run `Resonalyze.exe` directly. This is convenient for quick
+  testing or keeping multiple versions side by side.
+- **Installed `Setup.exe` build**
+  Installs to the current user's local Programs folder, creates shortcuts, and
+  registers an uninstaller.
+
+When the application detects a newer GitHub release, the version label in the
+custom title bar changes to **Update available**. Clicking it opens a focused
+update dialog:
+
+- installed builds can either start an **Automatic Update** or open the GitHub
+  releases page for manual download
+- portable builds offer manual download only, because they are not tied to a
+  managed install location
+
+Automatic update currently targets the installed x64 build distributed through
+`Setup.exe`. Portable `.zip` builds remain fully supported, but they are
+updated manually by downloading a newer archive.
+
 ## Saving and Loading Impulse Responses
 
 After a sweep measurement completes, click **Save** to store the measured
@@ -370,6 +404,7 @@ Files are saved as indented, human-readable JSON. Each file contains:
 - Sweep-deconvolution impulse response samples and peak index
 - Optional loopback transfer-function impulse response samples and peak index
   when loopback was enabled
+- Stored microphone and loopback Peak/RMS meter values from the measurement
 
 Click **Load** to open a previously saved response. Resonalyze validates the
 file before using it, rejects files below `44100 Hz`, restores the associated
@@ -510,7 +545,7 @@ impulse processing, phase analysis, and group-delay calculation.
 - Complete measurement-session save/load
 - Plot and raw-data export
 - Improved calibration workflow
-- Versioned Windows installer
+- Export/share improvements for annotated plots and overlays
 
 ## Contributing
 

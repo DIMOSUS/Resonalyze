@@ -11,6 +11,7 @@ internal sealed class MainCommandController
     private readonly Func<bool> canDrawCurrentMeasurement;
     private readonly Func<bool> hasPlotCurves;
     private readonly Func<bool> isHandleCreated;
+    private bool modeSettingsPressed;
 
     public MainCommandController(
         Button saveButton,
@@ -78,19 +79,26 @@ internal sealed class MainCommandController
         SetButtonFrozen(clearButton, !hasPlotCurves());
     }
 
-    public void UpdateModeSettingsButton()
+    public void UpdateModeSettingsButton(bool pressed = false)
     {
         if (!isHandleCreated())
         {
             return;
         }
 
+        modeSettingsPressed = pressed;
         bool hasSettings = getActiveTab() is not (
             ModeTab.LiveSpectrum or
             ModeTab.Autocorrelation or
             ModeTab.TimeAlignment);
 
-        SetButtonFrozen(modeSettingsButton, !hasSettings);
+        if (!hasSettings)
+        {
+            SetButtonFrozen(modeSettingsButton, true);
+            return;
+        }
+
+        SetButtonPressed(modeSettingsButton, modeSettingsPressed);
     }
 
     public static void SetButtonFrozen(Button button, bool frozen)
@@ -107,6 +115,16 @@ internal sealed class MainCommandController
             button.ForeColor = Color.White;
             button.Enabled = true;
         }
+    }
+
+    private static void SetButtonPressed(Button button, bool pressed)
+    {
+        button.Enabled = true;
+        button.BackColor = pressed
+            ? Color.FromArgb(40, 45, 68)
+            : Color.FromArgb(50, 55, 80);
+        button.ForeColor = Color.White;
+        button.Padding = pressed ? new Padding(1, 1, 0, 0) : Padding.Empty;
     }
 
     private bool ShouldFreezeDrawButton()

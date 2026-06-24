@@ -380,7 +380,7 @@ internal sealed class ChromeTitleBarController
 
     private static void VersionLabelLinkClicked(object? sender, LinkLabelLinkClickedEventArgs e)
     {
-        if (e.Link.LinkData is not string url || string.IsNullOrWhiteSpace(url))
+        if (e.Link?.LinkData is not string url || string.IsNullOrWhiteSpace(url))
         {
             return;
         }

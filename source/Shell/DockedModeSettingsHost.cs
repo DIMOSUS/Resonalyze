@@ -4,6 +4,8 @@ namespace Resonalyze;
 
 internal sealed class DockedModeSettingsHost : IDisposable
 {
+    public event EventHandler? StateChanged;
+
     private readonly Form owner;
     private readonly Control anchorControl;
     private Form? activeDialog;
@@ -54,6 +56,7 @@ internal sealed class DockedModeSettingsHost : IDisposable
         dialog.Show();
         PositionDialog();
         dialog.BringToFront();
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void Close()
@@ -82,6 +85,8 @@ internal sealed class DockedModeSettingsHost : IDisposable
                 allowProgrammaticClose = false;
             }
         }
+
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void Dispose()
@@ -160,7 +165,10 @@ internal sealed class DockedModeSettingsHost : IDisposable
     }
 
     private Point GetOutsideOwnerLocation() =>
-        new(owner.Bounds.Right, owner.Bounds.Top);
+        new(owner.Bounds.Right, owner.Bounds.Top + Scale(ChromeTitleBarController.Height));
+
+    private int Scale(int value) =>
+        (int)Math.Round(value * owner.DeviceDpi / 96.0);
 
     private Point GetInsideAnchorLocation(Form dialog)
     {
@@ -187,6 +195,7 @@ internal sealed class DockedModeSettingsHost : IDisposable
 
         activeDialog = null;
         activeTab = null;
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void DialogFormClosing(object? sender, FormClosingEventArgs e)

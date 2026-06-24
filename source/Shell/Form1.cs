@@ -168,6 +168,7 @@ namespace Resonalyze
                 noiseMeasurement,
                 timeAlignmentController.Measurement);
             dockedModeSettingsHost = new DockedModeSettingsHost(this, plotView1);
+            dockedModeSettingsHost.StateChanged += (_, _) => UpdateCurrentModeSettingsButton();
             liveSpectrumController.ConfigureFrom(expSweepMeasurement);
             commandController.Initialize();
             UpdatePeakInfo();
@@ -779,7 +780,7 @@ namespace Resonalyze
 
         private void UpdateCurrentModeSettingsButton()
         {
-            commandController.UpdateModeSettingsButton();
+            commandController.UpdateModeSettingsButton(dockedModeSettingsHost.IsOpen);
         }
 
         protected override void WndProc(ref Message m)

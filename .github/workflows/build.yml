@@ -37,7 +37,11 @@ jobs:
           $version = if ($commitCount -eq 0 -and $latestTag) {
             $baseVersion
           } else {
-            "$baseVersion-dev.$commitCount"
+            $parts = $baseVersion.Split('.')
+            $major = [int]$parts[0]
+            $minor = if ($parts.Length -gt 1) { [int]$parts[1] } else { 0 }
+            $patch = if ($parts.Length -gt 2) { [int]$parts[2] } else { 0 }
+            "$major.$minor.$($patch + 1)-dev.$commitCount"
           }
 
           "version=$version" >> $env:GITHUB_OUTPUT

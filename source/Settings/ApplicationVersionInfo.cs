@@ -20,16 +20,24 @@ internal static class ApplicationVersionInfo
 
     public static bool IsOlderThan(string otherVersion)
     {
-        if (!TryParseComparableVersion(GetInformationalVersion(), out Version? current, out bool currentPrerelease) ||
+        string currentRawVersion = GetInformationalVersion();
+        if (!TryParseComparableVersion(currentRawVersion, out Version? current, out bool currentPrerelease) ||
             !TryParseComparableVersion(otherVersion, out Version? other, out bool otherPrerelease))
         {
             return false;
         }
 
-        int versionCompare = current.CompareTo(other);
+        Version currentVersion = current!;
+        Version otherVersionComparable = other!;
+        int versionCompare = currentVersion.CompareTo(otherVersionComparable);
         if (versionCompare != 0)
         {
             return versionCompare < 0;
+        }
+
+        if (currentPrerelease && IsDevelopmentBuild(currentRawVersion))
+        {
+            return false;
         }
 
         return currentPrerelease && !otherPrerelease;
@@ -100,4 +108,7 @@ internal static class ApplicationVersionInfo
         };
         return true;
     }
+
+    private static bool IsDevelopmentBuild(string rawVersion) =>
+        rawVersion.Contains("-dev.", StringComparison.OrdinalIgnoreCase);
 }

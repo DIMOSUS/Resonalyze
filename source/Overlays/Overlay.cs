@@ -236,7 +236,7 @@ public sealed class OverlayCollection
             Mode.FrequencyResponse or Mode.LiveSpectrum =>
                 "{0}\n{2:0.0} Hz\n{4:0.00} dB",
             Mode.PhaseResponse =>
-                "{0}\n{2:0.0} Hz\n{4:0.0}°",
+                "{0}\n{2:0.0} Hz\n{4:0.0}\u00B0", // u00B0 degree char
             Mode.GroupDelay =>
                 "{0}\n{2:0.0} Hz\n{4:0.000} ms",
             Mode.ImpulseResponse =>

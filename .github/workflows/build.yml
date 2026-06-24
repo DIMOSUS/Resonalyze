@@ -18,6 +18,29 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        shell: pwsh
+        run: |
+          $latestTag = git describe --tags --match "v*" --abbrev=0 2>$null
+          if ($LASTEXITCODE -eq 0 -and $latestTag) {
+            $baseVersion = $latestTag.TrimStart('v')
+            $commitCount = [int](git rev-list "$latestTag..HEAD" --count)
+          } else {
+            $baseVersion = "0.1.0"
+            $commitCount = [int](git rev-list HEAD --count)
+          }
+
+          $version = if ($commitCount -eq 0 -and $latestTag) {
+            $baseVersion
+          } else {
+            "$baseVersion-dev.$commitCount"
+          }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
@@ -25,10 +48,10 @@ jobs:
           global-json-file: global.json
 
       - name: Restore
-        run: dotnet restore source/Resonalyze.sln
+        run: dotnet restore source/Resonalyze.sln -p:Version="${{ steps.version.outputs.version }}" -p:InformationalVersion="${{ steps.version.outputs.version }}"
 
       - name: Build
-        run: dotnet build source/Resonalyze.sln --configuration Release --no-restore
+        run: dotnet build source/Resonalyze.sln --configuration Release --no-restore -p:Version="${{ steps.version.outputs.version }}" -p:InformationalVersion="${{ steps.version.outputs.version }}"
 
       - name: Test DSP
         run: dotnet test tests/Resonalyze.Dsp.Tests/Resonalyze.Dsp.Tests.csproj --configuration Release --no-build --no-restore

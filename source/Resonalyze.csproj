@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -9,6 +9,7 @@
     <AssemblyName>Resonalyze</AssemblyName>
     <RootNamespace>Resonalyze</RootNamespace>
     <VersionPrefix>0.1.0</VersionPrefix>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ApplicationIcon>logo.ico</ApplicationIcon>
   </PropertyGroup>
 

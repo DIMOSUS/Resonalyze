@@ -77,6 +77,7 @@ namespace Resonalyze
         private bool hasCurrentImpulseResponse;
         private bool closingPrepared;
         private bool resourcesDisposed;
+        private bool updateCheckStarted;
 
         public Form1()
         {
@@ -208,7 +209,34 @@ namespace Resonalyze
             };
 
             FormClosing += Form1_FormClosing;
+            Shown += Form1_Shown;
             _ = SelectModeAsync(ModeTab.Frequency);
+        }
+
+        private async void Form1_Shown(object? sender, EventArgs e)
+        {
+            if (updateCheckStarted)
+            {
+                return;
+            }
+
+            updateCheckStarted = true;
+            try
+            {
+                using var cancellationTokenSource = new CancellationTokenSource(
+                    TimeSpan.FromSeconds(6));
+                GitHubReleaseChecker.ReleaseCheckResult? result =
+                    await GitHubReleaseChecker.CheckForUpdateAsync(
+                        cancellationTokenSource.Token);
+                if (result?.UpdateAvailable == true && !IsDisposed)
+                {
+                    titleBarController.SetUpdateAvailable(result.ReleaseUrl);
+                }
+            }
+            catch
+            {
+                // Update checks are best-effort only and must never affect startup.
+            }
         }
 
         public async Task ChangeModeAsync(Mode mode)

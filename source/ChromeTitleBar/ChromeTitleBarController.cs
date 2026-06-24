@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace Resonalyze;
@@ -25,8 +26,12 @@ internal sealed class ChromeTitleBarController
     private readonly Action updateMaximizedBounds;
     private readonly Dictionary<ModeTab, Button> modeTabButtons = new();
     private readonly Panel titleBar;
+    private readonly FlowLayoutPanel tabBar;
+    private readonly LinkLabel versionLabel;
     private readonly int titleBarHeight;
     private readonly float dpiScale;
+    private readonly int windowButtonWidth;
+    private int versionLabelWidth;
 
     public ChromeTitleBarController(
         Form form,
@@ -39,6 +44,8 @@ internal sealed class ChromeTitleBarController
         this.updateMaximizedBounds = updateMaximizedBounds;
         dpiScale = GetDpiScale();
         titleBarHeight = Scale(Height);
+        windowButtonWidth = Scale(46);
+        versionLabelWidth = GetVersionLabelWidth(ApplicationVersionInfo.GetDisplayVersion());
 
         form.FormBorderStyle = FormBorderStyle.None;
         updateMaximizedBounds();
@@ -53,13 +60,16 @@ internal sealed class ChromeTitleBarController
         };
         titleBar.MouseDown += TitleBarMouseDown;
 
-        FlowLayoutPanel tabBar = CreateTabBar();
+        tabBar = CreateTabBar();
         AddModeTabs(tabBar, tabActions);
-
         titleBar.Controls.Add(tabBar);
-        AddWindowButton("─", form.ClientSize.Width - 138, MinimizeWindowClick);
-        AddWindowButton("☐", form.ClientSize.Width - 92, MaximizeWindowClick);
-        AddWindowButton("✕", form.ClientSize.Width - 46, CloseWindowClick);
+
+        versionLabel = CreateVersionLabel();
+        titleBar.Controls.Add(versionLabel);
+
+        AddWindowButton("\u2500", form.ClientSize.Width - 138, MinimizeWindowClick); // -
+        AddWindowButton("\u2610", form.ClientSize.Width - 92, MaximizeWindowClick); // []
+        AddWindowButton("\u2715", form.ClientSize.Width - 46, CloseWindowClick); // x
 
         form.Controls.Add(titleBar);
         titleBar.BringToFront();
@@ -81,6 +91,13 @@ internal sealed class ChromeTitleBarController
         {
             SetModeTabStyle(button, tab == activeTab);
         }
+    }
+
+    public void SetUpdateAvailable(string releaseUrl)
+    {
+        UpdateVersionLabel(
+            $"{ApplicationVersionInfo.GetDisplayVersion()}  Update available",
+            releaseUrl);
     }
 
     public static Point GetPointFromLParam(IntPtr lParam)
@@ -156,37 +173,66 @@ internal sealed class ChromeTitleBarController
 
     private FlowLayoutPanel CreateTabBar()
     {
-        var tabBar = new FlowLayoutPanel
+        var result = new FlowLayoutPanel
         {
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             BackColor = titleBar.BackColor,
             FlowDirection = FlowDirection.LeftToRight,
             Location = new Point(Scale(8), Scale(6)),
             Padding = new Padding(0),
-            Size = new Size(form.ClientSize.Width - Scale(156), titleBarHeight - Scale(5)),
+            Size = new Size(Scale(200), titleBarHeight - Scale(5)),
             WrapContents = false
         };
-        tabBar.MouseDown += TitleBarMouseDown;
-        return tabBar;
+        result.MouseDown += TitleBarMouseDown;
+        UpdateTabBarLayout(result);
+        return result;
+    }
+
+    private LinkLabel CreateVersionLabel()
+    {
+        var label = new LinkLabel
+        {
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            AutoEllipsis = true,
+            BackColor = titleBar.BackColor,
+            ForeColor = Color.FromArgb(168, 176, 190),
+            DisabledLinkColor = Color.FromArgb(168, 176, 190),
+            Font = new Font(
+                form.Font.FontFamily,
+                Math.Max(8f, form.Font.Size - 0.5f),
+                FontStyle.Regular),
+            LinkBehavior = LinkBehavior.NeverUnderline,
+            LinkColor = Color.FromArgb(168, 176, 190),
+            ActiveLinkColor = Color.FromArgb(168, 176, 190),
+            VisitedLinkColor = Color.FromArgb(168, 176, 190),
+            Location = GetVersionLabelLocation(),
+            Size = new Size(versionLabelWidth, titleBarHeight),
+            TabStop = false,
+            Text = ApplicationVersionInfo.GetDisplayVersion(),
+            TextAlign = ContentAlignment.MiddleRight
+        };
+        label.MouseDown += VersionLabelMouseDown;
+        label.LinkClicked += VersionLabelLinkClicked;
+        return label;
     }
 
     private void AddModeTabs(
-        FlowLayoutPanel tabBar,
+        FlowLayoutPanel targetTabBar,
         IReadOnlyDictionary<ModeTab, Action> tabActions)
     {
-        AddModeTab(tabBar, ModeTab.Impulse, "Impulse", tabActions);
-        AddModeTab(tabBar, ModeTab.Frequency, "Frequency", tabActions);
-        AddModeTab(tabBar, ModeTab.Phase, "Phase", tabActions);
-        AddModeTab(tabBar, ModeTab.GroupDelay, "Group Delay", tabActions);
-        AddModeTab(tabBar, ModeTab.Waterfall, "Waterfall", tabActions);
-        AddModeTab(tabBar, ModeTab.Burst, "Burst", tabActions);
-        AddModeTab(tabBar, ModeTab.LiveSpectrum, "Live Spectrum", tabActions);
-        AddModeTab(tabBar, ModeTab.Autocorrelation, "Autocorrelation", tabActions);
-        AddModeTab(tabBar, ModeTab.TimeAlignment, "Time Alignment", tabActions);
+        AddModeTab(targetTabBar, ModeTab.Impulse, "Impulse", tabActions);
+        AddModeTab(targetTabBar, ModeTab.Frequency, "Frequency", tabActions);
+        AddModeTab(targetTabBar, ModeTab.Phase, "Phase", tabActions);
+        AddModeTab(targetTabBar, ModeTab.GroupDelay, "Group Delay", tabActions);
+        AddModeTab(targetTabBar, ModeTab.Waterfall, "Waterfall", tabActions);
+        AddModeTab(targetTabBar, ModeTab.Burst, "Burst", tabActions);
+        AddModeTab(targetTabBar, ModeTab.LiveSpectrum, "Live Spectrum", tabActions);
+        AddModeTab(targetTabBar, ModeTab.Autocorrelation, "Autocorrelation", tabActions);
+        AddModeTab(targetTabBar, ModeTab.TimeAlignment, "Time Alignment", tabActions);
     }
 
     private void AddModeTab(
-        FlowLayoutPanel tabBar,
+        FlowLayoutPanel targetTabBar,
         ModeTab tab,
         string text,
         IReadOnlyDictionary<ModeTab, Action> tabActions)
@@ -201,15 +247,15 @@ internal sealed class ChromeTitleBarController
             Margin = new Padding(0, 0, Scale(2), 0),
             Text = text,
             TextAlign = ContentAlignment.MiddleCenter,
-            UseVisualStyleBackColor = false,
-            Width = GetModeTabWidth(text),
             UseCompatibleTextRendering = true,
+            UseVisualStyleBackColor = false,
+            Width = GetModeTabWidth(text)
         };
         button.FlatAppearance.BorderSize = 0;
         button.Click += (_, _) => tabActions[tab]();
 
         modeTabButtons.Add(tab, button);
-        tabBar.Controls.Add(button);
+        targetTabBar.Controls.Add(button);
         SetModeTabStyle(button, active: false);
     }
 
@@ -262,6 +308,16 @@ internal sealed class ChromeTitleBarController
             IntPtr.Zero);
     }
 
+    private void VersionLabelMouseDown(object? sender, MouseEventArgs e)
+    {
+        if (versionLabel.Links.Count > 0)
+        {
+            return;
+        }
+
+        TitleBarMouseDown(sender, e);
+    }
+
     private void MinimizeWindowClick(object? sender, EventArgs e)
     {
         form.WindowState = FormWindowState.Minimized;
@@ -285,12 +341,55 @@ internal sealed class ChromeTitleBarController
         form.Close();
     }
 
+    private void UpdateVersionLabel(string text, string releaseUrl)
+    {
+        versionLabel.Text = text;
+        versionLabel.LinkBehavior = LinkBehavior.HoverUnderline;
+        versionLabel.LinkColor = Color.FromArgb(106, 173, 255);
+        versionLabel.ActiveLinkColor = Color.FromArgb(150, 210, 255);
+        versionLabel.VisitedLinkColor = versionLabel.LinkColor;
+        versionLabel.Links.Clear();
+        versionLabel.Links.Add(0, text.Length, releaseUrl);
+
+        versionLabelWidth = GetVersionLabelWidth(text);
+        versionLabel.Size = new Size(versionLabelWidth, titleBarHeight);
+        versionLabel.Location = GetVersionLabelLocation();
+        UpdateTabBarLayout(tabBar);
+    }
+
     private int GetModeTabWidth(string text) =>
         Math.Max(
             Scale(70),
-            TextRenderer.MeasureText(
-                text,
-                form.Font).Width + Scale(12));
+            TextRenderer.MeasureText(text, form.Font).Width + Scale(12));
+
+    private int GetVersionLabelWidth(string versionText) =>
+        Math.Max(
+            Scale(88),
+            TextRenderer.MeasureText(versionText, form.Font).Width + Scale(18));
+
+    private Point GetVersionLabelLocation() =>
+        new(form.ClientSize.Width - windowButtonWidth * 3 - versionLabelWidth - Scale(6), 0);
+
+    private void UpdateTabBarLayout(FlowLayoutPanel targetTabBar)
+    {
+        int rightReservedWidth = windowButtonWidth * 3 + versionLabelWidth + Scale(12);
+        targetTabBar.Size = new Size(
+            Math.Max(Scale(200), form.ClientSize.Width - Scale(8) - rightReservedWidth),
+            titleBarHeight - Scale(5));
+    }
+
+    private static void VersionLabelLinkClicked(object? sender, LinkLabelLinkClickedEventArgs e)
+    {
+        if (e.Link.LinkData is not string url || string.IsNullOrWhiteSpace(url))
+        {
+            return;
+        }
+
+        Process.Start(new ProcessStartInfo(url)
+        {
+            UseShellExecute = true
+        });
+    }
 
     private int Scale(int value) =>
         (int)Math.Round(value * dpiScale);

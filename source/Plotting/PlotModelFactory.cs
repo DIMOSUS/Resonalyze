@@ -109,7 +109,7 @@ internal sealed class PlotModelFactory
                 phaseResponseOptions.Unwrap);
 
             var series = OxyPlotAdapter.ToLineSeries(curve);
-            series.TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.0}°";
+            series.TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.0}\u00B0"; // u00B0 degree char
             model.Series.Add(series);
         }
 

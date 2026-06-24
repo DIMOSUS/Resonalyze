@@ -4,12 +4,64 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, for example 0.1.3 or v0.1.3-rc.1"
+        required: true
+        type: string
+      create_release:
+        description: "Create a GitHub Release after publish"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: write
 
 jobs:
+  prepare:
+    name: Prepare release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      ref_name: ${{ steps.prepare.outputs.ref_name }}
+      version: ${{ steps.prepare.outputs.version }}
+      create_release: ${{ steps.prepare.outputs.create_release }}
+
+    steps:
+      - name: Determine release metadata
+        id: prepare
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "push") {
+            $refName = "${{ github.ref_name }}"
+            if (-not $refName) {
+              throw "Tag push workflow requires github.ref_name."
+            }
+
+            $version = $refName.TrimStart('v')
+            $createRelease = "true"
+          } else {
+            $rawVersion = "${{ inputs.version }}"
+            if (-not $rawVersion) {
+              throw "workflow_dispatch requires a version input."
+            }
+
+            $version = $rawVersion.TrimStart('v')
+            $refName = if ($rawVersion.StartsWith('v')) {
+              $rawVersion
+            } else {
+              "v$rawVersion"
+            }
+            $createRelease = "${{ inputs.create_release }}".ToLowerInvariant()
+          }
+
+          "ref_name=$refName" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "create_release=$createRelease" >> $env:GITHUB_OUTPUT
+
   publish:
+    needs: prepare
     name: Publish ${{ matrix.rid }}
     runs-on: windows-latest
     strategy:
@@ -22,6 +74,15 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        shell: pwsh
+        run: |
+          $version = "${{ needs.prepare.outputs.version }}"
+          "version=$version" >> $env:GITHUB_OUTPUT
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
@@ -31,7 +92,7 @@ jobs:
       - name: Publish application
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}".TrimStart("v")
+          $version = "${{ steps.version.outputs.version }}"
           $publishDirectory = Join-Path $env:RUNNER_TEMP "publish-${{ matrix.rid }}"
 
           dotnet publish source/Resonalyze.csproj `
@@ -40,6 +101,7 @@ jobs:
             --self-contained true `
             --output $publishDirectory `
             -p:Version=$version `
+            -p:InformationalVersion=$version `
             -p:PublishSingleFile=true `
             -p:IncludeNativeLibrariesForSelfExtract=true `
             -p:DebugType=None `
@@ -51,7 +113,7 @@ jobs:
 
           Get-ChildItem $publishDirectory -Filter *.pdb | Remove-Item
 
-          $archive = "Resonalyze-${{ github.ref_name }}-${{ matrix.rid }}.zip"
+          $archive = "Resonalyze-${{ needs.prepare.outputs.ref_name }}-${{ matrix.rid }}.zip"
           Compress-Archive -Path "$publishDirectory\*" -DestinationPath $archive
 
           $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -62,13 +124,16 @@ jobs:
         with:
           name: Resonalyze-${{ matrix.rid }}
           path: |
-            Resonalyze-${{ github.ref_name }}-${{ matrix.rid }}.zip
-            Resonalyze-${{ github.ref_name }}-${{ matrix.rid }}.zip.sha256
+            Resonalyze-${{ needs.prepare.outputs.ref_name }}-${{ matrix.rid }}.zip
+            Resonalyze-${{ needs.prepare.outputs.ref_name }}-${{ matrix.rid }}.zip.sha256
           if-no-files-found: error
 
   release:
+    if: ${{ needs.prepare.outputs.create_release == 'true' }}
     name: Create GitHub Release
-    needs: publish
+    needs:
+      - prepare
+      - publish
     runs-on: ubuntu-latest
 
     steps:
@@ -82,8 +147,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" release/* \
+          gh release create "${{ needs.prepare.outputs.ref_name }}" release/* \
             --repo "${{ github.repository }}" \
-            --title "Resonalyze ${{ github.ref_name }}" \
+            --title "Resonalyze ${{ needs.prepare.outputs.ref_name }}" \
             --generate-notes \
             --verify-tag

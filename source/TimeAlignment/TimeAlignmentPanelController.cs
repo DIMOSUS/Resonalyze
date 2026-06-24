@@ -839,7 +839,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             resultTableFont);
         AppendStatusText(
             FormatDelayTableLine(
-                "meters (at 20 °C)",
+                "meters (at 20 \u00B0C)", // u00B0 degree char
                 $"{firstArrivalMeters:0.000}",
                 $"{strongestMeters:0.000}") + "\r\n",
             Color.FromArgb(220, 225, 235),

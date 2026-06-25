@@ -421,7 +421,9 @@ namespace Resonalyze
             if (GenerateOptions.WaterfallMode == WaterfallMode.BurstDecay)
             {
                 int offset = measurement.PeakIndex - GenerateOptions.LeftTukeyWindow + GenerateOptions.Offset;
-                double smoothingOctaves = 1.0 / GenerateOptions.SmoothingInverseOctaves;
+                double smoothingOctaves = GenerateOptions.SmoothingInverseOctaves > 0
+                    ? 1.0 / GenerateOptions.SmoothingInverseOctaves
+                    : 1.0 / 48.0;
                 IReadOnlyList<BurstDecaySlice> slices = WaterfallAnalysis.BuildBurstDecayRawSlices(
                     measurement,
                     offset,
@@ -460,13 +462,16 @@ namespace Resonalyze
 
                 Parallel.For(0, RawSlices.Count, i =>
                 {
+                    double smoothingOctaves = GenerateOptions.SmoothingInverseOctaves > 0
+                        ? 1.0 / GenerateOptions.SmoothingInverseOctaves
+                        : 0.0;
                     List<SignalPoint> resampled = DataHelper.LogarithmicResample(
                         OxyPlotAdapter.ToSignalPoints(RawSlices[i].Data),
                         minFrequency,
                         maxFrequency,
                         width,
                         null,
-                        1.0 / GenerateOptions.SmoothingInverseOctaves);
+                        smoothingOctaves);
                     ResampleSlices[i].Data = OxyPlotAdapter.ToDataPoints(resampled);
                 });
             }

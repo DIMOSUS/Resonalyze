@@ -53,7 +53,7 @@ namespace Resonalyze.Options
             button1.DialogResult = DialogResult.OK;
             button1.FlatStyle = FlatStyle.Popup;
             button1.ForeColor = Color.White;
-            button1.Location = new Point(12, 237);
+            button1.Location = new Point(12, 103);
             button1.Name = "button1";
             button1.Size = new Size(241, 23);
             button1.TabIndex = 35;
@@ -82,8 +82,11 @@ namespace Resonalyze.Options
             // 
             // modeComboBox
             // 
-            modeComboBox.FormattingEnabled = true;
+            modeComboBox.BackColor = Color.FromArgb(55, 60, 72);
+            modeComboBox.ForeColor = Color.White;
             modeComboBox.Location = new Point(132, 11);
+            modeComboBox.Margin = new Padding(0);
+            modeComboBox.MinimumSize = new Size(36, 19);
             modeComboBox.Name = "modeComboBox";
             modeComboBox.Size = new Size(121, 23);
             modeComboBox.TabIndex = 48;
@@ -100,9 +103,11 @@ namespace Resonalyze.Options
             // 
             // sequenceLengthComboBox
             // 
-            sequenceLengthComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            sequenceLengthComboBox.FormattingEnabled = true;
+            sequenceLengthComboBox.BackColor = Color.FromArgb(55, 60, 72);
+            sequenceLengthComboBox.ForeColor = Color.White;
             sequenceLengthComboBox.Location = new Point(132, 40);
+            sequenceLengthComboBox.Margin = new Padding(0);
+            sequenceLengthComboBox.MinimumSize = new Size(36, 19);
             sequenceLengthComboBox.Name = "sequenceLengthComboBox";
             sequenceLengthComboBox.Size = new Size(121, 23);
             sequenceLengthComboBox.TabIndex = 50;
@@ -112,7 +117,7 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 272);
+            ClientSize = new Size(265, 136);
             Controls.Add(sequenceLengthComboBox);
             Controls.Add(label3);
             Controls.Add(modeComboBox);

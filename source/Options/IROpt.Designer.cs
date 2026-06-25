@@ -1,4 +1,4 @@
-﻿namespace Resonalyze.Options
+namespace Resonalyze.Options
 {
     partial class IROpt
     {
@@ -33,19 +33,24 @@
             button1 = new Button();
             checkLogarithmic = new CheckBox();
             label2 = new Label();
-            ((System.ComponentModel.ISupportInitialize)numericLength).BeginInit();
+            (numericLength).BeginInit();
             SuspendLayout();
             // 
             // numericLength
             // 
-            numericLength.BorderStyle = BorderStyle.None;
+            numericLength.BackColor = Color.FromArgb(55, 60, 72);
+            numericLength.DecimalPlaces = 0;
+            numericLength.ForeColor = Color.White;
+            numericLength.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericLength.Location = new Point(193, 12);
             numericLength.Maximum = new decimal(new int[] { 32768, 0, 0, 0 });
             numericLength.Minimum = new decimal(new int[] { 4, 0, 0, 0 });
+            numericLength.MinimumSize = new Size(36, 19);
             numericLength.Name = "numericLength";
             numericLength.Size = new Size(60, 19);
             numericLength.TabIndex = 38;
             numericLength.TextAlign = HorizontalAlignment.Right;
+            numericLength.ThousandsSeparator = false;
             numericLength.Value = new decimal(new int[] { 8192, 0, 0, 0 });
             // 
             // label1
@@ -60,11 +65,11 @@
             // 
             // button1
             // 
-            button1.BackColor = UiPalette.ButtonBackground;
+            button1.BackColor = Color.FromArgb(50, 55, 80);
             button1.DialogResult = DialogResult.OK;
             button1.FlatStyle = FlatStyle.Popup;
             button1.ForeColor = Color.White;
-            button1.Location = new Point(12, 237);
+            button1.Location = new Point(12, 68);
             button1.Name = "button1";
             button1.Size = new Size(241, 23);
             button1.TabIndex = 35;
@@ -95,8 +100,8 @@
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            BackColor = UiPalette.AppBackground;
-            ClientSize = new Size(265, 272);
+            BackColor = Color.FromArgb(45, 50, 60);
+            ClientSize = new Size(265, 102);
             Controls.Add(checkLogarithmic);
             Controls.Add(label2);
             Controls.Add(numericLength);
@@ -108,7 +113,7 @@
             Name = "IROpt";
             ShowInTaskbar = false;
             Text = "Impulse Response Options";
-            ((System.ComponentModel.ISupportInitialize)numericLength).EndInit();
+            (numericLength).EndInit();
             ResumeLayout(false);
             PerformLayout();
 

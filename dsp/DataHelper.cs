@@ -119,7 +119,15 @@ namespace Resonalyze.Dsp
                 int h1Start = peakIndex - frequencyResponseOptions.LeftTukeyWindow;
 
                 var data = GetSpectrumData(measurement, h1Start, h1Length, window);
-                data = LogarithmicResample(data, 20, 20000, 1024, frequencyResponseOptions.UseCalibration ? calibration : null, 1.0 / frequencyResponseOptions.SmoothingInverseOctaves);
+                data = LogarithmicResample(
+                    data,
+                    20,
+                    20000,
+                    1024,
+                    frequencyResponseOptions.UseCalibration ? calibration : null,
+                    frequencyResponseOptions.SmoothingInverseOctaves > 0
+                        ? 1.0 / frequencyResponseOptions.SmoothingInverseOctaves
+                        : 0.0);
                 curves.Add(new AnalysisCurve("Frequency Response", data));
             }
 
@@ -143,7 +151,15 @@ namespace Resonalyze.Dsp
                 double[] window = Windowing.TukeyWindow(hLength, leftTukeyWindow, rightTukeyWindow);
 
                 var data = GetSpectrumData(measurement, hStart, hLength, window);
-                data = LogarithmicResample(data, 20, 20000, 1024, frequencyResponseOptions.UseCalibration ? calibration : null, 2.0 / frequencyResponseOptions.SmoothingInverseOctaves);
+                data = LogarithmicResample(
+                    data,
+                    20,
+                    20000,
+                    1024,
+                    frequencyResponseOptions.UseCalibration ? calibration : null,
+                    frequencyResponseOptions.SmoothingInverseOctaves > 0
+                        ? 2.0 / frequencyResponseOptions.SmoothingInverseOctaves
+                        : 0.0);
                 curves.Add(new AnalysisCurve(
                     $"HD{h}",
                     data,
@@ -165,7 +181,15 @@ namespace Resonalyze.Dsp
                 double[] window = Windowing.TukeyWindow(hLength, leftTukeyWindow, rightTukeyWindow);
 
                 var data = GetSpectrumData(measurement, hStart, hLength, window);
-                data = LogarithmicResample(data, 20, 20000, 1024, frequencyResponseOptions.UseCalibration ? calibration : null, 2.0 / frequencyResponseOptions.SmoothingInverseOctaves);
+                data = LogarithmicResample(
+                    data,
+                    20,
+                    20000,
+                    1024,
+                    frequencyResponseOptions.UseCalibration ? calibration : null,
+                    frequencyResponseOptions.SmoothingInverseOctaves > 0
+                        ? 2.0 / frequencyResponseOptions.SmoothingInverseOctaves
+                        : 0.0);
                 curves.Add(new AnalysisCurve(
                     "THD+N",
                     data,
@@ -259,7 +283,9 @@ namespace Resonalyze.Dsp
 
             return new AnalysisCurve(
                 "Phase",
-                SmoothLinear(data, 1.0 / smoothingInverseOctaves));
+                smoothingInverseOctaves > 0
+                    ? SmoothLinear(data, 1.0 / smoothingInverseOctaves)
+                    : data);
         }
 
         public static AnalysisCurve GetImpulse(

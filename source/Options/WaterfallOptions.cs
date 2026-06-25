@@ -7,12 +7,11 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement;
-
 namespace Resonalyze.Options
 {
     public partial class WaterfallOptions : Form
     {
+        private readonly ToolTip toolTip = new();
         private ExpSweepMeasurement? expSweepMeasurement;
         private decimal lastNonZeroStep = 4;
 
@@ -21,6 +20,8 @@ namespace Resonalyze.Options
             InitializeComponent();
             numericLeftWindow.ValueChanged += TukeyWindow_ValueChanged;
             numericRightWindow.ValueChanged += TukeyWindow_ValueChanged;
+            SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
+            InitializeToolTips();
             FormClosed += WaterfallOptions_FormClosed;
         }
 
@@ -51,7 +52,8 @@ namespace Resonalyze.Options
 
             numericDbRange.Value = waterfallGenerateOptions.DbRange;
 
-            numericSmoothingInverseOctaves.Value = (decimal)waterfallGenerateOptions.SmoothingInverseOctaves;
+            comboSmoothingInverseOctaves.SelectedItem =
+                SmoothingPresetOptions.Normalize(waterfallGenerateOptions.SmoothingInverseOctaves);
 
             numericOffset.Value = waterfallGenerateOptions.Offset;
             UpdateTukeyWindowLimits();
@@ -69,7 +71,10 @@ namespace Resonalyze.Options
 
             waterfallGenerateOptions.DbRange = (int)numericDbRange.Value;
 
-            waterfallGenerateOptions.SmoothingInverseOctaves = (double)numericSmoothingInverseOctaves.Value;
+            waterfallGenerateOptions.SmoothingInverseOctaves =
+                comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
+                    ? inverseOctaves
+                    : SmoothingPresetOptions.SupportedInverseOctaves[0];
 
             waterfallGenerateOptions.Offset = (int)numericOffset.Value;
             UpdateIrPreview();
@@ -162,6 +167,39 @@ namespace Resonalyze.Options
             {
                 expSweepMeasurement.ImpulseResponseChanged -= ExpSweepMeasurement_ImpulseResponseChanged;
             }
+
+            toolTip.Dispose();
+        }
+
+        private void InitializeToolTips()
+        {
+            toolTip.SetToolTip(
+                numericWindow,
+                "Sets the FFT window length for each waterfall slice.");
+            toolTip.SetToolTip(
+                numericSlices,
+                "Controls how many slices are drawn in depth.");
+            toolTip.SetToolTip(
+                numericStep,
+                "Sets the shift in samples between neighboring slices. Larger values cover more time with fewer overlapping slices.");
+            toolTip.SetToolTip(
+                numericLeftWindow,
+                "Controls the fade-in part of the Tukey window before the analyzed region.");
+            toolTip.SetToolTip(
+                numericRightWindow,
+                "Controls the fade-out part of the Tukey window after the analyzed region.");
+            toolTip.SetToolTip(
+                numericDbRange,
+                "Sets the lower display limit in decibels for the waterfall plot.");
+            toolTip.SetToolTip(
+                comboSmoothingInverseOctaves,
+                "Applies octave smoothing to each resampled frequency slice.");
+            toolTip.SetToolTip(
+                numericOffset,
+                "Shifts the whole waterfall analysis window relative to the detected impulse-response peak.");
+            toolTip.SetToolTip(
+                irPlotView,
+                "Preview of the impulse response and the analysis window used for waterfall generation.");
         }
     }
 }

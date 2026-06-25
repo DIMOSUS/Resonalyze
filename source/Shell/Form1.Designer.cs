@@ -30,6 +30,7 @@ namespace Resonalyze
         private void InitializeComponent()
         {
             components = new System.ComponentModel.Container();
+            var resources = new System.ComponentModel.ComponentResourceManager(typeof(Form1));
             buttonRecord = new Button();
             plotView1 = new OxyPlot.WindowsForms.PlotView();
             overlays = new Panel();
@@ -49,6 +50,7 @@ namespace Resonalyze
             inputLevelMeterPanel = new InputLevelMeterPanel();
             overlays.SuspendLayout();
             overlayPanel1.SuspendLayout();
+            (numericUpDown1).BeginInit();
             panel1.SuspendLayout();
             SuspendLayout();
             // 
@@ -108,9 +110,9 @@ namespace Resonalyze
             buttonSaveOverlay.BackColor = Color.FromArgb(50, 55, 100);
             buttonSaveOverlay.FlatStyle = FlatStyle.Popup;
             buttonSaveOverlay.ForeColor = Color.White;
-            buttonSaveOverlay.Location = new Point(22, 3);
+            buttonSaveOverlay.Location = new Point(21, 3);
             buttonSaveOverlay.Name = "buttonSaveOverlay";
-            buttonSaveOverlay.Size = new Size(40, 19);
+            buttonSaveOverlay.Size = new Size(41, 19);
             buttonSaveOverlay.TabIndex = 1;
             buttonSaveOverlay.Text = "1";
             buttonSaveOverlay.UseCompatibleTextRendering = true;
@@ -283,6 +285,7 @@ namespace Resonalyze
             Controls.Add(plotView1);
             Controls.Add(overlays);
             FormBorderStyle = FormBorderStyle.None;
+            Icon = (Icon)resources.GetObject("$this.Icon");
             MinimumSize = new Size(1366, 768);
             Name = "Form1";
             StartPosition = FormStartPosition.CenterScreen;
@@ -290,6 +293,7 @@ namespace Resonalyze
             overlays.ResumeLayout(false);
             overlayPanel1.ResumeLayout(false);
             overlayPanel1.PerformLayout();
+            (numericUpDown1).EndInit();
             panel1.ResumeLayout(false);
             ResumeLayout(false);
 

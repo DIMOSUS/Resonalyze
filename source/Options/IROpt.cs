@@ -13,9 +13,13 @@ namespace Resonalyze.Options
 {
     public partial class IROpt : Form
     {
+        private readonly ToolTip toolTip = new();
+
         public IROpt()
         {
             InitializeComponent();
+            InitializeToolTips();
+            FormClosed += (_, _) => toolTip.Dispose();
         }
 
         public void Init(ExpSweepMeasurement expSweepMeasurement, ImpulseResponseOptions opt)
@@ -28,6 +32,16 @@ namespace Resonalyze.Options
         {
             opt.Length = (int)numericLength.Value;
             opt.Logarithmic = checkLogarithmic.Checked;
+        }
+
+        private void InitializeToolTips()
+        {
+            toolTip.SetToolTip(
+                numericLength,
+                "Sets how many impulse-response samples are shown on the graph.");
+            toolTip.SetToolTip(
+                checkLogarithmic,
+                "Displays the impulse-response amplitude on a logarithmic scale for easier inspection of low-level tails.");
         }
     }
 }

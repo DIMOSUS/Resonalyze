@@ -13,6 +13,7 @@ namespace Resonalyze.Options
 {
     public partial class FROptions : Form
     {
+        private readonly ToolTip toolTip = new();
         private ExpSweepMeasurement? expSweepMeasurement;
 
         public FROptions()
@@ -20,6 +21,8 @@ namespace Resonalyze.Options
             InitializeComponent();
             numericLeftWindow.ValueChanged += TukeyWindow_ValueChanged;
             numericRightWindow.ValueChanged += TukeyWindow_ValueChanged;
+            SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
+            InitializeToolTips();
             FormClosed += FROptions_FormClosed;
         }
 
@@ -39,7 +42,8 @@ namespace Resonalyze.Options
             numericWindow.Value = frequencyResponseOptions.Window;
             numericLeftWindow.Value = frequencyResponseOptions.LeftTukeyWindow;
             numericRightWindow.Value = frequencyResponseOptions.RightTukeyWindow;
-            numericSmoothingInverseOctaves.Value = (decimal)frequencyResponseOptions.SmoothingInverseOctaves;
+            comboSmoothingInverseOctaves.SelectedItem =
+                SmoothingPresetOptions.Normalize(frequencyResponseOptions.SmoothingInverseOctaves);
             checkUseCalibration.Checked = frequencyResponseOptions.UseCalibration;
             UpdateTukeyWindowLimits();
             UpdateIrPreview();
@@ -50,7 +54,10 @@ namespace Resonalyze.Options
             frequencyResponseOptions.Window = (int)numericWindow.Value;
             frequencyResponseOptions.LeftTukeyWindow = (int)numericLeftWindow.Value;
             frequencyResponseOptions.RightTukeyWindow = (int)numericRightWindow.Value;
-            frequencyResponseOptions.SmoothingInverseOctaves = (double)numericSmoothingInverseOctaves.Value;
+            frequencyResponseOptions.SmoothingInverseOctaves =
+                comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
+                    ? inverseOctaves
+                    : SmoothingPresetOptions.SupportedInverseOctaves[0];
             frequencyResponseOptions.UseCalibration = checkUseCalibration.Checked;
             UpdateIrPreview();
         }
@@ -114,6 +121,30 @@ namespace Resonalyze.Options
             {
                 expSweepMeasurement.ImpulseResponseChanged -= ExpSweepMeasurement_ImpulseResponseChanged;
             }
+
+            toolTip.Dispose();
+        }
+
+        private void InitializeToolTips()
+        {
+            toolTip.SetToolTip(
+                numericWindow,
+                "Sets the FFT window length used to calculate the frequency response.");
+            toolTip.SetToolTip(
+                numericLeftWindow,
+                "Controls the fade-in part of the Tukey window before the main impulse region.");
+            toolTip.SetToolTip(
+                numericRightWindow,
+                "Controls the fade-out part of the Tukey window after the main impulse region.");
+            toolTip.SetToolTip(
+                comboSmoothingInverseOctaves,
+                "Applies octave smoothing to the resulting frequency-response curve.");
+            toolTip.SetToolTip(
+                checkUseCalibration,
+                "Applies the loaded microphone calibration file to the displayed frequency response.");
+            toolTip.SetToolTip(
+                irPlotView,
+                "Preview of the sweep-deconvolution impulse response and the analysis window used for this mode.");
         }
     }
 }

@@ -12,6 +12,7 @@ namespace Resonalyze.Options
 {
     public partial class BDOpt : Form
     {
+        private readonly ToolTip toolTip = new();
         private ExpSweepMeasurement? expSweepMeasurement;
 
         public BDOpt()
@@ -19,6 +20,8 @@ namespace Resonalyze.Options
             InitializeComponent();
             numericLeftWindow.ValueChanged += TukeyWindow_ValueChanged;
             numericRightWindow.ValueChanged += TukeyWindow_ValueChanged;
+            SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
+            InitializeToolTips();
             FormClosed += BDOpt_FormClosed;
         }
 
@@ -46,7 +49,8 @@ namespace Resonalyze.Options
 
             numericDbRange.Value = burstDecayGenOptions.DbRange;
 
-            numericSmoothingInverseOctaves.Value = (decimal)burstDecayGenOptions.SmoothingInverseOctaves;
+            comboSmoothingInverseOctaves.SelectedItem =
+                SmoothingPresetOptions.Normalize(burstDecayGenOptions.SmoothingInverseOctaves);
 
             numericOffset.Value = burstDecayGenOptions.Offset;
 
@@ -64,7 +68,10 @@ namespace Resonalyze.Options
 
             burstDecayGenOptions.DbRange = (int)numericDbRange.Value;
 
-            burstDecayGenOptions.SmoothingInverseOctaves = (double)numericSmoothingInverseOctaves.Value;
+            burstDecayGenOptions.SmoothingInverseOctaves =
+                comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
+                    ? inverseOctaves
+                    : SmoothingPresetOptions.SupportedInverseOctaves[0];
 
             burstDecayGenOptions.Offset = (int)numericOffset.Value;
 
@@ -143,6 +150,36 @@ namespace Resonalyze.Options
             {
                 expSweepMeasurement.ImpulseResponseChanged -= ExpSweepMeasurement_ImpulseResponseChanged;
             }
+
+            toolTip.Dispose();
+        }
+
+        private void InitializeToolTips()
+        {
+            toolTip.SetToolTip(
+                numericWindow,
+                "Sets the impulse-response window length used for burst-decay analysis.");
+            toolTip.SetToolTip(
+                numericLeftWindow,
+                "Controls the fade-in part of the Tukey window before the analyzed region.");
+            toolTip.SetToolTip(
+                numericRightWindow,
+                "Controls the fade-out part of the Tukey window after the analyzed region.");
+            toolTip.SetToolTip(
+                comboSmoothingInverseOctaves,
+                "Sets the analysis bandwidth in octaves for each burst-decay slice. Narrower bands increase frequency resolution but make traces less stable.");
+            toolTip.SetToolTip(
+                numericDbRange,
+                "Sets the lower display limit in decibels for the burst-decay plot.");
+            toolTip.SetToolTip(
+                numericOffset,
+                "Shifts the burst-decay analysis window relative to the detected impulse-response peak.");
+            toolTip.SetToolTip(
+                numericPeriods,
+                "Sets how many signal periods are shown on the horizontal axis for each frequency slice.");
+            toolTip.SetToolTip(
+                irPlotView,
+                "Preview of the impulse response and the analysis window used for burst-decay generation.");
         }
     }
 }

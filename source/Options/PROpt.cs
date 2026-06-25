@@ -13,6 +13,7 @@ namespace Resonalyze.Options
 {
     public partial class PROpt : Form
     {
+        private readonly ToolTip toolTip = new();
         private ExpSweepMeasurement? expSweepMeasurement;
 
         public PROpt()
@@ -20,6 +21,8 @@ namespace Resonalyze.Options
             InitializeComponent();
             numericLeftWindow.ValueChanged += TukeyWindow_ValueChanged;
             numericRightWindow.ValueChanged += TukeyWindow_ValueChanged;
+            SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
+            InitializeToolTips();
             FormClosed += PROpt_FormClosed;
         }
 
@@ -39,7 +42,8 @@ namespace Resonalyze.Options
             numericWindow.Value = opt.Window;
             numericLeftWindow.Value = opt.LeftTukeyWindow;
             numericRightWindow.Value = opt.RightTukeyWindow;
-            numericSmoothingInverseOctaves.Value = (decimal)opt.SmoothingInverseOctaves;
+            comboSmoothingInverseOctaves.SelectedItem =
+                SmoothingPresetOptions.Normalize(opt.SmoothingInverseOctaves);
             numericOffset.Value = (decimal)opt.Offset;
             checkBoxUnwrap.Checked = opt.Unwrap;
             UpdateTukeyWindowLimits();
@@ -51,7 +55,10 @@ namespace Resonalyze.Options
             opt.Window = (int)numericWindow.Value;
             opt.LeftTukeyWindow = (int)numericLeftWindow.Value;
             opt.RightTukeyWindow = (int)numericRightWindow.Value;
-            opt.SmoothingInverseOctaves = (double)numericSmoothingInverseOctaves.Value;
+            opt.SmoothingInverseOctaves =
+                comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
+                    ? inverseOctaves
+                    : SmoothingPresetOptions.SupportedInverseOctaves[0];
             opt.Offset = (int)numericOffset.Value;
             opt.Unwrap = checkBoxUnwrap.Checked;
             UpdateIrPreview();
@@ -116,6 +123,33 @@ namespace Resonalyze.Options
             {
                 expSweepMeasurement.ImpulseResponseChanged -= ExpSweepMeasurement_ImpulseResponseChanged;
             }
+
+            toolTip.Dispose();
+        }
+
+        private void InitializeToolTips()
+        {
+            toolTip.SetToolTip(
+                numericWindow,
+                "Sets the analysis window length used to calculate phase.");
+            toolTip.SetToolTip(
+                numericLeftWindow,
+                "Controls the fade-in part of the Tukey window before the selected impulse region.");
+            toolTip.SetToolTip(
+                numericRightWindow,
+                "Controls the fade-out part of the Tukey window after the selected impulse region.");
+            toolTip.SetToolTip(
+                comboSmoothingInverseOctaves,
+                "Applies octave smoothing to the phase trace.");
+            toolTip.SetToolTip(
+                numericOffset,
+                "Shifts the analysis window relative to the detected impulse-response peak.");
+            toolTip.SetToolTip(
+                checkBoxUnwrap,
+                "Removes 360-degree phase wraps to display a continuous phase curve.");
+            toolTip.SetToolTip(
+                irPlotView,
+                "Preview of the impulse response and the analysis window used for phase calculation.");
         }
     }
 }

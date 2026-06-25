@@ -214,7 +214,7 @@ internal sealed class MeasurementSettingsFile
             options.LeftTukeyWindow = Clamp(LeftTukeyWindow, 0, window / 2);
             options.RightTukeyWindow = Clamp(RightTukeyWindow, 0, window / 2);
             options.SmoothingInverseOctaves =
-                Math.Clamp(SmoothingInverseOctaves, 1.0, 96.0);
+                SmoothingPresetOptions.Normalize(SmoothingInverseOctaves);
             options.Offset = Clamp(Offset, -32768, 32768);
             options.Unwrap = Unwrap;
             options.UseCalibration = UseCalibration;
@@ -282,7 +282,7 @@ internal sealed class MeasurementSettingsFile
             options.RightTukeyWindow = Clamp(RightTukeyWindow, 0, window / 2);
             options.DbRange = Clamp(DbRange, -140, -10);
             options.SmoothingInverseOctaves =
-                Math.Clamp(SmoothingInverseOctaves, 1.0, 96.0);
+                SmoothingPresetOptions.Normalize(SmoothingInverseOctaves);
             options.Offset = Clamp(Offset, -32768, 32768);
             options.WaterfallMode = requiredMode;
             options.Periods = Math.Clamp(Periods, 1.0, 60.0);

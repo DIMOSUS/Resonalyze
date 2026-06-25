@@ -4,10 +4,13 @@ namespace Resonalyze.Options
     {
         private static readonly int[] SequenceLengths =
             { 256, 512, 1024, 2048, 4096, 8192, 16384 };
+        private readonly ToolTip toolTip = new();
 
         public LiveSpectrumOpt()
         {
             InitializeComponent();
+            InitializeToolTips();
+            FormClosed += (_, _) => toolTip.Dispose();
         }
 
         public void Init(LiveSpectrumOptions options)
@@ -87,6 +90,19 @@ namespace Resonalyze.Options
             {
                 return DisplayName;
             }
+        }
+
+        private void InitializeToolTips()
+        {
+            toolTip.SetToolTip(
+                modeComboBox,
+                "Chooses whether Live Spectrum shows the direct input spectrum or the transfer function relative to the selected loopback channel.");
+            toolTip.SetToolTip(
+                sequenceLengthComboBox,
+                "Sets the FFT block size. Longer sequences give finer frequency resolution but slower visual updates.");
+            toolTip.SetToolTip(
+                checkUseCalibration,
+                "Applies the loaded microphone calibration file to Live Spectrum.");
         }
     }
 }

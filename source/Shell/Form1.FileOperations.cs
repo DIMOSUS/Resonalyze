@@ -27,7 +27,7 @@ public partial class Form1
         }
 
         measurementSettings.LastImpulseResponseDirectory = directory;
-        SaveMeasurementSettings();
+        measurementSettings.Save();
     }
 
     private async void buttonSave_Click(object sender, EventArgs e)
@@ -55,6 +55,19 @@ public partial class Form1
                 ImpulseResponseFile file =
                     ImpulseResponseFile.Capture(expSweepMeasurement);
                 await file.SaveAsync(dialog.FileName);
+                if (currentHistoryEntryId.HasValue)
+                {
+                    measurementHistoryService.MarkSaved(
+                        currentHistoryEntryId.Value,
+                        dialog.FileName,
+                        file);
+                }
+                else
+                {
+                    currentHistoryEntryId = measurementHistoryService.AddOrUpdateLoadedFile(
+                        dialog.FileName,
+                        file);
+                }
                 SetImpulseResponseSourceFile(dialog.FileName);
                 UpdateLastImpulseResponseDirectory(dialog.FileName);
                 RefreshCurrentModePlot();
@@ -113,6 +126,9 @@ public partial class Form1
                     file.TransferPeakIndex);
                 expSweepMeasurement.RestoreLevelSnapshot(file.GetMeterSnapshot());
                 ApplyLoadedImpulseResponseState(dialog.FileName);
+                currentHistoryEntryId = measurementHistoryService.AddOrUpdateLoadedFile(
+                    dialog.FileName,
+                    file);
             }
             catch (Exception exception)
             {

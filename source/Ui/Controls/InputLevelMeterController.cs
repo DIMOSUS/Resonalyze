@@ -6,25 +6,21 @@ internal sealed class InputLevelMeterController : IDisposable
     private readonly InputLevelMeterPanel panel;
     private readonly ExpSweepMeasurement sweepMeasurement;
     private readonly NoiseMeasurement noiseMeasurement;
-    private readonly TimeAlignmentMeasurement timeAlignmentMeasurement;
     private bool disposed;
 
     public InputLevelMeterController(
         Form owner,
         InputLevelMeterPanel panel,
         ExpSweepMeasurement sweepMeasurement,
-        NoiseMeasurement noiseMeasurement,
-        TimeAlignmentMeasurement timeAlignmentMeasurement)
+        NoiseMeasurement noiseMeasurement)
     {
         this.owner = owner;
         this.panel = panel;
         this.sweepMeasurement = sweepMeasurement;
         this.noiseMeasurement = noiseMeasurement;
-        this.timeAlignmentMeasurement = timeAlignmentMeasurement;
 
         sweepMeasurement.LevelsAvailable += ApplyLevels;
         noiseMeasurement.LevelsAvailable += ApplyLevels;
-        timeAlignmentMeasurement.LevelsAvailable += ApplyLevels;
     }
 
     public void Clear()
@@ -47,7 +43,6 @@ internal sealed class InputLevelMeterController : IDisposable
         disposed = true;
         sweepMeasurement.LevelsAvailable -= ApplyLevels;
         noiseMeasurement.LevelsAvailable -= ApplyLevels;
-        timeAlignmentMeasurement.LevelsAvailable -= ApplyLevels;
     }
 
     private void ApplyLevels(InputLevelMeterSnapshot snapshot)

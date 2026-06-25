@@ -1,5 +1,6 @@
 using System.Windows.Forms;
 using Resonalyze.Dsp;
+using Resonalyze.History;
 using Resonalyze.Options;
 
 namespace Resonalyze
@@ -69,11 +70,14 @@ namespace Resonalyze
         private readonly TimeAlignmentPanelController timeAlignmentController;
         private readonly MainCommandController commandController;
         private readonly MeasurementSettingsFile measurementSettings;
+        private readonly MeasurementHistoryService measurementHistoryService = new();
         private readonly IReadOnlyDictionary<ModeTab, ModeDescriptor> modeDescriptors;
         private readonly PlotLabelsPanelController plotLabelsPanelController;
         private readonly InputLevelMeterController inputLevelMeterController;
         private readonly DockedModeSettingsHost dockedModeSettingsHost;
         private readonly DockedModeSettingsHost dockedMeasurementSettingsHost;
+        private readonly DockedModeSettingsHost dockedHistoryHost;
+        private Guid? currentHistoryEntryId;
         private bool hasCurrentImpulseResponse;
         private bool closingPrepared;
         private bool resourcesDisposed;
@@ -96,6 +100,7 @@ namespace Resonalyze
             inputLevelMeterController = dependencies.InputLevelMeterController;
             dockedModeSettingsHost = dependencies.DockedModeSettingsHost;
             dockedMeasurementSettingsHost = dependencies.DockedMeasurementSettingsHost;
+            dockedHistoryHost = dependencies.DockedHistoryHost;
             modeDescriptors = CreateModeDescriptors();
             ApplyPersistedSettings();
             WireControllerEvents();

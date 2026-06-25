@@ -86,6 +86,7 @@ public partial class Form1
         resourcesDisposed = true;
         dockedModeSettingsHost.Dispose();
         dockedMeasurementSettingsHost.Dispose();
+        dockedHistoryHost.Dispose();
         inputLevelMeterController.Dispose();
         expSweepMeasurement.Dispose();
         timeAlignmentController.Dispose();

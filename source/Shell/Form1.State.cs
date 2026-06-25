@@ -4,14 +4,19 @@ public partial class Form1
 {
     private void ApplyMeasurementConfigurationToControllers()
     {
-        liveSpectrumController.ConfigureFrom(expSweepMeasurement);
+        liveSpectrumController.ConfigureFrom(measurementSettings.Measurement);
         timeAlignmentController.RefreshConfiguration();
     }
 
     private async Task ApplyMeasurementConfigurationToControllersAsync()
     {
-        await liveSpectrumController.ReconfigureFromAsync(expSweepMeasurement);
+        await liveSpectrumController.ReconfigureFromAsync(measurementSettings.Measurement);
         timeAlignmentController.RefreshConfiguration();
+    }
+
+    private void PrepareSweepMeasurementForRun()
+    {
+        measurementSettings.Measurement.ApplyTo(expSweepMeasurement);
     }
 
     private void SetImpulseResponseAvailability(bool available)
@@ -24,6 +29,7 @@ public partial class Form1
     private void EnterMeasurementRunningState()
     {
         buttonRecord.Text = "Running...";
+        currentHistoryEntryId = null;
         hasCurrentImpulseResponse = false;
         SetImpulseResponseSourceFile(null);
         UpdatePeakInfo();
@@ -32,11 +38,14 @@ public partial class Form1
         UpdateDrawButtonText();
     }
 
-    private void ApplyLoadedImpulseResponseState(string filePath)
+    private void ApplyLoadedImpulseResponseState(string? filePath)
     {
         ApplyMeasurementConfigurationToControllers();
         SetImpulseResponseSourceFile(filePath);
-        UpdateLastImpulseResponseDirectory(filePath);
+        if (!string.IsNullOrWhiteSpace(filePath))
+        {
+            UpdateLastImpulseResponseDirectory(filePath);
+        }
         hasCurrentImpulseResponse = true;
         UpdatePeakInfo();
         RefreshCurrentModePlot();

@@ -8,6 +8,7 @@ internal sealed class MainCommandController
     private readonly Button clearButton;
     private readonly Button modeSettingsButton;
     private readonly Button recordSettingsButton;
+    private readonly Button historyButton;
     private readonly Func<bool> hasActiveModeSettings;
     private readonly Func<bool> supportsManualDraw;
     private readonly Func<bool> canDrawCurrentMeasurement;
@@ -15,6 +16,7 @@ internal sealed class MainCommandController
     private readonly Func<bool> isHandleCreated;
     private bool modeSettingsPressed;
     private bool recordSettingsPressed;
+    private bool historyPressed;
 
     public MainCommandController(
         Button saveButton,
@@ -23,6 +25,7 @@ internal sealed class MainCommandController
         Button clearButton,
         Button modeSettingsButton,
         Button recordSettingsButton,
+        Button historyButton,
         Func<bool> hasActiveModeSettings,
         Func<bool> supportsManualDraw,
         Func<bool> canDrawCurrentMeasurement,
@@ -35,6 +38,7 @@ internal sealed class MainCommandController
         this.clearButton = clearButton;
         this.modeSettingsButton = modeSettingsButton;
         this.recordSettingsButton = recordSettingsButton;
+        this.historyButton = historyButton;
         this.hasActiveModeSettings = hasActiveModeSettings;
         this.supportsManualDraw = supportsManualDraw;
         this.canDrawCurrentMeasurement = canDrawCurrentMeasurement;
@@ -114,6 +118,17 @@ internal sealed class MainCommandController
 
         recordSettingsPressed = pressed;
         SetButtonPressed(recordSettingsButton, recordSettingsPressed);
+    }
+
+    public void UpdateHistoryButton(bool pressed = false)
+    {
+        if (!isHandleCreated())
+        {
+            return;
+        }
+
+        historyPressed = pressed;
+        SetButtonPressed(historyButton, historyPressed);
     }
 
     public static void SetButtonFrozen(Button button, bool frozen)

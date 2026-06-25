@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Resonalyze.History;
 
 namespace Resonalyze;
 
@@ -42,6 +43,9 @@ public sealed class ImpulseResponseFile
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public LevelSnapshotFileEntry? LoopbackLevels { get; set; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PreviewFrequencyResponseFileEntry? PreviewFrequencyResponse { get; set; }
+
     public double[] SweepDeconvolutionRealSamples { get; set; } = Array.Empty<double>();
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -73,9 +77,9 @@ public sealed class ImpulseResponseFile
             transferPeakIndex = measurement.TransferPeakIndex;
         }
         LevelSnapshotFileEntry? microphoneLevels =
-            ConvertLevelEntry(measurement.CurrentLevels.Microphone);
+            CreateLevelSnapshotFileEntry(measurement.CurrentLevels.Microphone);
         LevelSnapshotFileEntry? loopbackLevels =
-            ConvertLevelEntry(measurement.CurrentLevels.Loopback);
+            CreateLevelSnapshotFileEntry(measurement.CurrentLevels.Loopback);
 
         return new ImpulseResponseFile
         {
@@ -90,6 +94,16 @@ public sealed class ImpulseResponseFile
             TransferPeakIndex = transferPeakIndex,
             MicrophoneLevels = microphoneLevels,
             LoopbackLevels = loopbackLevels,
+            PreviewFrequencyResponse = CreatePreviewFileEntry(
+                MeasurementHistoryPreviewBuilder.Build(
+                    sweepImpulseResponse,
+                    measurement.SweepDeconvolutionPeakIndex,
+                    measurement.SampleRate,
+                    measurement.MeasurementMode,
+                    measurement.TransferImpulseResponse,
+                    measurement.TransferImpulseResponse is { Length: > 0 }
+                        ? measurement.TransferPeakIndex
+                        : null)),
             SweepDeconvolutionRealSamples = sweepRealSamples,
             SweepDeconvolutionImaginarySamples = sweepImaginarySamples,
             TransferRealSamples = transferRealSamples,
@@ -163,6 +177,24 @@ public sealed class ImpulseResponseFile
         return new InputLevelMeterSnapshot(
             ToMeterEntry(MicrophoneLevels),
             ToMeterEntry(LoopbackLevels));
+    }
+
+    internal MeasurementHistoryPreview? ToPreview()
+    {
+        if (PreviewFrequencyResponse == null)
+        {
+            return null;
+        }
+
+        return new MeasurementHistoryPreview
+        {
+            Window = PreviewFrequencyResponse.Window,
+            LeftTukeyWindow = PreviewFrequencyResponse.LeftTukeyWindow,
+            RightTukeyWindow = PreviewFrequencyResponse.RightTukeyWindow,
+            SmoothingInverseOctaves = PreviewFrequencyResponse.SmoothingInverseOctaves,
+            Frequencies = PreviewFrequencyResponse.Frequencies.ToArray(),
+            MagnitudesDb = PreviewFrequencyResponse.MagnitudesDb.ToArray()
+        };
     }
 
     private void Validate()
@@ -258,6 +290,7 @@ public sealed class ImpulseResponseFile
 
         ValidateLevelEntry(MicrophoneLevels, nameof(MicrophoneLevels));
         ValidateLevelEntry(LoopbackLevels, nameof(LoopbackLevels));
+        ValidatePreview(PreviewFrequencyResponse);
     }
 
     private static (double[] Real, double[]? Imaginary) ConvertSamples(
@@ -314,7 +347,7 @@ public sealed class ImpulseResponseFile
         }
     }
 
-    private static LevelSnapshotFileEntry? ConvertLevelEntry(InputLevelMeterEntry entry)
+    internal static LevelSnapshotFileEntry? CreateLevelSnapshotFileEntry(InputLevelMeterEntry entry)
     {
         if (!entry.Available)
         {
@@ -327,6 +360,48 @@ public sealed class ImpulseResponseFile
             RmsDbFs = entry.RmsDbFs,
             Clipped = entry.Clipped,
             FullScaleReference = entry.FullScaleReference
+        };
+    }
+
+    internal static PreviewFrequencyResponseFileEntry? CreatePreviewFileEntry(
+        MeasurementHistoryPreview? preview)
+    {
+        if (preview == null)
+        {
+            return null;
+        }
+
+        int count = Math.Min(preview.Frequencies.Length, preview.MagnitudesDb.Length);
+        List<double> frequencies = [];
+        List<double> magnitudesDb = [];
+        for (int i = 0; i < count; i++)
+        {
+            double frequency = preview.Frequencies[i];
+            double magnitudeDb = preview.MagnitudesDb[i];
+            if (!double.IsFinite(frequency) ||
+                !double.IsFinite(magnitudeDb) ||
+                frequency <= 0)
+            {
+                continue;
+            }
+
+            frequencies.Add(frequency);
+            magnitudesDb.Add(magnitudeDb);
+        }
+
+        if (frequencies.Count == 0)
+        {
+            return null;
+        }
+
+        return new PreviewFrequencyResponseFileEntry
+        {
+            Window = preview.Window,
+            LeftTukeyWindow = preview.LeftTukeyWindow,
+            RightTukeyWindow = preview.RightTukeyWindow,
+            SmoothingInverseOctaves = preview.SmoothingInverseOctaves,
+            Frequencies = frequencies.ToArray(),
+            MagnitudesDb = magnitudesDb.ToArray()
         };
     }
 
@@ -358,11 +433,53 @@ public sealed class ImpulseResponseFile
         }
     }
 
+    private static void ValidatePreview(PreviewFrequencyResponseFileEntry? preview)
+    {
+        if (preview == null)
+        {
+            return;
+        }
+
+        if (preview.Window <= 0 ||
+            preview.LeftTukeyWindow < 0 ||
+            preview.RightTukeyWindow < 0 ||
+            preview.SmoothingInverseOctaves < 0)
+        {
+            throw new InvalidDataException("Preview frequency-response settings are invalid.");
+        }
+
+        if (preview.Frequencies.Length != preview.MagnitudesDb.Length)
+        {
+            throw new InvalidDataException(
+                "Preview frequency-response arrays have different lengths.");
+        }
+
+        for (int i = 0; i < preview.Frequencies.Length; i++)
+        {
+            if (!double.IsFinite(preview.Frequencies[i]) ||
+                !double.IsFinite(preview.MagnitudesDb[i]))
+            {
+                throw new InvalidDataException(
+                    $"Preview frequency-response sample {i} is not a finite number.");
+            }
+        }
+    }
+
     public sealed class LevelSnapshotFileEntry
     {
         public double PeakDbFs { get; set; }
         public double RmsDbFs { get; set; }
         public bool Clipped { get; set; }
         public bool FullScaleReference { get; set; }
+    }
+
+    public sealed class PreviewFrequencyResponseFileEntry
+    {
+        public int Window { get; set; }
+        public int LeftTukeyWindow { get; set; }
+        public int RightTukeyWindow { get; set; }
+        public int SmoothingInverseOctaves { get; set; }
+        public double[] Frequencies { get; set; } = Array.Empty<double>();
+        public double[] MagnitudesDb { get; set; } = Array.Empty<double>();
     }
 }

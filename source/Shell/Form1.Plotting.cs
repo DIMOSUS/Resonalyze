@@ -10,6 +10,10 @@ public partial class Form1
         ModeDescriptor descriptor = GetActiveModeDescriptor();
         if (descriptor.CreatePlotModel == null)
         {
+            if (descriptor.ShowsTimeAlignmentPanel)
+            {
+                timeAlignmentController.RefreshConfiguration();
+            }
             UpdateClearButtonState();
             return;
         }

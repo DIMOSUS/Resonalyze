@@ -42,6 +42,7 @@ files are provided with every release.
 
 - Exponential sine sweep measurement
 - Impulse response with JSON save/load
+- Measurement History with in-memory snapshots, saved-file recall, and FR previews
 - Windows Wave and ASIO audio backends
 - Playback/recording device selection with backend-specific channel routing
 - Device-aware sample-rate selection from supported rates
@@ -183,6 +184,8 @@ test project on every push to `main` and on pull requests.
    the current zoom/pan.
 8. Use **Save** to preserve the captured impulse response for later analysis
    or comparison.
+9. Use **History** to review recent measurements, preview their frequency
+   response, reload an older snapshot, or save an in-memory capture to disk.
 
 For acoustic measurements, microphone placement and room conditions strongly
 affect the result. For electrical loopback measurements, make sure signal
@@ -333,27 +336,78 @@ The Live Spectrum settings panel also exposes **Sequence Length**, which is the
 FFT block size used by the live analyzer. Only power-of-two values are offered
 to keep the live FFT path efficient and predictable.
 
+## Measurement History
+
+The **History** button opens a docked measurement-history panel with:
+
+- a list of recent measurement snapshots
+- a compact frequency-response preview for the selected row
+- row tooltips with capture metadata such as time, mode, sample rate,
+  duration, channel, peak index, and stored mic/loopback meter levels
+
+History entries are split into two kinds:
+
+- `RAM` for in-memory snapshots from the current session
+- `FILE` for saved IR files remembered across launches when the files still
+  exist on disk
+
+Newest entries appear at the top of the list. Column-header sorting is
+intentionally disabled so the history keeps a stable chronological order and
+row actions always match the visible item.
+
+The currently active loaded snapshot stays highlighted in the list, even if you
+click another row only to inspect its preview. That makes it easier to compare
+entries without losing track of which measurement is actually driving the main
+plots.
+
+Double-click a row to load it into the main workspace. Use:
+
+- **Save** to turn an in-memory snapshot into a regular IR JSON file
+- **Delete** to remove an item from history without deleting the underlying
+  file from disk
+
+Saving an in-memory snapshot turns that row into a file-backed history entry
+and updates the visible name to the chosen file name. Loaded IR files appear in
+the same list as fresh captures, so History works as a practical short-term
+measurement shelf rather than as a separate file browser.
+
+To keep memory use predictable, Resonalyze keeps only a small rolling set of
+unsaved in-memory snapshots. Saved file-backed entries are persisted
+separately.
+
 ## Time Alignment
 
-The **Time Alignment** mode measures acoustic delay against a loopback
-reference. It is designed for practical loudspeaker, microphone, and channel
-alignment work where the result has to be more precise than a single audio
-sample.
+The **Time Alignment** mode analyzes acoustic delay from the currently active
+measurement record. It is designed for practical loudspeaker, microphone, and
+channel alignment work where the result has to be more precise than a single
+audio sample.
 
 ![Time Alignment measurement](assets/images/time-alignment.png)
 
-Resonalyze plays the same mono exponential sweep used by the ordinary impulse
-response measurement, records the microphone channel and the selected loopback
-channel at the same time, and computes the microphone response relative to the
-loopback reference path. This removes the unknown playback latency from the
-measurement. With ASIO, both recorded channels also remain locked to the same
-hardware clock, which gives the most repeatable result.
+Time Alignment no longer runs its own separate capture path. Instead, it reads
+the active **transfer impulse response** already stored in the current record.
+That means it works immediately after:
+
+- a new sweep measurement captured with loopback enabled
+- loading an IR JSON file that contains transfer-response data
+
+If the active record does not contain a transfer IR, the mode clearly reports
+that the measurement was captured without loopback and does not attempt to
+estimate delay from the ordinary sweep-deconvolution response.
+
+The transfer IR itself comes from the same loopback-based sweep measurement
+pipeline used elsewhere in the app: Resonalyze plays the exponential sweep,
+records microphone and loopback at the same time, and computes the microphone
+response relative to the loopback reference path. This removes unknown playback
+latency from the response used for timing analysis. With ASIO, both recorded
+channels also remain locked to the same hardware clock, which gives the most
+repeatable result.
 
 The delay estimator uses a deliberately robust chain:
 
-- frequency-domain relative transfer function between loopback and microphone
+- active transfer impulse response from the current record
 - optional raised-cosine bandpass window around the frequency range of interest
-- analytic-signal envelope of the relative impulse response
+- analytic-signal envelope of that impulse response
 - fractional peak interpolation around the envelope maximum
 
 That last step is the important bit: Resonalyze does not stop at the nearest
@@ -363,7 +417,11 @@ coarse integer-sample result. For time alignment, that is a serious practical
 upgrade: smaller timing adjustments become visible, repeatable, and easier to
 trust.
 
-The mode also reports measurement quality:
+The mode recalculates immediately when you switch into **Time Alignment** and
+also updates live as soon as you change the bandpass settings.
+
+It reports signal quality using the stored meter snapshot from the same
+measurement record:
 
 - Color-coded `Excellent`, `Good`, `Fair`, or `Poor` confidence based on
   peak-to-background envelope ratio
@@ -372,29 +430,31 @@ The mode also reports measurement quality:
 - `CLIP` warning for overloaded microphone input
 - `FULL SCALE` marker for a digital loopback reference running at 0 dBFS
 
-The compact input level meter remains useful here as well: while the
-measurement is running it shows live microphone and loopback behavior, and
-after completion it preserves the final captured levels from that run.
+The compact input level meter remains useful here as well: it preserves the
+final captured levels from the last valid sweep measurement or loaded file, so
+the Time Alignment readout still has the signal context that produced the
+current transfer IR.
 
 The measured time, distance, and sample count are clickable. Click one of
 those result lines to copy just the numeric value to the clipboard, which is
 convenient when pasting delay values into another tool or a spreadsheet.
 
 When the bandpass window is enabled, Resonalyze shows a small frequency-domain
-preview of the selected pass band. After the measurement completes, it also
-shows the envelope around the detected peak, making it easy to see whether the
-reported delay comes from a clean dominant peak or from a noisy/ambiguous
-response.
+preview of the selected pass band. It also shows the envelope around the
+detected peak, making it easy to see whether the reported delay comes from a
+clean dominant arrival or from a noisy or ambiguous response.
 
-Time Alignment requires a configured loopback input channel. It works with:
+Time Alignment therefore depends on how the underlying sweep record was
+captured. To produce a usable transfer IR, the sweep measurement itself must be
+run with a configured loopback input channel. That loopback-enabled sweep can
+be captured through:
 
 - **ASIO**, which is the recommended path for best timing accuracy
 - **Wave**, if the selected recording device exposes a stereo input and one
   side can be dedicated to loopback
 
-Wave mode is supported for convenience, but it is less robust than ASIO for
-serious alignment work because the timing path is not as tightly controlled as
-with a dedicated low-latency hardware driver.
+Wave loopback is supported for convenience, but ASIO remains the preferred path
+for serious timing work because the capture chain is more tightly controlled.
 
 ## Installer and Updates
 
@@ -441,19 +501,23 @@ Files are saved as indented, human-readable JSON. Each file contains:
 - Optional loopback transfer-function impulse response samples and peak index
   when loopback was enabled
 - Stored microphone and loopback Peak/RMS meter values from the measurement
+- Embedded preview frequency-response data for the Measurement History panel
 
 Click **Load** to open a previously saved response. Resonalyze validates the
 file before using it, rejects files below `44100 Hz`, restores the associated
-measurement metadata, stays in the current analysis view, and redraws it from
-the loaded data. The loaded sample rate is applied back to the current
-measurement configuration, and all analyses derived from an impulse response,
-including frequency response, phase, group delay, waterfall, Burst Decay, and
-autocorrelation, can then be generated without repeating the measurement.
+measurement metadata into the active record, stays in the current analysis
+view, and redraws it from the loaded data. Loading an IR does **not** rewrite
+the current audio-device configuration in Record Settings. All analyses derived
+from an impulse response, including frequency response, phase, group delay,
+waterfall, Burst Decay, autocorrelation, and loopback-based Time Alignment,
+can then be generated without repeating the measurement.
 
 Saving and loading are disabled while a measurement is running. The current
 file format identifier is `resonalyze-impulse-response`, version `4`. Files are
 intended to remain readable by people, but editing sample arrays manually may
-make a file invalid or produce misleading analysis results.
+make a file invalid or produce misleading analysis results. Files that do not
+yet contain the embedded preview-frequency-response section can still be
+loaded; Resonalyze rebuilds the preview when needed.
 
 ## Plot Overlays
 

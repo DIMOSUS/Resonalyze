@@ -1,3 +1,4 @@
+using System.Numerics;
 using OxyPlot;
 using OxyPlot.Annotations;
 using OxyPlot.Axes;
@@ -14,39 +15,31 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private const int DelayTableSecondColumn = 34;
 
     private readonly Form owner;
-    private readonly ExpSweepMeasurement expSweepMeasurement;
     private readonly TimeAlignmentOptions options;
-    private readonly Action<string> setRecordButtonText;
+    private readonly ExpSweepMeasurement measurement;
     private readonly Action saveSettings;
-    private readonly Func<bool> isTimeAlignmentActive;
-    private readonly TimeAlignmentMeasurement measurement = new();
     private readonly Panel panel;
-    private readonly Label routeSummaryLabel;
+    private readonly Label sourceSummaryLabel;
     private readonly CheckBox bandpassCheckBox;
     private readonly DarkNumericUpDown bandpassCenterNumeric;
     private readonly DarkNumericUpDown bandpassPassOctavesNumeric;
     private readonly DarkNumericUpDown bandpassFadeOctavesNumeric;
     private readonly PlotView bandpassPlotView;
     private readonly PlotView envelopePlotView;
-    private readonly Button startButton;
     private readonly RichTextBox statusTextBox;
     private readonly Font resultTableFont;
     private bool disposed;
 
     public TimeAlignmentPanelController(
         Form owner,
-        ExpSweepMeasurement expSweepMeasurement,
         TimeAlignmentOptions options,
-        Action<string> setRecordButtonText,
-        Action saveSettings,
-        Func<bool> isTimeAlignmentActive)
+        ExpSweepMeasurement measurement,
+        Action saveSettings)
     {
         this.owner = owner;
-        this.expSweepMeasurement = expSweepMeasurement;
         this.options = options;
-        this.setRecordButtonText = setRecordButtonText;
+        this.measurement = measurement;
         this.saveSettings = saveSettings;
-        this.isTimeAlignmentActive = isTimeAlignmentActive;
         resultTableFont = new Font(
             FontFamily.GenericMonospace,
             owner.Font.Size + 4.0f,
@@ -54,23 +47,21 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         (
             panel,
-            routeSummaryLabel,
+            sourceSummaryLabel,
             bandpassCheckBox,
             bandpassCenterNumeric,
             bandpassPassOctavesNumeric,
             bandpassFadeOctavesNumeric,
             bandpassPlotView,
             envelopePlotView,
-            startButton,
             statusTextBox) = CreatePanel();
 
-        measurement.Completed += MeasurementCompleted;
         ApplyOptionsToControls();
         UpdateBandpassPreview();
+        RefreshAnalysis();
     }
 
-    public bool InProgress => measurement.InProgress;
-    public TimeAlignmentMeasurement Measurement => measurement;
+    public bool InProgress => false;
 
     public void SetVisible(bool visible)
     {
@@ -83,74 +74,11 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     public void RefreshConfiguration()
     {
-        UpdateRouteSummary();
         UpdateBandpassPreview();
+        RefreshAnalysis();
     }
 
-    public async Task ToggleAsync()
-    {
-        if (measurement.InProgress)
-        {
-            await measurement.AbortAsync();
-            return;
-        }
-
-        if (!TryValidateMeasurementRoute(out string routeError))
-        {
-            SetStatusText(routeError);
-            System.Media.SystemSounds.Beep.Play();
-            return;
-        }
-
-        try
-        {
-            UpdateOptionsFromControls();
-            saveSettings();
-            double duration = expSweepMeasurement.Sweep?.RequestedDuration ?? 1.0;
-            int microphoneInputChannelOffset = expSweepMeasurement.AudioBackend == AudioBackend.Wave
-                ? expSweepMeasurement.WaveInputChannelOffset
-                : expSweepMeasurement.AsioInputChannelOffset;
-            int loopbackInputChannelOffset = expSweepMeasurement.AudioBackend == AudioBackend.Wave
-                ? expSweepMeasurement.WaveLoopbackInputChannelOffset ??
-                    throw new InvalidOperationException("Wave loopback input is not configured.")
-                : expSweepMeasurement.AsioLoopbackInputChannelOffset ??
-                    throw new InvalidOperationException("ASIO loopback input is not configured.");
-            measurement.Init(
-                expSweepMeasurement.Octaves,
-                expSweepMeasurement.SampleRate,
-                expSweepMeasurement.Bits,
-                duration,
-                expSweepMeasurement.AudioBackend,
-                expSweepMeasurement.OutputDeviceNumber,
-                expSweepMeasurement.InputDeviceNumber,
-                expSweepMeasurement.PlaybackChannel,
-                expSweepMeasurement.AsioDriverName,
-                microphoneInputChannelOffset,
-                loopbackInputChannelOffset,
-                expSweepMeasurement.AsioOutputChannelOffset,
-                options);
-
-            startButton.Text = "Stop";
-            setRecordButtonText("Running...");
-            SetStatusText("Measuring time alignment...");
-            ClearEnvelopePreview();
-            _ = measurement.RunAsync();
-            SetControlsEnabled(false);
-        }
-        catch (Exception exception)
-        {
-            SetStatusText(exception.Message);
-            MessageBox.Show(
-                owner,
-                exception.Message,
-                "Time Alignment",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
-            SetControlsEnabled(true);
-        }
-    }
-
-    public Task AbortAsync() => measurement.AbortAsync();
+    public Task AbortAsync() => Task.CompletedTask;
 
     public void Dispose()
     {
@@ -160,54 +88,18 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
 
         disposed = true;
-        measurement.Dispose();
         resultTableFont.Dispose();
-    }
-
-    private void MeasurementCompleted(bool success)
-    {
-        if (owner.IsDisposed || !owner.IsHandleCreated)
-        {
-            return;
-        }
-
-        owner.BeginInvoke((MethodInvoker)delegate
-        {
-            startButton.Text = "Start";
-            setRecordButtonText(success ? "Ready" : measurement.LastError == null ? "Aborted" : "Error");
-
-            if (isTimeAlignmentActive())
-            {
-                UpdateRouteSummary();
-            }
-
-            if (success)
-            {
-                SetMeasurementResultStatus();
-                UpdateEnvelopePreview();
-            }
-            else if (measurement.LastError != null)
-            {
-                SetStatusText(measurement.LastError.Message);
-                ClearEnvelopePreview();
-            }
-            else
-            {
-                SetStatusText("Time-alignment measurement aborted.");
-                ClearEnvelopePreview();
-            }        });
     }
 
     private (
         Panel Panel,
-        Label RouteSummary,
+        Label SourceSummary,
         CheckBox BandpassEnabled,
         DarkNumericUpDown BandpassCenter,
         DarkNumericUpDown BandpassPassOctaves,
         DarkNumericUpDown BandpassFadeOctaves,
         PlotView BandpassPreview,
         PlotView EnvelopePreview,
-        Button Start,
         RichTextBox Status) CreatePanel()
     {
         int top = GetScaledTitleBarHeight() + 12;
@@ -224,38 +116,38 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         var title = UiStyle.CreateTitleLabel("Time Alignment", new Point(18, 18));
         var description = UiStyle.CreateInfoLabel(
-            "Loopback measurement: microphone input + reference input from Record Settings.",
+            "Computes delay from the active transfer impulse response.",
             new Point(18, 44));
         var help = UiStyle.CreateLabel(
             "What it is for\r\n" +
-            "Measures acoustic delay relative to the audio interface reference path.\r\n\r\n" +
+            "Measures arrival time from the currently active loopback-based measurement record.\r\n\r\n" +
             "How it works\r\n" +
-            "Resonalyze plays the configured sweep, records microphone and loopback at the same time, then compares the two impulse-response peaks.\r\n\r\n" +
-            "Accuracy note\r\n" +
-            "Wave mode is supported with a stereo input, but ASIO is recommended for best timing accuracy.",
+            "Resonalyze analyzes the active transfer IR immediately, optionally applies a bandpass window, then reports both First Arrival and Strongest Peak.\r\n\r\n" +
+            "Source selection\r\n" +
+            "This mode requires a transfer IR recorded with loopback enabled.",
             new Point(560, 24),
             UiPalette.TextSecondaryAlt,
             owner.Font,
             autoSize: false);
         help.Size = new Size(520, 150);
 
-        Label routeSummary = UiStyle.CreateLabel(
-            "Configure microphone and loopback channels in Record Settings.",
+        Label sourceSummary = UiStyle.CreateLabel(
+            "Source: waiting for an impulse response.",
             new Point(18, 78),
             UiPalette.TextHighlight,
             owner.Font,
             autoSize: false);
-        routeSummary.Size = new Size(520, 90);
-        CheckBox bandpassEnabled = UiStyle.CreateDarkCheckBox("Use bandpass window", new Point(18, 177));
+        sourceSummary.Size = new Size(520, 40);
+
+        CheckBox bandpassEnabled = UiStyle.CreateDarkCheckBox("Use bandpass window", new Point(18, 127));
         DarkNumericUpDown bandpassCenter =
-            UiStyle.CreateDarkNumericUpDown(new Point(180, 207), new Size(120, 23), 20, 20_000, 1000, 10);
+            UiStyle.CreateDarkNumericUpDown(new Point(180, 157), new Size(120, 23), 20, 20_000, 1000, 10);
         DarkNumericUpDown bandpassPassOctaves =
-            UiStyle.CreateDarkNumericUpDown(new Point(180, 241), new Size(120, 23), 0, 8, 1, 0.1M);
+            UiStyle.CreateDarkNumericUpDown(new Point(180, 191), new Size(120, 23), 0, 8, 1, 0.1M);
         DarkNumericUpDown bandpassFadeOctaves =
-            UiStyle.CreateDarkNumericUpDown(new Point(180, 275), new Size(120, 23), 0, 8, 0.5M, 0.1M);
-        PlotView bandpassPreview = UiStyle.CreateDarkPreviewPlotView(new Point(18, 313), new Size(520, 200));
+            UiStyle.CreateDarkNumericUpDown(new Point(180, 225), new Size(120, 23), 0, 8, 0.5M, 0.1M);
+        PlotView bandpassPreview = UiStyle.CreateDarkPreviewPlotView(new Point(18, 263), new Size(520, 200));
         PlotView envelopePreview = UiStyle.CreateDarkPreviewPlotView(new Point(560, 380), new Size(520, 300));
-        Button start = UiStyle.CreateDarkActionButton("Start", new Point(560, 198), new Size(520, 28));
         StatusRichTextBox status = new()
         {
             BackColor = UiPalette.PlotSurfaceMuted,
@@ -263,14 +155,13 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             DetectUrls = false,
             ForeColor = UiPalette.TextSecondarySoft,
             Font = new Font(owner.Font.FontFamily, 11, FontStyle.Bold),
-            Location = new Point(560, 240),
+            Location = new Point(560, 180),
             ReadOnly = true,
             ScrollBars = RichTextBoxScrollBars.None,
-            Size = new Size(560, 235),
-            Text = "Select an ASIO driver with loopback input channels."
+            Size = new Size(560, 200),
+            Text = "Run a loopback measurement or load an impulse response file with transfer IR."
         };
-        status.UseHandCursorAt = point =>
-            TryGetCopyableStatusLine(point, out _);
+        status.UseHandCursorAt = point => TryGetCopyableStatusLine(point, out _);
         status.MouseClick += StatusTextBoxMouseClick;
 
         newPanel.Controls.AddRange(
@@ -278,63 +169,138 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             title,
             description,
             help,
-            routeSummary,
+            sourceSummary,
             bandpassEnabled,
-            UiStyle.CreateLabel("Center frequency, Hz", new Point(18, 211), UiPalette.TextHighlight, owner.Font),
+            UiStyle.CreateLabel("Center frequency, Hz", new Point(18, 161), UiPalette.TextHighlight, owner.Font),
             bandpassCenter,
-            UiStyle.CreateLabel("Pass width, oct", new Point(18, 245), UiPalette.TextHighlight, owner.Font),
+            UiStyle.CreateLabel("Pass width, oct", new Point(18, 195), UiPalette.TextHighlight, owner.Font),
             bandpassPassOctaves,
-            UiStyle.CreateLabel("Fade width, oct", new Point(18, 279), UiPalette.TextHighlight, owner.Font),
+            UiStyle.CreateLabel("Fade width, oct", new Point(18, 229), UiPalette.TextHighlight, owner.Font),
             bandpassFadeOctaves,
             bandpassPreview,
             envelopePreview,
-            start,
             status
         ]);
         ScaleRuntimeControlTree(newPanel);
         owner.Controls.Add(newPanel);
         newPanel.BringToFront();
-        bandpassEnabled.CheckedChanged += (_, _) =>
-        {
-            UpdateOptionsFromControls();
-            UpdateBandpassPreview();
-            bandpassCenter.Enabled = bandpassEnabled.Checked && !measurement.InProgress;
-            bandpassPassOctaves.Enabled = bandpassEnabled.Checked && !measurement.InProgress;
-            bandpassFadeOctaves.Enabled = bandpassEnabled.Checked && !measurement.InProgress;
-            saveSettings();
-        };
-        bandpassCenter.ValueChanged += (_, _) =>
-        {
-            UpdateOptionsFromControls();
-            UpdateBandpassPreview();
-            saveSettings();
-        };
-        bandpassPassOctaves.ValueChanged += (_, _) =>
-        {
-            UpdateOptionsFromControls();
-            UpdateBandpassPreview();
-            saveSettings();
-        };
-        bandpassFadeOctaves.ValueChanged += (_, _) =>
-        {
-            UpdateOptionsFromControls();
-            UpdateBandpassPreview();
-            saveSettings();
-        };
-        start.Click += async (_, _) => await ToggleAsync();
+
+        bandpassEnabled.CheckedChanged += (_, _) => ApplyBandpassOptionChange();
+        bandpassCenter.ValueChanged += (_, _) => ApplyBandpassOptionChange();
+        bandpassPassOctaves.ValueChanged += (_, _) => ApplyBandpassOptionChange();
+        bandpassFadeOctaves.ValueChanged += (_, _) => ApplyBandpassOptionChange();
 
         return (
             newPanel,
-            routeSummary,
+            sourceSummary,
             bandpassEnabled,
             bandpassCenter,
             bandpassPassOctaves,
             bandpassFadeOctaves,
             bandpassPreview,
             envelopePreview,
-            start,
             status);
     }
+
+    private void ApplyBandpassOptionChange()
+    {
+        UpdateOptionsFromControls();
+        UpdateBandpassPreview();
+        RefreshAnalysis();
+        saveSettings();
+    }
+
+    private void RefreshAnalysis()
+    {
+        sourceSummaryLabel.Text = CreateSourceSummary();
+
+        if (!TryGetSourceImpulseResponse(
+            out double[]? impulseResponse,
+            out bool wrapPeakPositions,
+            out string noDataMessage))
+        {
+            SetStatusText(noDataMessage);
+            ClearEnvelopePreview();
+            return;
+        }
+
+        try
+        {
+            TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
+                impulseResponse!,
+                measurement.SampleRate,
+                CreateAnalysisOptions(wrapPeakPositions));
+            SetMeasurementResultStatus(result);
+            UpdateEnvelopePreview(result);
+        }
+        catch (Exception exception)
+        {
+            SetStatusText(exception.Message);
+            ClearEnvelopePreview();
+        }
+    }
+
+    private bool TryGetSourceImpulseResponse(
+        out double[]? impulseResponse,
+        out bool wrapPeakPositions,
+        out string message)
+    {
+        if (measurement.TransferImpulseResponse is { Length: > 0 } transferImpulseResponse)
+        {
+            impulseResponse = Array.ConvertAll(transferImpulseResponse, sample => sample.Real);
+            wrapPeakPositions = true;
+            message = string.Empty;
+            return true;
+        }
+
+        if (measurement.SweepDeconvolutionImpulseResponse is { Length: > 0 })
+        {
+            impulseResponse = null;
+            wrapPeakPositions = false;
+            message =
+                "This record was captured without loopback.\r\n" +
+                "Time Alignment requires a transfer IR.\r\n" +
+                "Run a new measurement with loopback enabled or load a file that contains transfer IR.";
+            return false;
+        }
+
+        impulseResponse = null;
+        wrapPeakPositions = false;
+        message =
+            "No impulse response is loaded.\r\n" +
+            "Run a loopback measurement or load an impulse response file with transfer IR.";
+        return false;
+    }
+
+    private string CreateSourceSummary()
+    {
+        if (measurement.TransferImpulseResponse is { Length: > 0 })
+        {
+            return $"Source: Transfer IR, {measurement.SampleRate} Hz.";
+        }
+
+        if (measurement.SweepDeconvolutionImpulseResponse is { Length: > 0 })
+        {
+            return
+                $"Source: Sweep deconvolution IR only, {measurement.SampleRate} Hz.\r\n" +
+                "Loopback was not recorded for this entry.";
+        }
+
+        return "Source: waiting for a loopback measurement or file with transfer IR.";
+    }
+
+    private TimeAlignmentAnalysisOptions CreateAnalysisOptions(bool wrapPeakPositions) =>
+        new()
+        {
+            UseBandpassWindow = options.UseBandpassWindow,
+            BandpassCenterHz = options.BandpassCenterHz,
+            BandpassPassOctaves = options.BandpassPassOctaves,
+            BandpassFadeOctaves = options.BandpassFadeOctaves,
+            FirstPeakThresholdBelowMaxDb = options.FirstPeakThresholdBelowMaxDb,
+            FirstPeakMinimumSnrDb = options.FirstPeakMinimumSnrDb,
+            PeakSearchWindowMilliseconds = options.PeakSearchWindowMilliseconds,
+            WrapPeakPositions = wrapPeakPositions
+        };
 
     private void ApplyOptionsToControls()
     {
@@ -345,6 +311,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             ClampDecimal(options.BandpassPassOctaves, bandpassPassOctavesNumeric);
         bandpassFadeOctavesNumeric.Value =
             ClampDecimal(options.BandpassFadeOctaves, bandpassFadeOctavesNumeric);
+        UpdateBandpassControlStates();
     }
 
     private void UpdateOptionsFromControls()
@@ -353,140 +320,14 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         options.BandpassCenterHz = (double)bandpassCenterNumeric.Value;
         options.BandpassPassOctaves = (double)bandpassPassOctavesNumeric.Value;
         options.BandpassFadeOctaves = (double)bandpassFadeOctavesNumeric.Value;
+        UpdateBandpassControlStates();
     }
 
-    private void UpdateRouteSummary()
+    private void UpdateBandpassControlStates()
     {
-        bool canMeasure = TryValidateMeasurementRoute(out string message);
-        routeSummaryLabel.Text = FormatRouteSummary(message);
-        SetControlsEnabled(canMeasure);
-        if (!measurement.InProgress &&
-            !HasMeasurementResult())
-        {
-            SetStatusText(canMeasure
-                ? "Ready to measure microphone delay against configured loopback."
-                : message);
-        }
-    }
-
-    private bool HasMeasurementResult() =>
-        measurement.EnvelopeSamples is { Length: > 0 } &&
-        measurement.LastError == null;
-
-    private string FormatRouteSummary(string message)
-    {
-        if (expSweepMeasurement.AudioBackend == AudioBackend.Wave)
-        {
-            string playbackDevice = GetWavePlaybackDeviceName(expSweepMeasurement.OutputDeviceNumber);
-            string recordingDevice = GetWaveRecordingDeviceName(expSweepMeasurement.InputDeviceNumber);
-            string mic = FormatWaveChannel(expSweepMeasurement.WaveInputChannelOffset);
-            string loopback = expSweepMeasurement.WaveLoopbackInputChannelOffset.HasValue
-                ? FormatWaveChannel(expSweepMeasurement.WaveLoopbackInputChannelOffset.Value)
-                : "None";
-            return
-                $"Backend: Wave\r\n" +
-                $"Playback device: {playbackDevice}\r\n" +
-                $"Recording device: {recordingDevice}\r\n" +
-                $"Mic input: {mic}\r\n" +
-                $"Loopback input: {loopback}\r\n" +
-                "Wave mode works, but ASIO is recommended for best timing accuracy.";
-        }
-
-        string driverName = string.IsNullOrWhiteSpace(expSweepMeasurement.AsioDriverName)
-            ? "ASIO"
-            : expSweepMeasurement.AsioDriverName;
-        string asioMic = "Channel " + (expSweepMeasurement.AsioInputChannelOffset + 1);
-        string asioLoopback = expSweepMeasurement.AsioLoopbackInputChannelOffset.HasValue
-            ? "Channel " + (expSweepMeasurement.AsioLoopbackInputChannelOffset.Value + 1)
-            : "None";
-        string asioOutput = "Channel " + (expSweepMeasurement.AsioOutputChannelOffset + 1);
-        if (!string.IsNullOrWhiteSpace(expSweepMeasurement.AsioDriverName))
-        {
-            AsioDriverInfo driverInfo = AsioDeviceCatalog.GetDriverInfo(
-                expSweepMeasurement.AsioDriverName,
-                expSweepMeasurement.SampleRate);
-            asioMic = FormatAsioChannel(
-                driverInfo.InputChannels,
-                expSweepMeasurement.AsioInputChannelOffset);
-            asioLoopback = expSweepMeasurement.AsioLoopbackInputChannelOffset.HasValue
-                ? FormatAsioChannel(
-                    driverInfo.InputChannels,
-                    expSweepMeasurement.AsioLoopbackInputChannelOffset.Value)
-                : "None";
-            asioOutput = FormatAsioChannel(
-                driverInfo.OutputChannels,
-                expSweepMeasurement.AsioOutputChannelOffset);
-        }
-        return
-            $"Backend:   ASIO ({driverName})\r\n" +
-            $"Output:   {asioOutput}\r\n" +
-            $"Mic input:   {asioMic}\r\n" +
-            $"Loopback input:   {asioLoopback}";
-    }
-
-    private bool TryValidateMeasurementRoute(out string message)
-    {
-        if (expSweepMeasurement.AudioBackend == AudioBackend.Asio)
-        {
-            if (string.IsNullOrWhiteSpace(expSweepMeasurement.AsioDriverName))
-            {
-                message = "Time Alignment requires an ASIO driver or Wave device with loopback.";
-                return false;
-            }
-            if (!expSweepMeasurement.AsioLoopbackInputChannelOffset.HasValue)
-            {
-                message = "Select an ASIO loopback input in Record Settings.";
-                return false;
-            }
-            if (expSweepMeasurement.AsioLoopbackInputChannelOffset.Value ==
-                expSweepMeasurement.AsioInputChannelOffset)
-            {
-                message = "Microphone and loopback inputs must use different ASIO channels.";
-                return false;
-            }
-
-            message = "ASIO route is ready.";
-            return true;
-        }
-
-        if (!expSweepMeasurement.WaveLoopbackInputChannelOffset.HasValue)
-        {
-            message = "Select a Wave loopback input in Record Settings.";
-            return false;
-        }
-        if (expSweepMeasurement.WaveLoopbackInputChannelOffset.Value ==
-            expSweepMeasurement.WaveInputChannelOffset)
-        {
-            message = "Microphone and loopback inputs must use different Wave channels.";
-            return false;
-        }
-        AudioDeviceInfo? device = AudioDeviceCatalog
-            .GetRecordingDevices()
-            .FirstOrDefault(candidate =>
-                candidate.DeviceNumber == expSweepMeasurement.InputDeviceNumber);
-        if (device == null || device.Channels < 2)
-        {
-            message = "Wave Time Alignment requires a selected stereo recording device.";
-            return false;
-        }
-
-        message = "Wave route is ready. ASIO is recommended for best timing accuracy.";
-        return true;
-    }
-
-    private void SetControlsEnabled(bool enabled)
-    {
-        bandpassCheckBox.Enabled = !measurement.InProgress;
-        bandpassCenterNumeric.Enabled = bandpassCheckBox.Checked && !measurement.InProgress;
-        bandpassPassOctavesNumeric.Enabled = bandpassCheckBox.Checked && !measurement.InProgress;
-        bandpassFadeOctavesNumeric.Enabled = bandpassCheckBox.Checked && !measurement.InProgress;
-        startButton.Enabled = enabled || measurement.InProgress;
-        startButton.BackColor = startButton.Enabled
-            ? UiPalette.ButtonBackground
-            : UiPalette.ButtonDisabledBackground;
-        startButton.ForeColor = startButton.Enabled
-            ? Color.White
-            : UiPalette.TextMuted;
+        bandpassCenterNumeric.Enabled = bandpassCheckBox.Checked;
+        bandpassPassOctavesNumeric.Enabled = bandpassCheckBox.Checked;
+        bandpassFadeOctavesNumeric.Enabled = bandpassCheckBox.Checked;
     }
 
     private void UpdateBandpassPreview()
@@ -498,12 +339,15 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             return;
         }
 
+        double maxFrequency = Math.Min(20_000, measurement.SampleRate > 0
+            ? measurement.SampleRate * 0.5
+            : 20_000);
         var model = CreatePreviewPlotModel("Bandpass Window");
         model.Axes.Add(new LogarithmicAxis
         {
             Position = AxisPosition.Bottom,
             Minimum = 20,
-            Maximum = Math.Min(20_000, expSweepMeasurement.SampleRate * 0.5),
+            Maximum = maxFrequency,
             AbsoluteMaximum = 20_000,
             AbsoluteMinimum = 20,
             MajorGridlineColor = OxyColor.FromRgb(55, 62, 78),
@@ -529,7 +373,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             (double)bandpassFadeOctavesNumeric.Value);
         const int pointCount = 240;
         double minLog = Math.Log10(20);
-        double maxLog = Math.Log10(Math.Min(20_000, expSweepMeasurement.SampleRate * 0.5));
+        double maxLog = Math.Log10(maxFrequency);
         for (int i = 0; i < pointCount; i++)
         {
             double t = i / (double)(pointCount - 1);
@@ -545,13 +389,10 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         bandpassPlotView.Model = model;
     }
 
-    private void UpdateEnvelopePreview()
+    private void UpdateEnvelopePreview(TimeAlignmentAnalysisResult result)
     {
-        double[]? envelope = measurement.EnvelopeSamples;
-        if (envelope == null ||
-            envelope.Length == 0 ||
-            measurement.EnvelopePeak <= 0 ||
-            measurement.SampleRate <= 0)
+        double[] envelope = result.EnvelopeSamples;
+        if (envelope.Length == 0 || result.EnvelopePeak <= 0 || measurement.SampleRate <= 0)
         {
             ClearEnvelopePreview();
             return;
@@ -569,17 +410,18 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             StrokeThickness = 2
         };
         int step = Math.Max(1, radius * 2 / 600);
-        double maxDeb = -10000;
-        double minDeb = +10000;
+        double maxDb = -10000;
+        double minDb = +10000;
         for (int offset = -radius; offset <= radius; offset += step)
         {
-            int index = WrapIndex(measurement.EnvelopePeakIndex + offset, envelope.Length);
+            int index = WrapIndex(result.EnvelopePeakIndex + offset, envelope.Length);
             double milliseconds = offset * 1000.0 / measurement.SampleRate;
-            double relativeAmplitude = envelope[index] / measurement.EnvelopePeak;
+            double relativeAmplitude = envelope[index] / result.EnvelopePeak;
             double decibels = DataHelper.AmplitudeToDecibels(relativeAmplitude);
-            series.Points.Add(new DataPoint(milliseconds, Math.Max(-80, decibels)));
-            maxDeb = Math.Max(maxDeb, decibels);
-            minDeb = Math.Min(minDeb, decibels);
+            double clampedDecibels = Math.Max(-80, decibels);
+            series.Points.Add(new DataPoint(milliseconds, clampedDecibels));
+            maxDb = Math.Max(maxDb, clampedDecibels);
+            minDb = Math.Min(minDb, clampedDecibels);
         }
 
         var model = CreatePreviewPlotModel("Envelope Around Peak");
@@ -600,10 +442,10 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             Title = "ms from peak"
         });
         var dbAxis = CreateDecibelAxis();
-        dbAxis.AbsoluteMaximum = maxDeb + 10;
-        dbAxis.AbsoluteMinimum = minDeb - 10;
-        dbAxis.Maximum = maxDeb + 2;
-        dbAxis.Minimum = minDeb - 2;
+        dbAxis.AbsoluteMaximum = maxDb + 10;
+        dbAxis.AbsoluteMinimum = minDb - 10;
+        dbAxis.Maximum = maxDb + 2;
+        dbAxis.Minimum = minDb - 2;
         model.Axes.Add(dbAxis);
 
         model.Series.Add(series);
@@ -616,12 +458,11 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             X = 0
         });
         int strongestOffset = NormalizeWrappedOffset(
-            measurement.StrongestEnvelopePeakIndex - measurement.EnvelopePeakIndex,
+            result.StrongestEnvelopePeakIndex - result.EnvelopePeakIndex,
             envelope.Length);
         double strongestMilliseconds =
             strongestOffset * 1000.0 / measurement.SampleRate;
-        if (Math.Abs(strongestMilliseconds) <= 50 &&
-            Math.Abs(strongestOffset) > 1)
+        if (Math.Abs(strongestMilliseconds) <= 50 && Math.Abs(strongestOffset) > 1)
         {
             model.Annotations.Add(new LineAnnotation
             {
@@ -632,6 +473,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 X = strongestMilliseconds
             });
         }
+
         envelopePlotView.Model = model;
         envelopePlotView.Visible = true;
     }
@@ -642,39 +484,36 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         envelopePlotView.Visible = false;
     }
 
-    private void SaveSettingsFromControls()
-    {
-        UpdateOptionsFromControls();
-        saveSettings();
-    }
-
     private void SetStatusText(string text)
     {
         statusTextBox.Clear();
         AppendStatusText(text, UiPalette.TextSecondarySoft);
     }
 
-    private void SetMeasurementResultStatus()
+    private void SetMeasurementResultStatus(TimeAlignmentAnalysisResult result)
     {
-        string confidence = FormatConfidence(measurement.ConfidenceDecibels);
+        string confidence = FormatConfidence(result.ConfidenceDecibels);
         Color confidenceColor = GetConfidenceColor(confidence);
+        InputLevelMeterSnapshot levels = measurement.CurrentLevels;
 
         statusTextBox.Clear();
-        AppendDelayTable();
+        AppendDelayTable(result);
         AppendStatusText("Signal Quality: ", UiPalette.TextPrimarySoft);
         AppendStatusText(
-            $"{confidence} ({measurement.ConfidenceDecibels:0.0} dB)\r\n",
+            $"{confidence} ({result.ConfidenceDecibels:0.0} dB)\r\n",
             confidenceColor);
+        AppendLevelLine("Mic", levels.Microphone);
+        AppendLevelLine("Loopback", levels.Loopback);
         statusTextBox.SelectionStart = 0;
         statusTextBox.SelectionLength = 0;
     }
 
-    private void AppendDelayTable()
+    private void AppendDelayTable(TimeAlignmentAnalysisResult result)
     {
         double firstArrivalMeters =
-            Math.Abs(measurement.FirstArrivalDelayMilliseconds) * SpeedOfSoundAt20C / 1000.0;
+            Math.Abs(result.FirstArrivalDelayMilliseconds) * SpeedOfSoundAt20C / 1000.0;
         double strongestMeters =
-            Math.Abs(measurement.StrongestDelayMilliseconds) * SpeedOfSoundAt20C / 1000.0;
+            Math.Abs(result.StrongestDelayMilliseconds) * SpeedOfSoundAt20C / 1000.0;
 
         AppendStatusText(
             FormatDelayTableLine("Measured delay:", "First Arrival", "Strongest Peak") + "\r\n",
@@ -683,13 +522,13 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         AppendStatusText(
             FormatDelayTableLine(
                 "ms",
-                $"{measurement.FirstArrivalDelayMilliseconds:0.000}",
-                $"{measurement.StrongestDelayMilliseconds:0.000}") + "\r\n",
+                $"{result.FirstArrivalDelayMilliseconds:0.000}",
+                $"{result.StrongestDelayMilliseconds:0.000}") + "\r\n",
             UiPalette.TextPrimarySoft,
             resultTableFont);
         AppendStatusText(
             FormatDelayTableLine(
-                "meters (20\u00B0C)", // u00B0 degree char
+                "meters (20\u00B0C)",
                 $"{firstArrivalMeters:0.000}",
                 $"{strongestMeters:0.000}") + "\r\n",
             UiPalette.TextPrimarySoft,
@@ -697,10 +536,33 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         AppendStatusText(
             FormatDelayTableLine(
                 "samples",
-                $"{measurement.FirstArrivalPeakSample:0.0}",
-                $"{measurement.StrongestPeakSample:0.0}") + "\r\n\r\n",
+                $"{result.FirstArrivalPeakSample:0.0}",
+                $"{result.StrongestPeakSample:0.0}") + "\r\n\r\n",
             UiPalette.TextPrimarySoft,
             resultTableFont);
+    }
+
+    private void AppendLevelLine(string label, InputLevelMeterEntry entry)
+    {
+        if (!entry.Available)
+        {
+            AppendStatusText($"{label}: unavailable\r\n", UiPalette.TextSecondarySoft);
+            return;
+        }
+
+        AppendStatusText(
+            $"{label}: peak {entry.PeakDbFs:0.0} dBFS, RMS {entry.RmsDbFs:0.0} dBFS",
+            UiPalette.TextPrimarySoft);
+        if (entry.Clipped)
+        {
+            AppendStatusText(" CLIP", UiPalette.ErrorSoft);
+        }
+        else if (entry.FullScaleReference)
+        {
+            AppendStatusText(" FULL SCALE", UiPalette.TextSecondarySoft);
+        }
+
+        AppendStatusText("\r\n", UiPalette.TextPrimarySoft);
     }
 
     private static string FormatDelayTableLine(
@@ -744,8 +606,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         int index = statusTextBox.GetCharIndexFromPosition(location);
         int line = statusTextBox.GetLineFromCharIndex(index);
-        if (line is < 1 or > 3 ||
-            line >= statusTextBox.Lines.Length)
+        if (line is < 1 or > 3 || line >= statusTextBox.Lines.Length)
         {
             return false;
         }
@@ -832,32 +693,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         decimal decimalValue = (decimal)value;
         return Math.Min(numeric.Maximum, Math.Max(numeric.Minimum, decimalValue));
     }
-
-    private static string FormatWaveChannel(int offset) =>
-        offset switch
-        {
-            0 => "1: Left",
-            1 => "2: Right",
-            _ => $"Channel {offset + 1}"
-        };
-
-    private static string FormatAsioChannel(
-        IReadOnlyList<AsioChannelInfo> channels,
-        int offset)
-    {
-        AsioChannelInfo? channel = channels.FirstOrDefault(candidate => candidate.Offset == offset);
-        return channel?.ToString() ?? $"Channel {offset + 1}";
-    }
-
-    private static string GetWavePlaybackDeviceName(int deviceNumber) =>
-        AudioDeviceCatalog.GetPlaybackDevices()
-            .FirstOrDefault(candidate => candidate.DeviceNumber == deviceNumber)
-            ?.Name ?? "Default playback device";
-
-    private static string GetWaveRecordingDeviceName(int deviceNumber) =>
-        AudioDeviceCatalog.GetRecordingDevices()
-            .FirstOrDefault(candidate => candidate.DeviceNumber == deviceNumber)
-            ?.Name ?? "Default recording device";
 
     private static int WrapIndex(int index, int length)
     {

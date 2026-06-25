@@ -1,4 +1,5 @@
 using System.Windows.Forms;
+using Resonalyze.History;
 
 namespace Resonalyze;
 
@@ -72,6 +73,7 @@ public partial class Form1
             buttonClear,
             buttonCurrentModeSettings,
             buttonRecordOpt,
+            buttonHistory,
             () => GetActiveModeDescriptor().HasDockedSettings,
             () => GetActiveModeDescriptor().SupportsCurveDrawing,
             CanDrawCurrentMeasurement,
@@ -79,19 +81,17 @@ public partial class Form1
             () => IsHandleCreated);
         TimeAlignmentPanelController createdTimeAlignmentController = new(
             this,
-            expSweepMeasurement,
             timeAlignmentOptions,
-            text => buttonRecord.Text = text,
-            SaveMeasurementSettings,
-            () => createdModeController.ActiveTab == ModeTab.TimeAlignment);
+            expSweepMeasurement,
+            () => SaveMeasurementSettings());
         InputLevelMeterController createdInputLevelMeterController = new(
             this,
             inputLevelMeterPanel,
             expSweepMeasurement,
-            noiseMeasurement,
-            createdTimeAlignmentController.Measurement);
+            noiseMeasurement);
         DockedModeSettingsHost createdDockedModeSettingsHost = new(this, plotView1);
         DockedModeSettingsHost createdDockedMeasurementSettingsHost = new(this, plotView1);
+        DockedModeSettingsHost createdDockedHistoryHost = new(this, plotView1);
 
         return new Form1ControllerDependencies(
             createdTitleBarController,
@@ -104,7 +104,8 @@ public partial class Form1
             createdTimeAlignmentController,
             createdInputLevelMeterController,
             createdDockedModeSettingsHost,
-            createdDockedMeasurementSettingsHost);
+            createdDockedMeasurementSettingsHost,
+            createdDockedHistoryHost);
     }
 
     private void ApplyPersistedSettings()
@@ -125,13 +126,16 @@ public partial class Form1
     {
         dockedModeSettingsHost.StateChanged += (_, _) => UpdateCurrentModeSettingsButton();
         dockedMeasurementSettingsHost.StateChanged += (_, _) => UpdateRecordSettingsButton();
+        dockedHistoryHost.StateChanged += (_, _) => UpdateHistoryButton();
         expSweepMeasurement.Completed += HandleMeasurementCompleted;
+        measurementHistoryService.Changed += HandleHistoryChanged;
     }
 
     private void InitializeStartupState()
     {
         ApplyMeasurementConfigurationToControllers();
         commandController.Initialize();
+        UpdateHistoryButton();
         UpdatePeakInfo();
         ApplicationUpdateService.Initialize(this);
         _ = SelectModeAsync(ModeTab.Frequency);
@@ -157,6 +161,7 @@ public partial class Form1
                 buttonRecord.Text = "Ready";
                 plotModelFactory.SetImpulseResponseFileName(null);
                 SetImpulseResponseAvailability(true);
+                currentHistoryEntryId = measurementHistoryService.AddMeasurement(expSweepMeasurement);
             }
             else
             {
@@ -187,5 +192,6 @@ public partial class Form1
         TimeAlignmentPanelController TimeAlignmentController,
         InputLevelMeterController InputLevelMeterController,
         DockedModeSettingsHost DockedModeSettingsHost,
-        DockedModeSettingsHost DockedMeasurementSettingsHost);
+        DockedModeSettingsHost DockedMeasurementSettingsHost,
+        DockedModeSettingsHost DockedHistoryHost);
 }

@@ -61,7 +61,8 @@ internal sealed class LiveSpectrumController : IDisposable
     public bool InProgress => measurement.InProgress;
     public bool TimerEnabled => timer.Enabled;
 
-    public async Task ReconfigureFromAsync(ExpSweepMeasurement measurementSource)
+    public async Task ReconfigureFromAsync(
+        MeasurementSettingsFile.SweepMeasurementSettings measurementSettings)
     {
         bool restart = measurement.InProgress;
         if (restart)
@@ -69,7 +70,7 @@ internal sealed class LiveSpectrumController : IDisposable
             await StopAsync();
         }
 
-        ConfigureFrom(measurementSource);
+        ConfigureFrom(measurementSettings);
 
         if (restart && getCurrentMode() == Mode.LiveSpectrum)
         {
@@ -77,23 +78,23 @@ internal sealed class LiveSpectrumController : IDisposable
         }
     }
 
-    public void ConfigureFrom(ExpSweepMeasurement measurementSource)
+    public void ConfigureFrom(MeasurementSettingsFile.SweepMeasurementSettings measurementSettings)
     {
         measurement.Init(
-            measurementSource.SampleRate,
-            measurementSource.Bits,
+            measurementSettings.SampleRate,
+            measurementSettings.Bits,
             60,
-            measurementSource.PlaybackChannel,
+            measurementSettings.PlaybackChannel,
             liveSpectrumOptions.SequenceLength,
-            measurementSource.OutputDeviceNumber,
-            measurementSource.InputDeviceNumber,
-            measurementSource.AudioBackend,
-            measurementSource.AsioDriverName,
-            measurementSource.AsioInputChannelOffset,
-            measurementSource.AsioOutputChannelOffset,
-            measurementSource.WaveInputChannelOffset,
-            measurementSource.WaveLoopbackInputChannelOffset,
-            measurementSource.AsioLoopbackInputChannelOffset,
+            measurementSettings.OutputDeviceNumber,
+            measurementSettings.InputDeviceNumber,
+            measurementSettings.AudioBackend,
+            measurementSettings.AsioDriverName,
+            measurementSettings.AsioInputChannelOffset,
+            measurementSettings.AsioOutputChannelOffset,
+            measurementSettings.WaveInputChannelOffset,
+            measurementSettings.WaveLoopbackInputChannelOffset,
+            measurementSettings.AsioLoopbackInputChannelOffset,
             liveSpectrumOptions);
     }
 

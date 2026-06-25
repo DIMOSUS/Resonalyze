@@ -39,12 +39,15 @@ public partial class Form1
     private void OpenModeSettings(ModeTab tab)
     {
         dockedMeasurementSettingsHost.Close();
+        dockedHistoryHost.Close();
         ModeDescriptor descriptor = GetModeDescriptor(tab);
         descriptor.OpenSettings?.Invoke();
     }
 
-    private void SaveMeasurementSettings()
+    private void SaveMeasurementSettings(bool captureMeasurementSettings = false)
     {
+        MeasurementSettingsFile.SweepMeasurementSettings preservedMeasurementSettings =
+            measurementSettings.Measurement;
         measurementSettings.CaptureFrom(
             expSweepMeasurement,
             frequencyResponseOptions,
@@ -55,6 +58,10 @@ public partial class Form1
             burstDecayGenOptions,
             liveSpectrumOptions,
             timeAlignmentOptions);
+        if (!captureMeasurementSettings)
+        {
+            measurementSettings.Measurement = preservedMeasurementSettings;
+        }
         measurementSettings.Save();
     }
 
@@ -88,6 +95,12 @@ public partial class Form1
 
     private void RefreshCurrentModePlot()
     {
+        if (GetActiveModeDescriptor().ShowsTimeAlignmentPanel)
+        {
+            timeAlignmentController.RefreshConfiguration();
+            return;
+        }
+
         bool includeCurves = GetActiveModeDescriptor().SupportsCurveDrawing &&
             CanDrawCurrentMeasurement();
         DrawSelectedMode(includeCurves);
@@ -182,6 +195,11 @@ public partial class Form1
     private void UpdateRecordSettingsButton()
     {
         commandController.UpdateRecordSettingsButton(dockedMeasurementSettingsHost.IsOpen);
+    }
+
+    private void UpdateHistoryButton()
+    {
+        commandController.UpdateHistoryButton(dockedHistoryHost.IsOpen);
     }
 
     private sealed record AxisViewport(

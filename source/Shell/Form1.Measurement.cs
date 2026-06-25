@@ -62,10 +62,9 @@ public partial class Form1
 
     private async void buttonRecord_Click(object sender, EventArgs e)
     {
-        if (CurrentMode == Mode.TimeAlignment)
+        if (dockedHistoryHost.IsOpen)
         {
-            await timeAlignmentController.ToggleAsync();
-            return;
+            dockedHistoryHost.Close();
         }
 
         if (CurrentMode == Mode.LiveSpectrum)
@@ -86,6 +85,7 @@ public partial class Form1
         }
         else
         {
+            PrepareSweepMeasurementForRun();
             EnterMeasurementRunningState();
             _ = expSweepMeasurement.RunAsync();
         }
@@ -100,17 +100,18 @@ public partial class Form1
         }
 
         dockedModeSettingsHost.Close();
+        dockedHistoryHost.Close();
         dockedMeasurementSettingsHost.Toggle(
-            ModeTab.Impulse,
+            "measurement-settings",
             () => new MeasurementOptions(),
-            dialog => dialog.Init(expSweepMeasurement),
+            dialog => dialog.Init(expSweepMeasurement, measurementSettings.Measurement),
             async dialog =>
             {
                 try
                 {
                     dialog.SetOptions(expSweepMeasurement);
                     ApplyMeasurementConfigurationToControllers();
-                    SaveMeasurementSettings();
+                    SaveMeasurementSettings(captureMeasurementSettings: true);
                 }
                 catch (InvalidOperationException exception)
                 {

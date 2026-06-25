@@ -9,7 +9,7 @@ internal sealed class DockedModeSettingsHost : IDisposable
     private readonly Form owner;
     private readonly Control anchorControl;
     private Form? activeDialog;
-    private ModeTab? activeTab;
+    private object? activeKey;
     private bool allowProgrammaticClose;
     private bool disposed;
 
@@ -27,7 +27,7 @@ internal sealed class DockedModeSettingsHost : IDisposable
     }
 
     public void Toggle<TDialog>(
-        ModeTab tab,
+        object key,
         Func<TDialog> create,
         Action<TDialog> initialize,
         Func<TDialog, Task> apply)
@@ -35,7 +35,7 @@ internal sealed class DockedModeSettingsHost : IDisposable
     {
         ObjectDisposedException.ThrowIf(disposed, this);
 
-        if (activeDialog != null && activeTab == tab)
+        if (activeDialog != null && Equals(activeKey, key))
         {
             Close();
             return;
@@ -50,7 +50,7 @@ internal sealed class DockedModeSettingsHost : IDisposable
         dialog.FormClosing += DialogFormClosing;
 
         activeDialog = dialog;
-        activeTab = tab;
+        activeKey = key;
 
         dialog.Owner = owner;
         dialog.Show();
@@ -68,7 +68,7 @@ internal sealed class DockedModeSettingsHost : IDisposable
 
         Form dialog = activeDialog;
         activeDialog = null;
-        activeTab = null;
+        activeKey = null;
         dialog.FormClosed -= DialogClosed;
         dialog.FormClosing -= DialogFormClosing;
 
@@ -213,8 +213,18 @@ internal sealed class DockedModeSettingsHost : IDisposable
         }
 
         activeDialog = null;
-        activeTab = null;
+        activeKey = null;
         StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void InvokeIfOpen<TDialog>(Action<TDialog> action)
+        where TDialog : Form
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        if (activeDialog is TDialog dialog)
+        {
+            action(dialog);
+        }
     }
 
     private void DialogFormClosing(object? sender, FormClosingEventArgs e)

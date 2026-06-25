@@ -25,13 +25,15 @@ namespace Resonalyze.Options
             InitializeComponent();
         }
 
-        public void Init(ExpSweepMeasurement expSweepMeasurement)
+        internal void Init(
+            ExpSweepMeasurement expSweepMeasurement,
+            MeasurementSettingsFile.SweepMeasurementSettings settings)
         {
             initializing = true;
             this.expSweepMeasurement = expSweepMeasurement;
             ExponentialSineSweep sweep = expSweepMeasurement.Sweep
                 ?? throw new InvalidOperationException("Sweep measurement is not initialized.");
-            numericUpDownBits.Value = expSweepMeasurement.Bits;
+            numericUpDownBits.Value = settings.Bits is 16 or 24 ? settings.Bits : 24;
 
             comboBoxChannel.Items.Clear();
             foreach (PlaybackChannel channel in Enum.GetValues<PlaybackChannel>())
@@ -39,15 +41,15 @@ namespace Resonalyze.Options
                 comboBoxChannel.Items.Add(channel.ToString());
             }
             comboBoxChannel.SelectedIndex = GetPlaybackChannelIndex(
-                expSweepMeasurement.PlaybackChannel);
+                settings.PlaybackChannel);
 
             comboBoxAudioBackend.Items.Clear();
             foreach (AudioBackend backend in Enum.GetValues<AudioBackend>())
             {
                 comboBoxAudioBackend.Items.Add(backend.ToString());
             }
-            comboBoxAudioBackend.SelectedIndex = Enum.IsDefined(expSweepMeasurement.AudioBackend)
-                ? (int)expSweepMeasurement.AudioBackend
+            comboBoxAudioBackend.SelectedIndex = Enum.IsDefined(settings.AudioBackend)
+                ? (int)settings.AudioBackend
                 : (int)AudioBackend.Wave;
 
             playbackDevices = AudioDeviceCatalog.GetPlaybackDevices();
@@ -55,7 +57,7 @@ namespace Resonalyze.Options
             comboBoxPlaybackDevice.Items.AddRange(playbackDevices.Cast<object>().ToArray());
             comboBoxPlaybackDevice.SelectedIndex = AudioDeviceCatalog.FindDeviceIndex(
                 playbackDevices,
-                expSweepMeasurement.OutputDeviceNumber);
+                settings.OutputDeviceNumber);
             ConfigureDropDownWidth(comboBoxPlaybackDevice);
             UpdateComboBoxToolTip(comboBoxPlaybackDevice);
 
@@ -64,12 +66,12 @@ namespace Resonalyze.Options
             comboBoxRecordingDevice.Items.AddRange(recordingDevices.Cast<object>().ToArray());
             comboBoxRecordingDevice.SelectedIndex = AudioDeviceCatalog.FindDeviceIndex(
                 recordingDevices,
-                expSweepMeasurement.InputDeviceNumber);
+                settings.InputDeviceNumber);
             ConfigureDropDownWidth(comboBoxRecordingDevice);
             UpdateComboBoxToolTip(comboBoxRecordingDevice);
             FillWaveChannelControls(
-                expSweepMeasurement.WaveInputChannelOffset,
-                expSweepMeasurement.WaveLoopbackInputChannelOffset);
+                settings.WaveInputChannelOffset,
+                settings.WaveLoopbackInputChannelOffset);
 
             asioDrivers = AsioDeviceCatalog.GetDrivers();
             comboBoxAsioDriver.Items.Clear();
@@ -78,20 +80,21 @@ namespace Resonalyze.Options
                 comboBoxAsioDriver.Items.AddRange(asioDrivers.Cast<object>().ToArray());
                 comboBoxAsioDriver.SelectedIndex = AsioDeviceCatalog.FindDriverIndex(
                     asioDrivers,
-                    expSweepMeasurement.AsioDriverName);
+                    settings.AsioDriverName);
                 ConfigureDropDownWidth(comboBoxAsioDriver);
                 UpdateComboBoxToolTip(comboBoxAsioDriver);
             }
 
-            numericUpDownRequestedDuration.Value = (int)(sweep.RequestedDuration * 1000.0);
-            numericUpDownComputeDuration.Value = (int)(sweep.CalculateDuration(sweep.RequestedDuration) * 1000.0);
-            numericUpDownOctaves.Value = expSweepMeasurement.Octaves;
-            RefreshSampleRateOptions(expSweepMeasurement.SampleRate);
+            numericUpDownRequestedDuration.Value = (int)(settings.RequestedDurationSeconds * 1000.0);
+            numericUpDownComputeDuration.Value =
+                (int)(sweep.CalculateDuration(settings.RequestedDurationSeconds) * 1000.0);
+            numericUpDownOctaves.Value = settings.Octaves;
+            RefreshSampleRateOptions(settings.SampleRate);
             initializing = false;
             RefreshAsioDriverInfo(
-                expSweepMeasurement.AsioInputChannelOffset,
-                expSweepMeasurement.AsioOutputChannelOffset,
-                expSweepMeasurement.AsioLoopbackInputChannelOffset);
+                settings.AsioInputChannelOffset,
+                settings.AsioOutputChannelOffset,
+                settings.AsioLoopbackInputChannelOffset);
             UpdateAudioBackendControls();
         }
 

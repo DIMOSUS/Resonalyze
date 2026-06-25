@@ -48,6 +48,7 @@ namespace Resonalyze
             buttonDraw = new Button();
             panel1 = new Panel();
             inputLevelMeterPanel = new InputLevelMeterPanel();
+            buttonHistory = new Button();
             overlays.SuspendLayout();
             overlayPanel1.SuspendLayout();
             (numericUpDown1).BeginInit();
@@ -211,7 +212,7 @@ namespace Resonalyze
             buttonClear.BackColor = Color.FromArgb(50, 55, 80);
             buttonClear.FlatStyle = FlatStyle.Popup;
             buttonClear.ForeColor = Color.White;
-            buttonClear.Location = new Point(1204, 250);
+            buttonClear.Location = new Point(1204, 280);
             buttonClear.Name = "buttonClear";
             buttonClear.Size = new Size(150, 23);
             buttonClear.TabIndex = 20;
@@ -239,7 +240,7 @@ namespace Resonalyze
             buttonDraw.BackColor = Color.FromArgb(50, 55, 80);
             buttonDraw.FlatStyle = FlatStyle.Popup;
             buttonDraw.ForeColor = Color.White;
-            buttonDraw.Location = new Point(1204, 279);
+            buttonDraw.Location = new Point(1204, 309);
             buttonDraw.Name = "buttonDraw";
             buttonDraw.Size = new Size(150, 23);
             buttonDraw.TabIndex = 22;
@@ -271,12 +272,27 @@ namespace Resonalyze
             inputLevelMeterPanel.Size = new Size(150, 88);
             inputLevelMeterPanel.TabIndex = 24;
             // 
+            // buttonHistory
+            // 
+            buttonHistory.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonHistory.BackColor = Color.FromArgb(50, 55, 80);
+            buttonHistory.FlatStyle = FlatStyle.Popup;
+            buttonHistory.ForeColor = Color.White;
+            buttonHistory.Location = new Point(1204, 240);
+            buttonHistory.Name = "buttonHistory";
+            buttonHistory.Size = new Size(150, 23);
+            buttonHistory.TabIndex = 25;
+            buttonHistory.Text = "History";
+            buttonHistory.UseVisualStyleBackColor = false;
+            buttonHistory.Click += buttonHistory_Click;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
             ClientSize = new Size(1366, 768);
+            Controls.Add(buttonHistory);
             Controls.Add(inputLevelMeterPanel);
             Controls.Add(panel1);
             Controls.Add(buttonDraw);
@@ -318,5 +334,6 @@ namespace Resonalyze
         private Panel panel1;
         private InputLevelMeterPanel inputLevelMeterPanel;
         private DarkNumericUpDown numericUpDown1;
+        private Button buttonHistory;
     }
 }

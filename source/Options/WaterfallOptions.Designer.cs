@@ -34,7 +34,6 @@ namespace Resonalyze.Options
             label5 = new Label();
             numericLeftWindow = new DarkNumericUpDown();
             numericRightWindow = new DarkNumericUpDown();
-            button1 = new Button();
             label6 = new Label();
             numericSampleRate = new DarkNumericUpDown();
             numericWindow = new DarkNumericUpDown();
@@ -134,19 +133,6 @@ namespace Resonalyze.Options
             numericRightWindow.TextAlign = HorizontalAlignment.Right;
             numericRightWindow.ThousandsSeparator = false;
             numericRightWindow.Value = new decimal(new int[] { 512, 0, 0, 0 });
-            // 
-            // button1
-            // 
-            button1.BackColor = Color.FromArgb(50, 55, 80);
-            button1.DialogResult = DialogResult.OK;
-            button1.FlatStyle = FlatStyle.Popup;
-            button1.ForeColor = Color.White;
-            button1.Location = new Point(12, 568);
-            button1.Name = "button1";
-            button1.Size = new Size(241, 23);
-            button1.TabIndex = 12;
-            button1.Text = "Apply settings";
-            button1.UseVisualStyleBackColor = false;
             // 
             // label6
             // 
@@ -362,7 +348,7 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(264, 601);
+            ClientSize = new Size(264, 567);
             Controls.Add(irPlotView);
             Controls.Add(numericOffset);
             Controls.Add(label11);
@@ -378,7 +364,6 @@ namespace Resonalyze.Options
             Controls.Add(numericWindow);
             Controls.Add(numericSampleRate);
             Controls.Add(label6);
-            Controls.Add(button1);
             Controls.Add(numericRightWindow);
             Controls.Add(numericLeftWindow);
             Controls.Add(label5);
@@ -412,7 +397,6 @@ namespace Resonalyze.Options
         private Label label5;
         private DarkNumericUpDown numericLeftWindow;
         private DarkNumericUpDown numericRightWindow;
-        private Button button1;
         private Label label6;
         private DarkNumericUpDown numericSampleRate;
         private DarkNumericUpDown numericWindow;

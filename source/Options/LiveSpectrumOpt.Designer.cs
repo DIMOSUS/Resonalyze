@@ -29,7 +29,6 @@ namespace Resonalyze.Options
         private void InitializeComponent()
         {
             label1 = new Label();
-            button1 = new Button();
             checkUseCalibration = new CheckBox();
             label2 = new Label();
             modeComboBox = new DarkComboBox();
@@ -61,19 +60,6 @@ namespace Resonalyze.Options
             label1.Size = new Size(38, 15);
             label1.TabIndex = 37;
             label1.Text = "Mode";
-            // 
-            // button1
-            // 
-            button1.BackColor = Color.FromArgb(50, 55, 80);
-            button1.DialogResult = DialogResult.OK;
-            button1.FlatStyle = FlatStyle.Popup;
-            button1.ForeColor = Color.White;
-            button1.Location = new Point(12, 318);
-            button1.Name = "button1";
-            button1.Size = new Size(241, 23);
-            button1.TabIndex = 35;
-            button1.Text = "Apply settings";
-            button1.UseVisualStyleBackColor = false;
             // 
             // checkUseCalibration
             // 
@@ -289,7 +275,7 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 351);
+            ClientSize = new Size(265, 324);
             Controls.Add(buttonResetAverage);
             Controls.Add(coherenceLimitComboBox);
             Controls.Add(label10);
@@ -311,7 +297,6 @@ namespace Resonalyze.Options
             Controls.Add(checkUseCalibration);
             Controls.Add(label2);
             Controls.Add(label1);
-            Controls.Add(button1);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -325,7 +310,6 @@ namespace Resonalyze.Options
 
         #endregion
         private Label label1;
-        private Button button1;
         private CheckBox checkUseCalibration;
         private Label label2;
         private DarkComboBox modeComboBox;

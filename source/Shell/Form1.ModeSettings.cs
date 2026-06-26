@@ -1,11 +1,14 @@
 using OxyPlot;
 using OxyPlot.Axes;
+using Resonalyze.Dsp;
 using Resonalyze.Options;
 
 namespace Resonalyze;
 
 public partial class Form1
 {
+    private int asyncPlotRefreshVersion;
+
     private void buttonWaterfallOpt_Click(object sender, EventArgs e)
     {
         OpenModeSettings(ModeTab.Waterfall);
@@ -62,6 +65,30 @@ public partial class Form1
         {
             measurementSettings.Measurement = preservedMeasurementSettings;
         }
+        ScheduleMeasurementSettingsSave();
+    }
+
+    private void ScheduleMeasurementSettingsSave()
+    {
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        measurementSettingsSavePending = true;
+        measurementSettingsSaveTimer.Stop();
+        measurementSettingsSaveTimer.Start();
+    }
+
+    private void FlushMeasurementSettings()
+    {
+        measurementSettingsSaveTimer.Stop();
+        if (!measurementSettingsSavePending)
+        {
+            return;
+        }
+
+        measurementSettingsSavePending = false;
         measurementSettings.Save();
     }
 
@@ -87,14 +114,77 @@ public partial class Form1
                 IReadOnlyList<AxisViewport> axisViewports = CaptureAxisViewports();
                 apply(dialog);
                 SaveMeasurementSettings();
-                await ApplyMeasurementConfigurationToControllersAsync();
-                RefreshCurrentModePlot();
-                RestoreAxisViewports(axisViewports);
-            });
+                await RefreshCurrentModePlotAsync(axisViewports);
+            },
+            applyOnChange: true);
+    }
+
+    private void ToggleLiveSpectrumOptions()
+    {
+        dockedModeSettingsHost.Toggle(
+            ModeTab.LiveSpectrum,
+            () => new LiveSpectrumOpt(),
+            opt =>
+            {
+                opt.Init(liveSpectrumOptions);
+                opt.ResetAverageRequested += liveSpectrumController.ResetAverage;
+            },
+            ApplyLiveSpectrumOptionsAsync,
+            applyOnChange: true);
+    }
+
+    private async Task ApplyLiveSpectrumOptionsAsync(LiveSpectrumOpt dialog)
+    {
+        LiveSpectrumRestartSnapshot before = LiveSpectrumRestartSnapshot.Capture(liveSpectrumOptions);
+        dialog.SetOptions(liveSpectrumOptions);
+        LiveSpectrumRestartSnapshot after = LiveSpectrumRestartSnapshot.Capture(liveSpectrumOptions);
+        SaveMeasurementSettings();
+
+        if (before != after)
+        {
+            await ApplyMeasurementConfigurationToControllersAsync();
+        }
+        else
+        {
+            liveSpectrumController.ApplyDisplayOptions();
+        }
+
+        RefreshCurrentModePlot();
+    }
+
+    private async Task RefreshCurrentModePlotAsync(
+        IReadOnlyList<AxisViewport>? restoreViewports = null)
+    {
+        ModeDescriptor descriptor = GetActiveModeDescriptor();
+        if (descriptor.CreatePlotModel == null || descriptor.Mode == Mode.LiveSpectrum)
+        {
+            RefreshCurrentModePlot();
+            return;
+        }
+
+        bool shouldIncludeCurves = descriptor.SupportsCurveDrawing &&
+            CanDrawCurrentMeasurement();
+        int version = Interlocked.Increment(ref asyncPlotRefreshVersion);
+        ModeTab tab = descriptor.Tab;
+        PlotModel model = await Task.Run(() => descriptor.CreatePlotModel(shouldIncludeCurves));
+        if (IsDisposed ||
+            version != Volatile.Read(ref asyncPlotRefreshVersion) ||
+            modeController.ActiveTab != tab)
+        {
+            return;
+        }
+
+        ShowPlotModel(model, shouldIncludeCurves, descriptor.ShowOverlayCurves);
+        if (restoreViewports != null)
+        {
+            RestoreAxisViewports(restoreViewports);
+        }
+        UpdateClearButtonState();
     }
 
     private void RefreshCurrentModePlot()
     {
+        Interlocked.Increment(ref asyncPlotRefreshVersion);
         if (GetActiveModeDescriptor().ShowsTimeAlignmentPanel)
         {
             timeAlignmentController.RefreshConfiguration();
@@ -207,4 +297,18 @@ public partial class Form1
         Type AxisType,
         double Minimum,
         double Maximum);
+
+    private sealed record LiveSpectrumRestartSnapshot(
+        LiveSpectrumMode Mode,
+        WindowType WindowType,
+        int SequenceLength,
+        int OverlapPercent)
+    {
+        public static LiveSpectrumRestartSnapshot Capture(LiveSpectrumOptions options) =>
+            new(
+                options.Mode,
+                options.WindowType,
+                options.SequenceLength,
+                options.OverlapPercent);
+    }
 }

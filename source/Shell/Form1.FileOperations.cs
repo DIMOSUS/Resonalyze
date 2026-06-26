@@ -27,13 +27,18 @@ public partial class Form1
         }
 
         measurementSettings.LastImpulseResponseDirectory = directory;
-        measurementSettings.Save();
+        ScheduleMeasurementSettingsSave();
     }
 
     private async void buttonSave_Click(object sender, EventArgs e)
     {
         if (expSweepMeasurement.HasImpulseResponse && !expSweepMeasurement.InProgress)
         {
+            if (liveSpectrumController.InProgress || liveSpectrumController.TimerEnabled)
+            {
+                await liveSpectrumController.AbortAsync();
+            }
+
             using var dialog = new SaveFileDialog
             {
                 AddExtension = true,

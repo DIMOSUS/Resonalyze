@@ -70,6 +70,7 @@ public partial class Form1
 
         e.Cancel = true;
         Enabled = false;
+        FlushMeasurementSettings();
         startupAudioWarmupCancellation?.Cancel();
         await Task.WhenAll(
             expSweepMeasurement.AbortAsync(),
@@ -95,6 +96,8 @@ public partial class Form1
         dockedModeSettingsHost.Dispose();
         dockedMeasurementSettingsHost.Dispose();
         dockedHistoryHost.Dispose();
+        measurementSettingsSaveTimer.Stop();
+        measurementSettingsSaveTimer.Dispose();
         inputLevelMeterController.Dispose();
         expSweepMeasurement.Dispose();
         timeAlignmentController.Dispose();

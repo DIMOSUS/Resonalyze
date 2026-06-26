@@ -30,7 +30,8 @@ internal sealed class DockedModeSettingsHost : IDisposable
         object key,
         Func<TDialog> create,
         Action<TDialog> initialize,
-        Func<TDialog, Task> apply)
+        Func<TDialog, Task> apply,
+        bool applyOnChange = false)
         where TDialog : Form
     {
         ObjectDisposedException.ThrowIf(disposed, this);
@@ -45,7 +46,7 @@ internal sealed class DockedModeSettingsHost : IDisposable
 
         TDialog dialog = create();
         initialize(dialog);
-        ConfigureDialog(dialog, () => apply(dialog));
+        ConfigureDialog(dialog, () => apply(dialog), applyOnChange);
         dialog.FormClosed += DialogClosed;
         dialog.FormClosing += DialogFormClosing;
 
@@ -107,7 +108,7 @@ internal sealed class DockedModeSettingsHost : IDisposable
         Close();
     }
 
-    private void ConfigureDialog(Form dialog, Func<Task> apply)
+    private void ConfigureDialog(Form dialog, Func<Task> apply, bool applyOnChange)
     {
         dialog.StartPosition = FormStartPosition.Manual;
         dialog.FormBorderStyle = FormBorderStyle.None;
@@ -131,27 +132,122 @@ internal sealed class DockedModeSettingsHost : IDisposable
 
             if (button.DialogResult == DialogResult.OK)
             {
+                if (applyOnChange)
+                {
+                    button.Visible = false;
+                    button.Enabled = false;
+                    button.TabStop = false;
+                    continue;
+                }
+
                 button.DialogResult = DialogResult.None;
                 button.Click += async (_, _) =>
-                {
-                    if (!button.Enabled)
                     {
-                        return;
-                    }
-
-                    button.Enabled = false;
-                    try
-                    {
-                        await apply();
-                    }
-                    finally
-                    {
-                        if (!button.IsDisposed)
+                        if (!button.Enabled)
                         {
-                            button.Enabled = true;
+                            return;
                         }
-                    }
-                };
+
+                        button.Enabled = false;
+                        try
+                        {
+                            await apply();
+                        }
+                        finally
+                        {
+                            if (!button.IsDisposed)
+                            {
+                                button.Enabled = true;
+                            }
+                        }
+                    };
+            }
+        }
+
+        if (applyOnChange)
+        {
+            WireLiveApply(dialog, apply);
+        }
+    }
+
+    private static void WireLiveApply(Form dialog, Func<Task> apply)
+    {
+        bool applying = false;
+        bool pending = false;
+        bool scheduled = false;
+
+        void ScheduleApply()
+        {
+            if (dialog.IsDisposed)
+            {
+                return;
+            }
+
+            pending = true;
+            if (applying || scheduled)
+            {
+                return;
+            }
+
+            scheduled = true;
+            dialog.BeginInvoke((MethodInvoker)ApplyPending);
+        }
+
+        async void ApplyPending()
+        {
+            scheduled = false;
+            if (applying || dialog.IsDisposed || !pending)
+            {
+                return;
+            }
+
+            applying = true;
+            pending = false;
+            try
+            {
+                await apply();
+            }
+            finally
+            {
+                applying = false;
+            }
+
+            if (pending && !dialog.IsDisposed)
+            {
+                ApplyPending();
+            }
+        }
+
+        foreach (Control control in EnumerateControls(dialog))
+        {
+            switch (control)
+            {
+                case Button:
+                    break;
+                case NumericUpDown numeric:
+                    numeric.ValueChanged += (_, _) => ScheduleApply();
+                    break;
+                case DarkNumericUpDown numeric:
+                    numeric.ValueChanged += (_, _) => ScheduleApply();
+                    break;
+                case ComboBox comboBox:
+                    comboBox.SelectionChangeCommitted += (_, _) => ScheduleApply();
+                    break;
+                case DarkComboBox comboBox:
+                    comboBox.SelectionChangeCommitted += (_, _) => ScheduleApply();
+                    break;
+                case CheckBox checkBox:
+                    checkBox.CheckedChanged += (_, _) => ScheduleApply();
+                    break;
+                case RadioButton radioButton:
+                    radioButton.CheckedChanged += (_, _) => ScheduleApply();
+                    break;
+                case TextBox textBox:
+                    textBox.Validated += (_, _) => ScheduleApply();
+                    break;
+                case TrackBar trackBar:
+                    trackBar.ValueChanged += (_, _) => ScheduleApply();
+                    break;
             }
         }
     }

@@ -30,7 +30,6 @@ namespace Resonalyze.Options
         {
             numericLength = new DarkNumericUpDown();
             label1 = new Label();
-            button1 = new Button();
             checkLogarithmic = new CheckBox();
             label2 = new Label();
             (numericLength).BeginInit();
@@ -63,19 +62,6 @@ namespace Resonalyze.Options
             label1.TabIndex = 37;
             label1.Text = "Length (samples)";
             // 
-            // button1
-            // 
-            button1.BackColor = Color.FromArgb(50, 55, 80);
-            button1.DialogResult = DialogResult.OK;
-            button1.FlatStyle = FlatStyle.Popup;
-            button1.ForeColor = Color.White;
-            button1.Location = new Point(12, 68);
-            button1.Name = "button1";
-            button1.Size = new Size(241, 23);
-            button1.TabIndex = 35;
-            button1.Text = "Apply settings";
-            button1.UseVisualStyleBackColor = false;
-            // 
             // checkLogarithmic
             // 
             checkLogarithmic.AutoSize = true;
@@ -101,12 +87,11 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 102);
+            ClientSize = new Size(265, 68);
             Controls.Add(checkLogarithmic);
             Controls.Add(label2);
             Controls.Add(numericLength);
             Controls.Add(label1);
-            Controls.Add(button1);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -123,7 +108,6 @@ namespace Resonalyze.Options
 
         private DarkNumericUpDown numericLength;
         private Label label1;
-        private Button button1;
         private CheckBox checkLogarithmic;
         private Label label2;
     }

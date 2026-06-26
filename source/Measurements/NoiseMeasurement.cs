@@ -275,6 +275,14 @@ namespace Resonalyze
             }
         }
 
+        public void RefreshLiveAveraging()
+        {
+            lock (dataSync)
+            {
+                UpdateAveragingParameters();
+            }
+        }
+
         /// <summary>
         /// True when capture blocks were dropped within the given window because
         /// the processing pipeline could not keep up (a CPU-overload signal).
@@ -310,13 +318,10 @@ namespace Resonalyze
                 OnSequenceDropped);
             Volatile.Write(ref sequenceWriter, sequenceChannel.Writer);
             int hopSize = ComputeHopSize();
-            double frameInterval = SampleRate > 0 ? (double)hopSize / SampleRate : 0.0;
-            (double attackSeconds, double releaseSeconds, double transferSeconds) =
-                GetAveragingTimeConstants(LiveSpectrumOptions.AveragingSpeed);
-            infiniteAveraging = LiveSpectrumOptions.AveragingSpeed == AveragingSpeed.Infinite;
-            inputAttackAlpha = AlphaFromTimeConstant(frameInterval, attackSeconds);
-            inputReleaseAlpha = AlphaFromTimeConstant(frameInterval, releaseSeconds);
-            transferAlpha = AlphaFromTimeConstant(frameInterval, transferSeconds);
+            lock (dataSync)
+            {
+                UpdateAveragingParameters();
+            }
             var reframer = new OverlapReframer(SequenceLength, hopSize);
             Task processingTask = ProcessSequencesAsync(
                 sequenceChannel.Reader,
@@ -542,6 +547,18 @@ namespace Resonalyze
 
             int hop = SequenceLength * (100 - overlapPercent) / 100;
             return Math.Clamp(hop, 1, SequenceLength);
+        }
+
+        private void UpdateAveragingParameters()
+        {
+            int hopSize = ComputeHopSize();
+            double frameInterval = SampleRate > 0 ? (double)hopSize / SampleRate : 0.0;
+            (double attackSeconds, double releaseSeconds, double transferSeconds) =
+                GetAveragingTimeConstants(LiveSpectrumOptions.AveragingSpeed);
+            infiniteAveraging = LiveSpectrumOptions.AveragingSpeed == AveragingSpeed.Infinite;
+            inputAttackAlpha = AlphaFromTimeConstant(frameInterval, attackSeconds);
+            inputReleaseAlpha = AlphaFromTimeConstant(frameInterval, releaseSeconds);
+            transferAlpha = AlphaFromTimeConstant(frameInterval, transferSeconds);
         }
 
         private void AccumulateSequence(float[][] sequence)

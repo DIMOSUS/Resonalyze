@@ -28,7 +28,6 @@ namespace Resonalyze.Options
         /// </summary>
         private void InitializeComponent()
         {
-            button1 = new Button();
             label1 = new Label();
             numericWindow = new DarkNumericUpDown();
             numericRightWindow = new DarkNumericUpDown();
@@ -44,19 +43,6 @@ namespace Resonalyze.Options
             (numericRightWindow).BeginInit();
             (numericLeftWindow).BeginInit();
             SuspendLayout();
-            // 
-            // button1
-            // 
-            button1.BackColor = Color.FromArgb(50, 55, 80);
-            button1.DialogResult = DialogResult.OK;
-            button1.FlatStyle = FlatStyle.Popup;
-            button1.ForeColor = Color.White;
-            button1.Location = new Point(12, 437);
-            button1.Name = "button1";
-            button1.Size = new Size(241, 23);
-            button1.TabIndex = 14;
-            button1.Text = "Apply settings";
-            button1.UseVisualStyleBackColor = false;
             // 
             // label1
             // 
@@ -199,7 +185,7 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 471);
+            ClientSize = new Size(265, 437);
             Controls.Add(irPlotView);
             Controls.Add(checkUseCalibration);
             Controls.Add(label2);
@@ -211,7 +197,6 @@ namespace Resonalyze.Options
             Controls.Add(label4);
             Controls.Add(numericWindow);
             Controls.Add(label1);
-            Controls.Add(button1);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -227,7 +212,6 @@ namespace Resonalyze.Options
         }
 
         #endregion
-        private Button button1;
         private Label label1;
         private DarkNumericUpDown numericWindow;
         private DarkNumericUpDown numericRightWindow;

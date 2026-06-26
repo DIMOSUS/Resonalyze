@@ -124,11 +124,27 @@ public partial class Form1
 
     private void WireControllerEvents()
     {
-        dockedModeSettingsHost.StateChanged += (_, _) => UpdateCurrentModeSettingsButton();
-        dockedMeasurementSettingsHost.StateChanged += (_, _) => UpdateRecordSettingsButton();
+        dockedModeSettingsHost.StateChanged += (_, _) =>
+        {
+            UpdateCurrentModeSettingsButton();
+            FlushMeasurementSettingsIfClosed(dockedModeSettingsHost);
+        };
+        dockedMeasurementSettingsHost.StateChanged += (_, _) =>
+        {
+            UpdateRecordSettingsButton();
+            FlushMeasurementSettingsIfClosed(dockedMeasurementSettingsHost);
+        };
         dockedHistoryHost.StateChanged += (_, _) => UpdateHistoryButton();
         expSweepMeasurement.Completed += HandleMeasurementCompleted;
         measurementHistoryService.Changed += HandleHistoryChanged;
+    }
+
+    private void FlushMeasurementSettingsIfClosed(DockedModeSettingsHost host)
+    {
+        if (!host.IsOpen)
+        {
+            FlushMeasurementSettings();
+        }
     }
 
     private void InitializeStartupState()
@@ -144,8 +160,14 @@ public partial class Form1
 
     private void WireFormEvents()
     {
+        measurementSettingsSaveTimer.Tick += MeasurementSettingsSaveTimer_Tick;
         FormClosing += Form1_FormClosing;
         Shown += Form1_Shown;
+    }
+
+    private void MeasurementSettingsSaveTimer_Tick(object? sender, EventArgs e)
+    {
+        FlushMeasurementSettings();
     }
 
     private void HandleMeasurementCompleted(bool success)

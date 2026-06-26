@@ -79,6 +79,25 @@ internal sealed class LiveSpectrumController : IDisposable
         SuspendPeakHold();
     }
 
+    public void ApplyDisplayOptions()
+    {
+        measurement.RefreshLiveAveraging();
+        if (liveSpectrumOptions.AveragingSpeed == AveragingSpeed.Infinite)
+        {
+            measurement.ResetAccumulation();
+        }
+
+        if (!liveSpectrumOptions.PeakHold)
+        {
+            peakHoldMagnitude = null;
+        }
+
+        if (!measurement.InProgress)
+        {
+            RestoreLastCurve();
+        }
+    }
+
     // Pauses peak-hold tracking briefly so the noisy first frames captured while
     // the average ramps up from zero are not latched into the envelope.
     private void SuspendPeakHold()

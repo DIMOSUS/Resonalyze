@@ -113,15 +113,7 @@ public partial class Form1
                 ShowsTimeAlignmentPanel: false,
                 ShowOverlayCurves: false,
                 CreatePlotModel: _ => plotModelFactory.CreateLiveSpectrum(),
-                OpenSettings: () => ToggleModeOptions(
-                    ModeTab.LiveSpectrum,
-                    () => new LiveSpectrumOpt(),
-                    opt =>
-                    {
-                        opt.Init(liveSpectrumOptions);
-                        opt.ResetAverageRequested += liveSpectrumController.ResetAverage;
-                    },
-                    opt => opt.SetOptions(liveSpectrumOptions))),
+                OpenSettings: ToggleLiveSpectrumOptions),
             [ModeTab.Autocorrelation] = new(
                 ModeTab.Autocorrelation,
                 Mode.Autocorrelation,

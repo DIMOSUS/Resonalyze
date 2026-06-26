@@ -36,7 +36,6 @@ namespace Resonalyze.Options
             label4 = new Label();
             numericWindow = new DarkNumericUpDown();
             label1 = new Label();
-            button1 = new Button();
             numericOffset = new DarkNumericUpDown();
             label11 = new Label();
             checkBoxUnwrap = new CheckBox();
@@ -151,19 +150,6 @@ namespace Resonalyze.Options
             label1.TabIndex = 33;
             label1.Text = "Window";
             // 
-            // button1
-            // 
-            button1.BackColor = Color.FromArgb(50, 55, 80);
-            button1.DialogResult = DialogResult.OK;
-            button1.FlatStyle = FlatStyle.Popup;
-            button1.ForeColor = Color.White;
-            button1.Location = new Point(12, 462);
-            button1.Name = "button1";
-            button1.Size = new Size(241, 23);
-            button1.TabIndex = 31;
-            button1.Text = "Apply settings";
-            button1.UseVisualStyleBackColor = false;
-            // 
             // numericOffset
             // 
             numericOffset.BackColor = Color.FromArgb(55, 60, 72);
@@ -229,7 +215,7 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 497);
+            ClientSize = new Size(265, 463);
             Controls.Add(irPlotView);
             Controls.Add(checkBoxUnwrap);
             Controls.Add(label2);
@@ -243,7 +229,6 @@ namespace Resonalyze.Options
             Controls.Add(label4);
             Controls.Add(numericWindow);
             Controls.Add(label1);
-            Controls.Add(button1);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -269,7 +254,6 @@ namespace Resonalyze.Options
         private Label label4;
         private DarkNumericUpDown numericWindow;
         private Label label1;
-        private Button button1;
         private DarkNumericUpDown numericOffset;
         private Label label11;
         private CheckBox checkBoxUnwrap;

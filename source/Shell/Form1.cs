@@ -22,6 +22,7 @@ namespace Resonalyze
     public partial class Form1 : Form
     {
         private const string PeakInfoAnnotationTag = "PeakInfoAnnotation";
+        private const int MeasurementSettingsSaveDelayMilliseconds = 10_000;
 
         public Mode CurrentMode { get; private set; }
 
@@ -82,6 +83,11 @@ namespace Resonalyze
         private bool closingPrepared;
         private bool resourcesDisposed;
         private bool updateCheckStarted;
+        private bool measurementSettingsSavePending;
+        private readonly System.Windows.Forms.Timer measurementSettingsSaveTimer = new()
+        {
+            Interval = MeasurementSettingsSaveDelayMilliseconds
+        };
         private CancellationTokenSource? startupAudioWarmupCancellation;
         private Task? startupAudioWarmupTask;
 

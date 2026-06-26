@@ -53,8 +53,11 @@ internal sealed class DockedModeSettingsHost : IDisposable
         activeKey = key;
 
         dialog.Owner = owner;
-        dialog.Show();
-        PositionDialog();
+        if (owner.WindowState != FormWindowState.Minimized)
+        {
+            dialog.Location = GetDialogLocation(dialog);
+            dialog.Show(owner);
+        }
         dialog.BringToFront();
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -166,15 +169,21 @@ internal sealed class DockedModeSettingsHost : IDisposable
             return;
         }
 
+        Point location = GetDialogLocation(activeDialog);
         if (!activeDialog.Visible)
         {
+            activeDialog.Location = location;
             activeDialog.Show(owner);
+            return;
         }
 
-        activeDialog.Location = HasRoomOutsideOwner(activeDialog)
-            ? GetOutsideOwnerLocation()
-            : GetInsideAnchorLocation(activeDialog);
+        activeDialog.Location = location;
     }
+
+    private Point GetDialogLocation(Form dialog) =>
+        HasRoomOutsideOwner(dialog)
+            ? GetOutsideOwnerLocation()
+            : GetInsideAnchorLocation(dialog);
 
     private bool HasRoomOutsideOwner(Form dialog)
     {

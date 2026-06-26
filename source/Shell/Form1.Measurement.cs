@@ -110,8 +110,13 @@ public partial class Form1
                 try
                 {
                     dialog.SetOptions(expSweepMeasurement);
-                    ApplyMeasurementConfigurationToControllers();
                     SaveMeasurementSettings(captureMeasurementSettings: true);
+                    await ApplyMeasurementConfigurationToControllersAsync();
+                    if (!liveSpectrumController.InProgress &&
+                        !expSweepMeasurement.InProgress)
+                    {
+                        await AudioDeviceWarmup.WarmUpAsync(measurementSettings.Measurement);
+                    }
                 }
                 catch (InvalidOperationException exception)
                 {
@@ -122,8 +127,15 @@ public partial class Form1
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Warning);
                 }
-
-                await Task.CompletedTask;
+                catch (Exception exception)
+                {
+                    MessageBox.Show(
+                        this,
+                        $"Failed to reinitialize the audio device.\r\n\r\n{exception.Message}",
+                        "Measurement Options",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                }
             });
     }
 

@@ -322,6 +322,21 @@ The **Live Spectrum** mode supports two operating modes:
   Shows the classic live spectrum of the selected microphone input without a
   loopback reference.
 
+In Transfer Function mode Resonalyze also draws a **coherence** curve (γ²) on a
+secondary right-hand axis scaled from 0 to 1. Coherence shows how much of the
+measured response is linearly correlated with the loopback reference: values
+near 1 mark frequencies where the transfer-function estimate is trustworthy,
+while low values flag bands dominated by noise, reflections, or non-linear
+behavior.
+
+The live estimate averages in the power domain (and the input spectrum is
+power-averaged with a Hann window), which avoids the downward bias of magnitude
+averaging on noise-like signals. The level is calibrated for tones rather than
+as a power spectral density. The on-screen smoothing is referenced to
+wall-clock time, so
+the response stays consistent regardless of the chosen overlap and sequence
+length, and the display refreshes at roughly 30 frames per second.
+
 Transfer Function mode requires a configured loopback input in **Record
 Settings**. It works with either Wave or ASIO as long as microphone and
 loopback are routed to separate channels. If loopback is not configured,
@@ -335,6 +350,17 @@ focus on the driven response instead of whatever the microphone happens to hear.
 The Live Spectrum settings panel also exposes **Sequence Length**, which is the
 FFT block size used by the live analyzer. Only power-of-two values are offered
 to keep the live FFT path efficient and predictable.
+
+It also exposes **Overlap** (`Off`, `50%`, or `75%`), which slides the analysis
+window by a fraction of its size instead of advancing in non-overlapping blocks.
+Both Live Spectrum modes apply a Hann window before the FFT, so overlap reclaims
+the samples the window tapers at the block edges. Higher overlap gives faster,
+smoother averaging and a more responsive display at the cost of more FFTs per
+second.
+
+Finally, **Smoothing** applies fractional-octave smoothing (`Off`, `1/1` …
+`1/48`) to the displayed curve, the same presets used by the Frequency Response
+mode.
 
 ## Measurement History
 

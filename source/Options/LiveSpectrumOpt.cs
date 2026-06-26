@@ -4,11 +4,13 @@ namespace Resonalyze.Options
     {
         private static readonly int[] SequenceLengths =
             { 256, 512, 1024, 2048, 4096, 8192, 16384 };
+        private static readonly int[] OverlapPercents = { 0, 50, 75 };
         private readonly ToolTip toolTip = new();
 
         public LiveSpectrumOpt()
         {
             InitializeComponent();
+            SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
             InitializeToolTips();
             FormClosed += (_, _) => toolTip.Dispose();
         }
@@ -32,6 +34,16 @@ namespace Resonalyze.Options
             }
             sequenceLengthComboBox.SelectedItem = NormalizeSequenceLength(options.SequenceLength);
 
+            overlapComboBox.Items.Clear();
+            foreach (int overlapPercent in OverlapPercents)
+            {
+                overlapComboBox.Items.Add(new OverlapOption(overlapPercent));
+            }
+            overlapComboBox.SelectedIndex = FindOverlapIndex(options.OverlapPercent);
+
+            comboSmoothingInverseOctaves.SelectedItem =
+                SmoothingPresetOptions.Normalize(options.SmoothingInverseOctaves);
+
             checkUseCalibration.Checked = options.UseCalibration;
         }
 
@@ -44,6 +56,43 @@ namespace Resonalyze.Options
             options.SequenceLength = sequenceLengthComboBox.SelectedItem is int sequenceLength
                 ? sequenceLength
                 : SequenceLengths[0];
+            options.OverlapPercent =
+                overlapComboBox.SelectedItem is OverlapOption overlapOption
+                    ? overlapOption.Percent
+                    : OverlapPercents[0];
+            options.SmoothingInverseOctaves =
+                comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
+                    ? inverseOctaves
+                    : SmoothingPresetOptions.SupportedInverseOctaves[0];
+        }
+
+        private static int FindOverlapIndex(int overlapPercent)
+        {
+            int normalizedIndex = 0;
+            for (int index = 0; index < OverlapPercents.Length; index++)
+            {
+                if (overlapPercent >= OverlapPercents[index])
+                {
+                    normalizedIndex = index;
+                }
+            }
+
+            return normalizedIndex;
+        }
+
+        private sealed class OverlapOption
+        {
+            public OverlapOption(int percent)
+            {
+                Percent = percent;
+            }
+
+            public int Percent { get; }
+
+            public override string ToString()
+            {
+                return Percent == 0 ? "Off" : $"{Percent}%";
+            }
         }
 
         private static int NormalizeSequenceLength(int sequenceLength)
@@ -100,6 +149,12 @@ namespace Resonalyze.Options
             toolTip.SetToolTip(
                 sequenceLengthComboBox,
                 "Sets the FFT block size. Longer sequences give finer frequency resolution but slower visual updates.");
+            toolTip.SetToolTip(
+                overlapComboBox,
+                "Overlaps successive analysis frames by sliding the FFT window a fraction of its size. Higher overlap gives faster, smoother averaging at the cost of more CPU.");
+            toolTip.SetToolTip(
+                comboSmoothingInverseOctaves,
+                "Applies fractional-octave smoothing to the displayed Live Spectrum curve.");
             toolTip.SetToolTip(
                 checkUseCalibration,
                 "Applies the loaded microphone calibration file to Live Spectrum.");

@@ -11,6 +11,7 @@ namespace Resonalyze;
 internal sealed class PlotModelFactory
 {
     private const double GroupDelayMagnitudeGateDb = -40.0;
+    public const string CoherenceAxisKey = "coherence";
 
     private readonly ExpSweepMeasurement expSweepMeasurement;
     private readonly NoiseMeasurement noiseMeasurement;
@@ -275,6 +276,24 @@ internal sealed class PlotModelFactory
 
         PlotModelStyle.AddFrequencyAxis(model);
         PlotModelStyle.AddDecibelAxis(model);
+        if (liveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction)
+        {
+            model.Axes.Add(new LinearAxis
+            {
+                Key = CoherenceAxisKey,
+                Position = AxisPosition.Right,
+                AbsoluteMinimum = 0,
+                AbsoluteMaximum = 1,
+                Minimum = 0,
+                Maximum = 1,
+                MajorStep = 0.25,
+                MinorStep = 0.125,
+                MajorGridlineStyle = LineStyle.None,
+                MinorGridlineStyle = LineStyle.None,
+                Title = "Coherence γ²",
+            });
+        }
+
         return model;
     }
 
@@ -302,7 +321,9 @@ internal sealed class PlotModelFactory
             20000,
             1024,
             liveSpectrumOptions.UseCalibration ? calibration : null,
-            1.0 / 6.0);
+            liveSpectrumOptions.SmoothingInverseOctaves > 0
+                ? 1.0 / liveSpectrumOptions.SmoothingInverseOctaves
+                : 0.0);
         var series = new LineSeries
         {
             Color = OxyColor.FromRgb(255, 0, 127),
@@ -312,6 +333,47 @@ internal sealed class PlotModelFactory
         };
         series.Points.AddRange(OxyPlotAdapter.ToDataPoints(resampled));
         series.TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB";
+        return series;
+    }
+
+    public LineSeries BuildCoherenceSeries(double[] coherence)
+    {
+        int length = noiseMeasurement.SequenceLength;
+        int binCount = Math.Min(length / 2, coherence.Length);
+        List<DataPoint> data = new(binCount);
+
+        for (int i = 1; i < binCount; i++)
+        {
+            double frequency =
+                i * ((double)noiseMeasurement.SampleRate / length);
+            data.Add(new DataPoint(frequency, coherence[i]));
+        }
+
+        List<SignalPoint> resampled = DataHelper.LogarithmicResample(
+            OxyPlotAdapter.ToSignalPoints(data),
+            20,
+            20000,
+            1024,
+            calibration: null,
+            liveSpectrumOptions.SmoothingInverseOctaves > 0
+                ? 1.0 / liveSpectrumOptions.SmoothingInverseOctaves
+                : 0.0,
+            dBUnpack: false);
+        var series = new LineSeries
+        {
+            Color = OxyColor.FromAColor(150, OxyColor.FromRgb(90, 200, 140)),
+            Title = "Coherence",
+            YAxisKey = CoherenceAxisKey
+        };
+        // The Lanczos resampling kernel has negative lobes, so it can overshoot
+        // past the physical [0, 1] range of coherence at sharp transitions.
+        foreach (SignalPoint point in resampled)
+        {
+            series.Points.Add(new DataPoint(
+                point.X,
+                Math.Clamp(point.Y, 0.0, 1.0)));
+        }
+        series.TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} γ²";
         return series;
     }
 

@@ -93,6 +93,11 @@ public partial class Form1
     {
         if (!expSweepMeasurement.InProgress)
         {
+            if (liveSpectrumController.InProgress || liveSpectrumController.TimerEnabled)
+            {
+                await liveSpectrumController.AbortAsync();
+            }
+
             using var dialog = new OpenFileDialog
             {
                 CheckFileExists = true,

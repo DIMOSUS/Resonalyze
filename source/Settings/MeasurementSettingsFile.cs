@@ -294,6 +294,8 @@ internal sealed class MeasurementSettingsFile
         public LiveSpectrumMode Mode { get; set; } = LiveSpectrumMode.TransferFunction;
         public bool UseCalibration { get; set; } = true;
         public int SequenceLength { get; set; } = 2048;
+        public int OverlapPercent { get; set; } = 50;
+        public int SmoothingInverseOctaves { get; set; } = 6;
 
         public static LiveSpectrumSettings Capture(
             LiveSpectrumOptions options) =>
@@ -303,7 +305,10 @@ internal sealed class MeasurementSettingsFile
                     ? options.Mode
                     : LiveSpectrumMode.TransferFunction,
                 UseCalibration = options.UseCalibration,
-                SequenceLength = NormalizeSequenceLength(options.SequenceLength)
+                SequenceLength = NormalizeSequenceLength(options.SequenceLength),
+                OverlapPercent = NormalizeOverlapPercent(options.OverlapPercent),
+                SmoothingInverseOctaves =
+                    SmoothingPresetOptions.Normalize(options.SmoothingInverseOctaves)
             };
 
         public void ApplyTo(LiveSpectrumOptions options)
@@ -313,6 +318,24 @@ internal sealed class MeasurementSettingsFile
                 : LiveSpectrumMode.TransferFunction;
             options.UseCalibration = UseCalibration;
             options.SequenceLength = NormalizeSequenceLength(SequenceLength);
+            options.OverlapPercent = NormalizeOverlapPercent(OverlapPercent);
+            options.SmoothingInverseOctaves =
+                SmoothingPresetOptions.Normalize(SmoothingInverseOctaves);
+        }
+
+        private static int NormalizeOverlapPercent(int overlapPercent)
+        {
+            int[] supported = [0, 50, 75];
+            int normalized = supported[0];
+            foreach (int candidate in supported)
+            {
+                if (overlapPercent >= candidate)
+                {
+                    normalized = candidate;
+                }
+            }
+
+            return normalized;
         }
 
         private static int NormalizeSequenceLength(int sequenceLength)

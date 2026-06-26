@@ -17,12 +17,23 @@ namespace Resonalyze
         private CancellationTokenSource? cancellationTokenSource;
         private Task<bool>? measurementTask;
         private ChannelWriter<float[][]>? sequenceWriter;
-        private double[]? accumulatedData;
+        private double[]? accumulatedPowerSpectrum;
         private Complex[]? accumulatedCrossSpectrum;
         private double[]? accumulatedReferencePowerSpectrum;
+        private double[]? accumulatedTargetPowerSpectrum;
+        private double inputAttackAlpha = 1.0;
+        private double inputReleaseAlpha = 1.0;
+        private double transferAlpha = 1.0;
         private int sequencesCounter;
         private volatile bool inProgress;
         private bool disposed;
+
+        // Smoothing time constants (seconds). The per-frame EMA coefficient is
+        // derived from these and the actual frame interval so the displayed
+        // smoothing stays consistent regardless of overlap and sequence length.
+        private const double InputAttackSeconds = 0.15;
+        private const double InputReleaseSeconds = 1.0;
+        private const double TransferSmoothingSeconds = 1.0;
 
         public event Action<bool>? Completed;
         internal event Action<InputLevelMeterSnapshot>? LevelsAvailable;
@@ -131,9 +142,10 @@ namespace Resonalyze
 
                 lock (dataSync)
                 {
-                    accumulatedData = null;
+                    accumulatedPowerSpectrum = null;
                     accumulatedCrossSpectrum = null;
                     accumulatedReferencePowerSpectrum = null;
+                    accumulatedTargetPowerSpectrum = null;
                     sequencesCounter = 0;
                 }
 
@@ -167,12 +179,71 @@ namespace Resonalyze
             }
         }
 
-        public double[]? GetAccumulatedSpectrumSnapshot()
+        /// <summary>
+        /// Produces a consistent display snapshot. The accumulators are cloned
+        /// under the data lock and the heavier H1/coherence/magnitude math runs
+        /// outside the lock, so a slow or busy UI consumer cannot stall the
+        /// background accumulation that drives the actual measurement.
+        /// </summary>
+        public LiveSpectrumSnapshot? GetAccumulatedSpectrumSnapshot()
         {
+            if (LiveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction)
+            {
+                Complex[] crossSpectrum;
+                double[] referencePowerSpectrum;
+                double[] targetPowerSpectrum;
+                lock (dataSync)
+                {
+                    if (accumulatedCrossSpectrum == null ||
+                        accumulatedReferencePowerSpectrum == null ||
+                        accumulatedTargetPowerSpectrum == null)
+                    {
+                        return null;
+                    }
+
+                    crossSpectrum = (Complex[])accumulatedCrossSpectrum.Clone();
+                    referencePowerSpectrum = (double[])accumulatedReferencePowerSpectrum.Clone();
+                    targetPowerSpectrum = (double[])accumulatedTargetPowerSpectrum.Clone();
+                }
+
+                double[] magnitude = SpectrumAnalysis.ComputeH1MagnitudeSpectrum(
+                    crossSpectrum,
+                    referencePowerSpectrum);
+                double[] coherence = SpectrumAnalysis.ComputeCoherence(
+                    crossSpectrum,
+                    referencePowerSpectrum,
+                    targetPowerSpectrum);
+                return new LiveSpectrumSnapshot(magnitude, coherence);
+            }
+
+            double[] powerSpectrum;
             lock (dataSync)
             {
-                return accumulatedData?.ToArray();
+                if (accumulatedPowerSpectrum == null)
+                {
+                    return null;
+                }
+
+                powerSpectrum = (double[])accumulatedPowerSpectrum.Clone();
             }
+
+            var amplitude = new double[powerSpectrum.Length];
+            for (int i = 0; i < amplitude.Length; i++)
+            {
+                amplitude[i] = Math.Sqrt(powerSpectrum[i]);
+            }
+
+            return new LiveSpectrumSnapshot(amplitude, null);
+        }
+
+        private static double AlphaFromTimeConstant(double frameInterval, double timeConstant)
+        {
+            if (frameInterval <= 0.0 || timeConstant <= 0.0)
+            {
+                return 1.0;
+            }
+
+            return Math.Clamp(1.0 - Math.Exp(-frameInterval / timeConstant), 1e-6, 1.0);
         }
 
         private async Task<bool> RunCoreAsync(CancellationToken cancellationToken)
@@ -190,7 +261,16 @@ namespace Resonalyze
                     FullMode = BoundedChannelFullMode.DropOldest
                 });
             Volatile.Write(ref sequenceWriter, sequenceChannel.Writer);
-            Task processingTask = ProcessSequencesAsync(sequenceChannel.Reader, cancellationToken);
+            int hopSize = ComputeHopSize();
+            double frameInterval = SampleRate > 0 ? (double)hopSize / SampleRate : 0.0;
+            inputAttackAlpha = AlphaFromTimeConstant(frameInterval, InputAttackSeconds);
+            inputReleaseAlpha = AlphaFromTimeConstant(frameInterval, InputReleaseSeconds);
+            transferAlpha = AlphaFromTimeConstant(frameInterval, TransferSmoothingSeconds);
+            var reframer = new OverlapReframer(SequenceLength, hopSize);
+            Task processingTask = ProcessSequencesAsync(
+                sequenceChannel.Reader,
+                reframer,
+                cancellationToken);
 
             try
             {
@@ -389,12 +469,28 @@ namespace Resonalyze
 
         private async Task ProcessSequencesAsync(
             ChannelReader<float[][]> reader,
+            OverlapReframer reframer,
             CancellationToken cancellationToken)
         {
             await foreach (float[][] sequence in reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
-                AccumulateSequence(sequence);
+                foreach (float[][] frame in reframer.Push(sequence))
+                {
+                    AccumulateSequence(frame);
+                }
             }
+        }
+
+        private int ComputeHopSize()
+        {
+            int overlapPercent = Math.Clamp(LiveSpectrumOptions.OverlapPercent, 0, 75);
+            if (overlapPercent <= 0)
+            {
+                return SequenceLength;
+            }
+
+            int hop = SequenceLength * (100 - overlapPercent) / 100;
+            return Math.Clamp(hop, 1, SequenceLength);
         }
 
         private void AccumulateSequence(float[][] sequence)
@@ -405,41 +501,36 @@ namespace Resonalyze
                 return;
             }
 
-            double[] magnitudes =
-                SpectrumAnalysis.ComputeMagnitudeSpectrum(sequence[GetMicrophoneSequenceIndex()]);
+            AccumulatePowerSpectrum(sequence);
+        }
 
-            const double lerpCoefficient = 0.01;
-            const double outOfRangeLerpCoefficient = 0.2;
-            const int boxFilterRadius = 16;
-            double[] minimums = BuildBoxFilteredExtrema(
-                magnitudes,
-                boxFilterRadius,
-                findMinimum: true);
-            double[] maximums = BuildBoxFilteredExtrema(
-                magnitudes,
-                boxFilterRadius,
-                findMinimum: false);
+        private void AccumulatePowerSpectrum(float[][] sequence)
+        {
+            double[] power =
+                SpectrumAnalysis.ComputePowerSpectrum(sequence[GetMicrophoneSequenceIndex()]);
+
             lock (dataSync)
             {
-                if (accumulatedData == null)
+                if (accumulatedPowerSpectrum == null)
                 {
                     if (sequencesCounter > 2)
                     {
-                        accumulatedData = magnitudes;
+                        accumulatedPowerSpectrum = power;
                     }
                 }
                 else
                 {
-                    for (int i = 0; i < accumulatedData.Length; i++)
+                    for (int i = 0; i < accumulatedPowerSpectrum.Length; i++)
                     {
-                        double history = accumulatedData[i];
-                        double currentLerpCoefficient =
-                            history >= minimums[i] && history <= maximums[i]
-                                ? lerpCoefficient
-                                : outOfRangeLerpCoefficient;
-                        accumulatedData[i] =
-                            (1 - currentLerpCoefficient) * history +
-                            currentLerpCoefficient * magnitudes[i];
+                        double history = accumulatedPowerSpectrum[i];
+                        // Attack/release: rise quickly toward louder energy,
+                        // decay slowly when it falls. Both coefficients are
+                        // already normalized to wall-clock time.
+                        double alpha = power[i] > history
+                            ? inputAttackAlpha
+                            : inputReleaseAlpha;
+                        accumulatedPowerSpectrum[i] =
+                            (1 - alpha) * history + alpha * power[i];
                     }
                 }
                 sequencesCounter++;
@@ -450,70 +541,40 @@ namespace Resonalyze
         {
             TransferSpectrumFrame frame = ComputeTransferSpectrumFrame(sequence);
 
-            const double lerpCoefficient = 0.01;
             lock (dataSync)
             {
                 if (accumulatedCrossSpectrum == null ||
-                    accumulatedReferencePowerSpectrum == null)
+                    accumulatedReferencePowerSpectrum == null ||
+                    accumulatedTargetPowerSpectrum == null)
                 {
                     if (sequencesCounter > 2)
                     {
                         accumulatedCrossSpectrum = frame.CrossSpectrum.ToArray();
                         accumulatedReferencePowerSpectrum =
                             frame.ReferencePowerSpectrum.ToArray();
-                        accumulatedData = SpectrumAnalysis.ComputeH1MagnitudeSpectrum(
-                            accumulatedCrossSpectrum,
-                            accumulatedReferencePowerSpectrum);
+                        accumulatedTargetPowerSpectrum =
+                            frame.TargetPowerSpectrum.ToArray();
                     }
                 }
                 else
                 {
+                    double alpha = transferAlpha;
                     for (int i = 0; i < accumulatedCrossSpectrum.Length; i++)
                     {
                         accumulatedCrossSpectrum[i] =
-                            (1 - lerpCoefficient) * accumulatedCrossSpectrum[i] +
-                            lerpCoefficient * frame.CrossSpectrum[i];
+                            (1 - alpha) * accumulatedCrossSpectrum[i] +
+                            alpha * frame.CrossSpectrum[i];
                         accumulatedReferencePowerSpectrum[i] =
-                            (1 - lerpCoefficient) * accumulatedReferencePowerSpectrum[i] +
-                            lerpCoefficient * frame.ReferencePowerSpectrum[i];
+                            (1 - alpha) * accumulatedReferencePowerSpectrum[i] +
+                            alpha * frame.ReferencePowerSpectrum[i];
+                        accumulatedTargetPowerSpectrum[i] =
+                            (1 - alpha) * accumulatedTargetPowerSpectrum[i] +
+                            alpha * frame.TargetPowerSpectrum[i];
                     }
-
-                    accumulatedData = SpectrumAnalysis.ComputeH1MagnitudeSpectrum(
-                        accumulatedCrossSpectrum,
-                        accumulatedReferencePowerSpectrum);
                 }
 
                 sequencesCounter++;
             }
-        }
-
-        private static double[] BuildBoxFilteredExtrema(
-            IReadOnlyList<double> source,
-            int radius,
-            bool findMinimum)
-        {
-            if (radius < 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(radius));
-            }
-
-            var filtered = new double[source.Count];
-            for (int i = 0; i < source.Count; i++)
-            {
-                int start = Math.Max(0, i - radius);
-                int end = Math.Min(source.Count - 1, i + radius);
-                double extreme = source[i];
-                for (int j = start; j <= end; j++)
-                {
-                    extreme = findMinimum
-                        ? Math.Min(extreme, source[j])
-                        : Math.Max(extreme, source[j]);
-                }
-
-                filtered[i] = extreme;
-            }
-
-            return filtered;
         }
 
         private TransferSpectrumFrame ComputeTransferSpectrumFrame(float[][] sequence)

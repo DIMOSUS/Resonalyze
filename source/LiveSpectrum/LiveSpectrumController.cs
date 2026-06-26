@@ -8,7 +8,7 @@ internal sealed class LiveSpectrumController : IDisposable
 {
     private readonly Form owner;
     private readonly NoiseMeasurement measurement;
-    private readonly System.Windows.Forms.Timer timer = new() { Interval = 100 };
+    private readonly System.Windows.Forms.Timer timer = new() { Interval = 33 };
     private readonly OxyPlot.WindowsForms.PlotView plotView;
     private readonly PlotModelFactory plotModelFactory;
     private readonly Panel overlaysPanel;
@@ -22,7 +22,9 @@ internal sealed class LiveSpectrumController : IDisposable
     private readonly Action updatePlotLabels;
     private readonly LiveSpectrumOptions liveSpectrumOptions;
     private const string LiveSpectrumTag = "live-spectrum:primary";
+    private const string LiveSpectrumCoherenceTag = "live-spectrum:coherence";
     private bool disposed;
+    private bool redrawInProgress;
 
     public LiveSpectrumController(
         Form owner,
@@ -170,16 +172,14 @@ internal sealed class LiveSpectrumController : IDisposable
 
     private async Task StopAsync()
     {
-        double[]? finalSnapshot = measurement.GetAccumulatedSpectrumSnapshot();
+        LiveSpectrumSnapshot? finalSnapshot = measurement.GetAccumulatedSpectrumSnapshot();
         timer.Stop();
         await measurement.AbortAsync();
 
         PlotModel model = plotModelFactory.CreateLiveSpectrum();
         if (finalSnapshot != null)
         {
-            LineSeries series = plotModelFactory.BuildNoiseSeries(finalSnapshot);
-            series.Tag = LiveSpectrumTag;
-            model.Series.Add(series);
+            AddLiveSpectrumSeries(model, finalSnapshot);
         }
 
         plotView.Model = model;
@@ -193,25 +193,56 @@ internal sealed class LiveSpectrumController : IDisposable
 
     private void TimerTick(object? sender, EventArgs e)
     {
-        double[]? snapshot = measurement.GetAccumulatedSpectrumSnapshot();
-        PlotModel? model = plotView.Model;
-        if (snapshot == null || model == null || getCurrentMode() != Mode.LiveSpectrum)
+        // Guard against re-entrancy if a redraw takes longer than the timer
+        // interval. The measurement runs on background threads and is never
+        // gated by this UI work, so a busy CPU only thins the display rate.
+        if (redrawInProgress)
         {
             return;
         }
 
-        RemoveLiveSpectrumSeries(model);
-        LineSeries series = plotModelFactory.BuildNoiseSeries(snapshot);
+        redrawInProgress = true;
+        try
+        {
+            LiveSpectrumSnapshot? snapshot = measurement.GetAccumulatedSpectrumSnapshot();
+            PlotModel? model = plotView.Model;
+            if (snapshot == null || model == null || getCurrentMode() != Mode.LiveSpectrum)
+            {
+                return;
+            }
+
+            RemoveLiveSpectrumSeries(model);
+            AddLiveSpectrumSeries(model, snapshot);
+            model.InvalidatePlot(true);
+            updatePlotLabels();
+        }
+        finally
+        {
+            redrawInProgress = false;
+        }
+    }
+
+    private void AddLiveSpectrumSeries(PlotModel model, LiveSpectrumSnapshot snapshot)
+    {
+        LineSeries series = plotModelFactory.BuildNoiseSeries(snapshot.Magnitude);
         series.Tag = LiveSpectrumTag;
         model.Series.Add(series);
-        model.InvalidatePlot(true);
-        updatePlotLabels();
+
+        if (snapshot.Coherence != null)
+        {
+            LineSeries coherenceSeries =
+                plotModelFactory.BuildCoherenceSeries(snapshot.Coherence);
+            coherenceSeries.Tag = LiveSpectrumCoherenceTag;
+            model.Series.Add(coherenceSeries);
+        }
     }
 
     private static void RemoveLiveSpectrumSeries(PlotModel model)
     {
         List<OxyPlot.Series.Series> liveSpectrumSeries = model.Series
-            .Where(series => Equals(series.Tag, LiveSpectrumTag))
+            .Where(series =>
+                Equals(series.Tag, LiveSpectrumTag) ||
+                Equals(series.Tag, LiveSpectrumCoherenceTag))
             .ToList();
         foreach (OxyPlot.Series.Series series in liveSpectrumSeries)
         {

@@ -25,6 +25,7 @@ internal partial class MeasurementHistoryWindow : Form
         historyDataGridView.SelectionChanged += HistoryDataGridView_SelectionChanged;
         historyDataGridView.CellContentClick += HistoryDataGridView_CellContentClick;
         historyDataGridView.CellDoubleClick += HistoryDataGridView_CellDoubleClick;
+        Resize += (_, _) => ConfigureGridColumns();
     }
 
     public Guid? SelectedEntryId =>
@@ -102,6 +103,7 @@ internal partial class MeasurementHistoryWindow : Form
     private void ConfigureGrid()
     {
         historyDataGridView.EnableHeadersVisualStyles = false;
+        historyDataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
         historyDataGridView.GridColor = UiPalette.DialogBorder;
         historyDataGridView.DefaultCellStyle.BackColor = UiPalette.DialogBackground;
         historyDataGridView.DefaultCellStyle.ForeColor = UiPalette.TextPrimary;
@@ -111,7 +113,9 @@ internal partial class MeasurementHistoryWindow : Form
         historyDataGridView.ColumnHeadersDefaultCellStyle.ForeColor = UiPalette.TextPrimary;
         historyDataGridView.ColumnHeadersDefaultCellStyle.SelectionBackColor = UiPalette.ControlSurface;
         historyDataGridView.ColumnHeadersDefaultCellStyle.SelectionForeColor = UiPalette.TextPrimary;
-        historyDataGridView.RowTemplate.Height = 24;
+        historyDataGridView.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
+        historyDataGridView.ColumnHeadersHeight = ScaleLogical(26);
+        historyDataGridView.RowTemplate.Height = ScaleLogical(24);
         foreach (DataGridViewColumn column in historyDataGridView.Columns)
         {
             column.SortMode = DataGridViewColumnSortMode.NotSortable;
@@ -119,6 +123,24 @@ internal partial class MeasurementHistoryWindow : Form
         historyDataGridView.Columns[0].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
         historyDataGridView.Columns[2].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
         historyDataGridView.Columns[3].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+        ConfigureGridColumns();
+    }
+
+    private void ConfigureGridColumns()
+    {
+        if (historyDataGridView.Columns.Count < 4)
+        {
+            return;
+        }
+
+        historyDataGridView.Columns[0].MinimumWidth = ScaleLogical(48);
+        historyDataGridView.Columns[0].FillWeight = 14;
+        historyDataGridView.Columns[1].MinimumWidth = ScaleLogical(140);
+        historyDataGridView.Columns[1].FillWeight = 54;
+        historyDataGridView.Columns[2].MinimumWidth = ScaleLogical(60);
+        historyDataGridView.Columns[2].FillWeight = 15;
+        historyDataGridView.Columns[3].MinimumWidth = ScaleLogical(70);
+        historyDataGridView.Columns[3].FillWeight = 17;
     }
 
     private void SelectRow(Guid? entryId)
@@ -289,4 +311,7 @@ internal partial class MeasurementHistoryWindow : Form
             IsZoomEnabled = false
         });
     }
+
+    private int ScaleLogical(int value) =>
+        Math.Max(1, (int)Math.Round(value * DeviceDpi / 96.0));
 }

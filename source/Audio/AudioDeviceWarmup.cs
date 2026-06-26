@@ -4,7 +4,10 @@ namespace Resonalyze;
 
 internal static class AudioDeviceWarmup
 {
+    private const double AsioWarmupAmplitude = 0.00025;
+
     private static readonly TimeSpan WarmupPlaybackDuration = TimeSpan.FromMilliseconds(200);
+    private static readonly TimeSpan AsioPrerollDuration = TimeSpan.FromMilliseconds(2200);
 
     public static async Task WarmUpAsync(
         MeasurementSettingsFile.SweepMeasurementSettings settings,
@@ -68,17 +71,35 @@ internal static class AudioDeviceWarmup
             firstInputOffset,
             settings.AsioOutputChannelOffset,
             inputChannelCount);
-        using var silence = FloatArrayWaveStream.FromMonoSamples(
-            new float[Math.Max(256, settings.SampleRate / 20)],
+        using var warmupSignal = FloatArrayWaveStream.FromMonoSamples(
+            CreateAsioWarmupSignal(settings.SampleRate),
             settings.SampleRate,
             settings.PlaybackChannel);
+        var loopingWarmup = new LoopingWaveProvider(warmupSignal);
 
         await session.StartAsync(
-            silence,
+            loopingWarmup,
             settings.SampleRate,
             autoStop: false,
             linkedCancellation.Token);
+        int prerollSamples = Math.Max(
+            1,
+            (int)Math.Round(settings.SampleRate * AsioPrerollDuration.TotalSeconds));
+        await session.WaitForSamplesAsync(prerollSamples, linkedCancellation.Token);
         await session.StopAsync();
+    }
+
+    private static float[] CreateAsioWarmupSignal(int sampleRate)
+    {
+        int sampleCount = Math.Max(256, sampleRate / 2);
+        var samples = new float[sampleCount];
+        var random = new Random(42);
+        for (int i = 0; i < samples.Length; i++)
+        {
+            samples[i] = (float)((random.NextDouble() * 2.0 - 1.0) * AsioWarmupAmplitude);
+        }
+
+        return samples;
     }
 
     private static async Task PlayBrieflyAsync(
@@ -117,11 +138,12 @@ internal static class AudioDeviceWarmup
         MeasurementSettingsFile.SweepMeasurementSettings settings)
     {
         int maxChannelOffset = settings.WaveInputChannelOffset;
-        if (settings.WaveLoopbackInputChannelOffset.HasValue)
+        int? loopbackOffset = GetEffectiveWaveLoopbackInputChannelOffset(settings);
+        if (loopbackOffset.HasValue)
         {
             maxChannelOffset = Math.Max(
                 maxChannelOffset,
-                settings.WaveLoopbackInputChannelOffset.Value);
+                loopbackOffset.Value);
         }
 
         return maxChannelOffset + 1;
@@ -130,10 +152,11 @@ internal static class AudioDeviceWarmup
     private static int GetAsioCaptureFirstInputOffset(
         MeasurementSettingsFile.SweepMeasurementSettings settings)
     {
-        return settings.AsioLoopbackInputChannelOffset.HasValue
+        int? loopbackOffset = GetEffectiveAsioLoopbackInputChannelOffset(settings);
+        return loopbackOffset.HasValue
             ? Math.Min(
                 settings.AsioInputChannelOffset,
-                settings.AsioLoopbackInputChannelOffset.Value)
+                loopbackOffset.Value)
             : settings.AsioInputChannelOffset;
     }
 
@@ -141,11 +164,34 @@ internal static class AudioDeviceWarmup
         MeasurementSettingsFile.SweepMeasurementSettings settings,
         int firstInputOffset)
     {
-        int lastInputOffset = settings.AsioLoopbackInputChannelOffset.HasValue
+        int? loopbackOffset = GetEffectiveAsioLoopbackInputChannelOffset(settings);
+        int lastInputOffset = loopbackOffset.HasValue
             ? Math.Max(
                 settings.AsioInputChannelOffset,
-                settings.AsioLoopbackInputChannelOffset.Value)
+                loopbackOffset.Value)
             : settings.AsioInputChannelOffset;
         return lastInputOffset - firstInputOffset + 1;
+    }
+
+    private static int? GetEffectiveWaveLoopbackInputChannelOffset(
+        MeasurementSettingsFile.SweepMeasurementSettings settings)
+    {
+        if (settings.WaveLoopbackInputChannelOffset == settings.WaveInputChannelOffset)
+        {
+            return null;
+        }
+
+        return settings.WaveLoopbackInputChannelOffset;
+    }
+
+    private static int? GetEffectiveAsioLoopbackInputChannelOffset(
+        MeasurementSettingsFile.SweepMeasurementSettings settings)
+    {
+        if (settings.AsioLoopbackInputChannelOffset == settings.AsioInputChannelOffset)
+        {
+            return null;
+        }
+
+        return settings.AsioLoopbackInputChannelOffset;
     }
 }

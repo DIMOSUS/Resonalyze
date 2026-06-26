@@ -7,6 +7,8 @@ public partial class Form1
 {
     private async void Form1_Shown(object? sender, EventArgs e)
     {
+        StartStartupAudioWarmup();
+
         if (updateCheckStarted)
         {
             return;
@@ -69,6 +71,11 @@ public partial class Form1
 
         if (CurrentMode == Mode.LiveSpectrum)
         {
+            if (!liveSpectrumController.InProgress)
+            {
+                await WaitForStartupAudioWarmupAsync();
+            }
+
             await liveSpectrumController.ToggleAsync();
             UpdateRecordButtonForCurrentMode();
             return;
@@ -85,6 +92,7 @@ public partial class Form1
         }
         else
         {
+            await WaitForStartupAudioWarmupAsync();
             PrepareSweepMeasurementForRun();
             EnterMeasurementRunningState();
             _ = expSweepMeasurement.RunAsync();
@@ -147,5 +155,62 @@ public partial class Form1
         }
 
         DrawSelectedMode(includeCurves: true);
+    }
+
+    private void StartStartupAudioWarmup()
+    {
+        if (startupAudioWarmupTask != null ||
+            measurementSettings.Measurement.AudioBackend != AudioBackend.Asio)
+        {
+            return;
+        }
+
+        startupAudioWarmupCancellation = new CancellationTokenSource();
+        startupAudioWarmupTask =
+            WarmUpStartupAudioAsync(startupAudioWarmupCancellation.Token);
+    }
+
+    private async Task WarmUpStartupAudioAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(250, cancellationToken);
+            if (IsDisposed ||
+                expSweepMeasurement.InProgress ||
+                liveSpectrumController.InProgress)
+            {
+                return;
+            }
+
+            await AudioDeviceWarmup.WarmUpAsync(
+                measurementSettings.Measurement,
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch
+        {
+            // Startup warm-up is best-effort. The normal measurement path will
+            // still report driver errors if the selected ASIO setup is invalid.
+        }
+    }
+
+    private async Task WaitForStartupAudioWarmupAsync()
+    {
+        Task? task = startupAudioWarmupTask;
+        if (task == null || task.IsCompleted)
+        {
+            return;
+        }
+
+        try
+        {
+            await task;
+        }
+        catch
+        {
+            // Warm-up failures are intentionally non-fatal.
+        }
     }
 }

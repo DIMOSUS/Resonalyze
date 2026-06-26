@@ -63,6 +63,12 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     public bool InProgress => false;
 
+    public void SetLayoutBounds(Rectangle bounds)
+    {
+        panel.Bounds = bounds;
+        FitContentToPanelWidth();
+    }
+
     public void SetVisible(bool visible)
     {
         panel.Visible = visible;
@@ -182,6 +188,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             status
         ]);
         ScaleRuntimeControlTree(newPanel);
+        FitContentToPanelWidth(newPanel);
         owner.Controls.Add(newPanel);
         newPanel.BringToFront();
 
@@ -724,8 +731,33 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
 
         root.SuspendLayout();
-        ScaleRuntimeBounds(root, factor, scaleLocation: false);
+        foreach (System.Windows.Forms.Control child in root.Controls)
+        {
+            ScaleRuntimeBounds(child, factor, scaleLocation: true);
+        }
+
         root.ResumeLayout(false);
+    }
+
+    private void FitContentToPanelWidth() => FitContentToPanelWidth(panel);
+
+    private void FitContentToPanelWidth(System.Windows.Forms.Control targetPanel)
+    {
+        int rightPadding = ScaleRuntimeValue(18);
+        int availableRight = Math.Max(1, targetPanel.ClientSize.Width - rightPadding);
+        foreach (System.Windows.Forms.Control control in targetPanel.Controls)
+        {
+            if (control.Left >= ScaleRuntimeValue(520))
+            {
+                control.Width = Math.Max(1, availableRight - control.Left);
+            }
+        }
+
+        if (targetPanel is Panel scrollPanel)
+        {
+            scrollPanel.HorizontalScroll.Visible = false;
+            scrollPanel.HorizontalScroll.Enabled = false;
+        }
     }
 
     private static void ScaleRuntimeBounds(
@@ -759,6 +791,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private int GetScaledTitleBarHeight() =>
         (int)Math.Round(ChromeTitleBarController.Height * GetRuntimeDpiScale());
+
+    private int ScaleRuntimeValue(int value) =>
+        Math.Max(1, (int)Math.Round(value * GetRuntimeDpiScale()));
 }
 
 internal sealed class StatusRichTextBox : RichTextBox

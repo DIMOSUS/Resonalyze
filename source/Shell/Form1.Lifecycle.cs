@@ -70,10 +70,12 @@ public partial class Form1
 
         e.Cancel = true;
         Enabled = false;
+        startupAudioWarmupCancellation?.Cancel();
         await Task.WhenAll(
             expSweepMeasurement.AbortAsync(),
             timeAlignmentController.AbortAsync(),
-            liveSpectrumController.AbortAsync());
+            liveSpectrumController.AbortAsync(),
+            startupAudioWarmupTask ?? Task.CompletedTask);
 
         DisposeAppResources();
         closingPrepared = true;
@@ -88,6 +90,8 @@ public partial class Form1
         }
 
         resourcesDisposed = true;
+        startupAudioWarmupCancellation?.Cancel();
+        startupAudioWarmupCancellation?.Dispose();
         dockedModeSettingsHost.Dispose();
         dockedMeasurementSettingsHost.Dispose();
         dockedHistoryHost.Dispose();

@@ -82,6 +82,8 @@ namespace Resonalyze
         private bool closingPrepared;
         private bool resourcesDisposed;
         private bool updateCheckStarted;
+        private CancellationTokenSource? startupAudioWarmupCancellation;
+        private Task? startupAudioWarmupTask;
 
         public Form1()
         {

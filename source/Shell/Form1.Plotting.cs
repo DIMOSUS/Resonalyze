@@ -95,6 +95,7 @@ public partial class Form1
         UpdateCurrentModeSettingsButton();
         UpdateDrawButtonText();
         UpdateRecordButtonForCurrentMode();
+        ApplyMainContentLayout();
         plotView1.Visible = descriptor.HasPlotView;
         overlays.Visible = descriptor.HasOverlayPanel;
         timeAlignmentController.SetVisible(descriptor.ShowsTimeAlignmentPanel);

@@ -135,6 +135,7 @@ public partial class Form1
     {
         ApplyMeasurementConfigurationToControllers();
         commandController.Initialize();
+        ApplyMainContentLayout();
         UpdateHistoryButton();
         UpdatePeakInfo();
         ApplicationUpdateService.Initialize(this);

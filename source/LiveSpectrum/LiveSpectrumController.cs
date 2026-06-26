@@ -161,6 +161,7 @@ internal sealed class LiveSpectrumController : IDisposable
     {
         lastSnapshot = null;
         peakHoldMagnitude = null;
+        RemoveOverloadAnnotation(plotView.Model);
     }
 
     public void RestoreLastCurve()
@@ -352,13 +353,7 @@ internal sealed class LiveSpectrumController : IDisposable
 
     private void UpdateOverloadAnnotation(PlotModel model)
     {
-        for (int index = model.Annotations.Count - 1; index >= 0; index--)
-        {
-            if (model.Annotations[index] is OverlayTextAnnotation { Tag: OverloadAnnotationTag })
-            {
-                model.Annotations.RemoveAt(index);
-            }
-        }
+        RemoveOverloadAnnotation(model);
 
         if (!measurement.HasRecentDrops())
         {
@@ -376,6 +371,22 @@ internal sealed class LiveSpectrumController : IDisposable
             TextColor = OxyColor.FromRgb(255, 170, 0),
             TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
         });
+    }
+
+    private static void RemoveOverloadAnnotation(PlotModel? model)
+    {
+        if (model == null)
+        {
+            return;
+        }
+
+        for (int index = model.Annotations.Count - 1; index >= 0; index--)
+        {
+            if (model.Annotations[index] is OverlayTextAnnotation { Tag: OverloadAnnotationTag })
+            {
+                model.Annotations.RemoveAt(index);
+            }
+        }
     }
 
     private static void RemoveLiveSpectrumSeries(PlotModel model)

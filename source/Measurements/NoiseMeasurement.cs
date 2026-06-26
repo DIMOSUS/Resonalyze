@@ -572,10 +572,19 @@ namespace Resonalyze
                         return;
                     }
 
-                    // Seed with zeros (not the first raw frame) so the curve
-                    // rises from the bottom instead of snapping to a noisy
-                    // instantaneous spectrum. The zero baseline counts as the
-                    // first sample of the cumulative average.
+                    if (infiniteAveraging)
+                    {
+                        // Infinite mode is an honest cumulative mean, so seed
+                        // with the first real frame (no zero baseline, which
+                        // would bias the curve low).
+                        accumulatedPowerSpectrum = power;
+                        averagedFrameCount = 1;
+                        sequencesCounter++;
+                        return;
+                    }
+
+                    // Seed with zeros so the curve rises from the bottom instead
+                    // of snapping to a noisy instantaneous spectrum.
                     accumulatedPowerSpectrum = new double[power.Length];
                     averagedFrameCount = 1;
                 }
@@ -614,6 +623,19 @@ namespace Resonalyze
                     if (sequencesCounter <= 2)
                     {
                         // Discard the first frames so the device can settle.
+                        sequencesCounter++;
+                        return;
+                    }
+
+                    if (infiniteAveraging)
+                    {
+                        // Honest cumulative mean: seed with the first real frame.
+                        accumulatedCrossSpectrum = frame.CrossSpectrum.ToArray();
+                        accumulatedReferencePowerSpectrum =
+                            frame.ReferencePowerSpectrum.ToArray();
+                        accumulatedTargetPowerSpectrum =
+                            frame.TargetPowerSpectrum.ToArray();
+                        averagedFrameCount = 1;
                         sequencesCounter++;
                         return;
                     }

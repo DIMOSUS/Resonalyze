@@ -1,3 +1,5 @@
+using Resonalyze.Dsp;
+
 namespace Resonalyze.Options
 {
     public enum LiveSpectrumMode
@@ -6,11 +8,45 @@ namespace Resonalyze.Options
         InputSpectrum
     }
 
+    /// <summary>
+    /// Preset averaging speeds for the live analyzer. Fast/Medium/Slow map to
+    /// exponential time constants; Infinite is a cumulative (never-forgetting)
+    /// average that keeps integrating until reset.
+    /// </summary>
+    public enum AveragingSpeed
+    {
+        Fast,
+        Medium,
+        Slow,
+        Infinite
+    }
+
     public sealed class LiveSpectrumOptions
     {
         public LiveSpectrumMode Mode { get; set; } = LiveSpectrumMode.TransferFunction;
         public bool UseCalibration { get; set; } = true;
         public int SequenceLength { get; set; } = 2048;
+
+        /// <summary>Analysis window applied before the FFT.</summary>
+        public WindowType WindowType { get; set; } = WindowType.Hann;
+
+        /// <summary>Exponential/cumulative averaging speed preset.</summary>
+        public AveragingSpeed AveragingSpeed { get; set; } = AveragingSpeed.Medium;
+
+        /// <summary>Shows a peak-hold envelope curve of the displayed trace.</summary>
+        public bool PeakHold { get; set; }
+
+        /// <summary>
+        /// Shows the coherence (γ²) curve in Transfer Function mode.
+        /// </summary>
+        public bool ShowCoherence { get; set; } = true;
+
+        /// <summary>
+        /// Coherence threshold (percent) below which the transfer-function curve
+        /// is drawn dimmed and dashed to flag untrustworthy frequencies. Zero
+        /// disables the marking.
+        /// </summary>
+        public int CoherenceThresholdPercent { get; set; } = 25;
 
         /// <summary>
         /// Fractional overlap between successive analysis frames, in percent.

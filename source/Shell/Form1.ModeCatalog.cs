@@ -116,7 +116,11 @@ public partial class Form1
                 OpenSettings: () => ToggleModeOptions(
                     ModeTab.LiveSpectrum,
                     () => new LiveSpectrumOpt(),
-                    opt => opt.Init(liveSpectrumOptions),
+                    opt =>
+                    {
+                        opt.Init(liveSpectrumOptions);
+                        opt.ResetAverageRequested += liveSpectrumController.ResetAverage;
+                    },
                     opt => opt.SetOptions(liveSpectrumOptions))),
             [ModeTab.Autocorrelation] = new(
                 ModeTab.Autocorrelation,

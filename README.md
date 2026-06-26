@@ -358,9 +358,38 @@ the samples the window tapers at the block edges. Higher overlap gives faster,
 smoother averaging and a more responsive display at the cost of more FFTs per
 second.
 
-Finally, **Smoothing** applies fractional-octave smoothing (`Off`, `1/1` …
-`1/48`) to the displayed curve, the same presets used by the Frequency Response
-mode.
+**Smoothing** applies fractional-octave smoothing (`Off`, `1/1` … `1/48`) to
+the displayed curve, the same presets used by the Frequency Response mode.
+
+**Window** selects the analysis window applied before the FFT: `Hann` (a good
+general default), `Flat Top` (maximum amplitude accuracy for tones),
+`Blackman-Harris` (strong spectral-leakage suppression), or `Rectangular`
+(unwindowed, for special cases).
+
+**Averaging** sets how quickly the trace responds: `Fast`, `Medium`, and `Slow`
+choose exponential time constants (referenced to wall-clock time, so they are
+independent of overlap and sequence length), while `Infinite` integrates a
+cumulative average indefinitely. **Reset Average** clears the running average and
+peak-hold envelope without restarting the measurement.
+
+**Peak Hold** overlays a second curve that retains the maximum level seen on the
+trace until it is reset. **Coherence** (on by default) toggles the γ² curve shown
+on a secondary 0-to-1 axis in Transfer Function mode.
+
+**Coherence Limit** marks unreliable parts of the transfer-function curve: any
+frequency whose coherence falls below the chosen percentage (default `25%`) is
+drawn dimmed and dashed, so it is immediately clear which portions of the trace
+should not be trusted. Set it to `Off` to draw the whole curve uniformly.
+
+If the CPU cannot keep up with the chosen settings, captured blocks are dropped
+rather than allowed to stall the measurement, and a **processing overload**
+warning appears at the top of the plot so the cause of a stuttering display is
+clear.
+
+Switching to another analysis mode and back restores the last Live Spectrum
+curve, its peak-hold envelope, and any active overlays, so a captured trace is
+not lost when you step away to inspect a different view. Press **Start** to
+resume live capture, or **Clear Curves** to discard the remembered trace.
 
 ## Measurement History
 

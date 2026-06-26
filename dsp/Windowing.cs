@@ -1,10 +1,69 @@
 namespace Resonalyze.Dsp
 {
     /// <summary>
-    /// Creates asymmetric Tukey windows used to isolate impulse-response regions.
+    /// Analysis window applied before the FFT in spectrum measurements.
+    /// </summary>
+    public enum WindowType
+    {
+        Hann,
+        FlatTop,
+        BlackmanHarris,
+        Rectangular
+    }
+
+    /// <summary>
+    /// Creates asymmetric Tukey windows used to isolate impulse-response regions
+    /// and symmetric analysis windows applied before spectral FFTs.
     /// </summary>
     public static class Windowing
     {
+        /// <summary>
+        /// Builds a symmetric analysis window of the requested type and length.
+        /// </summary>
+        public static double[] CreateAnalysisWindow(WindowType windowType, int length)
+        {
+            if (length < 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(length));
+            }
+
+            var window = new double[length];
+            for (int i = 0; i < length; i++)
+            {
+                window[i] = AnalysisWindowValue(windowType, i, length);
+            }
+
+            return window;
+        }
+
+        private static double AnalysisWindowValue(WindowType windowType, int index, int length)
+        {
+            if (length <= 1)
+            {
+                return 1.0;
+            }
+
+            double phase = 2.0 * Math.PI * index / (length - 1);
+            return windowType switch
+            {
+                WindowType.Rectangular => 1.0,
+                WindowType.Hann => 0.5 - 0.5 * Math.Cos(phase),
+                WindowType.BlackmanHarris =>
+                    0.35875
+                    - 0.48829 * Math.Cos(phase)
+                    + 0.14128 * Math.Cos(2.0 * phase)
+                    - 0.01168 * Math.Cos(3.0 * phase),
+                // SRS five-term flat-top: excellent amplitude accuracy for tones.
+                WindowType.FlatTop =>
+                    0.21557895
+                    - 0.41663158 * Math.Cos(phase)
+                    + 0.277263158 * Math.Cos(2.0 * phase)
+                    - 0.083578947 * Math.Cos(3.0 * phase)
+                    + 0.006947368 * Math.Cos(4.0 * phase),
+                _ => 0.5 - 0.5 * Math.Cos(phase)
+            };
+        }
+
         public static double[] TukeyWindow(int window, double leftTukeyWindow, double rightTukeyWindow)
         {
             double[] windowFunction = new double[window];

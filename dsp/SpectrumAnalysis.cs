@@ -8,6 +8,7 @@ namespace Resonalyze.Dsp;
 /// </summary>
 public static class SpectrumAnalysis
 {
+
     /// <summary>
     /// Computes the single-sided power spectrum of a Hann-windowed block.
     /// The result is normalized by the window's coherent gain so the level of a
@@ -19,7 +20,9 @@ public static class SpectrumAnalysis
     /// noise power simultaneously. Averaging in the power domain still removes
     /// the downward bias of magnitude averaging for noise-like signals.
     /// </summary>
-    public static double[] ComputePowerSpectrum(IReadOnlyList<float> samples)
+    public static double[] ComputePowerSpectrum(
+        IReadOnlyList<float> samples,
+        WindowType windowType = WindowType.Hann)
     {
         ArgumentNullException.ThrowIfNull(samples);
         if (samples.Count == 0)
@@ -28,13 +31,13 @@ public static class SpectrumAnalysis
         }
 
         int length = samples.Count;
+        double[] window = Windowing.CreateAnalysisWindow(windowType, length);
         var spectrum = new Complex[length];
         double windowSum = 0.0;
         for (int i = 0; i < length; i++)
         {
-            double window = HannWindow(i, length);
-            windowSum += window;
-            spectrum[i] = new Complex(samples[i] * window, 0.0);
+            windowSum += window[i];
+            spectrum[i] = new Complex(samples[i] * window[i], 0.0);
         }
 
         Fourier.Forward(spectrum, FourierOptions.Matlab);
@@ -65,7 +68,8 @@ public static class SpectrumAnalysis
 
     public static TransferSpectrumFrame ComputeTransferSpectrumFrame(
         IReadOnlyList<float> reference,
-        IReadOnlyList<float> target)
+        IReadOnlyList<float> target,
+        WindowType windowType = WindowType.Hann)
     {
         ArgumentNullException.ThrowIfNull(reference);
         ArgumentNullException.ThrowIfNull(target);
@@ -78,13 +82,13 @@ public static class SpectrumAnalysis
             throw new ArgumentException("Samples must not be empty.", nameof(reference));
         }
 
+        double[] window = Windowing.CreateAnalysisWindow(windowType, reference.Count);
         var referenceSpectrum = new Complex[reference.Count];
         var targetSpectrum = new Complex[target.Count];
         for (int i = 0; i < reference.Count; i++)
         {
-            double window = HannWindow(i, reference.Count);
-            referenceSpectrum[i] = new Complex(reference[i] * window, 0.0);
-            targetSpectrum[i] = new Complex(target[i] * window, 0.0);
+            referenceSpectrum[i] = new Complex(reference[i] * window[i], 0.0);
+            targetSpectrum[i] = new Complex(target[i] * window[i], 0.0);
         }
 
         Fourier.Forward(referenceSpectrum, FourierOptions.Matlab);
@@ -172,16 +176,6 @@ public static class SpectrumAnalysis
         }
 
         return magnitudes;
-    }
-
-    private static double HannWindow(int index, int length)
-    {
-        if (length == 1)
-        {
-            return 1.0;
-        }
-
-        return 0.5 - 0.5 * Math.Cos(2.0 * Math.PI * index / (length - 1));
     }
 }
 

@@ -23,8 +23,14 @@ internal sealed class LiveSpectrumController : IDisposable
     private readonly LiveSpectrumOptions liveSpectrumOptions;
     private const string LiveSpectrumTag = "live-spectrum:primary";
     private const string LiveSpectrumCoherenceTag = "live-spectrum:coherence";
+    private const string LiveSpectrumPeakHoldTag = "live-spectrum:peak-hold";
+    private const string OverloadAnnotationTag = "live-spectrum:overload";
+    private const long PeakHoldSuppressionMs = 1000;
     private bool disposed;
     private bool redrawInProgress;
+    private double[]? peakHoldMagnitude;
+    private long peakHoldResumeTick;
+    private LiveSpectrumSnapshot? lastSnapshot;
 
     public LiveSpectrumController(
         Form owner,
@@ -62,6 +68,24 @@ internal sealed class LiveSpectrumController : IDisposable
 
     public bool InProgress => measurement.InProgress;
     public bool TimerEnabled => timer.Enabled;
+
+    /// <summary>
+    /// Clears the running average and peak-hold envelope without interrupting
+    /// capture. Useful for the Infinite averaging preset.
+    /// </summary>
+    public void ResetAverage()
+    {
+        measurement.ResetAccumulation();
+        SuspendPeakHold();
+    }
+
+    // Pauses peak-hold tracking briefly so the noisy first frames captured while
+    // the average ramps up from zero are not latched into the envelope.
+    private void SuspendPeakHold()
+    {
+        peakHoldMagnitude = null;
+        peakHoldResumeTick = Environment.TickCount64 + PeakHoldSuppressionMs;
+    }
 
     public async Task ReconfigureFromAsync(
         MeasurementSettingsFile.SweepMeasurementSettings measurementSettings)
@@ -124,6 +148,40 @@ internal sealed class LiveSpectrumController : IDisposable
         updatePlotLabels();
     }
 
+    /// <summary>
+    /// Rebuilds the plot from the last displayed snapshot when the user returns
+    /// to the Live Spectrum mode without restarting, so the curve, peak hold and
+    /// overlays that were on screen reappear instead of an empty plot.
+    /// </summary>
+    /// <summary>
+    /// Discards the remembered curve and peak-hold envelope so they are not
+    /// restored after the plot is cleared.
+    /// </summary>
+    public void ForgetLastCurve()
+    {
+        lastSnapshot = null;
+        peakHoldMagnitude = null;
+    }
+
+    public void RestoreLastCurve()
+    {
+        if (measurement.InProgress)
+        {
+            return;
+        }
+
+        PlotModel model = plotModelFactory.CreateLiveSpectrum();
+        if (lastSnapshot != null)
+        {
+            AddLiveSpectrumSeries(model, lastSnapshot);
+        }
+
+        plotView.Model = model;
+        updateOverlayAvailability();
+        overlayCollection.Show(getCurrentMode());
+        updatePlotLabels();
+    }
+
     public void Dispose()
     {
         if (disposed)
@@ -159,6 +217,8 @@ internal sealed class LiveSpectrumController : IDisposable
             return;
         }
 
+        SuspendPeakHold();
+        lastSnapshot = null;
         plotView.Model = plotModelFactory.CreateLiveSpectrum();
         overlaysPanel.Enabled = false;
         overlayCollection.Show(getCurrentMode());
@@ -176,6 +236,7 @@ internal sealed class LiveSpectrumController : IDisposable
         timer.Stop();
         await measurement.AbortAsync();
 
+        lastSnapshot = finalSnapshot ?? lastSnapshot;
         PlotModel model = plotModelFactory.CreateLiveSpectrum();
         if (finalSnapshot != null)
         {
@@ -211,8 +272,10 @@ internal sealed class LiveSpectrumController : IDisposable
                 return;
             }
 
+            lastSnapshot = snapshot;
             RemoveLiveSpectrumSeries(model);
             AddLiveSpectrumSeries(model, snapshot);
+            UpdateOverloadAnnotation(model);
             model.InvalidatePlot(true);
             updatePlotLabels();
         }
@@ -224,11 +287,39 @@ internal sealed class LiveSpectrumController : IDisposable
 
     private void AddLiveSpectrumSeries(PlotModel model, LiveSpectrumSnapshot snapshot)
     {
-        LineSeries series = plotModelFactory.BuildNoiseSeries(snapshot.Magnitude);
-        series.Tag = LiveSpectrumTag;
-        model.Series.Add(series);
+        if (liveSpectrumOptions.PeakHold)
+        {
+            UpdatePeakHold(snapshot.Magnitude);
+            if (peakHoldMagnitude != null)
+            {
+                LineSeries peakHoldSeries =
+                    plotModelFactory.BuildPeakHoldSeries(peakHoldMagnitude);
+                peakHoldSeries.Tag = LiveSpectrumPeakHoldTag;
+                model.Series.Add(peakHoldSeries);
+            }
+        }
 
-        if (snapshot.Coherence != null)
+        if (snapshot.Coherence != null &&
+            liveSpectrumOptions.CoherenceThresholdPercent > 0)
+        {
+            (LineSeries trusted, LineSeries untrusted) =
+                plotModelFactory.BuildNoiseSeriesSegmented(
+                    snapshot.Magnitude,
+                    snapshot.Coherence,
+                    liveSpectrumOptions.CoherenceThresholdPercent);
+            untrusted.Tag = LiveSpectrumTag;
+            trusted.Tag = LiveSpectrumTag;
+            model.Series.Add(untrusted);
+            model.Series.Add(trusted);
+        }
+        else
+        {
+            LineSeries series = plotModelFactory.BuildNoiseSeries(snapshot.Magnitude);
+            series.Tag = LiveSpectrumTag;
+            model.Series.Add(series);
+        }
+
+        if (snapshot.Coherence != null && liveSpectrumOptions.ShowCoherence)
         {
             LineSeries coherenceSeries =
                 plotModelFactory.BuildCoherenceSeries(snapshot.Coherence);
@@ -237,12 +328,63 @@ internal sealed class LiveSpectrumController : IDisposable
         }
     }
 
+    private void UpdatePeakHold(double[] magnitude)
+    {
+        if (Environment.TickCount64 < peakHoldResumeTick)
+        {
+            return;
+        }
+
+        if (peakHoldMagnitude == null || peakHoldMagnitude.Length != magnitude.Length)
+        {
+            peakHoldMagnitude = (double[])magnitude.Clone();
+            return;
+        }
+
+        for (int i = 0; i < peakHoldMagnitude.Length; i++)
+        {
+            if (magnitude[i] > peakHoldMagnitude[i])
+            {
+                peakHoldMagnitude[i] = magnitude[i];
+            }
+        }
+    }
+
+    private void UpdateOverloadAnnotation(PlotModel model)
+    {
+        for (int index = model.Annotations.Count - 1; index >= 0; index--)
+        {
+            if (model.Annotations[index] is OverlayTextAnnotation { Tag: OverloadAnnotationTag })
+            {
+                model.Annotations.RemoveAt(index);
+            }
+        }
+
+        if (!measurement.HasRecentDrops())
+        {
+            return;
+        }
+
+        model.Annotations.Add(new OverlayTextAnnotation
+        {
+            Tag = OverloadAnnotationTag,
+            Text = "⚠ Processing overload — frames dropped",
+            TextPosition = new DataPoint(0.5, 0),
+            TextFlowDirection = TextFlowDirection.TopDown,
+            FontSize = 12,
+            FontWeight = 700,
+            TextColor = OxyColor.FromRgb(255, 170, 0),
+            TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
+        });
+    }
+
     private static void RemoveLiveSpectrumSeries(PlotModel model)
     {
         List<OxyPlot.Series.Series> liveSpectrumSeries = model.Series
             .Where(series =>
                 Equals(series.Tag, LiveSpectrumTag) ||
-                Equals(series.Tag, LiveSpectrumCoherenceTag))
+                Equals(series.Tag, LiveSpectrumCoherenceTag) ||
+                Equals(series.Tag, LiveSpectrumPeakHoldTag))
             .ToList();
         foreach (OxyPlot.Series.Series series in liveSpectrumSeries)
         {

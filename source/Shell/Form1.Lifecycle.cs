@@ -6,10 +6,14 @@ public partial class Form1
 {
     private async void buttonClear_Click(object sender, EventArgs e)
     {
-        if (CurrentMode == Mode.LiveSpectrum &&
-            liveSpectrumController.InProgress)
+        if (CurrentMode == Mode.LiveSpectrum)
         {
-            await liveSpectrumController.AbortAsync();
+            if (liveSpectrumController.InProgress)
+            {
+                await liveSpectrumController.AbortAsync();
+            }
+
+            liveSpectrumController.ForgetLastCurve();
         }
 
         overlayCollection.HideAll();

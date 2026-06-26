@@ -95,6 +95,68 @@ public sealed class SpectrumAnalysisTests
         Assert.Equal((double)length * length, power[0], precision: 3);
     }
 
+    [Theory]
+    [InlineData(WindowType.Hann)]
+    [InlineData(WindowType.FlatTop)]
+    [InlineData(WindowType.BlackmanHarris)]
+    [InlineData(WindowType.Rectangular)]
+    public void ComputePowerSpectrum_DcLevelIsWindowInvariantForAllWindows(WindowType windowType)
+    {
+        const int length = 128;
+        var ones = new float[length];
+        Array.Fill(ones, 1.0f);
+
+        double[] power = SpectrumAnalysis.ComputePowerSpectrum(ones, windowType);
+
+        // Coherent-gain normalization cancels the window sum, so DC always
+        // reads the rectangular-equivalent level regardless of window.
+        Assert.Equal((double)length * length, power[0], precision: 3);
+    }
+
+    [Fact]
+    public void CreateWindow_RectangularIsUnity()
+    {
+        double[] window = Windowing.CreateAnalysisWindow(WindowType.Rectangular, 16);
+
+        Assert.All(window, value => Assert.Equal(1.0, value, precision: 12));
+    }
+
+    [Fact]
+    public void CreateWindow_HannHasZeroEndpointsAndUnityCenter()
+    {
+        double[] window = Windowing.CreateAnalysisWindow(WindowType.Hann, 65);
+
+        Assert.Equal(0.0, window[0], precision: 9);
+        Assert.Equal(0.0, window[^1], precision: 9);
+        Assert.Equal(1.0, window[32], precision: 9);
+    }
+
+    [Theory]
+    [InlineData(WindowType.FlatTop)]
+    [InlineData(WindowType.BlackmanHarris)]
+    public void ComputePowerSpectrum_PeaksAtToneBinForWindow(WindowType windowType)
+    {
+        const int length = 512;
+        const int bin = 40;
+
+        double[] power = SpectrumAnalysis.ComputePowerSpectrum(
+            CreateSine(length, bin),
+            windowType);
+
+        int peakBin = 0;
+        double peak = double.NegativeInfinity;
+        for (int i = 1; i < power.Length; i++)
+        {
+            if (power[i] > peak)
+            {
+                peak = power[i];
+                peakBin = i;
+            }
+        }
+
+        Assert.Equal(bin, peakBin);
+    }
+
     [Fact]
     public void ComputePowerSpectrum_PeaksAtToneBin()
     {

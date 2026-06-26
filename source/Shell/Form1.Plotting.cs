@@ -18,6 +18,18 @@ public partial class Form1
             return;
         }
 
+        if (descriptor.Mode == Mode.LiveSpectrum)
+        {
+            // While running, the live timer owns the plot. When idle, restore the
+            // last curve, peak hold and overlays instead of an empty plot.
+            if (!liveSpectrumController.InProgress)
+            {
+                liveSpectrumController.RestoreLastCurve();
+            }
+            UpdateClearButtonState();
+            return;
+        }
+
         bool shouldIncludeCurves = includeCurves && descriptor.SupportsCurveDrawing;
         ShowPlotModel(
             descriptor.CreatePlotModel(shouldIncludeCurves),

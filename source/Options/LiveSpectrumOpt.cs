@@ -1,3 +1,5 @@
+using Resonalyze.Dsp;
+
 namespace Resonalyze.Options
 {
     public partial class LiveSpectrumOpt : Form
@@ -5,12 +7,20 @@ namespace Resonalyze.Options
         private static readonly int[] SequenceLengths =
             { 256, 512, 1024, 2048, 4096, 8192, 16384 };
         private static readonly int[] OverlapPercents = { 0, 50, 75 };
+        private static readonly int[] CoherenceLimits = { 0, 10, 20, 25, 30, 40, 50 };
         private readonly ToolTip toolTip = new();
+
+        /// <summary>
+        /// Raised when the user clicks Reset Average. Handled live (without an
+        /// Apply / restart) so the Infinite averaging preset can be cleared.
+        /// </summary>
+        public event Action? ResetAverageRequested;
 
         public LiveSpectrumOpt()
         {
             InitializeComponent();
             SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
+            buttonResetAverage.Click += (_, _) => ResetAverageRequested?.Invoke();
             InitializeToolTips();
             FormClosed += (_, _) => toolTip.Dispose();
         }
@@ -44,6 +54,35 @@ namespace Resonalyze.Options
             comboSmoothingInverseOctaves.SelectedItem =
                 SmoothingPresetOptions.Normalize(options.SmoothingInverseOctaves);
 
+            windowComboBox.Items.Clear();
+            windowComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            windowComboBox.Items.Add(new WindowOption(WindowType.Hann, "Hann"));
+            windowComboBox.Items.Add(new WindowOption(WindowType.FlatTop, "Flat Top"));
+            windowComboBox.Items.Add(
+                new WindowOption(WindowType.BlackmanHarris, "Blackman-Harris"));
+            windowComboBox.Items.Add(
+                new WindowOption(WindowType.Rectangular, "Rectangular"));
+            windowComboBox.SelectedIndex = FindWindowIndex(options.WindowType);
+
+            averagingComboBox.Items.Clear();
+            averagingComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            averagingComboBox.Items.Add(new AveragingOption(AveragingSpeed.Fast, "Fast"));
+            averagingComboBox.Items.Add(new AveragingOption(AveragingSpeed.Medium, "Medium"));
+            averagingComboBox.Items.Add(new AveragingOption(AveragingSpeed.Slow, "Slow"));
+            averagingComboBox.Items.Add(
+                new AveragingOption(AveragingSpeed.Infinite, "Infinite"));
+            averagingComboBox.SelectedIndex = FindAveragingIndex(options.AveragingSpeed);
+
+            coherenceLimitComboBox.Items.Clear();
+            foreach (int limit in CoherenceLimits)
+            {
+                coherenceLimitComboBox.Items.Add(new CoherenceLimitOption(limit));
+            }
+            coherenceLimitComboBox.SelectedIndex =
+                FindCoherenceLimitIndex(options.CoherenceThresholdPercent);
+
+            checkPeakHold.Checked = options.PeakHold;
+            checkCoherence.Checked = options.ShowCoherence;
             checkUseCalibration.Checked = options.UseCalibration;
         }
 
@@ -64,6 +103,103 @@ namespace Resonalyze.Options
                 comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
                     ? inverseOctaves
                     : SmoothingPresetOptions.SupportedInverseOctaves[0];
+            options.WindowType = windowComboBox.SelectedItem is WindowOption windowOption
+                ? windowOption.WindowType
+                : WindowType.Hann;
+            options.AveragingSpeed =
+                averagingComboBox.SelectedItem is AveragingOption averagingOption
+                    ? averagingOption.Speed
+                    : AveragingSpeed.Medium;
+            options.PeakHold = checkPeakHold.Checked;
+            options.ShowCoherence = checkCoherence.Checked;
+            options.CoherenceThresholdPercent =
+                coherenceLimitComboBox.SelectedItem is CoherenceLimitOption limitOption
+                    ? limitOption.Percent
+                    : CoherenceLimits[0];
+        }
+
+        private static int FindCoherenceLimitIndex(int thresholdPercent)
+        {
+            int normalizedIndex = 0;
+            for (int index = 0; index < CoherenceLimits.Length; index++)
+            {
+                if (thresholdPercent >= CoherenceLimits[index])
+                {
+                    normalizedIndex = index;
+                }
+            }
+
+            return normalizedIndex;
+        }
+
+        private sealed class CoherenceLimitOption
+        {
+            public CoherenceLimitOption(int percent)
+            {
+                Percent = percent;
+            }
+
+            public int Percent { get; }
+
+            public override string ToString() => Percent == 0 ? "Off" : $"{Percent}%";
+        }
+
+        private int FindWindowIndex(WindowType windowType)
+        {
+            for (int index = 0; index < windowComboBox.Items.Count; index++)
+            {
+                if (windowComboBox.Items[index] is WindowOption option &&
+                    option.WindowType == windowType)
+                {
+                    return index;
+                }
+            }
+
+            return 0;
+        }
+
+        private int FindAveragingIndex(AveragingSpeed speed)
+        {
+            for (int index = 0; index < averagingComboBox.Items.Count; index++)
+            {
+                if (averagingComboBox.Items[index] is AveragingOption option &&
+                    option.Speed == speed)
+                {
+                    return index;
+                }
+            }
+
+            return 0;
+        }
+
+        private sealed class WindowOption
+        {
+            public WindowOption(WindowType windowType, string displayName)
+            {
+                WindowType = windowType;
+                DisplayName = displayName;
+            }
+
+            public WindowType WindowType { get; }
+
+            public string DisplayName { get; }
+
+            public override string ToString() => DisplayName;
+        }
+
+        private sealed class AveragingOption
+        {
+            public AveragingOption(AveragingSpeed speed, string displayName)
+            {
+                Speed = speed;
+                DisplayName = displayName;
+            }
+
+            public AveragingSpeed Speed { get; }
+
+            public string DisplayName { get; }
+
+            public override string ToString() => DisplayName;
         }
 
         private static int FindOverlapIndex(int overlapPercent)
@@ -155,6 +291,24 @@ namespace Resonalyze.Options
             toolTip.SetToolTip(
                 comboSmoothingInverseOctaves,
                 "Applies fractional-octave smoothing to the displayed Live Spectrum curve.");
+            toolTip.SetToolTip(
+                windowComboBox,
+                "Analysis window applied before the FFT. Hann is a good default; Flat Top maximizes amplitude accuracy; Blackman-Harris suppresses spectral leakage; Rectangular leaves the block unwindowed.");
+            toolTip.SetToolTip(
+                averagingComboBox,
+                "Averaging speed. Fast/Medium/Slow set the exponential time constant; Infinite integrates indefinitely until you reset it.");
+            toolTip.SetToolTip(
+                checkPeakHold,
+                "Overlays a peak-hold envelope that retains the maximum level seen on the curve until reset.");
+            toolTip.SetToolTip(
+                checkCoherence,
+                "Shows the coherence (γ²) curve on a 0-to-1 axis in Transfer Function mode.");
+            toolTip.SetToolTip(
+                coherenceLimitComboBox,
+                "Frequencies whose coherence falls below this limit are drawn dimmed and dashed to flag where the transfer function is unreliable. Off disables the marking.");
+            toolTip.SetToolTip(
+                buttonResetAverage,
+                "Clears the running average and peak-hold envelope without restarting the measurement.");
             toolTip.SetToolTip(
                 checkUseCalibration,
                 "Applies the loaded microphone calibration file to Live Spectrum.");

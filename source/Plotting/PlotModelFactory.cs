@@ -276,7 +276,8 @@ internal sealed class PlotModelFactory
 
         PlotModelStyle.AddFrequencyAxis(model);
         PlotModelStyle.AddDecibelAxis(model);
-        if (liveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction)
+        if (liveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction &&
+            liveSpectrumOptions.ShowCoherence)
         {
             model.Axes.Add(new LinearAxis
             {
@@ -299,23 +300,53 @@ internal sealed class PlotModelFactory
 
     public LineSeries BuildNoiseSeries(double[] accumulatedData)
     {
+        var series = new LineSeries
+        {
+            Color = OxyColor.FromRgb(255, 0, 127),
+            Title = liveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction
+                ? "Live Transfer Function"
+                : "Live Spectrum",
+            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
+        };
+        series.Points.AddRange(
+            OxyPlotAdapter.ToDataPoints(ResampleLiveSpectrumMagnitude(accumulatedData)));
+        return series;
+    }
+
+    public LineSeries BuildPeakHoldSeries(double[] peakHoldData)
+    {
+        var series = new LineSeries
+        {
+            Color = OxyColor.FromAColor(170, OxyColor.FromRgb(255, 196, 0)),
+            LineStyle = LineStyle.Solid,
+            StrokeThickness = 1.0,
+            Title = "Peak Hold",
+            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
+        };
+        series.Points.AddRange(
+            OxyPlotAdapter.ToDataPoints(ResampleLiveSpectrumMagnitude(peakHoldData)));
+        return series;
+    }
+
+    private List<SignalPoint> ResampleLiveSpectrumMagnitude(double[] magnitude)
+    {
         int length = noiseMeasurement.SequenceLength;
-        int binCount = Math.Min(length / 2, accumulatedData.Length);
+        int binCount = Math.Min(length / 2, magnitude.Length);
         List<DataPoint> data = new(binCount);
 
         for (int i = 1; i < binCount; i++)
         {
             double frequency =
                 i * ((double)noiseMeasurement.SampleRate / length);
-            double decibels = DataHelper.AmplitudeToDecibels(accumulatedData[i]);
+            double decibels = DataHelper.AmplitudeToDecibels(magnitude[i]);
             if (liveSpectrumOptions.Mode == LiveSpectrumMode.InputSpectrum)
             {
-                decibels -= 21.0;
+                decibels -= 27.0;
             }
             data.Add(new DataPoint(frequency, decibels));
         }
 
-        List<SignalPoint> resampled = DataHelper.LogarithmicResample(
+        return DataHelper.LogarithmicResample(
             OxyPlotAdapter.ToSignalPoints(data),
             20,
             20000,
@@ -324,19 +355,79 @@ internal sealed class PlotModelFactory
             liveSpectrumOptions.SmoothingInverseOctaves > 0
                 ? 1.0 / liveSpectrumOptions.SmoothingInverseOctaves
                 : 0.0);
-        var series = new LineSeries
-        {
-            Color = OxyColor.FromRgb(255, 0, 127),
-            Title = liveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction
-                ? "Live Transfer Function"
-                : "Live Spectrum"
-        };
-        series.Points.AddRange(OxyPlotAdapter.ToDataPoints(resampled));
-        series.TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB";
-        return series;
     }
 
     public LineSeries BuildCoherenceSeries(double[] coherence)
+    {
+        var series = new LineSeries
+        {
+            Color = OxyColor.FromAColor(150, OxyColor.FromRgb(90, 200, 140)),
+            Title = "Coherence",
+            YAxisKey = CoherenceAxisKey,
+            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} γ²"
+        };
+        foreach (SignalPoint point in ResampleCoherence(coherence))
+        {
+            series.Points.Add(new DataPoint(point.X, point.Y));
+        }
+
+        return series;
+    }
+
+    /// <summary>
+    /// Builds the transfer-function curve split into a trusted segment (drawn
+    /// normally) and a low-coherence segment (dimmed and dashed) so the user can
+    /// see which frequencies are not reliable. Segments share their boundary
+    /// points so the two lines join seamlessly.
+    /// </summary>
+    public (LineSeries Trusted, LineSeries Untrusted) BuildNoiseSeriesSegmented(
+        double[] magnitude,
+        double[] coherence,
+        int thresholdPercent)
+    {
+        List<SignalPoint> magnitudePoints = ResampleLiveSpectrumMagnitude(magnitude);
+        List<SignalPoint> coherencePoints = ResampleCoherence(coherence);
+        int count = Math.Min(magnitudePoints.Count, coherencePoints.Count);
+        double threshold = thresholdPercent / 100.0;
+
+        var trusted = new LineSeries
+        {
+            Color = OxyColor.FromRgb(255, 0, 127),
+            Title = "Live Transfer Function",
+            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
+        };
+        var untrusted = new LineSeries
+        {
+            Color = OxyColor.FromAColor(140, OxyColor.FromRgb(170, 170, 170)),
+            LineStyle = LineStyle.Dash,
+            StrokeThickness = 1.0,
+            Title = "Low coherence",
+            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
+        };
+
+        bool IsTrusted(int index) => coherencePoints[index].Y >= threshold;
+
+        for (int i = 0; i < count; i++)
+        {
+            bool trustedHere = IsTrusted(i);
+            bool boundary =
+                (i > 0 && IsTrusted(i - 1) != trustedHere) ||
+                (i < count - 1 && IsTrusted(i + 1) != trustedHere);
+            double frequency = magnitudePoints[i].X;
+            double decibels = magnitudePoints[i].Y;
+
+            trusted.Points.Add(new DataPoint(
+                frequency,
+                trustedHere || boundary ? decibels : double.NaN));
+            untrusted.Points.Add(new DataPoint(
+                frequency,
+                !trustedHere || boundary ? decibels : double.NaN));
+        }
+
+        return (trusted, untrusted);
+    }
+
+    private List<SignalPoint> ResampleCoherence(double[] coherence)
     {
         int length = noiseMeasurement.SequenceLength;
         int binCount = Math.Min(length / 2, coherence.Length);
@@ -359,22 +450,17 @@ internal sealed class PlotModelFactory
                 ? 1.0 / liveSpectrumOptions.SmoothingInverseOctaves
                 : 0.0,
             dBUnpack: false);
-        var series = new LineSeries
-        {
-            Color = OxyColor.FromAColor(150, OxyColor.FromRgb(90, 200, 140)),
-            Title = "Coherence",
-            YAxisKey = CoherenceAxisKey
-        };
+
         // The Lanczos resampling kernel has negative lobes, so it can overshoot
         // past the physical [0, 1] range of coherence at sharp transitions.
-        foreach (SignalPoint point in resampled)
+        for (int i = 0; i < resampled.Count; i++)
         {
-            series.Points.Add(new DataPoint(
-                point.X,
-                Math.Clamp(point.Y, 0.0, 1.0)));
+            resampled[i] = new SignalPoint(
+                resampled[i].X,
+                Math.Clamp(resampled[i].Y, 0.0, 1.0));
         }
-        series.TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} γ²";
-        return series;
+
+        return resampled;
     }
 
     private static void AddLineSeries(

@@ -296,6 +296,11 @@ internal sealed class MeasurementSettingsFile
         public int SequenceLength { get; set; } = 2048;
         public int OverlapPercent { get; set; } = 50;
         public int SmoothingInverseOctaves { get; set; } = 6;
+        public WindowType WindowType { get; set; } = WindowType.Hann;
+        public AveragingSpeed AveragingSpeed { get; set; } = AveragingSpeed.Medium;
+        public bool PeakHold { get; set; }
+        public bool ShowCoherence { get; set; } = true;
+        public int CoherenceThresholdPercent { get; set; } = 25;
 
         public static LiveSpectrumSettings Capture(
             LiveSpectrumOptions options) =>
@@ -308,7 +313,17 @@ internal sealed class MeasurementSettingsFile
                 SequenceLength = NormalizeSequenceLength(options.SequenceLength),
                 OverlapPercent = NormalizeOverlapPercent(options.OverlapPercent),
                 SmoothingInverseOctaves =
-                    SmoothingPresetOptions.Normalize(options.SmoothingInverseOctaves)
+                    SmoothingPresetOptions.Normalize(options.SmoothingInverseOctaves),
+                WindowType = Enum.IsDefined(options.WindowType)
+                    ? options.WindowType
+                    : WindowType.Hann,
+                AveragingSpeed = Enum.IsDefined(options.AveragingSpeed)
+                    ? options.AveragingSpeed
+                    : AveragingSpeed.Medium,
+                PeakHold = options.PeakHold,
+                ShowCoherence = options.ShowCoherence,
+                CoherenceThresholdPercent =
+                    NormalizeCoherenceThreshold(options.CoherenceThresholdPercent)
             };
 
         public void ApplyTo(LiveSpectrumOptions options)
@@ -321,7 +336,20 @@ internal sealed class MeasurementSettingsFile
             options.OverlapPercent = NormalizeOverlapPercent(OverlapPercent);
             options.SmoothingInverseOctaves =
                 SmoothingPresetOptions.Normalize(SmoothingInverseOctaves);
+            options.WindowType = Enum.IsDefined(WindowType)
+                ? WindowType
+                : WindowType.Hann;
+            options.AveragingSpeed = Enum.IsDefined(AveragingSpeed)
+                ? AveragingSpeed
+                : AveragingSpeed.Medium;
+            options.PeakHold = PeakHold;
+            options.ShowCoherence = ShowCoherence;
+            options.CoherenceThresholdPercent =
+                NormalizeCoherenceThreshold(CoherenceThresholdPercent);
         }
+
+        private static int NormalizeCoherenceThreshold(int thresholdPercent) =>
+            Math.Clamp(thresholdPercent, 0, 95);
 
         private static int NormalizeOverlapPercent(int overlapPercent)
         {

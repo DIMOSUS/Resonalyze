@@ -24,16 +24,13 @@ namespace Resonalyze
         private double inputAttackAlpha = 1.0;
         private double inputReleaseAlpha = 1.0;
         private double transferAlpha = 1.0;
+        private bool infiniteAveraging;
+        private int averagedFrameCount;
         private int sequencesCounter;
+        private long lastDropTickMs;
+        private int droppedFrameTotal;
         private volatile bool inProgress;
         private bool disposed;
-
-        // Smoothing time constants (seconds). The per-frame EMA coefficient is
-        // derived from these and the actual frame interval so the displayed
-        // smoothing stays consistent regardless of overlap and sequence length.
-        private const double InputAttackSeconds = 0.15;
-        private const double InputReleaseSeconds = 1.0;
-        private const double TransferSmoothingSeconds = 1.0;
 
         public event Action<bool>? Completed;
         internal event Action<InputLevelMeterSnapshot>? LevelsAvailable;
@@ -147,7 +144,10 @@ namespace Resonalyze
                     accumulatedReferencePowerSpectrum = null;
                     accumulatedTargetPowerSpectrum = null;
                     sequencesCounter = 0;
+                    averagedFrameCount = 0;
                 }
+                Interlocked.Exchange(ref lastDropTickMs, 0);
+                Interlocked.Exchange(ref droppedFrameTotal, 0);
 
                 cancellationTokenSource?.Dispose();
                 cancellationTokenSource = new CancellationTokenSource();
@@ -246,6 +246,53 @@ namespace Resonalyze
             return Math.Clamp(1.0 - Math.Exp(-frameInterval / timeConstant), 1e-6, 1.0);
         }
 
+        // Attack/release time constants for the input spectrum and the single
+        // smoothing constant for the transfer function, in seconds.
+        private static (double Attack, double Release, double Transfer)
+            GetAveragingTimeConstants(AveragingSpeed speed) => speed switch
+            {
+                AveragingSpeed.Fast => (0.05, 0.3, 0.3),
+                AveragingSpeed.Slow => (0.5, 3.0, 3.0),
+                AveragingSpeed.Infinite => (0.0, 0.0, 0.0),
+                _ => (0.15, 1.0, 1.0)
+            };
+
+        /// <summary>
+        /// Clears the running average and peak state without stopping capture,
+        /// so the analyzer starts integrating from scratch. Safe to call from
+        /// the UI thread while a measurement is active.
+        /// </summary>
+        public void ResetAccumulation()
+        {
+            lock (dataSync)
+            {
+                accumulatedPowerSpectrum = null;
+                accumulatedCrossSpectrum = null;
+                accumulatedReferencePowerSpectrum = null;
+                accumulatedTargetPowerSpectrum = null;
+                sequencesCounter = 0;
+                averagedFrameCount = 0;
+            }
+        }
+
+        /// <summary>
+        /// True when capture blocks were dropped within the given window because
+        /// the processing pipeline could not keep up (a CPU-overload signal).
+        /// </summary>
+        public bool HasRecentDrops(int windowMilliseconds = 1000)
+        {
+            long lastDrop = Interlocked.Read(ref lastDropTickMs);
+            return inProgress &&
+                lastDrop != 0 &&
+                Environment.TickCount64 - lastDrop < windowMilliseconds;
+        }
+
+        private void OnSequenceDropped(float[][] dropped)
+        {
+            Interlocked.Increment(ref droppedFrameTotal);
+            Interlocked.Exchange(ref lastDropTickMs, Environment.TickCount64);
+        }
+
         private async Task<bool> RunCoreAsync(CancellationToken cancellationToken)
         {
             NoiseSignal noiseSignal = signal!;
@@ -259,13 +306,17 @@ namespace Resonalyze
                     SingleWriter = true,
                     AllowSynchronousContinuations = false,
                     FullMode = BoundedChannelFullMode.DropOldest
-                });
+                },
+                OnSequenceDropped);
             Volatile.Write(ref sequenceWriter, sequenceChannel.Writer);
             int hopSize = ComputeHopSize();
             double frameInterval = SampleRate > 0 ? (double)hopSize / SampleRate : 0.0;
-            inputAttackAlpha = AlphaFromTimeConstant(frameInterval, InputAttackSeconds);
-            inputReleaseAlpha = AlphaFromTimeConstant(frameInterval, InputReleaseSeconds);
-            transferAlpha = AlphaFromTimeConstant(frameInterval, TransferSmoothingSeconds);
+            (double attackSeconds, double releaseSeconds, double transferSeconds) =
+                GetAveragingTimeConstants(LiveSpectrumOptions.AveragingSpeed);
+            infiniteAveraging = LiveSpectrumOptions.AveragingSpeed == AveragingSpeed.Infinite;
+            inputAttackAlpha = AlphaFromTimeConstant(frameInterval, attackSeconds);
+            inputReleaseAlpha = AlphaFromTimeConstant(frameInterval, releaseSeconds);
+            transferAlpha = AlphaFromTimeConstant(frameInterval, transferSeconds);
             var reframer = new OverlapReframer(SequenceLength, hopSize);
             Task processingTask = ProcessSequencesAsync(
                 sequenceChannel.Reader,
@@ -506,33 +557,46 @@ namespace Resonalyze
 
         private void AccumulatePowerSpectrum(float[][] sequence)
         {
-            double[] power =
-                SpectrumAnalysis.ComputePowerSpectrum(sequence[GetMicrophoneSequenceIndex()]);
+            double[] power = SpectrumAnalysis.ComputePowerSpectrum(
+                sequence[GetMicrophoneSequenceIndex()],
+                LiveSpectrumOptions.WindowType);
 
             lock (dataSync)
             {
                 if (accumulatedPowerSpectrum == null)
                 {
-                    if (sequencesCounter > 2)
+                    if (sequencesCounter <= 2)
                     {
-                        accumulatedPowerSpectrum = power;
+                        // Discard the first frames so the device can settle.
+                        sequencesCounter++;
+                        return;
                     }
+
+                    // Seed with zeros (not the first raw frame) so the curve
+                    // rises from the bottom instead of snapping to a noisy
+                    // instantaneous spectrum. The zero baseline counts as the
+                    // first sample of the cumulative average.
+                    accumulatedPowerSpectrum = new double[power.Length];
+                    averagedFrameCount = 1;
                 }
-                else
+
+                double cumulativeAlpha = 1.0 / (averagedFrameCount + 1);
+                for (int i = 0; i < accumulatedPowerSpectrum.Length; i++)
                 {
-                    for (int i = 0; i < accumulatedPowerSpectrum.Length; i++)
-                    {
-                        double history = accumulatedPowerSpectrum[i];
-                        // Attack/release: rise quickly toward louder energy,
-                        // decay slowly when it falls. Both coefficients are
-                        // already normalized to wall-clock time.
-                        double alpha = power[i] > history
+                    double history = accumulatedPowerSpectrum[i];
+                    // Infinite mode is a true cumulative mean; otherwise
+                    // attack/release rises quickly toward louder energy and
+                    // decays slowly, with both coefficients normalized to
+                    // wall-clock time.
+                    double alpha = infiniteAveraging
+                        ? cumulativeAlpha
+                        : power[i] > history
                             ? inputAttackAlpha
                             : inputReleaseAlpha;
-                        accumulatedPowerSpectrum[i] =
-                            (1 - alpha) * history + alpha * power[i];
-                    }
+                    accumulatedPowerSpectrum[i] =
+                        (1 - alpha) * history + alpha * power[i];
                 }
+                averagedFrameCount++;
                 sequencesCounter++;
             }
         }
@@ -547,32 +611,37 @@ namespace Resonalyze
                     accumulatedReferencePowerSpectrum == null ||
                     accumulatedTargetPowerSpectrum == null)
                 {
-                    if (sequencesCounter > 2)
+                    if (sequencesCounter <= 2)
                     {
-                        accumulatedCrossSpectrum = frame.CrossSpectrum.ToArray();
-                        accumulatedReferencePowerSpectrum =
-                            frame.ReferencePowerSpectrum.ToArray();
-                        accumulatedTargetPowerSpectrum =
-                            frame.TargetPowerSpectrum.ToArray();
+                        // Discard the first frames so the device can settle.
+                        sequencesCounter++;
+                        return;
                     }
-                }
-                else
-                {
-                    double alpha = transferAlpha;
-                    for (int i = 0; i < accumulatedCrossSpectrum.Length; i++)
-                    {
-                        accumulatedCrossSpectrum[i] =
-                            (1 - alpha) * accumulatedCrossSpectrum[i] +
-                            alpha * frame.CrossSpectrum[i];
-                        accumulatedReferencePowerSpectrum[i] =
-                            (1 - alpha) * accumulatedReferencePowerSpectrum[i] +
-                            alpha * frame.ReferencePowerSpectrum[i];
-                        accumulatedTargetPowerSpectrum[i] =
-                            (1 - alpha) * accumulatedTargetPowerSpectrum[i] +
-                            alpha * frame.TargetPowerSpectrum[i];
-                    }
+
+                    accumulatedCrossSpectrum = new Complex[frame.CrossSpectrum.Length];
+                    accumulatedReferencePowerSpectrum =
+                        new double[frame.ReferencePowerSpectrum.Length];
+                    accumulatedTargetPowerSpectrum =
+                        new double[frame.TargetPowerSpectrum.Length];
+                    averagedFrameCount = 1;
                 }
 
+                double alpha = infiniteAveraging
+                    ? 1.0 / (averagedFrameCount + 1)
+                    : transferAlpha;
+                for (int i = 0; i < accumulatedCrossSpectrum.Length; i++)
+                {
+                    accumulatedCrossSpectrum[i] =
+                        (1 - alpha) * accumulatedCrossSpectrum[i] +
+                        alpha * frame.CrossSpectrum[i];
+                    accumulatedReferencePowerSpectrum[i] =
+                        (1 - alpha) * accumulatedReferencePowerSpectrum[i] +
+                        alpha * frame.ReferencePowerSpectrum[i];
+                    accumulatedTargetPowerSpectrum[i] =
+                        (1 - alpha) * accumulatedTargetPowerSpectrum[i] +
+                        alpha * frame.TargetPowerSpectrum[i];
+                }
+                averagedFrameCount++;
                 sequencesCounter++;
             }
         }
@@ -591,7 +660,8 @@ namespace Resonalyze
 
             return SpectrumAnalysis.ComputeTransferSpectrumFrame(
                 sequence[loopbackIndex.Value],
-                sequence[microphoneIndex]);
+                sequence[microphoneIndex],
+                LiveSpectrumOptions.WindowType);
         }
 
         private int GetRequiredWaveInputChannelCount()

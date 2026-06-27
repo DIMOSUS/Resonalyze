@@ -311,6 +311,7 @@ public sealed class Overlay
     private readonly Color defaultColor;
     private readonly decimal defaultOffset;
     private readonly ContextMenuStrip captureMenu;
+    private readonly ToolStripMenuItem captureCurveMenuItem;
     private readonly ToolStripItem exportDeviationMenuItem;
 
     private OverlayKind kind = OverlayKind.Captured;
@@ -372,7 +373,9 @@ public sealed class Overlay
         defaultOffset = offsetControl.Value;
         Index = index;
 
-        captureMenu = BuildCaptureMenu(out exportDeviationMenuItem);
+        captureMenu = BuildCaptureMenu(
+            out captureCurveMenuItem,
+            out exportDeviationMenuItem);
 
         toolTip.SetToolTip(offsetControl, "Overlay vertical offset (dB)");
         toolTip.SetToolTip(checkBox, "Show / hide this overlay");
@@ -622,21 +625,49 @@ public sealed class Overlay
     }
 
     /// <summary>
-    /// Re-evaluates availability of an operation slot when its captured sources
-    /// change. Captured slots are unaffected.
+    /// Re-evaluates availability of calculated slots when their captured
+    /// sources change. Captured slots are unaffected.
     /// </summary>
     public void RefreshSources()
     {
-        if (kind != OverlayKind.Operation)
+        if (kind == OverlayKind.Operation)
         {
-            return;
+            RefreshOperationSources();
         }
+        else if (kind == OverlayKind.Target)
+        {
+            RefreshTargetSources();
+        }
+    }
 
+    private void RefreshOperationSources()
+    {
         bool wasChecked = Checked;
-        bool available = operationConfigured &&
-            TryGetSources(out _, out _);
+        bool available = operationConfigured && TryGetSources(out _, out _);
+        ApplyCalculatedAvailability(
+            available,
+            operationConfigured,
+            wasChecked);
+    }
+
+    private void RefreshTargetSources()
+    {
+        bool wasChecked = Checked;
+        bool available = targetConfigured &&
+            (targetSourceSlot == 0 || ResolveTargetSource() is { Length: > 1 });
+        ApplyCalculatedAvailability(
+            available,
+            targetConfigured,
+            wasChecked);
+    }
+
+    private void ApplyCalculatedAvailability(
+        bool available,
+        bool configured,
+        bool wasChecked)
+    {
         checkBox.Enabled = available;
-        offsetControl.Enabled = operationConfigured;
+        offsetControl.Enabled = configured;
         settingsButton.Enabled = SeriesMode != Mode.None;
 
         if (!available)
@@ -644,7 +675,6 @@ public sealed class Overlay
             Hide();
             return;
         }
-
         if (wasChecked)
         {
             Show();
@@ -666,10 +696,15 @@ public sealed class Overlay
                 .ToArray());
     }
 
-    private ContextMenuStrip BuildCaptureMenu(out ToolStripItem exportDeviationItem)
+    private ContextMenuStrip BuildCaptureMenu(
+        out ToolStripMenuItem captureCurveItem,
+        out ToolStripItem exportDeviationItem)
     {
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Capture curve…", null, (_, _) => CaptureFromPlot());
+        captureCurveItem = new ToolStripMenuItem("Capture curve…");
+        captureCurveItem.Click += CaptureCurveMenuItemClick;
+        captureCurveItem.DropDownOpening += CaptureCurveMenuItemDropDownOpening;
+        menu.Items.Add(captureCurveItem);
         menu.Items.Add("Import from text…", null, (_, _) => ImportFromText());
         menu.Items.Add("Export to text…", null, (_, _) => ExportToText());
         exportDeviationItem = menu.Items.Add(
@@ -687,6 +722,7 @@ public sealed class Overlay
 
     private void CaptureButtonClick(object? sender, EventArgs e)
     {
+        RebuildCaptureCurveMenu();
         // The deviation export only applies to a target slot, and its label
         // reflects the current deviation mode.
         exportDeviationMenuItem.Visible = kind == OverlayKind.Target;
@@ -697,26 +733,72 @@ public sealed class Overlay
         captureMenu.Show(captureButton, new Point(0, captureButton.Height));
     }
 
-    private void CaptureFromPlot()
+    private void RebuildCaptureCurveMenu()
+    {
+        captureCurveMenuItem.DropDownItems.Clear();
+
+        List<LineSeries> candidates = GetCaptureCandidates();
+        captureCurveMenuItem.Enabled = candidates.Count > 0;
+        if (candidates.Count <= 1)
+        {
+            return;
+        }
+
+        foreach (LineSeries series in candidates)
+        {
+            var item = new ToolStripMenuItem(GetCaptureCandidateTitle(series));
+            item.Click += (_, _) => CaptureSeries(series);
+            captureCurveMenuItem.DropDownItems.Add(item);
+        }
+    }
+
+    private void CaptureCurveMenuItemClick(object? sender, EventArgs e)
+    {
+        List<LineSeries> candidates = GetCaptureCandidates();
+        if (candidates.Count == 1)
+        {
+            CaptureSeries(candidates[0]);
+        }
+    }
+
+    private void CaptureCurveMenuItemDropDownOpening(object? sender, EventArgs e)
+    {
+        captureCurveMenuItem.DropDownDirection = ShouldOpenCaptureSubmenuLeft()
+            ? ToolStripDropDownDirection.Left
+            : ToolStripDropDownDirection.Right;
+    }
+
+    private bool ShouldOpenCaptureSubmenuLeft()
+    {
+        if (captureCurveMenuItem.DropDownItems.Count == 0)
+        {
+            return false;
+        }
+
+        Rectangle screen = Screen.FromControl(captureButton).WorkingArea;
+        Point menuRight = captureMenu.PointToScreen(new Point(captureMenu.Width, 0));
+        int submenuWidth = captureCurveMenuItem.DropDown.GetPreferredSize(
+            Size.Empty).Width;
+        return menuRight.X + submenuWidth > screen.Right;
+    }
+
+    private List<LineSeries> GetCaptureCandidates()
     {
         PlotModel? model = collection.PlotView.Model;
         if (model == null)
         {
-            return;
+            return [];
         }
 
-        List<LineSeries> candidates = model.Series
+        return model.Series
             .OfType<LineSeries>()
             .Where(series => series.Tag is not string tag ||
                 !tag.StartsWith("overlay:", StringComparison.Ordinal))
             .ToList();
-        int selection = SelectSeriesIndex(candidates);
-        if (selection < 0)
-        {
-            return;
-        }
+    }
 
-        LineSeries selected = candidates[selection];
+    private void CaptureSeries(LineSeries selected)
+    {
         if (selected.Points.Count < 2)
         {
             return;
@@ -736,13 +818,8 @@ public sealed class Overlay
         UpdateKindGlyph();
         UpdateDrawPoints();
 
-        try
+        if (!TrySaveCurrentState("Overlay could not be saved."))
         {
-            SaveCurrentState();
-        }
-        catch (Exception exception)
-        {
-            ShowStorageError("Overlay could not be saved.", exception);
             return;
         }
 
@@ -794,13 +871,8 @@ public sealed class Overlay
         UpdateKindGlyph();
         UpdateDrawPoints();
 
-        try
+        if (!TrySaveCurrentState("Overlay could not be saved."))
         {
-            SaveCurrentState();
-        }
-        catch (Exception exception)
-        {
-            ShowStorageError("Overlay could not be saved.", exception);
             return;
         }
 
@@ -1025,7 +1097,7 @@ public sealed class Overlay
         smoothingInverseOctaves = dialog.SmoothingInverseOctaves;
         targetConfigured = true;
 
-        SaveCurrentState();
+        TrySaveCurrentState("Overlay changes could not be saved.");
         SetAvailability(true);
         Show();
     }
@@ -1059,7 +1131,7 @@ public sealed class Overlay
         opacityPercent = dialog.OpacityPercent;
         smoothingInverseOctaves = dialog.SmoothingInverseOctaves;
         UpdateDrawPoints();
-        SaveCurrentState();
+        TrySaveCurrentState("Overlay changes could not be saved.");
 
         if (wasChecked)
         {
@@ -1109,7 +1181,7 @@ public sealed class Overlay
         operationConfigured = true;
         UpdateKindGlyph();
 
-        SaveCurrentState();
+        TrySaveCurrentState("Overlay changes could not be saved.");
         RefreshSources();
         if (checkBox.Enabled)
         {
@@ -1163,7 +1235,7 @@ public sealed class Overlay
         {
             UpdateDrawPoints();
         }
-        SaveCurrentState();
+        TrySaveCurrentState("Overlay changes could not be saved.");
         if (wasChecked)
         {
             Show();
@@ -1261,32 +1333,34 @@ public sealed class Overlay
         UpdateKindGlyph();
     }
 
-    private void SaveCurrentState()
+    private bool TrySaveCurrentState(string errorMessage)
     {
         if (SeriesMode == Mode.None || Title == "")
         {
-            return;
+            return false;
         }
         if (kind == OverlayKind.Captured && sourcePoints == null)
         {
-            return;
+            return false;
         }
         if (kind == OverlayKind.Operation && !operationConfigured)
         {
-            return;
+            return false;
         }
         if (kind == OverlayKind.Target && !targetConfigured)
         {
-            return;
+            return false;
         }
 
         try
         {
             CreateFile().Save();
+            return true;
         }
         catch (Exception exception)
         {
-            ShowStorageError("Overlay changes could not be saved.", exception);
+            ShowStorageError(errorMessage, exception);
+            return false;
         }
     }
 
@@ -1500,26 +1574,11 @@ public sealed class Overlay
 
     private string GetTag(string part) => $"overlay:{SeriesMode}:{Index}:{part}";
 
-    private int SelectSeriesIndex(IReadOnlyList<LineSeries> candidates)
+    private static string GetCaptureCandidateTitle(LineSeries series)
     {
-        if (candidates.Count == 1)
-        {
-            return 0;
-        }
-        if (candidates.Count == 0)
-        {
-            return -1;
-        }
-
-        using var dialog = new SelectSeries();
-        foreach (LineSeries series in candidates)
-        {
-            dialog.AddOption(series.Title ?? string.Empty);
-        }
-        dialog.SetSelection(0);
-        return dialog.ShowDialog(collection.Form) == DialogResult.OK
-            ? dialog.GetSelect()
-            : -1;
+        return string.IsNullOrWhiteSpace(series.Title)
+            ? "Untitled curve"
+            : series.Title;
     }
 
     private void RefreshPlot(PlotModel model)

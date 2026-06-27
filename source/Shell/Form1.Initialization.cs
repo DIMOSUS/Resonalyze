@@ -184,7 +184,9 @@ public partial class Form1
                 buttonRecord.Text = "Ready";
                 plotModelFactory.SetImpulseResponseFileName(null);
                 SetImpulseResponseAvailability(true);
-                currentHistoryEntryId = measurementHistoryService.AddMeasurement(expSweepMeasurement);
+                currentHistoryEntryId = measurementHistoryService.AddMeasurement(
+                    expSweepMeasurement,
+                    CaptureCurrentSessionSnapshot());
             }
             else
             {

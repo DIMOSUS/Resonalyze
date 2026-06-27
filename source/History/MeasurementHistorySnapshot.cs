@@ -16,6 +16,7 @@ internal sealed class MeasurementHistorySnapshot
     public Complex[]? TransferImpulseResponse { get; init; }
     public required InputLevelMeterSnapshot MeterSnapshot { get; init; }
     public required MeasurementHistoryPreview Preview { get; init; }
+    public MeasurementSessionSnapshot? Session { get; init; }
 
     public ImpulseResponseFile ToImpulseResponseFile()
     {

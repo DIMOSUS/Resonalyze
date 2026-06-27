@@ -65,13 +65,15 @@ public partial class Form1
                     measurementHistoryService.MarkSaved(
                         currentHistoryEntryId.Value,
                         dialog.FileName,
-                        file);
+                        file,
+                        CaptureCurrentSessionSnapshot());
                 }
                 else
                 {
                     currentHistoryEntryId = measurementHistoryService.AddOrUpdateLoadedFile(
                         dialog.FileName,
-                        file);
+                        file,
+                        CaptureCurrentSessionSnapshot());
                 }
                 SetImpulseResponseSourceFile(dialog.FileName);
                 UpdateLastImpulseResponseDirectory(dialog.FileName);
@@ -138,7 +140,8 @@ public partial class Form1
                 ApplyLoadedImpulseResponseState(dialog.FileName);
                 currentHistoryEntryId = measurementHistoryService.AddOrUpdateLoadedFile(
                     dialog.FileName,
-                    file);
+                    file,
+                    CaptureCurrentSessionSnapshot());
             }
             catch (Exception exception)
             {

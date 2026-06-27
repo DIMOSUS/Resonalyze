@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using OxyPlot;
 using OxyPlot.Series;
+using Resonalyze.History;
 using Button = System.Windows.Forms.Button;
 using CheckBox = System.Windows.Forms.CheckBox;
 using ToolTip = System.Windows.Forms.ToolTip;
@@ -189,6 +190,56 @@ public sealed class OverlayCollection
     }
 
     internal void NotifyPlotChanged() => notifyPlotChanged();
+
+    internal List<OverlaySessionSnapshot> CaptureSessionState(Mode mode)
+    {
+        return overlays
+            .Select(overlay => overlay.CaptureSessionState(mode))
+            .Where(snapshot => snapshot != null)
+            .Cast<OverlaySessionSnapshot>()
+            .ToList();
+    }
+
+    internal void RestoreSessionState(
+        Mode mode,
+        IReadOnlyList<OverlaySessionSnapshot>? snapshots)
+    {
+        if (snapshots == null || snapshots.Count == 0)
+        {
+            return;
+        }
+
+        foreach (OverlaySessionSnapshot snapshot in snapshots)
+        {
+            if (snapshot.File?.Mode != mode)
+            {
+                continue;
+            }
+
+            Overlay? overlay = overlays.FirstOrDefault(
+                candidate => candidate.Index == snapshot.Slot);
+            overlay?.RestoreSessionState(snapshot);
+        }
+
+        foreach (Overlay overlay in overlays)
+        {
+            overlay.RefreshSources();
+        }
+
+        foreach (OverlaySessionSnapshot snapshot in snapshots)
+        {
+            if (!snapshot.Visible || snapshot.File?.Mode != mode)
+            {
+                continue;
+            }
+
+            Overlay? overlay = overlays.FirstOrDefault(
+                candidate => candidate.Index == snapshot.Slot);
+            overlay?.Show();
+        }
+
+        notifyPlotChanged();
+    }
 
     internal static string? GetTrackerFormatString(Mode mode)
     {
@@ -696,6 +747,44 @@ public sealed class Overlay
             drawPoints
                 .Select(point => new OverlayPoint(point.X, point.Y))
                 .ToArray());
+    }
+
+    internal OverlaySessionSnapshot? CaptureSessionState(Mode mode)
+    {
+        if (SeriesMode != mode || !Checked || Title == "")
+        {
+            return null;
+        }
+        if (kind == OverlayKind.Captured && sourcePoints == null)
+        {
+            return null;
+        }
+        if (kind == OverlayKind.Operation && !operationConfigured)
+        {
+            return null;
+        }
+        if (kind == OverlayKind.Target && !targetConfigured)
+        {
+            return null;
+        }
+
+        return new OverlaySessionSnapshot
+        {
+            Slot = Index,
+            Visible = Checked,
+            File = CreateFile()
+        };
+    }
+
+    internal void RestoreSessionState(OverlaySessionSnapshot snapshot)
+    {
+        if (snapshot.File == null || snapshot.File.Slot != Index)
+        {
+            return;
+        }
+
+        Hide();
+        ApplyFile(snapshot.File);
     }
 
     private ContextMenuStrip BuildCaptureMenu(

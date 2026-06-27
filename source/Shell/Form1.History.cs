@@ -62,7 +62,7 @@ public partial class Form1
                 return;
             }
 
-            RestoreHistorySnapshot(snapshot);
+            await RestoreHistorySnapshotAsync(snapshot);
             currentHistoryEntryId = entryId;
             dockedHistoryHost.InvokeIfOpen<MeasurementHistoryWindow>(dialog =>
             {
@@ -117,7 +117,11 @@ public partial class Form1
         {
             ImpulseResponseFile file = snapshot.ToImpulseResponseFile();
             await file.SaveAsync(dialog.FileName);
-            measurementHistoryService.MarkSaved(entryId, dialog.FileName, file);
+            measurementHistoryService.MarkSaved(
+                entryId,
+                dialog.FileName,
+                file,
+                snapshot.Session);
             if (currentHistoryEntryId == entryId)
             {
                 SetImpulseResponseSourceFile(dialog.FileName);
@@ -158,7 +162,7 @@ public partial class Form1
         });
     }
 
-    private void RestoreHistorySnapshot(MeasurementHistorySnapshot snapshot)
+    private async Task RestoreHistorySnapshotAsync(MeasurementHistorySnapshot snapshot)
     {
         expSweepMeasurement.RestoreImpulseResponse(
             snapshot.Octaves,
@@ -173,10 +177,77 @@ public partial class Form1
             snapshot.TransferPeakIndex);
         expSweepMeasurement.RestoreLevelSnapshot(snapshot.MeterSnapshot);
 
+        if (snapshot.Session != null)
+        {
+            ApplySessionSnapshot(snapshot.Session, snapshot.SampleRate);
+        }
+
         ApplyMeasurementConfigurationToControllers();
         SetImpulseResponseSourceFile(null);
         hasCurrentImpulseResponse = true;
         UpdatePeakInfo();
-        RefreshCurrentModePlot();
+
+        if (snapshot.Session != null)
+        {
+            await SelectModeAsync(NormalizeSessionMode(snapshot.Session.ActiveMode));
+            overlayCollection.RestoreSessionState(
+                CurrentMode,
+                snapshot.Session.ActiveOverlays);
+            SaveMeasurementSettings();
+        }
+        else
+        {
+            RefreshCurrentModePlot();
+        }
     }
+
+    private MeasurementSessionSnapshot CaptureCurrentSessionSnapshot()
+    {
+        return new MeasurementSessionSnapshot
+        {
+            ActiveMode = modeController.ActiveTab,
+            FrequencyResponse =
+                MeasurementSettingsFile.FrequencyResponseSettings.Capture(
+                    frequencyResponseOptions),
+            PhaseResponse =
+                MeasurementSettingsFile.FrequencyResponseSettings.Capture(
+                    phaseResponseOptions),
+            GroupDelay =
+                MeasurementSettingsFile.FrequencyResponseSettings.Capture(
+                    groupDelayOptions),
+            ImpulseResponse =
+                MeasurementSettingsFile.ImpulseResponseSettings.Capture(
+                    impulseResponseOptions),
+            Waterfall =
+                MeasurementSettingsFile.WaterfallSettings.Capture(
+                    waterfallGenOptions),
+            BurstDecay =
+                MeasurementSettingsFile.WaterfallSettings.Capture(
+                    burstDecayGenOptions),
+            LiveSpectrum =
+                MeasurementSettingsFile.LiveSpectrumSettings.Capture(
+                    liveSpectrumOptions),
+            TimeAlignment =
+                MeasurementSettingsFile.TimeAlignmentSettings.Capture(
+                    timeAlignmentOptions),
+            ActiveOverlays = overlayCollection.CaptureSessionState(CurrentMode)
+        };
+    }
+
+    private void ApplySessionSnapshot(
+        MeasurementSessionSnapshot session,
+        int sampleRate)
+    {
+        session.FrequencyResponse.ApplyTo(frequencyResponseOptions);
+        session.PhaseResponse.ApplyTo(phaseResponseOptions);
+        session.GroupDelay.ApplyTo(groupDelayOptions);
+        session.ImpulseResponse.ApplyTo(impulseResponseOptions);
+        session.Waterfall.ApplyTo(waterfallGenOptions, WaterfallMode.Fourier);
+        session.BurstDecay.ApplyTo(burstDecayGenOptions, WaterfallMode.BurstDecay);
+        session.LiveSpectrum.ApplyTo(liveSpectrumOptions);
+        session.TimeAlignment.ApplyTo(timeAlignmentOptions, sampleRate);
+    }
+
+    private static ModeTab NormalizeSessionMode(ModeTab mode) =>
+        Enum.IsDefined(mode) ? mode : ModeTab.Frequency;
 }

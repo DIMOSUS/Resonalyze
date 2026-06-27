@@ -11,6 +11,7 @@ internal sealed class MeasurementHistoryPersistence
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         Converters = { new JsonStringEnumConverter() }
     };
@@ -45,6 +46,7 @@ internal sealed class MeasurementHistoryPersistence
                     SourceFilePath = entry.SourceFilePath,
                     Metadata = entry.Metadata,
                     Preview = entry.Preview,
+                    Session = entry.Session,
                     Snapshot = null
                 })
                 .ToArray();
@@ -69,7 +71,8 @@ internal sealed class MeasurementHistoryPersistence
                     Timestamp = entry.Timestamp,
                     SourceFilePath = entry.SourceFilePath!,
                     Metadata = entry.Metadata,
-                    Preview = entry.Preview
+                    Preview = entry.Preview,
+                    Session = entry.Session
                 })
                 .ToList()
         };
@@ -96,5 +99,6 @@ internal sealed class MeasurementHistoryPersistence
             MeterSnapshot = InputLevelMeterSnapshot.Empty
         };
         public MeasurementHistoryPreview Preview { get; set; } = new();
+        public MeasurementSessionSnapshot? Session { get; set; }
     }
 }

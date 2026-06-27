@@ -18,9 +18,11 @@ internal sealed class MeasurementHistoryService
 
     public IReadOnlyList<MeasurementHistoryEntry> Entries => entries;
 
-    public Guid AddMeasurement(ExpSweepMeasurement measurement)
+    public Guid AddMeasurement(
+        ExpSweepMeasurement measurement,
+        MeasurementSessionSnapshot session)
     {
-        MeasurementHistorySnapshot snapshot = CreateSnapshot(measurement);
+        MeasurementHistorySnapshot snapshot = CreateSnapshot(measurement, session);
         MeasurementHistoryEntry entry = CreateEntry(
             DateTimeOffset.Now,
             TimestampDisplayHelper.Format(DateTimeOffset.Now),
@@ -32,9 +34,12 @@ internal sealed class MeasurementHistoryService
         return entry.Id;
     }
 
-    public Guid AddOrUpdateLoadedFile(string filePath, ImpulseResponseFile file)
+    public Guid AddOrUpdateLoadedFile(
+        string filePath,
+        ImpulseResponseFile file,
+        MeasurementSessionSnapshot session)
     {
-        MeasurementHistorySnapshot snapshot = CreateSnapshot(file);
+        MeasurementHistorySnapshot snapshot = CreateSnapshot(file, session);
         MeasurementHistoryEntry? entry = FindBySourceFilePath(filePath);
         if (entry == null)
         {
@@ -52,6 +57,7 @@ internal sealed class MeasurementHistoryService
             entry.SourceFilePath = filePath;
             entry.Metadata = MeasurementHistorySnapshotMetadata.FromSnapshot(snapshot);
             entry.Preview = snapshot.Preview;
+            entry.Session = snapshot.Session;
             entry.Snapshot = snapshot;
             MoveToStart(entry);
         }
@@ -61,9 +67,17 @@ internal sealed class MeasurementHistoryService
         return entry.Id;
     }
 
-    public void MarkSaved(Guid entryId, string filePath, ImpulseResponseFile file)
+    public void MarkSaved(
+        Guid entryId,
+        string filePath,
+        ImpulseResponseFile file,
+        MeasurementSessionSnapshot? sessionOverride = null)
     {
-        MeasurementHistorySnapshot snapshot = CreateSnapshot(file);
+        MeasurementHistoryEntry? existingEntry = FindById(entryId);
+        MeasurementSessionSnapshot? session = sessionOverride ??
+            existingEntry?.Session ??
+            existingEntry?.Snapshot?.Session;
+        MeasurementHistorySnapshot snapshot = CreateSnapshot(file, session);
         MeasurementHistoryEntry? duplicate = FindBySourceFilePath(filePath);
         if (duplicate != null && duplicate.Id != entryId)
         {
@@ -87,6 +101,7 @@ internal sealed class MeasurementHistoryService
             entry.SourceFilePath = filePath;
             entry.Metadata = MeasurementHistorySnapshotMetadata.FromSnapshot(snapshot);
             entry.Preview = snapshot.Preview;
+            entry.Session = snapshot.Session;
             entry.Snapshot = snapshot;
             MoveToStart(entry);
         }
@@ -129,7 +144,7 @@ internal sealed class MeasurementHistoryService
         }
 
         ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(entry.SourceFilePath);
-        entry.Snapshot = CreateSnapshot(file);
+        entry.Snapshot = CreateSnapshot(file, entry.Session);
         entry.Metadata = MeasurementHistorySnapshotMetadata.FromSnapshot(entry.Snapshot);
         entry.Preview = entry.Snapshot.Preview;
         return entry.Snapshot;
@@ -160,11 +175,14 @@ internal sealed class MeasurementHistoryService
             SourceFilePath = sourceFilePath,
             Metadata = MeasurementHistorySnapshotMetadata.FromSnapshot(snapshot),
             Preview = snapshot.Preview,
+            Session = snapshot.Session,
             Snapshot = snapshot
         };
     }
 
-    private static MeasurementHistorySnapshot CreateSnapshot(ExpSweepMeasurement measurement)
+    private static MeasurementHistorySnapshot CreateSnapshot(
+        ExpSweepMeasurement measurement,
+        MeasurementSessionSnapshot? session)
     {
         Complex[] sweep = measurement.SweepDeconvolutionImpulseResponse
             ?? throw new InvalidOperationException("Measurement has no sweep-deconvolution IR.");
@@ -190,11 +208,14 @@ internal sealed class MeasurementHistoryService
             SweepDeconvolutionImpulseResponse = sweep.ToArray(),
             TransferImpulseResponse = transfer,
             MeterSnapshot = measurement.CurrentLevels,
-            Preview = preview
+            Preview = preview,
+            Session = session
         };
     }
 
-    private static MeasurementHistorySnapshot CreateSnapshot(ImpulseResponseFile file)
+    private static MeasurementHistorySnapshot CreateSnapshot(
+        ImpulseResponseFile file,
+        MeasurementSessionSnapshot? session = null)
     {
         Complex[] sweep = file.GetSweepDeconvolutionImpulseResponse();
         Complex[]? transfer = file.GetTransferImpulseResponse();
@@ -220,7 +241,8 @@ internal sealed class MeasurementHistoryService
             SweepDeconvolutionImpulseResponse = sweep,
             TransferImpulseResponse = transfer,
             MeterSnapshot = file.GetMeterSnapshot(),
-            Preview = preview
+            Preview = preview,
+            Session = session
         };
     }
 

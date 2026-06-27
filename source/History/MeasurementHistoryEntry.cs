@@ -8,6 +8,7 @@ internal sealed class MeasurementHistoryEntry
     public string? SourceFilePath { get; set; }
     public required MeasurementHistorySnapshotMetadata Metadata { get; set; }
     public required MeasurementHistoryPreview Preview { get; set; }
+    public MeasurementSessionSnapshot? Session { get; set; }
     public MeasurementHistorySnapshot? Snapshot { get; set; }
 
     public bool IsFileBacked => !string.IsNullOrWhiteSpace(SourceFilePath);

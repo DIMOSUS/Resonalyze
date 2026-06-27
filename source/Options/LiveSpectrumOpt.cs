@@ -302,7 +302,7 @@ namespace Resonalyze.Options
                 "Overlays a peak-hold envelope that retains the maximum level seen on the curve until reset.");
             toolTip.SetToolTip(
                 checkCoherence,
-                "Shows the coherence (γ²) curve on a 0-to-1 axis in Transfer Function mode.");
+                "Shows the coherence (\u03B3\u00B2) curve on a 0-to-1 axis in Transfer Function mode.");
             toolTip.SetToolTip(
                 coherenceLimitComboBox,
                 "Frequencies whose coherence falls below this limit are drawn dimmed and dashed to flag where the transfer function is unreliable. Off disables the marking.");

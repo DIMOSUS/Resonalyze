@@ -745,10 +745,10 @@ public sealed class Overlay
             (_, _) => ExportDeviationToText());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(
-            "ƒ  Calculated overlay…",
+            "\u0192  Calculated overlay…", // \u0192 f
             null,
             (_, _) => ConfigureOperation());
-        menu.Items.Add("△  Target…", null, (_, _) => ConfigureTarget());
+        menu.Items.Add("\u25B3  Target…", null, (_, _) => ConfigureTarget()); // \u25B3 triangle
         return menu;
     }
 
@@ -1575,8 +1575,8 @@ public sealed class Overlay
     {
         captureButton.Text = kind switch
         {
-            OverlayKind.Operation => $"{Index}ƒ",
-            OverlayKind.Target => $"{Index}△",
+            OverlayKind.Operation => $"{Index}\u0192", // \u0192 f
+            OverlayKind.Target => $"{Index}\u25B3", // \u25B3 triangle
             _ => $"{Index}"
         };
     }

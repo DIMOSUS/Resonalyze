@@ -130,7 +130,7 @@ internal sealed class OverlayTargetSettingsDialog : Form
         };
         presetComboBox.SelectedIndexChanged += PresetChanged;
 
-        AddLabel("Tolerance ±dB", 120, 300, ToleranceTip);
+        AddLabel("Tolerance \u00B1dB", 120, 300, ToleranceTip); // \u00B1 +-
         ConfigureNumeric(toleranceInput, new Point(300, 140), 180, 0, 12, 0.5m, 1);
 
         AddLabel("Tilt dB/oct", 176, 20, TiltTip);
@@ -279,7 +279,7 @@ internal sealed class OverlayTargetSettingsDialog : Form
     private const string PresenceTip =
         "Presence bump (positive) or dip (negative) centered on its frequency, set by gain, center frequency and width.";
     private const string ToleranceTip =
-        "Shaded ±dB tolerance band drawn around the target. Zero hides the band.";
+        "Shaded \u00B1dB tolerance band drawn around the target. Zero hides the band."; // \u00B1 +-
     private const string DeviationTip =
         "Deviation curve: 'Deviation' shows measurement − target; 'EQ correction' shows target − measurement (the gain to dial into an equalizer); 'None' hides it.";
 

@@ -291,7 +291,7 @@ internal sealed class PlotModelFactory
                 MinorStep = 0.125,
                 MajorGridlineStyle = LineStyle.None,
                 MinorGridlineStyle = LineStyle.None,
-                Title = "Coherence γ²",
+                Title = "Coherence \u03B3\u00B2", // Y2
             });
         }
 
@@ -364,7 +364,7 @@ internal sealed class PlotModelFactory
             Color = OxyColor.FromAColor(150, OxyColor.FromRgb(90, 200, 140)),
             Title = "Coherence",
             YAxisKey = CoherenceAxisKey,
-            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} γ²"
+            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} \u03B3\u00B2" // Y2
         };
         foreach (SignalPoint point in ResampleCoherence(coherence))
         {

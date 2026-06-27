@@ -9,6 +9,7 @@ internal sealed class OverlaySettingsDialog : Form
     private readonly DarkComboBox smoothingComboBox = new();
     private readonly TrackBar opacityTrackBar = new();
     private readonly Label opacityValueLabel = new();
+    private readonly ToolTip toolTip = new();
     private readonly bool supportsSmoothing;
     private Color selectedColor;
 
@@ -61,7 +62,7 @@ internal sealed class OverlaySettingsDialog : Form
 
         AddLabel("Color", 112);
         colorButton.Location = new Point(20, 132);
-        colorButton.Size = new Size(122, 30);
+        colorButton.Size = new Size(122, 24);
         UiStyle.ApplySurfaceButton(colorButton, UiPalette.DialogSurfaceMuted);
         colorButton.Click += ColorButtonClick;
 
@@ -127,6 +128,7 @@ internal sealed class OverlaySettingsDialog : Form
             accent: false);
         clearButton.Location = new Point(20, buttonY);
         clearButton.Click += (_, _) => ClearRequested = true;
+        toolTip.SetToolTip(clearButton, "Delete this overlay slot in the current analysis mode.");
         var saveButton = OverlayDialogControls.CreateDialogButton(
             "Save",
             DialogResult.OK,
@@ -157,9 +159,28 @@ internal sealed class OverlaySettingsDialog : Form
             saveButton
         ]);
 
+        InitializeToolTips();
+        FormClosed += (_, _) => toolTip.Dispose();
+
         OverlayDialogControls.ApplyRuntimeDpiScale(this);
         ResumeLayout(false);
         PerformLayout();
+    }
+
+    private void InitializeToolTips()
+    {
+        toolTip.AutoPopDelay = 12_000;
+        toolTip.InitialDelay = 400;
+        toolTip.ReshowDelay = 150;
+
+        toolTip.SetToolTip(nameTextBox, "Display name shown in the on-plot legend.");
+        toolTip.SetToolTip(colorButton, "Curve color.");
+        toolTip.SetToolTip(thicknessInput, "Line thickness.");
+        toolTip.SetToolTip(styleComboBox, "Line style (solid, dash, dot, dash-dot).");
+        toolTip.SetToolTip(
+            smoothingComboBox,
+            "Fractional-octave smoothing applied to the displayed curve.");
+        toolTip.SetToolTip(opacityTrackBar, "Curve opacity.");
     }
 
     private void ColorButtonClick(object? sender, EventArgs e)

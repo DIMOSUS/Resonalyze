@@ -93,14 +93,18 @@ public static class OverlayMath
         TargetCurveSpec spec,
         double offsetDb,
         double toleranceDb,
-        int smoothingInverseOctaves)
+        int smoothingInverseOctaves,
+        TargetDeviationMode deviationMode = TargetDeviationMode.Deviation)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(spec);
 
         OverlayPoint[] smoothed = SmoothByOctaves(source, smoothingInverseOctaves);
         var target = new List<OverlayPoint>(smoothed.Length);
-        var deviation = new List<OverlayPoint>(smoothed.Length);
+        bool hasDeviation = deviationMode != TargetDeviationMode.None;
+        var deviation = hasDeviation
+            ? new List<OverlayPoint>(smoothed.Length)
+            : null;
         bool hasTolerance = toleranceDb > 0;
         var upper = hasTolerance
             ? new List<OverlayPoint>(smoothed.Length)
@@ -118,14 +122,22 @@ public static class OverlayMath
 
             double targetValue = spec.Evaluate(point.X) + offsetDb;
             target.Add(new OverlayPoint(point.X, targetValue));
-            deviation.Add(new OverlayPoint(point.X, point.Y - targetValue));
+            if (hasDeviation)
+            {
+                // Correction is the EQ gain to reach the target (target − source);
+                // Deviation is how far the response sits from it (source − target).
+                double value = deviationMode == TargetDeviationMode.Correction
+                    ? targetValue - point.Y
+                    : point.Y - targetValue;
+                deviation!.Add(new OverlayPoint(point.X, value));
+            }
             upper?.Add(new OverlayPoint(point.X, targetValue + toleranceDb));
             lower?.Add(new OverlayPoint(point.X, targetValue - toleranceDb));
         }
 
         return new TargetCurveResult(
             target.ToArray(),
-            deviation.ToArray(),
+            deviation?.ToArray() ?? Array.Empty<OverlayPoint>(),
             upper?.ToArray() ?? Array.Empty<OverlayPoint>(),
             lower?.ToArray() ?? Array.Empty<OverlayPoint>());
     }

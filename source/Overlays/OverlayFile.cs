@@ -60,7 +60,15 @@ public sealed class OverlayFile
     public double TargetBassShelfGainDb { get; set; }
     public double TargetBassShelfFrequencyHz { get; set; } = 100;
     public double TargetBassShelfWidthOctaves { get; set; } = 1.5;
+    public double TargetTrebleShelfGainDb { get; set; }
+    public double TargetTrebleShelfFrequencyHz { get; set; } = 5_000;
+    public double TargetTrebleShelfWidthOctaves { get; set; } = 1.5;
+    public double TargetPresenceGainDb { get; set; }
+    public double TargetPresenceFrequencyHz { get; set; } = 3_000;
+    public double TargetPresenceWidthOctaves { get; set; } = 1.0;
     public double TargetToleranceDb { get; set; }
+    public TargetDeviationMode TargetDeviationMode { get; set; } =
+        TargetDeviationMode.Deviation;
 
     public static string GetPath(Mode mode, int slot, string? rootDirectory = null)
     {
@@ -238,13 +246,23 @@ public sealed class OverlayFile
         if (!double.IsFinite(TargetTiltDbPerOctave) ||
             !double.IsFinite(TargetBassShelfGainDb) ||
             !(TargetBassShelfFrequencyHz > 0) ||
-            !(TargetBassShelfWidthOctaves > 0))
+            !(TargetBassShelfWidthOctaves > 0) ||
+            !double.IsFinite(TargetTrebleShelfGainDb) ||
+            !(TargetTrebleShelfFrequencyHz > 0) ||
+            !(TargetTrebleShelfWidthOctaves > 0) ||
+            !double.IsFinite(TargetPresenceGainDb) ||
+            !(TargetPresenceFrequencyHz > 0) ||
+            !(TargetPresenceWidthOctaves > 0))
         {
             throw new InvalidDataException("The target curve parameters are invalid.");
         }
         if (!double.IsFinite(TargetToleranceDb) || TargetToleranceDb < 0)
         {
             throw new InvalidDataException("The target tolerance is invalid.");
+        }
+        if (!Enum.IsDefined(TargetDeviationMode))
+        {
+            throw new InvalidDataException("The target deviation mode is invalid.");
         }
     }
 
@@ -327,33 +345,67 @@ public enum OverlayOperation
     Blend
 }
 
+public enum TargetDeviationMode
+{
+    /// <summary>measurement − target (how far the response is from the target).</summary>
+    Deviation,
+
+    /// <summary>target − measurement (the EQ gain needed to reach the target).</summary>
+    Correction,
+
+    /// <summary>Do not draw a deviation curve.</summary>
+    None
+}
+
 public enum TargetPreset
 {
     Flat,
     HarmanRoom,
+    RoomGentle,
+    Warm,
     Car,
+    CarMild,
+    House,
+    XCurve,
+    Smiley,
+    BbcDip,
     Custom
 }
 
 /// <summary>
-/// A parametric target response shape (relative dB) defined by an overall tilt
-/// around a 1 kHz pivot plus a low-frequency shelf. Presets are just parameter
-/// sets the user can edit.
+/// A parametric target response shape (relative dB) built from an overall tilt
+/// around a 1 kHz pivot, a low-frequency shelf, a high-frequency shelf, and a
+/// presence bump. Presets are just parameter sets the user can edit, and the
+/// four terms cover room, car, home-theater (X-curve), and voicing targets.
 /// </summary>
 public sealed record TargetCurveSpec(
     double TiltDbPerOctave,
     double BassShelfGainDb,
     double BassShelfFrequencyHz,
-    double BassShelfWidthOctaves)
+    double BassShelfWidthOctaves,
+    double TrebleShelfGainDb,
+    double TrebleShelfFrequencyHz,
+    double TrebleShelfWidthOctaves,
+    double PresenceGainDb,
+    double PresenceFrequencyHz,
+    double PresenceWidthOctaves)
 {
     public const double PivotHz = 1_000.0;
 
     public static TargetCurveSpec FromPreset(TargetPreset preset) => preset switch
     {
-        TargetPreset.Flat => new TargetCurveSpec(0, 0, 100, 1.5),
-        TargetPreset.HarmanRoom => new TargetCurveSpec(-0.8, 4, 105, 1.5),
-        TargetPreset.Car => new TargetCurveSpec(-1.0, 8, 80, 1.5),
-        _ => new TargetCurveSpec(-0.5, 0, 100, 1.5)
+        //                          tilt  bass(g,f,w)   treble(g,f,w)    presence(g,f,w)
+        TargetPreset.Flat => new(0, 0, 100, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
+        TargetPreset.HarmanRoom => new(-0.8, 4, 105, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
+        TargetPreset.RoomGentle => new(-0.5, 2, 120, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
+        TargetPreset.Warm => new(-1.0, 3, 110, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
+        TargetPreset.Car => new(-1.0, 8, 80, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
+        TargetPreset.CarMild => new(-0.8, 6, 75, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
+        TargetPreset.House => new(0, 6, 120, 1.0, 0, 5_000, 1.5, 0, 3_000, 1.0),
+        TargetPreset.XCurve => new(0, 0, 100, 1.5, -10, 2_500, 2.0, 0, 3_000, 1.0),
+        TargetPreset.Smiley => new(0, 6, 100, 1.0, 5, 4_000, 1.5, 0, 3_000, 1.0),
+        TargetPreset.BbcDip => new(-0.5, 0, 100, 1.5, 0, 5_000, 1.5, -3, 2_800, 1.0),
+        _ => new TargetCurveSpec(-0.5, 0, 100, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0)
     };
 
     /// <summary>Relative target level (dB) at the given frequency.</summary>
@@ -364,20 +416,39 @@ public sealed record TargetCurveSpec(
             return 0;
         }
 
-        double tilt = TiltDbPerOctave * Math.Log2(frequencyHz / PivotHz);
-        double shelf = 0;
+        double value = TiltDbPerOctave * Math.Log2(frequencyHz / PivotHz);
+
+        // Low shelf: → gain well below the corner, → 0 well above it.
         if (BassShelfGainDb != 0 &&
             BassShelfFrequencyHz > 0 &&
             BassShelfWidthOctaves > 0)
         {
             double x = Math.Log2(frequencyHz / BassShelfFrequencyHz) /
                 BassShelfWidthOctaves;
-            // Low shelf: → gain well below the corner, → 0 well above it,
-            // crossing half the gain at the corner frequency.
-            shelf = BassShelfGainDb * 0.5 * (1 - Math.Tanh(x));
+            value += BassShelfGainDb * 0.5 * (1 - Math.Tanh(x));
         }
 
-        return tilt + shelf;
+        // High shelf: → gain well above the corner, → 0 well below it.
+        if (TrebleShelfGainDb != 0 &&
+            TrebleShelfFrequencyHz > 0 &&
+            TrebleShelfWidthOctaves > 0)
+        {
+            double x = Math.Log2(frequencyHz / TrebleShelfFrequencyHz) /
+                TrebleShelfWidthOctaves;
+            value += TrebleShelfGainDb * 0.5 * (1 + Math.Tanh(x));
+        }
+
+        // Presence: a log-Gaussian bump (or dip) centered on its frequency.
+        if (PresenceGainDb != 0 &&
+            PresenceFrequencyHz > 0 &&
+            PresenceWidthOctaves > 0)
+        {
+            double x = Math.Log2(frequencyHz / PresenceFrequencyHz) /
+                PresenceWidthOctaves;
+            value += PresenceGainDb * Math.Exp(-0.5 * x * x);
+        }
+
+        return value;
     }
 }
 
@@ -390,7 +461,7 @@ public sealed record TargetCurveResult(
 public static class OverlaySmoothing
 {
     public static IReadOnlyList<int> SupportedInverseOctaves { get; } =
-        [0, 48, 24, 12, 6, 3];
+        [0, 48, 24, 12, 6, 3, 2, 1];
 
     public static bool SupportsMode(Mode mode)
     {

@@ -19,6 +19,7 @@ internal sealed class OverlayOperationSettingsDialog : Form
     private readonly DarkComboBox smoothingComboBox = new();
     private readonly TrackBar opacityTrackBar = new();
     private readonly Label opacityValueLabel = new();
+    private readonly ToolTip toolTip = new();
     private readonly bool supportsSmoothing;
     private readonly bool supportsAmplitudeSpace;
     private Color selectedColor;
@@ -127,7 +128,7 @@ internal sealed class OverlayOperationSettingsDialog : Form
 
         AddLabel("Color", 202);
         colorButton.Location = new Point(20, 222);
-        colorButton.Size = new Size(122, 30);
+        colorButton.Size = new Size(122, 24);
         UiStyle.ApplySurfaceButton(colorButton, UiPalette.DialogSurfaceMuted);
         colorButton.Click += ColorButtonClick;
 
@@ -207,6 +208,7 @@ internal sealed class OverlayOperationSettingsDialog : Form
 
         if (supportsAmplitudeSpace)
         {
+            amplitudeSpaceCheckBox.Checked = true;
             amplitudeSpaceCheckBox.AutoSize = true;
             amplitudeSpaceCheckBox.Location = new Point(20, amplitudeSpaceY);
             amplitudeSpaceCheckBox.Text = "Operate in amplitude space";
@@ -257,9 +259,46 @@ internal sealed class OverlayOperationSettingsDialog : Form
             saveButton
         ]);
 
+        InitializeToolTips();
+        FormClosed += (_, _) => toolTip.Dispose();
+
         OverlayDialogControls.ApplyRuntimeDpiScale(this);
         ResumeLayout(false);
         PerformLayout();
+    }
+
+    private void InitializeToolTips()
+    {
+        toolTip.AutoPopDelay = 12_000;
+        toolTip.InitialDelay = 400;
+        toolTip.ReshowDelay = 150;
+
+        toolTip.SetToolTip(nameTextBox, "Display name shown in the on-plot legend.");
+        toolTip.SetToolTip(
+            sourceAComboBox,
+            "Curve A — the first captured overlay slot used by the operation.");
+        toolTip.SetToolTip(
+            sourceBComboBox,
+            "Curve B — the second captured overlay slot used by the operation.");
+        toolTip.SetToolTip(
+            operationComboBox,
+            "Calculation applied between curve A and curve B.");
+        toolTip.SetToolTip(
+            blendFrequencyInput,
+            "Crossover frequency for the Blend operation (A below, B above).");
+        toolTip.SetToolTip(
+            blendWidthInput,
+            "Transition width of the blend crossover, in octaves.");
+        toolTip.SetToolTip(
+            amplitudeSpaceCheckBox,
+            "Convert both curves to linear amplitude before the operation and back to dB afterward (for dB-based views).");
+        toolTip.SetToolTip(colorButton, "Curve color.");
+        toolTip.SetToolTip(thicknessInput, "Line thickness.");
+        toolTip.SetToolTip(styleComboBox, "Line style (solid, dash, dot, dash-dot).");
+        toolTip.SetToolTip(
+            smoothingComboBox,
+            "Fractional-octave smoothing applied after the operation.");
+        toolTip.SetToolTip(opacityTrackBar, "Curve opacity.");
     }
 
     private void SaveButtonClick(object? sender, EventArgs e)

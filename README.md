@@ -576,31 +576,73 @@ loaded; Resonalyze rebuilds the preview when needed.
 
 ## Plot Overlays
 
-Each supported overlay view provides ten ordinary overlay slots and two
-calculated overlay slots. Click a numbered button in slots 1-10 to capture one
-of the curves currently shown on the plot. Overlay slots are stored
-automatically as human-readable JSON beside the executable:
+Each supported overlay view provides twelve universal overlay slots. Every slot
+can hold any of three kinds, chosen from the numbered capture-button menu (or the
+settings dialog):
+
+- **Captured** — a snapshot of a curve currently on the plot.
+- **Operation** — a calculation between two captured slots (`A - B`, `B - A`,
+  `A + B`, `(A + B) / 2`, `|A - B|`, or a frequency blend).
+- **Target** — a parametric target curve compared against a source.
+
+Overlay slots are stored automatically as human-readable JSON beside the
+executable:
 
 ```text
 overlays/<AnalysisMode>/overlay-01.json
 ```
 
-For slots 1-10, the checkbox shows or hides the saved curve, the numeric
-control applies a vertical offset, and `...` opens the settings dialog. A slot
-without a saved file remains disabled.
+The numbered button opens a menu to **Capture curve**, **Import from text**,
+**Export to text**, or switch the slot to a **Calculated overlay** or **Target**.
+The checkbox shows or hides the slot, the numeric control applies a vertical
+offset, and `...` opens the settings dialog. Operation and Target slots reference
+only captured slots (or, for a Target, the current measurement), which keeps the
+recompute order simple and free of cycles.
 
 Visible overlay names are drawn directly over the plot as a compact legend.
 Each entry uses the same color and line style as the curve itself, so exported
 screenshots and day-to-day comparisons remain readable even when many curves
 are active.
 
-Slots 11 and 12 are reserved for calculations between any two ordinary
-overlays from slots 1-10. They do not have capture or clear buttons. Instead,
-the row displays the currently selected operation, such as `A-B`, `A+B`,
-`AVG`, or `|A-B|`. Use `...` to select source overlays A and B, choose the
-operation, and configure the result appearance.
+### Target curves
 
-Ordinary overlay settings include:
+A **Target** overlay compares a source against a parametric target shape and
+draws two curves from the one slot: the **target** itself and the **deviation**
+(source minus target), plus an optional shaded **tolerance band** (±dB). The
+source is either a captured slot or the **current measurement** (the live/last
+Live Spectrum trace or the main Frequency Response curve).
+
+The target shape is built from four editable terms: an overall **tilt** around a
+1 kHz pivot, a **bass shelf**, a **treble shelf**, and a **presence** bump/dip.
+That covers room, car, home-theater, and voicing targets. Presets fill the
+parameters and remain fully editable:
+
+- `Flat`, `Room (gentle)`, `Harman room`, `Warm`
+- `Car`, `Car (mild)`, `House / bass boost`
+- `X-curve (cinema)`, `Smiley`, `BBC dip`, `Custom`
+
+The deviation curve has selectable modes: **Deviation** (`measurement − target`,
+how far the response sits from the target), **EQ correction**
+(`target − measurement`, the gain to dial into an equalizer to reach the target),
+or **None** to hide it.
+
+The settings dialog shows a live preview of the target shape, and the shared slot
+offset moves the target up or down (the deviation follows automatically). Target
+overlays are available in Frequency Response and paused Live Spectrum.
+
+![Target overlay settings](assets/images/target_overlay.jpg)
+
+### Import and export
+
+**Import from text** loads a captured overlay from a plain-text file of `X Y`
+pairs (for example `123.4 -5.5`), one per line. Parsing is lenient: values may be
+separated by spaces, tabs, commas or semicolons, extra columns are ignored, and
+any line that is not a valid number pair (comments, headers, blanks) is skipped.
+**Export to text** writes the slot's current curve in the same format. For a
+Target slot, **Export deviation** writes the deviation or EQ-correction curve,
+which is handy for transferring corrections into an equalizer or another tool.
+
+Captured overlay settings include:
 
 ![Ordinary overlay](assets/images/regular_overlay.jpg)
 - A user-defined name
@@ -612,7 +654,7 @@ Ordinary overlay settings include:
 Calculated overlay settings additionally include:
 
 ![Calculated overlay](assets/images/calc_overlay.jpg)
-- Two source slots selected from overlays 1-10
+- Two source slots selected from captured overlay slots
 - Operations `A - B`, `B - A`, `A + B`, `(A + B) / 2`, and `|A - B|`
 - Blend operation with a user-defined crossover frequency and transition width
 - Optional amplitude-space math for dB-based views, which converts both
@@ -634,9 +676,9 @@ Overlay files are separated by analysis mode and restored automatically when
 the application starts or the active view changes. Changes to any source
 overlay immediately update visible calculated overlays.
 
-Ordinary overlay files use format `resonalyze-overlay`, version `4`.
-Calculated overlay files use format `resonalyze-overlay-operation`, version
-`4`. Older overlay schema versions are intentionally not loaded.
+All overlay slots use a single file format `resonalyze-overlay`, version `5`,
+with a `kind` field selecting captured / operation / target. Older overlay
+schema versions are intentionally not loaded.
 
 Overlays are available in the Impulse Response, Frequency Response, Phase
 Response, Group Delay, paused Live Spectrum, and Autocorrelation views. The

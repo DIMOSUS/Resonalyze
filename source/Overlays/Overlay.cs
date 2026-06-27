@@ -311,6 +311,7 @@ public sealed class Overlay
     private readonly Color defaultColor;
     private readonly decimal defaultOffset;
     private readonly ContextMenuStrip captureMenu;
+    private readonly ToolStripItem exportDeviationMenuItem;
 
     private OverlayKind kind = OverlayKind.Captured;
     private bool updatingControls;
@@ -334,6 +335,23 @@ public sealed class Overlay
     private double blendWidthOctaves = 1;
     private bool useAmplitudeSpace;
 
+    // Target kind.
+    private bool targetConfigured;
+    private int targetSourceSlot;
+    private TargetPreset targetPreset = TargetPreset.HarmanRoom;
+    private double targetTiltDbPerOctave;
+    private double targetBassShelfGainDb;
+    private double targetBassShelfFrequencyHz = 100;
+    private double targetBassShelfWidthOctaves = 1.5;
+    private double targetTrebleShelfGainDb;
+    private double targetTrebleShelfFrequencyHz = 5_000;
+    private double targetTrebleShelfWidthOctaves = 1.5;
+    private double targetPresenceGainDb;
+    private double targetPresenceFrequencyHz = 3_000;
+    private double targetPresenceWidthOctaves = 1.0;
+    private double targetToleranceDb;
+    private TargetDeviationMode targetDeviationMode = TargetDeviationMode.Deviation;
+
     public Overlay(
         Panel panel,
         Button captureButton,
@@ -354,7 +372,7 @@ public sealed class Overlay
         defaultOffset = offsetControl.Value;
         Index = index;
 
-        captureMenu = BuildCaptureMenu();
+        captureMenu = BuildCaptureMenu(out exportDeviationMenuItem);
 
         toolTip.SetToolTip(offsetControl, "Overlay vertical offset (dB)");
         toolTip.SetToolTip(checkBox, "Show / hide this overlay");
@@ -407,22 +425,37 @@ public sealed class Overlay
     public void Show()
     {
         PlotModel? model = collection.PlotView.Model;
-        if (model == null)
-        {
-            return;
-        }
-
-        DataPoint[]? points = kind == OverlayKind.Operation
-            ? BuildOperationPoints()
-            : drawPoints;
-        if (points == null || points.Length < 2 || Title == "")
+        if (model == null || Title == "")
         {
             SetChecked(false);
             return;
         }
 
         RemoveSeries(model);
-        SetChecked(true);
+        bool drawn = kind switch
+        {
+            OverlayKind.Target => AddTargetSeries(model),
+            OverlayKind.Operation => AddCurveSeries(model, "curve", BuildOperationPoints()),
+            _ => AddCurveSeries(model, "curve", drawPoints)
+        };
+
+        if (drawn)
+        {
+            SetChecked(true);
+            RefreshPlot(model);
+        }
+        else
+        {
+            SetChecked(false);
+        }
+    }
+
+    private bool AddCurveSeries(PlotModel model, string part, DataPoint[]? points)
+    {
+        if (points == null || points.Length < 2)
+        {
+            return false;
+        }
 
         Color color = panel.BackColor;
         byte alpha = (byte)Math.Round(opacityPercent / 100.0 * 255);
@@ -432,7 +465,7 @@ public sealed class Overlay
             StrokeThickness = strokeThickness,
             LineStyle = ToOxyLineStyle(lineStyle),
             Title = Title,
-            Tag = GetTag()
+            Tag = GetTag(part)
         };
         string? trackerFormat = OverlayCollection.GetTrackerFormatString(SeriesMode);
         if (!string.IsNullOrEmpty(trackerFormat))
@@ -441,7 +474,139 @@ public sealed class Overlay
         }
         series.Points.AddRange(points);
         model.Series.Add(series);
-        RefreshPlot(model);
+        return true;
+    }
+
+    private bool AddTargetSeries(PlotModel model)
+    {
+        OverlayPoint[]? source = ResolveTargetSource();
+        if (source == null || source.Length < 2)
+        {
+            return false;
+        }
+
+        double offset = (double)offsetControl.Value;
+        TargetCurveResult result = OverlayMath.BuildTarget(
+            source,
+            CurrentTargetSpec(),
+            offset,
+            targetToleranceDb,
+            smoothingInverseOctaves,
+            targetDeviationMode);
+        if (result.Target.Length < 2)
+        {
+            return false;
+        }
+
+        Color color = panel.BackColor;
+        byte alpha = (byte)Math.Round(opacityPercent / 100.0 * 255);
+        OxyColor lineColor = OxyColor.FromArgb(alpha, color.R, color.G, color.B);
+        string? trackerFormat = OverlayCollection.GetTrackerFormatString(SeriesMode);
+
+        // Tolerance band first so the curves draw on top of it.
+        if (result.ToleranceUpper.Length >= 2 &&
+            result.ToleranceLower.Length == result.ToleranceUpper.Length)
+        {
+            var band = new OxyPlot.Series.AreaSeries
+            {
+                Color = OxyColors.Transparent,
+                Fill = OxyColor.FromArgb(40, color.R, color.G, color.B),
+                StrokeThickness = 0,
+                Tag = GetTag("tolerance")
+            };
+            band.Points.AddRange(result.ToleranceUpper.Select(p => new DataPoint(p.X, p.Y)));
+            band.Points2.AddRange(result.ToleranceLower.Select(p => new DataPoint(p.X, p.Y)));
+            model.Series.Add(band);
+        }
+
+        var targetSeries = new LineSeries
+        {
+            Color = lineColor,
+            StrokeThickness = strokeThickness,
+            LineStyle = ToOxyLineStyle(lineStyle),
+            Title = $"{Title} (target)",
+            Tag = GetTag("target")
+        };
+        if (!string.IsNullOrEmpty(trackerFormat))
+        {
+            targetSeries.TrackerFormatString = trackerFormat;
+        }
+        targetSeries.Points.AddRange(result.Target.Select(p => new DataPoint(p.X, p.Y)));
+        model.Series.Add(targetSeries);
+
+        if (result.Deviation.Length >= 2)
+        {
+            string deviationLabel = targetDeviationMode == TargetDeviationMode.Correction
+                ? "EQ correction"
+                : "deviation";
+            var deviationSeries = new LineSeries
+            {
+                Color = lineColor,
+                StrokeThickness = Math.Max(1.0, strokeThickness - 1.0),
+                LineStyle = LineStyle.Solid,
+                Title = $"{Title} ({deviationLabel})",
+                Tag = GetTag("deviation")
+            };
+            if (!string.IsNullOrEmpty(trackerFormat))
+            {
+                deviationSeries.TrackerFormatString = trackerFormat;
+            }
+            deviationSeries.Points.AddRange(
+                result.Deviation.Select(p => new DataPoint(p.X, p.Y)));
+            model.Series.Add(deviationSeries);
+        }
+
+        return true;
+    }
+
+    private TargetCurveSpec CurrentTargetSpec() => new(
+        targetTiltDbPerOctave,
+        targetBassShelfGainDb,
+        targetBassShelfFrequencyHz,
+        targetBassShelfWidthOctaves,
+        targetTrebleShelfGainDb,
+        targetTrebleShelfFrequencyHz,
+        targetTrebleShelfWidthOctaves,
+        targetPresenceGainDb,
+        targetPresenceFrequencyHz,
+        targetPresenceWidthOctaves);
+
+    private OverlayPoint[]? ResolveTargetSource()
+    {
+        if (targetSourceSlot != 0)
+        {
+            return collection.TryGetCaptureSource(
+                targetSourceSlot,
+                out OverlayOperationSource? source) && source != null
+                ? source.Points.ToArray()
+                : null;
+        }
+
+        // Current measurement: prefer the live trace, else the main analysis
+        // curve (any non-overlay, non-live-helper line series).
+        PlotModel? model = collection.PlotView.Model;
+        if (model == null)
+        {
+            return null;
+        }
+
+        LineSeries? primary = model.Series
+            .OfType<LineSeries>()
+            .FirstOrDefault(series => Equals(series.Tag, "live-spectrum:primary"));
+        primary ??= model.Series
+            .OfType<LineSeries>()
+            .FirstOrDefault(series =>
+                series.Tag is not string tag ||
+                (!tag.StartsWith("overlay:", StringComparison.Ordinal) &&
+                 !tag.StartsWith("live-spectrum:", StringComparison.Ordinal)));
+        if (primary == null || primary.Points.Count < 2)
+        {
+            return null;
+        }
+
+        return primary.Points
+            .Select(point => new OverlayPoint(point.X, point.Y))
+            .ToArray();
     }
 
     public void Hide()
@@ -501,19 +666,34 @@ public sealed class Overlay
                 .ToArray());
     }
 
-    private ContextMenuStrip BuildCaptureMenu()
+    private ContextMenuStrip BuildCaptureMenu(out ToolStripItem exportDeviationItem)
     {
         var menu = new ContextMenuStrip();
         menu.Items.Add("Capture curve…", null, (_, _) => CaptureFromPlot());
+        menu.Items.Add("Import from text…", null, (_, _) => ImportFromText());
+        menu.Items.Add("Export to text…", null, (_, _) => ExportToText());
+        exportDeviationItem = menu.Items.Add(
+            "Export deviation…",
+            null,
+            (_, _) => ExportDeviationToText());
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(
-            "Calculated overlay…",
+            "ƒ  Calculated overlay…",
             null,
             (_, _) => ConfigureOperation());
+        menu.Items.Add("△  Target…", null, (_, _) => ConfigureTarget());
         return menu;
     }
 
     private void CaptureButtonClick(object? sender, EventArgs e)
     {
+        // The deviation export only applies to a target slot, and its label
+        // reflects the current deviation mode.
+        exportDeviationMenuItem.Visible = kind == OverlayKind.Target;
+        exportDeviationMenuItem.Text =
+            targetDeviationMode == TargetDeviationMode.Correction
+                ? "Export EQ correction…"
+                : "Export deviation…";
         captureMenu.Show(captureButton, new Point(0, captureButton.Height));
     }
 
@@ -553,6 +733,7 @@ public sealed class Overlay
         sourcePoints = points;
         SeriesMode = mode;
         Title = title;
+        UpdateKindGlyph();
         UpdateDrawPoints();
 
         try
@@ -570,6 +751,194 @@ public sealed class Overlay
         collection.NotifyCapturedOverlayChanged();
     }
 
+    private void ImportFromText()
+    {
+        Mode mode = collection.Form.CurrentMode;
+        if (mode == Mode.None)
+        {
+            return;
+        }
+
+        using var dialog = new OpenFileDialog
+        {
+            CheckFileExists = true,
+            Filter = "Overlay points (*.txt)|*.txt|All files (*.*)|*.*",
+            Title = "Import overlay points"
+        };
+        if (dialog.ShowDialog(collection.Form) != DialogResult.OK)
+        {
+            return;
+        }
+
+        OverlayPoint[] imported;
+        try
+        {
+            imported = OverlayTextFile.Import(dialog.FileName);
+        }
+        catch (Exception exception)
+        {
+            ShowStorageError("Overlay could not be imported.", exception);
+            return;
+        }
+
+        Hide();
+        kind = OverlayKind.Captured;
+        operationConfigured = false;
+        targetConfigured = false;
+        sourcePoints = imported
+            .Select(point => new DataPoint(point.X, point.Y))
+            .ToArray();
+        SeriesMode = mode;
+        Title = $"Overlay {Index}: " +
+            System.IO.Path.GetFileNameWithoutExtension(dialog.FileName);
+        UpdateKindGlyph();
+        UpdateDrawPoints();
+
+        try
+        {
+            SaveCurrentState();
+        }
+        catch (Exception exception)
+        {
+            ShowStorageError("Overlay could not be saved.", exception);
+            return;
+        }
+
+        SetAvailability(true);
+        Show();
+        collection.NotifyCapturedOverlayChanged();
+    }
+
+    private void ExportToText()
+    {
+        OverlayPoint[]? points = CollectExportablePoints();
+        if (points == null || points.Length < 2)
+        {
+            System.Media.SystemSounds.Beep.Play();
+            return;
+        }
+
+        using var dialog = new SaveFileDialog
+        {
+            AddExtension = true,
+            DefaultExt = "txt",
+            FileName = $"{SanitizeFileName(Title)}.txt",
+            Filter = "Overlay points (*.txt)|*.txt|All files (*.*)|*.*",
+            Title = "Export overlay points"
+        };
+        if (dialog.ShowDialog(collection.Form) != DialogResult.OK)
+        {
+            return;
+        }
+
+        try
+        {
+            OverlayTextFile.Export(dialog.FileName, points);
+        }
+        catch (Exception exception)
+        {
+            ShowStorageError("Overlay could not be exported.", exception);
+        }
+    }
+
+    private void ExportDeviationToText()
+    {
+        if (kind != OverlayKind.Target)
+        {
+            System.Media.SystemSounds.Beep.Play();
+            return;
+        }
+
+        OverlayPoint[]? source = ResolveTargetSource();
+        if (source == null || source.Length < 2)
+        {
+            System.Media.SystemSounds.Beep.Play();
+            return;
+        }
+
+        // Export the deviation even if the displayed mode hides it; default to
+        // plain deviation when no curve mode is selected.
+        TargetDeviationMode exportMode = targetDeviationMode == TargetDeviationMode.None
+            ? TargetDeviationMode.Deviation
+            : targetDeviationMode;
+        TargetCurveResult result = OverlayMath.BuildTarget(
+            source,
+            CurrentTargetSpec(),
+            (double)offsetControl.Value,
+            targetToleranceDb,
+            smoothingInverseOctaves,
+            exportMode);
+        if (result.Deviation.Length < 2)
+        {
+            System.Media.SystemSounds.Beep.Play();
+            return;
+        }
+
+        string suffix = exportMode == TargetDeviationMode.Correction
+            ? "EQ correction"
+            : "deviation";
+        using var dialog = new SaveFileDialog
+        {
+            AddExtension = true,
+            DefaultExt = "txt",
+            FileName = $"{SanitizeFileName(Title)} - {suffix}.txt",
+            Filter = "Overlay points (*.txt)|*.txt|All files (*.*)|*.*",
+            Title = $"Export {suffix}"
+        };
+        if (dialog.ShowDialog(collection.Form) != DialogResult.OK)
+        {
+            return;
+        }
+
+        try
+        {
+            OverlayTextFile.Export(dialog.FileName, result.Deviation);
+        }
+        catch (Exception exception)
+        {
+            ShowStorageError("Deviation could not be exported.", exception);
+        }
+    }
+
+    private OverlayPoint[]? CollectExportablePoints()
+    {
+        switch (kind)
+        {
+            case OverlayKind.Operation:
+                return BuildOperationPoints()?
+                    .Select(point => new OverlayPoint(point.X, point.Y))
+                    .ToArray();
+            case OverlayKind.Target:
+                OverlayPoint[]? source = ResolveTargetSource();
+                if (source == null || source.Length < 2)
+                {
+                    return null;
+                }
+
+                return OverlayMath.BuildTarget(
+                    source,
+                    CurrentTargetSpec(),
+                    (double)offsetControl.Value,
+                    targetToleranceDb,
+                    smoothingInverseOctaves).Target;
+            default:
+                return sourcePoints?
+                    .Select(point => new OverlayPoint(point.X, point.Y))
+                    .ToArray();
+        }
+    }
+
+    private static string SanitizeFileName(string title)
+    {
+        string trimmed = string.IsNullOrWhiteSpace(title) ? "overlay" : title.Trim();
+        foreach (char invalid in System.IO.Path.GetInvalidFileNameChars())
+        {
+            trimmed = trimmed.Replace(invalid, '_');
+        }
+
+        return trimmed;
+    }
+
     private void SettingsButtonClick(object? sender, EventArgs e)
     {
         if (SeriesMode != collection.Form.CurrentMode)
@@ -583,12 +952,82 @@ public sealed class Overlay
             return;
         }
 
+        if (kind == OverlayKind.Target)
+        {
+            ConfigureTarget();
+            return;
+        }
+
         if (!HasCaptureData)
         {
             return;
         }
 
         ConfigureCaptured();
+    }
+
+    private void ConfigureTarget()
+    {
+        if (SeriesMode is not (Mode.FrequencyResponse or Mode.LiveSpectrum))
+        {
+            System.Media.SystemSounds.Beep.Play();
+            return;
+        }
+
+        IReadOnlyList<OverlaySlotOption> sources =
+            collection.GetCaptureSourceOptions();
+        TargetCurveSpec spec = targetConfigured
+            ? CurrentTargetSpec()
+            : TargetCurveSpec.FromPreset(TargetPreset.HarmanRoom);
+
+        using var dialog = new OverlayTargetSettingsDialog(
+            SeriesMode,
+            targetConfigured ? Title : $"Target {Index}",
+            targetConfigured ? targetSourceSlot : 0,
+            targetConfigured ? targetPreset : TargetPreset.HarmanRoom,
+            spec,
+            targetConfigured ? targetToleranceDb : 3,
+            targetConfigured ? targetDeviationMode : TargetDeviationMode.Deviation,
+            kind == OverlayKind.Target ? panel.BackColor : defaultColor,
+            strokeThickness,
+            kind == OverlayKind.Target ? lineStyle : OverlayLineStyle.Dash,
+            opacityPercent,
+            smoothingInverseOctaves,
+            sources);
+        if (dialog.ShowDialog(collection.Form) != DialogResult.OK)
+        {
+            return;
+        }
+
+        Hide();
+        kind = OverlayKind.Target;
+        Title = dialog.OverlayName;
+        targetSourceSlot = dialog.SourceSlot;
+        targetPreset = dialog.Preset;
+        TargetCurveSpec resultSpec = dialog.Spec;
+        targetTiltDbPerOctave = resultSpec.TiltDbPerOctave;
+        targetBassShelfGainDb = resultSpec.BassShelfGainDb;
+        targetBassShelfFrequencyHz = resultSpec.BassShelfFrequencyHz;
+        targetBassShelfWidthOctaves = resultSpec.BassShelfWidthOctaves;
+        targetTrebleShelfGainDb = resultSpec.TrebleShelfGainDb;
+        targetTrebleShelfFrequencyHz = resultSpec.TrebleShelfFrequencyHz;
+        targetTrebleShelfWidthOctaves = resultSpec.TrebleShelfWidthOctaves;
+        targetPresenceGainDb = resultSpec.PresenceGainDb;
+        targetPresenceFrequencyHz = resultSpec.PresenceFrequencyHz;
+        targetPresenceWidthOctaves = resultSpec.PresenceWidthOctaves;
+        targetToleranceDb = dialog.ToleranceDb;
+        targetDeviationMode = dialog.DeviationMode;
+        UpdateKindGlyph();
+        panel.BackColor = dialog.SelectedColor;
+        strokeThickness = dialog.StrokeThickness;
+        lineStyle = dialog.LineStyle;
+        opacityPercent = dialog.OpacityPercent;
+        smoothingInverseOctaves = dialog.SmoothingInverseOctaves;
+        targetConfigured = true;
+
+        SaveCurrentState();
+        SetAvailability(true);
+        Show();
     }
 
     private void ConfigureCaptured()
@@ -668,6 +1107,7 @@ public sealed class Overlay
         opacityPercent = dialog.OpacityPercent;
         smoothingInverseOctaves = dialog.SmoothingInverseOctaves;
         operationConfigured = true;
+        UpdateKindGlyph();
 
         SaveCurrentState();
         RefreshSources();
@@ -710,6 +1150,10 @@ public sealed class Overlay
             return;
         }
         if (kind == OverlayKind.Operation && !operationConfigured)
+        {
+            return;
+        }
+        if (kind == OverlayKind.Target && !targetConfigured)
         {
             return;
         }
@@ -786,6 +1230,25 @@ public sealed class Overlay
             useAmplitudeSpace = file.UseAmplitudeSpace;
             // Availability is resolved by RefreshSources after all slots load.
         }
+        else if (kind == OverlayKind.Target)
+        {
+            targetConfigured = true;
+            targetSourceSlot = file.TargetSourceSlot;
+            targetPreset = file.TargetPreset;
+            targetTiltDbPerOctave = file.TargetTiltDbPerOctave;
+            targetBassShelfGainDb = file.TargetBassShelfGainDb;
+            targetBassShelfFrequencyHz = file.TargetBassShelfFrequencyHz;
+            targetBassShelfWidthOctaves = file.TargetBassShelfWidthOctaves;
+            targetTrebleShelfGainDb = file.TargetTrebleShelfGainDb;
+            targetTrebleShelfFrequencyHz = file.TargetTrebleShelfFrequencyHz;
+            targetTrebleShelfWidthOctaves = file.TargetTrebleShelfWidthOctaves;
+            targetPresenceGainDb = file.TargetPresenceGainDb;
+            targetPresenceFrequencyHz = file.TargetPresenceFrequencyHz;
+            targetPresenceWidthOctaves = file.TargetPresenceWidthOctaves;
+            targetToleranceDb = file.TargetToleranceDb;
+            targetDeviationMode = file.TargetDeviationMode;
+            SetAvailability(true);
+        }
         else
         {
             sourcePoints = file.Points
@@ -794,6 +1257,8 @@ public sealed class Overlay
             UpdateDrawPoints();
             SetAvailability(true);
         }
+
+        UpdateKindGlyph();
     }
 
     private void SaveCurrentState()
@@ -807,6 +1272,10 @@ public sealed class Overlay
             return;
         }
         if (kind == OverlayKind.Operation && !operationConfigured)
+        {
+            return;
+        }
+        if (kind == OverlayKind.Target && !targetConfigured)
         {
             return;
         }
@@ -846,6 +1315,23 @@ public sealed class Overlay
             file.BlendFrequencyHz = blendFrequencyHz;
             file.BlendWidthOctaves = blendWidthOctaves;
             file.UseAmplitudeSpace = useAmplitudeSpace;
+        }
+        else if (kind == OverlayKind.Target)
+        {
+            file.TargetSourceSlot = targetSourceSlot;
+            file.TargetPreset = targetPreset;
+            file.TargetTiltDbPerOctave = targetTiltDbPerOctave;
+            file.TargetBassShelfGainDb = targetBassShelfGainDb;
+            file.TargetBassShelfFrequencyHz = targetBassShelfFrequencyHz;
+            file.TargetBassShelfWidthOctaves = targetBassShelfWidthOctaves;
+            file.TargetTrebleShelfGainDb = targetTrebleShelfGainDb;
+            file.TargetTrebleShelfFrequencyHz = targetTrebleShelfFrequencyHz;
+            file.TargetTrebleShelfWidthOctaves = targetTrebleShelfWidthOctaves;
+            file.TargetPresenceGainDb = targetPresenceGainDb;
+            file.TargetPresenceFrequencyHz = targetPresenceFrequencyHz;
+            file.TargetPresenceWidthOctaves = targetPresenceWidthOctaves;
+            file.TargetToleranceDb = targetToleranceDb;
+            file.TargetDeviationMode = targetDeviationMode;
         }
         else
         {
@@ -923,6 +1409,21 @@ public sealed class Overlay
         blendFrequencyHz = 1_000;
         blendWidthOctaves = 1;
         useAmplitudeSpace = false;
+        targetConfigured = false;
+        targetSourceSlot = 0;
+        targetPreset = TargetPreset.HarmanRoom;
+        targetTiltDbPerOctave = 0;
+        targetBassShelfGainDb = 0;
+        targetBassShelfFrequencyHz = 100;
+        targetBassShelfWidthOctaves = 1.5;
+        targetTrebleShelfGainDb = 0;
+        targetTrebleShelfFrequencyHz = 5_000;
+        targetTrebleShelfWidthOctaves = 1.5;
+        targetPresenceGainDb = 0;
+        targetPresenceFrequencyHz = 3_000;
+        targetPresenceWidthOctaves = 1.0;
+        targetToleranceDb = 0;
+        targetDeviationMode = TargetDeviationMode.Deviation;
         Title = "";
         SeriesMode = Mode.None;
         strokeThickness = 2;
@@ -945,6 +1446,19 @@ public sealed class Overlay
         SetAvailability(false);
         captureButton.Enabled = true;
         settingsButton.Enabled = true;
+        UpdateKindGlyph();
+    }
+
+    // Shows the slot number plus a compact kind glyph: plain number for a
+    // captured curve, ƒ for an operation, △ for a target.
+    private void UpdateKindGlyph()
+    {
+        captureButton.Text = kind switch
+        {
+            OverlayKind.Operation => $"{Index}ƒ",
+            OverlayKind.Target => $"{Index}△",
+            _ => $"{Index}"
+        };
     }
 
     private void SetAvailability(bool available)
@@ -973,15 +1487,18 @@ public sealed class Overlay
 
     private void RemoveSeries(PlotModel model)
     {
-        OxyPlot.Series.Series? existing = model.Series.FirstOrDefault(
-            series => Equals(series.Tag, GetTag()));
-        if (existing != null)
+        string prefix = $"overlay:{SeriesMode}:{Index}:";
+        List<OxyPlot.Series.Series> existing = model.Series
+            .Where(series => series.Tag is string tag &&
+                tag.StartsWith(prefix, StringComparison.Ordinal))
+            .ToList();
+        foreach (OxyPlot.Series.Series series in existing)
         {
-            model.Series.Remove(existing);
+            model.Series.Remove(series);
         }
     }
 
-    private string GetTag() => $"overlay:{SeriesMode}:{Index}";
+    private string GetTag(string part) => $"overlay:{SeriesMode}:{Index}:{part}";
 
     private int SelectSeriesIndex(IReadOnlyList<LineSeries> candidates)
     {

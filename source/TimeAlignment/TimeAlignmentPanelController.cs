@@ -747,6 +747,10 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         int availableRight = Math.Max(1, targetPanel.ClientSize.Width - rightPadding);
         foreach (System.Windows.Forms.Control control in targetPanel.Controls)
         {
+            if (control is PlotView)
+            {
+                continue;
+            }
             if (control.Left >= ScaleRuntimeValue(520))
             {
                 control.Width = Math.Max(1, availableRight - control.Left);

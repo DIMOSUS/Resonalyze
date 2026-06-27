@@ -82,6 +82,54 @@ public static class OverlayMath
         return result;
     }
 
+    /// <summary>
+    /// Builds the target curve, the deviation of a measurement from it, and the
+    /// optional tolerance band. The shared slot offset shifts the target, and the
+    /// deviation is computed against that shifted target. The measurement is
+    /// smoothed before the deviation so it does not jitter.
+    /// </summary>
+    public static TargetCurveResult BuildTarget(
+        IReadOnlyList<OverlayPoint> source,
+        TargetCurveSpec spec,
+        double offsetDb,
+        double toleranceDb,
+        int smoothingInverseOctaves)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(spec);
+
+        OverlayPoint[] smoothed = SmoothByOctaves(source, smoothingInverseOctaves);
+        var target = new List<OverlayPoint>(smoothed.Length);
+        var deviation = new List<OverlayPoint>(smoothed.Length);
+        bool hasTolerance = toleranceDb > 0;
+        var upper = hasTolerance
+            ? new List<OverlayPoint>(smoothed.Length)
+            : null;
+        var lower = hasTolerance
+            ? new List<OverlayPoint>(smoothed.Length)
+            : null;
+
+        foreach (OverlayPoint point in smoothed)
+        {
+            if (!(point.X > 0))
+            {
+                continue;
+            }
+
+            double targetValue = spec.Evaluate(point.X) + offsetDb;
+            target.Add(new OverlayPoint(point.X, targetValue));
+            deviation.Add(new OverlayPoint(point.X, point.Y - targetValue));
+            upper?.Add(new OverlayPoint(point.X, targetValue + toleranceDb));
+            lower?.Add(new OverlayPoint(point.X, targetValue - toleranceDb));
+        }
+
+        return new TargetCurveResult(
+            target.ToArray(),
+            deviation.ToArray(),
+            upper?.ToArray() ?? Array.Empty<OverlayPoint>(),
+            lower?.ToArray() ?? Array.Empty<OverlayPoint>());
+    }
+
     public static OverlayPoint[] CalculateOperation(
         IReadOnlyList<OverlayPoint> a,
         IReadOnlyList<OverlayPoint> b,

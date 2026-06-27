@@ -52,6 +52,16 @@ public sealed class OverlayFile
     public double BlendWidthOctaves { get; set; } = 1;
     public bool UseAmplitudeSpace { get; set; }
 
+    // Target kind: compares a source against a parametric target curve.
+    // TargetSourceSlot 0 means the current measurement; 1..12 a captured slot.
+    public int TargetSourceSlot { get; set; }
+    public TargetPreset TargetPreset { get; set; } = TargetPreset.HarmanRoom;
+    public double TargetTiltDbPerOctave { get; set; }
+    public double TargetBassShelfGainDb { get; set; }
+    public double TargetBassShelfFrequencyHz { get; set; } = 100;
+    public double TargetBassShelfWidthOctaves { get; set; } = 1.5;
+    public double TargetToleranceDb { get; set; }
+
     public static string GetPath(Mode mode, int slot, string? rootDirectory = null)
     {
         ValidateLocation(mode, slot);
@@ -202,8 +212,39 @@ public sealed class OverlayFile
             case OverlayKind.Operation:
                 ValidateOperation();
                 break;
+            case OverlayKind.Target:
+                ValidateTarget();
+                break;
             default:
                 throw new InvalidDataException("The overlay kind is invalid.");
+        }
+    }
+
+    private void ValidateTarget()
+    {
+        if (Mode is not (Mode.FrequencyResponse or Mode.LiveSpectrum))
+        {
+            throw new InvalidDataException(
+                "Target overlays are only supported in frequency-based modes.");
+        }
+        if (TargetSourceSlot is < 0 or > MaximumSlotCount)
+        {
+            throw new InvalidDataException("The target source slot is invalid.");
+        }
+        if (!Enum.IsDefined(TargetPreset))
+        {
+            throw new InvalidDataException("The target preset is invalid.");
+        }
+        if (!double.IsFinite(TargetTiltDbPerOctave) ||
+            !double.IsFinite(TargetBassShelfGainDb) ||
+            !(TargetBassShelfFrequencyHz > 0) ||
+            !(TargetBassShelfWidthOctaves > 0))
+        {
+            throw new InvalidDataException("The target curve parameters are invalid.");
+        }
+        if (!double.IsFinite(TargetToleranceDb) || TargetToleranceDb < 0)
+        {
+            throw new InvalidDataException("The target tolerance is invalid.");
         }
     }
 
@@ -285,6 +326,66 @@ public enum OverlayOperation
     AbsoluteDifference,
     Blend
 }
+
+public enum TargetPreset
+{
+    Flat,
+    HarmanRoom,
+    Car,
+    Custom
+}
+
+/// <summary>
+/// A parametric target response shape (relative dB) defined by an overall tilt
+/// around a 1 kHz pivot plus a low-frequency shelf. Presets are just parameter
+/// sets the user can edit.
+/// </summary>
+public sealed record TargetCurveSpec(
+    double TiltDbPerOctave,
+    double BassShelfGainDb,
+    double BassShelfFrequencyHz,
+    double BassShelfWidthOctaves)
+{
+    public const double PivotHz = 1_000.0;
+
+    public static TargetCurveSpec FromPreset(TargetPreset preset) => preset switch
+    {
+        TargetPreset.Flat => new TargetCurveSpec(0, 0, 100, 1.5),
+        TargetPreset.HarmanRoom => new TargetCurveSpec(-0.8, 4, 105, 1.5),
+        TargetPreset.Car => new TargetCurveSpec(-1.0, 8, 80, 1.5),
+        _ => new TargetCurveSpec(-0.5, 0, 100, 1.5)
+    };
+
+    /// <summary>Relative target level (dB) at the given frequency.</summary>
+    public double Evaluate(double frequencyHz)
+    {
+        if (!(frequencyHz > 0))
+        {
+            return 0;
+        }
+
+        double tilt = TiltDbPerOctave * Math.Log2(frequencyHz / PivotHz);
+        double shelf = 0;
+        if (BassShelfGainDb != 0 &&
+            BassShelfFrequencyHz > 0 &&
+            BassShelfWidthOctaves > 0)
+        {
+            double x = Math.Log2(frequencyHz / BassShelfFrequencyHz) /
+                BassShelfWidthOctaves;
+            // Low shelf: → gain well below the corner, → 0 well above it,
+            // crossing half the gain at the corner frequency.
+            shelf = BassShelfGainDb * 0.5 * (1 - Math.Tanh(x));
+        }
+
+        return tilt + shelf;
+    }
+}
+
+public sealed record TargetCurveResult(
+    OverlayPoint[] Target,
+    OverlayPoint[] Deviation,
+    OverlayPoint[] ToleranceUpper,
+    OverlayPoint[] ToleranceLower);
 
 public static class OverlaySmoothing
 {

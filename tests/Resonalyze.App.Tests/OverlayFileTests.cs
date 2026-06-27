@@ -248,6 +248,71 @@ public sealed class OverlayFileTests
     }
 
     [Fact]
+    public void SaveAndLoad_RoundTripsTargetKind()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = new OverlayFile
+            {
+                SavedAtUtc = DateTimeOffset.UtcNow,
+                Mode = Mode.FrequencyResponse,
+                Slot = 12,
+                Kind = OverlayKind.Target,
+                Title = "Harman target",
+                TargetSourceSlot = 0,
+                TargetPreset = TargetPreset.HarmanRoom,
+                TargetTiltDbPerOctave = -0.8,
+                TargetBassShelfGainDb = 4,
+                TargetBassShelfFrequencyHz = 105,
+                TargetBassShelfWidthOctaves = 1.5,
+                TargetToleranceDb = 3,
+                ColorArgb = Color.Orange.ToArgb()
+            };
+
+            original.Save(root);
+            OverlayFile? loaded = OverlayFile.Load(Mode.FrequencyResponse, 12, root);
+
+            Assert.NotNull(loaded);
+            Assert.Equal(OverlayKind.Target, loaded.Kind);
+            Assert.Equal(0, loaded.TargetSourceSlot);
+            Assert.Equal(TargetPreset.HarmanRoom, loaded.TargetPreset);
+            Assert.Equal(-0.8, loaded.TargetTiltDbPerOctave);
+            Assert.Equal(4, loaded.TargetBassShelfGainDb);
+            Assert.Equal(105, loaded.TargetBassShelfFrequencyHz);
+            Assert.Equal(1.5, loaded.TargetBassShelfWidthOctaves);
+            Assert.Equal(3, loaded.TargetToleranceDb);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Save_RejectsTargetInTimeMode()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var file = new OverlayFile
+            {
+                Mode = Mode.ImpulseResponse,
+                Slot = 11,
+                Kind = OverlayKind.Target,
+                Title = "Bad target",
+                ColorArgb = Color.White.ToArgb()
+            };
+
+            Assert.Throws<InvalidDataException>(() => file.Save(root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Save_RejectsSameOperationSourceSlot()
     {
         string root = CreateTemporaryDirectory();

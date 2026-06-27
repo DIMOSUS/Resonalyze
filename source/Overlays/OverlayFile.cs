@@ -9,8 +9,8 @@ namespace Resonalyze;
 public sealed class OverlayFile
 {
     public const string CurrentFormat = "resonalyze-overlay";
-    public const int CurrentVersion = 4;
-    public const int MaximumSlotCount = 10;
+    public const int CurrentVersion = 5;
+    public const int MaximumSlotCount = 12;
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -27,14 +27,30 @@ public sealed class OverlayFile
     public DateTimeOffset SavedAtUtc { get; set; }
     public Mode Mode { get; set; }
     public int Slot { get; set; }
+
+    /// <summary>Selects how the slot produces its curve(s).</summary>
+    public OverlayKind Kind { get; set; } = OverlayKind.Captured;
+
     public string Title { get; set; } = string.Empty;
+
+    // Presentation (all kinds).
     public double Offset { get; set; }
     public int ColorArgb { get; set; }
     public double StrokeThickness { get; set; } = 2;
     public OverlayLineStyle LineStyle { get; set; } = OverlayLineStyle.Solid;
     public int OpacityPercent { get; set; } = 100;
     public int SmoothingInverseOctaves { get; set; }
+
+    // Captured kind: the stored curve samples.
     public OverlayPoint[] Points { get; set; } = Array.Empty<OverlayPoint>();
+
+    // Operation kind: recipe referencing two captured source slots.
+    public int SourceSlotA { get; set; }
+    public int SourceSlotB { get; set; }
+    public OverlayOperation Operation { get; set; } = OverlayOperation.AMinusB;
+    public double BlendFrequencyHz { get; set; } = 1_000;
+    public double BlendWidthOctaves { get; set; } = 1;
+    public bool UseAmplitudeSpace { get; set; }
 
     public static string GetPath(Mode mode, int slot, string? rootDirectory = null)
     {
@@ -145,6 +161,10 @@ public sealed class OverlayFile
 
         ValidateLocation(Mode, Slot);
 
+        if (!Enum.IsDefined(Kind))
+        {
+            throw new InvalidDataException("The overlay kind is invalid.");
+        }
         if (string.IsNullOrWhiteSpace(Title))
         {
             throw new InvalidDataException("The overlay title is missing.");
@@ -173,6 +193,22 @@ public sealed class OverlayFile
             throw new InvalidDataException(
                 "The overlay smoothing setting is invalid.");
         }
+
+        switch (Kind)
+        {
+            case OverlayKind.Captured:
+                ValidateCaptured();
+                break;
+            case OverlayKind.Operation:
+                ValidateOperation();
+                break;
+            default:
+                throw new InvalidDataException("The overlay kind is invalid.");
+        }
+    }
+
+    private void ValidateCaptured()
+    {
         if (Points == null || Points.Length < 2)
         {
             throw new InvalidDataException("The overlay must contain at least two points.");
@@ -187,6 +223,47 @@ public sealed class OverlayFile
             }
         }
     }
+
+    private void ValidateOperation()
+    {
+        if (SourceSlotA is < 1 or > MaximumSlotCount ||
+            SourceSlotB is < 1 or > MaximumSlotCount ||
+            SourceSlotA == SourceSlotB)
+        {
+            throw new InvalidDataException(
+                "Calculated overlay source slots are invalid.");
+        }
+        if (!Enum.IsDefined(Operation))
+        {
+            throw new InvalidDataException(
+                "The calculated overlay operation is invalid.");
+        }
+        if (Operation == OverlayOperation.Blend)
+        {
+            if (!double.IsFinite(BlendFrequencyHz) || BlendFrequencyHz <= 0)
+            {
+                throw new InvalidDataException(
+                    "The blend crossover frequency is invalid.");
+            }
+            if (!double.IsFinite(BlendWidthOctaves) || BlendWidthOctaves <= 0)
+            {
+                throw new InvalidDataException(
+                    "The blend transition width is invalid.");
+            }
+        }
+        if (UseAmplitudeSpace && !OverlayMath.SupportsAmplitudeSpace(Mode))
+        {
+            throw new InvalidDataException(
+                "Amplitude-space overlay math is not supported in this mode.");
+        }
+    }
+}
+
+public enum OverlayKind
+{
+    Captured,
+    Operation,
+    Target
 }
 
 public readonly record struct OverlayPoint(double X, double Y);

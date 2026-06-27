@@ -10,6 +10,7 @@ namespace Resonalyze;
 
 public sealed class OverlayCollection
 {
+    private const int OrdinaryOverlaySlots = 10;
     private readonly List<Overlay> overlays = new();
     private readonly List<CalculatedOverlay> calculatedOverlays = new();
     private readonly Action notifyPlotChanged;
@@ -70,7 +71,7 @@ public sealed class OverlayCollection
         container.SuspendLayout();
 
         var random = new Random(3);
-        for (int index = 2; index <= OverlayOperationFile.MaximumSlot; index++)
+        for (int index = 2; index <= OverlayFile.MaximumSlotCount; index++)
         {
             Panel panel = CreatePanel(templatePanel, index, random);
             CheckBox checkBox = CreateCheckBox(templateCheckBox, index);
@@ -81,7 +82,7 @@ public sealed class OverlayCollection
             panel.Controls.Add(offset);
             panel.Controls.Add(settingsButton);
 
-            if (index <= OverlayFile.MaximumSlotCount)
+            if (index <= OrdinaryOverlaySlots)
             {
                 Button saveButton = CreateSaveButton(
                     templateSaveButton,
@@ -901,9 +902,8 @@ internal sealed class CalculatedOverlay
         SeriesMode = mode;
         try
         {
-            OverlayOperationFile? file =
-                OverlayOperationFile.Load(mode, Index);
-            if (file != null)
+            OverlayFile? file = OverlayFile.Load(mode, Index);
+            if (file != null && file.Kind == OverlayKind.Operation)
             {
                 ApplyFile(file);
             }
@@ -1004,17 +1004,6 @@ internal sealed class CalculatedOverlay
     {
         IReadOnlyList<OverlaySlotOption> sources =
             collection.GetOrdinaryOverlayOptions();
-        if (sources.Count < 2)
-        {
-            MessageBox.Show(
-                collection.Form,
-                "Save at least two ordinary overlays in slots 1-10 first.",
-                "Calculated overlay",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
-            return;
-        }
-
         using var dialog = new OverlayOperationSettingsDialog(
             SeriesMode,
             configured ? Title : $"Calculated overlay {Index}",
@@ -1105,7 +1094,7 @@ internal sealed class CalculatedOverlay
         return hasA && hasB && sourceA != null && sourceB != null;
     }
 
-    private void ApplyFile(OverlayOperationFile file)
+    private void ApplyFile(OverlayFile file)
     {
         configured = true;
         SeriesMode = file.Mode;
@@ -1147,11 +1136,12 @@ internal sealed class CalculatedOverlay
 
         try
         {
-            new OverlayOperationFile
+            new OverlayFile
             {
                 SavedAtUtc = DateTimeOffset.UtcNow,
                 Mode = SeriesMode,
                 Slot = Index,
+                Kind = OverlayKind.Operation,
                 Title = Title,
                 SourceSlotA = sourceSlotA,
                 SourceSlotB = sourceSlotB,

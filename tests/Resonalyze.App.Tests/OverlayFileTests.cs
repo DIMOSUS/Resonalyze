@@ -113,7 +113,7 @@ public sealed class OverlayFileTests
                   "slot": 2,
                   "mode": "FrequencyResponse",
                   "savedAtUtc": "2026-06-15T10:20:30+00:00",
-                  "version": 4,
+                  "version": 5,
                   "format": "resonalyze-overlay"
                 }
                 """);
@@ -184,17 +184,88 @@ public sealed class OverlayFileTests
     }
 
     [Fact]
-    public void Save_RejectsCalculatedSlot()
+    public void Save_RejectsOutOfRangeSlot()
     {
         string root = CreateTemporaryDirectory();
         try
         {
             OverlayFile file = CreateMinimalOverlay(
                 Mode.FrequencyResponse,
-                11);
+                13);
 
             Assert.Throws<ArgumentOutOfRangeException>(
                 () => file.Save(root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SaveAndLoad_RoundTripsOperationKind()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = new OverlayFile
+            {
+                SavedAtUtc = DateTimeOffset.UtcNow,
+                Mode = Mode.FrequencyResponse,
+                Slot = 11,
+                Kind = OverlayKind.Operation,
+                Title = "Left minus right",
+                SourceSlotA = 2,
+                SourceSlotB = 7,
+                Operation = OverlayOperation.Blend,
+                BlendFrequencyHz = 1_250,
+                BlendWidthOctaves = 0.75,
+                UseAmplitudeSpace = true,
+                Offset = 1.5,
+                ColorArgb = Color.Aqua.ToArgb(),
+                StrokeThickness = 3,
+                LineStyle = OverlayLineStyle.Dot,
+                OpacityPercent = 70,
+                SmoothingInverseOctaves = 6
+            };
+
+            original.Save(root);
+            OverlayFile? loaded = OverlayFile.Load(Mode.FrequencyResponse, 11, root);
+
+            Assert.NotNull(loaded);
+            Assert.Equal(OverlayKind.Operation, loaded.Kind);
+            Assert.Equal(original.SourceSlotA, loaded.SourceSlotA);
+            Assert.Equal(original.SourceSlotB, loaded.SourceSlotB);
+            Assert.Equal(original.Operation, loaded.Operation);
+            Assert.Equal(original.BlendFrequencyHz, loaded.BlendFrequencyHz);
+            Assert.Equal(original.BlendWidthOctaves, loaded.BlendWidthOctaves);
+            Assert.True(loaded.UseAmplitudeSpace);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Save_RejectsSameOperationSourceSlot()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var file = new OverlayFile
+            {
+                Mode = Mode.GroupDelay,
+                Slot = 12,
+                Kind = OverlayKind.Operation,
+                Title = "Invalid",
+                SourceSlotA = 3,
+                SourceSlotB = 3,
+                Operation = OverlayOperation.Sum,
+                ColorArgb = Color.White.ToArgb()
+            };
+
+            Assert.Throws<InvalidDataException>(() => file.Save(root));
         }
         finally
         {

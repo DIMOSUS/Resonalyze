@@ -63,8 +63,9 @@ files are provided with every release.
 - Harmonic distortion, THD, and THD+N analysis
 - Persistent comparison overlays with labels, styling, curve math, targets,
   import/export, and saved per-mode state
-- Measurement History with in-memory snapshots, saved-file recall, and FR
-  previews
+- Measurement History with in-memory snapshots, saved-file recall, FR previews,
+  per-entry working state (mode, settings, active overlays), and a one-click
+  new-session reset
 - Windows Wave and ASIO backends with device-aware sample-rate selection and
   backend-specific channel routing
 - Compact Mic/Loop input level meter with Peak, RMS, Peak Hold, and stored
@@ -98,7 +99,10 @@ Resonalyze is built around a focused engineering workflow:
   raw microphone spectrum.
 - **Measurement history as a working shelf**
   Recent captures stay available in memory, saved files are remembered across
-  launches, and each entry has a frequency-response preview.
+  launches, and each entry has a frequency-response preview. Entries also
+  remember their full working state — active mode, per-mode settings, and shown
+  overlays — so switching between measurements restores the whole context, and a
+  one-click reset starts a fresh session from defaults.
 - **Developer-friendly, inspectable data**
   IR files, overlays, settings, and history metadata are stored as readable
   JSON where practical, making measurements easy to archive, diff, and debug.
@@ -485,6 +489,26 @@ Double-click a row to load it into the main workspace. Use:
 - **Save** to turn an in-memory snapshot into a regular IR JSON file
 - **Delete** to remove an item from history without deleting the underlying
   file from disk
+- **New session (reset to defaults)** to start a clean slate: all per-mode
+  settings return to their defaults and the current measurement and overlays
+  are cleared. Audio device and routing settings are kept, and the history list
+  and saved files are left intact. The active entry's working state is saved
+  first, so nothing is lost.
+
+### Working state remembered per entry
+
+Each history entry remembers the working state it was last used with: the active
+mode, every per-mode setting (frequency response, phase, group delay, impulse
+response, waterfall, burst decay, live spectrum, time alignment), and which
+overlay slots were shown. Switching to another entry and back therefore restores
+not just the impulse response but the whole working context.
+
+This state is kept current as you work — it is written back into the active
+entry whenever you switch to another entry and when you close the app — so it
+reflects what you were actually doing, not just the moment of capture. Audio
+device and routing settings are never changed by switching entries. Overlays
+keep their own separate on-disk storage; history only records which slots were
+active and reloads their contents from there.
 
 Saving an in-memory snapshot turns that row into a file-backed history entry
 and updates the visible name to the chosen file name. Loaded IR files appear in

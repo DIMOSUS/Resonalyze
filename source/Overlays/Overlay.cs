@@ -105,9 +105,10 @@ public sealed class OverlayCollection
 
     public void Prepare(Mode mode)
     {
+        Mode overlayMode = OverlayModeFor(mode);
         foreach (Overlay overlay in overlays)
         {
-            overlay.Prepare(mode);
+            overlay.Prepare(overlayMode);
         }
 
         // Resolve operation sources once every captured slot is loaded.
@@ -121,7 +122,7 @@ public sealed class OverlayCollection
     {
         foreach (Overlay overlay in overlays)
         {
-            if (overlay.Checked && overlay.SeriesMode == mode)
+            if (overlay.Checked && overlay.SeriesMode == OverlayModeFor(mode))
             {
                 overlay.Show();
             }
@@ -151,12 +152,18 @@ public sealed class OverlayCollection
             Mode.Autocorrelation;
     }
 
+    // Frequency Response and Live Spectrum share the same frequency/dB axes, so
+    // they share a single set of overlay slots and on-disk storage. Both map to a
+    // single canonical mode used for every overlay comparison, path, and tag.
+    public static Mode OverlayModeFor(Mode mode) =>
+        mode == Mode.LiveSpectrum ? Mode.FrequencyResponse : mode;
+
     internal IReadOnlyList<OverlaySlotOption> GetCaptureSourceOptions()
     {
         return overlays
             .Where(overlay =>
                 overlay.Kind == OverlayKind.Captured &&
-                overlay.SeriesMode == Form.CurrentMode &&
+                overlay.SeriesMode == OverlayModeFor(Form.CurrentMode) &&
                 overlay.HasCaptureData)
             .Select(overlay => new OverlaySlotOption(
                 overlay.Index,
@@ -172,7 +179,7 @@ public sealed class OverlayCollection
             candidate =>
                 candidate.Index == slot &&
                 candidate.Kind == OverlayKind.Captured &&
-                candidate.SeriesMode == Form.CurrentMode);
+                candidate.SeriesMode == OverlayModeFor(Form.CurrentMode));
         source = overlay?.CreateOperationSource();
         return source != null;
     }
@@ -194,8 +201,9 @@ public sealed class OverlayCollection
     // contents are not captured here; they live in their own on-disk files.
     internal List<int> CaptureActiveSlots(Mode mode)
     {
+        Mode overlayMode = OverlayModeFor(mode);
         return overlays
-            .Where(overlay => overlay.Checked && overlay.SeriesMode == mode)
+            .Where(overlay => overlay.Checked && overlay.SeriesMode == overlayMode)
             .Select(overlay => overlay.Index)
             .ToList();
     }
@@ -210,10 +218,11 @@ public sealed class OverlayCollection
             return;
         }
 
+        Mode overlayMode = OverlayModeFor(mode);
         foreach (int slot in activeSlots)
         {
             Overlay? overlay = overlays.FirstOrDefault(
-                candidate => candidate.Index == slot && candidate.SeriesMode == mode);
+                candidate => candidate.Index == slot && candidate.SeriesMode == overlayMode);
             overlay?.Show();
         }
 
@@ -343,7 +352,9 @@ public sealed class Overlay
     private readonly ContextMenuStrip captureMenu;
     private readonly ToolStripMenuItem captureCurveMenuItem;
     private readonly ToolStripItem exportDeviationMenuItem;
-    private DateTime captureMenuClosedAt = DateTime.MinValue;
+    // True only while processing the very mouse press that dismissed the capture
+    // menu, so that same press toggles it closed instead of immediately reopening.
+    private bool captureMenuClosedByPress;
 
     private OverlayKind kind = OverlayKind.Captured;
     private bool updatingControls;
@@ -407,7 +418,7 @@ public sealed class Overlay
         captureMenu = BuildCaptureMenu(
             out captureCurveMenuItem,
             out exportDeviationMenuItem);
-        captureMenu.Closed += (_, _) => captureMenuClosedAt = DateTime.UtcNow;
+        captureMenu.Closed += CaptureMenuClosed;
 
         toolTip.SetToolTip(offsetControl, "Overlay vertical offset (dB)");
         toolTip.SetToolTip(checkBox, "Show / hide this overlay");
@@ -432,6 +443,11 @@ public sealed class Overlay
     public bool Checked => checkBox.Checked;
     public OverlayKind Kind => kind;
     public bool HasCaptureData => sourcePoints is { Length: > 1 };
+
+    // The overlay mode for the current view; Frequency Response and Live Spectrum
+    // collapse to one shared mode so they use the same slots and storage.
+    private Mode CurrentOverlayMode =>
+        OverlayCollection.OverlayModeFor(collection.Form.CurrentMode);
 
     public void Prepare(Mode mode)
     {
@@ -752,6 +768,17 @@ public sealed class Overlay
         return menu;
     }
 
+    private void CaptureMenuClosed(object? sender, ToolStripDropDownClosedEventArgs e)
+    {
+        // A press on the button while the menu is open is treated by WinForms as a
+        // click outside the menu and closes it. Flag that here and clear the flag
+        // once the current message has been fully processed, so the same press is
+        // recognised as a toggle-close in CaptureButtonMouseDown regardless of
+        // whether Closed fires before or after MouseDown.
+        captureMenuClosedByPress = true;
+        captureButton.BeginInvoke(() => captureMenuClosedByPress = false);
+    }
+
     private void CaptureButtonMouseDown(object? sender, MouseEventArgs e)
     {
         if (e.Button != MouseButtons.Left)
@@ -759,11 +786,24 @@ public sealed class Overlay
             return;
         }
 
-        // Clicking the button while the menu is open first closes the menu
-        // (the press is treated as a click outside it). Without this guard the
-        // same press would immediately reopen it, causing a flicker; with it the
-        // button toggles the menu closed as expected.
-        if ((DateTime.UtcNow - captureMenuClosedAt).TotalMilliseconds < 250)
+        // Toggle closed if this press is dismissing an open menu: either the menu
+        // is still visible (MouseDown ran before the outside-click close) or it has
+        // just been closed by this very press (Closed ran first).
+        if (captureMenu.Visible || captureMenuClosedByPress)
+        {
+            return;
+        }
+
+        // Open after the current mouse message has been processed. Showing a
+        // dropdown synchronously from within the button's mouse-down handler can be
+        // swallowed by the focus/activation change the press triggers, leaving the
+        // button visibly pressed but no menu on screen.
+        captureButton.BeginInvoke(ShowCaptureMenu);
+    }
+
+    private void ShowCaptureMenu()
+    {
+        if (captureMenu.Visible)
         {
             return;
         }
@@ -853,7 +893,7 @@ public sealed class Overlay
         var points = new DataPoint[selected.Points.Count];
         selected.Points.CopyTo(points);
         string title = $"Overlay {Index}: {selected.Title ?? string.Empty}";
-        Mode mode = collection.Form.CurrentMode;
+        Mode mode = CurrentOverlayMode;
 
         Hide();
         kind = OverlayKind.Captured;
@@ -876,7 +916,7 @@ public sealed class Overlay
 
     private void ImportFromText()
     {
-        Mode mode = collection.Form.CurrentMode;
+        Mode mode = CurrentOverlayMode;
         if (mode == Mode.None)
         {
             return;
@@ -1059,7 +1099,7 @@ public sealed class Overlay
 
     private void SettingsButtonClick(object? sender, EventArgs e)
     {
-        if (SeriesMode != collection.Form.CurrentMode)
+        if (SeriesMode != CurrentOverlayMode)
         {
             return;
         }
@@ -1237,7 +1277,7 @@ public sealed class Overlay
 
     private void ClearOverlay()
     {
-        if (SeriesMode != collection.Form.CurrentMode)
+        if (SeriesMode != CurrentOverlayMode)
         {
             return;
         }
@@ -1298,7 +1338,7 @@ public sealed class Overlay
 
         if (checkBox.Checked)
         {
-            if (SeriesMode == collection.Form.CurrentMode)
+            if (SeriesMode == CurrentOverlayMode)
             {
                 Show();
             }

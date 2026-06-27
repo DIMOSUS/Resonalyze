@@ -71,7 +71,11 @@ public partial class Form1
                 PersistCurrentSessionState();
             }
 
-            await RestoreHistorySnapshotAsync(snapshot);
+            // File-backed entries keep their file name in the plot titles (the same
+            // way a freshly saved or loaded IR does); in-memory entries have none.
+            string? sourceFilePath = measurementHistoryService.FindById(entryId)
+                ?.SourceFilePath;
+            await RestoreHistorySnapshotAsync(snapshot, sourceFilePath);
             currentHistoryEntryId = entryId;
             dockedHistoryHost.InvokeIfOpen<MeasurementHistoryWindow>(dialog =>
             {
@@ -171,7 +175,9 @@ public partial class Form1
         });
     }
 
-    private async Task RestoreHistorySnapshotAsync(MeasurementHistorySnapshot snapshot)
+    private async Task RestoreHistorySnapshotAsync(
+        MeasurementHistorySnapshot snapshot,
+        string? sourceFilePath)
     {
         expSweepMeasurement.RestoreImpulseResponse(
             snapshot.Octaves,
@@ -192,7 +198,7 @@ public partial class Form1
         }
 
         ApplyMeasurementConfigurationToControllers();
-        SetImpulseResponseSourceFile(null);
+        SetImpulseResponseSourceFile(sourceFilePath);
         hasCurrentImpulseResponse = true;
         UpdatePeakInfo();
 

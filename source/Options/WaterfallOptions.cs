@@ -173,29 +173,29 @@ namespace Resonalyze.Options
 
         private void InitializeToolTips()
         {
-            toolTip.SetToolTip(
-                numericWindow,
+            numericWindow.ApplyToolTip(
+                toolTip,
                 "Sets the FFT window length for each waterfall slice.");
-            toolTip.SetToolTip(
-                numericSlices,
+            numericSlices.ApplyToolTip(
+                toolTip,
                 "Controls how many slices are drawn in depth.");
-            toolTip.SetToolTip(
-                numericStep,
+            numericStep.ApplyToolTip(
+                toolTip,
                 "Sets the shift in samples between neighboring slices. Larger values cover more time with fewer overlapping slices.");
-            toolTip.SetToolTip(
-                numericLeftWindow,
+            numericLeftWindow.ApplyToolTip(
+                toolTip,
                 "Controls the fade-in part of the Tukey window before the analyzed region.");
-            toolTip.SetToolTip(
-                numericRightWindow,
+            numericRightWindow.ApplyToolTip(
+                toolTip,
                 "Controls the fade-out part of the Tukey window after the analyzed region.");
-            toolTip.SetToolTip(
-                numericDbRange,
+            numericDbRange.ApplyToolTip(
+                toolTip,
                 "Sets the lower display limit in decibels for the waterfall plot.");
             toolTip.SetToolTip(
                 comboSmoothingInverseOctaves,
                 "Applies octave smoothing to each resampled frequency slice.");
-            toolTip.SetToolTip(
-                numericOffset,
+            numericOffset.ApplyToolTip(
+                toolTip,
                 "Shifts the whole waterfall analysis window relative to the detected impulse-response peak.");
             toolTip.SetToolTip(
                 irPlotView,

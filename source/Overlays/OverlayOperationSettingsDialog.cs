@@ -283,8 +283,8 @@ internal sealed class OverlayOperationSettingsDialog : Form
         toolTip.SetToolTip(
             operationComboBox,
             "Calculation applied between curve A and curve B.");
-        toolTip.SetToolTip(
-            blendFrequencyInput,
+        blendFrequencyInput.ApplyToolTip(
+            toolTip,
             "Crossover frequency for the Blend operation (A below, B above).");
         toolTip.SetToolTip(
             blendWidthInput,
@@ -293,7 +293,7 @@ internal sealed class OverlayOperationSettingsDialog : Form
             amplitudeSpaceCheckBox,
             "Convert both curves to linear amplitude before the operation and back to dB afterward (for dB-based views).");
         toolTip.SetToolTip(colorButton, "Curve color.");
-        toolTip.SetToolTip(thicknessInput, "Line thickness.");
+        thicknessInput.ApplyToolTip(toolTip, "Line thickness.");
         toolTip.SetToolTip(styleComboBox, "Line style (solid, dash, dot, dash-dot).");
         toolTip.SetToolTip(
             smoothingComboBox,

@@ -130,13 +130,13 @@ internal sealed class OverlayTargetSettingsDialog : Form
         };
         presetComboBox.SelectedIndexChanged += PresetChanged;
 
-        AddLabel("Tolerance ±dB", 120, 300);
+        AddLabel("Tolerance ±dB", 120, 300, ToleranceTip);
         ConfigureNumeric(toleranceInput, new Point(300, 140), 180, 0, 12, 0.5m, 1);
 
-        AddLabel("Tilt dB/oct", 176);
+        AddLabel("Tilt dB/oct", 176, 20, TiltTip);
         ConfigureNumeric(tiltInput, new Point(20, 196), 160, -6, 6, 0.1m, 1);
 
-        AddLabel("Deviation", 176, 250);
+        AddLabel("Deviation", 176, 250, DeviationTip);
         ConfigureCombo(deviationModeComboBox, new Point(250, 196), new Size(230, 24));
         deviationModeComboBox.FormattingEnabled = true;
         foreach (TargetDeviationMode value in Enum.GetValues<TargetDeviationMode>())
@@ -152,21 +152,21 @@ internal sealed class OverlayTargetSettingsDialog : Form
         };
 
         // Compact gain / freq / width grid for the three shaping terms.
-        AddLabel("Gain dB", 230, 150);
-        AddLabel("Freq Hz", 230, 260);
-        AddLabel("Width oct", 230, 370);
+        AddLabel("Gain dB", 230, 150, "Lift or cut amount, in dB.");
+        AddLabel("Freq Hz", 230, 260, "Corner frequency (shelf) or center frequency (presence), in Hz.");
+        AddLabel("Width oct", 230, 370, "Transition width / bump width, in octaves.");
 
-        AddLabel("Bass shelf", 252);
+        AddLabel("Bass shelf", 252, 20, BassTip);
         ConfigureNumeric(bassGainInput, new Point(150, 250), 100, -12, 18, 0.5m, 1);
         ConfigureNumeric(bassFrequencyInput, new Point(260, 250), 100, 20, 500, 1, 0);
         ConfigureNumeric(bassWidthInput, new Point(370, 250), 100, 0.2m, 4, 0.1m, 1);
 
-        AddLabel("Treble shelf", 284);
+        AddLabel("Treble shelf", 284, 20, TrebleTip);
         ConfigureNumeric(trebleGainInput, new Point(150, 282), 100, -18, 12, 0.5m, 1);
         ConfigureNumeric(trebleFrequencyInput, new Point(260, 282), 100, 1_000, 16_000, 100, 0);
         ConfigureNumeric(trebleWidthInput, new Point(370, 282), 100, 0.2m, 4, 0.1m, 1);
 
-        AddLabel("Presence", 316);
+        AddLabel("Presence", 316, 20, PresenceTip);
         ConfigureNumeric(presenceGainInput, new Point(150, 314), 100, -12, 12, 0.5m, 1);
         ConfigureNumeric(presenceFrequencyInput, new Point(260, 314), 100, 500, 8_000, 50, 0);
         ConfigureNumeric(presenceWidthInput, new Point(370, 314), 100, 0.2m, 3, 0.1m, 1);
@@ -270,6 +270,19 @@ internal sealed class OverlayTargetSettingsDialog : Form
         PerformLayout();
     }
 
+    private const string TiltTip =
+        "Overall spectral tilt in dB per octave, pivoting at 1 kHz. Negative tilts the response downward toward high frequencies.";
+    private const string BassTip =
+        "Low-frequency shelf: bass lift (or cut) below the corner frequency, set by gain, corner frequency and transition width.";
+    private const string TrebleTip =
+        "High-frequency shelf: treble lift (or cut) above the corner frequency, set by gain, corner frequency and transition width.";
+    private const string PresenceTip =
+        "Presence bump (positive) or dip (negative) centered on its frequency, set by gain, center frequency and width.";
+    private const string ToleranceTip =
+        "Shaded ±dB tolerance band drawn around the target. Zero hides the band.";
+    private const string DeviationTip =
+        "Deviation curve: 'Deviation' shows measurement − target; 'EQ correction' shows target − measurement (the gain to dial into an equalizer); 'None' hides it.";
+
     private void InitializeToolTips()
     {
         toolTip.AutoPopDelay = 12_000;
@@ -279,42 +292,19 @@ internal sealed class OverlayTargetSettingsDialog : Form
         toolTip.SetToolTip(
             sourceComboBox,
             "Curve to compare against the target: a captured slot, or the current measurement (live/last Live Spectrum trace or the main Frequency Response curve).");
-        toolTip.SetToolTip(
-            tiltInput,
-            "Overall spectral tilt in dB per octave, pivoting at 1 kHz. Negative tilts the response downward toward high frequencies.");
-        toolTip.SetToolTip(
-            bassGainInput,
-            "Low-frequency shelf: amount of bass lift (or cut) below the corner frequency.");
-        toolTip.SetToolTip(
-            bassFrequencyInput,
-            "Corner frequency of the bass shelf.");
-        toolTip.SetToolTip(
-            bassWidthInput,
-            "Transition width of the bass shelf, in octaves.");
-        toolTip.SetToolTip(
-            trebleGainInput,
-            "High-frequency shelf: amount of treble lift (or cut) above the corner frequency.");
-        toolTip.SetToolTip(
-            trebleFrequencyInput,
-            "Corner frequency of the treble shelf.");
-        toolTip.SetToolTip(
-            trebleWidthInput,
-            "Transition width of the treble shelf, in octaves.");
-        toolTip.SetToolTip(
-            presenceGainInput,
-            "Presence bump (positive) or dip (negative) centered on its frequency.");
-        toolTip.SetToolTip(
-            presenceFrequencyInput,
-            "Center frequency of the presence bump/dip.");
-        toolTip.SetToolTip(
-            presenceWidthInput,
-            "Width of the presence bump/dip, in octaves.");
-        toolTip.SetToolTip(
-            toleranceInput,
-            "Shaded ±dB tolerance band drawn around the target. Zero hides the band.");
-        toolTip.SetToolTip(
-            deviationModeComboBox,
-            "Deviation curve: 'Deviation' shows measurement − target; 'EQ correction' shows target − measurement (the gain to dial into an equalizer); 'None' hides it.");
+        tiltInput.ApplyToolTip(toolTip, TiltTip);
+        bassGainInput.ApplyToolTip(toolTip, BassTip);
+        bassFrequencyInput.ApplyToolTip(toolTip, BassTip);
+        bassWidthInput.ApplyToolTip(toolTip, BassTip);
+        trebleGainInput.ApplyToolTip(toolTip, TrebleTip);
+        trebleFrequencyInput.ApplyToolTip(toolTip, TrebleTip);
+        trebleWidthInput.ApplyToolTip(toolTip, TrebleTip);
+        presenceGainInput.ApplyToolTip(toolTip, PresenceTip);
+        presenceFrequencyInput.ApplyToolTip(toolTip, PresenceTip);
+        presenceWidthInput.ApplyToolTip(toolTip, PresenceTip);
+        toleranceInput.ApplyToolTip(toolTip, ToleranceTip);
+        thicknessInput.ApplyToolTip(toolTip, "Line thickness.");
+        toolTip.SetToolTip(deviationModeComboBox, DeviationTip);
         toolTip.SetToolTip(
             smoothingComboBox,
             "Fractional-octave smoothing applied to the source before the deviation is computed.");
@@ -508,9 +498,20 @@ internal sealed class OverlayTargetSettingsDialog : Form
         UiStyle.ApplySurfaceInput(control, location, size);
     }
 
-    private void AddLabel(string text, int y, int x = 20)
+    private Label AddLabel(string text, int y, int x = 20, string? tooltip = null)
     {
-        Controls.Add(UiStyle.CreateLabel(text, new Point(x, y), UiPalette.TextSecondary, Font));
+        Label label = UiStyle.CreateLabel(
+            text,
+            new Point(x, y),
+            UiPalette.TextSecondary,
+            Font);
+        Controls.Add(label);
+        if (!string.IsNullOrEmpty(tooltip))
+        {
+            toolTip.SetToolTip(label, tooltip);
+        }
+
+        return label;
     }
 
     private static string GetPresetDescription(TargetPreset preset) => preset switch

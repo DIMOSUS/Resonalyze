@@ -36,8 +36,8 @@ namespace Resonalyze.Options
 
         private void InitializeToolTips()
         {
-            toolTip.SetToolTip(
-                numericLength,
+            numericLength.ApplyToolTip(
+                toolTip,
                 "Sets how many impulse-response samples are shown on the graph.");
             toolTip.SetToolTip(
                 checkLogarithmic,

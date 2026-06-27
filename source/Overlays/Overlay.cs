@@ -313,6 +313,7 @@ public sealed class Overlay
     private readonly ContextMenuStrip captureMenu;
     private readonly ToolStripMenuItem captureCurveMenuItem;
     private readonly ToolStripItem exportDeviationMenuItem;
+    private DateTime captureMenuClosedAt = DateTime.MinValue;
 
     private OverlayKind kind = OverlayKind.Captured;
     private bool updatingControls;
@@ -376,6 +377,7 @@ public sealed class Overlay
         captureMenu = BuildCaptureMenu(
             out captureCurveMenuItem,
             out exportDeviationMenuItem);
+        captureMenu.Closed += (_, _) => captureMenuClosedAt = DateTime.UtcNow;
 
         toolTip.SetToolTip(offsetControl, "Overlay vertical offset (dB)");
         toolTip.SetToolTip(checkBox, "Show / hide this overlay");
@@ -387,7 +389,7 @@ public sealed class Overlay
             "Overlay name, kind, color, line style and clearing");
 
         checkBox.CheckedChanged += CheckBoxChanged;
-        captureButton.Click += CaptureButtonClick;
+        captureButton.MouseDown += CaptureButtonMouseDown;
         settingsButton.Click += SettingsButtonClick;
         offsetControl.ValueChanged += OffsetValueChanged;
 
@@ -720,8 +722,22 @@ public sealed class Overlay
         return menu;
     }
 
-    private void CaptureButtonClick(object? sender, EventArgs e)
+    private void CaptureButtonMouseDown(object? sender, MouseEventArgs e)
     {
+        if (e.Button != MouseButtons.Left)
+        {
+            return;
+        }
+
+        // Clicking the button while the menu is open first closes the menu
+        // (the press is treated as a click outside it). Without this guard the
+        // same press would immediately reopen it, causing a flicker; with it the
+        // button toggles the menu closed as expected.
+        if ((DateTime.UtcNow - captureMenuClosedAt).TotalMilliseconds < 250)
+        {
+            return;
+        }
+
         RebuildCaptureCurveMenu();
         // The deviation export only applies to a target slot, and its label
         // reflects the current deviation mode.

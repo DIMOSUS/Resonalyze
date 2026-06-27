@@ -175,7 +175,7 @@ internal sealed class OverlaySettingsDialog : Form
 
         toolTip.SetToolTip(nameTextBox, "Display name shown in the on-plot legend.");
         toolTip.SetToolTip(colorButton, "Curve color.");
-        toolTip.SetToolTip(thicknessInput, "Line thickness.");
+        thicknessInput.ApplyToolTip(toolTip, "Line thickness.");
         toolTip.SetToolTip(styleComboBox, "Line style (solid, dash, dot, dash-dot).");
         toolTip.SetToolTip(
             smoothingComboBox,

@@ -156,26 +156,26 @@ namespace Resonalyze.Options
 
         private void InitializeToolTips()
         {
-            toolTip.SetToolTip(
-                numericWindow,
+            numericWindow.ApplyToolTip(
+                toolTip,
                 "Sets the impulse-response window length used for burst-decay analysis.");
-            toolTip.SetToolTip(
-                numericLeftWindow,
+            numericLeftWindow.ApplyToolTip(
+                toolTip,
                 "Controls the fade-in part of the Tukey window before the analyzed region.");
-            toolTip.SetToolTip(
-                numericRightWindow,
+            numericRightWindow.ApplyToolTip(
+                toolTip,
                 "Controls the fade-out part of the Tukey window after the analyzed region.");
             toolTip.SetToolTip(
                 comboSmoothingInverseOctaves,
                 "Sets the analysis bandwidth in octaves for each burst-decay slice. Narrower bands increase frequency resolution but make traces less stable.");
-            toolTip.SetToolTip(
-                numericDbRange,
+            numericDbRange.ApplyToolTip(
+                toolTip,
                 "Sets the lower display limit in decibels for the burst-decay plot.");
-            toolTip.SetToolTip(
-                numericOffset,
+            numericOffset.ApplyToolTip(
+                toolTip,
                 "Shifts the burst-decay analysis window relative to the detected impulse-response peak.");
-            toolTip.SetToolTip(
-                numericPeriods,
+            numericPeriods.ApplyToolTip(
+                toolTip,
                 "Sets how many signal periods are shown on the horizontal axis for each frequency slice.");
             toolTip.SetToolTip(
                 irPlotView,

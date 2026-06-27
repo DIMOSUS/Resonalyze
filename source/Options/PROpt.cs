@@ -129,20 +129,20 @@ namespace Resonalyze.Options
 
         private void InitializeToolTips()
         {
-            toolTip.SetToolTip(
-                numericWindow,
+            numericWindow.ApplyToolTip(
+                toolTip,
                 "Sets the analysis window length used to calculate phase.");
-            toolTip.SetToolTip(
-                numericLeftWindow,
+            numericLeftWindow.ApplyToolTip(
+                toolTip,
                 "Controls the fade-in part of the Tukey window before the selected impulse region.");
-            toolTip.SetToolTip(
-                numericRightWindow,
+            numericRightWindow.ApplyToolTip(
+                toolTip,
                 "Controls the fade-out part of the Tukey window after the selected impulse region.");
             toolTip.SetToolTip(
                 comboSmoothingInverseOctaves,
                 "Applies octave smoothing to the phase trace.");
-            toolTip.SetToolTip(
-                numericOffset,
+            numericOffset.ApplyToolTip(
+                toolTip,
                 "Shifts the analysis window relative to the detected impulse-response peak.");
             toolTip.SetToolTip(
                 checkBoxUnwrap,

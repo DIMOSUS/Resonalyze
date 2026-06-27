@@ -129,8 +129,8 @@ public partial class GDOpt : Form
     {
         bool useTransfer = expSweepMeasurement?.TransferImpulseResponse is { Length: > 0 };
         numericOffset.Enabled = !useTransfer;
-        toolTip.SetToolTip(
-            numericOffset,
+        numericOffset.ApplyToolTip(
+            toolTip,
             useTransfer
                 ? "Offset is disabled for transfer-function IR because Group Delay is referenced to the start of the IR."
                 : "Shifts the analysis window relative to the detected sweep-deconvolution IR peak.");
@@ -146,14 +146,14 @@ public partial class GDOpt : Form
 
     private void InitializeToolTips()
     {
-        toolTip.SetToolTip(
-            numericWindow,
+        numericWindow.ApplyToolTip(
+            toolTip,
             "Sets the analysis window length used for Group Delay calculation.");
-        toolTip.SetToolTip(
-            numericLeftWindow,
+        numericLeftWindow.ApplyToolTip(
+            toolTip,
             "Controls the fade-in part of the Tukey window before the selected impulse region.");
-        toolTip.SetToolTip(
-            numericRightWindow,
+        numericRightWindow.ApplyToolTip(
+            toolTip,
             "Controls the fade-out part of the Tukey window after the selected impulse region.");
         toolTip.SetToolTip(
             comboSmoothingInverseOctaves,

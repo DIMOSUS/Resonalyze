@@ -681,6 +681,17 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         ValueChanged?.Invoke(this, e);
     }
 
+    /// <summary>
+    /// Assigns a tooltip to the control and its inner text editor so it shows
+    /// regardless of whether the cursor is over the number or the spin buttons.
+    /// </summary>
+    public void ApplyToolTip(ToolTip toolTip, string text)
+    {
+        ArgumentNullException.ThrowIfNull(toolTip);
+        toolTip.SetToolTip(this, text);
+        toolTip.SetToolTip(editor, text);
+    }
+
     public void BeginInit()
     {
     }

@@ -127,14 +127,14 @@ namespace Resonalyze.Options
 
         private void InitializeToolTips()
         {
-            toolTip.SetToolTip(
-                numericWindow,
+            numericWindow.ApplyToolTip(
+                toolTip,
                 "Sets the FFT window length used to calculate the frequency response.");
-            toolTip.SetToolTip(
-                numericLeftWindow,
+            numericLeftWindow.ApplyToolTip(
+                toolTip,
                 "Controls the fade-in part of the Tukey window before the main impulse region.");
-            toolTip.SetToolTip(
-                numericRightWindow,
+            numericRightWindow.ApplyToolTip(
+                toolTip,
                 "Controls the fade-out part of the Tukey window after the main impulse region.");
             toolTip.SetToolTip(
                 comboSmoothingInverseOctaves,

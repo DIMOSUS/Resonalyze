@@ -16,7 +16,9 @@ internal sealed class MeasurementHistorySnapshot
     public Complex[]? TransferImpulseResponse { get; init; }
     public required InputLevelMeterSnapshot MeterSnapshot { get; init; }
     public required MeasurementHistoryPreview Preview { get; init; }
-    public MeasurementSessionSnapshot? Session { get; init; }
+    // Settable so the live working state (mode + per-mode settings + active
+    // overlays) can be written back into a cached snapshot when navigating away.
+    public MeasurementSessionSnapshot? Session { get; set; }
 
     public ImpulseResponseFile ToImpulseResponseFile()
     {

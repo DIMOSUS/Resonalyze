@@ -209,10 +209,12 @@ internal sealed class MeasurementSettingsFile
 
         public void ApplyTo(FrequencyResponseOptions options)
         {
-            int window = Clamp(Window, 32, 32768);
+            // Lower bound matches the UI (numericWindow.Minimum = 4); clamping to a
+            // higher floor would corrupt small windows on a settings/history roundtrip.
+            int window = Clamp(Window, 4, 32768);
             options.Window = window;
-            options.LeftTukeyWindow = Clamp(LeftTukeyWindow, 0, window / 2);
-            options.RightTukeyWindow = Clamp(RightTukeyWindow, 0, window / 2);
+            (options.LeftTukeyWindow, options.RightTukeyWindow) =
+                ClampTukeyWindows(LeftTukeyWindow, RightTukeyWindow, window);
             options.SmoothingInverseOctaves =
                 SmoothingPresetOptions.Normalize(SmoothingInverseOctaves);
             options.Offset = Clamp(Offset, -32768, 32768);
@@ -278,8 +280,8 @@ internal sealed class MeasurementSettingsFile
             options.SliceCount = Clamp(SliceCount, 1, 1024);
             options.Step = Step == 0 ? 1 : Clamp(Step, -32768, 32768);
             options.Window = window;
-            options.LeftTukeyWindow = Clamp(LeftTukeyWindow, 0, window / 2);
-            options.RightTukeyWindow = Clamp(RightTukeyWindow, 0, window / 2);
+            (options.LeftTukeyWindow, options.RightTukeyWindow) =
+                ClampTukeyWindows(LeftTukeyWindow, RightTukeyWindow, window);
             options.DbRange = Clamp(DbRange, -140, -10);
             options.SmoothingInverseOctaves =
                 SmoothingPresetOptions.Normalize(SmoothingInverseOctaves);
@@ -523,6 +525,24 @@ internal sealed class MeasurementSettingsFile
         offset.HasValue
             ? NormalizeAsioChannelOffset(asioDriverName, sampleRate, offset.Value, input: true)
             : null;
+
+    // Mirrors the UI invariant (see TukeyWindowControlHelper): each fade is in
+    // [0, window] and their sum must not exceed the window length. Clamping each
+    // to window/2 instead would corrupt valid asymmetric windows (e.g. 256 + 16).
+    private static (int Left, int Right) ClampTukeyWindows(
+        int left,
+        int right,
+        int window)
+    {
+        int clampedLeft = Clamp(left, 0, window);
+        int clampedRight = Clamp(right, 0, window);
+        if (clampedLeft + clampedRight > window)
+        {
+            clampedRight = Math.Max(0, window - clampedLeft);
+        }
+
+        return (clampedLeft, clampedRight);
+    }
 
     private static int Clamp(int value, int minimum, int maximum) =>
         Math.Clamp(value, minimum, maximum);

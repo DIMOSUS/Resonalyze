@@ -150,6 +150,25 @@ internal sealed class MeasurementHistoryService
         return entry.Snapshot;
     }
 
+    // Stores the latest live working state into an entry so returning to it later
+    // restores what the user was actually doing, not the state at save time.
+    public void UpdateSession(Guid entryId, MeasurementSessionSnapshot session)
+    {
+        MeasurementHistoryEntry? entry = FindById(entryId);
+        if (entry == null)
+        {
+            return;
+        }
+
+        entry.Session = session;
+        if (entry.Snapshot != null)
+        {
+            entry.Snapshot.Session = session;
+        }
+
+        persistence.Save(entries);
+    }
+
     public MeasurementHistoryEntry? FindById(Guid entryId) =>
         entries.FirstOrDefault(entry => entry.Id == entryId);
 

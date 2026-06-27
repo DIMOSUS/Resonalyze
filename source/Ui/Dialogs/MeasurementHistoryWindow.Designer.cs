@@ -28,6 +28,7 @@ partial class MeasurementHistoryWindow
     /// </summary>
     private void InitializeComponent()
     {
+        buttonNewSession = new Button();
         historyDataGridView = new DataGridView();
         Column1 = new DataGridViewTextBoxColumn();
         Column2 = new DataGridViewTextBoxColumn();
@@ -36,9 +37,21 @@ partial class MeasurementHistoryWindow
         FRPlotView = new OxyPlot.WindowsForms.PlotView();
         ((System.ComponentModel.ISupportInitialize)historyDataGridView).BeginInit();
         SuspendLayout();
-        // 
+        //
+        // buttonNewSession
+        //
+        buttonNewSession.FlatStyle = FlatStyle.Flat;
+        buttonNewSession.Location = new Point(0, 0);
+        buttonNewSession.Margin = new Padding(0);
+        buttonNewSession.Name = "buttonNewSession";
+        buttonNewSession.Size = new Size(350, 30);
+        buttonNewSession.TabIndex = 0;
+        buttonNewSession.Text = "New session (reset to defaults)";
+        buttonNewSession.UseVisualStyleBackColor = false;
+        buttonNewSession.Click += ButtonNewSession_Click;
+        //
         // historyDataGridView
-        // 
+        //
         historyDataGridView.AllowUserToAddRows = false;
         historyDataGridView.AllowUserToDeleteRows = false;
         historyDataGridView.AllowUserToResizeColumns = false;
@@ -47,14 +60,14 @@ partial class MeasurementHistoryWindow
         historyDataGridView.BorderStyle = BorderStyle.None;
         historyDataGridView.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
         historyDataGridView.Columns.AddRange(new DataGridViewColumn[] { Column1, Column2, Column3, Column4 });
-        historyDataGridView.Location = new Point(0, 0);
+        historyDataGridView.Location = new Point(0, 30);
         historyDataGridView.Margin = new Padding(0);
         historyDataGridView.MultiSelect = false;
         historyDataGridView.Name = "historyDataGridView";
         historyDataGridView.RowHeadersVisible = false;
         historyDataGridView.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-        historyDataGridView.Size = new Size(350, 500);
-        historyDataGridView.TabIndex = 0;
+        historyDataGridView.Size = new Size(350, 470);
+        historyDataGridView.TabIndex = 1;
         // 
         // Column1
         // 
@@ -90,7 +103,7 @@ partial class MeasurementHistoryWindow
         FRPlotView.Name = "FRPlotView";
         FRPlotView.PanCursor = Cursors.Hand;
         FRPlotView.Size = new Size(350, 200);
-        FRPlotView.TabIndex = 1;
+        FRPlotView.TabIndex = 2;
         FRPlotView.Text = "plotView1";
         FRPlotView.ZoomHorizontalCursor = Cursors.SizeWE;
         FRPlotView.ZoomRectangleCursor = Cursors.SizeNWSE;
@@ -104,6 +117,7 @@ partial class MeasurementHistoryWindow
         ClientSize = new Size(350, 700);
         Controls.Add(FRPlotView);
         Controls.Add(historyDataGridView);
+        Controls.Add(buttonNewSession);
         ForeColor = Color.FromArgb(235, 237, 240);
         FormBorderStyle = FormBorderStyle.None;
         MinimumSize = new Size(350, 700);
@@ -117,6 +131,7 @@ partial class MeasurementHistoryWindow
 
     #endregion
 
+    private Button buttonNewSession;
     private DataGridView historyDataGridView;
     private OxyPlot.WindowsForms.PlotView FRPlotView;
     private DataGridViewTextBoxColumn Column1;

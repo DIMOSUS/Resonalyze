@@ -23,6 +23,7 @@ public partial class Form1
                 dialog.EntryActivated += HandleHistoryEntryActivated;
                 dialog.SaveRequested += HandleHistorySaveRequested;
                 dialog.DeleteRequested += HandleHistoryDeleteRequested;
+                dialog.NewSessionRequested += HandleNewSessionRequested;
                 dialog.SetEntries(
                     measurementHistoryService.Entries,
                     currentHistoryEntryId,
@@ -60,6 +61,14 @@ public partial class Form1
             if (snapshot == null)
             {
                 return;
+            }
+
+            // Before leaving the current entry, write the live working state back
+            // into it so that returning later restores the latest mode/settings/
+            // overlays rather than the state captured at save time.
+            if (currentHistoryEntryId != entryId)
+            {
+                PersistCurrentSessionState();
             }
 
             await RestoreHistorySnapshotAsync(snapshot);
@@ -189,16 +198,83 @@ public partial class Form1
 
         if (snapshot.Session != null)
         {
+            // Switching mode re-prepares overlays from their own on-disk files and
+            // leaves them hidden, so restoring just re-shows the previously-active
+            // slots. Audio device and routing settings are intentionally untouched.
             await SelectModeAsync(NormalizeSessionMode(snapshot.Session.ActiveMode));
-            overlayCollection.RestoreSessionState(
+            overlayCollection.RestoreActiveSlots(
                 CurrentMode,
-                snapshot.Session.ActiveOverlays);
+                snapshot.Session.ActiveOverlaySlots);
             SaveMeasurementSettings();
         }
         else
         {
             RefreshCurrentModePlot();
         }
+    }
+
+    private async void HandleNewSessionRequested()
+    {
+        try
+        {
+            await StartNewSessionAsync();
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                this,
+                $"Failed to start a new session.\r\n\r\n{exception.Message}",
+                "New session",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+    }
+
+    // Starts a fresh session: mode settings return to defaults and the current
+    // measurement and overlays are cleared. Audio device and routing settings are
+    // preserved. The active history entry is saved first; the history list and the
+    // overlays' own on-disk files are left intact.
+    private async Task StartNewSessionAsync()
+    {
+        PersistCurrentSessionState();
+
+        if (liveSpectrumController.InProgress)
+        {
+            await liveSpectrumController.AbortAsync();
+        }
+        liveSpectrumController.ForgetLastCurve();
+
+        currentHistoryEntryId = null;
+        SetImpulseResponseAvailability(false);
+        SetImpulseResponseSourceFile(null);
+
+        ApplySessionSnapshot(
+            new MeasurementSessionSnapshot(),
+            expSweepMeasurement.SampleRate);
+        ApplyMeasurementConfigurationToControllers();
+        SaveMeasurementSettings();
+
+        // Re-preparing the default mode reloads overlays (left hidden) and draws an
+        // empty plot because there is no current measurement.
+        await SelectModeAsync(ModeTab.Frequency);
+
+        dockedHistoryHost.InvokeIfOpen<MeasurementHistoryWindow>(dialog =>
+            dialog.SetEntries(measurementHistoryService.Entries, null, null));
+    }
+
+    // Writes the live working state (mode + per-mode settings + active overlays)
+    // back into the currently-selected history entry. Safe to call when nothing is
+    // selected or no measurement is loaded.
+    private void PersistCurrentSessionState()
+    {
+        if (!currentHistoryEntryId.HasValue || !hasCurrentImpulseResponse)
+        {
+            return;
+        }
+
+        measurementHistoryService.UpdateSession(
+            currentHistoryEntryId.Value,
+            CaptureCurrentSessionSnapshot());
     }
 
     private MeasurementSessionSnapshot CaptureCurrentSessionSnapshot()
@@ -230,7 +306,7 @@ public partial class Form1
             TimeAlignment =
                 MeasurementSettingsFile.TimeAlignmentSettings.Capture(
                     timeAlignmentOptions),
-            ActiveOverlays = overlayCollection.CaptureSessionState(CurrentMode)
+            ActiveOverlaySlots = overlayCollection.CaptureActiveSlots(CurrentMode)
         };
     }
 

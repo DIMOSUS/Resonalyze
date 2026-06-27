@@ -71,6 +71,7 @@ public partial class Form1
         e.Cancel = true;
         Enabled = false;
         FlushMeasurementSettings();
+        PersistCurrentSessionState();
         startupAudioWarmupCancellation?.Cancel();
         await Task.WhenAll(
             expSweepMeasurement.AbortAsync(),

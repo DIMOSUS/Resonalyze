@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using OxyPlot;
 using OxyPlot.Series;
-using Resonalyze.History;
 using Button = System.Windows.Forms.Button;
 using CheckBox = System.Windows.Forms.CheckBox;
 using ToolTip = System.Windows.Forms.ToolTip;
@@ -191,50 +190,30 @@ public sealed class OverlayCollection
 
     internal void NotifyPlotChanged() => notifyPlotChanged();
 
-    internal List<OverlaySessionSnapshot> CaptureSessionState(Mode mode)
+    // Records which slots were active (shown) for the given mode. Overlay
+    // contents are not captured here; they live in their own on-disk files.
+    internal List<int> CaptureActiveSlots(Mode mode)
     {
         return overlays
-            .Select(overlay => overlay.CaptureSessionState(mode))
-            .Where(snapshot => snapshot != null)
-            .Cast<OverlaySessionSnapshot>()
+            .Where(overlay => overlay.Checked && overlay.SeriesMode == mode)
+            .Select(overlay => overlay.Index)
             .ToList();
     }
 
-    internal void RestoreSessionState(
-        Mode mode,
-        IReadOnlyList<OverlaySessionSnapshot>? snapshots)
+    // Shows the previously-active slots after a mode switch has already reloaded
+    // every overlay from disk and left them hidden. Slots not listed stay hidden,
+    // so this is a clean replace rather than a merge with prior UI state.
+    internal void RestoreActiveSlots(Mode mode, IReadOnlyList<int>? activeSlots)
     {
-        if (snapshots == null || snapshots.Count == 0)
+        if (activeSlots == null || activeSlots.Count == 0)
         {
             return;
         }
 
-        foreach (OverlaySessionSnapshot snapshot in snapshots)
+        foreach (int slot in activeSlots)
         {
-            if (snapshot.File?.Mode != mode)
-            {
-                continue;
-            }
-
             Overlay? overlay = overlays.FirstOrDefault(
-                candidate => candidate.Index == snapshot.Slot);
-            overlay?.RestoreSessionState(snapshot);
-        }
-
-        foreach (Overlay overlay in overlays)
-        {
-            overlay.RefreshSources();
-        }
-
-        foreach (OverlaySessionSnapshot snapshot in snapshots)
-        {
-            if (!snapshot.Visible || snapshot.File?.Mode != mode)
-            {
-                continue;
-            }
-
-            Overlay? overlay = overlays.FirstOrDefault(
-                candidate => candidate.Index == snapshot.Slot);
+                candidate => candidate.Index == slot && candidate.SeriesMode == mode);
             overlay?.Show();
         }
 
@@ -747,44 +726,6 @@ public sealed class Overlay
             drawPoints
                 .Select(point => new OverlayPoint(point.X, point.Y))
                 .ToArray());
-    }
-
-    internal OverlaySessionSnapshot? CaptureSessionState(Mode mode)
-    {
-        if (SeriesMode != mode || !Checked || Title == "")
-        {
-            return null;
-        }
-        if (kind == OverlayKind.Captured && sourcePoints == null)
-        {
-            return null;
-        }
-        if (kind == OverlayKind.Operation && !operationConfigured)
-        {
-            return null;
-        }
-        if (kind == OverlayKind.Target && !targetConfigured)
-        {
-            return null;
-        }
-
-        return new OverlaySessionSnapshot
-        {
-            Slot = Index,
-            Visible = Checked,
-            File = CreateFile()
-        };
-    }
-
-    internal void RestoreSessionState(OverlaySessionSnapshot snapshot)
-    {
-        if (snapshot.File == null || snapshot.File.Slot != Index)
-        {
-            return;
-        }
-
-        Hide();
-        ApplyFile(snapshot.File);
     }
 
     private ContextMenuStrip BuildCaptureMenu(

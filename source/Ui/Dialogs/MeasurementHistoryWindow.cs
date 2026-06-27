@@ -10,18 +10,22 @@ internal partial class MeasurementHistoryWindow : Form
 {
     private readonly List<Guid> rowEntryIds = [];
     private readonly Font activeEntryFont;
+    private readonly ToolTip historyToolTip = new() { ShowAlways = true };
     private Guid? activeEntryId;
 
     public event Action<Guid>? EntryActivated;
     public event Action<Guid>? SaveRequested;
     public event Action<Guid>? DeleteRequested;
+    public event Action? NewSessionRequested;
 
     public MeasurementHistoryWindow()
     {
         InitializeComponent();
         activeEntryFont = new Font(Font, FontStyle.Bold);
         StartPosition = FormStartPosition.CenterParent;
+        ConfigureNewSessionButton();
         ConfigureGrid();
+        FormClosed += (_, _) => historyToolTip.Dispose();
         historyDataGridView.SelectionChanged += HistoryDataGridView_SelectionChanged;
         historyDataGridView.CellContentClick += HistoryDataGridView_CellContentClick;
         historyDataGridView.CellDoubleClick += HistoryDataGridView_CellDoubleClick;
@@ -99,6 +103,23 @@ internal partial class MeasurementHistoryWindow : Form
         ApplyRowStyles();
         UpdatePreview();
     }
+
+    private void ConfigureNewSessionButton()
+    {
+        buttonNewSession.FlatAppearance.BorderColor = UiPalette.DialogBorder;
+        buttonNewSession.BackColor = UiPalette.ControlSurface;
+        buttonNewSession.ForeColor = UiPalette.TextPrimary;
+        buttonNewSession.FlatAppearance.MouseOverBackColor = UiPalette.ButtonPressedBackground;
+        historyToolTip.SetToolTip(
+            buttonNewSession,
+            "Start a fresh session: reset all mode settings to defaults and clear " +
+            "the current measurement and overlays. Audio device and routing " +
+            "settings are kept. The active history entry is saved first; the " +
+            "history list and saved files are not removed.");
+    }
+
+    private void ButtonNewSession_Click(object? sender, EventArgs e) =>
+        NewSessionRequested?.Invoke();
 
     private void ConfigureGrid()
     {

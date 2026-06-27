@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/images/logo.png" alt="Resonalyze logo" width="256">
+  <img src="assets/images/banner.png" alt="Resonalyze logo">
 </p>
 
 # Resonalyze

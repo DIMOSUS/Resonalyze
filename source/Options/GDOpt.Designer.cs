@@ -38,6 +38,7 @@ namespace Resonalyze.Options
             label1 = new Label();
             numericOffset = new DarkNumericUpDown();
             label11 = new Label();
+            buttonAutoFit = new Button();
             irPlotView = new OxyPlot.WindowsForms.PlotView();
             (numericRightWindow).BeginInit();
             (numericLeftWindow).BeginInit();
@@ -49,7 +50,7 @@ namespace Resonalyze.Options
             // 
             label9.AutoSize = true;
             label9.ForeColor = SystemColors.ControlLight;
-            label9.Location = new Point(12, 85);
+            label9.Location = new Point(12, 114);
             label9.Name = "label9";
             label9.Size = new Size(117, 15);
             label9.TabIndex = 40;
@@ -59,7 +60,7 @@ namespace Resonalyze.Options
             // 
             comboSmoothingInverseOctaves.BackColor = Color.FromArgb(55, 60, 72);
             comboSmoothingInverseOctaves.ForeColor = Color.White;
-            comboSmoothingInverseOctaves.Location = new Point(193, 84);
+            comboSmoothingInverseOctaves.Location = new Point(193, 113);
             comboSmoothingInverseOctaves.Margin = new Padding(0);
             comboSmoothingInverseOctaves.MinimumSize = new Size(36, 19);
             comboSmoothingInverseOctaves.Name = "comboSmoothingInverseOctaves";
@@ -154,7 +155,7 @@ namespace Resonalyze.Options
             numericOffset.DecimalPlaces = 0;
             numericOffset.ForeColor = Color.White;
             numericOffset.Increment = new decimal(new int[] { 1, 0, 0, 0 });
-            numericOffset.Location = new Point(193, 111);
+            numericOffset.Location = new Point(193, 140);
             numericOffset.Maximum = new decimal(new int[] { 32768, 0, 0, 0 });
             numericOffset.Minimum = new decimal(new int[] { 32768, 0, 0, int.MinValue });
             numericOffset.MinimumSize = new Size(36, 19);
@@ -169,16 +170,29 @@ namespace Resonalyze.Options
             // 
             label11.AutoSize = true;
             label11.ForeColor = SystemColors.ControlLight;
-            label11.Location = new Point(12, 110);
+            label11.Location = new Point(12, 142);
             label11.Name = "label11";
             label11.Size = new Size(39, 15);
             label11.TabIndex = 42;
             label11.Text = "Offset";
             // 
+            // buttonAutoFit
+            //
+            buttonAutoFit.BackColor = Color.FromArgb(55, 60, 72);
+            buttonAutoFit.FlatStyle = FlatStyle.Flat;
+            buttonAutoFit.ForeColor = Color.White;
+            buttonAutoFit.Location = new Point(12, 84);
+            buttonAutoFit.Name = "buttonAutoFit";
+            buttonAutoFit.Size = new Size(241, 25);
+            buttonAutoFit.TabIndex = 41;
+            buttonAutoFit.Text = "Auto fit window";
+            buttonAutoFit.UseVisualStyleBackColor = false;
+            buttonAutoFit.Click += buttonAutoFit_Click;
+            //
             // irPlotView
-            // 
+            //
             irPlotView.BackColor = Color.FromArgb(32, 36, 46);
-            irPlotView.Location = new Point(12, 144);
+            irPlotView.Location = new Point(12, 172);
             irPlotView.Name = "irPlotView";
             irPlotView.PanCursor = Cursors.Hand;
             irPlotView.Size = new Size(241, 296);
@@ -193,8 +207,9 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 447);
+            ClientSize = new Size(265, 476);
             Controls.Add(irPlotView);
+            Controls.Add(buttonAutoFit);
             Controls.Add(numericOffset);
             Controls.Add(label11);
             Controls.Add(label9);
@@ -232,6 +247,7 @@ namespace Resonalyze.Options
         private Label label1;
         private DarkNumericUpDown numericOffset;
         private Label label11;
+        private Button buttonAutoFit;
         private OxyPlot.WindowsForms.PlotView irPlotView;
     }
 }

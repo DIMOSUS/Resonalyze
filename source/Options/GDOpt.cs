@@ -73,6 +73,29 @@ public partial class GDOpt : Form
         UpdateIrPreview();
     }
 
+    private void buttonAutoFit_Click(object? sender, EventArgs e)
+    {
+        const int leftWindow = 256;
+        const int rightWindow = 16;
+
+        // Use the IR peak index: the transfer IR peak when a transfer function is
+        // present, otherwise the sweep deconvolution IR peak.
+        int peakIndex = expSweepMeasurement?.TransferImpulseResponse is { Length: > 0 }
+            ? expSweepMeasurement.TransferPeakIndex
+            : expSweepMeasurement?.SweepDeconvolutionPeakIndex ?? 0;
+
+        // Set the total length first so the Tukey limits leave room for both tails.
+        numericWindow.Value = ClampToRange(numericWindow, leftWindow + rightWindow + peakIndex);
+        numericLeftWindow.Value = ClampToRange(numericLeftWindow, leftWindow);
+        numericRightWindow.Value = ClampToRange(numericRightWindow, rightWindow);
+
+        UpdateTukeyWindowLimits();
+        UpdateIrPreview();
+    }
+
+    private static decimal ClampToRange(DarkNumericUpDown control, decimal value) =>
+        Math.Clamp(value, control.Minimum, control.Maximum);
+
     private void SettingsValueChanged(object? sender, EventArgs e)
     {
         UpdateTukeyWindowLimits();
@@ -155,6 +178,9 @@ public partial class GDOpt : Form
         numericRightWindow.ApplyToolTip(
             toolTip,
             "Controls the fade-out part of the Tukey window after the selected impulse region.");
+        toolTip.SetToolTip(
+            buttonAutoFit,
+            "Sets a sensible analysis window automatically: left Tukey 256, right Tukey 16, and window length = 256 + 16 + IR peak index.");
         toolTip.SetToolTip(
             comboSmoothingInverseOctaves,
             "Applies octave smoothing to the resulting Group Delay curve.");

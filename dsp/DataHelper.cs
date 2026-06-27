@@ -404,24 +404,34 @@ namespace Resonalyze.Dsp
             double normalizedLeftWindow = (double)leftTukeyWindow / length * 2.0;
             double normalizedRightWindow = (double)rightTukeyWindow / length * 2.0;
 
-            double[] window = Windowing.TukeyWindow(
+            double[] tukeyWindow = Windowing.TukeyWindow(
                 length,
                 normalizedLeftWindow,
                 normalizedRightWindow);
 
+            // Zero-pad the analysis window for a finer frequency grid. The extraction
+            // start stays at the user-defined window; only the padded tail is added,
+            // filled with zeros so the extra IR samples it covers contribute nothing.
+            // Target ~4x oversampling (clamped to a useful range) rounded up to a
+            // power of two so the FFT stays on the fast radix-2 path.
+            int target = Math.Clamp(length * 4, 4096, 32768);
+            int analysisLength = Math.Max(length, DspMath.NextPowerOfTwo(target));
+            double[] window = new double[analysisLength];
+            Array.Copy(tukeyWindow, window, length);
+
             Complex[] windowedImpulse = ExtractWindow(
                 measurement,
                 measurement.PeakIndex + startOffset,
-                length,
+                analysisLength,
                 window,
                 wrapWindow);
 
-            Complex[] spectrum = new Complex[length];
-            Complex[] timeWeightedSpectrum = new Complex[length];
+            Complex[] spectrum = new Complex[analysisLength];
+            Complex[] timeWeightedSpectrum = new Complex[analysisLength];
 
             double invSampleRate = 1.0 / measurement.SampleRate;
 
-            for (int i = 0; i < length; i++)
+            for (int i = 0; i < analysisLength; i++)
             {
                 Complex imp = windowedImpulse[i];
 
@@ -432,7 +442,7 @@ namespace Resonalyze.Dsp
             Fourier.Forward(spectrum, FourierOptions.Matlab);
             Fourier.Forward(timeWeightedSpectrum, FourierOptions.Matlab);
 
-            int halfLength = length / 2;
+            int halfLength = analysisLength / 2;
 
             double maxMagnitude = 0.0;
             for (int i = 1; i < halfLength; i++)
@@ -459,7 +469,7 @@ namespace Resonalyze.Dsp
 
                 Complex groupDelay = timeWeightedSpectrum[i] / spectrum[i];
 
-                double f = i * measurement.SampleRate / (double)length;
+                double f = i * measurement.SampleRate / (double)analysisLength;
 
                 double delayMilliseconds = (groupDelay.Real + absoluteStartTime) * 1000.0;
 

@@ -1,10 +1,26 @@
 <p align="center">
-  <img src="assets/images/banner.png" alt="Resonalyze logo">
+  <img src="assets/images/banner.png" alt="Resonalyze banner">
 </p>
 
-# Resonalyze
+<h1 align="center">Resonalyze</h1>
 
-### Acoustic Measurement & Analysis
+<p align="center">
+  <strong>Engineering Acoustic Measurements for Loudspeakers and Rooms</strong>
+</p>
+
+<p align="center">
+  A Windows desktop analyzer for impulse response, frequency response,
+  loopback-referenced timing, live transfer functions, overlays, and practical
+  loudspeaker alignment.
+</p>
+
+<p align="center">
+  <a href="https://github.com/DIMOSUS/Resonalyze/releases/latest"><strong>Download latest release</strong></a>
+  ·
+  <a href="#quick-start"><strong>Build from source</strong></a>
+  ·
+  <a href="#measurement-workflow"><strong>Measurement workflow</strong></a>
+</p>
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows)](https://www.microsoft.com/windows)
@@ -15,11 +31,9 @@
 
 **Resonalyze** is an open-source desktop application for measuring and
 visualizing the acoustic behavior of audio systems, rooms, loudspeakers,
-headphones, microphones, and complete signal paths.
-
-It generates test signals, records the response through a Windows audio
-device, processes the captured data, and presents the result as
-engineering-focused plots.
+headphones, microphones, and complete signal paths. It generates test signals,
+records the response through a Windows audio device, processes the captured
+data, and presents the result as engineering-focused plots.
 
 > Resonalyze is under active development. Treat its results as diagnostic
 > measurements, not as certified laboratory data.
@@ -40,48 +54,103 @@ files are provided with every release.
 
 ## Highlights
 
-- Exponential sine sweep measurement
-- Impulse response with JSON save/load
-- Measurement History with in-memory snapshots, saved-file recall, and FR previews
-- Windows Wave and ASIO audio backends
-- Playback/recording device selection with backend-specific channel routing
-- Device-aware sample-rate selection from supported rates
+- Exponential sine sweep measurement with impulse response JSON save/load
 - Optional loopback-referenced sweep processing through a transfer function
-- Wave or ASIO loopback Time Alignment with sub-sample delay estimation
-- Compact Mic/Loop input level meter with Peak, RMS, and Peak Hold
+- Time Alignment with sub-sample delay estimation from transfer IR
+- Live Spectrum with `Transfer Function` and `Input Spectrum` modes
+- Frequency response, phase, group delay, waterfall, Burst Decay, and
+  autocorrelation
+- Harmonic distortion, THD, and THD+N analysis
+- Persistent comparison overlays with labels, styling, curve math, targets,
+  import/export, and saved per-mode state
+- Measurement History with in-memory snapshots, saved-file recall, and FR
+  previews
+- Windows Wave and ASIO backends with device-aware sample-rate selection and
+  backend-specific channel routing
+- Compact Mic/Loop input level meter with Peak, RMS, Peak Hold, and stored
+  measurement levels
+- Docked, non-modal settings panels with live previews and instant graph
+  updates
 - Installed-build auto-update support through a signed NetSparkle appcast
-- Live Spectrum with switchable `Transfer Function` and `Input Spectrum` modes
-- Frequency response
-- Harmonic distortion and THD+N
-- Phase response
-- Group delay
-- Fourier waterfall
-- Burst Decay
-- Autocorrelation
-- Microphone calibration correction
-- Persistent, styled plot overlays with on-plot labels and curve arithmetic
-- Docked, non-modal mode settings with Apply flow and IR/window previews
-- Configurable FFT windows, smoothing, offsets, sweep timing, and playback
-  channel
+
+## Why Resonalyze?
+
+If you already know tools like REW, OpenSoundMeter, or Smaart, the natural
+question is simple: why install another analyzer?
+
+Resonalyze is built around a focused engineering workflow:
+
+- **Loopback-referenced timing**
+  Measurements can use a recorded loopback channel as the time reference, so
+  delay and transfer-function analysis are tied to the actual playback path
+  rather than to guesswork.
+- **Practical loudspeaker alignment**
+  Time Alignment reports first arrival and strongest peak with sub-sample
+  interpolation, distance at 20 °C, confidence, signal levels, and a visible
+  envelope around the detected arrival.
+- **Fast compare-and-adjust work**
+  Persistent overlays, calculated overlays, target curves, and on-plot labels
+  make it quick to compare measurements, tuning passes, channels, listening
+  positions, or before/after changes.
+- **Live transfer-function analysis**
+  Live Spectrum can use a loopback reference, coherence, overlap, averaging,
+  peak hold, and overload detection to show a driven response instead of only
+  raw microphone spectrum.
+- **Measurement history as a working shelf**
+  Recent captures stay available in memory, saved files are remembered across
+  launches, and each entry has a frequency-response preview.
+- **Developer-friendly, inspectable data**
+  IR files, overlays, settings, and history metadata are stored as readable
+  JSON where practical, making measurements easy to archive, diff, and debug.
+
+Resonalyze is not trying to be every acoustic tool at once. Its sweet spot is
+measurement-driven speaker and room work where timing, repeatability, quick
+comparison, and transparent data matter more than a huge legacy feature set.
 
 ## Gallery
 
 <table>
   <tr>
-    <td align="center"><strong>Frequency response</strong></td>
-    <td align="center"><strong>Impulse response</strong></td>
+    <td width="50%">
+      <h3>Frequency Response</h3>
+      <img src="assets/images/fr.jpg" alt="Frequency response plot">
+      <p>One-click loudspeaker response measurement with smoothing,
+      calibration, distortion curves, overlays, and target comparison.</p>
+    </td>
+    <td width="50%">
+      <h3>Time Alignment</h3>
+      <img src="assets/images/time-alignment.png" alt="Time Alignment measurement">
+      <p>Sub-sample delay estimation from a loopback-referenced transfer
+      impulse response, with confidence, levels, distance, and envelope view.</p>
+    </td>
   </tr>
   <tr>
-    <td><img src="assets/images/fr.jpg" alt="Frequency response plot"></td>
-    <td><img src="assets/images/impulse.jpg" alt="Impulse response plot"></td>
+    <td width="50%">
+      <h3>Live Spectrum</h3>
+      <img src="assets/images/noise.jpg" alt="Live Spectrum plot">
+      <p>Real-time input spectrum or transfer-function analyzer with coherence,
+      averaging, overlap, peak hold, and unreliable-band marking.</p>
+    </td>
+    <td width="50%">
+      <h3>Impulse Response</h3>
+      <img src="assets/images/impulse.jpg" alt="Impulse response plot">
+      <p>Inspect the measured impulse response, save it as readable JSON, load
+      it later, and reuse it across analysis modes without re-measuring.</p>
+    </td>
   </tr>
   <tr>
-    <td align="center"><strong>Waterfall</strong></td>
-    <td align="center"><strong>Burst Decay</strong></td>
-  </tr>
-  <tr>
-    <td><img src="assets/images/waterfall.jpg" alt="Waterfall plot"></td>
-    <td><img src="assets/images/burst.jpg" alt="Burst Decay plot"></td>
+    <td width="50%">
+      <h3>Group Delay</h3>
+      <img src="assets/images/gd.jpg" alt="Group delay plot">
+      <p>Analyze timing behavior from sweep deconvolution or, when available,
+      loopback-based transfer IR, with configurable windowing and previews.</p>
+    </td>
+    <td width="50%">
+      <h3>Waterfall and Burst Decay</h3>
+      <img src="assets/images/waterfall.jpg" alt="Waterfall plot">
+      <p>Visualize frequency decay and stored energy with Fourier waterfall and
+      Burst Decay views.</p>
+    </td>
   </tr>
 </table>
 
@@ -92,17 +161,13 @@ files are provided with every release.
 
 ![Phase response plot](assets/images/phase.jpg)
 
-### Group delay
+### Burst Decay
 
-![Group delay plot](assets/images/gd.jpg)
+![Burst Decay plot](assets/images/burst.jpg)
 
-### Live Spectrum
+### Overlays
 
-![Live Spectrum plot](assets/images/noise.jpg)
-
-### Time Alignment
-
-![Time Alignment measurement](assets/images/time-alignment.png)
+![Calculated overlay settings](assets/images/calc_overlay.jpg)
 
 </details>
 

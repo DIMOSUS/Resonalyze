@@ -66,7 +66,6 @@ namespace Resonalyze
         private readonly TimeAlignmentOptions timeAlignmentOptions = new();
         private readonly PlotModelFactory plotModelFactory;
         private readonly ModeController modeController;
-        private readonly ChromeTitleBarController titleBarController;
         private readonly LiveSpectrumController liveSpectrumController;
         private readonly TimeAlignmentPanelController timeAlignmentController;
         private readonly MainCommandController commandController;
@@ -97,7 +96,6 @@ namespace Resonalyze
             ConfigureToolTips();
             measurementSettings = MeasurementSettingsFile.LoadOrDefault();
             Form1ControllerDependencies dependencies = CreateControllerDependencies();
-            titleBarController = dependencies.TitleBarController;
             overlayCollection = dependencies.OverlayCollection;
             plotLabelsPanelController = dependencies.PlotLabelsPanelController;
             plotModelFactory = dependencies.PlotModelFactory;

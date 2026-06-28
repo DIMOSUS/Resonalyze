@@ -1,35 +1,11 @@
 using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.Series;
-using OxyPlot.WindowsForms;
 
 namespace Resonalyze;
 
-internal sealed class OverlayTargetSettingsDialog : Form
+internal sealed partial class OverlayTargetSettingsDialog : Form
 {
-    private readonly TextBox nameTextBox = new();
-    private readonly DarkComboBox sourceComboBox = new();
-    private readonly DarkComboBox presetComboBox = new();
-    private readonly DarkNumericUpDown tiltInput = new();
-    private readonly DarkNumericUpDown bassGainInput = new();
-    private readonly DarkNumericUpDown bassFrequencyInput = new();
-    private readonly DarkNumericUpDown bassWidthInput = new();
-    private readonly DarkNumericUpDown trebleGainInput = new();
-    private readonly DarkNumericUpDown trebleFrequencyInput = new();
-    private readonly DarkNumericUpDown trebleWidthInput = new();
-    private readonly DarkNumericUpDown presenceGainInput = new();
-    private readonly DarkNumericUpDown presenceFrequencyInput = new();
-    private readonly DarkNumericUpDown presenceWidthInput = new();
-    private readonly DarkNumericUpDown toleranceInput = new();
-    private readonly DarkComboBox deviationModeComboBox = new();
-    private readonly Button colorButton = new();
-    private readonly DarkNumericUpDown thicknessInput = new();
-    private readonly DarkComboBox styleComboBox = new();
-    private readonly DarkComboBox smoothingComboBox = new();
-    private readonly TrackBar opacityTrackBar = new();
-    private readonly Label opacityValueLabel = new();
-    private readonly PlotView previewPlot = new();
-    private readonly ToolTip toolTip = new();
     private Color selectedColor;
     private bool suppressEvents;
 
@@ -49,7 +25,11 @@ internal sealed class OverlayTargetSettingsDialog : Form
         IReadOnlyList<OverlaySlotOption> availableSources)
     {
         selectedColor = color;
-        InitializeDialog(availableSources);
+
+        InitializeComponent();
+        PopulateControls(availableSources);
+        WireEvents();
+        InitializeToolTips();
 
         suppressEvents = true;
         nameTextBox.Text = name;
@@ -95,17 +75,8 @@ internal sealed class OverlayTargetSettingsDialog : Form
         (double)presenceFrequencyInput.Value,
         (double)presenceWidthInput.Value);
 
-    private void InitializeDialog(IReadOnlyList<OverlaySlotOption> availableSources)
+    private void PopulateControls(IReadOnlyList<OverlaySlotOption> availableSources)
     {
-        SuspendLayout();
-        UiStyle.ApplyDarkDialog(this, new Size(500, 800), title: "Target overlay settings");
-
-        AddLabel("Name", 16);
-        ConfigureInput(nameTextBox, new Point(20, 36), new Size(460, 24));
-        nameTextBox.MaxLength = 80;
-
-        AddLabel("Source", 68);
-        ConfigureCombo(sourceComboBox, new Point(20, 88), new Size(460, 24));
         sourceComboBox.Items.Add(new TargetSourceOption(0, "Current measurement"));
         foreach (OverlaySlotOption source in availableSources)
         {
@@ -114,9 +85,6 @@ internal sealed class OverlayTargetSettingsDialog : Form
                 $"{source.Slot}: {source.Title}"));
         }
 
-        AddLabel("Preset", 120);
-        ConfigureCombo(presetComboBox, new Point(20, 140), new Size(200, 24));
-        presetComboBox.FormattingEnabled = true;
         foreach (TargetPreset value in Enum.GetValues<TargetPreset>())
         {
             presetComboBox.Items.Add(value);
@@ -128,17 +96,7 @@ internal sealed class OverlayTargetSettingsDialog : Form
                 args.Value = GetPresetLabel(value);
             }
         };
-        presetComboBox.SelectedIndexChanged += PresetChanged;
 
-        AddLabel("Tolerance \u00B1dB", 120, 300, ToleranceTip); // \u00B1 +-
-        ConfigureNumeric(toleranceInput, new Point(300, 140), 180, 0, 12, 0.5m, 1);
-
-        AddLabel("Tilt dB/oct", 176, 20, TiltTip);
-        ConfigureNumeric(tiltInput, new Point(20, 196), 160, -6, 6, 0.1m, 1);
-
-        AddLabel("Deviation", 176, 250, DeviationTip);
-        ConfigureCombo(deviationModeComboBox, new Point(250, 196), new Size(230, 24));
-        deviationModeComboBox.FormattingEnabled = true;
         foreach (TargetDeviationMode value in Enum.GetValues<TargetDeviationMode>())
         {
             deviationModeComboBox.Items.Add(value);
@@ -151,25 +109,27 @@ internal sealed class OverlayTargetSettingsDialog : Form
             }
         };
 
-        // Compact gain / freq / width grid for the three shaping terms.
-        AddLabel("Gain dB", 230, 150, "Lift or cut amount, in dB.");
-        AddLabel("Freq Hz", 230, 260, "Corner frequency (shelf) or center frequency (presence), in Hz.");
-        AddLabel("Width oct", 230, 370, "Transition width / bump width, in octaves.");
+        styleComboBox.DataSource = Enum.GetValues<OverlayLineStyle>();
 
-        AddLabel("Bass shelf", 252, 20, BassTip);
-        ConfigureNumeric(bassGainInput, new Point(150, 250), 100, -12, 18, 0.5m, 1);
-        ConfigureNumeric(bassFrequencyInput, new Point(260, 250), 100, 20, 500, 1, 0);
-        ConfigureNumeric(bassWidthInput, new Point(370, 250), 100, 0.2m, 4, 0.1m, 1);
+        foreach (int value in OverlaySmoothing.SupportedInverseOctaves)
+        {
+            smoothingComboBox.Items.Add(value);
+        }
+        smoothingComboBox.Format += (_, args) =>
+        {
+            if (args.ListItem is int value)
+            {
+                args.Value = OverlaySmoothing.GetLabel(value);
+            }
+        };
 
-        AddLabel("Treble shelf", 284, 20, TrebleTip);
-        ConfigureNumeric(trebleGainInput, new Point(150, 282), 100, -18, 12, 0.5m, 1);
-        ConfigureNumeric(trebleFrequencyInput, new Point(260, 282), 100, 1_000, 16_000, 100, 0);
-        ConfigureNumeric(trebleWidthInput, new Point(370, 282), 100, 0.2m, 4, 0.1m, 1);
+        AcceptButton = saveButton;
+        CancelButton = cancelButton;
+    }
 
-        AddLabel("Presence", 316, 20, PresenceTip);
-        ConfigureNumeric(presenceGainInput, new Point(150, 314), 100, -12, 12, 0.5m, 1);
-        ConfigureNumeric(presenceFrequencyInput, new Point(260, 314), 100, 500, 8_000, 50, 0);
-        ConfigureNumeric(presenceWidthInput, new Point(370, 314), 100, 0.2m, 3, 0.1m, 1);
+    private void WireEvents()
+    {
+        presetComboBox.SelectedIndexChanged += PresetChanged;
 
         // Editing the curve shape switches the preset to Custom and redraws.
         foreach (DarkNumericUpDown shape in new[]
@@ -183,91 +143,9 @@ internal sealed class OverlayTargetSettingsDialog : Form
             shape.ValueChanged += ParameterChanged;
         }
 
-        AddLabel("Color", 356);
-        colorButton.Location = new Point(20, 376);
-        colorButton.Size = new Size(122, 24);
-        UiStyle.ApplySurfaceButton(colorButton, UiPalette.DialogSurfaceMuted);
         colorButton.Click += ColorButtonClick;
-
-        AddLabel("Thickness", 356, 162);
-        ConfigureNumeric(thicknessInput, new Point(162, 376), 80, 0.5m, 10, 0.5m, 1);
-
-        AddLabel("Style", 356, 262);
-        ConfigureCombo(styleComboBox, new Point(262, 376), new Size(218, 24));
-        styleComboBox.DataSource = Enum.GetValues<OverlayLineStyle>();
-
-        AddLabel("Smoothing", 414);
-        ConfigureCombo(smoothingComboBox, new Point(20, 434), new Size(460, 24));
-        smoothingComboBox.FormattingEnabled = true;
-        foreach (int value in OverlaySmoothing.SupportedInverseOctaves)
-        {
-            smoothingComboBox.Items.Add(value);
-        }
-        smoothingComboBox.Format += (_, args) =>
-        {
-            if (args.ListItem is int value)
-            {
-                args.Value = OverlaySmoothing.GetLabel(value);
-            }
-        };
-
-        AddLabel("Opacity", 470);
-        opacityTrackBar.Location = new Point(14, 490);
-        opacityTrackBar.Size = new Size(380, 40);
-        opacityTrackBar.Minimum = 10;
-        opacityTrackBar.Maximum = 100;
-        opacityTrackBar.TickFrequency = 10;
         opacityTrackBar.ValueChanged += (_, _) => UpdateOpacityLabel();
-        opacityValueLabel.AutoSize = true;
-        opacityValueLabel.Location = new Point(410, 497);
-
-        AddLabel("Target preview", 540);
-        previewPlot.Location = new Point(20, 560);
-        previewPlot.Size = new Size(460, 160);
-        previewPlot.BackColor = UiPalette.DialogSurface;
-
-        var cancelButton = OverlayDialogControls.CreateDialogButton(
-            "Cancel",
-            DialogResult.Cancel,
-            accent: false);
-        cancelButton.Location = new Point(286, 736);
-        var saveButton = OverlayDialogControls.CreateDialogButton(
-            "Save",
-            DialogResult.OK,
-            accent: true);
-        saveButton.Location = new Point(386, 736);
         saveButton.Click += SaveButtonClick;
-
-        AcceptButton = saveButton;
-        CancelButton = cancelButton;
-        Controls.AddRange(
-        [
-            nameTextBox,
-            sourceComboBox,
-            presetComboBox,
-            toleranceInput,
-            deviationModeComboBox,
-            tiltInput,
-            bassGainInput, bassFrequencyInput, bassWidthInput,
-            trebleGainInput, trebleFrequencyInput, trebleWidthInput,
-            presenceGainInput, presenceFrequencyInput, presenceWidthInput,
-            colorButton,
-            thicknessInput,
-            styleComboBox,
-            smoothingComboBox,
-            opacityTrackBar,
-            opacityValueLabel,
-            previewPlot,
-            cancelButton,
-            saveButton
-        ]);
-
-        InitializeToolTips();
-        FormClosed += (_, _) => toolTip.Dispose();
-
-        OverlayDialogControls.ApplyRuntimeDpiScale(this);
-        ResumeLayout(false);
-        PerformLayout();
     }
 
     private const string TiltTip =
@@ -279,7 +157,7 @@ internal sealed class OverlayTargetSettingsDialog : Form
     private const string PresenceTip =
         "Presence bump (positive) or dip (negative) centered on its frequency, set by gain, center frequency and width.";
     private const string ToleranceTip =
-        "Shaded \u00B1dB tolerance band drawn around the target. Zero hides the band."; // \u00B1 +-
+        "Shaded ±dB tolerance band drawn around the target. Zero hides the band.";
     private const string DeviationTip =
         "Deviation curve: 'Deviation' shows measurement − target; 'EQ correction' shows target − measurement (the gain to dial into an equalizer); 'None' hides it.";
 
@@ -292,6 +170,16 @@ internal sealed class OverlayTargetSettingsDialog : Form
         toolTip.SetToolTip(
             sourceComboBox,
             "Curve to compare against the target: a captured slot, or the current measurement (live/last Live Spectrum trace or the main Frequency Response curve).");
+        toolTip.SetToolTip(toleranceLabel, ToleranceTip);
+        toolTip.SetToolTip(tiltLabel, TiltTip);
+        toolTip.SetToolTip(deviationLabel, DeviationTip);
+        toolTip.SetToolTip(gainHeaderLabel, "Lift or cut amount, in dB.");
+        toolTip.SetToolTip(freqHeaderLabel, "Corner frequency (shelf) or center frequency (presence), in Hz.");
+        toolTip.SetToolTip(widthHeaderLabel, "Transition width / bump width, in octaves.");
+        toolTip.SetToolTip(bassLabel, BassTip);
+        toolTip.SetToolTip(trebleLabel, TrebleTip);
+        toolTip.SetToolTip(presenceLabel, PresenceTip);
+
         tiltInput.ApplyToolTip(toolTip, TiltTip);
         bassGainInput.ApplyToolTip(toolTip, BassTip);
         bassFrequencyInput.ApplyToolTip(toolTip, BassTip);
@@ -461,57 +349,12 @@ internal sealed class OverlayTargetSettingsDialog : Form
         opacityValueLabel.Text = $"{opacityTrackBar.Value}%";
     }
 
-    private void ConfigureNumeric(
-        DarkNumericUpDown input,
-        Point location,
-        int width,
-        decimal minimum,
-        decimal maximum,
-        decimal increment,
-        int decimals)
-    {
-        input.Location = location;
-        input.Size = new Size(width, 24);
-        UiStyle.ApplyNumericUpDown(input, location, input.Size);
-        input.DecimalPlaces = decimals;
-        input.Increment = increment;
-        input.Minimum = minimum;
-        input.Maximum = maximum;
-    }
-
     private static decimal ClampToRange(DarkNumericUpDown input, double value)
     {
         return (decimal)Math.Clamp(
             value,
             (double)input.Minimum,
             (double)input.Maximum);
-    }
-
-    private void ConfigureCombo(DarkComboBox comboBox, Point location, Size size)
-    {
-        UiStyle.ApplySurfaceInput(comboBox, location, size);
-        comboBox.DropDownStyle = ComboBoxStyle.DropDownList;
-    }
-
-    private static void ConfigureInput(Control control, Point location, Size size)
-    {
-        UiStyle.ApplySurfaceInput(control, location, size);
-    }
-
-    private Label AddLabel(string text, int y, int x = 20, string? tooltip = null)
-    {
-        Label label = UiStyle.CreateLabel(
-            text,
-            new Point(x, y),
-            UiPalette.TextSecondary,
-            Font);
-        Controls.Add(label);
-        if (!string.IsNullOrEmpty(tooltip))
-        {
-            toolTip.SetToolTip(label, tooltip);
-        }
-
-        return label;
     }
 
     private static string GetPresetDescription(TargetPreset preset) => preset switch

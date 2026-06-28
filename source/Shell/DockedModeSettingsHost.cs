@@ -283,13 +283,26 @@ internal sealed class DockedModeSettingsHost : IDisposable
 
     private bool HasRoomOutsideOwner(Form dialog)
     {
-        Rectangle workingArea = Screen.FromControl(owner).WorkingArea;
+        // Dock to the right only when the dialog fits on the monitor that holds the
+        // window's right edge. Keying on the right edge (rather than the window
+        // centre, which is what Screen.FromControl uses) keeps the decision stable
+        // while the window is dragged across a monitor boundary — the dialog always
+        // lands just past owner.Bounds.Right, so that edge's monitor is the one that
+        // actually matters.
+        Rectangle workingArea = GetRightEdgeScreen().WorkingArea;
         int availableWidth = workingArea.Right - owner.Bounds.Right;
         return availableWidth >= dialog.Width;
     }
 
+    private Screen GetRightEdgeScreen()
+    {
+        Rectangle bounds = owner.Bounds;
+        Point rightEdge = new(bounds.Right - 1, bounds.Top + bounds.Height / 2);
+        return Screen.FromPoint(rightEdge);
+    }
+
     private Point GetOutsideOwnerLocation() =>
-        new(owner.Bounds.Right, owner.Bounds.Top + Scale(ChromeTitleBarController.Height));
+        new(owner.Bounds.Right, owner.Bounds.Top + Scale(ChromeTitleBar.BarHeight));
 
     private int Scale(int value) =>
         (int)Math.Round(value * owner.DeviceDpi / 96.0);

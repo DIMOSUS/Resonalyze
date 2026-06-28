@@ -794,7 +794,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     }
 
     private int GetScaledTitleBarHeight() =>
-        (int)Math.Round(ChromeTitleBarController.Height * GetRuntimeDpiScale());
+        (int)Math.Round(ChromeTitleBar.BarHeight * GetRuntimeDpiScale());
 
     private int ScaleRuntimeValue(int value) =>
         Math.Max(1, (int)Math.Round(value * GetRuntimeDpiScale()));

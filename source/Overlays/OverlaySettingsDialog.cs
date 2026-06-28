@@ -1,15 +1,7 @@
 namespace Resonalyze;
 
-internal sealed class OverlaySettingsDialog : Form
+internal sealed partial class OverlaySettingsDialog : Form
 {
-    private readonly TextBox nameTextBox = new();
-    private readonly Button colorButton = new();
-    private readonly DarkNumericUpDown thicknessInput = new();
-    private readonly DarkComboBox styleComboBox = new();
-    private readonly DarkComboBox smoothingComboBox = new();
-    private readonly TrackBar opacityTrackBar = new();
-    private readonly Label opacityValueLabel = new();
-    private readonly ToolTip toolTip = new();
     private readonly bool supportsSmoothing;
     private Color selectedColor;
 
@@ -24,7 +16,12 @@ internal sealed class OverlaySettingsDialog : Form
     {
         supportsSmoothing = OverlaySmoothing.SupportsMode(mode);
         selectedColor = color;
-        InitializeDialog();
+
+        InitializeComponent();
+        PopulateControls();
+        WireEvents();
+        InitializeToolTips();
+        ApplyModeAvailability();
 
         nameTextBox.Text = name;
         thicknessInput.Value = (decimal)Math.Clamp(strokeThickness, 0.5, 10);
@@ -46,94 +43,31 @@ internal sealed class OverlaySettingsDialog : Form
         : 0;
     public bool ClearRequested { get; private set; }
 
-    private void InitializeDialog()
+    private void PopulateControls()
     {
-        SuspendLayout();
-
-        UiStyle.ApplyDarkDialog(
-            this,
-            new Size(440, supportsSmoothing ? 360 : 300),
-            title: "Overlay settings");
-
-        AddSectionTitle("Overlay", 18);
-        AddLabel("Name", 52);
-        ConfigureInput(nameTextBox, new Point(20, 72), new Size(400, 24));
-        nameTextBox.MaxLength = 80;
-
-        AddLabel("Color", 112);
-        colorButton.Location = new Point(20, 132);
-        colorButton.Size = new Size(122, 24);
-        UiStyle.ApplySurfaceButton(colorButton, UiPalette.DialogSurfaceMuted);
-        colorButton.Click += ColorButtonClick;
-
-        AddLabel("Thickness", 112, 162);
-        thicknessInput.Location = new Point(162, 132);
-        thicknessInput.Size = new Size(90, 24);
-        UiStyle.ApplyNumericUpDown(thicknessInput, thicknessInput.Location, thicknessInput.Size);
-        thicknessInput.DecimalPlaces = 1;
-        thicknessInput.Increment = 0.5m;
-        thicknessInput.Minimum = 0.5m;
-        thicknessInput.Maximum = 10;
-
-        AddLabel("Style", 112, 272);
-        styleComboBox.Location = new Point(272, 132);
-        styleComboBox.Size = new Size(148, 24);
-        UiStyle.ApplyComboBox(styleComboBox, styleComboBox.Location, styleComboBox.Size);
         styleComboBox.DataSource = Enum.GetValues<OverlayLineStyle>();
 
-        int opacityLabelY = supportsSmoothing ? 238 : 178;
-        int opacityControlY = supportsSmoothing ? 258 : 198;
-        int buttonY = supportsSmoothing ? 315 : 255;
-
-        if (supportsSmoothing)
+        foreach (int value in OverlaySmoothing.SupportedInverseOctaves)
         {
-            AddLabel("Smoothing", 178);
-            UiStyle.ApplyComboBox(
-                smoothingComboBox,
-                new Point(20, 198),
-                new Size(400, 24));
-            smoothingComboBox.FormattingEnabled = true;
-            foreach (int value in OverlaySmoothing.SupportedInverseOctaves)
-            {
-                smoothingComboBox.Items.Add(value);
-            }
-            smoothingComboBox.Format += (_, args) =>
-            {
-                if (args.ListItem is int value)
-                {
-                    args.Value = OverlaySmoothing.GetLabel(value);
-                }
-            };
-            Controls.Add(smoothingComboBox);
+            smoothingComboBox.Items.Add(value);
         }
+        smoothingComboBox.Format += (_, args) =>
+        {
+            if (args.ListItem is int value)
+            {
+                args.Value = OverlaySmoothing.GetLabel(value);
+            }
+        };
 
-        AddLabel("Opacity", opacityLabelY);
-        opacityTrackBar.Location = new Point(14, opacityControlY);
-        opacityTrackBar.Size = new Size(340, 40);
-        opacityTrackBar.Minimum = 10;
-        opacityTrackBar.Maximum = 100;
-        opacityTrackBar.TickFrequency = 10;
+        AcceptButton = saveButton;
+        CancelButton = cancelButton;
+    }
+
+    private void WireEvents()
+    {
+        colorButton.Click += ColorButtonClick;
         opacityTrackBar.ValueChanged += (_, _) => UpdateOpacityLabel();
-        opacityValueLabel.AutoSize = true;
-        opacityValueLabel.Location = new Point(370, opacityControlY + 7);
-
-        var cancelButton = OverlayDialogControls.CreateDialogButton(
-            "Cancel",
-            DialogResult.Cancel,
-            accent: false);
-        cancelButton.Location = new Point(226, buttonY);
-        var clearButton = OverlayDialogControls.CreateDialogButton(
-            "Clear",
-            DialogResult.OK,
-            accent: false);
-        clearButton.Location = new Point(20, buttonY);
         clearButton.Click += (_, _) => ClearRequested = true;
-        toolTip.SetToolTip(clearButton, "Delete this overlay slot in the current analysis mode.");
-        var saveButton = OverlayDialogControls.CreateDialogButton(
-            "Save",
-            DialogResult.OK,
-            accent: true);
-        saveButton.Location = new Point(326, buttonY);
         saveButton.Click += (_, _) =>
         {
             if (OverlayName.Length == 0)
@@ -143,28 +77,14 @@ internal sealed class OverlaySettingsDialog : Form
                 nameTextBox.Focus();
             }
         };
+    }
 
-        AcceptButton = saveButton;
-        CancelButton = cancelButton;
-        Controls.AddRange(
-        [
-            nameTextBox,
-            colorButton,
-            thicknessInput,
-            styleComboBox,
-            opacityTrackBar,
-            opacityValueLabel,
-            clearButton,
-            cancelButton,
-            saveButton
-        ]);
-
-        InitializeToolTips();
-        FormClosed += (_, _) => toolTip.Dispose();
-
-        OverlayDialogControls.ApplyRuntimeDpiScale(this);
-        ResumeLayout(false);
-        PerformLayout();
+    // Smoothing is not meaningful for every mode; rather than reflowing the layout
+    // the row is simply greyed out so the dialog keeps a single fixed shape.
+    private void ApplyModeAvailability()
+    {
+        smoothingLabel.Enabled = supportsSmoothing;
+        smoothingComboBox.Enabled = supportsSmoothing;
     }
 
     private void InitializeToolTips()
@@ -181,6 +101,7 @@ internal sealed class OverlaySettingsDialog : Form
             smoothingComboBox,
             "Fractional-octave smoothing applied to the displayed curve.");
         toolTip.SetToolTip(opacityTrackBar, "Curve opacity.");
+        toolTip.SetToolTip(clearButton, "Delete this overlay slot in the current analysis mode.");
     }
 
     private void ColorButtonClick(object? sender, EventArgs e)
@@ -198,105 +119,11 @@ internal sealed class OverlaySettingsDialog : Form
         colorButton.BackColor = selectedColor;
         colorButton.Text =
             $"#{selectedColor.R:X2}{selectedColor.G:X2}{selectedColor.B:X2}";
-        colorButton.FlatAppearance.BorderColor =
-            UiPalette.DialogBorder;
+        colorButton.FlatAppearance.BorderColor = UiPalette.DialogBorder;
     }
 
     private void UpdateOpacityLabel()
     {
         opacityValueLabel.Text = $"{opacityTrackBar.Value}%";
     }
-
-    private void AddSectionTitle(string text, int y)
-    {
-        Controls.Add(UiStyle.CreateLabel(
-            text,
-            new Point(20, y),
-            ForeColor,
-            new Font(Font, FontStyle.Bold)));
-    }
-
-    private void AddLabel(string text, int y, int x = 20)
-    {
-        Controls.Add(UiStyle.CreateLabel(text, new Point(x, y), UiPalette.TextSecondary, Font));
-    }
-
-    private static void ConfigureInput(
-        Control control,
-        Point location,
-        Size size)
-    {
-        UiStyle.ApplySurfaceInput(control, location, size);
-    }
-}
-
-internal static class OverlayDialogControls
-{
-    public static void ApplyRuntimeDpiScale(Form form)
-    {
-        float factor = GetRuntimeDpiScale(form);
-        if (factor <= 1.01f)
-        {
-            return;
-        }
-
-        form.ClientSize = ScaleSize(form.ClientSize, factor);
-        form.Padding = ScalePadding(form.Padding, factor);
-        foreach (Control child in form.Controls)
-        {
-            ScaleControlTree(child, factor);
-        }
-    }
-
-    public static Button CreateDialogButton(
-        string text,
-        DialogResult result,
-        bool accent)
-    {
-        return UiStyle.CreateDialogButton(text, result, accent);
-    }
-
-    public static Label CreateLabel(
-        string text,
-        Point location,
-        Color color,
-        Font font)
-    {
-        return UiStyle.CreateLabel(text, location, color, font);
-    }
-
-    private static void ScaleControlTree(Control control, float factor)
-    {
-        control.Bounds = new Rectangle(
-            Scale(control.Left, factor),
-            Scale(control.Top, factor),
-            Math.Max(1, Scale(control.Width, factor)),
-            Math.Max(1, Scale(control.Height, factor)));
-        control.Margin = ScalePadding(control.Margin, factor);
-        control.Padding = ScalePadding(control.Padding, factor);
-
-        foreach (Control child in control.Controls)
-        {
-            ScaleControlTree(child, factor);
-        }
-    }
-
-    private static float GetRuntimeDpiScale(Form form)
-    {
-        using Graphics graphics = form.CreateGraphics();
-        return Math.Max(form.DeviceDpi / 96.0f, graphics.DpiX / 96.0f);
-    }
-
-    private static Size ScaleSize(Size size, float factor) =>
-        new(Scale(size.Width, factor), Scale(size.Height, factor));
-
-    private static Padding ScalePadding(Padding padding, float factor) =>
-        new(
-            Scale(padding.Left, factor),
-            Scale(padding.Top, factor),
-            Scale(padding.Right, factor),
-            Scale(padding.Bottom, factor));
-
-    private static int Scale(int value, float factor) =>
-        (int)Math.Round(value * factor);
 }

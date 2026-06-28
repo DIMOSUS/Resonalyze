@@ -1,11 +1,14 @@
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace Resonalyze;
 
-internal sealed class ChromeTitleBarController
+// Custom window chrome placed on the form in the designer. The control itself is
+// the title bar surface; its tabs, version label and window buttons are built in
+// Initialize because they depend on the owning form, the DPI scale and the mode
+// tab actions, none of which are available to the designer's parameterless ctor.
+internal sealed class ChromeTitleBar : Panel
 {
-    public const int Height = 40;
+    public const int BarHeight = 40;
     public const int ResizeGripSize = 8;
     public const int WmNcHitTest = 0x84;
     public const int HtClient = 1;
@@ -21,60 +24,67 @@ internal sealed class ChromeTitleBarController
     private const int HtBottomLeft = 16;
     private const int HtBottomRight = 17;
 
-    private readonly Form form;
-    private readonly Control plotView;
-    private readonly Action updateMaximizedBounds;
     private readonly Dictionary<ModeTab, Button> modeTabButtons = new();
-    private readonly Panel titleBar;
-    private readonly FlowLayoutPanel tabBar;
-    private readonly LinkLabel versionLabel;
-    private readonly int titleBarHeight;
-    private readonly float dpiScale;
-    private readonly int windowButtonWidth;
+
+    private Form form = null!;
+    private Action updateMaximizedBounds = null!;
+    private FlowLayoutPanel tabBar = null!;
+    private LinkLabel versionLabel = null!;
+    private float dpiScale = 1f;
+    private int titleBarHeight = BarHeight;
+    private int windowButtonWidth;
     private int versionLabelWidth;
     private bool isCustomMaximized;
+    private bool initialized;
     private Rectangle restoreBounds;
 
-    public ChromeTitleBarController(
-        Form form,
-        Control plotView,
-        Action updateMaximizedBounds,
+    public ChromeTitleBar()
+    {
+        BackColor = UiPalette.TitleBarBackground;
+        Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        Location = Point.Empty;
+    }
+
+    public bool IsCustomMaximized => isCustomMaximized;
+
+    // Wires the title bar to its owning form. Called once after the designer has
+    // added the control to the form.
+    public void Initialize(
+        Form owningForm,
+        Action updateMaximizedBoundsAction,
         IReadOnlyDictionary<ModeTab, Action> tabActions)
     {
-        this.form = form;
-        this.plotView = plotView;
-        this.updateMaximizedBounds = updateMaximizedBounds;
+        if (initialized)
+        {
+            return;
+        }
+        initialized = true;
+
+        form = owningForm;
+        updateMaximizedBounds = updateMaximizedBoundsAction;
         dpiScale = GetDpiScale();
-        titleBarHeight = Scale(Height);
+        titleBarHeight = Scale(BarHeight);
         windowButtonWidth = Scale(46);
         versionLabelWidth = GetVersionLabelWidth(ApplicationVersionInfo.GetDisplayVersion());
 
         form.FormBorderStyle = FormBorderStyle.None;
         updateMaximizedBounds();
-        ShiftClientControlsBelowTitleBar();
 
-        titleBar = new Panel
-        {
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-            BackColor = UiPalette.TitleBarBackground,
-            Location = Point.Empty,
-            Size = new Size(form.ClientSize.Width, titleBarHeight)
-        };
-        titleBar.MouseDown += TitleBarMouseDown;
+        Size = new Size(form.ClientSize.Width, titleBarHeight);
+        MouseDown += TitleBarMouseDown;
 
         tabBar = CreateTabBar();
         AddModeTabs(tabBar, tabActions);
-        titleBar.Controls.Add(tabBar);
+        Controls.Add(tabBar);
 
         versionLabel = CreateVersionLabel();
-        titleBar.Controls.Add(versionLabel);
+        Controls.Add(versionLabel);
 
-        AddWindowButton("\u2500", form.ClientSize.Width - 138, MinimizeWindowClick); // -
-        AddWindowButton("\u2610", form.ClientSize.Width - 92, MaximizeWindowClick); // []
-        AddWindowButton("\u2715", form.ClientSize.Width - 46, CloseWindowClick); // x
+        AddWindowButton("─", form.ClientSize.Width - 138, MinimizeWindowClick); // -
+        AddWindowButton("☐", form.ClientSize.Width - 92, MaximizeWindowClick); // []
+        AddWindowButton("✕", form.ClientSize.Width - 46, CloseWindowClick); // x
 
-        form.Controls.Add(titleBar);
-        titleBar.BringToFront();
+        BringToFront();
     }
 
     [DllImport("user32.dll")]
@@ -86,8 +96,6 @@ internal sealed class ChromeTitleBarController
         int msg,
         IntPtr wParam,
         IntPtr lParam);
-
-    public bool IsCustomMaximized => isCustomMaximized;
 
     public void SetActiveModeTab(ModeTab activeTab)
     {
@@ -155,32 +163,12 @@ internal sealed class ChromeTitleBarController
         return (IntPtr)HtClient;
     }
 
-    private void ShiftClientControlsBelowTitleBar()
-    {
-        foreach (Control control in form.Controls)
-        {
-            if (control == plotView)
-            {
-                control.Top += titleBarHeight;
-                control.Height -= titleBarHeight;
-                continue;
-            }
-
-            bool topAnchored = control.Anchor.HasFlag(AnchorStyles.Top);
-            bool bottomAnchored = control.Anchor.HasFlag(AnchorStyles.Bottom);
-            if (topAnchored && !bottomAnchored)
-            {
-                control.Top += titleBarHeight;
-            }
-        }
-    }
-
     private FlowLayoutPanel CreateTabBar()
     {
         var result = new FlowLayoutPanel
         {
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-            BackColor = titleBar.BackColor,
+            BackColor = BackColor,
             FlowDirection = FlowDirection.LeftToRight,
             Location = new Point(Scale(8), Scale(6)),
             Padding = new Padding(0),
@@ -198,7 +186,7 @@ internal sealed class ChromeTitleBarController
         {
             Anchor = AnchorStyles.Top | AnchorStyles.Right,
             AutoEllipsis = true,
-            BackColor = titleBar.BackColor,
+            BackColor = BackColor,
             ForeColor = UiPalette.TitleBarText,
             DisabledLinkColor = UiPalette.TitleBarText,
             Font = new Font(
@@ -253,7 +241,7 @@ internal sealed class ChromeTitleBarController
             UseCompatibleTextRendering = true,
             Width = GetModeTabWidth(text)
         };
-        UiStyle.ApplySurfaceButton(button, titleBar.BackColor, UiPalette.TitleBarTextSoft);
+        UiStyle.ApplySurfaceButton(button, BackColor, UiPalette.TitleBarTextSoft);
         button.Click += (_, _) => tabActions[tab]();
 
         modeTabButtons.Add(tab, button);
@@ -276,15 +264,15 @@ internal sealed class ChromeTitleBarController
             Size = new Size(width, titleBarHeight),
             Text = text,
         };
-        UiStyle.ApplySurfaceButton(button, titleBar.BackColor, UiPalette.TitleBarTextBright);
-        button.FlatAppearance.MouseOverBackColor = text == "\u2715" // X
+        UiStyle.ApplySurfaceButton(button, BackColor, UiPalette.TitleBarTextBright);
+        button.FlatAppearance.MouseOverBackColor = text == "✕" // X
             ? UiPalette.AccentBlueWarning
             : UiPalette.AccentBlueMuted;
-        button.FlatAppearance.MouseDownBackColor = text == "\u2715" // X
+        button.FlatAppearance.MouseDownBackColor = text == "✕" // X
             ? UiPalette.AccentBlueMutedAlt
             : UiPalette.AccentBlueStrong;
         button.Click += clickHandler;
-        titleBar.Controls.Add(button);
+        Controls.Add(button);
     }
 
     private void TitleBarMouseDown(object? sender, MouseEventArgs e)
@@ -381,7 +369,7 @@ internal sealed class ChromeTitleBarController
             return;
         }
 
-        Control origin = sender as Control ?? titleBar;
+        Control origin = sender as Control ?? this;
         Point screenPoint = origin.PointToScreen(localPoint);
         Rectangle workingArea = Screen.FromPoint(screenPoint).WorkingArea;
         double horizontalRatio = Math.Clamp(

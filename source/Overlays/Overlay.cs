@@ -38,11 +38,6 @@ public sealed class OverlayCollection
             .FirstOrDefault(button => button.Name == "buttonSaveOverlay")
             ?? throw new InvalidOperationException(
                 "Overlay template capture button is missing.");
-        Button templateSettingsButton = templatePanel.Controls
-            .OfType<Button>()
-            .FirstOrDefault(button => button.Name == "buttonOverlaySettings1")
-            ?? throw new InvalidOperationException(
-                "Overlay template settings button is missing.");
         DarkNumericUpDown templateOffset = templatePanel.Controls
             .OfType<DarkNumericUpDown>()
             .FirstOrDefault()
@@ -57,7 +52,6 @@ public sealed class OverlayCollection
         overlays.Add(new Overlay(
             templatePanel,
             templateCaptureButton,
-            templateSettingsButton,
             templateOffset,
             templateCheckBox,
             1,
@@ -73,18 +67,15 @@ public sealed class OverlayCollection
             Panel panel = CreatePanel(templatePanel, index, random);
             CheckBox checkBox = CreateCheckBox(templateCheckBox, index);
             DarkNumericUpDown offset = CreateOffset(templateOffset, index);
-            Button settingsButton = CreateSettingsButton(templateSettingsButton, index);
             Button captureButton = CreateCaptureButton(templateCaptureButton, index);
 
             panel.Controls.Add(checkBox);
             panel.Controls.Add(offset);
-            panel.Controls.Add(settingsButton);
             panel.Controls.Add(captureButton);
 
             overlays.Add(new Overlay(
                 panel,
                 captureButton,
-                settingsButton,
                 offset,
                 checkBox,
                 index,
@@ -196,6 +187,14 @@ public sealed class OverlayCollection
     }
 
     internal void NotifyPlotChanged() => notifyPlotChanged();
+
+    internal void CloseCaptureMenus()
+    {
+        foreach (Overlay overlay in overlays)
+        {
+            overlay.CloseCaptureMenu();
+        }
+    }
 
     // Records which slots were active (shown) for the given mode. Overlay
     // contents are not captured here; they live in their own on-disk files.
@@ -317,21 +316,6 @@ public sealed class OverlayCollection
         };
     }
 
-    private static Button CreateSettingsButton(Button templateSettingsButton, int index)
-    {
-        return new Button
-        {
-            FlatStyle = templateSettingsButton.FlatStyle,
-            BackColor = templateSettingsButton.BackColor,
-            ForeColor = templateSettingsButton.ForeColor,
-            Location = templateSettingsButton.Location,
-            Name = $"buttonOverlaySettings{index}",
-            Size = templateSettingsButton.Size,
-            Text = templateSettingsButton.Text,
-            UseVisualStyleBackColor = templateSettingsButton.UseVisualStyleBackColor,
-            UseCompatibleTextRendering = templateSettingsButton.UseCompatibleTextRendering
-        };
-    }
 }
 
 /// <summary>
@@ -344,7 +328,6 @@ public sealed class Overlay
     private readonly OverlayCollection collection;
     private readonly Panel panel;
     private readonly Button captureButton;
-    private readonly Button settingsButton;
     private readonly DarkNumericUpDown offsetControl;
     private readonly CheckBox checkBox;
     private readonly Color defaultColor;
@@ -352,9 +335,11 @@ public sealed class Overlay
     private readonly ContextMenuStrip captureMenu;
     private readonly ToolStripMenuItem captureCurveMenuItem;
     private readonly ToolStripItem exportDeviationMenuItem;
-    // True only while processing the very mouse press that dismissed the capture
-    // menu, so that same press toggles it closed instead of immediately reopening.
-    private bool captureMenuClosedByPress;
+    private readonly ToolStripItem settingsMenuItem;
+    private readonly System.Windows.Forms.Timer longPressTimer;
+    private int captureMenuOpenedAt;
+    private bool captureMenuSpuriousCloseGuard;
+    private bool longPressTriggered;
 
     private OverlayKind kind = OverlayKind.Captured;
     private bool updatingControls;
@@ -398,7 +383,6 @@ public sealed class Overlay
     public Overlay(
         Panel panel,
         Button captureButton,
-        Button settingsButton,
         DarkNumericUpDown offsetControl,
         CheckBox checkBox,
         int index,
@@ -407,7 +391,6 @@ public sealed class Overlay
     {
         this.panel = panel;
         this.captureButton = captureButton;
-        this.settingsButton = settingsButton;
         this.offsetControl = offsetControl;
         this.checkBox = checkBox;
         this.collection = collection;
@@ -417,21 +400,30 @@ public sealed class Overlay
 
         captureMenu = BuildCaptureMenu(
             out captureCurveMenuItem,
-            out exportDeviationMenuItem);
-        captureMenu.Closed += CaptureMenuClosed;
+            out exportDeviationMenuItem,
+            out settingsMenuItem);
+        captureMenu.Opened += (_, _) =>
+        {
+            captureMenuOpenedAt = Environment.TickCount;
+            captureMenuSpuriousCloseGuard = true;
+        };
+        captureMenu.Closing += CaptureMenuClosing;
+
+        // Holding the button for over half a second jumps straight to the slot's
+        // settings; a normal click still opens the capture menu.
+        longPressTimer = new System.Windows.Forms.Timer { Interval = 500 };
+        longPressTimer.Tick += LongPressTimerTick;
 
         toolTip.SetToolTip(offsetControl, "Overlay vertical offset (dB)");
         toolTip.SetToolTip(checkBox, "Show / hide this overlay");
         toolTip.SetToolTip(
             captureButton,
-            "Capture a curve into this slot, or switch it to a calculated overlay");
-        toolTip.SetToolTip(
-            settingsButton,
-            "Overlay name, kind, color, line style and clearing");
+            "Click for the overlay menu; hold to open this slot's settings");
 
         checkBox.CheckedChanged += CheckBoxChanged;
+        captureButton.Click += CaptureButtonClick;
         captureButton.MouseDown += CaptureButtonMouseDown;
-        settingsButton.Click += SettingsButtonClick;
+        captureButton.MouseUp += CaptureButtonMouseUp;
         offsetControl.ValueChanged += OffsetValueChanged;
 
         ResetState();
@@ -716,7 +708,6 @@ public sealed class Overlay
     {
         checkBox.Enabled = available;
         offsetControl.Enabled = configured;
-        settingsButton.Enabled = SeriesMode != Mode.None;
 
         if (!available)
         {
@@ -746,7 +737,8 @@ public sealed class Overlay
 
     private ContextMenuStrip BuildCaptureMenu(
         out ToolStripMenuItem captureCurveItem,
-        out ToolStripItem exportDeviationItem)
+        out ToolStripItem exportDeviationItem,
+        out ToolStripItem settingsItem)
     {
         var menu = new ContextMenuStrip();
         captureCurveItem = new ToolStripMenuItem("Capture curve…");
@@ -765,18 +757,63 @@ public sealed class Overlay
             null,
             (_, _) => ConfigureOperation());
         menu.Items.Add("\u25B3  Target…", null, (_, _) => ConfigureTarget()); // \u25B3 triangle
+        menu.Items.Add(new ToolStripSeparator());
+        settingsItem = menu.Items.Add(
+            "\u2699  Settings\u2026", // \u2699 gear
+            null,
+            (_, _) => OpenSettings());
         return menu;
     }
 
-    private void CaptureMenuClosed(object? sender, ToolStripDropDownClosedEventArgs e)
+    private void CaptureMenuClosing(object? sender, ToolStripDropDownClosingEventArgs e)
     {
-        // A press on the button while the menu is open is treated by WinForms as a
-        // click outside the menu and closes it. Flag that here and clear the flag
-        // once the current message has been fully processed, so the same press is
-        // recognised as a toggle-close in CaptureButtonMouseDown regardless of
-        // whether Closed fires before or after MouseDown.
-        captureMenuClosedByPress = true;
-        captureButton.BeginInvoke(() => captureMenuClosedByPress = false);
+        // A borderless custom-chrome window can emit a spurious activation change the
+        // instant the dropdown opens, which closes it immediately — the "button
+        // pressed, no menu" symptom that no show-timing change could fix. Cancel that
+        // single focus-change close if it arrives right after opening, but only once
+        // per open so a genuine later dismissal (e.g. clicking another slot) is not
+        // swallowed too. Clicking elsewhere (AppClicked), Esc (Keyboard), choosing an
+        // item, and programmatic Close (CloseCalled) are all unaffected.
+        if (e.CloseReason == ToolStripDropDownCloseReason.AppFocusChange &&
+            captureMenuSpuriousCloseGuard &&
+            Environment.TickCount - captureMenuOpenedAt < 250)
+        {
+            captureMenuSpuriousCloseGuard = false;
+            e.Cancel = true;
+        }
+    }
+
+    internal void CloseCaptureMenu()
+    {
+        if (captureMenu.Visible)
+        {
+            captureMenu.Close();
+        }
+    }
+
+    private void CaptureButtonClick(object? sender, EventArgs e)
+    {
+        // A long press already opened the settings dialog, so swallow the click that
+        // ends the hold instead of also opening the menu.
+        if (longPressTriggered)
+        {
+            longPressTriggered = false;
+            return;
+        }
+
+        // Open on Click (which fires after the mouse-up) and defer with BeginInvoke.
+        // Two WinForms quirks made the menu intermittently fail to appear when shown
+        // from mouse-down: showing synchronously inside the mouse message was
+        // swallowed by the focus/activation change, and showing on mouse-down let the
+        // click's own mouse-up land outside the just-opened menu and immediately
+        // close it. Showing on Click, posted after the current message, avoids both.
+        if (captureMenu.Visible)
+        {
+            captureMenu.Close();
+            return;
+        }
+
+        captureButton.BeginInvoke(ShowCaptureMenu);
     }
 
     private void CaptureButtonMouseDown(object? sender, MouseEventArgs e)
@@ -786,19 +823,31 @@ public sealed class Overlay
             return;
         }
 
-        // Toggle closed if this press is dismissing an open menu: either the menu
-        // is still visible (MouseDown ran before the outside-click close) or it has
-        // just been closed by this very press (Closed ran first).
-        if (captureMenu.Visible || captureMenuClosedByPress)
+        // Each fresh press clears the flag so a click that follows a held-but-aborted
+        // press (e.g. no settings to show) is still treated as a long press here, and
+        // a later genuine click is never wrongly swallowed.
+        longPressTriggered = false;
+        longPressTimer.Start();
+    }
+
+    private void CaptureButtonMouseUp(object? sender, MouseEventArgs e)
+    {
+        longPressTimer.Stop();
+    }
+
+    private void LongPressTimerTick(object? sender, EventArgs e)
+    {
+        longPressTimer.Stop();
+        longPressTriggered = true;
+
+        // The click that opens the menu only fires on mouse-up, so the menu is not
+        // up yet during the hold; close it defensively in case of odd ordering.
+        if (captureMenu.Visible)
         {
-            return;
+            captureMenu.Close();
         }
 
-        // Open after the current mouse message has been processed. Showing a
-        // dropdown synchronously from within the button's mouse-down handler can be
-        // swallowed by the focus/activation change the press triggers, leaving the
-        // button visibly pressed but no menu on screen.
-        captureButton.BeginInvoke(ShowCaptureMenu);
+        OpenSettings();
     }
 
     private void ShowCaptureMenu()
@@ -808,6 +857,11 @@ public sealed class Overlay
             return;
         }
 
+        // Make sure no other slot's menu stays open. A programmatic Close uses
+        // reason CloseCalled, which bypasses the spurious-focus-close guard, so this
+        // reliably leaves only one capture menu open at a time.
+        collection.CloseCaptureMenus();
+
         RebuildCaptureCurveMenu();
         // The deviation export only applies to a target slot, and its label
         // reflects the current deviation mode.
@@ -816,6 +870,8 @@ public sealed class Overlay
             targetDeviationMode == TargetDeviationMode.Correction
                 ? "Export EQ correction…"
                 : "Export deviation…";
+        settingsMenuItem.Enabled =
+            SeriesMode == CurrentOverlayMode && HasConfiguredContent();
         captureMenu.Show(captureButton, new Point(0, captureButton.Height));
     }
 
@@ -1097,7 +1153,10 @@ public sealed class Overlay
         return trimmed;
     }
 
-    private void SettingsButtonClick(object? sender, EventArgs e)
+    // Routes the capture menu's "Settings…" entry to the editor for the slot's
+    // current kind. Captured slots open the curve settings (name, color, clear);
+    // calculated and target slots reopen their own configuration dialogs.
+    private void OpenSettings()
     {
         if (SeriesMode != CurrentOverlayMode)
         {
@@ -1123,6 +1182,14 @@ public sealed class Overlay
 
         ConfigureCaptured();
     }
+
+    // The Settings entry only applies to a slot that already holds content.
+    private bool HasConfiguredContent() => kind switch
+    {
+        OverlayKind.Operation => operationConfigured,
+        OverlayKind.Target => targetConfigured,
+        _ => HasCaptureData
+    };
 
     private void ConfigureTarget()
     {
@@ -1238,7 +1305,9 @@ public sealed class Overlay
             operation,
             blendFrequencyHz,
             blendWidthOctaves,
-            useAmplitudeSpace,
+            // A brand-new calculated overlay defaults to amplitude space; editing an
+            // existing one keeps whatever was saved.
+            operationConfigured ? useAmplitudeSpace : true,
             kind == OverlayKind.Operation ? panel.BackColor : defaultColor,
             strokeThickness,
             kind == OverlayKind.Operation ? lineStyle : OverlayLineStyle.Dash,
@@ -1605,7 +1674,6 @@ public sealed class Overlay
 
         SetAvailability(false);
         captureButton.Enabled = true;
-        settingsButton.Enabled = true;
         UpdateKindGlyph();
     }
 
@@ -1624,7 +1692,6 @@ public sealed class Overlay
     private void SetAvailability(bool available)
     {
         checkBox.Enabled = available;
-        settingsButton.Enabled = available;
         offsetControl.Enabled = available;
         if (!available)
         {

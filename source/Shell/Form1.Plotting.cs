@@ -91,7 +91,7 @@ public partial class Form1
     private void SetActiveModeTab(ModeTab activeTab)
     {
         ModeDescriptor descriptor = GetModeDescriptor(activeTab);
-        titleBarController.SetActiveModeTab(activeTab);
+        chromeTitleBar.SetActiveModeTab(activeTab);
         UpdateCurrentModeSettingsButton();
         UpdateDrawButtonText();
         UpdateRecordButtonForCurrentMode();

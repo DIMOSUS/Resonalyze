@@ -27,7 +27,7 @@ public partial class Form1
                 ApplicationUpdateService.SetDetectedRelease(
                     result.TagName,
                     result.ReleaseUrl);
-                titleBarController.SetUpdateAvailable(result.ReleaseUrl);
+                chromeTitleBar.SetUpdateAvailable(result.ReleaseUrl);
             }
         }
         catch

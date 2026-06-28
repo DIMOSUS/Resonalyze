@@ -36,7 +36,6 @@ namespace Resonalyze
             overlays = new Panel();
             overlayPanel1 = new Panel();
             buttonSaveOverlay = new Button();
-            buttonOverlaySettings1 = new Button();
             numericUpDown1 = new DarkNumericUpDown();
             checkBox1 = new CheckBox();
             buttonRecordOpt = new Button();
@@ -49,6 +48,7 @@ namespace Resonalyze
             panel1 = new Panel();
             inputLevelMeterPanel = new InputLevelMeterPanel();
             buttonHistory = new Button();
+            chromeTitleBar = new ChromeTitleBar();
             overlays.SuspendLayout();
             overlayPanel1.SuspendLayout();
             (numericUpDown1).BeginInit();
@@ -74,10 +74,10 @@ namespace Resonalyze
             plotView1.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             plotView1.BackColor = Color.FromArgb(50, 55, 100);
             plotView1.ForeColor = Color.White;
-            plotView1.Location = new Point(12, 12);
+            plotView1.Location = new Point(12, 52);
             plotView1.Name = "plotView1";
             plotView1.PanCursor = Cursors.Hand;
-            plotView1.Size = new Size(1182, 744);
+            plotView1.Size = new Size(1182, 704);
             plotView1.TabIndex = 1;
             plotView1.Text = "plotView1";
             plotView1.ZoomHorizontalCursor = Cursors.SizeWE;
@@ -98,7 +98,6 @@ namespace Resonalyze
             // 
             overlayPanel1.BackColor = Color.OrangeRed;
             overlayPanel1.Controls.Add(buttonSaveOverlay);
-            overlayPanel1.Controls.Add(buttonOverlaySettings1);
             overlayPanel1.Controls.Add(numericUpDown1);
             overlayPanel1.Controls.Add(checkBox1);
             overlayPanel1.Location = new Point(3, 3);
@@ -111,26 +110,13 @@ namespace Resonalyze
             buttonSaveOverlay.BackColor = Color.FromArgb(50, 55, 100);
             buttonSaveOverlay.FlatStyle = FlatStyle.Popup;
             buttonSaveOverlay.ForeColor = Color.White;
-            buttonSaveOverlay.Location = new Point(21, 3);
+            buttonSaveOverlay.Location = new Point(23, 3);
             buttonSaveOverlay.Name = "buttonSaveOverlay";
-            buttonSaveOverlay.Size = new Size(41, 19);
+            buttonSaveOverlay.Size = new Size(55, 19);
             buttonSaveOverlay.TabIndex = 1;
             buttonSaveOverlay.Text = "1";
             buttonSaveOverlay.UseCompatibleTextRendering = true;
             buttonSaveOverlay.UseVisualStyleBackColor = false;
-            // 
-            // buttonOverlaySettings1
-            // 
-            buttonOverlaySettings1.BackColor = Color.FromArgb(50, 55, 80);
-            buttonOverlaySettings1.FlatStyle = FlatStyle.Popup;
-            buttonOverlaySettings1.ForeColor = Color.White;
-            buttonOverlaySettings1.Location = new Point(121, 3);
-            buttonOverlaySettings1.Name = "buttonOverlaySettings1";
-            buttonOverlaySettings1.Size = new Size(21, 19);
-            buttonOverlaySettings1.TabIndex = 21;
-            buttonOverlaySettings1.Text = "...";
-            buttonOverlaySettings1.UseCompatibleTextRendering = true;
-            buttonOverlaySettings1.UseVisualStyleBackColor = false;
             // 
             // numericUpDown1
             // 
@@ -138,12 +124,12 @@ namespace Resonalyze
             numericUpDown1.DecimalPlaces = 0;
             numericUpDown1.ForeColor = Color.White;
             numericUpDown1.Increment = new decimal(new int[] { 1, 0, 0, 0 });
-            numericUpDown1.Location = new Point(65, 3);
+            numericUpDown1.Location = new Point(84, 3);
             numericUpDown1.Maximum = new decimal(new int[] { 180, 0, 0, 0 });
             numericUpDown1.Minimum = new decimal(new int[] { 180, 0, 0, int.MinValue });
             numericUpDown1.MinimumSize = new Size(36, 19);
             numericUpDown1.Name = "numericUpDown1";
-            numericUpDown1.Size = new Size(53, 19);
+            numericUpDown1.Size = new Size(58, 19);
             numericUpDown1.TabIndex = 2;
             numericUpDown1.TextAlign = HorizontalAlignment.Right;
             numericUpDown1.ThousandsSeparator = false;
@@ -212,7 +198,7 @@ namespace Resonalyze
             buttonClear.BackColor = Color.FromArgb(50, 55, 80);
             buttonClear.FlatStyle = FlatStyle.Popup;
             buttonClear.ForeColor = Color.White;
-            buttonClear.Location = new Point(1204, 280);
+            buttonClear.Location = new Point(1204, 320);
             buttonClear.Name = "buttonClear";
             buttonClear.Size = new Size(150, 23);
             buttonClear.TabIndex = 20;
@@ -226,7 +212,7 @@ namespace Resonalyze
             buttonCurrentModeSettings.BackColor = Color.FromArgb(50, 55, 80);
             buttonCurrentModeSettings.FlatStyle = FlatStyle.Popup;
             buttonCurrentModeSettings.ForeColor = Color.White;
-            buttonCurrentModeSettings.Location = new Point(1204, 211);
+            buttonCurrentModeSettings.Location = new Point(1204, 251);
             buttonCurrentModeSettings.Name = "buttonCurrentModeSettings";
             buttonCurrentModeSettings.Size = new Size(150, 23);
             buttonCurrentModeSettings.TabIndex = 21;
@@ -240,7 +226,7 @@ namespace Resonalyze
             buttonDraw.BackColor = Color.FromArgb(50, 55, 80);
             buttonDraw.FlatStyle = FlatStyle.Popup;
             buttonDraw.ForeColor = Color.White;
-            buttonDraw.Location = new Point(1204, 309);
+            buttonDraw.Location = new Point(1204, 349);
             buttonDraw.Name = "buttonDraw";
             buttonDraw.Size = new Size(150, 23);
             buttonDraw.TabIndex = 22;
@@ -256,7 +242,7 @@ namespace Resonalyze
             panel1.Controls.Add(buttonRecordOpt);
             panel1.Controls.Add(buttonSave);
             panel1.Controls.Add(buttonLoad);
-            panel1.Location = new Point(1204, 106);
+            panel1.Location = new Point(1204, 146);
             panel1.Name = "panel1";
             panel1.Size = new Size(150, 90);
             panel1.TabIndex = 23;
@@ -267,7 +253,7 @@ namespace Resonalyze
             inputLevelMeterPanel.BackColor = Color.FromArgb(38, 42, 52);
             inputLevelMeterPanel.Font = new Font("Segoe UI", 8.75F, FontStyle.Bold);
             inputLevelMeterPanel.ForeColor = Color.FromArgb(225, 230, 240);
-            inputLevelMeterPanel.Location = new Point(1204, 12);
+            inputLevelMeterPanel.Location = new Point(1204, 52);
             inputLevelMeterPanel.Name = "inputLevelMeterPanel";
             inputLevelMeterPanel.Size = new Size(150, 88);
             inputLevelMeterPanel.TabIndex = 24;
@@ -278,20 +264,29 @@ namespace Resonalyze
             buttonHistory.BackColor = Color.FromArgb(50, 55, 80);
             buttonHistory.FlatStyle = FlatStyle.Popup;
             buttonHistory.ForeColor = Color.White;
-            buttonHistory.Location = new Point(1204, 240);
+            buttonHistory.Location = new Point(1204, 280);
             buttonHistory.Name = "buttonHistory";
             buttonHistory.Size = new Size(150, 23);
             buttonHistory.TabIndex = 25;
             buttonHistory.Text = "History";
             buttonHistory.UseVisualStyleBackColor = false;
             buttonHistory.Click += buttonHistory_Click;
-            // 
+            //
+            // chromeTitleBar
+            //
+            chromeTitleBar.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            chromeTitleBar.Location = new Point(0, 0);
+            chromeTitleBar.Name = "chromeTitleBar";
+            chromeTitleBar.Size = new Size(1366, 40);
+            chromeTitleBar.TabIndex = 26;
+            //
             // Form1
-            // 
+            //
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
             ClientSize = new Size(1366, 768);
+            Controls.Add(chromeTitleBar);
             Controls.Add(buttonHistory);
             Controls.Add(inputLevelMeterPanel);
             Controls.Add(panel1);
@@ -328,12 +323,12 @@ namespace Resonalyze
         private Button buttonLoad;
         private ToolTip toolTip1;
         private Button buttonClear;
-        private Button buttonOverlaySettings1;
         private Button buttonCurrentModeSettings;
         private Button buttonDraw;
         private Panel panel1;
         private InputLevelMeterPanel inputLevelMeterPanel;
         private DarkNumericUpDown numericUpDown1;
         private Button buttonHistory;
+        private ChromeTitleBar chromeTitleBar;
     }
 }

@@ -18,7 +18,7 @@ public partial class Form1
         }
 
         int margin = ScaleLayout(MainContentMargin);
-        int top = ScaleLayout(ChromeTitleBarController.Height) + margin;
+        int top = ScaleLayout(ChromeTitleBar.BarHeight) + margin;
         int rightEdge = GetCentralContentRightEdge(margin);
         int width = Math.Max(1, rightEdge - margin);
         int height = Math.Max(1, ClientSize.Height - top - margin);

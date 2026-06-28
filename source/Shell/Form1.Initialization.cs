@@ -17,9 +17,8 @@ public partial class Form1
 
     private Form1ControllerDependencies CreateControllerDependencies()
     {
-        ChromeTitleBarController createdTitleBarController = new(
+        chromeTitleBar.Initialize(
             this,
-            plotView1,
             UpdateMaximizedBounds,
             CreateModeTabActions());
         OverlayCollection createdOverlayCollection = new(
@@ -94,7 +93,6 @@ public partial class Form1
         DockedModeSettingsHost createdDockedHistoryHost = new(this, plotView1);
 
         return new Form1ControllerDependencies(
-            createdTitleBarController,
             createdOverlayCollection,
             createdPlotLabelsPanelController,
             createdPlotModelFactory,
@@ -207,7 +205,6 @@ public partial class Form1
     }
 
     private sealed record Form1ControllerDependencies(
-        ChromeTitleBarController TitleBarController,
         OverlayCollection OverlayCollection,
         PlotLabelsPanelController PlotLabelsPanelController,
         PlotModelFactory PlotModelFactory,

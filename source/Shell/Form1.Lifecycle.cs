@@ -43,15 +43,15 @@ public partial class Form1
 
     protected override void WndProc(ref Message m)
     {
-        if (m.Msg == ChromeTitleBarController.WmNcHitTest &&
-            !titleBarController.IsCustomMaximized)
+        if (m.Msg == ChromeTitleBar.WmNcHitTest &&
+            !chromeTitleBar.IsCustomMaximized)
         {
             base.WndProc(ref m);
-            if ((int)m.Result == ChromeTitleBarController.HtClient)
+            if ((int)m.Result == ChromeTitleBar.HtClient)
             {
                 Point point = PointToClient(
-                    ChromeTitleBarController.GetPointFromLParam(m.LParam));
-                m.Result = ChromeTitleBarController.GetResizeHitTest(
+                    ChromeTitleBar.GetPointFromLParam(m.LParam));
+                m.Result = ChromeTitleBar.GetResizeHitTest(
                     point,
                     ClientSize);
             }

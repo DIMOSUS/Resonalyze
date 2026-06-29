@@ -129,6 +129,11 @@ internal sealed class PlotModelFactory
                 AddLineSeries(model, excessPhaseCurve, phaseTrackerFormat);
             }
         }
+        else if (measurementContext.CanIncludeCurves(includeCurves) &&
+                 !measurementContext.HasTransferImpulseResponse)
+        {
+            AddRequiresTransferIrAnnotation(model);
+        }
 
         PlotModelStyle.AddFrequencyAxis(model);
         model.Axes.Add(new LinearAxis
@@ -202,6 +207,11 @@ internal sealed class PlotModelFactory
                     hasValidData = true;
                 }
             }
+        }
+        else if (measurementContext.CanIncludeCurves(includeCurves) &&
+                 !measurementContext.HasTransferImpulseResponse)
+        {
+            AddRequiresTransferIrAnnotation(model);
         }
 
         PlotModelStyle.AddFrequencyAxis(model);
@@ -503,5 +513,20 @@ internal sealed class PlotModelFactory
         LineSeries series = OxyPlotAdapter.ToLineSeries(curve);
         series.TrackerFormatString = trackerFormat;
         model.Series.Add(series);
+    }
+
+    // Phase and group delay need loopback timing; without a transfer IR the plot would
+    // otherwise be silently empty, so explain why.
+    private static void AddRequiresTransferIrAnnotation(PlotModel model)
+    {
+        model.Annotations.Add(new OverlayTextAnnotation
+        {
+            Text = "Requires loopback transfer IR",
+            TextPosition = new DataPoint(0.5, 3),
+            TextFlowDirection = TextFlowDirection.TopDown,
+            FontSize = 13,
+            TextColor = OxyColors.Gray,
+            TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
+        });
     }
 }

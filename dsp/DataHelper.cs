@@ -826,17 +826,18 @@ namespace Resonalyze.Dsp
             for (int i = 1; i < halfLength; i++)
             {
                 double magnitude = spectrum[i].Magnitude;
-
-                Complex groupDelay = timeWeightedSpectrum[i] / spectrum[i];
-
                 double f = i * measurement.SampleRate / (double)n;
 
-                double delayMilliseconds = (groupDelay.Real + absoluteStartTime) * 1000.0;
-
+                // Skip nulls/noise-floor bins before dividing: a near-zero spectrum
+                // would otherwise yield NaN/Infinity and poison the later smoothing.
                 if (magnitude < minMagnitude)
                 {
-                    delayMilliseconds = double.NaN;
+                    data.Add(new SignalPoint(f, double.NaN));
+                    continue;
                 }
+
+                Complex groupDelay = timeWeightedSpectrum[i] / spectrum[i];
+                double delayMilliseconds = (groupDelay.Real + absoluteStartTime) * 1000.0;
 
                 data.Add(new SignalPoint(f, delayMilliseconds));
             }

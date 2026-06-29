@@ -87,8 +87,10 @@ namespace Resonalyze.Options
         // the average excess-phase trend; peak references the dominant arrival.
         private void ApplyEstimatedTau(bool useSlope)
         {
+            // Phase analysis (and therefore τ) only works with a transfer IR, so
+            // gate the auto-estimate on the same condition as Fit and the plot.
             if (expSweepMeasurement is not { } measurement ||
-                !measurement.HasImpulseResponse ||
+                measurement.TransferImpulseResponse is not { Length: > 0 } ||
                 measurement.InProgress)
             {
                 System.Media.SystemSounds.Beep.Play();

@@ -49,8 +49,8 @@ public partial class Form1
         panel1,
         buttonCurrentModeSettings,
         buttonHistory,
-        buttonClear,
-        buttonDraw,
+        buttonOverlayShowAll,
+        buttonOverlayHideAll,
         overlays
     ];
 

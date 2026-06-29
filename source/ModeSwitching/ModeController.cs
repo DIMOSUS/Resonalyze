@@ -7,7 +7,6 @@ internal sealed class ModeController
     private readonly Action hideOverlays;
     private readonly Action<bool> drawSelectedMode;
     private readonly Func<bool> canDrawCurrentMeasurement;
-    private readonly Action updateDrawButton;
     private readonly Func<ModeTab, Mode> getMode;
     private readonly Func<ModeTab, bool> supportsCurveDrawing;
 
@@ -17,7 +16,6 @@ internal sealed class ModeController
         Action hideOverlays,
         Action<bool> drawSelectedMode,
         Func<bool> canDrawCurrentMeasurement,
-        Action updateDrawButton,
         Func<ModeTab, Mode> getMode,
         Func<ModeTab, bool> supportsCurveDrawing)
     {
@@ -26,7 +24,6 @@ internal sealed class ModeController
         this.hideOverlays = hideOverlays;
         this.drawSelectedMode = drawSelectedMode;
         this.canDrawCurrentMeasurement = canDrawCurrentMeasurement;
-        this.updateDrawButton = updateDrawButton;
         this.getMode = getMode;
         this.supportsCurveDrawing = supportsCurveDrawing;
     }
@@ -42,6 +39,5 @@ internal sealed class ModeController
 
         bool includeCurves = supportsCurveDrawing(tab) && canDrawCurrentMeasurement();
         drawSelectedMode(includeCurves);
-        updateDrawButton();
     }
 }

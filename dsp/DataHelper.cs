@@ -74,12 +74,21 @@ namespace Resonalyze.Dsp
         public bool ShowHd3 { get; set; } = true;
         public bool ShowHd4 { get; set; } = true;
         public bool ShowThdPlusNoise { get; set; } = true;
+
+        // Group-delay-mode curve visibility. Ignored by the other modes that reuse
+        // this options type.
+        public bool ShowGroupDelay { get; set; } = true;
     }
 
     public sealed class ImpulseResponseOptions
     {
         public int Length { get; set; } = 4096;
         public bool Logarithmic { get; set; }
+
+        // Curve visibility. Impulse Response and Autocorrelation modes share this
+        // options type but read their own flag.
+        public bool ShowImpulse { get; set; } = true;
+        public bool ShowAutocorrelation { get; set; } = true;
     }
 
     /// <summary>

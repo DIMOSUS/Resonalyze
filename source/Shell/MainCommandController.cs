@@ -4,15 +4,10 @@ internal sealed class MainCommandController
 {
     private readonly Button saveButton;
     private readonly Button loadButton;
-    private readonly Button drawButton;
-    private readonly Button clearButton;
     private readonly Button modeSettingsButton;
     private readonly Button recordSettingsButton;
     private readonly Button historyButton;
     private readonly Func<bool> hasActiveModeSettings;
-    private readonly Func<bool> supportsManualDraw;
-    private readonly Func<bool> canDrawCurrentMeasurement;
-    private readonly Func<bool> hasPlotCurves;
     private readonly Func<bool> isHandleCreated;
     private bool modeSettingsPressed;
     private bool recordSettingsPressed;
@@ -21,39 +16,25 @@ internal sealed class MainCommandController
     public MainCommandController(
         Button saveButton,
         Button loadButton,
-        Button drawButton,
-        Button clearButton,
         Button modeSettingsButton,
         Button recordSettingsButton,
         Button historyButton,
         Func<bool> hasActiveModeSettings,
-        Func<bool> supportsManualDraw,
-        Func<bool> canDrawCurrentMeasurement,
-        Func<bool> hasPlotCurves,
         Func<bool> isHandleCreated)
     {
         this.saveButton = saveButton;
         this.loadButton = loadButton;
-        this.drawButton = drawButton;
-        this.clearButton = clearButton;
         this.modeSettingsButton = modeSettingsButton;
         this.recordSettingsButton = recordSettingsButton;
         this.historyButton = historyButton;
         this.hasActiveModeSettings = hasActiveModeSettings;
-        this.supportsManualDraw = supportsManualDraw;
-        this.canDrawCurrentMeasurement = canDrawCurrentMeasurement;
-        this.hasPlotCurves = hasPlotCurves;
         this.isHandleCreated = isHandleCreated;
     }
-
-    public bool IsDrawFrozen => ShouldFreezeDrawButton();
 
     public void Initialize()
     {
         SetSaveAvailable(false);
         SetLoadAvailable(true);
-        SetButtonFrozen(drawButton, frozen: true);
-        UpdateDrawButton();
     }
 
     public void SetSaveAvailable(bool available) =>
@@ -62,32 +43,10 @@ internal sealed class MainCommandController
     public void SetLoadAvailable(bool available) =>
         SetButtonFrozen(loadButton, !available);
 
-    public void FreezeSaveLoadDraw()
+    public void FreezeSaveLoad()
     {
         SetSaveAvailable(false);
         SetLoadAvailable(false);
-        SetButtonFrozen(drawButton, frozen: true);
-    }
-
-    public void UpdateDrawButton()
-    {
-        if (!isHandleCreated())
-        {
-            return;
-        }
-
-        drawButton.Text = "Restore Curves";
-        SetButtonFrozen(drawButton, ShouldFreezeDrawButton());
-    }
-
-    public void UpdateClearButton()
-    {
-        if (!isHandleCreated())
-        {
-            return;
-        }
-
-        SetButtonFrozen(clearButton, !hasPlotCurves());
     }
 
     public void UpdateModeSettingsButton(bool pressed = false)
@@ -155,15 +114,5 @@ internal sealed class MainCommandController
             : UiPalette.ButtonBackground;
         button.ForeColor = Color.White;
         button.Padding = pressed ? new Padding(1, 1, 0, 0) : Padding.Empty;
-    }
-
-    private bool ShouldFreezeDrawButton()
-    {
-        if (!supportsManualDraw())
-        {
-            return true;
-        }
-
-        return !canDrawCurrentMeasurement();
     }
 }

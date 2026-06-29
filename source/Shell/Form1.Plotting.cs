@@ -14,7 +14,6 @@ public partial class Form1
             {
                 timeAlignmentController.RefreshConfiguration();
             }
-            UpdateClearButtonState();
             return;
         }
 
@@ -26,7 +25,6 @@ public partial class Form1
             {
                 liveSpectrumController.RestoreLastCurve();
             }
-            UpdateClearButtonState();
             return;
         }
 
@@ -35,7 +33,6 @@ public partial class Form1
             descriptor.CreatePlotModel(shouldIncludeCurves),
             shouldIncludeCurves,
             descriptor.ShowOverlayCurves);
-        UpdateClearButtonState();
     }
 
     private void ShowPlotModel(
@@ -66,10 +63,24 @@ public partial class Form1
         }
 
         overlays.Enabled = available;
+        buttonOverlayShowAll.Enabled = available;
+        buttonOverlayHideAll.Enabled = available;
         if (!available)
         {
             overlayCollection.HideAll();
         }
+    }
+
+    private void buttonOverlayShowAll_Click(object? sender, EventArgs e)
+    {
+        overlayCollection.Show(CurrentMode);
+        UpdatePlotLabelsPanel();
+    }
+
+    private void buttonOverlayHideAll_Click(object? sender, EventArgs e)
+    {
+        overlayCollection.HideAll();
+        UpdatePlotLabelsPanel();
     }
 
     private Task SelectModeAsync(ModeTab tab) => modeController.SelectAsync(tab);
@@ -93,19 +104,15 @@ public partial class Form1
         ModeDescriptor descriptor = GetModeDescriptor(activeTab);
         chromeTitleBar.SetActiveModeTab(activeTab);
         UpdateCurrentModeSettingsButton();
-        UpdateDrawButtonText();
         UpdateRecordButtonForCurrentMode();
         ApplyMainContentLayout();
         plotView1.Visible = descriptor.HasPlotView;
         overlays.Visible = descriptor.HasOverlayPanel;
+        buttonOverlayShowAll.Visible = descriptor.HasOverlayPanel;
+        buttonOverlayHideAll.Visible = descriptor.HasOverlayPanel;
         timeAlignmentController.SetVisible(descriptor.ShowsTimeAlignmentPanel);
         SyncDockedModeSettingsOnModeChange();
         UpdatePlotLabelsPanel();
-    }
-
-    private void UpdateDrawButtonText()
-    {
-        commandController.UpdateDrawButton();
     }
 
     private void UpdateRecordButtonForCurrentMode()
@@ -116,11 +123,6 @@ public partial class Form1
         }
 
         buttonRecord.Text = liveSpectrumController.InProgress ? "Stop" : "Start";
-    }
-
-    private void UpdateClearButtonState()
-    {
-        commandController.UpdateClearButton();
     }
 
     private void UpdatePlotLabelsPanel()

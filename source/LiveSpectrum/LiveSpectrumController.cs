@@ -16,9 +16,7 @@ internal sealed class LiveSpectrumController : IDisposable
     private readonly Func<Mode> getCurrentMode;
     private readonly Func<Task> selectLiveSpectrumAsync;
     private readonly Action updateOverlayAvailability;
-    private readonly Action updateDrawButton;
     private readonly Action updateRecordButton;
-    private readonly Action updateClearButton;
     private readonly Action updatePlotLabels;
     private readonly LiveSpectrumOptions liveSpectrumOptions;
     private const string LiveSpectrumTag = "live-spectrum:primary";
@@ -42,9 +40,7 @@ internal sealed class LiveSpectrumController : IDisposable
         Func<Mode> getCurrentMode,
         Func<Task> selectLiveSpectrumAsync,
         Action updateOverlayAvailability,
-        Action updateDrawButton,
         Action updateRecordButton,
-        Action updateClearButton,
         Action updatePlotLabels,
         LiveSpectrumOptions liveSpectrumOptions)
     {
@@ -57,9 +53,7 @@ internal sealed class LiveSpectrumController : IDisposable
         this.getCurrentMode = getCurrentMode;
         this.selectLiveSpectrumAsync = selectLiveSpectrumAsync;
         this.updateOverlayAvailability = updateOverlayAvailability;
-        this.updateDrawButton = updateDrawButton;
         this.updateRecordButton = updateRecordButton;
-        this.updateClearButton = updateClearButton;
         this.updatePlotLabels = updatePlotLabels;
         this.liveSpectrumOptions = liveSpectrumOptions;
         measurement.Completed += MeasurementCompleted;
@@ -162,7 +156,6 @@ internal sealed class LiveSpectrumController : IDisposable
             await measurement.AbortAsync();
         }
 
-        updateDrawButton();
         updateRecordButton();
         updatePlotLabels();
     }
@@ -244,9 +237,7 @@ internal sealed class LiveSpectrumController : IDisposable
         overlayCollection.Show(getCurrentMode());
         _ = measurement.RunAsync();
         timer.Start();
-        updateDrawButton();
         updateRecordButton();
-        updateClearButton();
         updatePlotLabels();
     }
 
@@ -266,9 +257,7 @@ internal sealed class LiveSpectrumController : IDisposable
         plotView.Model = model;
         updateOverlayAvailability();
         overlayCollection.Show(getCurrentMode());
-        updateDrawButton();
         updateRecordButton();
-        updateClearButton();
         updatePlotLabels();
     }
 
@@ -319,24 +308,27 @@ internal sealed class LiveSpectrumController : IDisposable
             }
         }
 
-        if (snapshot.Coherence != null &&
-            liveSpectrumOptions.CoherenceThresholdPercent > 0)
+        if (liveSpectrumOptions.ShowMainCurve)
         {
-            (LineSeries trusted, LineSeries untrusted) =
-                plotModelFactory.BuildNoiseSeriesSegmented(
-                    snapshot.Magnitude,
-                    snapshot.Coherence,
-                    liveSpectrumOptions.CoherenceThresholdPercent);
-            untrusted.Tag = LiveSpectrumTag;
-            trusted.Tag = LiveSpectrumTag;
-            model.Series.Add(untrusted);
-            model.Series.Add(trusted);
-        }
-        else
-        {
-            LineSeries series = plotModelFactory.BuildNoiseSeries(snapshot.Magnitude);
-            series.Tag = LiveSpectrumTag;
-            model.Series.Add(series);
+            if (snapshot.Coherence != null &&
+                liveSpectrumOptions.CoherenceThresholdPercent > 0)
+            {
+                (LineSeries trusted, LineSeries untrusted) =
+                    plotModelFactory.BuildNoiseSeriesSegmented(
+                        snapshot.Magnitude,
+                        snapshot.Coherence,
+                        liveSpectrumOptions.CoherenceThresholdPercent);
+                untrusted.Tag = LiveSpectrumTag;
+                trusted.Tag = LiveSpectrumTag;
+                model.Series.Add(untrusted);
+                model.Series.Add(trusted);
+            }
+            else
+            {
+                LineSeries series = plotModelFactory.BuildNoiseSeries(snapshot.Magnitude);
+                series.Tag = LiveSpectrumTag;
+                model.Series.Add(series);
+            }
         }
 
         if (snapshot.Coherence != null && liveSpectrumOptions.ShowCoherence)
@@ -433,9 +425,7 @@ internal sealed class LiveSpectrumController : IDisposable
         {
             timer.Stop();
             updateOverlayAvailability();
-            updateDrawButton();
             updateRecordButton();
-            updateClearButton();
             updatePlotLabels();
         });
     }

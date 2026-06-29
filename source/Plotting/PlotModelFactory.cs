@@ -130,7 +130,10 @@ internal sealed class PlotModelFactory
             }
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
-                 !measurementContext.HasTransferImpulseResponse)
+                 !measurementContext.HasTransferImpulseResponse &&
+                 (phaseResponseOptions.ShowMeasuredPhase ||
+                  phaseResponseOptions.ShowMinimumPhase ||
+                  phaseResponseOptions.ShowExcessPhase))
         {
             AddRequiresTransferIrAnnotation(model);
         }
@@ -182,7 +185,8 @@ internal sealed class PlotModelFactory
         bool hasValidData = false;
         // Group delay is only meaningful with a transfer IR (loopback timing).
         if (measurementContext.CanIncludeCurves(includeCurves) &&
-            measurementContext.HasTransferImpulseResponse)
+            measurementContext.HasTransferImpulseResponse &&
+            groupDelayOptions.ShowGroupDelay)
         {
             // The gate is positioned by its Gate offset (left-shoulder-end) within the
             // transfer IR; the group delay reads absolute, referenced to the IR start.
@@ -209,7 +213,8 @@ internal sealed class PlotModelFactory
             }
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
-                 !measurementContext.HasTransferImpulseResponse)
+                 !measurementContext.HasTransferImpulseResponse &&
+                 groupDelayOptions.ShowGroupDelay)
         {
             AddRequiresTransferIrAnnotation(model);
         }
@@ -261,7 +266,8 @@ internal sealed class PlotModelFactory
         PlotModel model = PlotModelStyle.CreateTitledModel(
             measurementContext.CreateTitle("Impulse Response"));
 
-        if (measurementContext.CanIncludeCurves(includeCurves))
+        if (measurementContext.CanIncludeCurves(includeCurves) &&
+            impulseResponseOptions.ShowImpulse)
         {
             AnalysisCurve curve =
                 DataHelper.GetImpulse(
@@ -287,7 +293,8 @@ internal sealed class PlotModelFactory
         PlotModel model = PlotModelStyle.CreateTitledModel(
             measurementContext.CreateTitle("Autocorrelation"));
 
-        if (measurementContext.CanIncludeCurves(includeCurves))
+        if (measurementContext.CanIncludeCurves(includeCurves) &&
+            impulseResponseOptions.ShowAutocorrelation)
         {
             AnalysisCurve curve =
                 DataHelper.GetAutocorrelation(

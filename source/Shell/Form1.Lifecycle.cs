@@ -1,38 +1,7 @@
-using OxyPlot;
-
 namespace Resonalyze;
 
 public partial class Form1
 {
-    private async void buttonClear_Click(object sender, EventArgs e)
-    {
-        if (CurrentMode == Mode.LiveSpectrum)
-        {
-            if (liveSpectrumController.InProgress)
-            {
-                await liveSpectrumController.AbortAsync();
-            }
-
-            liveSpectrumController.ForgetLastCurve();
-        }
-
-        overlayCollection.HideAll();
-
-        PlotModel? model = plotView1.Model;
-        if (model == null)
-        {
-            UpdatePlotLabelsPanel();
-            return;
-        }
-
-        model.Series.Clear();
-        model.InvalidatePlot(true);
-        plotView1.Refresh();
-        UpdateClearButtonState();
-        UpdateOverlayAvailability();
-        UpdatePlotLabelsPanel();
-    }
-
     private void UpdateMaximizedBounds()
     {
         Point center = new(

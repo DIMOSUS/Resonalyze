@@ -46,6 +46,7 @@ public partial class GDOpt : Form
             numericRightWindow.Value = ClampToControl(numericRightWindow, opt.GroupDelayRightMs);
             comboSmoothingInverseOctaves.SelectedItem =
                 SmoothingPresetOptions.Normalize(opt.SmoothingInverseOctaves);
+            checkBoxShowGroupDelay.Checked = opt.ShowGroupDelay;
         }
         finally
         {
@@ -66,6 +67,7 @@ public partial class GDOpt : Form
             comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
                 ? inverseOctaves
                 : SmoothingPresetOptions.SupportedInverseOctaves[0];
+        opt.ShowGroupDelay = checkBoxShowGroupDelay.Checked;
         UpdateIrPreview();
     }
 
@@ -188,6 +190,9 @@ public partial class GDOpt : Form
         toolTip.SetToolTip(
             comboSmoothingInverseOctaves,
             "Applies octave smoothing to the resulting Group Delay curve.");
+        toolTip.SetToolTip(
+            checkBoxShowGroupDelay,
+            "Shows the group-delay curve.");
         toolTip.SetToolTip(
             labelMinFrequency,
             "Lowest frequency the current gate can resolve (≈ 1 / gate length). Below it the curve is not reliable.");

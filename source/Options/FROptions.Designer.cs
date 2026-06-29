@@ -38,6 +38,7 @@ namespace Resonalyze.Options
             comboSmoothingInverseOctaves = new DarkComboBox();
             checkUseCalibration = new CheckBox();
             label2 = new Label();
+            labelCurves = new Label();
             checkBoxShowPrimary = new CheckBox();
             checkBoxShowHd2 = new CheckBox();
             checkBoxShowHd3 = new CheckBox();
@@ -172,11 +173,21 @@ namespace Resonalyze.Options
             label2.TabIndex = 46;
             label2.Text = "Use Calibration";
             //
+            // labelCurves
+            //
+            labelCurves.AutoSize = true;
+            labelCurves.ForeColor = Color.FromArgb(150, 170, 205);
+            labelCurves.Location = new Point(12, 136);
+            labelCurves.Name = "labelCurves";
+            labelCurves.Size = new Size(48, 15);
+            labelCurves.TabIndex = 53;
+            labelCurves.Text = "Curves:";
+            //
             // checkBoxShowPrimary
             //
             checkBoxShowPrimary.AutoSize = true;
             checkBoxShowPrimary.ForeColor = SystemColors.ControlLight;
-            checkBoxShowPrimary.Location = new Point(12, 136);
+            checkBoxShowPrimary.Location = new Point(12, 158);
             checkBoxShowPrimary.Name = "checkBoxShowPrimary";
             checkBoxShowPrimary.Size = new Size(149, 19);
             checkBoxShowPrimary.TabIndex = 48;
@@ -187,7 +198,7 @@ namespace Resonalyze.Options
             //
             checkBoxShowHd2.AutoSize = true;
             checkBoxShowHd2.ForeColor = SystemColors.ControlLight;
-            checkBoxShowHd2.Location = new Point(12, 158);
+            checkBoxShowHd2.Location = new Point(12, 180);
             checkBoxShowHd2.Name = "checkBoxShowHd2";
             checkBoxShowHd2.Size = new Size(81, 19);
             checkBoxShowHd2.TabIndex = 49;
@@ -198,7 +209,7 @@ namespace Resonalyze.Options
             //
             checkBoxShowHd3.AutoSize = true;
             checkBoxShowHd3.ForeColor = SystemColors.ControlLight;
-            checkBoxShowHd3.Location = new Point(12, 180);
+            checkBoxShowHd3.Location = new Point(12, 202);
             checkBoxShowHd3.Name = "checkBoxShowHd3";
             checkBoxShowHd3.Size = new Size(81, 19);
             checkBoxShowHd3.TabIndex = 50;
@@ -209,7 +220,7 @@ namespace Resonalyze.Options
             //
             checkBoxShowHd4.AutoSize = true;
             checkBoxShowHd4.ForeColor = SystemColors.ControlLight;
-            checkBoxShowHd4.Location = new Point(12, 202);
+            checkBoxShowHd4.Location = new Point(12, 224);
             checkBoxShowHd4.Name = "checkBoxShowHd4";
             checkBoxShowHd4.Size = new Size(81, 19);
             checkBoxShowHd4.TabIndex = 51;
@@ -220,7 +231,7 @@ namespace Resonalyze.Options
             //
             checkBoxShowThdPlusNoise.AutoSize = true;
             checkBoxShowThdPlusNoise.ForeColor = SystemColors.ControlLight;
-            checkBoxShowThdPlusNoise.Location = new Point(12, 224);
+            checkBoxShowThdPlusNoise.Location = new Point(12, 246);
             checkBoxShowThdPlusNoise.Name = "checkBoxShowThdPlusNoise";
             checkBoxShowThdPlusNoise.Size = new Size(110, 19);
             checkBoxShowThdPlusNoise.TabIndex = 52;
@@ -230,7 +241,7 @@ namespace Resonalyze.Options
             // irPlotView
             //
             irPlotView.BackColor = Color.FromArgb(32, 36, 46);
-            irPlotView.Location = new Point(12, 250);
+            irPlotView.Location = new Point(12, 272);
             irPlotView.Name = "irPlotView";
             irPlotView.PanCursor = Cursors.Hand;
             irPlotView.Size = new Size(241, 300);
@@ -245,13 +256,14 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 557);
+            ClientSize = new Size(265, 579);
             Controls.Add(irPlotView);
             Controls.Add(checkBoxShowThdPlusNoise);
             Controls.Add(checkBoxShowHd4);
             Controls.Add(checkBoxShowHd3);
             Controls.Add(checkBoxShowHd2);
             Controls.Add(checkBoxShowPrimary);
+            Controls.Add(labelCurves);
             Controls.Add(checkUseCalibration);
             Controls.Add(label2);
             Controls.Add(label9);
@@ -287,6 +299,7 @@ namespace Resonalyze.Options
         private DarkComboBox comboSmoothingInverseOctaves;
         private CheckBox checkUseCalibration;
         private Label label2;
+        private Label labelCurves;
         private CheckBox checkBoxShowPrimary;
         private CheckBox checkBoxShowHd2;
         private CheckBox checkBoxShowHd3;

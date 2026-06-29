@@ -7,7 +7,7 @@ namespace Resonalyze;
 
 internal sealed class MeasurementSettingsFile
 {
-    private const int CurrentSchemaVersion = 7;
+    private const int CurrentSchemaVersion = 8;
     private const string FileName = "measurement-settings.json";
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
@@ -201,6 +201,7 @@ internal sealed class MeasurementSettingsFile
         public bool ShowHd3 { get; set; } = true;
         public bool ShowHd4 { get; set; } = true;
         public bool ShowThdPlusNoise { get; set; } = true;
+        public bool ShowGroupDelay { get; set; } = true;
         public double PhaseGateOffsetMs { get; set; } = FrequencyResponseOptions.DefaultPhaseGateOffsetMs;
         public double PhaseLeftMs { get; set; } = FrequencyResponseOptions.DefaultPhaseLeftMs;
         public double PhasePlateauMs { get; set; } = FrequencyResponseOptions.DefaultPhasePlateauMs;
@@ -230,6 +231,7 @@ internal sealed class MeasurementSettingsFile
                 ShowHd3 = options.ShowHd3,
                 ShowHd4 = options.ShowHd4,
                 ShowThdPlusNoise = options.ShowThdPlusNoise,
+                ShowGroupDelay = options.ShowGroupDelay,
                 PhaseGateOffsetMs = options.PhaseGateOffsetMs,
                 PhaseLeftMs = options.PhaseLeftMs,
                 PhasePlateauMs = options.PhasePlateauMs,
@@ -262,6 +264,7 @@ internal sealed class MeasurementSettingsFile
             options.ShowHd3 = ShowHd3;
             options.ShowHd4 = ShowHd4;
             options.ShowThdPlusNoise = ShowThdPlusNoise;
+            options.ShowGroupDelay = ShowGroupDelay;
             options.PhaseGateOffsetMs = ClampMilliseconds(PhaseGateOffsetMs, 0.0, 2000.0);
             options.PhaseLeftMs = ClampMilliseconds(PhaseLeftMs, 0.0, 1000.0);
             options.PhasePlateauMs = ClampMilliseconds(PhasePlateauMs, 0.0, 1000.0);
@@ -281,19 +284,25 @@ internal sealed class MeasurementSettingsFile
     {
         public int Length { get; set; } = 4096;
         public bool Logarithmic { get; set; }
+        public bool ShowImpulse { get; set; } = true;
+        public bool ShowAutocorrelation { get; set; } = true;
 
         public static ImpulseResponseSettings Capture(
             ImpulseResponseOptions options) =>
             new()
             {
                 Length = options.Length,
-                Logarithmic = options.Logarithmic
+                Logarithmic = options.Logarithmic,
+                ShowImpulse = options.ShowImpulse,
+                ShowAutocorrelation = options.ShowAutocorrelation
             };
 
         public void ApplyTo(ImpulseResponseOptions options)
         {
             options.Length = Clamp(Length, 1, 262144);
             options.Logarithmic = Logarithmic;
+            options.ShowImpulse = ShowImpulse;
+            options.ShowAutocorrelation = ShowAutocorrelation;
         }
     }
 
@@ -354,6 +363,7 @@ internal sealed class MeasurementSettingsFile
         public int SmoothingInverseOctaves { get; set; } = 6;
         public WindowType WindowType { get; set; } = WindowType.Hann;
         public AveragingSpeed AveragingSpeed { get; set; } = AveragingSpeed.Medium;
+        public bool ShowMainCurve { get; set; } = true;
         public bool PeakHold { get; set; }
         public bool ShowCoherence { get; set; } = true;
         public int CoherenceThresholdPercent { get; set; } = 25;
@@ -376,6 +386,7 @@ internal sealed class MeasurementSettingsFile
                 AveragingSpeed = Enum.IsDefined(options.AveragingSpeed)
                     ? options.AveragingSpeed
                     : AveragingSpeed.Medium,
+                ShowMainCurve = options.ShowMainCurve,
                 PeakHold = options.PeakHold,
                 ShowCoherence = options.ShowCoherence,
                 CoherenceThresholdPercent =
@@ -398,6 +409,7 @@ internal sealed class MeasurementSettingsFile
             options.AveragingSpeed = Enum.IsDefined(AveragingSpeed)
                 ? AveragingSpeed
                 : AveragingSpeed.Medium;
+            options.ShowMainCurve = ShowMainCurve;
             options.PeakHold = PeakHold;
             options.ShowCoherence = ShowCoherence;
             options.CoherenceThresholdPercent =

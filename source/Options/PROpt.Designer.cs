@@ -46,6 +46,7 @@ namespace Resonalyze.Options
             buttonTauPeak = new Button();
             checkBoxUnwrap = new CheckBox();
             label2 = new Label();
+            labelCurves = new Label();
             checkBoxShowMeasured = new CheckBox();
             checkBoxShowMinimum = new CheckBox();
             checkBoxShowExcess = new CheckBox();
@@ -282,12 +283,22 @@ namespace Resonalyze.Options
             label2.Size = new Size(48, 15);
             label2.TabIndex = 44;
             label2.Text = "Unwrap";
-            // 
+            //
+            // labelCurves
+            //
+            labelCurves.AutoSize = true;
+            labelCurves.ForeColor = Color.FromArgb(150, 170, 205);
+            labelCurves.Location = new Point(12, 239);
+            labelCurves.Name = "labelCurves";
+            labelCurves.Size = new Size(48, 15);
+            labelCurves.TabIndex = 56;
+            labelCurves.Text = "Curves:";
+            //
             // checkBoxShowMeasured
-            // 
+            //
             checkBoxShowMeasured.AutoSize = true;
             checkBoxShowMeasured.ForeColor = SystemColors.ControlLight;
-            checkBoxShowMeasured.Location = new Point(12, 239);
+            checkBoxShowMeasured.Location = new Point(12, 261);
             checkBoxShowMeasured.Name = "checkBoxShowMeasured";
             checkBoxShowMeasured.Size = new Size(144, 19);
             checkBoxShowMeasured.TabIndex = 46;
@@ -298,7 +309,7 @@ namespace Resonalyze.Options
             // 
             checkBoxShowMinimum.AutoSize = true;
             checkBoxShowMinimum.ForeColor = SystemColors.ControlLight;
-            checkBoxShowMinimum.Location = new Point(12, 261);
+            checkBoxShowMinimum.Location = new Point(12, 283);
             checkBoxShowMinimum.Name = "checkBoxShowMinimum";
             checkBoxShowMinimum.Size = new Size(145, 19);
             checkBoxShowMinimum.TabIndex = 47;
@@ -309,7 +320,7 @@ namespace Resonalyze.Options
             // 
             checkBoxShowExcess.AutoSize = true;
             checkBoxShowExcess.ForeColor = SystemColors.ControlLight;
-            checkBoxShowExcess.Location = new Point(12, 283);
+            checkBoxShowExcess.Location = new Point(12, 305);
             checkBoxShowExcess.Name = "checkBoxShowExcess";
             checkBoxShowExcess.Size = new Size(125, 19);
             checkBoxShowExcess.TabIndex = 48;
@@ -319,7 +330,7 @@ namespace Resonalyze.Options
             // irPlotView
             // 
             irPlotView.BackColor = Color.FromArgb(32, 36, 46);
-            irPlotView.Location = new Point(12, 309);
+            irPlotView.Location = new Point(12, 331);
             irPlotView.Name = "irPlotView";
             irPlotView.PanCursor = Cursors.Hand;
             irPlotView.Size = new Size(241, 300);
@@ -334,12 +345,13 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 616);
+            ClientSize = new Size(265, 638);
             Controls.Add(irPlotView);
             Controls.Add(numericGateOffset);
             Controls.Add(buttonFit);
             Controls.Add(labelGateOffset);
             Controls.Add(labelMinFrequency);
+            Controls.Add(labelCurves);
             Controls.Add(checkBoxShowExcess);
             Controls.Add(checkBoxShowMinimum);
             Controls.Add(checkBoxShowMeasured);
@@ -393,6 +405,7 @@ namespace Resonalyze.Options
         private Button buttonTauPeak;
         private CheckBox checkBoxUnwrap;
         private Label label2;
+        private Label labelCurves;
         private CheckBox checkBoxShowMeasured;
         private CheckBox checkBoxShowMinimum;
         private CheckBox checkBoxShowExcess;

@@ -78,9 +78,76 @@ public sealed class PlotModelFactoryTests
             factory.CreateFrequencyResponse(includeCurves: false).Title);
     }
 
+    [Fact]
+    public void ImpulseResponse_RespectsShowImpulseFlag()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement();
+        var impulseOptions = new ImpulseResponseOptions { ShowImpulse = false };
+        PlotModelFactory factory =
+            CreateFactory(measurement, noiseMeasurement, impulseOptions: impulseOptions);
+
+        Assert.Empty(factory.CreateImpulseResponse(includeCurves: true).Series);
+
+        impulseOptions.ShowImpulse = true;
+        Assert.NotEmpty(factory.CreateImpulseResponse(includeCurves: true).Series);
+    }
+
+    [Fact]
+    public void Autocorrelation_RespectsShowAutocorrelationFlag()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement();
+        var impulseOptions = new ImpulseResponseOptions { ShowAutocorrelation = false };
+        PlotModelFactory factory =
+            CreateFactory(measurement, noiseMeasurement, impulseOptions: impulseOptions);
+
+        Assert.Empty(factory.CreateAutocorrelation(includeCurves: true).Series);
+
+        impulseOptions.ShowAutocorrelation = true;
+        Assert.NotEmpty(factory.CreateAutocorrelation(includeCurves: true).Series);
+    }
+
+    [Fact]
+    public void GroupDelay_RespectsShowGroupDelayFlag()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement();
+        var groupDelayOptions = new FrequencyResponseOptions { ShowGroupDelay = false };
+        PlotModelFactory factory =
+            CreateFactory(measurement, noiseMeasurement, groupDelayOptions: groupDelayOptions);
+
+        Assert.Empty(factory.CreateGroupDelay(includeCurves: true).Series);
+
+        groupDelayOptions.ShowGroupDelay = true;
+        Assert.NotEmpty(factory.CreateGroupDelay(includeCurves: true).Series);
+    }
+
+    private static ExpSweepMeasurement CreateTransferMeasurement()
+    {
+        var transferImpulse = new Complex[2048];
+        transferImpulse[64] = Complex.One;
+
+        var measurement = new ExpSweepMeasurement();
+        measurement.RestoreImpulseResponse(
+            octaves: 12,
+            sampleRate: 44_100,
+            bits: 24,
+            sweepDurationSeconds: 1.0,
+            playChannel: PlaybackChannel.Mono,
+            sweepDeconvolutionImpulseResponse: transferImpulse,
+            sweepDeconvolutionPeakIndex: 64,
+            measurementMode: SweepMeasurementMode.LoopbackTransfer,
+            transferImpulseResponse: transferImpulse,
+            transferPeakIndex: 64);
+        return measurement;
+    }
+
     private static PlotModelFactory CreateFactory(
         ExpSweepMeasurement measurement,
-        NoiseMeasurement noiseMeasurement)
+        NoiseMeasurement noiseMeasurement,
+        ImpulseResponseOptions? impulseOptions = null,
+        FrequencyResponseOptions? groupDelayOptions = null)
     {
         string calibrationPath = Path.Combine(
             Path.GetTempPath(),
@@ -92,8 +159,8 @@ public sealed class PlotModelFactoryTests
             new CalibrationFile(calibrationPath),
             new FrequencyResponseOptions(),
             new FrequencyResponseOptions(),
-            new FrequencyResponseOptions(),
-            new ImpulseResponseOptions(),
+            groupDelayOptions ?? new FrequencyResponseOptions(),
+            impulseOptions ?? new ImpulseResponseOptions(),
             new LiveSpectrumOptions(),
             new WaterfallGenerateOptions(),
             new WaterfallGenerateOptions());

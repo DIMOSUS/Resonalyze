@@ -51,7 +51,6 @@ public partial class Form1
 
         CurrentMode = mode;
         plotView1.Model = null;
-        UpdateClearButtonState();
         UpdatePlotLabelsPanel();
 
         if (OverlayCollection.SupportsMode(mode))
@@ -145,16 +144,6 @@ public partial class Form1
                         MessageBoxIcon.Warning);
                 }
             });
-    }
-
-    private async void buttonDraw_Click(object sender, EventArgs e)
-    {
-        if (commandController.IsDrawFrozen)
-        {
-            return;
-        }
-
-        DrawSelectedMode(includeCurves: true);
     }
 
     private void StartStartupAudioWarmup()

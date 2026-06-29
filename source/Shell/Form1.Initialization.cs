@@ -51,9 +51,7 @@ public partial class Form1
             () => CurrentMode,
             () => SelectModeAsync(ModeTab.LiveSpectrum),
             UpdateOverlayAvailability,
-            UpdateDrawButtonText,
             UpdateRecordButtonForCurrentMode,
-            UpdateClearButtonState,
             UpdatePlotLabelsPanel,
             liveSpectrumOptions);
         ModeController createdModeController = new(
@@ -62,21 +60,15 @@ public partial class Form1
             createdOverlayCollection.HideAll,
             DrawSelectedMode,
             CanDrawCurrentMeasurement,
-            UpdateDrawButtonText,
             tab => GetModeDescriptor(tab).Mode,
             tab => GetModeDescriptor(tab).SupportsCurveDrawing);
         MainCommandController createdCommandController = new(
             buttonSave,
             buttonLoad,
-            buttonDraw,
-            buttonClear,
             buttonCurrentModeSettings,
             buttonRecordOpt,
             buttonHistory,
             () => GetActiveModeDescriptor().HasDockedSettings,
-            () => GetActiveModeDescriptor().SupportsCurveDrawing,
-            CanDrawCurrentMeasurement,
-            () => plotView1.Model?.Series.Count > 0,
             () => IsHandleCreated);
         TimeAlignmentPanelController createdTimeAlignmentController = new(
             this,
@@ -193,14 +185,11 @@ public partial class Form1
             }
 
             UpdatePeakInfo();
-            UpdateDrawButtonText();
 
             if (success && CurrentMode != Mode.LiveSpectrum)
             {
                 DrawSelectedMode(true);
             }
-
-            UpdateClearButtonState();
         });
     }
 

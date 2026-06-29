@@ -32,6 +32,8 @@ namespace Resonalyze.Options
             label1 = new Label();
             checkLogarithmic = new CheckBox();
             label2 = new Label();
+            labelCurves = new Label();
+            checkBoxShowImpulse = new CheckBox();
             (numericLength).BeginInit();
             SuspendLayout();
             // 
@@ -81,13 +83,36 @@ namespace Resonalyze.Options
             label2.Size = new Size(101, 15);
             label2.TabIndex = 46;
             label2.Text = "Logarithmic Sacle";
-            // 
+            //
+            // labelCurves
+            //
+            labelCurves.AutoSize = true;
+            labelCurves.ForeColor = Color.FromArgb(150, 170, 205);
+            labelCurves.Location = new Point(12, 66);
+            labelCurves.Name = "labelCurves";
+            labelCurves.Size = new Size(48, 15);
+            labelCurves.TabIndex = 48;
+            labelCurves.Text = "Curves:";
+            //
+            // checkBoxShowImpulse
+            //
+            checkBoxShowImpulse.AutoSize = true;
+            checkBoxShowImpulse.ForeColor = SystemColors.ControlLight;
+            checkBoxShowImpulse.Location = new Point(12, 88);
+            checkBoxShowImpulse.Name = "checkBoxShowImpulse";
+            checkBoxShowImpulse.Size = new Size(149, 19);
+            checkBoxShowImpulse.TabIndex = 49;
+            checkBoxShowImpulse.Text = "Show impulse response";
+            checkBoxShowImpulse.UseVisualStyleBackColor = true;
+            //
             // IROpt
-            // 
+            //
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 68);
+            ClientSize = new Size(265, 118);
+            Controls.Add(checkBoxShowImpulse);
+            Controls.Add(labelCurves);
             Controls.Add(checkLogarithmic);
             Controls.Add(label2);
             Controls.Add(numericLength);
@@ -110,5 +135,7 @@ namespace Resonalyze.Options
         private Label label1;
         private CheckBox checkLogarithmic;
         private Label label2;
+        private Label labelCurves;
+        private CheckBox checkBoxShowImpulse;
     }
 }

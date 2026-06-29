@@ -26,12 +26,14 @@ namespace Resonalyze.Options
         {
             numericLength.Value = opt.Length;
             checkLogarithmic.Checked = opt.Logarithmic;
+            checkBoxShowImpulse.Checked = opt.ShowImpulse;
         }
 
         public void SetOptions(ImpulseResponseOptions opt)
         {
             opt.Length = (int)numericLength.Value;
             opt.Logarithmic = checkLogarithmic.Checked;
+            opt.ShowImpulse = checkBoxShowImpulse.Checked;
         }
 
         private void InitializeToolTips()
@@ -42,6 +44,9 @@ namespace Resonalyze.Options
             toolTip.SetToolTip(
                 checkLogarithmic,
                 "Displays the impulse-response amplitude on a logarithmic scale for easier inspection of low-level tails.");
+            toolTip.SetToolTip(
+                checkBoxShowImpulse,
+                "Shows the impulse-response curve.");
         }
     }
 }

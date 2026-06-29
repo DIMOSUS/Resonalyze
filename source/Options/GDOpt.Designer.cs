@@ -40,6 +40,8 @@ namespace Resonalyze.Options
             label4 = new Label();
             numericWindow = new DarkNumericUpDown();
             label1 = new Label();
+            labelCurves = new Label();
+            checkBoxShowGroupDelay = new CheckBox();
             irPlotView = new OxyPlot.WindowsForms.PlotView();
             (numericGateOffset).BeginInit();
             (numericRightWindow).BeginInit();
@@ -199,11 +201,32 @@ namespace Resonalyze.Options
             label1.Size = new Size(73, 15);
             label1.TabIndex = 33;
             label1.Text = "Plateau (ms)";
-            // 
+            //
+            // labelCurves
+            //
+            labelCurves.AutoSize = true;
+            labelCurves.ForeColor = Color.FromArgb(150, 170, 205);
+            labelCurves.Location = new Point(12, 161);
+            labelCurves.Name = "labelCurves";
+            labelCurves.Size = new Size(48, 15);
+            labelCurves.TabIndex = 63;
+            labelCurves.Text = "Curves:";
+            //
+            // checkBoxShowGroupDelay
+            //
+            checkBoxShowGroupDelay.AutoSize = true;
+            checkBoxShowGroupDelay.ForeColor = SystemColors.ControlLight;
+            checkBoxShowGroupDelay.Location = new Point(12, 183);
+            checkBoxShowGroupDelay.Name = "checkBoxShowGroupDelay";
+            checkBoxShowGroupDelay.Size = new Size(120, 19);
+            checkBoxShowGroupDelay.TabIndex = 64;
+            checkBoxShowGroupDelay.Text = "Show group delay";
+            checkBoxShowGroupDelay.UseVisualStyleBackColor = true;
+            //
             // irPlotView
-            // 
+            //
             irPlotView.BackColor = Color.FromArgb(32, 36, 46);
-            irPlotView.Location = new Point(12, 167);
+            irPlotView.Location = new Point(12, 209);
             irPlotView.Name = "irPlotView";
             irPlotView.PanCursor = Cursors.Hand;
             irPlotView.Size = new Size(241, 300);
@@ -218,8 +241,10 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 474);
+            ClientSize = new Size(265, 516);
             Controls.Add(irPlotView);
+            Controls.Add(checkBoxShowGroupDelay);
+            Controls.Add(labelCurves);
             Controls.Add(numericGateOffset);
             Controls.Add(buttonFit);
             Controls.Add(labelGateOffset);
@@ -261,6 +286,8 @@ namespace Resonalyze.Options
         private Label label4;
         private DarkNumericUpDown numericWindow;
         private Label label1;
+        private Label labelCurves;
+        private CheckBox checkBoxShowGroupDelay;
         private OxyPlot.WindowsForms.PlotView irPlotView;
     }
 }

@@ -81,6 +81,7 @@ namespace Resonalyze.Options
             coherenceLimitComboBox.SelectedIndex =
                 FindCoherenceLimitIndex(options.CoherenceThresholdPercent);
 
+            checkMainCurve.Checked = options.ShowMainCurve;
             checkPeakHold.Checked = options.PeakHold;
             checkCoherence.Checked = options.ShowCoherence;
             checkUseCalibration.Checked = options.UseCalibration;
@@ -110,6 +111,7 @@ namespace Resonalyze.Options
                 averagingComboBox.SelectedItem is AveragingOption averagingOption
                     ? averagingOption.Speed
                     : AveragingSpeed.Medium;
+            options.ShowMainCurve = checkMainCurve.Checked;
             options.PeakHold = checkPeakHold.Checked;
             options.ShowCoherence = checkCoherence.Checked;
             options.CoherenceThresholdPercent =
@@ -297,6 +299,9 @@ namespace Resonalyze.Options
             toolTip.SetToolTip(
                 averagingComboBox,
                 "Averaging speed. Fast/Medium/Slow set the exponential time constant; Infinite integrates indefinitely until you reset it.");
+            toolTip.SetToolTip(
+                checkMainCurve,
+                "Shows the main live trace (the spectrum / transfer-function curve).");
             toolTip.SetToolTip(
                 checkPeakHold,
                 "Overlays a peak-hold envelope that retains the maximum level seen on the curve until reset.");

@@ -179,7 +179,6 @@ public partial class Form1
         {
             RestoreAxisViewports(restoreViewports);
         }
-        UpdateClearButtonState();
     }
 
     private void RefreshCurrentModePlot()

@@ -49,6 +49,9 @@ namespace Resonalyze.Options
             label10 = new Label();
             coherenceLimitComboBox = new DarkComboBox();
             buttonResetAverage = new Button();
+            labelCurves = new Label();
+            labelMainCurve = new Label();
+            checkMainCurve = new CheckBox();
             SuspendLayout();
             // 
             // label1
@@ -201,7 +204,7 @@ namespace Resonalyze.Options
             //
             label8.AutoSize = true;
             label8.ForeColor = SystemColors.ControlLight;
-            label8.Location = new Point(12, 263);
+            label8.Location = new Point(12, 309);
             label8.Name = "label8";
             label8.Size = new Size(60, 15);
             label8.TabIndex = 59;
@@ -211,7 +214,7 @@ namespace Resonalyze.Options
             //
             checkPeakHold.AutoSize = true;
             checkPeakHold.ForeColor = SystemColors.ControlLight;
-            checkPeakHold.Location = new Point(238, 263);
+            checkPeakHold.Location = new Point(238, 309);
             checkPeakHold.Name = "checkPeakHold";
             checkPeakHold.Size = new Size(15, 14);
             checkPeakHold.TabIndex = 60;
@@ -221,7 +224,7 @@ namespace Resonalyze.Options
             //
             label9.AutoSize = true;
             label9.ForeColor = SystemColors.ControlLight;
-            label9.Location = new Point(12, 240);
+            label9.Location = new Point(12, 286);
             label9.Name = "label9";
             label9.Size = new Size(64, 15);
             label9.TabIndex = 62;
@@ -231,7 +234,7 @@ namespace Resonalyze.Options
             //
             checkCoherence.AutoSize = true;
             checkCoherence.ForeColor = SystemColors.ControlLight;
-            checkCoherence.Location = new Point(238, 240);
+            checkCoherence.Location = new Point(238, 286);
             checkCoherence.Name = "checkCoherence";
             checkCoherence.Size = new Size(15, 14);
             checkCoherence.TabIndex = 63;
@@ -263,19 +266,52 @@ namespace Resonalyze.Options
             buttonResetAverage.BackColor = Color.FromArgb(50, 55, 80);
             buttonResetAverage.FlatStyle = FlatStyle.Popup;
             buttonResetAverage.ForeColor = Color.White;
-            buttonResetAverage.Location = new Point(12, 289);
+            buttonResetAverage.Location = new Point(12, 335);
             buttonResetAverage.Name = "buttonResetAverage";
             buttonResetAverage.Size = new Size(241, 23);
             buttonResetAverage.TabIndex = 61;
             buttonResetAverage.Text = "Reset Average";
             buttonResetAverage.UseVisualStyleBackColor = false;
             //
+            // labelCurves
+            //
+            labelCurves.AutoSize = true;
+            labelCurves.ForeColor = Color.FromArgb(150, 170, 205);
+            labelCurves.Location = new Point(12, 240);
+            labelCurves.Name = "labelCurves";
+            labelCurves.Size = new Size(48, 15);
+            labelCurves.TabIndex = 66;
+            labelCurves.Text = "Curves:";
+            //
+            // labelMainCurve
+            //
+            labelMainCurve.AutoSize = true;
+            labelMainCurve.ForeColor = SystemColors.ControlLight;
+            labelMainCurve.Location = new Point(12, 263);
+            labelMainCurve.Name = "labelMainCurve";
+            labelMainCurve.Size = new Size(67, 15);
+            labelMainCurve.TabIndex = 67;
+            labelMainCurve.Text = "Main curve";
+            //
+            // checkMainCurve
+            //
+            checkMainCurve.AutoSize = true;
+            checkMainCurve.ForeColor = SystemColors.ControlLight;
+            checkMainCurve.Location = new Point(238, 263);
+            checkMainCurve.Name = "checkMainCurve";
+            checkMainCurve.Size = new Size(15, 14);
+            checkMainCurve.TabIndex = 68;
+            checkMainCurve.UseVisualStyleBackColor = true;
+            //
             // LiveSpectrumOpt
             //
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 324);
+            ClientSize = new Size(265, 370);
+            Controls.Add(checkMainCurve);
+            Controls.Add(labelMainCurve);
+            Controls.Add(labelCurves);
             Controls.Add(buttonResetAverage);
             Controls.Add(coherenceLimitComboBox);
             Controls.Add(label10);
@@ -330,5 +366,8 @@ namespace Resonalyze.Options
         private Label label10;
         private DarkComboBox coherenceLimitComboBox;
         private Button buttonResetAverage;
+        private Label labelCurves;
+        private Label labelMainCurve;
+        private CheckBox checkMainCurve;
     }
 }

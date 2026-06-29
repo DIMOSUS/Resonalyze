@@ -35,7 +35,6 @@ public partial class Form1
         UpdatePeakInfo();
         commandController.SetSaveAvailable(false);
         commandController.SetLoadAvailable(false);
-        UpdateDrawButtonText();
     }
 
     private void ApplyLoadedImpulseResponseState(string? filePath)
@@ -55,6 +54,5 @@ public partial class Form1
     {
         commandController.SetLoadAvailable(true);
         UpdatePeakInfo();
-        UpdateDrawButtonText();
     }
 }

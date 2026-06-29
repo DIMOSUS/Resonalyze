@@ -120,11 +120,15 @@ public partial class Form1
                 SupportsCurveDrawing: true,
                 HasPlotView: true,
                 HasOverlayPanel: true,
-                HasDockedSettings: false,
+                HasDockedSettings: true,
                 ShowsTimeAlignmentPanel: false,
                 ShowOverlayCurves: true,
                 CreatePlotModel: includeCurves => plotModelFactory.CreateAutocorrelation(includeCurves),
-                OpenSettings: null),
+                OpenSettings: () => ToggleModeOptions(
+                    ModeTab.Autocorrelation,
+                    () => new ACOpt(),
+                    opt => opt.Init(expSweepMeasurement, impulseResponseOptions),
+                    opt => opt.SetOptions(impulseResponseOptions))),
             [ModeTab.TimeAlignment] = new(
                 ModeTab.TimeAlignment,
                 Mode.TimeAlignment,

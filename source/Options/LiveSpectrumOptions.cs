@@ -33,6 +33,9 @@ namespace Resonalyze.Options
         /// <summary>Exponential/cumulative averaging speed preset.</summary>
         public AveragingSpeed AveragingSpeed { get; set; } = AveragingSpeed.Medium;
 
+        /// <summary>Shows the main live trace (the spectrum / transfer-function curve).</summary>
+        public bool ShowMainCurve { get; set; } = true;
+
         /// <summary>Shows a peak-hold envelope curve of the displayed trace.</summary>
         public bool PeakHold { get; set; }
 

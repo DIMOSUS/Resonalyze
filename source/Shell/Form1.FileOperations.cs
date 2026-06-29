@@ -54,7 +54,7 @@ public partial class Form1
                 return;
             }
 
-            commandController.FreezeSaveLoadDraw();
+            commandController.FreezeSaveLoad();
             try
             {
                 ImpulseResponseFile file =

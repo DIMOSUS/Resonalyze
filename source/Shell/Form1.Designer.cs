@@ -42,9 +42,9 @@ namespace Resonalyze
             buttonSave = new Button();
             buttonLoad = new Button();
             toolTip1 = new ToolTip(components);
-            buttonClear = new Button();
+            buttonOverlayShowAll = new Button();
             buttonCurrentModeSettings = new Button();
-            buttonDraw = new Button();
+            buttonOverlayHideAll = new Button();
             panel1 = new Panel();
             inputLevelMeterPanel = new InputLevelMeterPanel();
             buttonHistory = new Button();
@@ -191,21 +191,22 @@ namespace Resonalyze
             toolTip1.SetToolTip(buttonLoad, "Load Impulse Response");
             buttonLoad.UseVisualStyleBackColor = false;
             buttonLoad.Click += buttonLoad_Click;
-            // 
-            // buttonClear
-            // 
-            buttonClear.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonClear.BackColor = Color.FromArgb(50, 55, 80);
-            buttonClear.FlatStyle = FlatStyle.Popup;
-            buttonClear.ForeColor = Color.White;
-            buttonClear.Location = new Point(1204, 320);
-            buttonClear.Name = "buttonClear";
-            buttonClear.Size = new Size(150, 23);
-            buttonClear.TabIndex = 20;
-            buttonClear.Text = "Clear Curves";
-            buttonClear.UseVisualStyleBackColor = false;
-            buttonClear.Click += buttonClear_Click;
-            // 
+            //
+            // buttonOverlayShowAll
+            //
+            buttonOverlayShowAll.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            buttonOverlayShowAll.BackColor = Color.FromArgb(50, 55, 80);
+            buttonOverlayShowAll.FlatStyle = FlatStyle.Popup;
+            buttonOverlayShowAll.ForeColor = Color.White;
+            buttonOverlayShowAll.Location = new Point(1204, 389);
+            buttonOverlayShowAll.Name = "buttonOverlayShowAll";
+            buttonOverlayShowAll.Size = new Size(73, 23);
+            buttonOverlayShowAll.TabIndex = 20;
+            buttonOverlayShowAll.Text = "Show all";
+            toolTip1.SetToolTip(buttonOverlayShowAll, "Show all overlays for this mode");
+            buttonOverlayShowAll.UseVisualStyleBackColor = false;
+            buttonOverlayShowAll.Click += buttonOverlayShowAll_Click;
+            //
             // buttonCurrentModeSettings
             // 
             buttonCurrentModeSettings.Anchor = AnchorStyles.Top | AnchorStyles.Right;
@@ -219,21 +220,22 @@ namespace Resonalyze
             buttonCurrentModeSettings.Text = "Mode Settings...";
             buttonCurrentModeSettings.UseVisualStyleBackColor = false;
             buttonCurrentModeSettings.Click += buttonCurrentModeSettings_Click;
-            // 
-            // buttonDraw
-            // 
-            buttonDraw.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonDraw.BackColor = Color.FromArgb(50, 55, 80);
-            buttonDraw.FlatStyle = FlatStyle.Popup;
-            buttonDraw.ForeColor = Color.White;
-            buttonDraw.Location = new Point(1204, 349);
-            buttonDraw.Name = "buttonDraw";
-            buttonDraw.Size = new Size(150, 23);
-            buttonDraw.TabIndex = 22;
-            buttonDraw.Text = "Restore Curves";
-            buttonDraw.UseVisualStyleBackColor = false;
-            buttonDraw.Click += buttonDraw_Click;
-            // 
+            //
+            // buttonOverlayHideAll
+            //
+            buttonOverlayHideAll.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            buttonOverlayHideAll.BackColor = Color.FromArgb(50, 55, 80);
+            buttonOverlayHideAll.FlatStyle = FlatStyle.Popup;
+            buttonOverlayHideAll.ForeColor = Color.White;
+            buttonOverlayHideAll.Location = new Point(1281, 389);
+            buttonOverlayHideAll.Name = "buttonOverlayHideAll";
+            buttonOverlayHideAll.Size = new Size(73, 23);
+            buttonOverlayHideAll.TabIndex = 22;
+            buttonOverlayHideAll.Text = "Hide all";
+            toolTip1.SetToolTip(buttonOverlayHideAll, "Hide all overlays for this mode");
+            buttonOverlayHideAll.UseVisualStyleBackColor = false;
+            buttonOverlayHideAll.Click += buttonOverlayHideAll_Click;
+            //
             // panel1
             // 
             panel1.Anchor = AnchorStyles.Top | AnchorStyles.Right;
@@ -290,9 +292,9 @@ namespace Resonalyze
             Controls.Add(buttonHistory);
             Controls.Add(inputLevelMeterPanel);
             Controls.Add(panel1);
-            Controls.Add(buttonDraw);
+            Controls.Add(buttonOverlayHideAll);
             Controls.Add(buttonCurrentModeSettings);
-            Controls.Add(buttonClear);
+            Controls.Add(buttonOverlayShowAll);
             Controls.Add(plotView1);
             Controls.Add(overlays);
             FormBorderStyle = FormBorderStyle.None;
@@ -322,9 +324,9 @@ namespace Resonalyze
         private Button buttonSave;
         private Button buttonLoad;
         private ToolTip toolTip1;
-        private Button buttonClear;
+        private Button buttonOverlayShowAll;
         private Button buttonCurrentModeSettings;
-        private Button buttonDraw;
+        private Button buttonOverlayHideAll;
         private Panel panel1;
         private InputLevelMeterPanel inputLevelMeterPanel;
         private DarkNumericUpDown numericUpDown1;

@@ -55,6 +55,8 @@ internal sealed class PlotModelFactory
         measurementContext.SetImpulseResponseFileName(fileName);
     }
 
+    public string? ImpulseResponseFileName => measurementContext.ImpulseResponseFileName;
+
     public PlotModel CreateFrequencyResponse(bool includeCurves)
     {
         PlotModel model = PlotModelStyle.CreateTitledModel(

@@ -49,6 +49,7 @@ namespace Resonalyze
             inputLevelMeterPanel = new InputLevelMeterPanel();
             buttonHistory = new Button();
             chromeTitleBar = new ChromeTitleBar();
+            timeAlignmentPanel = new TimeAlignmentPanel();
             overlays.SuspendLayout();
             overlayPanel1.SuspendLayout();
             (numericUpDown1).BeginInit();
@@ -283,6 +284,20 @@ namespace Resonalyze
             chromeTitleBar.Size = new Size(1366, 40);
             chromeTitleBar.TabIndex = 26;
             // 
+            // timeAlignmentPanel
+            // 
+            timeAlignmentPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            timeAlignmentPanel.AutoScroll = true;
+            timeAlignmentPanel.BackColor = Color.FromArgb(40, 44, 54);
+            timeAlignmentPanel.BorderStyle = BorderStyle.FixedSingle;
+            timeAlignmentPanel.Font = new Font("Segoe UI", 9F);
+            timeAlignmentPanel.ForeColor = Color.White;
+            timeAlignmentPanel.Location = new Point(12, 52);
+            timeAlignmentPanel.Name = "timeAlignmentPanel";
+            timeAlignmentPanel.Size = new Size(1182, 704);
+            timeAlignmentPanel.TabIndex = 27;
+            timeAlignmentPanel.Visible = false;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
@@ -290,6 +305,7 @@ namespace Resonalyze
             BackColor = Color.FromArgb(45, 50, 60);
             ClientSize = new Size(1366, 768);
             Controls.Add(chromeTitleBar);
+            Controls.Add(timeAlignmentPanel);
             Controls.Add(buttonHistory);
             Controls.Add(inputLevelMeterPanel);
             Controls.Add(panel1);
@@ -333,5 +349,6 @@ namespace Resonalyze
         private DarkNumericUpDown numericUpDown1;
         private Button buttonHistory;
         private ChromeTitleBar chromeTitleBar;
+        private TimeAlignmentPanel timeAlignmentPanel;
     }
 }

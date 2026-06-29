@@ -18,7 +18,8 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private readonly TimeAlignmentOptions options;
     private readonly ExpSweepMeasurement measurement;
     private readonly Action saveSettings;
-    private readonly Panel panel;
+    private readonly Func<string?> getImpulseResponseFileName;
+    private readonly TimeAlignmentPanel panel;
     private readonly Label sourceSummaryLabel;
     private readonly CheckBox bandpassCheckBox;
     private readonly DarkNumericUpDown bandpassCenterNumeric;
@@ -26,37 +27,42 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private readonly DarkNumericUpDown bandpassFadeOctavesNumeric;
     private readonly PlotView bandpassPlotView;
     private readonly PlotView envelopePlotView;
-    private readonly RichTextBox statusTextBox;
+    private readonly StatusRichTextBox statusTextBox;
     private readonly Font resultTableFont;
     private bool disposed;
 
     public TimeAlignmentPanelController(
         Form owner,
+        TimeAlignmentPanel panel,
         TimeAlignmentOptions options,
         ExpSweepMeasurement measurement,
-        Action saveSettings)
+        Action saveSettings,
+        Func<string?> getImpulseResponseFileName)
     {
         this.owner = owner;
+        this.panel = panel;
         this.options = options;
         this.measurement = measurement;
         this.saveSettings = saveSettings;
+        this.getImpulseResponseFileName = getImpulseResponseFileName;
         resultTableFont = new Font(
             FontFamily.GenericMonospace,
             owner.Font.Size + 4.0f,
             FontStyle.Bold);
 
-        (
-            panel,
-            sourceSummaryLabel,
-            bandpassCheckBox,
-            bandpassCenterNumeric,
-            bandpassPassOctavesNumeric,
-            bandpassFadeOctavesNumeric,
-            bandpassPlotView,
-            envelopePlotView,
-            statusTextBox) = CreatePanel();
+        sourceSummaryLabel = panel.SourceSummaryLabel;
+        bandpassCheckBox = panel.BandpassCheckBox;
+        bandpassCenterNumeric = panel.BandpassCenterNumeric;
+        bandpassPassOctavesNumeric = panel.BandpassPassOctavesNumeric;
+        bandpassFadeOctavesNumeric = panel.BandpassFadeOctavesNumeric;
+        bandpassPlotView = panel.BandpassPlotView;
+        envelopePlotView = panel.EnvelopePlotView;
+        statusTextBox = panel.StatusTextBox;
+        statusTextBox.UseHandCursorAt = point => TryGetCopyableStatusLine(point, out _);
+        statusTextBox.MouseClick += StatusTextBoxMouseClick;
 
         ApplyOptionsToControls();
+        WireEvents();
         UpdateBandpassPreview();
         RefreshAnalysis();
     }
@@ -66,7 +72,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     public void SetLayoutBounds(Rectangle bounds)
     {
         panel.Bounds = bounds;
-        FitContentToPanelWidth();
     }
 
     public void SetVisible(bool visible)
@@ -97,116 +102,12 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         resultTableFont.Dispose();
     }
 
-    private (
-        Panel Panel,
-        Label SourceSummary,
-        CheckBox BandpassEnabled,
-        DarkNumericUpDown BandpassCenter,
-        DarkNumericUpDown BandpassPassOctaves,
-        DarkNumericUpDown BandpassFadeOctaves,
-        PlotView BandpassPreview,
-        PlotView EnvelopePreview,
-        RichTextBox Status) CreatePanel()
+    private void WireEvents()
     {
-        int top = GetScaledTitleBarHeight() + 12;
-        var newPanel = new Panel
-        {
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
-            AutoScroll = true,
-            BackColor = UiPalette.PlotSurfaceMuted,
-            BorderStyle = BorderStyle.FixedSingle,
-            Location = new Point(12, top),
-            Size = new Size(1182, 706),
-            Visible = false
-        };
-
-        var title = UiStyle.CreateTitleLabel("Time Alignment", new Point(18, 18));
-        var description = UiStyle.CreateInfoLabel(
-            "Computes delay from the active transfer impulse response.",
-            new Point(18, 44));
-        var help = UiStyle.CreateLabel(
-            "What it is for\r\n" +
-            "Measures arrival time from the currently active loopback-based measurement record.\r\n\r\n" +
-            "How it works\r\n" +
-            "Resonalyze analyzes the active transfer IR immediately, optionally applies a bandpass window, then reports both First Arrival and Strongest Peak.\r\n\r\n" +
-            "Source selection\r\n" +
-            "This mode requires a transfer IR recorded with loopback enabled.",
-            new Point(560, 24),
-            UiPalette.TextSecondaryAlt,
-            owner.Font,
-            autoSize: false);
-        help.Size = new Size(520, 150);
-
-        Label sourceSummary = UiStyle.CreateLabel(
-            "Source: waiting for an impulse response.",
-            new Point(18, 78),
-            UiPalette.TextHighlight,
-            owner.Font,
-            autoSize: false);
-        sourceSummary.Size = new Size(520, 40);
-
-        CheckBox bandpassEnabled = UiStyle.CreateDarkCheckBox("Use bandpass window", new Point(18, 127));
-        DarkNumericUpDown bandpassCenter =
-            UiStyle.CreateDarkNumericUpDown(new Point(180, 157), new Size(120, 23), 20, 20_000, 1000, 10);
-        DarkNumericUpDown bandpassPassOctaves =
-            UiStyle.CreateDarkNumericUpDown(new Point(180, 191), new Size(120, 23), 0, 8, 1, 0.1M);
-        DarkNumericUpDown bandpassFadeOctaves =
-            UiStyle.CreateDarkNumericUpDown(new Point(180, 225), new Size(120, 23), 0, 8, 0.5M, 0.1M);
-        PlotView bandpassPreview = UiStyle.CreateDarkPreviewPlotView(new Point(18, 263), new Size(520, 200));
-        PlotView envelopePreview = UiStyle.CreateDarkPreviewPlotView(new Point(560, 380), new Size(520, 300));
-        StatusRichTextBox status = new()
-        {
-            BackColor = UiPalette.PlotSurfaceMuted,
-            BorderStyle = BorderStyle.None,
-            DetectUrls = false,
-            ForeColor = UiPalette.TextSecondarySoft,
-            Font = new Font(owner.Font.FontFamily, 11, FontStyle.Bold),
-            Location = new Point(560, 180),
-            ReadOnly = true,
-            ScrollBars = RichTextBoxScrollBars.None,
-            Size = new Size(560, 200),
-            Text = "Run a loopback measurement or load an impulse response file with transfer IR."
-        };
-        status.UseHandCursorAt = point => TryGetCopyableStatusLine(point, out _);
-        status.MouseClick += StatusTextBoxMouseClick;
-
-        newPanel.Controls.AddRange(
-        [
-            title,
-            description,
-            help,
-            sourceSummary,
-            bandpassEnabled,
-            UiStyle.CreateLabel("Center frequency, Hz", new Point(18, 161), UiPalette.TextHighlight, owner.Font),
-            bandpassCenter,
-            UiStyle.CreateLabel("Pass width, oct", new Point(18, 195), UiPalette.TextHighlight, owner.Font),
-            bandpassPassOctaves,
-            UiStyle.CreateLabel("Fade width, oct", new Point(18, 229), UiPalette.TextHighlight, owner.Font),
-            bandpassFadeOctaves,
-            bandpassPreview,
-            envelopePreview,
-            status
-        ]);
-        ScaleRuntimeControlTree(newPanel);
-        FitContentToPanelWidth(newPanel);
-        owner.Controls.Add(newPanel);
-        newPanel.BringToFront();
-
-        bandpassEnabled.CheckedChanged += (_, _) => ApplyBandpassOptionChange();
-        bandpassCenter.ValueChanged += (_, _) => ApplyBandpassOptionChange();
-        bandpassPassOctaves.ValueChanged += (_, _) => ApplyBandpassOptionChange();
-        bandpassFadeOctaves.ValueChanged += (_, _) => ApplyBandpassOptionChange();
-
-        return (
-            newPanel,
-            sourceSummary,
-            bandpassEnabled,
-            bandpassCenter,
-            bandpassPassOctaves,
-            bandpassFadeOctaves,
-            bandpassPreview,
-            envelopePreview,
-            status);
+        bandpassCheckBox.CheckedChanged += (_, _) => ApplyBandpassOptionChange();
+        bandpassCenterNumeric.ValueChanged += (_, _) => ApplyBandpassOptionChange();
+        bandpassPassOctavesNumeric.ValueChanged += (_, _) => ApplyBandpassOptionChange();
+        bandpassFadeOctavesNumeric.ValueChanged += (_, _) => ApplyBandpassOptionChange();
     }
 
     private void ApplyBandpassOptionChange()
@@ -283,7 +184,8 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     {
         if (measurement.TransferImpulseResponse is { Length: > 0 })
         {
-            return $"Source: Transfer IR, {measurement.SampleRate} Hz.";
+            string source = getImpulseResponseFileName() ?? "Transfer IR";
+            return $"Source: {source}, {measurement.SampleRate} Hz.";
         }
 
         if (measurement.SweepDeconvolutionImpulseResponse is { Length: > 0 })
@@ -339,13 +241,13 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private void UpdateBandpassPreview()
     {
-        bandpassPlotView.Visible = bandpassCheckBox.Checked;
-        if (!bandpassCheckBox.Checked)
-        {
-            bandpassPlotView.Model = null;
-            return;
-        }
+        bool addCurve = bandpassCheckBox.Checked;
+        PlotModel model = CreateBandpassPreviewModel(addCurve);
+        bandpassPlotView.Model = model;
+    }
 
+    private PlotModel CreateBandpassPreviewModel(bool addCurve)
+    {
         double maxFrequency = Math.Min(20_000, measurement.SampleRate > 0
             ? measurement.SampleRate * 0.5
             : 20_000);
@@ -365,9 +267,14 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             TicklineColor = OxyColors.White
         });
         var dbAxis = CreateDecibelAxis();
-        dbAxis.AbsoluteMinimum = -100;
-        dbAxis.AbsoluteMaximum = 20;
+        dbAxis.AbsoluteMinimum = -80;
+        dbAxis.AbsoluteMaximum = 0;
         model.Axes.Add(dbAxis);
+
+        if (!addCurve)
+        {
+            return model;
+        }
 
         var series = new LineSeries
         {
@@ -393,7 +300,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
 
         model.Series.Add(series);
-        bandpassPlotView.Model = model;
+        return model;
     }
 
     private void UpdateEnvelopePreview(TimeAlignmentAnalysisResult result)
@@ -482,13 +389,39 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
 
         envelopePlotView.Model = model;
-        envelopePlotView.Visible = true;
     }
 
     private void ClearEnvelopePreview()
     {
-        envelopePlotView.Model = null;
-        envelopePlotView.Visible = false;
+        envelopePlotView.Model = CreateEmptyEnvelopePreviewModel();
+    }
+
+    private PlotModel CreateEmptyEnvelopePreviewModel()
+    {
+        var model = CreatePreviewPlotModel("Envelope Around Peak");
+        model.Axes.Add(new LinearAxis
+        {
+            Position = AxisPosition.Bottom,
+            AbsoluteMinimum = -50,
+            AbsoluteMaximum = 50,
+            Minimum = -50,
+            Maximum = 50,
+            MajorStep = 25,
+            MajorGridlineColor = OxyColor.FromRgb(55, 62, 78),
+            MajorGridlineStyle = LineStyle.Solid,
+            MinorGridlineColor = OxyColor.FromRgb(48, 54, 70),
+            MinorGridlineStyle = LineStyle.Dot,
+            TextColor = OxyColors.White,
+            TicklineColor = OxyColors.White,
+            Title = "ms from peak"
+        });
+        var dbAxis = CreateDecibelAxis();
+        dbAxis.AbsoluteMaximum = 0;
+        dbAxis.AbsoluteMinimum = -80;
+        dbAxis.Maximum = 0;
+        dbAxis.Minimum = -80;
+        model.Axes.Add(dbAxis);
+        return model;
     }
 
     private void SetStatusText(string text)
@@ -722,82 +655,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         return offset;
     }
 
-    private void ScaleRuntimeControlTree(System.Windows.Forms.Control root)
-    {
-        float factor = GetRuntimeDpiScale();
-        if (factor <= 1.01f)
-        {
-            return;
-        }
-
-        root.SuspendLayout();
-        foreach (System.Windows.Forms.Control child in root.Controls)
-        {
-            ScaleRuntimeBounds(child, factor, scaleLocation: true);
-        }
-
-        root.ResumeLayout(false);
-    }
-
-    private void FitContentToPanelWidth() => FitContentToPanelWidth(panel);
-
-    private void FitContentToPanelWidth(System.Windows.Forms.Control targetPanel)
-    {
-        int rightPadding = ScaleRuntimeValue(18);
-        int availableRight = Math.Max(1, targetPanel.ClientSize.Width - rightPadding);
-        foreach (System.Windows.Forms.Control control in targetPanel.Controls)
-        {
-            if (control is PlotView)
-            {
-                continue;
-            }
-            if (control.Left >= ScaleRuntimeValue(520))
-            {
-                control.Width = Math.Max(1, availableRight - control.Left);
-            }
-        }
-
-        if (targetPanel is Panel scrollPanel)
-        {
-            scrollPanel.HorizontalScroll.Visible = false;
-            scrollPanel.HorizontalScroll.Enabled = false;
-        }
-    }
-
-    private static void ScaleRuntimeBounds(
-        System.Windows.Forms.Control control,
-        float factor,
-        bool scaleLocation)
-    {
-        int left = scaleLocation
-            ? (int)Math.Round(control.Left * factor)
-            : control.Left;
-        int top = scaleLocation
-            ? (int)Math.Round(control.Top * factor)
-            : control.Top;
-        control.Bounds = new Rectangle(
-            left,
-            top,
-            Math.Max(1, (int)Math.Round(control.Width * factor)),
-            Math.Max(1, (int)Math.Round(control.Height * factor)));
-
-        foreach (System.Windows.Forms.Control child in control.Controls)
-        {
-            ScaleRuntimeBounds(child, factor, scaleLocation: true);
-        }
-    }
-
-    private float GetRuntimeDpiScale()
-    {
-        using Graphics graphics = owner.CreateGraphics();
-        return Math.Max(owner.DeviceDpi / 96.0f, graphics.DpiX / 96.0f);
-    }
-
-    private int GetScaledTitleBarHeight() =>
-        (int)Math.Round(ChromeTitleBar.BarHeight * GetRuntimeDpiScale());
-
-    private int ScaleRuntimeValue(int value) =>
-        Math.Max(1, (int)Math.Round(value * GetRuntimeDpiScale()));
 }
 
 internal sealed class StatusRichTextBox : RichTextBox

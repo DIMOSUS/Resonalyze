@@ -21,6 +21,8 @@ internal sealed class MeasurementPlotContext
             : Path.GetFileName(fileName);
     }
 
+    public string? ImpulseResponseFileName => impulseResponseFileName;
+
     public string CreateTitle(string baseTitle) =>
         string.IsNullOrWhiteSpace(impulseResponseFileName)
             ? baseTitle

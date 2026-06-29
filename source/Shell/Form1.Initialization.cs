@@ -71,9 +71,11 @@ public partial class Form1
             () => IsHandleCreated);
         TimeAlignmentPanelController createdTimeAlignmentController = new(
             this,
+            timeAlignmentPanel,
             timeAlignmentOptions,
             expSweepMeasurement,
-            () => SaveMeasurementSettings());
+            () => SaveMeasurementSettings(),
+            () => plotModelFactory.ImpulseResponseFileName);
         InputLevelMeterController createdInputLevelMeterController = new(
             this,
             inputLevelMeterPanel,

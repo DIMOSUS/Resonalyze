@@ -44,6 +44,12 @@ public sealed class OverlayFile
     // Captured kind: the stored curve samples.
     public OverlayPoint[] Points { get; set; } = Array.Empty<OverlayPoint>();
 
+    // Captured phase curves only: true if the samples are an unwrapped (continuous)
+    // representation, false if wrapped (-180..180), null if unknown (e.g. imported text
+    // or a non-phase mode). Additive and nullable, so it needs no file version bump:
+    // older files deserialize to null and older app builds ignore the unknown property.
+    public bool? PhaseUnwrapped { get; set; }
+
     // Operation kind: recipe referencing two captured source slots.
     public int SourceSlotA { get; set; }
     public int SourceSlotB { get; set; }

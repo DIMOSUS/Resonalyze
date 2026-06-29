@@ -174,6 +174,85 @@ public sealed class OverlayMathTests
         Assert.Equal(4, result[2].Y);
     }
 
+    [Theory]
+    [InlineData(OverlayOperation.AMinusB, -20)]
+    [InlineData(OverlayOperation.BMinusA, 20)]
+    [InlineData(OverlayOperation.AbsoluteDifference, 20)]
+    public void CalculateOperation_WrapsPhaseDifferenceAcrossTheBranchCut(
+        OverlayOperation operation,
+        double expected)
+    {
+        // 170 and -170 degrees are only 20 degrees apart; a raw subtraction would report
+        // 340. The wrapped formula must take the shortest angular distance.
+        OverlayPoint[] a =
+        [
+            new OverlayPoint(1, 170),
+            new OverlayPoint(2, 170)
+        ];
+        OverlayPoint[] b =
+        [
+            new OverlayPoint(1, -170),
+            new OverlayPoint(2, -170)
+        ];
+
+        OverlayPoint[] result = OverlayMath.CalculateOperation(
+            a,
+            b,
+            operation,
+            wrapPhaseDifference: true);
+
+        Assert.Equal(2, result.Length);
+        Assert.All(result, point => Assert.Equal(expected, point.Y, precision: 9));
+    }
+
+    [Fact]
+    public void CalculateOperation_RawDifferencePreservesUnwrappedSlope()
+    {
+        // Two unwrapped curves whose difference exceeds 180 degrees: without wrapping the
+        // accumulated slope (and hence delay) must survive untouched.
+        OverlayPoint[] a =
+        [
+            new OverlayPoint(1, 170),
+            new OverlayPoint(2, 170)
+        ];
+        OverlayPoint[] b =
+        [
+            new OverlayPoint(1, -170),
+            new OverlayPoint(2, -170)
+        ];
+
+        OverlayPoint[] result = OverlayMath.CalculateOperation(
+            a,
+            b,
+            OverlayOperation.AMinusB,
+            wrapPhaseDifference: false);
+
+        Assert.All(result, point => Assert.Equal(340, point.Y, precision: 9));
+    }
+
+    [Fact]
+    public void CalculateOperation_DoesNotWrapNonDifferenceOperations()
+    {
+        OverlayPoint[] a =
+        [
+            new OverlayPoint(1, 170),
+            new OverlayPoint(2, 170)
+        ];
+        OverlayPoint[] b =
+        [
+            new OverlayPoint(1, 170),
+            new OverlayPoint(2, 170)
+        ];
+
+        OverlayPoint[] result = OverlayMath.CalculateOperation(
+            a,
+            b,
+            OverlayOperation.Sum,
+            wrapPhaseDifference: true);
+
+        Assert.All(result, point => Assert.Equal(340, point.Y, precision: 9));
+    }
+
     [Fact]
     public void SmoothByOctaves_PreservesConstantCurve()
     {

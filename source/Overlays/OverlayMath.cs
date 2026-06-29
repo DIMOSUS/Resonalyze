@@ -148,7 +148,8 @@ public static class OverlayMath
         OverlayOperation operation,
         double blendFrequencyHz = 1_000,
         double blendWidthOctaves = 1,
-        bool useAmplitudeSpace = false)
+        bool useAmplitudeSpace = false,
+        bool wrapPhaseDifference = false)
     {
         ArgumentNullException.ThrowIfNull(a);
         ArgumentNullException.ThrowIfNull(b);
@@ -212,7 +213,7 @@ public static class OverlayMath
             }
             double value = useBlend
                 ? ApplyBlend(aPoint.X, aValue, bValue, lowerBlend, upperBlend)
-                : ApplyOperation(aValue, bValue, operation);
+                : ApplyOperation(aValue, bValue, operation, wrapPhaseDifference);
             if (useAmplitudeSpace)
             {
                 value = DataHelper.AmplitudeToDecibels(value);
@@ -229,17 +230,33 @@ public static class OverlayMath
     private static double ApplyOperation(
         double a,
         double b,
-        OverlayOperation operation)
+        OverlayOperation operation,
+        bool wrapPhaseDifference = false)
     {
         return operation switch
         {
-            OverlayOperation.AMinusB => a - b,
-            OverlayOperation.BMinusA => b - a,
+            OverlayOperation.AMinusB => WrapDegrees(a - b, wrapPhaseDifference),
+            OverlayOperation.BMinusA => WrapDegrees(b - a, wrapPhaseDifference),
             OverlayOperation.Sum => a + b,
             OverlayOperation.Average => (a + b) / 2,
-            OverlayOperation.AbsoluteDifference => Math.Abs(a - b),
+            OverlayOperation.AbsoluteDifference =>
+                Math.Abs(WrapDegrees(a - b, wrapPhaseDifference)),
             _ => double.NaN
         };
+    }
+
+    // Maps a phase difference in degrees to the shortest angular distance in (-180, 180]
+    // via atan2(sin, cos). Used only when comparing wrapped phase curves; left untouched
+    // otherwise so unwrapped curves keep their accumulated slope.
+    private static double WrapDegrees(double degrees, bool wrap)
+    {
+        if (!wrap || !double.IsFinite(degrees))
+        {
+            return degrees;
+        }
+
+        double radians = degrees * Math.PI / 180.0;
+        return Math.Atan2(Math.Sin(radians), Math.Cos(radians)) * 180.0 / Math.PI;
     }
 
     private static double ApplyBlend(

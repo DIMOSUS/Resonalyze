@@ -99,7 +99,10 @@ internal sealed class PlotModelFactory
                     phaseResponseOptions.SmoothingInverseOctaves,
                     phaseResponseOptions.Unwrap);
 
-                AddLineSeries(model, curve, phaseTrackerFormat);
+                // Measured phase can be either representation; tag it so overlay
+                // math knows whether a difference must use the wrapped formula.
+                AddLineSeries(model, curve, phaseTrackerFormat).Tag =
+                    new PhaseCurveTag(phaseResponseOptions.Unwrap);
             }
 
             if (phaseResponseOptions.ShowMinimumPhase)
@@ -112,7 +115,9 @@ internal sealed class PlotModelFactory
                     phaseResponseOptions.PhaseRightMs,
                     phaseResponseOptions.SmoothingInverseOctaves);
 
-                AddLineSeries(model, minimumPhaseCurve, phaseTrackerFormat);
+                // Minimum phase is continuous (unwrapped) by construction.
+                AddLineSeries(model, minimumPhaseCurve, phaseTrackerFormat).Tag =
+                    new PhaseCurveTag(Unwrapped: true);
             }
 
             if (phaseResponseOptions.ShowExcessPhase)
@@ -126,7 +131,10 @@ internal sealed class PlotModelFactory
                     phaseResponseOptions.PhaseDetrendMs,
                     phaseResponseOptions.SmoothingInverseOctaves);
 
-                AddLineSeries(model, excessPhaseCurve, phaseTrackerFormat);
+                // Excess phase stays continuous (unwrapped) regardless of the detrend
+                // choice; a residual slope is still an unwrapped representation.
+                AddLineSeries(model, excessPhaseCurve, phaseTrackerFormat).Tag =
+                    new PhaseCurveTag(Unwrapped: true);
             }
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
@@ -512,7 +520,7 @@ internal sealed class PlotModelFactory
         return resampled;
     }
 
-    private static void AddLineSeries(
+    private static LineSeries AddLineSeries(
         PlotModel model,
         AnalysisCurve curve,
         string trackerFormat)
@@ -520,6 +528,7 @@ internal sealed class PlotModelFactory
         LineSeries series = OxyPlotAdapter.ToLineSeries(curve);
         series.TrackerFormatString = trackerFormat;
         model.Series.Add(series);
+        return series;
     }
 
     // Phase and group delay need loopback timing; without a transfer IR the plot would
@@ -537,3 +546,11 @@ internal sealed class PlotModelFactory
         });
     }
 }
+
+/// <summary>
+/// Carried on a phase <c>LineSeries.Tag</c> so a captured overlay records whether the
+/// curve is an unwrapped (continuous) or wrapped (-180..180) phase representation. The
+/// overlay difference operations need this to decide between a raw subtraction (keeps the
+/// slope/delay of unwrapped curves) and the wrapped formula (shortest angular distance).
+/// </summary>
+internal sealed record PhaseCurveTag(bool Unwrapped);

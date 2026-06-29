@@ -821,6 +821,16 @@ Calculated overlay settings additionally include:
   linear amplitude before the operation and back to dB afterward
 - independent octave smoothing applied after the selected operation
 
+In **Phase Response**, the difference operations (`A - B`, `B - A`, `|A - B|`) are
+phase-aware. Each captured phase curve remembers whether it is an unwrapped
+(continuous) or wrapped (-180..180) representation: measured phase follows the
+**Unwrap** option in effect when it was captured, while minimum and excess phase are
+always continuous. When either operand is wrapped, the difference uses the shortest
+angular distance (`atan2(sin Δ, cos Δ)`) so it never jumps by ±360° across the
+branch cut. When both are unwrapped it stays a plain subtraction, preserving the
+accumulated slope (and therefore the delay) of the two curves. Imported text curves
+have no wrap hint and are treated as unwrapped.
+
 Octave smoothing is available only for Frequency Response, Phase Response, Group
 Delay, and paused Live Spectrum. Impulse Response and Autocorrelation keep their
 original time-domain samples. Overlay JSON always stores the unsmoothed source

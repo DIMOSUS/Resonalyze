@@ -376,6 +376,9 @@ public sealed class Overlay
     // Captured kind.
     private DataPoint[]? sourcePoints;
     private DataPoint[]? drawPoints;
+    // Phase representation of a captured curve: true unwrapped, false wrapped, null
+    // unknown. Drives the wrapped-difference choice in phase overlay operations.
+    private bool? phaseUnwrapped;
 
     // Operation kind.
     private bool operationConfigured;
@@ -825,7 +828,8 @@ public sealed class Overlay
             Title,
             drawPoints
                 .Select(point => new OverlayPoint(point.X, point.Y))
-                .ToArray());
+                .ToArray(),
+            phaseUnwrapped);
     }
 
     private ContextMenuStrip BuildCaptureMenu(
@@ -1048,6 +1052,9 @@ public sealed class Overlay
         kind = OverlayKind.Captured;
         operationConfigured = false;
         sourcePoints = points;
+        phaseUnwrapped = mode == Mode.PhaseResponse && selected.Tag is PhaseCurveTag tag
+            ? tag.Unwrapped
+            : null;
         SeriesMode = mode;
         Title = title;
         UpdateKindGlyph();
@@ -1097,6 +1104,8 @@ public sealed class Overlay
         kind = OverlayKind.Captured;
         operationConfigured = false;
         targetConfigured = false;
+        // Imported text gives no wrap/unwrap hint; leave it unknown.
+        phaseUnwrapped = null;
         sourcePoints = imported
             .Select(point => new DataPoint(point.X, point.Y))
             .ToArray();
@@ -1574,6 +1583,7 @@ public sealed class Overlay
             sourcePoints = file.Points
                 .Select(point => new DataPoint(point.X, point.Y))
                 .ToArray();
+            phaseUnwrapped = file.PhaseUnwrapped;
             UpdateDrawPoints();
             SetAvailability(true);
         }
@@ -1660,6 +1670,7 @@ public sealed class Overlay
             file.Points = (sourcePoints ?? Array.Empty<DataPoint>())
                 .Select(point => new OverlayPoint(point.X, point.Y))
                 .ToArray();
+            file.PhaseUnwrapped = phaseUnwrapped;
         }
 
         return file;
@@ -1674,13 +1685,22 @@ public sealed class Overlay
             return null;
         }
 
+        // Phase is circular: subtracting two curves needs the wrapped formula whenever
+        // either operand is a wrapped (-180..180) representation, so the difference is the
+        // shortest angular distance instead of jumping by +/-360. Two unwrapped curves
+        // (the default, plus minimum/excess phase) keep the raw subtraction so their slope
+        // (and hence delay) survives. Unknown representations are treated as unwrapped.
+        bool wrapPhaseDifference = SeriesMode == Mode.PhaseResponse &&
+            (sourceA!.PhaseUnwrapped == false || sourceB!.PhaseUnwrapped == false);
+
         OverlayPoint[] points = OverlayMath.CalculateOperation(
             sourceA!.Points,
             sourceB!.Points,
             operation,
             blendFrequencyHz,
             blendWidthOctaves,
-            useAmplitudeSpace);
+            useAmplitudeSpace,
+            wrapPhaseDifference);
         points = OverlayMath.SmoothByOctaves(points, smoothingInverseOctaves);
         if (points.Length < 2)
         {
@@ -1724,6 +1744,7 @@ public sealed class Overlay
         kind = OverlayKind.Captured;
         sourcePoints = null;
         drawPoints = null;
+        phaseUnwrapped = null;
         operationConfigured = false;
         sourceSlotA = 0;
         sourceSlotB = 0;
@@ -1859,4 +1880,5 @@ public sealed class Overlay
 internal sealed record OverlayOperationSource(
     int Slot,
     string Title,
-    IReadOnlyList<OverlayPoint> Points);
+    IReadOnlyList<OverlayPoint> Points,
+    bool? PhaseUnwrapped = null);

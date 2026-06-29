@@ -56,6 +56,50 @@ public sealed class OverlayFileTests
         }
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void SaveAndLoad_RoundTripsPhaseUnwrappedFlag(bool unwrapped)
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            OverlayFile original = CreateMinimalOverlay(Mode.PhaseResponse, 5);
+            original.PhaseUnwrapped = unwrapped;
+
+            original.Save(root);
+            OverlayFile? loaded = OverlayFile.Load(Mode.PhaseResponse, 5, root);
+
+            Assert.NotNull(loaded);
+            Assert.Equal(unwrapped, loaded.PhaseUnwrapped);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Load_DefaultsPhaseUnwrappedToNullForOlderFiles()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            OverlayFile original = CreateMinimalOverlay(Mode.PhaseResponse, 6);
+            original.Save(root);
+
+            // An older file simply never wrote the property, so it must load as unknown.
+            OverlayFile? loaded = OverlayFile.Load(Mode.PhaseResponse, 6, root);
+
+            Assert.NotNull(loaded);
+            Assert.Null(loaded.PhaseUnwrapped);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public void SaveAndLoad_PreservesNaNPointValues()
     {

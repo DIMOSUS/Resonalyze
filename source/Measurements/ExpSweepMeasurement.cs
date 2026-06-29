@@ -503,7 +503,9 @@ namespace Resonalyze
                 microphone.GetSamplesSnapshot(),
                 WaveInputChannelOffset,
                 loopback.GetSamplesSnapshot(),
-                WaveLoopbackInputChannelOffset!.Value);
+                WaveLoopbackInputChannelOffset!.Value,
+                microphoneStart,
+                loopbackStart);
             ProcessImpulseResponse(
                 merged,
                 sweep,

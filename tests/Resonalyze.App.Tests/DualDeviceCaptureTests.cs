@@ -44,6 +44,25 @@ public sealed class DualDeviceCaptureTests
     }
 
     [Fact]
+    public void MergeMicrophoneAndLoopback_DropsEachDeviceStartOffsetBeforeAligning()
+    {
+        // Microphone captured 2 extra leading samples before playback, loopback 1.
+        float[][] microphone = [[91f, 92f, 1f, 2f, 3f]];
+        float[][] loopback = [[81f, 5f, 6f, 7f]];
+
+        float[][] merged = DualDeviceCapture.MergeMicrophoneAndLoopback(
+            microphone,
+            microphoneChannel: 0,
+            loopback,
+            loopbackChannel: 0,
+            microphoneStart: 2,
+            loopbackStart: 1);
+
+        Assert.Equal([1f, 2f, 3f], merged[0]);
+        Assert.Equal([5f, 6f, 7f], merged[1]);
+    }
+
+    [Fact]
     public void MergeMicrophoneAndLoopback_MissingChannelYieldsEmptyResult()
     {
         float[][] microphone = [[1f, 2f, 3f]];

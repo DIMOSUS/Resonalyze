@@ -228,6 +228,9 @@ namespace Resonalyze
                 }
                 Interlocked.Exchange(ref lastDropTickMs, 0);
                 Interlocked.Exchange(ref droppedFrameTotal, 0);
+                // Drop any blocks left queued by a previous run so the first transfer frame
+                // cannot pair a fresh block with a stale one.
+                loopbackPairer?.Reset();
 
                 cancellationTokenSource?.Dispose();
                 cancellationTokenSource = new CancellationTokenSource();

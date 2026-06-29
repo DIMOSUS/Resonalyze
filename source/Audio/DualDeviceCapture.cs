@@ -16,27 +16,47 @@ internal static class DualDeviceCapture
     /// separate input devices, selecting one channel from each and trimming both to the
     /// shorter length so they share a common sample grid.
     /// </summary>
+    /// <param name="microphoneStart">
+    /// Samples already captured on the microphone device when playback began; dropped from the
+    /// front so both streams start near playback time (best-effort start alignment).
+    /// </param>
+    /// <param name="loopbackStart">As <paramref name="microphoneStart"/>, for the loopback device.</param>
     public static float[][] MergeMicrophoneAndLoopback(
         float[][] microphoneChannels,
         int microphoneChannel,
         float[][] loopbackChannels,
-        int loopbackChannel)
+        int loopbackChannel,
+        int microphoneStart = 0,
+        int loopbackStart = 0)
     {
         ArgumentNullException.ThrowIfNull(microphoneChannels);
         ArgumentNullException.ThrowIfNull(loopbackChannels);
 
-        float[] microphone = ExtractChannel(microphoneChannels, microphoneChannel);
-        float[] loopback = ExtractChannel(loopbackChannels, loopbackChannel);
+        float[] microphone = ExtractChannel(microphoneChannels, microphoneChannel, microphoneStart);
+        float[] loopback = ExtractChannel(loopbackChannels, loopbackChannel, loopbackStart);
         int count = Math.Min(microphone.Length, loopback.Length);
 
         return [Trim(microphone, count), Trim(loopback, count)];
     }
 
-    private static float[] ExtractChannel(float[][] channels, int channel)
+    private static float[] ExtractChannel(float[][] channels, int channel, int start)
     {
-        return (uint)channel < (uint)channels.Length
-            ? channels[channel]
-            : Array.Empty<float>();
+        if ((uint)channel >= (uint)channels.Length)
+        {
+            return Array.Empty<float>();
+        }
+
+        float[] samples = channels[channel];
+        int offset = Math.Clamp(start, 0, samples.Length);
+        int count = samples.Length - offset;
+        if (offset == 0)
+        {
+            return samples;
+        }
+
+        var trimmed = new float[count];
+        Array.Copy(samples, offset, trimmed, 0, count);
+        return trimmed;
     }
 
     private static float[] Trim(float[] samples, int count)

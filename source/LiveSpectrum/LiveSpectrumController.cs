@@ -84,10 +84,10 @@ internal sealed class LiveSpectrumController : IDisposable
             peakHoldMagnitude = null;
         }
 
-        if (!measurement.InProgress)
-        {
-            RestoreLastCurve();
-        }
+        // Rebuild the model even while running: display options such as the coherence
+        // curve add or remove the coherence axis, and a running TimerTick would otherwise
+        // attach the coherence series to a model that has no matching axis.
+        RebuildModel();
     }
 
     // Pauses peak-hold tracking briefly so the noisy first frames captured while
@@ -181,6 +181,14 @@ internal sealed class LiveSpectrumController : IDisposable
             return;
         }
 
+        RebuildModel();
+    }
+
+    // Recreates the plot model (and therefore its axes) from the current options, redraws
+    // the last snapshot, and restores overlays. Safe to call while running: the next
+    // TimerTick simply renders onto the fresh model.
+    private void RebuildModel()
+    {
         PlotModel model = plotModelFactory.CreateLiveSpectrum();
         if (lastSnapshot != null)
         {

@@ -1,3 +1,4 @@
+using System;
 using System.Windows.Forms;
 using Resonalyze.Dsp;
 
@@ -13,9 +14,11 @@ public partial class GDOpt : Form
     {
         InitializeComponent();
 
-        numericLeftWindow.ValueChanged += SettingsValueChanged;
-        numericRightWindow.ValueChanged += SettingsValueChanged;
-        numericOffset.ValueChanged += SettingsValueChanged;
+        numericLeftWindow.ValueChanged += Gate_ValueChanged;
+        numericRightWindow.ValueChanged += Gate_ValueChanged;
+        numericGateOffset.ValueChanged += (_, _) => UpdateIrPreview();
+        buttonFit.Click += buttonFit_Click;
+        ConfigureResetDefaults();
         SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
         InitializeToolTips();
         FormClosed += GDOpt_FormClosed;
@@ -37,69 +40,83 @@ public partial class GDOpt : Form
         initializing = true;
         try
         {
-            numericWindow.Value = opt.Window;
-            numericLeftWindow.Value = opt.LeftTukeyWindow;
-            numericRightWindow.Value = opt.RightTukeyWindow;
+            numericGateOffset.Value = ClampToControl(numericGateOffset, opt.GroupDelayGateOffsetMs);
+            numericWindow.Value = ClampToControl(numericWindow, opt.GroupDelayPlateauMs);
+            numericLeftWindow.Value = ClampToControl(numericLeftWindow, opt.GroupDelayLeftMs);
+            numericRightWindow.Value = ClampToControl(numericRightWindow, opt.GroupDelayRightMs);
             comboSmoothingInverseOctaves.SelectedItem =
                 SmoothingPresetOptions.Normalize(opt.SmoothingInverseOctaves);
-            numericOffset.Value = opt.Offset;
         }
         finally
         {
             initializing = false;
         }
 
-        UpdateTukeyWindowLimits();
-        UpdateOffsetAvailability();
+        UpdateMinFrequencyLabel();
         UpdateIrPreview();
     }
 
     public void SetOptions(FrequencyResponseOptions opt)
     {
-        opt.Window = (int)numericWindow.Value;
-        opt.LeftTukeyWindow = (int)numericLeftWindow.Value;
-        opt.RightTukeyWindow = (int)numericRightWindow.Value;
+        opt.GroupDelayGateOffsetMs = (double)numericGateOffset.Value;
+        opt.GroupDelayPlateauMs = (double)numericWindow.Value;
+        opt.GroupDelayLeftMs = (double)numericLeftWindow.Value;
+        opt.GroupDelayRightMs = (double)numericRightWindow.Value;
         opt.SmoothingInverseOctaves =
             comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
                 ? inverseOctaves
                 : SmoothingPresetOptions.SupportedInverseOctaves[0];
-        opt.Offset = (int)numericOffset.Value;
         UpdateIrPreview();
+    }
+
+    // Points each field's "R" reset button at the built-in defaults.
+    private void ConfigureResetDefaults()
+    {
+        var defaults = new FrequencyResponseOptions();
+        numericLeftWindow.DefaultValue = (decimal)defaults.GroupDelayLeftMs;
+        numericWindow.DefaultValue = (decimal)defaults.GroupDelayPlateauMs;
+        numericRightWindow.DefaultValue = (decimal)defaults.GroupDelayRightMs;
+        comboSmoothingInverseOctaves.DefaultSelectedItem =
+            SmoothingPresetOptions.Normalize(
+                FrequencyResponseOptions.DefaultGroupDelaySmoothingInverseOctaves);
+    }
+
+    // Snap the gate offset to the transfer IR peak (deterministic, gate-independent).
+    private void buttonFit_Click(object? sender, EventArgs e)
+    {
+        if (expSweepMeasurement is not { } measurement ||
+            measurement.TransferImpulseResponse is not { Length: > 0 } ||
+            measurement.SampleRate <= 0)
+        {
+            System.Media.SystemSounds.Beep.Play();
+            return;
+        }
+
+        double onsetMs = measurement.TransferPeakIndex * 1000.0 / measurement.SampleRate;
+        numericGateOffset.Value = ClampToControl(numericGateOffset, onsetMs);
     }
 
     private void numericWindow_ValueChanged(object sender, EventArgs e)
     {
-        UpdateTukeyWindowLimits();
+        UpdateMinFrequencyLabel();
         UpdateIrPreview();
     }
 
-    private void buttonAutoFit_Click(object? sender, EventArgs e)
+    private void Gate_ValueChanged(object? sender, EventArgs e)
     {
-        const int leftWindow = 256;
-        const int rightWindow = 16;
-
-        // Use the IR peak index: the transfer IR peak when a transfer function is
-        // present, otherwise the sweep deconvolution IR peak.
-        int peakIndex = expSweepMeasurement?.TransferImpulseResponse is { Length: > 0 }
-            ? expSweepMeasurement.TransferPeakIndex
-            : expSweepMeasurement?.SweepDeconvolutionPeakIndex ?? 0;
-
-        // Set the total length first so the Tukey limits leave room for both tails.
-        numericWindow.Value = ClampToRange(numericWindow, leftWindow + rightWindow + peakIndex);
-        numericLeftWindow.Value = ClampToRange(numericLeftWindow, leftWindow);
-        numericRightWindow.Value = ClampToRange(numericRightWindow, rightWindow);
-
-        UpdateTukeyWindowLimits();
+        UpdateMinFrequencyLabel();
         UpdateIrPreview();
     }
 
-    private static decimal ClampToRange(DarkNumericUpDown control, decimal value) =>
-        Math.Clamp(value, control.Minimum, control.Maximum);
-
-    private void SettingsValueChanged(object? sender, EventArgs e)
+    private void UpdateMinFrequencyLabel()
     {
-        UpdateTukeyWindowLimits();
-        UpdateIrPreview();
+        double hz = FrequencyResponseOptions.GateMinReliableFrequencyHz(
+            (double)numericLeftWindow.Value,
+            (double)numericWindow.Value,
+            (double)numericRightWindow.Value);
+        labelMinFrequency.Text = hz > 0
+            ? $"Reliable from ≈ {hz:0} Hz"
+            : "Reliable from ≈ — Hz";
     }
 
     private void ExpSweepMeasurement_ImpulseResponseChanged()
@@ -115,7 +132,6 @@ public partial class GDOpt : Form
             return;
         }
 
-        UpdateOffsetAvailability();
         UpdateIrPreview();
     }
 
@@ -131,62 +147,52 @@ public partial class GDOpt : Form
 
     private void UpdateIrPreview()
     {
-        if (initializing || expSweepMeasurement == null)
+        if (initializing || expSweepMeasurement == null || expSweepMeasurement.SampleRate <= 0)
         {
             return;
         }
 
-        ImpulseWindowPreview.Update(
+        ImpulseWindowPreview.UpdateGated(
             irPlotView,
             expSweepMeasurement,
-            (int)numericWindow.Value,
-            (int)numericLeftWindow.Value,
-            (int)numericRightWindow.Value,
-            expSweepMeasurement.TransferImpulseResponse is { Length: > 0 }
-                ? 0
-                : (int)numericOffset.Value,
-            IrPreviewSource.TransferFromStart);
+            (double)numericGateOffset.Value,
+            (double)numericLeftWindow.Value,
+            (double)numericWindow.Value,
+            (double)numericRightWindow.Value,
+            IrPreviewSource.Primary);
     }
 
-    private void UpdateOffsetAvailability()
+    private static decimal ClampToControl(DarkNumericUpDown control, double value)
     {
-        bool useTransfer = expSweepMeasurement?.TransferImpulseResponse is { Length: > 0 };
-        numericOffset.Enabled = !useTransfer;
-        numericOffset.ApplyToolTip(
-            toolTip,
-            useTransfer
-                ? "Offset is disabled for transfer-function IR because Group Delay is referenced to the start of the IR."
-                : "Shifts the analysis window relative to the detected sweep-deconvolution IR peak.");
-    }
-
-    private void UpdateTukeyWindowLimits()
-    {
-        TukeyWindowControlHelper.ClampAndUpdateLimits(
-            numericWindow,
-            numericLeftWindow,
-            numericRightWindow);
+        decimal candidate = double.IsFinite(value) ? (decimal)value : 0m;
+        return Math.Clamp(candidate, control.Minimum, control.Maximum);
     }
 
     private void InitializeToolTips()
     {
+        numericGateOffset.ApplyToolTip(
+            toolTip,
+            "Gate position: time from the IR start to the end of the left Tukey shoulder. Use Fit to snap it to the transfer IR peak.");
+        toolTip.SetToolTip(
+            buttonFit,
+            "Snap the gate offset to the transfer IR peak.");
         numericWindow.ApplyToolTip(
             toolTip,
-            "Sets the analysis window length used for Group Delay calculation.");
+            "Flat (weight 1) part of the gate after the peak, in milliseconds.");
         numericLeftWindow.ApplyToolTip(
             toolTip,
-            "Controls the fade-in part of the Tukey window before the selected impulse region.");
+            "Tukey fade-in before the peak, in milliseconds. Keep short.");
         numericRightWindow.ApplyToolTip(
             toolTip,
-            "Controls the fade-out part of the Tukey window after the selected impulse region.");
-        toolTip.SetToolTip(
-            buttonAutoFit,
-            "Sets a sensible analysis window automatically: left Tukey 256, right Tukey 16, and window length = 256 + 16 + IR peak index.");
+            "Tukey fade-out gate after the plateau, in milliseconds. End it before the first reflection.");
         toolTip.SetToolTip(
             comboSmoothingInverseOctaves,
             "Applies octave smoothing to the resulting Group Delay curve.");
         toolTip.SetToolTip(
+            labelMinFrequency,
+            "Lowest frequency the current gate can resolve (≈ 1 / gate length). Below it the curve is not reliable.");
+        toolTip.SetToolTip(
             irPlotView,
-            "Preview of the IR used for Group Delay together with the current analysis window.");
+            "Preview of the IR used for Group Delay together with the current gate window.");
     }
-
 }

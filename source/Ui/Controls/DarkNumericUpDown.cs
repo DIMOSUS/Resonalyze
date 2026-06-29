@@ -26,6 +26,9 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     private bool downHovered;
     private bool upPressed;
     private bool downPressed;
+    private bool resetHovered;
+    private bool resetPressed;
+    private decimal? defaultValue;
     private BorderStyle borderStyle = BorderStyle.None;
     private bool readOnly;
 
@@ -207,6 +210,31 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         }
     }
 
+    /// <summary>
+    /// Optional default value. When set, a small "R" reset button appears to the
+    /// right of the spin buttons that restores this value.
+    /// </summary>
+    [Browsable(true)]
+    [DefaultValue(null)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
+    public decimal? DefaultValue
+    {
+        get => defaultValue;
+        set
+        {
+            if (defaultValue == value)
+            {
+                return;
+            }
+
+            defaultValue = value;
+            LayoutEditor();
+            Invalidate();
+        }
+    }
+
+    private bool ShowResetButton => defaultValue.HasValue;
+
     [Browsable(true)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
     public decimal Value
@@ -329,10 +357,14 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         base.OnMouseMove(e);
         bool newUpHovered = GetUpButtonBounds().Contains(e.Location);
         bool newDownHovered = GetDownButtonBounds().Contains(e.Location);
-        if (upHovered != newUpHovered || downHovered != newDownHovered)
+        bool newResetHovered = ShowResetButton && GetResetButtonBounds().Contains(e.Location);
+        if (upHovered != newUpHovered ||
+            downHovered != newDownHovered ||
+            resetHovered != newResetHovered)
         {
             upHovered = newUpHovered;
             downHovered = newDownHovered;
+            resetHovered = newResetHovered;
             Invalidate();
         }
     }
@@ -342,8 +374,10 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         base.OnMouseLeave(e);
         upHovered = false;
         downHovered = false;
+        resetHovered = false;
         upPressed = false;
         downPressed = false;
+        resetPressed = false;
         Invalidate();
     }
 
@@ -371,16 +405,25 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
             return;
         }
 
+        if (ShowResetButton && GetResetButtonBounds().Contains(e.Location))
+        {
+            resetPressed = true;
+            Value = defaultValue!.Value;
+            Invalidate();
+            return;
+        }
+
         editor.Focus();
     }
 
     protected override void OnMouseUp(MouseEventArgs e)
     {
         base.OnMouseUp(e);
-        if (upPressed || downPressed)
+        if (upPressed || downPressed || resetPressed)
         {
             upPressed = false;
             downPressed = false;
+            resetPressed = false;
             Invalidate();
         }
     }
@@ -439,6 +482,29 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
 
         DrawArrow(e.Graphics, upBounds, up: true);
         DrawArrow(e.Graphics, downBounds, up: false);
+
+        if (ShowResetButton)
+        {
+            Rectangle resetBounds = GetResetButtonBounds();
+            DrawButtonState(e.Graphics, resetBounds, resetHovered, resetPressed);
+            e.Graphics.DrawLine(
+                separatorPen,
+                resetBounds.Left,
+                1,
+                resetBounds.Left,
+                Height - 2);
+
+            Color glyphColor = Enabled ? UiPalette.TextPrimarySoft : UiPalette.TextMuted;
+            TextRenderer.DrawText(
+                e.Graphics,
+                "R",
+                Font,
+                resetBounds,
+                glyphColor,
+                TextFormatFlags.HorizontalCenter |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding);
+        }
     }
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
@@ -578,9 +644,10 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         int textToButtonsGap = ScaleLogical(LogicalTextToButtonsGap);
         int verticalPadding = ScaleLogical(LogicalVerticalPadding);
         int buttonColumnWidth = GetButtonColumnWidth();
+        int resetColumnWidth = GetResetColumnWidth();
         int textAreaWidth = Math.Max(
             8,
-            Width - buttonColumnWidth - horizontalPadding - textToButtonsGap - 2);
+            Width - buttonColumnWidth - resetColumnWidth - horizontalPadding - textToButtonsGap - 2);
         int textHeight = Math.Max(10, Height - verticalPadding * 2 - 2);
         int textY = Math.Max(1, verticalPadding);
         editor.Font = Font;
@@ -592,10 +659,29 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     private Rectangle GetButtonColumnBounds()
     {
         int buttonColumnWidth = GetButtonColumnWidth();
+        int resetColumnWidth = GetResetColumnWidth();
         return new Rectangle(
-            Math.Max(1, Width - buttonColumnWidth - 1),
+            Math.Max(1, Width - buttonColumnWidth - resetColumnWidth - 1),
             1,
             buttonColumnWidth,
+            Math.Max(0, Height - 2));
+    }
+
+    private int GetResetColumnWidth() =>
+        ShowResetButton ? GetButtonColumnWidth() : 0;
+
+    private Rectangle GetResetButtonBounds()
+    {
+        if (!ShowResetButton)
+        {
+            return Rectangle.Empty;
+        }
+
+        int resetColumnWidth = GetResetColumnWidth();
+        return new Rectangle(
+            Math.Max(1, Width - resetColumnWidth - 1),
+            1,
+            resetColumnWidth,
             Math.Max(0, Height - 2));
     }
 

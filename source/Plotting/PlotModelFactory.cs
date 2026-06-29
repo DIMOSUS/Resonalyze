@@ -81,26 +81,61 @@ internal sealed class PlotModelFactory
         PlotModel model = PlotModelStyle.CreateTitledModel(
             measurementContext.CreateTitle("Phase Response"));
 
-        if (measurementContext.CanIncludeCurves(includeCurves))
+        // Phase analysis is only meaningful with a transfer IR (loopback timing).
+        if (measurementContext.CanIncludeCurves(includeCurves) &&
+            measurementContext.HasTransferImpulseResponse)
         {
-            AnalysisCurve curve = DataHelper.GetPhase(
-                measurementContext.CreatePrimaryMeasurement(),
-                phaseResponseOptions.Window,
-                phaseResponseOptions.LeftTukeyWindow,
-                phaseResponseOptions.RightTukeyWindow,
-                phaseResponseOptions.Offset,
-                phaseResponseOptions.SmoothingInverseOctaves,
-                phaseResponseOptions.Unwrap);
+            const string phaseTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.0}\u00B0";
 
-            AddLineSeries(model, curve, "{0}\n{2:0.0} Hz\n{4:0.0}\u00B0");
+            if (phaseResponseOptions.ShowMeasuredPhase)
+            {
+                AnalysisCurve curve = DataHelper.GetPhase(
+                    measurementContext.CreatePrimaryMeasurement(),
+                    phaseResponseOptions.PhaseGateOffsetMs,
+                    phaseResponseOptions.PhaseLeftMs,
+                    phaseResponseOptions.PhasePlateauMs,
+                    phaseResponseOptions.PhaseRightMs,
+                    phaseResponseOptions.PhaseDetrendMs,
+                    phaseResponseOptions.SmoothingInverseOctaves,
+                    phaseResponseOptions.Unwrap);
+
+                AddLineSeries(model, curve, phaseTrackerFormat);
+            }
+
+            if (phaseResponseOptions.ShowMinimumPhase)
+            {
+                AnalysisCurve minimumPhaseCurve = DataHelper.GetMinimumPhase(
+                    measurementContext.CreatePrimaryMeasurement(),
+                    phaseResponseOptions.PhaseGateOffsetMs,
+                    phaseResponseOptions.PhaseLeftMs,
+                    phaseResponseOptions.PhasePlateauMs,
+                    phaseResponseOptions.PhaseRightMs,
+                    phaseResponseOptions.SmoothingInverseOctaves);
+
+                AddLineSeries(model, minimumPhaseCurve, phaseTrackerFormat);
+            }
+
+            if (phaseResponseOptions.ShowExcessPhase)
+            {
+                AnalysisCurve excessPhaseCurve = DataHelper.GetExcessPhase(
+                    measurementContext.CreatePrimaryMeasurement(),
+                    phaseResponseOptions.PhaseGateOffsetMs,
+                    phaseResponseOptions.PhaseLeftMs,
+                    phaseResponseOptions.PhasePlateauMs,
+                    phaseResponseOptions.PhaseRightMs,
+                    phaseResponseOptions.PhaseDetrendMs,
+                    phaseResponseOptions.SmoothingInverseOctaves);
+
+                AddLineSeries(model, excessPhaseCurve, phaseTrackerFormat);
+            }
         }
 
         PlotModelStyle.AddFrequencyAxis(model);
         model.Axes.Add(new LinearAxis
         {
             Position = AxisPosition.Left,
-            AbsoluteMinimum = -720,
-            AbsoluteMaximum = 720,
+            AbsoluteMinimum = -2880,
+            AbsoluteMaximum = 2880,
             Minimum = -180,
             Maximum = 180,
             MajorStep = 45,
@@ -140,24 +175,21 @@ internal sealed class PlotModelFactory
         double minimum = +1000;
         double maximum = -1000;
         bool hasValidData = false;
-        if (measurementContext.CanIncludeCurves(includeCurves))
+        // Group delay is only meaningful with a transfer IR (loopback timing).
+        if (measurementContext.CanIncludeCurves(includeCurves) &&
+            measurementContext.HasTransferImpulseResponse)
         {
-            bool useTransfer = measurementContext.HasTransferImpulseResponse;
-            IImpulseMeasurement measurement = useTransfer
-                ? new ImpulseMeasurementView(
-                    expSweepMeasurement.TransferImpulseResponse!,
-                    0,
-                    expSweepMeasurement.SampleRate)
-                : measurementContext.CreateSweepDeconvolutionMeasurement();
+            // The gate is positioned by its Gate offset (left-shoulder-end) within the
+            // transfer IR; the group delay reads absolute, referenced to the IR start.
+            IImpulseMeasurement measurement = measurementContext.CreatePrimaryMeasurement();
             AnalysisCurve curve = DataHelper.GetGroupDelay(
                 measurement,
-                groupDelayOptions.Window,
-                groupDelayOptions.LeftTukeyWindow,
-                groupDelayOptions.RightTukeyWindow,
-                useTransfer ? 0 : groupDelayOptions.Offset,
+                groupDelayOptions.GroupDelayGateOffsetMs,
+                groupDelayOptions.GroupDelayLeftMs,
+                groupDelayOptions.GroupDelayPlateauMs,
+                groupDelayOptions.GroupDelayRightMs,
                 groupDelayOptions.SmoothingInverseOctaves,
-                GroupDelayMagnitudeGateDb,
-                wrapWindow: useTransfer);
+                GroupDelayMagnitudeGateDb);
             AddLineSeries(model, curve, "{0}\n{2:0.0} Hz\n{4:0.000} ms");
 
             for (int i = 0; i < curve.Points.Count; i++)

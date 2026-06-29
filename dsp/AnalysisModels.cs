@@ -15,7 +15,9 @@ public enum AnalysisCurveKind
     SecondHarmonic,
     ThirdHarmonic,
     FourthHarmonic,
-    ThdPlusNoise
+    ThdPlusNoise,
+    MinimumPhase,
+    ExcessPhase
 }
 
 /// <summary>

@@ -47,19 +47,16 @@ namespace Resonalyze
         private readonly FrequencyResponseOptions frequencyResponseOptions = new();
         private readonly FrequencyResponseOptions phaseResponseOptions = new()
         {
-            Window = 2048,
-            LeftTukeyWindow = 16,
-            RightTukeyWindow = 256,
-            SmoothingInverseOctaves = 12,
-            Offset = 0,
+            // Phase windowing (gate ms + τ) comes from the FrequencyResponseOptions
+            // defaults; only the smoothing default differs from the shared value.
+            SmoothingInverseOctaves = FrequencyResponseOptions.DefaultPhaseSmoothingInverseOctaves,
         };
         private readonly FrequencyResponseOptions groupDelayOptions = new()
         {
-            Window = 2048,
-            LeftTukeyWindow = 16,
-            RightTukeyWindow = 256,
-            SmoothingInverseOctaves = 12,
-            Offset = 0,
+            // Group delay uses the ms-based gate (left fade + plateau + right fade)
+            // from the FrequencyResponseOptions defaults; only smoothing differs from
+            // the shared value.
+            SmoothingInverseOctaves = FrequencyResponseOptions.DefaultGroupDelaySmoothingInverseOctaves,
         };
         private readonly ImpulseResponseOptions impulseResponseOptions = new();
         private readonly LiveSpectrumOptions liveSpectrumOptions = new();
@@ -94,6 +91,7 @@ namespace Resonalyze
         {
             InitializeComponent();
             ConfigureToolTips();
+            PlotInteraction.EnableDoubleClickAxisReset(plotView1);
             measurementSettings = MeasurementSettingsFile.LoadOrDefault();
             Form1ControllerDependencies dependencies = CreateControllerDependencies();
             overlayCollection = dependencies.OverlayCollection;

@@ -41,10 +41,10 @@ public sealed class SyntheticDelayTests
 
         IReadOnlyList<SignalPoint> groupDelay = DataHelper.GetGroupDelay(
             measurement,
-            length: TransformLength,
-            leftTukeyWindow: 0,
-            rightTukeyWindow: 0,
-            offset: 0,
+            gateOffsetMs: 0,
+            leftMs: 0,
+            plateauMs: TransformLength * 1000.0 / SampleRate,
+            rightMs: 0,
             smoothingInverseOctaves: 96).Points;
 
         double expectedDelayMilliseconds = DelaySamples * 1000.0 / SampleRate;
@@ -74,10 +74,10 @@ public sealed class SyntheticDelayTests
 
         IReadOnlyList<SignalPoint> groupDelay = DataHelper.GetGroupDelay(
             measurement,
-            length: TransformLength,
-            leftTukeyWindow: 0,
-            rightTukeyWindow: 0,
-            offset: 0,
+            gateOffsetMs: 0,
+            leftMs: 0,
+            plateauMs: TransformLength * 1000.0 / SampleRate,
+            rightMs: 0,
             smoothingInverseOctaves: 0).Points;
 
         SignalPoint firstValidPoint =
@@ -90,26 +90,28 @@ public sealed class SyntheticDelayTests
     }
 
     [Fact]
-    public void GroupDelay_CanAnalyzeCyclicNegativeDelay()
+    public void GroupDelay_ReadsAbsoluteDelayFromIrStart()
     {
-        const int negativeDelaySamples = 24;
+        // The gate's left shoulder lands on the peak and the buffer offset is added
+        // back, so the group delay reads the absolute arrival time of a peak that sits
+        // well into the IR (not relative to the peak).
+        const int peakSample = 800;
         var response = new Complex[TransformLength];
-        response[^negativeDelaySamples] = Complex.One;
+        response[peakSample] = Complex.One;
         var measurement = new SyntheticMeasurement(
             response,
             SampleRate,
-            maxMagnitudeIndex: 0);
+            maxMagnitudeIndex: peakSample);
 
         IReadOnlyList<SignalPoint> groupDelay = DataHelper.GetGroupDelay(
             measurement,
-            length: TransformLength,
-            leftTukeyWindow: 128,
-            rightTukeyWindow: 0,
-            offset: 0,
-            smoothingInverseOctaves: 96,
-            wrapWindow: true).Points;
+            gateOffsetMs: peakSample * 1000.0 / SampleRate,
+            leftMs: 48 * 1000.0 / SampleRate,
+            plateauMs: 256 * 1000.0 / SampleRate,
+            rightMs: 64 * 1000.0 / SampleRate,
+            smoothingInverseOctaves: 96).Points;
 
-        double expectedDelayMilliseconds = -negativeDelaySamples * 1000.0 / SampleRate;
+        double expectedDelayMilliseconds = peakSample * 1000.0 / SampleRate;
         List<SignalPoint> analysisBand = groupDelay
             .Where(point => point.X >= 1_000 && point.X <= 18_000)
             .ToList();
@@ -119,8 +121,44 @@ public sealed class SyntheticDelayTests
             analysisBand,
             point => Assert.InRange(
                 point.Y,
-                expectedDelayMilliseconds - 1e-9,
-                expectedDelayMilliseconds + 1e-9));
+                expectedDelayMilliseconds - 1e-6,
+                expectedDelayMilliseconds + 1e-6));
+    }
+
+    [Fact]
+    public void GroupDelay_WrapsWhenLeftShoulderPrecedesIrStart()
+    {
+        // Peak near the IR start: the left shoulder runs into negative indices, so the
+        // gate must read the cyclic tail (wrap) and the time correction must still
+        // recover the true absolute arrival.
+        const int peakSample = 5;
+        var response = new Complex[TransformLength];
+        response[peakSample] = Complex.One;
+        var measurement = new SyntheticMeasurement(
+            response,
+            SampleRate,
+            maxMagnitudeIndex: peakSample);
+
+        IReadOnlyList<SignalPoint> groupDelay = DataHelper.GetGroupDelay(
+            measurement,
+            gateOffsetMs: peakSample * 1000.0 / SampleRate,
+            leftMs: 48 * 1000.0 / SampleRate, // 48 samples > peak → left shoulder negative
+            plateauMs: 256 * 1000.0 / SampleRate,
+            rightMs: 64 * 1000.0 / SampleRate,
+            smoothingInverseOctaves: 96).Points;
+
+        double expectedDelayMilliseconds = peakSample * 1000.0 / SampleRate;
+        List<SignalPoint> analysisBand = groupDelay
+            .Where(point => point.X >= 1_000 && point.X <= 18_000)
+            .ToList();
+
+        Assert.NotEmpty(analysisBand);
+        Assert.All(
+            analysisBand,
+            point => Assert.InRange(
+                point.Y,
+                expectedDelayMilliseconds - 1e-6,
+                expectedDelayMilliseconds + 1e-6));
     }
 
     private static SyntheticMeasurement CreateDelayedImpulse()

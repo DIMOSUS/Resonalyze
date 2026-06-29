@@ -15,6 +15,65 @@ namespace Resonalyze.Dsp
         public int Offset { get; set; }
         public bool Unwrap { get; set; } = true;
         public bool UseCalibration { get; set; } = true;
+
+        // Phase-mode curve visibility. Ignored by the other modes that reuse this
+        // options type.
+        public bool ShowMeasuredPhase { get; set; } = true;
+        public bool ShowMinimumPhase { get; set; } = true;
+        public bool ShowExcessPhase { get; set; } = true;
+
+        // Phase-mode windowing (milliseconds): the Tukey gate is left + plateau + right
+        // with the peak at the fade-in/plateau boundary. PhaseDetrendMs is the τ used
+        // to detrend the excess phase (absolute reference). Phase mode uses these
+        // instead of Window/LeftTukeyWindow/RightTukeyWindow/Offset.
+        // Single source of truth for the phase-mode defaults. Tune these to taste;
+        // they drive the first-run values, the settings-file fallback and the "R"
+        // reset buttons.
+        public const double DefaultPhaseGateOffsetMs = 0.0;
+        public const double DefaultPhaseLeftMs = 0.5;
+        public const double DefaultPhasePlateauMs = 4.0;
+        public const double DefaultPhaseRightMs = 1.5;
+        public const double DefaultPhaseDetrendMs = 0.0;
+        public const double DefaultPhaseSmoothingInverseOctaves = 12.0;
+
+        public double PhaseGateOffsetMs { get; set; } = DefaultPhaseGateOffsetMs;
+        public double PhaseLeftMs { get; set; } = DefaultPhaseLeftMs;
+        public double PhasePlateauMs { get; set; } = DefaultPhasePlateauMs;
+        public double PhaseRightMs { get; set; } = DefaultPhaseRightMs;
+        public double PhaseDetrendMs { get; set; } = DefaultPhaseDetrendMs;
+
+        // Single source of truth for the group-delay gate defaults (ms). Group delay is
+        // usually viewed a bit lower than the phase crossover region, so the gate is
+        // slightly wider than the phase default.
+        public const double DefaultGroupDelayGateOffsetMs = 0.0;
+        public const double DefaultGroupDelayLeftMs = 0.5;
+        public const double DefaultGroupDelayPlateauMs = 10.0;
+        public const double DefaultGroupDelayRightMs = 3.0;
+        public const double DefaultGroupDelaySmoothingInverseOctaves = 12.0;
+
+        public double GroupDelayGateOffsetMs { get; set; } = DefaultGroupDelayGateOffsetMs;
+        public double GroupDelayLeftMs { get; set; } = DefaultGroupDelayLeftMs;
+        public double GroupDelayPlateauMs { get; set; } = DefaultGroupDelayPlateauMs;
+        public double GroupDelayRightMs { get; set; } = DefaultGroupDelayRightMs;
+
+        // The lowest frequency the gated window can resolve (~one period inside the
+        // gate). Driven purely by the gate duration, not the sample rate or FFT size.
+        public static double GateMinReliableFrequencyHz(
+            double leftMs,
+            double plateauMs,
+            double rightMs)
+        {
+            double gateMs = leftMs + plateauMs + rightMs;
+            return gateMs > 0.0 ? 1000.0 / gateMs : 0.0;
+        }
+
+        // Frequency-response curve visibility. Ignored by the other modes that reuse
+        // this options type.
+        public bool ShowPrimary { get; set; } = true;
+        public bool ShowHd2 { get; set; } = true;
+        public bool ShowHd3 { get; set; } = true;
+        public bool ShowHd4 { get; set; } = true;
+        public bool ShowThdPlusNoise { get; set; } = true;
     }
 
     public sealed class ImpulseResponseOptions
@@ -108,17 +167,24 @@ namespace Resonalyze.Dsp
             var curves = new List<AnalysisCurve>();
             int peakIndex = measurement.PeakIndex;
 
-            if (includePrimary)
+            // Each curve is gated by the caller's computational scope
+            // (includePrimary / includeHarmonics) AND the user's per-curve
+            // visibility flag.
+            bool wantHd2 = includeHarmonics && frequencyResponseOptions.ShowHd2;
+            bool wantHd3 = includeHarmonics && frequencyResponseOptions.ShowHd3;
+            bool wantHd4 = includeHarmonics && frequencyResponseOptions.ShowHd4;
+            bool wantThd = includeHarmonics && frequencyResponseOptions.ShowThdPlusNoise;
+
+            if (includePrimary && frequencyResponseOptions.ShowPrimary)
             {
                 double leftTukeyWindow = (double)frequencyResponseOptions.LeftTukeyWindow / frequencyResponseOptions.Window * 2.0;
                 double rightTukeyWindow = (double)frequencyResponseOptions.RightTukeyWindow / frequencyResponseOptions.Window * 2.0;
 
                 double[] window = Windowing.TukeyWindow(frequencyResponseOptions.Window, leftTukeyWindow, rightTukeyWindow);
 
-                int h1Length = frequencyResponseOptions.Window;
                 int h1Start = peakIndex - frequencyResponseOptions.LeftTukeyWindow;
 
-                var data = GetSpectrumData(measurement, h1Start, h1Length, window);
+                var data = GetOversampledSpectrumData(measurement, h1Start, window);
                 data = LogarithmicResample(
                     data,
                     20,
@@ -131,13 +197,24 @@ namespace Resonalyze.Dsp
                 curves.Add(new AnalysisCurve("Frequency Response", data));
             }
 
-            if (!includeHarmonics)
+            if (!wantHd2 && !wantHd3 && !wantHd4 && !wantThd)
             {
                 return curves;
             }
 
             for (int h = 2; h < 5; h++)
             {
+                bool wanted = h switch
+                {
+                    2 => wantHd2,
+                    3 => wantHd3,
+                    _ => wantHd4
+                };
+                if (!wanted)
+                {
+                    continue;
+                }
+
                 int peak = peakIndex - (int)measurement.HarmonicIROffset(h);
 
                 int hStart = peakIndex - (int)measurement.HarmonicIROffset(h + 0.03);
@@ -150,7 +227,7 @@ namespace Resonalyze.Dsp
                 double rightTukeyWindow = 0.5;
                 double[] window = Windowing.TukeyWindow(hLength, leftTukeyWindow, rightTukeyWindow);
 
-                var data = GetSpectrumData(measurement, hStart, hLength, window);
+                var data = GetOversampledSpectrumData(measurement, hStart, window);
                 data = LogarithmicResample(
                     data,
                     20,
@@ -171,6 +248,7 @@ namespace Resonalyze.Dsp
                     }));
             }
 
+            if (wantThd)
             {
                 int hStart = peakIndex - (int)measurement.HarmonicIROffset(5.5);
                 int hEnd = peakIndex - (int)measurement.HarmonicIROffset(1.5);
@@ -180,7 +258,7 @@ namespace Resonalyze.Dsp
                 double rightTukeyWindow = 0.05;
                 double[] window = Windowing.TukeyWindow(hLength, leftTukeyWindow, rightTukeyWindow);
 
-                var data = GetSpectrumData(measurement, hStart, hLength, window);
+                var data = GetOversampledSpectrumData(measurement, hStart, window);
                 data = LogarithmicResample(
                     data,
                     20,
@@ -258,27 +336,153 @@ namespace Resonalyze.Dsp
             return data;
         }
 
+        // Fixed analysis length for the gated phase / group-delay FFTs. The gate
+        // (left + plateau + right) is specified in time and zero-padded to this length,
+        // so the frequency grid is constant regardless of the gate and identical across
+        // measurements.
+        public const int GatedFftLength = 32768;
+
+        private static int MillisecondsToSamples(double milliseconds, int sampleRate) =>
+            (int)Math.Round(Math.Max(0.0, milliseconds) * sampleRate / 1000.0);
+
+        // Builds a zero-padded, gated windowed impulse (time domain). The Tukey gate
+        // spans left + plateau + right samples; the end of its left shoulder (the
+        // fade-in/plateau boundary) is placed at gateOffsetMs from the IR start. Wrap
+        // handles a gate that runs into negative indices. Shared by phase and GD.
+        private static Complex[] ExtractGatedWindowedImpulse(
+            IImpulseMeasurement measurement,
+            double gateOffsetMs,
+            double leftMs,
+            double plateauMs,
+            double rightMs,
+            bool wrap,
+            out int extractionStart)
+        {
+            int sampleRate = measurement.SampleRate;
+            int gateOffset = MillisecondsToSamples(gateOffsetMs, sampleRate);
+            int left = MillisecondsToSamples(leftMs, sampleRate);
+            int plateau = MillisecondsToSamples(plateauMs, sampleRate);
+            int right = MillisecondsToSamples(rightMs, sampleRate);
+
+            int gate = Math.Clamp(left + plateau + right, 1, GatedFftLength);
+            // Keep the fades coherent if the clamp had to trim the gate.
+            left = Math.Min(left, gate);
+            right = Math.Min(right, gate - left);
+
+            double leftNorm = (double)left / gate * 2.0;
+            double rightNorm = (double)right / gate * 2.0;
+            double[] tukey = Windowing.TukeyWindow(gate, leftNorm, rightNorm);
+
+            double[] window = new double[GatedFftLength];
+            Array.Copy(tukey, window, gate);
+
+            // Left shoulder ends at the gate offset, so extraction starts a shoulder
+            // earlier; the time correction downstream keeps readings absolute.
+            extractionStart = gateOffset - left;
+            return ExtractWindow(measurement, extractionStart, GatedFftLength, window, wrap);
+        }
+
+        // Gated windowed spectrum for phase analysis (the impulse FFT'd in place).
+        private static Complex[] BuildPhaseSpectrum(
+            IImpulseMeasurement measurement,
+            double gateOffsetMs,
+            double leftMs,
+            double plateauMs,
+            double rightMs,
+            out int extractionStart)
+        {
+            Complex[] spectrum = ExtractGatedWindowedImpulse(
+                measurement,
+                gateOffsetMs,
+                leftMs,
+                plateauMs,
+                rightMs,
+                wrap: false,
+                out extractionStart);
+            Fourier.Forward(spectrum, FourierOptions.Matlab);
+            return spectrum;
+        }
+
+        // Measured phase (radians) referenced to an absolute sample, for bins
+        // 1..n/2-1. The reference is shared across measurements (common origin), so
+        // setting it equal across two captures preserves their relative phase; setting
+        // it to a measurement's own arrival flattens that curve.
+        private static List<SignalPoint> BuildMeasuredPhase(
+            Complex[] spectrum,
+            int extractionStart,
+            double referenceSamples,
+            int sampleRate,
+            bool unwrap)
+        {
+            int n = spectrum.Length;
+            double referenceShift = referenceSamples - extractionStart;
+            var data = new List<SignalPoint>(n / 2);
+
+            const double minFrequency = 100;
+            double phaseAccumulator = 0.0;
+            double prevWrapped = 0.0;
+
+            for (int i = 1; i < n / 2; i++)
+            {
+                double f = i * sampleRate / (double)n;
+
+                // Re-reference the segment phase to the absolute reference sample.
+                double referenced = spectrum[i].Phase + Math.Tau * i * referenceShift / n;
+                double wrapped = Math.Atan2(Math.Sin(referenced), Math.Cos(referenced));
+
+                if (!unwrap)
+                {
+                    data.Add(new SignalPoint(f, wrapped));
+                    continue;
+                }
+
+                if (i > 1 && f >= minFrequency)
+                {
+                    double delta = wrapped - prevWrapped;
+                    if (delta > Math.PI)
+                        phaseAccumulator -= Math.Tau;
+                    else if (delta < -Math.PI)
+                        phaseAccumulator += Math.Tau;
+                }
+
+                prevWrapped = wrapped;
+                data.Add(new SignalPoint(f, wrapped + phaseAccumulator));
+            }
+
+            return data;
+        }
+
         public static AnalysisCurve GetPhase(
             IImpulseMeasurement measurement,
-            int length,
-            int leftTukeyWindow,
-            int rightTukeyWindow,
-            int offset,
+            double gateOffsetMs,
+            double leftMs,
+            double plateauMs,
+            double rightMs,
+            double detrendMilliseconds,
             double smoothingInverseOctaves,
             bool unwrap)
         {
-            int startOffset = -leftTukeyWindow + offset;
+            Complex[] spectrum = BuildPhaseSpectrum(
+                measurement,
+                gateOffsetMs,
+                leftMs,
+                plateauMs,
+                rightMs,
+                out int extractionStart);
 
-            double normalizedLeftWindow = (double)leftTukeyWindow / length * 2.0;
-            double normalizedRightWindow = (double)rightTukeyWindow / length * 2.0;
-            double[] window = Windowing.TukeyWindow(length, normalizedLeftWindow, normalizedRightWindow);
+            double referenceSamples =
+                detrendMilliseconds * measurement.SampleRate / 1000.0;
+            List<SignalPoint> phase = BuildMeasuredPhase(
+                spectrum,
+                extractionStart,
+                referenceSamples,
+                measurement.SampleRate,
+                unwrap);
 
-            var phaseData = GetPhaseData(measurement, startOffset, length, window, unwrap);
-
-            List<SignalPoint> data = new List<SignalPoint>(length / 2);
-            for (int i = 0; i < phaseData.Count; i++)
+            List<SignalPoint> data = new(phase.Count);
+            foreach (SignalPoint point in phase)
             {
-                data.Add(new SignalPoint(phaseData[i].X, phaseData[i].Y / Math.PI * 180.0));
+                data.Add(new SignalPoint(point.X, point.Y / Math.PI * 180.0));
             }
 
             return new AnalysisCurve(
@@ -286,6 +490,175 @@ namespace Resonalyze.Dsp
                 smoothingInverseOctaves > 0
                     ? SmoothLinear(data, 1.0 / smoothingInverseOctaves)
                     : data);
+        }
+
+        // Oversampling length shared by the spectrum, phase and minimum-phase
+        // analyses. The finer linear grid keeps the logarithmic resample well-fed at
+        // low frequencies and improves the cepstral minimum-phase reconstruction (see
+        // GetMinimumPhase). Rounded up to a power of two for the fast radix-2 FFT.
+        private static int GetOversampledLength(int length)
+        {
+            int target = Math.Clamp(length * 4, 4096, 32768);
+            return Math.Max(length, DspMath.NextPowerOfTwo(target));
+        }
+
+        // Computes a magnitude spectrum from a windowed segment, zero-padded to the
+        // shared oversampled length. The extraction start stays at the caller's
+        // window; only a zero tail is appended, so the extra samples it spans add
+        // nothing while the finer frequency grid sharpens the logarithmic resample.
+        public static List<SignalPoint> GetOversampledSpectrumData(
+            IImpulseMeasurement measurement,
+            int start,
+            double[] tukeyWindow)
+        {
+            int length = tukeyWindow.Length;
+            int analysisLength = GetOversampledLength(length);
+            double[] window = new double[analysisLength];
+            Array.Copy(tukeyWindow, window, length);
+            return GetSpectrumData(measurement, start, analysisLength, window);
+        }
+
+        /// <summary>
+        /// Computes the minimum-phase response derived from the windowed magnitude
+        /// spectrum. Unlike <see cref="GetPhase"/> this contains no excess (delay or
+        /// reflection) component, so it shows the phase that remains after a perfect
+        /// minimum-phase equalization of the magnitude.
+        /// </summary>
+        public static AnalysisCurve GetMinimumPhase(
+            IImpulseMeasurement measurement,
+            double gateOffsetMs,
+            double leftMs,
+            double plateauMs,
+            double rightMs,
+            double smoothingInverseOctaves)
+        {
+            Complex[] spectrum = BuildPhaseSpectrum(
+                measurement,
+                gateOffsetMs,
+                leftMs,
+                plateauMs,
+                rightMs,
+                out _);
+
+            int n = spectrum.Length;
+            double[] magnitude = new double[n];
+            for (int i = 0; i < n; i++)
+            {
+                magnitude[i] = spectrum[i].Magnitude;
+            }
+
+            // The minimum phase depends only on the magnitude (Bode relation); it is
+            // the magnitude-derived reference and is not affected by the τ detrend.
+            double[] minimumPhase = MinimumPhase.FromMagnitude(magnitude);
+
+            List<SignalPoint> data = new(n / 2);
+            for (int i = 1; i < n / 2; i++)
+            {
+                double f = i * measurement.SampleRate / (double)n;
+                data.Add(new SignalPoint(f, minimumPhase[i] / Math.PI * 180.0));
+            }
+
+            return new AnalysisCurve(
+                "Minimum Phase",
+                smoothingInverseOctaves > 0
+                    ? SmoothLinear(data, 1.0 / smoothingInverseOctaves)
+                    : data,
+                AnalysisCurveKind.MinimumPhase);
+        }
+
+        /// <summary>
+        /// Computes the excess phase: measured phase minus minimum phase. This is the
+        /// all-pass component (pure delay plus reflections) that a minimum-phase
+        /// equalizer cannot correct. The measured part is always taken unwrapped so
+        /// the difference is continuous.
+        /// </summary>
+        public static AnalysisCurve GetExcessPhase(
+            IImpulseMeasurement measurement,
+            double gateOffsetMs,
+            double leftMs,
+            double plateauMs,
+            double rightMs,
+            double detrendMilliseconds,
+            double smoothingInverseOctaves)
+        {
+            Complex[] spectrum = BuildPhaseSpectrum(
+                measurement,
+                gateOffsetMs,
+                leftMs,
+                plateauMs,
+                rightMs,
+                out int extractionStart);
+
+            double referenceSamples =
+                detrendMilliseconds * measurement.SampleRate / 1000.0;
+
+            // Measured phase (always unwrapped so the difference is continuous) and the
+            // minimum phase share the same grid; the τ detrend rides on the measured
+            // part, so the excess inherits it.
+            List<SignalPoint> measured = BuildMeasuredPhase(
+                spectrum,
+                extractionStart,
+                referenceSamples,
+                measurement.SampleRate,
+                unwrap: true);
+
+            int n = spectrum.Length;
+            double[] magnitude = new double[n];
+            for (int i = 0; i < n; i++)
+            {
+                magnitude[i] = spectrum[i].Magnitude;
+            }
+            double[] minimumPhase = MinimumPhase.FromMagnitude(magnitude);
+
+            // BuildMeasuredPhase and the minimum-phase array both start at bin 1, so the
+            // measured point at index j corresponds to bin j + 1.
+            List<SignalPoint> data = new(measured.Count);
+            for (int j = 0; j < measured.Count; j++)
+            {
+                double excess = measured[j].Y - minimumPhase[j + 1];
+                data.Add(new SignalPoint(measured[j].X, excess / Math.PI * 180.0));
+            }
+
+            return new AnalysisCurve(
+                "Excess Phase",
+                smoothingInverseOctaves > 0
+                    ? SmoothLinear(data, 1.0 / smoothingInverseOctaves)
+                    : data,
+                AnalysisCurveKind.ExcessPhase);
+        }
+
+        /// <summary>
+        /// Estimates the τ (in milliseconds) that flattens the excess phase, using the
+        /// same window as the displayed curves. Returns both the energy-weighted
+        /// average (slope) and the dominant-arrival (peak) estimates. The values are
+        /// absolute (referenced to IR sample 0), so the same value can be entered on a
+        /// second measurement to compare their relative phase.
+        /// </summary>
+        public static (double SlopeMilliseconds, double PeakMilliseconds) EstimatePhaseDetrend(
+            IImpulseMeasurement measurement,
+            double gateOffsetMs,
+            double leftMs,
+            double plateauMs,
+            double rightMs)
+        {
+            Complex[] spectrum = BuildPhaseSpectrum(
+                measurement,
+                gateOffsetMs,
+                leftMs,
+                plateauMs,
+                rightMs,
+                out int extractionStart);
+
+            ExcessDelayResult result = ExcessDelay.Estimate(
+                spectrum,
+                measurement.SampleRate);
+
+            // ExcessDelay reports the delay relative to the window start; add the
+            // extraction start to get an absolute sample, then convert to ms.
+            double toMilliseconds = 1000.0 / measurement.SampleRate;
+            double slopeMs = (extractionStart + result.SlopeDelaySamples) * toMilliseconds;
+            double peakMs = (extractionStart + result.PeakDelaySamples) * toMilliseconds;
+            return (slopeMs, peakMs);
         }
 
         public static AnalysisCurve GetImpulse(
@@ -391,50 +764,34 @@ namespace Resonalyze.Dsp
 
         public static AnalysisCurve GetGroupDelay(
             IImpulseMeasurement measurement,
-            int length,
-            int leftTukeyWindow,
-            int rightTukeyWindow,
-            int offset,
+            double gateOffsetMs,
+            double leftMs,
+            double plateauMs,
+            double rightMs,
             double smoothingInverseOctaves,
-            double magnitudeGateDb = -30.0,
-            bool wrapWindow = false)
+            double magnitudeGateDb = -30.0)
         {
-            int startOffset = -leftTukeyWindow + offset;
-
-            double normalizedLeftWindow = (double)leftTukeyWindow / length * 2.0;
-            double normalizedRightWindow = (double)rightTukeyWindow / length * 2.0;
-
-            double[] tukeyWindow = Windowing.TukeyWindow(
-                length,
-                normalizedLeftWindow,
-                normalizedRightWindow);
-
-            // Zero-pad the analysis window for a finer frequency grid. The extraction
-            // start stays at the user-defined window; only the padded tail is added,
-            // filled with zeros so the extra IR samples it covers contribute nothing.
-            // Target ~4x oversampling (clamped to a useful range) rounded up to a
-            // power of two so the FFT stays on the fast radix-2 path.
-            int target = Math.Clamp(length * 4, 4096, 32768);
-            int analysisLength = Math.Max(length, DspMath.NextPowerOfTwo(target));
-            double[] window = new double[analysisLength];
-            Array.Copy(tukeyWindow, window, length);
-
-            Complex[] windowedImpulse = ExtractWindow(
+            // Same gate as the phase mode: the left shoulder ends at the gate offset.
+            // Wrap handles a gate that runs into negative indices and must read the
+            // cyclic tail; the time correction downstream keeps the delay absolute.
+            Complex[] windowedImpulse = ExtractGatedWindowedImpulse(
                 measurement,
-                measurement.PeakIndex + startOffset,
-                analysisLength,
-                window,
-                wrapWindow);
+                gateOffsetMs,
+                leftMs,
+                plateauMs,
+                rightMs,
+                wrap: true,
+                out int extractionStart);
 
-            Complex[] spectrum = new Complex[analysisLength];
-            Complex[] timeWeightedSpectrum = new Complex[analysisLength];
+            int n = windowedImpulse.Length;
+            Complex[] spectrum = new Complex[n];
+            Complex[] timeWeightedSpectrum = new Complex[n];
 
             double invSampleRate = 1.0 / measurement.SampleRate;
 
-            for (int i = 0; i < analysisLength; i++)
+            for (int i = 0; i < n; i++)
             {
                 Complex imp = windowedImpulse[i];
-
                 spectrum[i] = imp;
                 timeWeightedSpectrum[i] = imp * (i * invSampleRate);
             }
@@ -442,7 +799,7 @@ namespace Resonalyze.Dsp
             Fourier.Forward(spectrum, FourierOptions.Matlab);
             Fourier.Forward(timeWeightedSpectrum, FourierOptions.Matlab);
 
-            int halfLength = analysisLength / 2;
+            int halfLength = n / 2;
 
             double maxMagnitude = 0.0;
             for (int i = 1; i < halfLength; i++)
@@ -461,7 +818,10 @@ namespace Resonalyze.Dsp
 
             List<SignalPoint> data = new();
 
-            double absoluteStartTime = startOffset * invSampleRate;
+            // The gate buffer starts at extractionStart; adding it back makes the group
+            // delay absolute (referenced to the IR start), so a peak well into the IR
+            // reads its true arrival time.
+            double absoluteStartTime = extractionStart * invSampleRate;
 
             for (int i = 1; i < halfLength; i++)
             {
@@ -469,7 +829,7 @@ namespace Resonalyze.Dsp
 
                 Complex groupDelay = timeWeightedSpectrum[i] / spectrum[i];
 
-                double f = i * measurement.SampleRate / (double)analysisLength;
+                double f = i * measurement.SampleRate / (double)n;
 
                 double delayMilliseconds = (groupDelay.Real + absoluteStartTime) * 1000.0;
 

@@ -193,6 +193,23 @@ internal sealed class MeasurementSettingsFile
         public int Offset { get; set; }
         public bool Unwrap { get; set; } = true;
         public bool UseCalibration { get; set; } = true;
+        public bool ShowMeasuredPhase { get; set; } = true;
+        public bool ShowMinimumPhase { get; set; } = true;
+        public bool ShowExcessPhase { get; set; } = true;
+        public bool ShowPrimary { get; set; } = true;
+        public bool ShowHd2 { get; set; } = true;
+        public bool ShowHd3 { get; set; } = true;
+        public bool ShowHd4 { get; set; } = true;
+        public bool ShowThdPlusNoise { get; set; } = true;
+        public double PhaseGateOffsetMs { get; set; } = FrequencyResponseOptions.DefaultPhaseGateOffsetMs;
+        public double PhaseLeftMs { get; set; } = FrequencyResponseOptions.DefaultPhaseLeftMs;
+        public double PhasePlateauMs { get; set; } = FrequencyResponseOptions.DefaultPhasePlateauMs;
+        public double PhaseRightMs { get; set; } = FrequencyResponseOptions.DefaultPhaseRightMs;
+        public double PhaseDetrendMs { get; set; } = FrequencyResponseOptions.DefaultPhaseDetrendMs;
+        public double GroupDelayGateOffsetMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayGateOffsetMs;
+        public double GroupDelayLeftMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayLeftMs;
+        public double GroupDelayPlateauMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayPlateauMs;
+        public double GroupDelayRightMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayRightMs;
 
         public static FrequencyResponseSettings Capture(
             FrequencyResponseOptions options) =>
@@ -204,7 +221,24 @@ internal sealed class MeasurementSettingsFile
                 SmoothingInverseOctaves = options.SmoothingInverseOctaves,
                 Offset = options.Offset,
                 Unwrap = options.Unwrap,
-                UseCalibration = options.UseCalibration
+                UseCalibration = options.UseCalibration,
+                ShowMeasuredPhase = options.ShowMeasuredPhase,
+                ShowMinimumPhase = options.ShowMinimumPhase,
+                ShowExcessPhase = options.ShowExcessPhase,
+                ShowPrimary = options.ShowPrimary,
+                ShowHd2 = options.ShowHd2,
+                ShowHd3 = options.ShowHd3,
+                ShowHd4 = options.ShowHd4,
+                ShowThdPlusNoise = options.ShowThdPlusNoise,
+                PhaseGateOffsetMs = options.PhaseGateOffsetMs,
+                PhaseLeftMs = options.PhaseLeftMs,
+                PhasePlateauMs = options.PhasePlateauMs,
+                PhaseRightMs = options.PhaseRightMs,
+                PhaseDetrendMs = options.PhaseDetrendMs,
+                GroupDelayGateOffsetMs = options.GroupDelayGateOffsetMs,
+                GroupDelayLeftMs = options.GroupDelayLeftMs,
+                GroupDelayPlateauMs = options.GroupDelayPlateauMs,
+                GroupDelayRightMs = options.GroupDelayRightMs
             };
 
         public void ApplyTo(FrequencyResponseOptions options)
@@ -220,7 +254,27 @@ internal sealed class MeasurementSettingsFile
             options.Offset = Clamp(Offset, -32768, 32768);
             options.Unwrap = Unwrap;
             options.UseCalibration = UseCalibration;
+            options.ShowMeasuredPhase = ShowMeasuredPhase;
+            options.ShowMinimumPhase = ShowMinimumPhase;
+            options.ShowExcessPhase = ShowExcessPhase;
+            options.ShowPrimary = ShowPrimary;
+            options.ShowHd2 = ShowHd2;
+            options.ShowHd3 = ShowHd3;
+            options.ShowHd4 = ShowHd4;
+            options.ShowThdPlusNoise = ShowThdPlusNoise;
+            options.PhaseGateOffsetMs = ClampMilliseconds(PhaseGateOffsetMs, 0.0, 2000.0);
+            options.PhaseLeftMs = ClampMilliseconds(PhaseLeftMs, 0.0, 1000.0);
+            options.PhasePlateauMs = ClampMilliseconds(PhasePlateauMs, 0.0, 1000.0);
+            options.PhaseRightMs = ClampMilliseconds(PhaseRightMs, 0.0, 1000.0);
+            options.PhaseDetrendMs = ClampMilliseconds(PhaseDetrendMs, -2000.0, 2000.0);
+            options.GroupDelayGateOffsetMs = ClampMilliseconds(GroupDelayGateOffsetMs, 0.0, 2000.0);
+            options.GroupDelayLeftMs = ClampMilliseconds(GroupDelayLeftMs, 0.0, 1000.0);
+            options.GroupDelayPlateauMs = ClampMilliseconds(GroupDelayPlateauMs, 0.0, 1000.0);
+            options.GroupDelayRightMs = ClampMilliseconds(GroupDelayRightMs, 0.0, 1000.0);
         }
+
+        private static double ClampMilliseconds(double value, double min, double max) =>
+            double.IsFinite(value) ? Math.Clamp(value, min, max) : 0.0;
     }
 
     internal sealed class ImpulseResponseSettings

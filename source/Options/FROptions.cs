@@ -45,6 +45,11 @@ namespace Resonalyze.Options
             comboSmoothingInverseOctaves.SelectedItem =
                 SmoothingPresetOptions.Normalize(frequencyResponseOptions.SmoothingInverseOctaves);
             checkUseCalibration.Checked = frequencyResponseOptions.UseCalibration;
+            checkBoxShowPrimary.Checked = frequencyResponseOptions.ShowPrimary;
+            checkBoxShowHd2.Checked = frequencyResponseOptions.ShowHd2;
+            checkBoxShowHd3.Checked = frequencyResponseOptions.ShowHd3;
+            checkBoxShowHd4.Checked = frequencyResponseOptions.ShowHd4;
+            checkBoxShowThdPlusNoise.Checked = frequencyResponseOptions.ShowThdPlusNoise;
             UpdateTukeyWindowLimits();
             UpdateIrPreview();
         }
@@ -59,6 +64,11 @@ namespace Resonalyze.Options
                     ? inverseOctaves
                     : SmoothingPresetOptions.SupportedInverseOctaves[0];
             frequencyResponseOptions.UseCalibration = checkUseCalibration.Checked;
+            frequencyResponseOptions.ShowPrimary = checkBoxShowPrimary.Checked;
+            frequencyResponseOptions.ShowHd2 = checkBoxShowHd2.Checked;
+            frequencyResponseOptions.ShowHd3 = checkBoxShowHd3.Checked;
+            frequencyResponseOptions.ShowHd4 = checkBoxShowHd4.Checked;
+            frequencyResponseOptions.ShowThdPlusNoise = checkBoxShowThdPlusNoise.Checked;
             UpdateIrPreview();
         }
 
@@ -142,6 +152,21 @@ namespace Resonalyze.Options
             toolTip.SetToolTip(
                 checkUseCalibration,
                 "Applies the loaded microphone calibration file to the displayed frequency response.");
+            toolTip.SetToolTip(
+                checkBoxShowPrimary,
+                "Shows the primary frequency-response curve.");
+            toolTip.SetToolTip(
+                checkBoxShowHd2,
+                "Shows the 2nd harmonic distortion curve.");
+            toolTip.SetToolTip(
+                checkBoxShowHd3,
+                "Shows the 3rd harmonic distortion curve.");
+            toolTip.SetToolTip(
+                checkBoxShowHd4,
+                "Shows the 4th harmonic distortion curve.");
+            toolTip.SetToolTip(
+                checkBoxShowThdPlusNoise,
+                "Shows the total harmonic distortion + noise curve.");
             toolTip.SetToolTip(
                 irPlotView,
                 "Preview of the sweep-deconvolution impulse response and the analysis window used for this mode.");

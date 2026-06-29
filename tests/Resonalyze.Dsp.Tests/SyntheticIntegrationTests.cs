@@ -64,10 +64,10 @@ public sealed class SyntheticIntegrationTests
 
         IReadOnlyList<SignalPoint> groupDelay = DataHelper.GetGroupDelay(
             measurement,
-            length: 4096,
-            leftTukeyWindow: 0,
-            rightTukeyWindow: 0,
-            offset: 0,
+            gateOffsetMs: 0,
+            leftMs: 0,
+            plateauMs: 4096 * 1000.0 / SampleRate,
+            rightMs: 0,
             smoothingInverseOctaves: 96).Points;
 
         double expectedDelayMilliseconds = 0.5 * 1000.0 / SampleRate;

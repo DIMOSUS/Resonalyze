@@ -28,7 +28,11 @@ namespace Resonalyze.Options
         /// </summary>
         private void InitializeComponent()
         {
+            labelGateOffset = new Label();
+            buttonFit = new Button();
+            numericGateOffset = new DarkNumericUpDown();
             label9 = new Label();
+            labelMinFrequency = new Label();
             comboSmoothingInverseOctaves = new DarkComboBox();
             numericRightWindow = new DarkNumericUpDown();
             numericLeftWindow = new DarkNumericUpDown();
@@ -38,130 +42,186 @@ namespace Resonalyze.Options
             label1 = new Label();
             numericOffset = new DarkNumericUpDown();
             label11 = new Label();
+            buttonTauSlope = new Button();
+            buttonTauPeak = new Button();
             checkBoxUnwrap = new CheckBox();
             label2 = new Label();
+            checkBoxShowMeasured = new CheckBox();
+            checkBoxShowMinimum = new CheckBox();
+            checkBoxShowExcess = new CheckBox();
             irPlotView = new OxyPlot.WindowsForms.PlotView();
+            (numericGateOffset).BeginInit();
             (numericRightWindow).BeginInit();
             (numericLeftWindow).BeginInit();
             (numericWindow).BeginInit();
             (numericOffset).BeginInit();
             SuspendLayout();
             // 
+            // labelGateOffset
+            // 
+            labelGateOffset.AutoSize = true;
+            labelGateOffset.ForeColor = SystemColors.ControlLight;
+            labelGateOffset.Location = new Point(12, 14);
+            labelGateOffset.Name = "labelGateOffset";
+            labelGateOffset.Size = new Size(91, 15);
+            labelGateOffset.TabIndex = 60;
+            labelGateOffset.Text = "Gate offset (ms)";
+            // 
+            // buttonFit
+            // 
+            buttonFit.BackColor = Color.FromArgb(55, 60, 72);
+            buttonFit.FlatStyle = FlatStyle.Flat;
+            buttonFit.ForeColor = Color.White;
+            buttonFit.Location = new Point(115, 11);
+            buttonFit.Name = "buttonFit";
+            buttonFit.Size = new Size(33, 21);
+            buttonFit.TabIndex = 61;
+            buttonFit.Text = "Fit";
+            buttonFit.UseCompatibleTextRendering = true;
+            buttonFit.UseVisualStyleBackColor = false;
+            // 
+            // numericGateOffset
+            // 
+            numericGateOffset.BackColor = Color.FromArgb(55, 60, 72);
+            numericGateOffset.DecimalPlaces = 3;
+            numericGateOffset.ForeColor = Color.White;
+            numericGateOffset.Increment = new decimal(new int[] { 1, 0, 0, 131072 });
+            numericGateOffset.Location = new Point(153, 12);
+            numericGateOffset.Maximum = new decimal(new int[] { 2000, 0, 0, 0 });
+            numericGateOffset.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
+            numericGateOffset.MinimumSize = new Size(36, 19);
+            numericGateOffset.Name = "numericGateOffset";
+            numericGateOffset.Size = new Size(100, 19);
+            numericGateOffset.TabIndex = 62;
+            numericGateOffset.TextAlign = HorizontalAlignment.Right;
+            numericGateOffset.ThousandsSeparator = false;
+            numericGateOffset.Value = new decimal(new int[] { 0, 0, 0, 0 });
+            // 
             // label9
             // 
             label9.AutoSize = true;
             label9.ForeColor = SystemColors.ControlLight;
-            label9.Location = new Point(12, 85);
+            label9.Location = new Point(12, 136);
             label9.Name = "label9";
             label9.Size = new Size(117, 15);
             label9.TabIndex = 40;
             label9.Text = "Smoothing (octaves)";
             // 
+            // labelMinFrequency
+            // 
+            labelMinFrequency.AutoSize = true;
+            labelMinFrequency.ForeColor = Color.FromArgb(150, 170, 205);
+            labelMinFrequency.Location = new Point(12, 111);
+            labelMinFrequency.Name = "labelMinFrequency";
+            labelMinFrequency.Size = new Size(120, 15);
+            labelMinFrequency.TabIndex = 55;
+            labelMinFrequency.Text = "Reliable from ≈ — Hz";
+            // 
             // comboSmoothingInverseOctaves
             // 
             comboSmoothingInverseOctaves.BackColor = Color.FromArgb(55, 60, 72);
             comboSmoothingInverseOctaves.ForeColor = Color.White;
-            comboSmoothingInverseOctaves.Location = new Point(193, 84);
+            comboSmoothingInverseOctaves.Location = new Point(153, 135);
             comboSmoothingInverseOctaves.Margin = new Padding(0);
             comboSmoothingInverseOctaves.MinimumSize = new Size(36, 19);
             comboSmoothingInverseOctaves.Name = "comboSmoothingInverseOctaves";
-            comboSmoothingInverseOctaves.Size = new Size(60, 23);
+            comboSmoothingInverseOctaves.Size = new Size(100, 23);
             comboSmoothingInverseOctaves.TabIndex = 39;
             // 
             // numericRightWindow
             // 
             numericRightWindow.BackColor = Color.FromArgb(55, 60, 72);
-            numericRightWindow.DecimalPlaces = 0;
+            numericRightWindow.DecimalPlaces = 2;
             numericRightWindow.ForeColor = Color.White;
-            numericRightWindow.Increment = new decimal(new int[] { 1, 0, 0, 0 });
-            numericRightWindow.Location = new Point(193, 61);
-            numericRightWindow.Maximum = new decimal(new int[] { 16384, 0, 0, 0 });
+            numericRightWindow.Increment = new decimal(new int[] { 1, 0, 0, 131072 });
+            numericRightWindow.Location = new Point(153, 86);
+            numericRightWindow.Maximum = new decimal(new int[] { 680, 0, 0, 0 });
             numericRightWindow.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
             numericRightWindow.MinimumSize = new Size(36, 19);
             numericRightWindow.Name = "numericRightWindow";
-            numericRightWindow.Size = new Size(60, 19);
+            numericRightWindow.Size = new Size(100, 19);
             numericRightWindow.TabIndex = 38;
             numericRightWindow.TextAlign = HorizontalAlignment.Right;
             numericRightWindow.ThousandsSeparator = false;
-            numericRightWindow.Value = new decimal(new int[] { 256, 0, 0, 0 });
+            numericRightWindow.Value = new decimal(new int[] { 7, 0, 0, 65536 });
             // 
             // numericLeftWindow
             // 
             numericLeftWindow.BackColor = Color.FromArgb(55, 60, 72);
-            numericLeftWindow.DecimalPlaces = 0;
+            numericLeftWindow.DecimalPlaces = 2;
             numericLeftWindow.ForeColor = Color.White;
-            numericLeftWindow.Increment = new decimal(new int[] { 1, 0, 0, 0 });
-            numericLeftWindow.Location = new Point(193, 36);
-            numericLeftWindow.Maximum = new decimal(new int[] { 16384, 0, 0, 0 });
+            numericLeftWindow.Increment = new decimal(new int[] { 1, 0, 0, 131072 });
+            numericLeftWindow.Location = new Point(153, 61);
+            numericLeftWindow.Maximum = new decimal(new int[] { 680, 0, 0, 0 });
             numericLeftWindow.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
             numericLeftWindow.MinimumSize = new Size(36, 19);
             numericLeftWindow.Name = "numericLeftWindow";
-            numericLeftWindow.Size = new Size(60, 19);
+            numericLeftWindow.Size = new Size(100, 19);
             numericLeftWindow.TabIndex = 37;
             numericLeftWindow.TextAlign = HorizontalAlignment.Right;
             numericLeftWindow.ThousandsSeparator = false;
-            numericLeftWindow.Value = new decimal(new int[] { 256, 0, 0, 0 });
+            numericLeftWindow.Value = new decimal(new int[] { 3, 0, 0, 65536 });
             // 
             // label5
             // 
             label5.AutoSize = true;
             label5.ForeColor = SystemColors.ControlLight;
-            label5.Location = new Point(12, 60);
+            label5.Location = new Point(12, 85);
             label5.Name = "label5";
-            label5.Size = new Size(117, 15);
+            label5.Size = new Size(97, 15);
             label5.TabIndex = 36;
-            label5.Text = "Tukey Window Right";
+            label5.Text = "Right Tukey (ms)";
             // 
             // label4
             // 
             label4.AutoSize = true;
             label4.ForeColor = SystemColors.ControlLight;
-            label4.Location = new Point(12, 35);
+            label4.Location = new Point(12, 60);
             label4.Name = "label4";
-            label4.Size = new Size(109, 15);
+            label4.Size = new Size(89, 15);
             label4.TabIndex = 35;
-            label4.Text = "Tukey Window Left";
+            label4.Text = "Left Tukey (ms)";
             // 
             // numericWindow
             // 
             numericWindow.BackColor = Color.FromArgb(55, 60, 72);
-            numericWindow.DecimalPlaces = 0;
+            numericWindow.DecimalPlaces = 2;
             numericWindow.ForeColor = Color.White;
-            numericWindow.Increment = new decimal(new int[] { 1, 0, 0, 0 });
-            numericWindow.Location = new Point(193, 12);
-            numericWindow.Maximum = new decimal(new int[] { 32768, 0, 0, 0 });
-            numericWindow.Minimum = new decimal(new int[] { 4, 0, 0, 0 });
+            numericWindow.Increment = new decimal(new int[] { 1, 0, 0, 131072 });
+            numericWindow.Location = new Point(153, 37);
+            numericWindow.Maximum = new decimal(new int[] { 680, 0, 0, 0 });
+            numericWindow.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
             numericWindow.MinimumSize = new Size(36, 19);
             numericWindow.Name = "numericWindow";
-            numericWindow.Size = new Size(60, 19);
+            numericWindow.Size = new Size(100, 19);
             numericWindow.TabIndex = 34;
             numericWindow.TextAlign = HorizontalAlignment.Right;
             numericWindow.ThousandsSeparator = false;
-            numericWindow.Value = new decimal(new int[] { 8192, 0, 0, 0 });
+            numericWindow.Value = new decimal(new int[] { 200, 0, 0, 131072 });
             numericWindow.ValueChanged += numericWindow_ValueChanged;
             // 
             // label1
             // 
             label1.AutoSize = true;
             label1.ForeColor = SystemColors.ControlLight;
-            label1.Location = new Point(12, 14);
+            label1.Location = new Point(12, 39);
             label1.Name = "label1";
-            label1.Size = new Size(51, 15);
+            label1.Size = new Size(73, 15);
             label1.TabIndex = 33;
-            label1.Text = "Window";
+            label1.Text = "Plateau (ms)";
             // 
             // numericOffset
             // 
             numericOffset.BackColor = Color.FromArgb(55, 60, 72);
-            numericOffset.DecimalPlaces = 0;
+            numericOffset.DecimalPlaces = 3;
             numericOffset.ForeColor = Color.White;
-            numericOffset.Increment = new decimal(new int[] { 1, 0, 0, 0 });
-            numericOffset.Location = new Point(193, 111);
-            numericOffset.Maximum = new decimal(new int[] { 32768, 0, 0, 0 });
-            numericOffset.Minimum = new decimal(new int[] { 32768, 0, 0, int.MinValue });
+            numericOffset.Increment = new decimal(new int[] { 5, 0, 0, 196608 });
+            numericOffset.Location = new Point(153, 162);
+            numericOffset.Maximum = new decimal(new int[] { 2000, 0, 0, 0 });
+            numericOffset.Minimum = new decimal(new int[] { 2000, 0, 0, int.MinValue });
             numericOffset.MinimumSize = new Size(36, 19);
             numericOffset.Name = "numericOffset";
-            numericOffset.Size = new Size(60, 19);
+            numericOffset.Size = new Size(100, 19);
             numericOffset.TabIndex = 43;
             numericOffset.TextAlign = HorizontalAlignment.Right;
             numericOffset.ThousandsSeparator = false;
@@ -171,17 +231,43 @@ namespace Resonalyze.Options
             // 
             label11.AutoSize = true;
             label11.ForeColor = SystemColors.ControlLight;
-            label11.Location = new Point(12, 110);
+            label11.Location = new Point(12, 161);
             label11.Name = "label11";
-            label11.Size = new Size(39, 15);
+            label11.Size = new Size(40, 15);
             label11.TabIndex = 42;
-            label11.Text = "Offset";
+            label11.Text = "τ (ms)";
+            // 
+            // buttonTauSlope
+            // 
+            buttonTauSlope.BackColor = Color.FromArgb(55, 60, 72);
+            buttonTauSlope.FlatStyle = FlatStyle.Flat;
+            buttonTauSlope.ForeColor = Color.White;
+            buttonTauSlope.Location = new Point(12, 185);
+            buttonTauSlope.Name = "buttonTauSlope";
+            buttonTauSlope.Size = new Size(118, 23);
+            buttonTauSlope.TabIndex = 53;
+            buttonTauSlope.Text = "Find τ (slope)";
+            buttonTauSlope.UseCompatibleTextRendering = true;
+            buttonTauSlope.UseVisualStyleBackColor = false;
+            // 
+            // buttonTauPeak
+            // 
+            buttonTauPeak.BackColor = Color.FromArgb(55, 60, 72);
+            buttonTauPeak.FlatStyle = FlatStyle.Flat;
+            buttonTauPeak.ForeColor = Color.White;
+            buttonTauPeak.Location = new Point(135, 185);
+            buttonTauPeak.Name = "buttonTauPeak";
+            buttonTauPeak.Size = new Size(118, 23);
+            buttonTauPeak.TabIndex = 54;
+            buttonTauPeak.Text = "Find τ (peak)";
+            buttonTauPeak.UseCompatibleTextRendering = true;
+            buttonTauPeak.UseVisualStyleBackColor = false;
             // 
             // checkBoxUnwrap
             // 
             checkBoxUnwrap.AutoSize = true;
             checkBoxUnwrap.ForeColor = SystemColors.ControlLight;
-            checkBoxUnwrap.Location = new Point(238, 136);
+            checkBoxUnwrap.Location = new Point(238, 216);
             checkBoxUnwrap.Name = "checkBoxUnwrap";
             checkBoxUnwrap.Size = new Size(15, 14);
             checkBoxUnwrap.TabIndex = 45;
@@ -191,16 +277,49 @@ namespace Resonalyze.Options
             // 
             label2.AutoSize = true;
             label2.ForeColor = SystemColors.ControlLight;
-            label2.Location = new Point(12, 135);
+            label2.Location = new Point(12, 215);
             label2.Name = "label2";
             label2.Size = new Size(48, 15);
             label2.TabIndex = 44;
             label2.Text = "Unwrap";
             // 
+            // checkBoxShowMeasured
+            // 
+            checkBoxShowMeasured.AutoSize = true;
+            checkBoxShowMeasured.ForeColor = SystemColors.ControlLight;
+            checkBoxShowMeasured.Location = new Point(12, 239);
+            checkBoxShowMeasured.Name = "checkBoxShowMeasured";
+            checkBoxShowMeasured.Size = new Size(144, 19);
+            checkBoxShowMeasured.TabIndex = 46;
+            checkBoxShowMeasured.Text = "Show measured phase";
+            checkBoxShowMeasured.UseVisualStyleBackColor = true;
+            // 
+            // checkBoxShowMinimum
+            // 
+            checkBoxShowMinimum.AutoSize = true;
+            checkBoxShowMinimum.ForeColor = SystemColors.ControlLight;
+            checkBoxShowMinimum.Location = new Point(12, 261);
+            checkBoxShowMinimum.Name = "checkBoxShowMinimum";
+            checkBoxShowMinimum.Size = new Size(145, 19);
+            checkBoxShowMinimum.TabIndex = 47;
+            checkBoxShowMinimum.Text = "Show minimum phase";
+            checkBoxShowMinimum.UseVisualStyleBackColor = true;
+            // 
+            // checkBoxShowExcess
+            // 
+            checkBoxShowExcess.AutoSize = true;
+            checkBoxShowExcess.ForeColor = SystemColors.ControlLight;
+            checkBoxShowExcess.Location = new Point(12, 283);
+            checkBoxShowExcess.Name = "checkBoxShowExcess";
+            checkBoxShowExcess.Size = new Size(125, 19);
+            checkBoxShowExcess.TabIndex = 48;
+            checkBoxShowExcess.Text = "Show excess phase";
+            checkBoxShowExcess.UseVisualStyleBackColor = true;
+            // 
             // irPlotView
             // 
             irPlotView.BackColor = Color.FromArgb(32, 36, 46);
-            irPlotView.Location = new Point(12, 156);
+            irPlotView.Location = new Point(12, 309);
             irPlotView.Name = "irPlotView";
             irPlotView.PanCursor = Cursors.Hand;
             irPlotView.Size = new Size(241, 300);
@@ -215,10 +334,19 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 463);
+            ClientSize = new Size(265, 616);
             Controls.Add(irPlotView);
+            Controls.Add(numericGateOffset);
+            Controls.Add(buttonFit);
+            Controls.Add(labelGateOffset);
+            Controls.Add(labelMinFrequency);
+            Controls.Add(checkBoxShowExcess);
+            Controls.Add(checkBoxShowMinimum);
+            Controls.Add(checkBoxShowMeasured);
             Controls.Add(checkBoxUnwrap);
             Controls.Add(label2);
+            Controls.Add(buttonTauPeak);
+            Controls.Add(buttonTauSlope);
             Controls.Add(numericOffset);
             Controls.Add(label11);
             Controls.Add(label9);
@@ -235,6 +363,7 @@ namespace Resonalyze.Options
             Name = "PROpt";
             ShowInTaskbar = false;
             Text = "Phase Response Options";
+            (numericGateOffset).EndInit();
             (numericRightWindow).EndInit();
             (numericLeftWindow).EndInit();
             (numericWindow).EndInit();
@@ -246,7 +375,11 @@ namespace Resonalyze.Options
 
         #endregion
 
+        private Label labelGateOffset;
+        private Button buttonFit;
+        private DarkNumericUpDown numericGateOffset;
         private Label label9;
+        private Label labelMinFrequency;
         private DarkComboBox comboSmoothingInverseOctaves;
         private DarkNumericUpDown numericRightWindow;
         private DarkNumericUpDown numericLeftWindow;
@@ -256,8 +389,13 @@ namespace Resonalyze.Options
         private Label label1;
         private DarkNumericUpDown numericOffset;
         private Label label11;
+        private Button buttonTauSlope;
+        private Button buttonTauPeak;
         private CheckBox checkBoxUnwrap;
         private Label label2;
+        private CheckBox checkBoxShowMeasured;
+        private CheckBox checkBoxShowMinimum;
+        private CheckBox checkBoxShowExcess;
         private OxyPlot.WindowsForms.PlotView irPlotView;
     }
 }

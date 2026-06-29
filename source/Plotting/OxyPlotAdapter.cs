@@ -48,6 +48,8 @@ internal static class OxyPlotAdapter
             AnalysisCurveKind.ThirdHarmonic => OxyColor.FromRgb(128, 64, 127),
             AnalysisCurveKind.FourthHarmonic => OxyColor.FromRgb(1, 64, 254),
             AnalysisCurveKind.ThdPlusNoise => OxyColors.White,
+            AnalysisCurveKind.MinimumPhase => OxyColor.FromRgb(0, 200, 255),
+            AnalysisCurveKind.ExcessPhase => OxyColor.FromRgb(130, 220, 90),
             _ => OxyColor.FromRgb(255, 127, 0)
         };
     }

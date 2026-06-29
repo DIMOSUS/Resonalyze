@@ -20,12 +20,16 @@ public sealed class DarkComboBox : UserControl
 
     private readonly ComboBox modelComboBox;
     private readonly Panel buttonPanel;
+    private readonly Panel resetPanel;
     private ToolStripDropDown? popupDropDown;
     private ListBox? popupListBox;
     private ToolStripControlHost? popupHost;
     private bool dropDownVisible;
     private bool buttonHovered;
     private bool buttonPressed;
+    private bool resetHovered;
+    private bool resetPressed;
+    private object? defaultSelectedItem;
     private long suppressToggleUntilTick;
 
     public DarkComboBox()
@@ -103,11 +107,94 @@ public sealed class DarkComboBox : UserControl
             }
         };
 
+        resetPanel = new Panel
+        {
+            BackColor = Color.Transparent,
+            Cursor = Cursors.Default,
+            Margin = Padding.Empty,
+            TabStop = false,
+            Visible = false
+        };
+        resetPanel.Paint += ResetPanelPaint;
+        resetPanel.MouseEnter += (_, _) =>
+        {
+            resetHovered = true;
+            resetPanel.Invalidate();
+        };
+        resetPanel.MouseLeave += (_, _) =>
+        {
+            resetHovered = false;
+            resetPressed = false;
+            resetPanel.Invalidate();
+        };
+        resetPanel.MouseDown += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Left || !Enabled)
+            {
+                return;
+            }
+
+            resetPressed = true;
+            resetPanel.Invalidate();
+        };
+        resetPanel.MouseUp += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Left)
+            {
+                return;
+            }
+
+            bool wasPressed = resetPressed;
+            resetPressed = false;
+            resetPanel.Invalidate();
+            if (wasPressed &&
+                Enabled &&
+                resetPanel.ClientRectangle.Contains(e.Location))
+            {
+                ResetToDefault();
+            }
+        };
+
         Controls.Add(modelComboBox);
         Controls.Add(buttonPanel);
+        Controls.Add(resetPanel);
         buttonPanel.BringToFront();
+        resetPanel.BringToFront();
 
         LayoutInnerControls();
+    }
+
+    /// <summary>
+    /// Optional default selection. When set, a small "R" reset button appears to the
+    /// right of the drop-down arrow that restores this item.
+    /// </summary>
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public object? DefaultSelectedItem
+    {
+        get => defaultSelectedItem;
+        set
+        {
+            defaultSelectedItem = value;
+            LayoutInnerControls();
+            Invalidate();
+        }
+    }
+
+    private bool ShowResetButton => defaultSelectedItem != null;
+
+    private void ResetToDefault()
+    {
+        if (defaultSelectedItem == null)
+        {
+            return;
+        }
+
+        SelectedItem = defaultSelectedItem;
+
+        // Reset is a deliberate user commit; raise the committed event so listeners
+        // (e.g. the docked settings host) apply it, like picking from the drop-down.
+        SelectionChangeCommitted?.Invoke(this, EventArgs.Empty);
     }
 
     [Browsable(true)]
@@ -405,6 +492,7 @@ public sealed class DarkComboBox : UserControl
         base.OnMouseDown(e);
         if (e.Button == MouseButtons.Left &&
             !buttonPanel.Bounds.Contains(e.Location) &&
+            !(resetPanel.Visible && resetPanel.Bounds.Contains(e.Location)) &&
             !ShouldSuppressToggle())
         {
             ToggleDropDown();
@@ -442,9 +530,15 @@ public sealed class DarkComboBox : UserControl
         e.Graphics.DrawRectangle(borderPen, 0, 0, bounds.Width - 1, bounds.Height - 1);
 
         int buttonWidth = GetButtonWidth();
-        int separatorX = Math.Max(0, bounds.Width - buttonWidth - 1);
+        int resetWidth = ShowResetButton ? buttonWidth : 0;
+        int separatorX = Math.Max(0, bounds.Width - buttonWidth - resetWidth - 1);
         using var separatorPen = new Pen(UiPalette.DialogBorderSoft);
         e.Graphics.DrawLine(separatorPen, separatorX, 1, separatorX, bounds.Height - 2);
+        if (ShowResetButton)
+        {
+            int resetSeparatorX = Math.Max(0, bounds.Width - resetWidth - 1);
+            e.Graphics.DrawLine(separatorPen, resetSeparatorX, 1, resetSeparatorX, bounds.Height - 2);
+        }
 
         Rectangle textBounds = new(
             ScaleLogical(LogicalHorizontalPadding),
@@ -495,6 +589,31 @@ public sealed class DarkComboBox : UserControl
                 new PointF(centerX + halfWidth, centerY - halfHeight),
                 new PointF(centerX, centerY + halfHeight)
             ]);
+    }
+
+    private void ResetPanelPaint(object? sender, PaintEventArgs e)
+    {
+        Rectangle bounds = resetPanel.ClientRectangle;
+        Color buttonColor = !Enabled
+            ? UiPalette.DialogSurfaceMuted
+            : resetPressed
+                ? UiPalette.ButtonPressedBackground
+                : resetHovered
+                    ? UiPalette.ButtonHoverBackground
+                    : UiPalette.ButtonBackground;
+        using var backgroundBrush = new SolidBrush(buttonColor);
+        e.Graphics.FillRectangle(backgroundBrush, bounds);
+
+        Color glyphColor = Enabled ? UiPalette.TextPrimary : UiPalette.TextMuted;
+        TextRenderer.DrawText(
+            e.Graphics,
+            "R",
+            Font,
+            bounds,
+            glyphColor,
+            TextFormatFlags.HorizontalCenter |
+            TextFormatFlags.VerticalCenter |
+            TextFormatFlags.NoPadding);
     }
 
     private void PopupListBoxDrawItem(object? sender, DrawItemEventArgs e)
@@ -791,12 +910,29 @@ public sealed class DarkComboBox : UserControl
             return;
         }
 
+        int buttonWidth = GetButtonWidth();
+        int resetWidth = ShowResetButton ? buttonWidth : 0;
+
+        if (resetPanel != null)
+        {
+            resetPanel.Visible = ShowResetButton;
+            if (ShowResetButton)
+            {
+                resetPanel.Bounds = new Rectangle(
+                    Math.Max(0, Width - resetWidth - 1),
+                    1,
+                    Math.Max(1, resetWidth),
+                    Math.Max(1, Height - 2));
+            }
+        }
+
         buttonPanel.Bounds = new Rectangle(
-            Math.Max(0, Width - GetButtonWidth() - 1),
+            Math.Max(0, Width - buttonWidth - resetWidth - 1),
             1,
-            Math.Max(1, GetButtonWidth()),
+            Math.Max(1, buttonWidth),
             Math.Max(1, Height - 2));
         buttonPanel.BringToFront();
+        resetPanel?.BringToFront();
     }
 
     private int GetPopupItemHeight()

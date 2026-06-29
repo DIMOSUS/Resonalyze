@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Windows.Forms;
 using OxyPlot;
+using OxyPlot.Annotations;
 using OxyPlot.Axes;
 using OxyPlot.Series;
 using Resonalyze.Dsp;
@@ -34,6 +35,120 @@ internal static class ImpulseWindowPreview
             source);
         plotView.InvalidatePlot(true);
     }
+
+    // Preview for the gated phase / group-delay modes: the IR is shown on its own
+    // (absolute) timeline, the Tukey gate is drawn where it actually sits, and a blue
+    // dotted vertical line marks the gate offset (the end of the left shoulder).
+    public static void UpdateGated(
+        OxyPlot.WindowsForms.PlotView plotView,
+        ExpSweepMeasurement measurement,
+        double gateOffsetMs,
+        double leftMs,
+        double plateauMs,
+        double rightMs,
+        IrPreviewSource source)
+    {
+        plotView.Model = CreateGatedPlotModel(
+            measurement,
+            gateOffsetMs,
+            leftMs,
+            plateauMs,
+            rightMs,
+            source);
+        plotView.InvalidatePlot(true);
+    }
+
+    private static PlotModel CreateGatedPlotModel(
+        ExpSweepMeasurement measurement,
+        double gateOffsetMs,
+        double leftMs,
+        double plateauMs,
+        double rightMs,
+        IrPreviewSource source)
+    {
+        var model = CreatePreviewPlotModel("IR Gate");
+
+        IrSource? irSource = measurement.SampleRate > 0
+            ? SelectImpulseResponse(measurement, source)
+            : null;
+        if (irSource == null)
+        {
+            model.Axes.Add(CreateTimeAxis(-10, 10));
+            model.Axes.Add(CreateAmplitudeAxis());
+            return model;
+        }
+
+        int sampleRate = measurement.SampleRate;
+        int gateOffset = MillisecondsToSamples(gateOffsetMs, sampleRate);
+        int left = MillisecondsToSamples(leftMs, sampleRate);
+        int plateau = MillisecondsToSamples(plateauMs, sampleRate);
+        int right = MillisecondsToSamples(rightMs, sampleRate);
+        int gate = Math.Max(1, left + plateau + right);
+        int gateStart = gateOffset - left;
+
+        double[] tukey = Windowing.TukeyWindow(
+            gate,
+            (double)left / gate * 2.0,
+            (double)right / gate * 2.0);
+
+        int context = Math.Max(gate / 8, MillisecondsToSamples(0.2, sampleRate));
+        int displayStart = Math.Max(0, gateStart - context);
+        int displayEnd = Math.Min(irSource.Samples.Length - 1, gateStart + gate + context);
+
+        double maxMagnitude = 0;
+        for (int s = displayStart; s <= displayEnd; s++)
+        {
+            maxMagnitude = Math.Max(maxMagnitude, Math.Abs(irSource.Samples[s].Real));
+        }
+        double scale = maxMagnitude > 0 ? 1.0 / maxMagnitude : 1.0;
+
+        var irPoints = new List<DataPoint>(Math.Max(0, displayEnd - displayStart + 1));
+        var windowPoints = new List<DataPoint>(irPoints.Capacity);
+        for (int s = displayStart; s <= displayEnd; s++)
+        {
+            double ms = s * 1000.0 / sampleRate;
+            irPoints.Add(new DataPoint(ms, irSource.Samples[s].Real * scale));
+            double w = s >= gateStart && s < gateStart + gate ? tukey[s - gateStart] : 0.0;
+            windowPoints.Add(new DataPoint(ms, w));
+        }
+
+        double timeMin = displayStart * 1000.0 / sampleRate;
+        double timeMax = displayEnd * 1000.0 / sampleRate;
+        model.Axes.Add(CreateTimeAxis(timeMin, timeMax));
+        model.Axes.Add(CreateAmplitudeAxis());
+
+        var impulseSeries = new LineSeries
+        {
+            Color = OxyColor.FromRgb(255, 210, 70),
+            StrokeThickness = 1.5,
+            TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}"
+        };
+        impulseSeries.Points.AddRange(irPoints);
+        model.Series.Add(impulseSeries);
+
+        var windowSeries = new LineSeries
+        {
+            Color = OxyColor.FromRgb(50, 210, 120),
+            StrokeThickness = 1.5,
+            TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}"
+        };
+        windowSeries.Points.AddRange(windowPoints);
+        model.Series.Add(windowSeries);
+
+        model.Annotations.Add(new LineAnnotation
+        {
+            Type = LineAnnotationType.Vertical,
+            X = gateOffsetMs,
+            Color = OxyColor.FromArgb(127, 80, 150, 255),
+            LineStyle = LineStyle.Dot,
+            StrokeThickness = 1.0
+        });
+
+        return model;
+    }
+
+    private static int MillisecondsToSamples(double milliseconds, int sampleRate) =>
+        (int)Math.Round(Math.Max(0.0, milliseconds) * sampleRate / 1000.0);
 
     private static PlotModel CreatePlotModel(
         ExpSweepMeasurement measurement,

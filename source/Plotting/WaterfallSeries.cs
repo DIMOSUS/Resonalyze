@@ -403,7 +403,7 @@ namespace Resonalyze
                 {
                     int offset = measurement.PeakIndex - windowFuncOffset + slice * step + GenerateOptions.Offset;
                     List<DataPoint> data = OxyPlotAdapter.ToDataPoints(
-                        DataHelper.GetSpectrumData(measurement, offset, window, windowFunction));
+                        DataHelper.GetOversampledSpectrumData(measurement, offset, windowFunction));
 
                     double time;
                     if (step > 0)

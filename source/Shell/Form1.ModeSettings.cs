@@ -102,7 +102,8 @@ public partial class Form1
         ModeTab tab,
         Func<TDialog> create,
         Action<TDialog> initialize,
-        Action<TDialog> apply)
+        Action<TDialog> apply,
+        Func<object?>? viewResetKey = null)
         where TDialog : Form
     {
         dockedModeSettingsHost.Toggle(
@@ -111,10 +112,14 @@ public partial class Form1
             initialize,
             async dialog =>
             {
+                object? keyBefore = viewResetKey?.Invoke();
                 IReadOnlyList<AxisViewport> axisViewports = CaptureAxisViewports();
                 apply(dialog);
                 SaveMeasurementSettings();
-                await RefreshCurrentModePlotAsync(axisViewports);
+                // When a setting changes the axis scale itself (e.g. linear <-> logarithmic),
+                // the old zoom is meaningless, so refit the view instead of restoring it.
+                bool refit = viewResetKey != null && !Equals(keyBefore, viewResetKey());
+                await RefreshCurrentModePlotAsync(refit ? null : axisViewports);
             },
             applyOnChange: true);
     }

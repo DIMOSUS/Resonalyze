@@ -276,26 +276,77 @@ internal sealed class PlotModelFactory
         PlotModel model = PlotModelStyle.CreateTitledModel(
             measurementContext.CreateTitle("Impulse Response"));
 
+        AnalysisCurve? curve = null;
         if (measurementContext.CanIncludeCurves(includeCurves) &&
             impulseResponseOptions.ShowImpulse)
         {
-            AnalysisCurve curve =
-                DataHelper.GetImpulse(
-                    measurementContext.CreatePrimaryMeasurement(),
-                    impulseResponseOptions);
+            curve = DataHelper.GetImpulse(
+                measurementContext.CreatePrimaryMeasurement(),
+                impulseResponseOptions);
             AddLineSeries(model, curve, "{0}\n{2:0} sample\n{4:0.00000000}");
         }
 
-        model.Axes.Add(new LinearAxis
+        var timeAxis = new LinearAxis
         {
             Position = AxisPosition.Bottom,
             MajorGridlineStyle = LineStyle.Solid,
-        });
-        model.Axes.Add(new LinearAxis
+        };
+        var valueAxis = new LinearAxis
         {
             Position = AxisPosition.Left,
-        });
+        };
+        // Lock both axes to the drawn curve (which already reflects the logarithmic toggle) so
+        // they are re-fit on every settings change and cannot be panned/zoomed away from the
+        // data.
+        ApplyCurveRange(timeAxis, curve, point => point.X);
+        ApplyCurveRange(valueAxis, curve, point => point.Y);
+        model.Axes.Add(timeAxis);
+        model.Axes.Add(valueAxis);
         return model;
+    }
+
+    // Fixes an axis to the curve's own min/max for the selected coordinate (both the visible
+    // Minimum/Maximum and the AbsoluteMinimum/Maximum that bound zoom and pan). A flat range is
+    // given a small margin so the axis stays valid.
+    private static void ApplyCurveRange(
+        LinearAxis axis,
+        AnalysisCurve? curve,
+        Func<SignalPoint, double> selector)
+    {
+        if (curve == null)
+        {
+            return;
+        }
+
+        double minimum = double.PositiveInfinity;
+        double maximum = double.NegativeInfinity;
+        foreach (SignalPoint point in curve.Points)
+        {
+            double value = selector(point);
+            if (!double.IsFinite(value))
+            {
+                continue;
+            }
+
+            minimum = Math.Min(minimum, value);
+            maximum = Math.Max(maximum, value);
+        }
+
+        if (!double.IsFinite(minimum) || !double.IsFinite(maximum))
+        {
+            return;
+        }
+
+        if (maximum - minimum < 1e-9)
+        {
+            minimum -= 0.5;
+            maximum += 0.5;
+        }
+
+        axis.Minimum = minimum;
+        axis.Maximum = maximum;
+        axis.AbsoluteMinimum = minimum;
+        axis.AbsoluteMaximum = maximum;
     }
 
     public PlotModel CreateAutocorrelation(bool includeCurves)

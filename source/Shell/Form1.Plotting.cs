@@ -162,12 +162,22 @@ public partial class Form1
             return;
         }
 
-        string transferPeak = expSweepMeasurement.TransferImpulseResponse == null
-            ? "--"
-            : expSweepMeasurement.TransferPeakIndex.ToString();
+        string transferPeak;
+        if (expSweepMeasurement.TransferImpulseResponse == null)
+        {
+            transferPeak = "--";
+        }
+        else
+        {
+            int peakSamples = expSweepMeasurement.TransferPeakIndex;
+            double peakMs = expSweepMeasurement.SampleRate > 0
+                ? peakSamples * 1000.0 / expSweepMeasurement.SampleRate
+                : 0;
+            transferPeak = $"{peakMs:0.000} ms ({peakSamples} samples)";
+        }
         string text = expSweepMeasurement.InProgress
             ? "Peaks: measuring..."
-            : "Transfer IR Peak: " + transferPeak + " samples";
+            : "Transfer IR Peak: " + transferPeak;
         model.Annotations.Add(new OverlayTextAnnotation
         {
             Tag = PeakInfoAnnotationTag,

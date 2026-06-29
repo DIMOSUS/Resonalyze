@@ -684,9 +684,21 @@ namespace Resonalyze.Dsp
 
             if (opt.Logarithmic)
             {
+                // Show the impulse in dB relative to its own peak (peak = 0 dB). The absolute
+                // sample scale depends on the recording level and the deconvolution gain, so an
+                // absolute dB floor can sit above the whole curve and collapse it to a flat line.
+                double peakMagnitude = 0;
                 for (int i = 0; i < length; i++)
                 {
-                    data.Add(new SignalPoint(i - offset, AmplitudeToDecibels(impulse[i].Magnitude)));
+                    peakMagnitude = Math.Max(peakMagnitude, impulse[i].Magnitude);
+                }
+
+                double reference = peakMagnitude > 0 ? peakMagnitude : 1.0;
+                for (int i = 0; i < length; i++)
+                {
+                    data.Add(new SignalPoint(
+                        i - offset,
+                        AmplitudeToDecibels(impulse[i].Magnitude / reference)));
                 }
             }
             else

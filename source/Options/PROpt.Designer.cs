@@ -73,7 +73,7 @@ namespace Resonalyze.Options
             buttonFit.BackColor = Color.FromArgb(55, 60, 72);
             buttonFit.FlatStyle = FlatStyle.Flat;
             buttonFit.ForeColor = Color.White;
-            buttonFit.Location = new Point(115, 11);
+            buttonFit.Location = new Point(113, 11);
             buttonFit.Name = "buttonFit";
             buttonFit.Size = new Size(33, 21);
             buttonFit.TabIndex = 61;
@@ -102,7 +102,7 @@ namespace Resonalyze.Options
             // 
             label9.AutoSize = true;
             label9.ForeColor = SystemColors.ControlLight;
-            label9.Location = new Point(12, 136);
+            label9.Location = new Point(12, 189);
             label9.Name = "label9";
             label9.Size = new Size(117, 15);
             label9.TabIndex = 40;
@@ -122,8 +122,7 @@ namespace Resonalyze.Options
             // 
             comboSmoothingInverseOctaves.BackColor = Color.FromArgb(55, 60, 72);
             comboSmoothingInverseOctaves.ForeColor = Color.White;
-            comboSmoothingInverseOctaves.Location = new Point(153, 135);
-            comboSmoothingInverseOctaves.Margin = new Padding(0);
+            comboSmoothingInverseOctaves.Location = new Point(155, 187);
             comboSmoothingInverseOctaves.MinimumSize = new Size(36, 19);
             comboSmoothingInverseOctaves.Name = "comboSmoothingInverseOctaves";
             comboSmoothingInverseOctaves.Size = new Size(100, 23);
@@ -167,7 +166,7 @@ namespace Resonalyze.Options
             // 
             label5.AutoSize = true;
             label5.ForeColor = SystemColors.ControlLight;
-            label5.Location = new Point(12, 85);
+            label5.Location = new Point(12, 88);
             label5.Name = "label5";
             label5.Size = new Size(97, 15);
             label5.TabIndex = 36;
@@ -177,7 +176,7 @@ namespace Resonalyze.Options
             // 
             label4.AutoSize = true;
             label4.ForeColor = SystemColors.ControlLight;
-            label4.Location = new Point(12, 60);
+            label4.Location = new Point(12, 63);
             label4.Name = "label4";
             label4.Size = new Size(89, 15);
             label4.TabIndex = 35;
@@ -217,7 +216,7 @@ namespace Resonalyze.Options
             numericOffset.DecimalPlaces = 3;
             numericOffset.ForeColor = Color.White;
             numericOffset.Increment = new decimal(new int[] { 5, 0, 0, 196608 });
-            numericOffset.Location = new Point(153, 162);
+            numericOffset.Location = new Point(155, 131);
             numericOffset.Maximum = new decimal(new int[] { 2000, 0, 0, 0 });
             numericOffset.Minimum = new decimal(new int[] { 2000, 0, 0, int.MinValue });
             numericOffset.MinimumSize = new Size(36, 19);
@@ -232,7 +231,7 @@ namespace Resonalyze.Options
             // 
             label11.AutoSize = true;
             label11.ForeColor = SystemColors.ControlLight;
-            label11.Location = new Point(12, 161);
+            label11.Location = new Point(14, 133);
             label11.Name = "label11";
             label11.Size = new Size(40, 15);
             label11.TabIndex = 42;
@@ -243,9 +242,9 @@ namespace Resonalyze.Options
             buttonTauSlope.BackColor = Color.FromArgb(55, 60, 72);
             buttonTauSlope.FlatStyle = FlatStyle.Flat;
             buttonTauSlope.ForeColor = Color.White;
-            buttonTauSlope.Location = new Point(12, 185);
+            buttonTauSlope.Location = new Point(12, 156);
             buttonTauSlope.Name = "buttonTauSlope";
-            buttonTauSlope.Size = new Size(118, 23);
+            buttonTauSlope.Size = new Size(116, 23);
             buttonTauSlope.TabIndex = 53;
             buttonTauSlope.Text = "Find τ (slope)";
             buttonTauSlope.UseCompatibleTextRendering = true;
@@ -256,9 +255,9 @@ namespace Resonalyze.Options
             buttonTauPeak.BackColor = Color.FromArgb(55, 60, 72);
             buttonTauPeak.FlatStyle = FlatStyle.Flat;
             buttonTauPeak.ForeColor = Color.White;
-            buttonTauPeak.Location = new Point(135, 185);
+            buttonTauPeak.Location = new Point(139, 156);
             buttonTauPeak.Name = "buttonTauPeak";
-            buttonTauPeak.Size = new Size(118, 23);
+            buttonTauPeak.Size = new Size(116, 23);
             buttonTauPeak.TabIndex = 54;
             buttonTauPeak.Text = "Find τ (peak)";
             buttonTauPeak.UseCompatibleTextRendering = true;
@@ -283,19 +282,19 @@ namespace Resonalyze.Options
             label2.Size = new Size(48, 15);
             label2.TabIndex = 44;
             label2.Text = "Unwrap";
-            //
+            // 
             // labelCurves
-            //
+            // 
             labelCurves.AutoSize = true;
             labelCurves.ForeColor = Color.FromArgb(150, 170, 205);
             labelCurves.Location = new Point(12, 239);
             labelCurves.Name = "labelCurves";
-            labelCurves.Size = new Size(48, 15);
+            labelCurves.Size = new Size(46, 15);
             labelCurves.TabIndex = 56;
             labelCurves.Text = "Curves:";
-            //
+            // 
             // checkBoxShowMeasured
-            //
+            // 
             checkBoxShowMeasured.AutoSize = true;
             checkBoxShowMeasured.ForeColor = SystemColors.ControlLight;
             checkBoxShowMeasured.Location = new Point(12, 261);

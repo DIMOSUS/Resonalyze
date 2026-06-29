@@ -123,6 +123,51 @@ public sealed class PlotModelFactoryTests
         Assert.NotEmpty(factory.CreateGroupDelay(includeCurves: true).Series);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ImpulseResponse_LocksValueAxisToCurveRange(bool logarithmic)
+    {
+        var ir = new Complex[8192];
+        int peak = 1024;
+        for (int i = 0; i < 2000 && peak + i < ir.Length; i++)
+        {
+            ir[peak + i] = new Complex(Math.Exp(-i / 200.0) * Math.Cos(i * 0.3), 0);
+        }
+
+        using var measurement = new ExpSweepMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement();
+        measurement.RestoreImpulseResponse(
+            octaves: 12, sampleRate: 44_100, bits: 24, sweepDurationSeconds: 1.0,
+            playChannel: PlaybackChannel.Mono,
+            sweepDeconvolutionImpulseResponse: ir, sweepDeconvolutionPeakIndex: peak);
+
+        var options = new ImpulseResponseOptions { Logarithmic = logarithmic, ShowImpulse = true };
+        PlotModelFactory factory =
+            CreateFactory(measurement, noiseMeasurement, impulseOptions: options);
+
+        var model = factory.CreateImpulseResponse(includeCurves: true);
+        var series = (OxyPlot.Series.LineSeries)model.Series[0];
+        var valueAxis = model.Axes.First(axis =>
+            axis.Position == OxyPlot.Axes.AxisPosition.Left);
+        var timeAxis = model.Axes.First(axis =>
+            axis.Position == OxyPlot.Axes.AxisPosition.Bottom);
+
+        double expectedMinY = series.Points.Min(point => point.Y);
+        double expectedMaxY = series.Points.Max(point => point.Y);
+        Assert.Equal(expectedMinY, valueAxis.Minimum, precision: 9);
+        Assert.Equal(expectedMaxY, valueAxis.Maximum, precision: 9);
+        Assert.Equal(expectedMinY, valueAxis.AbsoluteMinimum, precision: 9);
+        Assert.Equal(expectedMaxY, valueAxis.AbsoluteMaximum, precision: 9);
+
+        double expectedMinX = series.Points.Min(point => point.X);
+        double expectedMaxX = series.Points.Max(point => point.X);
+        Assert.Equal(expectedMinX, timeAxis.Minimum, precision: 9);
+        Assert.Equal(expectedMaxX, timeAxis.Maximum, precision: 9);
+        Assert.Equal(expectedMinX, timeAxis.AbsoluteMinimum, precision: 9);
+        Assert.Equal(expectedMaxX, timeAxis.AbsoluteMaximum, precision: 9);
+    }
+
     private static ExpSweepMeasurement CreateTransferMeasurement()
     {
         var transferImpulse = new Complex[2048];

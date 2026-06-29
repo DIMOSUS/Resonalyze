@@ -27,7 +27,8 @@ public partial class Form1
                     ModeTab.Impulse,
                     () => new IROpt(),
                     opt => opt.Init(expSweepMeasurement, impulseResponseOptions),
-                    opt => opt.SetOptions(impulseResponseOptions))),
+                    opt => opt.SetOptions(impulseResponseOptions),
+                    viewResetKey: () => impulseResponseOptions.Logarithmic)),
             [ModeTab.Frequency] = new(
                 ModeTab.Frequency,
                 Mode.FrequencyResponse,

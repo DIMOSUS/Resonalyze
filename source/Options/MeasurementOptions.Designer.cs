@@ -17,6 +17,10 @@ namespace Resonalyze.Options
             {
                 components.Dispose();
             }
+            if (disposing)
+            {
+                warningStatusFont?.Dispose();
+            }
             base.Dispose(disposing);
         }
 
@@ -49,6 +53,8 @@ namespace Resonalyze.Options
             comboBoxWaveInputChannel = new DarkComboBox();
             labelWaveLoopbackChannel = new Label();
             comboBoxWaveLoopbackChannel = new DarkComboBox();
+            labelWaveLoopbackDevice = new Label();
+            comboBoxWaveLoopbackDevice = new DarkComboBox();
             labelWaveLoopbackStatus = new Label();
             labelAudioBackend = new Label();
             comboBoxAudioBackend = new DarkComboBox();
@@ -176,7 +182,7 @@ namespace Resonalyze.Options
             button1.DialogResult = DialogResult.OK;
             button1.FlatStyle = FlatStyle.Popup;
             button1.ForeColor = Color.White;
-            button1.Location = new Point(12, 608);
+            button1.Location = new Point(11, 651);
             button1.Name = "button1";
             button1.Size = new Size(311, 23);
             button1.TabIndex = 12;
@@ -291,7 +297,7 @@ namespace Resonalyze.Options
             // 
             labelWaveInputChannel.AutoSize = true;
             labelWaveInputChannel.ForeColor = SystemColors.ControlLight;
-            labelWaveInputChannel.Location = new Point(12, 282);
+            labelWaveInputChannel.Location = new Point(12, 311);
             labelWaveInputChannel.Name = "labelWaveInputChannel";
             labelWaveInputChannel.Size = new Size(112, 15);
             labelWaveInputChannel.TabIndex = 38;
@@ -301,7 +307,7 @@ namespace Resonalyze.Options
             // 
             comboBoxWaveInputChannel.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxWaveInputChannel.ForeColor = Color.White;
-            comboBoxWaveInputChannel.Location = new Point(153, 274);
+            comboBoxWaveInputChannel.Location = new Point(153, 303);
             comboBoxWaveInputChannel.Margin = new Padding(0);
             comboBoxWaveInputChannel.MinimumSize = new Size(36, 19);
             comboBoxWaveInputChannel.Name = "comboBoxWaveInputChannel";
@@ -312,7 +318,7 @@ namespace Resonalyze.Options
             // 
             labelWaveLoopbackChannel.AutoSize = true;
             labelWaveLoopbackChannel.ForeColor = SystemColors.ControlLight;
-            labelWaveLoopbackChannel.Location = new Point(12, 311);
+            labelWaveLoopbackChannel.Location = new Point(12, 340);
             labelWaveLoopbackChannel.Name = "labelWaveLoopbackChannel";
             labelWaveLoopbackChannel.Size = new Size(133, 15);
             labelWaveLoopbackChannel.TabIndex = 40;
@@ -322,7 +328,7 @@ namespace Resonalyze.Options
             // 
             comboBoxWaveLoopbackChannel.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxWaveLoopbackChannel.ForeColor = Color.White;
-            comboBoxWaveLoopbackChannel.Location = new Point(153, 303);
+            comboBoxWaveLoopbackChannel.Location = new Point(153, 332);
             comboBoxWaveLoopbackChannel.Margin = new Padding(0);
             comboBoxWaveLoopbackChannel.MinimumSize = new Size(36, 19);
             comboBoxWaveLoopbackChannel.Name = "comboBoxWaveLoopbackChannel";
@@ -330,12 +336,34 @@ namespace Resonalyze.Options
             comboBoxWaveLoopbackChannel.TabIndex = 41;
             comboBoxWaveLoopbackChannel.SelectedIndexChanged += comboBoxWaveLoopbackChannel_SelectedIndexChanged;
             // 
+            // labelWaveLoopbackDevice
+            // 
+            labelWaveLoopbackDevice.AutoSize = true;
+            labelWaveLoopbackDevice.ForeColor = SystemColors.ControlLight;
+            labelWaveLoopbackDevice.Location = new Point(12, 282);
+            labelWaveLoopbackDevice.Name = "labelWaveLoopbackDevice";
+            labelWaveLoopbackDevice.Size = new Size(125, 15);
+            labelWaveLoopbackDevice.TabIndex = 46;
+            labelWaveLoopbackDevice.Text = "Wave loopback device";
+            // 
+            // comboBoxWaveLoopbackDevice
+            // 
+            comboBoxWaveLoopbackDevice.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxWaveLoopbackDevice.ForeColor = Color.White;
+            comboBoxWaveLoopbackDevice.Location = new Point(153, 274);
+            comboBoxWaveLoopbackDevice.Margin = new Padding(0);
+            comboBoxWaveLoopbackDevice.MinimumSize = new Size(36, 19);
+            comboBoxWaveLoopbackDevice.Name = "comboBoxWaveLoopbackDevice";
+            comboBoxWaveLoopbackDevice.Size = new Size(170, 23);
+            comboBoxWaveLoopbackDevice.TabIndex = 47;
+            comboBoxWaveLoopbackDevice.SelectedIndexChanged += comboBoxWaveLoopbackDevice_SelectedIndexChanged;
+            // 
             // labelWaveLoopbackStatus
             // 
             labelWaveLoopbackStatus.ForeColor = SystemColors.ControlLight;
-            labelWaveLoopbackStatus.Location = new Point(12, 336);
+            labelWaveLoopbackStatus.Location = new Point(12, 362);
             labelWaveLoopbackStatus.Name = "labelWaveLoopbackStatus";
-            labelWaveLoopbackStatus.Size = new Size(311, 32);
+            labelWaveLoopbackStatus.Size = new Size(311, 60);
             labelWaveLoopbackStatus.TabIndex = 42;
             labelWaveLoopbackStatus.Text = "-";
             // 
@@ -365,7 +393,7 @@ namespace Resonalyze.Options
             // 
             labelAsioDriver.AutoSize = true;
             labelAsioDriver.ForeColor = SystemColors.ControlLight;
-            labelAsioDriver.Location = new Point(12, 388);
+            labelAsioDriver.Location = new Point(12, 436);
             labelAsioDriver.Name = "labelAsioDriver";
             labelAsioDriver.Size = new Size(66, 15);
             labelAsioDriver.TabIndex = 25;
@@ -375,7 +403,7 @@ namespace Resonalyze.Options
             // 
             comboBoxAsioDriver.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxAsioDriver.ForeColor = Color.White;
-            comboBoxAsioDriver.Location = new Point(153, 380);
+            comboBoxAsioDriver.Location = new Point(153, 428);
             comboBoxAsioDriver.Margin = new Padding(0);
             comboBoxAsioDriver.MinimumSize = new Size(36, 19);
             comboBoxAsioDriver.Name = "comboBoxAsioDriver";
@@ -387,7 +415,7 @@ namespace Resonalyze.Options
             // 
             buttonAsioControlPanel.FlatStyle = FlatStyle.Popup;
             buttonAsioControlPanel.ForeColor = Color.White;
-            buttonAsioControlPanel.Location = new Point(153, 570);
+            buttonAsioControlPanel.Location = new Point(153, 618);
             buttonAsioControlPanel.Name = "buttonAsioControlPanel";
             buttonAsioControlPanel.Size = new Size(170, 23);
             buttonAsioControlPanel.TabIndex = 37;
@@ -399,7 +427,7 @@ namespace Resonalyze.Options
             // 
             labelAsioInputChannel.AutoSize = true;
             labelAsioInputChannel.ForeColor = SystemColors.ControlLight;
-            labelAsioInputChannel.Location = new Point(12, 417);
+            labelAsioInputChannel.Location = new Point(12, 465);
             labelAsioInputChannel.Name = "labelAsioInputChannel";
             labelAsioInputChannel.Size = new Size(109, 15);
             labelAsioInputChannel.TabIndex = 27;
@@ -409,7 +437,7 @@ namespace Resonalyze.Options
             // 
             comboBoxAsioInputChannel.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxAsioInputChannel.ForeColor = Color.White;
-            comboBoxAsioInputChannel.Location = new Point(153, 409);
+            comboBoxAsioInputChannel.Location = new Point(153, 457);
             comboBoxAsioInputChannel.Margin = new Padding(0);
             comboBoxAsioInputChannel.MinimumSize = new Size(36, 19);
             comboBoxAsioInputChannel.Name = "comboBoxAsioInputChannel";
@@ -420,7 +448,7 @@ namespace Resonalyze.Options
             // 
             labelAsioOutputChannel.AutoSize = true;
             labelAsioOutputChannel.ForeColor = SystemColors.ControlLight;
-            labelAsioOutputChannel.Location = new Point(12, 446);
+            labelAsioOutputChannel.Location = new Point(12, 494);
             labelAsioOutputChannel.Name = "labelAsioOutputChannel";
             labelAsioOutputChannel.Size = new Size(122, 15);
             labelAsioOutputChannel.TabIndex = 29;
@@ -430,7 +458,7 @@ namespace Resonalyze.Options
             // 
             comboBoxAsioOutputChannel.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxAsioOutputChannel.ForeColor = Color.White;
-            comboBoxAsioOutputChannel.Location = new Point(153, 438);
+            comboBoxAsioOutputChannel.Location = new Point(153, 486);
             comboBoxAsioOutputChannel.Margin = new Padding(0);
             comboBoxAsioOutputChannel.MinimumSize = new Size(36, 19);
             comboBoxAsioOutputChannel.Name = "comboBoxAsioOutputChannel";
@@ -441,7 +469,7 @@ namespace Resonalyze.Options
             // 
             labelAsioLoopbackChannel.AutoSize = true;
             labelAsioLoopbackChannel.ForeColor = SystemColors.ControlLight;
-            labelAsioLoopbackChannel.Location = new Point(12, 475);
+            labelAsioLoopbackChannel.Location = new Point(12, 523);
             labelAsioLoopbackChannel.Name = "labelAsioLoopbackChannel";
             labelAsioLoopbackChannel.Size = new Size(130, 15);
             labelAsioLoopbackChannel.TabIndex = 43;
@@ -451,7 +479,7 @@ namespace Resonalyze.Options
             // 
             comboBoxAsioLoopbackChannel.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxAsioLoopbackChannel.ForeColor = Color.White;
-            comboBoxAsioLoopbackChannel.Location = new Point(153, 467);
+            comboBoxAsioLoopbackChannel.Location = new Point(153, 515);
             comboBoxAsioLoopbackChannel.Margin = new Padding(0);
             comboBoxAsioLoopbackChannel.MinimumSize = new Size(36, 19);
             comboBoxAsioLoopbackChannel.Name = "comboBoxAsioLoopbackChannel";
@@ -462,7 +490,7 @@ namespace Resonalyze.Options
             // 
             labelAsioSampleRate.AutoSize = true;
             labelAsioSampleRate.ForeColor = SystemColors.ControlLight;
-            labelAsioSampleRate.Location = new Point(12, 496);
+            labelAsioSampleRate.Location = new Point(12, 544);
             labelAsioSampleRate.Name = "labelAsioSampleRate";
             labelAsioSampleRate.Size = new Size(97, 15);
             labelAsioSampleRate.TabIndex = 31;
@@ -472,7 +500,7 @@ namespace Resonalyze.Options
             // 
             labelAsioSampleRateStatus.AutoSize = true;
             labelAsioSampleRateStatus.ForeColor = SystemColors.ControlLight;
-            labelAsioSampleRateStatus.Location = new Point(153, 496);
+            labelAsioSampleRateStatus.Location = new Point(153, 544);
             labelAsioSampleRateStatus.Name = "labelAsioSampleRateStatus";
             labelAsioSampleRateStatus.Size = new Size(12, 15);
             labelAsioSampleRateStatus.TabIndex = 32;
@@ -482,7 +510,7 @@ namespace Resonalyze.Options
             // 
             labelAsioPlaybackLatency.AutoSize = true;
             labelAsioPlaybackLatency.ForeColor = SystemColors.ControlLight;
-            labelAsioPlaybackLatency.Location = new Point(12, 514);
+            labelAsioPlaybackLatency.Location = new Point(12, 562);
             labelAsioPlaybackLatency.Name = "labelAsioPlaybackLatency";
             labelAsioPlaybackLatency.Size = new Size(95, 15);
             labelAsioPlaybackLatency.TabIndex = 35;
@@ -492,7 +520,7 @@ namespace Resonalyze.Options
             // 
             labelAsioPlaybackLatencyValue.AutoSize = true;
             labelAsioPlaybackLatencyValue.ForeColor = SystemColors.ControlLight;
-            labelAsioPlaybackLatencyValue.Location = new Point(153, 514);
+            labelAsioPlaybackLatencyValue.Location = new Point(153, 562);
             labelAsioPlaybackLatencyValue.Name = "labelAsioPlaybackLatencyValue";
             labelAsioPlaybackLatencyValue.Size = new Size(12, 15);
             labelAsioPlaybackLatencyValue.TabIndex = 36;
@@ -502,7 +530,7 @@ namespace Resonalyze.Options
             // 
             buttonAsioInputProbe.FlatStyle = FlatStyle.Popup;
             buttonAsioInputProbe.ForeColor = Color.White;
-            buttonAsioInputProbe.Location = new Point(153, 541);
+            buttonAsioInputProbe.Location = new Point(153, 589);
             buttonAsioInputProbe.Name = "buttonAsioInputProbe";
             buttonAsioInputProbe.Size = new Size(170, 23);
             buttonAsioInputProbe.TabIndex = 45;
@@ -515,7 +543,7 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(334, 642);
+            ClientSize = new Size(334, 684);
             Controls.Add(buttonAsioInputProbe);
             Controls.Add(comboBoxAsioLoopbackChannel);
             Controls.Add(labelAsioLoopbackChannel);
@@ -531,6 +559,8 @@ namespace Resonalyze.Options
             Controls.Add(comboBoxAsioDriver);
             Controls.Add(labelAsioDriver);
             Controls.Add(labelWaveLoopbackStatus);
+            Controls.Add(comboBoxWaveLoopbackDevice);
+            Controls.Add(labelWaveLoopbackDevice);
             Controls.Add(comboBoxWaveLoopbackChannel);
             Controls.Add(labelWaveLoopbackChannel);
             Controls.Add(comboBoxWaveInputChannel);
@@ -591,6 +621,8 @@ namespace Resonalyze.Options
         private DarkComboBox comboBoxWaveInputChannel;
         private Label labelWaveLoopbackChannel;
         private DarkComboBox comboBoxWaveLoopbackChannel;
+        private Label labelWaveLoopbackDevice;
+        private DarkComboBox comboBoxWaveLoopbackDevice;
         private Label labelWaveLoopbackStatus;
         private Label labelAudioBackend;
         private DarkComboBox comboBoxAudioBackend;

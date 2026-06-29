@@ -123,6 +123,10 @@ internal sealed class MeasurementSettingsFile
         public string? AsioDriverName { get; set; }
         public int WaveInputChannelOffset { get; set; }
         public int? WaveLoopbackInputChannelOffset { get; set; }
+        // Null = the Wave loopback shares the microphone input device (default). When set, the
+        // loopback is captured from this separate input device. Additive and nullable, so it
+        // needs no schema bump: older files load it as null (shared device).
+        public int? WaveLoopbackDeviceNumber { get; set; }
         public int AsioInputChannelOffset { get; set; }
         public int? AsioLoopbackInputChannelOffset { get; set; }
         public int AsioOutputChannelOffset { get; set; }
@@ -142,6 +146,7 @@ internal sealed class MeasurementSettingsFile
                 AsioDriverName = measurement.AsioDriverName,
                 WaveInputChannelOffset = measurement.WaveInputChannelOffset,
                 WaveLoopbackInputChannelOffset = measurement.WaveLoopbackInputChannelOffset,
+                WaveLoopbackDeviceNumber = measurement.WaveLoopbackDeviceNumber,
                 AsioInputChannelOffset = measurement.AsioInputChannelOffset,
                 AsioLoopbackInputChannelOffset = measurement.AsioLoopbackInputChannelOffset,
                 AsioOutputChannelOffset = measurement.AsioOutputChannelOffset
@@ -180,7 +185,10 @@ internal sealed class MeasurementSettingsFile
                 NormalizeOptionalAsioChannelOffset(
                     AsioDriverName,
                     Clamp(SampleRate, 44_100, 384_000),
-                    AsioLoopbackInputChannelOffset));
+                    AsioLoopbackInputChannelOffset),
+                NormalizeOptionalDeviceNumber(
+                    AudioDeviceCatalog.GetRecordingDevices(),
+                    WaveLoopbackDeviceNumber));
         }
     }
 
@@ -521,6 +529,16 @@ internal sealed class MeasurementSettingsFile
         devices.Any(device => device.DeviceNumber == deviceNumber)
             ? deviceNumber
             : -1;
+
+    // Keeps a separate loopback device only when it still exists; otherwise falls back to
+    // the shared-device behaviour (null).
+    private static int? NormalizeOptionalDeviceNumber(
+        IReadOnlyList<AudioDeviceInfo> devices,
+        int? deviceNumber) =>
+        deviceNumber.HasValue &&
+        devices.Any(device => device.DeviceNumber == deviceNumber.Value)
+            ? deviceNumber
+            : null;
 
     private static AudioBackend NormalizeAudioBackend(
         AudioBackend backend,

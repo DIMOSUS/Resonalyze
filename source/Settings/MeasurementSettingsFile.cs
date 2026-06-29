@@ -7,7 +7,7 @@ namespace Resonalyze;
 
 internal sealed class MeasurementSettingsFile
 {
-    private const int CurrentSchemaVersion = 8;
+    private const int CurrentSchemaVersion = 7;
     private const string FileName = "measurement-settings.json";
 
     private static readonly JsonSerializerOptions SerializerOptions = new()

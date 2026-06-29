@@ -132,6 +132,29 @@ public sealed class OverlayCollection
         notifyPlotChanged();
     }
 
+    // Redraws shown Target overlays bound to the current measurement so they
+    // track a live-updating trace (for example the running Live Spectrum curve).
+    // Returns true if any such overlay was redrawn.
+    public bool RefreshCurrentMeasurementTargets()
+    {
+        bool any = false;
+        foreach (Overlay overlay in overlays)
+        {
+            any |= overlay.RedrawCurrentMeasurementTarget();
+        }
+
+        return any;
+    }
+
+    // True when at least one slot for this mode is populated, so the bulk
+    // Show all / Hide all controls have something to act on.
+    public bool HasOverlays(Mode mode)
+    {
+        Mode overlayMode = OverlayModeFor(mode);
+        return overlays.Any(overlay =>
+            overlay.SeriesMode == overlayMode && overlay.Title.Length > 0);
+    }
+
     public static bool SupportsMode(Mode mode)
     {
         return mode is
@@ -487,10 +510,42 @@ public sealed class Overlay
             SetChecked(true);
             RefreshPlot(model);
         }
+        else if (IsCurrentMeasurementTarget)
+        {
+            // A target bound to the current measurement stays armed even when the
+            // source trace is not on the plot yet (for example the running Live
+            // Spectrum before its first frame); it draws once the curve appears.
+            SetChecked(true);
+            RefreshPlot(model);
+        }
         else
         {
             SetChecked(false);
         }
+    }
+
+    private bool IsCurrentMeasurementTarget =>
+        kind == OverlayKind.Target && targetSourceSlot == 0;
+
+    // Redraws a shown current-measurement Target overlay so it follows a
+    // live-updating source such as the running Live Spectrum trace. Returns true
+    // if this overlay is such a target. The caller invalidates the plot.
+    internal bool RedrawCurrentMeasurementTarget()
+    {
+        if (!Checked || !IsCurrentMeasurementTarget)
+        {
+            return false;
+        }
+
+        PlotModel? model = collection.PlotView.Model;
+        if (model == null)
+        {
+            return false;
+        }
+
+        RemoveSeries(model);
+        AddTargetSeries(model);
+        return true;
     }
 
     private bool AddCurveSeries(PlotModel model, string part, DataPoint[]? points)
@@ -522,23 +577,38 @@ public sealed class Overlay
 
     private bool AddTargetSeries(PlotModel model)
     {
-        OverlayPoint[]? source = ResolveTargetSource();
-        if (source == null || source.Length < 2)
+        double offset = (double)offsetControl.Value;
+        TargetCurveSpec spec = CurrentTargetSpec();
+
+        // The target shape and its tolerance band are parametric over frequency, so
+        // always build them on the full grid — they must never be clipped to the
+        // measurement, even when its coverage is partial or absent.
+        TargetCurveResult result = OverlayMath.BuildTarget(
+            DefaultTargetGrid,
+            spec,
+            offset,
+            targetToleranceDb,
+            0,
+            TargetDeviationMode.None);
+        if (result.Target.Length < 2)
         {
             return false;
         }
 
-        double offset = (double)offsetControl.Value;
-        TargetCurveResult result = OverlayMath.BuildTarget(
-            source,
-            CurrentTargetSpec(),
-            offset,
-            targetToleranceDb,
-            smoothingInverseOctaves,
-            targetDeviationMode);
-        if (result.Target.Length < 2)
+        // Deviation / EQ correction compares against the incoming curve, so it is
+        // built from the source and clipped to wherever that curve has data (gaps
+        // appear where, for example, coherence is below the threshold).
+        OverlayPoint[] deviation = Array.Empty<OverlayPoint>();
+        if (targetDeviationMode != TargetDeviationMode.None &&
+            ResolveTargetSource() is { Length: >= 2 } source)
         {
-            return false;
+            deviation = OverlayMath.BuildTarget(
+                source,
+                spec,
+                offset,
+                0,
+                smoothingInverseOctaves,
+                targetDeviationMode).Deviation;
         }
 
         Color color = panel.BackColor;
@@ -577,7 +647,7 @@ public sealed class Overlay
         targetSeries.Points.AddRange(result.Target.Select(p => new DataPoint(p.X, p.Y)));
         model.Series.Add(targetSeries);
 
-        if (result.Deviation.Length >= 2)
+        if (deviation.Length >= 2)
         {
             string deviationLabel = targetDeviationMode == TargetDeviationMode.Correction
                 ? "EQ correction"
@@ -595,11 +665,31 @@ public sealed class Overlay
                 deviationSeries.TrackerFormatString = trackerFormat;
             }
             deviationSeries.Points.AddRange(
-                result.Deviation.Select(p => new DataPoint(p.X, p.Y)));
+                deviation.Select(p => new DataPoint(p.X, p.Y)));
             model.Series.Add(deviationSeries);
         }
 
         return true;
+    }
+
+    // Log-spaced 20 Hz … 20 kHz grid used to draw a target shape and its tolerance
+    // band when no measurement curve is on the plot to supply frequencies.
+    private static readonly OverlayPoint[] DefaultTargetGrid = BuildDefaultTargetGrid();
+
+    private static OverlayPoint[] BuildDefaultTargetGrid()
+    {
+        const double minHz = 20.0;
+        const double maxHz = 20_000.0;
+        const int count = 512;
+        var grid = new OverlayPoint[count];
+        double logMin = Math.Log10(minHz);
+        double logStep = (Math.Log10(maxHz) - logMin) / (count - 1);
+        for (int i = 0; i < count; i++)
+        {
+            grid[i] = new OverlayPoint(Math.Pow(10.0, logMin + i * logStep), 0.0);
+        }
+
+        return grid;
     }
 
     private TargetCurveSpec CurrentTargetSpec() => new(
@@ -647,6 +737,9 @@ public sealed class Overlay
             return null;
         }
 
+        // Keep NaN gaps (e.g. where live coherence is below the threshold): they
+        // make the deviation / EQ-correction curve break over unreliable bands
+        // instead of bridging them.
         return primary.Points
             .Select(point => new OverlayPoint(point.X, point.Y))
             .ToArray();
@@ -693,10 +786,10 @@ public sealed class Overlay
     private void RefreshTargetSources()
     {
         bool wasChecked = Checked;
-        bool available = targetConfigured &&
-            (targetSourceSlot == 0 || ResolveTargetSource() is { Length: > 1 });
+        // A configured target can always draw its shape and tolerance band; the
+        // comparison source only governs whether the deviation curve appears.
         ApplyCalculatedAvailability(
-            available,
+            targetConfigured,
             targetConfigured,
             wasChecked);
     }

@@ -55,20 +55,26 @@ public partial class Form1
 
     private void UpdateOverlayAvailability()
     {
-        bool available = OverlayCollection.SupportsMode(CurrentMode);
-        if (CurrentMode == Mode.LiveSpectrum)
-        {
-            available &= !liveSpectrumController.InProgress &&
-                !liveSpectrumController.TimerEnabled;
-        }
-
+        bool available = OverlaysAvailableForCurrentMode();
         overlays.Enabled = available;
-        buttonOverlayShowAll.Enabled = available;
-        buttonOverlayHideAll.Enabled = available;
+        RefreshOverlayButtons();
         if (!available)
         {
             overlayCollection.HideAll();
         }
+    }
+
+    private bool OverlaysAvailableForCurrentMode() =>
+        OverlayCollection.SupportsMode(CurrentMode);
+
+    // The bulk overlay buttons act only when the current mode actually has
+    // populated overlay slots to show or hide.
+    private void RefreshOverlayButtons()
+    {
+        bool hasOverlays = OverlaysAvailableForCurrentMode() &&
+            overlayCollection.HasOverlays(CurrentMode);
+        buttonOverlayShowAll.Enabled = hasOverlays;
+        buttonOverlayHideAll.Enabled = hasOverlays;
     }
 
     private void buttonOverlayShowAll_Click(object? sender, EventArgs e)
@@ -128,6 +134,7 @@ public partial class Form1
     private void UpdatePlotLabelsPanel()
     {
         plotLabelsPanelController.Refresh();
+        RefreshOverlayButtons();
     }
 
     private void UpdatePeakInfo()

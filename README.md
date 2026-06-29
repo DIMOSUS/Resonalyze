@@ -68,6 +68,10 @@ file is provided with every release.
 - Live Spectrum with `Transfer Function` and `Input Spectrum` modes
 - Frequency response, phase, group delay, waterfall, Burst Decay, and
   autocorrelation
+- Minimum-phase / excess-phase decomposition with a millisecond gate, gate
+  offset, and a τ (delay) detrend for cross-measurement phase comparison
+- Per-curve visibility toggles in every analysis view; curves redraw on the fly
+  with no separate draw/clear step
 - Harmonic distortion, THD, and THD+N analysis
 - Persistent comparison overlays with labels, styling, curve math, targets,
   import/export, and saved per-mode state
@@ -154,8 +158,8 @@ comparison, and transparent data matter more than a large legacy feature set.
     <td width="50%">
       <h3>Group Delay</h3>
       <img src="assets/images/gd.jpg" alt="Group delay plot">
-      <p>Analyze timing behavior from sweep deconvolution or, when available,
-      the loopback-based transfer IR, with configurable windowing and previews.</p>
+      <p>Analyze timing behavior from the loopback-referenced transfer IR, with a
+      millisecond gate, gate offset, and a live impulse-window preview.</p>
     </td>
     <td width="50%">
       <h3>Waterfall and Burst Decay</h3>
@@ -290,17 +294,56 @@ analysis while preserving the visible plot range. This makes it easier to tune
 smoothing, FFT windows, Tukey fades, offsets, and display options without losing
 the area you were inspecting.
 
+Each curve-based view groups its plotted curves under a **Curves:** heading with
+one checkbox per curve — for example Primary / HD2–HD4 / THD+N in Frequency
+Response, or measured / minimum / excess in Phase. Toggling a curve redraws
+immediately; there is no separate draw or clear step. Numeric and dropdown
+settings carry a small **R** button that resets them to the built-in default,
+and double-clicking a plot axis restores its default scale.
+
 The Frequency Response, Phase, Group Delay, Waterfall, and Burst settings
 include a compact impulse-window preview where applicable. The preview shows the
-impulse response used by that mode together with the selected Tukey window. When
-loopback transfer processing is available, Group Delay previews and analyzes the
-transfer IR from the start of the impulse response; otherwise it falls back to
-the sweep-deconvolution IR.
+impulse response used by that mode together with the selected Tukey window. Phase
+and Group Delay analyze the loopback transfer IR and are only drawn when the
+active record provides one; their preview marks the gate position used for the
+analysis.
 
 Live Spectrum has its own docked settings panel. It lets you choose between
 `Transfer Function` and `Input Spectrum`, enable or disable calibration, and
 select a **Sequence Length** from a power-of-two list. The sequence length is
 the FFT block size used by the live analyzer and is preserved between sessions.
+
+## Phase and Group Delay
+
+Phase and group-delay analysis run on the **loopback transfer impulse response**:
+both views need the common timing reference it provides, so they are only drawn
+when the active record contains a transfer IR. Without one, the plot says that
+loopback is required instead of showing a misleading curve.
+
+Both modes share a millisecond-based gate built from a left Tukey fade, a flat
+plateau, and a right Tukey fade. A **Gate offset** positions the end of the left
+fade inside the fixed analysis frame, and **Fit** snaps it to the transfer-IR
+peak. The docked preview draws the impulse response, the gate window, and a
+marker at the gate offset. A read-only readout shows the lowest reliable
+frequency (≈ 1 / gate length), so it is clear where the gated curve stops being
+trustworthy.
+
+The Phase view can show three independently toggled curves:
+
+- **Measured phase** — the raw response, including delay and reflections.
+- **Minimum phase** — the part tied to the magnitude (correctable with EQ),
+  reconstructed with a real-cepstrum method.
+- **Excess phase** — measured minus minimum: the all-pass part (pure delay and
+  reflections) that an equalizer cannot fix.
+
+A **τ** (delay) value detrends the linear-phase slope so the excess phase becomes
+readable. **Find τ** estimates it either from the dominant arrival (peak) or from
+the energy-weighted average group delay (slope). Entering the same τ on two
+measurements lines up their phase for a direct comparison — for example, a
+midrange and a tweeter on the same axis.
+
+Group Delay reads absolute delay referenced to the start of the transfer IR, so a
+peak well into the impulse response reports its true arrival time.
 
 ## Audio Backends
 
@@ -318,10 +361,10 @@ playback path from the primary response plots. Harmonic distortion curves still
 use the ordinary sweep-deconvolution response, because the harmonic separation
 belongs to the sweep analysis itself.
 
-Group Delay follows the same rule: when loopback transfer processing is active,
-it is computed from the loopback-referenced transfer impulse response. In that
-mode the group-delay reference is the start of the transfer IR rather than the
-peak of the ordinary sweep-deconvolution response.
+Phase and Group Delay are computed from this loopback-referenced transfer impulse
+response and are only available when the active record contains one. The
+group-delay reference is the start of the transfer IR, so reported delay is
+absolute rather than relative to a response peak.
 
 Without loopback, sweep measurements use the classic single-channel
 deconvolution path.
@@ -459,6 +502,9 @@ independent of overlap and sequence length), while `Infinite` integrates a
 cumulative average indefinitely. **Reset Average** clears the running average and
 peak-hold envelope without restarting the measurement.
 
+**Main curve** (on by default) shows the primary live trace itself; turning it
+off leaves only the optional peak-hold and coherence curves.
+
 **Peak Hold** overlays a second curve that retains the maximum level seen on the
 trace until it is reset. **Coherence** (on by default) toggles the γ² curve
 shown on a secondary 0-to-1 axis in Transfer Function mode.
@@ -476,7 +522,8 @@ clear.
 Switching to another analysis mode and back restores the last Live Spectrum
 curve, its peak-hold envelope, and any active overlays, so a captured trace is
 not lost when you step away to inspect a different view. Press **Start** to
-resume live capture, or **Clear Curves** to discard the remembered trace.
+resume live capture; starting a new capture replaces the remembered trace
+automatically.
 
 ## Measurement History
 
@@ -715,8 +762,13 @@ active.
 A **Target** overlay compares a source against a parametric target shape and
 draws two curves from the one slot: the **target** itself and the **deviation**
 (source minus target), plus an optional shaded **tolerance band** (±dB). The
-source is either a captured slot or the **current measurement** (the live or
-last Live Spectrum trace, or the main Frequency Response curve).
+source is either a captured slot or the **current measurement** (the main
+Frequency Response curve, or the Live Spectrum main trace — including the running
+trace, which the target and deviation follow frame by frame).
+
+The target shape and its tolerance band are parametric over frequency, so they
+are drawn whenever the slot is enabled even if no measurement is on the plot yet;
+only the deviation curve waits for an incoming source.
 
 The target shape is built from four editable terms: an overall **tilt** around a
 1 kHz pivot, a **bass shelf**, a **treble shelf**, and a **presence** bump/dip.
@@ -734,7 +786,8 @@ target), or **None** to hide it.
 
 The settings dialog shows a live preview of the target shape, and the shared
 slot offset moves the target up or down (the deviation follows automatically).
-Target overlays are available in Frequency Response and paused Live Spectrum.
+Target overlays are available in Frequency Response and Live Spectrum (both the
+running and the paused trace).
 
 ![Target overlay settings](assets/images/target_overlay.jpg)
 
@@ -787,10 +840,9 @@ with a `kind` field selecting captured / operation / target. Older overlay
 schema versions are intentionally not loaded.
 
 Overlays are available in the Impulse Response, Frequency Response, Phase
-Response, Group Delay, paused Live Spectrum, and Autocorrelation views. The
-Clear button removes all plotted curves and hides every active overlay without
-deleting its saved JSON file. When Live Spectrum is running, Clear pauses it
-before clearing the plot.
+Response, Group Delay, paused Live Spectrum, and Autocorrelation views. A
+**Show all** / **Hide all** pair above the overlay panel toggles every active
+overlay for the current mode at once, without deleting any saved JSON file.
 
 ## Calibration
 

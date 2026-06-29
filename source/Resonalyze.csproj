@@ -11,7 +11,7 @@
     <AssemblyTitle>Resonalyze</AssemblyTitle>
     <Company>DIMOSUS</Company>
     <Product>Resonalyze</Product>
-    <VersionPrefix>0.2.0</VersionPrefix>
+    <VersionPrefix>0.0.0</VersionPrefix>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ApplicationIcon>logo.ico</ApplicationIcon>
     <SparklePublicKey Condition="'$(SparklePublicKey)' == ''"></SparklePublicKey>

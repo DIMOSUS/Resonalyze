@@ -43,8 +43,8 @@ namespace Resonalyze
             buttonLoad = new Button();
             toolTip1 = new ToolTip(components);
             buttonOverlayShowAll = new Button();
-            buttonCurrentModeSettings = new Button();
             buttonOverlayHideAll = new Button();
+            buttonCurrentModeSettings = new Button();
             panel1 = new Panel();
             inputLevelMeterPanel = new InputLevelMeterPanel();
             buttonHistory = new Button();
@@ -191,9 +191,9 @@ namespace Resonalyze
             toolTip1.SetToolTip(buttonLoad, "Load Impulse Response");
             buttonLoad.UseVisualStyleBackColor = false;
             buttonLoad.Click += buttonLoad_Click;
-            //
+            // 
             // buttonOverlayShowAll
-            //
+            // 
             buttonOverlayShowAll.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             buttonOverlayShowAll.BackColor = Color.FromArgb(50, 55, 80);
             buttonOverlayShowAll.FlatStyle = FlatStyle.Popup;
@@ -206,23 +206,9 @@ namespace Resonalyze
             toolTip1.SetToolTip(buttonOverlayShowAll, "Show all overlays for this mode");
             buttonOverlayShowAll.UseVisualStyleBackColor = false;
             buttonOverlayShowAll.Click += buttonOverlayShowAll_Click;
-            //
-            // buttonCurrentModeSettings
             // 
-            buttonCurrentModeSettings.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonCurrentModeSettings.BackColor = Color.FromArgb(50, 55, 80);
-            buttonCurrentModeSettings.FlatStyle = FlatStyle.Popup;
-            buttonCurrentModeSettings.ForeColor = Color.White;
-            buttonCurrentModeSettings.Location = new Point(1204, 251);
-            buttonCurrentModeSettings.Name = "buttonCurrentModeSettings";
-            buttonCurrentModeSettings.Size = new Size(150, 23);
-            buttonCurrentModeSettings.TabIndex = 21;
-            buttonCurrentModeSettings.Text = "Mode Settings...";
-            buttonCurrentModeSettings.UseVisualStyleBackColor = false;
-            buttonCurrentModeSettings.Click += buttonCurrentModeSettings_Click;
-            //
             // buttonOverlayHideAll
-            //
+            // 
             buttonOverlayHideAll.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             buttonOverlayHideAll.BackColor = Color.FromArgb(50, 55, 80);
             buttonOverlayHideAll.FlatStyle = FlatStyle.Popup;
@@ -235,7 +221,21 @@ namespace Resonalyze
             toolTip1.SetToolTip(buttonOverlayHideAll, "Hide all overlays for this mode");
             buttonOverlayHideAll.UseVisualStyleBackColor = false;
             buttonOverlayHideAll.Click += buttonOverlayHideAll_Click;
-            //
+            // 
+            // buttonCurrentModeSettings
+            // 
+            buttonCurrentModeSettings.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonCurrentModeSettings.BackColor = Color.FromArgb(50, 55, 80);
+            buttonCurrentModeSettings.FlatStyle = FlatStyle.Popup;
+            buttonCurrentModeSettings.ForeColor = Color.White;
+            buttonCurrentModeSettings.Location = new Point(1204, 271);
+            buttonCurrentModeSettings.Name = "buttonCurrentModeSettings";
+            buttonCurrentModeSettings.Size = new Size(150, 23);
+            buttonCurrentModeSettings.TabIndex = 21;
+            buttonCurrentModeSettings.Text = "Mode Settings...";
+            buttonCurrentModeSettings.UseVisualStyleBackColor = false;
+            buttonCurrentModeSettings.Click += buttonCurrentModeSettings_Click;
+            // 
             // panel1
             // 
             panel1.Anchor = AnchorStyles.Top | AnchorStyles.Right;
@@ -266,24 +266,25 @@ namespace Resonalyze
             buttonHistory.BackColor = Color.FromArgb(50, 55, 80);
             buttonHistory.FlatStyle = FlatStyle.Popup;
             buttonHistory.ForeColor = Color.White;
-            buttonHistory.Location = new Point(1204, 280);
+            buttonHistory.Location = new Point(1204, 242);
             buttonHistory.Name = "buttonHistory";
             buttonHistory.Size = new Size(150, 23);
             buttonHistory.TabIndex = 25;
             buttonHistory.Text = "History";
             buttonHistory.UseVisualStyleBackColor = false;
             buttonHistory.Click += buttonHistory_Click;
-            //
+            // 
             // chromeTitleBar
-            //
+            // 
             chromeTitleBar.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            chromeTitleBar.BackColor = Color.FromArgb(28, 30, 36);
             chromeTitleBar.Location = new Point(0, 0);
             chromeTitleBar.Name = "chromeTitleBar";
             chromeTitleBar.Size = new Size(1366, 40);
             chromeTitleBar.TabIndex = 26;
-            //
+            // 
             // Form1
-            //
+            // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);

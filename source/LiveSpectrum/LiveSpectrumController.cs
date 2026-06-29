@@ -11,7 +11,6 @@ internal sealed class LiveSpectrumController : IDisposable
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 33 };
     private readonly OxyPlot.WindowsForms.PlotView plotView;
     private readonly PlotModelFactory plotModelFactory;
-    private readonly Panel overlaysPanel;
     private readonly OverlayCollection overlayCollection;
     private readonly Func<Mode> getCurrentMode;
     private readonly Func<Task> selectLiveSpectrumAsync;
@@ -20,6 +19,7 @@ internal sealed class LiveSpectrumController : IDisposable
     private readonly Action updatePlotLabels;
     private readonly LiveSpectrumOptions liveSpectrumOptions;
     private const string LiveSpectrumTag = "live-spectrum:primary";
+    private const string LiveSpectrumLowCoherenceTag = "live-spectrum:low-coherence";
     private const string LiveSpectrumCoherenceTag = "live-spectrum:coherence";
     private const string LiveSpectrumPeakHoldTag = "live-spectrum:peak-hold";
     private const string OverloadAnnotationTag = "live-spectrum:overload";
@@ -35,7 +35,6 @@ internal sealed class LiveSpectrumController : IDisposable
         NoiseMeasurement measurement,
         OxyPlot.WindowsForms.PlotView plotView,
         PlotModelFactory plotModelFactory,
-        Panel overlaysPanel,
         OverlayCollection overlayCollection,
         Func<Mode> getCurrentMode,
         Func<Task> selectLiveSpectrumAsync,
@@ -48,7 +47,6 @@ internal sealed class LiveSpectrumController : IDisposable
         this.measurement = measurement;
         this.plotView = plotView;
         this.plotModelFactory = plotModelFactory;
-        this.overlaysPanel = overlaysPanel;
         this.overlayCollection = overlayCollection;
         this.getCurrentMode = getCurrentMode;
         this.selectLiveSpectrumAsync = selectLiveSpectrumAsync;
@@ -233,7 +231,6 @@ internal sealed class LiveSpectrumController : IDisposable
         SuspendPeakHold();
         lastSnapshot = null;
         plotView.Model = plotModelFactory.CreateLiveSpectrum();
-        overlaysPanel.Enabled = false;
         overlayCollection.Show(getCurrentMode());
         _ = measurement.RunAsync();
         timer.Start();
@@ -284,6 +281,9 @@ internal sealed class LiveSpectrumController : IDisposable
             lastSnapshot = snapshot;
             RemoveLiveSpectrumSeries(model);
             AddLiveSpectrumSeries(model, snapshot);
+            // Keep target overlays that track the current measurement in sync with
+            // the freshly drawn live trace.
+            overlayCollection.RefreshCurrentMeasurementTargets();
             UpdateOverloadAnnotation(model);
             model.InvalidatePlot(true);
             updatePlotLabels();
@@ -318,7 +318,10 @@ internal sealed class LiveSpectrumController : IDisposable
                         snapshot.Magnitude,
                         snapshot.Coherence,
                         liveSpectrumOptions.CoherenceThresholdPercent);
-                untrusted.Tag = LiveSpectrumTag;
+                // Keep the trusted (above-threshold) curve as the canonical primary
+                // trace so the current-measurement target source uses it, not the
+                // low-coherence segment.
+                untrusted.Tag = LiveSpectrumLowCoherenceTag;
                 trusted.Tag = LiveSpectrumTag;
                 model.Series.Add(untrusted);
                 model.Series.Add(trusted);
@@ -405,6 +408,7 @@ internal sealed class LiveSpectrumController : IDisposable
         List<OxyPlot.Series.Series> liveSpectrumSeries = model.Series
             .Where(series =>
                 Equals(series.Tag, LiveSpectrumTag) ||
+                Equals(series.Tag, LiveSpectrumLowCoherenceTag) ||
                 Equals(series.Tag, LiveSpectrumCoherenceTag) ||
                 Equals(series.Tag, LiveSpectrumPeakHoldTag))
             .ToList();

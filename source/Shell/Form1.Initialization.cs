@@ -46,7 +46,6 @@ public partial class Form1
             noiseMeasurement,
             plotView1,
             createdPlotModelFactory,
-            overlays,
             createdOverlayCollection,
             () => CurrentMode,
             () => SelectModeAsync(ModeTab.LiveSpectrum),

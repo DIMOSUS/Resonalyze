@@ -80,9 +80,9 @@ internal sealed class ChromeTitleBar : Panel
         versionLabel = CreateVersionLabel();
         Controls.Add(versionLabel);
 
-        AddWindowButton("─", form.ClientSize.Width - 138, MinimizeWindowClick); // -
-        AddWindowButton("☐", form.ClientSize.Width - 92, MaximizeWindowClick); // []
-        AddWindowButton("✕", form.ClientSize.Width - 46, CloseWindowClick); // x
+        AddWindowButton("─", form.ClientSize.Width - 138, MinimizeWindowClick);
+        AddWindowButton("☐", form.ClientSize.Width - 92, MaximizeWindowClick);
+        AddWindowButton("✕", form.ClientSize.Width - 46, CloseWindowClick);
 
         BringToFront();
     }
@@ -218,9 +218,9 @@ internal sealed class ChromeTitleBar : Panel
         AddModeTab(targetTabBar, ModeTab.GroupDelay, "Group Delay", tabActions);
         AddModeTab(targetTabBar, ModeTab.Waterfall, "Waterfall", tabActions);
         AddModeTab(targetTabBar, ModeTab.Burst, "Burst", tabActions);
-        AddModeTab(targetTabBar, ModeTab.LiveSpectrum, "Live Spectrum", tabActions);
         AddModeTab(targetTabBar, ModeTab.Autocorrelation, "Autocorrelation", tabActions);
         AddModeTab(targetTabBar, ModeTab.TimeAlignment, "Time Alignment", tabActions);
+        AddModeTab(targetTabBar, ModeTab.LiveSpectrum, "Live Spectrum", tabActions);
     }
 
     private void AddModeTab(

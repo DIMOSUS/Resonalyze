@@ -25,9 +25,71 @@ namespace Resonalyze.Options
         private AsioDriverInfo asioDriverInfo = AsioDeviceCatalog.EmptyDriverInfo;
         private bool initializing;
 
+        private DarkComboBox comboBoxPlaybackDevice => waveAudioBackendPanel.ComboBoxPlaybackDevice;
+
+        private DarkComboBox comboBoxRecordingDevice => waveAudioBackendPanel.ComboBoxRecordingDevice;
+
+        private DarkComboBox comboBoxWaveLoopbackDevice => waveAudioBackendPanel.ComboBoxWaveLoopbackDevice;
+
+        private DarkComboBox comboBoxWaveInputChannel => waveAudioBackendPanel.ComboBoxWaveInputChannel;
+
+        private DarkComboBox comboBoxWaveLoopbackChannel => waveAudioBackendPanel.ComboBoxWaveLoopbackChannel;
+
+        private Label labelPlaybackDevice => waveAudioBackendPanel.LabelPlaybackDevice;
+
+        private Label labelRecordingDevice => waveAudioBackendPanel.LabelRecordingDevice;
+
+        private Label labelWaveLoopbackDevice => waveAudioBackendPanel.LabelWaveLoopbackDevice;
+
+        private Label labelWaveInputChannel => waveAudioBackendPanel.LabelWaveInputChannel;
+
+        private Label labelWaveLoopbackChannel => waveAudioBackendPanel.LabelWaveLoopbackChannel;
+
+        private Label labelWaveLoopbackStatus => waveAudioBackendPanel.LabelWaveLoopbackStatus;
+
+        private DarkComboBox comboBoxAsioDriver => asioAudioBackendPanel.ComboBoxAsioDriver;
+
+        private DarkComboBox comboBoxAsioInputChannel => asioAudioBackendPanel.ComboBoxAsioInputChannel;
+
+        private DarkComboBox comboBoxAsioOutputChannel => asioAudioBackendPanel.ComboBoxAsioOutputChannel;
+
+        private DarkComboBox comboBoxAsioLoopbackChannel => asioAudioBackendPanel.ComboBoxAsioLoopbackChannel;
+
+        private Button buttonAsioInputProbe => asioAudioBackendPanel.ButtonAsioInputProbe;
+
+        private Button buttonAsioControlPanel => asioAudioBackendPanel.ButtonAsioControlPanel;
+
+        private Label labelAsioDriver => asioAudioBackendPanel.LabelAsioDriver;
+
+        private Label labelAsioInputChannel => asioAudioBackendPanel.LabelAsioInputChannel;
+
+        private Label labelAsioOutputChannel => asioAudioBackendPanel.LabelAsioOutputChannel;
+
+        private Label labelAsioLoopbackChannel => asioAudioBackendPanel.LabelAsioLoopbackChannel;
+
+        private Label labelAsioSampleRate => asioAudioBackendPanel.LabelAsioSampleRate;
+
+        private Label labelAsioSampleRateStatus => asioAudioBackendPanel.LabelAsioSampleRateStatus;
+
+        private Label labelAsioPlaybackLatency => asioAudioBackendPanel.LabelAsioPlaybackLatency;
+
+        private Label labelAsioPlaybackLatencyValue => asioAudioBackendPanel.LabelAsioPlaybackLatencyValue;
+
         public MeasurementOptions()
         {
             InitializeComponent();
+            WireAudioBackendPanelEvents();
+        }
+
+        private void WireAudioBackendPanelEvents()
+        {
+            comboBoxPlaybackDevice.SelectedIndexChanged += comboBoxPlaybackDevice_SelectedIndexChanged;
+            comboBoxRecordingDevice.SelectedIndexChanged += comboBoxRecordingDevice_SelectedIndexChanged;
+            comboBoxWaveLoopbackDevice.SelectedIndexChanged += comboBoxWaveLoopbackDevice_SelectedIndexChanged;
+            comboBoxWaveLoopbackChannel.SelectedIndexChanged += comboBoxWaveLoopbackChannel_SelectedIndexChanged;
+            comboBoxAsioDriver.SelectedIndexChanged += comboBoxAsioDriver_SelectedIndexChanged;
+            buttonAsioInputProbe.Click += buttonAsioInputProbe_Click;
+            buttonAsioControlPanel.Click += buttonAsioControlPanel_Click;
         }
 
         internal void Init(
@@ -278,7 +340,7 @@ namespace Resonalyze.Options
                 loopbackDevice.Value != GetSelectedRecordingDeviceNumber();
         }
 
-        private void comboBoxAsioDriver_SelectedIndexChanged(object sender, EventArgs e)
+        private void comboBoxAsioDriver_SelectedIndexChanged(object? sender, EventArgs e)
         {
             if (initializing)
             {
@@ -322,6 +384,8 @@ namespace Resonalyze.Options
         {
             bool useAsio =
                 comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio;
+            waveAudioBackendPanel.Visible = !useAsio;
+            asioAudioBackendPanel.Visible = useAsio;
             comboBoxPlaybackDevice.Enabled = !useAsio;
             comboBoxRecordingDevice.Enabled = !useAsio;
             comboBoxWaveLoopbackDevice.Enabled = !useAsio;
@@ -382,7 +446,7 @@ namespace Resonalyze.Options
             deviceToolTip.SetToolTip(comboBox, text);
         }
 
-        private void buttonAsioControlPanel_Click(object sender, EventArgs e)
+        private void buttonAsioControlPanel_Click(object? sender, EventArgs e)
         {
             if (comboBoxAsioDriver.SelectedItem is not AsioDeviceInfo asioDriver)
             {

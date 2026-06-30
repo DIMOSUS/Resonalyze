@@ -151,7 +151,7 @@ namespace Resonalyze.Options
                 (double)numericWindow.Value,
                 (double)numericRightWindow.Value);
             labelMinFrequency.Text = hz > 0
-                ? $"Reliable from ≈ {hz:0} Hz"
+                ? $"Reliable from ≈ {hz:0}+ Hz"
                 : "Reliable from ≈ — Hz";
         }
 

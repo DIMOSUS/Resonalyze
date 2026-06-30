@@ -825,7 +825,7 @@ public sealed class DarkComboBox : UserControl
         popupListBox.Bounds = new Rectangle(1, 1, width - 2, listHeight);
         popupHost.Size = popupPanel.Size;
 
-        popupListBox.SelectedIndex = modelComboBox.SelectedIndex;
+        popupListBox.SelectedIndex = GetPopupSafeSelectedIndex();
         dropDownVisible = true;
         Invalidate();
         buttonPanel.Invalidate();
@@ -861,8 +861,26 @@ public sealed class DarkComboBox : UserControl
     {
         if (popupListBox != null)
         {
-            popupListBox.SelectedIndex = modelComboBox.SelectedIndex;
+            if (popupListBox.Items.Count != modelComboBox.Items.Count)
+            {
+                RebuildPopupItems();
+            }
+
+            popupListBox.SelectedIndex = GetPopupSafeSelectedIndex();
         }
+    }
+
+    private int GetPopupSafeSelectedIndex()
+    {
+        int selectedIndex = modelComboBox.SelectedIndex;
+        if (popupListBox == null ||
+            selectedIndex < 0 ||
+            selectedIndex >= popupListBox.Items.Count)
+        {
+            return -1;
+        }
+
+        return selectedIndex;
     }
 
     private void CommitPopupSelection(int index)

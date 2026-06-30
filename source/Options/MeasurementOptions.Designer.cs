@@ -45,33 +45,10 @@ namespace Resonalyze.Options
             comboBoxSampleRate = new DarkComboBox();
             numericUpDownBits = new DarkNumericUpDown();
             numericUpDownOctaves = new DarkNumericUpDown();
-            labelPlaybackDevice = new Label();
-            comboBoxPlaybackDevice = new DarkComboBox();
-            labelRecordingDevice = new Label();
-            comboBoxRecordingDevice = new DarkComboBox();
-            labelWaveInputChannel = new Label();
-            comboBoxWaveInputChannel = new DarkComboBox();
-            labelWaveLoopbackChannel = new Label();
-            comboBoxWaveLoopbackChannel = new DarkComboBox();
-            labelWaveLoopbackDevice = new Label();
-            comboBoxWaveLoopbackDevice = new DarkComboBox();
-            labelWaveLoopbackStatus = new Label();
             labelAudioBackend = new Label();
             comboBoxAudioBackend = new DarkComboBox();
-            labelAsioDriver = new Label();
-            comboBoxAsioDriver = new DarkComboBox();
-            buttonAsioControlPanel = new Button();
-            labelAsioInputChannel = new Label();
-            comboBoxAsioInputChannel = new DarkComboBox();
-            labelAsioOutputChannel = new Label();
-            comboBoxAsioOutputChannel = new DarkComboBox();
-            labelAsioLoopbackChannel = new Label();
-            comboBoxAsioLoopbackChannel = new DarkComboBox();
-            labelAsioSampleRate = new Label();
-            labelAsioSampleRateStatus = new Label();
-            labelAsioPlaybackLatency = new Label();
-            labelAsioPlaybackLatencyValue = new Label();
-            buttonAsioInputProbe = new Button();
+            waveAudioBackendPanel = new WaveAudioBackendPanel();
+            asioAudioBackendPanel = new AsioAudioBackendPanel();
             (numericUpDownRequestedDuration).BeginInit();
             (numericUpDownComputeDuration).BeginInit();
             (numericUpDownBits).BeginInit();
@@ -182,7 +159,7 @@ namespace Resonalyze.Options
             button1.DialogResult = DialogResult.OK;
             button1.FlatStyle = FlatStyle.Popup;
             button1.ForeColor = Color.White;
-            button1.Location = new Point(11, 651);
+            button1.Location = new Point(11, 437);
             button1.Name = "button1";
             button1.Size = new Size(311, 23);
             button1.TabIndex = 12;
@@ -249,124 +226,6 @@ namespace Resonalyze.Options
             numericUpDownOctaves.ThousandsSeparator = false;
             numericUpDownOctaves.Value = new decimal(new int[] { 1, 0, 0, 0 });
             //
-            // labelPlaybackDevice
-            //
-            labelPlaybackDevice.AutoSize = true;
-            labelPlaybackDevice.ForeColor = SystemColors.ControlLight;
-            labelPlaybackDevice.Location = new Point(12, 224);
-            labelPlaybackDevice.Name = "labelPlaybackDevice";
-            labelPlaybackDevice.Size = new Size(91, 15);
-            labelPlaybackDevice.TabIndex = 19;
-            labelPlaybackDevice.Text = "Playback device";
-            //
-            // comboBoxPlaybackDevice
-            //
-            comboBoxPlaybackDevice.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxPlaybackDevice.ForeColor = Color.White;
-            comboBoxPlaybackDevice.Location = new Point(153, 216);
-            comboBoxPlaybackDevice.Margin = new Padding(0);
-            comboBoxPlaybackDevice.MinimumSize = new Size(36, 19);
-            comboBoxPlaybackDevice.Name = "comboBoxPlaybackDevice";
-            comboBoxPlaybackDevice.Size = new Size(170, 23);
-            comboBoxPlaybackDevice.TabIndex = 20;
-            comboBoxPlaybackDevice.SelectedIndexChanged += comboBoxPlaybackDevice_SelectedIndexChanged;
-            //
-            // labelRecordingDevice
-            //
-            labelRecordingDevice.AutoSize = true;
-            labelRecordingDevice.ForeColor = SystemColors.ControlLight;
-            labelRecordingDevice.Location = new Point(12, 253);
-            labelRecordingDevice.Name = "labelRecordingDevice";
-            labelRecordingDevice.Size = new Size(98, 15);
-            labelRecordingDevice.TabIndex = 21;
-            labelRecordingDevice.Text = "Recording device";
-            //
-            // comboBoxRecordingDevice
-            //
-            comboBoxRecordingDevice.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxRecordingDevice.ForeColor = Color.White;
-            comboBoxRecordingDevice.Location = new Point(153, 245);
-            comboBoxRecordingDevice.Margin = new Padding(0);
-            comboBoxRecordingDevice.MinimumSize = new Size(36, 19);
-            comboBoxRecordingDevice.Name = "comboBoxRecordingDevice";
-            comboBoxRecordingDevice.Size = new Size(170, 23);
-            comboBoxRecordingDevice.TabIndex = 22;
-            comboBoxRecordingDevice.SelectedIndexChanged += comboBoxRecordingDevice_SelectedIndexChanged;
-            //
-            // labelWaveInputChannel
-            //
-            labelWaveInputChannel.AutoSize = true;
-            labelWaveInputChannel.ForeColor = SystemColors.ControlLight;
-            labelWaveInputChannel.Location = new Point(12, 311);
-            labelWaveInputChannel.Name = "labelWaveInputChannel";
-            labelWaveInputChannel.Size = new Size(112, 15);
-            labelWaveInputChannel.TabIndex = 38;
-            labelWaveInputChannel.Text = "Wave input channel";
-            //
-            // comboBoxWaveInputChannel
-            //
-            comboBoxWaveInputChannel.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxWaveInputChannel.ForeColor = Color.White;
-            comboBoxWaveInputChannel.Location = new Point(153, 303);
-            comboBoxWaveInputChannel.Margin = new Padding(0);
-            comboBoxWaveInputChannel.MinimumSize = new Size(36, 19);
-            comboBoxWaveInputChannel.Name = "comboBoxWaveInputChannel";
-            comboBoxWaveInputChannel.Size = new Size(170, 23);
-            comboBoxWaveInputChannel.TabIndex = 39;
-            //
-            // labelWaveLoopbackChannel
-            //
-            labelWaveLoopbackChannel.AutoSize = true;
-            labelWaveLoopbackChannel.ForeColor = SystemColors.ControlLight;
-            labelWaveLoopbackChannel.Location = new Point(12, 340);
-            labelWaveLoopbackChannel.Name = "labelWaveLoopbackChannel";
-            labelWaveLoopbackChannel.Size = new Size(133, 15);
-            labelWaveLoopbackChannel.TabIndex = 40;
-            labelWaveLoopbackChannel.Text = "Wave loopback channel";
-            //
-            // comboBoxWaveLoopbackChannel
-            //
-            comboBoxWaveLoopbackChannel.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxWaveLoopbackChannel.ForeColor = Color.White;
-            comboBoxWaveLoopbackChannel.Location = new Point(153, 332);
-            comboBoxWaveLoopbackChannel.Margin = new Padding(0);
-            comboBoxWaveLoopbackChannel.MinimumSize = new Size(36, 19);
-            comboBoxWaveLoopbackChannel.Name = "comboBoxWaveLoopbackChannel";
-            comboBoxWaveLoopbackChannel.Size = new Size(170, 23);
-            comboBoxWaveLoopbackChannel.TabIndex = 41;
-            comboBoxWaveLoopbackChannel.SelectedIndexChanged += comboBoxWaveLoopbackChannel_SelectedIndexChanged;
-            //
-            // labelWaveLoopbackDevice
-            //
-            labelWaveLoopbackDevice.AutoSize = true;
-            labelWaveLoopbackDevice.ForeColor = SystemColors.ControlLight;
-            labelWaveLoopbackDevice.Location = new Point(12, 282);
-            labelWaveLoopbackDevice.Name = "labelWaveLoopbackDevice";
-            labelWaveLoopbackDevice.Size = new Size(125, 15);
-            labelWaveLoopbackDevice.TabIndex = 46;
-            labelWaveLoopbackDevice.Text = "Wave loopback device";
-            //
-            // comboBoxWaveLoopbackDevice
-            //
-            comboBoxWaveLoopbackDevice.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxWaveLoopbackDevice.ForeColor = Color.White;
-            comboBoxWaveLoopbackDevice.Location = new Point(153, 274);
-            comboBoxWaveLoopbackDevice.Margin = new Padding(0);
-            comboBoxWaveLoopbackDevice.MinimumSize = new Size(36, 19);
-            comboBoxWaveLoopbackDevice.Name = "comboBoxWaveLoopbackDevice";
-            comboBoxWaveLoopbackDevice.Size = new Size(170, 23);
-            comboBoxWaveLoopbackDevice.TabIndex = 47;
-            comboBoxWaveLoopbackDevice.SelectedIndexChanged += comboBoxWaveLoopbackDevice_SelectedIndexChanged;
-            //
-            // labelWaveLoopbackStatus
-            //
-            labelWaveLoopbackStatus.ForeColor = SystemColors.ControlLight;
-            labelWaveLoopbackStatus.Location = new Point(12, 362);
-            labelWaveLoopbackStatus.Name = "labelWaveLoopbackStatus";
-            labelWaveLoopbackStatus.Size = new Size(311, 60);
-            labelWaveLoopbackStatus.TabIndex = 42;
-            labelWaveLoopbackStatus.Text = "-";
-            //
             // labelAudioBackend
             //
             labelAudioBackend.AutoSize = true;
@@ -389,188 +248,30 @@ namespace Resonalyze.Options
             comboBoxAudioBackend.TabIndex = 24;
             comboBoxAudioBackend.SelectedIndexChanged += comboBoxAudioBackend_SelectedIndexChanged;
             //
-            // labelAsioDriver
+            // waveAudioBackendPanel
             //
-            labelAsioDriver.AutoSize = true;
-            labelAsioDriver.ForeColor = SystemColors.ControlLight;
-            labelAsioDriver.Location = new Point(12, 436);
-            labelAsioDriver.Name = "labelAsioDriver";
-            labelAsioDriver.Size = new Size(66, 15);
-            labelAsioDriver.TabIndex = 25;
-            labelAsioDriver.Text = "ASIO driver";
+            waveAudioBackendPanel.Location = new Point(12, 216);
+            waveAudioBackendPanel.Name = "waveAudioBackendPanel";
+            waveAudioBackendPanel.Size = new Size(311, 206);
+            waveAudioBackendPanel.TabIndex = 25;
             //
-            // comboBoxAsioDriver
+            // asioAudioBackendPanel
             //
-            comboBoxAsioDriver.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxAsioDriver.ForeColor = Color.White;
-            comboBoxAsioDriver.Location = new Point(153, 428);
-            comboBoxAsioDriver.Margin = new Padding(0);
-            comboBoxAsioDriver.MinimumSize = new Size(36, 19);
-            comboBoxAsioDriver.Name = "comboBoxAsioDriver";
-            comboBoxAsioDriver.Size = new Size(170, 23);
-            comboBoxAsioDriver.TabIndex = 26;
-            comboBoxAsioDriver.SelectedIndexChanged += comboBoxAsioDriver_SelectedIndexChanged;
-            //
-            // buttonAsioControlPanel
-            //
-            buttonAsioControlPanel.FlatStyle = FlatStyle.Popup;
-            buttonAsioControlPanel.ForeColor = Color.White;
-            buttonAsioControlPanel.Location = new Point(153, 618);
-            buttonAsioControlPanel.Name = "buttonAsioControlPanel";
-            buttonAsioControlPanel.Size = new Size(170, 23);
-            buttonAsioControlPanel.TabIndex = 37;
-            buttonAsioControlPanel.Text = "ASIO Control Panel";
-            buttonAsioControlPanel.UseVisualStyleBackColor = true;
-            buttonAsioControlPanel.Click += buttonAsioControlPanel_Click;
-            //
-            // labelAsioInputChannel
-            //
-            labelAsioInputChannel.AutoSize = true;
-            labelAsioInputChannel.ForeColor = SystemColors.ControlLight;
-            labelAsioInputChannel.Location = new Point(12, 465);
-            labelAsioInputChannel.Name = "labelAsioInputChannel";
-            labelAsioInputChannel.Size = new Size(109, 15);
-            labelAsioInputChannel.TabIndex = 27;
-            labelAsioInputChannel.Text = "ASIO input channel";
-            //
-            // comboBoxAsioInputChannel
-            //
-            comboBoxAsioInputChannel.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxAsioInputChannel.ForeColor = Color.White;
-            comboBoxAsioInputChannel.Location = new Point(153, 457);
-            comboBoxAsioInputChannel.Margin = new Padding(0);
-            comboBoxAsioInputChannel.MinimumSize = new Size(36, 19);
-            comboBoxAsioInputChannel.Name = "comboBoxAsioInputChannel";
-            comboBoxAsioInputChannel.Size = new Size(170, 23);
-            comboBoxAsioInputChannel.TabIndex = 28;
-            //
-            // labelAsioOutputChannel
-            //
-            labelAsioOutputChannel.AutoSize = true;
-            labelAsioOutputChannel.ForeColor = SystemColors.ControlLight;
-            labelAsioOutputChannel.Location = new Point(12, 494);
-            labelAsioOutputChannel.Name = "labelAsioOutputChannel";
-            labelAsioOutputChannel.Size = new Size(122, 15);
-            labelAsioOutputChannel.TabIndex = 29;
-            labelAsioOutputChannel.Text = "ASIO output channels";
-            //
-            // comboBoxAsioOutputChannel
-            //
-            comboBoxAsioOutputChannel.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxAsioOutputChannel.ForeColor = Color.White;
-            comboBoxAsioOutputChannel.Location = new Point(153, 486);
-            comboBoxAsioOutputChannel.Margin = new Padding(0);
-            comboBoxAsioOutputChannel.MinimumSize = new Size(36, 19);
-            comboBoxAsioOutputChannel.Name = "comboBoxAsioOutputChannel";
-            comboBoxAsioOutputChannel.Size = new Size(170, 23);
-            comboBoxAsioOutputChannel.TabIndex = 30;
-            //
-            // labelAsioLoopbackChannel
-            //
-            labelAsioLoopbackChannel.AutoSize = true;
-            labelAsioLoopbackChannel.ForeColor = SystemColors.ControlLight;
-            labelAsioLoopbackChannel.Location = new Point(12, 523);
-            labelAsioLoopbackChannel.Name = "labelAsioLoopbackChannel";
-            labelAsioLoopbackChannel.Size = new Size(130, 15);
-            labelAsioLoopbackChannel.TabIndex = 43;
-            labelAsioLoopbackChannel.Text = "ASIO loopback channel";
-            //
-            // comboBoxAsioLoopbackChannel
-            //
-            comboBoxAsioLoopbackChannel.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxAsioLoopbackChannel.ForeColor = Color.White;
-            comboBoxAsioLoopbackChannel.Location = new Point(153, 515);
-            comboBoxAsioLoopbackChannel.Margin = new Padding(0);
-            comboBoxAsioLoopbackChannel.MinimumSize = new Size(36, 19);
-            comboBoxAsioLoopbackChannel.Name = "comboBoxAsioLoopbackChannel";
-            comboBoxAsioLoopbackChannel.Size = new Size(170, 23);
-            comboBoxAsioLoopbackChannel.TabIndex = 44;
-            //
-            // labelAsioSampleRate
-            //
-            labelAsioSampleRate.AutoSize = true;
-            labelAsioSampleRate.ForeColor = SystemColors.ControlLight;
-            labelAsioSampleRate.Location = new Point(12, 544);
-            labelAsioSampleRate.Name = "labelAsioSampleRate";
-            labelAsioSampleRate.Size = new Size(97, 15);
-            labelAsioSampleRate.TabIndex = 31;
-            labelAsioSampleRate.Text = "ASIO sample rate";
-            //
-            // labelAsioSampleRateStatus
-            //
-            labelAsioSampleRateStatus.AutoSize = true;
-            labelAsioSampleRateStatus.ForeColor = SystemColors.ControlLight;
-            labelAsioSampleRateStatus.Location = new Point(153, 544);
-            labelAsioSampleRateStatus.Name = "labelAsioSampleRateStatus";
-            labelAsioSampleRateStatus.Size = new Size(12, 15);
-            labelAsioSampleRateStatus.TabIndex = 32;
-            labelAsioSampleRateStatus.Text = "-";
-            //
-            // labelAsioPlaybackLatency
-            //
-            labelAsioPlaybackLatency.AutoSize = true;
-            labelAsioPlaybackLatency.ForeColor = SystemColors.ControlLight;
-            labelAsioPlaybackLatency.Location = new Point(12, 562);
-            labelAsioPlaybackLatency.Name = "labelAsioPlaybackLatency";
-            labelAsioPlaybackLatency.Size = new Size(95, 15);
-            labelAsioPlaybackLatency.TabIndex = 35;
-            labelAsioPlaybackLatency.Text = "Playback latency";
-            //
-            // labelAsioPlaybackLatencyValue
-            //
-            labelAsioPlaybackLatencyValue.AutoSize = true;
-            labelAsioPlaybackLatencyValue.ForeColor = SystemColors.ControlLight;
-            labelAsioPlaybackLatencyValue.Location = new Point(153, 562);
-            labelAsioPlaybackLatencyValue.Name = "labelAsioPlaybackLatencyValue";
-            labelAsioPlaybackLatencyValue.Size = new Size(12, 15);
-            labelAsioPlaybackLatencyValue.TabIndex = 36;
-            labelAsioPlaybackLatencyValue.Text = "-";
-            //
-            // buttonAsioInputProbe
-            //
-            buttonAsioInputProbe.FlatStyle = FlatStyle.Popup;
-            buttonAsioInputProbe.ForeColor = Color.White;
-            buttonAsioInputProbe.Location = new Point(153, 589);
-            buttonAsioInputProbe.Name = "buttonAsioInputProbe";
-            buttonAsioInputProbe.Size = new Size(170, 23);
-            buttonAsioInputProbe.TabIndex = 45;
-            buttonAsioInputProbe.Text = "Test ASIO Inputs";
-            buttonAsioInputProbe.UseVisualStyleBackColor = true;
-            buttonAsioInputProbe.Click += buttonAsioInputProbe_Click;
+            asioAudioBackendPanel.Location = new Point(12, 216);
+            asioAudioBackendPanel.Name = "asioAudioBackendPanel";
+            asioAudioBackendPanel.Size = new Size(311, 213);
+            asioAudioBackendPanel.TabIndex = 26;
             //
             // MeasurementOptions
             //
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(334, 684);
-            Controls.Add(buttonAsioInputProbe);
-            Controls.Add(comboBoxAsioLoopbackChannel);
-            Controls.Add(labelAsioLoopbackChannel);
-            Controls.Add(buttonAsioControlPanel);
-            Controls.Add(labelAsioPlaybackLatencyValue);
-            Controls.Add(labelAsioPlaybackLatency);
-            Controls.Add(labelAsioSampleRateStatus);
-            Controls.Add(labelAsioSampleRate);
-            Controls.Add(comboBoxAsioOutputChannel);
-            Controls.Add(labelAsioOutputChannel);
-            Controls.Add(comboBoxAsioInputChannel);
-            Controls.Add(labelAsioInputChannel);
-            Controls.Add(comboBoxAsioDriver);
-            Controls.Add(labelAsioDriver);
-            Controls.Add(labelWaveLoopbackStatus);
-            Controls.Add(comboBoxWaveLoopbackDevice);
-            Controls.Add(labelWaveLoopbackDevice);
-            Controls.Add(comboBoxWaveLoopbackChannel);
-            Controls.Add(labelWaveLoopbackChannel);
-            Controls.Add(comboBoxWaveInputChannel);
-            Controls.Add(labelWaveInputChannel);
+            ClientSize = new Size(334, 470);
+            Controls.Add(asioAudioBackendPanel);
+            Controls.Add(waveAudioBackendPanel);
             Controls.Add(comboBoxAudioBackend);
             Controls.Add(labelAudioBackend);
-            Controls.Add(comboBoxRecordingDevice);
-            Controls.Add(labelRecordingDevice);
-            Controls.Add(comboBoxPlaybackDevice);
-            Controls.Add(labelPlaybackDevice);
             Controls.Add(numericUpDownOctaves);
             Controls.Add(numericUpDownBits);
             Controls.Add(comboBoxSampleRate);
@@ -596,7 +297,6 @@ namespace Resonalyze.Options
             (numericUpDownOctaves).EndInit();
             ResumeLayout(false);
             PerformLayout();
-
         }
 
         #endregion
@@ -613,32 +313,9 @@ namespace Resonalyze.Options
         private DarkComboBox comboBoxSampleRate;
         private DarkNumericUpDown numericUpDownBits;
         private DarkNumericUpDown numericUpDownOctaves;
-        private Label labelPlaybackDevice;
-        private DarkComboBox comboBoxPlaybackDevice;
-        private Label labelRecordingDevice;
-        private DarkComboBox comboBoxRecordingDevice;
-        private Label labelWaveInputChannel;
-        private DarkComboBox comboBoxWaveInputChannel;
-        private Label labelWaveLoopbackChannel;
-        private DarkComboBox comboBoxWaveLoopbackChannel;
-        private Label labelWaveLoopbackDevice;
-        private DarkComboBox comboBoxWaveLoopbackDevice;
-        private Label labelWaveLoopbackStatus;
         private Label labelAudioBackend;
         private DarkComboBox comboBoxAudioBackend;
-        private Label labelAsioDriver;
-        private DarkComboBox comboBoxAsioDriver;
-        private Button buttonAsioControlPanel;
-        private Label labelAsioInputChannel;
-        private DarkComboBox comboBoxAsioInputChannel;
-        private Label labelAsioOutputChannel;
-        private DarkComboBox comboBoxAsioOutputChannel;
-        private Label labelAsioLoopbackChannel;
-        private DarkComboBox comboBoxAsioLoopbackChannel;
-        private Label labelAsioSampleRate;
-        private Label labelAsioSampleRateStatus;
-        private Label labelAsioPlaybackLatency;
-        private Label labelAsioPlaybackLatencyValue;
-        private Button buttonAsioInputProbe;
+        private WaveAudioBackendPanel waveAudioBackendPanel;
+        private AsioAudioBackendPanel asioAudioBackendPanel;
     }
 }

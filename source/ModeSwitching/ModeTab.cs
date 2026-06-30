@@ -10,5 +10,7 @@ internal enum ModeTab
     Burst,
     LiveSpectrum,
     Autocorrelation,
-    TimeAlignment
+    TimeAlignment,
+    ToolsEqWizard,
+    ToolsIrComparer
 }

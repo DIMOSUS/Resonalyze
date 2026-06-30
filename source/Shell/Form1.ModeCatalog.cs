@@ -17,10 +17,9 @@ public partial class Form1
                 ModeTab.Impulse,
                 Mode.ImpulseResponse,
                 SupportsCurveDrawing: true,
-                HasPlotView: true,
+                MainContent: MainContentKind.Plot,
                 HasOverlayPanel: true,
                 HasDockedSettings: true,
-                ShowsTimeAlignmentPanel: false,
                 ShowOverlayCurves: true,
                 CreatePlotModel: includeCurves => plotModelFactory.CreateImpulseResponse(includeCurves),
                 OpenSettings: () => ToggleModeOptions(
@@ -33,10 +32,9 @@ public partial class Form1
                 ModeTab.Frequency,
                 Mode.FrequencyResponse,
                 SupportsCurveDrawing: true,
-                HasPlotView: true,
+                MainContent: MainContentKind.Plot,
                 HasOverlayPanel: true,
                 HasDockedSettings: true,
-                ShowsTimeAlignmentPanel: false,
                 ShowOverlayCurves: true,
                 CreatePlotModel: includeCurves => plotModelFactory.CreateFrequencyResponse(includeCurves),
                 OpenSettings: () => ToggleModeOptions(
@@ -48,10 +46,9 @@ public partial class Form1
                 ModeTab.Phase,
                 Mode.PhaseResponse,
                 SupportsCurveDrawing: true,
-                HasPlotView: true,
+                MainContent: MainContentKind.Plot,
                 HasOverlayPanel: true,
                 HasDockedSettings: true,
-                ShowsTimeAlignmentPanel: false,
                 ShowOverlayCurves: true,
                 CreatePlotModel: includeCurves => plotModelFactory.CreatePhaseResponse(includeCurves),
                 OpenSettings: () => ToggleModeOptions(
@@ -63,10 +60,9 @@ public partial class Form1
                 ModeTab.GroupDelay,
                 Mode.GroupDelay,
                 SupportsCurveDrawing: true,
-                HasPlotView: true,
+                MainContent: MainContentKind.Plot,
                 HasOverlayPanel: true,
                 HasDockedSettings: true,
-                ShowsTimeAlignmentPanel: false,
                 ShowOverlayCurves: true,
                 CreatePlotModel: includeCurves => plotModelFactory.CreateGroupDelay(includeCurves),
                 OpenSettings: () => ToggleModeOptions(
@@ -78,10 +74,9 @@ public partial class Form1
                 ModeTab.Waterfall,
                 Mode.CumulativeSpectrumDecay,
                 SupportsCurveDrawing: true,
-                HasPlotView: true,
+                MainContent: MainContentKind.Plot,
                 HasOverlayPanel: false,
                 HasDockedSettings: true,
-                ShowsTimeAlignmentPanel: false,
                 ShowOverlayCurves: false,
                 CreatePlotModel: includeCurves => plotModelFactory.CreateWaterfall(includeCurves),
                 OpenSettings: () => ToggleModeOptions(
@@ -93,10 +88,9 @@ public partial class Form1
                 ModeTab.Burst,
                 Mode.BurstDecay,
                 SupportsCurveDrawing: true,
-                HasPlotView: true,
+                MainContent: MainContentKind.Plot,
                 HasOverlayPanel: false,
                 HasDockedSettings: true,
-                ShowsTimeAlignmentPanel: false,
                 ShowOverlayCurves: false,
                 CreatePlotModel: includeCurves => plotModelFactory.CreateBurstDecay(includeCurves),
                 OpenSettings: () => ToggleModeOptions(
@@ -108,10 +102,9 @@ public partial class Form1
                 ModeTab.LiveSpectrum,
                 Mode.LiveSpectrum,
                 SupportsCurveDrawing: false,
-                HasPlotView: true,
+                MainContent: MainContentKind.Plot,
                 HasOverlayPanel: true,
                 HasDockedSettings: true,
-                ShowsTimeAlignmentPanel: false,
                 ShowOverlayCurves: false,
                 CreatePlotModel: _ => plotModelFactory.CreateLiveSpectrum(),
                 OpenSettings: ToggleLiveSpectrumOptions),
@@ -119,10 +112,9 @@ public partial class Form1
                 ModeTab.Autocorrelation,
                 Mode.Autocorrelation,
                 SupportsCurveDrawing: true,
-                HasPlotView: true,
+                MainContent: MainContentKind.Plot,
                 HasOverlayPanel: true,
                 HasDockedSettings: true,
-                ShowsTimeAlignmentPanel: false,
                 ShowOverlayCurves: true,
                 CreatePlotModel: includeCurves => plotModelFactory.CreateAutocorrelation(includeCurves),
                 OpenSettings: () => ToggleModeOptions(
@@ -134,24 +126,59 @@ public partial class Form1
                 ModeTab.TimeAlignment,
                 Mode.TimeAlignment,
                 SupportsCurveDrawing: false,
-                HasPlotView: false,
+                MainContent: MainContentKind.TimeAlignment,
                 HasOverlayPanel: false,
                 HasDockedSettings: false,
-                ShowsTimeAlignmentPanel: true,
+                ShowOverlayCurves: false,
+                CreatePlotModel: null,
+                OpenSettings: null),
+            [ModeTab.ToolsEqWizard] = new(
+                ModeTab.ToolsEqWizard,
+                Mode.EqWizard,
+                SupportsCurveDrawing: false,
+                MainContent: MainContentKind.EqWizard,
+                HasOverlayPanel: true,
+                HasDockedSettings: false,
+                ShowOverlayCurves: false,
+                CreatePlotModel: null,
+                OpenSettings: null),
+            [ModeTab.ToolsIrComparer] = new(
+                ModeTab.ToolsIrComparer,
+                Mode.IrComparer,
+                SupportsCurveDrawing: false,
+                MainContent: MainContentKind.IrComparer,
+                HasOverlayPanel: false,
+                HasDockedSettings: false,
                 ShowOverlayCurves: false,
                 CreatePlotModel: null,
                 OpenSettings: null)
         };
 
+    private enum MainContentKind
+    {
+        Plot,
+        TimeAlignment,
+        EqWizard,
+        IrComparer
+    }
+
     private sealed record ModeDescriptor(
         ModeTab Tab,
         Mode Mode,
         bool SupportsCurveDrawing,
-        bool HasPlotView,
+        MainContentKind MainContent,
         bool HasOverlayPanel,
         bool HasDockedSettings,
-        bool ShowsTimeAlignmentPanel,
         bool ShowOverlayCurves,
         Func<bool, PlotModel>? CreatePlotModel,
-        Action? OpenSettings);
+        Action? OpenSettings)
+    {
+        public bool HasPlotView => MainContent == MainContentKind.Plot;
+
+        public bool ShowsTimeAlignmentPanel => MainContent == MainContentKind.TimeAlignment;
+
+        public bool ShowsEqWizardPanel => MainContent == MainContentKind.EqWizard;
+
+        public bool ShowsIrComparerPanel => MainContent == MainContentKind.IrComparer;
+    }
 }

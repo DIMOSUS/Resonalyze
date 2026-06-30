@@ -56,8 +56,8 @@ public partial class Form1
         ModeController createdModeController = new(
             ChangeModeAsync,
             SetActiveModeTab,
-            createdOverlayCollection.HideAll,
             DrawSelectedMode,
+            RestoreActiveOverlaySlotsForCurrentMode,
             CanDrawCurrentMeasurement,
             tab => GetModeDescriptor(tab).Mode,
             tab => GetModeDescriptor(tab).SupportsCurveDrawing);

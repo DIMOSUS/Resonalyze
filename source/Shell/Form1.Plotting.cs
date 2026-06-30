@@ -67,6 +67,33 @@ public partial class Form1
     private bool OverlaysAvailableForCurrentMode() =>
         OverlayCollection.SupportsMode(CurrentMode);
 
+    private void CaptureActiveOverlaySlotsForCurrentMode()
+    {
+        if (!OverlayCollection.SupportsMode(CurrentMode))
+        {
+            return;
+        }
+
+        activeOverlaySlotsByMode[OverlayCollection.OverlayModeFor(CurrentMode)] =
+            overlayCollection.CaptureActiveSlots(CurrentMode);
+    }
+
+    private void RestoreActiveOverlaySlotsForCurrentMode()
+    {
+        if (!OverlayCollection.SupportsMode(CurrentMode))
+        {
+            return;
+        }
+
+        Mode overlayMode = OverlayCollection.OverlayModeFor(CurrentMode);
+        if (activeOverlaySlotsByMode.TryGetValue(
+                overlayMode,
+                out List<int>? activeSlots))
+        {
+            overlayCollection.RestoreActiveSlots(CurrentMode, activeSlots);
+        }
+    }
+
     // The bulk overlay buttons act only when the current mode actually has
     // populated overlay slots to show or hide.
     private void RefreshOverlayButtons()
@@ -91,6 +118,14 @@ public partial class Form1
 
     private Task SelectModeAsync(ModeTab tab) => modeController.SelectAsync(tab);
 
+    internal async void OpenEqWizardForTargetOverlay(int targetOverlaySlot)
+    {
+        await SelectModeAsync(ModeTab.ToolsEqWizard);
+        eqWizardPanel.SetTargetOverlayOptions(
+            overlayCollection.GetTargetOverlayOptions(CurrentMode));
+        eqWizardPanel.SelectTargetOverlaySlot(targetOverlaySlot);
+    }
+
     private Dictionary<ModeTab, Action> CreateModeTabActions() =>
         new()
         {
@@ -102,7 +137,9 @@ public partial class Form1
             [ModeTab.Burst] = () => _ = SelectModeAsync(ModeTab.Burst),
             [ModeTab.LiveSpectrum] = () => _ = SelectModeAsync(ModeTab.LiveSpectrum),
             [ModeTab.Autocorrelation] = () => _ = SelectModeAsync(ModeTab.Autocorrelation),
-            [ModeTab.TimeAlignment] = () => _ = SelectModeAsync(ModeTab.TimeAlignment)
+            [ModeTab.TimeAlignment] = () => _ = SelectModeAsync(ModeTab.TimeAlignment),
+            [ModeTab.ToolsEqWizard] = () => _ = SelectModeAsync(ModeTab.ToolsEqWizard),
+            [ModeTab.ToolsIrComparer] = () => _ = SelectModeAsync(ModeTab.ToolsIrComparer)
         };
 
     private void SetActiveModeTab(ModeTab activeTab)
@@ -117,6 +154,13 @@ public partial class Form1
         buttonOverlayShowAll.Visible = descriptor.HasOverlayPanel;
         buttonOverlayHideAll.Visible = descriptor.HasOverlayPanel;
         timeAlignmentController.SetVisible(descriptor.ShowsTimeAlignmentPanel);
+        eqWizardPanel.Visible = descriptor.ShowsEqWizardPanel;
+        if (descriptor.ShowsEqWizardPanel)
+        {
+            eqWizardPanel.SetTargetOverlayOptions(
+                overlayCollection.GetTargetOverlayOptions(CurrentMode));
+        }
+        irComparerPanel.Visible = descriptor.ShowsIrComparerPanel;
         SyncDockedModeSettingsOnModeChange();
         UpdatePlotLabelsPanel();
     }

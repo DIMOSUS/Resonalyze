@@ -266,6 +266,11 @@ internal sealed record OverlaySlotOption(int Slot, string Title)
     public override string ToString() => $"{Slot}: {Title}";
 }
 
+internal sealed record TargetOverlayOption(int Slot, string Title, int SourceSlot)
+{
+    public override string ToString() => $"{Slot}: {Title}";
+}
+
 internal sealed record BlendWidthOption(double Octaves, string Label)
 {
     public override string ToString() => Label;

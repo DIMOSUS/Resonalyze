@@ -16,7 +16,9 @@ namespace Resonalyze
         BurstDecay,
         LiveSpectrum,
         Autocorrelation,
-        TimeAlignment
+        TimeAlignment,
+        EqWizard,
+        IrComparer
     }
 
     public partial class Form1 : Form
@@ -69,6 +71,7 @@ namespace Resonalyze
         private readonly MeasurementSettingsFile measurementSettings;
         private readonly MeasurementHistoryService measurementHistoryService = new();
         private readonly IReadOnlyDictionary<ModeTab, ModeDescriptor> modeDescriptors;
+        private readonly Dictionary<Mode, List<int>> activeOverlaySlotsByMode = new();
         private readonly PlotLabelsPanelController plotLabelsPanelController;
         private readonly InputLevelMeterController inputLevelMeterController;
         private readonly DockedModeSettingsHost dockedModeSettingsHost;

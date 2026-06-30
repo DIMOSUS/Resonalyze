@@ -26,6 +26,8 @@ public partial class Form1
 
         plotView1.Bounds = bounds;
         timeAlignmentController?.SetLayoutBounds(bounds);
+        eqWizardPanel.Bounds = bounds;
+        irComparerPanel.Bounds = bounds;
     }
 
     private int GetCentralContentRightEdge(int margin)

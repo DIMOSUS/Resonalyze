@@ -50,6 +50,8 @@ namespace Resonalyze
             buttonHistory = new Button();
             chromeTitleBar = new ChromeTitleBar();
             timeAlignmentPanel = new TimeAlignmentPanel();
+            eqWizardPanel = new EqWizardPanel();
+            irComparerPanel = new IrComparerPanel();
             overlays.SuspendLayout();
             overlayPanel1.SuspendLayout();
             (numericUpDown1).BeginInit();
@@ -199,7 +201,7 @@ namespace Resonalyze
             buttonOverlayShowAll.BackColor = Color.FromArgb(50, 55, 80);
             buttonOverlayShowAll.FlatStyle = FlatStyle.Popup;
             buttonOverlayShowAll.ForeColor = Color.White;
-            buttonOverlayShowAll.Location = new Point(1204, 389);
+            buttonOverlayShowAll.Location = new Point(1200, 389);
             buttonOverlayShowAll.Name = "buttonOverlayShowAll";
             buttonOverlayShowAll.Size = new Size(73, 23);
             buttonOverlayShowAll.TabIndex = 20;
@@ -298,6 +300,34 @@ namespace Resonalyze
             timeAlignmentPanel.TabIndex = 27;
             timeAlignmentPanel.Visible = false;
             // 
+            // eqWizardPanel
+            // 
+            eqWizardPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            eqWizardPanel.AutoScroll = true;
+            eqWizardPanel.BackColor = Color.FromArgb(40, 44, 54);
+            eqWizardPanel.BorderStyle = BorderStyle.FixedSingle;
+            eqWizardPanel.Font = new Font("Segoe UI", 9F);
+            eqWizardPanel.ForeColor = Color.White;
+            eqWizardPanel.Location = new Point(12, 52);
+            eqWizardPanel.Name = "eqWizardPanel";
+            eqWizardPanel.Size = new Size(1182, 704);
+            eqWizardPanel.TabIndex = 28;
+            eqWizardPanel.Visible = false;
+            // 
+            // irComparerPanel
+            // 
+            irComparerPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            irComparerPanel.AutoScroll = true;
+            irComparerPanel.BackColor = Color.FromArgb(40, 44, 54);
+            irComparerPanel.BorderStyle = BorderStyle.FixedSingle;
+            irComparerPanel.Font = new Font("Segoe UI", 9F);
+            irComparerPanel.ForeColor = Color.White;
+            irComparerPanel.Location = new Point(12, 52);
+            irComparerPanel.Name = "irComparerPanel";
+            irComparerPanel.Size = new Size(1182, 704);
+            irComparerPanel.TabIndex = 29;
+            irComparerPanel.Visible = false;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
@@ -305,6 +335,8 @@ namespace Resonalyze
             BackColor = Color.FromArgb(45, 50, 60);
             ClientSize = new Size(1366, 768);
             Controls.Add(chromeTitleBar);
+            Controls.Add(irComparerPanel);
+            Controls.Add(eqWizardPanel);
             Controls.Add(timeAlignmentPanel);
             Controls.Add(buttonHistory);
             Controls.Add(inputLevelMeterPanel);
@@ -350,5 +382,7 @@ namespace Resonalyze
         private Button buttonHistory;
         private ChromeTitleBar chromeTitleBar;
         private TimeAlignmentPanel timeAlignmentPanel;
+        private EqWizardPanel eqWizardPanel;
+        private IrComparerPanel irComparerPanel;
     }
 }

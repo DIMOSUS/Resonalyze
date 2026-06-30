@@ -61,6 +61,7 @@ namespace Resonalyze
             cancelButton = new Button();
             saveButton = new Button();
             toolTip = new ToolTip(components);
+            buttonEQWizard = new Button();
             (toleranceInput).BeginInit();
             (tiltInput).BeginInit();
             (bassGainInput).BeginInit();
@@ -598,12 +599,27 @@ namespace Resonalyze
             saveButton.Text = "Save";
             saveButton.UseVisualStyleBackColor = false;
             // 
+            // buttonEQWizard
+            // 
+            buttonEQWizard.BackColor = Color.FromArgb(62, 65, 73);
+            buttonEQWizard.DialogResult = DialogResult.None;
+            buttonEQWizard.FlatAppearance.BorderSize = 0;
+            buttonEQWizard.FlatStyle = FlatStyle.Flat;
+            buttonEQWizard.ForeColor = Color.White;
+            buttonEQWizard.Location = new Point(23, 740);
+            buttonEQWizard.Name = "buttonEQWizard";
+            buttonEQWizard.Size = new Size(155, 30);
+            buttonEQWizard.TabIndex = 23;
+            buttonEQWizard.Text = "To EQ Wizard";
+            buttonEQWizard.UseVisualStyleBackColor = false;
+            // 
             // OverlayTargetSettingsDialog
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(40, 42, 48);
             ClientSize = new Size(500, 781);
+            Controls.Add(buttonEQWizard);
             Controls.Add(nameLabel);
             Controls.Add(nameTextBox);
             Controls.Add(sourceLabel);
@@ -719,5 +735,6 @@ namespace Resonalyze
         private Button cancelButton;
         private Button saveButton;
         private ToolTip toolTip;
+        private Button buttonEQWizard;
     }
 }

@@ -62,6 +62,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
     public int OpacityPercent => opacityTrackBar.Value;
     public int SmoothingInverseOctaves =>
         smoothingComboBox.SelectedItem is int value ? value : 0;
+    public bool OpenEqWizardRequested { get; private set; }
 
     public TargetCurveSpec Spec => new(
         (double)tiltInput.Value,
@@ -146,6 +147,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         colorButton.Click += ColorButtonClick;
         opacityTrackBar.ValueChanged += (_, _) => UpdateOpacityLabel();
         saveButton.Click += SaveButtonClick;
+        buttonEQWizard.Click += ButtonEQWizardClick;
     }
 
     private const string TiltTip =
@@ -303,14 +305,41 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
 
     private void SaveButtonClick(object? sender, EventArgs e)
     {
-        if (OverlayName.Length > 0 && sourceComboBox.SelectedItem != null)
+        if (ValidateSaveRequest(focusOnError: true))
         {
             return;
         }
 
         DialogResult = DialogResult.None;
+    }
+
+    private void ButtonEQWizardClick(object? sender, EventArgs e)
+    {
+        if (!ValidateSaveRequest(focusOnError: true))
+        {
+            DialogResult = DialogResult.None;
+            return;
+        }
+
+        OpenEqWizardRequested = true;
+        DialogResult = DialogResult.OK;
+        Close();
+    }
+
+    private bool ValidateSaveRequest(bool focusOnError)
+    {
+        if (OverlayName.Length > 0 && sourceComboBox.SelectedItem != null)
+        {
+            return true;
+        }
+
         System.Media.SystemSounds.Beep.Play();
-        nameTextBox.Focus();
+        if (focusOnError)
+        {
+            nameTextBox.Focus();
+        }
+
+        return false;
     }
 
     private void SelectSource(int slot)

@@ -30,6 +30,9 @@ internal sealed class ChromeTitleBar : Panel
     private Action updateMaximizedBounds = null!;
     private FlowLayoutPanel tabBar = null!;
     private LinkLabel versionLabel = null!;
+    private Button? toolsDropDownButton;
+    private ContextMenuStrip? toolsMenu;
+    private ModeTab lastToolsTab = ModeTab.ToolsEqWizard;
     private float dpiScale = 1f;
     private int titleBarHeight = BarHeight;
     private int windowButtonWidth;
@@ -99,9 +102,21 @@ internal sealed class ChromeTitleBar : Panel
 
     public void SetActiveModeTab(ModeTab activeTab)
     {
-        foreach ((ModeTab tab, Button button) in modeTabButtons)
+        if (IsToolsTab(activeTab))
         {
-            SetModeTabStyle(button, tab == activeTab);
+            lastToolsTab = activeTab;
+        }
+
+        foreach (Button button in modeTabButtons.Values.Distinct())
+        {
+            bool active = modeTabButtons.Any(
+                pair => ReferenceEquals(pair.Value, button) && pair.Key == activeTab);
+            SetModeTabStyle(button, active);
+        }
+
+        if (toolsDropDownButton != null)
+        {
+            SetModeTabStyle(toolsDropDownButton, IsToolsTab(activeTab));
         }
     }
 
@@ -221,6 +236,7 @@ internal sealed class ChromeTitleBar : Panel
         AddModeTab(targetTabBar, ModeTab.Autocorrelation, "Autocorrelation", tabActions);
         AddModeTab(targetTabBar, ModeTab.TimeAlignment, "Time Alignment", tabActions);
         AddModeTab(targetTabBar, ModeTab.LiveSpectrum, "Live Spectrum", tabActions);
+        AddToolsModeTab(targetTabBar, tabActions);
     }
 
     private void AddModeTab(
@@ -247,6 +263,130 @@ internal sealed class ChromeTitleBar : Panel
         modeTabButtons.Add(tab, button);
         targetTabBar.Controls.Add(button);
         SetModeTabStyle(button, active: false);
+    }
+
+    private void AddToolsModeTab(
+        FlowLayoutPanel targetTabBar,
+        IReadOnlyDictionary<ModeTab, Action> tabActions)
+    {
+        const string text = "Tools";
+        int height = Math.Max(Scale(28), TextRenderer.MeasureText(text, form.Font).Height + Scale(8));
+        var host = new Panel
+        {
+            BackColor = BackColor,
+            Height = height,
+            Margin = new Padding(0, 0, Scale(2), 0),
+            Width = GetModeTabWidth(text) + Scale(20)
+        };
+        host.MouseDown += TitleBarMouseDown;
+
+        var mainButton = new Button
+        {
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+            AutoSize = false,
+            Font = new Font(form.Font, FontStyle.Regular),
+            ForeColor = UiPalette.TitleBarTextSoft,
+            Location = Point.Empty,
+            Margin = Padding.Empty,
+            Size = new Size(host.Width - Scale(22), height),
+            Text = text,
+            TextAlign = ContentAlignment.MiddleCenter,
+            UseCompatibleTextRendering = true
+        };
+        UiStyle.ApplySurfaceButton(mainButton, BackColor, UiPalette.TitleBarTextSoft);
+        mainButton.Click += (_, _) => SelectToolsTab(tabActions, lastToolsTab);
+
+        toolsDropDownButton = new Button
+        {
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right,
+            AutoSize = false,
+            Font = new Font(form.Font, FontStyle.Regular),
+            ForeColor = UiPalette.TitleBarTextSoft,
+            Location = new Point(host.Width - Scale(22), 0),
+            Margin = Padding.Empty,
+            Size = new Size(Scale(22), height),
+            Text = string.Empty,
+            TextAlign = ContentAlignment.MiddleCenter,
+            UseCompatibleTextRendering = true
+        };
+        UiStyle.ApplySurfaceButton(toolsDropDownButton, BackColor, UiPalette.TitleBarTextSoft);
+        toolsDropDownButton.Paint += PaintToolsDropDownButton;
+        toolsDropDownButton.Click += (_, _) => ShowToolsMenu(tabActions);
+
+        modeTabButtons.Add(ModeTab.ToolsEqWizard, mainButton);
+        modeTabButtons.Add(ModeTab.ToolsIrComparer, mainButton);
+        host.Controls.Add(mainButton);
+        host.Controls.Add(toolsDropDownButton);
+        targetTabBar.Controls.Add(host);
+        SetModeTabStyle(mainButton, active: false);
+        SetModeTabStyle(toolsDropDownButton, active: false);
+    }
+
+    private void ShowToolsMenu(IReadOnlyDictionary<ModeTab, Action> tabActions)
+    {
+        if (toolsDropDownButton == null)
+        {
+            return;
+        }
+
+        toolsMenu?.Dispose();
+        toolsMenu = new ContextMenuStrip
+        {
+            BackColor = UiPalette.ButtonBackground,
+            ForeColor = UiPalette.TitleBarTextBright,
+            ShowImageMargin = false
+        };
+        AddToolsMenuItem(toolsMenu, "EQ Wizard", ModeTab.ToolsEqWizard, tabActions);
+        AddToolsMenuItem(toolsMenu, "IR Comparer", ModeTab.ToolsIrComparer, tabActions);
+        toolsMenu.Show(toolsDropDownButton, new Point(0, toolsDropDownButton.Height));
+    }
+
+    private void AddToolsMenuItem(
+        ContextMenuStrip menu,
+        string text,
+        ModeTab tab,
+        IReadOnlyDictionary<ModeTab, Action> tabActions)
+    {
+        var item = new ToolStripMenuItem(text)
+        {
+            BackColor = UiPalette.ButtonBackground,
+            ForeColor = UiPalette.TitleBarTextBright
+        };
+        item.Click += (_, _) => SelectToolsTab(tabActions, tab);
+        menu.Items.Add(item);
+    }
+
+    private void SelectToolsTab(
+        IReadOnlyDictionary<ModeTab, Action> tabActions,
+        ModeTab tab)
+    {
+        lastToolsTab = tab;
+        tabActions[tab]();
+    }
+
+    private void PaintToolsDropDownButton(object? sender, PaintEventArgs e)
+    {
+        if (sender is not Button button)
+        {
+            return;
+        }
+
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        using var separatorPen = new Pen(Color.FromArgb(82, 90, 108));
+        e.Graphics.DrawLine(separatorPen, 0, Scale(5), 0, button.Height - Scale(5));
+
+        int arrowWidth = Scale(7);
+        int arrowHeight = Scale(4);
+        int centerX = button.Width / 2;
+        int centerY = button.Height / 2 + Scale(1);
+        Point[] points =
+        [
+            new(centerX - arrowWidth / 2, centerY - arrowHeight / 2),
+            new(centerX + arrowWidth / 2, centerY - arrowHeight / 2),
+            new(centerX, centerY + arrowHeight / 2)
+        ];
+        using var brush = new SolidBrush(UiPalette.TitleBarTextBright);
+        e.Graphics.FillPolygon(brush, points);
     }
 
     private void AddWindowButton(
@@ -451,6 +591,9 @@ internal sealed class ChromeTitleBar : Panel
 
     private int Scale(int value) =>
         (int)Math.Round(value * dpiScale);
+
+    private static bool IsToolsTab(ModeTab tab) =>
+        tab is ModeTab.ToolsEqWizard or ModeTab.ToolsIrComparer;
 
     private float GetDpiScale()
     {

@@ -163,6 +163,7 @@ public sealed class OverlayCollection
             Mode.PhaseResponse or
             Mode.GroupDelay or
             Mode.LiveSpectrum or
+            Mode.EqWizard or
             Mode.Autocorrelation;
     }
 
@@ -170,7 +171,7 @@ public sealed class OverlayCollection
     // they share a single set of overlay slots and on-disk storage. Both map to a
     // single canonical mode used for every overlay comparison, path, and tag.
     public static Mode OverlayModeFor(Mode mode) =>
-        mode == Mode.LiveSpectrum ? Mode.FrequencyResponse : mode;
+        mode is Mode.LiveSpectrum or Mode.EqWizard ? Mode.FrequencyResponse : mode;
 
     internal IReadOnlyList<OverlaySlotOption> GetCaptureSourceOptions()
     {
@@ -182,6 +183,15 @@ public sealed class OverlayCollection
             .Select(overlay => new OverlaySlotOption(
                 overlay.Index,
                 overlay.Title))
+            .ToArray();
+    }
+
+    internal IReadOnlyList<TargetOverlayOption> GetTargetOverlayOptions(Mode mode)
+    {
+        Mode overlayMode = OverlayModeFor(mode);
+        return overlays
+            .Where(overlay => overlay.IsConfiguredTargetFor(overlayMode))
+            .Select(overlay => overlay.CreateTargetOverlayOption())
             .ToArray();
     }
 
@@ -529,6 +539,15 @@ public sealed class Overlay
 
     private bool IsCurrentMeasurementTarget =>
         kind == OverlayKind.Target && targetSourceSlot == 0;
+
+    internal bool IsConfiguredTargetFor(Mode mode) =>
+        kind == OverlayKind.Target &&
+        targetConfigured &&
+        SeriesMode == mode &&
+        Title.Length > 0;
+
+    internal TargetOverlayOption CreateTargetOverlayOption() =>
+        new(Index, Title, targetSourceSlot);
 
     // Redraws a shown current-measurement Target overlay so it follows a
     // live-updating source such as the running Live Spectrum trace. Returns true
@@ -1352,9 +1371,13 @@ public sealed class Overlay
         smoothingInverseOctaves = dialog.SmoothingInverseOctaves;
         targetConfigured = true;
 
-        TrySaveCurrentState("Overlay changes could not be saved.");
+        bool saved = TrySaveCurrentState("Overlay changes could not be saved.");
         SetAvailability(true);
         Show();
+        if (dialog.OpenEqWizardRequested && saved)
+        {
+            collection.Form.OpenEqWizardForTargetOverlay(Index);
+        }
     }
 
     private void ConfigureCaptured()

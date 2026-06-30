@@ -38,6 +38,8 @@ public partial class Form1
 
     public async Task ChangeModeAsync(Mode mode)
     {
+        CaptureActiveOverlaySlotsForCurrentMode();
+
         if (expSweepMeasurement.InProgress)
         {
             await expSweepMeasurement.AbortAsync();

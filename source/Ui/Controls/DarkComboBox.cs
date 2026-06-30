@@ -44,7 +44,7 @@ public sealed class DarkComboBox : UserControl
 
         BackColor = UiPalette.ControlSurface;
         ForeColor = UiPalette.TextPrimary;
-        Margin = Padding.Empty;
+        Margin = new Padding(3);
         Size = new Size(121, 19);
         MinimumSize = new Size(36, 19);
         TabStop = true;

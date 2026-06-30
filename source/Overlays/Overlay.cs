@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using OxyPlot;
 using OxyPlot.Series;
+using Resonalyze.Dsp;
 using Button = System.Windows.Forms.Button;
 using CheckBox = System.Windows.Forms.CheckBox;
 using ToolTip = System.Windows.Forms.ToolTip;
@@ -193,6 +194,126 @@ public sealed class OverlayCollection
             .Where(overlay => overlay.IsConfiguredTargetFor(overlayMode))
             .Select(overlay => overlay.CreateTargetOverlayOption())
             .ToArray();
+    }
+
+    // Colour of the synthesised "Source + EQ" curve. Fixed (no overlay backs it) and
+    // chosen to stand out from the random overlay slot colours.
+    private static readonly OxyColor SourcePlusEqColor = OxyColor.FromRgb(0, 209, 255);
+
+    // Resolves everything the EQ Wizard plot draws for a target slot: the target
+    // shape, its captured source curve, and the source with the supplied EQ applied
+    // (Source + EQ). When a source curve exists, the target is sampled on the same
+    // frequencies so the area between Source + EQ and Target lines up exactly.
+    // Returns null when the slot is not a configured target for the current mode.
+    internal EqWizardRenderSet? BuildEqWizardRender(
+        int targetSlot,
+        EqualizationCurve eq,
+        int sourceSmoothingInverseOctaves)
+    {
+        ArgumentNullException.ThrowIfNull(eq);
+
+        Mode overlayMode = OverlayModeFor(Form.CurrentMode);
+        Overlay? target = overlays.FirstOrDefault(
+            overlay => overlay.Index == targetSlot &&
+                overlay.IsConfiguredTargetFor(overlayMode));
+        if (target == null)
+        {
+            return null;
+        }
+
+        EqWizardCurve? sourceCurve = null;
+        int sourceSlot = target.TargetSourceSlotValue;
+        if (sourceSlot != 0)
+        {
+            Overlay? source = overlays.FirstOrDefault(
+                overlay => overlay.Index == sourceSlot &&
+                    overlay.Kind == OverlayKind.Captured &&
+                    overlay.SeriesMode == overlayMode);
+            sourceCurve = source?.BuildCapturedWizardCurve();
+        }
+
+        // Optional extra smoothing of the source applies to every derived curve
+        // (Source, Source + EQ) and to the auto-tune fit, which all read from it.
+        if (sourceCurve is { Points.Count: >= 2 } && sourceSmoothingInverseOctaves > 0)
+        {
+            OverlayPoint[] smoothed = OverlayMath.SmoothByOctaves(
+                sourceCurve.Points.Select(point => new OverlayPoint(point.X, point.Y)).ToArray(),
+                sourceSmoothingInverseOctaves);
+            sourceCurve = sourceCurve with
+            {
+                Points = smoothed.Select(point => new DataPoint(point.X, point.Y)).ToArray()
+            };
+        }
+
+        EqWizardCurve? targetCurve;
+        EqWizardCurve? sourcePlusEqCurve = null;
+        if (sourceCurve is { Points.Count: >= 2 })
+        {
+            double[] frequencies = sourceCurve.Points.Select(point => point.X).ToArray();
+            targetCurve = target.BuildTargetWizardCurveAt(frequencies);
+            sourcePlusEqCurve = BuildSourcePlusEqCurve(sourceCurve.Points, eq);
+        }
+        else
+        {
+            targetCurve = target.BuildTargetWizardCurve();
+        }
+
+        if (targetCurve == null)
+        {
+            return null;
+        }
+
+        return new EqWizardRenderSet(
+            targetCurve,
+            sourceCurve,
+            sourcePlusEqCurve,
+            target.OffsetValue);
+    }
+
+    private static EqWizardCurve BuildSourcePlusEqCurve(
+        IReadOnlyList<DataPoint> sourcePoints,
+        EqualizationCurve eq)
+    {
+        var points = new DataPoint[sourcePoints.Count];
+        for (int i = 0; i < sourcePoints.Count; i++)
+        {
+            DataPoint point = sourcePoints[i];
+            points[i] = new DataPoint(point.X, point.Y + eq.MagnitudeDbAt(point.X));
+        }
+
+        return new EqWizardCurve(
+            "Source + EQ",
+            SourcePlusEqColor,
+            2,
+            LineStyle.Solid,
+            points);
+    }
+
+    // Applies a vertical offset to the chosen target overlay from the EQ Wizard.
+    internal void ApplyEqWizardTargetOffset(int targetSlot, double offset)
+    {
+        Mode overlayMode = OverlayModeFor(Form.CurrentMode);
+        Overlay? target = overlays.FirstOrDefault(
+            overlay => overlay.Index == targetSlot &&
+                overlay.IsConfiguredTargetFor(overlayMode));
+        target?.ApplyTargetOffset(offset);
+    }
+
+    // Opens the settings dialog of the chosen target overlay from the EQ Wizard.
+    // Returns true if a configured target was found and its dialog shown.
+    internal bool OpenEqWizardTargetSettings(int targetSlot)
+    {
+        Mode overlayMode = OverlayModeFor(Form.CurrentMode);
+        Overlay? target = overlays.FirstOrDefault(
+            overlay => overlay.Index == targetSlot &&
+                overlay.IsConfiguredTargetFor(overlayMode));
+        if (target == null)
+        {
+            return false;
+        }
+
+        target.ShowSettingsDialog();
+        return true;
     }
 
     internal bool TryGetCaptureSource(
@@ -548,6 +669,99 @@ public sealed class Overlay
 
     internal TargetOverlayOption CreateTargetOverlayOption() =>
         new(Index, Title, targetSourceSlot);
+
+    // Opens this overlay's settings dialog (used by the EQ Wizard to edit the
+    // target it is tuning against). Routes to the right editor for the slot kind.
+    internal void ShowSettingsDialog() => OpenSettings();
+
+    internal int TargetSourceSlotValue => targetSourceSlot;
+
+    internal double OffsetValue => (double)offsetControl.Value;
+
+    // Drives this Target overlay's vertical offset from the EQ Wizard. Setting the
+    // slot's offset control reuses the normal change path, so the value is persisted
+    // and any shown overlay on the main plot is redrawn.
+    internal void ApplyTargetOffset(double offset)
+    {
+        if (kind != OverlayKind.Target || !targetConfigured)
+        {
+            return;
+        }
+
+        decimal clamped = (decimal)Math.Clamp(
+            offset,
+            (double)offsetControl.Minimum,
+            (double)offsetControl.Maximum);
+        if (offsetControl.Value != clamped)
+        {
+            offsetControl.Value = clamped;
+        }
+    }
+
+    // The EQ Wizard always draws the target in this fixed colour, regardless of the
+    // overlay's own colour, so the wizard's curve palette stays consistent.
+    private static readonly OxyColor EqWizardTargetColor = OxyColor.FromRgb(0x4A, 0xB1, 0xDC);
+
+    // Builds this Target overlay's shape on the default grid for the EQ Wizard
+    // plot, returning a self-contained curve description (no plot mutation).
+    internal EqWizardCurve? BuildTargetWizardCurve() =>
+        BuildTargetWizardCurveOn(DefaultTargetGrid);
+
+    // Same target shape, evaluated at the supplied frequencies so it lines up
+    // point-for-point with the source curve (needed for an exact area fill).
+    internal EqWizardCurve? BuildTargetWizardCurveAt(IReadOnlyList<double> frequenciesHz) =>
+        BuildTargetWizardCurveOn(
+            frequenciesHz.Select(frequency => new OverlayPoint(frequency, 0)).ToArray());
+
+    private EqWizardCurve? BuildTargetWizardCurveOn(OverlayPoint[] grid)
+    {
+        if (kind != OverlayKind.Target || !targetConfigured)
+        {
+            return null;
+        }
+
+        TargetCurveResult result = OverlayMath.BuildTarget(
+            grid,
+            CurrentTargetSpec(),
+            (double)offsetControl.Value,
+            0,
+            0,
+            TargetDeviationMode.None);
+        if (result.Target.Length < 2)
+        {
+            return null;
+        }
+
+        return new EqWizardCurve(
+            "Target",
+            EqWizardTargetColor,
+            strokeThickness,
+            ToOxyLineStyle(lineStyle),
+            result.Target.Select(point => new DataPoint(point.X, point.Y)).ToArray());
+    }
+
+    // Returns this captured overlay's drawn curve for the EQ Wizard plot.
+    internal EqWizardCurve? BuildCapturedWizardCurve()
+    {
+        if (kind != OverlayKind.Captured || drawPoints is not { Length: >= 2 })
+        {
+            return null;
+        }
+
+        return new EqWizardCurve(
+            "Source",
+            ToOverlayColor(),
+            strokeThickness,
+            ToOxyLineStyle(lineStyle),
+            (DataPoint[])drawPoints.Clone());
+    }
+
+    private OxyColor ToOverlayColor()
+    {
+        Color color = panel.BackColor;
+        byte alpha = (byte)Math.Round(opacityPercent / 100.0 * 255);
+        return OxyColor.FromArgb(alpha, color.R, color.G, color.B);
+    }
 
     // Redraws a shown current-measurement Target overlay so it follows a
     // live-updating source such as the running Live Spectrum trace. Returns true

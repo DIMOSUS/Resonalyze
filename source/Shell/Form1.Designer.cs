@@ -52,6 +52,7 @@ namespace Resonalyze
             timeAlignmentPanel = new TimeAlignmentPanel();
             eqWizardPanel = new EqWizardPanel();
             irComparerPanel = new IrComparerPanel();
+            eqResultsPanel = new EqResultsPanel();
             overlays.SuspendLayout();
             overlayPanel1.SuspendLayout();
             (numericUpDown1).BeginInit();
@@ -327,14 +328,26 @@ namespace Resonalyze
             irComparerPanel.Size = new Size(1182, 704);
             irComparerPanel.TabIndex = 29;
             irComparerPanel.Visible = false;
-            // 
+            //
+            // eqResultsPanel
+            //
+            eqResultsPanel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            eqResultsPanel.BackColor = Color.FromArgb(20, 22, 30);
+            eqResultsPanel.BorderStyle = BorderStyle.FixedSingle;
+            eqResultsPanel.Location = new Point(1200, 415);
+            eqResultsPanel.Name = "eqResultsPanel";
+            eqResultsPanel.Size = new Size(154, 341);
+            eqResultsPanel.TabIndex = 30;
+            eqResultsPanel.Visible = false;
+            //
             // Form1
-            // 
+            //
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
             ClientSize = new Size(1366, 768);
             Controls.Add(chromeTitleBar);
+            Controls.Add(eqResultsPanel);
             Controls.Add(irComparerPanel);
             Controls.Add(eqWizardPanel);
             Controls.Add(timeAlignmentPanel);
@@ -384,5 +397,6 @@ namespace Resonalyze
         private TimeAlignmentPanel timeAlignmentPanel;
         private EqWizardPanel eqWizardPanel;
         private IrComparerPanel irComparerPanel;
+        private EqResultsPanel eqResultsPanel;
     }
 }

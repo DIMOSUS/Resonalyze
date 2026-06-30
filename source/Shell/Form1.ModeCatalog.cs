@@ -137,7 +137,7 @@ public partial class Form1
                 Mode.EqWizard,
                 SupportsCurveDrawing: false,
                 MainContent: MainContentKind.EqWizard,
-                HasOverlayPanel: true,
+                HasOverlayPanel: false,
                 HasDockedSettings: false,
                 ShowOverlayCurves: false,
                 CreatePlotModel: null,

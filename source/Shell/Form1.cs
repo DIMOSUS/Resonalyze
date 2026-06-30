@@ -108,6 +108,10 @@ namespace Resonalyze
             dockedModeSettingsHost = dependencies.DockedModeSettingsHost;
             dockedMeasurementSettingsHost = dependencies.DockedMeasurementSettingsHost;
             dockedHistoryHost = dependencies.DockedHistoryHost;
+            eqWizardPanel.RenderProvider = overlayCollection.BuildEqWizardRender;
+            eqWizardPanel.TargetOffsetSetter = overlayCollection.ApplyEqWizardTargetOffset;
+            eqWizardPanel.ResultsChanged = eqResultsPanel.SetResults;
+            eqWizardPanel.OverlaySettingsRequested = OpenEqWizardOverlaySettings;
             modeDescriptors = CreateModeDescriptors();
             ApplyPersistedSettings();
             WireControllerEvents();

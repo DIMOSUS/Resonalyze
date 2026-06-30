@@ -47,7 +47,7 @@ namespace Resonalyze
             slotLabel.ForeColor = Color.FromArgb(210, 214, 222);
             slotLabel.Location = new Point(2, 0);
             slotLabel.Name = "slotLabel";
-            slotLabel.Size = new Size(20, 36);
+            slotLabel.Size = new Size(20, 30);
             slotLabel.TabIndex = 0;
             slotLabel.Text = "1";
             slotLabel.TextAlign = ContentAlignment.MiddleRight;
@@ -57,7 +57,7 @@ namespace Resonalyze
             // 
             frequencyLabel.AutoSize = true;
             frequencyLabel.ForeColor = Color.FromArgb(170, 176, 190);
-            frequencyLabel.Location = new Point(26, 10);
+            frequencyLabel.Location = new Point(25, 7);
             frequencyLabel.Name = "frequencyLabel";
             frequencyLabel.Size = new Size(13, 15);
             frequencyLabel.TabIndex = 1;
@@ -70,7 +70,7 @@ namespace Resonalyze
             frequencyInput.Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             frequencyInput.ForeColor = Color.White;
             frequencyInput.Increment = new decimal(new int[] { 10, 0, 0, 0 });
-            frequencyInput.Location = new Point(36, 7);
+            frequencyInput.Location = new Point(36, 4);
             frequencyInput.Maximum = new decimal(new int[] { 20000, 0, 0, 0 });
             frequencyInput.Minimum = new decimal(new int[] { 10, 0, 0, 0 });
             frequencyInput.MinimumSize = new Size(36, 19);
@@ -85,7 +85,7 @@ namespace Resonalyze
             // 
             qLabel.AutoSize = true;
             qLabel.ForeColor = Color.FromArgb(170, 176, 190);
-            qLabel.Location = new Point(101, 10);
+            qLabel.Location = new Point(101, 7);
             qLabel.Name = "qLabel";
             qLabel.Size = new Size(16, 15);
             qLabel.TabIndex = 3;
@@ -98,7 +98,7 @@ namespace Resonalyze
             qInput.Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             qInput.ForeColor = Color.White;
             qInput.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
-            qInput.Location = new Point(115, 7);
+            qInput.Location = new Point(115, 4);
             qInput.Maximum = new decimal(new int[] { 20, 0, 0, 0 });
             qInput.Minimum = new decimal(new int[] { 1, 0, 0, 65536 });
             qInput.MinimumSize = new Size(36, 19);
@@ -113,7 +113,7 @@ namespace Resonalyze
             // 
             gainLabel.AutoSize = true;
             gainLabel.ForeColor = Color.FromArgb(170, 176, 190);
-            gainLabel.Location = new Point(170, 10);
+            gainLabel.Location = new Point(170, 7);
             gainLabel.Name = "gainLabel";
             gainLabel.Size = new Size(15, 15);
             gainLabel.TabIndex = 5;
@@ -126,7 +126,7 @@ namespace Resonalyze
             gainInput.Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             gainInput.ForeColor = Color.White;
             gainInput.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
-            gainInput.Location = new Point(183, 7);
+            gainInput.Location = new Point(183, 4);
             gainInput.Maximum = new decimal(new int[] { 6, 0, 0, 0 });
             gainInput.Minimum = new decimal(new int[] { 15, 0, 0, int.MinValue });
             gainInput.MinimumSize = new Size(36, 19);
@@ -151,9 +151,9 @@ namespace Resonalyze
             Controls.Add(slotLabel);
             Font = new Font("Segoe UI", 9F);
             ForeColor = Color.White;
-            MinimumSize = new Size(236, 34);
+            MinimumSize = new Size(236, 30);
             Name = "PeqSlotControl";
-            Size = new Size(236, 36);
+            Size = new Size(236, 30);
             (frequencyInput).EndInit();
             (qInput).EndInit();
             (gainInput).EndInit();

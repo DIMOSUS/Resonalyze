@@ -126,6 +126,21 @@ public partial class Form1
         eqWizardPanel.SelectTargetOverlaySlot(targetOverlaySlot);
     }
 
+    // Opens the settings of the target overlay the EQ Wizard is tuning, then
+    // refreshes the wizard so any edits (spec, tolerance, title) take effect.
+    private void OpenEqWizardOverlaySettings(int targetOverlaySlot)
+    {
+        if (!overlayCollection.OpenEqWizardTargetSettings(targetOverlaySlot))
+        {
+            return;
+        }
+
+        eqWizardPanel.SetTargetOverlayOptions(
+            overlayCollection.GetTargetOverlayOptions(CurrentMode));
+        eqWizardPanel.SelectTargetOverlaySlot(targetOverlaySlot);
+        eqWizardPanel.RefreshCurves();
+    }
+
     private Dictionary<ModeTab, Action> CreateModeTabActions() =>
         new()
         {
@@ -161,6 +176,7 @@ public partial class Form1
                 overlayCollection.GetTargetOverlayOptions(CurrentMode));
         }
         irComparerPanel.Visible = descriptor.ShowsIrComparerPanel;
+        eqResultsPanel.Visible = descriptor.ShowsEqWizardPanel;
         SyncDockedModeSettingsOnModeChange();
         UpdatePlotLabelsPanel();
     }

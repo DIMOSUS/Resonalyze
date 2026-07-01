@@ -46,7 +46,8 @@ internal static class ImpulseWindowPreview
         double leftMs,
         double plateauMs,
         double rightMs,
-        IrPreviewSource source)
+        IrPreviewSource source,
+        CompareAnalysisSource? compare = null)
     {
         plotView.Model = CreateGatedPlotModel(
             measurement,
@@ -54,7 +55,8 @@ internal static class ImpulseWindowPreview
             leftMs,
             plateauMs,
             rightMs,
-            source);
+            source,
+            compare);
         plotView.InvalidatePlot(true);
     }
 
@@ -64,7 +66,8 @@ internal static class ImpulseWindowPreview
         double leftMs,
         double plateauMs,
         double rightMs,
-        IrPreviewSource source)
+        IrPreviewSource source,
+        CompareAnalysisSource? compare)
     {
         var model = CreatePreviewPlotModel("IR Gate");
 
@@ -135,6 +138,8 @@ internal static class ImpulseWindowPreview
         windowSeries.Points.AddRange(windowPoints);
         model.Series.Add(windowSeries);
 
+        AddCompareImpulse(model, compare, sampleRate, displayStart, displayEnd);
+
         model.Annotations.Add(new LineAnnotation
         {
             Type = LineAnnotationType.Vertical,
@@ -145,6 +150,50 @@ internal static class ImpulseWindowPreview
         });
 
         return model;
+    }
+
+    // Overlays the Compare transfer IR on the same absolute timeline (index = index),
+    // dashed / dimmed / in a distinct hue. Normalised independently so both peaks show.
+    // Only drawn when the sample rate matches, so the shared ms axis stays meaningful.
+    private static void AddCompareImpulse(
+        PlotModel model,
+        CompareAnalysisSource? compare,
+        int sampleRate,
+        int displayStart,
+        int displayEnd)
+    {
+        if (compare is not { } source ||
+            source.SampleRate != sampleRate ||
+            source.TransferImpulseResponse is not { Length: > 0 } samples)
+        {
+            return;
+        }
+
+        double maxMagnitude = 0;
+        for (int s = displayStart; s <= displayEnd && s < samples.Length; s++)
+        {
+            maxMagnitude = Math.Max(maxMagnitude, Math.Abs(samples[s].Real));
+        }
+        double scale = maxMagnitude > 0 ? 1.0 / maxMagnitude : 1.0;
+
+        var comparePoints = new List<DataPoint>(Math.Max(0, displayEnd - displayStart + 1));
+        for (int s = displayStart; s <= displayEnd; s++)
+        {
+            double ms = s * 1000.0 / sampleRate;
+            double value = s >= 0 && s < samples.Length ? samples[s].Real * scale : 0.0;
+            comparePoints.Add(new DataPoint(ms, value));
+        }
+
+        var compareSeries = new LineSeries
+        {
+            Color = OxyColor.FromArgb(180, 120, 200, 255),
+            StrokeThickness = 1.5,
+            LineStyle = LineStyle.Dash,
+            Title = source.DisplayName,
+            TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}"
+        };
+        compareSeries.Points.AddRange(comparePoints);
+        model.Series.Add(compareSeries);
     }
 
     private static int MillisecondsToSamples(double milliseconds, int sampleRate) =>

@@ -101,6 +101,65 @@ public sealed class OverlayFileTests
     }
 
     [Fact]
+    public void SaveAndLoad_RoundTripsOperationWithLiveCurveOperands()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = new OverlayFile
+            {
+                SavedAtUtc = DateTimeOffset.UtcNow,
+                Mode = Mode.PhaseResponse,
+                Slot = 9,
+                Kind = OverlayKind.Operation,
+                Title = "Main minus Compare",
+                SourceCurveKeyA = "PhaseResponse:Primary:Main",
+                SourceCurveKeyB = "PhaseResponse:Primary:Compare",
+                Operation = OverlayOperation.AMinusB,
+                ColorArgb = Color.Aqua.ToArgb()
+            };
+
+            original.Save(root);
+            OverlayFile? loaded = OverlayFile.Load(Mode.PhaseResponse, 9, root);
+
+            Assert.NotNull(loaded);
+            Assert.Equal(OverlayKind.Operation, loaded.Kind);
+            Assert.Equal("PhaseResponse:Primary:Main", loaded.SourceCurveKeyA);
+            Assert.Equal("PhaseResponse:Primary:Compare", loaded.SourceCurveKeyB);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Save_RejectsIdenticalLiveCurveOperands()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var file = new OverlayFile
+            {
+                Mode = Mode.PhaseResponse,
+                Slot = 10,
+                Kind = OverlayKind.Operation,
+                Title = "Invalid",
+                SourceCurveKeyA = "PhaseResponse:Primary:Main",
+                SourceCurveKeyB = "PhaseResponse:Primary:Main",
+                Operation = OverlayOperation.AMinusB,
+                ColorArgb = Color.White.ToArgb()
+            };
+
+            Assert.Throws<InvalidDataException>(() => file.Save(root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void SaveAndLoad_PreservesNaNPointValues()
     {
         string root = CreateTemporaryDirectory();

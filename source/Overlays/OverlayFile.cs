@@ -50,9 +50,14 @@ public sealed class OverlayFile
     // older files deserialize to null and older app builds ignore the unknown property.
     public bool? PhaseUnwrapped { get; set; }
 
-    // Operation kind: recipe referencing two captured source slots.
+    // Operation kind: recipe referencing two operands. Each operand is a captured slot
+    // (SourceSlotA/B), unless SourceCurveKeyA/B is set — then it is a live analysis
+    // curve resolved by its CurveTag Key on every rebuild. Additive and nullable, so no
+    // file version bump is needed (older files load the key as null = slot operand).
     public int SourceSlotA { get; set; }
     public int SourceSlotB { get; set; }
+    public string? SourceCurveKeyA { get; set; }
+    public string? SourceCurveKeyB { get; set; }
     public OverlayOperation Operation { get; set; } = OverlayOperation.AMinusB;
     public double BlendFrequencyHz { get; set; } = 1_000;
     public double BlendWidthOctaves { get; set; } = 1;
@@ -291,12 +296,23 @@ public sealed class OverlayFile
 
     private void ValidateOperation()
     {
-        if (SourceSlotA is < 1 or > MaximumSlotCount ||
-            SourceSlotB is < 1 or > MaximumSlotCount ||
-            SourceSlotA == SourceSlotB)
+        // An operand is a live curve when its CurveKey is set; otherwise a captured slot
+        // whose index must be in range. The two operands must not be identical.
+        bool aIsCurve = !string.IsNullOrEmpty(SourceCurveKeyA);
+        bool bIsCurve = !string.IsNullOrEmpty(SourceCurveKeyB);
+        if ((!aIsCurve && SourceSlotA is < 1 or > MaximumSlotCount) ||
+            (!bIsCurve && SourceSlotB is < 1 or > MaximumSlotCount))
         {
             throw new InvalidDataException(
                 "Calculated overlay source slots are invalid.");
+        }
+        bool sameOperand = aIsCurve || bIsCurve
+            ? aIsCurve && bIsCurve && SourceCurveKeyA == SourceCurveKeyB
+            : SourceSlotA == SourceSlotB;
+        if (sameOperand)
+        {
+            throw new InvalidDataException(
+                "Calculated overlay operands must differ.");
         }
         if (!Enum.IsDefined(Operation))
         {

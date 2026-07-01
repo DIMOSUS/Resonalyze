@@ -12,7 +12,9 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         Mode mode,
         string name,
         int sourceSlotA,
+        string? sourceCurveKeyA,
         int sourceSlotB,
+        string? sourceCurveKeyB,
         OverlayOperation operation,
         double blendFrequencyHz,
         double blendWidthOctaves,
@@ -22,21 +24,22 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         OverlayLineStyle lineStyle,
         int opacityPercent,
         int smoothingInverseOctaves,
-        IReadOnlyList<OverlaySlotOption> availableSources)
+        IReadOnlyList<OverlaySlotOption> availableSources,
+        IReadOnlyList<LiveCurveOption> availableLiveCurves)
     {
         supportsSmoothing = OverlaySmoothing.SupportsMode(mode);
         supportsAmplitudeSpace = OverlayMath.SupportsAmplitudeSpace(mode);
         selectedColor = color;
 
         InitializeComponent();
-        PopulateControls(availableSources);
+        PopulateControls(availableSources, availableLiveCurves);
         WireEvents();
         InitializeToolTips();
         ApplyModeAvailability();
 
         nameTextBox.Text = name;
-        SelectSlot(sourceAComboBox, sourceSlotA, 0);
-        SelectSlot(sourceBComboBox, sourceSlotB, 1);
+        SelectOperand(sourceAComboBox, sourceSlotA, sourceCurveKeyA, 0);
+        SelectOperand(sourceBComboBox, sourceSlotB, sourceCurveKeyB, 1);
         operationComboBox.SelectedItem = operation;
         blendFrequencyInput.Value = (decimal)Math.Clamp(
             blendFrequencyHz,
@@ -54,10 +57,10 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
     }
 
     public string OverlayName => nameTextBox.Text.Trim();
-    public int SourceSlotA =>
-        ((OverlaySlotOption)sourceAComboBox.SelectedItem!).Slot;
-    public int SourceSlotB =>
-        ((OverlaySlotOption)sourceBComboBox.SelectedItem!).Slot;
+    public int SourceSlotA => SlotOf(sourceAComboBox);
+    public int SourceSlotB => SlotOf(sourceBComboBox);
+    public string? SourceCurveKeyA => OperandOf(sourceAComboBox)?.CurveKey;
+    public string? SourceCurveKeyB => OperandOf(sourceBComboBox)?.CurveKey;
     public OverlayOperation Operation =>
         (OverlayOperation)operationComboBox.SelectedItem!;
     public double BlendFrequencyHz => (double)blendFrequencyInput.Value;
@@ -73,12 +76,28 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         ? (int)smoothingComboBox.SelectedItem!
         : 0;
 
-    private void PopulateControls(IReadOnlyList<OverlaySlotOption> availableSources)
+    private void PopulateControls(
+        IReadOnlyList<OverlaySlotOption> availableSources,
+        IReadOnlyList<LiveCurveOption> availableLiveCurves)
     {
+        // Live curves (the ones drawn on the plot right now) first, then captured slots.
+        // A live-curve operand re-reads its curve on every rebuild; a slot operand is a
+        // one-off snapshot.
+        foreach (LiveCurveOption live in availableLiveCurves)
+        {
+            var operand = new OverlayOperandOption(0, live.Key, $"Live: {live.Label}");
+            sourceAComboBox.Items.Add(operand);
+            sourceBComboBox.Items.Add(operand);
+        }
+
         foreach (OverlaySlotOption source in availableSources)
         {
-            sourceAComboBox.Items.Add(source);
-            sourceBComboBox.Items.Add(source);
+            var operand = new OverlayOperandOption(
+                source.Slot,
+                null,
+                $"Slot {source.Slot}: {source.Title}");
+            sourceAComboBox.Items.Add(operand);
+            sourceBComboBox.Items.Add(operand);
         }
 
         foreach (OverlayOperation item in Enum.GetValues<OverlayOperation>())
@@ -149,10 +168,10 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         toolTip.SetToolTip(nameTextBox, "Display name shown in the on-plot legend.");
         toolTip.SetToolTip(
             sourceAComboBox,
-            "Curve A — the first captured overlay slot used by the operation.");
+            "Curve A — a live plot curve (tracks the analysis) or a captured overlay slot.");
         toolTip.SetToolTip(
             sourceBComboBox,
-            "Curve B — the second captured overlay slot used by the operation.");
+            "Curve B — a live plot curve (tracks the analysis) or a captured overlay slot.");
         toolTip.SetToolTip(
             operationComboBox,
             "Calculation applied between curve A and curve B.");
@@ -176,10 +195,12 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
 
     private void SaveButtonClick(object? sender, EventArgs e)
     {
+        OverlayOperandOption? a = OperandOf(sourceAComboBox);
+        OverlayOperandOption? b = OperandOf(sourceBComboBox);
         bool valid = OverlayName.Length > 0 &&
-            sourceAComboBox.SelectedItem != null &&
-            sourceBComboBox.SelectedItem != null &&
-            SourceSlotA != SourceSlotB;
+            a != null &&
+            b != null &&
+            !SameOperand(a, b);
         if (valid)
         {
             return;
@@ -243,15 +264,18 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         opacityValueLabel.Text = $"{opacityTrackBar.Value}%";
     }
 
-    private static void SelectSlot(
+    private static void SelectOperand(
         DarkComboBox comboBox,
         int slot,
+        string? curveKey,
         int fallbackIndex)
     {
         int index = comboBox.Items
-            .Cast<OverlaySlotOption>()
+            .Cast<OverlayOperandOption>()
             .Select((item, itemIndex) => (item, itemIndex))
-            .Where(pair => pair.item.Slot == slot)
+            .Where(pair => curveKey != null
+                ? pair.item.CurveKey == curveKey
+                : !pair.item.IsLiveCurve && pair.item.Slot == slot)
             .Select(pair => pair.itemIndex)
             .DefaultIfEmpty(-1)
             .First();
@@ -259,11 +283,34 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
             ? index
             : Math.Min(fallbackIndex, comboBox.Items.Count - 1);
     }
+
+    private static OverlayOperandOption? OperandOf(DarkComboBox comboBox) =>
+        comboBox.SelectedItem as OverlayOperandOption;
+
+    private static int SlotOf(DarkComboBox comboBox) =>
+        OperandOf(comboBox) is { IsLiveCurve: false } operand ? operand.Slot : 0;
+
+    private static bool SameOperand(OverlayOperandOption a, OverlayOperandOption b) =>
+        a.IsLiveCurve || b.IsLiveCurve
+            ? a.CurveKey == b.CurveKey
+            : a.Slot == b.Slot;
 }
 
 internal sealed record OverlaySlotOption(int Slot, string Title)
 {
     public override string ToString() => $"{Slot}: {Title}";
+}
+
+// A live analysis curve (identified by its CurveTag Key) selectable as an operation
+// operand directly from the plot, without capturing it into a slot first.
+internal sealed record LiveCurveOption(string Key, string Label);
+
+// A unified operation operand: a captured slot (CurveKey null) or a live curve.
+internal sealed record OverlayOperandOption(int Slot, string? CurveKey, string Label)
+{
+    public bool IsLiveCurve => CurveKey != null;
+
+    public override string ToString() => Label;
 }
 
 internal sealed record TargetOverlayOption(int Slot, string Title, int SourceSlot)

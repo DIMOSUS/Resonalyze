@@ -5,6 +5,7 @@ using OxyPlot.Axes;
 using OxyPlot.Series;
 using OxyPlot.WindowsForms;
 using Resonalyze.Dsp;
+using Resonalyze.History;
 
 namespace Resonalyze;
 
@@ -12,15 +13,19 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 {
     private const double SpeedOfSoundAt20C = 343.2;
     private const int DelayTableFirstColumn = 18;
-    private const int DelayTableSecondColumn = 34;
+    // Widened past the old 34 so a Compare cell "value (Δ)" fits without touching the
+    // Strongest Peak column.
+    private const int DelayTableSecondColumn = 37;
 
     private readonly Form owner;
     private readonly TimeAlignmentOptions options;
     private readonly ExpSweepMeasurement measurement;
     private readonly Action saveSettings;
     private readonly Func<string?> getImpulseResponseFileName;
+    private readonly Func<TimeAlignmentCompareMeasurement?> getCompareMeasurement;
     private readonly TimeAlignmentPanel panel;
     private readonly Label sourceSummaryLabel;
+    private readonly Label compareLabel;
     private readonly CheckBox bandpassCheckBox;
     private readonly DarkNumericUpDown bandpassCenterNumeric;
     private readonly DarkNumericUpDown bandpassPassOctavesNumeric;
@@ -37,7 +42,8 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         TimeAlignmentOptions options,
         ExpSweepMeasurement measurement,
         Action saveSettings,
-        Func<string?> getImpulseResponseFileName)
+        Func<string?> getImpulseResponseFileName,
+        Func<TimeAlignmentCompareMeasurement?> getCompareMeasurement)
     {
         this.owner = owner;
         this.panel = panel;
@@ -45,12 +51,14 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         this.measurement = measurement;
         this.saveSettings = saveSettings;
         this.getImpulseResponseFileName = getImpulseResponseFileName;
+        this.getCompareMeasurement = getCompareMeasurement;
         resultTableFont = new Font(
             FontFamily.GenericMonospace,
             owner.Font.Size + 4.0f,
             FontStyle.Bold);
 
         sourceSummaryLabel = panel.SourceSummaryLabel;
+        compareLabel = panel.CompareLabel;
         bandpassCheckBox = panel.BandpassCheckBox;
         bandpassCenterNumeric = panel.BandpassCenterNumeric;
         bandpassPassOctavesNumeric = panel.BandpassPassOctavesNumeric;
@@ -121,11 +129,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private void RefreshAnalysis()
     {
         sourceSummaryLabel.Text = CreateSourceSummary();
+        compareLabel.Text = CreateCompareSummary();
 
-        if (!TryGetSourceImpulseResponse(
-            out double[]? impulseResponse,
-            out bool wrapPeakPositions,
-            out string noDataMessage))
+        if (!TryGetMainSource(out TimeAlignmentAnalysisSource mainSource, out string noDataMessage))
         {
             SetStatusText(noDataMessage);
             ClearEnvelopePreview();
@@ -134,12 +140,21 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         try
         {
-            TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
-                impulseResponse!,
-                measurement.SampleRate,
-                CreateAnalysisOptions(wrapPeakPositions));
-            SetMeasurementResultStatus(result);
-            UpdateEnvelopePreview(result);
+            TimeAlignmentAnalysisResult mainResult = TimeAlignmentAnalysis.Analyze(
+                mainSource.TransferImpulseResponse,
+                mainSource.SampleRate,
+                CreateAnalysisOptions(wrapPeakPositions: true));
+            TimeAlignmentCompareAnalysis? compareAnalysis =
+                AnalyzeCompare(mainSource, out string? compareWarning);
+            SetMeasurementResultStatus(
+                mainSource,
+                mainResult,
+                compareAnalysis,
+                compareWarning);
+            UpdateEnvelopePreview(
+                mainResult,
+                mainSource.SampleRate,
+                compareAnalysis?.Result);
         }
         catch (Exception exception)
         {
@@ -148,23 +163,30 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
     }
 
-    private bool TryGetSourceImpulseResponse(
-        out double[]? impulseResponse,
-        out bool wrapPeakPositions,
+    private bool TryGetMainSource(
+        out TimeAlignmentAnalysisSource source,
         out string message)
     {
         if (measurement.TransferImpulseResponse is { Length: > 0 } transferImpulseResponse)
         {
-            impulseResponse = Array.ConvertAll(transferImpulseResponse, sample => sample.Real);
-            wrapPeakPositions = true;
+            source = new TimeAlignmentAnalysisSource(
+                "Main",
+                getImpulseResponseFileName() ?? "Transfer IR",
+                measurement.SampleRate,
+                measurement.Bits,
+                measurement.Octaves,
+                measurement.Sweep?.ComputedDuration ?? 0.0,
+                measurement.PlaybackChannel,
+                measurement.MeasurementMode,
+                Array.ConvertAll(transferImpulseResponse, sample => sample.Real),
+                measurement.CurrentLevels);
             message = string.Empty;
             return true;
         }
 
         if (measurement.SweepDeconvolutionImpulseResponse is { Length: > 0 })
         {
-            impulseResponse = null;
-            wrapPeakPositions = false;
+            source = default;
             message =
                 "This record was captured without loopback.\r\n" +
                 "Time Alignment requires a transfer IR.\r\n" +
@@ -172,8 +194,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             return false;
         }
 
-        impulseResponse = null;
-        wrapPeakPositions = false;
+        source = default;
         message =
             "No impulse response is loaded.\r\n" +
             "Run a loopback measurement or load an impulse response file with transfer IR.";
@@ -185,18 +206,47 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         if (measurement.TransferImpulseResponse is { Length: > 0 })
         {
             string source = getImpulseResponseFileName() ?? "Transfer IR";
-            return $"Source: {source}, {measurement.SampleRate} Hz.";
+            return $"Source: {source}, {measurement.SampleRate} Hz, {measurement.Bits} bit.";
         }
 
         if (measurement.SweepDeconvolutionImpulseResponse is { Length: > 0 })
         {
             return
-                $"Source: Sweep deconvolution IR only, {measurement.SampleRate} Hz.\r\n" +
+                $"Source: Sweep deconvolution IR only, {measurement.SampleRate} Hz, {measurement.Bits} bit.\r\n" +
                 "Loopback was not recorded for this entry.";
         }
 
         return "Source: waiting for a loopback measurement or file with transfer IR.";
     }
+
+    private string CreateCompareSummary()
+    {
+        TimeAlignmentCompareMeasurement? compare = getCompareMeasurement();
+        if (compare == null)
+        {
+            return "Compare: -";
+        }
+
+        MeasurementHistorySnapshot snapshot = compare.Value.Snapshot;
+        return $"Compare: {compare.Value.DisplayName}, {snapshot.SampleRate} Hz, {snapshot.Bits} bit.";
+    }
+
+    private static TimeAlignmentAnalysisSource CreateCompareSource(
+        TimeAlignmentCompareMeasurement compare,
+        MeasurementHistorySnapshot snapshot) =>
+        new(
+            "Compare",
+            compare.DisplayName,
+            snapshot.SampleRate,
+            snapshot.Bits,
+            snapshot.Octaves,
+            snapshot.SweepDurationSeconds,
+            snapshot.PlayChannel,
+            snapshot.MeasurementMode,
+            Array.ConvertAll(
+                snapshot.TransferImpulseResponse!,
+                sample => sample.Real),
+            snapshot.MeterSnapshot);
 
     private TimeAlignmentAnalysisOptions CreateAnalysisOptions(bool wrapPeakPositions) =>
         new()
@@ -303,10 +353,57 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         return model;
     }
 
-    private void UpdateEnvelopePreview(TimeAlignmentAnalysisResult result)
+    private TimeAlignmentCompareAnalysis? AnalyzeCompare(
+        TimeAlignmentAnalysisSource mainSource,
+        out string? warning)
+    {
+        warning = null;
+        TimeAlignmentCompareMeasurement? compare = getCompareMeasurement();
+        if (compare == null)
+        {
+            return null;
+        }
+
+        TimeAlignmentCompareMeasurement compareValue = compare.Value;
+        MeasurementHistorySnapshot snapshot = compareValue.Snapshot;
+        if (snapshot.SampleRate != mainSource.SampleRate)
+        {
+            warning =
+                $"Sample rate mismatch: Main is {mainSource.SampleRate} Hz, " +
+                $"Compare is {snapshot.SampleRate} Hz.";
+            return null;
+        }
+
+        if (snapshot.TransferImpulseResponse is not { Length: > 0 })
+        {
+            warning = "Compare impulse response has no transfer IR.";
+            return null;
+        }
+
+        try
+        {
+            TimeAlignmentAnalysisSource compareSource =
+                CreateCompareSource(compareValue, snapshot);
+            TimeAlignmentAnalysisResult compareResult = TimeAlignmentAnalysis.Analyze(
+                compareSource.TransferImpulseResponse,
+                compareSource.SampleRate,
+                CreateAnalysisOptions(wrapPeakPositions: true));
+            return new TimeAlignmentCompareAnalysis(compareSource, compareResult);
+        }
+        catch (Exception exception)
+        {
+            warning = exception.Message;
+            return null;
+        }
+    }
+
+    private void UpdateEnvelopePreview(
+        TimeAlignmentAnalysisResult result,
+        int sampleRate,
+        TimeAlignmentAnalysisResult? compareResult = null)
     {
         double[] envelope = result.EnvelopeSamples;
-        if (envelope.Length == 0 || result.EnvelopePeak <= 0 || measurement.SampleRate <= 0)
+        if (envelope.Length == 0 || result.EnvelopePeak <= 0 || sampleRate <= 0)
         {
             ClearEnvelopePreview();
             return;
@@ -314,29 +411,34 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         int radius = Math.Min(
             envelope.Length / 2,
-            Math.Max(1, (int)Math.Round(measurement.SampleRate * 0.025)));
-        double minMilliseconds = -radius * 1000.0 / measurement.SampleRate;
-        double maxMilliseconds = radius * 1000.0 / measurement.SampleRate;
-
-        var series = new LineSeries
+            Math.Max(1, (int)Math.Round(sampleRate * 0.025)));
+        double minMilliseconds = -radius * 1000.0 / sampleRate;
+        double maxMilliseconds = radius * 1000.0 / sampleRate;
+        double compareOffsetMilliseconds = 0.0;
+        if (compareResult.HasValue)
         {
-            Color = OxyColor.FromRgb(255, 210, 80),
-            StrokeThickness = 2
-        };
-        int step = Math.Max(1, radius * 2 / 600);
-        double maxDb = -10000;
-        double minDb = +10000;
-        for (int offset = -radius; offset <= radius; offset += step)
-        {
-            int index = WrapIndex(result.EnvelopePeakIndex + offset, envelope.Length);
-            double milliseconds = offset * 1000.0 / measurement.SampleRate;
-            double relativeAmplitude = envelope[index] / result.EnvelopePeak;
-            double decibels = DataHelper.AmplitudeToDecibels(relativeAmplitude);
-            double clampedDecibels = Math.Max(-80, decibels);
-            series.Points.Add(new DataPoint(milliseconds, clampedDecibels));
-            maxDb = Math.Max(maxDb, clampedDecibels);
-            minDb = Math.Min(minDb, clampedDecibels);
+            compareOffsetMilliseconds =
+                compareResult.Value.FirstArrivalDelayMilliseconds -
+                result.FirstArrivalDelayMilliseconds;
+            minMilliseconds = Math.Min(
+                minMilliseconds,
+                compareOffsetMilliseconds - radius * 1000.0 / sampleRate);
+            maxMilliseconds = Math.Max(
+                maxMilliseconds,
+                compareOffsetMilliseconds + radius * 1000.0 / sampleRate);
         }
+
+        int step = Math.Max(1, radius * 2 / 600);
+        LineSeries mainSeries = CreateEnvelopeSeries(
+            result,
+            sampleRate,
+            radius,
+            step,
+            xOffsetMilliseconds: 0.0,
+            OxyColor.FromRgb(255, 210, 80),
+            strokeThickness: 2,
+            out double maxDb,
+            out double minDb);
 
         var model = CreatePreviewPlotModel("Envelope Around Peak");
         model.Axes.Add(new LinearAxis
@@ -362,33 +464,200 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         dbAxis.Minimum = minDb - 2;
         model.Axes.Add(dbAxis);
 
-        model.Series.Add(series);
-        model.Annotations.Add(new LineAnnotation
+        model.Series.Add(mainSeries);
+        if (compareResult.HasValue)
         {
-            Color = OxyColor.FromRgb(255, 96, 96),
-            LineStyle = LineStyle.Dash,
-            StrokeThickness = 1,
-            Type = LineAnnotationType.Vertical,
-            X = 0
-        });
-        int strongestOffset = NormalizeWrappedOffset(
-            result.StrongestEnvelopePeakIndex - result.EnvelopePeakIndex,
-            envelope.Length);
-        double strongestMilliseconds =
-            strongestOffset * 1000.0 / measurement.SampleRate;
-        if (Math.Abs(strongestMilliseconds) <= 50 && Math.Abs(strongestOffset) > 1)
-        {
-            model.Annotations.Add(new LineAnnotation
-            {
-                Color = OxyColor.FromRgb(140, 170, 255),
-                LineStyle = LineStyle.Dot,
-                StrokeThickness = 1,
-                Type = LineAnnotationType.Vertical,
-                X = strongestMilliseconds
-            });
+            LineSeries compareSeries = CreateEnvelopeSeries(
+                compareResult.Value,
+                sampleRate,
+                radius,
+                step,
+                compareOffsetMilliseconds,
+                OxyColor.FromArgb(155, 80, 210, 255),
+                strokeThickness: 1.75,
+                out double compareMaxDb,
+                out double compareMinDb);
+            maxDb = Math.Max(maxDb, compareMaxDb);
+            minDb = Math.Min(minDb, compareMinDb);
+            dbAxis.AbsoluteMaximum = maxDb + 10;
+            dbAxis.AbsoluteMinimum = minDb - 10;
+            dbAxis.Maximum = maxDb + 2;
+            dbAxis.Minimum = minDb - 2;
+            model.Series.Add(compareSeries);
         }
 
+        if (compareResult.HasValue)
+        {
+            AddComparePeakMarkers(
+                model,
+                result,
+                compareResult.Value,
+                compareOffsetMilliseconds);
+        }
+        else
+        {
+            AddMainPeakMarkers(model, result);
+        }
         envelopePlotView.Model = model;
+    }
+
+    private static LineSeries CreateEnvelopeSeries(
+        TimeAlignmentAnalysisResult result,
+        int sampleRate,
+        int radius,
+        int step,
+        double xOffsetMilliseconds,
+        OxyColor color,
+        double strokeThickness,
+        out double maxDb,
+        out double minDb)
+    {
+        double[] envelope = result.EnvelopeSamples;
+        maxDb = -10000;
+        minDb = +10000;
+        var series = new LineSeries
+        {
+            Color = color,
+            StrokeThickness = strokeThickness
+        };
+        for (int offset = -radius; offset <= radius; offset += step)
+        {
+            int index = WrapIndex(result.EnvelopePeakIndex + offset, envelope.Length);
+            double milliseconds = offset * 1000.0 / sampleRate + xOffsetMilliseconds;
+            double relativeAmplitude = envelope[index] / result.EnvelopePeak;
+            double decibels = DataHelper.AmplitudeToDecibels(relativeAmplitude);
+            double clampedDecibels = Math.Max(-80, decibels);
+            series.Points.Add(new DataPoint(milliseconds, clampedDecibels));
+            maxDb = Math.Max(maxDb, clampedDecibels);
+            minDb = Math.Min(minDb, clampedDecibels);
+        }
+
+        return series;
+    }
+
+    private static void AddMainPeakMarkers(
+        PlotModel model,
+        TimeAlignmentAnalysisResult mainResult)
+    {
+        double strongestMilliseconds =
+            mainResult.StrongestDelayMilliseconds -
+            mainResult.FirstArrivalDelayMilliseconds;
+        AddCalloutMarker(
+            model,
+            "M First",
+            0.0,
+            GetPeakMarkerDecibels(mainResult, mainResult.EnvelopePeakIndex),
+            OxyColor.FromRgb(255, 96, 96),
+            PlotCalloutDirection.LeftUp);
+        if (Math.Abs(strongestMilliseconds) > 0.001)
+        {
+            AddCalloutMarker(
+                model,
+                "M Peak",
+                strongestMilliseconds,
+                GetPeakMarkerDecibels(mainResult, mainResult.StrongestEnvelopePeakIndex),
+                OxyColor.FromRgb(140, 170, 255),
+                PlotCalloutDirection.RightUp);
+        }
+    }
+
+    private static void AddComparePeakMarkers(
+        PlotModel model,
+        TimeAlignmentAnalysisResult mainResult,
+        TimeAlignmentAnalysisResult compareResult,
+        double compareFirstArrivalMilliseconds)
+    {
+        double mainFirstArrivalDecibels =
+            GetPeakMarkerDecibels(mainResult, mainResult.EnvelopePeakIndex);
+        double compareFirstArrivalDecibels =
+            GetPeakMarkerDecibels(compareResult, compareResult.EnvelopePeakIndex);
+        double mainStrongestMilliseconds =
+            mainResult.StrongestDelayMilliseconds -
+            mainResult.FirstArrivalDelayMilliseconds;
+        double compareStrongestMilliseconds =
+            compareResult.StrongestDelayMilliseconds -
+            mainResult.FirstArrivalDelayMilliseconds;
+        double mainStrongestDecibels =
+            GetPeakMarkerDecibels(mainResult, mainResult.StrongestEnvelopePeakIndex);
+        double compareStrongestDecibels =
+            GetPeakMarkerDecibels(compareResult, compareResult.StrongestEnvelopePeakIndex);
+
+        AddCalloutMarker(
+            model,
+            "M First",
+            0.0,
+            mainFirstArrivalDecibels,
+            OxyColor.FromRgb(255, 96, 96),
+            mainFirstArrivalDecibels >= compareFirstArrivalDecibels
+                ? PlotCalloutDirection.LeftUp
+                : PlotCalloutDirection.LeftDown);
+        AddCalloutMarker(
+            model,
+            "C First",
+            compareFirstArrivalMilliseconds,
+            compareFirstArrivalDecibels,
+            OxyColor.FromArgb(145, 255, 96, 96),
+            compareFirstArrivalDecibels > mainFirstArrivalDecibels
+                ? PlotCalloutDirection.LeftUp
+                : PlotCalloutDirection.LeftDown);
+
+        if (Math.Abs(mainStrongestMilliseconds) > 0.001)
+        {
+            AddCalloutMarker(
+                model,
+                "M Peak",
+                mainStrongestMilliseconds,
+                mainStrongestDecibels,
+                OxyColor.FromRgb(140, 170, 255),
+                mainStrongestDecibels >= compareStrongestDecibels
+                    ? PlotCalloutDirection.RightUp
+                    : PlotCalloutDirection.RightDown);
+        }
+
+        if (Math.Abs(compareStrongestMilliseconds - compareFirstArrivalMilliseconds) > 0.001)
+        {
+            AddCalloutMarker(
+                model,
+                "C Peak",
+                compareStrongestMilliseconds,
+                compareStrongestDecibels,
+                OxyColor.FromArgb(145, 140, 170, 255),
+                compareStrongestDecibels > mainStrongestDecibels
+                    ? PlotCalloutDirection.RightUp
+                    : PlotCalloutDirection.RightDown);
+        }
+    }
+
+    private static void AddCalloutMarker(
+        PlotModel model,
+        string label,
+        double milliseconds,
+        double decibels,
+        OxyColor color,
+        PlotCalloutDirection direction)
+    {
+        model.Annotations.Add(new PlotCalloutMarkerAnnotation
+        {
+            Text = label,
+            AnchorPoint = new DataPoint(milliseconds, decibels),
+            Color = color,
+            Direction = direction,
+            Layer = AnnotationLayer.AboveSeries
+        });
+    }
+
+    private static double GetPeakMarkerDecibels(
+        TimeAlignmentAnalysisResult result,
+        int peakIndex)
+    {
+        if ((uint)peakIndex >= (uint)result.EnvelopeSamples.Length ||
+            result.EnvelopePeak <= 0)
+        {
+            return 0.0;
+        }
+
+        double relativeAmplitude = result.EnvelopeSamples[peakIndex] / result.EnvelopePeak;
+        return Math.Max(-80, DataHelper.AmplitudeToDecibels(relativeAmplitude));
     }
 
     private void ClearEnvelopePreview()
@@ -426,60 +695,183 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private void SetStatusText(string text)
     {
-        statusTextBox.Clear();
-        AppendStatusText(text, UiPalette.TextSecondarySoft);
+        statusTextBox.BeginUpdate();
+        try
+        {
+            statusTextBox.Clear();
+            AppendStatusText(text, UiPalette.TextSecondarySoft);
+        }
+        finally
+        {
+            statusTextBox.EndUpdate();
+        }
     }
 
-    private void SetMeasurementResultStatus(TimeAlignmentAnalysisResult result)
+    private void SetMeasurementResultStatus(
+        TimeAlignmentAnalysisSource mainSource,
+        TimeAlignmentAnalysisResult mainResult,
+        TimeAlignmentCompareAnalysis? compareAnalysis,
+        string? compareWarning)
+    {
+        statusTextBox.BeginUpdate();
+        try
+        {
+            statusTextBox.Clear();
+            AppendMeasurementResult("Main", mainSource.Levels, mainResult);
+            AppendCompareResult(mainResult, compareAnalysis, compareWarning);
+            statusTextBox.SelectionStart = 0;
+            statusTextBox.SelectionLength = 0;
+        }
+        finally
+        {
+            statusTextBox.EndUpdate();
+        }
+    }
+
+    private void AppendCompareResult(
+        TimeAlignmentAnalysisResult mainResult,
+        TimeAlignmentCompareAnalysis? compareAnalysis,
+        string? warning)
+    {
+        if (compareAnalysis == null && warning == null)
+        {
+            return;
+        }
+
+        if (warning != null)
+        {
+            AppendStatusText("\r\nCompare: ", UiPalette.TextPrimarySoft, resultTableFont);
+            AppendStatusText(warning + "\r\n", UiPalette.WarningAmber);
+            return;
+        }
+
+        AppendStatusText("\r\n", UiPalette.TextPrimarySoft);
+        // Passing the Main result makes the Compare delay table show each value's delta
+        // against Source in parentheses.
+        AppendMeasurementResult(
+            "Compare",
+            compareAnalysis!.Value.Source.Levels,
+            compareAnalysis.Value.Result,
+            mainResult);
+    }
+
+    private void AppendMeasurementResult(
+        string title,
+        InputLevelMeterSnapshot levels,
+        TimeAlignmentAnalysisResult result,
+        TimeAlignmentAnalysisResult? reference = null)
+    {
+        AppendSignalQuality(title, result);
+        AppendLevelLine("Mic", levels.Microphone);
+        AppendLevelLine("Loopback", levels.Loopback);
+        AppendSeparator();
+        AppendDelayTable(result, reference);
+    }
+
+    private void AppendSignalQuality(string title, TimeAlignmentAnalysisResult result)
     {
         string confidence = FormatConfidence(result.ConfidenceDecibels);
         Color confidenceColor = GetConfidenceColor(confidence);
-        InputLevelMeterSnapshot levels = measurement.CurrentLevels;
-
-        statusTextBox.Clear();
-        AppendDelayTable(result);
-        AppendStatusText("Signal Quality: ", UiPalette.TextPrimarySoft);
+        AppendStatusText($"{title} Quality: ", UiPalette.TextPrimarySoft);
         AppendStatusText(
             $"{confidence} ({result.ConfidenceDecibels:0.0} dB)\r\n",
             confidenceColor);
-        AppendLevelLine("Mic", levels.Microphone);
-        AppendLevelLine("Loopback", levels.Loopback);
-        statusTextBox.SelectionStart = 0;
-        statusTextBox.SelectionLength = 0;
     }
 
-    private void AppendDelayTable(TimeAlignmentAnalysisResult result)
+    private void AppendSeparator()
     {
-        double firstArrivalMeters =
-            Math.Abs(result.FirstArrivalDelayMilliseconds) * SpeedOfSoundAt20C / 1000.0;
-        double strongestMeters =
-            Math.Abs(result.StrongestDelayMilliseconds) * SpeedOfSoundAt20C / 1000.0;
-
         AppendStatusText(
-            FormatDelayTableLine("Measured delay:", "First Arrival", "Strongest Peak") + "\r\n",
+            new string('_', 54) + "\r\n",
+            UiPalette.TextSecondarySoft,
+            resultTableFont);
+    }
+
+    // When reference is supplied (the Compare table), each value shows its delta against
+    // the Source value in parentheses, e.g. "1.006 (+0.010)".
+    private void AppendDelayTable(
+        TimeAlignmentAnalysisResult result,
+        TimeAlignmentAnalysisResult? reference = null)
+    {
+        double firstArrivalMeters = DelayMeters(result.FirstArrivalDelayMilliseconds);
+        double strongestMeters = DelayMeters(result.StrongestDelayMilliseconds);
+
+        // Header split into segments so the two peak labels carry a light colour accent
+        // matching their envelope markers, while keeping the column alignment.
+        AppendStatusText(
+            "Measured delay:".PadRight(DelayTableFirstColumn),
             UiPalette.TextPrimarySoft,
+            resultTableFont);
+        AppendStatusText(
+            "First Arrival".PadRight(DelayTableSecondColumn - DelayTableFirstColumn),
+            UiPalette.TimeAlignmentFirstArrival,
+            resultTableFont);
+        AppendStatusText(
+            "Strongest Peak\r\n",
+            UiPalette.TimeAlignmentStrongestPeak,
             resultTableFont);
         AppendStatusText(
             FormatDelayTableLine(
                 "ms",
-                $"{result.FirstArrivalDelayMilliseconds:0.000}",
-                $"{result.StrongestDelayMilliseconds:0.000}") + "\r\n",
+                FormatValueWithDelta(
+                    result.FirstArrivalDelayMilliseconds,
+                    reference?.FirstArrivalDelayMilliseconds,
+                    "0.000"),
+                FormatValueWithDelta(
+                    result.StrongestDelayMilliseconds,
+                    reference?.StrongestDelayMilliseconds,
+                    "0.000")) + "\r\n",
             UiPalette.TextPrimarySoft,
             resultTableFont);
         AppendStatusText(
             FormatDelayTableLine(
                 "meters (20\u00B0C)",
-                $"{firstArrivalMeters:0.000}",
-                $"{strongestMeters:0.000}") + "\r\n",
+                FormatValueWithDelta(
+                    firstArrivalMeters,
+                    reference == null
+                        ? null
+                        : DelayMeters(reference.Value.FirstArrivalDelayMilliseconds),
+                    "0.000"),
+                FormatValueWithDelta(
+                    strongestMeters,
+                    reference == null
+                        ? null
+                        : DelayMeters(reference.Value.StrongestDelayMilliseconds),
+                    "0.000")) + "\r\n",
             UiPalette.TextPrimarySoft,
             resultTableFont);
         AppendStatusText(
             FormatDelayTableLine(
                 "samples",
-                $"{result.FirstArrivalPeakSample:0.0}",
-                $"{result.StrongestPeakSample:0.0}") + "\r\n\r\n",
+                FormatValueWithDelta(
+                    result.FirstArrivalPeakSample,
+                    reference?.FirstArrivalPeakSample,
+                    "0.0"),
+                FormatValueWithDelta(
+                    result.StrongestPeakSample,
+                    reference?.StrongestPeakSample,
+                    "0.0")) + "\r\n",
             UiPalette.TextPrimarySoft,
             resultTableFont);
+    }
+
+    private static double DelayMeters(double delayMilliseconds) =>
+        Math.Abs(delayMilliseconds) * SpeedOfSoundAt20C / 1000.0;
+
+    // "value" for a Source cell; "value (+delta)" for a Compare cell where a reference
+    // is given. The delta always carries an explicit sign.
+    private static string FormatValueWithDelta(
+        double value,
+        double? reference,
+        string valueFormat)
+    {
+        string text = value.ToString(valueFormat);
+        if (reference.HasValue)
+        {
+            double delta = value - reference.Value;
+            text += " (" + delta.ToString("+" + valueFormat + ";-" + valueFormat) + ")";
+        }
+
+        return text;
     }
 
     private void AppendLevelLine(string label, InputLevelMeterEntry entry)
@@ -539,14 +931,17 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private bool TryGetCopyableStatusLine(Point location, out string value)
     {
         value = string.Empty;
-        if (!statusTextBox.Text.StartsWith("Measured delay:", StringComparison.Ordinal))
+        int index = statusTextBox.GetCharIndexFromPosition(location);
+        int line = statusTextBox.GetLineFromCharIndex(index);
+        if (line >= statusTextBox.Lines.Length)
         {
             return false;
         }
 
-        int index = statusTextBox.GetCharIndexFromPosition(location);
-        int line = statusTextBox.GetLineFromCharIndex(index);
-        if (line is < 1 or > 3 || line >= statusTextBox.Lines.Length)
+        string lineText = statusTextBox.Lines[line];
+        if (!lineText.StartsWith("ms", StringComparison.Ordinal) &&
+            !lineText.StartsWith("meters", StringComparison.Ordinal) &&
+            !lineText.StartsWith("samples", StringComparison.Ordinal))
         {
             return false;
         }
@@ -554,9 +949,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         int lineStart = statusTextBox.GetFirstCharIndexFromLine(line);
         int column = Math.Max(0, index - lineStart);
         value = column >= DelayTableSecondColumn
-            ? GetDelayTableValue(statusTextBox.Lines[line], DelayTableSecondColumn)
+            ? GetDelayTableValue(lineText, DelayTableSecondColumn)
             : column >= DelayTableFirstColumn
-                ? GetDelayTableValue(statusTextBox.Lines[line], DelayTableFirstColumn)
+                ? GetDelayTableValue(lineText, DelayTableFirstColumn)
                 : string.Empty;
         return !string.IsNullOrWhiteSpace(value);
     }
@@ -571,7 +966,10 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         int endColumn = startColumn == DelayTableFirstColumn
             ? Math.Min(DelayTableSecondColumn, line.Length)
             : line.Length;
-        return line[startColumn..endColumn].Trim();
+        string cell = line[startColumn..endColumn].Trim();
+        // Copy just the value, not the Compare "(Δ)" suffix.
+        int deltaStart = cell.IndexOf(" (", StringComparison.Ordinal);
+        return deltaStart >= 0 ? cell[..deltaStart] : cell;
     }
 
     private static string FormatConfidence(double confidenceDecibels)
@@ -657,13 +1055,58 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
 }
 
+internal readonly record struct TimeAlignmentCompareMeasurement(
+    string DisplayName,
+    MeasurementHistorySnapshot Snapshot);
+
+internal readonly record struct TimeAlignmentCompareAnalysis(
+    TimeAlignmentAnalysisSource Source,
+    TimeAlignmentAnalysisResult Result);
+
+internal readonly record struct TimeAlignmentAnalysisSource(
+    string Kind,
+    string DisplayName,
+    int SampleRate,
+    int Bits,
+    int Octaves,
+    double SweepDurationSeconds,
+    PlaybackChannel PlayChannel,
+    SweepMeasurementMode MeasurementMode,
+    double[] TransferImpulseResponse,
+    InputLevelMeterSnapshot Levels);
+
 internal sealed class StatusRichTextBox : RichTextBox
 {
     private const int WmSetCursor = 0x20;
+    private const int WmSetRedraw = 0x0B;
+    private int updateDepth;
 
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public Func<Point, bool>? UseHandCursorAt { get; set; }
+
+    public void BeginUpdate()
+    {
+        if (updateDepth++ == 0 && IsHandleCreated)
+        {
+            SendMessage(Handle, WmSetRedraw, IntPtr.Zero, IntPtr.Zero);
+        }
+    }
+
+    public void EndUpdate()
+    {
+        if (updateDepth == 0)
+        {
+            return;
+        }
+
+        updateDepth--;
+        if (updateDepth == 0 && IsHandleCreated)
+        {
+            SendMessage(Handle, WmSetRedraw, new IntPtr(1), IntPtr.Zero);
+            Invalidate();
+        }
+    }
 
     protected override void WndProc(ref Message message)
     {
@@ -679,4 +1122,11 @@ internal sealed class StatusRichTextBox : RichTextBox
 
         base.WndProc(ref message);
     }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(
+        IntPtr hWnd,
+        int msg,
+        IntPtr wParam,
+        IntPtr lParam);
 }

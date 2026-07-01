@@ -54,7 +54,7 @@ public partial class Form1
                 OpenSettings: () => ToggleModeOptions(
                     ModeTab.Phase,
                     () => new PROpt(),
-                    opt => opt.Init(expSweepMeasurement, phaseResponseOptions),
+                    opt => opt.Init(expSweepMeasurement, phaseResponseOptions, GetCompareAnalysisSource),
                     opt => opt.SetOptions(phaseResponseOptions))),
             [ModeTab.GroupDelay] = new(
                 ModeTab.GroupDelay,
@@ -68,7 +68,7 @@ public partial class Form1
                 OpenSettings: () => ToggleModeOptions(
                     ModeTab.GroupDelay,
                     () => new GDOpt(),
-                    opt => opt.Init(expSweepMeasurement, groupDelayOptions),
+                    opt => opt.Init(expSweepMeasurement, groupDelayOptions, GetCompareAnalysisSource),
                     opt => opt.SetOptions(groupDelayOptions))),
             [ModeTab.Waterfall] = new(
                 ModeTab.Waterfall,

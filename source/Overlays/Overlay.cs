@@ -329,6 +329,50 @@ public sealed class OverlayCollection
         return source != null;
     }
 
+    // Live analysis curves on the current plot that an operation operand can reference
+    // directly (every such curve carries a CurveTag). Both Main and Compare are offered.
+    internal IReadOnlyList<LiveCurveOption> GetLiveCurveOptions()
+    {
+        PlotModel? model = PlotView.Model;
+        if (model == null)
+        {
+            return [];
+        }
+
+        return model.Series
+            .OfType<LineSeries>()
+            .Where(series => series.Tag is CurveTag && series.Points.Count >= 2)
+            .Select(series =>
+            {
+                var tag = (CurveTag)series.Tag!;
+                return new LiveCurveOption(tag.Key, tag.Label);
+            })
+            .ToArray();
+    }
+
+    // Resolves a live-curve operand from the current plot by its CurveTag Key. Returns
+    // false when that curve is not currently drawn (e.g. its Show toggle is off).
+    internal bool TryGetLiveCurveSource(string key, out OverlayOperationSource? source)
+    {
+        source = null;
+        LineSeries? match = PlotView.Model?.Series
+            .OfType<LineSeries>()
+            .FirstOrDefault(series =>
+                series.Tag is CurveTag tag && tag.Key == key && series.Points.Count >= 2);
+        if (match == null)
+        {
+            return false;
+        }
+
+        var curveTag = (CurveTag)match.Tag!;
+        source = new OverlayOperationSource(
+            0,
+            curveTag.Label,
+            match.Points.Select(point => new OverlayPoint(point.X, point.Y)).ToArray(),
+            curveTag.PhaseUnwrapped);
+        return true;
+    }
+
     internal void NotifyCapturedOverlayChanged()
     {
         foreach (Overlay overlay in overlays)
@@ -511,10 +555,15 @@ public sealed class Overlay
     // unknown. Drives the wrapped-difference choice in phase overlay operations.
     private bool? phaseUnwrapped;
 
-    // Operation kind.
+    // Operation kind. Each operand is either a captured slot (SourceSlotA/B) or, when
+    // SourceCurveKeyA/B is set, a live analysis curve resolved from the plot by its
+    // CurveTag Key on every rebuild — so an operation over live curves recomputes as
+    // the analysis changes (e.g. while tweaking window settings).
     private bool operationConfigured;
     private int sourceSlotA;
     private int sourceSlotB;
+    private string? sourceCurveKeyA;
+    private string? sourceCurveKeyB;
     private OverlayOperation operation = OverlayOperation.AMinusB;
     private double blendFrequencyHz = 1_000;
     private double blendWidthOctaves = 1;
@@ -644,11 +693,12 @@ public sealed class Overlay
             SetChecked(true);
             RefreshPlot(model);
         }
-        else if (IsCurrentMeasurementTarget)
+        else if (IsCurrentMeasurementTarget || ReferencesLiveCurve)
         {
-            // A target bound to the current measurement stays armed even when the
-            // source trace is not on the plot yet (for example the running Live
-            // Spectrum before its first frame); it draws once the curve appears.
+            // A target bound to the current measurement — or an operation over a live
+            // curve — stays armed even when its source is not on the plot yet (e.g. the
+            // running Live Spectrum before its first frame, or a curve whose Show toggle
+            // is momentarily off); it redraws once the curve reappears.
             SetChecked(true);
             RefreshPlot(model);
         }
@@ -660,6 +710,10 @@ public sealed class Overlay
 
     private bool IsCurrentMeasurementTarget =>
         kind == OverlayKind.Target && targetSourceSlot == 0;
+
+    private bool ReferencesLiveCurve =>
+        kind == OverlayKind.Operation &&
+        (sourceCurveKeyA != null || sourceCurveKeyB != null);
 
     internal bool IsConfiguredTargetFor(Mode mode) =>
         kind == OverlayKind.Target &&
@@ -959,15 +1013,17 @@ public sealed class Overlay
             return null;
         }
 
+        // Every analysis curve carries a CurveTag; the current-measurement primary is
+        // the main Primary-kind curve (the live transfer function while running, or the
+        // mode's main trace otherwise). Overlay and live-helper series are skipped.
         LineSeries? primary = model.Series
             .OfType<LineSeries>()
-            .FirstOrDefault(series => Equals(series.Tag, "live-spectrum:primary"));
-        primary ??= model.Series
-            .OfType<LineSeries>()
             .FirstOrDefault(series =>
-                series.Tag is not string tag ||
-                (!tag.StartsWith("overlay:", StringComparison.Ordinal) &&
-                 !tag.StartsWith("live-spectrum:", StringComparison.Ordinal)));
+                series.Tag is CurveTag
+                {
+                    Source: CurveSource.Main,
+                    Kind: Resonalyze.Dsp.AnalysisCurveKind.Primary
+                });
         if (primary == null || primary.Points.Count < 2)
         {
             return null;
@@ -1012,7 +1068,11 @@ public sealed class Overlay
     private void RefreshOperationSources()
     {
         bool wasChecked = Checked;
-        bool available = operationConfigured && TryGetSources(out _, out _);
+        // A live-curve operand may not be on the plot at this instant (mode just loaded,
+        // its Show toggle off); keep such an operation available as long as it is
+        // configured, like a target. Slot-only operations still require their captures.
+        bool available = operationConfigured &&
+            (ReferencesLiveCurve || TryGetSources(out _, out _));
         ApplyCalculatedAvailability(
             available,
             operationConfigured,
@@ -1285,8 +1345,8 @@ public sealed class Overlay
         kind = OverlayKind.Captured;
         operationConfigured = false;
         sourcePoints = points;
-        phaseUnwrapped = mode == Mode.PhaseResponse && selected.Tag is PhaseCurveTag tag
-            ? tag.Unwrapped
+        phaseUnwrapped = selected.Tag is CurveTag curveTag
+            ? curveTag.PhaseUnwrapped
             : null;
         SeriesMode = mode;
         Title = title;
@@ -1636,11 +1696,15 @@ public sealed class Overlay
     {
         IReadOnlyList<OverlaySlotOption> sources =
             collection.GetCaptureSourceOptions();
+        IReadOnlyList<LiveCurveOption> liveCurves =
+            collection.GetLiveCurveOptions();
         using var dialog = new OverlayOperationSettingsDialog(
             SeriesMode,
             operationConfigured ? Title : $"Calculated overlay {Index}",
             sourceSlotA,
+            sourceCurveKeyA,
             sourceSlotB,
+            sourceCurveKeyB,
             operation,
             blendFrequencyHz,
             blendWidthOctaves,
@@ -1652,7 +1716,8 @@ public sealed class Overlay
             kind == OverlayKind.Operation ? lineStyle : OverlayLineStyle.Dash,
             opacityPercent,
             smoothingInverseOctaves,
-            sources);
+            sources,
+            liveCurves);
         if (dialog.ShowDialog(collection.Form) != DialogResult.OK)
         {
             return;
@@ -1663,6 +1728,8 @@ public sealed class Overlay
         Title = dialog.OverlayName;
         sourceSlotA = dialog.SourceSlotA;
         sourceSlotB = dialog.SourceSlotB;
+        sourceCurveKeyA = dialog.SourceCurveKeyA;
+        sourceCurveKeyB = dialog.SourceCurveKeyB;
         operation = dialog.Operation;
         blendFrequencyHz = dialog.BlendFrequencyHz;
         blendWidthOctaves = dialog.BlendWidthOctaves;
@@ -1790,6 +1857,8 @@ public sealed class Overlay
             operationConfigured = true;
             sourceSlotA = file.SourceSlotA;
             sourceSlotB = file.SourceSlotB;
+            sourceCurveKeyA = file.SourceCurveKeyA;
+            sourceCurveKeyB = file.SourceCurveKeyB;
             operation = file.Operation;
             blendFrequencyHz = file.BlendFrequencyHz;
             blendWidthOctaves = file.BlendWidthOctaves;
@@ -1880,6 +1949,8 @@ public sealed class Overlay
         {
             file.SourceSlotA = sourceSlotA;
             file.SourceSlotB = sourceSlotB;
+            file.SourceCurveKeyA = sourceCurveKeyA;
+            file.SourceCurveKeyB = sourceCurveKeyB;
             file.Operation = operation;
             file.BlendFrequencyHz = blendFrequencyHz;
             file.BlendWidthOctaves = blendWidthOctaves;
@@ -1954,9 +2025,25 @@ public sealed class Overlay
         out OverlayOperationSource? sourceA,
         out OverlayOperationSource? sourceB)
     {
-        bool hasA = collection.TryGetCaptureSource(sourceSlotA, out sourceA);
-        bool hasB = collection.TryGetCaptureSource(sourceSlotB, out sourceB);
-        return hasA && hasB && sourceA != null && sourceB != null;
+        sourceA = ResolveOperand(sourceCurveKeyA, sourceSlotA);
+        sourceB = ResolveOperand(sourceCurveKeyB, sourceSlotB);
+        return sourceA != null && sourceB != null;
+    }
+
+    // A live-curve operand (curveKey set) resolves from the current plot each time, so
+    // the operation tracks the analysis; otherwise it reads the captured slot.
+    private OverlayOperationSource? ResolveOperand(string? curveKey, int slot)
+    {
+        if (curveKey != null)
+        {
+            return collection.TryGetLiveCurveSource(curveKey, out OverlayOperationSource? live)
+                ? live
+                : null;
+        }
+
+        return collection.TryGetCaptureSource(slot, out OverlayOperationSource? captured)
+            ? captured
+            : null;
     }
 
     private void UpdateDrawPoints()
@@ -1985,6 +2072,8 @@ public sealed class Overlay
         operationConfigured = false;
         sourceSlotA = 0;
         sourceSlotB = 0;
+        sourceCurveKeyA = null;
+        sourceCurveKeyB = null;
         operation = OverlayOperation.AMinusB;
         blendFrequencyHz = 1_000;
         blendWidthOctaves = 1;

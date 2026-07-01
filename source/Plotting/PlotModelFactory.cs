@@ -24,6 +24,7 @@ internal sealed class PlotModelFactory
     private readonly LiveSpectrumOptions liveSpectrumOptions;
     private readonly WaterfallGenerateOptions waterfallGenOptions;
     private readonly WaterfallGenerateOptions burstDecayGenOptions;
+    private Func<CompareAnalysisSource?>? getCompareSource;
 
     public PlotModelFactory(
         ExpSweepMeasurement expSweepMeasurement,
@@ -57,6 +58,11 @@ internal sealed class PlotModelFactory
 
     public string? ImpulseResponseFileName => measurementContext.ImpulseResponseFileName;
 
+    // The Compare measurement (from the Compare picker) whose Phase / Group Delay is
+    // overlaid with the SAME analysis settings as the main measurement.
+    public void SetCompareSourceProvider(Func<CompareAnalysisSource?> provider) =>
+        getCompareSource = provider;
+
     public PlotModel CreateFrequencyResponse(bool includeCurves)
     {
         PlotModel model = PlotModelStyle.CreateTitledModel(
@@ -69,7 +75,32 @@ internal sealed class PlotModelFactory
                 calibration);
             foreach (AnalysisCurve curve in curves)
             {
-                AddLineSeries(model, curve, "{0}\n{2:0.0} Hz\n{4:0.00} dB");
+                AddLineSeries(
+                    model,
+                    curve,
+                    "{0}\n{2:0.0} Hz\n{4:0.00} dB",
+                    Mode.FrequencyResponse);
+            }
+
+            // Overlay the Compare magnitude (primary only; harmonics stay Main-only to
+            // keep the plot readable), computed with the identical options/calibration.
+            if (TryCreateCompareSweepMeasurement() is { } compare)
+            {
+                IReadOnlyList<AnalysisCurve> compareCurves = DataHelper.GetSpectrum(
+                    compare.Measurement,
+                    frequencyResponseOptions,
+                    calibration,
+                    includePrimary: true,
+                    includeHarmonics: false);
+                foreach (AnalysisCurve curve in compareCurves)
+                {
+                    AddCompareLineSeries(
+                        model,
+                        curve,
+                        "{0}\n{2:0.0} Hz\n{4:0.00} dB",
+                        compare.DisplayName,
+                        Mode.FrequencyResponse);
+                }
             }
         }
 
@@ -103,8 +134,12 @@ internal sealed class PlotModelFactory
 
                 // Measured phase can be either representation; tag it so overlay
                 // math knows whether a difference must use the wrapped formula.
-                AddLineSeries(model, curve, phaseTrackerFormat).Tag =
-                    new PhaseCurveTag(phaseResponseOptions.Unwrap);
+                AddLineSeries(
+                    model,
+                    curve,
+                    phaseTrackerFormat,
+                    Mode.PhaseResponse,
+                    phaseResponseOptions.Unwrap);
             }
 
             if (phaseResponseOptions.ShowMinimumPhase)
@@ -118,8 +153,12 @@ internal sealed class PlotModelFactory
                     phaseResponseOptions.SmoothingInverseOctaves);
 
                 // Minimum phase is continuous (unwrapped) by construction.
-                AddLineSeries(model, minimumPhaseCurve, phaseTrackerFormat).Tag =
-                    new PhaseCurveTag(Unwrapped: true);
+                AddLineSeries(
+                    model,
+                    minimumPhaseCurve,
+                    phaseTrackerFormat,
+                    Mode.PhaseResponse,
+                    phaseUnwrapped: true);
             }
 
             if (phaseResponseOptions.ShowExcessPhase)
@@ -135,8 +174,74 @@ internal sealed class PlotModelFactory
 
                 // Excess phase stays continuous (unwrapped) regardless of the detrend
                 // choice; a residual slope is still an unwrapped representation.
-                AddLineSeries(model, excessPhaseCurve, phaseTrackerFormat).Tag =
-                    new PhaseCurveTag(Unwrapped: true);
+                AddLineSeries(
+                    model,
+                    excessPhaseCurve,
+                    phaseTrackerFormat,
+                    Mode.PhaseResponse,
+                    phaseUnwrapped: true);
+            }
+
+            // Overlay the Compare measurement with the identical gate / detrend /
+            // smoothing so the two responses can be read on the same terms.
+            if (TryCreateCompareMeasurement() is { } compare)
+            {
+                if (phaseResponseOptions.ShowMeasuredPhase)
+                {
+                    AnalysisCurve compareCurve = DataHelper.GetPhase(
+                        compare.Measurement,
+                        phaseResponseOptions.PhaseGateOffsetMs,
+                        phaseResponseOptions.PhaseLeftMs,
+                        phaseResponseOptions.PhasePlateauMs,
+                        phaseResponseOptions.PhaseRightMs,
+                        phaseResponseOptions.PhaseDetrendMs,
+                        phaseResponseOptions.SmoothingInverseOctaves,
+                        phaseResponseOptions.Unwrap);
+                    AddCompareLineSeries(
+                        model,
+                        compareCurve,
+                        phaseTrackerFormat,
+                        compare.DisplayName,
+                        Mode.PhaseResponse,
+                        phaseResponseOptions.Unwrap);
+                }
+
+                if (phaseResponseOptions.ShowMinimumPhase)
+                {
+                    AnalysisCurve compareCurve = DataHelper.GetMinimumPhase(
+                        compare.Measurement,
+                        phaseResponseOptions.PhaseGateOffsetMs,
+                        phaseResponseOptions.PhaseLeftMs,
+                        phaseResponseOptions.PhasePlateauMs,
+                        phaseResponseOptions.PhaseRightMs,
+                        phaseResponseOptions.SmoothingInverseOctaves);
+                    AddCompareLineSeries(
+                        model,
+                        compareCurve,
+                        phaseTrackerFormat,
+                        compare.DisplayName,
+                        Mode.PhaseResponse,
+                        phaseUnwrapped: true);
+                }
+
+                if (phaseResponseOptions.ShowExcessPhase)
+                {
+                    AnalysisCurve compareCurve = DataHelper.GetExcessPhase(
+                        compare.Measurement,
+                        phaseResponseOptions.PhaseGateOffsetMs,
+                        phaseResponseOptions.PhaseLeftMs,
+                        phaseResponseOptions.PhasePlateauMs,
+                        phaseResponseOptions.PhaseRightMs,
+                        phaseResponseOptions.PhaseDetrendMs,
+                        phaseResponseOptions.SmoothingInverseOctaves);
+                    AddCompareLineSeries(
+                        model,
+                        compareCurve,
+                        phaseTrackerFormat,
+                        compare.DisplayName,
+                        Mode.PhaseResponse,
+                        phaseUnwrapped: true);
+                }
             }
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
@@ -209,17 +314,32 @@ internal sealed class PlotModelFactory
                 groupDelayOptions.GroupDelayRightMs,
                 groupDelayOptions.SmoothingInverseOctaves,
                 GroupDelayMagnitudeGateDb);
-            AddLineSeries(model, curve, "{0}\n{2:0.0} Hz\n{4:0.000} ms");
+            const string groupDelayTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.000} ms";
+            AddLineSeries(model, curve, groupDelayTrackerFormat, Mode.GroupDelay);
+            UpdateGroupDelayRange(curve, ref minimum, ref maximum, ref hasValidData);
 
-            for (int i = 0; i < curve.Points.Count; i++)
+            // Overlay the Compare measurement with the identical gate / smoothing.
+            if (TryCreateCompareMeasurement() is { } compare)
             {
-                double y = curve.Points[i].Y;
-                if (double.IsFinite(y))
-                {
-                    minimum = Math.Min(minimum, y);
-                    maximum = Math.Max(maximum, y);
-                    hasValidData = true;
-                }
+                AnalysisCurve compareCurve = DataHelper.GetGroupDelay(
+                    compare.Measurement,
+                    groupDelayOptions.GroupDelayGateOffsetMs,
+                    groupDelayOptions.GroupDelayLeftMs,
+                    groupDelayOptions.GroupDelayPlateauMs,
+                    groupDelayOptions.GroupDelayRightMs,
+                    groupDelayOptions.SmoothingInverseOctaves,
+                    GroupDelayMagnitudeGateDb);
+                // Draw the Compare curve as an overlay but keep the Y-axis auto-fit
+                // driven by the main measurement only. The Compare group delay is
+                // gated at the same offset, so as the gate moves its extremes swing
+                // widely; folding them into the range makes the scale jump on every
+                // edit. Off-scale Compare points are simply clipped, like any overlay.
+                AddCompareLineSeries(
+                    model,
+                    compareCurve,
+                    groupDelayTrackerFormat,
+                    compare.DisplayName,
+                    Mode.GroupDelay);
             }
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
@@ -276,14 +396,33 @@ internal sealed class PlotModelFactory
         PlotModel model = PlotModelStyle.CreateTitledModel(
             measurementContext.CreateTitle("Impulse Response"));
 
+        const string impulseTracker = "{0}\n{2:0} sample\n{4:0.00000000}";
         AnalysisCurve? curve = null;
+        AnalysisCurve? compareCurve = null;
         if (measurementContext.CanIncludeCurves(includeCurves) &&
             impulseResponseOptions.ShowImpulse)
         {
-            curve = DataHelper.GetImpulse(
-                measurementContext.CreatePrimaryMeasurement(),
-                impulseResponseOptions);
-            AddLineSeries(model, curve, "{0}\n{2:0} sample\n{4:0.00000000}");
+            // With a transfer IR, show it whole on an absolute timeline from sample 0 to
+            // the peak plus the Length tail; otherwise keep the peak-centred sweep window.
+            bool fromStart = measurementContext.HasTransferImpulseResponse;
+            IImpulseMeasurement main = measurementContext.CreatePrimaryMeasurement();
+            curve = fromStart
+                ? DataHelper.GetImpulseFromStart(main, impulseResponseOptions)
+                : DataHelper.GetImpulse(main, impulseResponseOptions);
+            AddLineSeries(model, curve, impulseTracker, Mode.ImpulseResponse);
+
+            if (TryCreateCompareMeasurement() is { } compare)
+            {
+                compareCurve = fromStart
+                    ? DataHelper.GetImpulseFromStart(compare.Measurement, impulseResponseOptions)
+                    : DataHelper.GetImpulse(compare.Measurement, impulseResponseOptions);
+                AddCompareLineSeries(
+                    model,
+                    compareCurve,
+                    impulseTracker,
+                    compare.DisplayName,
+                    Mode.ImpulseResponse);
+            }
         }
 
         var timeAxis = new LinearAxis
@@ -295,11 +434,11 @@ internal sealed class PlotModelFactory
         {
             Position = AxisPosition.Left,
         };
-        // Lock both axes to the drawn curve (which already reflects the logarithmic toggle) so
-        // they are re-fit on every settings change and cannot be panned/zoomed away from the
-        // data.
-        ApplyCurveRange(timeAxis, curve, point => point.X);
-        ApplyCurveRange(valueAxis, curve, point => point.Y);
+        // Lock both axes to the drawn curves (which already reflect the logarithmic
+        // toggle) so they are re-fit on every settings change and cannot be panned/zoomed
+        // away from the data. The Compare curve is included so it stays on-screen.
+        ApplyCurveRange(timeAxis, point => point.X, curve, compareCurve);
+        ApplyCurveRange(valueAxis, point => point.Y, curve, compareCurve);
         model.Axes.Add(timeAxis);
         model.Axes.Add(valueAxis);
         return model;
@@ -310,26 +449,29 @@ internal sealed class PlotModelFactory
     // given a small margin so the axis stays valid.
     private static void ApplyCurveRange(
         LinearAxis axis,
-        AnalysisCurve? curve,
-        Func<SignalPoint, double> selector)
+        Func<SignalPoint, double> selector,
+        params AnalysisCurve?[] curves)
     {
-        if (curve == null)
-        {
-            return;
-        }
-
         double minimum = double.PositiveInfinity;
         double maximum = double.NegativeInfinity;
-        foreach (SignalPoint point in curve.Points)
+        foreach (AnalysisCurve? curve in curves)
         {
-            double value = selector(point);
-            if (!double.IsFinite(value))
+            if (curve == null)
             {
                 continue;
             }
 
-            minimum = Math.Min(minimum, value);
-            maximum = Math.Max(maximum, value);
+            foreach (SignalPoint point in curve.Points)
+            {
+                double value = selector(point);
+                if (!double.IsFinite(value))
+                {
+                    continue;
+                }
+
+                minimum = Math.Min(minimum, value);
+                maximum = Math.Max(maximum, value);
+            }
         }
 
         if (!double.IsFinite(minimum) || !double.IsFinite(maximum))
@@ -361,7 +503,11 @@ internal sealed class PlotModelFactory
                 DataHelper.GetAutocorrelation(
                     measurementContext.CreatePrimaryMeasurement(),
                     impulseResponseOptions);
-            AddLineSeries(model, curve, "{0}\n{2:0.000} ms\n{4:0.000}");
+            AddLineSeries(
+                model,
+                curve,
+                "{0}\n{2:0.000} ms\n{4:0.000}",
+                Mode.Autocorrelation);
         }
 
         model.Axes.Add(new LinearAxis
@@ -566,12 +712,102 @@ internal sealed class PlotModelFactory
     private static LineSeries AddLineSeries(
         PlotModel model,
         AnalysisCurve curve,
-        string trackerFormat)
+        string trackerFormat,
+        Mode mode,
+        bool? phaseUnwrapped = null)
     {
         LineSeries series = OxyPlotAdapter.ToLineSeries(curve);
         series.TrackerFormatString = trackerFormat;
+        series.Tag = new CurveTag(mode, curve.Kind, CurveSource.Main, phaseUnwrapped);
         model.Series.Add(series);
         return series;
+    }
+
+    // Same hue as its main counterpart, but dashed and dimmed so the Compare curve
+    // reads as "the other measurement" without a second colour to decode.
+    private static LineSeries AddCompareLineSeries(
+        PlotModel model,
+        AnalysisCurve curve,
+        string trackerFormat,
+        string compareName,
+        Mode mode,
+        bool? phaseUnwrapped = null)
+    {
+        LineSeries series = OxyPlotAdapter.ToLineSeries(curve);
+        series.TrackerFormatString = trackerFormat;
+        series.LineStyle = LineStyle.Dash;
+        series.StrokeThickness = 1.5;
+        OxyColor color = series.Color;
+        series.Color = OxyColor.FromArgb(150, color.R, color.G, color.B);
+        series.Title = $"{curve.Name} · {compareName}";
+        series.Tag = new CurveTag(mode, curve.Kind, CurveSource.Compare, phaseUnwrapped);
+        model.Series.Add(series);
+        return series;
+    }
+
+    private static void UpdateGroupDelayRange(
+        AnalysisCurve curve,
+        ref double minimum,
+        ref double maximum,
+        ref bool hasValidData)
+    {
+        for (int i = 0; i < curve.Points.Count; i++)
+        {
+            double y = curve.Points[i].Y;
+            if (double.IsFinite(y))
+            {
+                minimum = Math.Min(minimum, y);
+                maximum = Math.Max(maximum, y);
+                hasValidData = true;
+            }
+        }
+    }
+
+    // Builds a view over the Compare transfer IR so the gated phase / group-delay
+    // math runs on it identically. Requires a matching sample rate, otherwise the
+    // gate (in ms) and the frequency axis would not align with the main measurement.
+    private (IImpulseMeasurement Measurement, string DisplayName)? TryCreateCompareMeasurement()
+    {
+        if (getCompareSource?.Invoke() is not { } compare)
+        {
+            return null;
+        }
+
+        if (compare.TransferImpulseResponse is not { Length: > 0 } transferIr ||
+            compare.SampleRate != expSweepMeasurement.SampleRate)
+        {
+            return null;
+        }
+
+        int peakIndex = Math.Clamp(compare.TransferPeakIndex, 0, transferIr.Length - 1);
+        return (
+            new ImpulseMeasurementView(transferIr, peakIndex, compare.SampleRate),
+            compare.DisplayName);
+    }
+
+    // The Compare sweep-deconvolution measurement, used for the Frequency Response
+    // magnitude (which is built from the sweep IR, like the main curve). Harmonics are
+    // not offered for Compare, so no harmonic-offset function is needed.
+    private (IImpulseMeasurement Measurement, string DisplayName)? TryCreateCompareSweepMeasurement()
+    {
+        if (getCompareSource?.Invoke() is not { } compare)
+        {
+            return null;
+        }
+
+        if (compare.SweepDeconvolutionImpulseResponse is not { Length: > 0 } sweepIr ||
+            compare.SampleRate != expSweepMeasurement.SampleRate)
+        {
+            return null;
+        }
+
+        int peakIndex = Math.Clamp(
+            compare.SweepDeconvolutionPeakIndex,
+            0,
+            sweepIr.Length - 1);
+        return (
+            new ImpulseMeasurementView(sweepIr, peakIndex, compare.SampleRate),
+            compare.DisplayName);
     }
 
     // Phase and group delay need loopback timing; without a transfer IR the plot would
@@ -589,11 +825,3 @@ internal sealed class PlotModelFactory
         });
     }
 }
-
-/// <summary>
-/// Carried on a phase <c>LineSeries.Tag</c> so a captured overlay records whether the
-/// curve is an unwrapped (continuous) or wrapped (-180..180) phase representation. The
-/// overlay difference operations need this to decide between a raw subtraction (keeps the
-/// slope/delay of unwrapped curves) and the wrapped formula (shortest angular distance).
-/// </summary>
-internal sealed record PhaseCurveTag(bool Unwrapped);

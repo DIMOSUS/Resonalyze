@@ -63,6 +63,7 @@ public partial class Form1
         resourcesDisposed = true;
         startupAudioWarmupCancellation?.Cancel();
         startupAudioWarmupCancellation?.Dispose();
+        compareMenuStrip?.Dispose();
         dockedModeSettingsHost.Dispose();
         dockedMeasurementSettingsHost.Dispose();
         dockedHistoryHost.Dispose();

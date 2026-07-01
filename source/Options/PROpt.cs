@@ -8,6 +8,7 @@ namespace Resonalyze.Options
     {
         private readonly ToolTip toolTip = new();
         private ExpSweepMeasurement? expSweepMeasurement;
+        private Func<CompareAnalysisSource?>? getCompare;
 
         public PROpt()
         {
@@ -24,7 +25,10 @@ namespace Resonalyze.Options
             FormClosed += PROpt_FormClosed;
         }
 
-        public void Init(ExpSweepMeasurement expSweepMeasurement, FrequencyResponseOptions opt)
+        public void Init(
+            ExpSweepMeasurement expSweepMeasurement,
+            FrequencyResponseOptions opt,
+            Func<CompareAnalysisSource?>? getCompare = null)
         {
             if (!ReferenceEquals(this.expSweepMeasurement, expSweepMeasurement))
             {
@@ -37,6 +41,7 @@ namespace Resonalyze.Options
             }
 
             this.expSweepMeasurement = expSweepMeasurement;
+            this.getCompare = getCompare;
             numericGateOffset.Value = ClampToControl(numericGateOffset, opt.PhaseGateOffsetMs);
             numericWindow.Value = ClampToControl(numericWindow, opt.PhasePlateauMs);
             numericLeftWindow.Value = ClampToControl(numericLeftWindow, opt.PhaseLeftMs);
@@ -155,6 +160,9 @@ namespace Resonalyze.Options
                 : "Reliable from ≈ — Hz";
         }
 
+        // Re-draws the preview after the Compare selection changes while docked.
+        public void RefreshComparePreview() => UpdateIrPreview();
+
         private void UpdateIrPreview()
         {
             if (expSweepMeasurement == null || expSweepMeasurement.SampleRate <= 0)
@@ -169,7 +177,8 @@ namespace Resonalyze.Options
                 (double)numericLeftWindow.Value,
                 (double)numericWindow.Value,
                 (double)numericRightWindow.Value,
-                IrPreviewSource.Primary);
+                IrPreviewSource.Primary,
+                getCompare?.Invoke());
         }
 
         private static decimal ClampToControl(DarkNumericUpDown control, double value)

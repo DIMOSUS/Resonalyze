@@ -87,6 +87,8 @@ namespace Resonalyze
         {
             Interval = MeasurementSettingsSaveDelayMilliseconds
         };
+        private CompareMeasurementSelection? compareMeasurement;
+        private ContextMenuStrip? compareMenuStrip;
         private CancellationTokenSource? startupAudioWarmupCancellation;
         private Task? startupAudioWarmupTask;
 

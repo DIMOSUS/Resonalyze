@@ -41,6 +41,7 @@ public partial class Form1
             liveSpectrumOptions,
             waterfallGenOptions,
             burstDecayGenOptions);
+        createdPlotModelFactory.SetCompareSourceProvider(GetCompareAnalysisSource);
         LiveSpectrumController createdLiveSpectrumController = new(
             this,
             noiseMeasurement,
@@ -75,7 +76,8 @@ public partial class Form1
             timeAlignmentOptions,
             expSweepMeasurement,
             () => SaveMeasurementSettings(),
-            () => plotModelFactory.ImpulseResponseFileName);
+            () => plotModelFactory.ImpulseResponseFileName,
+            GetTimeAlignmentCompareMeasurement);
         InputLevelMeterController createdInputLevelMeterController = new(
             this,
             inputLevelMeterPanel,
@@ -143,6 +145,7 @@ public partial class Form1
         ApplyMeasurementConfigurationToControllers();
         commandController.Initialize();
         ApplyMainContentLayout();
+        UpdateCompareButton();
         UpdateHistoryButton();
         UpdatePeakInfo();
         ApplicationUpdateService.Initialize(this);
@@ -152,6 +155,7 @@ public partial class Form1
     private void WireFormEvents()
     {
         measurementSettingsSaveTimer.Tick += MeasurementSettingsSaveTimer_Tick;
+        buttonCompare.Click += buttonCompare_Click;
         FormClosing += Form1_FormClosing;
         Shown += Form1_Shown;
     }

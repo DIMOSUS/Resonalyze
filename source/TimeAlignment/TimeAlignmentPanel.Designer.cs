@@ -42,6 +42,7 @@ namespace Resonalyze
             bandpassPlotView = new OxyPlot.WindowsForms.PlotView();
             envelopePlotView = new OxyPlot.WindowsForms.PlotView();
             statusTextBox = new StatusRichTextBox();
+            compareLabel = new Label();
             (bandpassCenterNumeric).BeginInit();
             (bandpassPassOctavesNumeric).BeginInit();
             (bandpassFadeOctavesNumeric).BeginInit();
@@ -50,9 +51,9 @@ namespace Resonalyze
             // helpLabel
             // 
             helpLabel.ForeColor = Color.FromArgb(205, 210, 220);
-            helpLabel.Location = new Point(18, 65);
+            helpLabel.Location = new Point(18, 64);
             helpLabel.Name = "helpLabel";
-            helpLabel.Size = new Size(500, 174);
+            helpLabel.Size = new Size(500, 166);
             helpLabel.TabIndex = 2;
             helpLabel.Text = resources.GetString("helpLabel.Text");
             // 
@@ -62,7 +63,7 @@ namespace Resonalyze
             sourceSummaryLabel.ForeColor = Color.FromArgb(210, 214, 222);
             sourceSummaryLabel.Location = new Point(18, 18);
             sourceSummaryLabel.Name = "sourceSummaryLabel";
-            sourceSummaryLabel.Size = new Size(500, 47);
+            sourceSummaryLabel.Size = new Size(500, 20);
             sourceSummaryLabel.TabIndex = 3;
             sourceSummaryLabel.Text = "Source: waiting for an impulse response.";
             // 
@@ -191,15 +192,25 @@ namespace Resonalyze
             statusTextBox.BackColor = Color.FromArgb(40, 44, 54);
             statusTextBox.BorderStyle = BorderStyle.None;
             statusTextBox.DetectUrls = false;
-            statusTextBox.Font = new Font("Segoe UI", 11F, FontStyle.Bold);
+            statusTextBox.Font = new Font("Segoe UI", 11F, FontStyle.Bold, GraphicsUnit.Point, 204);
             statusTextBox.ForeColor = Color.FromArgb(190, 195, 205);
             statusTextBox.Location = new Point(580, 18);
             statusTextBox.Name = "statusTextBox";
             statusTextBox.ReadOnly = true;
             statusTextBox.ScrollBars = RichTextBoxScrollBars.None;
-            statusTextBox.Size = new Size(580, 318);
+            statusTextBox.Size = new Size(580, 348);
             statusTextBox.TabIndex = 13;
             statusTextBox.Text = "Run a loopback measurement or load an impulse response file with transfer IR.";
+            // 
+            // compareLabel
+            // 
+            compareLabel.Font = new Font("Segoe UI Semibold", 11.25F, FontStyle.Bold, GraphicsUnit.Point, 204);
+            compareLabel.ForeColor = Color.FromArgb(210, 214, 222);
+            compareLabel.Location = new Point(18, 38);
+            compareLabel.Name = "compareLabel";
+            compareLabel.Size = new Size(500, 20);
+            compareLabel.TabIndex = 14;
+            compareLabel.Text = "Compare: -";
             // 
             // TimeAlignmentPanel
             // 
@@ -208,6 +219,7 @@ namespace Resonalyze
             AutoScroll = true;
             BackColor = Color.FromArgb(40, 44, 54);
             BorderStyle = BorderStyle.FixedSingle;
+            Controls.Add(compareLabel);
             Controls.Add(statusTextBox);
             Controls.Add(envelopePlotView);
             Controls.Add(bandpassPlotView);
@@ -244,5 +256,6 @@ namespace Resonalyze
         private OxyPlot.WindowsForms.PlotView bandpassPlotView;
         private OxyPlot.WindowsForms.PlotView envelopePlotView;
         private StatusRichTextBox statusTextBox;
+        private Label compareLabel;
     }
 }

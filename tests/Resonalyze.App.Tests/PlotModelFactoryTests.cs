@@ -1,4 +1,5 @@
 using System.Numerics;
+using OxyPlot.Series;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
 
@@ -121,6 +122,52 @@ public sealed class PlotModelFactoryTests
 
         groupDelayOptions.ShowGroupDelay = true;
         Assert.NotEmpty(factory.CreateGroupDelay(includeCurves: true).Series);
+    }
+
+    [Fact]
+    public void GroupDelay_TagsMainAndCompareCurvesForLinkedOverlays()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement();
+        var groupDelayOptions = new FrequencyResponseOptions { ShowGroupDelay = true };
+        PlotModelFactory factory =
+            CreateFactory(measurement, noiseMeasurement, groupDelayOptions: groupDelayOptions);
+
+        List<CurveTag> mainTags = factory.CreateGroupDelay(includeCurves: true).Series
+            .OfType<LineSeries>()
+            .Select(series => series.Tag)
+            .OfType<CurveTag>()
+            .ToList();
+        Assert.Contains(
+            mainTags,
+            tag => tag.Mode == Mode.GroupDelay &&
+                tag.Kind == AnalysisCurveKind.Primary &&
+                tag.Source == CurveSource.Main);
+        Assert.DoesNotContain(mainTags, tag => tag.Source == CurveSource.Compare);
+
+        // A Compare source at the same sample rate adds a second, Compare-tagged curve
+        // that a linked overlay slot can bind to.
+        var compareIr = new Complex[2048];
+        compareIr[64] = Complex.One;
+        factory.SetCompareSourceProvider(
+            () => new CompareAnalysisSource(
+                "Reference",
+                44_100,
+                compareIr,
+                64,
+                compareIr,
+                64));
+
+        List<CurveTag> comparedTags = factory.CreateGroupDelay(includeCurves: true).Series
+            .OfType<LineSeries>()
+            .Select(series => series.Tag)
+            .OfType<CurveTag>()
+            .ToList();
+        Assert.Contains(comparedTags, tag => tag.Source == CurveSource.Main);
+        Assert.Contains(
+            comparedTags,
+            tag => tag.Source == CurveSource.Compare &&
+                tag.Key == "GroupDelay:Primary:Compare");
     }
 
     [Theory]

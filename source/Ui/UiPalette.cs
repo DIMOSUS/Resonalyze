@@ -62,5 +62,9 @@ internal static class UiPalette
     public static Color WarningRed => Color.FromArgb(255, 96, 96);
     public static Color ErrorSoft => Color.FromArgb(255, 110, 110);
     public static Color ErrorSoftTint => Color.FromArgb(255, 210, 210);
+    // Light accents echoing the Time Alignment envelope markers: first arrival red,
+    // strongest peak blue.
+    public static Color TimeAlignmentFirstArrival => Color.FromArgb(236, 148, 148);
+    public static Color TimeAlignmentStrongestPeak => Color.FromArgb(150, 180, 250);
     public static Color TextMutedSoft => Color.FromArgb(165, 170, 180);
 }

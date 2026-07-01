@@ -1,5 +1,6 @@
 using OxyPlot;
 using OxyPlot.Series;
+using Resonalyze.Dsp;
 using Resonalyze.Options;
 
 namespace Resonalyze;
@@ -18,7 +19,11 @@ internal sealed class LiveSpectrumController : IDisposable
     private readonly Action updateRecordButton;
     private readonly Action updatePlotLabels;
     private readonly LiveSpectrumOptions liveSpectrumOptions;
-    private const string LiveSpectrumTag = "live-spectrum:primary";
+    // The live transfer-function curve carries a CurveTag (like every analysis curve)
+    // so overlays can bind to it by key; the remaining live-spectrum helper series stay
+    // string-tagged for internal bookkeeping only.
+    private static readonly CurveTag LiveSpectrumTag =
+        new(Mode.LiveSpectrum, AnalysisCurveKind.Primary, CurveSource.Main);
     private const string LiveSpectrumLowCoherenceTag = "live-spectrum:low-coherence";
     private const string LiveSpectrumCoherenceTag = "live-spectrum:coherence";
     private const string LiveSpectrumPeakHoldTag = "live-spectrum:peak-hold";

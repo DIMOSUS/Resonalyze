@@ -8,6 +8,7 @@ public partial class GDOpt : Form
 {
     private readonly ToolTip toolTip = new();
     private ExpSweepMeasurement? expSweepMeasurement;
+    private Func<CompareAnalysisSource?>? getCompare;
     private bool initializing;
 
     public GDOpt()
@@ -24,7 +25,10 @@ public partial class GDOpt : Form
         FormClosed += GDOpt_FormClosed;
     }
 
-    public void Init(ExpSweepMeasurement expSweepMeasurement, FrequencyResponseOptions opt)
+    public void Init(
+        ExpSweepMeasurement expSweepMeasurement,
+        FrequencyResponseOptions opt,
+        Func<CompareAnalysisSource?>? getCompare = null)
     {
         if (!ReferenceEquals(this.expSweepMeasurement, expSweepMeasurement))
         {
@@ -37,6 +41,7 @@ public partial class GDOpt : Form
             this.expSweepMeasurement.ImpulseResponseChanged += ExpSweepMeasurement_ImpulseResponseChanged;
         }
 
+        this.getCompare = getCompare;
         initializing = true;
         try
         {
@@ -147,6 +152,9 @@ public partial class GDOpt : Form
         toolTip.Dispose();
     }
 
+    // Re-draws the preview after the Compare selection changes while docked.
+    public void RefreshComparePreview() => UpdateIrPreview();
+
     private void UpdateIrPreview()
     {
         if (initializing || expSweepMeasurement == null || expSweepMeasurement.SampleRate <= 0)
@@ -161,7 +169,8 @@ public partial class GDOpt : Form
             (double)numericLeftWindow.Value,
             (double)numericWindow.Value,
             (double)numericRightWindow.Value,
-            IrPreviewSource.Primary);
+            IrPreviewSource.Primary,
+            getCompare?.Invoke());
     }
 
     private static decimal ClampToControl(DarkNumericUpDown control, double value)

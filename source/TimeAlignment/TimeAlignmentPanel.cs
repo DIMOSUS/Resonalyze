@@ -11,6 +11,8 @@ public partial class TimeAlignmentPanel : UserControl
 
     internal Label SourceSummaryLabel => sourceSummaryLabel;
 
+    internal Label CompareLabel => compareLabel;
+
     internal CheckBox BandpassCheckBox => bandpassCheckBox;
 
     internal DarkNumericUpDown BandpassCenterNumeric => bandpassCenterNumeric;

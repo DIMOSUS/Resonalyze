@@ -53,6 +53,7 @@ namespace Resonalyze
             eqWizardPanel = new EqWizardPanel();
             signalGeneratorPanel = new SignalGeneratorPanel();
             eqResultsPanel = new EqResultsPanel();
+            buttonCompare = new Button();
             overlays.SuspendLayout();
             overlayPanel1.SuspendLayout();
             (numericUpDown1).BeginInit();
@@ -64,12 +65,14 @@ namespace Resonalyze
             buttonRecord.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             buttonRecord.BackColor = Color.FromArgb(50, 55, 80);
             buttonRecord.FlatStyle = FlatStyle.Popup;
+            buttonRecord.Font = new Font("Segoe UI", 10F);
             buttonRecord.ForeColor = Color.White;
             buttonRecord.Location = new Point(3, 3);
             buttonRecord.Name = "buttonRecord";
             buttonRecord.Size = new Size(142, 23);
             buttonRecord.TabIndex = 0;
             buttonRecord.Text = "Start";
+            buttonRecord.UseCompatibleTextRendering = true;
             buttonRecord.UseVisualStyleBackColor = false;
             buttonRecord.Click += buttonRecord_Click;
             // 
@@ -155,13 +158,13 @@ namespace Resonalyze
             buttonRecordOpt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             buttonRecordOpt.BackColor = Color.FromArgb(50, 55, 80);
             buttonRecordOpt.FlatStyle = FlatStyle.Popup;
-            buttonRecordOpt.Font = new Font("Segoe UI Emoji", 9.75F);
+            buttonRecordOpt.Font = new Font("Segoe UI Emoji", 10F);
             buttonRecordOpt.ForeColor = Color.White;
             buttonRecordOpt.Location = new Point(4, 32);
             buttonRecordOpt.Name = "buttonRecordOpt";
             buttonRecordOpt.Size = new Size(141, 24);
             buttonRecordOpt.TabIndex = 8;
-            buttonRecordOpt.Text = "Record Settings";
+            buttonRecordOpt.Text = "⛭ Record Settings";
             buttonRecordOpt.UseCompatibleTextRendering = true;
             buttonRecordOpt.UseVisualStyleBackColor = false;
             buttonRecordOpt.Click += buttonRecordOpt_Click;
@@ -171,6 +174,7 @@ namespace Resonalyze
             buttonSave.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             buttonSave.BackColor = Color.FromArgb(50, 55, 80);
             buttonSave.FlatStyle = FlatStyle.Popup;
+            buttonSave.Font = new Font("Segoe UI", 10F);
             buttonSave.ForeColor = Color.White;
             buttonSave.Location = new Point(4, 62);
             buttonSave.Name = "buttonSave";
@@ -178,6 +182,7 @@ namespace Resonalyze
             buttonSave.TabIndex = 18;
             buttonSave.Text = "Save";
             toolTip1.SetToolTip(buttonSave, "Save Impulse Response");
+            buttonSave.UseCompatibleTextRendering = true;
             buttonSave.UseVisualStyleBackColor = false;
             buttonSave.Click += buttonSave_Click;
             // 
@@ -186,6 +191,7 @@ namespace Resonalyze
             buttonLoad.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             buttonLoad.BackColor = Color.FromArgb(50, 55, 80);
             buttonLoad.FlatStyle = FlatStyle.Popup;
+            buttonLoad.Font = new Font("Segoe UI", 10F);
             buttonLoad.ForeColor = Color.White;
             buttonLoad.Location = new Point(76, 62);
             buttonLoad.Name = "buttonLoad";
@@ -193,6 +199,7 @@ namespace Resonalyze
             buttonLoad.TabIndex = 19;
             buttonLoad.Text = "Load";
             toolTip1.SetToolTip(buttonLoad, "Load Impulse Response");
+            buttonLoad.UseCompatibleTextRendering = true;
             buttonLoad.UseVisualStyleBackColor = false;
             buttonLoad.Click += buttonLoad_Click;
             // 
@@ -201,6 +208,7 @@ namespace Resonalyze
             buttonOverlayShowAll.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             buttonOverlayShowAll.BackColor = Color.FromArgb(50, 55, 80);
             buttonOverlayShowAll.FlatStyle = FlatStyle.Popup;
+            buttonOverlayShowAll.Font = new Font("Segoe UI", 10F);
             buttonOverlayShowAll.ForeColor = Color.White;
             buttonOverlayShowAll.Location = new Point(1200, 389);
             buttonOverlayShowAll.Name = "buttonOverlayShowAll";
@@ -208,6 +216,7 @@ namespace Resonalyze
             buttonOverlayShowAll.TabIndex = 20;
             buttonOverlayShowAll.Text = "Show all";
             toolTip1.SetToolTip(buttonOverlayShowAll, "Show all overlays for this mode");
+            buttonOverlayShowAll.UseCompatibleTextRendering = true;
             buttonOverlayShowAll.UseVisualStyleBackColor = false;
             buttonOverlayShowAll.Click += buttonOverlayShowAll_Click;
             // 
@@ -216,6 +225,7 @@ namespace Resonalyze
             buttonOverlayHideAll.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             buttonOverlayHideAll.BackColor = Color.FromArgb(50, 55, 80);
             buttonOverlayHideAll.FlatStyle = FlatStyle.Popup;
+            buttonOverlayHideAll.Font = new Font("Segoe UI", 10F);
             buttonOverlayHideAll.ForeColor = Color.White;
             buttonOverlayHideAll.Location = new Point(1281, 389);
             buttonOverlayHideAll.Name = "buttonOverlayHideAll";
@@ -223,6 +233,7 @@ namespace Resonalyze
             buttonOverlayHideAll.TabIndex = 22;
             buttonOverlayHideAll.Text = "Hide all";
             toolTip1.SetToolTip(buttonOverlayHideAll, "Hide all overlays for this mode");
+            buttonOverlayHideAll.UseCompatibleTextRendering = true;
             buttonOverlayHideAll.UseVisualStyleBackColor = false;
             buttonOverlayHideAll.Click += buttonOverlayHideAll_Click;
             // 
@@ -231,12 +242,14 @@ namespace Resonalyze
             buttonCurrentModeSettings.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             buttonCurrentModeSettings.BackColor = Color.FromArgb(50, 55, 80);
             buttonCurrentModeSettings.FlatStyle = FlatStyle.Popup;
+            buttonCurrentModeSettings.Font = new Font("Segoe UI Emoji", 10F);
             buttonCurrentModeSettings.ForeColor = Color.White;
-            buttonCurrentModeSettings.Location = new Point(1204, 271);
+            buttonCurrentModeSettings.Location = new Point(1204, 300);
             buttonCurrentModeSettings.Name = "buttonCurrentModeSettings";
             buttonCurrentModeSettings.Size = new Size(150, 23);
             buttonCurrentModeSettings.TabIndex = 21;
-            buttonCurrentModeSettings.Text = "Mode Settings...";
+            buttonCurrentModeSettings.Text = "🔧 Mode Settings...";
+            buttonCurrentModeSettings.UseCompatibleTextRendering = true;
             buttonCurrentModeSettings.UseVisualStyleBackColor = false;
             buttonCurrentModeSettings.Click += buttonCurrentModeSettings_Click;
             // 
@@ -244,13 +257,14 @@ namespace Resonalyze
             // 
             panel1.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             panel1.BorderStyle = BorderStyle.FixedSingle;
+            panel1.Controls.Add(buttonCompare);
             panel1.Controls.Add(buttonRecord);
             panel1.Controls.Add(buttonRecordOpt);
             panel1.Controls.Add(buttonSave);
             panel1.Controls.Add(buttonLoad);
             panel1.Location = new Point(1204, 146);
             panel1.Name = "panel1";
-            panel1.Size = new Size(150, 90);
+            panel1.Size = new Size(150, 119);
             panel1.TabIndex = 23;
             // 
             // inputLevelMeterPanel
@@ -269,12 +283,14 @@ namespace Resonalyze
             buttonHistory.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             buttonHistory.BackColor = Color.FromArgb(50, 55, 80);
             buttonHistory.FlatStyle = FlatStyle.Popup;
+            buttonHistory.Font = new Font("Segoe UI Emoji", 10F, FontStyle.Regular, GraphicsUnit.Point, 0);
             buttonHistory.ForeColor = Color.White;
-            buttonHistory.Location = new Point(1204, 242);
+            buttonHistory.Location = new Point(1204, 271);
             buttonHistory.Name = "buttonHistory";
             buttonHistory.Size = new Size(150, 23);
             buttonHistory.TabIndex = 25;
             buttonHistory.Text = "History";
+            buttonHistory.UseCompatibleTextRendering = true;
             buttonHistory.UseVisualStyleBackColor = false;
             buttonHistory.Click += buttonHistory_Click;
             // 
@@ -311,12 +327,13 @@ namespace Resonalyze
             eqWizardPanel.ForeColor = Color.White;
             eqWizardPanel.Location = new Point(12, 52);
             eqWizardPanel.Name = "eqWizardPanel";
+            eqWizardPanel.Padding = new Padding(6);
             eqWizardPanel.Size = new Size(1182, 704);
             eqWizardPanel.TabIndex = 28;
             eqWizardPanel.Visible = false;
             // 
             // signalGeneratorPanel
-            //
+            // 
             signalGeneratorPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             signalGeneratorPanel.AutoScroll = true;
             signalGeneratorPanel.BackColor = Color.FromArgb(40, 44, 54);
@@ -328,20 +345,38 @@ namespace Resonalyze
             signalGeneratorPanel.Size = new Size(1182, 704);
             signalGeneratorPanel.TabIndex = 29;
             signalGeneratorPanel.Visible = false;
-            //
+            // 
             // eqResultsPanel
-            //
+            // 
             eqResultsPanel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             eqResultsPanel.BackColor = Color.FromArgb(20, 22, 30);
             eqResultsPanel.BorderStyle = BorderStyle.FixedSingle;
+            eqResultsPanel.Font = new Font("Segoe UI", 9F);
+            eqResultsPanel.ForeColor = Color.FromArgb(225, 228, 235);
             eqResultsPanel.Location = new Point(1200, 415);
             eqResultsPanel.Name = "eqResultsPanel";
+            eqResultsPanel.Padding = new Padding(8);
             eqResultsPanel.Size = new Size(154, 341);
             eqResultsPanel.TabIndex = 30;
             eqResultsPanel.Visible = false;
-            //
+            // 
+            // buttonCompare
+            // 
+            buttonCompare.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonCompare.BackColor = Color.FromArgb(50, 55, 80);
+            buttonCompare.FlatStyle = FlatStyle.Popup;
+            buttonCompare.Font = new Font("Segoe UI Emoji", 9.75F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            buttonCompare.ForeColor = Color.White;
+            buttonCompare.Location = new Point(4, 91);
+            buttonCompare.Name = "buttonCompare";
+            buttonCompare.Size = new Size(141, 23);
+            buttonCompare.TabIndex = 31;
+            buttonCompare.Text = "Compare";
+            buttonCompare.UseCompatibleTextRendering = true;
+            buttonCompare.UseVisualStyleBackColor = false;
+            // 
             // Form1
-            //
+            // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
@@ -398,5 +433,6 @@ namespace Resonalyze
         private EqWizardPanel eqWizardPanel;
         private SignalGeneratorPanel signalGeneratorPanel;
         private EqResultsPanel eqResultsPanel;
+        private Button buttonCompare;
     }
 }

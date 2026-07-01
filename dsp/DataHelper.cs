@@ -712,6 +712,51 @@ namespace Resonalyze.Dsp
             return new AnalysisCurve("Impulse Response", data);
         }
 
+        // Impulse from the very start of the response (sample 0) up to peakIndex plus
+        // opt.Length, with the X coordinate in absolute samples. Used when a transfer IR
+        // is available, so the onset, the peak and the decay tail are all visible on a
+        // single absolute-sample timeline.
+        public static AnalysisCurve GetImpulseFromStart(
+            IImpulseMeasurement measurement,
+            ImpulseResponseOptions opt)
+        {
+            int available = measurement.ImpulseResponse?.Length ?? 0;
+            int length = Math.Clamp(
+                measurement.PeakIndex + opt.Length,
+                1,
+                Math.Max(1, available));
+            Complex[] impulse = ExtractWindow(measurement, 0, length);
+
+            List<SignalPoint> data = new(length);
+
+            if (opt.Logarithmic)
+            {
+                // dB relative to the window's own peak (see GetImpulse for why).
+                double peakMagnitude = 0;
+                for (int i = 0; i < length; i++)
+                {
+                    peakMagnitude = Math.Max(peakMagnitude, impulse[i].Magnitude);
+                }
+
+                double reference = peakMagnitude > 0 ? peakMagnitude : 1.0;
+                for (int i = 0; i < length; i++)
+                {
+                    data.Add(new SignalPoint(
+                        i,
+                        AmplitudeToDecibels(impulse[i].Magnitude / reference)));
+                }
+            }
+            else
+            {
+                for (int i = 0; i < length; i++)
+                {
+                    data.Add(new SignalPoint(i, impulse[i].Real));
+                }
+            }
+
+            return new AnalysisCurve("Impulse Response", data);
+        }
+
         public static AnalysisCurve GetAutocorrelation(
             IImpulseMeasurement measurement,
             ImpulseResponseOptions opt)

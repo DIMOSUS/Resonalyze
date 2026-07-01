@@ -179,11 +179,15 @@ public partial class Form1
             return;
         }
 
-        ShowPlotModel(model, shouldIncludeCurves, descriptor.ShowOverlayCurves);
+        // Apply the saved zoom to the new model's axes BEFORE showing it. Overlays
+        // (e.g. a calculated overlay) force a synchronous repaint while drawing; if the
+        // zoom were restored only afterwards, that repaint would flash the default scale
+        // first, so the plot appears to jump on every settings change.
         if (restoreViewports != null)
         {
-            RestoreAxisViewports(restoreViewports);
+            ApplyAxisViewports(model, restoreViewports);
         }
+        ShowPlotModel(model, shouldIncludeCurves, descriptor.ShowOverlayCurves);
     }
 
     private void RefreshCurrentModePlot()
@@ -208,6 +212,13 @@ public partial class Form1
             return Array.Empty<AxisViewport>();
         }
 
+        // ActualMinimum/ActualMaximum only refresh on render, so a rebuild triggered
+        // before the previous paint settled (common with Compare, whose model is
+        // slower to build) would capture the nominal range and drop the user's zoom.
+        // Update the model in place first so the actual range reflects the live
+        // pan/zoom synchronously, independent of paint timing.
+        ((IPlotModel)model).Update(false);
+
         var viewports = new List<AxisViewport>(model.Axes.Count);
         foreach (Axis axis in model.Axes)
         {
@@ -221,14 +232,16 @@ public partial class Form1
         return viewports;
     }
 
-    private void RestoreAxisViewports(IReadOnlyList<AxisViewport> viewports)
+    private static void ApplyAxisViewports(
+        PlotModel model,
+        IReadOnlyList<AxisViewport> viewports)
     {
-        if (viewports.Count == 0 || plotView1.Model == null)
+        if (viewports.Count == 0)
         {
             return;
         }
 
-        foreach (Axis axis in plotView1.Model.Axes)
+        foreach (Axis axis in model.Axes)
         {
             AxisViewport? viewport = viewports.FirstOrDefault(
                 item => item.Position == axis.Position &&
@@ -240,9 +253,6 @@ public partial class Form1
 
             axis.Zoom(viewport.Minimum, viewport.Maximum);
         }
-
-        plotView1.Model.InvalidatePlot(false);
-        plotView1.Refresh();
     }
 
     private bool HasDockedModeSettings(ModeTab tab) =>

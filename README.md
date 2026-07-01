@@ -69,13 +69,16 @@ file is provided with every release.
   (leakage-free periodic pink, pink, brown/red, white noise) and coherence
 - Frequency response, phase, group delay, waterfall, Burst Decay, and
   autocorrelation
+- Compare a second measurement (from a file or History) against the current one
+  across Time Alignment, Phase, Group Delay, Frequency Response, and Impulse
+  Response, with matching analysis settings and per-metric deltas
 - Minimum-phase / excess-phase decomposition with a millisecond gate, gate
   offset, and a τ (delay) detrend for cross-measurement phase comparison
 - Per-curve visibility toggles in every analysis view; curves redraw on the fly
   with no separate draw/clear step
 - Harmonic distortion, THD, and THD+N analysis
-- Persistent comparison overlays with labels, styling, curve math, targets,
-  import/export, and saved per-mode state
+- Persistent comparison overlays with labels, styling, curve math over captured
+  or live plot curves, targets, import/export, and saved per-mode state
 - EQ Wizard: design an up-to-32-band parametric EQ against a target, with Auto
   Tune, a live results read-out, cross-tool PEQ import/export, and a printable
   tuning-sheet PDF
@@ -92,15 +95,6 @@ file is provided with every release.
 - Docked, non-modal settings panels with live previews and instant graph
   updates
 - Auto-update support for installed builds through a signed NetSparkle appcast
-
-## Typical workflows
-
-- ✔ Align car speakers
-- ✔ Tune a home loudspeaker
-- ✔ Compare crossover prototypes
-- ✔ Measure a microphone
-- ✔ Create PEQ filters
-- ✔ Export to DSP
 
 ## Why Resonalyze?
 
@@ -305,9 +299,12 @@ real-time analysis without capturing an IR, use the additional
    math. When tuning home or car systems, add a **target curve** overlay (a
    parametric house/Harman-style target with presets) and switch its deviation
    readout to **EQ correction** to see how much to dial into an equalizer.
-9. Use **Save** to keep the captured impulse response for later analysis or
-   comparison.
-10. Use **History** to review recent measurements, preview their frequency
+9. Pin a second measurement with [**Compare**](#compare) to overlay a reference
+   from a file or a History entry across Time Alignment, Phase, Group Delay,
+   Frequency Response, and Impulse Response.
+10. Use **Save** to keep the captured impulse response for later analysis or
+    comparison.
+11. Use **History** to review recent measurements, preview their frequency
     response, reload an older snapshot, or save an in-memory capture to disk.
 
 For acoustic measurements, microphone placement and room conditions strongly
@@ -645,6 +642,39 @@ measurement shelf rather than as a separate file browser.
 To keep memory use predictable, Resonalyze retains only a small rolling set of
 unsaved in-memory snapshots. Saved file-backed entries are persisted separately.
 
+## Compare
+
+The **Compare** button in the action panel overlays a second measurement on top
+of the current one, so two responses can be read side by side with the *same*
+analysis settings. Choose the reference from a file (**Choose file…**) or from a
+**History** entry; the button then shows its name, and **Clear** removes it.
+
+Compare is applied everywhere it is meaningful, always recomputed with the
+current mode's settings so the two curves stay directly comparable:
+
+- **Time Alignment** — the reference envelope is overlaid on the peak preview
+  with its own first-arrival and strongest-peak markers, and the delay table
+  gains a second block whose every value shows the delta against the source in
+  parentheses (for example `1.006 (+0.010)`).
+- **Phase** and **Group Delay** — the reference curves are computed with the
+  identical gate, τ detrend, and smoothing and drawn dashed and dimmed; the
+  gated IR preview in the settings panels shows the reference impulse as well.
+- **Frequency Response** — the reference magnitude is overlaid (harmonics stay
+  source-only to keep the plot readable).
+- **Impulse Response** — the reference impulse is drawn alongside the source
+  with the axis fitting both curves. When the record contains a transfer IR,
+  the plot uses an absolute sample timeline from sample 0 to the IR peak plus
+  the configured **Length**, so the arrival positions of the two impulses can
+  be compared directly.
+
+A reference is only drawn when its sample rate matches the current measurement:
+Time Alignment states the mismatch explicitly, the other modes simply omit the
+curve. Because Compare applies the same settings to both measurements, adjusting
+a window or gate updates both curves at once — the intended way to compare two
+phase or group-delay responses fairly. The source and Compare curves are also
+selectable as live operands in a [calculated overlay](#plot-overlays), so their
+difference can be plotted and watched live while you tune the analysis window.
+
 ## Time Alignment
 
 The **Time Alignment** mode analyzes acoustic delay from the currently active
@@ -713,6 +743,10 @@ When the bandpass window is enabled, Resonalyze shows a small frequency-domain
 preview of the selected pass band. It also shows the envelope around the
 detected peak, making it easy to see whether the reported delay comes from a
 clean dominant arrival or from a noisy or ambiguous response.
+
+Selecting a [Compare](#compare) reference overlays its envelope on the same
+preview and adds a second delay-table block whose values carry the delta against
+the source, which turns Time Alignment into a direct A/B of two arrivals.
 
 Time Alignment therefore depends on how the underlying sweep record was
 captured. To produce a usable transfer IR, the sweep measurement itself must be
@@ -796,8 +830,9 @@ can hold one of three kinds, chosen from the numbered capture-button menu (or
 from the settings dialog):
 
 - **Captured** — a snapshot of a curve currently on the plot.
-- **Operation** — a calculation between two captured slots (`A - B`, `B - A`,
-  `A + B`, `(A + B) / 2`, `|A - B|`, or a frequency blend).
+- **Operation** — a calculation between two operands, each either a live plot
+  curve or a captured slot (`A - B`, `B - A`, `A + B`, `(A + B) / 2`, `|A - B|`,
+  or a frequency blend).
 - **Target** — a parametric target curve compared against a source.
 
 Overlay slots are stored automatically as human-readable JSON beside the
@@ -810,9 +845,12 @@ overlays/<AnalysisMode>/overlay-01.json
 The numbered button opens a menu to **Capture curve**, **Import from text**,
 **Export to text**, or switch the slot to a **Calculated overlay** or **Target**.
 The checkbox shows or hides the slot, the numeric control applies a vertical
-offset, and `...` opens the settings dialog. Operation and Target slots
-reference only captured slots (or, for a Target, the current measurement), which
-keeps the recompute order simple and free of cycles.
+offset, and `...` opens the settings dialog. A Target slot references a captured
+slot or the current measurement; an Operation slot references two operands that
+are each a live plot curve or a captured slot. A live-curve operand re-reads the
+plot on every rebuild, so a calculation over it — for example the difference
+between the source and a Compare curve — updates live as the analysis settings
+change.
 
 Visible overlay names are drawn directly over the plot as a compact legend. Each
 entry uses the same color and line style as the curve itself, so exported
@@ -876,7 +914,8 @@ Captured overlay settings include:
 Calculated overlay settings additionally include:
 
 ![Calculated overlay](assets/images/calc_overlay.jpg)
-- two source slots selected from the captured overlay slots
+- two operands (Curve A and Curve B), each selected from the live plot curves or
+  the captured overlay slots
 - operations `A - B`, `B - A`, `A + B`, `(A + B) / 2`, and `|A - B|`
 - a blend operation with a user-defined crossover frequency and transition width
 - optional amplitude-space math for dB-based views, which converts both curves to
@@ -884,8 +923,8 @@ Calculated overlay settings additionally include:
 - independent octave smoothing applied after the selected operation
 
 In **Phase Response**, the difference operations (`A - B`, `B - A`, `|A - B|`) are
-phase-aware. Each captured phase curve remembers whether it is an unwrapped
-(continuous) or wrapped (-180..180) representation: measured phase follows the
+phase-aware. Each phase curve — captured or live — remembers whether it is an
+unwrapped (continuous) or wrapped (-180..180) representation: measured phase follows the
 **Unwrap** option in effect when it was captured, while minimum and excess phase are
 always continuous. When either operand is wrapped, the difference uses the shortest
 angular distance (`atan2(sin Δ, cos Δ)`) so it never jumps by ±360° across the

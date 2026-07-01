@@ -232,7 +232,7 @@ internal sealed class MeasurementHistoryService
         };
     }
 
-    private static MeasurementHistorySnapshot CreateSnapshot(
+    internal static MeasurementHistorySnapshot CreateSnapshot(
         ImpulseResponseFile file,
         MeasurementSessionSnapshot? session = null)
     {

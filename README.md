@@ -79,6 +79,9 @@ file is provided with every release.
 - EQ Wizard: design an up-to-32-band parametric EQ against a target, with Auto
   Tune, a live results read-out, cross-tool PEQ import/export, and a printable
   tuning-sheet PDF
+- Signal Generator: play pink (periodic and continuous), brown/red, white noise,
+  or a sine tone through the configured playback device for level setting and
+  channel checks
 - Measurement History with in-memory snapshots, saved-file recall, FR previews,
   per-entry working state (mode, settings, active overlays), and a one-click
   new-session reset
@@ -982,6 +985,32 @@ non-peaking filter types, and malformed entries are skipped rather than rejected
 car or speaker: the product banner, a title from the file name, the date and fit
 range, a small EQ preview graph with the fit window shaded, the tuning statistics,
 the preamp, and one large card per filter.
+
+## Signal Generator
+
+The **Signal Generator** (under the **Tools** tab) plays a continuous test signal
+through the current playback device, independent of any measurement. It is handy
+for setting output levels, checking channel routing and polarity, exercising a
+loudspeaker, or feeding an external analyzer.
+
+**Signal type** offers the same excitation options as Live Spectrum plus a tone:
+
+- **Pink noise (periodic)** — the default; one period of exactly pink noise
+  looped seamlessly.
+- **Pink noise** — continuous random pink noise, −3 dB/octave.
+- **Brown / red noise** — −6 dB/octave, weighted toward low frequencies.
+- **White noise** — flat energy per hertz.
+- **Sine** — a pure tone; the **Frequency, Hz** field is only enabled for this
+  type.
+
+**Duration, s** sets how long the signal plays, and **Level, %** scales its
+amplitude. **Play** starts playback and **Stop** ends it; a status line reports
+whether the generator is `Ready`, `Playing`, or shows any playback error.
+
+The generator reuses the audio configuration from **Record Settings** — backend
+(Wave or ASIO), sample rate, bit depth, playback channel, and output device or
+ASIO output channel pair — and displays the resolved settings so you can confirm
+where the signal is going before pressing **Play**.
 
 ## Calibration
 

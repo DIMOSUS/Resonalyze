@@ -2,10 +2,25 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Options
 {
-    public enum LiveSpectrumMode
+    /// <summary>
+    /// Spectral colour of the excitation signal played during a live measurement.
+    /// Ordered by general usefulness for a dual-FFT analyzer:
+    /// <list type="bullet">
+    /// <item><see cref="PinkPeriodic"/> — pink noise synthesised as one FFT-length
+    /// period and looped. Exactly pink and deterministic, so the transfer-function
+    /// average converges quickly with no random variance. The default.</item>
+    /// <item><see cref="Pink"/> — continuous (random) pink noise, −3 dB/octave.</item>
+    /// <item><see cref="Brown"/> — brown/red noise, −6 dB/octave: even more
+    /// low-frequency drive, useful for subwoofer and room-mode work.</item>
+    /// <item><see cref="White"/> — flat energy per hertz.</item>
+    /// </list>
+    /// </summary>
+    public enum NoiseColor
     {
-        TransferFunction,
-        InputSpectrum
+        PinkPeriodic,
+        Pink,
+        Brown,
+        White
     }
 
     /// <summary>
@@ -23,7 +38,9 @@ namespace Resonalyze.Options
 
     public sealed class LiveSpectrumOptions
     {
-        public LiveSpectrumMode Mode { get; set; } = LiveSpectrumMode.TransferFunction;
+        /// <summary>Spectral colour of the excitation noise played during measurement.</summary>
+        public NoiseColor NoiseColor { get; set; } = NoiseColor.PinkPeriodic;
+
         public bool UseCalibration { get; set; } = true;
         public int SequenceLength { get; set; } = 2048;
 

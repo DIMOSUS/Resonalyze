@@ -223,8 +223,7 @@ internal sealed class LiveSpectrumController : IDisposable
         {
             await selectLiveSpectrumAsync();
         }
-        if (liveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction &&
-            !measurement.HasConfiguredLoopback)
+        if (!measurement.HasConfiguredLoopback)
         {
             MessageBox.Show(
                 owner,

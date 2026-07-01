@@ -364,7 +364,7 @@ internal sealed class MeasurementSettingsFile
 
     internal sealed class LiveSpectrumSettings
     {
-        public LiveSpectrumMode Mode { get; set; } = LiveSpectrumMode.TransferFunction;
+        public NoiseColor NoiseColor { get; set; } = NoiseColor.PinkPeriodic;
         public bool UseCalibration { get; set; } = true;
         public int SequenceLength { get; set; } = 2048;
         public int OverlapPercent { get; set; } = 50;
@@ -380,9 +380,9 @@ internal sealed class MeasurementSettingsFile
             LiveSpectrumOptions options) =>
             new()
             {
-                Mode = Enum.IsDefined(options.Mode)
-                    ? options.Mode
-                    : LiveSpectrumMode.TransferFunction,
+                NoiseColor = Enum.IsDefined(options.NoiseColor)
+                    ? options.NoiseColor
+                    : NoiseColor.PinkPeriodic,
                 UseCalibration = options.UseCalibration,
                 SequenceLength = NormalizeSequenceLength(options.SequenceLength),
                 OverlapPercent = NormalizeOverlapPercent(options.OverlapPercent),
@@ -403,9 +403,9 @@ internal sealed class MeasurementSettingsFile
 
         public void ApplyTo(LiveSpectrumOptions options)
         {
-            options.Mode = Enum.IsDefined(Mode)
-                ? Mode
-                : LiveSpectrumMode.TransferFunction;
+            options.NoiseColor = Enum.IsDefined(NoiseColor)
+                ? NoiseColor
+                : NoiseColor.PinkPeriodic;
             options.UseCalibration = UseCalibration;
             options.SequenceLength = NormalizeSequenceLength(SequenceLength);
             options.OverlapPercent = NormalizeOverlapPercent(OverlapPercent);

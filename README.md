@@ -65,7 +65,8 @@ file is provided with every release.
 - Exponential sine sweep measurement with impulse-response JSON save/load
 - Optional loopback-referenced sweep processing via a transfer function
 - Time Alignment with sub-sample delay estimation from the transfer IR
-- Live Spectrum with `Transfer Function` and `Input Spectrum` modes
+- Live Spectrum: real-time loopback transfer function with selectable excitation
+  (leakage-free periodic pink, pink, brown/red, white noise) and coherence
 - Frequency response, phase, group delay, waterfall, Burst Decay, and
   autocorrelation
 - Minimum-phase / excess-phase decomposition with a millisecond gate, gate
@@ -118,9 +119,10 @@ Resonalyze is built around a focused engineering workflow:
   make it quick to compare measurements, tuning passes, channels, listening
   positions, or before/after changes.
 - **Live transfer-function analysis**
-  Live Spectrum can use a loopback reference, coherence, overlap, averaging,
-  peak hold, and overload detection to show a driven response rather than only
-  the raw microphone spectrum.
+  Live Spectrum drives the system with a selectable excitation signal — including
+  a leakage-free periodic pink noise — and uses a loopback reference, coherence,
+  overlap, averaging, peak hold, and overload detection to show the driven
+  response rather than only the raw microphone spectrum.
 - **Measurement history as a working shelf**
   Recent captures stay available in memory, saved files are remembered across
   launches, and each entry has a frequency-response preview. Entries also
@@ -156,8 +158,9 @@ comparison, and transparent data matter more than a large legacy feature set.
     <td width="50%">
       <h3>Live Spectrum</h3>
       <img src="assets/images/noise.jpg" alt="Live Spectrum plot">
-      <p>Real-time input spectrum or transfer-function analyzer with coherence,
-      averaging, overlap, peak hold, and unreliable-band marking.</p>
+      <p>Real-time loopback transfer-function analyzer with selectable excitation
+      noise, coherence, averaging, overlap, peak hold, and unreliable-band
+      marking.</p>
     </td>
     <td width="50%">
       <h3>Impulse Response</h3>
@@ -334,10 +337,10 @@ and Group Delay analyze the loopback transfer IR and are only drawn when the
 active record provides one; their preview marks the gate position used for the
 analysis.
 
-Live Spectrum has its own docked settings panel. It lets you choose between
-`Transfer Function` and `Input Spectrum`, enable or disable calibration, and
-select a **Sequence Length** from a power-of-two list. The sequence length is
-the FFT block size used by the live analyzer and is preserved between sessions.
+Live Spectrum has its own docked settings panel. It lets you choose the
+**Signal Type** (excitation noise), enable or disable calibration, and select a
+**Sequence Length** from a power-of-two list. The sequence length is the FFT
+block size used by the live analyzer and is preserved between sessions.
 
 ## Phase and Group Delay
 
@@ -487,42 +490,50 @@ or an unexpectedly hot reference path before you start analyzing the curves.
 
 ## Live Spectrum
 
-The **Live Spectrum** mode supports two operating modes:
+The **Live Spectrum** mode is a live, dual-FFT **transfer-function** analyzer. It
+plays a continuous excitation signal, uses the configured loopback channel as a
+reference, and shows the real-time frequency-domain relationship from loopback to
+microphone. Because the estimate is referenced to loopback rather than to the
+microphone alone, it suppresses noise and other input-side content that is not
+correlated with the playback signal.
 
-- **Transfer Function**
-  Uses the configured loopback channel as a reference and shows the live
-  frequency-domain relationship from loopback to microphone. Because the
-  estimate is referenced to loopback rather than to the microphone alone, it
-  also helps suppress noise and other input-side content that is not correlated
-  with the playback signal.
-- **Input Spectrum**
-  Shows the classic live spectrum of the selected microphone input, without a
-  loopback reference.
-
-In Transfer Function mode, Resonalyze also draws a **coherence** curve (γ²) on a
+Alongside the transfer function, Resonalyze draws a **coherence** curve (γ²) on a
 secondary right-hand axis scaled from 0 to 1. Coherence shows how much of the
 measured response is linearly correlated with the loopback reference: values
 near 1 mark frequencies where the transfer-function estimate is trustworthy,
 while low values flag bands dominated by noise, reflections, or non-linear
 behavior.
 
-The live estimate averages in the power domain (and the input spectrum is
-power-averaged with a Hann window), which avoids the downward bias that
-magnitude averaging introduces on noise-like signals. The level is calibrated
-for tones rather than as a power spectral density. On-screen smoothing is
-referenced to wall-clock time, so the response stays consistent regardless of
+The live estimate averages in the power domain, which avoids the downward bias
+that magnitude averaging introduces on noise-like signals. The level is
+calibrated for tones rather than as a power spectral density. On-screen smoothing
+is referenced to wall-clock time, so the response stays consistent regardless of
 the chosen overlap and sequence length, and the display refreshes at roughly 30
 frames per second.
 
-Transfer Function mode requires a configured loopback input in **Record
-Settings**. It works with either Wave or ASIO, as long as the microphone and
-loopback are routed to separate channels. If loopback is not configured,
-Resonalyze blocks Transfer Function start and explains what needs to be fixed.
+Live Spectrum requires a configured loopback input in **Record Settings**. It
+works with either Wave or ASIO, as long as the microphone and loopback are routed
+to separate channels. If loopback is not configured, Resonalyze blocks the start
+and explains what needs to be fixed.
 
-In practice, Transfer Function mode is more stable than raw input-spectrum
-viewing when the room or measurement chain contains unrelated noise. It is not a
-magic denoiser, but it is the better choice when you want to focus on the driven
-response rather than on whatever the microphone happens to hear.
+In practice, referencing to loopback is far more stable than viewing the raw
+microphone spectrum when the room or measurement chain contains unrelated noise.
+It is not a magic denoiser, but it lets you focus on the driven response rather
+than on whatever the microphone happens to hear.
+
+**Signal Type** selects the excitation noise, ordered by usefulness:
+
+- **Pink noise (periodic)** — the default. One FFT-length period of exactly pink
+  noise, synthesised in the frequency domain and looped. Because it is periodic
+  with the analysis block, every frame captures a whole period, so it is measured
+  **leakage-free** with a rectangular window and perfect bin resolution, and the
+  average converges almost instantly. When it is selected, **Window** is forced to
+  `Rectangular` and **Overlap** to `Off` (both would only add correlated frames
+  that do not improve the estimate); your own picks are restored for other signals.
+- **Pink noise** — continuous random pink noise, −3 dB/octave.
+- **Brown / red noise** — −6 dB/octave, with more low-frequency drive for
+  subwoofer and room-mode work.
+- **White noise** — flat energy per hertz.
 
 The Live Spectrum settings panel also exposes **Sequence Length**, the FFT block
 size used by the live analyzer. Only power-of-two values are offered, to keep the
@@ -530,10 +541,10 @@ live FFT path efficient and predictable.
 
 It also exposes **Overlap** (`Off`, `50%`, or `75%`), which slides the analysis
 window by a fraction of its size instead of advancing in non-overlapping blocks.
-Both Live Spectrum modes apply a Hann window before the FFT, so overlap reclaims
-the samples the window tapers at the block edges. Higher overlap gives faster,
-smoother averaging and a more responsive display, at the cost of more FFTs per
-second.
+With a tapering window (the usual case) overlap reclaims the samples the window
+attenuates at the block edges, giving faster, smoother averaging and a more
+responsive display at the cost of more FFTs per second. It is disabled for
+periodic pink noise, where overlapped frames are correlated and add no averaging.
 
 **Smoothing** applies fractional-octave smoothing (`Off`, `1/1` … `1/48`) to the
 displayed curve, using the same presets as the Frequency Response mode.
@@ -541,7 +552,8 @@ displayed curve, using the same presets as the Frequency Response mode.
 **Window** selects the analysis window applied before the FFT: `Hann` (a good
 general default), `Flat Top` (maximum amplitude accuracy for tones),
 `Blackman-Harris` (strong spectral-leakage suppression), or `Rectangular`
-(unwindowed, for special cases).
+(unwindowed). It is forced to `Rectangular` for periodic pink noise, which is
+already leakage-free.
 
 **Averaging** sets how quickly the trace responds: `Fast`, `Medium`, and `Slow`
 select exponential time constants (referenced to wall-clock time, so they are
@@ -554,7 +566,7 @@ off leaves only the optional peak-hold and coherence curves.
 
 **Peak Hold** overlays a second curve that retains the maximum level seen on the
 trace until it is reset. **Coherence** (on by default) toggles the γ² curve
-shown on a secondary 0-to-1 axis in Transfer Function mode.
+shown on a secondary 0-to-1 axis.
 
 **Coherence Limit** marks unreliable parts of the transfer-function curve: any
 frequency whose coherence falls below the chosen percentage (default `25%`) is

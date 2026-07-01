@@ -303,14 +303,14 @@ public partial class Form1
         double Maximum);
 
     private sealed record LiveSpectrumRestartSnapshot(
-        LiveSpectrumMode Mode,
+        NoiseColor NoiseColor,
         WindowType WindowType,
         int SequenceLength,
         int OverlapPercent)
     {
         public static LiveSpectrumRestartSnapshot Capture(LiveSpectrumOptions options) =>
             new(
-                options.Mode,
+                options.NoiseColor,
                 options.WindowType,
                 options.SequenceLength,
                 options.OverlapPercent);

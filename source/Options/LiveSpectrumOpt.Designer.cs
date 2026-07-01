@@ -28,10 +28,10 @@ namespace Resonalyze.Options
         /// </summary>
         private void InitializeComponent()
         {
-            label1 = new Label();
             checkUseCalibration = new CheckBox();
             label2 = new Label();
-            modeComboBox = new DarkComboBox();
+            labelSignalType = new Label();
+            signalTypeComboBox = new DarkComboBox();
             label3 = new Label();
             sequenceLengthComboBox = new DarkComboBox();
             label4 = new Label();
@@ -53,19 +53,9 @@ namespace Resonalyze.Options
             labelMainCurve = new Label();
             checkMainCurve = new CheckBox();
             SuspendLayout();
-            // 
-            // label1
-            // 
-            label1.AutoSize = true;
-            label1.ForeColor = SystemColors.ControlLight;
-            label1.Location = new Point(12, 14);
-            label1.Name = "label1";
-            label1.Size = new Size(38, 15);
-            label1.TabIndex = 37;
-            label1.Text = "Mode";
-            // 
+            //
             // checkUseCalibration
-            // 
+            //
             checkUseCalibration.AutoSize = true;
             checkUseCalibration.ForeColor = SystemColors.ControlLight;
             checkUseCalibration.Location = new Point(238, 217);
@@ -73,9 +63,9 @@ namespace Resonalyze.Options
             checkUseCalibration.Size = new Size(15, 14);
             checkUseCalibration.TabIndex = 47;
             checkUseCalibration.UseVisualStyleBackColor = true;
-            // 
+            //
             // label2
-            // 
+            //
             label2.AutoSize = true;
             label2.ForeColor = SystemColors.ControlLight;
             label2.Location = new Point(12, 217);
@@ -83,20 +73,30 @@ namespace Resonalyze.Options
             label2.Size = new Size(87, 15);
             label2.TabIndex = 46;
             label2.Text = "Use Calibration";
-            // 
-            // modeComboBox
-            // 
-            modeComboBox.BackColor = Color.FromArgb(55, 60, 72);
-            modeComboBox.ForeColor = Color.White;
-            modeComboBox.Location = new Point(132, 11);
-            modeComboBox.Margin = new Padding(0);
-            modeComboBox.MinimumSize = new Size(36, 19);
-            modeComboBox.Name = "modeComboBox";
-            modeComboBox.Size = new Size(121, 23);
-            modeComboBox.TabIndex = 48;
-            // 
+            //
+            // labelSignalType
+            //
+            labelSignalType.AutoSize = true;
+            labelSignalType.ForeColor = SystemColors.ControlLight;
+            labelSignalType.Location = new Point(12, 14);
+            labelSignalType.Name = "labelSignalType";
+            labelSignalType.Size = new Size(64, 15);
+            labelSignalType.TabIndex = 37;
+            labelSignalType.Text = "Signal Type";
+            //
+            // signalTypeComboBox
+            //
+            signalTypeComboBox.BackColor = Color.FromArgb(55, 60, 72);
+            signalTypeComboBox.ForeColor = Color.White;
+            signalTypeComboBox.Location = new Point(132, 11);
+            signalTypeComboBox.Margin = new Padding(0);
+            signalTypeComboBox.MinimumSize = new Size(36, 19);
+            signalTypeComboBox.Name = "signalTypeComboBox";
+            signalTypeComboBox.Size = new Size(121, 23);
+            signalTypeComboBox.TabIndex = 48;
+            //
             // label3
-            // 
+            //
             label3.AutoSize = true;
             label3.ForeColor = SystemColors.ControlLight;
             label3.Location = new Point(12, 72);
@@ -104,9 +104,9 @@ namespace Resonalyze.Options
             label3.Size = new Size(98, 15);
             label3.TabIndex = 49;
             label3.Text = "Sequence Length";
-            // 
+            //
             // sequenceLengthComboBox
-            // 
+            //
             sequenceLengthComboBox.BackColor = Color.FromArgb(55, 60, 72);
             sequenceLengthComboBox.ForeColor = Color.White;
             sequenceLengthComboBox.Location = new Point(132, 69);
@@ -309,6 +309,8 @@ namespace Resonalyze.Options
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
             ClientSize = new Size(265, 370);
+            Controls.Add(signalTypeComboBox);
+            Controls.Add(labelSignalType);
             Controls.Add(checkMainCurve);
             Controls.Add(labelMainCurve);
             Controls.Add(labelCurves);
@@ -329,10 +331,8 @@ namespace Resonalyze.Options
             Controls.Add(label4);
             Controls.Add(sequenceLengthComboBox);
             Controls.Add(label3);
-            Controls.Add(modeComboBox);
             Controls.Add(checkUseCalibration);
             Controls.Add(label2);
-            Controls.Add(label1);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -345,10 +345,10 @@ namespace Resonalyze.Options
         }
 
         #endregion
-        private Label label1;
         private CheckBox checkUseCalibration;
         private Label label2;
-        private DarkComboBox modeComboBox;
+        private Label labelSignalType;
+        private DarkComboBox signalTypeComboBox;
         private Label label3;
         private DarkComboBox sequenceLengthComboBox;
         private Label label4;

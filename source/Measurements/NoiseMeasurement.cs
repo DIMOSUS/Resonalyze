@@ -22,12 +22,9 @@ namespace Resonalyze
         private CancellationTokenSource? cancellationTokenSource;
         private Task<bool>? measurementTask;
         private ChannelWriter<float[][]>? sequenceWriter;
-        private double[]? accumulatedPowerSpectrum;
         private Complex[]? accumulatedCrossSpectrum;
         private double[]? accumulatedReferencePowerSpectrum;
         private double[]? accumulatedTargetPowerSpectrum;
-        private double inputAttackAlpha = 1.0;
-        private double inputReleaseAlpha = 1.0;
         private double transferAlpha = 1.0;
         private bool infiniteAveraging;
         private int averagedFrameCount;
@@ -75,11 +72,8 @@ namespace Resonalyze
             WaveLoopbackDeviceNumber.HasValue &&
             WaveLoopbackDeviceNumber.Value != InputDeviceNumber;
 
-        // True only when a separate loopback device must actually be captured and paired:
-        // the loopback is used solely by the transfer-function mode.
-        private bool PairsSeparateLoopbackDevice =>
-            LiveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction &&
-            UsesSeparateWaveLoopbackDevice;
+        // True only when a separate loopback device must actually be captured and paired.
+        private bool PairsSeparateLoopbackDevice => UsesSeparateWaveLoopbackDevice;
 
         public void Init(
             int sampleRate,
@@ -128,7 +122,12 @@ namespace Resonalyze
 
             signal?.Dispose();
             signal = new NoiseSignal();
-            signal.FillData(requestedDuration, bits, sampleRate);
+            signal.FillData(
+                requestedDuration,
+                bits,
+                sampleRate,
+                LiveSpectrumOptions.NoiseColor,
+                SequenceLength);
 
             DisposeRecorders();
             lock (levelSync)
@@ -219,7 +218,6 @@ namespace Resonalyze
 
                 lock (dataSync)
                 {
-                    accumulatedPowerSpectrum = null;
                     accumulatedCrossSpectrum = null;
                     accumulatedReferencePowerSpectrum = null;
                     accumulatedTargetPowerSpectrum = null;
@@ -270,53 +268,31 @@ namespace Resonalyze
         /// </summary>
         public LiveSpectrumSnapshot? GetAccumulatedSpectrumSnapshot()
         {
-            if (LiveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction)
-            {
-                Complex[] crossSpectrum;
-                double[] referencePowerSpectrum;
-                double[] targetPowerSpectrum;
-                lock (dataSync)
-                {
-                    if (accumulatedCrossSpectrum == null ||
-                        accumulatedReferencePowerSpectrum == null ||
-                        accumulatedTargetPowerSpectrum == null)
-                    {
-                        return null;
-                    }
-
-                    crossSpectrum = (Complex[])accumulatedCrossSpectrum.Clone();
-                    referencePowerSpectrum = (double[])accumulatedReferencePowerSpectrum.Clone();
-                    targetPowerSpectrum = (double[])accumulatedTargetPowerSpectrum.Clone();
-                }
-
-                double[] magnitude = SpectrumAnalysis.ComputeH1MagnitudeSpectrum(
-                    crossSpectrum,
-                    referencePowerSpectrum);
-                double[] coherence = SpectrumAnalysis.ComputeCoherence(
-                    crossSpectrum,
-                    referencePowerSpectrum,
-                    targetPowerSpectrum);
-                return new LiveSpectrumSnapshot(magnitude, coherence);
-            }
-
-            double[] powerSpectrum;
+            Complex[] crossSpectrum;
+            double[] referencePowerSpectrum;
+            double[] targetPowerSpectrum;
             lock (dataSync)
             {
-                if (accumulatedPowerSpectrum == null)
+                if (accumulatedCrossSpectrum == null ||
+                    accumulatedReferencePowerSpectrum == null ||
+                    accumulatedTargetPowerSpectrum == null)
                 {
                     return null;
                 }
 
-                powerSpectrum = (double[])accumulatedPowerSpectrum.Clone();
+                crossSpectrum = (Complex[])accumulatedCrossSpectrum.Clone();
+                referencePowerSpectrum = (double[])accumulatedReferencePowerSpectrum.Clone();
+                targetPowerSpectrum = (double[])accumulatedTargetPowerSpectrum.Clone();
             }
 
-            var amplitude = new double[powerSpectrum.Length];
-            for (int i = 0; i < amplitude.Length; i++)
-            {
-                amplitude[i] = Math.Sqrt(powerSpectrum[i]);
-            }
-
-            return new LiveSpectrumSnapshot(amplitude, null);
+            double[] magnitude = SpectrumAnalysis.ComputeH1MagnitudeSpectrum(
+                crossSpectrum,
+                referencePowerSpectrum);
+            double[] coherence = SpectrumAnalysis.ComputeCoherence(
+                crossSpectrum,
+                referencePowerSpectrum,
+                targetPowerSpectrum);
+            return new LiveSpectrumSnapshot(magnitude, coherence);
         }
 
         private static double AlphaFromTimeConstant(double frameInterval, double timeConstant)
@@ -329,16 +305,14 @@ namespace Resonalyze
             return Math.Clamp(1.0 - Math.Exp(-frameInterval / timeConstant), 1e-6, 1.0);
         }
 
-        // Attack/release time constants for the input spectrum and the single
-        // smoothing constant for the transfer function, in seconds.
-        private static (double Attack, double Release, double Transfer)
-            GetAveragingTimeConstants(AveragingSpeed speed) => speed switch
-            {
-                AveragingSpeed.Fast => (0.05, 0.3, 0.3),
-                AveragingSpeed.Slow => (0.5, 3.0, 3.0),
-                AveragingSpeed.Infinite => (0.0, 0.0, 0.0),
-                _ => (0.15, 1.0, 1.0)
-            };
+        // Exponential smoothing time constant for the transfer function, in seconds.
+        private static double GetAveragingTimeConstant(AveragingSpeed speed) => speed switch
+        {
+            AveragingSpeed.Fast => 0.3,
+            AveragingSpeed.Slow => 3.0,
+            AveragingSpeed.Infinite => 0.0,
+            _ => 1.0
+        };
 
         /// <summary>
         /// Clears the running average and peak state without stopping capture,
@@ -349,7 +323,6 @@ namespace Resonalyze
         {
             lock (dataSync)
             {
-                accumulatedPowerSpectrum = null;
                 accumulatedCrossSpectrum = null;
                 accumulatedReferencePowerSpectrum = null;
                 accumulatedTargetPowerSpectrum = null;
@@ -685,7 +658,7 @@ namespace Resonalyze
 
         private int ComputeHopSize()
         {
-            int overlapPercent = Math.Clamp(LiveSpectrumOptions.OverlapPercent, 0, 75);
+            int overlapPercent = Math.Clamp(EffectiveOverlapPercent, 0, 75);
             if (overlapPercent <= 0)
             {
                 return SequenceLength;
@@ -695,82 +668,27 @@ namespace Resonalyze
             return Math.Clamp(hop, 1, SequenceLength);
         }
 
+        // Periodic pink noise is a deterministic single-period signal analyzed with a
+        // rectangular window, so overlapping frames are highly correlated and add no
+        // effective averaging. Disable overlap for it to avoid wasting CPU.
+        private int EffectiveOverlapPercent =>
+            LiveSpectrumOptions.NoiseColor == NoiseColor.PinkPeriodic
+                ? 0
+                : LiveSpectrumOptions.OverlapPercent;
+
         private void UpdateAveragingParameters()
         {
             int hopSize = ComputeHopSize();
             double frameInterval = SampleRate > 0 ? (double)hopSize / SampleRate : 0.0;
-            (double attackSeconds, double releaseSeconds, double transferSeconds) =
-                GetAveragingTimeConstants(LiveSpectrumOptions.AveragingSpeed);
+            double transferSeconds =
+                GetAveragingTimeConstant(LiveSpectrumOptions.AveragingSpeed);
             infiniteAveraging = LiveSpectrumOptions.AveragingSpeed == AveragingSpeed.Infinite;
-            inputAttackAlpha = AlphaFromTimeConstant(frameInterval, attackSeconds);
-            inputReleaseAlpha = AlphaFromTimeConstant(frameInterval, releaseSeconds);
             transferAlpha = AlphaFromTimeConstant(frameInterval, transferSeconds);
         }
 
         private void AccumulateSequence(float[][] sequence)
         {
-            if (LiveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction)
-            {
-                AccumulateTransferSequence(sequence);
-                return;
-            }
-
-            AccumulatePowerSpectrum(sequence);
-        }
-
-        private void AccumulatePowerSpectrum(float[][] sequence)
-        {
-            double[] power = SpectrumAnalysis.ComputePowerSpectrum(
-                sequence[GetMicrophoneSequenceIndex()],
-                LiveSpectrumOptions.WindowType);
-
-            lock (dataSync)
-            {
-                if (accumulatedPowerSpectrum == null)
-                {
-                    if (sequencesCounter <= 2)
-                    {
-                        // Discard the first frames so the device can settle.
-                        sequencesCounter++;
-                        return;
-                    }
-
-                    if (infiniteAveraging)
-                    {
-                        // Infinite mode is an honest cumulative mean, so seed
-                        // with the first real frame (no zero baseline, which
-                        // would bias the curve low).
-                        accumulatedPowerSpectrum = power;
-                        averagedFrameCount = 1;
-                        sequencesCounter++;
-                        return;
-                    }
-
-                    // Seed with zeros so the curve rises from the bottom instead
-                    // of snapping to a noisy instantaneous spectrum.
-                    accumulatedPowerSpectrum = new double[power.Length];
-                    averagedFrameCount = 1;
-                }
-
-                double cumulativeAlpha = 1.0 / (averagedFrameCount + 1);
-                for (int i = 0; i < accumulatedPowerSpectrum.Length; i++)
-                {
-                    double history = accumulatedPowerSpectrum[i];
-                    // Infinite mode is a true cumulative mean; otherwise
-                    // attack/release rises quickly toward louder energy and
-                    // decays slowly, with both coefficients normalized to
-                    // wall-clock time.
-                    double alpha = infiniteAveraging
-                        ? cumulativeAlpha
-                        : power[i] > history
-                            ? inputAttackAlpha
-                            : inputReleaseAlpha;
-                    accumulatedPowerSpectrum[i] =
-                        (1 - alpha) * history + alpha * power[i];
-                }
-                averagedFrameCount++;
-                sequencesCounter++;
-            }
+            AccumulateTransferSequence(sequence);
         }
 
         private void AccumulateTransferSequence(float[][] sequence)
@@ -846,14 +764,21 @@ namespace Resonalyze
             return SpectrumAnalysis.ComputeTransferSpectrumFrame(
                 sequence[loopbackIndex.Value],
                 sequence[microphoneIndex],
-                LiveSpectrumOptions.WindowType);
+                EffectiveWindowType);
         }
+
+        // Periodic pink noise is exactly one FFT-length period, so every analysis block
+        // holds a whole period: a rectangular (no) window then gives a leakage-free
+        // spectrum with perfect bin resolution. Force it regardless of the stored window.
+        private WindowType EffectiveWindowType =>
+            LiveSpectrumOptions.NoiseColor == NoiseColor.PinkPeriodic
+                ? WindowType.Rectangular
+                : LiveSpectrumOptions.WindowType;
 
         private int GetRequiredWaveInputChannelCount()
         {
             int lastChannel = WaveInputChannelOffset;
-            if (LiveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction &&
-                WaveLoopbackInputChannelOffset.HasValue)
+            if (WaveLoopbackInputChannelOffset.HasValue)
             {
                 lastChannel = Math.Max(lastChannel, WaveLoopbackInputChannelOffset.Value);
             }
@@ -863,8 +788,7 @@ namespace Resonalyze
 
         private int GetAsioCaptureFirstInputOffset()
         {
-            if (LiveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction &&
-                AsioLoopbackInputChannelOffset.HasValue)
+            if (AsioLoopbackInputChannelOffset.HasValue)
             {
                 return Math.Min(AsioInputChannelOffset, AsioLoopbackInputChannelOffset.Value);
             }
@@ -876,8 +800,7 @@ namespace Resonalyze
         {
             int firstInputOffset = GetAsioCaptureFirstInputOffset();
             int lastInputOffset = AsioInputChannelOffset;
-            if (LiveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction &&
-                AsioLoopbackInputChannelOffset.HasValue)
+            if (AsioLoopbackInputChannelOffset.HasValue)
             {
                 lastInputOffset = Math.Max(lastInputOffset, AsioLoopbackInputChannelOffset.Value);
             }

@@ -379,15 +379,11 @@ internal sealed class PlotModelFactory
 
     public PlotModel CreateLiveSpectrum()
     {
-        PlotModel model = PlotModelStyle.CreateTitledModel(
-            liveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction
-                ? "Live Transfer Function"
-                : "Live Spectrum");
+        PlotModel model = PlotModelStyle.CreateTitledModel("Live Transfer Function");
 
         PlotModelStyle.AddFrequencyAxis(model);
         PlotModelStyle.AddDecibelAxis(model);
-        if (liveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction &&
-            liveSpectrumOptions.ShowCoherence)
+        if (liveSpectrumOptions.ShowCoherence)
         {
             model.Axes.Add(new LinearAxis
             {
@@ -413,9 +409,7 @@ internal sealed class PlotModelFactory
         var series = new LineSeries
         {
             Color = OxyColor.FromRgb(255, 0, 127),
-            Title = liveSpectrumOptions.Mode == LiveSpectrumMode.TransferFunction
-                ? "Live Transfer Function"
-                : "Live Spectrum",
+            Title = "Live Transfer Function",
             TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
         };
         series.Points.AddRange(
@@ -449,10 +443,6 @@ internal sealed class PlotModelFactory
             double frequency =
                 i * ((double)noiseMeasurement.SampleRate / length);
             double decibels = DataHelper.AmplitudeToDecibels(magnitude[i]);
-            if (liveSpectrumOptions.Mode == LiveSpectrumMode.InputSpectrum)
-            {
-                decibels -= 27.0;
-            }
             data.Add(new DataPoint(frequency, decibels));
         }
 

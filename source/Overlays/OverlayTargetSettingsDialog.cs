@@ -148,6 +148,16 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         opacityTrackBar.ValueChanged += (_, _) => UpdateOpacityLabel();
         saveButton.Click += SaveButtonClick;
         buttonEQWizard.Click += ButtonEQWizardClick;
+        sourceComboBox.SelectedIndexChanged += (_, _) => UpdateEqWizardButtonState();
+        UpdateEqWizardButtonState();
+    }
+
+    // The EQ Wizard needs a captured source curve; the current measurement (slot 0)
+    // provides none, so the button is only enabled for a real source slot.
+    private void UpdateEqWizardButtonState()
+    {
+        buttonEQWizard.Enabled =
+            sourceComboBox.SelectedItem is TargetSourceOption option && option.Slot != 0;
     }
 
     private const string TiltTip =
@@ -318,6 +328,14 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         if (!ValidateSaveRequest(focusOnError: true))
         {
             DialogResult = DialogResult.None;
+            return;
+        }
+
+        if (SourceSlot == 0)
+        {
+            DialogResult = DialogResult.None;
+            System.Media.SystemSounds.Beep.Play();
+            sourceComboBox.Focus();
             return;
         }
 

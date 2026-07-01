@@ -21,6 +21,11 @@
     <Content Include="logo.ico" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Bundled so the tuning-sheet PDF banner works without a filesystem path. -->
+    <EmbeddedResource Include="..\assets\images\banner.png" LogicalName="Resonalyze.banner.png" />
+  </ItemGroup>
+
   <ItemGroup Condition="'$(SparklePublicKey)' != ''">
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>SparklePublicKey</_Parameter1>
@@ -34,6 +39,7 @@
     <PackageReference Include="NAudio.Asio" Version="2.3.0" />
     <PackageReference Include="NetSparkleUpdater.UI.WinForms" Version="3.0.1" />
     <PackageReference Include="OxyPlot.WindowsForms" Version="2.2.0" />
+    <PackageReference Include="PDFsharp-MigraDoc-GDI" Version="6.2.4" />
   </ItemGroup>
 
   <ItemGroup>

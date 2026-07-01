@@ -1,14 +1,20 @@
-using System.Globalization;
 using System.Text;
 
 namespace Resonalyze.Dsp;
 
 /// <summary>
-/// Serialises and parses an <see cref="EqualizationCurve"/> as a simple text file:
-/// the first line is the overall gain (preamp), and each following line is one PEQ
-/// band as "index frequency Q gain". Parsing is defensive: blank lines, comments
-/// and malformed lines are skipped, numbers accept '.' or ',' decimals, and the
-/// band count is capped, so a hand-edited or corrupt file never throws.
+/// Reads and writes an <see cref="EqualizationCurve"/> in the Equalizer APO text
+/// format, e.g.:
+/// <code>
+/// Preamp: -6.0 dB
+///
+/// Filter 1: ON PK Fc 600 Hz Gain 6.0 dB Q 4.0
+/// </code>
+/// The building blocks (preamp line, filter lines, filter-line parsing) are shared
+/// with the REW format. Parsing is defensive: blank lines, comments, disabled
+/// filters (OFF), unsupported types (only peaking "PK") and malformed lines are
+/// skipped; numbers accept '.' or ',' decimals and the band count is capped, so a
+/// hand-edited or foreign file never throws.
 /// </summary>
 public static class PeqTextFile
 {
@@ -17,16 +23,33 @@ public static class PeqTextFile
         ArgumentNullException.ThrowIfNull(curve);
 
         var builder = new StringBuilder();
-        builder.AppendLine(FormatNumber(curve.PreampDb));
+        builder.AppendLine(FormatPreampLine(curve.PreampDb));
+        builder.AppendLine();
+        builder.Append(FormatFilters(curve));
+        return builder.ToString();
+    }
+
+    // "Preamp: -6.0 dB"
+    internal static string FormatPreampLine(double preampDb) =>
+        $"Preamp: {EqTextNumbers.Format(preampDb, "0.0")} dB";
+
+    // The block of "Filter N: ON PK Fc ... Gain ... dB Q ..." lines (no preamp).
+    internal static string FormatFilters(EqualizationCurve curve)
+    {
+        var builder = new StringBuilder();
         for (int i = 0; i < curve.Bands.Count; i++)
         {
             PeqBand band = curve.Bands[i];
-            builder.AppendLine(string.Join(
-                ' ',
-                (i + 1).ToString(CultureInfo.InvariantCulture),
-                FormatNumber(band.FrequencyHz),
-                FormatNumber(band.Q),
-                FormatNumber(band.GainDb)));
+            builder
+                .Append("Filter ")
+                .Append((i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture))
+                .Append(": ON PK Fc ")
+                .Append(EqTextNumbers.Format(band.FrequencyHz, "0.###"))
+                .Append(" Hz Gain ")
+                .Append(EqTextNumbers.Format(band.GainDb, "0.0"))
+                .Append(" dB Q ")
+                .Append(EqTextNumbers.Format(band.Q, "0.0"))
+                .AppendLine();
         }
 
         return builder.ToString();
@@ -37,7 +60,6 @@ public static class PeqTextFile
         ArgumentNullException.ThrowIfNull(text);
 
         double preampDb = 0;
-        bool preampRead = false;
         var bands = new List<PeqBand>();
 
         foreach (string rawLine in text.Split('\n'))
@@ -53,19 +75,28 @@ public static class PeqTextFile
                 continue;
             }
 
-            string[] tokens = line.Split(
-                (char[]?)null,
-                StringSplitOptions.RemoveEmptyEntries);
-
-            // The first meaningful, single-number line is the overall gain.
-            if (!preampRead && tokens.Length == 1 && TryParseNumber(tokens[0], out double gain))
+            string[] tokens = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (tokens.Length == 0)
             {
-                preampDb = gain;
-                preampRead = true;
                 continue;
             }
 
-            if (TryParseBand(tokens, out PeqBand band))
+            if (tokens[0].StartsWith("Preamp", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (string token in tokens.Skip(1))
+                {
+                    if (EqTextNumbers.TryParse(token, out double gain))
+                    {
+                        preampDb = gain;
+                        break;
+                    }
+                }
+
+                continue;
+            }
+
+            if (tokens[0].Equals("Filter", StringComparison.OrdinalIgnoreCase) &&
+                TryParseFilter(tokens, out PeqBand band))
             {
                 bands.Add(band);
             }
@@ -74,21 +105,20 @@ public static class PeqTextFile
         return new EqualizationCurve(bands, preampDb);
     }
 
-    // Accepts "index F Q G" (4 tokens) or "F Q G" (3 tokens); anything else is
-    // skipped. Frequency and Q must be positive to be a usable band.
-    private static bool TryParseBand(string[] tokens, out PeqBand band)
+    // Reads a "Filter N: ON PK Fc F Hz Gain G dB Q Q" line. Disabled (OFF) and
+    // non-peaking filters are ignored, as are lines missing any of Fc/Gain/Q.
+    private static bool TryParseFilter(string[] tokens, out PeqBand band)
     {
         band = default;
 
-        int offset = tokens.Length >= 4 ? 1 : 0;
-        if (tokens.Length - offset < 3)
+        if (HasToken(tokens, "OFF") || !HasToken(tokens, "PK"))
         {
             return false;
         }
 
-        if (!TryParseNumber(tokens[offset], out double frequencyHz) ||
-            !TryParseNumber(tokens[offset + 1], out double q) ||
-            !TryParseNumber(tokens[offset + 2], out double gainDb))
+        if (!EqTextNumbers.TryParse(TokenAfter(tokens, "Fc"), out double frequencyHz) ||
+            !EqTextNumbers.TryParse(TokenAfter(tokens, "Gain"), out double gainDb) ||
+            !EqTextNumbers.TryParse(TokenAfter(tokens, "Q"), out double q))
         {
             return false;
         }
@@ -104,16 +134,19 @@ public static class PeqTextFile
         return true;
     }
 
-    private static bool TryParseNumber(string token, out double value)
+    private static string? TokenAfter(string[] tokens, string keyword)
     {
-        if (double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out value))
+        for (int i = 0; i < tokens.Length - 1; i++)
         {
-            return true;
+            if (tokens[i].Equals(keyword, StringComparison.OrdinalIgnoreCase))
+            {
+                return tokens[i + 1];
+            }
         }
 
-        return double.TryParse(token, NumberStyles.Float, CultureInfo.CurrentCulture, out value);
+        return null;
     }
 
-    private static string FormatNumber(double value) =>
-        value.ToString("0.####", CultureInfo.InvariantCulture);
+    private static bool HasToken(string[] tokens, string keyword) =>
+        tokens.Any(token => token.Equals(keyword, StringComparison.OrdinalIgnoreCase));
 }

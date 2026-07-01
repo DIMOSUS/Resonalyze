@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using OxyPlot;
 using OxyPlot.Annotations;
+using OxyPlot.Axes;
 using OxyPlot.Series;
 using Resonalyze.Dsp;
 
@@ -45,9 +46,15 @@ public partial class EqWizardPanel : UserControl
     private PlotWatermarkAnnotation hintAnnotation = null!;
     private LineAnnotation fromMarker = null!;
     private LineAnnotation toMarker = null!;
+    private RectangleAnnotation rangeFill = null!;
     private int selectedBandIndex = -1;
+    private EqTuneStats? lastStats;
     private bool suppressTargetOffsetEvents;
     private bool suppressRedraw;
+    private bool suppressWindowClamp;
+
+    // Smallest allowed gap between the From and To frequencies (Hz).
+    private const decimal MinFrequencyGapHz = 1m;
 
     // Colour of the highlighted single-band contribution curve (semi-transparent).
     private static readonly OxyColor BandCurveColor = OxyColor.FromArgb(150, 255, 170, 40);
@@ -68,8 +75,8 @@ public partial class EqWizardPanel : UserControl
         buttonOverlaySettings.Click += (_, _) => OpenOverlaySettings();
         buttonImport.Click += (_, _) => ImportPeq();
         buttonExport.Click += (_, _) => ExportPeq();
-        numericFromHz.ValueChanged += (_, _) => OnFrequencyWindowChanged();
-        numericToHz.ValueChanged += (_, _) => OnFrequencyWindowChanged();
+        numericFromHz.ValueChanged += (_, _) => FrequencyBoundChanged(fromChanged: true);
+        numericToHz.ValueChanged += (_, _) => FrequencyBoundChanged(fromChanged: false);
         // Clicking away from the bands clears the highlighted single-band curve.
         Click += (_, _) => DeselectBand();
         panelPEQ.Click += (_, _) => DeselectBand();
@@ -256,7 +263,19 @@ public partial class EqWizardPanel : UserControl
         // plots: a logarithmic 20 Hz - 20 kHz frequency axis and a dB axis.
         PlotModel model = new PlotModel();
         PlotModelStyle.AddFrequencyAxis(model);
-        PlotModelStyle.AddDecibelAxis(model);
+        model.Axes.Add(new LinearAxis
+        {
+            Position = AxisPosition.Left,
+            AbsoluteMinimum = -90,
+            AbsoluteMaximum = 20,
+            MajorStep = 10,
+            Minimum = -80,
+            Maximum = 10,
+            MajorGridlineStyle = LineStyle.Solid,
+            MinorGridlineStyle = LineStyle.Dot,
+            Title = "dB",
+        });
+
         model.Annotations.Add(new PlotWatermarkAnnotation
         {
             Text = "EQ Wizard",
@@ -276,13 +295,23 @@ public partial class EqWizardPanel : UserControl
         };
         model.Annotations.Add(hintAnnotation);
 
-        // Translucent green guides marking the Auto Tune frequency range.
+        // Translucent green band behind the curves marking the Auto Tune range,
+        // bounded by dashed guides at its edges.
+        rangeFill = new RectangleAnnotation
+        {
+            Fill = OxyColor.FromArgb(10, 90, 210, 120),
+            StrokeThickness = 0,
+            Layer = AnnotationLayer.BelowSeries
+        };
+        model.Annotations.Add(rangeFill);
         fromMarker = CreateRangeMarker();
         toMarker = CreateRangeMarker();
         model.Annotations.Add(fromMarker);
         model.Annotations.Add(toMarker);
         fromMarker.X = (double)numericFromHz.Value;
         toMarker.X = (double)numericToHz.Value;
+        rangeFill.MinimumX = fromMarker.X;
+        rangeFill.MaximumX = toMarker.X;
 
         plotWizard.Model = model;
         PlotInteraction.EnableDoubleClickAxisReset(plotWizard);
@@ -294,18 +323,78 @@ public partial class EqWizardPanel : UserControl
     private static LineAnnotation CreateRangeMarker() => new()
     {
         Type = LineAnnotationType.Vertical,
-        Color = OxyColor.FromArgb(120, 90, 210, 120),
-        StrokeThickness = 2,
-        LineStyle = LineStyle.Solid,
+        Color = OxyColor.FromArgb(100, 90, 210, 120),
+        StrokeThickness = 1,
+        LineStyle = LineStyle.Dash,
         Layer = AnnotationLayer.AboveSeries
     };
 
-    // Moves the range guides to the current From/To frequencies.
+    // Moves the range guides and shaded band to the current From/To frequencies.
     private void UpdateAutoTuneRangeMarkers()
     {
         fromMarker.X = (double)numericFromHz.Value;
         toMarker.X = (double)numericToHz.Value;
+        rangeFill.MinimumX = fromMarker.X;
+        rangeFill.MaximumX = toMarker.X;
         plotWizard.InvalidatePlot(false);
+    }
+
+    // Keeps From strictly below To, then refreshes the guides and windowed stats.
+    private void FrequencyBoundChanged(bool fromChanged)
+    {
+        if (suppressWindowClamp)
+        {
+            return;
+        }
+
+        EnforceFrequencyOrder(fromChanged);
+        OnFrequencyWindowChanged();
+    }
+
+    // Enforces From <= To - gap by pushing the opposite bound; if that bound is at
+    // its limit, the just-edited bound is pulled back instead. The suppression flag
+    // stops the programmatic adjustment from re-entering this logic.
+    private void EnforceFrequencyOrder(bool fromChanged)
+    {
+        if (numericFromHz.Value <= numericToHz.Value - MinFrequencyGapHz)
+        {
+            return;
+        }
+
+        suppressWindowClamp = true;
+        try
+        {
+            if (fromChanged)
+            {
+                decimal desiredTo = numericFromHz.Value + MinFrequencyGapHz;
+                if (desiredTo <= numericToHz.Maximum)
+                {
+                    numericToHz.Value = desiredTo;
+                }
+                else
+                {
+                    numericToHz.Value = numericToHz.Maximum;
+                    numericFromHz.Value = numericToHz.Maximum - MinFrequencyGapHz;
+                }
+            }
+            else
+            {
+                decimal desiredFrom = numericToHz.Value - MinFrequencyGapHz;
+                if (desiredFrom >= numericFromHz.Minimum)
+                {
+                    numericFromHz.Value = desiredFrom;
+                }
+                else
+                {
+                    numericFromHz.Value = numericFromHz.Minimum;
+                    numericToHz.Value = numericFromHz.Minimum + MinFrequencyGapHz;
+                }
+            }
+        }
+        finally
+        {
+            suppressWindowClamp = false;
+        }
     }
 
     // The frequency window drives both the guides and the windowed Tuning results,
@@ -351,7 +440,8 @@ public partial class EqWizardPanel : UserControl
         // The EQ only has an effect when there is a source curve to apply it to.
         NumericGain.Enabled = !bypass && render?.SourcePlusEq != null;
         bool showEqCurves = render?.SourcePlusEq != null;
-        ResultsChanged?.Invoke(BuildStats(render, eq));
+        lastStats = BuildStats(render, eq);
+        ResultsChanged?.Invoke(lastStats);
         if (render != null)
         {
             SetTargetOffsetValue(render.TargetOffset);
@@ -374,6 +464,7 @@ public partial class EqWizardPanel : UserControl
                 AddWizardSeries(model, render.SourcePlusEq!);
             }
 
+            AddEqCurve(model, eq, render.Target);
             AddSelectedBandCurve(model, render.Target);
         }
 
@@ -571,15 +662,19 @@ public partial class EqWizardPanel : UserControl
         return Math.Clamp(rounded, control.Minimum, control.Maximum);
     }
 
-    // Writes the current PEQ (preamp + bands) to a simple text file.
+    private const string TuningSheetFilter = "Tuning sheet (PDF) (*.pdf)|*.pdf";
+
+    // Writes the current PEQ in the format chosen in the dialog. The text profile
+    // formats are followed by a printable "tuning sheet" PDF entry.
     private void ExportPeq()
     {
+        IReadOnlyList<IEqProfileFormat> formats = EqProfileFormats.Exportable;
         using var dialog = new SaveFileDialog
         {
             AddExtension = true,
-            DefaultExt = "txt",
-            FileName = "eq.txt",
-            Filter = "PEQ text (*.txt)|*.txt|All files (*.*)|*.*",
+            DefaultExt = formats[0].Extension,
+            FileName = "eq",
+            Filter = BuildFormatFilter(formats) + "|" + TuningSheetFilter,
             Title = "Export PEQ"
         };
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
@@ -587,11 +682,22 @@ public partial class EqWizardPanel : UserControl
             return;
         }
 
+        int selected = dialog.FilterIndex - 1;
+        EqualizationCurve curve = BuildEqualizationCurve();
         try
         {
-            System.IO.File.WriteAllText(
-                dialog.FileName,
-                PeqTextFile.Format(BuildEqualizationCurve()));
+            if (selected >= formats.Count)
+            {
+                // The tuning sheet is the last filter entry; its title is the file name.
+                string title = System.IO.Path.GetFileNameWithoutExtension(dialog.FileName);
+                (double minHz, double maxHz) = GetFrequencyWindow();
+                TuningSheetPdf.Export(dialog.FileName, title, curve, minHz, maxHz, lastStats);
+            }
+            else
+            {
+                IEqProfileFormat format = formats[Math.Clamp(selected, 0, formats.Count - 1)];
+                System.IO.File.WriteAllText(dialog.FileName, format.Export(curve));
+            }
         }
         catch (Exception exception)
         {
@@ -599,14 +705,15 @@ public partial class EqWizardPanel : UserControl
         }
     }
 
-    // Loads a PEQ from a text file and applies it. Parsing tolerates broken or
-    // hand-edited files, so only file access can fail here.
+    // Loads a PEQ using the format chosen in the dialog and applies it. Parsing
+    // tolerates broken or hand-edited files, so only file access can fail here.
     private void ImportPeq()
     {
+        IReadOnlyList<IEqProfileFormat> formats = EqProfileFormats.Importable;
         using var dialog = new OpenFileDialog
         {
             CheckFileExists = true,
-            Filter = "PEQ text (*.txt)|*.txt|All files (*.*)|*.*",
+            Filter = BuildFormatFilter(formats),
             Title = "Import PEQ"
         };
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
@@ -614,10 +721,11 @@ public partial class EqWizardPanel : UserControl
             return;
         }
 
+        IEqProfileFormat format = formats[Math.Clamp(dialog.FilterIndex - 1, 0, formats.Count - 1)];
         EqualizationCurve curve;
         try
         {
-            curve = PeqTextFile.Parse(System.IO.File.ReadAllText(dialog.FileName));
+            curve = format.Import(System.IO.File.ReadAllText(dialog.FileName));
         }
         catch (Exception exception)
         {
@@ -629,6 +737,11 @@ public partial class EqWizardPanel : UserControl
         checkBoxBypass.Checked = false;
         ApplyEqualizationCurve(curve);
     }
+
+    private static string BuildFormatFilter(IReadOnlyList<IEqProfileFormat> formats) =>
+        string.Join(
+            "|",
+            formats.Select(format => $"{format.Name} (*.{format.Extension})|*.{format.Extension}"));
 
     private void ShowFileError(string message, Exception exception)
     {
@@ -705,6 +818,24 @@ public partial class EqWizardPanel : UserControl
         };
         series.Points.AddRange(curve.Points);
         model.Series.Add(series);
+    }
+
+    // Draws the EQ filter response itself (all bands, without the preamp) as a white
+    // line, sampled on the baseline frequencies. Values are the raw EQ gain in dB.
+    private void AddEqCurve(PlotModel model, EqualizationCurve eq, EqWizardCurve? baseline)
+    {
+        if (baseline is not { Points.Count: >= 2 })
+        {
+            return;
+        }
+
+        var eqWithoutGain = new EqualizationCurve(eq.Bands, 0);
+        var points = baseline.Points
+            .Select(point => new DataPoint(point.X, eqWithoutGain.MagnitudeDbAt(point.X)))
+            .ToArray();
+        AddWizardSeries(
+            model,
+            new EqWizardCurve("EQ", OxyColors.White, 1.5, LineStyle.Solid, points));
     }
 
     // Draws the highlighted band's individual contribution relative to the target

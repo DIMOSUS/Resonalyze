@@ -8,79 +8,102 @@ public sealed class PeqTextFileTests
         var curve = new EqualizationCurve(
             new[]
             {
-                new PeqBand(1_000, 1.0, 6.0),
-                new PeqBand(3_000, 3.4, -10.0)
+                new PeqBand(600, 4.0, 6.0),
+                new PeqBand(1577, 1.4, -4.1)
             },
-            preampDb: -2.5);
+            preampDb: -6.0);
 
         EqualizationCurve parsed = PeqTextFile.Parse(PeqTextFile.Format(curve));
 
-        Assert.Equal(-2.5, parsed.PreampDb, 6);
+        Assert.Equal(-6.0, parsed.PreampDb, 6);
         Assert.Equal(2, parsed.Bands.Count);
-        Assert.Equal(1_000, parsed.Bands[0].FrequencyHz, 6);
-        Assert.Equal(1.0, parsed.Bands[0].Q, 6);
+        Assert.Equal(600, parsed.Bands[0].FrequencyHz, 6);
+        Assert.Equal(4.0, parsed.Bands[0].Q, 6);
         Assert.Equal(6.0, parsed.Bands[0].GainDb, 6);
-        Assert.Equal(3_000, parsed.Bands[1].FrequencyHz, 6);
-        Assert.Equal(3.4, parsed.Bands[1].Q, 6);
-        Assert.Equal(-10.0, parsed.Bands[1].GainDb, 6);
+        Assert.Equal(1577, parsed.Bands[1].FrequencyHz, 6);
+        Assert.Equal(1.4, parsed.Bands[1].Q, 6);
+        Assert.Equal(-4.1, parsed.Bands[1].GainDb, 6);
     }
 
     [Fact]
-    public void Parse_ReadsFirstLineAsPreampAndIgnoresIndex()
+    public void Format_MatchesEqualizerApoLayout()
     {
-        string text = "1.5\n1 100 0.7 3\n2 5000 2 -4\n";
+        var curve = new EqualizationCurve(
+            new[] { new PeqBand(600, 4.0, 6.0) },
+            preampDb: -6.0);
 
-        EqualizationCurve curve = PeqTextFile.Parse(text);
+        string text = PeqTextFile.Format(curve);
 
-        Assert.Equal(1.5, curve.PreampDb, 6);
-        Assert.Equal(2, curve.Bands.Count);
-        Assert.Equal(100, curve.Bands[0].FrequencyHz, 6);
-        Assert.Equal(5000, curve.Bands[1].FrequencyHz, 6);
+        Assert.Contains("Preamp: -6.0 dB", text);
+        Assert.Contains("Filter 1: ON PK Fc 600 Hz Gain 6.0 dB Q 4.0", text);
     }
 
     [Fact]
-    public void Parse_SkipsBlankCommentAndMalformedLines()
+    public void Parse_ReadsEqualizerApoExample()
     {
         string text =
-            "0\n" +
+            "Preamp: -6.0 dB\n" +
             "\n" +
-            "# a comment\n" +
-            "// another comment\n" +
-            "garbage line\n" +
-            "1 1000 1 6\n" +
-            "2 nope nope nope\n" +
-            "3 2000 0 5\n" +     // Q = 0 is invalid -> skipped
-            "4 -50 1 5\n" +      // negative frequency -> skipped
-            "5 4000 2 -3\n";
+            "Filter 1: ON PK Fc 600 Hz Gain 6.0 dB Q 4.0\n" +
+            "Filter 2: ON PK Fc 5582 Hz Gain 4.9 dB Q 2.0\n" +
+            "Filter 3: ON PK Fc 1577 Hz Gain -4.1 dB Q 1.4\n";
 
         EqualizationCurve curve = PeqTextFile.Parse(text);
 
-        Assert.Equal(0, curve.PreampDb, 6);
+        Assert.Equal(-6.0, curve.PreampDb, 6);
+        Assert.Equal(3, curve.Bands.Count);
+        Assert.Equal(5582, curve.Bands[1].FrequencyHz, 6);
+        Assert.Equal(4.9, curve.Bands[1].GainDb, 6);
+        Assert.Equal(2.0, curve.Bands[1].Q, 6);
+        Assert.Equal(-4.1, curve.Bands[2].GainDb, 6);
+    }
+
+    [Fact]
+    public void Parse_SkipsDisabledAndUnsupportedFilters()
+    {
+        string text =
+            "Preamp: 0 dB\n" +
+            "Filter 1: ON PK Fc 1000 Hz Gain 6 dB Q 1\n" +
+            "Filter 2: OFF PK Fc 2000 Hz Gain 3 dB Q 1\n" +   // disabled -> skipped
+            "Filter 3: ON LP Fc 8000 Hz\n" +                  // low-pass -> skipped
+            "Filter 4: ON PK Fc 4000 Hz Gain -3 dB Q 2\n";
+
+        EqualizationCurve curve = PeqTextFile.Parse(text);
+
         Assert.Equal(2, curve.Bands.Count);
         Assert.Equal(1000, curve.Bands[0].FrequencyHz, 6);
         Assert.Equal(4000, curve.Bands[1].FrequencyHz, 6);
     }
 
     [Fact]
-    public void Parse_AcceptsThreeTokenBandsWithoutIndex()
+    public void Parse_SkipsBlankCommentAndMalformedLines()
     {
-        string text = "0\n1000 1 6\n2000 2 -3\n";
+        string text =
+            "Preamp: -1.5 dB\n" +
+            "\n" +
+            "# a comment\n" +
+            "garbage line\n" +
+            "Filter 1: ON PK Fc 1000 Hz Gain 6 dB Q 1\n" +
+            "Filter 2: ON PK Fc nope Hz Gain x dB Q y\n" +   // unparseable -> skipped
+            "Filter 3: ON PK Fc 2000 Hz Gain 5 dB Q 0\n" +   // Q = 0 -> skipped
+            "Filter 4: ON PK Fc 4000 Hz Gain -3 dB Q 2\n";
 
         EqualizationCurve curve = PeqTextFile.Parse(text);
 
+        Assert.Equal(-1.5, curve.PreampDb, 6);
         Assert.Equal(2, curve.Bands.Count);
         Assert.Equal(1000, curve.Bands[0].FrequencyHz, 6);
-        Assert.Equal(2000, curve.Bands[1].FrequencyHz, 6);
+        Assert.Equal(4000, curve.Bands[1].FrequencyHz, 6);
     }
 
     [Fact]
     public void Parse_CapsBandCountToMaximum()
     {
         var builder = new System.Text.StringBuilder();
-        builder.AppendLine("0");
+        builder.AppendLine("Preamp: 0 dB");
         for (int i = 0; i < EqualizationCurve.MaxBandCount + 10; i++)
         {
-            builder.AppendLine($"{i + 1} 1000 1 1");
+            builder.AppendLine($"Filter {i + 1}: ON PK Fc 1000 Hz Gain 1 dB Q 1");
         }
 
         EqualizationCurve curve = PeqTextFile.Parse(builder.ToString());
@@ -100,13 +123,12 @@ public sealed class PeqTextFileTests
     [Fact]
     public void Parse_HandlesCarriageReturnLineEndings()
     {
-        string text = "1.5\r\n1 1000 1.0 6.0\r\n";
+        string text = "Preamp: -6.0 dB\r\n\r\nFilter 1: ON PK Fc 600 Hz Gain 6.0 dB Q 4.0\r\n";
 
         EqualizationCurve curve = PeqTextFile.Parse(text);
 
-        Assert.Equal(1.5, curve.PreampDb, 6);
+        Assert.Equal(-6.0, curve.PreampDb, 6);
         Assert.Single(curve.Bands);
-        Assert.Equal(1000, curve.Bands[0].FrequencyHz, 6);
-        Assert.Equal(6.0, curve.Bands[0].GainDb, 6);
+        Assert.Equal(600, curve.Bands[0].FrequencyHz, 6);
     }
 }

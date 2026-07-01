@@ -9,5 +9,6 @@
 
   <ItemGroup>
     <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
+    <PackageReference Include="YamlDotNet" Version="16.2.1" />
   </ItemGroup>
 </Project>

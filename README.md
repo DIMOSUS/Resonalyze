@@ -75,6 +75,9 @@ file is provided with every release.
 - Harmonic distortion, THD, and THD+N analysis
 - Persistent comparison overlays with labels, styling, curve math, targets,
   import/export, and saved per-mode state
+- EQ Wizard: design an up-to-32-band parametric EQ against a target, with Auto
+  Tune, a live results read-out, cross-tool PEQ import/export, and a printable
+  tuning-sheet PDF
 - Measurement History with in-memory snapshots, saved-file recall, FR previews,
   per-entry working state (mode, settings, active overlays), and a one-click
   new-session reset
@@ -166,6 +169,20 @@ comparison, and transparent data matter more than a large legacy feature set.
       <img src="assets/images/waterfall.jpg" alt="Waterfall plot">
       <p>Visualize frequency decay and stored energy with the Fourier waterfall
       and Burst Decay views.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <h3>EQ Wizard</h3>
+      <img src="assets/images/eq_wizard.png" alt="EQ Wizard mode">
+      <p>Design a parametric EQ against a target with Auto Tune, per-band curves,
+      a live results read-out, cross-tool import/export, and a tuning-sheet PDF.</p>
+    </td>
+    <td width="50%">
+      <h3>Target Overlays</h3>
+      <img src="assets/images/target_overlay.jpg" alt="Target overlay settings">
+      <p>Compare any source against a parametric target shape with presets, a
+      tolerance band, and a deviation / EQ-correction curve.</p>
     </td>
   </tr>
 </table>
@@ -875,6 +892,76 @@ Response, Group Delay, paused Live Spectrum, and Autocorrelation views. A
 **Show all** / **Hide all** pair above the overlay panel toggles every active
 overlay for the current mode at once, without deleting any saved JSON file.
 
+## EQ Wizard
+
+The **EQ Wizard** (under the **Tools** tab) designs a parametric equalizer — up
+to 32 peaking (PK) bands plus a preamp — that moves a measured response toward a
+target. It builds directly on Target overlays: you can open it from **Tools > EQ
+Wizard** and pick a target, or jump straight in with the **To EQ Wizard** button
+in a Target overlay's settings. Because the wizard needs a real curve to tune
+against, its target must use a captured source (not the live current measurement).
+
+![EQ Wizard mode](assets/images/eq_wizard.png)
+
+The plot shows, on shared frequency/dB axes:
+
+- **Source** — the captured reference measurement (with optional extra smoothing)
+- **Target** — the parametric target shape (always drawn in a fixed blue)
+- **Source + EQ** — the source with the current EQ applied
+- **EQ** — the filter response itself (all bands, without the preamp) in white
+- a shaded **error fill** between Source + EQ and Target, so the remaining
+  deviation is visible at a glance
+
+Click a band card (or any of its fields) to overlay that band's individual
+contribution as a dashed curve relative to the target; click empty space to clear
+it. Each band card carries its **frequency**, **Q**, and **gain**, and the panel
+adds a **Target Level** (target offset), a **Gain** (preamp), a **Bands** count,
+source **Smoothing** (`1/N` octave), and a **Bypass** toggle that draws the curves
+without the EQ. An overlay-settings shortcut reopens the underlying target.
+
+### Auto Tune
+
+**Auto Tune** fits the whole EQ automatically. It works on the error between the
+target and the (smoothed) source, sets a preamp for the broadband level, then adds
+peaking bands greedily where the residual error is largest — choosing each band's
+frequency, gain, and the Q that reduces the error the most. It **chooses the band
+count itself**, up to the **Max Filters** limit (4–32). A cumulative-boost cap and
+minimum band spacing keep it from stacking many maxed-out bands where the response
+simply cannot be corrected (for example a deep-bass roll-off).
+
+A **From / To** frequency window limits where bands are placed; it is drawn on the
+plot as a shaded band between dashed guides, and the same window bounds the error
+metrics in the results panel.
+
+### Results
+
+Replacing the overlay panel in this mode, a colour-coded **Tuning results** panel
+reports the fit quality and the EQ's own extents:
+
+- **RMS error** and **Max error** between Source + EQ and Target, measured inside
+  the From / To window
+- **Filters used**, the number of active bands
+- **Peak boost** and **Peak cut** of the combined EQ
+- **Headroom** — the margin to 0 dB (red when the EQ nets a boost that could clip)
+
+### Import, export, and tuning sheet
+
+The wizard imports and exports PEQ profiles in several formats, so tunings move
+between tools and DSPs:
+
+- **Import + export:** Equalizer APO, REW filter settings, Generic CSV,
+  EasyEffects (JSON), CamillaDSP (YAML)
+- **Export only:** miniDSP biquads (RBJ coefficients), GraphicEQ (Wavelet /
+  JamesDSP)
+
+Import is deliberately lenient: comments, blank lines, disabled (`OFF`) filters,
+non-peaking filter types, and malformed entries are skipped rather than rejected.
+
+**Export as tuning sheet** produces a phone-friendly PDF for reading next to the
+car or speaker: the product banner, a title from the file name, the date and fit
+range, a small EQ preview graph with the fit window shaded, the tuning statistics,
+the preamp, and one large card per filter.
+
 ## Calibration
 
 Frequency-response correction is loaded from `calibration.txt` beside
@@ -900,6 +987,7 @@ Resonalyze/
 |   |-- Plotting/           OxyPlot model creation, annotations, and adapters
 |   |-- Shell/              Main form, title bar, commands, and docked settings
 |   |-- TimeAlignment/      Loopback delay measurement UI and orchestration
+|   |-- Tools/              EQ Wizard, PEQ controls, and tuning-sheet PDF export
 |   |-- Ui/                 Reusable WinForms controls and dialogs
 |   `-- Resonalyze.csproj
 |-- dsp/                    Reusable signal-processing library
@@ -925,6 +1013,11 @@ processing, phase analysis, and group-delay calculation.
 - [NAudio.Asio](https://www.nuget.org/packages/NAudio.Asio)
 - [Math.NET Numerics](https://numerics.mathdotnet.com/)
 - [OxyPlot](https://oxyplot.github.io/)
+- [YamlDotNet](https://github.com/aaubry/YamlDotNet) — CamillaDSP profile import/export
+- [PDFsharp / MigraDoc](https://github.com/empira/PDFsharp) — tuning-sheet PDF export
+
+Third-party package licenses are listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Contributing
 

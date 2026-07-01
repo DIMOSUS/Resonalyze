@@ -69,7 +69,11 @@ public partial class Form1
 
     private void CaptureActiveOverlaySlotsForCurrentMode()
     {
-        if (!OverlayCollection.SupportsMode(CurrentMode))
+        // Modes without a main plot (e.g. EQ Wizard) share the Frequency overlay
+        // slots but never draw them, so their "active" state is empty. Capturing it
+        // would wipe the real Frequency selection, so skip those modes.
+        if (!GetActiveModeDescriptor().HasPlotView ||
+            !OverlayCollection.SupportsMode(CurrentMode))
         {
             return;
         }
@@ -80,7 +84,10 @@ public partial class Form1
 
     private void RestoreActiveOverlaySlotsForCurrentMode()
     {
-        if (!OverlayCollection.SupportsMode(CurrentMode))
+        // Restoring into a mode with no main plot would call Overlay.Show() with a
+        // null model, which unchecks the slots and loses the saved selection.
+        if (!GetActiveModeDescriptor().HasPlotView ||
+            !OverlayCollection.SupportsMode(CurrentMode))
         {
             return;
         }

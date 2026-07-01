@@ -18,7 +18,7 @@ namespace Resonalyze
         Autocorrelation,
         TimeAlignment,
         EqWizard,
-        IrComparer
+        SignalGenerator
     }
 
     public partial class Form1 : Form
@@ -112,12 +112,23 @@ namespace Resonalyze
             eqWizardPanel.TargetOffsetSetter = overlayCollection.ApplyEqWizardTargetOffset;
             eqWizardPanel.ResultsChanged = eqResultsPanel.SetResults;
             eqWizardPanel.OverlaySettingsRequested = OpenEqWizardOverlaySettings;
+            signalGeneratorPanel.PlaybackSettingsProvider = CreateSignalGeneratorPlaybackSettings;
             modeDescriptors = CreateModeDescriptors();
             ApplyPersistedSettings();
             WireControllerEvents();
             InitializeStartupState();
             WireFormEvents();
         }
+
+        private SignalGeneratorPlaybackSettings CreateSignalGeneratorPlaybackSettings() =>
+            new(
+                expSweepMeasurement.AudioBackend,
+                expSweepMeasurement.SampleRate,
+                expSweepMeasurement.Bits,
+                expSweepMeasurement.PlaybackChannel,
+                expSweepMeasurement.OutputDeviceNumber,
+                expSweepMeasurement.AsioDriverName,
+                expSweepMeasurement.AsioOutputChannelOffset);
 
     }
 }

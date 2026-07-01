@@ -314,7 +314,7 @@ internal sealed class ChromeTitleBar : Panel
         toolsDropDownButton.Click += (_, _) => ShowToolsMenu(tabActions);
 
         modeTabButtons.Add(ModeTab.ToolsEqWizard, mainButton);
-        modeTabButtons.Add(ModeTab.ToolsIrComparer, mainButton);
+        modeTabButtons.Add(ModeTab.ToolsSignalGenerator, mainButton);
         host.Controls.Add(mainButton);
         host.Controls.Add(toolsDropDownButton);
         targetTabBar.Controls.Add(host);
@@ -337,7 +337,7 @@ internal sealed class ChromeTitleBar : Panel
             ShowImageMargin = false
         };
         AddToolsMenuItem(toolsMenu, "EQ Wizard", ModeTab.ToolsEqWizard, tabActions);
-        AddToolsMenuItem(toolsMenu, "IR Comparer", ModeTab.ToolsIrComparer, tabActions);
+        AddToolsMenuItem(toolsMenu, "Signal Generator", ModeTab.ToolsSignalGenerator, tabActions);
         toolsMenu.Show(toolsDropDownButton, new Point(0, toolsDropDownButton.Height));
     }
 
@@ -593,7 +593,7 @@ internal sealed class ChromeTitleBar : Panel
         (int)Math.Round(value * dpiScale);
 
     private static bool IsToolsTab(ModeTab tab) =>
-        tab is ModeTab.ToolsEqWizard or ModeTab.ToolsIrComparer;
+        tab is ModeTab.ToolsEqWizard or ModeTab.ToolsSignalGenerator;
 
     private float GetDpiScale()
     {

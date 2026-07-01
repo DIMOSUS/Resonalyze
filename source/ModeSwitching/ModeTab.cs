@@ -12,5 +12,5 @@ internal enum ModeTab
     Autocorrelation,
     TimeAlignment,
     ToolsEqWizard,
-    ToolsIrComparer
+    ToolsSignalGenerator
 }

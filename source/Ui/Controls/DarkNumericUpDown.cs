@@ -9,7 +9,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
 {
     private const int LogicalButtonColumnWidth = 18;
     private const int LogicalTextHorizontalPadding = 6;
-    private const int LogicalTextToButtonsGap = 4;
+    private const int LogicalTextToButtonsGap = 1;
     private const int LogicalVerticalPadding = 2;
     private const int LogicalArrowHalfWidth = 4;
     private const int LogicalArrowHalfHeight = 2;

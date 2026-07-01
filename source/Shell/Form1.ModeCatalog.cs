@@ -142,11 +142,11 @@ public partial class Form1
                 ShowOverlayCurves: false,
                 CreatePlotModel: null,
                 OpenSettings: null),
-            [ModeTab.ToolsIrComparer] = new(
-                ModeTab.ToolsIrComparer,
-                Mode.IrComparer,
+            [ModeTab.ToolsSignalGenerator] = new(
+                ModeTab.ToolsSignalGenerator,
+                Mode.SignalGenerator,
                 SupportsCurveDrawing: false,
-                MainContent: MainContentKind.IrComparer,
+                MainContent: MainContentKind.SignalGenerator,
                 HasOverlayPanel: false,
                 HasDockedSettings: false,
                 ShowOverlayCurves: false,
@@ -159,7 +159,7 @@ public partial class Form1
         Plot,
         TimeAlignment,
         EqWizard,
-        IrComparer
+        SignalGenerator
     }
 
     private sealed record ModeDescriptor(
@@ -179,6 +179,6 @@ public partial class Form1
 
         public bool ShowsEqWizardPanel => MainContent == MainContentKind.EqWizard;
 
-        public bool ShowsIrComparerPanel => MainContent == MainContentKind.IrComparer;
+        public bool ShowsSignalGeneratorPanel => MainContent == MainContentKind.SignalGenerator;
     }
 }

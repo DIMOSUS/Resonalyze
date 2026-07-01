@@ -161,7 +161,7 @@ public partial class Form1
             [ModeTab.Autocorrelation] = () => _ = SelectModeAsync(ModeTab.Autocorrelation),
             [ModeTab.TimeAlignment] = () => _ = SelectModeAsync(ModeTab.TimeAlignment),
             [ModeTab.ToolsEqWizard] = () => _ = SelectModeAsync(ModeTab.ToolsEqWizard),
-            [ModeTab.ToolsIrComparer] = () => _ = SelectModeAsync(ModeTab.ToolsIrComparer)
+            [ModeTab.ToolsSignalGenerator] = () => _ = SelectModeAsync(ModeTab.ToolsSignalGenerator)
         };
 
     private void SetActiveModeTab(ModeTab activeTab)
@@ -182,7 +182,11 @@ public partial class Form1
             eqWizardPanel.SetTargetOverlayOptions(
                 overlayCollection.GetTargetOverlayOptions(CurrentMode));
         }
-        irComparerPanel.Visible = descriptor.ShowsIrComparerPanel;
+        signalGeneratorPanel.Visible = descriptor.ShowsSignalGeneratorPanel;
+        if (descriptor.ShowsSignalGeneratorPanel)
+        {
+            signalGeneratorPanel.RefreshAudioSettings();
+        }
         eqResultsPanel.Visible = descriptor.ShowsEqWizardPanel;
         SyncDockedModeSettingsOnModeChange();
         UpdatePlotLabelsPanel();

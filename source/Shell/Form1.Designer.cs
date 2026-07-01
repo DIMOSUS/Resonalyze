@@ -51,7 +51,7 @@ namespace Resonalyze
             chromeTitleBar = new ChromeTitleBar();
             timeAlignmentPanel = new TimeAlignmentPanel();
             eqWizardPanel = new EqWizardPanel();
-            irComparerPanel = new IrComparerPanel();
+            signalGeneratorPanel = new SignalGeneratorPanel();
             eqResultsPanel = new EqResultsPanel();
             overlays.SuspendLayout();
             overlayPanel1.SuspendLayout();
@@ -315,19 +315,19 @@ namespace Resonalyze
             eqWizardPanel.TabIndex = 28;
             eqWizardPanel.Visible = false;
             // 
-            // irComparerPanel
-            // 
-            irComparerPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            irComparerPanel.AutoScroll = true;
-            irComparerPanel.BackColor = Color.FromArgb(40, 44, 54);
-            irComparerPanel.BorderStyle = BorderStyle.FixedSingle;
-            irComparerPanel.Font = new Font("Segoe UI", 9F);
-            irComparerPanel.ForeColor = Color.White;
-            irComparerPanel.Location = new Point(12, 52);
-            irComparerPanel.Name = "irComparerPanel";
-            irComparerPanel.Size = new Size(1182, 704);
-            irComparerPanel.TabIndex = 29;
-            irComparerPanel.Visible = false;
+            // signalGeneratorPanel
+            //
+            signalGeneratorPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            signalGeneratorPanel.AutoScroll = true;
+            signalGeneratorPanel.BackColor = Color.FromArgb(40, 44, 54);
+            signalGeneratorPanel.BorderStyle = BorderStyle.FixedSingle;
+            signalGeneratorPanel.Font = new Font("Segoe UI", 9F);
+            signalGeneratorPanel.ForeColor = Color.White;
+            signalGeneratorPanel.Location = new Point(12, 52);
+            signalGeneratorPanel.Name = "signalGeneratorPanel";
+            signalGeneratorPanel.Size = new Size(1182, 704);
+            signalGeneratorPanel.TabIndex = 29;
+            signalGeneratorPanel.Visible = false;
             //
             // eqResultsPanel
             //
@@ -348,7 +348,7 @@ namespace Resonalyze
             ClientSize = new Size(1366, 768);
             Controls.Add(chromeTitleBar);
             Controls.Add(eqResultsPanel);
-            Controls.Add(irComparerPanel);
+            Controls.Add(signalGeneratorPanel);
             Controls.Add(eqWizardPanel);
             Controls.Add(timeAlignmentPanel);
             Controls.Add(buttonHistory);
@@ -396,7 +396,7 @@ namespace Resonalyze
         private ChromeTitleBar chromeTitleBar;
         private TimeAlignmentPanel timeAlignmentPanel;
         private EqWizardPanel eqWizardPanel;
-        private IrComparerPanel irComparerPanel;
+        private SignalGeneratorPanel signalGeneratorPanel;
         private EqResultsPanel eqResultsPanel;
     }
 }

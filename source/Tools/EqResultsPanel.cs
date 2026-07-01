@@ -19,10 +19,41 @@ public sealed partial class EqResultsPanel : UserControl
     private static readonly Color BadColor = Color.FromArgb(232, 86, 76);
     private static readonly Color InfoColor = Color.FromArgb(0, 209, 255);
 
+    private readonly ToolTip toolTip = new()
+    {
+        InitialDelay = 500,
+        ReshowDelay = 150,
+        AutoPopDelay = 8000,
+        ShowAlways = true
+    };
+
     public EqResultsPanel()
     {
         InitializeComponent();
+        InitializeToolTips();
         Clear();
+    }
+
+    private void InitializeToolTips()
+    {
+        SetTip(rmsCaption, rmsValue,
+            "Root-mean-square deviation of Source + EQ from the target, within the " +
+            "From/To window. Lower is better.");
+        SetTip(maxCaption, maxValue,
+            "Largest absolute deviation of Source + EQ from the target, within the window.");
+        SetTip(filtersCaption, filtersValue, "Number of active bands (non-zero gain).");
+        SetTip(boostCaption, boostValue,
+            "Largest positive gain of the combined EQ. A net boost risks clipping.");
+        SetTip(cutCaption, cutValue, "Largest attenuation of the combined EQ.");
+        SetTip(headroomCaption, headroomValue,
+            "Margin to 0 dB (−peak boost). Negative means the EQ nets a boost that " +
+            "could clip.");
+    }
+
+    private void SetTip(Label caption, Label value, string text)
+    {
+        toolTip.SetToolTip(caption, text);
+        toolTip.SetToolTip(value, text);
     }
 
     public void Clear()

@@ -40,6 +40,18 @@ public partial class EqWizardPanel : UserControl
         "Create a Target overlay in a Frequency Response measurement,\n" +
         "then return here to fine-tune it.";
 
+    private const string FrequencyTip = "Band center frequency (Hz).";
+    private const string QTip = "Band quality factor (Q) — higher Q is a narrower band.";
+    private const string GainTip = "Band gain (dB). Positive boosts, negative cuts.";
+
+    private readonly ToolTip toolTip = new()
+    {
+        InitialDelay = 500,
+        ReshowDelay = 150,
+        AutoPopDelay = 8000,
+        ShowAlways = true
+    };
+
     private readonly List<PeqSlotControl> peqSlots = new();
     private TableLayoutPanel peqSlotTable = null!;
     private PlotLabelsPanelController plotLabels = null!;
@@ -81,6 +93,57 @@ public partial class EqWizardPanel : UserControl
         Click += (_, _) => DeselectBand();
         panelPEQ.Click += (_, _) => DeselectBand();
         plotWizard.Click += (_, _) => DeselectBand();
+        InitializeToolTips();
+    }
+
+    private void InitializeToolTips()
+    {
+        SetTip(labelSource, darkComboBoxSource,
+            "Target overlay to tune. Its captured source is the reference the EQ " +
+            "corrects toward the target.");
+        SetTip(buttonOverlaySettings,
+            "Open the settings of the target overlay being tuned.");
+        SetTip(labelTargetOffset, NumericTargetOffset,
+            "Vertical offset of the target curve (dB); shared with the overlay's offset.");
+        SetTip(labelGain, NumericGain,
+            "EQ preamp (dB) applied on top of all bands. Usually negative to leave " +
+            "headroom for boosts.");
+        SetTip(labelBands, darkComboBoxBands, "Number of PEQ bands shown.");
+        SetTip(labelSmooth, comboBoxSmooth,
+            "Extra smoothing of the source curve (1/N octave), used for display and " +
+            "Auto Tune.");
+        SetTip(checkBoxBypass,
+            "Show the curves without the EQ applied (Source + EQ equals Source).");
+        SetTip(labelBandsLimit, comboBoxBandsLimit,
+            "Maximum number of bands Auto Tune may create.");
+        SetTip(labelFromHz, numericFromHz,
+            "Lower edge of the Auto Tune frequency window; also bounds the error metrics.");
+        SetTip(labelToHz, numericToHz,
+            "Upper edge of the Auto Tune frequency window; also bounds the error metrics.");
+        SetTip(buttonAutoTune,
+            "Automatically fit the bands and preamp so Source + EQ approaches the " +
+            "target within the frequency window.");
+        SetTip(buttonImport,
+            "Import a PEQ profile (Equalizer APO, REW, CSV, EasyEffects, CamillaDSP).");
+        SetTip(buttonExport,
+            "Export the PEQ as a profile file or a printable tuning-sheet PDF.");
+    }
+
+    private void SetTip(Control label, Control control, string text)
+    {
+        SetTip(label, text);
+        SetTip(control, text);
+    }
+
+    // Applies the tooltip to a control and its children, so it shows over composite
+    // controls (DarkComboBox, DarkNumericUpDown) too.
+    private void SetTip(Control control, string text)
+    {
+        toolTip.SetToolTip(control, text);
+        foreach (Control child in control.Controls)
+        {
+            SetTip(child, text);
+        }
     }
 
     internal IReadOnlyList<PeqSlotControl> PeqSlots => peqSlots;
@@ -124,6 +187,13 @@ public partial class EqWizardPanel : UserControl
         try
         {
             peqSlotTable.Controls.Clear();
+            // Dispose the old slots so their tooltip registrations are released;
+            // leaving orphaned controls alive breaks the shared ToolTip.
+            foreach (PeqSlotControl oldSlot in peqSlots)
+            {
+                oldSlot.Dispose();
+            }
+
             peqSlots.Clear();
 
             for (int index = 0; index < clampedSlotCount; index++)
@@ -139,6 +209,9 @@ public partial class EqWizardPanel : UserControl
                 slot.FrequencyInput.ValueChanged += PeqBandValueChanged;
                 slot.QInput.ValueChanged += PeqBandValueChanged;
                 slot.GainInput.ValueChanged += PeqBandValueChanged;
+                SetTip(slot.FrequencyInput, FrequencyTip);
+                SetTip(slot.QInput, QTip);
+                SetTip(slot.GainInput, GainTip);
                 slot.Activated += (sender, _) => SelectBand((PeqSlotControl)sender!);
                 peqSlots.Add(slot);
                 peqSlotTable.Controls.Add(slot, column, row);

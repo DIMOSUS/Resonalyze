@@ -89,6 +89,15 @@ file is provided with every release.
   updates
 - Auto-update support for installed builds through a signed NetSparkle appcast
 
+## Typical workflows
+
+- ✔ Align car speakers
+- ✔ Tune a home loudspeaker
+- ✔ Compare crossover prototypes
+- ✔ Measure a microphone
+- ✔ Create PEQ filters
+- ✔ Export to DSP
+
 ## Why Resonalyze?
 
 If you already use tools like REW, OpenSoundMeter, or Smaart, the obvious

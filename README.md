@@ -15,6 +15,11 @@
 </p>
 
 <p align="center">
+  <em><strong>Measure each driver once, then virtually align, combine, and optimize your
+  loudspeaker system before applying a single change to the DSP.</strong></em>
+</p>
+
+<p align="center">
   <a href="https://github.com/DIMOSUS/Resonalyze/releases/latest"><strong>Download latest release</strong></a>
   ·
   <a href="#quick-start"><strong>Build from source</strong></a>
@@ -67,6 +72,10 @@ file is provided with every release.
   loopback reference, and all analysis is derived from the resulting transfer
   function (harmonics and THD+N stay on the sweep deconvolution)
 - Time Alignment with sub-sample delay estimation from the transfer IR
+- Crossover summation prediction: the true **complex (vector) sum** of two
+  measurements (`Main ⊕ Compare`) with Compare delay/polarity controls, plus a
+  **sum-loss** curve — accounts for delay, polarity, and phase the way dB-curve
+  math cannot
 - Live Spectrum: real-time loopback transfer function with selectable excitation
   (leakage-free periodic pink, pink, brown/red, white noise) and coherence
 - Frequency response, phase, group delay, waterfall, Burst Decay, and
@@ -81,10 +90,6 @@ file is provided with every release.
 - Harmonic distortion, THD, and THD+N analysis
 - Persistent comparison overlays with labels, styling, curve math over captured
   or live plot curves, targets, import/export, and saved per-mode state
-- Complex (vector) sum overlay in Frequency Response that adds the Main and
-  Compare transfer IRs — with Compare delay and polarity controls — to predict
-  driver/crossover summation, plus a sum-loss curve showing how far the real
-  phase-aware sum falls short of a phase-blind magnitude addition
 - Live overlay preview: captured, calculated, and target overlay dialogs redraw
   the candidate curve on the plot as you edit, and revert on Cancel
 - EQ Wizard: design an up-to-32-band parametric EQ against a target, with Auto
@@ -115,6 +120,18 @@ Resonalyze is built around a focused engineering workflow:
   Measurements can use a recorded loopback channel as the time reference, so
   delay and transfer-function analysis are tied to the actual playback path
   instead of to guesswork.
+- **Crossover summation prediction**
+  Measure each driver once, then virtually align, combine, and optimize your
+  loudspeaker system before applying a single change to the DSP.
+  Because every measurement carries a loopback transfer IR, Resonalyze can
+  compute the true **complex (vector) sum** of two measurements — `Main ⊕
+  Compare` — summing their impulse responses sample-by-sample so relative delay,
+  polarity, and phase are all accounted for. That predicts how two drivers (or
+  the two sides of a crossover) actually combine, which arithmetic on dB curves
+  cannot. Compare-side **delay** and **polarity** controls let you tune the
+  alignment live, and a companion **sum-loss** curve shows exactly how many dB
+  the real phase-aware sum falls short of a phase-blind magnitude addition — a
+  direct read-out of the summation loss you are dialing out.
 - **Practical loudspeaker alignment**
   Time Alignment reports first arrival and strongest peak with sub-sample
   interpolation, distance at 20 °C, confidence, signal levels, and a visible

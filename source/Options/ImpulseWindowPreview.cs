@@ -15,8 +15,118 @@ internal enum IrPreviewSource
     TransferFromStart
 }
 
+// One impulse response drawn on a gated preview: the samples on the absolute
+// timeline plus the color/title it is drawn with.
+internal sealed record IrPreviewTrace(
+    Complex[] Samples,
+    string Title,
+    OxyColor Color);
+
 internal static class ImpulseWindowPreview
 {
+    // Gated preview for an arbitrary set of impulse responses on one shared
+    // absolute timeline (the Virtual DSP phase gate): every trace is
+    // normalized independently so each arrival is visible, and the Tukey gate is
+    // drawn where it actually sits.
+    public static void UpdateGatedMulti(
+        OxyPlot.WindowsForms.PlotView plotView,
+        IReadOnlyList<IrPreviewTrace> traces,
+        int sampleRate,
+        double gateOffsetMs,
+        double leftMs,
+        double plateauMs,
+        double rightMs)
+    {
+        var model = CreatePreviewPlotModel("IR Gate");
+
+        if (traces.Count == 0 || sampleRate <= 0)
+        {
+            model.Axes.Add(CreateTimeAxis(-10, 10));
+            model.Axes.Add(CreateAmplitudeAxis());
+            plotView.Model = model;
+            plotView.InvalidatePlot(true);
+            return;
+        }
+
+        int gateOffset = MillisecondsToSamples(gateOffsetMs, sampleRate);
+        int left = MillisecondsToSamples(leftMs, sampleRate);
+        int plateau = MillisecondsToSamples(plateauMs, sampleRate);
+        int right = MillisecondsToSamples(rightMs, sampleRate);
+        int gate = Math.Max(1, left + plateau + right);
+        int gateStart = gateOffset - left;
+
+        double[] tukey = Windowing.TukeyWindow(
+            gate,
+            (double)left / gate * 2.0,
+            (double)right / gate * 2.0);
+
+        int longest = traces.Max(trace => trace.Samples.Length);
+        int context = Math.Max(gate / 8, MillisecondsToSamples(0.2, sampleRate));
+        int displayStart = Math.Max(0, gateStart - context);
+        int displayEnd = Math.Min(longest - 1, gateStart + gate + context);
+        if (displayEnd < displayStart)
+        {
+            displayEnd = displayStart;
+        }
+
+        foreach (IrPreviewTrace trace in traces)
+        {
+            double maxMagnitude = 0;
+            for (int s = displayStart; s <= displayEnd && s < trace.Samples.Length; s++)
+            {
+                maxMagnitude = Math.Max(maxMagnitude, Math.Abs(trace.Samples[s].Real));
+            }
+            double scale = maxMagnitude > 0 ? 1.0 / maxMagnitude : 1.0;
+
+            var series = new LineSeries
+            {
+                Color = trace.Color,
+                StrokeThickness = 1.2,
+                Title = trace.Title,
+                TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}"
+            };
+            for (int s = displayStart; s <= displayEnd; s++)
+            {
+                double value = s < trace.Samples.Length
+                    ? trace.Samples[s].Real * scale
+                    : 0.0;
+                series.Points.Add(new DataPoint(s * 1000.0 / sampleRate, value));
+            }
+
+            model.Series.Add(series);
+        }
+
+        var windowSeries = new LineSeries
+        {
+            Color = OxyColor.FromRgb(50, 210, 120),
+            StrokeThickness = 1.5,
+            TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}"
+        };
+        for (int s = displayStart; s <= displayEnd; s++)
+        {
+            double w = s >= gateStart && s < gateStart + gate ? tukey[s - gateStart] : 0.0;
+            windowSeries.Points.Add(new DataPoint(s * 1000.0 / sampleRate, w));
+        }
+        model.Series.Add(windowSeries);
+
+        model.Axes.Add(CreateTimeAxis(
+            displayStart * 1000.0 / sampleRate,
+            displayEnd * 1000.0 / sampleRate));
+        model.Axes.Add(CreateAmplitudeAxis());
+
+        model.Annotations.Add(new LineAnnotation
+        {
+            Type = LineAnnotationType.Vertical,
+            X = gateOffsetMs,
+            Color = OxyColor.FromArgb(127, 80, 150, 255),
+            LineStyle = LineStyle.Dot,
+            StrokeThickness = 1.0
+        });
+
+        plotView.Model = model;
+        plotView.InvalidatePlot(true);
+    }
+
     public static void Update(
         OxyPlot.WindowsForms.PlotView plotView,
         ExpSweepMeasurement measurement,

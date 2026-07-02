@@ -23,7 +23,7 @@
 
   <ItemGroup>
     <!-- Bundled so the tuning-sheet PDF banner works without a filesystem path. -->
-    <EmbeddedResource Include="..\assets\images\banner.png" LogicalName="Resonalyze.banner.png" />
+    <EmbeddedResource Include="..\assets\images\banner_white.jpg" LogicalName="Resonalyze.banner.jpg" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(SparklePublicKey)' != ''">

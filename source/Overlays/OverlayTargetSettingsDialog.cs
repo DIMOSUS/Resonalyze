@@ -133,7 +133,6 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
             }
         };
 
-        AcceptButton = saveButton;
         CancelButton = cancelButton;
     }
 
@@ -363,6 +362,8 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
 
     private void SaveButtonClick(object? sender, EventArgs e)
     {
+        CommitNumericEditors();
+
         if (ValidateSaveRequest(focusOnError: true))
         {
             return;
@@ -373,6 +374,8 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
 
     private void ButtonEQWizardClick(object? sender, EventArgs e)
     {
+        CommitNumericEditors();
+
         if (!ValidateSaveRequest(focusOnError: true))
         {
             DialogResult = DialogResult.None;
@@ -406,6 +409,47 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         }
 
         return false;
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        DarkNumericUpDown? input = keyData == Keys.Enter
+            ? GetFocusedNumericInput()
+            : null;
+        if (input != null)
+        {
+            input.CommitText();
+            return true;
+        }
+
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    private DarkNumericUpDown? GetFocusedNumericInput() =>
+        NumericInputs().FirstOrDefault(control => control.ContainsFocus);
+
+    private IEnumerable<DarkNumericUpDown> NumericInputs()
+    {
+        yield return toleranceInput;
+        yield return tiltInput;
+        yield return bassGainInput;
+        yield return bassFrequencyInput;
+        yield return bassWidthInput;
+        yield return trebleGainInput;
+        yield return trebleFrequencyInput;
+        yield return trebleWidthInput;
+        yield return presenceGainInput;
+        yield return presenceFrequencyInput;
+        yield return presenceWidthInput;
+        yield return thicknessInput;
+    }
+
+    private void CommitNumericEditors()
+    {
+        foreach (DarkNumericUpDown input in NumericInputs())
+        {
+            input.CommitText();
+        }
     }
 
     private void SelectSource(int slot)

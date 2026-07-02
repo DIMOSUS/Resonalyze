@@ -52,6 +52,7 @@ namespace Resonalyze
             timeAlignmentPanel = new TimeAlignmentPanel();
             eqWizardPanel = new EqWizardPanel();
             signalGeneratorPanel = new SignalGeneratorPanel();
+            virtualCrossoverPanel = new VirtualCrossoverPanel();
             eqResultsPanel = new EqResultsPanel();
             buttonCompare = new Button();
             overlays.SuspendLayout();
@@ -345,9 +346,24 @@ namespace Resonalyze
             signalGeneratorPanel.Size = new Size(1182, 704);
             signalGeneratorPanel.TabIndex = 29;
             signalGeneratorPanel.Visible = false;
-            // 
+            //
+            // virtualCrossoverPanel
+            //
+            virtualCrossoverPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            virtualCrossoverPanel.AutoScroll = true;
+            virtualCrossoverPanel.BackColor = Color.FromArgb(40, 44, 54);
+            virtualCrossoverPanel.BorderStyle = BorderStyle.FixedSingle;
+            virtualCrossoverPanel.Font = new Font("Segoe UI", 9F);
+            virtualCrossoverPanel.ForeColor = Color.White;
+            virtualCrossoverPanel.Location = new Point(12, 52);
+            virtualCrossoverPanel.Name = "virtualCrossoverPanel";
+            virtualCrossoverPanel.Padding = new Padding(6);
+            virtualCrossoverPanel.Size = new Size(1182, 704);
+            virtualCrossoverPanel.TabIndex = 31;
+            virtualCrossoverPanel.Visible = false;
+            //
             // eqResultsPanel
-            // 
+            //
             eqResultsPanel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             eqResultsPanel.BackColor = Color.FromArgb(20, 22, 30);
             eqResultsPanel.BorderStyle = BorderStyle.FixedSingle;
@@ -383,6 +399,7 @@ namespace Resonalyze
             ClientSize = new Size(1366, 768);
             Controls.Add(chromeTitleBar);
             Controls.Add(eqResultsPanel);
+            Controls.Add(virtualCrossoverPanel);
             Controls.Add(signalGeneratorPanel);
             Controls.Add(eqWizardPanel);
             Controls.Add(timeAlignmentPanel);
@@ -432,6 +449,7 @@ namespace Resonalyze
         private TimeAlignmentPanel timeAlignmentPanel;
         private EqWizardPanel eqWizardPanel;
         private SignalGeneratorPanel signalGeneratorPanel;
+        private VirtualCrossoverPanel virtualCrossoverPanel;
         private EqResultsPanel eqResultsPanel;
         private Button buttonCompare;
     }

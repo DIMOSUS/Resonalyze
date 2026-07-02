@@ -67,7 +67,6 @@ internal sealed partial class OverlaySettingsDialog : Form
             }
         };
 
-        AcceptButton = saveButton;
         CancelButton = cancelButton;
     }
 
@@ -86,6 +85,8 @@ internal sealed partial class OverlaySettingsDialog : Form
         clearButton.Click += (_, _) => ClearRequested = true;
         saveButton.Click += (_, _) =>
         {
+            CommitNumericEditors();
+
             if (OverlayName.Length == 0)
             {
                 DialogResult = DialogResult.None;
@@ -93,6 +94,36 @@ internal sealed partial class OverlaySettingsDialog : Form
                 nameTextBox.Focus();
             }
         };
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        DarkNumericUpDown? input = keyData == Keys.Enter
+            ? GetFocusedNumericInput()
+            : null;
+        if (input != null)
+        {
+            input.CommitText();
+            return true;
+        }
+
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    private DarkNumericUpDown? GetFocusedNumericInput() =>
+        NumericInputs().FirstOrDefault(control => control.ContainsFocus);
+
+    private IEnumerable<DarkNumericUpDown> NumericInputs()
+    {
+        yield return thicknessInput;
+    }
+
+    private void CommitNumericEditors()
+    {
+        foreach (DarkNumericUpDown input in NumericInputs())
+        {
+            input.CommitText();
+        }
     }
 
     // Smoothing is not meaningful for every mode; rather than reflowing the layout

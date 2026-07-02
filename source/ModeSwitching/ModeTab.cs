@@ -12,5 +12,6 @@ internal enum ModeTab
     Autocorrelation,
     TimeAlignment,
     ToolsEqWizard,
-    ToolsSignalGenerator
+    ToolsSignalGenerator,
+    ToolsVirtualCrossover
 }

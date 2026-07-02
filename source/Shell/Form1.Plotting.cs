@@ -101,6 +101,60 @@ public partial class Form1
         }
     }
 
+    // Saves a curve produced by the Virtual DSP tool as a Captured overlay
+    // in the first free Frequency Response slot; returns the slot, or null when
+    // all twelve are occupied. The file is picked up by Prepare() on the next
+    // switch to a frequency-based mode, and the slot joins the active set so it
+    // arrives already checked.
+    internal int? SaveVirtualCrossoverOverlay(string title, OverlayPoint[] points)
+    {
+        for (int slot = 1; slot <= OverlayFile.MaximumSlotCount; slot++)
+        {
+            bool occupied;
+            try
+            {
+                occupied = OverlayFile.Load(Mode.FrequencyResponse, slot) != null;
+            }
+            catch (Exception)
+            {
+                // An unreadable slot file still owns its slot.
+                occupied = true;
+            }
+            if (occupied)
+            {
+                continue;
+            }
+
+            var file = new OverlayFile
+            {
+                SavedAtUtc = DateTimeOffset.UtcNow,
+                Mode = Mode.FrequencyResponse,
+                Slot = slot,
+                Kind = OverlayKind.Captured,
+                Title = title,
+                ColorArgb = Color.FromArgb(230, 184, 0).ToArgb(),
+                Points = points
+            };
+            file.Save();
+
+            if (!activeOverlaySlotsByMode.TryGetValue(
+                    Mode.FrequencyResponse,
+                    out List<int>? active))
+            {
+                active = new List<int>();
+                activeOverlaySlotsByMode[Mode.FrequencyResponse] = active;
+            }
+            if (!active.Contains(slot))
+            {
+                active.Add(slot);
+            }
+
+            return slot;
+        }
+
+        return null;
+    }
+
     // The bulk overlay buttons act only when the current mode actually has
     // populated overlay slots to show or hide.
     private void RefreshOverlayButtons()
@@ -161,7 +215,8 @@ public partial class Form1
             [ModeTab.Autocorrelation] = () => _ = SelectModeAsync(ModeTab.Autocorrelation),
             [ModeTab.TimeAlignment] = () => _ = SelectModeAsync(ModeTab.TimeAlignment),
             [ModeTab.ToolsEqWizard] = () => _ = SelectModeAsync(ModeTab.ToolsEqWizard),
-            [ModeTab.ToolsSignalGenerator] = () => _ = SelectModeAsync(ModeTab.ToolsSignalGenerator)
+            [ModeTab.ToolsSignalGenerator] = () => _ = SelectModeAsync(ModeTab.ToolsSignalGenerator),
+            [ModeTab.ToolsVirtualCrossover] = () => _ = SelectModeAsync(ModeTab.ToolsVirtualCrossover)
         };
 
     private void SetActiveModeTab(ModeTab activeTab)
@@ -186,6 +241,11 @@ public partial class Form1
         if (descriptor.ShowsSignalGeneratorPanel)
         {
             signalGeneratorPanel.RefreshAudioSettings();
+        }
+        virtualCrossoverPanel.Visible = descriptor.ShowsVirtualCrossoverPanel;
+        if (descriptor.ShowsVirtualCrossoverPanel)
+        {
+            virtualCrossoverPanel.OnPanelShown();
         }
         eqResultsPanel.Visible = descriptor.ShowsEqWizardPanel;
         SyncDockedModeSettingsOnModeChange();

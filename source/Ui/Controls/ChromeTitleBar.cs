@@ -32,7 +32,7 @@ internal sealed class ChromeTitleBar : Panel
     private LinkLabel versionLabel = null!;
     private Button? toolsDropDownButton;
     private ContextMenuStrip? toolsMenu;
-    private ModeTab lastToolsTab = ModeTab.ToolsEqWizard;
+    private ModeTab lastToolsTab = ModeTab.ToolsVirtualCrossover;
     private float dpiScale = 1f;
     private int titleBarHeight = BarHeight;
     private int windowButtonWidth;
@@ -315,6 +315,7 @@ internal sealed class ChromeTitleBar : Panel
 
         modeTabButtons.Add(ModeTab.ToolsEqWizard, mainButton);
         modeTabButtons.Add(ModeTab.ToolsSignalGenerator, mainButton);
+        modeTabButtons.Add(ModeTab.ToolsVirtualCrossover, mainButton);
         host.Controls.Add(mainButton);
         host.Controls.Add(toolsDropDownButton);
         targetTabBar.Controls.Add(host);
@@ -336,6 +337,7 @@ internal sealed class ChromeTitleBar : Panel
             ForeColor = UiPalette.TitleBarTextBright,
             ShowImageMargin = false
         };
+        AddToolsMenuItem(toolsMenu, "Virtual DSP", ModeTab.ToolsVirtualCrossover, tabActions);
         AddToolsMenuItem(toolsMenu, "EQ Wizard", ModeTab.ToolsEqWizard, tabActions);
         AddToolsMenuItem(toolsMenu, "Signal Generator", ModeTab.ToolsSignalGenerator, tabActions);
         toolsMenu.Show(toolsDropDownButton, new Point(0, toolsDropDownButton.Height));
@@ -593,7 +595,9 @@ internal sealed class ChromeTitleBar : Panel
         (int)Math.Round(value * dpiScale);
 
     private static bool IsToolsTab(ModeTab tab) =>
-        tab is ModeTab.ToolsEqWizard or ModeTab.ToolsSignalGenerator;
+        tab is ModeTab.ToolsEqWizard
+            or ModeTab.ToolsSignalGenerator
+            or ModeTab.ToolsVirtualCrossover;
 
     private float GetDpiScale()
     {

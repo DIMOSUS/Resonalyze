@@ -43,6 +43,38 @@ data, and presents the result as engineering-focused plots.
 > Resonalyze is under active development. Treat its results as diagnostic
 > measurements, not as certified laboratory data.
 
+## Project Showcase
+
+Resonalyze is built around a practical loudspeaker workflow: measure real
+drivers, inspect timing, design EQ and DSP settings virtually, then apply the
+result with fewer blind tuning passes.
+
+<p align="center">
+  <img src="assets/images/visual_dsp.png" alt="Virtual DSP crossover design and summation prediction">
+</p>
+
+<p align="center">
+  <strong>Virtual DSP</strong> — combine measured drivers through gain, delay,
+  polarity, crossover filters, and PEQ before touching the hardware DSP.
+</p>
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="assets/images/eq_wizard.png" alt="EQ Wizard parametric EQ tuning">
+      <p><strong>EQ Wizard</strong> designs an up-to-32-band PEQ against a
+      target, with Auto Tune, per-band editing, import/export, and printable
+      tuning sheets.</p>
+    </td>
+    <td width="50%">
+      <img src="assets/images/time-alignment.png" alt="Time Alignment delay measurement">
+      <p><strong>Time Alignment</strong> estimates loopback-referenced delay
+      from the transfer impulse response and shows confidence, levels, distance,
+      and the arrival envelope.</p>
+    </td>
+  </tr>
+</table>
+
 ## Demo
 
 A one-minute tour of the main features:
@@ -76,6 +108,11 @@ file is provided with every release.
   measurements (`Main ⊕ Compare`) with Compare delay/polarity controls, plus a
   **sum-loss** curve — accounts for delay, polarity, and phase the way dB-curve
   math cannot
+- **Virtual DSP** tool: run up to three measured drivers through virtual
+  DSP chains — gain, delay, polarity, Butterworth / Linkwitz-Riley / Bessel
+  crossovers, and imported PEQ — and see their complex sum, sum loss, phase
+  tracking, auto crossover proposals, auto delay, gated phase view, overlay
+  capture, sessions, and tuning-sheet export
 - Live Spectrum: real-time loopback transfer function with selectable excitation
   (leakage-free periodic pink, pink, brown/red, white noise) and coherence
 - Frequency response, phase, group delay, waterfall, Burst Decay, and
@@ -131,7 +168,10 @@ Resonalyze is built around a focused engineering workflow:
   cannot. Compare-side **delay** and **polarity** controls let you tune the
   alignment live, and a companion **sum-loss** curve shows exactly how many dB
   the real phase-aware sum falls short of a phase-blind magnitude addition — a
-  direct read-out of the summation loss you are dialing out.
+  direct read-out of the summation loss you are dialing out. The **Virtual
+  DSP** tool takes this to its conclusion: complete virtual DSP chains
+  (gain, delay, polarity, crossover filters, PEQ) per driver, tuned against the
+  live predicted sum before a single setting is applied to the hardware.
 - **Practical loudspeaker alignment**
   Time Alignment reports first arrival and strongest peak with sub-sample
   interpolation, distance at 20 °C, confidence, signal levels, and a visible
@@ -164,16 +204,31 @@ comparison, and transparent data matter more than a large legacy feature set.
 <table>
   <tr>
     <td width="50%">
-      <h3>Frequency Response</h3>
-      <img src="assets/images/fr.jpg" alt="Frequency response plot">
-      <p>One-click loudspeaker response measurement with smoothing,
-      calibration, distortion curves, overlays, and target comparison.</p>
+      <h3>Virtual DSP</h3>
+      <img src="assets/images/visual_dsp.png" alt="Virtual DSP crossover design">
+      <p>Measure each driver once, then design gain, delay, polarity,
+      crossover filters, PEQ, and the complex acoustic sum before applying
+      settings to the real DSP.</p>
     </td>
+    <td width="50%">
+      <h3>EQ Wizard</h3>
+      <img src="assets/images/eq_wizard.png" alt="EQ Wizard mode">
+      <p>Design a parametric EQ against a target with Auto Tune, per-band curves,
+      a live results read-out, cross-tool import/export, and a tuning-sheet PDF.</p>
+    </td>
+  </tr>
+  <tr>
     <td width="50%">
       <h3>Time Alignment</h3>
       <img src="assets/images/time-alignment.png" alt="Time Alignment measurement">
       <p>Sub-sample delay estimation from a loopback-referenced transfer
       impulse response, with confidence, levels, distance, and envelope view.</p>
+    </td>
+    <td width="50%">
+      <h3>Frequency Response</h3>
+      <img src="assets/images/fr.jpg" alt="Frequency response plot">
+      <p>One-click loudspeaker response measurement with smoothing,
+      calibration, distortion curves, overlays, and target comparison.</p>
     </td>
   </tr>
   <tr>
@@ -203,20 +258,6 @@ comparison, and transparent data matter more than a large legacy feature set.
       <img src="assets/images/waterfall.jpg" alt="Waterfall plot">
       <p>Visualize frequency decay and stored energy with the Fourier waterfall
       and Burst Decay views.</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <h3>EQ Wizard</h3>
-      <img src="assets/images/eq_wizard.png" alt="EQ Wizard mode">
-      <p>Design a parametric EQ against a target with Auto Tune, per-band curves,
-      a live results read-out, cross-tool import/export, and a tuning-sheet PDF.</p>
-    </td>
-    <td width="50%">
-      <h3>Target Overlays</h3>
-      <img src="assets/images/target_overlay.jpg" alt="Target overlay settings">
-      <p>Compare any source against a parametric target shape with presets, a
-      tolerance band, and a deviation / EQ-correction curve.</p>
     </td>
   </tr>
 </table>
@@ -1133,6 +1174,69 @@ The generator reuses the audio configuration from **Record Settings** — backen
 ASIO output channel pair — and displays the resolved settings so you can confirm
 where the signal is going before pressing **Play**.
 
+## Virtual DSP
+
+The **Virtual DSP** (under the **Tools** tab) is the summation-prediction
+workflow taken to its conclusion: measure each driver once, then design the
+whole DSP setup virtually. Up to three channels (A, B, C) each pick a
+measurement — from a file or from History — and run it through a virtual DSP
+chain:
+
+- **Gain** (dB) — relative levels are only honest when the measurements share
+  one playback chain; compensate any difference here
+- **Delay** (ms) with a live **mm** read-out — the ruler check against the
+  physical driver offset (343 m/s)
+- **Invert polarity** — the DSP polarity switch
+- **Crossover** — Off, low-pass, high-pass, or band-pass; each edge picks
+  **Butterworth** (6–48 dB/oct), **Linkwitz-Riley** (12/24/48 dB/oct), or
+  **Bessel** (6–48 dB/oct, near-constant group delay) with its own corner
+  frequency
+- **PEQ** — load a parametric EQ profile (any format the EQ Wizard imports) into
+  the chain
+- **Mute** — temporarily remove a channel from the plots, sum, loss metric,
+  overlay capture, and Auto delay without clearing its source or settings
+- **IR polarity** — a measured Normal / Inverted / Unknown indicator read from
+  the transfer IR, independent of the virtual polarity switch
+
+Because every stage is linear and the measurements are loopback-referenced
+transfer IRs, multiplying each measurement by its chain and summing the results
+as complex responses predicts the **linear** response the microphone would
+capture after dialing those settings into the hardware — the same math used by
+crossover design tools, applied to your own in-room measurements.
+
+The filters are evaluated as the **digital biquad cascades a real DSP runs**
+(bilinear transform at the measurement sample rate), so the prediction matches
+miniDSP-class hardware up to Nyquist, not just an analog textbook curve.
+
+The acoustic plot shows raw and processed curves per channel, the complex
+**Sum**, and the **Sum loss** curve, with a **Phase view** toggle to check that
+the channels track each other through the crossover region. The Phase view has a
+manual **Gate...** dialog with an IR preview, Tukey left / plateau / right
+window controls, gate offset, and a shared τ detrend so reflections can be cut
+out without breaking relative phase. A second plot shows each DSP chain's own
+magnitude and phase (without the driver). A **Sum loss avg** read-out over the
+crossover window turns tuning into a number you can minimize — or use the
+classic null test: invert one channel and tune the delay for the deepest notch.
+
+- **Auto crossover...** estimates each channel's usable band, lets you confirm
+  the driver type, then proposes LR24 crossover points and cut-only gains.
+- **Auto delay** aligns in two stages: band-limited first arrivals set the
+  coarse offsets, then a fractional-delay phase search fine-tunes the result and
+  flips polarity when the complex sum is stronger inverted.
+- **Capture to overlay** saves the predicted sum as a Captured overlay in
+  Frequency Response — compare it against real measurements and target curves,
+  or feed it onward to the EQ Wizard.
+- **Export…** writes the whole setup as a tuning sheet (printable PDF or plain
+  text): per channel the gain, delay in ms and mm, polarity, crossover filters,
+  and PEQ bands — exactly the list you type into the DSP.
+- **Save session... / Load session...** exports or imports the complete session
+  JSON (sources, chains, gate, and view state) for sharing or archiving.
+
+The tool's autosaved state (sources, chains, gate, and view flags) persists in
+`tools/virtual-crossover.json` and survives restarts. Accuracy holds within the
+usual physics: one microphone position, the same playback chain for every
+measurement, and the linear (non-clipping) regime.
+
 ## Calibration
 
 Frequency-response correction is loaded from `calibration.txt` beside
@@ -1158,7 +1262,7 @@ Resonalyze/
 |   |-- Plotting/           OxyPlot model creation, annotations, and adapters
 |   |-- Shell/              Main form, title bar, commands, and docked settings
 |   |-- TimeAlignment/      Loopback delay measurement UI and orchestration
-|   |-- Tools/              EQ Wizard, PEQ controls, and tuning-sheet PDF export
+|   |-- Tools/              EQ Wizard, Signal Generator, Virtual DSP, PEQ import/export, tuning sheets
 |   |-- Ui/                 Reusable WinForms controls and dialogs
 |   `-- Resonalyze.csproj
 |-- dsp/                    Reusable signal-processing library

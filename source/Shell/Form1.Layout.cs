@@ -28,6 +28,7 @@ public partial class Form1
         timeAlignmentController?.SetLayoutBounds(bounds);
         eqWizardPanel.Bounds = bounds;
         signalGeneratorPanel.Bounds = bounds;
+        virtualCrossoverPanel.Bounds = bounds;
     }
 
     private int GetCentralContentRightEdge(int margin)

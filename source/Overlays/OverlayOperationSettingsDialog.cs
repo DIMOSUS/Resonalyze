@@ -166,7 +166,6 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
             }
         };
 
-        AcceptButton = saveButton;
         CancelButton = cancelButton;
     }
 
@@ -282,6 +281,8 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
 
     private void SaveButtonClick(object? sender, EventArgs e)
     {
+        CommitNumericEditors();
+
         OverlayOperandOption? a = OperandOf(sourceAComboBox);
         OverlayOperandOption? b = OperandOf(sourceBComboBox);
         // Complex sum (and its loss variant) has no operands to validate — sources are fixed.
@@ -303,6 +304,38 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         else
         {
             sourceBComboBox.Focus();
+        }
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        DarkNumericUpDown? input = keyData == Keys.Enter
+            ? GetFocusedNumericInput()
+            : null;
+        if (input != null)
+        {
+            input.CommitText();
+            return true;
+        }
+
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    private DarkNumericUpDown? GetFocusedNumericInput() =>
+        NumericInputs().FirstOrDefault(control => control.ContainsFocus);
+
+    private IEnumerable<DarkNumericUpDown> NumericInputs()
+    {
+        yield return blendFrequencyInput;
+        yield return numericTimeOffset;
+        yield return thicknessInput;
+    }
+
+    private void CommitNumericEditors()
+    {
+        foreach (DarkNumericUpDown input in NumericInputs())
+        {
+            input.CommitText();
         }
     }
 

@@ -151,6 +151,16 @@ public partial class Form1
                 HasDockedSettings: false,
                 ShowOverlayCurves: false,
                 CreatePlotModel: null,
+                OpenSettings: null),
+            [ModeTab.ToolsVirtualCrossover] = new(
+                ModeTab.ToolsVirtualCrossover,
+                Mode.VirtualCrossover,
+                SupportsCurveDrawing: false,
+                MainContent: MainContentKind.VirtualCrossover,
+                HasOverlayPanel: false,
+                HasDockedSettings: false,
+                ShowOverlayCurves: false,
+                CreatePlotModel: null,
                 OpenSettings: null)
         };
 
@@ -159,7 +169,8 @@ public partial class Form1
         Plot,
         TimeAlignment,
         EqWizard,
-        SignalGenerator
+        SignalGenerator,
+        VirtualCrossover
     }
 
     private sealed record ModeDescriptor(
@@ -180,5 +191,7 @@ public partial class Form1
         public bool ShowsEqWizardPanel => MainContent == MainContentKind.EqWizard;
 
         public bool ShowsSignalGeneratorPanel => MainContent == MainContentKind.SignalGenerator;
+
+        public bool ShowsVirtualCrossoverPanel => MainContent == MainContentKind.VirtualCrossover;
     }
 }

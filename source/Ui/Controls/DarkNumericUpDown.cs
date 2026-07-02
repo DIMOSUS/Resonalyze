@@ -258,6 +258,11 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     [Browsable(true)]
     public event EventHandler? ValueChanged;
 
+    public void CommitText()
+    {
+        CommitEditorText();
+    }
+
     public override Color BackColor
     {
         get => base.BackColor;

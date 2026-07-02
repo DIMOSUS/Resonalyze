@@ -18,7 +18,8 @@ namespace Resonalyze
         Autocorrelation,
         TimeAlignment,
         EqWizard,
-        SignalGenerator
+        SignalGenerator,
+        VirtualCrossover
     }
 
     public partial class Form1 : Form
@@ -115,6 +116,9 @@ namespace Resonalyze
             eqWizardPanel.ResultsChanged = eqResultsPanel.SetResults;
             eqWizardPanel.OverlaySettingsRequested = OpenEqWizardOverlaySettings;
             signalGeneratorPanel.PlaybackSettingsProvider = CreateSignalGeneratorPlaybackSettings;
+            virtualCrossoverPanel.HistoryService = measurementHistoryService;
+            virtualCrossoverPanel.Calibration = calibration;
+            virtualCrossoverPanel.OverlayCaptureRequested = SaveVirtualCrossoverOverlay;
             modeDescriptors = CreateModeDescriptors();
             ApplyPersistedSettings();
             WireControllerEvents();

@@ -6,6 +6,12 @@ namespace Resonalyze;
 
 internal sealed partial class OverlayTargetSettingsDialog : Form
 {
+    // Live preview on the main plot: fired with a snapshot of the candidate settings
+    // on every control change, so the target shape, tolerance band, and deviation
+    // curve can be tuned against the real measurement. Nothing is committed until
+    // Save; the caller restores its stored state on Cancel.
+    private readonly Action<OverlayTargetPreview>? previewChanged;
+    private readonly bool initialized;
     private Color selectedColor;
     private bool suppressEvents;
 
@@ -22,8 +28,10 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         OverlayLineStyle lineStyle,
         int opacityPercent,
         int smoothingInverseOctaves,
-        IReadOnlyList<OverlaySlotOption> availableSources)
+        IReadOnlyList<OverlaySlotOption> availableSources,
+        Action<OverlayTargetPreview>? previewChanged = null)
     {
+        this.previewChanged = previewChanged;
         selectedColor = color;
 
         InitializeComponent();
@@ -48,6 +56,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         UpdateOpacityLabel();
         UpdatePresetTooltip();
         UpdatePreview();
+        initialized = true;
     }
 
     public string OverlayName => nameTextBox.Text.Trim();
@@ -144,11 +153,25 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
             shape.ValueChanged += ParameterChanged;
         }
 
+        nameTextBox.TextChanged += (_, _) => NotifyPreview();
+        toleranceInput.ValueChanged += (_, _) => NotifyPreview();
+        deviationModeComboBox.SelectedIndexChanged += (_, _) => NotifyPreview();
+        thicknessInput.ValueChanged += (_, _) => NotifyPreview();
+        styleComboBox.SelectedIndexChanged += (_, _) => NotifyPreview();
+        smoothingComboBox.SelectedIndexChanged += (_, _) => NotifyPreview();
         colorButton.Click += ColorButtonClick;
-        opacityTrackBar.ValueChanged += (_, _) => UpdateOpacityLabel();
+        opacityTrackBar.ValueChanged += (_, _) =>
+        {
+            UpdateOpacityLabel();
+            NotifyPreview();
+        };
         saveButton.Click += SaveButtonClick;
         buttonEQWizard.Click += ButtonEQWizardClick;
-        sourceComboBox.SelectedIndexChanged += (_, _) => UpdateEqWizardButtonState();
+        sourceComboBox.SelectedIndexChanged += (_, _) =>
+        {
+            UpdateEqWizardButtonState();
+            NotifyPreview();
+        };
         UpdateEqWizardButtonState();
     }
 
@@ -311,6 +334,31 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         }
         model.Series.Add(series);
         previewPlot.Model = model;
+        NotifyPreview();
+    }
+
+    // Live preview on the main plot; fired alongside the dialog's own mini preview
+    // and by the controls the mini preview does not track (source, tolerance,
+    // deviation mode, styling). Suppressed during construction, where control
+    // values are still being seeded.
+    private void NotifyPreview()
+    {
+        if (!initialized || previewChanged == null)
+        {
+            return;
+        }
+
+        previewChanged(new OverlayTargetPreview(
+            OverlayName,
+            SourceSlot,
+            Spec,
+            ToleranceDb,
+            DeviationMode,
+            SelectedColor,
+            StrokeThickness,
+            LineStyle,
+            OpacityPercent,
+            SmoothingInverseOctaves));
     }
 
     private void SaveButtonClick(object? sender, EventArgs e)
@@ -457,3 +505,18 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         public override string ToString() => Display;
     }
 }
+
+// A snapshot of the candidate settings in the target-overlay dialog, fired on every
+// control change for the live preview on the main plot. Mirrors the dialog's output
+// properties so the caller can render exactly what Save would commit.
+internal sealed record OverlayTargetPreview(
+    string Name,
+    int SourceSlot,
+    TargetCurveSpec Spec,
+    double ToleranceDb,
+    TargetDeviationMode DeviationMode,
+    Color Color,
+    double StrokeThickness,
+    OverlayLineStyle LineStyle,
+    int OpacityPercent,
+    int SmoothingInverseOctaves);

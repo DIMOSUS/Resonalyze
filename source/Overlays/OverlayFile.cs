@@ -63,6 +63,12 @@ public sealed class OverlayFile
     public double BlendWidthOctaves { get; set; } = 1;
     public bool UseAmplitudeSpace { get; set; }
 
+    // ComplexSum only: extra delay (ms) and a polarity flip applied to the Compare
+    // transfer response before the sum, mirroring a DSP channel setup. Additive
+    // with safe defaults, so no file version bump is needed.
+    public double CompareDelayMs { get; set; }
+    public bool CompareInvertPolarity { get; set; }
+
     // Target kind: compares a source against a parametric target curve.
     // TargetSourceSlot 0 means the current measurement; 1..12 a captured slot.
     public int TargetSourceSlot { get; set; }
@@ -296,24 +302,43 @@ public sealed class OverlayFile
 
     private void ValidateOperation()
     {
-        // An operand is a live curve when its CurveKey is set; otherwise a captured slot
-        // whose index must be in range. The two operands must not be identical.
-        bool aIsCurve = !string.IsNullOrEmpty(SourceCurveKeyA);
-        bool bIsCurve = !string.IsNullOrEmpty(SourceCurveKeyB);
-        if ((!aIsCurve && SourceSlotA is < 1 or > MaximumSlotCount) ||
-            (!bIsCurve && SourceSlotB is < 1 or > MaximumSlotCount))
+        if (Operation == OverlayOperation.ComplexSum)
         {
-            throw new InvalidDataException(
-                "Calculated overlay source slots are invalid.");
+            // Complex sum reads the Main and Compare transfer IRs directly; it has
+            // no operands and only draws on the frequency-response axes.
+            if (Mode != Mode.FrequencyResponse)
+            {
+                throw new InvalidDataException(
+                    "The complex-sum overlay is only supported in Frequency Response.");
+            }
+            if (!double.IsFinite(CompareDelayMs) || Math.Abs(CompareDelayMs) > 1_000)
+            {
+                throw new InvalidDataException(
+                    "The complex-sum Compare delay is invalid.");
+            }
         }
-        bool sameOperand = aIsCurve || bIsCurve
-            ? aIsCurve && bIsCurve && SourceCurveKeyA == SourceCurveKeyB
-            : SourceSlotA == SourceSlotB;
-        if (sameOperand)
+        else
         {
-            throw new InvalidDataException(
-                "Calculated overlay operands must differ.");
+            // An operand is a live curve when its CurveKey is set; otherwise a captured
+            // slot whose index must be in range. The two operands must not be identical.
+            bool aIsCurve = !string.IsNullOrEmpty(SourceCurveKeyA);
+            bool bIsCurve = !string.IsNullOrEmpty(SourceCurveKeyB);
+            if ((!aIsCurve && SourceSlotA is < 1 or > MaximumSlotCount) ||
+                (!bIsCurve && SourceSlotB is < 1 or > MaximumSlotCount))
+            {
+                throw new InvalidDataException(
+                    "Calculated overlay source slots are invalid.");
+            }
+            bool sameOperand = aIsCurve || bIsCurve
+                ? aIsCurve && bIsCurve && SourceCurveKeyA == SourceCurveKeyB
+                : SourceSlotA == SourceSlotB;
+            if (sameOperand)
+            {
+                throw new InvalidDataException(
+                    "Calculated overlay operands must differ.");
+            }
         }
+
         if (!Enum.IsDefined(Operation))
         {
             throw new InvalidDataException(
@@ -364,7 +389,16 @@ public enum OverlayOperation
     Sum,
     Average,
     AbsoluteDifference,
-    Blend
+    Blend,
+
+    /// <summary>
+    /// The complex (vector) sum of the Main and Compare transfer responses,
+    /// FFT(h1 + h2). Takes no operands — it reads the two transfer impulse
+    /// responses directly, so it captures relative delay, polarity, and phase
+    /// (the physically correct summed output of two drivers), which arithmetic
+    /// on dB curves cannot. Frequency Response only.
+    /// </summary>
+    ComplexSum
 }
 
 public enum TargetDeviationMode

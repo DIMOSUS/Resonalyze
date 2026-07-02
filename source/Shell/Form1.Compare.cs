@@ -177,6 +177,23 @@ public partial class Form1
             selection.Snapshot.SweepDeconvolutionPeakIndex);
     }
 
+    // The complex (vector) sum of the Main and Compare transfer responses for the
+    // ComplexSum calculated overlay in Frequency Response. Null while unavailable
+    // (no Compare, either side lacks a transfer IR, or the sample rates differ);
+    // the overlay stays armed and draws once the data appears. The delay and
+    // polarity flip apply to the Compare response, mirroring a DSP channel setup.
+    internal OverlayPoint[]? BuildComplexSumOverlayPoints(
+        double compareDelayMs,
+        bool invertComparePolarity)
+    {
+        Resonalyze.Dsp.AnalysisCurve? curve = plotModelFactory.TryBuildComplexSumCurve(
+            compareDelayMs,
+            invertComparePolarity);
+        return curve?.Points
+            .Select(point => new OverlayPoint(point.X, point.Y))
+            .ToArray();
+    }
+
     private TimeAlignmentCompareMeasurement? GetTimeAlignmentCompareMeasurement() =>
         compareMeasurement == null
             ? null

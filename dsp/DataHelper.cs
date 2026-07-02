@@ -166,6 +166,38 @@ namespace Resonalyze.Dsp
             return data;
         }
 
+        /// <summary>
+        /// The primary (linear) response spectrum: Tukey-windowed around the peak,
+        /// oversampled, log-resampled with optional calibration and smoothing. Used
+        /// by GetSpectrum for its primary curve and directly for derived responses
+        /// (e.g. the complex sum of two transfer impulse responses), where the
+        /// per-curve visibility gating of GetSpectrum must not apply.
+        /// </summary>
+        public static AnalysisCurve GetPrimarySpectrum(
+            IImpulseMeasurement measurement,
+            FrequencyResponseOptions frequencyResponseOptions,
+            CalibrationFile? calibration)
+        {
+            double leftTukeyWindow = (double)frequencyResponseOptions.LeftTukeyWindow / frequencyResponseOptions.Window * 2.0;
+            double rightTukeyWindow = (double)frequencyResponseOptions.RightTukeyWindow / frequencyResponseOptions.Window * 2.0;
+
+            double[] window = Windowing.TukeyWindow(frequencyResponseOptions.Window, leftTukeyWindow, rightTukeyWindow);
+
+            int h1Start = measurement.PeakIndex - frequencyResponseOptions.LeftTukeyWindow;
+
+            var data = GetOversampledSpectrumData(measurement, h1Start, window);
+            data = LogarithmicResample(
+                data,
+                20,
+                20000,
+                1024,
+                frequencyResponseOptions.UseCalibration ? calibration : null,
+                frequencyResponseOptions.SmoothingInverseOctaves > 0
+                    ? 1.0 / frequencyResponseOptions.SmoothingInverseOctaves
+                    : 0.0);
+            return new AnalysisCurve("Frequency Response", data);
+        }
+
         public static IReadOnlyList<AnalysisCurve> GetSpectrum(
             IImpulseMeasurement measurement,
             FrequencyResponseOptions frequencyResponseOptions,
@@ -186,24 +218,10 @@ namespace Resonalyze.Dsp
 
             if (includePrimary && frequencyResponseOptions.ShowPrimary)
             {
-                double leftTukeyWindow = (double)frequencyResponseOptions.LeftTukeyWindow / frequencyResponseOptions.Window * 2.0;
-                double rightTukeyWindow = (double)frequencyResponseOptions.RightTukeyWindow / frequencyResponseOptions.Window * 2.0;
-
-                double[] window = Windowing.TukeyWindow(frequencyResponseOptions.Window, leftTukeyWindow, rightTukeyWindow);
-
-                int h1Start = peakIndex - frequencyResponseOptions.LeftTukeyWindow;
-
-                var data = GetOversampledSpectrumData(measurement, h1Start, window);
-                data = LogarithmicResample(
-                    data,
-                    20,
-                    20000,
-                    1024,
-                    frequencyResponseOptions.UseCalibration ? calibration : null,
-                    frequencyResponseOptions.SmoothingInverseOctaves > 0
-                        ? 1.0 / frequencyResponseOptions.SmoothingInverseOctaves
-                        : 0.0);
-                curves.Add(new AnalysisCurve("Frequency Response", data));
+                curves.Add(GetPrimarySpectrum(
+                    measurement,
+                    frequencyResponseOptions,
+                    calibration));
             }
 
             if (!wantHd2 && !wantHd3 && !wantHd4 && !wantThd)

@@ -3,6 +3,11 @@ namespace Resonalyze;
 internal sealed partial class OverlaySettingsDialog : Form
 {
     private readonly bool supportsSmoothing;
+    // Live preview: fired with a snapshot of the candidate settings on every control
+    // change so the caller can restyle the shown curve immediately. Nothing is
+    // committed until Save; the caller restores its stored state on Cancel.
+    private readonly Action<OverlayCapturedPreview>? previewChanged;
+    private readonly bool initialized;
     private Color selectedColor;
 
     public OverlaySettingsDialog(
@@ -12,8 +17,10 @@ internal sealed partial class OverlaySettingsDialog : Form
         double strokeThickness,
         OverlayLineStyle lineStyle,
         int opacityPercent,
-        int smoothingInverseOctaves)
+        int smoothingInverseOctaves,
+        Action<OverlayCapturedPreview>? previewChanged = null)
     {
+        this.previewChanged = previewChanged;
         supportsSmoothing = OverlaySmoothing.SupportsMode(mode);
         selectedColor = color;
 
@@ -30,6 +37,7 @@ internal sealed partial class OverlaySettingsDialog : Form
         opacityTrackBar.Value = Math.Clamp(opacityPercent, 10, 100);
         UpdateColorButton();
         UpdateOpacityLabel();
+        initialized = true;
     }
 
     public string OverlayName => nameTextBox.Text.Trim();
@@ -65,8 +73,16 @@ internal sealed partial class OverlaySettingsDialog : Form
 
     private void WireEvents()
     {
+        nameTextBox.TextChanged += (_, _) => NotifyPreview();
+        thicknessInput.ValueChanged += (_, _) => NotifyPreview();
+        styleComboBox.SelectedIndexChanged += (_, _) => NotifyPreview();
+        smoothingComboBox.SelectedIndexChanged += (_, _) => NotifyPreview();
         colorButton.Click += ColorButtonClick;
-        opacityTrackBar.ValueChanged += (_, _) => UpdateOpacityLabel();
+        opacityTrackBar.ValueChanged += (_, _) =>
+        {
+            UpdateOpacityLabel();
+            NotifyPreview();
+        };
         clearButton.Click += (_, _) => ClearRequested = true;
         saveButton.Click += (_, _) =>
         {
@@ -111,7 +127,25 @@ internal sealed partial class OverlaySettingsDialog : Form
         {
             selectedColor = dialog.SelectedColor;
             UpdateColorButton();
+            NotifyPreview();
         }
+    }
+
+    // Suppressed during construction, where control values are still being seeded.
+    private void NotifyPreview()
+    {
+        if (!initialized || previewChanged == null)
+        {
+            return;
+        }
+
+        previewChanged(new OverlayCapturedPreview(
+            OverlayName,
+            SelectedColor,
+            StrokeThickness,
+            LineStyle,
+            OpacityPercent,
+            SmoothingInverseOctaves));
     }
 
     private void UpdateColorButton()
@@ -127,3 +161,14 @@ internal sealed partial class OverlaySettingsDialog : Form
         opacityValueLabel.Text = $"{opacityTrackBar.Value}%";
     }
 }
+
+// A snapshot of the candidate settings in the captured-overlay dialog, fired on
+// every control change for the live preview. Mirrors the dialog's output
+// properties so the caller can render exactly what Save would commit.
+internal sealed record OverlayCapturedPreview(
+    string Name,
+    Color Color,
+    double StrokeThickness,
+    OverlayLineStyle LineStyle,
+    int OpacityPercent,
+    int SmoothingInverseOctaves);

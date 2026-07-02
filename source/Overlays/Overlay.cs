@@ -541,6 +541,10 @@ public sealed class Overlay
 
     private OverlayKind kind = OverlayKind.Captured;
     private bool updatingControls;
+    // True while a settings dialog is live-previewing candidate values on the plot;
+    // keeps periodic redraws (e.g. the running Live Spectrum's current-measurement
+    // target refresh) from stomping the preview with the stored state.
+    private bool previewActive;
 
     // Presentation (all kinds).
     private double strokeThickness = 2;
@@ -568,6 +572,9 @@ public sealed class Overlay
     private double blendFrequencyHz = 1_000;
     private double blendWidthOctaves = 1;
     private bool useAmplitudeSpace;
+    // ComplexSum only: delay (ms) and polarity flip applied to the Compare response.
+    private double compareDelayMs;
+    private bool compareInvertPolarity;
 
     // Target kind.
     private bool targetConfigured;
@@ -693,12 +700,13 @@ public sealed class Overlay
             SetChecked(true);
             RefreshPlot(model);
         }
-        else if (IsCurrentMeasurementTarget || ReferencesLiveCurve)
+        else if (IsCurrentMeasurementTarget || ReferencesLiveCurve || IsComplexSumOperation)
         {
             // A target bound to the current measurement — or an operation over a live
-            // curve — stays armed even when its source is not on the plot yet (e.g. the
-            // running Live Spectrum before its first frame, or a curve whose Show toggle
-            // is momentarily off); it redraws once the curve reappears.
+            // curve or the Main/Compare transfer IRs — stays armed even when its source
+            // is not available yet (e.g. the running Live Spectrum before its first
+            // frame, a curve whose Show toggle is momentarily off, or no Compare
+            // selected); it redraws once the data appears.
             SetChecked(true);
             RefreshPlot(model);
         }
@@ -714,6 +722,12 @@ public sealed class Overlay
     private bool ReferencesLiveCurve =>
         kind == OverlayKind.Operation &&
         (sourceCurveKeyA != null || sourceCurveKeyB != null);
+
+    // Complex sum reads the Main and Compare transfer IRs from the measurement, not
+    // from operands; like a live-curve operation it recomputes on every rebuild and
+    // stays armed while the Compare data is absent.
+    private bool IsComplexSumOperation =>
+        kind == OverlayKind.Operation && operation == OverlayOperation.ComplexSum;
 
     internal bool IsConfiguredTargetFor(Mode mode) =>
         kind == OverlayKind.Target &&
@@ -822,7 +836,7 @@ public sealed class Overlay
     // if this overlay is such a target. The caller invalidates the plot.
     internal bool RedrawCurrentMeasurementTarget()
     {
-        if (!Checked || !IsCurrentMeasurementTarget)
+        if (!Checked || !IsCurrentMeasurementTarget || previewActive)
         {
             return false;
         }
@@ -838,21 +852,41 @@ public sealed class Overlay
         return true;
     }
 
-    private bool AddCurveSeries(PlotModel model, string part, DataPoint[]? points)
+    private bool AddCurveSeries(PlotModel model, string part, DataPoint[]? points) =>
+        AddCurveSeries(
+            model,
+            part,
+            points,
+            panel.BackColor,
+            opacityPercent,
+            strokeThickness,
+            lineStyle,
+            Title);
+
+    // Style-parameterized so the settings dialog's live preview can render candidate
+    // presentation values without committing them to the slot first.
+    private bool AddCurveSeries(
+        PlotModel model,
+        string part,
+        DataPoint[]? points,
+        Color color,
+        int opacity,
+        double thickness,
+        OverlayLineStyle style,
+        string title)
     {
         if (points == null || points.Length < 2)
         {
             return false;
         }
 
-        Color color = panel.BackColor;
-        byte alpha = (byte)Math.Round(opacityPercent / 100.0 * 255);
+        byte alpha = (byte)Math.Round(opacity / 100.0 * 255);
         var series = new LineSeries
         {
             Color = OxyColor.FromArgb(alpha, color.R, color.G, color.B),
-            StrokeThickness = strokeThickness,
-            LineStyle = ToOxyLineStyle(lineStyle),
-            Title = Title,
+            StrokeThickness = thickness,
+            LineStyle = ToOxyLineStyle(style),
+            Title = title,
             Tag = GetTag(part)
         };
         string? trackerFormat = OverlayCollection.GetTrackerFormatString(SeriesMode);
@@ -865,10 +899,36 @@ public sealed class Overlay
         return true;
     }
 
-    private bool AddTargetSeries(PlotModel model)
+    private bool AddTargetSeries(PlotModel model) =>
+        AddTargetSeries(
+            model,
+            CurrentTargetSpec(),
+            targetToleranceDb,
+            targetDeviationMode,
+            targetSourceSlot,
+            smoothingInverseOctaves,
+            panel.BackColor,
+            opacityPercent,
+            strokeThickness,
+            lineStyle,
+            Title);
+
+    // Fully parameterized so the settings dialog's live preview can render candidate
+    // target settings without committing them to the slot first.
+    private bool AddTargetSeries(
+        PlotModel model,
+        TargetCurveSpec spec,
+        double toleranceDb,
+        TargetDeviationMode deviationMode,
+        int sourceSlot,
+        int smoothing,
+        Color color,
+        int opacity,
+        double thickness,
+        OverlayLineStyle style,
+        string title)
     {
         double offset = (double)offsetControl.Value;
-        TargetCurveSpec spec = CurrentTargetSpec();
 
         // The target shape and its tolerance band are parametric over frequency, so
         // always build them on the full grid — they must never be clipped to the
@@ -877,7 +937,7 @@ public sealed class Overlay
             DefaultTargetGrid,
             spec,
             offset,
-            targetToleranceDb,
+            toleranceDb,
             0,
             TargetDeviationMode.None);
         if (result.Target.Length < 2)
@@ -889,20 +949,19 @@ public sealed class Overlay
         // built from the source and clipped to wherever that curve has data (gaps
         // appear where, for example, coherence is below the threshold).
         OverlayPoint[] deviation = Array.Empty<OverlayPoint>();
-        if (targetDeviationMode != TargetDeviationMode.None &&
-            ResolveTargetSource() is { Length: >= 2 } source)
+        if (deviationMode != TargetDeviationMode.None &&
+            ResolveTargetSource(sourceSlot) is { Length: >= 2 } source)
         {
             deviation = OverlayMath.BuildTarget(
                 source,
                 spec,
                 offset,
                 0,
-                smoothingInverseOctaves,
-                targetDeviationMode).Deviation;
+                smoothing,
+                deviationMode).Deviation;
         }
 
-        Color color = panel.BackColor;
-        byte alpha = (byte)Math.Round(opacityPercent / 100.0 * 255);
+        byte alpha = (byte)Math.Round(opacity / 100.0 * 255);
         OxyColor lineColor = OxyColor.FromArgb(alpha, color.R, color.G, color.B);
         string? trackerFormat = OverlayCollection.GetTrackerFormatString(SeriesMode);
 
@@ -925,9 +984,9 @@ public sealed class Overlay
         var targetSeries = new LineSeries
         {
             Color = lineColor,
-            StrokeThickness = strokeThickness,
-            LineStyle = ToOxyLineStyle(lineStyle),
-            Title = $"{Title} (target)",
+            StrokeThickness = thickness,
+            LineStyle = ToOxyLineStyle(style),
+            Title = $"{title} (target)",
             Tag = GetTag("target")
         };
         if (!string.IsNullOrEmpty(trackerFormat))
@@ -939,15 +998,15 @@ public sealed class Overlay
 
         if (deviation.Length >= 2)
         {
-            string deviationLabel = targetDeviationMode == TargetDeviationMode.Correction
+            string deviationLabel = deviationMode == TargetDeviationMode.Correction
                 ? "EQ correction"
                 : "deviation";
             var deviationSeries = new LineSeries
             {
                 Color = lineColor,
-                StrokeThickness = Math.Max(1.0, strokeThickness - 1.0),
+                StrokeThickness = Math.Max(1.0, thickness - 1.0),
                 LineStyle = LineStyle.Solid,
-                Title = $"{Title} ({deviationLabel})",
+                Title = $"{title} ({deviationLabel})",
                 Tag = GetTag("deviation")
             };
             if (!string.IsNullOrEmpty(trackerFormat))
@@ -960,6 +1019,32 @@ public sealed class Overlay
         }
 
         return true;
+    }
+
+    // Redraws this slot's series with the target dialog's candidate settings while
+    // it is open; nothing is committed, so Cancel can restore cleanly.
+    private void PreviewTarget(OverlayTargetPreview settings)
+    {
+        PlotModel? model = collection.PlotView.Model;
+        if (model == null)
+        {
+            return;
+        }
+
+        RemoveSeries(model);
+        AddTargetSeries(
+            model,
+            settings.Spec,
+            settings.ToleranceDb,
+            settings.DeviationMode,
+            settings.SourceSlot,
+            settings.SmoothingInverseOctaves,
+            settings.Color,
+            settings.OpacityPercent,
+            settings.StrokeThickness,
+            settings.LineStyle,
+            settings.Name.Length > 0 ? settings.Name : Title);
+        RefreshPlot(model);
     }
 
     // Log-spaced 20 Hz … 20 kHz grid used to draw a target shape and its tolerance
@@ -994,12 +1079,12 @@ public sealed class Overlay
         targetPresenceFrequencyHz,
         targetPresenceWidthOctaves);
 
-    private OverlayPoint[]? ResolveTargetSource()
+    private OverlayPoint[]? ResolveTargetSource(int sourceSlot)
     {
-        if (targetSourceSlot != 0)
+        if (sourceSlot != 0)
         {
             return collection.TryGetCaptureSource(
-                targetSourceSlot,
+                sourceSlot,
                 out OverlayOperationSource? source) && source != null
                 ? source.Points.ToArray()
                 : null;
@@ -1069,10 +1154,11 @@ public sealed class Overlay
     {
         bool wasChecked = Checked;
         // A live-curve operand may not be on the plot at this instant (mode just loaded,
-        // its Show toggle off); keep such an operation available as long as it is
-        // configured, like a target. Slot-only operations still require their captures.
+        // its Show toggle off), and the complex sum's Compare data may not be selected
+        // yet; keep such an operation available as long as it is configured, like a
+        // target. Slot-only operations still require their captures.
         bool available = operationConfigured &&
-            (ReferencesLiveCurve || TryGetSources(out _, out _));
+            (ReferencesLiveCurve || IsComplexSumOperation || TryGetSources(out _, out _));
         ApplyCalculatedAvailability(
             available,
             operationConfigured,
@@ -1458,7 +1544,7 @@ public sealed class Overlay
             return;
         }
 
-        OverlayPoint[]? source = ResolveTargetSource();
+        OverlayPoint[]? source = ResolveTargetSource(targetSourceSlot);
         if (source == null || source.Length < 2)
         {
             System.Media.SystemSounds.Beep.Play();
@@ -1518,7 +1604,7 @@ public sealed class Overlay
                     .Select(point => new OverlayPoint(point.X, point.Y))
                     .ToArray();
             case OverlayKind.Target:
-                OverlayPoint[]? source = ResolveTargetSource();
+                OverlayPoint[]? source = ResolveTargetSource(targetSourceSlot);
                 if (source == null || source.Length < 2)
                 {
                     return null;
@@ -1600,6 +1686,12 @@ public sealed class Overlay
             ? CurrentTargetSpec()
             : TargetCurveSpec.FromPreset(TargetPreset.HarmanRoom);
 
+        // Live preview while the dialog is open: the target shape, tolerance band,
+        // and deviation curve redraw on the main plot as the parameters change, so
+        // a target can be shaped against the real measurement. Cancel restores the
+        // stored rendering.
+        bool previewShown = false;
+        bool wasCheckedBefore = Checked;
         using var dialog = new OverlayTargetSettingsDialog(
             SeriesMode,
             targetConfigured ? Title : $"Target {Index}",
@@ -1613,9 +1705,22 @@ public sealed class Overlay
             kind == OverlayKind.Target ? lineStyle : OverlayLineStyle.Dash,
             opacityPercent,
             smoothingInverseOctaves,
-            sources);
-        if (dialog.ShowDialog(collection.Form) != DialogResult.OK)
+            sources,
+            settings =>
+            {
+                previewShown = true;
+                previewActive = true;
+                PreviewTarget(settings);
+            });
+        DialogResult result = dialog.ShowDialog(collection.Form);
+        previewActive = false;
+        if (result != DialogResult.OK)
         {
+            if (previewShown)
+            {
+                RestoreAfterPreview(wasCheckedBefore);
+            }
+
             return;
         }
 
@@ -1656,6 +1761,10 @@ public sealed class Overlay
 
     private void ConfigureCaptured()
     {
+        // Live preview while the dialog is open: styling and smoothing changes
+        // redraw the shown curve immediately; Cancel restores the stored rendering.
+        bool previewShown = false;
+        bool wasCheckedBefore = Checked;
         using var dialog = new OverlaySettingsDialog(
             SeriesMode,
             Title,
@@ -1663,9 +1772,22 @@ public sealed class Overlay
             strokeThickness,
             lineStyle,
             opacityPercent,
-            smoothingInverseOctaves);
-        if (dialog.ShowDialog(collection.Form) != DialogResult.OK)
+            smoothingInverseOctaves,
+            settings =>
+            {
+                previewShown = true;
+                previewActive = true;
+                PreviewCaptured(settings);
+            });
+        DialogResult result = dialog.ShowDialog(collection.Form);
+        previewActive = false;
+        if (result != DialogResult.OK)
         {
+            if (previewShown)
+            {
+                RestoreAfterPreview(wasCheckedBefore);
+            }
+
             return;
         }
         if (dialog.ClearRequested)
@@ -1698,6 +1820,14 @@ public sealed class Overlay
             collection.GetCaptureSourceOptions();
         IReadOnlyList<LiveCurveOption> liveCurves =
             collection.GetLiveCurveOptions();
+
+        // Live preview while the dialog is open: every change — operands, operation,
+        // blend, complex-sum delay / polarity, styling, smoothing — redraws the
+        // candidate curve immediately, so e.g. a crossover delay can be tuned by
+        // watching the plot. Nothing is committed until Save; Cancel restores the
+        // slot's stored rendering.
+        bool previewShown = false;
+        bool wasCheckedBefore = Checked;
         using var dialog = new OverlayOperationSettingsDialog(
             SeriesMode,
             operationConfigured ? Title : $"Calculated overlay {Index}",
@@ -1711,15 +1841,30 @@ public sealed class Overlay
             // A brand-new calculated overlay defaults to amplitude space; editing an
             // existing one keeps whatever was saved.
             operationConfigured ? useAmplitudeSpace : true,
+            compareDelayMs,
+            compareInvertPolarity,
             kind == OverlayKind.Operation ? panel.BackColor : defaultColor,
             strokeThickness,
             kind == OverlayKind.Operation ? lineStyle : OverlayLineStyle.Dash,
             opacityPercent,
             smoothingInverseOctaves,
             sources,
-            liveCurves);
-        if (dialog.ShowDialog(collection.Form) != DialogResult.OK)
+            liveCurves,
+            settings =>
+            {
+                previewShown = true;
+                previewActive = true;
+                PreviewOperation(settings);
+            });
+        DialogResult result = dialog.ShowDialog(collection.Form);
+        previewActive = false;
+        if (result != DialogResult.OK)
         {
+            if (previewShown)
+            {
+                RestoreAfterPreview(wasCheckedBefore);
+            }
+
             return;
         }
 
@@ -1734,6 +1879,8 @@ public sealed class Overlay
         blendFrequencyHz = dialog.BlendFrequencyHz;
         blendWidthOctaves = dialog.BlendWidthOctaves;
         useAmplitudeSpace = dialog.UseAmplitudeSpace;
+        compareDelayMs = dialog.CompareDelayMs;
+        compareInvertPolarity = dialog.CompareInvertPolarity;
         panel.BackColor = dialog.SelectedColor;
         strokeThickness = dialog.StrokeThickness;
         lineStyle = dialog.LineStyle;
@@ -1863,6 +2010,8 @@ public sealed class Overlay
             blendFrequencyHz = file.BlendFrequencyHz;
             blendWidthOctaves = file.BlendWidthOctaves;
             useAmplitudeSpace = file.UseAmplitudeSpace;
+            compareDelayMs = file.CompareDelayMs;
+            compareInvertPolarity = file.CompareInvertPolarity;
             // Availability is resolved by RefreshSources after all slots load.
         }
         else if (kind == OverlayKind.Target)
@@ -1955,6 +2104,8 @@ public sealed class Overlay
             file.BlendFrequencyHz = blendFrequencyHz;
             file.BlendWidthOctaves = blendWidthOctaves;
             file.UseAmplitudeSpace = useAmplitudeSpace;
+            file.CompareDelayMs = compareDelayMs;
+            file.CompareInvertPolarity = compareInvertPolarity;
         }
         else if (kind == OverlayKind.Target)
         {
@@ -1984,11 +2135,47 @@ public sealed class Overlay
         return file;
     }
 
-    private DataPoint[]? BuildOperationPoints()
+    // The stored slot configuration expressed as the same snapshot the settings
+    // dialog fires for its live preview, so both paths share one build routine.
+    private OverlayOperationPreview CurrentOperationSnapshot() => new(
+        Title,
+        sourceSlotA,
+        sourceCurveKeyA,
+        sourceSlotB,
+        sourceCurveKeyB,
+        operation,
+        blendFrequencyHz,
+        blendWidthOctaves,
+        useAmplitudeSpace,
+        compareDelayMs,
+        compareInvertPolarity,
+        panel.BackColor,
+        strokeThickness,
+        lineStyle,
+        opacityPercent,
+        smoothingInverseOctaves);
+
+    private DataPoint[]? BuildOperationPoints() =>
+        BuildOperationPointsFor(CurrentOperationSnapshot());
+
+    private DataPoint[]? BuildOperationPointsFor(OverlayOperationPreview settings)
     {
-        if (!TryGetSources(
-                out OverlayOperationSource? sourceA,
-                out OverlayOperationSource? sourceB))
+        // Complex sum is computed from the Main and Compare transfer IRs by the
+        // measurement pipeline (identical FR window / calibration / smoothing), not
+        // from operand curves; only the overlay's own smoothing and offset apply here.
+        if (settings.Operation == OverlayOperation.ComplexSum)
+        {
+            return BuildComplexSumPoints(
+                settings.CompareDelayMs,
+                settings.CompareInvertPolarity,
+                settings.SmoothingInverseOctaves);
+        }
+
+        OverlayOperationSource? sourceA =
+            ResolveOperand(settings.SourceCurveKeyA, settings.SourceSlotA);
+        OverlayOperationSource? sourceB =
+            ResolveOperand(settings.SourceCurveKeyB, settings.SourceSlotB);
+        if (sourceA == null || sourceB == null)
         {
             return null;
         }
@@ -1999,17 +2186,17 @@ public sealed class Overlay
         // (the default, plus minimum/excess phase) keep the raw subtraction so their slope
         // (and hence delay) survives. Unknown representations are treated as unwrapped.
         bool wrapPhaseDifference = SeriesMode == Mode.PhaseResponse &&
-            (sourceA!.PhaseUnwrapped == false || sourceB!.PhaseUnwrapped == false);
+            (sourceA.PhaseUnwrapped == false || sourceB.PhaseUnwrapped == false);
 
         OverlayPoint[] points = OverlayMath.CalculateOperation(
-            sourceA!.Points,
-            sourceB!.Points,
-            operation,
-            blendFrequencyHz,
-            blendWidthOctaves,
-            useAmplitudeSpace,
+            sourceA.Points,
+            sourceB.Points,
+            settings.Operation,
+            settings.BlendFrequencyHz,
+            settings.BlendWidthOctaves,
+            settings.UseAmplitudeSpace,
             wrapPhaseDifference);
-        points = OverlayMath.SmoothByOctaves(points, smoothingInverseOctaves);
+        points = OverlayMath.SmoothByOctaves(points, settings.SmoothingInverseOctaves);
         if (points.Length < 2)
         {
             return null;
@@ -2019,6 +2206,77 @@ public sealed class Overlay
         return points
             .Select(point => new DataPoint(point.X, point.Y + offset))
             .ToArray();
+    }
+
+    private DataPoint[]? BuildComplexSumPoints(
+        double delayMs,
+        bool invertPolarity,
+        int smoothing)
+    {
+        OverlayPoint[]? sumPoints = collection.Form.BuildComplexSumOverlayPoints(
+            delayMs,
+            invertPolarity);
+        if (sumPoints == null || sumPoints.Length < 2)
+        {
+            return null;
+        }
+
+        OverlayPoint[] smoothed = OverlayMath.SmoothByOctaves(sumPoints, smoothing);
+        double offset = (double)offsetControl.Value;
+        return smoothed
+            .Select(point => new DataPoint(point.X, point.Y + offset))
+            .ToArray();
+    }
+
+    // Redraws this slot's series with the dialog's candidate settings — operands,
+    // operation, styling, everything — while the dialog is open; nothing is
+    // committed, so Cancel can restore cleanly.
+    private void PreviewOperation(OverlayOperationPreview settings)
+    {
+        PlotModel? model = collection.PlotView.Model;
+        if (model == null)
+        {
+            return;
+        }
+
+        RemoveSeries(model);
+        DataPoint[]? points = BuildOperationPointsFor(settings);
+        if (points != null)
+        {
+            AddCurveSeries(
+                model,
+                "curve",
+                points,
+                settings.Color,
+                settings.OpacityPercent,
+                settings.StrokeThickness,
+                settings.LineStyle,
+                settings.Name.Length > 0 ? settings.Name : Title);
+        }
+
+        RefreshPlot(model);
+    }
+
+    // Clears a live preview after the dialog is cancelled: the stored slot state is
+    // unchanged, so simply redraw it — or just remove the preview if the slot was
+    // hidden before the dialog opened.
+    private void RestoreAfterPreview(bool wasChecked)
+    {
+        PlotModel? model = collection.PlotView.Model;
+        if (model == null)
+        {
+            return;
+        }
+
+        RemoveSeries(model);
+        if (wasChecked)
+        {
+            Show();
+        }
+        else
+        {
+            RefreshPlot(model);
+        }
     }
 
     private bool TryGetSources(
@@ -2048,19 +2306,49 @@ public sealed class Overlay
 
     private void UpdateDrawPoints()
     {
+        drawPoints = BuildCapturedPoints(smoothingInverseOctaves);
+    }
+
+    // Parameterized so the settings dialog's live preview can render a candidate
+    // smoothing without committing it to the slot first.
+    private DataPoint[]? BuildCapturedPoints(int smoothing)
+    {
         if (sourcePoints == null)
         {
-            drawPoints = null;
-            return;
+            return null;
         }
 
         OverlayPoint[] smoothed = OverlayMath.SmoothByOctaves(
             sourcePoints.Select(point => new OverlayPoint(point.X, point.Y)).ToArray(),
-            smoothingInverseOctaves);
+            smoothing);
         double offset = (double)offsetControl.Value;
-        drawPoints = smoothed
+        return smoothed
             .Select(point => new DataPoint(point.X, point.Y + offset))
             .ToArray();
+    }
+
+    // Redraws this slot's series with the captured-curve dialog's candidate
+    // styling / smoothing while it is open; nothing is committed, so Cancel can
+    // restore cleanly.
+    private void PreviewCaptured(OverlayCapturedPreview settings)
+    {
+        PlotModel? model = collection.PlotView.Model;
+        if (model == null)
+        {
+            return;
+        }
+
+        RemoveSeries(model);
+        AddCurveSeries(
+            model,
+            "curve",
+            BuildCapturedPoints(settings.SmoothingInverseOctaves),
+            settings.Color,
+            settings.OpacityPercent,
+            settings.StrokeThickness,
+            settings.LineStyle,
+            settings.Name.Length > 0 ? settings.Name : Title);
+        RefreshPlot(model);
     }
 
     private void ResetState()
@@ -2078,6 +2366,8 @@ public sealed class Overlay
         blendFrequencyHz = 1_000;
         blendWidthOctaves = 1;
         useAmplitudeSpace = false;
+        compareDelayMs = 0;
+        compareInvertPolarity = false;
         targetConfigured = false;
         targetSourceSlot = 0;
         targetPreset = TargetPreset.HarmanRoom;

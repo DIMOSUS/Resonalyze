@@ -810,6 +810,76 @@ internal sealed class PlotModelFactory
             compare.DisplayName);
     }
 
+    // The complex (vector) sum of the Main and Compare transfer responses, i.e.
+    // FFT(h1 + h2). Both transfer IRs share the loopback time reference (sample 0),
+    // so a sample-wise sum of the impulse responses is exactly the response the
+    // microphone would capture if both sources played together — including their
+    // relative delay, polarity, and phase. This is what predicts the summed output
+    // of two drivers through a crossover; adding the two dB magnitudes cannot.
+    // Requires a transfer IR on both sides at the same sample rate; the curve runs
+    // through the same FR pipeline (window, calibration, smoothing) as the plot.
+    //
+    // compareDelayMs and invertComparePolarity mirror the per-channel delay and
+    // polarity switch a DSP would apply to the Compare source, so the predicted sum
+    // can be tuned before touching the hardware.
+    internal AnalysisCurve? TryBuildComplexSumCurve(
+        double compareDelayMs = 0,
+        bool invertComparePolarity = false)
+    {
+        if (expSweepMeasurement.TransferImpulseResponse is not { Length: > 0 } mainIr)
+        {
+            return null;
+        }
+
+        if (getCompareSource?.Invoke() is not { } compare ||
+            compare.TransferImpulseResponse is not { Length: > 0 } compareIr ||
+            compare.SampleRate != expSweepMeasurement.SampleRate)
+        {
+            return null;
+        }
+
+        // The shift is applied with linear interpolation, so fractional-sample
+        // delays (a 0.01 ms step is ~0.44 samples at 44.1 kHz) move the result
+        // smoothly; first-order interpolation costs a slight HF droop near
+        // half-sample offsets, negligible in the crossover regions this predicts.
+        double delaySamples =
+            compareDelayMs / 1_000.0 * expSweepMeasurement.SampleRate;
+        int wholeDelay = (int)Math.Floor(delaySamples);
+        double fraction = delaySamples - wholeDelay;
+        double sign = invertComparePolarity ? -1.0 : 1.0;
+
+        int length = Math.Max(
+            mainIr.Length,
+            compareIr.Length + Math.Max(0, wholeDelay + 1));
+        var sum = new Complex[length];
+        for (int i = 0; i < length; i++)
+        {
+            Complex value = i < mainIr.Length ? mainIr[i] : Complex.Zero;
+            Complex shifted =
+                SampleAt(compareIr, i - wholeDelay) * (1.0 - fraction) +
+                SampleAt(compareIr, i - wholeDelay - 1) * fraction;
+            sum[i] = value + sign * shifted;
+        }
+
+        // Anchor the analysis window at the earlier of the two arrivals so the later
+        // impulse still falls inside the window plateau; the summed envelope peak
+        // could sit between them or vanish entirely under cancellation.
+        int mainPeak = Math.Clamp(expSweepMeasurement.TransferPeakIndex, 0, length - 1);
+        int comparePeak = Math.Clamp(
+            compare.TransferPeakIndex + (int)Math.Round(delaySamples),
+            0,
+            length - 1);
+        int peakIndex = Math.Min(mainPeak, comparePeak);
+
+        return DataHelper.GetPrimarySpectrum(
+            new ImpulseMeasurementView(sum, peakIndex, expSweepMeasurement.SampleRate),
+            frequencyResponseOptions,
+            calibration);
+    }
+
+    private static Complex SampleAt(Complex[] source, int index) =>
+        (uint)index < (uint)source.Length ? source[index] : Complex.Zero;
+
     // Phase and group delay need loopback timing; without a transfer IR the plot would
     // otherwise be silently empty, so explain why.
     private static void AddRequiresTransferIrAnnotation(PlotModel model)

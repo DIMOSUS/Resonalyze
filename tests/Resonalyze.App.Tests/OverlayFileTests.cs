@@ -160,6 +160,68 @@ public sealed class OverlayFileTests
     }
 
     [Fact]
+    public void SaveAndLoad_RoundTripsComplexSumOperationWithoutOperands()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            // Complex sum reads the Main and Compare transfer IRs directly, so a
+            // valid file carries no operand slots or curve keys at all.
+            var original = new OverlayFile
+            {
+                SavedAtUtc = DateTimeOffset.UtcNow,
+                Mode = Mode.FrequencyResponse,
+                Slot = 11,
+                Kind = OverlayKind.Operation,
+                Title = "Main + Compare (complex)",
+                Operation = OverlayOperation.ComplexSum,
+                CompareDelayMs = -0.35,
+                CompareInvertPolarity = true,
+                ColorArgb = Color.Orange.ToArgb()
+            };
+
+            original.Save(root);
+            OverlayFile? loaded = OverlayFile.Load(Mode.FrequencyResponse, 11, root);
+
+            Assert.NotNull(loaded);
+            Assert.Equal(OverlayKind.Operation, loaded.Kind);
+            Assert.Equal(OverlayOperation.ComplexSum, loaded.Operation);
+            Assert.Null(loaded.SourceCurveKeyA);
+            Assert.Null(loaded.SourceCurveKeyB);
+            Assert.Equal(-0.35, loaded.CompareDelayMs);
+            Assert.True(loaded.CompareInvertPolarity);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Save_RejectsComplexSumOutsideFrequencyResponse()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var file = new OverlayFile
+            {
+                Mode = Mode.PhaseResponse,
+                Slot = 12,
+                Kind = OverlayKind.Operation,
+                Title = "Invalid",
+                Operation = OverlayOperation.ComplexSum,
+                ColorArgb = Color.White.ToArgb()
+            };
+
+            Assert.Throws<InvalidDataException>(() => file.Save(root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void SaveAndLoad_PreservesNaNPointValues()
     {
         string root = CreateTemporaryDirectory();

@@ -170,6 +170,129 @@ public sealed class PlotModelFactoryTests
                 tag.Key == "GroupDelay:Primary:Compare");
     }
 
+    [Fact]
+    public void ComplexSum_OfTwoIdenticalTransferResponses_AddsSixDecibels()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement();
+        PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
+
+        // Without a Compare measurement the complex sum has nothing to add.
+        Assert.Null(factory.TryBuildComplexSumCurve());
+
+        var compareIr = new Complex[2048];
+        compareIr[64] = Complex.One;
+        factory.SetCompareSourceProvider(
+            () => new CompareAnalysisSource(
+                "Reference",
+                44_100,
+                compareIr,
+                64,
+                compareIr,
+                64));
+
+        AnalysisCurve? sum = factory.TryBuildComplexSumCurve();
+        Assert.NotNull(sum);
+
+        // The Compare IR equals the main transfer IR, so the coherent (complex)
+        // sum is exactly double the amplitude everywhere: +20·log10(2) dB.
+        AnalysisCurve main = DataHelper.GetPrimarySpectrum(
+            new ImpulseMeasurementView(
+                measurement.TransferImpulseResponse!,
+                measurement.TransferPeakIndex,
+                measurement.SampleRate),
+            new FrequencyResponseOptions(),
+            calibration: null);
+        double expectedDelta = 20.0 * Math.Log10(2.0);
+        Assert.Equal(main.Points.Count, sum.Points.Count);
+        for (int i = 0; i < main.Points.Count; i++)
+        {
+            Assert.Equal(main.Points[i].X, sum.Points[i].X, precision: 9);
+            Assert.Equal(main.Points[i].Y + expectedDelta, sum.Points[i].Y, precision: 6);
+        }
+    }
+
+    [Fact]
+    public void ComplexSum_CompareDelayRealignsAnEarlierArrival()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement();
+        PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
+
+        // The Compare impulse arrives 10 samples early; delaying it by exactly
+        // 10 samples' worth of milliseconds re-aligns it with the main impulse,
+        // restoring the fully coherent +6 dB sum.
+        var compareIr = new Complex[2048];
+        compareIr[54] = Complex.One;
+        factory.SetCompareSourceProvider(
+            () => new CompareAnalysisSource(
+                "Reference", 44_100, compareIr, 54, compareIr, 54));
+
+        double delayMs = 10.0 / 44_100.0 * 1_000.0;
+        AnalysisCurve? aligned = factory.TryBuildComplexSumCurve(delayMs);
+        Assert.NotNull(aligned);
+
+        AnalysisCurve main = DataHelper.GetPrimarySpectrum(
+            new ImpulseMeasurementView(
+                measurement.TransferImpulseResponse!,
+                measurement.TransferPeakIndex,
+                measurement.SampleRate),
+            new FrequencyResponseOptions(),
+            calibration: null);
+        double expectedDelta = 20.0 * Math.Log10(2.0);
+        for (int i = 0; i < main.Points.Count; i++)
+        {
+            Assert.Equal(
+                main.Points[i].Y + expectedDelta,
+                aligned.Points[i].Y,
+                precision: 5);
+        }
+    }
+
+    [Fact]
+    public void ComplexSum_InvertedComparePolarityCancelsAnIdenticalResponse()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement();
+        PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
+
+        var compareIr = new Complex[2048];
+        compareIr[64] = Complex.One;
+        factory.SetCompareSourceProvider(
+            () => new CompareAnalysisSource(
+                "Reference", 44_100, compareIr, 64, compareIr, 64));
+
+        // An identical response in opposite polarity sums to silence everywhere.
+        AnalysisCurve? cancelled = factory.TryBuildComplexSumCurve(
+            compareDelayMs: 0,
+            invertComparePolarity: true);
+        Assert.NotNull(cancelled);
+        Assert.All(cancelled.Points, point => Assert.True(point.Y < -100.0));
+    }
+
+    [Fact]
+    public void ComplexSum_RequiresMatchingSampleRateAndTransferIr()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement();
+        PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
+
+        var compareIr = new Complex[2048];
+        compareIr[64] = Complex.One;
+
+        // A Compare at a different sample rate cannot be summed sample-wise.
+        factory.SetCompareSourceProvider(
+            () => new CompareAnalysisSource(
+                "Reference", 48_000, compareIr, 64, compareIr, 64));
+        Assert.Null(factory.TryBuildComplexSumCurve());
+
+        // A Compare without a transfer IR has no loopback time reference.
+        factory.SetCompareSourceProvider(
+            () => new CompareAnalysisSource(
+                "Reference", 44_100, Array.Empty<Complex>(), 0, compareIr, 64));
+        Assert.Null(factory.TryBuildComplexSumCurve());
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

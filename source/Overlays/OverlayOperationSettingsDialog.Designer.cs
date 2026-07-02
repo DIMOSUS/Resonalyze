@@ -45,9 +45,13 @@ namespace Resonalyze
             cancelButton = new Button();
             saveButton = new Button();
             toolTip = new ToolTip(components);
+            numericTimeOffset = new DarkNumericUpDown();
+            labelTimeOffset = new Label();
+            checkBoxInvPhase = new CheckBox();
             (thicknessInput).BeginInit();
             (blendFrequencyInput).BeginInit();
             ((System.ComponentModel.ISupportInitialize)opacityTrackBar).BeginInit();
+            (numericTimeOffset).BeginInit();
             SuspendLayout();
             // 
             // nameLabel
@@ -130,7 +134,7 @@ namespace Resonalyze
             operationComboBox.Margin = new Padding(0);
             operationComboBox.MinimumSize = new Size(36, 19);
             operationComboBox.Name = "operationComboBox";
-            operationComboBox.Size = new Size(400, 24);
+            operationComboBox.Size = new Size(190, 24);
             operationComboBox.TabIndex = 3;
             // 
             // colorLabel
@@ -343,12 +347,52 @@ namespace Resonalyze
             saveButton.Text = "Save";
             saveButton.UseVisualStyleBackColor = false;
             // 
+            // numericTimeOffset
+            // 
+            numericTimeOffset.BackColor = Color.FromArgb(55, 58, 65);
+            numericTimeOffset.DecimalPlaces = 3;
+            numericTimeOffset.ForeColor = Color.White;
+            numericTimeOffset.Increment = new decimal(new int[] { 1, 0, 0, 131072 });
+            numericTimeOffset.Location = new Point(230, 162);
+            numericTimeOffset.Maximum = new decimal(new int[] { 10, 0, 0, 0 });
+            numericTimeOffset.Minimum = new decimal(new int[] { 10, 0, 0, int.MinValue });
+            numericTimeOffset.MinimumSize = new Size(36, 19);
+            numericTimeOffset.Name = "numericTimeOffset";
+            numericTimeOffset.Size = new Size(94, 24);
+            numericTimeOffset.TabIndex = 14;
+            numericTimeOffset.TextAlign = HorizontalAlignment.Right;
+            numericTimeOffset.ThousandsSeparator = false;
+            numericTimeOffset.Value = new decimal(new int[] { 0, 0, 0, 65536 });
+            // 
+            // labelTimeOffset
+            // 
+            labelTimeOffset.AutoSize = true;
+            labelTimeOffset.ForeColor = Color.FromArgb(185, 190, 200);
+            labelTimeOffset.Location = new Point(230, 144);
+            labelTimeOffset.Name = "labelTimeOffset";
+            labelTimeOffset.Size = new Size(69, 15);
+            labelTimeOffset.TabIndex = 15;
+            labelTimeOffset.Text = "Time Offset";
+            // 
+            // checkBoxInvPhase
+            // 
+            checkBoxInvPhase.AutoSize = true;
+            checkBoxInvPhase.ForeColor = Color.FromArgb(235, 237, 240);
+            checkBoxInvPhase.Location = new Point(341, 165);
+            checkBoxInvPhase.Name = "checkBoxInvPhase";
+            checkBoxInvPhase.Size = new Size(79, 19);
+            checkBoxInvPhase.TabIndex = 16;
+            checkBoxInvPhase.Text = "Inv. Phase";
+            // 
             // OverlayOperationSettingsDialog
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(40, 42, 48);
             ClientSize = new Size(440, 610);
+            Controls.Add(checkBoxInvPhase);
+            Controls.Add(labelTimeOffset);
+            Controls.Add(numericTimeOffset);
             Controls.Add(nameLabel);
             Controls.Add(nameTextBox);
             Controls.Add(curveALabel);
@@ -389,6 +433,7 @@ namespace Resonalyze
             (thicknessInput).EndInit();
             (blendFrequencyInput).EndInit();
             ((System.ComponentModel.ISupportInitialize)opacityTrackBar).EndInit();
+            (numericTimeOffset).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -422,5 +467,8 @@ namespace Resonalyze
         private Button cancelButton;
         private Button saveButton;
         private ToolTip toolTip;
+        private DarkNumericUpDown numericTimeOffset;
+        private Label labelTimeOffset;
+        private CheckBox checkBoxInvPhase;
     }
 }

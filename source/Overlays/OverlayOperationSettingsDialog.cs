@@ -6,6 +6,12 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
 {
     private readonly bool supportsSmoothing;
     private readonly bool supportsAmplitudeSpace;
+    private readonly bool supportsComplexSum;
+    // Live preview: fired with a full snapshot of the candidate settings on every
+    // control change, so the caller can redraw the overlay immediately. Nothing is
+    // committed until Save; the caller restores its stored state on Cancel.
+    private readonly Action<OverlayOperationPreview>? previewChanged;
+    private readonly bool initialized;
     private Color selectedColor;
 
     public OverlayOperationSettingsDialog(
@@ -19,16 +25,23 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         double blendFrequencyHz,
         double blendWidthOctaves,
         bool useAmplitudeSpace,
+        double compareDelayMs,
+        bool compareInvertPolarity,
         Color color,
         double strokeThickness,
         OverlayLineStyle lineStyle,
         int opacityPercent,
         int smoothingInverseOctaves,
         IReadOnlyList<OverlaySlotOption> availableSources,
-        IReadOnlyList<LiveCurveOption> availableLiveCurves)
+        IReadOnlyList<LiveCurveOption> availableLiveCurves,
+        Action<OverlayOperationPreview>? previewChanged = null)
     {
+        this.previewChanged = previewChanged;
         supportsSmoothing = OverlaySmoothing.SupportsMode(mode);
         supportsAmplitudeSpace = OverlayMath.SupportsAmplitudeSpace(mode);
+        // Complex sum reads the Main and Compare transfer IRs and only draws on the
+        // frequency-response axes (Live Spectrum shares the same overlay mode).
+        supportsComplexSum = mode == Mode.FrequencyResponse;
         selectedColor = color;
 
         InitializeComponent();
@@ -46,6 +59,11 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
             1,
             1_000_000);
         amplitudeSpaceCheckBox.Checked = useAmplitudeSpace && supportsAmplitudeSpace;
+        numericTimeOffset.Value = (decimal)Math.Clamp(
+            compareDelayMs,
+            (double)numericTimeOffset.Minimum,
+            (double)numericTimeOffset.Maximum);
+        checkBoxInvPhase.Checked = compareInvertPolarity;
         thicknessInput.Value = (decimal)Math.Clamp(strokeThickness, 0.5, 10);
         styleComboBox.SelectedItem = lineStyle;
         smoothingComboBox.SelectedItem = smoothingInverseOctaves;
@@ -54,6 +72,7 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         UpdateColorButton();
         UpdateOpacityLabel();
         UpdateBlendControls();
+        initialized = true;
     }
 
     public string OverlayName => nameTextBox.Text.Trim();
@@ -67,6 +86,8 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
     public double BlendWidthOctaves =>
         ((BlendWidthOption)blendWidthInput.SelectedItem!).Octaves;
     public bool UseAmplitudeSpace => amplitudeSpaceCheckBox.Checked;
+    public double CompareDelayMs => (double)numericTimeOffset.Value;
+    public bool CompareInvertPolarity => checkBoxInvPhase.Checked;
     public Color SelectedColor => selectedColor;
     public double StrokeThickness => (double)thicknessInput.Value;
     public OverlayLineStyle LineStyle =>
@@ -102,6 +123,11 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
 
         foreach (OverlayOperation item in Enum.GetValues<OverlayOperation>())
         {
+            if (item == OverlayOperation.ComplexSum && !supportsComplexSum)
+            {
+                continue;
+            }
+
             operationComboBox.Items.Add(item);
         }
         operationComboBox.Format += (_, args) =>
@@ -144,10 +170,58 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
 
     private void WireEvents()
     {
-        operationComboBox.SelectedIndexChanged += (_, _) => UpdateBlendControls();
+        operationComboBox.SelectedIndexChanged += (_, _) =>
+        {
+            UpdateBlendControls();
+            NotifyPreview();
+        };
+        nameTextBox.TextChanged += (_, _) => NotifyPreview();
+        sourceAComboBox.SelectedIndexChanged += (_, _) => NotifyPreview();
+        sourceBComboBox.SelectedIndexChanged += (_, _) => NotifyPreview();
+        blendFrequencyInput.ValueChanged += (_, _) => NotifyPreview();
+        blendWidthInput.SelectedIndexChanged += (_, _) => NotifyPreview();
+        amplitudeSpaceCheckBox.CheckedChanged += (_, _) => NotifyPreview();
+        numericTimeOffset.ValueChanged += (_, _) => NotifyPreview();
+        checkBoxInvPhase.CheckedChanged += (_, _) => NotifyPreview();
+        thicknessInput.ValueChanged += (_, _) => NotifyPreview();
+        styleComboBox.SelectedIndexChanged += (_, _) => NotifyPreview();
+        smoothingComboBox.SelectedIndexChanged += (_, _) => NotifyPreview();
         colorButton.Click += ColorButtonClick;
-        opacityTrackBar.ValueChanged += (_, _) => UpdateOpacityLabel();
+        opacityTrackBar.ValueChanged += (_, _) =>
+        {
+            UpdateOpacityLabel();
+            NotifyPreview();
+        };
         saveButton.Click += SaveButtonClick;
+    }
+
+    // Live preview while tuning: fires a full snapshot of the candidate settings on
+    // every change so the caller can redraw the curve immediately. Suppressed during
+    // construction, where control values are still being seeded.
+    private void NotifyPreview()
+    {
+        if (!initialized || previewChanged == null)
+        {
+            return;
+        }
+
+        previewChanged(new OverlayOperationPreview(
+            OverlayName,
+            SourceSlotA,
+            SourceCurveKeyA,
+            SourceSlotB,
+            SourceCurveKeyB,
+            Operation,
+            BlendFrequencyHz,
+            BlendWidthOctaves,
+            UseAmplitudeSpace,
+            CompareDelayMs,
+            CompareInvertPolarity,
+            SelectedColor,
+            StrokeThickness,
+            LineStyle,
+            OpacityPercent,
+            SmoothingInverseOctaves));
     }
 
     // Smoothing and amplitude-space are only meaningful for some modes; instead of
@@ -174,7 +248,10 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
             "Curve B — a live plot curve (tracks the analysis) or a captured overlay slot.");
         toolTip.SetToolTip(
             operationComboBox,
-            "Calculation applied between curve A and curve B.");
+            "Calculation applied between curve A and curve B. The complex sum instead " +
+            "adds the Main and Compare transfer responses as complex spectra " +
+            "(delay, polarity, and phase included) — the physically summed output of " +
+            "two sources; it needs a Compare measurement with a transfer IR.");
         blendFrequencyInput.ApplyToolTip(
             toolTip,
             "Crossover frequency for the Blend operation (A below, B above).");
@@ -184,6 +261,14 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         toolTip.SetToolTip(
             amplitudeSpaceCheckBox,
             "Convert both curves to linear amplitude before the operation and back to dB afterward (for dB-based views).");
+        numericTimeOffset.ApplyToolTip(
+            toolTip,
+            "Extra delay applied to the Compare response before the complex sum, in " +
+            "milliseconds — the delay you would dial into that DSP channel.");
+        toolTip.SetToolTip(
+            checkBoxInvPhase,
+            "Invert the polarity of the Compare response before the complex sum — " +
+            "the phase/polarity switch of that DSP channel.");
         toolTip.SetToolTip(colorButton, "Curve color.");
         thicknessInput.ApplyToolTip(toolTip, "Line thickness.");
         toolTip.SetToolTip(styleComboBox, "Line style (solid, dash, dot, dash-dot).");
@@ -197,10 +282,10 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
     {
         OverlayOperandOption? a = OperandOf(sourceAComboBox);
         OverlayOperandOption? b = OperandOf(sourceBComboBox);
-        bool valid = OverlayName.Length > 0 &&
-            a != null &&
-            b != null &&
-            !SameOperand(a, b);
+        // Complex sum has no operands to validate — its sources are fixed.
+        bool operandsValid = Operation == OverlayOperation.ComplexSum ||
+            (a != null && b != null && !SameOperand(a, b));
+        bool valid = OverlayName.Length > 0 && operandsValid;
         if (valid)
         {
             return;
@@ -218,16 +303,28 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         }
     }
 
-    // Blend frequency / width only apply to the Blend operation; they are greyed
-    // out for the others rather than hidden so nothing shifts around.
+    // Blend frequency / width only apply to the Blend operation, and the complex sum
+    // takes no operands at all (it reads the Main and Compare transfer IRs directly);
+    // the inapplicable controls are greyed out rather than hidden so nothing shifts.
     private void UpdateBlendControls()
     {
-        bool isBlend = operationComboBox.SelectedItem is OverlayOperation op &&
-            op == OverlayOperation.Blend;
+        OverlayOperation? op = operationComboBox.SelectedItem as OverlayOperation?;
+        bool isBlend = op == OverlayOperation.Blend;
+        bool isComplexSum = op == OverlayOperation.ComplexSum;
         blendFrequencyLabel.Enabled = isBlend;
         blendFrequencyInput.Enabled = isBlend;
         blendWidthLabel.Enabled = isBlend;
         blendWidthInput.Enabled = isBlend;
+        curveALabel.Enabled = !isComplexSum;
+        sourceAComboBox.Enabled = !isComplexSum;
+        curveBLabel.Enabled = !isComplexSum;
+        sourceBComboBox.Enabled = !isComplexSum;
+        // Complex sum is inherently amplitude-domain math; the checkbox is moot.
+        amplitudeSpaceCheckBox.Enabled = supportsAmplitudeSpace && !isComplexSum;
+        // The Compare delay / polarity flip only shape the complex sum.
+        labelTimeOffset.Enabled = isComplexSum;
+        numericTimeOffset.Enabled = isComplexSum;
+        checkBoxInvPhase.Enabled = isComplexSum;
     }
 
     private void SelectBlendWidth(double blendWidthOctaves)
@@ -247,6 +344,7 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         {
             selectedColor = dialog.SelectedColor;
             UpdateColorButton();
+            NotifyPreview();
         }
     }
 
@@ -305,6 +403,27 @@ internal sealed record OverlaySlotOption(int Slot, string Title)
 // operand directly from the plot, without capturing it into a slot first.
 internal sealed record LiveCurveOption(string Key, string Label);
 
+// A full snapshot of the candidate settings in the calculated-overlay dialog, fired
+// on every control change for the live preview. Mirrors the dialog's output
+// properties so the caller can render exactly what Save would commit.
+internal sealed record OverlayOperationPreview(
+    string Name,
+    int SourceSlotA,
+    string? SourceCurveKeyA,
+    int SourceSlotB,
+    string? SourceCurveKeyB,
+    OverlayOperation Operation,
+    double BlendFrequencyHz,
+    double BlendWidthOctaves,
+    bool UseAmplitudeSpace,
+    double CompareDelayMs,
+    bool CompareInvertPolarity,
+    Color Color,
+    double StrokeThickness,
+    OverlayLineStyle LineStyle,
+    int OpacityPercent,
+    int SmoothingInverseOctaves);
+
 // A unified operation operand: a captured slot (CurveKey null) or a live curve.
 internal sealed record OverlayOperandOption(int Slot, string? CurveKey, string Label)
 {
@@ -348,6 +467,7 @@ internal static class OverlayOperationLabels
             OverlayOperation.Average => "(A + B) / 2",
             OverlayOperation.AbsoluteDifference => "|A - B|",
             OverlayOperation.Blend => "Blend A/B",
+            OverlayOperation.ComplexSum => "Main ⊕ Compare (complex sum)", // ⊕ circled plus
             _ => "Off"
         };
     }
@@ -362,6 +482,7 @@ internal static class OverlayOperationLabels
             OverlayOperation.Average => "AVG",
             OverlayOperation.AbsoluteDifference => "|A-B|",
             OverlayOperation.Blend => "XOVR",
+            OverlayOperation.ComplexSum => "M⊕C", // ⊕ circled plus
             _ => "--"
         };
     }

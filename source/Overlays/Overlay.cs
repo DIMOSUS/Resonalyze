@@ -727,7 +727,8 @@ public sealed class Overlay
     // from operands; like a live-curve operation it recomputes on every rebuild and
     // stays armed while the Compare data is absent.
     private bool IsComplexSumOperation =>
-        kind == OverlayKind.Operation && operation == OverlayOperation.ComplexSum;
+        kind == OverlayKind.Operation &&
+        operation is OverlayOperation.ComplexSum or OverlayOperation.ComplexSumLoss;
 
     internal bool IsConfiguredTargetFor(Mode mode) =>
         kind == OverlayKind.Target &&
@@ -2163,12 +2164,13 @@ public sealed class Overlay
         // Complex sum is computed from the Main and Compare transfer IRs by the
         // measurement pipeline (identical FR window / calibration / smoothing), not
         // from operand curves; only the overlay's own smoothing and offset apply here.
-        if (settings.Operation == OverlayOperation.ComplexSum)
+        if (settings.Operation is OverlayOperation.ComplexSum or OverlayOperation.ComplexSumLoss)
         {
             return BuildComplexSumPoints(
                 settings.CompareDelayMs,
                 settings.CompareInvertPolarity,
-                settings.SmoothingInverseOctaves);
+                settings.SmoothingInverseOctaves,
+                showLoss: settings.Operation == OverlayOperation.ComplexSumLoss);
         }
 
         OverlayOperationSource? sourceA =
@@ -2211,11 +2213,13 @@ public sealed class Overlay
     private DataPoint[]? BuildComplexSumPoints(
         double delayMs,
         bool invertPolarity,
-        int smoothing)
+        int smoothing,
+        bool showLoss = false)
     {
         OverlayPoint[]? sumPoints = collection.Form.BuildComplexSumOverlayPoints(
             delayMs,
-            invertPolarity);
+            invertPolarity,
+            showLoss);
         if (sumPoints == null || sumPoints.Length < 2)
         {
             return null;

@@ -910,6 +910,64 @@ internal sealed class PlotModelFactory
     private static Complex SampleAt(Complex[] source, int index) =>
         (uint)index < (uint)source.Length ? source[index] : Complex.Zero;
 
+    // The signed dB gap of the complex sum |H1 + H2| relative to the phase-blind
+    // amplitude-magnitude sum (|H1| + |H2|). By the triangle inequality it is always <= 0:
+    // it shows how many dB the real (phase-aware) sum falls short of the naive addition,
+    // i.e. the summation loss caused by phase misalignment (0 only where the two sources
+    // are perfectly in phase, dropping toward deep cancellation). The magnitude sum ignores
+    // delay/polarity, so as those are tuned only the complex sum moves and the gap closes
+    // toward 0 as the sources come into phase.
+    internal AnalysisCurve? TryBuildComplexSumLossCurve(
+        double compareDelayMs = 0,
+        bool invertComparePolarity = false)
+    {
+        if (TryBuildComplexSumCurve(compareDelayMs, invertComparePolarity) is not { } complexCurve)
+        {
+            return null;
+        }
+
+        if (expSweepMeasurement.TransferImpulseResponse is not { Length: > 0 } mainIr ||
+            getCompareSource?.Invoke() is not { } compare ||
+            compare.TransferImpulseResponse is not { Length: > 0 } compareIr)
+        {
+            return null;
+        }
+
+        // Individual magnitudes of the two transfer responses, each windowed around its own
+        // peak but log-resampled onto the same fixed frequency grid as the complex sum, so
+        // all three curves align index-by-index.
+        AnalysisCurve mainMagnitude = DataHelper.GetPrimarySpectrum(
+            new ImpulseMeasurementView(
+                mainIr,
+                Math.Clamp(expSweepMeasurement.TransferPeakIndex, 0, mainIr.Length - 1),
+                expSweepMeasurement.SampleRate),
+            frequencyResponseOptions,
+            calibration);
+        AnalysisCurve compareMagnitude = DataHelper.GetPrimarySpectrum(
+            new ImpulseMeasurementView(
+                compareIr,
+                Math.Clamp(compare.TransferPeakIndex, 0, compareIr.Length - 1),
+                compare.SampleRate),
+            frequencyResponseOptions,
+            calibration);
+
+        int count = Math.Min(
+            complexCurve.Points.Count,
+            Math.Min(mainMagnitude.Points.Count, compareMagnitude.Points.Count));
+        var points = new List<SignalPoint>(count);
+        for (int i = 0; i < count; i++)
+        {
+            double magnitudeSumDb = DataHelper.AmplitudeToDecibels(
+                DataHelper.DecibelsToAmplitude(mainMagnitude.Points[i].Y) +
+                DataHelper.DecibelsToAmplitude(compareMagnitude.Points[i].Y));
+            points.Add(new SignalPoint(
+                complexCurve.Points[i].X,
+                complexCurve.Points[i].Y - magnitudeSumDb));
+        }
+
+        return new AnalysisCurve("Complex Sum Loss", points);
+    }
+
     // Phase and group delay need loopback timing; without a transfer IR the plot would
     // otherwise be silently empty, so explain why.
     private static void AddRequiresTransferIrAnnotation(PlotModel model)

@@ -198,6 +198,42 @@ public sealed class OverlayFileTests
     }
 
     [Fact]
+    public void SaveAndLoad_RoundTripsComplexSumLossOperation()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            // The loss variant behaves like the complex sum: no operands, FR only, and it
+            // carries the same Compare delay / polarity that shape the underlying sum.
+            var original = new OverlayFile
+            {
+                SavedAtUtc = DateTimeOffset.UtcNow,
+                Mode = Mode.FrequencyResponse,
+                Slot = 10,
+                Kind = OverlayKind.Operation,
+                Title = "Sum loss",
+                Operation = OverlayOperation.ComplexSumLoss,
+                CompareDelayMs = 0.5,
+                CompareInvertPolarity = true,
+                ColorArgb = Color.Cyan.ToArgb()
+            };
+
+            original.Save(root);
+            OverlayFile? loaded = OverlayFile.Load(Mode.FrequencyResponse, 10, root);
+
+            Assert.NotNull(loaded);
+            Assert.Equal(OverlayOperation.ComplexSumLoss, loaded.Operation);
+            Assert.Null(loaded.SourceCurveKeyA);
+            Assert.Equal(0.5, loaded.CompareDelayMs);
+            Assert.True(loaded.CompareInvertPolarity);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Save_RejectsComplexSumOutsideFrequencyResponse()
     {
         string root = CreateTemporaryDirectory();

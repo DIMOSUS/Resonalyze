@@ -83,7 +83,8 @@ file is provided with every release.
   or live plot curves, targets, import/export, and saved per-mode state
 - Complex (vector) sum overlay in Frequency Response that adds the Main and
   Compare transfer IRs — with Compare delay and polarity controls — to predict
-  driver/crossover summation
+  driver/crossover summation, plus a sum-loss curve showing how far the real
+  phase-aware sum falls short of a phase-blind magnitude addition
 - Live overlay preview: captured, calculated, and target overlay dialogs redraw
   the candidate curve on the plot as you edit, and revert on Cancel
 - EQ Wizard: design an up-to-32-band parametric EQ against a target, with Auto
@@ -935,6 +936,9 @@ Calculated overlay settings additionally include:
 - a **complex (vector) sum** (`Main ⊕ Compare`), available in Frequency Response
   when a Compare measurement is set and both records have a transfer IR (see
   below)
+- a **sum loss** curve (`complex − magnitude`), the companion to the complex sum,
+  showing how many dB the real phase-aware sum falls short of a phase-blind
+  magnitude addition (see below)
 - optional amplitude-space math for dB-based views, which converts both curves to
   linear amplitude before the operation and back to dB afterward
 - independent octave smoothing applied after the selected operation
@@ -980,6 +984,18 @@ Two Compare-side controls make it a DSP-style alignment tool:
 Both update the summed curve live as you turn the field or toggle the checkbox.
 The operation needs a Compare measurement with a transfer IR at the same sample
 rate; it stays armed and redraws automatically once that data is available.
+
+A companion **sum loss** operation (`complex − magnitude`) plots the difference
+between the complex sum and a phase-blind magnitude addition (`|Main| +
+|Compare|`). By the triangle inequality it is always **≤ 0 dB**: it shows how
+many decibels the real, phase-aware sum falls short of what naive dB/amplitude
+addition would predict — zero where the two sources are perfectly in phase, and
+dropping into deep negatives toward cancellation. Because the magnitude sum
+ignores delay and polarity, only the complex side moves as you tune **Time
+offset** and **Invert polarity**, so the curve rises back toward 0 dB as you
+bring the sources into phase — a direct read-out of the summation loss you are
+dialing out. It shares the same requirements and live behavior as the complex
+sum.
 
 ### Live overlay preview
 

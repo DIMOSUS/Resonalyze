@@ -63,9 +63,9 @@ public sealed class OverlayFile
     public double BlendWidthOctaves { get; set; } = 1;
     public bool UseAmplitudeSpace { get; set; }
 
-    // ComplexSum only: extra delay (ms) and a polarity flip applied to the Compare
-    // transfer response before the sum, mirroring a DSP channel setup. Additive
-    // with safe defaults, so no file version bump is needed.
+    // ComplexSum / ComplexSumLoss only: extra delay (ms) and a polarity flip applied to
+    // the Compare transfer response before the sum, mirroring a DSP channel setup.
+    // Additive with safe defaults, so no file version bump is needed.
     public double CompareDelayMs { get; set; }
     public bool CompareInvertPolarity { get; set; }
 
@@ -302,10 +302,10 @@ public sealed class OverlayFile
 
     private void ValidateOperation()
     {
-        if (Operation == OverlayOperation.ComplexSum)
+        if (Operation is OverlayOperation.ComplexSum or OverlayOperation.ComplexSumLoss)
         {
-            // Complex sum reads the Main and Compare transfer IRs directly; it has
-            // no operands and only draws on the frequency-response axes.
+            // Complex sum (and its loss variant) reads the Main and Compare transfer IRs
+            // directly; it has no operands and only draws on the frequency-response axes.
             if (Mode != Mode.FrequencyResponse)
             {
                 throw new InvalidDataException(
@@ -398,7 +398,16 @@ public enum OverlayOperation
     /// (the physically correct summed output of two drivers), which arithmetic
     /// on dB curves cannot. Frequency Response only.
     /// </summary>
-    ComplexSum
+    ComplexSum,
+
+    /// <summary>
+    /// The dB gap between the phase-blind amplitude-magnitude sum (|H1| + |H2|) and the
+    /// complex sum (|H1 + H2|). Always &gt;= 0 by the triangle inequality; shows how much
+    /// the naive addition overestimates because it ignores the phase between the two
+    /// sources. Like <see cref="ComplexSum"/> it takes no operands and reads the two
+    /// transfer impulse responses directly. Frequency Response only.
+    /// </summary>
+    ComplexSumLoss
 }
 
 public enum TargetDeviationMode

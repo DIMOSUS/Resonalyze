@@ -124,7 +124,8 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
 
         foreach (OverlayOperation item in Enum.GetValues<OverlayOperation>())
         {
-            if (item == OverlayOperation.ComplexSum && !supportsComplexSum)
+            if (item is OverlayOperation.ComplexSum or OverlayOperation.ComplexSumLoss &&
+                !supportsComplexSum)
             {
                 continue;
             }
@@ -283,8 +284,9 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
     {
         OverlayOperandOption? a = OperandOf(sourceAComboBox);
         OverlayOperandOption? b = OperandOf(sourceBComboBox);
-        // Complex sum has no operands to validate — its sources are fixed.
-        bool operandsValid = Operation == OverlayOperation.ComplexSum ||
+        // Complex sum (and its loss variant) has no operands to validate — sources are fixed.
+        bool operandsValid =
+            Operation is OverlayOperation.ComplexSum or OverlayOperation.ComplexSumLoss ||
             (a != null && b != null && !SameOperand(a, b));
         bool valid = OverlayName.Length > 0 && operandsValid;
         if (valid)
@@ -311,7 +313,7 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
     {
         OverlayOperation? op = operationComboBox.SelectedItem as OverlayOperation?;
         bool isBlend = op == OverlayOperation.Blend;
-        bool isComplexSum = op == OverlayOperation.ComplexSum;
+        bool isComplexSum = op is OverlayOperation.ComplexSum or OverlayOperation.ComplexSumLoss;
         UiStyle.SetTextEnabledLook(blendFrequencyLabel, isBlend);
         blendFrequencyInput.Enabled = isBlend;
         UiStyle.SetTextEnabledLook(blendWidthLabel, isBlend);
@@ -470,6 +472,7 @@ internal static class OverlayOperationLabels
             OverlayOperation.AbsoluteDifference => "|A - B|",
             OverlayOperation.Blend => "Blend A/B",
             OverlayOperation.ComplexSum => "Main ⊕ Compare (complex sum)", // ⊕ circled plus
+            OverlayOperation.ComplexSumLoss => "Sum loss (complex − magnitude)",
             _ => "Off"
         };
     }
@@ -485,6 +488,7 @@ internal static class OverlayOperationLabels
             OverlayOperation.AbsoluteDifference => "|A-B|",
             OverlayOperation.Blend => "XOVR",
             OverlayOperation.ComplexSum => "M⊕C", // ⊕ circled plus
+            OverlayOperation.ComplexSumLoss => "LOSS",
             _ => "--"
         };
     }

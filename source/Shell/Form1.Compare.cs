@@ -182,13 +182,17 @@ public partial class Form1
     // (no Compare, either side lacks a transfer IR, or the sample rates differ);
     // the overlay stays armed and draws once the data appears. The delay and
     // polarity flip apply to the Compare response, mirroring a DSP channel setup.
+    // When showLoss is set, returns the signed dB gap of the complex sum relative to the
+    // magnitude sum (<= 0: how much the real phase-aware sum falls short of the phase-blind
+    // addition) instead of the sum itself.
     internal OverlayPoint[]? BuildComplexSumOverlayPoints(
         double compareDelayMs,
-        bool invertComparePolarity)
+        bool invertComparePolarity,
+        bool showLoss = false)
     {
-        Resonalyze.Dsp.AnalysisCurve? curve = plotModelFactory.TryBuildComplexSumCurve(
-            compareDelayMs,
-            invertComparePolarity);
+        Resonalyze.Dsp.AnalysisCurve? curve = showLoss
+            ? plotModelFactory.TryBuildComplexSumLossCurve(compareDelayMs, invertComparePolarity)
+            : plotModelFactory.TryBuildComplexSumCurve(compareDelayMs, invertComparePolarity);
         return curve?.Points
             .Select(point => new OverlayPoint(point.X, point.Y))
             .ToArray();

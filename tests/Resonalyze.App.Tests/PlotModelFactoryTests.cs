@@ -293,6 +293,51 @@ public sealed class PlotModelFactoryTests
         Assert.Null(factory.TryBuildComplexSumCurve());
     }
 
+    [Fact]
+    public void ComplexSumLoss_IsZero_WhenSourcesSumCoherently()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement();
+        PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
+
+        // Without a Compare measurement there is nothing to compare against.
+        Assert.Null(factory.TryBuildComplexSumLossCurve());
+
+        var compareIr = new Complex[2048];
+        compareIr[64] = Complex.One;
+        factory.SetCompareSourceProvider(
+            () => new CompareAnalysisSource(
+                "Reference", 44_100, compareIr, 64, compareIr, 64));
+
+        // Identical, in-phase responses: the magnitude sum and the complex sum are both
+        // exactly double the amplitude, so the phase-blind addition loses nothing.
+        AnalysisCurve? loss = factory.TryBuildComplexSumLossCurve();
+        Assert.NotNull(loss);
+        Assert.All(loss.Points, point => Assert.Equal(0.0, point.Y, precision: 4));
+    }
+
+    [Fact]
+    public void ComplexSumLoss_IsLarge_WhenSourcesCancel()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement();
+        PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
+
+        var compareIr = new Complex[2048];
+        compareIr[64] = Complex.One;
+        factory.SetCompareSourceProvider(
+            () => new CompareAnalysisSource(
+                "Reference", 44_100, compareIr, 64, compareIr, 64));
+
+        // Opposite polarity: the complex sum cancels to near silence while the magnitude
+        // sum stays at full level, so the real sum falls far below it (a large negative gap).
+        AnalysisCurve? loss = factory.TryBuildComplexSumLossCurve(
+            compareDelayMs: 0,
+            invertComparePolarity: true);
+        Assert.NotNull(loss);
+        Assert.All(loss.Points, point => Assert.True(point.Y < -40.0));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

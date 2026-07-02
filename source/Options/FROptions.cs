@@ -106,7 +106,8 @@ namespace Resonalyze.Options
                 (int)numericLeftWindow.Value,
                 (int)numericRightWindow.Value,
                 offset: 0,
-                IrPreviewSource.SweepDeconvolution);
+                // FR magnitude is now windowed on the transfer IR, so preview that window.
+                IrPreviewSource.Primary);
         }
 
         private void ExpSweepMeasurement_ImpulseResponseChanged()

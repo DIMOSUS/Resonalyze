@@ -68,7 +68,9 @@ internal sealed class PlotModelFactory
         PlotModel model = PlotModelStyle.CreateTitledModel(
             measurementContext.CreateTitle("Frequency Response"));
 
-        if (measurementContext.CanIncludeCurves(includeCurves))
+        // Magnitude is derived from the loopback transfer IR, which is required.
+        if (measurementContext.CanIncludeCurves(includeCurves) &&
+            measurementContext.HasTransferImpulseResponse)
         {
             IReadOnlyList<AnalysisCurve> curves = measurementContext.CreateFrequencyResponseCurves(
                 frequencyResponseOptions,
@@ -102,6 +104,11 @@ internal sealed class PlotModelFactory
                         Mode.FrequencyResponse);
                 }
             }
+        }
+        else if (measurementContext.CanIncludeCurves(includeCurves) &&
+                 !measurementContext.HasTransferImpulseResponse)
+        {
+            AddRequiresTransferIrAnnotation(model);
         }
 
         PlotModelStyle.AddFrequencyAxis(model);
@@ -275,7 +282,8 @@ internal sealed class PlotModelFactory
             measurementContext.CreateTitle("Fourier Waterfall"),
             waterfallGenOptions);
 
-        if (measurementContext.CanIncludeCurves(includeCurves))
+        if (measurementContext.CanIncludeCurves(includeCurves) &&
+            measurementContext.HasTransferImpulseResponse)
         {
             var waterfall = new WaterfallSeries()
             {
@@ -285,6 +293,11 @@ internal sealed class PlotModelFactory
 
             waterfall.FillFourierWaterfallData(measurementContext.CreatePrimaryMeasurement());
             model.Series.Add(waterfall);
+        }
+        else if (measurementContext.CanIncludeCurves(includeCurves) &&
+                 !measurementContext.HasTransferImpulseResponse)
+        {
+            AddRequiresTransferIrAnnotation(model);
         }
 
         return model;
@@ -376,7 +389,8 @@ internal sealed class PlotModelFactory
             measurementContext.CreateTitle("Burst Decay"),
             burstDecayGenOptions);
 
-        if (measurementContext.CanIncludeCurves(includeCurves))
+        if (measurementContext.CanIncludeCurves(includeCurves) &&
+            measurementContext.HasTransferImpulseResponse)
         {
             var waterfall = new WaterfallSeries()
             {
@@ -386,6 +400,11 @@ internal sealed class PlotModelFactory
 
             waterfall.FillFourierWaterfallData(measurementContext.CreatePrimaryMeasurement());
             model.Series.Add(waterfall);
+        }
+        else if (measurementContext.CanIncludeCurves(includeCurves) &&
+                 !measurementContext.HasTransferImpulseResponse)
+        {
+            AddRequiresTransferIrAnnotation(model);
         }
 
         return model;
@@ -400,22 +419,20 @@ internal sealed class PlotModelFactory
         AnalysisCurve? curve = null;
         AnalysisCurve? compareCurve = null;
         if (measurementContext.CanIncludeCurves(includeCurves) &&
+            measurementContext.HasTransferImpulseResponse &&
             impulseResponseOptions.ShowImpulse)
         {
-            // With a transfer IR, show it whole on an absolute timeline from sample 0 to
-            // the peak plus the Length tail; otherwise keep the peak-centred sweep window.
-            bool fromStart = measurementContext.HasTransferImpulseResponse;
+            // The transfer IR is shown whole on an absolute timeline from sample 0 to the
+            // peak plus the Length tail, so arrival times can be compared directly.
             IImpulseMeasurement main = measurementContext.CreatePrimaryMeasurement();
-            curve = fromStart
-                ? DataHelper.GetImpulseFromStart(main, impulseResponseOptions)
-                : DataHelper.GetImpulse(main, impulseResponseOptions);
+            curve = DataHelper.GetImpulseFromStart(main, impulseResponseOptions);
             AddLineSeries(model, curve, impulseTracker, Mode.ImpulseResponse);
 
             if (TryCreateCompareMeasurement() is { } compare)
             {
-                compareCurve = fromStart
-                    ? DataHelper.GetImpulseFromStart(compare.Measurement, impulseResponseOptions)
-                    : DataHelper.GetImpulse(compare.Measurement, impulseResponseOptions);
+                compareCurve = DataHelper.GetImpulseFromStart(
+                    compare.Measurement,
+                    impulseResponseOptions);
                 AddCompareLineSeries(
                     model,
                     compareCurve,
@@ -423,6 +440,12 @@ internal sealed class PlotModelFactory
                     compare.DisplayName,
                     Mode.ImpulseResponse);
             }
+        }
+        else if (measurementContext.CanIncludeCurves(includeCurves) &&
+                 !measurementContext.HasTransferImpulseResponse &&
+                 impulseResponseOptions.ShowImpulse)
+        {
+            AddRequiresTransferIrAnnotation(model);
         }
 
         var timeAxis = new LinearAxis
@@ -497,6 +520,7 @@ internal sealed class PlotModelFactory
             measurementContext.CreateTitle("Autocorrelation"));
 
         if (measurementContext.CanIncludeCurves(includeCurves) &&
+            measurementContext.HasTransferImpulseResponse &&
             impulseResponseOptions.ShowAutocorrelation)
         {
             AnalysisCurve curve =
@@ -508,6 +532,12 @@ internal sealed class PlotModelFactory
                 curve,
                 "{0}\n{2:0.000} ms\n{4:0.000}",
                 Mode.Autocorrelation);
+        }
+        else if (measurementContext.CanIncludeCurves(includeCurves) &&
+                 !measurementContext.HasTransferImpulseResponse &&
+                 impulseResponseOptions.ShowAutocorrelation)
+        {
+            AddRequiresTransferIrAnnotation(model);
         }
 
         model.Axes.Add(new LinearAxis

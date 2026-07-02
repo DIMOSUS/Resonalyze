@@ -63,7 +63,9 @@ file is provided with every release.
 ## Highlights
 
 - Exponential sine sweep measurement with impulse-response JSON save/load
-- Optional loopback-referenced sweep processing via a transfer function
+- Mandatory loopback-referenced sweep processing: every measurement captures a
+  loopback reference, and all analysis is derived from the resulting transfer
+  function (harmonics and THD+N stay on the sweep deconvolution)
 - Time Alignment with sub-sample delay estimation from the transfer IR
 - Live Spectrum: real-time loopback transfer function with selectable excitation
   (leakage-free periodic pink, pink, brown/red, white noise) and coherence
@@ -79,6 +81,11 @@ file is provided with every release.
 - Harmonic distortion, THD, and THD+N analysis
 - Persistent comparison overlays with labels, styling, curve math over captured
   or live plot curves, targets, import/export, and saved per-mode state
+- Complex (vector) sum overlay in Frequency Response that adds the Main and
+  Compare transfer IRs — with Compare delay and polarity controls — to predict
+  driver/crossover summation
+- Live overlay preview: captured, calculated, and target overlay dialogs redraw
+  the candidate curve on the plot as you edit, and revert on Cancel
 - EQ Wizard: design an up-to-32-band parametric EQ against a target, with Auto
   Tune, a live results read-out, cross-tool PEQ import/export, and a printable
   tuning-sheet PDF
@@ -284,7 +291,9 @@ real-time analysis without capturing an IR, use the additional
 2. Start Resonalyze and open the measurement settings.
 3. Select the audio backend, sample rate, devices or backend-specific input and
    loopback channels, sweep duration, playback channel, and analysis
-   parameters.
+   parameters. A **loopback reference channel is required** — all analysis is
+   derived from the transfer IR it produces, so the settings panel flags an
+   unset loopback and the measurement will not start without one.
 4. Start a recording to generate and capture the exponential sine sweep.
 5. Watch the compact input level meter to confirm microphone level, loopback
    presence, and headroom before trusting the measurement.
@@ -381,22 +390,25 @@ through an ASIO driver.
 
 ![Measurement settings](assets/images/measurement-options.png)
 
-The microphone input is the primary measurement channel. The loopback input is
-optional for ordinary sweep measurements and required for Time Alignment. When
-loopback is enabled for a sweep measurement, Resonalyze records both channels
-simultaneously and computes the main impulse response as a transfer function
-from the loopback reference to the microphone response. This removes the
-playback path from the primary response plots. Harmonic distortion curves still
-use the ordinary sweep-deconvolution response, because the harmonic separation
-belongs to the sweep analysis itself.
+The microphone input is the primary measurement channel, and a loopback
+reference channel is **required** for every measurement. Resonalyze records both
+channels simultaneously and derives the main impulse response as a transfer
+function from the loopback reference to the microphone response, which removes
+the playback path (DAC, amplifier, output routing) from the analysis. All
+IR-based views — frequency response, phase, group delay, impulse response,
+waterfall, Burst Decay, and autocorrelation — are computed from this transfer
+IR. Harmonic distortion, THD, and THD+N curves use the ordinary
+sweep-deconvolution response instead, because the harmonic separation belongs to
+the sweep analysis itself.
 
-Phase and Group Delay are computed from this loopback-referenced transfer impulse
-response and are only available when the active record contains one. The
-group-delay reference is the start of the transfer IR, so reported delay is
+The group-delay reference is the start of the transfer IR, so reported delay is
 absolute rather than relative to a response peak.
 
-Without loopback, sweep measurements use the classic single-channel
-deconvolution path.
+Because the loopback is mandatory, a measurement will not start until a loopback
+channel is selected for the active backend; the settings panel flags an unset
+loopback in place. Records loaded from older files that were captured without a
+transfer IR still open, but their transfer-IR views show a "requires loopback
+transfer IR" note instead of a misleading curve.
 
 ### Wave
 
@@ -410,12 +422,13 @@ measurement settings dialog lets you choose:
 - sample rate from the values supported by the current configuration
 - playback channel
 - microphone input channel (`Left` or `Right`)
-- optional loopback input channel (`Left` or `Right`)
+- loopback input channel (`Left` or `Right`) — required
 
 By default the loopback is captured from a second channel of the microphone
 device, so it shares the same clock and stays sample-accurate. If that device
-does not expose a stereo input, loopback capture is unavailable and Resonalyze
-falls back to ordinary single-channel measurement behavior.
+does not expose a stereo input, choose a separate loopback device (below) or a
+stereo interface; loopback is mandatory, so a mono-only device cannot be used on
+its own.
 
 #### Separate Wave loopback device
 
@@ -444,7 +457,7 @@ measurement settings dialog lets you choose:
 - ASIO driver
 - sample rate from the values supported by the selected driver
 - ASIO input channel used for the microphone
-- optional ASIO loopback input channel
+- ASIO loopback input channel — required
 - ASIO output channel pair used for playback
 - playback routing within the selected output pair
 
@@ -832,7 +845,8 @@ from the settings dialog):
 - **Captured** — a snapshot of a curve currently on the plot.
 - **Operation** — a calculation between two operands, each either a live plot
   curve or a captured slot (`A - B`, `B - A`, `A + B`, `(A + B) / 2`, `|A - B|`,
-  or a frequency blend).
+  or a frequency blend), plus a **complex (vector) sum** of the Main and Compare
+  transfer IRs in Frequency Response (see below).
 - **Target** — a parametric target curve compared against a source.
 
 Overlay slots are stored automatically as human-readable JSON beside the
@@ -918,6 +932,9 @@ Calculated overlay settings additionally include:
   the captured overlay slots
 - operations `A - B`, `B - A`, `A + B`, `(A + B) / 2`, and `|A - B|`
 - a blend operation with a user-defined crossover frequency and transition width
+- a **complex (vector) sum** (`Main ⊕ Compare`), available in Frequency Response
+  when a Compare measurement is set and both records have a transfer IR (see
+  below)
 - optional amplitude-space math for dB-based views, which converts both curves to
   linear amplitude before the operation and back to dB afterward
 - independent octave smoothing applied after the selected operation
@@ -941,6 +958,38 @@ Calculated results use the same axes, units, zoom, and vertical pan as the
 ordinary overlays. Operations are applied to the displayed Y values after source
 offsets. As a result, addition and averaging on a decibel plot are arithmetic
 operations on dB coordinates, not physical summation of acoustic power.
+
+### Complex (vector) sum
+
+In Frequency Response, a calculated overlay can compute the **complex (vector)
+sum** of the Main and Compare transfer impulse responses (`Main ⊕ Compare`).
+Both transfer IRs share the same sample-0 time reference, so summing them
+sample-by-sample and taking the magnitude gives the *physically correct* summed
+response of two sources — it accounts for their relative delay, polarity, and
+phase, unlike arithmetic on dB magnitudes. This predicts how two drivers, or the
+two sides of a crossover, actually combine.
+
+Two Compare-side controls make it a DSP-style alignment tool:
+
+- **Time offset** — a fractional-sample delay applied to the Compare IR
+  (interpolated between samples), mirroring a delay you would dial into a DSP
+  channel.
+- **Invert polarity** — flips the Compare IR, to check a polarity swap at the
+  crossover.
+
+Both update the summed curve live as you turn the field or toggle the checkbox.
+The operation needs a Compare measurement with a transfer IR at the same sample
+rate; it stays armed and redraws automatically once that data is available.
+
+### Live overlay preview
+
+The captured, calculated, and target overlay settings dialogs preview their
+result on the plot while you edit. Every control change — name, color, style,
+opacity, smoothing, operands, the complex-sum delay/polarity, and the whole
+target shape, tolerance band, and deviation curve — redraws the candidate curve
+immediately, using the same rendering path as the committed overlay, so you see
+exactly what **Save** will keep. Closing with **Cancel** (or `Esc`) restores the
+previous state.
 
 Overlay files are separated by analysis mode and restored automatically when the
 application starts or the active view changes. Changes to any source overlay

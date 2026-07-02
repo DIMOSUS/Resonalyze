@@ -90,6 +90,15 @@ namespace Resonalyze.Options
             comboBoxAsioDriver.SelectedIndexChanged += comboBoxAsioDriver_SelectedIndexChanged;
             buttonAsioInputProbe.Click += buttonAsioInputProbe_Click;
             buttonAsioControlPanel.Click += buttonAsioControlPanel_Click;
+
+            deviceToolTip.SetToolTip(
+                comboBoxWaveLoopbackChannel,
+                "Required. Channel carrying the loopback reference signal; every analysis " +
+                "is derived from the transfer IR it produces.");
+            deviceToolTip.SetToolTip(
+                comboBoxAsioLoopbackChannel,
+                "Required. ASIO input channel carrying the loopback reference signal; every " +
+                "analysis is derived from the transfer IR it produces.");
         }
 
         internal void Init(
@@ -601,11 +610,25 @@ namespace Resonalyze.Options
                 return;
             }
 
+            // The loopback channel is mandatory: without it there is no transfer IR and no
+            // measurement can run. Make an unset loopback impossible to overlook.
+            if (!loopbackSelected)
+            {
+                labelWaveLoopbackStatus.Font = WarningStatusFont;
+                labelWaveLoopbackStatus.Text = supportsLoopback
+                    ? "⚠ Loopback channel is REQUIRED. Select the channel carrying the " +
+                        "loopback reference; measurements cannot run without it."
+                    : "⚠ Loopback channel is REQUIRED. Select a stereo recording device, " +
+                        "or a separate loopback device, then choose its channel.";
+                labelWaveLoopbackStatus.ForeColor = Color.Gold;
+                return;
+            }
+
             labelWaveLoopbackStatus.Font = NormalStatusFont;
             labelWaveLoopbackStatus.Text = supportsLoopback
                 ? "Stereo input available for Wave loopback."
                 : "Select a stereo recording device, or a separate loopback device.";
-            labelWaveLoopbackStatus.ForeColor = supportsLoopback || !loopbackSelected
+            labelWaveLoopbackStatus.ForeColor = supportsLoopback
                 ? Color.LightGray
                 : Color.LightSalmon;
         }

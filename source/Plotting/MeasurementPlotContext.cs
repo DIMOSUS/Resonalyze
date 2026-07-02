@@ -36,17 +36,18 @@ internal sealed class MeasurementPlotContext
     public bool HasTransferImpulseResponse =>
         expSweepMeasurement.TransferImpulseResponse is { Length: > 0 };
 
+    // All analysis (magnitude, phase, group delay, impulse, decays) is derived from the
+    // loopback transfer IR, which is now mandatory for every measurement. Callers must gate
+    // on HasTransferImpulseResponse; the sweep deconvolution is reserved for harmonics/noise.
     public IImpulseMeasurement CreatePrimaryMeasurement()
     {
-        if (expSweepMeasurement.TransferImpulseResponse is { Length: > 0 } transferIr)
-        {
-            return new ImpulseMeasurementView(
-                transferIr,
-                expSweepMeasurement.TransferPeakIndex,
-                expSweepMeasurement.SampleRate);
-        }
-
-        return CreateSweepDeconvolutionMeasurement();
+        Complex[] transferIr = expSweepMeasurement.TransferImpulseResponse
+            ?? throw new InvalidOperationException(
+                "Transfer impulse response is not available.");
+        return new ImpulseMeasurementView(
+            transferIr,
+            expSweepMeasurement.TransferPeakIndex,
+            expSweepMeasurement.SampleRate);
     }
 
     public IImpulseMeasurement CreateSweepDeconvolutionMeasurement()
@@ -61,29 +62,23 @@ internal sealed class MeasurementPlotContext
             expSweepMeasurement.HarmonicIROffset);
     }
 
+    // Magnitude comes from the transfer IR (referenced by loopback, free of DAC/amp
+    // colouration); harmonics and THD+N come from the sweep deconvolution, which is the
+    // only representation that carries the harmonic time offsets.
     public IReadOnlyList<AnalysisCurve> CreateFrequencyResponseCurves(
         FrequencyResponseOptions options,
         CalibrationFile calibration)
     {
-        IImpulseMeasurement sweepMeasurement = CreateSweepDeconvolutionMeasurement();
-        if (!HasTransferImpulseResponse)
-        {
-            return DataHelper.GetSpectrum(
-                sweepMeasurement,
-                options,
-                calibration);
-        }
-
         var curves = new List<AnalysisCurve>();
         curves.AddRange(DataHelper.GetSpectrum(
-            sweepMeasurement,
+            CreatePrimaryMeasurement(),
             options,
             calibration,
             includePrimary: true,
             includeHarmonics: false));
 
         curves.AddRange(DataHelper.GetSpectrum(
-            sweepMeasurement,
+            CreateSweepDeconvolutionMeasurement(),
             options,
             calibration,
             includePrimary: false,

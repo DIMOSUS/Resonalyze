@@ -264,7 +264,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         set
         {
             base.BackColor = value;
-            if (editor != null)
+            if (editor != null && Enabled)
             {
                 editor.BackColor = value;
             }
@@ -279,7 +279,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         set
         {
             base.ForeColor = value;
-            if (editor != null)
+            if (editor != null && Enabled)
             {
                 editor.ForeColor = value;
             }
@@ -291,7 +291,12 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     protected override void OnEnabledChanged(EventArgs e)
     {
         base.OnEnabledChanged(e);
-        editor.Enabled = Enabled;
+        // Keep the inner editor's own Enabled=true so the native EDIT paints its text in our
+        // muted colour instead of the system's dark disabled grey; the disabled parent still
+        // blocks all interaction. ReadOnly is a safety net against programmatic edits.
+        editor.ReadOnly = readOnly || !Enabled;
+        editor.ForeColor = Enabled ? ForeColor : UiPalette.TextMuted;
+        editor.BackColor = Enabled ? BackColor : UiPalette.ButtonDisabledBackground;
         Invalidate();
     }
 

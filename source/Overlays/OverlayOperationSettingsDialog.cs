@@ -1,4 +1,5 @@
 using Resonalyze.Dsp;
+using Resonalyze.Ui;
 
 namespace Resonalyze;
 
@@ -228,9 +229,9 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
     // reflowing the dialog those controls are greyed out, keeping a fixed layout.
     private void ApplyModeAvailability()
     {
-        smoothingLabel.Enabled = supportsSmoothing;
+        UiStyle.SetTextEnabledLook(smoothingLabel, supportsSmoothing);
         smoothingComboBox.Enabled = supportsSmoothing;
-        amplitudeSpaceCheckBox.Enabled = supportsAmplitudeSpace;
+        UiStyle.SetTextEnabledLook(amplitudeSpaceCheckBox, supportsAmplitudeSpace, interactive: true);
     }
 
     private void InitializeToolTips()
@@ -311,20 +312,21 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         OverlayOperation? op = operationComboBox.SelectedItem as OverlayOperation?;
         bool isBlend = op == OverlayOperation.Blend;
         bool isComplexSum = op == OverlayOperation.ComplexSum;
-        blendFrequencyLabel.Enabled = isBlend;
+        UiStyle.SetTextEnabledLook(blendFrequencyLabel, isBlend);
         blendFrequencyInput.Enabled = isBlend;
-        blendWidthLabel.Enabled = isBlend;
+        UiStyle.SetTextEnabledLook(blendWidthLabel, isBlend);
         blendWidthInput.Enabled = isBlend;
-        curveALabel.Enabled = !isComplexSum;
+        UiStyle.SetTextEnabledLook(curveALabel, !isComplexSum);
         sourceAComboBox.Enabled = !isComplexSum;
-        curveBLabel.Enabled = !isComplexSum;
+        UiStyle.SetTextEnabledLook(curveBLabel, !isComplexSum);
         sourceBComboBox.Enabled = !isComplexSum;
         // Complex sum is inherently amplitude-domain math; the checkbox is moot.
-        amplitudeSpaceCheckBox.Enabled = supportsAmplitudeSpace && !isComplexSum;
+        UiStyle.SetTextEnabledLook(
+            amplitudeSpaceCheckBox, supportsAmplitudeSpace && !isComplexSum, interactive: true);
         // The Compare delay / polarity flip only shape the complex sum.
-        labelTimeOffset.Enabled = isComplexSum;
+        UiStyle.SetTextEnabledLook(labelTimeOffset, isComplexSum);
         numericTimeOffset.Enabled = isComplexSum;
-        checkBoxInvPhase.Enabled = isComplexSum;
+        UiStyle.SetTextEnabledLook(checkBoxInvPhase, isComplexSum, interactive: true);
     }
 
     private void SelectBlendWidth(double blendWidthOctaves)

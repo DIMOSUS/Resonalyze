@@ -1,9 +1,45 @@
+using System.Runtime.CompilerServices;
 using OxyPlot.WindowsForms;
 
 namespace Resonalyze.Ui;
 
 internal static class UiStyle
 {
+    // Remembers each control's real (enabled) text colour so it can be restored after a
+    // muted pass, keyed weakly so controls are not kept alive.
+    private static readonly ConditionalWeakTable<Control, object> enabledForeColors = new();
+
+    // Standard Label/CheckBox controls paint disabled text with a dark emboss (Label) or a
+    // low-contrast system grey (CheckBox), which reads as near-black on the dark theme. Rather
+    // than letting WinForms disable them, keep them Enabled and mute the text colour instead —
+    // matching how DarkComboBox/DarkNumericUpDown render their own disabled state. Pass
+    // interactive:true for check boxes so the muted look also stops them toggling or taking focus.
+    public static void SetTextEnabledLook(Control control, bool enabled, bool interactive = false)
+    {
+        if (enabled)
+        {
+            if (enabledForeColors.TryGetValue(control, out object? stored))
+            {
+                control.ForeColor = (Color)stored;
+            }
+        }
+        else
+        {
+            if (!enabledForeColors.TryGetValue(control, out _))
+            {
+                enabledForeColors.Add(control, control.ForeColor);
+            }
+
+            control.ForeColor = UiPalette.TextMuted;
+        }
+
+        if (interactive && control is CheckBox checkBox)
+        {
+            checkBox.AutoCheck = enabled;
+            checkBox.TabStop = enabled;
+        }
+    }
+
     public static void ApplyDarkDialog(
         Form form,
         Size clientSize,

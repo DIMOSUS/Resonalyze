@@ -93,6 +93,21 @@ public partial class Form1
         }
         else
         {
+            if (!measurementSettings.Measurement.HasLoopbackConfigured)
+            {
+                MessageBox.Show(
+                    this,
+                    "A loopback reference channel is required before measuring.\r\n\r\n" +
+                    "Every analysis (frequency response, phase, group delay, impulse " +
+                    "response and the decays) is derived from the loopback transfer IR. " +
+                    "Open Measurement Options and select a loopback channel for the " +
+                    "current audio backend.",
+                    "Loopback required",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
             await WaitForStartupAudioWarmupAsync();
             PrepareSweepMeasurementForRun();
             EnterMeasurementRunningState();

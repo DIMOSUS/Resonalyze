@@ -99,7 +99,7 @@ internal sealed partial class OverlaySettingsDialog : Form
     // the row is simply greyed out so the dialog keeps a single fixed shape.
     private void ApplyModeAvailability()
     {
-        smoothingLabel.Enabled = supportsSmoothing;
+        Ui.UiStyle.SetTextEnabledLook(smoothingLabel, supportsSmoothing);
         smoothingComboBox.Enabled = supportsSmoothing;
     }
 

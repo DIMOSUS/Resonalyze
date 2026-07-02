@@ -131,6 +131,13 @@ internal sealed class MeasurementSettingsFile
         public int? AsioLoopbackInputChannelOffset { get; set; }
         public int AsioOutputChannelOffset { get; set; }
 
+        // A loopback reference channel is mandatory: every analysis mode is derived from the
+        // transfer IR, which only exists when the loopback is captured alongside the microphone.
+        public bool HasLoopbackConfigured =>
+            AudioBackend == AudioBackend.Asio
+                ? AsioLoopbackInputChannelOffset.HasValue
+                : WaveLoopbackInputChannelOffset.HasValue;
+
         public static SweepMeasurementSettings Capture(
             ExpSweepMeasurement measurement) =>
             new()

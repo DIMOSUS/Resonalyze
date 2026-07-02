@@ -307,10 +307,13 @@ public sealed class PlotModelFactoryTests
 
         using var measurement = new ExpSweepMeasurement();
         using var noiseMeasurement = new NoiseMeasurement();
+        // The impulse view is now derived from the mandatory loopback transfer IR.
         measurement.RestoreImpulseResponse(
             octaves: 12, sampleRate: 44_100, bits: 24, sweepDurationSeconds: 1.0,
             playChannel: PlaybackChannel.Mono,
-            sweepDeconvolutionImpulseResponse: ir, sweepDeconvolutionPeakIndex: peak);
+            sweepDeconvolutionImpulseResponse: ir, sweepDeconvolutionPeakIndex: peak,
+            measurementMode: SweepMeasurementMode.LoopbackTransfer,
+            transferImpulseResponse: ir, transferPeakIndex: peak);
 
         var options = new ImpulseResponseOptions { Logarithmic = logarithmic, ShowImpulse = true };
         PlotModelFactory factory =
@@ -336,6 +339,57 @@ public sealed class PlotModelFactoryTests
         Assert.Equal(expectedMaxX, timeAxis.Maximum, precision: 9);
         Assert.Equal(expectedMinX, timeAxis.AbsoluteMinimum, precision: 9);
         Assert.Equal(expectedMaxX, timeAxis.AbsoluteMaximum, precision: 9);
+    }
+
+    [Fact]
+    public void AnalysisModes_RequireTransferIr_ShowAnnotationWhenAbsent()
+    {
+        using var measurement = CreateSweepOnlyMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement();
+        PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
+
+        // With no loopback transfer IR, every analysis mode draws nothing and shows an
+        // explanatory annotation instead. Sweep deconvolution alone is no longer rendered.
+        OxyPlot.PlotModel[] models =
+        [
+            factory.CreateFrequencyResponse(includeCurves: true),
+            factory.CreatePhaseResponse(includeCurves: true),
+            factory.CreateGroupDelay(includeCurves: true),
+            factory.CreateImpulseResponse(includeCurves: true),
+            factory.CreateAutocorrelation(includeCurves: true),
+        ];
+        foreach (OxyPlot.PlotModel model in models)
+        {
+            Assert.Empty(model.Series);
+            Assert.NotEmpty(model.Annotations);
+        }
+    }
+
+    [Fact]
+    public void FrequencyResponse_DrawsCurves_WhenTransferIrPresent()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement();
+        PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
+
+        Assert.NotEmpty(factory.CreateFrequencyResponse(includeCurves: true).Series);
+    }
+
+    private static ExpSweepMeasurement CreateSweepOnlyMeasurement()
+    {
+        var sweep = new Complex[2048];
+        sweep[64] = Complex.One;
+
+        var measurement = new ExpSweepMeasurement();
+        measurement.RestoreImpulseResponse(
+            octaves: 12,
+            sampleRate: 44_100,
+            bits: 24,
+            sweepDurationSeconds: 1.0,
+            playChannel: PlaybackChannel.Mono,
+            sweepDeconvolutionImpulseResponse: sweep,
+            sweepDeconvolutionPeakIndex: 64);
+        return measurement;
     }
 
     private static ExpSweepMeasurement CreateTransferMeasurement()

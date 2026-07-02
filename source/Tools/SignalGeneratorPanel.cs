@@ -54,7 +54,7 @@ public partial class SignalGeneratorPanel : UserControl
     {
         bool isSine = SelectedSignalType == SignalGeneratorType.Sine;
         numericFrequency.Enabled = isSine;
-        labelFrequency.Enabled = isSine;
+        Ui.UiStyle.SetTextEnabledLook(labelFrequency, isSine);
         labelStatus.Text = player?.PlaybackState == PlaybackState.Playing
             ? "Playing"
             : "Ready";

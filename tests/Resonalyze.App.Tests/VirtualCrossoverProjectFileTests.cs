@@ -24,6 +24,7 @@ public sealed class VirtualCrossoverProjectFileTests
             original.Channels[0] = new VirtualCrossoverChannelSettings
             {
                 Enabled = false,
+                Bypass = true,
                 DisplayName = "Woofer",
                 SourceFilePath = @"C:\measurements\woofer.json",
                 HistoryEntryId = Guid.NewGuid(),
@@ -57,6 +58,7 @@ public sealed class VirtualCrossoverProjectFileTests
             VirtualCrossoverChannelSettings expected = original.Channels[0];
             VirtualCrossoverChannelSettings actual = loaded.Channels[0];
             Assert.Equal(expected.Enabled, actual.Enabled);
+            Assert.Equal(expected.Bypass, actual.Bypass);
             Assert.Equal(expected.DisplayName, actual.DisplayName);
             Assert.Equal(expected.SourceFilePath, actual.SourceFilePath);
             Assert.Equal(expected.HistoryEntryId, actual.HistoryEntryId);

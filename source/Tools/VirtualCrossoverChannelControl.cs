@@ -71,6 +71,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
     internal Label PeqInfoLabel => labelPeqInfo;
     internal CheckBox ShowRawCheckBox => checkBoxShowRaw;
     internal CheckBox ShowProcessedCheckBox => checkBoxShowProcessed;
+    internal CheckBox BypassCheckBox => checkBoxBypass;
 
     public CrossoverKind SelectedCrossoverKind =>
         comboBoxCrossoverKind.SelectedItem is CrossoverKind kind
@@ -267,6 +268,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         WireEdgeEvents(numericLowPassHz, comboBoxLowPassFamily, comboBoxLowPassSlope);
         checkBoxShowRaw.CheckedChanged += (_, _) => RaiseSettingsChanged();
         checkBoxShowProcessed.CheckedChanged += (_, _) => RaiseSettingsChanged();
+        checkBoxBypass.CheckedChanged += (_, _) => RaiseSettingsChanged();
     }
 
     private void WireEdgeEvents(

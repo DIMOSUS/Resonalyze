@@ -4,10 +4,12 @@ namespace Resonalyze;
 
 /// <summary>
 /// The crossover wizard: shows each participating channel with its detected
-/// usable band and driver type, lets the user confirm or override the types,
-/// and previews the resulting proposal (LR24 splits at the level-aligned curve
-/// intersections, cut-only gains) live. Apply hands the proposal back to the
-/// panel; nothing is written until then.
+/// usable band and driver type, lets the user confirm or override the types, and
+/// asks which filter families and crossover-frequency window the optimizer may
+/// use (and whether the two sides of a junction may take different slopes). The
+/// resulting proposal — crossover frequencies, families, slopes and cut-only
+/// gains chosen to flatten the magnitude sum — previews live. Apply hands it back
+/// to the panel; nothing is written until then.
 /// </summary>
 internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
 {
@@ -27,6 +29,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     };
 
     private readonly List<ChannelRow> rows = new();
+    private readonly List<(CheckBox Box, CrossoverFilterFamily Family)> familyBoxes = new();
+    private double sampleRateHz = 48_000;
     private bool initialized;
 
     public VirtualCrossoverAutoSetupDialog()
@@ -35,12 +39,12 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         AcceptButton = buttonApply;
         CancelButton = buttonCancel;
         buttonApply.Click += ApplyClick;
+        WireOptionControls();
         toolTip.SetToolTip(
             labelPreview,
-            "The proposal that Apply writes into the channels:\r\n" +
-            "Linkwitz-Riley 24 dB/oct splits where the level-aligned\r\n" +
-            "responses intersect, and cut-only gains that level the\r\n" +
-            "channels to the quietest one.");
+            "The proposal that Apply writes into the channels: crossover\r\n" +
+            "frequencies, families and slopes chosen to flatten the summed\r\n" +
+            "magnitude response, plus cut-only gains that level the channels.");
     }
 
     /// <summary>The proposal computed on Apply, in the same order as the Init channels.</summary>
@@ -49,11 +53,25 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     /// <summary>
     /// Seeds one row per participating channel: the display name, its accent
     /// color, the smoothed raw magnitude curve, and the auto-detected band/type.
+    /// The sample rate is needed because the optimizer evaluates the exact digital
+    /// biquad cascades the DSP runs.
     /// </summary>
     public void Init(
+        double sampleRateHz,
         IReadOnlyList<(string Name, Color Accent, IReadOnlyList<SignalPoint> MagnitudeDb,
             DriverBandEstimate Band)> channels)
     {
+        this.sampleRateHz = sampleRateHz;
+        // Matches the optimizer's Nyquist ceiling; at 44.1 kHz this keeps the full
+        // 20 kHz reachable instead of clamping to ~19.8 kHz.
+        double ceiling = Math.Min(20_000, sampleRateHz * 0.49);
+        maxCrossover.Maximum = (decimal)Math.Round(ceiling);
+        minCrossover.Maximum = maxCrossover.Maximum;
+        if ((double)maxCrossover.Value > ceiling)
+        {
+            maxCrossover.Value = maxCrossover.Maximum;
+        }
+
         var rowControls = new[]
         {
             (labelName1, labelBand1, comboType1),
@@ -95,17 +113,55 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         UpdatePreview();
     }
 
+    // Maps the designer's filter-family checkboxes to their families and wires the
+    // option controls to refresh the live preview when the user changes them.
+    private void WireOptionControls()
+    {
+        familyBoxes.Add((checkButterworth, CrossoverFilterFamily.Butterworth));
+        familyBoxes.Add((checkLinkwitzRiley, CrossoverFilterFamily.LinkwitzRiley));
+        familyBoxes.Add((checkBessel, CrossoverFilterFamily.Bessel));
+        foreach ((CheckBox box, CrossoverFilterFamily _) in familyBoxes)
+        {
+            box.CheckedChanged += (_, _) => UpdatePreview();
+        }
+
+        minCrossover.ValueChanged += (_, _) => UpdatePreview();
+        maxCrossover.ValueChanged += (_, _) => UpdatePreview();
+        independentSlopes.CheckedChanged += (_, _) => UpdatePreview();
+        toolTip.SetToolTip(
+            independentSlopes,
+            "Let the low-pass and high-pass of a junction take different slopes\r\n" +
+            "(they still share one crossover frequency), to compensate a driver's\r\n" +
+            "own roll-off. Off keeps both sides matched, the textbook crossover.");
+    }
+
     private DriverType TypeOf(ChannelRow row) =>
         row.TypeComboBox.SelectedItem is DriverType type ? type : DriverType.Woofer;
 
+    private IReadOnlyList<CrossoverFilterFamily> SelectedFamilies() =>
+        familyBoxes.Where(item => item.Box.Checked).Select(item => item.Family).ToList();
+
+    private CrossoverAutoSetupOptions CurrentOptions() =>
+        new(
+            SelectedFamilies(),
+            (double)minCrossover.Value,
+            (double)maxCrossover.Value,
+            independentSlopes.Checked,
+            sampleRateHz);
+
     private IReadOnlyList<CrossoverProposal>? TryPropose()
     {
+        if (SelectedFamilies().Count == 0)
+        {
+            return null;
+        }
+
         var sources = rows
             .Select(row => new AutoSetupSource(row.MagnitudeDb, TypeOf(row)))
             .ToList();
         try
         {
-            return CrossoverAutoSetup.Propose(sources);
+            return CrossoverAutoSetup.Propose(sources, CurrentOptions());
         }
         catch (ArgumentException)
         {
@@ -120,6 +176,13 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             return;
         }
 
+        if (SelectedFamilies().Count == 0)
+        {
+            buttonApply.Enabled = false;
+            labelPreview.Text = "Enable at least one filter family.";
+            return;
+        }
+
         IReadOnlyList<CrossoverProposal>? proposals = TryPropose();
         buttonApply.Enabled = proposals != null;
         if (proposals == null)
@@ -128,9 +191,35 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             return;
         }
 
-        labelPreview.Text = string.Join(
-            Environment.NewLine,
-            rows.Select((row, index) => FormatProposal(row, proposals[index])));
+        var lines = rows
+            .Select((row, index) => FormatProposal(row, proposals[index]))
+            .ToList();
+        lines.Add(FormatFlatness(proposals));
+        labelPreview.Text = string.Join(Environment.NewLine, lines);
+    }
+
+    // The predicted flatness of the summed magnitude response over the interior
+    // passband — the quantity the optimizer minimizes, shown so the user can weigh
+    // the option choices.
+    private string FormatFlatness(IReadOnlyList<CrossoverProposal> proposals)
+    {
+        var sources = rows
+            .Select(row => new AutoSetupSource(row.MagnitudeDb, TypeOf(row)))
+            .ToList();
+        DriverBandEstimate low = CrossoverAutoSetup.EstimateBand(
+            sources.OrderBy(source => source.Type).First().MagnitudeDb);
+        DriverBandEstimate high = CrossoverAutoSetup.EstimateBand(
+            sources.OrderBy(source => source.Type).Last().MagnitudeDb);
+        double trim = Math.Pow(2.0, 0.5);
+
+        var window = CrossoverAutoSetup
+            .SummedResponseDb(sources, proposals, sampleRateHz)
+            .Where(point => point.X >= low.LowHz * trim && point.X <= high.HighHz / trim)
+            .Select(point => point.Y)
+            .ToList();
+        double ripple = window.Count > 0 ? window.Max() - window.Min() : 0;
+        return $"Predicted sum: ±{ripple / 2:0.0} dB over " +
+            $"{FormatHz(low.LowHz)}–{FormatHz(high.HighHz)}";
     }
 
     private static string FormatProposal(ChannelRow row, CrossoverProposal proposal)
@@ -138,14 +227,26 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         var parts = new List<string>();
         if (proposal.HighPassEdge is { } highPass)
         {
-            parts.Add($"HP {FormatHz(highPass.FrequencyHz)} LR{highPass.SlopeDbPerOctave}");
+            parts.Add($"HP {FormatHz(highPass.FrequencyHz)} {FormatFamily(highPass)}");
         }
         if (proposal.LowPassEdge is { } lowPass)
         {
-            parts.Add($"LP {FormatHz(lowPass.FrequencyHz)} LR{lowPass.SlopeDbPerOctave}");
+            parts.Add($"LP {FormatHz(lowPass.FrequencyHz)} {FormatFamily(lowPass)}");
         }
         parts.Add($"gain {proposal.GainDb:0.0} dB");
         return $"{row.Name}:  {string.Join(",  ", parts)}";
+    }
+
+    // A compact family + slope tag, e.g. "LR24", "BW18", "BE24".
+    private static string FormatFamily(CrossoverEdge edge)
+    {
+        string family = edge.Family switch
+        {
+            CrossoverFilterFamily.LinkwitzRiley => "LR",
+            CrossoverFilterFamily.Butterworth => "BW",
+            _ => "BE"
+        };
+        return $"{family}{edge.SlopeDbPerOctave}";
     }
 
     private void ApplyClick(object? sender, EventArgs e)

@@ -55,6 +55,7 @@ namespace Resonalyze
             labelCurves = new Label();
             checkBoxShowRaw = new CheckBox();
             checkBoxShowProcessed = new CheckBox();
+            checkBoxBypass = new CheckBox();
             buttonMute = new Button();
             (numericGain).BeginInit();
             (numericDelay).BeginInit();
@@ -371,9 +372,21 @@ namespace Resonalyze
             checkBoxShowProcessed.TabIndex = 24;
             checkBoxShowProcessed.Text = "Processed";
             checkBoxShowProcessed.UseVisualStyleBackColor = true;
-            // 
+            //
+            // checkBoxBypass
+            //
+            checkBoxBypass.AutoSize = true;
+            checkBoxBypass.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            checkBoxBypass.ForeColor = Color.FromArgb(210, 214, 222);
+            checkBoxBypass.Location = new Point(228, 198);
+            checkBoxBypass.Name = "checkBoxBypass";
+            checkBoxBypass.Size = new Size(66, 19);
+            checkBoxBypass.TabIndex = 25;
+            checkBoxBypass.Text = "Bypass";
+            checkBoxBypass.UseVisualStyleBackColor = true;
+            //
             // buttonMute
-            // 
+            //
             buttonMute.BackColor = Color.FromArgb(46, 51, 67);
             buttonMute.FlatStyle = FlatStyle.Popup;
             buttonMute.Font = new Font("Segoe UI Emoji", 12F, FontStyle.Regular, GraphicsUnit.Point, 0);
@@ -419,6 +432,7 @@ namespace Resonalyze
             Controls.Add(labelCurves);
             Controls.Add(checkBoxShowRaw);
             Controls.Add(checkBoxShowProcessed);
+            Controls.Add(checkBoxBypass);
             Font = new Font("Segoe UI", 9F);
             ForeColor = Color.White;
             MaximumSize = new Size(334, 226);
@@ -461,6 +475,7 @@ namespace Resonalyze
         private Label labelCurves;
         private CheckBox checkBoxShowRaw;
         private CheckBox checkBoxShowProcessed;
+        private CheckBox checkBoxBypass;
         private Button buttonMute;
     }
 }

@@ -14,6 +14,13 @@ public sealed class VirtualCrossoverChannelSettings
 {
     public bool Enabled { get; set; } = true;
 
+    /// <summary>
+    /// When set (and the channel is enabled), the channel contributes its raw
+    /// measured signal with the whole DSP chain bypassed — no gain, delay,
+    /// polarity, crossover or PEQ — for an A/B against the processed result.
+    /// </summary>
+    public bool Bypass { get; set; }
+
     public string DisplayName { get; set; } = string.Empty;
     public string? SourceFilePath { get; set; }
     public Guid? HistoryEntryId { get; set; }

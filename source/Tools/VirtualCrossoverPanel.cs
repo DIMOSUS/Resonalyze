@@ -68,6 +68,13 @@ public partial class VirtualCrossoverPanel : UserControl
     private PlotLabelsPanelController plotLabels = null!;
     private bool initialized;
     private bool suppressProjectEvents;
+
+    // Single-flight coalescing for the interactive redraw. While a redraw's heavy
+    // work (the ApplyChain FFTs) runs on a background task the UI stays live; a
+    // change that arrives mid-flight only flags a rerun, so exactly one redraw is
+    // in flight at a time and it always ends on the latest settings.
+    private Task? redrawTask;
+    private bool redrawPending;
     private bool savePending;
 
     public VirtualCrossoverPanel()
@@ -319,6 +326,7 @@ public partial class VirtualCrossoverPanel : UserControl
             control.LowPassSlopeComboBox.SelectedItem = settings.LowPassEdge.SlopeDbPerOctave;
             control.ShowRawCheckBox.Checked = settings.ShowRawCurve;
             control.ShowProcessedCheckBox.Checked = settings.ShowProcessedCurve;
+            control.BypassCheckBox.Checked = settings.Bypass;
             control.Muted = !settings.Enabled;
         });
 
@@ -339,6 +347,7 @@ public partial class VirtualCrossoverPanel : UserControl
         settings.ShowRawCurve = control.ShowRawCheckBox.Checked;
         settings.ShowProcessedCurve = control.ShowProcessedCheckBox.Checked;
         settings.Enabled = !control.Muted;
+        settings.Bypass = control.BypassCheckBox.Checked;
     }
 
     private static decimal Clamp(DarkNumericUpDown control, double value)
@@ -882,6 +891,11 @@ public partial class VirtualCrossoverPanel : UserControl
                 "the metric, Auto delay and both plots — a quick\r\n" +
                 "\"what changes without this driver\" check.");
             toolTip.SetToolTip(
+                channel.Control.BypassCheckBox,
+                "Bypass the DSP chain: feed the raw measured signal with\r\n" +
+                "no gain, delay, polarity, crossover or PEQ — the driver's\r\n" +
+                "natural band-pass, for an A/B against the processed result.");
+            toolTip.SetToolTip(
                 channel.Control.MeasuredPolarityLabel,
                 "Acoustic polarity read from the measured IR\r\n" +
                 "(the sign of its first significant excursion).\r\n" +
@@ -905,8 +919,51 @@ public partial class VirtualCrossoverPanel : UserControl
         frequencyResponseOptions.SmoothingInverseOctaves =
             comboBoxSmoothing.SelectedItem is int smoothing ? smoothing : 12;
 
-        RedrawMainPlot();
-        RedrawDspPlot();
+        RequestRedraw();
+    }
+
+    // Starts the redraw loop, or — if one is already running — marks its current
+    // pass stale so it repeats once more with the latest settings. Called only on
+    // the UI thread, so the flag and the task handle need no synchronization.
+    private void RequestRedraw()
+    {
+        if (redrawTask is { IsCompleted: false })
+        {
+            redrawPending = true;
+            return;
+        }
+
+        redrawTask = RunRedrawLoopAsync();
+    }
+
+    // The redraw loop. Only the ApplyChain FFTs inside ProcessChannelsAsync leave
+    // the UI thread; the loop bookkeeping, the cache and the OxyPlot updates all
+    // run here on the UI thread. It repeats while changes kept arriving during the
+    // last pass, collapsing a burst of edits into a single trailing redraw.
+    private async Task RunRedrawLoopAsync()
+    {
+        do
+        {
+            redrawPending = false;
+            try
+            {
+                await RedrawMainPlotAsync();
+                if (!mainPlotView.IsDisposed)
+                {
+                    RedrawDspPlot();
+                }
+            }
+            catch (Exception exception)
+            {
+                // A redraw is best-effort: keep the last good frame and let the
+                // next change try again rather than tearing down the tool.
+                System.Diagnostics.Debug.WriteLine(
+                    $"Virtual DSP redraw failed: {exception}");
+            }
+        }
+        while (redrawPending && !mainPlotView.IsDisposed);
+
+        redrawTask = null;
     }
 
     private sealed record ProcessedChannel(
@@ -998,19 +1055,29 @@ public partial class VirtualCrossoverPanel : UserControl
             DspChannelChain chain;
             using (AppProfiler.Zone("VirtualDSP.ProcessChannels.BuildChain"))
             {
-                chain = channel.Settings.ToChain();
-                if (alignmentOverrides != null)
+                if (channel.Settings.Bypass)
                 {
-                    AlignmentOverride alignment = alignmentOverrides.TryGetValue(
-                        channel,
-                        out AlignmentOverride value)
-                        ? value
-                        : new AlignmentOverride(0, false);
-                    chain = chain with
+                    // Bypass feeds the raw measured signal: the identity chain (no
+                    // gain, delay, polarity, crossover or PEQ), so even Auto delay's
+                    // alignment overrides do not move it.
+                    chain = DspChannelChain.Identity;
+                }
+                else
+                {
+                    chain = channel.Settings.ToChain();
+                    if (alignmentOverrides != null)
                     {
-                        DelayMs = alignment.DelayMs,
-                        InvertPolarity = alignment.InvertPolarity
-                    };
+                        AlignmentOverride alignment = alignmentOverrides.TryGetValue(
+                            channel,
+                            out AlignmentOverride value)
+                            ? value
+                            : new AlignmentOverride(0, false);
+                        chain = chain with
+                        {
+                            DelayMs = alignment.DelayMs,
+                            InvertPolarity = alignment.InvertPolarity
+                        };
+                    }
                 }
             }
 
@@ -1066,7 +1133,79 @@ public partial class VirtualCrossoverPanel : UserControl
         return processed;
     }
 
-    private void RedrawMainPlot()
+    // One channel whose processed IR the cache does not already hold, snapshotted
+    // so the background task reads nothing but the immutable transfer IR and the
+    // value-typed chain.
+    private sealed record PendingChannel(
+        int Index,
+        ChannelRuntime Channel,
+        Complex[] TransferIr,
+        int SampleRate,
+        DspChannelChain Chain,
+        ProcessedChannelCacheKey Key,
+        OxyColor Color);
+
+    // The interactive-redraw variant of ProcessChannels: the cache is read and
+    // written here on the UI thread, and only the FFT-heavy ApplyChain runs on a
+    // background task. Results come back in channel order. There is no
+    // alignment-override path — Auto delay keeps using the synchronous
+    // ProcessChannels.
+    private async Task<List<ProcessedChannel>> ProcessChannelsAsync()
+    {
+        using var _ = AppProfiler.Zone("VirtualDSP.ProcessChannelsAsync");
+        var results = new ProcessedChannel?[channels.Count];
+        var jobs = new List<PendingChannel>();
+        for (int i = 0; i < channels.Count; i++)
+        {
+            ChannelRuntime channel = channels[i];
+            if (!channel.Settings.Enabled ||
+                channel.TransferImpulseResponse is not { } ir)
+            {
+                continue;
+            }
+
+            DspChannelChain chain = channel.Settings.Bypass
+                ? DspChannelChain.Identity
+                : channel.Settings.ToChain();
+            var key = new ProcessedChannelCacheKey(ir, channel.SampleRate, chain);
+            if (channel.ProcessedCache?.Key.Equals(key) == true)
+            {
+                results[i] = new ProcessedChannel(
+                    channel,
+                    channel.ProcessedCache.ImpulseResponse,
+                    channel.ProcessedCache.PeakIndex,
+                    ChannelColors[i]);
+                continue;
+            }
+
+            jobs.Add(new PendingChannel(
+                i, channel, ir, channel.SampleRate, chain, key, ChannelColors[i]));
+        }
+
+        if (jobs.Count > 0)
+        {
+            List<(PendingChannel Job, Complex[] Result, int Peak)> computed =
+                await Task.Run(() => jobs
+                    .Select(job =>
+                    {
+                        Complex[] result = VirtualCrossoverAnalysis.ApplyChain(
+                            job.TransferIr, job.Chain, job.SampleRate);
+                        int peak = VirtualCrossoverAnalysis.FindPeakIndex(result);
+                        return (job, result, peak);
+                    })
+                    .ToList());
+
+            foreach ((PendingChannel job, Complex[] result, int peak) in computed)
+            {
+                job.Channel.ProcessedCache = new ProcessedChannelCache(job.Key, result, peak);
+                results[job.Index] = new ProcessedChannel(job.Channel, result, peak, job.Color);
+            }
+        }
+
+        return results.Where(item => item != null).Select(item => item!).ToList();
+    }
+
+    private async Task RedrawMainPlotAsync()
     {
         using var _ = AppProfiler.Zone("VirtualDSP.RedrawMainPlot");
         PlotModel? model = mainPlotView.Model;
@@ -1075,8 +1214,16 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
+        // The heavy ApplyChain FFTs run off the UI thread; the existing curves stay
+        // on screen until the new data is ready, so there is no clear-then-fill
+        // flicker during the compute.
+        List<ProcessedChannel> processed = await ProcessChannelsAsync();
+        if (mainPlotView.IsDisposed)
+        {
+            return;
+        }
+
         RemoveCurveSeries(model);
-        List<ProcessedChannel> processed = ProcessChannels();
         hintAnnotation.Text = processed.Count == 0 ? NoSourcesHint : string.Empty;
 
         // The processed magnitudes and the complex sum feed both the drawn
@@ -1853,7 +2000,7 @@ public partial class VirtualCrossoverPanel : UserControl
         dialog.PreviewChanged = (offsetMs, leftMs, plateauMs, rightMs, detrendMs) =>
         {
             gatePreview = (offsetMs, leftMs, plateauMs, rightMs, detrendMs);
-            RedrawMainPlot();
+            RequestRedraw();
         };
 
         try
@@ -1873,7 +2020,7 @@ public partial class VirtualCrossoverPanel : UserControl
             // Save committed the candidate values, Cancel discards them; either
             // way the plot re-renders from the project state.
             gatePreview = null;
-            RedrawMainPlot();
+            RequestRedraw();
         }
     }
 
@@ -1899,8 +2046,11 @@ public partial class VirtualCrossoverPanel : UserControl
 
             // The chain is drawn without its delay term: the filters' phase shape
             // is the readable part, while a delay would wrap the trace into an
-            // unreadable sawtooth (its effect is visible on the acoustic plot).
-            DspChannelChain chain = channel.Settings.ToChain() with { DelayMs = 0 };
+            // unreadable sawtooth (its effect is visible on the acoustic plot). A
+            // bypassed channel draws its flat identity chain.
+            DspChannelChain chain = channel.Settings.Bypass
+                ? DspChannelChain.Identity
+                : channel.Settings.ToChain() with { DelayMs = 0 };
             PreparedDspResponse preparedResponse = PreparedDspResponse.Create(
                 chain,
                 channel.SampleRate);
@@ -2068,7 +2218,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         using var dialog = new VirtualCrossoverAutoSetupDialog();
-        dialog.Init(dialogChannels);
+        dialog.Init(participating[0].SampleRate, dialogChannels);
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
             dialog.Result is not { } proposals)
         {

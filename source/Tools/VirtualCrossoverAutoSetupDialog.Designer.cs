@@ -40,6 +40,16 @@ namespace Resonalyze
             labelName3 = new Label();
             labelBand3 = new Label();
             comboType3 = new DarkComboBox();
+            labelFilters = new Label();
+            checkButterworth = new CheckBox();
+            checkLinkwitzRiley = new CheckBox();
+            checkBessel = new CheckBox();
+            labelRange = new Label();
+            minCrossover = new DarkNumericUpDown();
+            labelDash = new Label();
+            maxCrossover = new DarkNumericUpDown();
+            labelHz = new Label();
+            independentSlopes = new CheckBox();
             labelPreview = new Label();
             buttonApply = new Button();
             buttonCancel = new Button();
@@ -146,13 +156,125 @@ namespace Resonalyze
             comboType3.Size = new Size(110, 19);
             comboType3.TabIndex = 9;
             //
+            // labelFilters
+            //
+            labelFilters.AutoSize = true;
+            labelFilters.ForeColor = Color.FromArgb(185, 190, 200);
+            labelFilters.Location = new Point(12, 128);
+            labelFilters.Name = "labelFilters";
+            labelFilters.Size = new Size(42, 15);
+            labelFilters.TabIndex = 10;
+            labelFilters.Text = "Filters:";
+            //
+            // checkButterworth
+            //
+            checkButterworth.AutoSize = true;
+            checkButterworth.Checked = true;
+            checkButterworth.CheckState = CheckState.Checked;
+            checkButterworth.ForeColor = Color.White;
+            checkButterworth.Location = new Point(66, 126);
+            checkButterworth.Name = "checkButterworth";
+            checkButterworth.Size = new Size(88, 19);
+            checkButterworth.TabIndex = 11;
+            checkButterworth.Text = "Butterworth";
+            //
+            // checkLinkwitzRiley
+            //
+            checkLinkwitzRiley.AutoSize = true;
+            checkLinkwitzRiley.Checked = true;
+            checkLinkwitzRiley.CheckState = CheckState.Checked;
+            checkLinkwitzRiley.ForeColor = Color.White;
+            checkLinkwitzRiley.Location = new Point(168, 126);
+            checkLinkwitzRiley.Name = "checkLinkwitzRiley";
+            checkLinkwitzRiley.Size = new Size(104, 19);
+            checkLinkwitzRiley.TabIndex = 12;
+            checkLinkwitzRiley.Text = "Linkwitz-Riley";
+            //
+            // checkBessel
+            //
+            checkBessel.AutoSize = true;
+            checkBessel.Checked = true;
+            checkBessel.CheckState = CheckState.Checked;
+            checkBessel.ForeColor = Color.White;
+            checkBessel.Location = new Point(288, 126);
+            checkBessel.Name = "checkBessel";
+            checkBessel.Size = new Size(58, 19);
+            checkBessel.TabIndex = 13;
+            checkBessel.Text = "Bessel";
+            //
+            // labelRange
+            //
+            labelRange.AutoSize = true;
+            labelRange.ForeColor = Color.FromArgb(185, 190, 200);
+            labelRange.Location = new Point(12, 158);
+            labelRange.Name = "labelRange";
+            labelRange.Size = new Size(96, 15);
+            labelRange.TabIndex = 14;
+            labelRange.Text = "Crossover range:";
+            //
+            // minCrossover
+            //
+            minCrossover.Location = new Point(120, 154);
+            minCrossover.Minimum = 20m;
+            minCrossover.Maximum = 20000m;
+            minCrossover.Increment = 10m;
+            minCrossover.DecimalPlaces = 0;
+            minCrossover.MinimumSize = new Size(36, 19);
+            minCrossover.Name = "minCrossover";
+            minCrossover.Size = new Size(72, 21);
+            minCrossover.TabIndex = 15;
+            minCrossover.Value = 20m;
+            //
+            // labelDash
+            //
+            labelDash.AutoSize = true;
+            labelDash.ForeColor = Color.FromArgb(185, 190, 200);
+            labelDash.Location = new Point(200, 158);
+            labelDash.Name = "labelDash";
+            labelDash.Size = new Size(12, 15);
+            labelDash.TabIndex = 16;
+            labelDash.Text = "–";
+            //
+            // maxCrossover
+            //
+            maxCrossover.Location = new Point(232, 154);
+            maxCrossover.Minimum = 20m;
+            maxCrossover.Maximum = 20000m;
+            maxCrossover.Increment = 100m;
+            maxCrossover.DecimalPlaces = 0;
+            maxCrossover.MinimumSize = new Size(36, 19);
+            maxCrossover.Name = "maxCrossover";
+            maxCrossover.Size = new Size(72, 21);
+            maxCrossover.TabIndex = 17;
+            maxCrossover.Value = 20000m;
+            //
+            // labelHz
+            //
+            labelHz.AutoSize = true;
+            labelHz.ForeColor = Color.FromArgb(185, 190, 200);
+            labelHz.Location = new Point(312, 158);
+            labelHz.Name = "labelHz";
+            labelHz.Size = new Size(20, 15);
+            labelHz.TabIndex = 18;
+            labelHz.Text = "Hz";
+            //
+            // independentSlopes
+            //
+            independentSlopes.AutoSize = true;
+            independentSlopes.ForeColor = Color.White;
+            independentSlopes.Location = new Point(12, 184);
+            independentSlopes.Name = "independentSlopes";
+            independentSlopes.Size = new Size(172, 19);
+            independentSlopes.TabIndex = 19;
+            independentSlopes.Text = "Independent slopes per side";
+            //
             // labelPreview
             //
             labelPreview.ForeColor = Color.FromArgb(230, 184, 0);
-            labelPreview.Location = new Point(12, 130);
+            labelPreview.Location = new Point(12, 214);
             labelPreview.Name = "labelPreview";
-            labelPreview.Size = new Size(444, 60);
-            labelPreview.TabIndex = 10;
+            labelPreview.Size = new Size(444, 62);
+            labelPreview.TabIndex = 20;
             labelPreview.Text = "—";
             //
             // buttonApply
@@ -162,10 +284,10 @@ namespace Resonalyze
             buttonApply.DialogResult = DialogResult.OK;
             buttonApply.FlatStyle = FlatStyle.Popup;
             buttonApply.ForeColor = Color.White;
-            buttonApply.Location = new Point(282, 200);
+            buttonApply.Location = new Point(282, 284);
             buttonApply.Name = "buttonApply";
             buttonApply.Size = new Size(84, 26);
-            buttonApply.TabIndex = 11;
+            buttonApply.TabIndex = 21;
             buttonApply.Text = "Apply";
             buttonApply.UseVisualStyleBackColor = false;
             //
@@ -175,10 +297,10 @@ namespace Resonalyze
             buttonCancel.DialogResult = DialogResult.Cancel;
             buttonCancel.FlatStyle = FlatStyle.Popup;
             buttonCancel.ForeColor = Color.White;
-            buttonCancel.Location = new Point(372, 200);
+            buttonCancel.Location = new Point(372, 284);
             buttonCancel.Name = "buttonCancel";
             buttonCancel.Size = new Size(84, 26);
-            buttonCancel.TabIndex = 12;
+            buttonCancel.TabIndex = 22;
             buttonCancel.Text = "Cancel";
             buttonCancel.UseVisualStyleBackColor = true;
             //
@@ -187,7 +309,7 @@ namespace Resonalyze
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(40, 44, 54);
-            ClientSize = new Size(468, 238);
+            ClientSize = new Size(468, 322);
             Controls.Add(labelHeader);
             Controls.Add(labelName1);
             Controls.Add(labelBand1);
@@ -198,6 +320,16 @@ namespace Resonalyze
             Controls.Add(labelName3);
             Controls.Add(labelBand3);
             Controls.Add(comboType3);
+            Controls.Add(labelFilters);
+            Controls.Add(checkButterworth);
+            Controls.Add(checkLinkwitzRiley);
+            Controls.Add(checkBessel);
+            Controls.Add(labelRange);
+            Controls.Add(minCrossover);
+            Controls.Add(labelDash);
+            Controls.Add(maxCrossover);
+            Controls.Add(labelHz);
+            Controls.Add(independentSlopes);
             Controls.Add(labelPreview);
             Controls.Add(buttonApply);
             Controls.Add(buttonCancel);
@@ -226,6 +358,16 @@ namespace Resonalyze
         private Label labelName3;
         private Label labelBand3;
         private DarkComboBox comboType3;
+        private Label labelFilters;
+        private CheckBox checkButterworth;
+        private CheckBox checkLinkwitzRiley;
+        private CheckBox checkBessel;
+        private Label labelRange;
+        private DarkNumericUpDown minCrossover;
+        private Label labelDash;
+        private DarkNumericUpDown maxCrossover;
+        private Label labelHz;
+        private CheckBox independentSlopes;
         private Label labelPreview;
         private Button buttonApply;
         private Button buttonCancel;

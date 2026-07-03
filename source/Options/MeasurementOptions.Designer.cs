@@ -47,12 +47,16 @@ namespace Resonalyze.Options
             numericUpDownOctaves = new DarkNumericUpDown();
             labelAudioBackend = new Label();
             comboBoxAudioBackend = new DarkComboBox();
+            labelAverageRunCount = new Label();
+            numericUpDownAverageRunCount = new DarkNumericUpDown();
+            checkBoxConfirmEachAverageRun = new CheckBox();
             waveAudioBackendPanel = new WaveAudioBackendPanel();
             asioAudioBackendPanel = new AsioAudioBackendPanel();
             (numericUpDownRequestedDuration).BeginInit();
             (numericUpDownComputeDuration).BeginInit();
             (numericUpDownBits).BeginInit();
             (numericUpDownOctaves).BeginInit();
+            (numericUpDownAverageRunCount).BeginInit();
             SuspendLayout();
             //
             // label1
@@ -159,7 +163,7 @@ namespace Resonalyze.Options
             button1.DialogResult = DialogResult.OK;
             button1.FlatStyle = FlatStyle.Popup;
             button1.ForeColor = Color.White;
-            button1.Location = new Point(11, 437);
+            button1.Location = new Point(11, 491);
             button1.Name = "button1";
             button1.Size = new Size(311, 23);
             button1.TabIndex = 12;
@@ -230,7 +234,7 @@ namespace Resonalyze.Options
             //
             labelAudioBackend.AutoSize = true;
             labelAudioBackend.ForeColor = SystemColors.ControlLight;
-            labelAudioBackend.Location = new Point(12, 186);
+            labelAudioBackend.Location = new Point(12, 224);
             labelAudioBackend.Name = "labelAudioBackend";
             labelAudioBackend.Size = new Size(87, 15);
             labelAudioBackend.TabIndex = 23;
@@ -240,7 +244,7 @@ namespace Resonalyze.Options
             //
             comboBoxAudioBackend.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxAudioBackend.ForeColor = Color.White;
-            comboBoxAudioBackend.Location = new Point(153, 178);
+            comboBoxAudioBackend.Location = new Point(153, 216);
             comboBoxAudioBackend.Margin = new Padding(0);
             comboBoxAudioBackend.MinimumSize = new Size(36, 19);
             comboBoxAudioBackend.Name = "comboBoxAudioBackend";
@@ -248,16 +252,54 @@ namespace Resonalyze.Options
             comboBoxAudioBackend.TabIndex = 24;
             comboBoxAudioBackend.SelectedIndexChanged += comboBoxAudioBackend_SelectedIndexChanged;
             //
+            // labelAverageRunCount
+            //
+            labelAverageRunCount.AutoSize = true;
+            labelAverageRunCount.ForeColor = SystemColors.ControlLight;
+            labelAverageRunCount.Location = new Point(12, 174);
+            labelAverageRunCount.Name = "labelAverageRunCount";
+            labelAverageRunCount.Size = new Size(84, 15);
+            labelAverageRunCount.TabIndex = 27;
+            labelAverageRunCount.Text = "Measurements";
+            //
+            // numericUpDownAverageRunCount
+            //
+            numericUpDownAverageRunCount.BackColor = Color.FromArgb(55, 60, 72);
+            numericUpDownAverageRunCount.DecimalPlaces = 0;
+            numericUpDownAverageRunCount.ForeColor = Color.White;
+            numericUpDownAverageRunCount.Increment = new decimal(new int[] { 1, 0, 0, 0 });
+            numericUpDownAverageRunCount.Location = new Point(153, 170);
+            numericUpDownAverageRunCount.Maximum = new decimal(new int[] { 64, 0, 0, 0 });
+            numericUpDownAverageRunCount.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
+            numericUpDownAverageRunCount.MinimumSize = new Size(36, 19);
+            numericUpDownAverageRunCount.Name = "numericUpDownAverageRunCount";
+            numericUpDownAverageRunCount.Size = new Size(170, 19);
+            numericUpDownAverageRunCount.TabIndex = 28;
+            numericUpDownAverageRunCount.TextAlign = HorizontalAlignment.Right;
+            numericUpDownAverageRunCount.ThousandsSeparator = false;
+            numericUpDownAverageRunCount.Value = new decimal(new int[] { 1, 0, 0, 0 });
+            //
+            // checkBoxConfirmEachAverageRun
+            //
+            checkBoxConfirmEachAverageRun.AutoSize = true;
+            checkBoxConfirmEachAverageRun.ForeColor = SystemColors.ControlLight;
+            checkBoxConfirmEachAverageRun.Location = new Point(153, 194);
+            checkBoxConfirmEachAverageRun.Name = "checkBoxConfirmEachAverageRun";
+            checkBoxConfirmEachAverageRun.Size = new Size(119, 19);
+            checkBoxConfirmEachAverageRun.TabIndex = 29;
+            checkBoxConfirmEachAverageRun.Text = "Confirm each run";
+            checkBoxConfirmEachAverageRun.UseVisualStyleBackColor = true;
+            //
             // waveAudioBackendPanel
             //
-            waveAudioBackendPanel.Location = new Point(12, 216);
+            waveAudioBackendPanel.Location = new Point(12, 254);
             waveAudioBackendPanel.Name = "waveAudioBackendPanel";
             waveAudioBackendPanel.Size = new Size(311, 206);
             waveAudioBackendPanel.TabIndex = 25;
             //
             // asioAudioBackendPanel
             //
-            asioAudioBackendPanel.Location = new Point(12, 216);
+            asioAudioBackendPanel.Location = new Point(12, 254);
             asioAudioBackendPanel.Name = "asioAudioBackendPanel";
             asioAudioBackendPanel.Size = new Size(311, 213);
             asioAudioBackendPanel.TabIndex = 26;
@@ -267,9 +309,12 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(334, 470);
+            ClientSize = new Size(334, 524);
             Controls.Add(asioAudioBackendPanel);
             Controls.Add(waveAudioBackendPanel);
+            Controls.Add(checkBoxConfirmEachAverageRun);
+            Controls.Add(numericUpDownAverageRunCount);
+            Controls.Add(labelAverageRunCount);
             Controls.Add(comboBoxAudioBackend);
             Controls.Add(labelAudioBackend);
             Controls.Add(numericUpDownOctaves);
@@ -295,6 +340,7 @@ namespace Resonalyze.Options
             (numericUpDownComputeDuration).EndInit();
             (numericUpDownBits).EndInit();
             (numericUpDownOctaves).EndInit();
+            (numericUpDownAverageRunCount).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -315,6 +361,9 @@ namespace Resonalyze.Options
         private DarkNumericUpDown numericUpDownOctaves;
         private Label labelAudioBackend;
         private DarkComboBox comboBoxAudioBackend;
+        private Label labelAverageRunCount;
+        private DarkNumericUpDown numericUpDownAverageRunCount;
+        private CheckBox checkBoxConfirmEachAverageRun;
         private WaveAudioBackendPanel waveAudioBackendPanel;
         private AsioAudioBackendPanel asioAudioBackendPanel;
     }

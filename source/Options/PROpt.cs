@@ -53,6 +53,7 @@ namespace Resonalyze.Options
             checkBoxShowMeasured.Checked = opt.ShowMeasuredPhase;
             checkBoxShowMinimum.Checked = opt.ShowMinimumPhase;
             checkBoxShowExcess.Checked = opt.ShowExcessPhase;
+            checkBoxShowCoherence.Checked = opt.ShowCoherence;
             UpdateMinFrequencyLabel();
             UpdateIrPreview();
         }
@@ -72,6 +73,7 @@ namespace Resonalyze.Options
             opt.ShowMeasuredPhase = checkBoxShowMeasured.Checked;
             opt.ShowMinimumPhase = checkBoxShowMinimum.Checked;
             opt.ShowExcessPhase = checkBoxShowExcess.Checked;
+            opt.ShowCoherence = checkBoxShowCoherence.Checked;
             UpdateIrPreview();
         }
 
@@ -254,6 +256,9 @@ namespace Resonalyze.Options
             toolTip.SetToolTip(
                 checkBoxShowExcess,
                 "Shows the excess phase (green): measured minus minimum — the part EQ cannot fix.");
+            toolTip.SetToolTip(
+                checkBoxShowCoherence,
+                "Shows the measurement coherence (\u03B3\u00B2) curve when the IR was captured with 2+ averaged runs.");
             toolTip.SetToolTip(
                 labelMinFrequency,
                 "Lowest frequency the current gate can resolve (≈ 1 / gate length). Below it the curve is not reliable.");

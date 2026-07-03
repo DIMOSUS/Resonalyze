@@ -135,7 +135,10 @@ public partial class Form1
                     file.SweepDeconvolutionPeakIndex,
                     file.MeasurementMode,
                     file.GetTransferImpulseResponse(),
-                    file.TransferPeakIndex);
+                    file.TransferPeakIndex,
+                    file.TransferCoherence,
+                    file.AverageRunCount,
+                    file.AcceptedAverageRunCount);
                 expSweepMeasurement.RestoreLevelSnapshot(file.GetMeterSnapshot());
                 ApplyLoadedImpulseResponseState(dialog.FileName);
                 currentHistoryEntryId = measurementHistoryService.AddOrUpdateLoadedFile(

@@ -40,6 +40,7 @@ namespace Resonalyze.Options
             label2 = new Label();
             labelCurves = new Label();
             checkBoxShowPrimary = new CheckBox();
+            checkBoxShowCoherence = new CheckBox();
             checkBoxShowHd2 = new CheckBox();
             checkBoxShowHd3 = new CheckBox();
             checkBoxShowHd4 = new CheckBox();
@@ -172,30 +173,41 @@ namespace Resonalyze.Options
             label2.Size = new Size(87, 15);
             label2.TabIndex = 46;
             label2.Text = "Use Calibration";
-            //
+            // 
             // labelCurves
-            //
+            // 
             labelCurves.AutoSize = true;
             labelCurves.ForeColor = Color.FromArgb(150, 170, 205);
             labelCurves.Location = new Point(12, 136);
             labelCurves.Name = "labelCurves";
-            labelCurves.Size = new Size(48, 15);
+            labelCurves.Size = new Size(46, 15);
             labelCurves.TabIndex = 53;
             labelCurves.Text = "Curves:";
-            //
+            // 
             // checkBoxShowPrimary
-            //
+            // 
             checkBoxShowPrimary.AutoSize = true;
             checkBoxShowPrimary.ForeColor = SystemColors.ControlLight;
             checkBoxShowPrimary.Location = new Point(12, 158);
             checkBoxShowPrimary.Name = "checkBoxShowPrimary";
-            checkBoxShowPrimary.Size = new Size(149, 19);
+            checkBoxShowPrimary.Size = new Size(161, 19);
             checkBoxShowPrimary.TabIndex = 48;
             checkBoxShowPrimary.Text = "Show frequency response";
             checkBoxShowPrimary.UseVisualStyleBackColor = true;
-            //
+            // 
+            // checkBoxShowCoherence
+            // 
+            checkBoxShowCoherence.AutoSize = true;
+            checkBoxShowCoherence.ForeColor = SystemColors.ControlLight;
+            checkBoxShowCoherence.Location = new Point(12, 268);
+            checkBoxShowCoherence.Name = "checkBoxShowCoherence";
+            checkBoxShowCoherence.Size = new Size(134, 19);
+            checkBoxShowCoherence.TabIndex = 54;
+            checkBoxShowCoherence.Text = "Show γ² (coherence)";
+            checkBoxShowCoherence.UseVisualStyleBackColor = true;
+            // 
             // checkBoxShowHd2
-            //
+            // 
             checkBoxShowHd2.AutoSize = true;
             checkBoxShowHd2.ForeColor = SystemColors.ControlLight;
             checkBoxShowHd2.Location = new Point(12, 180);
@@ -204,9 +216,9 @@ namespace Resonalyze.Options
             checkBoxShowHd2.TabIndex = 49;
             checkBoxShowHd2.Text = "Show HD2";
             checkBoxShowHd2.UseVisualStyleBackColor = true;
-            //
+            // 
             // checkBoxShowHd3
-            //
+            // 
             checkBoxShowHd3.AutoSize = true;
             checkBoxShowHd3.ForeColor = SystemColors.ControlLight;
             checkBoxShowHd3.Location = new Point(12, 202);
@@ -215,9 +227,9 @@ namespace Resonalyze.Options
             checkBoxShowHd3.TabIndex = 50;
             checkBoxShowHd3.Text = "Show HD3";
             checkBoxShowHd3.UseVisualStyleBackColor = true;
-            //
+            // 
             // checkBoxShowHd4
-            //
+            // 
             checkBoxShowHd4.AutoSize = true;
             checkBoxShowHd4.ForeColor = SystemColors.ControlLight;
             checkBoxShowHd4.Location = new Point(12, 224);
@@ -226,22 +238,22 @@ namespace Resonalyze.Options
             checkBoxShowHd4.TabIndex = 51;
             checkBoxShowHd4.Text = "Show HD4";
             checkBoxShowHd4.UseVisualStyleBackColor = true;
-            //
+            // 
             // checkBoxShowThdPlusNoise
-            //
+            // 
             checkBoxShowThdPlusNoise.AutoSize = true;
             checkBoxShowThdPlusNoise.ForeColor = SystemColors.ControlLight;
             checkBoxShowThdPlusNoise.Location = new Point(12, 246);
             checkBoxShowThdPlusNoise.Name = "checkBoxShowThdPlusNoise";
-            checkBoxShowThdPlusNoise.Size = new Size(110, 19);
+            checkBoxShowThdPlusNoise.Size = new Size(99, 19);
             checkBoxShowThdPlusNoise.TabIndex = 52;
             checkBoxShowThdPlusNoise.Text = "Show THD+N";
             checkBoxShowThdPlusNoise.UseVisualStyleBackColor = true;
-            //
+            // 
             // irPlotView
-            //
+            // 
             irPlotView.BackColor = Color.FromArgb(32, 36, 46);
-            irPlotView.Location = new Point(12, 272);
+            irPlotView.Location = new Point(12, 294);
             irPlotView.Name = "irPlotView";
             irPlotView.PanCursor = Cursors.Hand;
             irPlotView.Size = new Size(241, 300);
@@ -256,12 +268,13 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 579);
+            ClientSize = new Size(265, 601);
             Controls.Add(irPlotView);
             Controls.Add(checkBoxShowThdPlusNoise);
             Controls.Add(checkBoxShowHd4);
             Controls.Add(checkBoxShowHd3);
             Controls.Add(checkBoxShowHd2);
+            Controls.Add(checkBoxShowCoherence);
             Controls.Add(checkBoxShowPrimary);
             Controls.Add(labelCurves);
             Controls.Add(checkUseCalibration);
@@ -301,6 +314,7 @@ namespace Resonalyze.Options
         private Label label2;
         private Label labelCurves;
         private CheckBox checkBoxShowPrimary;
+        private CheckBox checkBoxShowCoherence;
         private CheckBox checkBoxShowHd2;
         private CheckBox checkBoxShowHd3;
         private CheckBox checkBoxShowHd4;

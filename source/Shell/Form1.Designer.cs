@@ -46,6 +46,7 @@ namespace Resonalyze
             buttonOverlayHideAll = new Button();
             buttonCurrentModeSettings = new Button();
             panel1 = new Panel();
+            buttonCompare = new Button();
             inputLevelMeterPanel = new InputLevelMeterPanel();
             buttonHistory = new Button();
             chromeTitleBar = new ChromeTitleBar();
@@ -54,7 +55,6 @@ namespace Resonalyze
             signalGeneratorPanel = new SignalGeneratorPanel();
             virtualCrossoverPanel = new VirtualCrossoverPanel();
             eqResultsPanel = new EqResultsPanel();
-            buttonCompare = new Button();
             overlays.SuspendLayout();
             overlayPanel1.SuspendLayout();
             (numericUpDown1).BeginInit();
@@ -161,9 +161,9 @@ namespace Resonalyze
             buttonRecordOpt.FlatStyle = FlatStyle.Popup;
             buttonRecordOpt.Font = new Font("Segoe UI Emoji", 10F);
             buttonRecordOpt.ForeColor = Color.White;
-            buttonRecordOpt.Location = new Point(4, 32);
+            buttonRecordOpt.Location = new Point(3, 32);
             buttonRecordOpt.Name = "buttonRecordOpt";
-            buttonRecordOpt.Size = new Size(141, 24);
+            buttonRecordOpt.Size = new Size(142, 24);
             buttonRecordOpt.TabIndex = 8;
             buttonRecordOpt.Text = "⛭ Record Settings";
             buttonRecordOpt.UseCompatibleTextRendering = true;
@@ -177,7 +177,7 @@ namespace Resonalyze
             buttonSave.FlatStyle = FlatStyle.Popup;
             buttonSave.Font = new Font("Segoe UI", 10F);
             buttonSave.ForeColor = Color.White;
-            buttonSave.Location = new Point(4, 62);
+            buttonSave.Location = new Point(3, 62);
             buttonSave.Name = "buttonSave";
             buttonSave.Size = new Size(69, 23);
             buttonSave.TabIndex = 18;
@@ -245,7 +245,7 @@ namespace Resonalyze
             buttonCurrentModeSettings.FlatStyle = FlatStyle.Popup;
             buttonCurrentModeSettings.Font = new Font("Segoe UI Emoji", 10F);
             buttonCurrentModeSettings.ForeColor = Color.White;
-            buttonCurrentModeSettings.Location = new Point(1204, 300);
+            buttonCurrentModeSettings.Location = new Point(1204, 309);
             buttonCurrentModeSettings.Name = "buttonCurrentModeSettings";
             buttonCurrentModeSettings.Size = new Size(150, 23);
             buttonCurrentModeSettings.TabIndex = 21;
@@ -268,6 +268,21 @@ namespace Resonalyze
             panel1.Size = new Size(150, 119);
             panel1.TabIndex = 23;
             // 
+            // buttonCompare
+            // 
+            buttonCompare.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonCompare.BackColor = Color.FromArgb(50, 55, 80);
+            buttonCompare.FlatStyle = FlatStyle.Popup;
+            buttonCompare.Font = new Font("Segoe UI Emoji", 9.75F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            buttonCompare.ForeColor = Color.White;
+            buttonCompare.Location = new Point(3, 91);
+            buttonCompare.Name = "buttonCompare";
+            buttonCompare.Size = new Size(142, 23);
+            buttonCompare.TabIndex = 31;
+            buttonCompare.Text = "Compare";
+            buttonCompare.UseCompatibleTextRendering = true;
+            buttonCompare.UseVisualStyleBackColor = false;
+            // 
             // inputLevelMeterPanel
             // 
             inputLevelMeterPanel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
@@ -286,7 +301,7 @@ namespace Resonalyze
             buttonHistory.FlatStyle = FlatStyle.Popup;
             buttonHistory.Font = new Font("Segoe UI Emoji", 10F, FontStyle.Regular, GraphicsUnit.Point, 0);
             buttonHistory.ForeColor = Color.White;
-            buttonHistory.Location = new Point(1204, 271);
+            buttonHistory.Location = new Point(1204, 280);
             buttonHistory.Name = "buttonHistory";
             buttonHistory.Size = new Size(150, 23);
             buttonHistory.TabIndex = 25;
@@ -346,9 +361,9 @@ namespace Resonalyze
             signalGeneratorPanel.Size = new Size(1182, 704);
             signalGeneratorPanel.TabIndex = 29;
             signalGeneratorPanel.Visible = false;
-            //
+            // 
             // virtualCrossoverPanel
-            //
+            // 
             virtualCrossoverPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             virtualCrossoverPanel.AutoScroll = true;
             virtualCrossoverPanel.BackColor = Color.FromArgb(40, 44, 54);
@@ -361,9 +376,9 @@ namespace Resonalyze
             virtualCrossoverPanel.Size = new Size(1182, 704);
             virtualCrossoverPanel.TabIndex = 31;
             virtualCrossoverPanel.Visible = false;
-            //
+            // 
             // eqResultsPanel
-            //
+            // 
             eqResultsPanel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             eqResultsPanel.BackColor = Color.FromArgb(20, 22, 30);
             eqResultsPanel.BorderStyle = BorderStyle.FixedSingle;
@@ -375,21 +390,6 @@ namespace Resonalyze
             eqResultsPanel.Size = new Size(154, 341);
             eqResultsPanel.TabIndex = 30;
             eqResultsPanel.Visible = false;
-            // 
-            // buttonCompare
-            // 
-            buttonCompare.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonCompare.BackColor = Color.FromArgb(50, 55, 80);
-            buttonCompare.FlatStyle = FlatStyle.Popup;
-            buttonCompare.Font = new Font("Segoe UI Emoji", 9.75F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            buttonCompare.ForeColor = Color.White;
-            buttonCompare.Location = new Point(4, 91);
-            buttonCompare.Name = "buttonCompare";
-            buttonCompare.Size = new Size(141, 23);
-            buttonCompare.TabIndex = 31;
-            buttonCompare.Text = "Compare";
-            buttonCompare.UseCompatibleTextRendering = true;
-            buttonCompare.UseVisualStyleBackColor = false;
             // 
             // Form1
             // 

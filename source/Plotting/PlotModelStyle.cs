@@ -16,6 +16,7 @@ internal static class PlotModelStyle
     {
         model.Axes.Add(new LogarithmicAxis
         {
+            Key = PlotModelFactory.FrequencyAxisKey,
             Position = AxisPosition.Bottom,
             AbsoluteMinimum = 20,
             AbsoluteMaximum = 20000,
@@ -28,8 +29,9 @@ internal static class PlotModelStyle
 
     public static void AddDecibelAxis(PlotModel model)
     {
-        model.Axes.Add(new LinearAxis
+        model.Axes.Insert(0, new LinearAxis
         {
+            Key = PlotModelFactory.DecibelAxisKey,
             Position = AxisPosition.Left,
             AbsoluteMinimum = -120,
             AbsoluteMaximum = 10,

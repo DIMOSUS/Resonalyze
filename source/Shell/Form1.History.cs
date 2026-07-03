@@ -189,7 +189,10 @@ public partial class Form1
             snapshot.SweepDeconvolutionPeakIndex,
             snapshot.MeasurementMode,
             snapshot.TransferImpulseResponse,
-            snapshot.TransferPeakIndex);
+            snapshot.TransferPeakIndex,
+            snapshot.TransferCoherence,
+            snapshot.AverageRunCount,
+            snapshot.AcceptedAverageRunCount);
         expSweepMeasurement.RestoreLevelSnapshot(snapshot.MeterSnapshot);
 
         if (snapshot.Session != null)

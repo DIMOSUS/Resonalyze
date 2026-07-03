@@ -15,6 +15,7 @@ namespace Resonalyze.Dsp
         public int Offset { get; set; }
         public bool Unwrap { get; set; } = true;
         public bool UseCalibration { get; set; } = true;
+        public bool ShowCoherence { get; set; } = true;
 
         // Phase-mode curve visibility. Ignored by the other modes that reuse this
         // options type.

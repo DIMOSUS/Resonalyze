@@ -263,7 +263,7 @@ namespace Resonalyze
             // 
             buttonSessionImport.FlatStyle = FlatStyle.Popup;
             buttonSessionImport.ForeColor = Color.White;
-            buttonSessionImport.Location = new Point(349, 582);
+            buttonSessionImport.Location = new Point(349, 612);
             buttonSessionImport.Name = "buttonSessionImport";
             buttonSessionImport.Size = new Size(130, 24);
             buttonSessionImport.TabIndex = 17;
@@ -274,7 +274,7 @@ namespace Resonalyze
             // 
             buttonSessionExport.FlatStyle = FlatStyle.Popup;
             buttonSessionExport.ForeColor = Color.White;
-            buttonSessionExport.Location = new Point(349, 612);
+            buttonSessionExport.Location = new Point(349, 582);
             buttonSessionExport.Name = "buttonSessionExport";
             buttonSessionExport.Size = new Size(130, 24);
             buttonSessionExport.TabIndex = 18;
@@ -286,7 +286,7 @@ namespace Resonalyze
             labelMetric.AutoSize = true;
             labelMetric.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelMetric.ForeColor = Color.FromArgb(230, 184, 0);
-            labelMetric.Location = new Point(349, 443);
+            labelMetric.Location = new Point(349, 434);
             labelMetric.Name = "labelMetric";
             labelMetric.Size = new Size(95, 15);
             labelMetric.TabIndex = 15;

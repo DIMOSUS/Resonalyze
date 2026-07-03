@@ -52,6 +52,39 @@ public sealed class TransferFunctionTests
             TransferFunction.ComputeRelativeIr([1.0, 2.0], [1.0]));
     }
 
+    [Fact]
+    public void ComputeAveragedRelativeIr_SingleRunDoesNotReportCoherence()
+    {
+        double[] reference = CreateImpulse(128);
+
+        TransferEstimateResult result = TransferFunction.ComputeAveragedRelativeIr(
+            [new TransferFunctionFrame(reference, reference)]);
+
+        Assert.Null(result.Coherence);
+        Assert.Equal(0, result.PeakIndex);
+        Assert.Equal(1.0, result.ImpulseResponse[0], precision: 9);
+    }
+
+    [Fact]
+    public void ComputeAveragedRelativeIr_MultipleRunsReportsCoherence()
+    {
+        const int delay = 9;
+        double[] reference = CreateImpulse(128);
+        double[] target = Delay(reference, delay);
+
+        TransferEstimateResult result = TransferFunction.ComputeAveragedRelativeIr(
+            [
+                new TransferFunctionFrame(reference, target),
+                new TransferFunctionFrame(reference, target),
+                new TransferFunctionFrame(reference, target)
+            ]);
+
+        Assert.NotNull(result.Coherence);
+        Assert.Equal(delay, result.PeakIndex);
+        Assert.Equal(1.0, result.ImpulseResponse[delay], precision: 9);
+        Assert.All(result.Coherence!, value => Assert.InRange(value, 0.0, 1.0));
+    }
+
     private static double[] CreateImpulse(int length)
     {
         var impulse = new double[length];

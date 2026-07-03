@@ -129,6 +129,7 @@ public partial class Form1
         };
         dockedHistoryHost.StateChanged += (_, _) => UpdateHistoryButton();
         expSweepMeasurement.Completed += HandleMeasurementCompleted;
+        expSweepMeasurement.AverageProgressChanged += HandleAverageProgressChanged;
         measurementHistoryService.Changed += HandleHistoryChanged;
     }
 
@@ -155,6 +156,10 @@ public partial class Form1
     private void WireFormEvents()
     {
         measurementSettingsSaveTimer.Tick += MeasurementSettingsSaveTimer_Tick;
+        recordButtonLongPressTimer.Tick += RecordButtonLongPressTimer_Tick;
+        buttonRecord.MouseDown += buttonRecord_MouseDown;
+        buttonRecord.MouseLeave += buttonRecord_MouseLeave;
+        buttonRecord.MouseUp += buttonRecord_MouseUp;
         buttonCompare.Click += buttonCompare_Click;
         FormClosing += Form1_FormClosing;
         Shown += Form1_Shown;
@@ -195,6 +200,21 @@ public partial class Form1
             {
                 DrawSelectedMode(true);
             }
+        });
+    }
+
+    private void HandleAverageProgressChanged(SweepAverageProgress progress)
+    {
+        if (IsDisposed || !IsHandleCreated)
+        {
+            return;
+        }
+
+        BeginInvoke((MethodInvoker)delegate
+        {
+            buttonRecord.Text = progress.State == SweepAverageProgressState.WaitingForConfirmation
+                ? $"Next run ({progress.CurrentRun + 1}/{progress.TotalRuns})"
+                : $"Running {progress.CurrentRun}/{progress.TotalRuns}...";
         });
     }
 

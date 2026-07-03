@@ -12,8 +12,11 @@ internal sealed class MeasurementHistorySnapshot
     public SweepMeasurementMode MeasurementMode { get; init; }
     public int SweepDeconvolutionPeakIndex { get; init; }
     public int? TransferPeakIndex { get; init; }
+    public int AverageRunCount { get; init; } = 1;
+    public int AcceptedAverageRunCount { get; init; } = 1;
     public required Complex[] SweepDeconvolutionImpulseResponse { get; init; }
     public Complex[]? TransferImpulseResponse { get; init; }
+    public double[]? TransferCoherence { get; init; }
     public required InputLevelMeterSnapshot MeterSnapshot { get; init; }
     public required MeasurementHistoryPreview Preview { get; init; }
     // Settable so the live working state (mode + per-mode settings + active
@@ -33,6 +36,8 @@ internal sealed class MeasurementHistorySnapshot
             MeasurementMode = MeasurementMode,
             SweepDeconvolutionPeakIndex = SweepDeconvolutionPeakIndex,
             TransferPeakIndex = TransferPeakIndex,
+            AverageRunCount = AverageRunCount,
+            AcceptedAverageRunCount = AcceptedAverageRunCount,
             SweepDeconvolutionRealSamples = SweepDeconvolutionImpulseResponse.Select(
                 sample => sample.Real).ToArray(),
             SweepDeconvolutionImaginarySamples = HasImaginarySamples(SweepDeconvolutionImpulseResponse)
@@ -43,6 +48,7 @@ internal sealed class MeasurementHistorySnapshot
                 HasImaginarySamples(transfer)
                 ? transfer.Select(sample => sample.Imaginary).ToArray()
                 : null,
+            TransferCoherence = TransferCoherence?.ToArray(),
             MicrophoneLevels = ImpulseResponseFile.CreateLevelSnapshotFileEntry(
                 MeterSnapshot.Microphone),
             LoopbackLevels = ImpulseResponseFile.CreateLevelSnapshotFileEntry(

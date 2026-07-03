@@ -10,6 +10,8 @@ internal sealed class MeasurementHistorySnapshotMetadata
     public SweepMeasurementMode MeasurementMode { get; init; }
     public int SweepDeconvolutionPeakIndex { get; init; }
     public int? TransferPeakIndex { get; init; }
+    public int AverageRunCount { get; init; } = 1;
+    public int AcceptedAverageRunCount { get; init; } = 1;
     public required InputLevelMeterSnapshot MeterSnapshot { get; init; }
 
     public static MeasurementHistorySnapshotMetadata FromSnapshot(
@@ -25,6 +27,8 @@ internal sealed class MeasurementHistorySnapshotMetadata
             MeasurementMode = snapshot.MeasurementMode,
             SweepDeconvolutionPeakIndex = snapshot.SweepDeconvolutionPeakIndex,
             TransferPeakIndex = snapshot.TransferPeakIndex,
+            AverageRunCount = snapshot.AverageRunCount,
+            AcceptedAverageRunCount = snapshot.AcceptedAverageRunCount,
             MeterSnapshot = snapshot.MeterSnapshot
         };
     }
@@ -41,6 +45,10 @@ internal sealed class MeasurementHistorySnapshotMetadata
             $"Duration: {SweepDurationSeconds:0.###} s",
             $"Channel: {PlayChannel}"
         };
+        if (AverageRunCount > 1 || AcceptedAverageRunCount > 1)
+        {
+            lines.Add($"Averaging: {AcceptedAverageRunCount}/{AverageRunCount} runs");
+        }
 
         if (MeasurementMode == SweepMeasurementMode.LoopbackTransfer &&
             TransferPeakIndex.HasValue)

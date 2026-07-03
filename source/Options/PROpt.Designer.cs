@@ -50,6 +50,7 @@ namespace Resonalyze.Options
             checkBoxShowMeasured = new CheckBox();
             checkBoxShowMinimum = new CheckBox();
             checkBoxShowExcess = new CheckBox();
+            checkBoxShowCoherence = new CheckBox();
             irPlotView = new OxyPlot.WindowsForms.PlotView();
             (numericGateOffset).BeginInit();
             (numericRightWindow).BeginInit();
@@ -326,10 +327,21 @@ namespace Resonalyze.Options
             checkBoxShowExcess.Text = "Show excess phase";
             checkBoxShowExcess.UseVisualStyleBackColor = true;
             // 
+            // checkBoxShowCoherence
+            // 
+            checkBoxShowCoherence.AutoSize = true;
+            checkBoxShowCoherence.ForeColor = SystemColors.ControlLight;
+            checkBoxShowCoherence.Location = new Point(12, 327);
+            checkBoxShowCoherence.Name = "checkBoxShowCoherence";
+            checkBoxShowCoherence.Size = new Size(134, 19);
+            checkBoxShowCoherence.TabIndex = 57;
+            checkBoxShowCoherence.Text = "Show γ² (coherence)";
+            checkBoxShowCoherence.UseVisualStyleBackColor = true;
+            // 
             // irPlotView
             // 
             irPlotView.BackColor = Color.FromArgb(32, 36, 46);
-            irPlotView.Location = new Point(12, 331);
+            irPlotView.Location = new Point(12, 353);
             irPlotView.Name = "irPlotView";
             irPlotView.PanCursor = Cursors.Hand;
             irPlotView.Size = new Size(241, 300);
@@ -344,8 +356,9 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 638);
+            ClientSize = new Size(265, 660);
             Controls.Add(irPlotView);
+            Controls.Add(checkBoxShowCoherence);
             Controls.Add(numericGateOffset);
             Controls.Add(buttonFit);
             Controls.Add(labelGateOffset);
@@ -408,6 +421,7 @@ namespace Resonalyze.Options
         private CheckBox checkBoxShowMeasured;
         private CheckBox checkBoxShowMinimum;
         private CheckBox checkBoxShowExcess;
+        private CheckBox checkBoxShowCoherence;
         private OxyPlot.WindowsForms.PlotView irPlotView;
     }
 }

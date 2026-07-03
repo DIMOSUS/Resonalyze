@@ -26,6 +26,7 @@ namespace Resonalyze
     {
         private const string PeakInfoAnnotationTag = "PeakInfoAnnotation";
         private const int MeasurementSettingsSaveDelayMilliseconds = 10_000;
+        private const int RecordButtonLongPressMilliseconds = 650;
 
         public Mode CurrentMode { get; private set; }
 
@@ -88,10 +89,16 @@ namespace Resonalyze
         {
             Interval = MeasurementSettingsSaveDelayMilliseconds
         };
+        private readonly System.Windows.Forms.Timer recordButtonLongPressTimer = new()
+        {
+            Interval = RecordButtonLongPressMilliseconds
+        };
         private CompareMeasurementSelection? compareMeasurement;
         private ContextMenuStrip? compareMenuStrip;
         private CancellationTokenSource? startupAudioWarmupCancellation;
         private Task? startupAudioWarmupTask;
+        private bool recordButtonLongPressTriggered;
+        private bool suppressNextRecordButtonClick;
 
         public Form1()
         {

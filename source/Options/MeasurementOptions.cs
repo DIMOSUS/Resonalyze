@@ -179,6 +179,8 @@ namespace Resonalyze.Options
             numericUpDownComputeDuration.Value =
                 (int)(sweep.CalculateDuration(settings.RequestedDurationSeconds) * 1000.0);
             numericUpDownOctaves.Value = settings.Octaves;
+            numericUpDownAverageRunCount.Value = Math.Clamp(settings.AverageRunCount, 1, 64);
+            checkBoxConfirmEachAverageRun.Checked = settings.ConfirmEachAverageRun;
             RefreshSampleRateOptions(settings.SampleRate);
             initializing = false;
             RefreshAsioDriverInfo(
@@ -242,6 +244,8 @@ namespace Resonalyze.Options
                     ? waveLoopback.Offset
                     : null;
             int? waveLoopbackDeviceNumber = GetSelectedWaveLoopbackDeviceNumber();
+            int averageRunCount = (int)numericUpDownAverageRunCount.Value;
+            bool confirmEachAverageRun = checkBoxConfirmEachAverageRun.Checked;
             bool separateWaveLoopbackDevice =
                 waveLoopbackDeviceNumber.HasValue &&
                 waveLoopbackDeviceNumber.Value != inputDeviceNumber;
@@ -271,7 +275,9 @@ namespace Resonalyze.Options
                 waveInputChannelOffset,
                 waveLoopbackInputChannelOffset,
                 asioLoopbackInputChannelOffset,
-                waveLoopbackDeviceNumber);
+                waveLoopbackDeviceNumber,
+                averageRunCount,
+                confirmEachAverageRun);
         }
 
         private void numericUpDownRequestedDuration_ValueChanged(object sender, EventArgs e)

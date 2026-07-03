@@ -65,6 +65,13 @@ public partial class Form1
 
     private async void buttonRecord_Click(object sender, EventArgs e)
     {
+        recordButtonLongPressTimer.Stop();
+        if (suppressNextRecordButtonClick)
+        {
+            suppressNextRecordButtonClick = false;
+            return;
+        }
+
         if (dockedHistoryHost.IsOpen)
         {
             dockedHistoryHost.Close();
@@ -85,6 +92,12 @@ public partial class Form1
         if (liveSpectrumController.InProgress)
         {
             await liveSpectrumController.AbortAsync();
+        }
+
+        if (expSweepMeasurement.WaitingForAverageConfirmation)
+        {
+            expSweepMeasurement.ContinueAverageRun();
+            return;
         }
 
         if (expSweepMeasurement.InProgress)
@@ -114,6 +127,47 @@ public partial class Form1
             _ = expSweepMeasurement.RunAsync();
         }
     }
+
+    private void buttonRecord_MouseDown(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left || !CanLongPressCancelMeasurementSeries())
+        {
+            return;
+        }
+
+        recordButtonLongPressTriggered = false;
+        suppressNextRecordButtonClick = false;
+        recordButtonLongPressTimer.Start();
+    }
+
+    private void buttonRecord_MouseUp(object? sender, MouseEventArgs e)
+    {
+        recordButtonLongPressTimer.Stop();
+    }
+
+    private void buttonRecord_MouseLeave(object? sender, EventArgs e)
+    {
+        recordButtonLongPressTimer.Stop();
+    }
+
+    private async void RecordButtonLongPressTimer_Tick(object? sender, EventArgs e)
+    {
+        recordButtonLongPressTimer.Stop();
+        if (!CanLongPressCancelMeasurementSeries() || recordButtonLongPressTriggered)
+        {
+            return;
+        }
+
+        recordButtonLongPressTriggered = true;
+        suppressNextRecordButtonClick = true;
+        buttonRecord.Text = "Aborting...";
+        await expSweepMeasurement.AbortAsync();
+    }
+
+    private bool CanLongPressCancelMeasurementSeries() =>
+        CurrentMode != Mode.LiveSpectrum &&
+        expSweepMeasurement.InProgress &&
+        expSweepMeasurement.AverageRunCount > 1;
 
     private void buttonRecordOpt_Click(object sender, EventArgs e)
     {

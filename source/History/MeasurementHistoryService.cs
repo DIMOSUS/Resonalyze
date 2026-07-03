@@ -224,8 +224,11 @@ internal sealed class MeasurementHistoryService
             MeasurementMode = measurement.MeasurementMode,
             SweepDeconvolutionPeakIndex = measurement.SweepDeconvolutionPeakIndex,
             TransferPeakIndex = transfer != null ? measurement.TransferPeakIndex : null,
+            AverageRunCount = measurement.AverageRunCount,
+            AcceptedAverageRunCount = measurement.AcceptedAverageRunCount,
             SweepDeconvolutionImpulseResponse = sweep.ToArray(),
             TransferImpulseResponse = transfer,
+            TransferCoherence = measurement.TransferCoherence?.ToArray(),
             MeterSnapshot = measurement.CurrentLevels,
             Preview = preview,
             Session = session
@@ -257,8 +260,11 @@ internal sealed class MeasurementHistoryService
             MeasurementMode = file.MeasurementMode,
             SweepDeconvolutionPeakIndex = file.SweepDeconvolutionPeakIndex,
             TransferPeakIndex = file.TransferPeakIndex,
+            AverageRunCount = file.AverageRunCount,
+            AcceptedAverageRunCount = file.AcceptedAverageRunCount,
             SweepDeconvolutionImpulseResponse = sweep,
             TransferImpulseResponse = transfer,
+            TransferCoherence = file.TransferCoherence?.ToArray(),
             MeterSnapshot = file.GetMeterSnapshot(),
             Preview = preview,
             Session = session

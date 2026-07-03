@@ -69,6 +69,8 @@ public partial class Form1
         dockedHistoryHost.Dispose();
         measurementSettingsSaveTimer.Stop();
         measurementSettingsSaveTimer.Dispose();
+        recordButtonLongPressTimer.Stop();
+        recordButtonLongPressTimer.Dispose();
         inputLevelMeterController.Dispose();
         expSweepMeasurement.Dispose();
         timeAlignmentController.Dispose();

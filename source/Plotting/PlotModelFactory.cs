@@ -11,7 +11,15 @@ namespace Resonalyze;
 internal sealed class PlotModelFactory
 {
     private const double GroupDelayMagnitudeGateDb = -40.0;
+
     public const string CoherenceAxisKey = "coherence";
+    public const string DecibelAxisKey = "decibel";
+    public const string FrequencyAxisKey = "frequency";
+    public const string PhaseAxisKey = "phase";
+    public const string GroupDelayAxisKey = "groupDelay";
+    public const string ImpulseAxisKey = "impulse";
+    public const string TimeAxisKey = "time";
+    public const string AutocorrelationAxisKey = "autocorrelation";
 
     private readonly ExpSweepMeasurement expSweepMeasurement;
     private readonly NoiseMeasurement noiseMeasurement;
@@ -81,7 +89,8 @@ internal sealed class PlotModelFactory
                     model,
                     curve,
                     "{0}\n{2:0.0} Hz\n{4:0.00} dB",
-                    Mode.FrequencyResponse);
+                    Mode.FrequencyResponse,
+                    DecibelAxisKey);
             }
 
             // Overlay the Compare magnitude (primary only; harmonics stay Main-only to
@@ -104,6 +113,10 @@ internal sealed class PlotModelFactory
                         Mode.FrequencyResponse);
                 }
             }
+
+            AddMeasurementCoherenceIfAvailable(
+                model,
+                frequencyResponseOptions);
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
                  !measurementContext.HasTransferImpulseResponse)
@@ -146,6 +159,7 @@ internal sealed class PlotModelFactory
                     curve,
                     phaseTrackerFormat,
                     Mode.PhaseResponse,
+                    PhaseAxisKey,
                     phaseResponseOptions.Unwrap);
             }
 
@@ -165,6 +179,7 @@ internal sealed class PlotModelFactory
                     minimumPhaseCurve,
                     phaseTrackerFormat,
                     Mode.PhaseResponse,
+                    PhaseAxisKey,
                     phaseUnwrapped: true);
             }
 
@@ -186,6 +201,7 @@ internal sealed class PlotModelFactory
                     excessPhaseCurve,
                     phaseTrackerFormat,
                     Mode.PhaseResponse,
+                    PhaseAxisKey,
                     phaseUnwrapped: true);
             }
 
@@ -250,6 +266,10 @@ internal sealed class PlotModelFactory
                         phaseUnwrapped: true);
                 }
             }
+
+            AddMeasurementCoherenceIfAvailable(
+                model,
+                phaseResponseOptions);
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
                  !measurementContext.HasTransferImpulseResponse &&
@@ -261,8 +281,9 @@ internal sealed class PlotModelFactory
         }
 
         PlotModelStyle.AddFrequencyAxis(model);
-        model.Axes.Add(new LinearAxis
+        model.Axes.Insert(0, new LinearAxis
         {
+            Key = PhaseAxisKey,
             Position = AxisPosition.Left,
             AbsoluteMinimum = -2880,
             AbsoluteMaximum = 2880,
@@ -314,46 +335,53 @@ internal sealed class PlotModelFactory
         // Group delay is only meaningful with a transfer IR (loopback timing).
         if (measurementContext.CanIncludeCurves(includeCurves) &&
             measurementContext.HasTransferImpulseResponse &&
-            groupDelayOptions.ShowGroupDelay)
+            (groupDelayOptions.ShowGroupDelay || groupDelayOptions.ShowCoherence))
         {
-            // The gate is positioned by its Gate offset (left-shoulder-end) within the
-            // transfer IR; the group delay reads absolute, referenced to the IR start.
-            IImpulseMeasurement measurement = measurementContext.CreatePrimaryMeasurement();
-            AnalysisCurve curve = DataHelper.GetGroupDelay(
-                measurement,
-                groupDelayOptions.GroupDelayGateOffsetMs,
-                groupDelayOptions.GroupDelayLeftMs,
-                groupDelayOptions.GroupDelayPlateauMs,
-                groupDelayOptions.GroupDelayRightMs,
-                groupDelayOptions.SmoothingInverseOctaves,
-                GroupDelayMagnitudeGateDb);
             const string groupDelayTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.000} ms";
-            AddLineSeries(model, curve, groupDelayTrackerFormat, Mode.GroupDelay);
-            UpdateGroupDelayRange(curve, ref minimum, ref maximum, ref hasValidData);
-
-            // Overlay the Compare measurement with the identical gate / smoothing.
-            if (TryCreateCompareMeasurement() is { } compare)
+            if (groupDelayOptions.ShowGroupDelay)
             {
-                AnalysisCurve compareCurve = DataHelper.GetGroupDelay(
-                    compare.Measurement,
+                // The gate is positioned by its Gate offset (left-shoulder-end) within the
+                // transfer IR; the group delay reads absolute, referenced to the IR start.
+                IImpulseMeasurement measurement = measurementContext.CreatePrimaryMeasurement();
+                AnalysisCurve curve = DataHelper.GetGroupDelay(
+                    measurement,
                     groupDelayOptions.GroupDelayGateOffsetMs,
                     groupDelayOptions.GroupDelayLeftMs,
                     groupDelayOptions.GroupDelayPlateauMs,
                     groupDelayOptions.GroupDelayRightMs,
                     groupDelayOptions.SmoothingInverseOctaves,
                     GroupDelayMagnitudeGateDb);
-                // Draw the Compare curve as an overlay but keep the Y-axis auto-fit
-                // driven by the main measurement only. The Compare group delay is
-                // gated at the same offset, so as the gate moves its extremes swing
-                // widely; folding them into the range makes the scale jump on every
-                // edit. Off-scale Compare points are simply clipped, like any overlay.
-                AddCompareLineSeries(
-                    model,
-                    compareCurve,
-                    groupDelayTrackerFormat,
-                    compare.DisplayName,
-                    Mode.GroupDelay);
+                AddLineSeries(model, curve, groupDelayTrackerFormat, Mode.GroupDelay, GroupDelayAxisKey);
+                UpdateGroupDelayRange(curve, ref minimum, ref maximum, ref hasValidData);
+
+                // Overlay the Compare measurement with the identical gate / smoothing.
+                if (TryCreateCompareMeasurement() is { } compare)
+                {
+                    AnalysisCurve compareCurve = DataHelper.GetGroupDelay(
+                        compare.Measurement,
+                        groupDelayOptions.GroupDelayGateOffsetMs,
+                        groupDelayOptions.GroupDelayLeftMs,
+                        groupDelayOptions.GroupDelayPlateauMs,
+                        groupDelayOptions.GroupDelayRightMs,
+                        groupDelayOptions.SmoothingInverseOctaves,
+                        GroupDelayMagnitudeGateDb);
+                    // Draw the Compare curve as an overlay but keep the Y-axis auto-fit
+                    // driven by the main measurement only. The Compare group delay is
+                    // gated at the same offset, so as the gate moves its extremes swing
+                    // widely; folding them into the range makes the scale jump on every
+                    // edit. Off-scale Compare points are simply clipped, like any overlay.
+                    AddCompareLineSeries(
+                        model,
+                        compareCurve,
+                        groupDelayTrackerFormat,
+                        compare.DisplayName,
+                        Mode.GroupDelay);
+                }
             }
+
+            AddMeasurementCoherenceIfAvailable(
+                model,
+                groupDelayOptions);
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
                  !measurementContext.HasTransferImpulseResponse &&
@@ -365,6 +393,7 @@ internal sealed class PlotModelFactory
         PlotModelStyle.AddFrequencyAxis(model);
         var msAxis = new LinearAxis
         {
+            Key = GroupDelayAxisKey,
             Position = AxisPosition.Left,
             AbsoluteMinimum = -30,
             AbsoluteMaximum = 30,
@@ -379,7 +408,7 @@ internal sealed class PlotModelFactory
             msAxis.Minimum = minimum - 2;
             msAxis.Maximum = maximum + 2;
         }
-        model.Axes.Add(msAxis);
+        model.Axes.Insert(0, msAxis);
         return model;
     }
 
@@ -426,7 +455,7 @@ internal sealed class PlotModelFactory
             // peak plus the Length tail, so arrival times can be compared directly.
             IImpulseMeasurement main = measurementContext.CreatePrimaryMeasurement();
             curve = DataHelper.GetImpulseFromStart(main, impulseResponseOptions);
-            AddLineSeries(model, curve, impulseTracker, Mode.ImpulseResponse);
+            AddLineSeries(model, curve, impulseTracker, Mode.ImpulseResponse, ImpulseAxisKey);
 
             if (TryCreateCompareMeasurement() is { } compare)
             {
@@ -450,11 +479,13 @@ internal sealed class PlotModelFactory
 
         var timeAxis = new LinearAxis
         {
+            Key = TimeAxisKey,
             Position = AxisPosition.Bottom,
             MajorGridlineStyle = LineStyle.Solid,
         };
         var valueAxis = new LinearAxis
         {
+            Key = ImpulseAxisKey,
             Position = AxisPosition.Left,
         };
         // Lock both axes to the drawn curves (which already reflect the logarithmic
@@ -531,7 +562,8 @@ internal sealed class PlotModelFactory
                 model,
                 curve,
                 "{0}\n{2:0.000} ms\n{4:0.000}",
-                Mode.Autocorrelation);
+                Mode.Autocorrelation,
+                AutocorrelationAxisKey);
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
                  !measurementContext.HasTransferImpulseResponse &&
@@ -542,12 +574,14 @@ internal sealed class PlotModelFactory
 
         model.Axes.Add(new LinearAxis
         {
+            Key = TimeAxisKey,
             Position = AxisPosition.Bottom,
             MajorGridlineStyle = LineStyle.Solid,
             Title = "ms"
         });
         model.Axes.Add(new LinearAxis
         {
+            Key = AutocorrelationAxisKey,
             Position = AxisPosition.Left,
         });
         return model;
@@ -561,20 +595,7 @@ internal sealed class PlotModelFactory
         PlotModelStyle.AddDecibelAxis(model);
         if (liveSpectrumOptions.ShowCoherence)
         {
-            model.Axes.Add(new LinearAxis
-            {
-                Key = CoherenceAxisKey,
-                Position = AxisPosition.Right,
-                AbsoluteMinimum = 0,
-                AbsoluteMaximum = 1,
-                Minimum = 0,
-                Maximum = 1,
-                MajorStep = 0.25,
-                MinorStep = 0.125,
-                MajorGridlineStyle = LineStyle.None,
-                MinorGridlineStyle = LineStyle.None,
-                Title = "Coherence \u03B3\u00B2", // Y2
-            });
+            AddCoherenceAxis(model);
         }
 
         return model;
@@ -635,14 +656,35 @@ internal sealed class PlotModelFactory
 
     public LineSeries BuildCoherenceSeries(double[] coherence)
     {
+        int fftLength = Math.Max(0, (coherence.Length - 1) * 2);
+        return BuildCoherenceSeries(
+            coherence,
+            noiseMeasurement.SampleRate,
+            fftLength,
+            liveSpectrumOptions.SmoothingInverseOctaves);
+    }
+
+    private LineSeries BuildCoherenceSeries(
+        double[] coherence,
+        int sampleRate,
+        int fftLength,
+        double smoothingInverseOctaves)
+    {
         var series = new LineSeries
         {
             Color = OxyColor.FromAColor(150, OxyColor.FromRgb(90, 200, 140)),
             Title = "Coherence",
+            XAxisKey = FrequencyAxisKey,
             YAxisKey = CoherenceAxisKey,
-            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} \u03B3\u00B2" // Y2
+            StrokeThickness = 1,
+            LineStyle = LineStyle.Dash,
+            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} \u03B3\u00B2" // γ²
         };
-        foreach (SignalPoint point in ResampleCoherence(coherence))
+        foreach (SignalPoint point in ResampleCoherence(
+            coherence,
+            sampleRate,
+            fftLength,
+            smoothingInverseOctaves))
         {
             series.Points.Add(new DataPoint(point.X, point.Y));
         }
@@ -662,7 +704,11 @@ internal sealed class PlotModelFactory
         int thresholdPercent)
     {
         List<SignalPoint> magnitudePoints = ResampleLiveSpectrumMagnitude(magnitude);
-        List<SignalPoint> coherencePoints = ResampleCoherence(coherence);
+        List<SignalPoint> coherencePoints = ResampleCoherence(
+            coherence,
+            noiseMeasurement.SampleRate,
+            noiseMeasurement.SequenceLength,
+            liveSpectrumOptions.SmoothingInverseOctaves);
         int count = Math.Min(magnitudePoints.Count, coherencePoints.Count);
         double threshold = thresholdPercent / 100.0;
 
@@ -703,16 +749,24 @@ internal sealed class PlotModelFactory
         return (trusted, untrusted);
     }
 
-    private List<SignalPoint> ResampleCoherence(double[] coherence)
+    private List<SignalPoint> ResampleCoherence(
+        double[] coherence,
+        int sampleRate,
+        int fftLength,
+        double smoothingInverseOctaves)
     {
-        int length = noiseMeasurement.SequenceLength;
-        int binCount = Math.Min(length / 2, coherence.Length);
+        if (sampleRate <= 0 || fftLength <= 0)
+        {
+            return [];
+        }
+
+        int binCount = Math.Min(fftLength / 2 + 1, coherence.Length);
         List<DataPoint> data = new(binCount);
 
         for (int i = 1; i < binCount; i++)
         {
             double frequency =
-                i * ((double)noiseMeasurement.SampleRate / length);
+                i * ((double)sampleRate / fftLength);
             data.Add(new DataPoint(frequency, coherence[i]));
         }
 
@@ -722,8 +776,8 @@ internal sealed class PlotModelFactory
             20000,
             1024,
             calibration: null,
-            liveSpectrumOptions.SmoothingInverseOctaves > 0
-                ? 1.0 / liveSpectrumOptions.SmoothingInverseOctaves
+            smoothingInverseOctaves > 0
+                ? 1.0 / smoothingInverseOctaves
                 : 0.0,
             dBUnpack: false);
 
@@ -739,14 +793,59 @@ internal sealed class PlotModelFactory
         return resampled;
     }
 
+    private void AddMeasurementCoherenceIfAvailable(
+        PlotModel model,
+        FrequencyResponseOptions options)
+    {
+        if (!options.ShowCoherence ||
+            expSweepMeasurement.TransferCoherence is not { Length: > 1 } coherence ||
+            expSweepMeasurement.SampleRate <= 0)
+        {
+            return;
+        }
+
+        int fftLength = (coherence.Length - 1) * 2;
+        AddCoherenceAxis(model);
+        model.Series.Add(BuildCoherenceSeries(
+            coherence,
+            expSweepMeasurement.SampleRate,
+            fftLength,
+            options.SmoothingInverseOctaves));
+    }
+
+    private static void AddCoherenceAxis(PlotModel model)
+    {
+        if (model.Axes.Any(axis => axis.Key == CoherenceAxisKey))
+        {
+            return;
+        }
+
+        model.Axes.Add(new LinearAxis
+        {
+            Key = CoherenceAxisKey,
+            Position = AxisPosition.Right,
+            AbsoluteMinimum = 0,
+            AbsoluteMaximum = 1,
+            Minimum = 0,
+            Maximum = 1,
+            MajorGridlineStyle = LineStyle.None,
+            MinorGridlineStyle = LineStyle.None,
+            Title = "Coherence \u03B3\u00B2", // Y2
+            IsPanEnabled = false,
+            IsZoomEnabled = false
+        });
+    }
+
     private static LineSeries AddLineSeries(
         PlotModel model,
         AnalysisCurve curve,
         string trackerFormat,
         Mode mode,
+        string yAxisKey,
         bool? phaseUnwrapped = null)
     {
         LineSeries series = OxyPlotAdapter.ToLineSeries(curve);
+        series.YAxisKey = yAxisKey;
         series.TrackerFormatString = trackerFormat;
         series.Tag = new CurveTag(mode, curve.Kind, CurveSource.Main, phaseUnwrapped);
         model.Series.Add(series);

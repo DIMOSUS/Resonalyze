@@ -103,7 +103,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
 
         using CancellationTokenRegistration registration =
             cancellationToken.Register(() => firstBufferReady.TrySetCanceled(cancellationToken));
-        await firstBufferReady.Task.ConfigureAwait(false);
+        await firstBufferReady.Task;
     }
 
     public Task WaitForSamplesAsync(int sampleCount, CancellationToken cancellationToken)
@@ -152,7 +152,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
 
         try
         {
-            await stoppedTask.WaitAsync(StopTimeout).ConfigureAwait(false);
+            await stoppedTask.WaitAsync(StopTimeout);
         }
         catch (TimeoutException exception)
         {

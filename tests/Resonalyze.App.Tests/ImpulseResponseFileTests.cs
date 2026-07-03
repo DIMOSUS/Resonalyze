@@ -20,6 +20,8 @@ public sealed class ImpulseResponseFileTests
             PlayChannel = PlaybackChannel.Left,
             MeasurementMode = SweepMeasurementMode.LoopbackTransfer,
             SweepDeconvolutionPeakIndex = 2,
+            AverageRunCount = 4,
+            AcceptedAverageRunCount = 3,
             MicrophoneLevels = new ImpulseResponseFile.LevelSnapshotFileEntry
             {
                 PeakDbFs = -6.5,
@@ -35,7 +37,8 @@ public sealed class ImpulseResponseFileTests
             SweepDeconvolutionRealSamples = [0.125, 0.5, 1.0, -0.25],
             TransferPeakIndex = 1,
             TransferRealSamples = [0.25, 1.0, -0.5],
-            TransferImaginarySamples = [0, 0.125, 0]
+            TransferImaginarySamples = [0, 0.125, 0],
+            TransferCoherence = [0.91, 0.82, 0.73]
         };
 
         try
@@ -44,10 +47,13 @@ public sealed class ImpulseResponseFileTests
 
             string json = await File.ReadAllTextAsync(path);
             Assert.Contains("\"format\": \"resonalyze-impulse-response\"", json);
-            Assert.Contains("\"version\": 4", json);
+            Assert.Contains($"\"version\": {ImpulseResponseFile.CurrentVersion}", json);
             Assert.Contains("\"measurementMode\": \"LoopbackTransfer\"", json);
             Assert.Contains("\"sweepDeconvolutionPeakIndex\": 2", json);
+            Assert.Contains("\"averageRunCount\": 4", json);
+            Assert.Contains("\"acceptedAverageRunCount\": 3", json);
             Assert.Contains("\"transferPeakIndex\": 1", json);
+            Assert.Contains("\"transferCoherence\"", json);
             Assert.Contains("\"microphoneLevels\"", json);
             Assert.Contains("\"loopbackLevels\"", json);
             Assert.Contains("\"sweepDeconvolutionRealSamples\"", json);
@@ -72,6 +78,8 @@ public sealed class ImpulseResponseFileTests
             Assert.Equal(PlaybackChannel.Left, loaded.PlayChannel);
             Assert.Equal(SweepMeasurementMode.LoopbackTransfer, loaded.MeasurementMode);
             Assert.Equal(2, loaded.SweepDeconvolutionPeakIndex);
+            Assert.Equal(4, loaded.AverageRunCount);
+            Assert.Equal(3, loaded.AcceptedAverageRunCount);
             Assert.NotNull(loaded.MicrophoneLevels);
             Assert.Equal(-6.5, loaded.MicrophoneLevels.PeakDbFs);
             Assert.Equal(-18.25, loaded.MicrophoneLevels.RmsDbFs);
@@ -92,6 +100,8 @@ public sealed class ImpulseResponseFileTests
             Assert.Equal(
                 [new Complex(0.25, 0), new Complex(1, 0.125), new Complex(-0.5, 0)],
                 transferSamples);
+            Assert.NotNull(loaded.TransferCoherence);
+            Assert.Equal([0.91, 0.82, 0.73], loaded.TransferCoherence);
         }
         finally
         {

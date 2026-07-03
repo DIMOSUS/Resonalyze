@@ -46,6 +46,7 @@ namespace Resonalyze.Options
                 SmoothingPresetOptions.Normalize(frequencyResponseOptions.SmoothingInverseOctaves);
             checkUseCalibration.Checked = frequencyResponseOptions.UseCalibration;
             checkBoxShowPrimary.Checked = frequencyResponseOptions.ShowPrimary;
+            checkBoxShowCoherence.Checked = frequencyResponseOptions.ShowCoherence;
             checkBoxShowHd2.Checked = frequencyResponseOptions.ShowHd2;
             checkBoxShowHd3.Checked = frequencyResponseOptions.ShowHd3;
             checkBoxShowHd4.Checked = frequencyResponseOptions.ShowHd4;
@@ -65,6 +66,7 @@ namespace Resonalyze.Options
                     : SmoothingPresetOptions.SupportedInverseOctaves[0];
             frequencyResponseOptions.UseCalibration = checkUseCalibration.Checked;
             frequencyResponseOptions.ShowPrimary = checkBoxShowPrimary.Checked;
+            frequencyResponseOptions.ShowCoherence = checkBoxShowCoherence.Checked;
             frequencyResponseOptions.ShowHd2 = checkBoxShowHd2.Checked;
             frequencyResponseOptions.ShowHd3 = checkBoxShowHd3.Checked;
             frequencyResponseOptions.ShowHd4 = checkBoxShowHd4.Checked;
@@ -156,6 +158,9 @@ namespace Resonalyze.Options
             toolTip.SetToolTip(
                 checkBoxShowPrimary,
                 "Shows the primary frequency-response curve.");
+            toolTip.SetToolTip(
+                checkBoxShowCoherence,
+                "Shows the measurement coherence (\u03B3\u00B2) curve when the IR was captured with 2+ averaged runs.");
             toolTip.SetToolTip(
                 checkBoxShowHd2,
                 "Shows the 2nd harmonic distortion curve.");

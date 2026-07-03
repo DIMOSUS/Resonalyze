@@ -11,7 +11,7 @@ namespace Resonalyze;
 public sealed class ImpulseResponseFile
 {
     public const string CurrentFormat = "resonalyze-impulse-response";
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 5;
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -33,6 +33,8 @@ public sealed class ImpulseResponseFile
     public SweepMeasurementMode MeasurementMode { get; set; } =
         SweepMeasurementMode.SweepDeconvolution;
     public int SweepDeconvolutionPeakIndex { get; set; }
+    public int AverageRunCount { get; set; } = 1;
+    public int AcceptedAverageRunCount { get; set; } = 1;
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? TransferPeakIndex { get; set; }
@@ -56,6 +58,9 @@ public sealed class ImpulseResponseFile
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double[]? TransferImaginarySamples { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double[]? TransferCoherence { get; set; }
 
     public static ImpulseResponseFile Capture(ExpSweepMeasurement measurement)
     {
@@ -91,6 +96,8 @@ public sealed class ImpulseResponseFile
             PlayChannel = measurement.PlaybackChannel,
             MeasurementMode = measurement.MeasurementMode,
             SweepDeconvolutionPeakIndex = measurement.SweepDeconvolutionPeakIndex,
+            AverageRunCount = measurement.AverageRunCount,
+            AcceptedAverageRunCount = measurement.AcceptedAverageRunCount,
             TransferPeakIndex = transferPeakIndex,
             MicrophoneLevels = microphoneLevels,
             LoopbackLevels = loopbackLevels,
@@ -107,7 +114,8 @@ public sealed class ImpulseResponseFile
             SweepDeconvolutionRealSamples = sweepRealSamples,
             SweepDeconvolutionImaginarySamples = sweepImaginarySamples,
             TransferRealSamples = transferRealSamples,
-            TransferImaginarySamples = transferImaginarySamples
+            TransferImaginarySamples = transferImaginarySamples,
+            TransferCoherence = measurement.TransferCoherence?.ToArray()
         };
     }
 
@@ -204,7 +212,7 @@ public sealed class ImpulseResponseFile
             throw new InvalidDataException(
                 $"Unsupported file format '{Format}'.");
         }
-        if (Version != CurrentVersion)
+        if (Version is < 4 or > CurrentVersion)
         {
             throw new InvalidDataException(
                 $"Unsupported impulse response version {Version}.");
@@ -251,6 +259,14 @@ public sealed class ImpulseResponseFile
             throw new InvalidDataException(
                 "The sweep deconvolution peak index is outside the sample array.");
         }
+        if (AverageRunCount < 1 || AcceptedAverageRunCount < 1)
+        {
+            throw new InvalidDataException("The averaging run counts are invalid.");
+        }
+        if (AcceptedAverageRunCount > AverageRunCount)
+        {
+            throw new InvalidDataException("Accepted averaging runs exceed requested runs.");
+        }
         if (TransferRealSamples != null &&
             TransferRealSamples.Length == 0)
         {
@@ -286,6 +302,18 @@ public sealed class ImpulseResponseFile
                 TransferRealSamples,
                 TransferImaginarySamples,
                 "Transfer impulse response");
+        }
+        if (TransferCoherence != null)
+        {
+            for (int i = 0; i < TransferCoherence.Length; i++)
+            {
+                double value = TransferCoherence[i];
+                if (!double.IsFinite(value) || value < 0 || value > 1)
+                {
+                    throw new InvalidDataException(
+                        $"Transfer coherence sample {i} is outside the valid range.");
+                }
+            }
         }
 
         ValidateLevelEntry(MicrophoneLevels, nameof(MicrophoneLevels));

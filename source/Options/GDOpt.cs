@@ -52,6 +52,7 @@ public partial class GDOpt : Form
             comboSmoothingInverseOctaves.SelectedItem =
                 SmoothingPresetOptions.Normalize(opt.SmoothingInverseOctaves);
             checkBoxShowGroupDelay.Checked = opt.ShowGroupDelay;
+            checkBoxShowCoherence.Checked = opt.ShowCoherence;
         }
         finally
         {
@@ -73,6 +74,7 @@ public partial class GDOpt : Form
                 ? inverseOctaves
                 : SmoothingPresetOptions.SupportedInverseOctaves[0];
         opt.ShowGroupDelay = checkBoxShowGroupDelay.Checked;
+        opt.ShowCoherence = checkBoxShowCoherence.Checked;
         UpdateIrPreview();
     }
 
@@ -202,6 +204,9 @@ public partial class GDOpt : Form
         toolTip.SetToolTip(
             checkBoxShowGroupDelay,
             "Shows the group-delay curve.");
+        toolTip.SetToolTip(
+            checkBoxShowCoherence,
+            "Shows the measurement coherence (\u03B3\u00B2) curve when the IR was captured with 2+ averaged runs.");
         toolTip.SetToolTip(
             labelMinFrequency,
             "Lowest frequency the current gate can resolve (≈ 1 / gate length). Below it the curve is not reliable.");

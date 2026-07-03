@@ -130,6 +130,8 @@ internal sealed class MeasurementSettingsFile
         public int AsioInputChannelOffset { get; set; }
         public int? AsioLoopbackInputChannelOffset { get; set; }
         public int AsioOutputChannelOffset { get; set; }
+        public int AverageRunCount { get; set; } = 1;
+        public bool ConfirmEachAverageRun { get; set; }
 
         // A loopback reference channel is mandatory: every analysis mode is derived from the
         // transfer IR, which only exists when the loopback is captured alongside the microphone.
@@ -156,7 +158,9 @@ internal sealed class MeasurementSettingsFile
                 WaveLoopbackDeviceNumber = measurement.WaveLoopbackDeviceNumber,
                 AsioInputChannelOffset = measurement.AsioInputChannelOffset,
                 AsioLoopbackInputChannelOffset = measurement.AsioLoopbackInputChannelOffset,
-                AsioOutputChannelOffset = measurement.AsioOutputChannelOffset
+                AsioOutputChannelOffset = measurement.AsioOutputChannelOffset,
+                AverageRunCount = measurement.AverageRunCount,
+                ConfirmEachAverageRun = measurement.ConfirmEachAverageRun
             };
 
         public void ApplyTo(ExpSweepMeasurement measurement)
@@ -195,7 +199,9 @@ internal sealed class MeasurementSettingsFile
                     AsioLoopbackInputChannelOffset),
                 NormalizeOptionalDeviceNumber(
                     AudioDeviceCatalog.GetRecordingDevices(),
-                    WaveLoopbackDeviceNumber));
+                    WaveLoopbackDeviceNumber),
+                Clamp(AverageRunCount, 1, 64),
+                ConfirmEachAverageRun);
         }
     }
 
@@ -208,6 +214,7 @@ internal sealed class MeasurementSettingsFile
         public int Offset { get; set; }
         public bool Unwrap { get; set; } = true;
         public bool UseCalibration { get; set; } = true;
+        public bool ShowCoherence { get; set; } = true;
         public bool ShowMeasuredPhase { get; set; } = true;
         public bool ShowMinimumPhase { get; set; } = true;
         public bool ShowExcessPhase { get; set; } = true;
@@ -238,6 +245,7 @@ internal sealed class MeasurementSettingsFile
                 Offset = options.Offset,
                 Unwrap = options.Unwrap,
                 UseCalibration = options.UseCalibration,
+                ShowCoherence = options.ShowCoherence,
                 ShowMeasuredPhase = options.ShowMeasuredPhase,
                 ShowMinimumPhase = options.ShowMinimumPhase,
                 ShowExcessPhase = options.ShowExcessPhase,
@@ -271,6 +279,7 @@ internal sealed class MeasurementSettingsFile
             options.Offset = Clamp(Offset, -32768, 32768);
             options.Unwrap = Unwrap;
             options.UseCalibration = UseCalibration;
+            options.ShowCoherence = ShowCoherence;
             options.ShowMeasuredPhase = ShowMeasuredPhase;
             options.ShowMinimumPhase = ShowMinimumPhase;
             options.ShowExcessPhase = ShowExcessPhase;

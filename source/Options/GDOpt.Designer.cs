@@ -42,6 +42,7 @@ namespace Resonalyze.Options
             label1 = new Label();
             labelCurves = new Label();
             checkBoxShowGroupDelay = new CheckBox();
+            checkBoxShowCoherence = new CheckBox();
             irPlotView = new OxyPlot.WindowsForms.PlotView();
             (numericGateOffset).BeginInit();
             (numericRightWindow).BeginInit();
@@ -201,32 +202,43 @@ namespace Resonalyze.Options
             label1.Size = new Size(73, 15);
             label1.TabIndex = 33;
             label1.Text = "Plateau (ms)";
-            //
+            // 
             // labelCurves
-            //
+            // 
             labelCurves.AutoSize = true;
             labelCurves.ForeColor = Color.FromArgb(150, 170, 205);
             labelCurves.Location = new Point(12, 161);
             labelCurves.Name = "labelCurves";
-            labelCurves.Size = new Size(48, 15);
+            labelCurves.Size = new Size(46, 15);
             labelCurves.TabIndex = 63;
             labelCurves.Text = "Curves:";
-            //
+            // 
             // checkBoxShowGroupDelay
-            //
+            // 
             checkBoxShowGroupDelay.AutoSize = true;
             checkBoxShowGroupDelay.ForeColor = SystemColors.ControlLight;
             checkBoxShowGroupDelay.Location = new Point(12, 183);
             checkBoxShowGroupDelay.Name = "checkBoxShowGroupDelay";
-            checkBoxShowGroupDelay.Size = new Size(120, 19);
+            checkBoxShowGroupDelay.Size = new Size(121, 19);
             checkBoxShowGroupDelay.TabIndex = 64;
             checkBoxShowGroupDelay.Text = "Show group delay";
             checkBoxShowGroupDelay.UseVisualStyleBackColor = true;
-            //
+            // 
+            // checkBoxShowCoherence
+            // 
+            checkBoxShowCoherence.AutoSize = true;
+            checkBoxShowCoherence.ForeColor = SystemColors.ControlLight;
+            checkBoxShowCoherence.Location = new Point(12, 205);
+            checkBoxShowCoherence.Name = "checkBoxShowCoherence";
+            checkBoxShowCoherence.Size = new Size(134, 19);
+            checkBoxShowCoherence.TabIndex = 65;
+            checkBoxShowCoherence.Text = "Show γ² (coherence)";
+            checkBoxShowCoherence.UseVisualStyleBackColor = true;
+            // 
             // irPlotView
-            //
+            // 
             irPlotView.BackColor = Color.FromArgb(32, 36, 46);
-            irPlotView.Location = new Point(12, 209);
+            irPlotView.Location = new Point(12, 231);
             irPlotView.Name = "irPlotView";
             irPlotView.PanCursor = Cursors.Hand;
             irPlotView.Size = new Size(241, 300);
@@ -241,8 +253,9 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 516);
+            ClientSize = new Size(265, 538);
             Controls.Add(irPlotView);
+            Controls.Add(checkBoxShowCoherence);
             Controls.Add(checkBoxShowGroupDelay);
             Controls.Add(labelCurves);
             Controls.Add(numericGateOffset);
@@ -288,6 +301,7 @@ namespace Resonalyze.Options
         private Label label1;
         private Label labelCurves;
         private CheckBox checkBoxShowGroupDelay;
+        private CheckBox checkBoxShowCoherence;
         private OxyPlot.WindowsForms.PlotView irPlotView;
     }
 }

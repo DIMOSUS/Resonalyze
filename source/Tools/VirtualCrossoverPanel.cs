@@ -966,23 +966,25 @@ public partial class VirtualCrossoverPanel : UserControl
         hintAnnotation.Text = processed.Count == 0 ? NoSourcesHint : string.Empty;
 
         // The processed magnitudes and the complex sum feed both the drawn
-        // curves and the sum-loss metric, so they are built once here.
+        // curves and the sum-loss metric, so they are built once here. Every
+        // curve — the channels AND the sum — shares one window anchor (the
+        // earliest arrival): with per-channel anchors the gates capture slightly
+        // different room content and the loss can poke above its 0 dB ceiling.
         List<AnalysisCurve>? magnitudes = null;
         AnalysisCurve? sumCurve = null;
         if (processed.Count >= 2)
         {
+            int anchor = processed.Min(item => item.PeakIndex);
             magnitudes = processed
                 .Select(item => BuildMagnitudeCurve(
-                    item.ImpulseResponse, item.PeakIndex, item.Channel.SampleRate))
+                    item.ImpulseResponse, anchor, item.Channel.SampleRate))
                 .ToList();
             // The window anchors at the earliest arrival: the summed envelope peak
             // can sit between the arrivals or vanish entirely under cancellation.
             Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
                 processed.Select(item => item.ImpulseResponse).ToList());
             sumCurve = BuildMagnitudeCurve(
-                sum,
-                processed.Min(item => item.PeakIndex),
-                processed[0].Channel.SampleRate);
+                sum, anchor, processed[0].Channel.SampleRate);
         }
 
         UpdateMetric(processed, magnitudes, sumCurve);

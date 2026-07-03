@@ -6,6 +6,7 @@ internal static class Program
     private static void Main()
     {
         ApplicationConfiguration.Initialize();
+        AppProfiler.SetThreadName("UI");
         Application.Run(new Form1());
     }
 }

@@ -3,6 +3,8 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
+    <Configurations>Debug;Release;Tracy</Configurations>
+    <Platforms>AnyCPU</Platforms>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -15,6 +17,13 @@
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ApplicationIcon>logo.ico</ApplicationIcon>
     <SparklePublicKey Condition="'$(SparklePublicKey)' == ''"></SparklePublicKey>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Tracy'">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>portable</DebugType>
+    <Optimize>true</Optimize>
+    <DefineConstants>$(DefineConstants);TRACE;TRACY_ENABLE</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -40,6 +49,10 @@
     <PackageReference Include="NetSparkleUpdater.UI.WinForms" Version="3.0.1" />
     <PackageReference Include="OxyPlot.WindowsForms" Version="2.2.0" />
     <PackageReference Include="PDFsharp-MigraDoc-GDI" Version="6.2.4" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(Configuration)' == 'Tracy'">
+    <PackageReference Include="Tracy-CSharp" Version="0.13.1" />
   </ItemGroup>
 
   <ItemGroup>

@@ -7,6 +7,7 @@ public partial class Form1
 {
     private void DrawSelectedMode(bool includeCurves)
     {
+        using var _ = AppProfiler.Zone("Form1.DrawSelectedMode");
         ModeDescriptor descriptor = GetActiveModeDescriptor();
         if (descriptor.CreatePlotModel == null)
         {
@@ -40,6 +41,7 @@ public partial class Form1
         bool includeCurves,
         bool showOverlay)
     {
+        using var _ = AppProfiler.Zone("Form1.ShowPlotModel");
         plotView1.Model = model;
         UpdatePeakInfo();
 

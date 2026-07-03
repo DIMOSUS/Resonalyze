@@ -25,6 +25,11 @@ public static class BiquadResponse
 
         double omega = Math.Tau * frequencyHz / sampleRateHz;
         Complex z1 = Complex.Exp(new Complex(0, -omega));
+        return Evaluate(coefficients, z1);
+    }
+
+    public static Complex Evaluate(BiquadCoefficients coefficients, Complex z1)
+    {
         Complex z2 = z1 * z1;
 
         Complex numerator = coefficients.B0 + coefficients.B1 * z1 + coefficients.B2 * z2;

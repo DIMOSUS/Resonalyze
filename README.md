@@ -322,6 +322,18 @@ Run all application and deterministic DSP tests with:
 dotnet test source/Resonalyze.sln -c Release
 ```
 
+For local performance profiling, build the dedicated Tracy configuration:
+
+```powershell
+dotnet run --project source/Resonalyze.csproj -c Tracy
+```
+
+This configuration defines `TRACY_ENABLE` and references `Tracy-CSharp`; normal
+Debug and Release builds do not load Tracy. Add instrumentation through
+`AppProfiler.Zone(...)`, `AppProfiler.FrameMark(...)`, and
+`AppProfiler.SetThreadName(...)` so profiling code stays isolated behind the
+build flag.
+
 The Release executable is produced at:
 
 ```text

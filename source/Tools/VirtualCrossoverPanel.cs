@@ -90,6 +90,8 @@ public partial class VirtualCrossoverPanel : UserControl
 
         InitializeMainPlot();
         InitializeDspPlot();
+        mainPlotView.Paint += (_, _) => AppProfiler.FrameMark("vdsp-main");
+        dspPlotView.Paint += (_, _) => AppProfiler.FrameMark("vdsp-dsp");
         InitializeSmoothingComboBox();
         WirePanelEvents();
         InitializeToolTips();
@@ -889,6 +891,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private void RedrawAll()
     {
+        using var _ = AppProfiler.Zone("VirtualDSP.RedrawAll");
         if (suppressProjectEvents)
         {
             return;
@@ -914,6 +917,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private List<ProcessedChannel> ProcessChannels(
         IReadOnlyDictionary<ChannelRuntime, AlignmentOverride>? alignmentOverrides = null)
     {
+        using var _ = AppProfiler.Zone("VirtualDSP.ProcessChannels");
         var processed = new List<ProcessedChannel>();
         for (int i = 0; i < channels.Count; i++)
         {
@@ -955,6 +959,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private void RedrawMainPlot()
     {
+        using var _ = AppProfiler.Zone("VirtualDSP.RedrawMainPlot");
         PlotModel? model = mainPlotView.Model;
         if (model == null)
         {
@@ -1596,6 +1601,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private void RedrawDspPlot()
     {
+        using var _ = AppProfiler.Zone("VirtualDSP.RedrawDspPlot");
         PlotModel? model = dspPlotView.Model;
         if (model == null)
         {

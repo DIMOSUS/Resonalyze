@@ -98,6 +98,7 @@ namespace Resonalyze
             InitializeComponent();
             ConfigureToolTips();
             PlotInteraction.EnableDoubleClickAxisReset(plotView1);
+            plotView1.Paint += (_, _) => AppProfiler.FrameMark("main-plot");
             measurementSettings = MeasurementSettingsFile.LoadOrDefault();
             Form1ControllerDependencies dependencies = CreateControllerDependencies();
             overlayCollection = dependencies.OverlayCollection;

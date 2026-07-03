@@ -103,6 +103,10 @@ file is provided with every release.
 - Mandatory loopback-referenced sweep processing: every measurement captures a
   loopback reference, and all analysis is derived from the resulting transfer
   function (harmonics and THD+N stay on the sweep deconvolution)
+- Multi-sweep averaging (1–64 runs) combined as a cross-spectrum transfer
+  estimate to lift the signal-to-noise ratio, with a per-frequency **coherence**
+  (γ²) curve in the Frequency Response, Phase, and Group Delay views and an
+  optional confirm-between-runs pause for spatial averaging
 - Time Alignment with sub-sample delay estimation from the transfer IR
 - Crossover summation prediction: the true **complex (vector) sum** of two
   measurements (`Main ⊕ Compare`) with Compare delay/polarity controls, plus a
@@ -157,6 +161,12 @@ Resonalyze is built around a focused engineering workflow:
   Measurements can use a recorded loopback channel as the time reference, so
   delay and transfer-function analysis are tied to the actual playback path
   instead of to guesswork.
+- **Repeatable, confidence-scored measurements**
+  Average up to 64 sweeps into one cross-spectrum transfer estimate to pull the
+  response out of the noise, and read a per-frequency **coherence** (γ²) curve
+  that flags exactly which bands are trustworthy. An optional
+  confirm-between-runs pause turns the same path into spatial averaging across
+  microphone positions.
 - **Crossover summation prediction**
   Measure each driver once, then virtually align, combine, and optimize your
   loudspeaker system before applying a single change to the DSP.
@@ -171,7 +181,12 @@ Resonalyze is built around a focused engineering workflow:
   direct read-out of the summation loss you are dialing out. The **Virtual
   DSP** tool takes this to its conclusion: complete virtual DSP chains
   (gain, delay, polarity, crossover filters, PEQ) per driver, tuned against the
-  live predicted sum before a single setting is applied to the hardware.
+  live predicted sum before a single setting is applied to the hardware. Two
+  auto-fit modes do the tedious part: an **Auto crossover** optimizer searches
+  the crossover frequencies, filter families, slopes, and cut-only gains that
+  flatten the summed magnitude (favoring tight, minimally overlapping splits),
+  and **Auto delay** aligns each junction's delay and polarity against the
+  phase-aware sum.
 - **Practical loudspeaker alignment**
   Time Alignment reports first arrival and strongest peak with sub-sample
   interpolation, distance at 20 °C, confidence, signal levels, and a visible
@@ -228,7 +243,8 @@ comparison, and transparent data matter more than a large legacy feature set.
       <h3>Frequency Response</h3>
       <img src="assets/images/fr.jpg" alt="Frequency response plot">
       <p>One-click loudspeaker response measurement with smoothing,
-      calibration, distortion curves, overlays, and target comparison.</p>
+      calibration, distortion curves, overlays, target comparison, and an
+      optional coherence curve from averaged sweeps.</p>
     </td>
   </tr>
   <tr>
@@ -364,8 +380,13 @@ real-time analysis without capturing an IR, use the additional
    loopback channels, sweep duration, playback channel, and analysis
    parameters. A **loopback reference channel is required** — all analysis is
    derived from the transfer IR it produces, so the settings panel flags an
-   unset loopback and the measurement will not start without one.
-4. Start a recording to generate and capture the exponential sine sweep.
+   unset loopback and the measurement will not start without one. To average
+   several sweeps, set **Measurements** above `1`; enable **Confirm each run** to
+   pause before each sweep so you can reposition the microphone for spatial
+   averaging.
+4. Start a recording to generate and capture the exponential sine sweep. With
+   averaging enabled the runs are combined into one transfer IR and a coherence
+   (γ²) curve.
 5. Watch the compact input level meter to confirm microphone level, loopback
    presence, and headroom before trusting the measurement.
 6. Select the analysis view you need.
@@ -888,6 +909,8 @@ Files are saved as indented, human-readable JSON. Each file contains:
 - sweep-deconvolution impulse-response samples and peak index
 - optional loopback transfer-function impulse-response samples and peak index
   when loopback was enabled
+- optional transfer-function coherence (γ²) data when two or more sweeps were
+  averaged, plus the requested and accepted run counts
 - stored microphone and loopback Peak/RMS meter values from the measurement
 - embedded preview frequency-response data for the Measurement History panel
 
@@ -1207,6 +1230,9 @@ chain:
   the chain
 - **Mute** — temporarily remove a channel from the plots, sum, loss metric,
   overlay capture, and Auto delay without clearing its source or settings
+- **Bypass** — feed the channel's raw measured signal into the sum with the
+  whole chain skipped (no gain, delay, polarity, crossover, or PEQ), for an A/B
+  against the processed result; unlike Mute, the channel stays in the sum
 - **IR polarity** — a measured Normal / Inverted / Unknown indicator read from
   the transfer IR, independent of the virtual polarity switch
 
@@ -1230,11 +1256,28 @@ magnitude and phase (without the driver). A **Sum loss avg** read-out over the
 crossover window turns tuning into a number you can minimize — or use the
 classic null test: invert one channel and tune the delay for the deepest notch.
 
-- **Auto crossover...** estimates each channel's usable band, lets you confirm
-  the driver type, then proposes LR24 crossover points and cut-only gains.
+Editing a chain recomputes the prediction on a background task, so dragging a
+gain, delay, or crossover value stays responsive even with three channels
+loaded; a burst of rapid edits is coalesced into a single trailing redraw that
+always lands on the latest settings, and the previous curves stay on screen
+until the new frame is ready.
+
+- **Auto crossover...** estimates each channel's usable band and driver type,
+  then asks which filter families to allow (Butterworth / Linkwitz-Riley /
+  Bessel), the crossover-frequency window, and whether the two sides of a
+  junction may take independent slopes. It searches the crossover frequency,
+  family, slope, and cut-only gains to flatten the summed magnitude — modelling
+  each junction the way its family sums (amplitude for LR/Bessel, power for
+  Butterworth), penalizing wide band overlap, and keeping a practical minimum
+  slope, so it lands on a tight, engineer-sensible split rather than shallow
+  filters that only look flat by overlapping widely. Narrowing the window past an
+  outer driver adds a subsonic / brickwall band-limit on that channel.
 - **Auto delay** aligns in two stages: band-limited first arrivals set the
-  coarse offsets, then a fractional-delay phase search fine-tunes the result and
-  flips polarity when the complex sum is stronger inverted.
+  coarse offsets, then a fractional-delay search minimizes the sum-loss metric at
+  each junction. It weighs every near-optimal candidate against an arrival-based
+  prior and a physical tie-break, so it does not add delay or flip polarity
+  without a real improvement — sidestepping the flip-plus-half-period impostor a
+  steep crossover can otherwise hide.
 - **Capture to overlay** saves the predicted sum as a Captured overlay in
   Frequency Response — compare it against real measurements and target curves,
   or feed it onward to the EQ Wizard.

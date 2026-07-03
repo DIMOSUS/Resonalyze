@@ -286,7 +286,7 @@ namespace Resonalyze
             labelMetric.AutoSize = true;
             labelMetric.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelMetric.ForeColor = Color.FromArgb(230, 184, 0);
-            labelMetric.Location = new Point(349, 434);
+            labelMetric.Location = new Point(349, 437);
             labelMetric.Name = "labelMetric";
             labelMetric.Size = new Size(95, 15);
             labelMetric.TabIndex = 15;

@@ -1233,14 +1233,47 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
+        List<IReadOnlyList<SignalPoint>> channelPoints = magnitudes
+            .Select(curve => (IReadOnlyList<SignalPoint>)curve.Points)
+            .ToList();
+        var parts = new List<string>();
+
+        // Per-junction read-outs first, so an improvement at one crossover is
+        // not averaged away by the other. Each junction reads the full sum
+        // inside its own pair band; the out-of-pair channels are filtered so
+        // far down there that their contribution is negligible.
+        foreach (AdjacentPair pair in GetAdjacentPairs(OrderByBand(processed)))
+        {
+            double? pairLoss = VirtualCrossoverAnalysis.AverageSumLossDb(
+                sumCurve.Points, channelPoints, pair.BandLowHz, pair.BandHighHz);
+            double? pairDip = VirtualCrossoverAnalysis.MinimumSumLossDb(
+                sumCurve.Points, channelPoints, pair.BandLowHz, pair.BandHighHz);
+            if (pairLoss.HasValue)
+            {
+                parts.Add(
+                    $"{pair.Lower.Channel.Control.ChannelName}/" +
+                    $"{pair.Upper.Channel.Control.ChannelName} " +
+                    $"{pairLoss.Value:0.0} dB" +
+                    (pairDip.HasValue ? $", dip {pairDip.Value:0.0} dB" : "") +
+                    $" ({FormatHz(pair.BandLowHz)} – {FormatHz(pair.BandHighHz)})");
+            }
+        }
+
         (double minHz, double maxHz) = GetCrossoverWindow(processed);
         double? loss = VirtualCrossoverAnalysis.AverageSumLossDb(
-            sumCurve.Points,
-            magnitudes.Select(curve => curve.Points).ToList(),
-            minHz,
-            maxHz);
-        labelMetric.Text = loss.HasValue
-            ? $"Sum loss avg: {loss.Value:0.0} dB ({FormatHz(minHz)} – {FormatHz(maxHz)})"
+            sumCurve.Points, channelPoints, minHz, maxHz);
+        double? dip = VirtualCrossoverAnalysis.MinimumSumLossDb(
+            sumCurve.Points, channelPoints, minHz, maxHz);
+        if (loss.HasValue)
+        {
+            string total = $"{loss.Value:0.0} dB" +
+                (dip.HasValue ? $", dip {dip.Value:0.0} dB" : "") +
+                $" ({FormatHz(minHz)} – {FormatHz(maxHz)})";
+            parts.Add(parts.Count > 0 ? "total " + total : total);
+        }
+
+        labelMetric.Text = parts.Count > 0
+            ? "Sum loss avg: " + string.Join("   ", parts)
             : "Sum loss avg: —";
     }
 
@@ -1249,17 +1282,58 @@ public partial class VirtualCrossoverPanel : UserControl
             ? $"{frequencyHz / 1_000:0.#} kHz"
             : $"{frequencyHz:0} Hz";
 
-    // Bounds of the stage-2 fine-search span. The span itself scales with the
-    // crossover frequency (half its period): the coarse arrival error grows
-    // with the period at low splits, while at high splits a wide window would
-    // hop onto a neighboring correlation lobe one period away.
-    private const double MinFineAlignmentRangeMs = 0.1;
+    // Bounds of the stage-2 fine-search span. The span scales with the
+    // crossover frequency (half its period) because the coarse arrival error
+    // grows with the period — but it never drops below half a millisecond:
+    // arrival estimates carry a floor of error (filter group-delay asymmetry,
+    // driver rise time) that does not shrink with the junction period, so at a
+    // high split half a period would regularly miss the true optimum. The
+    // extra lobes a wide window admits are handled by the candidate list, the
+    // arrival prior, and the physical tie-break in SelectCandidate.
+    private const double MinFineAlignmentRangeMs = 0.5;
     private const double MaxFineAlignmentRangeMs = 2.5;
+
+    // Tie-break preferences among near-equal alignment candidates. An inverted
+    // winner must beat the best non-inverted candidate by a real margin: room
+    // reflections routinely hand a (flip + half-period shift) impostor a few
+    // hundredths of a dB inside the pair band, while a genuinely flipped
+    // driver wins by the full arrival-prior penalty of its non-inverted
+    // impostors (>= ~0.3 dB, see PriorPenaltyDbAtSigma). Among equals of one
+    // polarity, the candidate closest to the measured arrivals wins — the
+    // physically minimal correction.
+    private const double InvertPreferenceMarginDb = 0.25;
+    private const double DelayTieMarginDb = 0.1;
+
+    private static AlignmentCandidate SelectCandidate(
+        IReadOnlyList<AlignmentCandidate> candidates,
+        double baseDeltaMs)
+    {
+        AlignmentCandidate best = candidates[0];
+        if (best.InvertPolarity)
+        {
+            AlignmentCandidate? bestNormal = candidates
+                .Where(item => !item.InvertPolarity)
+                .OrderByDescending(item => item.ScoreDb)
+                .FirstOrDefault();
+            if (bestNormal != null &&
+                bestNormal.ScoreDb >= best.ScoreDb - InvertPreferenceMarginDb)
+            {
+                best = bestNormal;
+            }
+        }
+
+        return candidates
+            .Where(item => item.InvertPolarity == best.InvertPolarity &&
+                item.ScoreDb >= best.ScoreDb - DelayTieMarginDb)
+            .OrderBy(item => Math.Abs(item.DelayMs - baseDeltaMs))
+            .First();
+    }
 
     // Two-stage alignment. Stage 1: Time-Alignment-style band-limited first
     // arrivals give a coarse delay per channel (robust, no phase ambiguity).
-    // Stage 2: the phase correlation fine-tunes each channel within a small
-    // window around that base, also deciding whether its polarity should flip.
+    // Stage 2: walking pair by pair outward from the reference, a phase
+    // correlation fine-tunes each channel against its settled neighbor inside
+    // their shared pair band, also deciding whether its polarity should flip.
     // The latest-arriving channel is the fixed reference, so the proposed
     // delays stay non-negative by construction. Previous Auto/manual delay and
     // polarity settings are ignored: the command recomputes an absolute proposal
@@ -1312,40 +1386,30 @@ public partial class VirtualCrossoverPanel : UserControl
         // in its high band. So each adjacent pair is measured around its own
         // crossover frequency, and the pairwise differences chain into one
         // relative timeline.
-        List<ProcessedChannel> byBand = processed
-            .OrderBy(item =>
-            {
-                (double lowHz, double highHz) = GetChannelBand(item.Channel.Settings);
-                return Math.Sqrt(lowHz * highHz);
-            })
-            .ToList();
+        List<ProcessedChannel> byBand = OrderByBand(processed);
+        List<AdjacentPair> pairs = GetAdjacentPairs(byBand);
 
         var timeline = new Dictionary<ChannelRuntime, double> { [byBand[0].Channel] = 0 };
-        // The highest crossover frequency each channel participates in: it sets
-        // the channel's fine-search span (half that period).
-        var maxPairFc = new Dictionary<ChannelRuntime, double>();
-        for (int i = 0; i < byBand.Count - 1; i++)
+        foreach (AdjacentPair pair in pairs)
         {
-            ProcessedChannel lower = byBand[i];
-            ProcessedChannel upper = byBand[i + 1];
-            double pairHz = GetPairCrossoverHz(lower.Channel.Settings, upper.Channel.Settings);
-            maxPairFc[lower.Channel] = Math.Max(
-                maxPairFc.GetValueOrDefault(lower.Channel), pairHz);
-            maxPairFc[upper.Channel] = Math.Max(
-                maxPairFc.GetValueOrDefault(upper.Channel), pairHz);
-            double bandLow = Math.Max(20, pairHz / 2);
-            double bandHigh = Math.Min(20_000, pairHz * 2);
-
             double lowerArrival = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-                lower.ImpulseResponse, lower.Channel.SampleRate, bandLow, bandHigh);
+                pair.Lower.ImpulseResponse,
+                pair.Lower.Channel.SampleRate,
+                pair.BandLowHz,
+                pair.BandHighHz);
             double upperArrival = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-                upper.ImpulseResponse, upper.Channel.SampleRate, bandLow, bandHigh);
-            timeline[upper.Channel] =
-                timeline[lower.Channel] + (upperArrival - lowerArrival);
+                pair.Upper.ImpulseResponse,
+                pair.Upper.Channel.SampleRate,
+                pair.BandLowHz,
+                pair.BandHighHz);
+            timeline[pair.Upper.Channel] =
+                timeline[pair.Lower.Channel] + (upperArrival - lowerArrival);
 
             log.AppendLine(
-                $"Pair {lower.Channel.Control.ChannelName}/{upper.Channel.Control.ChannelName}: " +
-                $"fc {pairHz:0} Hz, band {bandLow:0}-{bandHigh:0} Hz, " +
+                $"Pair {pair.Lower.Channel.Control.ChannelName}/" +
+                $"{pair.Upper.Channel.Control.ChannelName}: " +
+                $"fc {pair.CrossoverHz:0} Hz, " +
+                $"band {pair.BandLowHz:0}-{pair.BandHighHz:0} Hz, " +
                 $"arrivals {lowerArrival:0.000} / {upperArrival:0.000} ms, " +
                 $"diff {upperArrival - lowerArrival:+0.000;-0.000} ms");
         }
@@ -1356,66 +1420,132 @@ public partial class VirtualCrossoverPanel : UserControl
         ChannelRuntime reference = timeline.First(pair => pair.Value == latest).Key;
         log.AppendLine($"Reference: {reference.Control.ChannelName}");
 
-        foreach (ChannelRuntime channel in processed
-            .Select(item => item.Channel)
-            .Where(candidate => candidate != reference)
-            .OrderBy(candidate => timeline[candidate]))
+        // Stage 2: sequential pairwise fine alignment, walking outward from the
+        // reference along the band order. Each channel is phase-correlated
+        // against its already-settled neighbor only, inside their shared pair
+        // band, so the search window is sized by THAT junction — a mid channel
+        // must not have its low-junction window squeezed to the period of its
+        // high junction. An arrival error at a low junction then propagates
+        // through the chain and moves the whole upper group together, which a
+        // per-channel search against all fixed channels at once cannot do.
+        int referenceIndex = byBand.FindIndex(item => item.Channel == reference);
+        var searchOrder =
+            new List<(ProcessedChannel Target, ProcessedChannel Neighbor, AdjacentPair Pair)>();
+        for (int i = referenceIndex - 1; i >= 0; i--)
         {
-            // Reprocess so already-aligned channels participate with their new
-            // delays; the current channel's own response is still untouched, so
-            // the stage-1 timeline remains valid for it.
-            List<ProcessedChannel> current = ProcessChannels(alignment);
-            ProcessedChannel variable = current.First(item => item.Channel == channel);
-            List<Complex[]> fixedIrs = current
-                .Where(item => item.Channel != channel)
-                .Select(item => item.ImpulseResponse)
-                .ToList();
+            searchOrder.Add((byBand[i], byBand[i + 1], pairs[i]));
+        }
+        for (int i = referenceIndex + 1; i < byBand.Count; i++)
+        {
+            searchOrder.Add((byBand[i], byBand[i - 1], pairs[i - 1]));
+        }
 
-            // Stage 2: phase correlation (with the polarity flip allowed) in a
-            // window around the arrival-based delta. The span is half the period
-            // of the channel's highest crossover: wide enough to absorb the
-            // coarse arrival error (which grows with the period), narrow enough
-            // not to reach the neighboring correlation lobe one period away.
-            double halfPeriodMs = 500.0 / maxPairFc.GetValueOrDefault(channel, 1_000);
+        // One junction search: candidates of the prior-penalized loss score in
+        // a window around the arrival-based delta. The window is half the
+        // period of THIS junction's crossover — wide enough to absorb the
+        // coarse arrival error (which grows with the period), narrow enough
+        // not to span two same-polarity lobes. The base doubles as a soft
+        // prior: a quadratic dB penalty that deters far lobes.
+        (IReadOnlyList<AlignmentCandidate> Candidates, double BaseDelta, double HalfPeriodMs)
+            SearchJunction(
+                ChannelRuntime channel,
+                ChannelRuntime neighborChannel,
+                AdjacentPair junction,
+                double? windowOverrideMs = null)
+        {
+            // Reprocess so the settled neighbors participate with their new
+            // delays and polarities. The searched channel is dropped from the
+            // override map so its response is the raw, undelayed IR — the search
+            // provides the delay, and chosen.DelayMs is then the absolute delay
+            // to assign. Without this reset, a uniform shift applied earlier to
+            // a not-yet-searched channel (the negative-delay branch below) would
+            // bake a stray offset into variableIr that the reported delay does
+            // not account for, mis-aligning that channel by the shift.
+            var searchAlignment = new Dictionary<ChannelRuntime, AlignmentOverride>(alignment);
+            searchAlignment.Remove(channel);
+            List<ProcessedChannel> current = ProcessChannels(searchAlignment);
+            Complex[] variableIr = current
+                .First(item => item.Channel == channel).ImpulseResponse;
+            var neighborIrs = new List<Complex[]>
+            {
+                current.First(item => item.Channel == neighborChannel).ImpulseResponse
+            };
+
+            double halfPeriodMs = 500.0 / junction.CrossoverHz;
+            double rangeMs = windowOverrideMs ?? Math.Clamp(
+                halfPeriodMs, MinFineAlignmentRangeMs, MaxFineAlignmentRangeMs);
+            double baseDelta = alignment.GetValueOrDefault(neighborChannel).DelayMs
+                + timeline[neighborChannel] - timeline[channel];
+            IReadOnlyList<AlignmentCandidate> candidates =
+                VirtualCrossoverAnalysis.FindAlignmentCandidates(
+                    variableIr,
+                    neighborIrs,
+                    channel.SampleRate,
+                    junction.BandLowHz,
+                    junction.BandHighHz,
+                    baseDelta - rangeMs,
+                    baseDelta + rangeMs,
+                    priorDelayMs: baseDelta,
+                    priorSigmaMs: rangeMs / 2);
+            return (candidates, baseDelta, halfPeriodMs);
+        }
+
+        foreach ((ProcessedChannel target, ProcessedChannel neighbor, AdjacentPair pair)
+            in searchOrder)
+        {
+            ChannelRuntime channel = target.Channel;
+            (IReadOnlyList<AlignmentCandidate> candidates, double baseDelta,
+                double halfPeriodMs) = SearchJunction(channel, neighbor.Channel, pair);
+            log.AppendLine(
+                $"Channel {channel.Control.ChannelName}: " +
+                $"vs {neighbor.Channel.Control.ChannelName} " +
+                $"in {pair.BandLowHz:0}-{pair.BandHighHz:0} Hz, " +
+                $"base {baseDelta:0.000} ms, candidates " +
+                string.Join("; ", candidates.Select(item =>
+                    $"{item.DelayMs:0.000} ms" +
+                    $"{(item.InvertPolarity ? " inv" : "")} " +
+                    $"(score {item.ScoreDb:0.00}, avg {item.LossDb:0.00}, " +
+                    $"dip {item.DipDb:0.0} dB)")));
+
+            AlignmentCandidate chosen = candidates.Count > 0
+                ? SelectCandidate(candidates, baseDelta)
+                : new AlignmentCandidate(baseDelta, false, 0);
+            if (candidates.Count > 0 && chosen != candidates[0])
+            {
+                log.AppendLine(
+                    $"  preferred {chosen.DelayMs:0.000} ms" +
+                    $"{(chosen.InvertPolarity ? " inv" : "")} over " +
+                    $"{candidates[0].DelayMs:0.000} ms" +
+                    $"{(candidates[0].InvertPolarity ? " inv" : "")} " +
+                    $"(margin {candidates[0].ScoreDb - chosen.ScoreDb:0.00} dB)");
+            }
+
             double fineRangeMs = Math.Clamp(
                 halfPeriodMs, MinFineAlignmentRangeMs, MaxFineAlignmentRangeMs);
 
-            double baseDelta = latest - timeline[channel];
-            AlignmentResult result = VirtualCrossoverAnalysis.FindBestAlignment(
-                variable.ImpulseResponse,
-                fixedIrs,
-                channel.SampleRate,
-                minHz,
-                maxHz,
-                baseDelta - fineRangeMs,
-                baseDelta + fineRangeMs);
-            log.AppendLine(
-                $"Channel {channel.Control.ChannelName}: base {baseDelta:0.000} ms, " +
-                $"window ±{fineRangeMs:0.000} ms, fine {result.DelayMs:0.000} ms, " +
-                $"invert {(result.InvertPolarity ? "yes" : "no")}");
-
             // A result pinned to the window edge means the optimum lies beyond
             // the coarse estimate's reach — retry once, widened but still short
-            // of a full period so the search cannot land on the next lobe.
+            // of a full period so the search cannot land on the next lobe. The
+            // edge hit means the base itself is suspect, so the retry relaxes
+            // the prior along with the window.
             double retryRangeMs = Math.Min(1.8 * halfPeriodMs, 3.0);
             if (retryRangeMs > fineRangeMs &&
-                Math.Abs(result.DelayMs - baseDelta) >= fineRangeMs - 0.02)
+                Math.Abs(chosen.DelayMs - baseDelta) >= fineRangeMs - 0.02)
             {
-                result = VirtualCrossoverAnalysis.FindBestAlignment(
-                    variable.ImpulseResponse,
-                    fixedIrs,
-                    channel.SampleRate,
-                    minHz,
-                    maxHz,
-                    baseDelta - retryRangeMs,
-                    baseDelta + retryRangeMs);
+                (IReadOnlyList<AlignmentCandidate> retried, _, _) = SearchJunction(
+                    channel, neighbor.Channel, pair, windowOverrideMs: retryRangeMs);
+                if (retried.Count > 0)
+                {
+                    chosen = retried[0];
+                }
+
                 log.AppendLine(
                     $"  WARNING: fine result at the search edge; widened to " +
-                    $"±{retryRangeMs:0.000} ms -> {result.DelayMs:0.000} ms, " +
-                    $"invert {(result.InvertPolarity ? "yes" : "no")}");
+                    $"±{retryRangeMs:0.000} ms -> {chosen.DelayMs:0.000} ms, " +
+                    $"invert {(chosen.InvertPolarity ? "yes" : "no")}");
             }
 
-            double newDelay = result.DelayMs;
+            double newDelay = chosen.DelayMs;
             if (newDelay < 0)
             {
                 // A physically impossible negative delay: push every channel by
@@ -1438,7 +1568,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
             alignment[channel] = new AlignmentOverride(
                 Math.Clamp(Math.Round(newDelay, 2), 0, 100),
-                result.InvertPolarity);
+                chosen.InvertPolarity);
         }
 
         foreach (ProcessedChannel item in processed)
@@ -1498,6 +1628,45 @@ public partial class VirtualCrossoverPanel : UserControl
         (double upperLow, double upperHigh) = GetChannelBand(upper);
         return Math.Sqrt(
             Math.Sqrt(lowerLow * lowerHigh) * Math.Sqrt(upperLow * upperHigh));
+    }
+
+    // Adjacent channels along the spectrum with their shared junction: the pair
+    // crossover frequency and the band (an octave to each side) where the two
+    // drivers genuinely overlap. This band is where coarse arrivals are
+    // compared, where the fine delay search correlates, and where the per-pair
+    // sum-loss metric is read.
+    private sealed record AdjacentPair(
+        ProcessedChannel Lower,
+        ProcessedChannel Upper,
+        double CrossoverHz,
+        double BandLowHz,
+        double BandHighHz);
+
+    private static List<ProcessedChannel> OrderByBand(List<ProcessedChannel> processed) =>
+        processed
+            .OrderBy(item =>
+            {
+                (double lowHz, double highHz) = GetChannelBand(item.Channel.Settings);
+                return Math.Sqrt(lowHz * highHz);
+            })
+            .ToList();
+
+    private static List<AdjacentPair> GetAdjacentPairs(List<ProcessedChannel> byBand)
+    {
+        var pairs = new List<AdjacentPair>();
+        for (int i = 0; i < byBand.Count - 1; i++)
+        {
+            double pairHz = GetPairCrossoverHz(
+                byBand[i].Channel.Settings, byBand[i + 1].Channel.Settings);
+            pairs.Add(new AdjacentPair(
+                byBand[i],
+                byBand[i + 1],
+                pairHz,
+                Math.Max(20, pairHz / 2),
+                Math.Min(20_000, pairHz * 2)));
+        }
+
+        return pairs;
     }
 
     // The band a channel actually plays in: its crossover corners when set, the

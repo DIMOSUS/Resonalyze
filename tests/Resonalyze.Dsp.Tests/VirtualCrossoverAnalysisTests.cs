@@ -324,6 +324,27 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void MinimumSumLossDb_ReadsTheDeepestNotch()
+    {
+        // A narrow -12 dB notch barely moves the average but must read at full
+        // depth as the dip.
+        var channel = new List<SignalPoint>
+        {
+            new(500, 0.0), new(1_000, 0.0), new(2_000, 0.0)
+        };
+        var sum = new List<SignalPoint>
+        {
+            new(500, 6.0206), new(1_000, -5.9794), new(2_000, 6.0206)
+        };
+
+        double? dip = VirtualCrossoverAnalysis.MinimumSumLossDb(
+            sum, [channel, channel], 100, 10_000);
+
+        Assert.NotNull(dip);
+        Assert.Equal(-12.0, dip.Value, 3);
+    }
+
+    [Fact]
     public void AverageSumLossDb_IgnoresPointsOutsideTheWindow()
     {
         var channel = new List<SignalPoint> { new(100, 0.0), new(1_000, 0.0) };
@@ -368,6 +389,93 @@ public sealed class VirtualCrossoverAnalysisTests
 
         Assert.False(result.InvertPolarity);
         Assert.Equal(1.0, result.DelayMs, 3);
+    }
+
+    [Fact]
+    public void FindBestAlignment_WideWindowKeepsTheTrueSolutionAtACrossover()
+    {
+        // A realistic crossover pair: LR24 low-pass vs high-pass at 1 kHz sum
+        // in phase, so the truth is the applied 0.4 ms delay with no flip. The
+        // ±1.5 ms window spans the (flip + half-period) impostors at ±0.5 ms
+        // around it; the loss-based score must reject them by the off-corner
+        // cancellations they create, without any prior.
+        Complex[] variable = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(8_192, 200),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.HighPass,
+                HighPassEdge: new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))),
+            SampleRate);
+        Complex[] fixedIr = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(8_192, 200),
+            new DspChannelChain(
+                DelayMs: 0.4,
+                Crossover: new CrossoverSpec(
+                    CrossoverKind.LowPass,
+                    new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))),
+            SampleRate);
+
+        AlignmentResult result = VirtualCrossoverAnalysis.FindBestAlignment(
+            variable, [fixedIr], SampleRate, 500, 2_000, -1.1, 1.9);
+
+        Assert.False(result.InvertPolarity);
+        Assert.Equal(0.4, result.DelayMs, 2);
+    }
+
+    [Fact]
+    public void FindAlignmentCandidates_ReportsBothSidesOfTheDegeneracy()
+    {
+        // The same echo-bait construction: both the flipped solution against
+        // the stronger echo and the direct alignment are local optima, and the
+        // candidate list must expose both so a caller can disambiguate with
+        // outside evidence (the channel's other junction).
+        Complex[] variable = UnitImpulse(4_096, 100);
+        var fixedIr = new Complex[4_096];
+        fixedIr[100] = Complex.One;
+        fixedIr[124] = new Complex(-1.1, 0); // +0.5 ms at 48 kHz, inverted.
+
+        IReadOnlyList<AlignmentCandidate> candidates =
+            VirtualCrossoverAnalysis.FindAlignmentCandidates(
+                variable, [fixedIr], SampleRate, 500, 2_000, -1, 1);
+
+        Assert.True(candidates.Count >= 2);
+        Assert.Contains(candidates, item =>
+            item.InvertPolarity && Math.Abs(item.DelayMs - 0.5) < 0.1);
+        Assert.Contains(candidates, item =>
+            !item.InvertPolarity && Math.Abs(item.DelayMs) < 0.1);
+        // Best first.
+        Assert.True(candidates[0].ScoreDb >= candidates[^1].ScoreDb);
+        // Without a prior the score IS the raw in-band average, and the dip
+        // (a minimum) can never sit above it.
+        Assert.All(candidates, item =>
+        {
+            Assert.Equal(item.ScoreDb, item.LossDb, 9);
+            Assert.True(item.DipDb <= item.LossDb + 1e-9);
+        });
+    }
+
+    [Fact]
+    public void FindBestAlignment_PriorBreaksTheFlippedLobeDegeneracy()
+    {
+        // The fixed channel carries an inverted echo (1.1x) half a period after
+        // the arrival, so summing the variable channel flipped against the echo
+        // genuinely scores a little better in-band than the direct alignment.
+        // Without the prior the search takes that bait; a prior at the
+        // arrival-based delay keeps the non-inverted solution.
+        Complex[] variable = UnitImpulse(4_096, 100);
+        var fixedIr = new Complex[4_096];
+        fixedIr[100] = Complex.One;
+        fixedIr[124] = new Complex(-1.1, 0); // +0.5 ms at 48 kHz, inverted.
+
+        AlignmentResult unguided = VirtualCrossoverAnalysis.FindBestAlignment(
+            variable, [fixedIr], SampleRate, 500, 2_000, -1, 1);
+        AlignmentResult guided = VirtualCrossoverAnalysis.FindBestAlignment(
+            variable, [fixedIr], SampleRate, 500, 2_000, -1, 1,
+            priorDelayMs: 0, priorSigmaMs: 0.25);
+
+        Assert.True(unguided.InvertPolarity);
+        Assert.Equal(0.5, unguided.DelayMs, 1);
+        Assert.False(guided.InvertPolarity);
+        Assert.Equal(0.0, guided.DelayMs, 1);
     }
 
     [Fact]

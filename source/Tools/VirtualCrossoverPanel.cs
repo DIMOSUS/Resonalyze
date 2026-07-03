@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.Series;
@@ -197,6 +198,7 @@ public partial class VirtualCrossoverPanel : UserControl
             // Discard the previous project's resolved measurement first, so an
             // imported channel without a source does not keep stale audio.
             channel.TransferImpulseResponse = null;
+            channel.ProcessedCache = null;
             channel.SampleRate = 0;
             await ResolveSourceAsync(channel, showErrors: false);
         }
@@ -511,6 +513,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         channel.TransferImpulseResponse = transferIr;
+        channel.ProcessedCache = null;
         channel.TransferPeakIndex = Math.Clamp(
             snapshot.TransferPeakIndex ?? 0, 0, transferIr.Length - 1);
         channel.SampleRate = snapshot.SampleRate;
@@ -534,6 +537,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private void ClearSourceCore(ChannelRuntime channel)
     {
         channel.TransferImpulseResponse = null;
+        channel.ProcessedCache = null;
         channel.SampleRate = 0;
         channel.Settings.DisplayName = string.Empty;
         channel.Settings.SourceFilePath = null;
@@ -581,6 +585,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 snapshot?.TransferImpulseResponse is { Length: > 0 } transferIr)
             {
                 channel.TransferImpulseResponse = transferIr;
+                channel.ProcessedCache = null;
                 channel.TransferPeakIndex = Math.Clamp(
                     snapshot.TransferPeakIndex ?? 0, 0, transferIr.Length - 1);
                 channel.SampleRate = snapshot.SampleRate;
@@ -914,11 +919,71 @@ public partial class VirtualCrossoverPanel : UserControl
         double DelayMs,
         bool InvertPolarity);
 
+    private sealed class ProcessedChannelCacheKey : IEquatable<ProcessedChannelCacheKey>
+    {
+        private readonly Complex[] source;
+        private readonly int sampleRate;
+        private readonly double gainDb;
+        private readonly double delayMs;
+        private readonly bool invertPolarity;
+        private readonly CrossoverSpec? crossover;
+        private readonly double peqPreampDb;
+        private readonly PeqBand[] peqBands;
+
+        public ProcessedChannelCacheKey(
+            Complex[] source,
+            int sampleRate,
+            DspChannelChain chain)
+        {
+            this.source = source;
+            this.sampleRate = sampleRate;
+            gainDb = chain.GainDb;
+            delayMs = chain.DelayMs;
+            invertPolarity = chain.InvertPolarity;
+            crossover = chain.Crossover;
+            peqPreampDb = chain.Peq?.PreampDb ?? 0;
+            peqBands = chain.Peq?.Bands.ToArray() ?? Array.Empty<PeqBand>();
+        }
+
+        public bool Equals(ProcessedChannelCacheKey? other) =>
+            other != null &&
+            ReferenceEquals(source, other.source) &&
+            sampleRate == other.sampleRate &&
+            gainDb == other.gainDb &&
+            delayMs == other.delayMs &&
+            invertPolarity == other.invertPolarity &&
+            EqualityComparer<CrossoverSpec?>.Default.Equals(crossover, other.crossover) &&
+            peqPreampDb == other.peqPreampDb &&
+            peqBands.SequenceEqual(other.peqBands);
+
+        public override bool Equals(object? obj) =>
+            obj is ProcessedChannelCacheKey other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            var hash = new HashCode();
+            hash.Add(RuntimeHelpers.GetHashCode(source));
+            hash.Add(sampleRate);
+            hash.Add(gainDb);
+            hash.Add(delayMs);
+            hash.Add(invertPolarity);
+            hash.Add(crossover);
+            hash.Add(peqPreampDb);
+            foreach (PeqBand band in peqBands)
+            {
+                hash.Add(band);
+            }
+
+            return hash.ToHashCode();
+        }
+    }
+
     private List<ProcessedChannel> ProcessChannels(
         IReadOnlyDictionary<ChannelRuntime, AlignmentOverride>? alignmentOverrides = null)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.ProcessChannels");
         var processed = new List<ProcessedChannel>();
+        bool useCache = alignmentOverrides == null;
         for (int i = 0; i < channels.Count; i++)
         {
             ChannelRuntime channel = channels[i];
@@ -930,28 +995,72 @@ public partial class VirtualCrossoverPanel : UserControl
                 continue;
             }
 
-            DspChannelChain chain = channel.Settings.ToChain();
-            if (alignmentOverrides != null)
+            DspChannelChain chain;
+            using (AppProfiler.Zone("VirtualDSP.ProcessChannels.BuildChain"))
             {
-                AlignmentOverride alignment = alignmentOverrides.TryGetValue(
-                    channel,
-                    out AlignmentOverride value)
-                    ? value
-                    : new AlignmentOverride(0, false);
-                chain = chain with
+                chain = channel.Settings.ToChain();
+                if (alignmentOverrides != null)
                 {
-                    DelayMs = alignment.DelayMs,
-                    InvertPolarity = alignment.InvertPolarity
-                };
+                    AlignmentOverride alignment = alignmentOverrides.TryGetValue(
+                        channel,
+                        out AlignmentOverride value)
+                        ? value
+                        : new AlignmentOverride(0, false);
+                    chain = chain with
+                    {
+                        DelayMs = alignment.DelayMs,
+                        InvertPolarity = alignment.InvertPolarity
+                    };
+                }
             }
 
-            Complex[] result = VirtualCrossoverAnalysis.ApplyChain(
-                ir, chain, channel.SampleRate);
-            processed.Add(new ProcessedChannel(
-                channel,
-                result,
-                VirtualCrossoverAnalysis.FindPeakIndex(result),
-                ChannelColors[i]));
+            ProcessedChannelCacheKey? cacheKey = useCache
+                ? new ProcessedChannelCacheKey(ir, channel.SampleRate, chain)
+                : null;
+            if (cacheKey != null &&
+                channel.ProcessedCache?.Key.Equals(cacheKey) == true)
+            {
+                using (AppProfiler.Zone("VirtualDSP.ProcessChannels.CacheHit"))
+                {
+                    processed.Add(new ProcessedChannel(
+                        channel,
+                        channel.ProcessedCache.ImpulseResponse,
+                        channel.ProcessedCache.PeakIndex,
+                        ChannelColors[i]));
+                }
+
+                continue;
+            }
+
+            Complex[] result;
+            using (AppProfiler.Zone("VirtualDSP.ProcessChannels.ApplyChain"))
+            {
+                result = VirtualCrossoverAnalysis.ApplyChain(
+                    ir, chain, channel.SampleRate);
+            }
+
+            int peakIndex;
+            using (AppProfiler.Zone("VirtualDSP.ProcessChannels.FindPeak"))
+            {
+                peakIndex = VirtualCrossoverAnalysis.FindPeakIndex(result);
+            }
+
+            if (cacheKey != null)
+            {
+                channel.ProcessedCache = new ProcessedChannelCache(
+                    cacheKey,
+                    result,
+                    peakIndex);
+            }
+
+            using (AppProfiler.Zone("VirtualDSP.ProcessChannels.AddResult"))
+            {
+                processed.Add(new ProcessedChannel(
+                    channel,
+                    result,
+                    peakIndex,
+                    ChannelColors[i]));
+            }
         }
 
         return processed;
@@ -1619,17 +1728,19 @@ public partial class VirtualCrossoverPanel : UserControl
                 continue;
             }
 
-            double sampleRate = channel.SampleRate;
             // The chain is drawn without its delay term: the filters' phase shape
             // is the readable part, while a delay would wrap the trace into an
             // unreadable sawtooth (its effect is visible on the acoustic plot).
             DspChannelChain chain = channel.Settings.ToChain() with { DelayMs = 0 };
+            PreparedDspResponse preparedResponse = PreparedDspResponse.Create(
+                chain,
+                channel.SampleRate);
 
             var magnitudePoints = new List<DataPoint>(grid.Count);
             var phasePoints = new List<DataPoint>(grid.Count);
             foreach (double frequency in grid)
             {
-                Complex response = chain.Response(frequency, sampleRate);
+                Complex response = preparedResponse.Response(frequency);
                 magnitudePoints.Add(new DataPoint(
                     frequency, DataHelper.AmplitudeToDecibels(response.Magnitude)));
                 phasePoints.Add(new DataPoint(
@@ -1962,5 +2073,11 @@ public partial class VirtualCrossoverPanel : UserControl
         public Complex[]? TransferImpulseResponse { get; set; }
         public int TransferPeakIndex { get; set; }
         public int SampleRate { get; set; }
+        public ProcessedChannelCache? ProcessedCache { get; set; }
     }
+
+    private sealed record ProcessedChannelCache(
+        ProcessedChannelCacheKey Key,
+        Complex[] ImpulseResponse,
+        int PeakIndex);
 }

@@ -61,108 +61,20 @@ public static class VirtualCrossoverAnalysis
             Math.Max(0.0, chain.DelayMs) / 1_000.0 * sampleRate);
         int length = DspMath.NextPowerOfTwo(
             impulseResponse.Length + delaySamples + FilterTailPadding);
+        PreparedDspResponse preparedChain = PreparedDspResponse.Create(chain, sampleRate);
+        if (preparedChain.IsTimeDomainScaleOnly)
+        {
+            return preparedChain.ApplyTimeDomainScale(impulseResponse, length);
+        }
 
         var spectrum = new Complex[length];
         Array.Copy(impulseResponse, spectrum, impulseResponse.Length);
         Fourier.Forward(spectrum, FourierOptions.Matlab);
 
-        PreparedChain preparedChain = PreparedChain.Create(chain, sampleRate);
-        int half = length / 2;
-        spectrum[0] *= preparedChain.Response(0.0, sampleRate);
-        for (int i = 1; i < half; i++)
-        {
-            Complex response = preparedChain.Response(i * (double)sampleRate / length, sampleRate);
-            spectrum[i] *= response;
-            spectrum[length - i] *= Complex.Conjugate(response);
-        }
-        // The Nyquist bin has no conjugate partner; a real scale keeps a real
-        // impulse real (the discarded imaginary part is a half-sample artifact).
-        spectrum[half] *= preparedChain.Response(sampleRate / 2.0, sampleRate).Real;
+        preparedChain.ApplyToSpectrum(spectrum);
 
         Fourier.Inverse(spectrum, FourierOptions.Matlab);
         return spectrum;
-    }
-
-    private sealed class PreparedChain
-    {
-        private readonly double linearGain;
-        private readonly double delayMs;
-        private readonly BiquadCoefficients[] sections;
-
-        private PreparedChain(
-            double linearGain,
-            double delayMs,
-            BiquadCoefficients[] sections)
-        {
-            this.linearGain = linearGain;
-            this.delayMs = delayMs;
-            this.sections = sections;
-        }
-
-        public static PreparedChain Create(DspChannelChain chain, int sampleRate)
-        {
-            double linearGain = Math.Pow(10.0, chain.GainDb / 20.0) *
-                (chain.InvertPolarity ? -1.0 : 1.0);
-            var sections = new List<BiquadCoefficients>();
-
-            if (chain.Crossover is { Kind: not CrossoverKind.Off } crossover)
-            {
-                AddCrossoverSections(sections, crossover, sampleRate);
-            }
-
-            if (chain.Peq is { } peq)
-            {
-                linearGain *= Math.Pow(10.0, peq.PreampDb / 20.0);
-                foreach (PeqBand band in peq.Bands)
-                {
-                    if (band.GainDb == 0 || band.Q <= 0 || band.FrequencyHz <= 0)
-                    {
-                        continue;
-                    }
-
-                    sections.Add(PeakingBiquad.Compute(band, sampleRate));
-                }
-            }
-
-            return new PreparedChain(linearGain, chain.DelayMs, sections.ToArray());
-        }
-
-        public Complex Response(double frequencyHz, double sampleRateHz)
-        {
-            double omega = Math.Tau * frequencyHz / sampleRateHz;
-            Complex z1 = Complex.Exp(new Complex(0, -omega));
-            Complex response = linearGain * Complex.Exp(
-                new Complex(0, -Math.Tau * frequencyHz * delayMs / 1_000.0));
-            foreach (BiquadCoefficients section in sections)
-            {
-                response *= BiquadResponse.Evaluate(section, z1);
-            }
-
-            return response;
-        }
-
-        private static void AddCrossoverSections(
-            List<BiquadCoefficients> sections,
-            CrossoverSpec spec,
-            double sampleRate)
-        {
-            if (spec.Kind is CrossoverKind.LowPass or CrossoverKind.BandPass)
-            {
-                CrossoverEdge edge = spec.LowPassEdge
-                    ?? throw new InvalidOperationException(
-                        "The crossover kind requires a low-pass edge.");
-                sections.AddRange(CrossoverFilter.BuildSections(
-                    edge, highPass: false, sampleRate));
-            }
-            if (spec.Kind is CrossoverKind.HighPass or CrossoverKind.BandPass)
-            {
-                CrossoverEdge edge = spec.HighPassEdge
-                    ?? throw new InvalidOperationException(
-                        "The crossover kind requires a high-pass edge.");
-                sections.AddRange(CrossoverFilter.BuildSections(
-                    edge, highPass: true, sampleRate));
-            }
-        }
     }
 
     /// <summary>Sample-wise sum of the processed channel impulse responses.</summary>
@@ -552,13 +464,15 @@ public static class VirtualCrossoverAnalysis
         }
 
         int peakIndex = 0;
-        double peakMagnitude = 0.0;
+        double peakMagnitudeSquared = 0.0;
         for (int i = 0; i < impulseResponse.Length; i++)
         {
-            double magnitude = impulseResponse[i].Magnitude;
-            if (magnitude > peakMagnitude)
+            Complex sample = impulseResponse[i];
+            double magnitudeSquared =
+                sample.Real * sample.Real + sample.Imaginary * sample.Imaginary;
+            if (magnitudeSquared > peakMagnitudeSquared)
             {
-                peakMagnitude = magnitude;
+                peakMagnitudeSquared = magnitudeSquared;
                 peakIndex = i;
             }
         }

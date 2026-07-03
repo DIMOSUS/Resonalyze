@@ -1,4 +1,5 @@
 using System.Numerics;
+using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp.Tests;
 
@@ -71,6 +72,88 @@ public sealed class VirtualCrossoverAnalysisTests
 
         double maxImaginary = processed.Max(sample => Math.Abs(sample.Imaginary));
         Assert.True(maxImaginary < 1e-9, $"Imaginary residue {maxImaginary} is too large.");
+    }
+
+    [Fact]
+    public void ApplyChain_FullChainMatchesDirectFrequencyResponse()
+    {
+        Complex[] ir = UnitImpulse(2_048, 73);
+        ir[120] = new Complex(0.35, 0);
+        ir[511] = new Complex(-0.12, 0);
+        var chain = new DspChannelChain(
+            GainDb: -2.5,
+            DelayMs: -0.37,
+            InvertPolarity: true,
+            Crossover: new CrossoverSpec(
+                CrossoverKind.BandPass,
+                LowPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.LinkwitzRiley, 3_000, 24),
+                HighPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.LinkwitzRiley, 250, 24)),
+            Peq: new EqualizationCurve(
+                [
+                    new PeqBand(120, 1.4, -3.0),
+                    new PeqBand(950, 2.2, 4.5),
+                    new PeqBand(4_200, 0.8, -2.0)
+                ],
+                preampDb: -1.5));
+
+        Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+            ir, chain, SampleRate);
+        Complex[] expectedSpectrum = new Complex[processed.Length];
+        Array.Copy(ir, expectedSpectrum, ir.Length);
+        Fourier.Forward(expectedSpectrum, FourierOptions.Matlab);
+        int half = expectedSpectrum.Length / 2;
+        expectedSpectrum[0] *= chain.Response(0, SampleRate);
+        for (int i = 1; i < half; i++)
+        {
+            Complex response = chain.Response(
+                i * (double)SampleRate / expectedSpectrum.Length,
+                SampleRate);
+            expectedSpectrum[i] *= response;
+            expectedSpectrum[expectedSpectrum.Length - i] *= Complex.Conjugate(response);
+        }
+
+        expectedSpectrum[half] *= chain.Response(SampleRate / 2.0, SampleRate).Real;
+
+        Complex[] actualSpectrum = (Complex[])processed.Clone();
+        Fourier.Forward(actualSpectrum, FourierOptions.Matlab);
+        double maxError = expectedSpectrum
+            .Zip(actualSpectrum, (expected, actual) => (expected - actual).Magnitude)
+            .Max();
+        Assert.True(maxError < 1e-9, $"Max spectrum error {maxError:e} is too large.");
+    }
+
+    [Fact]
+    public void PreparedDspResponse_MatchesDspChannelChainResponse()
+    {
+        var chain = new DspChannelChain(
+            GainDb: 1.75,
+            DelayMs: 0.42,
+            InvertPolarity: true,
+            Crossover: new CrossoverSpec(
+                CrossoverKind.BandPass,
+                LowPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.LinkwitzRiley, 3_200, 24),
+                HighPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.Butterworth, 280, 18)),
+            Peq: new EqualizationCurve(
+                [
+                    new PeqBand(85, 0.9, 2.5),
+                    new PeqBand(740, 3.0, -5.0),
+                    new PeqBand(6_500, 1.2, 1.8)
+                ],
+                preampDb: -0.75));
+        PreparedDspResponse prepared = PreparedDspResponse.Create(chain, SampleRate);
+
+        foreach (double frequency in EqualizationCurve.LogFrequencyGrid(20, 20_000, 128))
+        {
+            Complex expected = chain.Response(frequency, SampleRate);
+            Complex actual = prepared.Response(frequency);
+            Assert.True(
+                (expected - actual).Magnitude < 1e-12,
+                $"Response mismatch at {frequency:0.###} Hz.");
+        }
     }
 
     [Fact]

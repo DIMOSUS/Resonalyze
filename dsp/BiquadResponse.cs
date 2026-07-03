@@ -31,7 +31,11 @@ public static class BiquadResponse
     public static Complex Evaluate(BiquadCoefficients coefficients, Complex z1)
     {
         Complex z2 = z1 * z1;
+        return Evaluate(coefficients, z1, z2);
+    }
 
+    public static Complex Evaluate(BiquadCoefficients coefficients, Complex z1, Complex z2)
+    {
         Complex numerator = coefficients.B0 + coefficients.B1 * z1 + coefficients.B2 * z2;
         Complex denominator = 1.0 - coefficients.A1 * z1 - coefficients.A2 * z2;
         return numerator / denominator;

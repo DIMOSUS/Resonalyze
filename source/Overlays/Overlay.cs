@@ -555,6 +555,7 @@ public sealed class Overlay
     // Captured kind.
     private DataPoint[]? sourcePoints;
     private DataPoint[]? drawPoints;
+    private string? capturedYAxisKey;
     // Phase representation of a captured curve: true unwrapped, false wrapped, null
     // unknown. Drives the wrapped-difference choice in phase overlay operations.
     private bool? phaseUnwrapped;
@@ -692,7 +693,7 @@ public sealed class Overlay
         {
             OverlayKind.Target => AddTargetSeries(model),
             OverlayKind.Operation => AddCurveSeries(model, "curve", BuildOperationPoints()),
-            _ => AddCurveSeries(model, "curve", drawPoints)
+            _ => AddCurveSeries(model, "curve", drawPoints, capturedYAxisKey)
         };
 
         if (drawn)
@@ -853,7 +854,11 @@ public sealed class Overlay
         return true;
     }
 
-    private bool AddCurveSeries(PlotModel model, string part, DataPoint[]? points) =>
+    private bool AddCurveSeries(
+        PlotModel model,
+        string part,
+        DataPoint[]? points,
+        string? yAxisKey = null) =>
         AddCurveSeries(
             model,
             part,
@@ -862,7 +867,8 @@ public sealed class Overlay
             opacityPercent,
             strokeThickness,
             lineStyle,
-            Title);
+            Title,
+            yAxisKey);
 
     // Style-parameterized so the settings dialog's live preview can render candidate
     // presentation values without committing them to the slot first.
@@ -874,11 +880,17 @@ public sealed class Overlay
         int opacity,
         double thickness,
         OverlayLineStyle style,
-        string title)
+        string title,
+        string? yAxisKey = null)
     {
         if (points == null || points.Length < 2)
         {
             return false;
+        }
+
+        if (yAxisKey == PlotModelFactory.CoherenceAxisKey)
+        {
+            PlotModelFactory.AddCoherenceAxis(model);
         }
 
         byte alpha = (byte)Math.Round(opacity / 100.0 * 255);
@@ -890,7 +902,14 @@ public sealed class Overlay
             Title = title,
             Tag = GetTag(part)
         };
-        string? trackerFormat = OverlayCollection.GetTrackerFormatString(SeriesMode);
+        if (!string.IsNullOrEmpty(yAxisKey))
+        {
+            series.YAxisKey = yAxisKey;
+        }
+
+        string? trackerFormat = yAxisKey == PlotModelFactory.CoherenceAxisKey
+            ? "{0}\n{2:0.0} Hz\n{4:0.00} \u03B3\u00B2"
+            : OverlayCollection.GetTrackerFormatString(SeriesMode);
         if (!string.IsNullOrEmpty(trackerFormat))
         {
             series.TrackerFormatString = trackerFormat;
@@ -1432,6 +1451,9 @@ public sealed class Overlay
         kind = OverlayKind.Captured;
         operationConfigured = false;
         sourcePoints = points;
+        capturedYAxisKey = string.IsNullOrEmpty(selected.YAxisKey)
+            ? null
+            : selected.YAxisKey;
         phaseUnwrapped = selected.Tag is CurveTag curveTag
             ? curveTag.PhaseUnwrapped
             : null;
@@ -1486,6 +1508,7 @@ public sealed class Overlay
         targetConfigured = false;
         // Imported text gives no wrap/unwrap hint; leave it unknown.
         phaseUnwrapped = null;
+        capturedYAxisKey = null;
         sourcePoints = imported
             .Select(point => new DataPoint(point.X, point.Y))
             .ToArray();
@@ -1727,6 +1750,7 @@ public sealed class Overlay
 
         Hide();
         kind = OverlayKind.Target;
+        capturedYAxisKey = null;
         Title = dialog.OverlayName;
         targetSourceSlot = dialog.SourceSlot;
         targetPreset = dialog.Preset;
@@ -1871,6 +1895,7 @@ public sealed class Overlay
 
         Hide();
         kind = OverlayKind.Operation;
+        capturedYAxisKey = null;
         Title = dialog.OverlayName;
         sourceSlotA = dialog.SourceSlotA;
         sourceSlotB = dialog.SourceSlotB;
@@ -2040,6 +2065,7 @@ public sealed class Overlay
                 .Select(point => new DataPoint(point.X, point.Y))
                 .ToArray();
             phaseUnwrapped = file.PhaseUnwrapped;
+            capturedYAxisKey = GetCapturedYAxisKey(file);
             UpdateDrawPoints();
             SetAvailability(true);
         }
@@ -2131,6 +2157,7 @@ public sealed class Overlay
                 .Select(point => new OverlayPoint(point.X, point.Y))
                 .ToArray();
             file.PhaseUnwrapped = phaseUnwrapped;
+            file.CapturedYAxisKey = capturedYAxisKey;
         }
 
         return file;
@@ -2351,7 +2378,8 @@ public sealed class Overlay
             settings.OpacityPercent,
             settings.StrokeThickness,
             settings.LineStyle,
-            settings.Name.Length > 0 ? settings.Name : Title);
+            settings.Name.Length > 0 ? settings.Name : Title,
+            capturedYAxisKey);
         RefreshPlot(model);
     }
 
@@ -2360,6 +2388,7 @@ public sealed class Overlay
         kind = OverlayKind.Captured;
         sourcePoints = null;
         drawPoints = null;
+        capturedYAxisKey = null;
         phaseUnwrapped = null;
         operationConfigured = false;
         sourceSlotA = 0;
@@ -2466,6 +2495,19 @@ public sealed class Overlay
         return string.IsNullOrWhiteSpace(series.Title)
             ? "Untitled curve"
             : series.Title;
+    }
+
+    private static string? GetCapturedYAxisKey(OverlayFile file)
+    {
+        if (!string.IsNullOrEmpty(file.CapturedYAxisKey))
+        {
+            return file.CapturedYAxisKey;
+        }
+
+        return file.Mode is Mode.FrequencyResponse or Mode.PhaseResponse or Mode.GroupDelay or Mode.LiveSpectrum &&
+            file.Title.Contains("Coherence", StringComparison.OrdinalIgnoreCase)
+                ? PlotModelFactory.CoherenceAxisKey
+                : null;
     }
 
     private void RefreshPlot(PlotModel model)

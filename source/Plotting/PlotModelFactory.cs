@@ -656,11 +656,10 @@ internal sealed class PlotModelFactory
 
     public LineSeries BuildCoherenceSeries(double[] coherence)
     {
-        int fftLength = Math.Max(0, (coherence.Length - 1) * 2);
         return BuildCoherenceSeries(
             coherence,
             noiseMeasurement.SampleRate,
-            fftLength,
+            noiseMeasurement.SequenceLength,
             liveSpectrumOptions.SmoothingInverseOctaves);
     }
 
@@ -761,36 +760,101 @@ internal sealed class PlotModelFactory
         }
 
         int binCount = Math.Min(fftLength / 2 + 1, coherence.Length);
-        List<DataPoint> data = new(binCount);
-
-        for (int i = 1; i < binCount; i++)
+        double binWidth = (double)sampleRate / fftLength;
+        double nyquist = sampleRate / 2.0;
+        double minFrequency = Math.Max(20.0, binWidth);
+        double maxFrequency = Math.Min(20000.0, nyquist);
+        if (binCount <= 1 || maxFrequency <= minFrequency)
         {
-            double frequency =
-                i * ((double)sampleRate / fftLength);
-            data.Add(new DataPoint(frequency, coherence[i]));
+            return [];
         }
 
-        List<SignalPoint> resampled = DataHelper.LogarithmicResample(
-            OxyPlotAdapter.ToSignalPoints(data),
-            20,
-            20000,
-            1024,
-            calibration: null,
-            smoothingInverseOctaves > 0
-                ? 1.0 / smoothingInverseOctaves
-                : 0.0,
-            dBUnpack: false);
+        const int targetCount = 1024;
+        double logMin = Math.Log10(minFrequency);
+        double logMax = Math.Log10(maxFrequency);
+        double logStep = (logMax - logMin) / (targetCount - 1);
+        double halfStepScale = Math.Pow(10.0, logStep * 0.5) - 1.0;
+        List<SignalPoint> points = new(targetCount);
 
-        // The Lanczos resampling kernel has negative lobes, so it can overshoot
-        // past the physical [0, 1] range of coherence at sharp transitions.
-        for (int i = 0; i < resampled.Count; i++)
+        for (int i = 0; i < targetCount; i++)
         {
-            resampled[i] = new SignalPoint(
-                resampled[i].X,
-                Math.Clamp(resampled[i].Y, 0.0, 1.0));
+            double frequency = Math.Pow(10.0, logMin + logStep * i);
+            double halfStep = frequency * halfStepScale;
+            int startBin = Math.Max(1, (int)Math.Floor((frequency - halfStep) / binWidth));
+            int endBin = Math.Min(binCount - 1, (int)Math.Ceiling((frequency + halfStep) / binWidth));
+            if (endBin < startBin)
+            {
+                int nearestBin = Math.Clamp((int)Math.Round(frequency / binWidth), 1, binCount - 1);
+                double value = Math.Clamp(coherence[nearestBin], 0.0, 1.0);
+                points.Add(new SignalPoint(frequency, value));
+                continue;
+            }
+
+            double sum = 0.0;
+            int count = 0;
+            for (int bin = startBin; bin <= endBin; bin++)
+            {
+                double value = coherence[bin];
+                if (double.IsFinite(value))
+                {
+                    sum += value;
+                    count++;
+                }
+            }
+
+            if (count > 0)
+            {
+                points.Add(new SignalPoint(
+                    frequency,
+                    Math.Clamp(sum / count, 0.0, 1.0)));
+            }
         }
 
-        return resampled;
+        return SmoothCoherencePoints(points, smoothingInverseOctaves);
+    }
+
+    private static List<SignalPoint> SmoothCoherencePoints(
+        List<SignalPoint> points,
+        double smoothingInverseOctaves)
+    {
+        if (smoothingInverseOctaves <= 0 || points.Count < 3)
+        {
+            return points;
+        }
+
+        double halfWindowOctaves = 0.5 / smoothingInverseOctaves;
+        double lowerFactor = Math.Pow(2.0, -halfWindowOctaves);
+        double upperFactor = Math.Pow(2.0, halfWindowOctaves);
+        var smoothed = new List<SignalPoint>(points.Count);
+
+        int start = 0;
+        int end = 0;
+        double sum = 0.0;
+
+        for (int i = 0; i < points.Count; i++)
+        {
+            double lower = points[i].X * lowerFactor;
+            double upper = points[i].X * upperFactor;
+
+            while (end < points.Count && points[end].X <= upper)
+            {
+                sum += points[end].Y;
+                end++;
+            }
+
+            while (start < end && points[start].X < lower)
+            {
+                sum -= points[start].Y;
+                start++;
+            }
+
+            int count = end - start;
+            smoothed.Add(new SignalPoint(
+                points[i].X,
+                count > 0 ? Math.Clamp(sum / count, 0.0, 1.0) : points[i].Y));
+        }
+
+        return smoothed;
     }
 
     private void AddMeasurementCoherenceIfAvailable(
@@ -813,7 +877,7 @@ internal sealed class PlotModelFactory
             options.SmoothingInverseOctaves));
     }
 
-    private static void AddCoherenceAxis(PlotModel model)
+    internal static void AddCoherenceAxis(PlotModel model)
     {
         if (model.Axes.Any(axis => axis.Key == CoherenceAxisKey))
         {

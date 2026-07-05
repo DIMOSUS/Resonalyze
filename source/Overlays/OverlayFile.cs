@@ -44,6 +44,11 @@ public sealed class OverlayFile
     // Captured kind: the stored curve samples.
     public OverlayPoint[] Points { get; set; } = Array.Empty<OverlayPoint>();
 
+    // Captured kind: optional OxyPlot Y axis key used by non-primary curves
+    // such as Coherence. Additive and nullable: older files stay on the mode's
+    // default axis, older app builds ignore this property.
+    public string? CapturedYAxisKey { get; set; }
+
     // Captured phase curves only: true if the samples are an unwrapped (continuous)
     // representation, false if wrapped (-180..180), null if unknown (e.g. imported text
     // or a non-phase mode). Additive and nullable, so it needs no file version bump:

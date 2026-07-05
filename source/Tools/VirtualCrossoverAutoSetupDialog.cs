@@ -99,7 +99,9 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
 
             typeComboBox.Items.AddRange(
             [
+                DriverType.Subwoofer,
                 DriverType.Woofer,
+                DriverType.Midbass,
                 DriverType.Midrange,
                 DriverType.Tweeter
             ]);

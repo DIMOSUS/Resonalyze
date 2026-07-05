@@ -74,21 +74,61 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void EstimateBand_ReadsEdgesLevelAndType()
     {
+        Assert.Equal(
+            DriverType.Subwoofer,
+            CrossoverAutoSetup.EstimateBand(BandCurve(22, 78, 0)).SuggestedType);
+
         DriverBandEstimate woofer = CrossoverAutoSetup.EstimateBand(
-            BandCurve(35, 600, -12));
+            BandCurve(50, 200, -12));
         Assert.Equal(DriverType.Woofer, woofer.SuggestedType);
         Assert.InRange(woofer.LowHz, 20, 60);
-        Assert.InRange(woofer.HighHz, 500, 900);
         Assert.InRange(woofer.LevelDb, -13, -11);
 
-        DriverBandEstimate midrange = CrossoverAutoSetup.EstimateBand(
-            BandCurve(150, 4_000, 0));
-        Assert.Equal(DriverType.Midrange, midrange.SuggestedType);
+        Assert.Equal(
+            DriverType.Midbass,
+            CrossoverAutoSetup.EstimateBand(BandCurve(100, 450, 0)).SuggestedType);
+
+        Assert.Equal(
+            DriverType.Midrange,
+            CrossoverAutoSetup.EstimateBand(BandCurve(300, 3_500, 0)).SuggestedType);
 
         DriverBandEstimate tweeter = CrossoverAutoSetup.EstimateBand(
-            BandCurve(1_800, 20_000, -3));
+            BandCurve(2_500, 18_000, -3));
         Assert.Equal(DriverType.Tweeter, tweeter.SuggestedType);
-        Assert.InRange(tweeter.LowHz, 1_200, 2_000);
+        Assert.InRange(tweeter.LowHz, 1_800, 2_600);
+    }
+
+    [Fact]
+    public void Propose_WooferToMidrange_KeepsTheCrossoverInTheWooferRange()
+    {
+        // Regression: a woofer whose measured response extends into the midband
+        // (its -8 dB point sits near 850 Hz) must still hand over to the midrange
+        // down in the woofer's sensible range (~250 Hz), not up at 850 Hz.
+        var woofer = new AutoSetupSource(BandCurve(35, 850, 0), DriverType.Woofer);
+        var midrange = new AutoSetupSource(BandCurve(200, 5_000, 0), DriverType.Midrange);
+
+        IReadOnlyList<CrossoverProposal> proposals = CrossoverAutoSetup.Propose(
+            [woofer, midrange],
+            Options());
+
+        double crossover = proposals[0].LowPassEdge!.Value.FrequencyHz;
+        Assert.InRange(crossover, 200, 300);
+    }
+
+    [Fact]
+    public void Propose_SubwooferToWoofer_CrossesInTheirOverlap()
+    {
+        // Subwoofer (20-80 Hz) and woofer (40-250 Hz) overlap only at 40-80 Hz;
+        // the handover must land there, not up in the woofer's midband skirt.
+        var sub = new AutoSetupSource(BandCurve(20, 120, 0), DriverType.Subwoofer);
+        var woofer = new AutoSetupSource(BandCurve(50, 600, 0), DriverType.Woofer);
+
+        IReadOnlyList<CrossoverProposal> proposals = CrossoverAutoSetup.Propose(
+            [sub, woofer],
+            Options());
+
+        double crossover = proposals[0].LowPassEdge!.Value.FrequencyHz;
+        Assert.InRange(crossover, 40, 80);
     }
 
     [Fact]

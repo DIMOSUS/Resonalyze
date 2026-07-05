@@ -1,9 +1,14 @@
 namespace Resonalyze.Dsp;
 
-/// <summary>The driver class a measured response most resembles.</summary>
+/// <summary>
+/// The driver class a measured response most resembles. Declared low to high in
+/// frequency, so ordering channels by this enum orders them along the spectrum.
+/// </summary>
 public enum DriverType
 {
+    Subwoofer,
     Woofer,
+    Midbass,
     Midrange,
     Tweeter
 }
@@ -175,23 +180,51 @@ public static class CrossoverAutoSetup
         return new DriverBandEstimate(lowHz, highHz, level, Classify(lowHz, highHz));
     }
 
-    // Log-center classification with a hard tweeter override: a driver that only
-    // starts at 1 kHz is a tweeter no matter how far its band extends.
+    // Classifies by the band's log-center, using the geometric midpoints between
+    // the neighbouring driver classes' own centers as thresholds. The class only
+    // seeds the wizard's suggestion; the user confirms it before optimizing.
     private static DriverType Classify(double lowHz, double highHz)
     {
-        if (lowHz >= 1_000)
-        {
-            return DriverType.Tweeter;
-        }
-
         double center = Math.Sqrt(lowHz * highHz);
-        if (center < 300)
+        if (center < 63)
+        {
+            return DriverType.Subwoofer;
+        }
+        if (center < 141)
         {
             return DriverType.Woofer;
         }
+        if (center < 450)
+        {
+            return DriverType.Midbass;
+        }
 
-        return center <= 2_000 ? DriverType.Midrange : DriverType.Tweeter;
+        return center < 2_500 ? DriverType.Midrange : DriverType.Tweeter;
     }
+
+    // The frequency range a driver of this class may sensibly play — and so the
+    // band any crossover involving it must stay inside. A woofer measured in-room
+    // still shows output near 850 Hz, but nobody crosses a woofer there; the class
+    // caps the search to musically sane handovers.
+    private static (double LowHz, double HighHz) SensibleRange(DriverType type) => type switch
+    {
+        DriverType.Subwoofer => (20, 80),
+        DriverType.Woofer => (40, 250),
+        DriverType.Midbass => (80, 500),
+        DriverType.Midrange => (250, 4_000),
+        DriverType.Tweeter => (2_000, 20_000),
+        _ => (20, 20_000)
+    };
+
+    // The band a handover between two adjacent driver classes may sit in: at or
+    // below the lower driver's sensible top and at or above the upper driver's
+    // sensible bottom. When the classes do not overlap (a "skipped" pairing such
+    // as a 2-way woofer + tweeter) the returned low exceeds the high, signalling
+    // that no class-sensible band exists and the measured overlap should stand.
+    private static (double LowHz, double HighHz) JunctionTypeBounds(
+        DriverType lower,
+        DriverType upper) =>
+        (SensibleRange(upper).LowHz, SensibleRange(lower).HighHz);
 
     /// <summary>
     /// Builds the crossover proposal for the given channels, honouring the wizard
@@ -428,8 +461,10 @@ public static class CrossoverAutoSetup
     private static double ProposeCrossoverFrequency(
         IReadOnlyList<SignalPoint> lowerCurve,
         DriverBandEstimate lowerBand,
+        DriverType lowerType,
         IReadOnlyList<SignalPoint> upperCurve,
-        DriverBandEstimate upperBand)
+        DriverBandEstimate upperBand,
+        DriverType upperType)
     {
         double overlapLow = upperBand.LowHz;
         double overlapHigh = lowerBand.HighHz;
@@ -481,6 +516,16 @@ public static class CrossoverAutoSetup
             ? Math.Clamp(crossover, minimum, maximum)
             : Math.Sqrt(upperBand.LowHz * lowerBand.HighHz);
 
+        // Keep the seed inside the range sensible for both driver classes when
+        // they overlap, so the initial handover is not up in the lower driver's
+        // roll-off skirt (a woofer seeded at 850 Hz). Non-overlapping classes have
+        // no such range and keep the measured seed.
+        (double typeLow, double typeHigh) = JunctionTypeBounds(lowerType, upperType);
+        if (typeLow <= typeHigh)
+        {
+            crossover = Math.Clamp(crossover, typeLow, typeHigh);
+        }
+
         return Math.Clamp(crossover, 20, 20_000);
     }
 
@@ -497,6 +542,7 @@ public static class CrossoverAutoSetup
         private readonly int[] inputIndex;
         private readonly IReadOnlyList<SignalPoint>[] curves;
         private readonly DriverBandEstimate[] bands;
+        private readonly DriverType[] types;
         private readonly double[] grid;
         private readonly double[][] driverAmplitude;
         private readonly int evalLow;
@@ -530,6 +576,7 @@ public static class CrossoverAutoSetup
             inputIndex = ordered.Select(item => item.index).ToArray();
             curves = ordered.Select(item => item.channel.MagnitudeDb).ToArray();
             bands = ordered.Select(item => EstimateBand(item.channel.MagnitudeDb)).ToArray();
+            types = ordered.Select(item => item.channel.Type).ToArray();
 
             grid = BuildGrid(options.SampleRateHz);
             driverAmplitude = new double[channelCount][];
@@ -638,7 +685,7 @@ public static class CrossoverAutoSetup
             for (int j = 0; j < channelCount - 1; j++)
             {
                 double fc = ProposeCrossoverFrequency(
-                    curves[j], bands[j], curves[j + 1], bands[j + 1]);
+                    curves[j], bands[j], types[j], curves[j + 1], bands[j + 1], types[j + 1]);
                 crossoverHz[j] = Math.Clamp(fc, options.MinCrossoverHz, options.MaxCrossoverHz);
                 junctionFamily[j] = family;
                 lowerSlope[j] = slope;
@@ -721,21 +768,41 @@ public static class CrossoverAutoSetup
             // junctions.
             double separation = Math.Pow(2.0, MinJunctionSeparationOctaves);
             double low = Math.Max(options.MinCrossoverHz, bands[j + 1].LowHz);
+            double high = Math.Min(options.MaxCrossoverHz, bands[j].HighHz);
+
+            // Constrain the handover to a band sensible for BOTH driver classes
+            // when their ranges overlap — a woofer must not cross up in its
+            // roll-off skirt at 850 Hz. Adjacent classes that do not overlap (e.g.
+            // a 2-way woofer + tweeter with no midrange between them) have no such
+            // band, so the measured overlap stands.
+            (double typeLow, double typeHigh) = JunctionTypeBounds(types[j], types[j + 1]);
+            if (typeLow <= typeHigh)
+            {
+                low = Math.Max(low, typeLow);
+                high = Math.Min(high, typeHigh);
+            }
+
             if (j > 0)
             {
                 low = Math.Max(low, crossoverHz[j - 1] * separation);
             }
 
-            double high = Math.Min(options.MaxCrossoverHz, bands[j].HighHz);
             if (j < channelCount - 2)
             {
                 high = Math.Min(high, crossoverHz[j + 1] / separation);
             }
 
-            if (high <= low)
+            if (high < low)
             {
+                // Bounds crossed (an over-tight user window, a measured/class
+                // conflict, or neighbour separation): collapse to one sensible
+                // frequency — the class band's center when the classes overlap,
+                // otherwise the current seed — clamped to the requested window.
+                double pinned = typeLow <= typeHigh
+                    ? Math.Sqrt(typeLow * typeHigh)
+                    : crossoverHz[j];
                 low = high = Math.Clamp(
-                    crossoverHz[j], options.MinCrossoverHz, options.MaxCrossoverHz);
+                    pinned, options.MinCrossoverHz, options.MaxCrossoverHz);
             }
 
             double[] fcGrid = LogSpace(low, high, CrossoverGridSteps);

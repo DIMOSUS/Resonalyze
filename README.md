@@ -107,6 +107,8 @@ file is provided with every release.
   estimate to lift the signal-to-noise ratio, with a per-frequency **coherence**
   (γ²) curve in the Frequency Response, Phase, and Group Delay views and an
   optional confirm-between-runs pause for spatial averaging
+- Selectable microphone calibration profiles (**0°** / **90°**) applied per view,
+  with lenient parsing of common `.txt` / `.cal` / `.frd` / `.csv` correction files
 - Time Alignment with sub-sample delay estimation from the transfer IR
 - Crossover summation prediction: the true **complex (vector) sum** of two
   measurements (`Main ⊕ Compare`) with Compare delay/polarity controls, plus a
@@ -439,8 +441,8 @@ active record provides one; their preview marks the gate position used for the
 analysis.
 
 Live Spectrum has its own docked settings panel. It lets you choose the
-**Signal Type** (excitation noise), enable or disable calibration, and select a
-**Sequence Length** from a power-of-two list. The sequence length is the FFT
+**Signal Type** (excitation noise), pick a microphone **calibration** profile
+(Off / 0° / 90°), and select a **Sequence Length** from a power-of-two list. The sequence length is the FFT
 block size used by the live analyzer and is preserved between sessions.
 
 ## Phase and Group Delay
@@ -1262,22 +1264,31 @@ loaded; a burst of rapid edits is coalesced into a single trailing redraw that
 always lands on the latest settings, and the previous curves stay on screen
 until the new frame is ready.
 
-- **Auto crossover...** estimates each channel's usable band and driver type,
-  then asks which filter families to allow (Butterworth / Linkwitz-Riley /
-  Bessel), the crossover-frequency window, and whether the two sides of a
-  junction may take independent slopes. It searches the crossover frequency,
-  family, slope, and cut-only gains to flatten the summed magnitude — modelling
-  each junction the way its family sums (amplitude for LR/Bessel, power for
-  Butterworth), penalizing wide band overlap, and keeping a practical minimum
-  slope, so it lands on a tight, engineer-sensible split rather than shallow
-  filters that only look flat by overlapping widely. Narrowing the window past an
-  outer driver adds a subsonic / brickwall band-limit on that channel.
-- **Auto delay** aligns in two stages: band-limited first arrivals set the
-  coarse offsets, then a fractional-delay search minimizes the sum-loss metric at
-  each junction. It weighs every near-optimal candidate against an arrival-based
-  prior and a physical tie-break, so it does not add delay or flip polarity
-  without a real improvement — sidestepping the flip-plus-half-period impostor a
-  steep crossover can otherwise hide.
+- **Auto crossover...** estimates each channel's usable band and driver type
+  (subwoofer, woofer, midbass, midrange, or tweeter), then asks which filter
+  families to allow (Butterworth / Linkwitz-Riley / Bessel), the
+  crossover-frequency window, and whether the two sides of a junction may take
+  independent slopes. It searches the crossover frequency, family, slope, and
+  cut-only gains to flatten the summed magnitude — modelling each junction the
+  way its family sums (amplitude for LR/Bessel, power for Butterworth),
+  penalizing wide band overlap, and keeping a practical minimum slope, so it
+  lands on a tight, engineer-sensible split rather than shallow filters that only
+  look flat by overlapping widely. Handovers stay within the sensible range for
+  the two driver types (so a woofer is not crossed up in its roll-off), and
+  narrowing the window past an outer driver adds a subsonic / brickwall
+  band-limit on that channel.
+- **Auto delay** aligns in two stages: band-limited first arrivals — refined by a
+  GCC-PHAT cross-correlation where it carries a reliable peak — set the coarse
+  offsets, then a fractional-delay search minimizes the sum-loss metric at each
+  junction. It weighs every near-optimal candidate against an arrival-based prior
+  and a physical tie-break, so it does not add delay or flip polarity without a
+  real improvement — sidestepping the flip-plus-half-period impostor a steep
+  crossover can otherwise hide. The search runs on a background task with a busy
+  indicator, so the window stays responsive during the few seconds it takes. If
+  the resulting delays span more than ~10 ms — usually a sign that one channel's
+  crossover has excessive group delay (a narrow or steep low-frequency band-pass)
+  — a banner flags the lagging driver so you can soften its filter instead of
+  dialing in an absurd bulk delay.
 - **Capture to overlay** saves the predicted sum as a Captured overlay in
   Frequency Response — compare it against real measurements and target curves,
   or feed it onward to the EQ Wizard.
@@ -1294,18 +1305,27 @@ measurement, and the linear (non-clipping) regime.
 
 ## Calibration
 
-Frequency-response correction is loaded from `calibration.txt` beside
-`Resonalyze.exe`. In a source checkout, edit:
+Resonalyze applies a microphone (or measurement-chain) frequency-response
+correction during logarithmic resampling. Configure up to two calibration
+profiles in **Record Settings** — one for **0°** (on-axis) and one for **90°**
+(grazing) measurements — by browsing to a correction file for each.
 
-```text
-source/calibration.txt
-```
+Correction files are read leniently in the common plain-text formats
+(`.txt`, `.cal`, `.frd`, `.csv`): `frequency level` pairs, with comments,
+headers, a decimal comma, comma / semicolon / tab delimiters, and extra columns
+all handled.
 
-The project copies this file to the build and publish output automatically. The
-calibration data is applied during logarithmic resampling when **Use
-Calibration** is enabled in the frequency-response options. Replace the example
-data with the correction curve supplied for your microphone or measurement
-chain.
+In the **Frequency Response** and **Live Spectrum** settings a calibration
+selector picks which profile to apply — **Off**, **0 degrees**, or
+**90 degrees** — listing only the profiles that actually have a file configured.
+The selected mode is saved with the measurement settings, and every plot is
+routed through the matching file.
+
+For a source checkout, a legacy `source/calibration.txt` beside the executable
+is still honored as the 0° profile when no 0° file is configured; the project
+copies it to the build and publish output automatically. Replace its example
+data with the correction curve for your microphone, or point the 0° / 90°
+profiles at your own files.
 
 ## Architecture
 

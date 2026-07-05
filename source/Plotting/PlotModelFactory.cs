@@ -23,7 +23,7 @@ internal sealed class PlotModelFactory
 
     private readonly ExpSweepMeasurement expSweepMeasurement;
     private readonly NoiseMeasurement noiseMeasurement;
-    private readonly CalibrationFile calibration;
+    private readonly Func<MicrophoneCalibrationMode, CalibrationFile?> getCalibration;
     private readonly MeasurementPlotContext measurementContext;
     private readonly FrequencyResponseOptions frequencyResponseOptions;
     private readonly FrequencyResponseOptions phaseResponseOptions;
@@ -37,7 +37,7 @@ internal sealed class PlotModelFactory
     public PlotModelFactory(
         ExpSweepMeasurement expSweepMeasurement,
         NoiseMeasurement noiseMeasurement,
-        CalibrationFile calibration,
+        Func<MicrophoneCalibrationMode, CalibrationFile?> getCalibration,
         FrequencyResponseOptions frequencyResponseOptions,
         FrequencyResponseOptions phaseResponseOptions,
         FrequencyResponseOptions groupDelayOptions,
@@ -48,7 +48,7 @@ internal sealed class PlotModelFactory
     {
         this.expSweepMeasurement = expSweepMeasurement;
         this.noiseMeasurement = noiseMeasurement;
-        this.calibration = calibration;
+        this.getCalibration = getCalibration;
         measurementContext = new MeasurementPlotContext(expSweepMeasurement);
         this.frequencyResponseOptions = frequencyResponseOptions;
         this.phaseResponseOptions = phaseResponseOptions;
@@ -71,6 +71,16 @@ internal sealed class PlotModelFactory
     public void SetCompareSourceProvider(Func<CompareAnalysisSource?> provider) =>
         getCompareSource = provider;
 
+    private CalibrationFile? GetCalibration(FrequencyResponseOptions options) =>
+        options.CalibrationMode == MicrophoneCalibrationMode.Off
+            ? null
+            : getCalibration(options.CalibrationMode);
+
+    private CalibrationFile? GetCalibration(LiveSpectrumOptions options) =>
+        options.CalibrationMode == MicrophoneCalibrationMode.Off
+            ? null
+            : getCalibration(options.CalibrationMode);
+
     public PlotModel CreateFrequencyResponse(bool includeCurves)
     {
         PlotModel model = PlotModelStyle.CreateTitledModel(
@@ -82,7 +92,7 @@ internal sealed class PlotModelFactory
         {
             IReadOnlyList<AnalysisCurve> curves = measurementContext.CreateFrequencyResponseCurves(
                 frequencyResponseOptions,
-                calibration);
+                GetCalibration(frequencyResponseOptions));
             foreach (AnalysisCurve curve in curves)
             {
                 AddLineSeries(
@@ -100,7 +110,7 @@ internal sealed class PlotModelFactory
                 IReadOnlyList<AnalysisCurve> compareCurves = DataHelper.GetSpectrum(
                     compare.Measurement,
                     frequencyResponseOptions,
-                    calibration,
+                    GetCalibration(frequencyResponseOptions),
                     includePrimary: true,
                     includeHarmonics: false);
                 foreach (AnalysisCurve curve in compareCurves)
@@ -648,7 +658,7 @@ internal sealed class PlotModelFactory
             20,
             20000,
             1024,
-            liveSpectrumOptions.UseCalibration ? calibration : null,
+            GetCalibration(liveSpectrumOptions),
             liveSpectrumOptions.SmoothingInverseOctaves > 0
                 ? 1.0 / liveSpectrumOptions.SmoothingInverseOctaves
                 : 0.0);
@@ -1067,7 +1077,7 @@ internal sealed class PlotModelFactory
         return DataHelper.GetPrimarySpectrum(
             new ImpulseMeasurementView(sum, peakIndex, expSweepMeasurement.SampleRate),
             frequencyResponseOptions,
-            calibration);
+            GetCalibration(frequencyResponseOptions));
     }
 
     private static Complex SampleAt(Complex[] source, int index) =>
@@ -1105,14 +1115,14 @@ internal sealed class PlotModelFactory
                 Math.Clamp(expSweepMeasurement.TransferPeakIndex, 0, mainIr.Length - 1),
                 expSweepMeasurement.SampleRate),
             frequencyResponseOptions,
-            calibration);
+            GetCalibration(frequencyResponseOptions));
         AnalysisCurve compareMagnitude = DataHelper.GetPrimarySpectrum(
             new ImpulseMeasurementView(
                 compareIr,
                 Math.Clamp(compare.TransferPeakIndex, 0, compareIr.Length - 1),
                 compare.SampleRate),
             frequencyResponseOptions,
-            calibration);
+            GetCalibration(frequencyResponseOptions));
 
         int count = Math.Min(
             complexCurve.Points.Count,

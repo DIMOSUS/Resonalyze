@@ -67,7 +67,7 @@ internal sealed class MeasurementPlotContext
     // only representation that carries the harmonic time offsets.
     public IReadOnlyList<AnalysisCurve> CreateFrequencyResponseCurves(
         FrequencyResponseOptions options,
-        CalibrationFile calibration)
+        CalibrationFile? calibration)
     {
         var curves = new List<AnalysisCurve>();
         curves.AddRange(DataHelper.GetSpectrum(

@@ -132,6 +132,8 @@ internal sealed class MeasurementSettingsFile
         public int AsioOutputChannelOffset { get; set; }
         public int AverageRunCount { get; set; } = 1;
         public bool ConfirmEachAverageRun { get; set; }
+        public string? MicrophoneCalibration0DegreesPath { get; set; }
+        public string? MicrophoneCalibration90DegreesPath { get; set; }
 
         // A loopback reference channel is mandatory: every analysis mode is derived from the
         // transfer IR, which only exists when the loopback is captured alongside the microphone.
@@ -214,6 +216,7 @@ internal sealed class MeasurementSettingsFile
         public int Offset { get; set; }
         public bool Unwrap { get; set; } = true;
         public bool UseCalibration { get; set; } = true;
+        public MicrophoneCalibrationMode? CalibrationMode { get; set; }
         public bool ShowCoherence { get; set; } = true;
         public bool ShowMeasuredPhase { get; set; } = true;
         public bool ShowMinimumPhase { get; set; } = true;
@@ -245,6 +248,7 @@ internal sealed class MeasurementSettingsFile
                 Offset = options.Offset,
                 Unwrap = options.Unwrap,
                 UseCalibration = options.UseCalibration,
+                CalibrationMode = options.CalibrationMode,
                 ShowCoherence = options.ShowCoherence,
                 ShowMeasuredPhase = options.ShowMeasuredPhase,
                 ShowMinimumPhase = options.ShowMinimumPhase,
@@ -278,7 +282,7 @@ internal sealed class MeasurementSettingsFile
                 SmoothingPresetOptions.Normalize(SmoothingInverseOctaves);
             options.Offset = Clamp(Offset, -32768, 32768);
             options.Unwrap = Unwrap;
-            options.UseCalibration = UseCalibration;
+            options.CalibrationMode = NormalizeCalibrationMode(CalibrationMode, UseCalibration);
             options.ShowCoherence = ShowCoherence;
             options.ShowMeasuredPhase = ShowMeasuredPhase;
             options.ShowMinimumPhase = ShowMinimumPhase;
@@ -382,6 +386,7 @@ internal sealed class MeasurementSettingsFile
     {
         public NoiseColor NoiseColor { get; set; } = NoiseColor.PinkPeriodic;
         public bool UseCalibration { get; set; } = true;
+        public MicrophoneCalibrationMode? CalibrationMode { get; set; }
         public int SequenceLength { get; set; } = 2048;
         public int OverlapPercent { get; set; } = 50;
         public int SmoothingInverseOctaves { get; set; } = 6;
@@ -400,6 +405,7 @@ internal sealed class MeasurementSettingsFile
                     ? options.NoiseColor
                     : NoiseColor.PinkPeriodic,
                 UseCalibration = options.UseCalibration,
+                CalibrationMode = options.CalibrationMode,
                 SequenceLength = NormalizeSequenceLength(options.SequenceLength),
                 OverlapPercent = NormalizeOverlapPercent(options.OverlapPercent),
                 SmoothingInverseOctaves =
@@ -422,7 +428,7 @@ internal sealed class MeasurementSettingsFile
             options.NoiseColor = Enum.IsDefined(NoiseColor)
                 ? NoiseColor
                 : NoiseColor.PinkPeriodic;
-            options.UseCalibration = UseCalibration;
+            options.CalibrationMode = NormalizeCalibrationMode(CalibrationMode, UseCalibration);
             options.SequenceLength = NormalizeSequenceLength(SequenceLength);
             options.OverlapPercent = NormalizeOverlapPercent(OverlapPercent);
             options.SmoothingInverseOctaves =
@@ -625,6 +631,20 @@ internal sealed class MeasurementSettingsFile
         offset.HasValue
             ? NormalizeAsioChannelOffset(asioDriverName, sampleRate, offset.Value, input: true)
             : null;
+
+    private static MicrophoneCalibrationMode NormalizeCalibrationMode(
+        MicrophoneCalibrationMode? mode,
+        bool legacyUseCalibration)
+    {
+        if (mode.HasValue && Enum.IsDefined(mode.Value))
+        {
+            return mode.Value;
+        }
+
+        return legacyUseCalibration
+            ? MicrophoneCalibrationMode.Degrees0
+            : MicrophoneCalibrationMode.Off;
+    }
 
     // Mirrors the UI invariant (see TukeyWindowControlHelper): each fade is in
     // [0, window] and their sum must not exceed the window length. Clamping each

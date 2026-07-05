@@ -34,7 +34,10 @@ namespace Resonalyze.Options
             FormClosed += (_, _) => toolTip.Dispose();
         }
 
-        public void Init(LiveSpectrumOptions options)
+        public void Init(
+            LiveSpectrumOptions options,
+            bool hasZeroDegreeCalibration,
+            bool hasNinetyDegreeCalibration)
         {
             signalTypeComboBox.Items.Clear();
             signalTypeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -95,7 +98,11 @@ namespace Resonalyze.Options
             checkMainCurve.Checked = options.ShowMainCurve;
             checkPeakHold.Checked = options.PeakHold;
             checkCoherence.Checked = options.ShowCoherence;
-            checkUseCalibration.Checked = options.UseCalibration;
+            MicrophoneCalibrationComboHelper.Configure(
+                comboCalibration,
+                options.CalibrationMode,
+                hasZeroDegreeCalibration,
+                hasNinetyDegreeCalibration);
         }
 
         public void SetOptions(LiveSpectrumOptions options)
@@ -104,7 +111,8 @@ namespace Resonalyze.Options
                 signalTypeComboBox.SelectedItem is NoiseColorOption noiseColorOption
                     ? noiseColorOption.NoiseColor
                     : NoiseColor.PinkPeriodic;
-            options.UseCalibration = checkUseCalibration.Checked;
+            options.CalibrationMode =
+                MicrophoneCalibrationComboHelper.GetSelectedMode(comboCalibration);
             options.SequenceLength = sequenceLengthComboBox.SelectedItem is int sequenceLength
                 ? sequenceLength
                 : SequenceLengths[0];
@@ -368,8 +376,8 @@ namespace Resonalyze.Options
                 buttonResetAverage,
                 "Clears the running average and peak-hold envelope without restarting the measurement.");
             toolTip.SetToolTip(
-                checkUseCalibration,
-                "Applies the loaded microphone calibration file to Live Spectrum.");
+                comboCalibration,
+                "Applies the selected microphone calibration file to Live Spectrum.");
         }
     }
 }

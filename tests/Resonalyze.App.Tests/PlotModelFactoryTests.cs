@@ -470,7 +470,7 @@ public sealed class PlotModelFactoryTests
         return new PlotModelFactory(
             measurement,
             noiseMeasurement,
-            new CalibrationFile(calibrationPath),
+            mode => new CalibrationFile(calibrationPath),
             new FrequencyResponseOptions(),
             new FrequencyResponseOptions(),
             groupDelayOptions ?? new FrequencyResponseOptions(),

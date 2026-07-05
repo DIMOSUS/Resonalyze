@@ -51,6 +51,10 @@ public partial class Form1
     {
         MeasurementSettingsFile.SweepMeasurementSettings preservedMeasurementSettings =
             measurementSettings.Measurement;
+        string? microphoneCalibration0DegreesPath =
+            measurementSettings.Measurement.MicrophoneCalibration0DegreesPath;
+        string? microphoneCalibration90DegreesPath =
+            measurementSettings.Measurement.MicrophoneCalibration90DegreesPath;
         measurementSettings.CaptureFrom(
             expSweepMeasurement,
             frequencyResponseOptions,
@@ -64,6 +68,13 @@ public partial class Form1
         if (!captureMeasurementSettings)
         {
             measurementSettings.Measurement = preservedMeasurementSettings;
+        }
+        else
+        {
+            measurementSettings.Measurement.MicrophoneCalibration0DegreesPath =
+                microphoneCalibration0DegreesPath;
+            measurementSettings.Measurement.MicrophoneCalibration90DegreesPath =
+                microphoneCalibration90DegreesPath;
         }
         ScheduleMeasurementSettingsSave();
     }
@@ -131,7 +142,10 @@ public partial class Form1
             () => new LiveSpectrumOpt(),
             opt =>
             {
-                opt.Init(liveSpectrumOptions);
+                opt.Init(
+                    liveSpectrumOptions,
+                    HasMicrophoneCalibration(MicrophoneCalibrationMode.Degrees0),
+                    HasMicrophoneCalibration(MicrophoneCalibrationMode.Degrees90));
                 opt.ResetAverageRequested += liveSpectrumController.ResetAverage;
             },
             ApplyLiveSpectrumOptionsAsync,

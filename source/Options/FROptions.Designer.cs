@@ -36,7 +36,7 @@ namespace Resonalyze.Options
             label4 = new Label();
             label9 = new Label();
             comboSmoothingInverseOctaves = new DarkComboBox();
-            checkUseCalibration = new CheckBox();
+            comboCalibration = new DarkComboBox();
             label2 = new Label();
             labelCurves = new Label();
             checkBoxShowPrimary = new CheckBox();
@@ -154,15 +154,16 @@ namespace Resonalyze.Options
             comboSmoothingInverseOctaves.Size = new Size(60, 23);
             comboSmoothingInverseOctaves.TabIndex = 28;
             // 
-            // checkUseCalibration
+            // comboCalibration
             // 
-            checkUseCalibration.AutoSize = true;
-            checkUseCalibration.ForeColor = SystemColors.ControlLight;
-            checkUseCalibration.Location = new Point(238, 111);
-            checkUseCalibration.Name = "checkUseCalibration";
-            checkUseCalibration.Size = new Size(15, 14);
-            checkUseCalibration.TabIndex = 47;
-            checkUseCalibration.UseVisualStyleBackColor = true;
+            comboCalibration.BackColor = Color.FromArgb(55, 60, 72);
+            comboCalibration.ForeColor = Color.White;
+            comboCalibration.Location = new Point(153, 108);
+            comboCalibration.Margin = new Padding(0);
+            comboCalibration.MinimumSize = new Size(36, 19);
+            comboCalibration.Name = "comboCalibration";
+            comboCalibration.Size = new Size(100, 23);
+            comboCalibration.TabIndex = 47;
             // 
             // label2
             // 
@@ -170,9 +171,9 @@ namespace Resonalyze.Options
             label2.ForeColor = SystemColors.ControlLight;
             label2.Location = new Point(12, 110);
             label2.Name = "label2";
-            label2.Size = new Size(87, 15);
+            label2.Size = new Size(65, 15);
             label2.TabIndex = 46;
-            label2.Text = "Use Calibration";
+            label2.Text = "Calibration";
             // 
             // labelCurves
             // 
@@ -277,7 +278,7 @@ namespace Resonalyze.Options
             Controls.Add(checkBoxShowCoherence);
             Controls.Add(checkBoxShowPrimary);
             Controls.Add(labelCurves);
-            Controls.Add(checkUseCalibration);
+            Controls.Add(comboCalibration);
             Controls.Add(label2);
             Controls.Add(label9);
             Controls.Add(comboSmoothingInverseOctaves);
@@ -310,7 +311,7 @@ namespace Resonalyze.Options
         private Label label4;
         private Label label9;
         private DarkComboBox comboSmoothingInverseOctaves;
-        private CheckBox checkUseCalibration;
+        private DarkComboBox comboCalibration;
         private Label label2;
         private Label labelCurves;
         private CheckBox checkBoxShowPrimary;

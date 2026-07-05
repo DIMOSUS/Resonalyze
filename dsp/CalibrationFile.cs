@@ -11,6 +11,8 @@ namespace Resonalyze.Dsp
     public sealed class CalibrationFile
     {
         private readonly List<SignalPoint> calibration = new();
+        private readonly CalibrationFile? baseCalibration;
+        private readonly Func<double, double>? decibelOffset;
 
         public CalibrationFile(string file)
         {
@@ -23,28 +25,108 @@ namespace Resonalyze.Dsp
 
             foreach (string line in lines)
             {
-                string l = line.Trim();
-                l = l.Replace('\t', ' ');
-                string[] words = l.Split(' ');
-                if (words.Length == 2)
+                if (TryParseCalibrationPoint(line, out double f, out double db))
                 {
-                    double f = 0, db = 0;
-
-                    bool valid =
-                        double.TryParse(words[0], NumberStyles.Float, CultureInfo.InvariantCulture, out f) &&
-                        double.TryParse(words[1], NumberStyles.Float, CultureInfo.InvariantCulture, out db);
-                    if (valid)
-                    {
-                        calibration.Add(new SignalPoint(f, DataHelper.DecibelsToAmplitude(db)));
-                    }
+                    calibration.Add(new SignalPoint(f, DataHelper.DecibelsToAmplitude(db)));
                 }
             }
 
             calibration.Sort((left, right) => left.X.CompareTo(right.X));
         }
 
+        private CalibrationFile(
+            CalibrationFile baseCalibration,
+            Func<double, double> decibelOffset)
+        {
+            this.baseCalibration = baseCalibration;
+            this.decibelOffset = decibelOffset;
+        }
+
+        public static CalibrationFile CreateNinetyDegreeApproximation(
+            CalibrationFile zeroDegreeCalibration) =>
+            new(zeroDegreeCalibration, Delta90Minus0);
+
+        public static double Delta90Minus0(double hz)
+        {
+            const double a = 0.202901338;
+            const double fc = 1917.43333;
+            const double p = 1.34178411;
+            const double q = 2.23024128;
+
+            return -a * Math.Pow(Math.Log2(1.0 + Math.Pow(hz / fc, p)), q);
+        }
+
+        private static bool TryParseCalibrationPoint(
+            string line,
+            out double frequency,
+            out double decibels)
+        {
+            frequency = 0;
+            decibels = 0;
+            string trimmed = line.Trim();
+            if (trimmed.Length == 0 ||
+                trimmed.StartsWith("#", StringComparison.Ordinal) ||
+                trimmed.StartsWith("*", StringComparison.Ordinal) ||
+                trimmed.StartsWith("//", StringComparison.Ordinal) ||
+                trimmed.StartsWith(";", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            List<double> numbers = ExtractNumbers(trimmed, splitCommas: false);
+            if (numbers.Count < 2)
+            {
+                numbers = ExtractNumbers(trimmed, splitCommas: true);
+            }
+
+            if (numbers.Count < 2)
+            {
+                return false;
+            }
+
+            frequency = numbers[0];
+            decibels = numbers[1];
+            return
+                frequency > 0 &&
+                double.IsFinite(decibels);
+        }
+
+        private static List<double> ExtractNumbers(string line, bool splitCommas)
+        {
+            char[] separators = splitCommas
+                ? [' ', '\t', ';', ',']
+                : [' ', '\t', ';'];
+            string[] fields = line.Split(
+                separators,
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var numbers = new List<double>(fields.Length);
+            foreach (string field in fields)
+            {
+                if (TryParseNumber(field, out double value))
+                {
+                    numbers.Add(value);
+                }
+            }
+
+            return numbers;
+        }
+
+        private static bool TryParseNumber(string text, out double value) =>
+            double.TryParse(
+                text.Replace(',', '.'),
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out value) &&
+            double.IsFinite(value);
+
         public double GetDecibelCorrection(double frequency, double smoothingOctaves = 0.5)
         {
+            if (baseCalibration != null && decibelOffset != null)
+            {
+                return baseCalibration.GetDecibelCorrection(frequency, smoothingOctaves) +
+                    decibelOffset(frequency);
+            }
+
             if (calibration.Count < 2)
             {
                 return 0;

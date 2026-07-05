@@ -26,7 +26,11 @@ namespace Resonalyze.Options
             FormClosed += FROptions_FormClosed;
         }
 
-        public void Init(ExpSweepMeasurement expSweepMeasurement, FrequencyResponseOptions frequencyResponseOptions)
+        public void Init(
+            ExpSweepMeasurement expSweepMeasurement,
+            FrequencyResponseOptions frequencyResponseOptions,
+            bool hasZeroDegreeCalibration,
+            bool hasNinetyDegreeCalibration)
         {
             if (!ReferenceEquals(this.expSweepMeasurement, expSweepMeasurement))
             {
@@ -44,7 +48,11 @@ namespace Resonalyze.Options
             numericRightWindow.Value = frequencyResponseOptions.RightTukeyWindow;
             comboSmoothingInverseOctaves.SelectedItem =
                 SmoothingPresetOptions.Normalize(frequencyResponseOptions.SmoothingInverseOctaves);
-            checkUseCalibration.Checked = frequencyResponseOptions.UseCalibration;
+            MicrophoneCalibrationComboHelper.Configure(
+                comboCalibration,
+                frequencyResponseOptions.CalibrationMode,
+                hasZeroDegreeCalibration,
+                hasNinetyDegreeCalibration);
             checkBoxShowPrimary.Checked = frequencyResponseOptions.ShowPrimary;
             checkBoxShowCoherence.Checked = frequencyResponseOptions.ShowCoherence;
             checkBoxShowHd2.Checked = frequencyResponseOptions.ShowHd2;
@@ -64,7 +72,8 @@ namespace Resonalyze.Options
                 comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
                     ? inverseOctaves
                     : SmoothingPresetOptions.SupportedInverseOctaves[0];
-            frequencyResponseOptions.UseCalibration = checkUseCalibration.Checked;
+            frequencyResponseOptions.CalibrationMode =
+                MicrophoneCalibrationComboHelper.GetSelectedMode(comboCalibration);
             frequencyResponseOptions.ShowPrimary = checkBoxShowPrimary.Checked;
             frequencyResponseOptions.ShowCoherence = checkBoxShowCoherence.Checked;
             frequencyResponseOptions.ShowHd2 = checkBoxShowHd2.Checked;
@@ -153,8 +162,8 @@ namespace Resonalyze.Options
                 comboSmoothingInverseOctaves,
                 "Applies octave smoothing to the resulting frequency-response curve.");
             toolTip.SetToolTip(
-                checkUseCalibration,
-                "Applies the loaded microphone calibration file to the displayed frequency response.");
+                comboCalibration,
+                "Applies the selected microphone calibration file to the displayed frequency response.");
             toolTip.SetToolTip(
                 checkBoxShowPrimary,
                 "Shows the primary frequency-response curve.");

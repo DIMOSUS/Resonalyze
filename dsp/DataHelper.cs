@@ -6,6 +6,13 @@ using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp
 {
+    public enum MicrophoneCalibrationMode
+    {
+        Off,
+        Degrees0,
+        Degrees90
+    }
+
     public sealed class FrequencyResponseOptions
     {
         public int Window { get; set; } = 4096;
@@ -14,7 +21,16 @@ namespace Resonalyze.Dsp
         public double SmoothingInverseOctaves { get; set; } = 6;
         public int Offset { get; set; }
         public bool Unwrap { get; set; } = true;
-        public bool UseCalibration { get; set; } = true;
+        public MicrophoneCalibrationMode CalibrationMode { get; set; } =
+            MicrophoneCalibrationMode.Degrees0;
+
+        public bool UseCalibration
+        {
+            get => CalibrationMode != MicrophoneCalibrationMode.Off;
+            set => CalibrationMode = value
+                ? MicrophoneCalibrationMode.Degrees0
+                : MicrophoneCalibrationMode.Off;
+        }
         public bool ShowCoherence { get; set; } = true;
 
         // Phase-mode curve visibility. Ignored by the other modes that reuse this
@@ -202,7 +218,7 @@ namespace Resonalyze.Dsp
         public static IReadOnlyList<AnalysisCurve> GetSpectrum(
             IImpulseMeasurement measurement,
             FrequencyResponseOptions frequencyResponseOptions,
-            CalibrationFile calibration,
+            CalibrationFile? calibration,
             bool includePrimary = true,
             bool includeHarmonics = true)
         {

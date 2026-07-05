@@ -187,8 +187,9 @@ public partial class Form1
             {
                 try
                 {
-                    dialog.SetOptions(expSweepMeasurement);
+                    dialog.SetOptions(expSweepMeasurement, measurementSettings.Measurement);
                     SaveMeasurementSettings(captureMeasurementSettings: true);
+                    RefreshCalibrationConsumers();
                     await ApplyMeasurementConfigurationToControllersAsync();
                     if (!liveSpectrumController.InProgress &&
                         !expSweepMeasurement.InProgress)

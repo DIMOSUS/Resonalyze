@@ -41,7 +41,16 @@ namespace Resonalyze.Options
         /// <summary>Spectral colour of the excitation noise played during measurement.</summary>
         public NoiseColor NoiseColor { get; set; } = NoiseColor.PinkPeriodic;
 
-        public bool UseCalibration { get; set; } = true;
+        public MicrophoneCalibrationMode CalibrationMode { get; set; } =
+            MicrophoneCalibrationMode.Degrees0;
+
+        public bool UseCalibration
+        {
+            get => CalibrationMode != MicrophoneCalibrationMode.Off;
+            set => CalibrationMode = value
+                ? MicrophoneCalibrationMode.Degrees0
+                : MicrophoneCalibrationMode.Off;
+        }
         public int SequenceLength { get; set; } = 2048;
 
         /// <summary>Analysis window applied before the FFT.</summary>

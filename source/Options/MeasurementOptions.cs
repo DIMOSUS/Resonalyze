@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -24,6 +25,8 @@ namespace Resonalyze.Options
         private IReadOnlyList<AsioDeviceInfo> asioDrivers = Array.Empty<AsioDeviceInfo>();
         private AsioDriverInfo asioDriverInfo = AsioDeviceCatalog.EmptyDriverInfo;
         private bool initializing;
+        private string? microphoneCalibration0DegreesPath;
+        private string? microphoneCalibration90DegreesPath;
 
         private DarkComboBox comboBoxPlaybackDevice => waveAudioBackendPanel.ComboBoxPlaybackDevice;
 
@@ -181,6 +184,9 @@ namespace Resonalyze.Options
             numericUpDownOctaves.Value = settings.Octaves;
             numericUpDownAverageRunCount.Value = Math.Clamp(settings.AverageRunCount, 1, 64);
             checkBoxConfirmEachAverageRun.Checked = settings.ConfirmEachAverageRun;
+            microphoneCalibration0DegreesPath = settings.MicrophoneCalibration0DegreesPath;
+            microphoneCalibration90DegreesPath = settings.MicrophoneCalibration90DegreesPath;
+            UpdateCalibrationButtons();
             RefreshSampleRateOptions(settings.SampleRate);
             initializing = false;
             RefreshAsioDriverInfo(
@@ -190,8 +196,15 @@ namespace Resonalyze.Options
             UpdateAudioBackendControls();
         }
 
-        public void SetOptions(ExpSweepMeasurement expSweepMeasurement)
+        internal void SetOptions(
+            ExpSweepMeasurement expSweepMeasurement,
+            MeasurementSettingsFile.SweepMeasurementSettings settings)
         {
+            settings.MicrophoneCalibration0DegreesPath =
+                NormalizeCalibrationPath(microphoneCalibration0DegreesPath);
+            settings.MicrophoneCalibration90DegreesPath =
+                NormalizeCalibrationPath(microphoneCalibration90DegreesPath);
+
             int sampleRate = GetSelectedSampleRate();
             int bits = expSweepMeasurement.Bits;
             PlaybackChannel playbackChannel = (PlaybackChannel)comboBoxChannel.SelectedIndex;
@@ -279,6 +292,99 @@ namespace Resonalyze.Options
                 averageRunCount,
                 confirmEachAverageRun);
         }
+
+        private void buttonCalibration0_Click(object? sender, EventArgs e)
+        {
+            microphoneCalibration0DegreesPath =
+                SelectCalibrationFile(microphoneCalibration0DegreesPath);
+            UpdateCalibrationButtons();
+        }
+
+        private void buttonCalibration90_Click(object? sender, EventArgs e)
+        {
+            microphoneCalibration90DegreesPath =
+                SelectCalibrationFile(microphoneCalibration90DegreesPath);
+            UpdateCalibrationButtons();
+        }
+
+        private void buttonClearCalibration0_Click(object? sender, EventArgs e)
+        {
+            microphoneCalibration0DegreesPath = null;
+            UpdateCalibrationButtons();
+        }
+
+        private void buttonClearCalibration90_Click(object? sender, EventArgs e)
+        {
+            microphoneCalibration90DegreesPath = null;
+            UpdateCalibrationButtons();
+        }
+
+        private string? SelectCalibrationFile(string? currentPath)
+        {
+            using var dialog = new OpenFileDialog
+            {
+                Title = "Select microphone calibration file",
+                Filter =
+                    "Microphone calibration files (*.txt;*.cal;*.frd;*.csv)|*.txt;*.cal;*.frd;*.csv|" +
+                    "All files (*.*)|*.*",
+                CheckFileExists = true,
+                Multiselect = false
+            };
+            if (!string.IsNullOrWhiteSpace(currentPath))
+            {
+                dialog.FileName = currentPath;
+                string? directory = Path.GetDirectoryName(currentPath);
+                if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
+                {
+                    dialog.InitialDirectory = directory;
+                }
+            }
+
+            return dialog.ShowDialog(this) == DialogResult.OK
+                ? dialog.FileName
+                : currentPath;
+        }
+
+        private void UpdateCalibrationButtons()
+        {
+            UpdateCalibrationButton(
+                buttonCalibration0,
+                buttonClearCalibration0,
+                microphoneCalibration0DegreesPath);
+            UpdateCalibrationButton(
+                buttonCalibration90,
+                buttonClearCalibration90,
+                microphoneCalibration90DegreesPath);
+        }
+
+        private void UpdateCalibrationButton(
+            Button selectButton,
+            Button clearButton,
+            string? path)
+        {
+            string? normalized = NormalizeCalibrationPath(path);
+            bool missing = normalized != null && !File.Exists(normalized);
+            selectButton.Text = normalized == null
+                ? "Select file..."
+                : Path.GetFileName(normalized);
+            selectButton.ForeColor = missing ? Color.LightSalmon : Color.White;
+            clearButton.Enabled = normalized != null;
+            deviceToolTip.SetToolTip(
+                selectButton,
+                normalized == null
+                    ? "No calibration file selected."
+                    : missing
+                        ? $"Calibration file not found: {normalized}"
+                        : normalized);
+            deviceToolTip.SetToolTip(
+                clearButton,
+                normalized == null
+                    ? "No calibration file selected."
+                    : "Clear selected calibration file.");
+        }
+
+        private static string? NormalizeCalibrationPath(string? path) =>
+            string.IsNullOrWhiteSpace(path) ? null : path;
 
         private void numericUpDownRequestedDuration_ValueChanged(object sender, EventArgs e)
         {

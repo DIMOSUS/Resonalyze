@@ -1619,12 +1619,22 @@ public partial class VirtualCrossoverPanel : UserControl
                 trustPhat ? -phat.PositivePeak.DelayMs : upperArrival - lowerArrival;
             timeline[pair.Upper.Channel] = timeline[pair.Lower.Channel] + increment;
 
+            // Full-band processed-IR peak times, a detector-independent arrival
+            // proxy: a band-limited arrival that sits many ms LATER than its own
+            // channel's energy peak is a detector artifact (a late in-band lobe),
+            // not a real arrival.
+            double lowerPeakMs =
+                pair.Lower.PeakIndex * 1000.0 / pair.Lower.Channel.SampleRate;
+            double upperPeakMs =
+                pair.Upper.PeakIndex * 1000.0 / pair.Upper.Channel.SampleRate;
+
             log.AppendLine(
                 $"Pair {pair.Lower.Channel.Control.ChannelName}/" +
                 $"{pair.Upper.Channel.Control.ChannelName}: " +
                 $"fc {pair.CrossoverHz:0} Hz, " +
                 $"band {pair.BandLowHz:0}-{pair.BandHighHz:0} Hz, " +
-                $"arrivals {lowerArrival:0.000} / {upperArrival:0.000} ms, " +
+                $"arrivals {lowerArrival:0.000} / {upperArrival:0.000} ms " +
+                $"(peaks {lowerPeakMs:0.000} / {upperPeakMs:0.000} ms), " +
                 $"diff {upperArrival - lowerArrival:+0.000;-0.000} ms, " +
                 $"phat peak {phat.PositivePeak.DelayMs:+0.000;-0.000} ms " +
                 $"(r {phat.PositivePeak.Coefficient:+0.000;-0.000}) -> seed " +

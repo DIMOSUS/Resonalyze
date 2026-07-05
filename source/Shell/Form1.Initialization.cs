@@ -1,4 +1,5 @@
 using System.Windows.Forms;
+using Resonalyze.Dsp;
 using Resonalyze.History;
 
 namespace Resonalyze;
@@ -33,7 +34,7 @@ public partial class Form1
         PlotModelFactory createdPlotModelFactory = new(
             expSweepMeasurement,
             noiseMeasurement,
-            calibration,
+            GetMicrophoneCalibration,
             frequencyResponseOptions,
             phaseResponseOptions,
             groupDelayOptions,
@@ -151,6 +152,99 @@ public partial class Form1
         UpdatePeakInfo();
         ApplicationUpdateService.Initialize(this);
         _ = SelectModeAsync(ModeTab.Frequency);
+    }
+
+    private bool HasMicrophoneCalibration(MicrophoneCalibrationMode mode) =>
+        mode == MicrophoneCalibrationMode.Degrees90
+            ? HasApproximateNinetyDegreeCalibration()
+            : GetMicrophoneCalibrationPath(mode) != null;
+
+    private CalibrationFile? GetMicrophoneCalibration(MicrophoneCalibrationMode mode)
+    {
+        if (mode == MicrophoneCalibrationMode.Degrees90 &&
+            GetMicrophoneCalibrationPath(MicrophoneCalibrationMode.Degrees90) == null)
+        {
+            return GetApproximateNinetyDegreeCalibration();
+        }
+
+        string? path = GetMicrophoneCalibrationPath(mode);
+        if (path == null)
+        {
+            return null;
+        }
+
+        if (!calibrationCache.TryGetValue(path, out CalibrationFile? calibrationFile))
+        {
+            calibrationFile = new CalibrationFile(path);
+            calibrationCache[path] = calibrationFile;
+        }
+
+        return calibrationFile;
+    }
+
+    private CalibrationFile? GetApproximateNinetyDegreeCalibration()
+    {
+        string? zeroDegreePath = GetMicrophoneCalibrationPath(
+            MicrophoneCalibrationMode.Degrees0);
+        if (zeroDegreePath == null)
+        {
+            return null;
+        }
+
+        string cacheKey = $"approx90:{zeroDegreePath}";
+        if (!calibrationCache.TryGetValue(cacheKey, out CalibrationFile? calibrationFile))
+        {
+            CalibrationFile zeroDegreeCalibration =
+                GetMicrophoneCalibration(MicrophoneCalibrationMode.Degrees0)
+                ?? throw new InvalidOperationException(
+                    "0 degree microphone calibration is not available.");
+            calibrationFile = CalibrationFile.CreateNinetyDegreeApproximation(
+                zeroDegreeCalibration);
+            calibrationCache[cacheKey] = calibrationFile;
+        }
+
+        return calibrationFile;
+    }
+
+    private string? GetMicrophoneCalibrationPath(MicrophoneCalibrationMode mode)
+    {
+        string? path = mode switch
+        {
+            MicrophoneCalibrationMode.Degrees0 =>
+                measurementSettings.Measurement.MicrophoneCalibration0DegreesPath,
+            MicrophoneCalibrationMode.Degrees90 =>
+                measurementSettings.Measurement.MicrophoneCalibration90DegreesPath,
+            _ => null
+        };
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            return File.Exists(path) ? path : null;
+        }
+
+        if (mode == MicrophoneCalibrationMode.Degrees0)
+        {
+            string legacyPath = Path.Combine(AppContext.BaseDirectory, "calibration.txt");
+            if (File.Exists(legacyPath))
+            {
+                return legacyPath;
+            }
+        }
+
+        return null;
+    }
+
+    private bool HasApproximateNinetyDegreeCalibration() =>
+        GetMicrophoneCalibrationPath(MicrophoneCalibrationMode.Degrees90) != null ||
+        GetMicrophoneCalibrationPath(MicrophoneCalibrationMode.Degrees0) != null;
+
+    private void RefreshCalibrationConsumers()
+    {
+        calibrationCache.Clear();
+        if (virtualCrossoverPanel != null)
+        {
+            virtualCrossoverPanel.Calibration =
+                GetMicrophoneCalibration(MicrophoneCalibrationMode.Degrees0);
+        }
     }
 
     private void WireFormEvents()

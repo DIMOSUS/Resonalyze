@@ -33,8 +33,8 @@ namespace Resonalyze
         private readonly OverlayCollection overlayCollection;
         private readonly ExpSweepMeasurement expSweepMeasurement = new();
         private readonly NoiseMeasurement noiseMeasurement = new();
-        private readonly CalibrationFile calibration = new(
-            Path.Combine(AppContext.BaseDirectory, "calibration.txt"));
+        private readonly Dictionary<string, CalibrationFile> calibrationCache = new(
+            StringComparer.OrdinalIgnoreCase);
         private readonly WaterfallGenerateOptions waterfallGenOptions = new()
         {
             WaterfallMode = WaterfallMode.Fourier,
@@ -125,7 +125,7 @@ namespace Resonalyze
             eqWizardPanel.OverlaySettingsRequested = OpenEqWizardOverlaySettings;
             signalGeneratorPanel.PlaybackSettingsProvider = CreateSignalGeneratorPlaybackSettings;
             virtualCrossoverPanel.HistoryService = measurementHistoryService;
-            virtualCrossoverPanel.Calibration = calibration;
+            RefreshCalibrationConsumers();
             virtualCrossoverPanel.OverlayCaptureRequested = SaveVirtualCrossoverOverlay;
             modeDescriptors = CreateModeDescriptors();
             ApplyPersistedSettings();

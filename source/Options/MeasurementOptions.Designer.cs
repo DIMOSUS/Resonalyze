@@ -64,9 +64,9 @@ namespace Resonalyze.Options
             (numericUpDownOctaves).BeginInit();
             (numericUpDownAverageRunCount).BeginInit();
             SuspendLayout();
-            //
+            // 
             // label1
-            //
+            // 
             label1.AutoSize = true;
             label1.ForeColor = SystemColors.ControlLight;
             label1.Location = new Point(12, 20);
@@ -74,9 +74,9 @@ namespace Resonalyze.Options
             label1.Size = new Size(72, 15);
             label1.TabIndex = 1;
             label1.Text = "Sample Rate";
-            //
+            // 
             // label2
-            //
+            // 
             label2.AutoSize = true;
             label2.ForeColor = SystemColors.ControlLight;
             label2.Location = new Point(12, 45);
@@ -84,9 +84,9 @@ namespace Resonalyze.Options
             label2.Size = new Size(26, 15);
             label2.TabIndex = 3;
             label2.Text = "Bits";
-            //
+            // 
             // comboBoxChannel
-            //
+            // 
             comboBoxChannel.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxChannel.ForeColor = Color.White;
             comboBoxChannel.Location = new Point(153, 140);
@@ -96,9 +96,9 @@ namespace Resonalyze.Options
             comboBoxChannel.Size = new Size(170, 23);
             comboBoxChannel.TabIndex = 4;
             comboBoxChannel.SelectedIndexChanged += comboBoxChannel_SelectedIndexChanged;
-            //
+            // 
             // label3
-            //
+            // 
             label3.AutoSize = true;
             label3.ForeColor = SystemColors.ControlLight;
             label3.Location = new Point(12, 148);
@@ -106,9 +106,9 @@ namespace Resonalyze.Options
             label3.Size = new Size(51, 15);
             label3.TabIndex = 5;
             label3.Text = "Channel";
-            //
+            // 
             // label4
-            //
+            // 
             label4.AutoSize = true;
             label4.ForeColor = SystemColors.ControlLight;
             label4.Location = new Point(12, 95);
@@ -116,9 +116,9 @@ namespace Resonalyze.Options
             label4.Size = new Size(138, 15);
             label4.TabIndex = 7;
             label4.Text = "Requested Duration (ms)";
-            //
+            // 
             // label5
-            //
+            // 
             label5.AutoSize = true;
             label5.ForeColor = SystemColors.ControlLight;
             label5.Location = new Point(12, 119);
@@ -126,9 +126,9 @@ namespace Resonalyze.Options
             label5.Size = new Size(133, 15);
             label5.TabIndex = 9;
             label5.Text = "Compute Duration (ms)";
-            //
+            // 
             // numericUpDownRequestedDuration
-            //
+            // 
             numericUpDownRequestedDuration.BackColor = Color.FromArgb(55, 60, 72);
             numericUpDownRequestedDuration.DecimalPlaces = 0;
             numericUpDownRequestedDuration.ForeColor = Color.White;
@@ -144,9 +144,9 @@ namespace Resonalyze.Options
             numericUpDownRequestedDuration.ThousandsSeparator = false;
             numericUpDownRequestedDuration.Value = new decimal(new int[] { 1000, 0, 0, 0 });
             numericUpDownRequestedDuration.ValueChanged += numericUpDownRequestedDuration_ValueChanged;
-            //
+            // 
             // numericUpDownComputeDuration
-            //
+            // 
             numericUpDownComputeDuration.BackColor = Color.FromArgb(55, 60, 72);
             numericUpDownComputeDuration.DecimalPlaces = 0;
             numericUpDownComputeDuration.Enabled = false;
@@ -163,21 +163,21 @@ namespace Resonalyze.Options
             numericUpDownComputeDuration.TextAlign = HorizontalAlignment.Right;
             numericUpDownComputeDuration.ThousandsSeparator = false;
             numericUpDownComputeDuration.Value = new decimal(new int[] { 0, 0, 0, 0 });
-            //
+            // 
             // button1
-            //
+            // 
             button1.DialogResult = DialogResult.OK;
             button1.FlatStyle = FlatStyle.Popup;
             button1.ForeColor = Color.White;
-            button1.Location = new Point(11, 541);
+            button1.Location = new Point(12, 554);
             button1.Name = "button1";
             button1.Size = new Size(311, 23);
             button1.TabIndex = 12;
             button1.Text = "Apply settings";
             button1.UseVisualStyleBackColor = true;
-            //
+            // 
             // label6
-            //
+            // 
             label6.AutoSize = true;
             label6.ForeColor = SystemColors.ControlLight;
             label6.Location = new Point(12, 70);
@@ -185,9 +185,9 @@ namespace Resonalyze.Options
             label6.Size = new Size(49, 15);
             label6.TabIndex = 15;
             label6.Text = "Octaves";
-            //
+            // 
             // comboBoxSampleRate
-            //
+            // 
             comboBoxSampleRate.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxSampleRate.ForeColor = Color.White;
             comboBoxSampleRate.Location = new Point(153, 12);
@@ -197,9 +197,9 @@ namespace Resonalyze.Options
             comboBoxSampleRate.Size = new Size(170, 23);
             comboBoxSampleRate.TabIndex = 16;
             comboBoxSampleRate.SelectedIndexChanged += comboBoxSampleRate_SelectedIndexChanged;
-            //
+            // 
             // numericUpDownBits
-            //
+            // 
             numericUpDownBits.BackColor = Color.FromArgb(55, 60, 72);
             numericUpDownBits.DecimalPlaces = 0;
             numericUpDownBits.Enabled = false;
@@ -216,9 +216,9 @@ namespace Resonalyze.Options
             numericUpDownBits.TextAlign = HorizontalAlignment.Right;
             numericUpDownBits.ThousandsSeparator = false;
             numericUpDownBits.Value = new decimal(new int[] { 8, 0, 0, 0 });
-            //
+            // 
             // numericUpDownOctaves
-            //
+            // 
             numericUpDownOctaves.BackColor = Color.FromArgb(55, 60, 72);
             numericUpDownOctaves.DecimalPlaces = 0;
             numericUpDownOctaves.Enabled = false;
@@ -235,41 +235,41 @@ namespace Resonalyze.Options
             numericUpDownOctaves.TextAlign = HorizontalAlignment.Right;
             numericUpDownOctaves.ThousandsSeparator = false;
             numericUpDownOctaves.Value = new decimal(new int[] { 1, 0, 0, 0 });
-            //
+            // 
             // labelAudioBackend
-            //
+            // 
             labelAudioBackend.AutoSize = true;
             labelAudioBackend.ForeColor = SystemColors.ControlLight;
-            labelAudioBackend.Location = new Point(12, 274);
+            labelAudioBackend.Location = new Point(12, 285);
             labelAudioBackend.Name = "labelAudioBackend";
             labelAudioBackend.Size = new Size(87, 15);
             labelAudioBackend.TabIndex = 23;
             labelAudioBackend.Text = "Audio backend";
-            //
+            // 
             // comboBoxAudioBackend
-            //
+            // 
             comboBoxAudioBackend.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxAudioBackend.ForeColor = Color.White;
-            comboBoxAudioBackend.Location = new Point(153, 266);
+            comboBoxAudioBackend.Location = new Point(153, 277);
             comboBoxAudioBackend.Margin = new Padding(0);
             comboBoxAudioBackend.MinimumSize = new Size(36, 19);
             comboBoxAudioBackend.Name = "comboBoxAudioBackend";
             comboBoxAudioBackend.Size = new Size(170, 23);
             comboBoxAudioBackend.TabIndex = 24;
             comboBoxAudioBackend.SelectedIndexChanged += comboBoxAudioBackend_SelectedIndexChanged;
-            //
+            // 
             // labelAverageRunCount
-            //
+            // 
             labelAverageRunCount.AutoSize = true;
             labelAverageRunCount.ForeColor = SystemColors.ControlLight;
             labelAverageRunCount.Location = new Point(12, 174);
             labelAverageRunCount.Name = "labelAverageRunCount";
-            labelAverageRunCount.Size = new Size(84, 15);
+            labelAverageRunCount.Size = new Size(85, 15);
             labelAverageRunCount.TabIndex = 27;
             labelAverageRunCount.Text = "Measurements";
-            //
+            // 
             // numericUpDownAverageRunCount
-            //
+            // 
             numericUpDownAverageRunCount.BackColor = Color.FromArgb(55, 60, 72);
             numericUpDownAverageRunCount.DecimalPlaces = 0;
             numericUpDownAverageRunCount.ForeColor = Color.White;
@@ -284,9 +284,9 @@ namespace Resonalyze.Options
             numericUpDownAverageRunCount.TextAlign = HorizontalAlignment.Right;
             numericUpDownAverageRunCount.ThousandsSeparator = false;
             numericUpDownAverageRunCount.Value = new decimal(new int[] { 1, 0, 0, 0 });
-            //
+            // 
             // checkBoxConfirmEachAverageRun
-            //
+            // 
             checkBoxConfirmEachAverageRun.AutoSize = true;
             checkBoxConfirmEachAverageRun.ForeColor = SystemColors.ControlLight;
             checkBoxConfirmEachAverageRun.Location = new Point(153, 194);
@@ -295,19 +295,19 @@ namespace Resonalyze.Options
             checkBoxConfirmEachAverageRun.TabIndex = 29;
             checkBoxConfirmEachAverageRun.Text = "Confirm each run";
             checkBoxConfirmEachAverageRun.UseVisualStyleBackColor = true;
-            //
+            // 
             // labelCalibration0
-            //
+            // 
             labelCalibration0.AutoSize = true;
             labelCalibration0.ForeColor = SystemColors.ControlLight;
             labelCalibration0.Location = new Point(12, 224);
             labelCalibration0.Name = "labelCalibration0";
-            labelCalibration0.Size = new Size(99, 15);
+            labelCalibration0.Size = new Size(100, 15);
             labelCalibration0.TabIndex = 30;
             labelCalibration0.Text = "Mic calibration 0°";
-            //
+            // 
             // buttonCalibration0
-            //
+            // 
             buttonCalibration0.FlatStyle = FlatStyle.Popup;
             buttonCalibration0.ForeColor = Color.White;
             buttonCalibration0.Location = new Point(153, 219);
@@ -317,9 +317,9 @@ namespace Resonalyze.Options
             buttonCalibration0.Text = "Select file...";
             buttonCalibration0.UseVisualStyleBackColor = true;
             buttonCalibration0.Click += buttonCalibration0_Click;
-            //
+            // 
             // buttonClearCalibration0
-            //
+            // 
             buttonClearCalibration0.FlatStyle = FlatStyle.Popup;
             buttonClearCalibration0.ForeColor = Color.White;
             buttonClearCalibration0.Location = new Point(299, 219);
@@ -329,19 +329,19 @@ namespace Resonalyze.Options
             buttonClearCalibration0.Text = "X";
             buttonClearCalibration0.UseVisualStyleBackColor = true;
             buttonClearCalibration0.Click += buttonClearCalibration0_Click;
-            //
+            // 
             // labelCalibration90
-            //
+            // 
             labelCalibration90.AutoSize = true;
             labelCalibration90.ForeColor = SystemColors.ControlLight;
             labelCalibration90.Location = new Point(12, 249);
             labelCalibration90.Name = "labelCalibration90";
-            labelCalibration90.Size = new Size(105, 15);
+            labelCalibration90.Size = new Size(106, 15);
             labelCalibration90.TabIndex = 32;
             labelCalibration90.Text = "Mic calibration 90°";
-            //
+            // 
             // buttonCalibration90
-            //
+            // 
             buttonCalibration90.FlatStyle = FlatStyle.Popup;
             buttonCalibration90.ForeColor = Color.White;
             buttonCalibration90.Location = new Point(153, 244);
@@ -351,9 +351,9 @@ namespace Resonalyze.Options
             buttonCalibration90.Text = "Select file...";
             buttonCalibration90.UseVisualStyleBackColor = true;
             buttonCalibration90.Click += buttonCalibration90_Click;
-            //
+            // 
             // buttonClearCalibration90
-            //
+            // 
             buttonClearCalibration90.FlatStyle = FlatStyle.Popup;
             buttonClearCalibration90.ForeColor = Color.White;
             buttonClearCalibration90.Location = new Point(299, 244);
@@ -363,27 +363,29 @@ namespace Resonalyze.Options
             buttonClearCalibration90.Text = "X";
             buttonClearCalibration90.UseVisualStyleBackColor = true;
             buttonClearCalibration90.Click += buttonClearCalibration90_Click;
-            //
+            // 
             // waveAudioBackendPanel
-            //
-            waveAudioBackendPanel.Location = new Point(12, 304);
+            // 
+            waveAudioBackendPanel.BackColor = Color.FromArgb(45, 50, 60);
+            waveAudioBackendPanel.Location = new Point(12, 315);
             waveAudioBackendPanel.Name = "waveAudioBackendPanel";
             waveAudioBackendPanel.Size = new Size(311, 206);
             waveAudioBackendPanel.TabIndex = 25;
-            //
+            // 
             // asioAudioBackendPanel
-            //
-            asioAudioBackendPanel.Location = new Point(12, 304);
+            // 
+            asioAudioBackendPanel.BackColor = Color.FromArgb(45, 50, 60);
+            asioAudioBackendPanel.Location = new Point(12, 315);
             asioAudioBackendPanel.Name = "asioAudioBackendPanel";
             asioAudioBackendPanel.Size = new Size(311, 213);
             asioAudioBackendPanel.TabIndex = 26;
-            //
+            // 
             // MeasurementOptions
-            //
+            // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(334, 574);
+            ClientSize = new Size(334, 589);
             Controls.Add(asioAudioBackendPanel);
             Controls.Add(waveAudioBackendPanel);
             Controls.Add(buttonClearCalibration90);

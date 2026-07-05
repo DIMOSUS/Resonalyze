@@ -683,10 +683,15 @@ public partial class VirtualCrossoverPanel : UserControl
     private void UpdatePeqLabel(ChannelRuntime channel)
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
-        channel.Control.PeqInfoLabel.Text = settings.PeqBands.Count == 0 && settings.PeqPreampDb == 0
+        bool noPeq = settings.PeqBands.Count == 0 && settings.PeqPreampDb == 0;
+        string text = noPeq
             ? "No PEQ"
             : $"{settings.PeqSourceName ?? "PEQ"}: {settings.PeqBands.Count} bands, " +
               $"preamp {settings.PeqPreampDb:0.0} dB";
+        channel.Control.PeqInfoLabel.Text = text;
+        // The label is narrow and clips the file name; the full text lives in the
+        // tooltip. Nothing worth hovering when there is no PEQ.
+        toolTip.SetToolTip(channel.Control.PeqInfoLabel, noPeq ? string.Empty : text);
     }
 
     // ------------------------------------------------------------------ plots
@@ -1232,6 +1237,7 @@ public partial class VirtualCrossoverPanel : UserControl
             BuildMetricCurves(processed);
 
         UpdateMetric(processed, magnitudes, sumCurve);
+        UpdateCrossoverWarning(processed);
 
         if (processed.Count > 0)
         {
@@ -1444,6 +1450,54 @@ public partial class VirtualCrossoverPanel : UserControl
             : "Sum loss avg: —";
     }
 
+    // The spread of alignment delays, above which the setup is flagged. A driver
+    // whose crossover has pathological group delay (a narrow or steep low-
+    // frequency band-pass) arrives so late that Auto delay must push every other
+    // driver out by this much to match it — a spread this large is the symptom.
+    private const double CrossoverGroupDelayWarningMs = 10.0;
+
+    // Warns, live, when the alignment delays span more than the threshold: the
+    // latest driver (the one the others are delayed to catch up to) lags by that
+    // much. This reads the applied delays directly, so it exactly mirrors what
+    // Auto delay produced — no group-delay proxy that measures the wrong point
+    // (a narrow low-frequency band-pass peaks late in its own band, and only its
+    // arrival across the whole overlap, i.e. the alignment delay, tells the
+    // truth). Bypassed channels carry the raw signal and are excluded.
+    private void UpdateCrossoverWarning(List<ProcessedChannel> processed)
+    {
+        List<ProcessedChannel> active = processed
+            .Where(item => !item.Channel.Settings.Bypass)
+            .ToList();
+        if (active.Count < 2)
+        {
+            labelCrossoverWarning.Visible = false;
+            return;
+        }
+
+        // The latest driver holds the smallest delay (everyone else is delayed
+        // toward it); the spread is how far ahead the earliest driver sits.
+        ProcessedChannel latest = active.MinBy(item => item.Channel.Settings.DelayMs)!;
+        double earliestDelay = active.Max(item => item.Channel.Settings.DelayMs);
+        double spread = earliestDelay - latest.Channel.Settings.DelayMs;
+        if (spread <= CrossoverGroupDelayWarningMs)
+        {
+            labelCrossoverWarning.Visible = false;
+            toolTip.SetToolTip(labelCrossoverWarning, string.Empty);
+            return;
+        }
+
+        string name = latest.Channel.Control.ChannelName;
+        labelCrossoverWarning.Text =
+            $"⚠ {name} lags the others by ~{spread:0} ms — check its crossover.";
+        toolTip.SetToolTip(
+            labelCrossoverWarning,
+            $"{name} arrives ~{spread:0} ms after the other drivers, so Auto delay pushes " +
+            "them out by that much to match it.\r\n\r\n" +
+            "This is usually excessive crossover group delay — a narrow or steep low-frequency " +
+            "band-pass. Reduce its slope or widen its band to bring the alignment delays down.");
+        labelCrossoverWarning.Visible = true;
+    }
+
     private static string FormatHz(double frequencyHz) =>
         frequencyHz >= 1_000
             ? $"{frequencyHz / 1_000:0.#} kHz"
@@ -1528,7 +1582,7 @@ public partial class VirtualCrossoverPanel : UserControl
     // delays stay non-negative by construction. Previous Auto/manual delay and
     // polarity settings are ignored: the command recomputes an absolute proposal
     // from the current sources, crossover filters, gains and PEQ every time.
-    private void AutoAlignDelay()
+    private async void AutoAlignDelay()
     {
         var alignment = new Dictionary<ChannelRuntime, AlignmentOverride>();
         List<ProcessedChannel> processed = ProcessChannels(alignment);
@@ -1570,6 +1624,91 @@ public partial class VirtualCrossoverPanel : UserControl
         log.AppendLine($"Crossover window: {minHz:0} - {maxHz:0} Hz");
         log.AppendLine("Previous delay / polarity settings ignored for this run.");
 
+        // The alignment stages are FFT-heavy (~seconds). Run them off the UI
+        // thread so the window stays responsive and shows the busy state instead
+        // of hanging. Inputs are locked for the duration, so the background
+        // compute reads a stable snapshot of the settings and IRs.
+        SetAutoDelayBusy(true);
+        try
+        {
+            await Task.Run(() => ComputeAutoAlignment(processed, alignment, log));
+            ApplyAlignmentResult(processed, alignment, log);
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Debug.WriteLine($"Auto delay failed: {exception}");
+            System.Media.SystemSounds.Beep.Play();
+        }
+        finally
+        {
+            SetAutoDelayBusy(false);
+        }
+    }
+
+    // Marks the panel busy while Auto delay runs: the heavy stages moved off the
+    // UI thread, so without this the window would look idle while a click does
+    // nothing for seconds. Disables the inputs the compute reads (so it sees a
+    // stable snapshot) and shows a wait state.
+    private void SetAutoDelayBusy(bool busy)
+    {
+        buttonAutoDelay.Enabled = !busy;
+        buttonAutoDelay.Text = busy ? "Aligning…" : "Auto delay";
+        buttonAutoSetup.Enabled = !busy;
+        foreach (ChannelRuntime channel in channels)
+        {
+            channel.Control.Enabled = !busy;
+        }
+
+        Cursor = busy ? Cursors.WaitCursor : Cursors.Default;
+        if (busy)
+        {
+            labelMetric.Text = "Auto delay: aligning…";
+        }
+    }
+
+    // Applies the computed delays/polarities to the channels and their controls,
+    // redraws, and closes the log with this run's outcome. UI-thread work: it
+    // touches controls and the plots, so it stays out of the background compute.
+    private void ApplyAlignmentResult(
+        List<ProcessedChannel> processed,
+        Dictionary<ChannelRuntime, AlignmentOverride> alignment,
+        System.Text.StringBuilder log)
+    {
+        foreach (ProcessedChannel item in processed)
+        {
+            AlignmentOverride result = alignment.GetValueOrDefault(item.Channel);
+            item.Channel.Settings.DelayMs = Math.Round(result.DelayMs, 2);
+            item.Channel.Settings.InvertPolarity = result.InvertPolarity;
+            ApplySettingsToControl(item.Channel);
+            log.AppendLine(
+                $"Result {item.Channel.Control.ChannelName}: " +
+                $"delay {item.Channel.Settings.DelayMs:0.00} ms, " +
+                $"invert {(item.Channel.Settings.InvertPolarity ? "yes" : "no")}");
+        }
+
+        ScheduleSave();
+        RedrawAll();
+        // RedrawAll refreshes the label asynchronously (the ApplyChain FFTs run
+        // off the UI thread), so labelMetric.Text still holds the PREVIOUS run's
+        // value here. Recompute the metric synchronously from the just-applied
+        // settings so the log ends with this run's true outcome.
+        List<ProcessedChannel> outcome = ProcessChannels();
+        (List<AnalysisCurve>? outcomeMagnitudes, AnalysisCurve? outcomeSum) =
+            BuildMetricCurves(outcome);
+        log.AppendLine(ComputeMetricText(outcome, outcomeMagnitudes, outcomeSum));
+        WriteAlignmentLog(log.ToString());
+    }
+
+    // The FFT-heavy alignment stages, isolated so they can run on a background
+    // thread: they read `processed` (immutable IRs) and the locked channel
+    // settings, fill `alignment` and `log`, and touch no UI (ChannelName is a
+    // plain field). Only the non-cached ProcessChannels path is used, so nothing
+    // shared is mutated.
+    private void ComputeAutoAlignment(
+        List<ProcessedChannel> processed,
+        Dictionary<ChannelRuntime, AlignmentOverride> alignment,
+        System.Text.StringBuilder log)
+    {
         // Stage 1: coarse offsets from band-limited first arrivals, refined by the
         // GCC-PHAT peak where it is trustworthy. Arrivals of different drivers are
         // only comparable inside a SHARED band — a woofer's envelope in its own low
@@ -1837,30 +1976,6 @@ public partial class VirtualCrossoverPanel : UserControl
                 Math.Clamp(Math.Round(newDelay, 2), 0, 100),
                 chosen.InvertPolarity);
         }
-
-        foreach (ProcessedChannel item in processed)
-        {
-            AlignmentOverride result = alignment.GetValueOrDefault(item.Channel);
-            item.Channel.Settings.DelayMs = Math.Round(result.DelayMs, 2);
-            item.Channel.Settings.InvertPolarity = result.InvertPolarity;
-            ApplySettingsToControl(item.Channel);
-            log.AppendLine(
-                $"Result {item.Channel.Control.ChannelName}: " +
-                $"delay {item.Channel.Settings.DelayMs:0.00} ms, " +
-                $"invert {(item.Channel.Settings.InvertPolarity ? "yes" : "no")}");
-        }
-
-        ScheduleSave();
-        RedrawAll();
-        // RedrawAll refreshes the label asynchronously (the ApplyChain FFTs run
-        // off the UI thread), so labelMetric.Text still holds the PREVIOUS run's
-        // value here. Recompute the metric synchronously from the just-applied
-        // settings so the log ends with this run's true outcome.
-        List<ProcessedChannel> outcome = ProcessChannels();
-        (List<AnalysisCurve>? outcomeMagnitudes, AnalysisCurve? outcomeSum) =
-            BuildMetricCurves(outcome);
-        log.AppendLine(ComputeMetricText(outcome, outcomeMagnitudes, outcomeSum));
-        WriteAlignmentLog(log.ToString());
     }
 
     private static void AppendCorrelationAlignmentDiagnostics(

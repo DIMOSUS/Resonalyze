@@ -49,6 +49,7 @@ namespace Resonalyze
             buttonSessionImport = new Button();
             buttonSessionExport = new Button();
             labelMetric = new Label();
+            labelCrossoverWarning = new Label();
             SuspendLayout();
             // 
             // mainPlotView
@@ -292,6 +293,16 @@ namespace Resonalyze
             labelMetric.TabIndex = 15;
             labelMetric.Text = "Sum loss avg: —";
             // 
+            // labelCrossoverWarning
+            // 
+            labelCrossoverWarning.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            labelCrossoverWarning.ForeColor = Color.FromArgb(235, 110, 95);
+            labelCrossoverWarning.Location = new Point(349, 452);
+            labelCrossoverWarning.Name = "labelCrossoverWarning";
+            labelCrossoverWarning.Size = new Size(818, 16);
+            labelCrossoverWarning.TabIndex = 19;
+            labelCrossoverWarning.Visible = false;
+            // 
             // VirtualCrossoverPanel
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
@@ -314,6 +325,7 @@ namespace Resonalyze
             Controls.Add(buttonSessionImport);
             Controls.Add(buttonSessionExport);
             Controls.Add(labelMetric);
+            Controls.Add(labelCrossoverWarning);
             Controls.Add(virtualCrossoverChannelControl3);
             Controls.Add(virtualCrossoverChannelControl2);
             Controls.Add(virtualCrossoverChannelControl1);
@@ -349,5 +361,6 @@ namespace Resonalyze
         private Button buttonSessionImport;
         private Button buttonSessionExport;
         private Label labelMetric;
+        private Label labelCrossoverWarning;
     }
 }

@@ -498,6 +498,122 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void FindBandLimitedCorrelationDelay_ReturnsDelayToAddToSecondSignal()
+    {
+        Complex[] first = UnitImpulse(8_192, 2_000);
+        Complex[] second = UnitImpulse(8_192, 1_952);
+
+        CorrelationAlignmentResult result =
+            VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
+                first,
+                second,
+                SampleRate,
+                centerFrequencyHz: 1_000,
+                passOctaves: 1,
+                searchRangeMs: 3);
+
+        Assert.False(result.BestByMagnitude.InvertPolarity);
+        Assert.Equal(1.0, result.BestByMagnitude.DelayMs, 2);
+        Assert.True(result.BestByMagnitude.Coefficient > 0.95);
+    }
+
+    [Fact]
+    public void FindBandLimitedCorrelationDelay_PhaseTransformFindsTheSameDelay()
+    {
+        Complex[] first = UnitImpulse(8_192, 2_000);
+        Complex[] second = UnitImpulse(8_192, 1_952);
+
+        CorrelationAlignmentResult result =
+            VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
+                first,
+                second,
+                SampleRate,
+                centerFrequencyHz: 1_000,
+                passOctaves: 2,
+                searchRangeMs: 3,
+                phaseTransform: true);
+
+        Assert.False(result.BestByMagnitude.InvertPolarity);
+        Assert.Equal(1.0, result.BestByMagnitude.DelayMs, 2);
+        Assert.True(result.BestByMagnitude.Coefficient > 0.95);
+    }
+
+    [Fact]
+    public void FindBandLimitedCorrelationDelay_ReportsNegativeTroughAsInversion()
+    {
+        Complex[] first = UnitImpulse(8_192, 2_000);
+        Complex[] second = UnitImpulse(8_192, 1_952);
+        second[1_952] = -Complex.One;
+
+        CorrelationAlignmentResult result =
+            VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
+                first,
+                second,
+                SampleRate,
+                centerFrequencyHz: 1_000,
+                passOctaves: 1,
+                searchRangeMs: 3);
+
+        Assert.True(result.BestByMagnitude.InvertPolarity);
+        Assert.Equal(1.0, result.BestByMagnitude.DelayMs, 2);
+        Assert.True(result.BestByMagnitude.Coefficient < -0.95);
+    }
+
+    [Fact]
+    public void FindBandLimitedCorrelationDelay_CenterLagReachesAnOffsetBeyondTheZeroWindow()
+    {
+        // The channels are 400 samples (8.33 ms) apart — far outside a ±3 ms
+        // window around zero. Centering the window on that arrival estimate is
+        // what lets the search reach the true peak; without it the search is
+        // trapped inside ±3 ms and cannot find the offset.
+        Complex[] first = UnitImpulse(16_384, 4_000);
+        Complex[] second = UnitImpulse(16_384, 3_600);
+        const double offsetMs = 400.0 / SampleRate * 1_000.0;
+
+        CorrelationAlignmentResult centered =
+            VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
+                first, second, SampleRate,
+                centerFrequencyHz: 1_000, passOctaves: 2, searchRangeMs: 3,
+                centerLagMs: offsetMs, phaseTransform: true);
+        CorrelationAlignmentResult uncentered =
+            VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
+                first, second, SampleRate,
+                centerFrequencyHz: 1_000, passOctaves: 2, searchRangeMs: 3,
+                centerLagMs: 0, phaseTransform: true);
+
+        Assert.Equal(offsetMs, centered.PositivePeak.DelayMs, 2);
+        Assert.True(centered.PositivePeak.Coefficient > 0.95);
+
+        // Trapped in ±3 ms around zero, the uncentered search cannot reach the
+        // 8.33 ms peak and reports a weak in-window extremum instead.
+        Assert.True(Math.Abs(uncentered.BestByMagnitude.DelayMs) <= 3.05);
+        Assert.True(Math.Abs(uncentered.PositivePeak.Coefficient) < 0.5);
+    }
+
+    [Fact]
+    public void FindBandLimitedCorrelationDelay_ExposesPositivePeakAndInvertedTrough()
+    {
+        // The positive peak and the negative trough are reported independently of
+        // which one wins by magnitude: the seed path reads PositivePeak directly,
+        // so its non-inverted flag and the trough's inverted flag must hold.
+        Complex[] first = UnitImpulse(8_192, 2_000);
+        Complex[] second = UnitImpulse(8_192, 1_952);
+
+        CorrelationAlignmentResult result =
+            VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
+                first, second, SampleRate,
+                centerFrequencyHz: 1_000, passOctaves: 2, searchRangeMs: 3,
+                phaseTransform: true);
+
+        Assert.False(result.PositivePeak.InvertPolarity);
+        Assert.True(result.PositivePeak.Coefficient > 0.95);
+        Assert.True(result.NegativeTrough.InvertPolarity);
+        Assert.True(result.NegativeTrough.Coefficient < 0);
+        Assert.True(result.Confidence >= 0);
+        Assert.Equal(result.PositivePeak.DelayMs, result.BestByMagnitude.DelayMs, 6);
+    }
+
+    [Fact]
     public void EstimatePolarity_ReadsTheFirstSignificantExcursion()
     {
         Complex[] positive = UnitImpulse(256, 50);

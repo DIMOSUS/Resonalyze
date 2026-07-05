@@ -28,6 +28,39 @@ public sealed record AlignmentCandidate(
     double DipDb = 0);
 
 /// <summary>
+/// One extremum of a band-limited time-domain cross-correlation search.
+/// </summary>
+public sealed record CorrelationDelayCandidate(
+    double DelayMs,
+    double Coefficient,
+    bool InvertPolarity);
+
+/// <summary>
+/// Diagnostic result of a time-domain delay search around a crossover.
+/// <see cref="DelayMs"/> is the delay to add to the second impulse response
+/// passed to the search so it aligns with the first.
+/// </summary>
+public sealed record CorrelationAlignmentResult(
+    double CenterFrequencyHz,
+    double BandLowHz,
+    double BandHighHz,
+    double SearchRangeMs,
+    CorrelationDelayCandidate PositivePeak,
+    CorrelationDelayCandidate NegativeTrough)
+{
+    public CorrelationDelayCandidate BestByMagnitude =>
+        Math.Abs(NegativeTrough.Coefficient) > Math.Abs(PositivePeak.Coefficient)
+            ? NegativeTrough
+            : PositivePeak;
+
+    public double Confidence =>
+        Math.Abs(BestByMagnitude.Coefficient) -
+        Math.Min(
+            Math.Abs(PositivePeak.Coefficient),
+            Math.Abs(NegativeTrough.Coefficient));
+}
+
+/// <summary>
 /// The acoustic polarity read from a measured impulse response.
 /// </summary>
 public enum PolarityEstimate
@@ -287,8 +320,215 @@ public static class VirtualCrossoverAnalysis
                 BandpassPassOctaves = Math.Log2(high / low),
                 BandpassFadeOctaves = 1.0,
                 FirstPeakThresholdBelowMaxDb = 15
-            });
+        });
         return result.FirstArrivalDelayMilliseconds;
+    }
+
+    /// <summary>
+    /// Diagnostic crossover-local delay search. Both already-processed channel
+    /// IRs are band-limited around the crossover (a smooth octave-wide band) and
+    /// their normalized cross-correlation is evaluated in a short lag window,
+    /// computed in the frequency domain from the band-weighted cross-spectrum.
+    /// Positive peaks indicate normal polarity; strong negative troughs indicate
+    /// the same delay would become a peak if the second channel were inverted.
+    /// With <paramref name="phaseTransform"/> set the cross-spectrum is whitened
+    /// (GCC-PHAT), so the peak tracks the pure phase delay independent of the two
+    /// drivers' magnitude shapes.
+    /// </summary>
+    public static CorrelationAlignmentResult FindBandLimitedCorrelationDelay(
+        Complex[] firstImpulseResponse,
+        Complex[] secondImpulseResponse,
+        int sampleRate,
+        double centerFrequencyHz,
+        double passOctaves = 1.0,
+        double searchRangeMs = 3.0,
+        double centerLagMs = 0.0,
+        bool phaseTransform = false)
+    {
+        ArgumentNullException.ThrowIfNull(firstImpulseResponse);
+        ArgumentNullException.ThrowIfNull(secondImpulseResponse);
+        if (firstImpulseResponse.Length == 0 || secondImpulseResponse.Length == 0)
+        {
+            throw new ArgumentException("Impulse responses are required.");
+        }
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+        if (!(centerFrequencyHz > 0) || !(passOctaves > 0) || !(searchRangeMs > 0))
+        {
+            throw new ArgumentException("The correlation search settings are invalid.");
+        }
+
+        double nyquist = sampleRate / 2.0;
+        double halfOctaves = passOctaves / 2.0;
+        double lowHz = Math.Max(20.0, centerFrequencyHz / Math.Pow(2.0, halfOctaves));
+        double highHz = Math.Min(nyquist * 0.95, centerFrequencyHz * Math.Pow(2.0, halfOctaves));
+        if (highHz <= lowHz)
+        {
+            highHz = Math.Min(nyquist * 0.95, Math.Max(lowHz * Math.Sqrt(2.0), lowHz + 1.0));
+        }
+
+        // Band-limited cross-correlation without an explicit FIR: filtering both
+        // IRs by the same band-pass and correlating them equals inverse-
+        // transforming their cross-spectrum weighted by the band's SQUARED
+        // magnitude. That drops the windowed-sinc's taps, latency and side-lobe
+        // ringing, and costs one FFT pair instead of two convolutions. The band
+        // is a smooth raised cosine over log frequency, so the correlation it
+        // weights stays clean. Padding to len1+len2 keeps the lags we read free
+        // of circular wrap-around.
+        int fftLength = DspMath.NextPowerOfTwo(
+            firstImpulseResponse.Length + secondImpulseResponse.Length);
+        Complex[] firstSpectrum = ForwardSpectrum(firstImpulseResponse, fftLength);
+        Complex[] secondSpectrum = ForwardSpectrum(secondImpulseResponse, fftLength);
+
+        // In GCC-PHAT mode each bin's cross term is whitened to unit magnitude, so
+        // the delay peak depends only on the phase difference between the channels
+        // and not on either one's magnitude shape — a sharper, shape-independent
+        // delay estimate. The raw mode keeps the true amplitude cross-spectrum.
+        var crossSpectrum = new Complex[fftLength];
+        double firstEnergy = 0;
+        double secondEnergy = 0;
+        double weightSum = 0;
+        for (int k = 0; k < fftLength; k++)
+        {
+            double frequency = (double)k / fftLength * sampleRate;
+            if (frequency > nyquist)
+            {
+                // Bins above Nyquist are the conjugate mirror of a real band.
+                frequency = sampleRate - frequency;
+            }
+
+            double weightSquared = BandWeight(frequency, lowHz, highHz);
+            weightSquared *= weightSquared;
+            Complex a = firstSpectrum[k];
+            Complex b = secondSpectrum[k];
+            Complex cross = a * Complex.Conjugate(b);
+            if (phaseTransform)
+            {
+                double magnitude = cross.Magnitude;
+                if (magnitude > 1e-20)
+                {
+                    // Only bins that actually contribute a unit phasor count toward
+                    // the normalizer, so a perfect phase alignment still reaches 1.
+                    crossSpectrum[k] = weightSquared * cross / magnitude;
+                    weightSum += weightSquared;
+                }
+            }
+            else
+            {
+                crossSpectrum[k] = weightSquared * cross;
+                firstEnergy += weightSquared * (a.Real * a.Real + a.Imaginary * a.Imaginary);
+                secondEnergy += weightSquared * (b.Real * b.Real + b.Imaginary * b.Imaginary);
+            }
+        }
+
+        Fourier.Inverse(crossSpectrum, FourierOptions.Matlab);
+
+        // The inverse transform already carries the 1/N of the correlation. In raw
+        // mode the Parseval energy sums carry an N, so the coefficient normalizer
+        // is sqrt(Ea·Eb)/N; in PHAT mode every bin is a unit phasor, so a perfect
+        // phase alignment sums to Σ W², making the normalizer (Σ W²)/N. Either way
+        // the result lands in [-1, 1].
+        double normalizer = phaseTransform
+            ? weightSum / fftLength
+            : Math.Sqrt(firstEnergy * secondEnergy) / fftLength;
+        // The lag window is centered on the arrival-based estimate, not on zero:
+        // a low-frequency junction's relative delay is several milliseconds (the
+        // driver arrivals differ that much), so a window around zero would miss it
+        // the way the stage-2 fine search would miss it around the wrong base.
+        int rangeSamples = Math.Max(1, (int)Math.Round(searchRangeMs / 1000.0 * sampleRate));
+        int centerLag = (int)Math.Round(centerLagMs / 1000.0 * sampleRate);
+        int minLag = centerLag - rangeSamples;
+        int maxLag = centerLag + rangeSamples;
+        var correlation = new double[maxLag - minLag + 1];
+        for (int lag = minLag; lag <= maxLag; lag++)
+        {
+            // A positive lag is the delay added to the second signal, held at
+            // circular index lag mod N.
+            int index = ((lag % fftLength) + fftLength) % fftLength;
+            correlation[lag - minLag] =
+                normalizer > 0 ? crossSpectrum[index].Real / normalizer : 0;
+        }
+
+        CorrelationDelayCandidate positive = FindCorrelationExtremum(
+            correlation, minLag, sampleRate, findMaximum: true);
+        CorrelationDelayCandidate negative = FindCorrelationExtremum(
+            correlation, minLag, sampleRate, findMaximum: false);
+
+        return new CorrelationAlignmentResult(
+            centerFrequencyHz,
+            lowHz,
+            highHz,
+            searchRangeMs,
+            positive,
+            negative);
+    }
+
+    // A smooth band-pass magnitude: a raised cosine over log frequency, one at
+    // the band's geometric center and tapering to zero at the octave edges.
+    // Unlike a brickwall it folds no ringing into the correlation it weights.
+    private static double BandWeight(double frequencyHz, double lowHz, double highHz)
+    {
+        if (frequencyHz <= lowHz || frequencyHz >= highHz)
+        {
+            return 0;
+        }
+
+        double position = (Math.Log2(frequencyHz) - Math.Log2(lowHz)) /
+            (Math.Log2(highHz) - Math.Log2(lowHz));
+        return 0.5 - 0.5 * Math.Cos(Math.Tau * position);
+    }
+
+    private static CorrelationDelayCandidate FindCorrelationExtremum(
+        double[] correlation,
+        int minLag,
+        int sampleRate,
+        bool findMaximum)
+    {
+        int bestIndex = 0;
+        double best = findMaximum ? double.NegativeInfinity : double.PositiveInfinity;
+        for (int i = 0; i < correlation.Length; i++)
+        {
+            double coefficient = correlation[i];
+            if (findMaximum ? coefficient > best : coefficient < best)
+            {
+                best = coefficient;
+                bestIndex = i;
+            }
+        }
+
+        double refinedLag = RefineLag(
+            correlation, minLag, minLag + bestIndex, findMaximum);
+        return new CorrelationDelayCandidate(
+            refinedLag * 1000.0 / sampleRate,
+            best,
+            !findMaximum);
+    }
+
+    private static double RefineLag(
+        double[] values,
+        int minLag,
+        int bestLag,
+        bool findMaximum)
+    {
+        int index = bestLag - minLag;
+        if (index <= 0 || index >= values.Length - 1)
+        {
+            return bestLag;
+        }
+
+        double left = findMaximum ? values[index - 1] : -values[index - 1];
+        double center = findMaximum ? values[index] : -values[index];
+        double right = findMaximum ? values[index + 1] : -values[index + 1];
+        double denominator = left - 2.0 * center + right;
+        if (Math.Abs(denominator) < 1e-12)
+        {
+            return bestLag;
+        }
+
+        double offset = 0.5 * (left - right) / denominator;
+        return bestLag + Math.Clamp(offset, -1.0, 1.0);
     }
 
     // One spectrum bin of the alignment problem: the combined fixed spectrum,

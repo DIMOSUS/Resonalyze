@@ -1227,26 +1227,9 @@ public partial class VirtualCrossoverPanel : UserControl
         hintAnnotation.Text = processed.Count == 0 ? NoSourcesHint : string.Empty;
 
         // The processed magnitudes and the complex sum feed both the drawn
-        // curves and the sum-loss metric, so they are built once here. Every
-        // curve — the channels AND the sum — shares one window anchor (the
-        // earliest arrival): with per-channel anchors the gates capture slightly
-        // different room content and the loss can poke above its 0 dB ceiling.
-        List<AnalysisCurve>? magnitudes = null;
-        AnalysisCurve? sumCurve = null;
-        if (processed.Count >= 2)
-        {
-            int anchor = processed.Min(item => item.PeakIndex);
-            magnitudes = processed
-                .Select(item => BuildMagnitudeCurve(
-                    item.ImpulseResponse, anchor, item.Channel.SampleRate))
-                .ToList();
-            // The window anchors at the earliest arrival: the summed envelope peak
-            // can sit between the arrivals or vanish entirely under cancellation.
-            Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
-                processed.Select(item => item.ImpulseResponse).ToList());
-            sumCurve = BuildMagnitudeCurve(
-                sum, anchor, processed[0].Channel.SampleRate);
-        }
+        // curves and the sum-loss metric, so they are built once here.
+        (List<AnalysisCurve>? magnitudes, AnalysisCurve? sumCurve) =
+            BuildMetricCurves(processed);
 
         UpdateMetric(processed, magnitudes, sumCurve);
 
@@ -1374,10 +1357,47 @@ public partial class VirtualCrossoverPanel : UserControl
         List<AnalysisCurve>? magnitudes,
         AnalysisCurve? sumCurve)
     {
+        labelMetric.Text = ComputeMetricText(processed, magnitudes, sumCurve);
+    }
+
+    // The magnitude curves and complex sum the metric reads, built the same way
+    // for the on-screen redraw and for a synchronous read (e.g. the Auto delay
+    // log) so the two never disagree. Fewer than two channels yield no metric.
+    private (List<AnalysisCurve>? Magnitudes, AnalysisCurve? Sum) BuildMetricCurves(
+        List<ProcessedChannel> processed)
+    {
+        if (processed.Count < 2)
+        {
+            return (null, null);
+        }
+
+        // Every curve — the channels AND the sum — shares one window anchor (the
+        // earliest arrival): with per-channel anchors the gates capture slightly
+        // different room content and the loss can poke above its 0 dB ceiling.
+        // The summed envelope peak can sit between the arrivals or vanish under
+        // cancellation, so the anchor is the earliest arrival, not the sum peak.
+        int anchor = processed.Min(item => item.PeakIndex);
+        List<AnalysisCurve> magnitudes = processed
+            .Select(item => BuildMagnitudeCurve(
+                item.ImpulseResponse, anchor, item.Channel.SampleRate))
+            .ToList();
+        Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
+            processed.Select(item => item.ImpulseResponse).ToList());
+        AnalysisCurve sumCurve = BuildMagnitudeCurve(
+            sum, anchor, processed[0].Channel.SampleRate);
+        return (magnitudes, sumCurve);
+    }
+
+    // The "Sum loss avg" read-out text for a processed set, without touching any
+    // control — so it can feed both the label and a log line.
+    private string ComputeMetricText(
+        List<ProcessedChannel> processed,
+        List<AnalysisCurve>? magnitudes,
+        AnalysisCurve? sumCurve)
+    {
         if (magnitudes == null || sumCurve == null)
         {
-            labelMetric.Text = "Sum loss avg: —";
-            return;
+            return "Sum loss avg: —";
         }
 
         List<IReadOnlyList<SignalPoint>> channelPoints = magnitudes
@@ -1419,7 +1439,7 @@ public partial class VirtualCrossoverPanel : UserControl
             parts.Add(parts.Count > 0 ? "total " + total : total);
         }
 
-        labelMetric.Text = parts.Count > 0
+        return parts.Count > 0
             ? "Sum loss avg: " + string.Join("   ", parts)
             : "Sum loss avg: —";
     }
@@ -1440,6 +1460,21 @@ public partial class VirtualCrossoverPanel : UserControl
     private const double MinFineAlignmentRangeMs = 0.5;
     private const double MaxFineAlignmentRangeMs = 2.5;
 
+    // Diagnostics only: a deliberately wide fine-search window (many periods at a
+    // high crossover, ~one at a low one) whose candidates are logged but never
+    // chosen. It surfaces summation optima that sit several lobes outside the
+    // working window, so a log can show whether a better lobe exists there.
+    private const double DiagnosticFineRangeMs = 3.0;
+    private const double DiagnosticCorrelationRangeMs = 3.0;
+
+    // The minimum non-inverted PHAT peak correlation for its position to seed the
+    // stage-2 window instead of the arrival envelope. Below it the peak is noise
+    // (a low-frequency junction with too few in-band periods), and the arrival
+    // estimate stands. Deliberately low: even a modest genuine peak beats the
+    // arrival envelope, and the loss search plus the wide-window promotion recover
+    // from a seed that still lands a little off.
+    private const double PhatSeedMinCoefficient = 0.15;
+
     // Tie-break preferences among near-equal alignment candidates. An inverted
     // winner must beat the best non-inverted candidate by a real margin: room
     // reflections routinely hand a (flip + half-period shift) impostor a few
@@ -1450,6 +1485,14 @@ public partial class VirtualCrossoverPanel : UserControl
     // physically minimal correction.
     private const double InvertPreferenceMarginDb = 0.25;
     private const double DelayTieMarginDb = 0.1;
+
+    // How much better (in score dB) a wide-window optimum must be before it
+    // unseats the arrival-anchored fine pick. The narrow window is centered on
+    // the coarse arrival, which at a high crossover can be a whole lobe off (its
+    // period is a fraction of the arrival uncertainty); the promotion recovers
+    // that lobe, while the margin keeps the physically-minimal arrival pick
+    // unless a distinctly better summation exists elsewhere.
+    private const double WideWindowPromotionMarginDb = 0.2;
 
     private static AlignmentCandidate SelectCandidate(
         IReadOnlyList<AlignmentCandidate> candidates,
@@ -1527,14 +1570,15 @@ public partial class VirtualCrossoverPanel : UserControl
         log.AppendLine($"Crossover window: {minHz:0} - {maxHz:0} Hz");
         log.AppendLine("Previous delay / polarity settings ignored for this run.");
 
-        // Stage 1: coarse offsets from band-limited first arrivals. Arrivals of
-        // different drivers are only comparable inside a SHARED band — a woofer's
-        // envelope in its own low band rises milliseconds later than a tweeter's
-        // in its high band. So each adjacent pair is measured around its own
-        // crossover frequency, and the pairwise differences chain into one
-        // relative timeline.
+        // Stage 1: coarse offsets from band-limited first arrivals, refined by the
+        // GCC-PHAT peak where it is trustworthy. Arrivals of different drivers are
+        // only comparable inside a SHARED band — a woofer's envelope in its own low
+        // band rises milliseconds later than a tweeter's in its high band. So each
+        // adjacent pair is measured around its own crossover frequency, and the
+        // pairwise differences chain into one relative timeline that seeds stage 2.
         List<ProcessedChannel> byBand = OrderByBand(processed);
         List<AdjacentPair> pairs = GetAdjacentPairs(byBand);
+        AppendCorrelationAlignmentDiagnostics(log, pairs);
 
         var timeline = new Dictionary<ChannelRuntime, double> { [byBand[0].Channel] = 0 };
         foreach (AdjacentPair pair in pairs)
@@ -1549,8 +1593,31 @@ public partial class VirtualCrossoverPanel : UserControl
                 pair.Upper.Channel.SampleRate,
                 pair.BandLowHz,
                 pair.BandHighHz);
-            timeline[pair.Upper.Channel] =
-                timeline[pair.Lower.Channel] + (upperArrival - lowerArrival);
+
+            // Refine the coarse offset with the non-inverted GCC-PHAT peak: at a
+            // mid/high junction it lands the stage-2 window on the correct lobe
+            // directly, sparing the wide-window recovery. Only the peak POSITION
+            // is used (polarity and the final lobe stay with the loss search), and
+            // only when the peak carries a real correlation — otherwise the arrival
+            // envelope stands. The PHAT window is centered on the arrival estimate,
+            // so a trusted peak is by construction within reach of it. The timeline
+            // stores arrivals as (upper - lower); the PHAT peak is the delay to add
+            // to the upper channel, i.e. the same quantity negated.
+            double passOctaves = Math.Log2(pair.BandHighHz / pair.BandLowHz);
+            CorrelationAlignmentResult phat =
+                VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
+                    pair.Lower.ImpulseResponse,
+                    pair.Upper.ImpulseResponse,
+                    pair.Lower.Channel.SampleRate,
+                    pair.CrossoverHz,
+                    passOctaves,
+                    DiagnosticCorrelationRangeMs,
+                    centerLagMs: lowerArrival - upperArrival,
+                    phaseTransform: true);
+            bool trustPhat = phat.PositivePeak.Coefficient >= PhatSeedMinCoefficient;
+            double increment =
+                trustPhat ? -phat.PositivePeak.DelayMs : upperArrival - lowerArrival;
+            timeline[pair.Upper.Channel] = timeline[pair.Lower.Channel] + increment;
 
             log.AppendLine(
                 $"Pair {pair.Lower.Channel.Control.ChannelName}/" +
@@ -1558,7 +1625,10 @@ public partial class VirtualCrossoverPanel : UserControl
                 $"fc {pair.CrossoverHz:0} Hz, " +
                 $"band {pair.BandLowHz:0}-{pair.BandHighHz:0} Hz, " +
                 $"arrivals {lowerArrival:0.000} / {upperArrival:0.000} ms, " +
-                $"diff {upperArrival - lowerArrival:+0.000;-0.000} ms");
+                $"diff {upperArrival - lowerArrival:+0.000;-0.000} ms, " +
+                $"phat peak {phat.PositivePeak.DelayMs:+0.000;-0.000} ms " +
+                $"(r {phat.PositivePeak.Coefficient:+0.000;-0.000}) -> seed " +
+                $"{(trustPhat ? "phat" : "arrival")}");
         }
 
         // The relatively latest channel is the fixed reference; everyone else is
@@ -1588,11 +1658,12 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         // One junction search: candidates of the prior-penalized loss score in
-        // a window around the arrival-based delta. The window is half the
-        // period of THIS junction's crossover — wide enough to absorb the
-        // coarse arrival error (which grows with the period), narrow enough
-        // not to span two same-polarity lobes. The base doubles as a soft
-        // prior: a quadratic dB penalty that deters far lobes.
+        // a window around the coarse delta (the PHAT-seeded timeline, arrival
+        // envelope where PHAT was untrusted). The window is half the period of
+        // THIS junction's crossover — wide enough to absorb the coarse error
+        // (which grows with the period), narrow enough not to span two
+        // same-polarity lobes. The base doubles as a soft prior: a quadratic dB
+        // penalty that deters far lobes.
         (IReadOnlyList<AlignmentCandidate> Candidates, double BaseDelta, double HalfPeriodMs)
             SearchJunction(
                 ChannelRuntime channel,
@@ -1667,6 +1738,24 @@ public partial class VirtualCrossoverPanel : UserControl
                     $"(margin {candidates[0].ScoreDb - chosen.ScoreDb:0.00} dB)");
             }
 
+            // Diagnostic wide sweep: the same junction searched across a much
+            // wider window so lobes beyond the working range appear in the log.
+            // Purely informational — the chosen result above is untouched.
+            (IReadOnlyList<AlignmentCandidate> wide, double wideBase, _) =
+                SearchJunction(
+                    channel, neighbor.Channel, pair,
+                    windowOverrideMs: DiagnosticFineRangeMs);
+            log.AppendLine(
+                $"  [diag] wide +-{DiagnosticFineRangeMs:0.0} ms " +
+                $"(base {wideBase:0.000} ms): " +
+                (wide.Count > 0
+                    ? string.Join("; ", wide.Select(item =>
+                        $"{item.DelayMs:0.000} ms" +
+                        $"{(item.InvertPolarity ? " inv" : "")} " +
+                        $"(score {item.ScoreDb:0.00}, avg {item.LossDb:0.00}, " +
+                        $"dip {item.DipDb:0.0} dB)"))
+                    : "none"));
+
             double fineRangeMs = Math.Clamp(
                 halfPeriodMs, MinFineAlignmentRangeMs, MaxFineAlignmentRangeMs);
 
@@ -1690,6 +1779,27 @@ public partial class VirtualCrossoverPanel : UserControl
                     $"  WARNING: fine result at the search edge; widened to " +
                     $"±{retryRangeMs:0.000} ms -> {chosen.DelayMs:0.000} ms, " +
                     $"invert {(chosen.InvertPolarity ? "yes" : "no")}");
+            }
+
+            // Promote the wide-window optimum when it clearly beats the
+            // arrival-anchored pick: the coarse arrival can sit a whole lobe off
+            // at a high crossover, and the narrow window cannot reach the true
+            // summation optimum a few periods away. SelectCandidate applies the
+            // same flip/tie rules to the wide set, and the margin ensures a mere
+            // lobe/flip impostor cannot pull the result off the arrival.
+            if (wide.Count > 0)
+            {
+                AlignmentCandidate wideChosen = SelectCandidate(wide, wideBase);
+                if (wideChosen.ScoreDb > chosen.ScoreDb + WideWindowPromotionMarginDb)
+                {
+                    log.AppendLine(
+                        $"  promoted {wideChosen.DelayMs:0.000} ms" +
+                        $"{(wideChosen.InvertPolarity ? " inv" : "")} " +
+                        $"over {chosen.DelayMs:0.000} ms" +
+                        $"{(chosen.InvertPolarity ? " inv" : "")} " +
+                        $"(gain {wideChosen.ScoreDb - chosen.ScoreDb:0.00} dB)");
+                    chosen = wideChosen;
+                }
             }
 
             double newDelay = chosen.DelayMs;
@@ -1732,9 +1842,100 @@ public partial class VirtualCrossoverPanel : UserControl
 
         ScheduleSave();
         RedrawAll();
-        // RedrawAll refreshed the metric, so the log ends with the outcome.
-        log.AppendLine(labelMetric.Text);
+        // RedrawAll refreshes the label asynchronously (the ApplyChain FFTs run
+        // off the UI thread), so labelMetric.Text still holds the PREVIOUS run's
+        // value here. Recompute the metric synchronously from the just-applied
+        // settings so the log ends with this run's true outcome.
+        List<ProcessedChannel> outcome = ProcessChannels();
+        (List<AnalysisCurve>? outcomeMagnitudes, AnalysisCurve? outcomeSum) =
+            BuildMetricCurves(outcome);
+        log.AppendLine(ComputeMetricText(outcome, outcomeMagnitudes, outcomeSum));
         WriteAlignmentLog(log.ToString());
+    }
+
+    private static void AppendCorrelationAlignmentDiagnostics(
+        System.Text.StringBuilder log,
+        IReadOnlyList<AdjacentPair> pairs)
+    {
+        if (pairs.Count == 0)
+        {
+            return;
+        }
+
+        log.AppendLine();
+        log.AppendLine(
+            "[corr] band-limited cross-correlation diagnostics " +
+            "(full pair band, " +
+            $"window ±{DiagnosticCorrelationRangeMs:0.###} ms; " +
+            "[corr] raw amplitude, [phat] phase-transform / whitened)");
+
+        foreach (AdjacentPair pair in pairs)
+        {
+            // The full pair band, so the correlation reads the same overlap the
+            // stage-2 loss search does. The pair band spans fc/2..fc*2 around the
+            // crossover, so its width in octaves is log2(high/low).
+            double passOctaves = Math.Log2(pair.BandHighHz / pair.BandLowHz);
+
+            // Center the lag window on the arrival-based "delay to add to upper"
+            // (lower arrival minus upper arrival), the same coarse estimate stage 1
+            // computes, so a several-millisecond low-frequency offset stays in the
+            // window instead of falling off its zero-centered edge.
+            double lowerArrival = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+                pair.Lower.ImpulseResponse,
+                pair.Lower.Channel.SampleRate,
+                pair.BandLowHz,
+                pair.BandHighHz);
+            double upperArrival = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+                pair.Upper.ImpulseResponse,
+                pair.Upper.Channel.SampleRate,
+                pair.BandLowHz,
+                pair.BandHighHz);
+            double centerLagMs = lowerArrival - upperArrival;
+
+            AppendCorrelationMode(
+                log, pair, "corr", passOctaves, centerLagMs, phaseTransform: false);
+            AppendCorrelationMode(
+                log, pair, "phat", passOctaves, centerLagMs, phaseTransform: true);
+        }
+
+        log.AppendLine();
+    }
+
+    private static void AppendCorrelationMode(
+        System.Text.StringBuilder log,
+        AdjacentPair pair,
+        string tag,
+        double passOctaves,
+        double centerLagMs,
+        bool phaseTransform)
+    {
+        CorrelationAlignmentResult result =
+            VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
+                pair.Lower.ImpulseResponse,
+                pair.Upper.ImpulseResponse,
+                pair.Lower.Channel.SampleRate,
+                pair.CrossoverHz,
+                passOctaves,
+                DiagnosticCorrelationRangeMs,
+                centerLagMs,
+                phaseTransform);
+        CorrelationDelayCandidate best = result.BestByMagnitude;
+
+        log.AppendLine(
+            $"[{tag}] {pair.Lower.Channel.Control.ChannelName}/" +
+            $"{pair.Upper.Channel.Control.ChannelName}: " +
+            $"fc {result.CenterFrequencyHz:0} Hz, " +
+            $"band {result.BandLowHz:0}-{result.BandHighHz:0} Hz, " +
+            $"delay to add to {pair.Upper.Channel.Control.ChannelName}: " +
+            $"{best.DelayMs:+0.000;-0.000} ms, " +
+            $"invert {(best.InvertPolarity ? "yes" : "no")}, " +
+            $"r {best.Coefficient:+0.000;-0.000}, " +
+            $"confidence {result.Confidence:0.000}");
+        log.AppendLine(
+            $"  [{tag}] peak {result.PositivePeak.DelayMs:+0.000;-0.000} ms " +
+            $"(r {result.PositivePeak.Coefficient:+0.000;-0.000}); " +
+            $"trough {result.NegativeTrough.DelayMs:+0.000;-0.000} ms " +
+            $"(r {result.NegativeTrough.Coefficient:+0.000;-0.000}, inv)");
     }
 
     // A diagnostic trace of the last Auto delay run (pair bands, arrivals,

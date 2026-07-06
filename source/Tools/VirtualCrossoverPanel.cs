@@ -206,6 +206,9 @@ public partial class VirtualCrossoverPanel : UserControl
                 OverlaySmoothing.IsValid(project.SmoothingInverseOctaves)
                     ? project.SmoothingInverseOctaves
                     : 12;
+            radioDspMagnitude.Checked = project.DspPlotMode == DspPlotMode.Magnitude;
+            radioDspPhase.Checked = project.DspPlotMode == DspPlotMode.Phase;
+            radioDspGroupDelay.Checked = project.DspPlotMode == DspPlotMode.GroupDelay;
 
             for (int i = 0; i < channels.Count; i++)
             {
@@ -339,6 +342,20 @@ public partial class VirtualCrossoverPanel : UserControl
         radioViewPhase.CheckedChanged += (_, _) => OnViewModeChanged();
         comboBoxSmoothing.SelectedIndexChanged += (_, _) => OnViewChanged();
         comboBoxCalibration.SelectedIndexChanged += (_, _) => OnCalibrationChanged();
+        // Three-radio group: each fires on both the check and the uncheck, so act
+        // only on the one that became checked to run the switch exactly once.
+        radioDspMagnitude.CheckedChanged += (_, _) =>
+        {
+            if (radioDspMagnitude.Checked) OnDspPlotModeChanged();
+        };
+        radioDspPhase.CheckedChanged += (_, _) =>
+        {
+            if (radioDspPhase.Checked) OnDspPlotModeChanged();
+        };
+        radioDspGroupDelay.CheckedChanged += (_, _) =>
+        {
+            if (radioDspGroupDelay.Checked) OnDspPlotModeChanged();
+        };
     }
 
     // ----------------------------------------------------------- channel list
@@ -953,24 +970,14 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         var model = new PlotModel();
         PlotModelStyle.AddFrequencyAxis(model);
+        // One value axis, reconfigured per plot mode (magnitude / phase / group
+        // delay). A single axis keeps each mode readable on its own scale.
         model.Axes.Add(new LinearAxis
         {
-            Key = "dsp-magnitude",
+            Key = DspValueAxisKey,
             Position = AxisPosition.Left,
-            Title = "dB",
             MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineStyle = LineStyle.Dot,
-            Minimum = -60,
-            Maximum = 20
-        });
-        model.Axes.Add(new LinearAxis
-        {
-            Key = "dsp-phase",
-            Position = AxisPosition.Right,
-            Title = "deg",
-            Minimum = -190,
-            Maximum = 190,
-            MajorStep = 90
+            MinorGridlineStyle = LineStyle.Dot
         });
         model.Annotations.Add(new PlotWatermarkAnnotation
         {
@@ -980,8 +987,74 @@ public partial class VirtualCrossoverPanel : UserControl
             FontWeight = FontWeights.Bold
         });
 
+        ConfigureDspValueAxis((LinearAxis)model.Axes[^1], CurrentDspPlotMode());
         dspPlotView.Model = model;
         PlotInteraction.EnableDoubleClickAxisReset(dspPlotView);
+    }
+
+    private const string DspValueAxisKey = "dsp-value";
+
+    // Tracks the mode the value axis range was last set for, so switching modes
+    // resets the range to the new mode's default while an in-mode redraw (e.g.
+    // editing a filter) preserves the user's zoom/pan.
+    private DspPlotMode? dspValueAxisMode;
+
+    private DspPlotMode CurrentDspPlotMode() =>
+        radioDspPhase.Checked ? DspPlotMode.Phase
+        : radioDspGroupDelay.Checked ? DspPlotMode.GroupDelay
+        : DspPlotMode.Magnitude;
+
+    // Titles the value axis and, only when the mode actually changed, resets its
+    // range to that mode's sensible default.
+    private void ConfigureDspValueAxis(LinearAxis axis, DspPlotMode mode)
+    {
+        axis.Title = mode switch
+        {
+            DspPlotMode.Phase => "deg",
+            DspPlotMode.GroupDelay => "ms",
+            _ => "dB"
+        };
+
+        if (dspValueAxisMode == mode)
+        {
+            return;
+        }
+
+        dspValueAxisMode = mode;
+        switch (mode)
+        {
+            case DspPlotMode.Phase:
+                axis.Minimum = -190;
+                axis.Maximum = 190;
+                axis.MajorStep = 90;
+                break;
+            case DspPlotMode.GroupDelay:
+                // Group delay range varies widely with the filters, so let it
+                // auto-scale to the drawn curves.
+                axis.Minimum = double.NaN;
+                axis.Maximum = double.NaN;
+                axis.MajorStep = double.NaN;
+                break;
+            default:
+                axis.Minimum = -60;
+                axis.Maximum = 20;
+                axis.MajorStep = double.NaN;
+                break;
+        }
+
+        axis.Reset();
+    }
+
+    private void OnDspPlotModeChanged()
+    {
+        if (suppressProjectEvents)
+        {
+            return;
+        }
+
+        project.DspPlotMode = CurrentDspPlotMode();
+        ScheduleSave();
+        RedrawDspPlot();
     }
 
     private void InitializeSmoothingComboBox()
@@ -1028,6 +1101,11 @@ public partial class VirtualCrossoverPanel : UserControl
         toolTip.SetToolTip(
             comboBoxSmoothing,
             "Fractional-octave smoothing of the magnitude curves.");
+        toolTip.SetToolTip(
+            radioDspGroupDelay,
+            "What the lower plot shows for each channel's DSP chain:\r\n" +
+            "Magnitude, Phase, or filter Group delay (the crossover/PEQ\r\n" +
+            "group delay in ms, excluding the channel's bulk delay).");
         toolTip.SetToolTip(
             comboBoxCalibration,
             "Microphone calibration applied to the magnitude curves.\r\n" +
@@ -2566,6 +2644,13 @@ public partial class VirtualCrossoverPanel : UserControl
 
         RemoveCurveSeries(model);
 
+        DspPlotMode mode = CurrentDspPlotMode();
+        if (model.Axes.FirstOrDefault(axis => axis.Key == DspValueAxisKey)
+            is LinearAxis valueAxis)
+        {
+            ConfigureDspValueAxis(valueAxis, mode);
+        }
+
         IReadOnlyList<double> grid = EqualizationCurve.LogFrequencyGrid(20, 20_000, 512);
         for (int i = 0; i < channels.Count; i++)
         {
@@ -2575,10 +2660,11 @@ public partial class VirtualCrossoverPanel : UserControl
                 continue;
             }
 
-            // The chain is drawn without its delay term: the filters' phase shape
-            // is the readable part, while a delay would wrap the trace into an
-            // unreadable sawtooth (its effect is visible on the acoustic plot). A
-            // bypassed channel draws its flat identity chain.
+            // The chain is drawn without its delay term: the filters' own shape is
+            // the readable part, while a bulk delay would wrap the phase into an
+            // unreadable sawtooth and swamp the filter group delay (its effect is
+            // visible on the acoustic plot). A bypassed channel draws its flat
+            // identity chain.
             DspChannelChain chain = channel.Settings.Bypass
                 ? DspChannelChain.Identity
                 : channel.Settings.ToChain() with { DelayMs = 0 };
@@ -2586,27 +2672,54 @@ public partial class VirtualCrossoverPanel : UserControl
                 chain,
                 channel.SampleRate);
 
-            var magnitudePoints = new List<DataPoint>(grid.Count);
-            var phasePoints = new List<DataPoint>(grid.Count);
+            var points = new List<DataPoint>(grid.Count);
             foreach (double frequency in grid)
             {
-                Complex response = preparedResponse.Response(frequency);
-                magnitudePoints.Add(new DataPoint(
-                    frequency, DataHelper.AmplitudeToDecibels(response.Magnitude)));
-                phasePoints.Add(new DataPoint(
-                    frequency, response.Phase / Math.PI * 180.0));
+                points.Add(new DataPoint(
+                    frequency,
+                    DspPlotValue(preparedResponse, frequency, mode)));
             }
 
-            string name = channel.Control.ChannelName;
             AddDspSeries(
-                model, $"{name} filter", magnitudePoints,
-                ChannelColors[i], 1.8, LineStyle.Solid, "dsp-magnitude");
-            AddDspSeries(
-                model, $"{name} phase", phasePoints,
-                OxyColor.FromAColor(140, ChannelColors[i]), 1.2, LineStyle.Dash, "dsp-phase");
+                model, $"{channel.Control.ChannelName} filter", points,
+                ChannelColors[i], 1.8, LineStyle.Solid, DspValueAxisKey);
         }
 
         model.InvalidatePlot(true);
+    }
+
+    private static double DspPlotValue(
+        PreparedDspResponse response,
+        double frequency,
+        DspPlotMode mode) => mode switch
+    {
+        DspPlotMode.Phase => response.Response(frequency).Phase / Math.PI * 180.0,
+        DspPlotMode.GroupDelay => GroupDelayMilliseconds(response, frequency),
+        _ => DataHelper.AmplitudeToDecibels(response.Response(frequency).Magnitude)
+    };
+
+    // Filter group delay τ_g = -dφ/dω, read from the complex response by a central
+    // difference: -Im(H'(f)/H(f)) / (2π), in milliseconds. Working from the
+    // complex response avoids phase unwrapping, which a coarse log grid could alias
+    // at a steep crossover.
+    private static double GroupDelayMilliseconds(
+        PreparedDspResponse response,
+        double frequency)
+    {
+        double delta = Math.Max(frequency * 1e-3, 1e-6);
+        double lowFrequency = Math.Max(frequency - delta, 1e-3);
+        double highFrequency = frequency + delta;
+        Complex low = response.Response(lowFrequency);
+        Complex high = response.Response(highFrequency);
+        Complex center = response.Response(frequency);
+        if (center.Magnitude < 1e-20)
+        {
+            return 0;
+        }
+
+        Complex derivative = (high - low) / (highFrequency - lowFrequency);
+        double phaseSlope = (derivative / center).Imaginary; // dφ/df
+        return -phaseSlope / (2.0 * Math.PI) * 1000.0;
     }
 
     // ------------------------------------------------------- capture / export

@@ -139,7 +139,8 @@ public sealed class VirtualCrossoverProjectFileTests
         {
             var original = new VirtualCrossoverProjectFile
             {
-                CalibrationMode = MicrophoneCalibrationMode.Degrees90
+                CalibrationMode = MicrophoneCalibrationMode.Degrees90,
+                DspPlotMode = DspPlotMode.GroupDelay
             };
             while (original.Channels.Count <
                 VirtualCrossoverProjectFile.MaximumChannelCount)
@@ -155,6 +156,7 @@ public sealed class VirtualCrossoverProjectFileTests
                 VirtualCrossoverProjectFile.MaximumChannelCount,
                 loaded.Channels.Count);
             Assert.Equal(MicrophoneCalibrationMode.Degrees90, loaded.CalibrationMode);
+            Assert.Equal(DspPlotMode.GroupDelay, loaded.DspPlotMode);
         }
         finally
         {
@@ -195,6 +197,12 @@ public sealed class VirtualCrossoverProjectFileTests
             CalibrationMode = (MicrophoneCalibrationMode)42
         };
         Assert.Throws<InvalidDataException>(() => badCalibrationMode.Validate());
+
+        var badDspPlotMode = new VirtualCrossoverProjectFile
+        {
+            DspPlotMode = (DspPlotMode)42
+        };
+        Assert.Throws<InvalidDataException>(() => badDspPlotMode.Validate());
 
         var badSmoothing = new VirtualCrossoverProjectFile
         {

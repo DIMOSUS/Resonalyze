@@ -4,6 +4,14 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
+/// <summary>Which curve the Virtual DSP chain plot shows for each channel.</summary>
+public enum DspPlotMode
+{
+    Magnitude,
+    Phase,
+    GroupDelay
+}
+
 /// <summary>
 /// One channel of the virtual crossover: which measurement feeds it and the DSP
 /// chain applied before the virtual sum. The source is re-resolved on load — by
@@ -158,6 +166,10 @@ public sealed class VirtualCrossoverProjectFile
     public bool ShowLossCurve { get; set; }
     public bool ShowPhaseView { get; set; }
     public int SmoothingInverseOctaves { get; set; } = 12;
+
+    // Which curve the per-channel DSP chain plot shows. Additive: older files lack
+    // it and default to Magnitude.
+    public DspPlotMode DspPlotMode { get; set; } = DspPlotMode.Magnitude;
 
     // Microphone calibration applied to the magnitude curves. The measurement is
     // loopback-referenced, so calibration is optional and off by default.
@@ -320,6 +332,11 @@ public sealed class VirtualCrossoverProjectFile
         {
             throw new InvalidDataException(
                 "The virtual crossover calibration mode is invalid.");
+        }
+        if (!Enum.IsDefined(DspPlotMode))
+        {
+            throw new InvalidDataException(
+                "The virtual crossover DSP plot mode is invalid.");
         }
         if (PhaseGateOffsetMs is { } gateOffset &&
             (!double.IsFinite(gateOffset) || gateOffset is < 0 or > 10_000))

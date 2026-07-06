@@ -360,6 +360,15 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         {
             StepDown();
         }
+
+        // Consume the wheel so it only steps the value: otherwise WinForms bubbles
+        // it to an AutoScroll parent (e.g. the scrolling channel list) which then
+        // scrolls instead. The inner editor forwards its wheel here too, so this
+        // covers hovering over the number as well as the spin buttons.
+        if (e is HandledMouseEventArgs handled)
+        {
+            handled.Handled = true;
+        }
     }
 
     protected override void OnMouseMove(MouseEventArgs e)

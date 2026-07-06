@@ -508,6 +508,14 @@ public sealed class DarkComboBox : UserControl
         }
 
         MoveSelection(e.Delta > 0 ? -1 : +1, committed: true);
+
+        // Consume the wheel so it only changes the selection, and does not bubble
+        // to an AutoScroll parent (e.g. the scrolling channel list) which would
+        // scroll the panel instead.
+        if (e is HandledMouseEventArgs handled)
+        {
+            handled.Handled = true;
+        }
     }
 
     protected override void OnPaint(PaintEventArgs e)

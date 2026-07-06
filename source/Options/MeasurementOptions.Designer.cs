@@ -367,7 +367,7 @@ namespace Resonalyze.Options
             // waveAudioBackendPanel
             // 
             waveAudioBackendPanel.BackColor = Color.FromArgb(45, 50, 60);
-            waveAudioBackendPanel.Location = new Point(12, 315);
+            waveAudioBackendPanel.Location = new Point(12, 310);
             waveAudioBackendPanel.Name = "waveAudioBackendPanel";
             waveAudioBackendPanel.Size = new Size(311, 206);
             waveAudioBackendPanel.TabIndex = 25;
@@ -375,7 +375,7 @@ namespace Resonalyze.Options
             // asioAudioBackendPanel
             // 
             asioAudioBackendPanel.BackColor = Color.FromArgb(45, 50, 60);
-            asioAudioBackendPanel.Location = new Point(12, 315);
+            asioAudioBackendPanel.Location = new Point(12, 310);
             asioAudioBackendPanel.Name = "asioAudioBackendPanel";
             asioAudioBackendPanel.Size = new Size(311, 213);
             asioAudioBackendPanel.TabIndex = 26;

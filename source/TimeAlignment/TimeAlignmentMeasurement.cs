@@ -318,9 +318,21 @@ public sealed class TimeAlignmentMeasurement : IDisposable
             CreatePeakSearchOptions(Options));
         int peakIndex = peakSearchResult.SelectedIndex;
         double peak = envelope[peakIndex];
-        double fractionalOffset = FindFractionalOffset(envelope, peakIndex);
-        double strongestFractionalOffset =
-            FindFractionalOffset(envelope, peakSearchResult.StrongestIndex);
+
+        // The envelope peak locates each arrival robustly, but its sub-sample
+        // position is only a broad-lobe parabola. Refine it with a GCC-PHAT
+        // cross-correlation of the raw channels, confined to a short window around
+        // the envelope peak: whitening collapses the delay to a sharp sinc, so the
+        // refined lag tracks the true broadband arrival independent of the driver's
+        // magnitude shape. A weak or edge-pinned peak falls back to the parabola.
+        int refineRadius = ComputePhatSearchRadius(SampleRate);
+        // Whiten once; both arrivals refine from the same correlation.
+        PhaseTransformCorrelation phaseTransform =
+            TransferFunction.ComputePhaseTransform(loopback, microphone, filter);
+        double firstArrivalSample = RefineArrivalSample(
+            phaseTransform, envelope, peakIndex, refineRadius);
+        double strongestSample = RefineArrivalSample(
+            phaseTransform, envelope, peakSearchResult.StrongestIndex, refineRadius);
 
         ConfidenceDecibels = SignalEnvelope.EstimatePeakConfidenceDecibels(
             envelope,
@@ -331,17 +343,41 @@ public sealed class TimeAlignmentMeasurement : IDisposable
         EnvelopePeak = peak;
         StrongestEnvelopePeakIndex = peakSearchResult.StrongestIndex;
         StrongestEnvelopePeak = peakSearchResult.StrongestPeak;
-        double wrappedPeakSample = peakIndex + fractionalOffset;
         FirstArrivalPeakSample =
-            ToSignedDelaySamples(wrappedPeakSample, envelope.Length);
+            ToSignedDelaySamples(firstArrivalSample, envelope.Length);
         FirstArrivalDelayMilliseconds =
             FirstArrivalPeakSample * 1000.0 / SampleRate;
-        StrongestPeakSample = ToSignedDelaySamples(
-            peakSearchResult.StrongestIndex + strongestFractionalOffset,
-            envelope.Length);
+        StrongestPeakSample =
+            ToSignedDelaySamples(strongestSample, envelope.Length);
         StrongestDelayMilliseconds = StrongestPeakSample * 1000.0 / SampleRate;
         PeakSample = FirstArrivalPeakSample;
         DelayMilliseconds = FirstArrivalDelayMilliseconds;
+    }
+
+    // The minimum normalized GCC-PHAT peak height for its refined lag to be
+    // trusted over the envelope parabola. A clean sweep peaks well above this; a
+    // value below it means the whitened correlation carries no clear delay.
+    private const double PhatTrustCoefficient = 0.2;
+
+    // A short refinement window (~0.1 ms) around the envelope peak: wide enough to
+    // absorb the envelope's sub-sample bias, narrow enough not to slide onto a
+    // neighbouring reflection or a band-limited side lobe.
+    private static int ComputePhatSearchRadius(int sampleRate) =>
+        Math.Clamp((int)Math.Round(sampleRate * 0.0001), 2, 8);
+
+    // Refines one envelope arrival to sub-sample precision from the precomputed
+    // GCC-PHAT correlation, falling back to the envelope parabola when the whitened
+    // peak is weak or pinned to the search-window edge.
+    private double RefineArrivalSample(
+        PhaseTransformCorrelation phaseTransform,
+        IReadOnlyList<double> envelope,
+        int coarseIndex,
+        int searchRadius)
+    {
+        PhaseTransformDelay phat = phaseTransform.RefineAround(coarseIndex, searchRadius);
+        return phat.Refined && phat.PeakCorrelation >= PhatTrustCoefficient
+            ? phat.LagSamples
+            : coarseIndex + FindFractionalOffset(envelope, coarseIndex);
     }
 
     private static double FindFractionalOffset(

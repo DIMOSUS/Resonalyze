@@ -109,7 +109,8 @@ file is provided with every release.
   optional confirm-between-runs pause for spatial averaging
 - Selectable microphone calibration profiles (**0°** / **90°**) applied per view,
   with lenient parsing of common `.txt` / `.cal` / `.frd` / `.csv` correction files
-- Time Alignment with sub-sample delay estimation from the transfer IR
+- Time Alignment with sub-sample delay estimation from the transfer IR, refined
+  by a GCC-PHAT cross-correlation
 - Crossover summation prediction: the true **complex (vector) sum** of two
   measurements (`Main ⊕ Compare`) with Compare delay/polarity controls, plus a
   **sum-loss** curve — accounts for delay, polarity, and phase the way dB-curve
@@ -190,9 +191,9 @@ Resonalyze is built around a focused engineering workflow:
   and **Auto delay** aligns each junction's delay and polarity against the
   phase-aware sum.
 - **Practical loudspeaker alignment**
-  Time Alignment reports first arrival and strongest peak with sub-sample
-  interpolation, distance at 20 °C, confidence, signal levels, and a visible
-  envelope around the detected arrival.
+  Time Alignment reports first arrival and strongest peak, each refined to
+  sub-sample precision by a GCC-PHAT cross-correlation, plus distance at 20 °C,
+  confidence, signal levels, and a visible envelope around the detected arrival.
 - **Fast compare-and-adjust work**
   Persistent overlays, calculated overlays, target curves, and on-plot labels
   make it quick to compare measurements, tuning passes, channels, listening
@@ -810,19 +811,33 @@ latency from the response used for timing analysis. With ASIO, both recorded
 channels also stay locked to the same hardware clock, which gives the most
 repeatable result.
 
-The delay estimator uses a deliberately robust chain:
+The delay estimator uses a deliberately robust two-stage chain:
 
 - the active transfer impulse response from the current record
 - an optional raised-cosine bandpass window around the frequency range of
   interest
-- the analytic-signal envelope of that impulse response
-- fractional peak interpolation around the envelope maximum
+- the analytic-signal envelope of that impulse response, whose first arrival and
+  strongest peak are detected robustly — this is the coarse, polarity-blind anchor
+- a **GCC-PHAT** (phase-transform) cross-correlation of the raw microphone and
+  loopback channels that refines each anchor to sub-sample precision
 
-That last step is the important part: Resonalyze does not stop at the nearest
-sample. It refines the peak position between samples, which enables sub-sample
-delay estimates such as `87.0 samples` or `1.972 ms` instead of a coarse
-integer-sample result. For time alignment, this is a serious practical upgrade:
-smaller timing adjustments become visible, repeatable, and easier to trust.
+That second stage is what makes the numbers trustworthy. The cross-spectrum is
+whitened to unit magnitude over a soft band mask built from where the sweep
+actually has energy, so the correlation collapses to a sharp peak at the true
+broadband delay — independent of the driver's own magnitude shape, which would
+otherwise pull an envelope peak off the real arrival. A short search window keeps
+the refinement on the arrival the envelope found, a windowed-sinc plus parabolic
+interpolation reads the peak between samples, and the search runs on peak
+magnitude so a polarity-inverted arrival (a trough) is located just as reliably
+as a normal one. When the whitened peak is weak or pinned to the window edge, the
+estimate falls back to the envelope's own fractional peak, so the result is never
+worse than the plain envelope.
+
+The payoff is delay estimates such as `87.0 samples` or `1.972 ms` resolved to a
+hundredth of a sample instead of a coarse integer, and refined against the true
+acoustic arrival rather than the driver-tinted envelope shape. For time
+alignment, this is a serious practical upgrade: smaller timing adjustments become
+visible, repeatable, and easier to trust.
 
 The mode recalculates immediately when you switch into **Time Alignment**, and
 also updates live as soon as you change the bandpass settings.

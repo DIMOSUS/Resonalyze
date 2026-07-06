@@ -164,6 +164,16 @@ public partial class VirtualCrossoverPanel : UserControl
     internal Func<string, OverlayPoint[], int?>? OverlayCaptureRequested { get; set; }
 
     /// <summary>
+    /// Pushes the sum-loss read-out to the host: a compact per-junction column for
+    /// display and the full banded breakdown for a tooltip. Wired by the host form,
+    /// which shows it in the right-side panel where overlays sit in analysis modes.
+    /// </summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Action<string, string>? MetricChanged { get; set; }
+
+    /// <summary>
     /// Called by the host whenever the tool tab becomes active. The first call
     /// loads the saved project and re-resolves its sources.
     /// </summary>
@@ -1140,11 +1150,6 @@ public partial class VirtualCrossoverPanel : UserControl
             buttonSessionImport,
             "Load a saved session file, replacing the current state.\r\n" +
             "Sources are re-resolved from history or their file paths.");
-        toolTip.SetToolTip(
-            labelMetric,
-            "Average summation loss inside the crossover window.\r\n" +
-            "0 dB — perfectly coherent summation;\r\n" +
-            "more negative — the channels partially cancel.");
         foreach (ChannelRuntime channel in channels)
         {
             toolTip.SetToolTip(
@@ -1636,12 +1641,13 @@ public partial class VirtualCrossoverPanel : UserControl
         List<AnalysisCurve>? magnitudes,
         AnalysisCurve? sumCurve)
     {
+        // The read-out lives in the host's right-side panel (where overlays sit in
+        // analysis modes), as a compact per-junction column with the full banded
+        // breakdown on hover.
         List<MetricEntry> entries = BuildMetricEntries(processed, magnitudes, sumCurve);
-        // The label stays compact (no per-junction frequency ranges) so it does not
-        // overflow with many channels; the full breakdown lives in the tooltip.
-        labelMetric.Text = FormatMetricLabel(entries);
-        toolTip.SetToolTip(
-            labelMetric, entries.Count > 0 ? FormatMetricDetail(entries) : string.Empty);
+        MetricChanged?.Invoke(
+            FormatMetricCompact(entries),
+            entries.Count > 0 ? FormatMetricDetail(entries) : string.Empty);
     }
 
     // The magnitude curves and complex sum the metric reads, built the same way
@@ -1753,6 +1759,26 @@ public partial class VirtualCrossoverPanel : UserControl
             return entry.IsTotal ? "total " + body : $"{entry.Junction} {body}";
         });
         return "Sum loss avg: " + string.Join("   ", parts);
+    }
+
+    // Compact per-junction column for the narrow host read-out panel: a monospace
+    // "name  avg / dip" line each, no frequency ranges (those are on hover).
+    private static string FormatMetricCompact(IReadOnlyList<MetricEntry> entries)
+    {
+        if (entries.Count == 0)
+        {
+            return "Sum loss (dB)\r\n  avg / dip\r\n\r\n—";
+        }
+
+        var builder = new System.Text.StringBuilder("Sum loss (dB)\r\n  avg / dip\r\n\r\n");
+        foreach (MetricEntry entry in entries)
+        {
+            string name = (entry.IsTotal ? "Total" : entry.Junction).PadRight(6);
+            string dip = entry.DipDb.HasValue ? $"{entry.DipDb.Value,5:0.0}" : "    —";
+            builder.AppendLine($"{name}{entry.AverageDb,5:0.0} /{dip}");
+        }
+
+        return builder.ToString().TrimEnd();
     }
 
     // Full multi-line breakdown for the tooltip and the Auto delay log, one
@@ -1995,7 +2021,7 @@ public partial class VirtualCrossoverPanel : UserControl
         Cursor = busy ? Cursors.WaitCursor : Cursors.Default;
         if (busy)
         {
-            labelMetric.Text = "Auto delay: aligning…";
+            MetricChanged?.Invoke("Auto delay\r\naligning…", string.Empty);
         }
     }
 
@@ -2021,10 +2047,9 @@ public partial class VirtualCrossoverPanel : UserControl
 
         ScheduleSave();
         RedrawAll();
-        // RedrawAll refreshes the label asynchronously (the ApplyChain FFTs run
-        // off the UI thread), so labelMetric.Text still holds the PREVIOUS run's
-        // value here. Recompute the metric synchronously from the just-applied
-        // settings so the log ends with this run's true outcome.
+        // RedrawAll pushes the read-out asynchronously (the ApplyChain FFTs run off
+        // the UI thread), so recompute the metric synchronously from the just-
+        // applied settings so the log ends with this run's true outcome.
         List<ProcessedChannel> outcome = ProcessChannels();
         (List<AnalysisCurve>? outcomeMagnitudes, AnalysisCurve? outcomeSum) =
             BuildMetricCurves(outcome);
@@ -2838,7 +2863,12 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        string metricLine = labelMetric.Text;
+        // The sheet subtitle takes the compact single-line summary.
+        List<ProcessedChannel> metricChannels = ProcessChannels();
+        (List<AnalysisCurve>? metricMagnitudes, AnalysisCurve? metricSum) =
+            BuildMetricCurves(metricChannels);
+        string metricLine = FormatMetricLabel(
+            BuildMetricEntries(metricChannels, metricMagnitudes, metricSum));
         int sampleRate = channels
             .Where(channel => channel.TransferImpulseResponse != null)
             .Select(channel => channel.SampleRate)

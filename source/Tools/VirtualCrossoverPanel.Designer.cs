@@ -49,7 +49,6 @@ namespace Resonalyze
             comboBoxCalibration = new DarkComboBox();
             buttonSessionImport = new Button();
             buttonSessionExport = new Button();
-            labelMetric = new Label();
             labelCrossoverWarning = new Label();
             dspModePanel = new Panel();
             labelDspMode = new Label();
@@ -296,22 +295,11 @@ namespace Resonalyze
             buttonSessionExport.Text = "Save session...";
             buttonSessionExport.UseVisualStyleBackColor = true;
             // 
-            // labelMetric
-            // 
-            labelMetric.AutoSize = true;
-            labelMetric.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelMetric.ForeColor = Color.FromArgb(230, 184, 0);
-            labelMetric.Location = new Point(358, 437);
-            labelMetric.Name = "labelMetric";
-            labelMetric.Size = new Size(95, 15);
-            labelMetric.TabIndex = 15;
-            labelMetric.Text = "Sum loss avg: —";
-            // 
             // labelCrossoverWarning
             // 
             labelCrossoverWarning.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelCrossoverWarning.ForeColor = Color.FromArgb(235, 110, 95);
-            labelCrossoverWarning.Location = new Point(358, 452);
+            labelCrossoverWarning.Location = new Point(358, 434);
             labelCrossoverWarning.Name = "labelCrossoverWarning";
             labelCrossoverWarning.Size = new Size(934, 16);
             labelCrossoverWarning.TabIndex = 19;
@@ -400,7 +388,6 @@ namespace Resonalyze
             Controls.Add(comboBoxCalibration);
             Controls.Add(buttonSessionImport);
             Controls.Add(buttonSessionExport);
-            Controls.Add(labelMetric);
             Controls.Add(labelCrossoverWarning);
             Controls.Add(dspModePanel);
             Controls.Add(channelListPanel);
@@ -440,7 +427,6 @@ namespace Resonalyze
         private DarkComboBox comboBoxCalibration;
         private Button buttonSessionImport;
         private Button buttonSessionExport;
-        private Label labelMetric;
         private Label labelCrossoverWarning;
         private Panel dspModePanel;
         private Label labelDspMode;

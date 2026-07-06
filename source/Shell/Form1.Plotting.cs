@@ -245,6 +245,7 @@ public partial class Form1
             signalGeneratorPanel.RefreshAudioSettings();
         }
         virtualCrossoverPanel.Visible = descriptor.ShowsVirtualCrossoverPanel;
+        virtualDspMetricLabel.Visible = descriptor.ShowsVirtualCrossoverPanel;
         if (descriptor.ShowsVirtualCrossoverPanel)
         {
             virtualCrossoverPanel.OnPanelShown();

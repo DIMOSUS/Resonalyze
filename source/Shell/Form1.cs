@@ -127,6 +127,11 @@ namespace Resonalyze
             virtualCrossoverPanel.HistoryService = measurementHistoryService;
             RefreshCalibrationConsumers();
             virtualCrossoverPanel.OverlayCaptureRequested = SaveVirtualCrossoverOverlay;
+            virtualCrossoverPanel.MetricChanged = (text, detail) =>
+            {
+                virtualDspMetricLabel.Text = text;
+                toolTip1.SetToolTip(virtualDspMetricLabel, detail);
+            };
             modeDescriptors = CreateModeDescriptors();
             ApplyPersistedSettings();
             WireControllerEvents();

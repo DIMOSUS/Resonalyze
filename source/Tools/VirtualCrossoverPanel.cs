@@ -1636,7 +1636,12 @@ public partial class VirtualCrossoverPanel : UserControl
         List<AnalysisCurve>? magnitudes,
         AnalysisCurve? sumCurve)
     {
-        labelMetric.Text = ComputeMetricText(processed, magnitudes, sumCurve);
+        List<MetricEntry> entries = BuildMetricEntries(processed, magnitudes, sumCurve);
+        // The label stays compact (no per-junction frequency ranges) so it does not
+        // overflow with many channels; the full breakdown lives in the tooltip.
+        labelMetric.Text = FormatMetricLabel(entries);
+        toolTip.SetToolTip(
+            labelMetric, entries.Count > 0 ? FormatMetricDetail(entries) : string.Empty);
     }
 
     // The magnitude curves and complex sum the metric reads, built the same way
@@ -1667,22 +1672,33 @@ public partial class VirtualCrossoverPanel : UserControl
         return (magnitudes, sumCurve);
     }
 
-    // The "Sum loss avg" read-out text for a processed set, without touching any
-    // control — so it can feed both the label and a log line.
-    private string ComputeMetricText(
+    // One sum-loss read-out: a junction pair (or the total across the crossover
+    // window), its average and dip in dB, and the band it was measured over.
+    private readonly record struct MetricEntry(
+        string Junction,
+        double AverageDb,
+        double? DipDb,
+        double LowHz,
+        double HighHz,
+        bool IsTotal);
+
+    // Builds the sum-loss read-outs for a processed set without touching any
+    // control, so they can feed the label, its tooltip, and the Auto delay log
+    // from one computation. Empty when there is no metric (fewer than two channels).
+    private List<MetricEntry> BuildMetricEntries(
         List<ProcessedChannel> processed,
         List<AnalysisCurve>? magnitudes,
         AnalysisCurve? sumCurve)
     {
+        var entries = new List<MetricEntry>();
         if (magnitudes == null || sumCurve == null)
         {
-            return "Sum loss avg: —";
+            return entries;
         }
 
         List<IReadOnlyList<SignalPoint>> channelPoints = magnitudes
             .Select(curve => (IReadOnlyList<SignalPoint>)curve.Points)
             .ToList();
-        var parts = new List<string>();
 
         // Per-junction read-outs first, so an improvement at one crossover is
         // not averaged away by the other. Each junction reads the full sum
@@ -1696,12 +1712,14 @@ public partial class VirtualCrossoverPanel : UserControl
                 sumCurve.Points, channelPoints, pair.BandLowHz, pair.BandHighHz);
             if (pairLoss.HasValue)
             {
-                parts.Add(
+                entries.Add(new MetricEntry(
                     $"{pair.Lower.Channel.Control.ChannelName}/" +
-                    $"{pair.Upper.Channel.Control.ChannelName} " +
-                    $"{pairLoss.Value:0.0} dB" +
-                    (pairDip.HasValue ? $", dip {pairDip.Value:0.0} dB" : "") +
-                    $" ({FormatHz(pair.BandLowHz)} – {FormatHz(pair.BandHighHz)})");
+                    $"{pair.Upper.Channel.Control.ChannelName}",
+                    pairLoss.Value,
+                    pairDip,
+                    pair.BandLowHz,
+                    pair.BandHighHz,
+                    IsTotal: false));
             }
         }
 
@@ -1712,15 +1730,47 @@ public partial class VirtualCrossoverPanel : UserControl
             sumCurve.Points, channelPoints, minHz, maxHz);
         if (loss.HasValue)
         {
-            string total = $"{loss.Value:0.0} dB" +
-                (dip.HasValue ? $", dip {dip.Value:0.0} dB" : "") +
-                $" ({FormatHz(minHz)} – {FormatHz(maxHz)})";
-            parts.Add(parts.Count > 0 ? "total " + total : total);
+            entries.Add(new MetricEntry(
+                "total", loss.Value, dip, minHz, maxHz, IsTotal: true));
         }
 
-        return parts.Count > 0
-            ? "Sum loss avg: " + string.Join("   ", parts)
-            : "Sum loss avg: —";
+        return entries;
+    }
+
+    // Compact single line for the label: no frequency ranges, so it stays short
+    // with many channels.
+    private static string FormatMetricLabel(IReadOnlyList<MetricEntry> entries)
+    {
+        if (entries.Count == 0)
+        {
+            return "Sum loss avg: —";
+        }
+
+        IEnumerable<string> parts = entries.Select(entry =>
+        {
+            string body = $"{entry.AverageDb:0.0} dB" +
+                (entry.DipDb.HasValue ? $", dip {entry.DipDb.Value:0.0} dB" : "");
+            return entry.IsTotal ? "total " + body : $"{entry.Junction} {body}";
+        });
+        return "Sum loss avg: " + string.Join("   ", parts);
+    }
+
+    // Full multi-line breakdown for the tooltip and the Auto delay log, one
+    // read-out per line, including the band each was measured over.
+    private static string FormatMetricDetail(IReadOnlyList<MetricEntry> entries)
+    {
+        if (entries.Count == 0)
+        {
+            return "Sum loss avg: —";
+        }
+
+        return "Sum loss avg\r\n" + string.Join("\r\n", entries.Select(entry =>
+        {
+            string name = entry.IsTotal ? "Total" : entry.Junction;
+            string dip = entry.DipDb.HasValue ? $", dip {entry.DipDb.Value:0.0} dB" : "";
+            return $"{name}: {entry.AverageDb:0.0} dB avg{dip} " +
+                $"({FormatHz(entry.LowHz)} – {FormatHz(entry.HighHz)})";
+        }));
     }
 
     // The spread of alignment delays, above which the setup is flagged. A driver
@@ -1978,7 +2028,8 @@ public partial class VirtualCrossoverPanel : UserControl
         List<ProcessedChannel> outcome = ProcessChannels();
         (List<AnalysisCurve>? outcomeMagnitudes, AnalysisCurve? outcomeSum) =
             BuildMetricCurves(outcome);
-        log.AppendLine(ComputeMetricText(outcome, outcomeMagnitudes, outcomeSum));
+        log.AppendLine(FormatMetricDetail(
+            BuildMetricEntries(outcome, outcomeMagnitudes, outcomeSum)));
         WriteAlignmentLog(log.ToString());
     }
 

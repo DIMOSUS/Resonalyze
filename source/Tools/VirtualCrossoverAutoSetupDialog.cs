@@ -56,6 +56,13 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     /// The sample rate is needed because the optimizer evaluates the exact digital
     /// biquad cascades the DSP runs.
     /// </summary>
+    // The designer lays the options section out below three channel rows; extra
+    // rows shift it down by this step and grow the dialog to match.
+    private const int DesignRowCount = 3;
+    private const int RowTop = 42;
+    private const int RowStep = 28;
+    private const int PreviewLineHeight = 15;
+
     public void Init(
         double sampleRateHz,
         IReadOnlyList<(string Name, Color Accent, IReadOnlyList<SignalPoint> MagnitudeDb,
@@ -72,31 +79,42 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             maxCrossover.Value = maxCrossover.Maximum;
         }
 
-        var rowControls = new[]
+        // One row per participating channel, created on the fly so the dialog
+        // carries as many channels as the panel does. Below three rows (the
+        // designer's layout) the options section slides down and the dialog and
+        // its preview grow to fit.
+        SuspendLayout();
+        for (int i = 0; i < channels.Count; i++)
         {
-            (labelName1, labelBand1, comboType1),
-            (labelName2, labelBand2, comboType2),
-            (labelName3, labelBand3, comboType3)
-        };
-
-        for (int i = 0; i < rowControls.Length; i++)
-        {
-            (Label nameLabel, Label bandLabel, DarkComboBox typeComboBox) = rowControls[i];
-            bool used = i < channels.Count;
-            nameLabel.Visible = used;
-            bandLabel.Visible = used;
-            typeComboBox.Visible = used;
-            if (!used)
-            {
-                continue;
-            }
-
             (string name, Color accent, IReadOnlyList<SignalPoint> magnitude,
                 DriverBandEstimate band) = channels[i];
-            nameLabel.Text = name;
-            nameLabel.ForeColor = accent;
-            bandLabel.Text = $"{FormatHz(band.LowHz)} – {FormatHz(band.HighHz)}";
+            int top = RowTop + i * RowStep;
 
+            var nameLabel = new Label
+            {
+                AutoEllipsis = true,
+                Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204),
+                ForeColor = accent,
+                Location = new Point(12, top),
+                Size = new Size(190, 15),
+                Text = name
+            };
+            var bandLabel = new Label
+            {
+                AutoSize = true,
+                ForeColor = Color.FromArgb(170, 176, 190),
+                Location = new Point(210, top),
+                Text = $"{FormatHz(band.LowHz)} – {FormatHz(band.HighHz)}"
+            };
+            var typeComboBox = new DarkComboBox
+            {
+                BackColor = Color.FromArgb(55, 60, 72),
+                ForeColor = Color.White,
+                Location = new Point(346, top - 2),
+                MinimumSize = new Size(36, 19),
+                Size = new Size(110, 19),
+                TabIndex = i
+            };
             typeComboBox.Items.AddRange(
             [
                 DriverType.Subwoofer,
@@ -108,9 +126,35 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             typeComboBox.SelectedItem = band.SuggestedType;
             typeComboBox.SelectedIndexChanged += (_, _) => UpdatePreview();
 
+            Controls.Add(nameLabel);
+            Controls.Add(bandLabel);
+            Controls.Add(typeComboBox);
             rows.Add(new ChannelRow(name, magnitude, nameLabel, bandLabel, typeComboBox));
         }
 
+        int extraRows = Math.Max(0, channels.Count - DesignRowCount);
+        if (extraRows > 0)
+        {
+            // Extra channel rows push the options down; the preview also gains one
+            // line per extra channel. The Apply/Cancel buttons are bottom-anchored
+            // and follow the client-size growth on their own.
+            int rowShift = extraRows * RowStep;
+            foreach (Control control in new Control[]
+                     {
+                         labelFilters, checkButterworth, checkLinkwitzRiley, checkBessel,
+                         labelRange, minCrossover, labelDash, maxCrossover, labelHz,
+                         independentSlopes, labelPreview
+                     })
+            {
+                control.Top += rowShift;
+            }
+
+            int previewGrowth = extraRows * PreviewLineHeight;
+            labelPreview.Height += previewGrowth;
+            ClientSize = new Size(ClientSize.Width, ClientSize.Height + rowShift + previewGrowth);
+        }
+
+        ResumeLayout();
         initialized = true;
         UpdatePreview();
     }

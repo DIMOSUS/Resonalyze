@@ -72,6 +72,36 @@ public sealed class CrossoverAutoSetupTests
     }
 
     [Fact]
+    public void Propose_HandlesAFourWaySystem()
+    {
+        // Sub / woofer / midrange / tweeter — the four-way case the wizard now
+        // carries end to end. Three junctions, ordered low to high, with every
+        // handover inside both classes' sensible range and a sane summed ripple.
+        var sources = new List<AutoSetupSource>
+        {
+            new(BandCurve(20, 100, 0), DriverType.Subwoofer),
+            new(BandCurve(40, 500, 0), DriverType.Woofer),
+            new(BandCurve(250, 4_500, 0), DriverType.Midrange),
+            new(BandCurve(2_000, 20_000, 0), DriverType.Tweeter)
+        };
+
+        IReadOnlyList<CrossoverProposal> proposals = CrossoverAutoSetup.Propose(
+            sources, Options());
+
+        Assert.Equal(4, proposals.Count);
+        double subToWoofer = proposals[0].LowPassEdge!.Value.FrequencyHz;
+        double wooferToMid = proposals[1].LowPassEdge!.Value.FrequencyHz;
+        double midToTweeter = proposals[2].LowPassEdge!.Value.FrequencyHz;
+        Assert.True(subToWoofer < wooferToMid);
+        Assert.True(wooferToMid < midToTweeter);
+        Assert.InRange(subToWoofer, 40, 80);
+        Assert.InRange(wooferToMid, 250, 500);
+        Assert.InRange(midToTweeter, 2_000, 4_000);
+        Assert.Null(proposals[3].LowPassEdge);
+        Assert.True(SumRippleDb(sources, proposals) < 6.0);
+    }
+
+    [Fact]
     public void EstimateBand_ReadsEdgesLevelAndType()
     {
         Assert.Equal(

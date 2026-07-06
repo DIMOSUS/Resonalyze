@@ -97,56 +97,15 @@ public static class TransferFunction
         value.Real * value.Real + value.Imaginary * value.Imaginary;
 
     /// <summary>
-    /// Computes the phase-transform (GCC-PHAT) cross-correlation of two captured
-    /// channels, ready to refine one or more coarse lags without recomputing the
-    /// transform. The cross-spectrum is whitened to unit magnitude and weighted by
-    /// a smooth band mask built from where the reference actually carries energy, so
-    /// the correlation collapses to a sharp, low-side-lobe peak at the true
-    /// broadband delay — independent of the driver's magnitude shape (and its
-    /// polarity: an inverted channel simply flips the peak, which
-    /// <see cref="PhaseTransformCorrelation.RefineAround"/> handles).
-    /// </summary>
-    public static PhaseTransformCorrelation ComputePhaseTransform(
-        IReadOnlyList<double> reference,
-        IReadOnlyList<double> target,
-        IReadOnlyList<double>? filter = null,
-        double referenceGate = 0.02)
-    {
-        ArgumentNullException.ThrowIfNull(reference);
-        ArgumentNullException.ThrowIfNull(target);
-        if (reference.Count != target.Count)
-        {
-            throw new ArgumentException("Input arrays must have same length.");
-        }
-        if (reference.Count == 0)
-        {
-            throw new ArgumentException("Input arrays must not be empty.");
-        }
-
-        // Pad to twice the length so the lags we read stay free of circular wrap.
-        int fftLength = DspMath.NextPowerOfTwo(checked(reference.Count * 2));
-        Complex[] referenceSpectrum = RealForwardSpectrum(reference, fftLength);
-        Complex[] targetSpectrum = RealForwardSpectrum(target, fftLength);
-
-        var crossSpectrum = new Complex[fftLength];
-        var gateReference = new double[fftLength];
-        for (int bin = 0; bin < fftLength; bin++)
-        {
-            crossSpectrum[bin] = targetSpectrum[bin] * Complex.Conjugate(referenceSpectrum[bin]);
-            gateReference[bin] = referenceSpectrum[bin].Magnitude;
-        }
-
-        return BuildPhaseTransform(crossSpectrum, gateReference, filter, referenceGate);
-    }
-
-    /// <summary>
-    /// Computes the phase-transform (GCC-PHAT) auto-correlation of a single
-    /// loopback-referenced transfer impulse response. Its spectrum already carries
-    /// the microphone/loopback cross-phase, so whitening it to unit magnitude over
-    /// the band where the response has energy yields the same sharp delay peak as a
-    /// two-channel GCC-PHAT — usable where only the transfer IR is available. The
-    /// correlation is indexed to match the impulse response, so envelope-peak lags
-    /// refine directly.
+    /// Computes the phase-transform (GCC-PHAT) correlation of a loopback-referenced
+    /// transfer impulse response. Its spectrum already carries the
+    /// microphone/loopback cross-phase, so whitening it to unit magnitude over the
+    /// band where the response has energy collapses the correlation to a sharp,
+    /// low-side-lobe peak at the true broadband delay — independent of the driver's
+    /// magnitude shape (and its polarity: an inverted channel simply flips the
+    /// peak, which <see cref="PhaseTransformCorrelation.RefineAround"/> handles).
+    /// The correlation is indexed to match the impulse response, so envelope-peak
+    /// lags refine directly.
     /// </summary>
     public static PhaseTransformCorrelation ComputePhaseTransformFromResponse(
         IReadOnlyList<double> impulseResponse,
@@ -158,9 +117,12 @@ public static class TransferFunction
             throw new ArgumentException("Impulse response must not be empty.");
         }
 
-        // No padding: the transfer IR is already the deconvolved response, so its
-        // whitened self-correlation is indexed exactly like the IR/envelope.
-        int fftLength = impulseResponse.Count;
+        // Padding up to a power of two keeps MathNet on the fast radix-2 path (an
+        // odd length would silently fall back to the much slower Bluestein
+        // algorithm). It is a no-op for the pipeline's own IRs, which are already
+        // power-of-two, and zero-padding does not move the correlation peak: the
+        // lag axis stays index-aligned with the impulse response.
+        int fftLength = DspMath.NextPowerOfTwo(impulseResponse.Count);
         Complex[] spectrum = RealForwardSpectrum(impulseResponse, fftLength);
         var gateReference = new double[fftLength];
         for (int bin = 0; bin < fftLength; bin++)
@@ -252,22 +214,6 @@ public static class TransferFunction
 
         return 0.5 - 0.5 * Math.Cos(Math.PI * (value - low) / (high - low));
     }
-
-    /// <summary>
-    /// Convenience one-shot: compute the GCC-PHAT correlation and refine a single
-    /// coarse lag. Prefer <see cref="ComputePhaseTransform"/> plus repeated
-    /// <see cref="PhaseTransformCorrelation.RefineAround"/> when refining several
-    /// lags of the same capture, so the transform runs once.
-    /// </summary>
-    public static PhaseTransformDelay EstimatePhaseTransformDelay(
-        IReadOnlyList<double> reference,
-        IReadOnlyList<double> target,
-        int coarseLagSamples,
-        int searchRadiusSamples,
-        IReadOnlyList<double>? filter = null,
-        double referenceGate = 0.02) =>
-        ComputePhaseTransform(reference, target, filter, referenceGate)
-            .RefineAround(coarseLagSamples, searchRadiusSamples);
 
     // Sub-sample peak location by a fine windowed-sinc (Lanczos) upsampling around
     // the integer extremum, then one parabolic step between the winning grid node
@@ -455,9 +401,10 @@ public readonly record struct PhaseTransformDelay(
     bool Refined);
 
 /// <summary>
-/// A precomputed GCC-PHAT cross-correlation, from
-/// <see cref="TransferFunction.ComputePhaseTransform"/>. Refine any number of
-/// coarse lags of the same capture from it without recomputing the transform.
+/// A precomputed GCC-PHAT correlation, from
+/// <see cref="TransferFunction.ComputePhaseTransformFromResponse"/>. Refine any
+/// number of coarse lags of the same capture from it without recomputing the
+/// transform.
 /// </summary>
 public sealed class PhaseTransformCorrelation
 {

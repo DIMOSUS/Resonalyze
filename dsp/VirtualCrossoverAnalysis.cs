@@ -424,6 +424,11 @@ public static class VirtualCrossoverAnalysis
         }
 
         Fourier.Inverse(crossSpectrum, FourierOptions.Matlab);
+        var correlation = new double[fftLength];
+        for (int i = 0; i < fftLength; i++)
+        {
+            correlation[i] = crossSpectrum[i].Real;
+        }
 
         // The inverse transform already carries the 1/N of the correlation. In raw
         // mode the Parseval energy sums carry an N, so the coefficient normalizer
@@ -439,22 +444,12 @@ public static class VirtualCrossoverAnalysis
         // the way the stage-2 fine search would miss it around the wrong base.
         int rangeSamples = Math.Max(1, (int)Math.Round(searchRangeMs / 1000.0 * sampleRate));
         int centerLag = (int)Math.Round(centerLagMs / 1000.0 * sampleRate);
-        int minLag = centerLag - rangeSamples;
-        int maxLag = centerLag + rangeSamples;
-        var correlation = new double[maxLag - minLag + 1];
-        for (int lag = minLag; lag <= maxLag; lag++)
-        {
-            // A positive lag is the delay added to the second signal, held at
-            // circular index lag mod N.
-            int index = ((lag % fftLength) + fftLength) % fftLength;
-            correlation[lag - minLag] =
-                normalizer > 0 ? crossSpectrum[index].Real / normalizer : 0;
-        }
-
         CorrelationDelayCandidate positive = FindCorrelationExtremum(
-            correlation, minLag, sampleRate, findMaximum: true);
+            correlation, centerLag, rangeSamples, normalizer, sampleRate,
+            findMaximum: true);
         CorrelationDelayCandidate negative = FindCorrelationExtremum(
-            correlation, minLag, sampleRate, findMaximum: false);
+            correlation, centerLag, rangeSamples, normalizer, sampleRate,
+            findMaximum: false);
 
         return new CorrelationAlignmentResult(
             centerFrequencyHz,
@@ -480,55 +475,40 @@ public static class VirtualCrossoverAnalysis
         return 0.5 - 0.5 * Math.Cos(Math.Tau * position);
     }
 
+    // The extremum inside the lag window, refined to sub-sample precision with the
+    // shared windowed-sinc interpolation (a plain 3-point parabola systematically
+    // mislocates a sinc-shaped correlation peak). Positive lags are read at their
+    // circular index lag mod N; an edge-pinned extremum stays at its integer lag.
     private static CorrelationDelayCandidate FindCorrelationExtremum(
         double[] correlation,
-        int minLag,
+        int centerLag,
+        int rangeSamples,
+        double normalizer,
         int sampleRate,
         bool findMaximum)
     {
-        int bestIndex = 0;
-        double best = findMaximum ? double.NegativeInfinity : double.PositiveInfinity;
-        for (int i = 0; i < correlation.Length; i++)
+        int fftLength = correlation.Length;
+        double sign = findMaximum ? 1.0 : -1.0;
+        int bestLag = centerLag;
+        double best = double.NegativeInfinity;
+        for (int lag = centerLag - rangeSamples; lag <= centerLag + rangeSamples; lag++)
         {
-            double coefficient = correlation[i];
-            if (findMaximum ? coefficient > best : coefficient < best)
+            double value = sign * correlation[TransferFunction.WrapIndex(lag, fftLength)];
+            if (value > best)
             {
-                best = coefficient;
-                bestIndex = i;
+                best = value;
+                bestLag = lag;
             }
         }
 
-        double refinedLag = RefineLag(
-            correlation, minLag, minLag + bestIndex, findMaximum);
+        bool interior = Math.Abs(bestLag - centerLag) < rangeSamples;
+        double refinedLag = interior
+            ? TransferFunction.RefinePeakLag(correlation, bestLag, fftLength, sign)
+            : bestLag;
         return new CorrelationDelayCandidate(
             refinedLag * 1000.0 / sampleRate,
-            best,
+            normalizer > 0 ? sign * best / normalizer : 0,
             !findMaximum);
-    }
-
-    private static double RefineLag(
-        double[] values,
-        int minLag,
-        int bestLag,
-        bool findMaximum)
-    {
-        int index = bestLag - minLag;
-        if (index <= 0 || index >= values.Length - 1)
-        {
-            return bestLag;
-        }
-
-        double left = findMaximum ? values[index - 1] : -values[index - 1];
-        double center = findMaximum ? values[index] : -values[index];
-        double right = findMaximum ? values[index + 1] : -values[index + 1];
-        double denominator = left - 2.0 * center + right;
-        if (Math.Abs(denominator) < 1e-12)
-        {
-            return bestLag;
-        }
-
-        double offset = 0.5 * (left - right) / denominator;
-        return bestLag + Math.Clamp(offset, -1.0, 1.0);
     }
 
     // One spectrum bin of the alignment problem: the combined fixed spectrum,

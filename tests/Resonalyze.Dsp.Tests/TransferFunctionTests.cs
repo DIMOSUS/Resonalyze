@@ -46,6 +46,50 @@ public sealed class TransferFunctionTests
         Assert.InRange(result.LagSamples, trueDelay - 0.05, trueDelay + 0.05);
     }
 
+    [Theory]
+    [InlineData(50.35)]
+    [InlineData(128.6)]
+    public void ComputePhaseTransformFromResponse_RecoversDelayFromTheIrAlone(
+        double trueDelay)
+    {
+        // A transfer IR's spectrum already carries the cross-phase, so whitening it
+        // recovers the same delay a two-channel GCC-PHAT would.
+        double[] impulseResponse = BandLimitedPulse(4096, trueDelay);
+        int coarse = (int)Math.Round(trueDelay);
+
+        PhaseTransformCorrelation correlation =
+            TransferFunction.ComputePhaseTransformFromResponse(impulseResponse);
+        PhaseTransformDelay result = correlation.RefineAround(coarse, searchRadiusSamples: 4);
+
+        Assert.True(result.Refined);
+        Assert.InRange(result.LagSamples, trueDelay - 0.02, trueDelay + 0.02);
+    }
+
+    // A band-limited pulse at a fractional position, built from a flat-magnitude
+    // linear-phase spectrum — a stand-in transfer IR whose delay is known exactly.
+    private static double[] BandLimitedPulse(int length, double delaySamples)
+    {
+        var spectrum = new Complex[length];
+        spectrum[0] = Complex.One;
+        int maxBin = length * 2 / 5;
+        for (int k = 1; k <= maxBin; k++)
+        {
+            double angle = -2.0 * Math.PI * k * delaySamples / length;
+            Complex bin = Complex.FromPolarCoordinates(1.0, angle);
+            spectrum[k] = bin;
+            spectrum[length - k] = Complex.Conjugate(bin);
+        }
+
+        Fourier.Inverse(spectrum, FourierOptions.Matlab);
+        var pulse = new double[length];
+        for (int i = 0; i < length; i++)
+        {
+            pulse[i] = spectrum[i].Real;
+        }
+
+        return pulse;
+    }
+
     [Fact]
     public void RefineAround_ReusesOneTransformForMultipleLags()
     {

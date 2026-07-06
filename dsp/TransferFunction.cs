@@ -123,15 +123,68 @@ public static class TransferFunction
             throw new ArgumentException("Input arrays must not be empty.");
         }
 
+        // Pad to twice the length so the lags we read stay free of circular wrap.
         int fftLength = DspMath.NextPowerOfTwo(checked(reference.Count * 2));
         Complex[] referenceSpectrum = RealForwardSpectrum(reference, fftLength);
         Complex[] targetSpectrum = RealForwardSpectrum(target, fftLength);
 
-        double maxReferenceMagnitude = 0;
+        var crossSpectrum = new Complex[fftLength];
+        var gateReference = new double[fftLength];
         for (int bin = 0; bin < fftLength; bin++)
         {
-            maxReferenceMagnitude = Math.Max(
-                maxReferenceMagnitude, referenceSpectrum[bin].Magnitude);
+            crossSpectrum[bin] = targetSpectrum[bin] * Complex.Conjugate(referenceSpectrum[bin]);
+            gateReference[bin] = referenceSpectrum[bin].Magnitude;
+        }
+
+        return BuildPhaseTransform(crossSpectrum, gateReference, filter, referenceGate);
+    }
+
+    /// <summary>
+    /// Computes the phase-transform (GCC-PHAT) auto-correlation of a single
+    /// loopback-referenced transfer impulse response. Its spectrum already carries
+    /// the microphone/loopback cross-phase, so whitening it to unit magnitude over
+    /// the band where the response has energy yields the same sharp delay peak as a
+    /// two-channel GCC-PHAT — usable where only the transfer IR is available. The
+    /// correlation is indexed to match the impulse response, so envelope-peak lags
+    /// refine directly.
+    /// </summary>
+    public static PhaseTransformCorrelation ComputePhaseTransformFromResponse(
+        IReadOnlyList<double> impulseResponse,
+        double referenceGate = 0.02)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponse);
+        if (impulseResponse.Count == 0)
+        {
+            throw new ArgumentException("Impulse response must not be empty.");
+        }
+
+        // No padding: the transfer IR is already the deconvolved response, so its
+        // whitened self-correlation is indexed exactly like the IR/envelope.
+        int fftLength = impulseResponse.Count;
+        Complex[] spectrum = RealForwardSpectrum(impulseResponse, fftLength);
+        var gateReference = new double[fftLength];
+        for (int bin = 0; bin < fftLength; bin++)
+        {
+            gateReference[bin] = spectrum[bin].Magnitude;
+        }
+
+        return BuildPhaseTransform(spectrum, gateReference, filter: null, referenceGate);
+    }
+
+    // Shared core: whiten the cross-spectrum to unit magnitude, weight it by a soft
+    // band mask taken from where the gate reference has energy, and inverse-
+    // transform to the correlation.
+    private static PhaseTransformCorrelation BuildPhaseTransform(
+        Complex[] crossSpectrum,
+        double[] gateReference,
+        IReadOnlyList<double>? filter,
+        double referenceGate)
+    {
+        int fftLength = crossSpectrum.Length;
+        double maxReference = 0;
+        for (int bin = 0; bin < fftLength; bin++)
+        {
+            maxReference = Math.Max(maxReference, gateReference[bin]);
         }
 
         // A soft band mask instead of a hard energy gate. Bins fade in over a
@@ -139,27 +192,26 @@ public static class TransferFunction
         // band tapers smoothly at the excitation edges rather than as a brick wall
         // — a brick wall rings into the correlation as side lobes that can bias the
         // sub-sample refinement. The whole passband still sits at weight one; only
-        // the true roll-off edges of the sweep taper.
-        double gateHigh = maxReferenceMagnitude * referenceGate;
+        // the true roll-off edges taper.
+        double gateHigh = maxReference * referenceGate;
         double gateLow = gateHigh * 0.2;
         var whitened = new Complex[fftLength];
         double weightSum = 0;
         for (int bin = 0; bin < fftLength; bin++)
         {
-            double bandWeight = SoftGate(referenceSpectrum[bin].Magnitude, gateLow, gateHigh);
+            double bandWeight = SoftGate(gateReference[bin], gateLow, gateHigh);
             if (bandWeight <= 0)
             {
                 continue;
             }
 
-            Complex cross = targetSpectrum[bin] * Complex.Conjugate(referenceSpectrum[bin]);
-            double magnitude = cross.Magnitude;
+            double magnitude = crossSpectrum[bin].Magnitude;
             if (magnitude <= 1e-20)
             {
                 continue;
             }
 
-            Complex unit = bandWeight * cross / magnitude;
+            Complex unit = bandWeight * crossSpectrum[bin] / magnitude;
             if (filter != null && filter.Count == fftLength)
             {
                 unit *= filter[bin];

@@ -458,7 +458,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             Title = "ms from peak"
         });
         var dbAxis = CreateDecibelAxis();
-        dbAxis.AbsoluteMaximum = maxDb + 10;
+        dbAxis.AbsoluteMaximum = maxDb + 30;
         dbAxis.AbsoluteMinimum = minDb - 10;
         dbAxis.Maximum = maxDb + 2;
         dbAxis.Minimum = minDb - 2;
@@ -479,7 +479,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 out double compareMinDb);
             maxDb = Math.Max(maxDb, compareMaxDb);
             minDb = Math.Min(minDb, compareMinDb);
-            dbAxis.AbsoluteMaximum = maxDb + 10;
+            dbAxis.AbsoluteMaximum = maxDb + 30;
             dbAxis.AbsoluteMinimum = minDb - 10;
             dbAxis.Maximum = maxDb + 2;
             dbAxis.Minimum = minDb - 2;
@@ -766,6 +766,25 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         AppendLevelLine("Loopback", levels.Loopback);
         AppendSeparator();
         AppendDelayTable(result, reference);
+        AppendStrongestPeakHint(result);
+    }
+
+    // A subwoofer or any narrowband/modal measurement can leave the strongest peak
+    // a room mode or reflection well after the direct sound, so the two columns
+    // disagree. Point the reader at the first arrival instead of the misleading
+    // strongest peak.
+    private void AppendStrongestPeakHint(TimeAlignmentAnalysisResult result)
+    {
+        if (!result.StrongestPeakIsSeparateArrival)
+        {
+            return;
+        }
+
+        AppendStatusText(
+            $"⚠ Strongest peak is ~{result.StrongestPeakSeparationMilliseconds:0.0} ms " +
+            "after first arrival — likely a room mode or reflection.\r\n" +
+            "Use First Arrival for alignment.\r\n",
+            UiPalette.WarningAmber);
     }
 
     private void AppendSignalQuality(string title, TimeAlignmentAnalysisResult result)
@@ -868,10 +887,20 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         if (reference.HasValue)
         {
             double delta = value - reference.Value;
-            text += " (" + delta.ToString("+" + valueFormat + ";-" + valueFormat) + ")";
+            text += " (" + FormatSignedDelta(delta, valueFormat) + ")";
         }
 
         return text;
+    }
+
+    // Signs the delta from its rounded magnitude, so a delta that rounds to zero
+    // reads "+0,000" rather than a spurious "-0,000" (or "-+0,000") from a tiny
+    // negative value the format would otherwise sign.
+    private static string FormatSignedDelta(double delta, string valueFormat)
+    {
+        string magnitude = Math.Abs(delta).ToString(valueFormat);
+        bool negative = delta < 0 && magnitude.Any(character => character is > '0' and <= '9');
+        return (negative ? "-" : "+") + magnitude;
     }
 
     private void AppendLevelLine(string label, InputLevelMeterEntry entry)

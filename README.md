@@ -818,26 +818,32 @@ The delay estimator uses a deliberately robust two-stage chain:
   interest
 - the analytic-signal envelope of that impulse response, whose first arrival and
   strongest peak are detected robustly — this is the coarse, polarity-blind anchor
-- a **GCC-PHAT** (phase-transform) cross-correlation of the raw microphone and
-  loopback channels that refines each anchor to sub-sample precision
+- a **GCC-PHAT** (phase-transform) correlation, computed from the transfer IR's
+  own spectrum, that refines each anchor to sub-sample precision
 
-That second stage is what makes the numbers trustworthy. The cross-spectrum is
-whitened to unit magnitude over a soft band mask built from where the sweep
-actually has energy, so the correlation collapses to a sharp peak at the true
-broadband delay — independent of the driver's own magnitude shape, which would
-otherwise pull an envelope peak off the real arrival. A short search window keeps
-the refinement on the arrival the envelope found, a windowed-sinc plus parabolic
-interpolation reads the peak between samples, and the search runs on peak
-magnitude so a polarity-inverted arrival (a trough) is located just as reliably
-as a normal one. When the whitened peak is weak or pinned to the window edge, the
-estimate falls back to the envelope's own fractional peak, so the result is never
-worse than the plain envelope.
+That second stage is what makes the numbers trustworthy. The transfer IR's
+spectrum already carries the microphone-to-loopback cross-phase, so whitening it
+to unit magnitude over a soft band mask (built from where the response actually
+has energy) collapses the correlation to a sharp peak at the true broadband delay
+— independent of the driver's own magnitude shape, which would otherwise pull an
+envelope peak off the real arrival. A short search window keeps the refinement on
+the arrival the envelope found, a windowed-sinc plus parabolic interpolation reads
+the peak between samples, and the search runs on peak magnitude so a
+polarity-inverted arrival (a trough) is located just as reliably as a normal one.
+When the whitened peak is weak or pinned to the window edge, the estimate falls
+back to the envelope's own fractional peak, so the result is never worse than the
+plain envelope.
 
 The payoff is delay estimates such as `87.0 samples` or `1.972 ms` resolved to a
 hundredth of a sample instead of a coarse integer, and refined against the true
 acoustic arrival rather than the driver-tinted envelope shape. For time
 alignment, this is a serious practical upgrade: smaller timing adjustments become
 visible, repeatable, and easier to trust.
+
+When the strongest peak lands well after the first arrival — the classic
+narrowband-subwoofer case, where room modes ring louder than the direct sound
+long after it — Time Alignment flags it and points you at the first arrival, so a
+modal or reflected peak is not mistaken for the driver's real timing.
 
 The mode recalculates immediately when you switch into **Time Alignment**, and
 also updates live as soon as you change the bandpass settings.

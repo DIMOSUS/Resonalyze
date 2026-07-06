@@ -163,10 +163,10 @@ namespace Resonalyze
             // bandpassPlotView
             // 
             bandpassPlotView.BackColor = Color.FromArgb(32, 36, 46);
-            bandpassPlotView.Location = new Point(18, 372);
+            bandpassPlotView.Location = new Point(18, 404);
             bandpassPlotView.Name = "bandpassPlotView";
             bandpassPlotView.PanCursor = Cursors.Hand;
-            bandpassPlotView.Size = new Size(500, 320);
+            bandpassPlotView.Size = new Size(500, 352);
             bandpassPlotView.TabIndex = 11;
             bandpassPlotView.Text = "bandpassPlotView";
             bandpassPlotView.ZoomHorizontalCursor = Cursors.SizeWE;
@@ -176,11 +176,11 @@ namespace Resonalyze
             // envelopePlotView
             // 
             envelopePlotView.BackColor = Color.FromArgb(32, 36, 46);
-            envelopePlotView.Location = new Point(580, 372);
+            envelopePlotView.Location = new Point(580, 404);
             envelopePlotView.MinimumSize = new Size(320, 240);
             envelopePlotView.Name = "envelopePlotView";
             envelopePlotView.PanCursor = Cursors.Hand;
-            envelopePlotView.Size = new Size(580, 320);
+            envelopePlotView.Size = new Size(580, 352);
             envelopePlotView.TabIndex = 12;
             envelopePlotView.Text = "envelopePlotView";
             envelopePlotView.ZoomHorizontalCursor = Cursors.SizeWE;
@@ -198,7 +198,7 @@ namespace Resonalyze
             statusTextBox.Name = "statusTextBox";
             statusTextBox.ReadOnly = true;
             statusTextBox.ScrollBars = RichTextBoxScrollBars.None;
-            statusTextBox.Size = new Size(580, 348);
+            statusTextBox.Size = new Size(580, 380);
             statusTextBox.TabIndex = 13;
             statusTextBox.Text = "Run a loopback measurement or load an impulse response file with transfer IR.";
             // 
@@ -235,7 +235,7 @@ namespace Resonalyze
             Font = new Font("Segoe UI", 9F);
             ForeColor = Color.White;
             Name = "TimeAlignmentPanel";
-            Size = new Size(1182, 706);
+            Size = new Size(1182, 770);
             (bandpassCenterNumeric).EndInit();
             (bandpassPassOctavesNumeric).EndInit();
             (bandpassFadeOctavesNumeric).EndInit();

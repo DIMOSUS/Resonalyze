@@ -154,23 +154,7 @@ public static class SignalEnvelope
         double peak)
     {
         ArgumentNullException.ThrowIfNull(envelope);
-        int exclusionRadius = Math.Max(8, envelope.Count / 50);
-        double sumSquares = 0;
-        int count = 0;
-        for (int i = 0; i < envelope.Count; i++)
-        {
-            if (CircularDistance(i, peakIndex, envelope.Count) <= exclusionRadius)
-            {
-                continue;
-            }
-
-            sumSquares += envelope[i] * envelope[i];
-            count++;
-        }
-
-        double noiseRms = count > 0
-            ? Math.Sqrt(sumSquares / count)
-            : 0;
+        double noiseRms = EstimateEnvelopeNoiseRms(envelope, peakIndex);
         return DataHelper.AmplitudeToDecibels(peak / Math.Max(noiseRms, 1e-12));
     }
 

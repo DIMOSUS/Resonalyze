@@ -333,51 +333,17 @@ namespace Resonalyze.Dsp
                 measurement.PeakIndex + offset,
                 length,
                 window);
-
             Fourier.Forward(spectrum, FourierOptions.Matlab);
 
-            int n = spectrum.Length;
-            List<SignalPoint> data = new();
-
-            const double minFrequency = 100;
-
-            double phaseAccumulator = 0.0;
-            double prevWrapped = 0.0;
-
-            for (int i = 1; i < n / 2; i++)
-            {
-                double f = i * measurement.SampleRate / (double)n;
-
-                // Compensation for window start offset relative to peak.
-                double phaseOffset = Math.Tau * i * offset / n;
-
-                // First compensate, then wrap.
-                double wrapped = spectrum[i].Phase - phaseOffset;
-                wrapped = Math.Atan2(Math.Sin(wrapped), Math.Cos(wrapped));
-
-                if (!unwrap)
-                {
-                    data.Add(new SignalPoint(f, wrapped));
-                    continue;
-                }
-
-                if (i > 1 && f >= minFrequency)
-                {
-                    double delta = wrapped - prevWrapped;
-
-                    if (delta > Math.PI)
-                        phaseAccumulator -= Math.Tau;
-                    else if (delta < -Math.PI)
-                        phaseAccumulator += Math.Tau;
-                }
-
-                prevWrapped = wrapped;
-
-                double phase = wrapped + phaseAccumulator;
-                data.Add(new SignalPoint(f, phase));
-            }
-
-            return data;
+            // The extraction starts `offset` samples past the peak; a reference of 0
+            // makes BuildMeasuredPhase compensate exactly that offset, so the phase
+            // reads as if referenced to the peak.
+            return BuildMeasuredPhase(
+                spectrum,
+                extractionStart: offset,
+                referenceSamples: 0,
+                measurement.SampleRate,
+                unwrap);
         }
 
         // Fixed analysis length for the gated phase / group-delay FFTs. The gate
@@ -714,37 +680,7 @@ namespace Resonalyze.Dsp
 
             int length = offset + opt.Length;
             Complex[] impulse = ExtractWindow(measurement, start, length);
-
-            List<SignalPoint> data = new List<SignalPoint> { };
-
-            if (opt.Logarithmic)
-            {
-                // Show the impulse in dB relative to its own peak (peak = 0 dB). The absolute
-                // sample scale depends on the recording level and the deconvolution gain, so an
-                // absolute dB floor can sit above the whole curve and collapse it to a flat line.
-                double peakMagnitude = 0;
-                for (int i = 0; i < length; i++)
-                {
-                    peakMagnitude = Math.Max(peakMagnitude, impulse[i].Magnitude);
-                }
-
-                double reference = peakMagnitude > 0 ? peakMagnitude : 1.0;
-                for (int i = 0; i < length; i++)
-                {
-                    data.Add(new SignalPoint(
-                        i - offset,
-                        AmplitudeToDecibels(impulse[i].Magnitude / reference)));
-                }
-            }
-            else
-            {
-                for (int i = 0; i < length; i++)
-                {
-                    data.Add(new SignalPoint(i - offset, impulse[i].Real));
-                }
-            }
-
-            return new AnalysisCurve("Impulse Response", data);
+            return RenderImpulseCurve(impulse, length, -offset, opt.Logarithmic);
         }
 
         // Impulse from the very start of the response (sample 0) up to peakIndex plus
@@ -761,12 +697,22 @@ namespace Resonalyze.Dsp
                 1,
                 Math.Max(1, available));
             Complex[] impulse = ExtractWindow(measurement, 0, length);
+            return RenderImpulseCurve(impulse, length, 0, opt.Logarithmic);
+        }
 
+        private static AnalysisCurve RenderImpulseCurve(
+            Complex[] impulse,
+            int length,
+            int xOffset,
+            bool logarithmic)
+        {
             List<SignalPoint> data = new(length);
 
-            if (opt.Logarithmic)
+            if (logarithmic)
             {
-                // dB relative to the window's own peak (see GetImpulse for why).
+                // Show the impulse in dB relative to its own peak (peak = 0 dB). The absolute
+                // sample scale depends on the recording level and the deconvolution gain, so an
+                // absolute dB floor can sit above the whole curve and collapse it to a flat line.
                 double peakMagnitude = 0;
                 for (int i = 0; i < length; i++)
                 {
@@ -777,7 +723,7 @@ namespace Resonalyze.Dsp
                 for (int i = 0; i < length; i++)
                 {
                     data.Add(new SignalPoint(
-                        i,
+                        i + xOffset,
                         AmplitudeToDecibels(impulse[i].Magnitude / reference)));
                 }
             }
@@ -785,7 +731,7 @@ namespace Resonalyze.Dsp
             {
                 for (int i = 0; i < length; i++)
                 {
-                    data.Add(new SignalPoint(i, impulse[i].Real));
+                    data.Add(new SignalPoint(i + xOffset, impulse[i].Real));
                 }
             }
 
@@ -798,69 +744,95 @@ namespace Resonalyze.Dsp
         {
             int offset = 64;
             int length = 2048;
-            const float timeWindowMilliseconds = 3.0f;
-
-            List<SignalPoint> data = new List<SignalPoint> { };
+            const double timeWindowMilliseconds = 3.0;
 
             int start = measurement.PeakIndex - offset;
-            float average = 0;
-
-            //-- normalization
             Complex[] impulse = ExtractWindow(measurement, start, length);
-            float[] impulseSamples = new float[length];
+
+            double mean = 0;
             for (int i = 0; i < length; i++)
             {
-                impulseSamples[i] = (float)impulse[i].Real;
-                average += impulseSamples[i];
+                mean += impulse[i].Real;
             }
-            average /= length;
+            mean /= length;
 
-            //-- self convolution
-            float denominator = 0;
+            // Linear (non-circular) autocorrelation by Wiener-Khinchin: zero-pad the
+            // mean-removed signal to twice its length so lags cannot wrap, then
+            // FFT -> power spectrum -> inverse FFT. O(n log n) instead of the direct
+            // O(n^2)-per-lag sum this replaced.
+            int fftLength = DspMath.NextPowerOfTwo(length * 2);
+            var spectrum = new Complex[fftLength];
             for (int i = 0; i < length; i++)
             {
-                denominator += (impulseSamples[i] - average) * (impulseSamples[i] - average);
+                spectrum[i] = new Complex(impulse[i].Real - mean, 0.0);
             }
 
-            float substep(int i, float step)
+            Fourier.Forward(spectrum, FourierOptions.Matlab);
+            for (int i = 0; i < fftLength; i++)
             {
-                if (i < 1 || i > length - 3)
-                    return impulseSamples[i];
-
-                float wAcc = 0;
-                float f = 0;
-                for (int l = -1; l < 3; l++)
-                {
-                    float w = (float)LanczosKernel(l - step, 2.0);
-                    wAcc += w;
-                    f += w * impulseSamples[i + l];
-                }
-
-                return f / wAcc;
+                spectrum[i] = new Complex(
+                    spectrum[i].Real * spectrum[i].Real +
+                    spectrum[i].Imaginary * spectrum[i].Imaginary,
+                    0.0);
             }
+            Fourier.Inverse(spectrum, FourierOptions.Matlab);
 
+            // Lag 0 is the signal's energy — the normalization denominator.
+            double denominator = spectrum[0].Real;
+            var correlation = new double[length];
             for (int k = 0; k < length; k++)
             {
-                if (k / (float)measurement.SampleRate * 1000.0f > timeWindowMilliseconds)
+                correlation[k] = spectrum[k].Real;
+            }
+
+            List<SignalPoint> data = new();
+            for (int k = 0; k < length; k++)
+            {
+                if (k / (double)measurement.SampleRate * 1000.0 > timeWindowMilliseconds)
                 {
                     break;
                 }
 
-                // Sub-sample interpolation avoids the stair-step shape of integer-lag autocorrelation.
-                for (float fractionalStep = 0; fractionalStep < 1.0f; fractionalStep += 0.1f)
+                // Sub-sample interpolation avoids the stair-step shape of integer-lag
+                // autocorrelation. Correlation is linear in the shifted signal, so
+                // interpolating the correlation equals the interpolate-then-correlate
+                // it replaced, at a fraction of the cost.
+                for (int step = 0; step < 10; step++)
                 {
-                    float numerator = 0;
-                    for (int i = 0; i < length - k; i++)
-                    {
-                        numerator += (impulseSamples[i] - average) * (substep(i + k, fractionalStep) - average);
-                    }
-
-                    float timeMs = (k + fractionalStep) / (float)measurement.SampleRate * 1000.0f;
-                    data.Add(new SignalPoint(timeMs, denominator > float.Epsilon ? numerator / denominator : 0));
+                    double position = k + step * 0.1;
+                    double timeMs = position / measurement.SampleRate * 1000.0;
+                    double value = denominator > 1e-30
+                        ? InterpolateCorrelation(correlation, position) / denominator
+                        : 0;
+                    data.Add(new SignalPoint(timeMs, value));
                 }
             }
 
             return new AnalysisCurve("Autocorrelation", data);
+        }
+
+        // Normalized 4-tap Lanczos read of the correlation at a fractional lag.
+        private static double InterpolateCorrelation(double[] correlation, double position)
+        {
+            int center = (int)Math.Floor(position);
+            double weightSum = 0;
+            double weightedSum = 0;
+            for (int l = -1; l <= 2; l++)
+            {
+                int index = center + l;
+                if ((uint)index >= (uint)correlation.Length)
+                {
+                    continue;
+                }
+
+                double weight = DspMath.LanczosKernel(position - index, 2.0);
+                weightedSum += correlation[index] * weight;
+                weightSum += weight;
+            }
+
+            return weightSum > 1e-12
+                ? weightedSum / weightSum
+                : correlation[Math.Clamp(center, 0, correlation.Length - 1)];
         }
 
         public static AnalysisCurve GetGroupDelay(
@@ -962,18 +934,8 @@ namespace Resonalyze.Dsp
             return Math.Log10(frequency / start) / Math.Log10(stop / start);
         }
 
-        public static double LanczosKernel(double x, double a = 1)
-        {
-            if (Math.Abs(x) < 0.00001f)
-            {
-                return 1.0f;
-            }
-            if (Math.Abs(x) <= a)
-            {
-                return (a * Math.Sin(Math.PI * x) * Math.Sin(Math.PI * x / a)) / (Math.PI * Math.PI * x * x);
-            }
-            return 0.0f;
-        }
+        public static double LanczosKernel(double x, double a = 1) =>
+            DspMath.LanczosKernel(x, a);
 
         /// <summary>
         /// Resamples linearly spaced FFT bins onto a logarithmic frequency grid.
@@ -1070,14 +1032,20 @@ namespace Resonalyze.Dsp
                     weightSum += weight;
                 }
 
-                double filteredValue = 0;
-                if (dBUnpack)
+                double filteredValue;
+                if (weightSum > 1e-12)
                 {
-                    filteredValue = AmplitudeToDecibels(weightSum > 1e-12 ? weightedSum / weightSum : 0);
+                    filteredValue = dBUnpack
+                        ? AmplitudeToDecibels(weightedSum / weightSum)
+                        : weightedSum / weightSum;
                 }
                 else
                 {
-                    filteredValue = weightSum > 1e-12 ? weightedSum / weightSum : 0;
+                    // Lanczos weights are signed, so the sum degenerates when the
+                    // kernel window falls outside the input grid (e.g. resampling to
+                    // 20 kHz from a spectrum that ends below it). Hold the nearest
+                    // input sample instead of pinning the point to the -160 dB floor.
+                    filteredValue = Sample(centerIndex).Y;
                 }
 
                 if (calibration != null)
@@ -1147,9 +1115,11 @@ namespace Resonalyze.Dsp
                     weightSum += weight;
                 }
 
-                double filteredValue = 0;
-
-                filteredValue = weightSum > 1e-12 ? weightedSum / weightSum : 0;
+                // Same degenerate-weight-sum fallback as LogarithmicResample: hold
+                // the centre sample rather than collapsing the point to 0.
+                double filteredValue = weightSum > 1e-12
+                    ? weightedSum / weightSum
+                    : centerPoint.Y;
 
                 output.Add(new SignalPoint(frequency, filteredValue));
             }

@@ -53,7 +53,7 @@ public sealed class PreparedDspResponse
             linearGain *= Math.Pow(10.0, peq.PreampDb / 20.0);
             foreach (PeqBand band in peq.Bands)
             {
-                if (band.GainDb == 0 || band.Q <= 0 || band.FrequencyHz <= 0)
+                if (band.IsTransparent)
                 {
                     continue;
                 }

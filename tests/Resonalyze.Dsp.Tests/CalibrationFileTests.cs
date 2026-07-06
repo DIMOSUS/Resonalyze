@@ -69,6 +69,54 @@ public sealed class CalibrationFileTests
         Assert.Equal(expected, ninetyDegree.GetDecibelCorrection(1000), precision: 6);
     }
 
+    [Fact]
+    public void QueryBelowCalibratedRange_HoldsFirstPointInsteadOfExtrapolating()
+    {
+        // A steep first segment on a file starting at 100 Hz: unclamped linear
+        // extrapolation down to 20 Hz would run ~80 segment widths out and drive
+        // the amplitude negative (a -160 dB correction spike).
+        string path = WriteCalibrationFile(
+            "100 0.0\n" +
+            "101 1.0\n" +
+            "20000 1.0\n");
+
+        var calibration = new CalibrationFile(path);
+
+        Assert.Equal(0.0, calibration.GetDecibelCorrection(20), precision: 6);
+    }
+
+    [Fact]
+    public void QueryAboveCalibratedRange_StaysNearLastPoint()
+    {
+        string path = WriteCalibrationFile(
+            "20 1.0\n" +
+            "1000 1.0\n" +
+            "5000 3.0\n");
+
+        var calibration = new CalibrationFile(path);
+
+        double correction = calibration.GetDecibelCorrection(20_000);
+
+        Assert.InRange(correction, 1.0, 3.5);
+    }
+
+    [Fact]
+    public void HasData_ReflectsWhetherCalibrationLoaded()
+    {
+        string missing = Path.Combine(
+            Path.GetTempPath(),
+            $"resonalyze-calibration-missing-{Guid.NewGuid():N}.txt");
+        string loaded = WriteCalibrationFile(
+            "20 2.5\n" +
+            "20000 2.5\n");
+
+        Assert.False(new CalibrationFile(missing).HasData);
+        Assert.True(new CalibrationFile(loaded).HasData);
+        Assert.True(CalibrationFile
+            .CreateNinetyDegreeApproximation(new CalibrationFile(loaded))
+            .HasData);
+    }
+
     private static string WriteCalibrationFile(string text)
     {
         string path = Path.Combine(

@@ -652,16 +652,34 @@ public static class VirtualCrossoverAnalysis
         double Score(double correlation) =>
             allowInvert ? Math.Abs(correlation) : correlation;
 
+        // The coarse grid is evaluated transposed — outer loop over bins, inner
+        // over delays — so each bin rotates by an incremental phasor (one complex
+        // multiply per delay) instead of a full Complex.Exp per (bin, delay).
         double coarseStep = Math.Min(0.02, 250.0 / maxFrequencyHz / 4.0);
+        int gridCount = Math.Max(
+            1,
+            (int)Math.Floor((maxDelayMs - minDelayMs) / coarseStep + 1e-9) + 1);
+        var gridScores = new double[gridCount];
+        foreach ((double omegaMs, Complex cross) in crossTerms)
+        {
+            Complex rotated = cross * Complex.Exp(new Complex(0, -omegaMs * minDelayMs));
+            Complex stepPhasor = Complex.Exp(new Complex(0, -omegaMs * coarseStep));
+            for (int i = 0; i < gridCount; i++)
+            {
+                gridScores[i] += rotated.Real;
+                rotated *= stepPhasor;
+            }
+        }
+
         double best = minDelayMs;
         double bestScore = double.NegativeInfinity;
-        for (double delay = minDelayMs; delay <= maxDelayMs; delay += coarseStep)
+        for (int i = 0; i < gridCount; i++)
         {
-            double score = Score(Correlation(delay));
+            double score = Score(gridScores[i]);
             if (score > bestScore)
             {
                 bestScore = score;
-                best = delay;
+                best = minDelayMs + i * coarseStep;
             }
         }
 
@@ -756,16 +774,51 @@ public static class VirtualCrossoverAnalysis
             return new AlignmentCandidate(delayMs, invert, score);
         }
 
+        // The coarse grid is evaluated transposed — outer loop over bins, inner
+        // over delays — replacing a Complex.Exp per (bin, delay) with one complex
+        // multiply. The refinement passes below still score arbitrary delays
+        // through Scored(); they touch only a few dozen points per seed.
         double coarseStep = Math.Min(0.02, 250.0 / maxFrequencyHz / 4.0);
-        var grid = new List<AlignmentCandidate>();
-        for (double delay = minDelayMs; delay <= maxDelayMs; delay += coarseStep)
+        int gridCount = Math.Max(
+            1,
+            (int)Math.Floor((maxDelayMs - minDelayMs) / coarseStep + 1e-9) + 1);
+        var normalDb = new double[gridCount];
+        var invertedDb = new double[gridCount];
+        foreach (AlignmentBin bin in bins)
         {
-            grid.Add(Scored(delay));
+            Complex rotated = bin.Variable * Complex.Exp(
+                new Complex(0, -bin.OmegaMs * minDelayMs));
+            Complex stepPhasor = Complex.Exp(new Complex(0, -bin.OmegaMs * coarseStep));
+            for (int i = 0; i < gridCount; i++)
+            {
+                normalDb[i] += bin.LogWeight * Math.Log10(Math.Max(
+                    (bin.FixedSum + rotated).Magnitude / bin.MagnitudeSum,
+                    MinBinAmplitudeRatio));
+                invertedDb[i] += bin.LogWeight * Math.Log10(Math.Max(
+                    (bin.FixedSum - rotated).Magnitude / bin.MagnitudeSum,
+                    MinBinAmplitudeRatio));
+                rotated *= stepPhasor;
+            }
         }
 
-        if (grid.Count == 0)
+        var grid = new List<AlignmentCandidate>(gridCount);
+        for (int i = 0; i < gridCount; i++)
         {
-            return [];
+            double delayMs = minDelayMs + i * coarseStep;
+            double normal = normalDb[i] * 20.0 / weightSum;
+            double inverted = invertedDb[i] * 20.0 / weightSum;
+            (double lossDb, bool invert) = inverted > normal
+                ? (inverted, true)
+                : (normal, false);
+
+            double score = lossDb;
+            if (priorDelayMs is { } prior && priorSigmaMs > 0)
+            {
+                double distance = (delayMs - prior) / priorSigmaMs;
+                score -= PriorPenaltyDbAtSigma * distance * distance;
+            }
+
+            grid.Add(new AlignmentCandidate(delayMs, invert, score));
         }
 
         // Local optima of the coarse grid (window edges included): each is the

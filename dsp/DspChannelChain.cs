@@ -40,9 +40,7 @@ public sealed record DspChannelChain(
             response *= Math.Pow(10.0, peq.PreampDb / 20.0);
             foreach (PeqBand band in peq.Bands)
             {
-                // Skip the same degenerate bands PeqBand treats as transparent, so a
-                // half-filled PEQ slot cannot poison the response.
-                if (band.GainDb == 0 || band.Q <= 0 || band.FrequencyHz <= 0)
+                if (band.IsTransparent)
                 {
                     continue;
                 }

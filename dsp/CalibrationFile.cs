@@ -42,6 +42,13 @@ namespace Resonalyze.Dsp
             this.decibelOffset = decibelOffset;
         }
 
+        /// <summary>
+        /// True when at least two calibration points were loaded, i.e.
+        /// <see cref="GetDecibelCorrection"/> returns a real correction rather than
+        /// the 0 dB fallback of a missing or unparsable file.
+        /// </summary>
+        public bool HasData => baseCalibration?.HasData ?? calibration.Count >= 2;
+
         public static CalibrationFile CreateNinetyDegreeApproximation(
             CalibrationFile zeroDegreeCalibration) =>
             new(zeroDegreeCalibration, Delta90Minus0);
@@ -166,25 +173,20 @@ namespace Resonalyze.Dsp
                 return -1;
             }
 
-            double LanczosKernel(double x)
-            {
-                if (Math.Abs(x) < 0.00001)
-                {
-                    return 1.0f;
-                }
-                if (Math.Abs(x) <= a)
-                {
-                    return (a * Math.Sin(Math.PI * x) * Math.Sin(Math.PI * x / a)) / (Math.PI * Math.PI * x * x);
-                }
-                return 0.0f;
-            }
-
             int corner = BinarySearchX(frequency);
 
             if (corner < 1)
             {
-                double fraction = (calibration[corner + 1].X - frequency) /
-                    (calibration[corner + 1].X - calibration[corner].X);
+                // Clamped so a frequency below the calibrated range holds the first
+                // point's value: an unclamped fraction would linearly extrapolate the
+                // first segment's slope arbitrarily far (a file starting at 100 Hz
+                // queried at 20 Hz extrapolates ~80 segment widths), easily driving
+                // the amplitude negative and the correction to the -160 dB floor.
+                double fraction = Math.Clamp(
+                    (calibration[corner + 1].X - frequency) /
+                    (calibration[corner + 1].X - calibration[corner].X),
+                    0.0,
+                    1.0);
                 return DataHelper.AmplitudeToDecibels(
                     calibration[corner].Y * fraction +
                     calibration[corner + 1].Y * (1.0 - fraction));
@@ -205,7 +207,9 @@ namespace Resonalyze.Dsp
                      Math.Abs(frequencyIndex - corner) < 3))
                 {
                     SignalPoint samplePoint = calibration[frequencyIndex];
-                    double weight = LanczosKernel((frequency - samplePoint.X) / halfDeltaFrequency * a);
+                    double weight = DspMath.LanczosKernel(
+                        (frequency - samplePoint.X) / halfDeltaFrequency * a,
+                        a);
                     weightedSum += samplePoint.Y * weight;
                     weightSum += weight;
                     frequencyIndex += step;
@@ -215,7 +219,12 @@ namespace Resonalyze.Dsp
             Accumulate(-1, corner);
             Accumulate(1, corner + 1);
 
-            return weightSum > 0 ? DataHelper.AmplitudeToDecibels(weightedSum / weightSum) : 0;
+            // Lanczos weights are signed, so a degenerate window can sum to ~0 or
+            // negative; fall back to the nearest point instead of a 0 dB correction
+            // that would step discontinuously against the neighbouring frequencies.
+            return weightSum > 1e-9
+                ? DataHelper.AmplitudeToDecibels(weightedSum / weightSum)
+                : DataHelper.AmplitudeToDecibels(calibration[corner].Y);
         }
     }
 }

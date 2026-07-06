@@ -64,27 +64,53 @@ namespace Resonalyze.Dsp
             };
         }
 
+        /// <summary>
+        /// Asymmetric Tukey window: a cosine fade-in over the leftmost
+        /// <c>leftTukeyWindow / 2</c> of the window, a unity plateau, and a cosine
+        /// fade-out over the rightmost <c>rightTukeyWindow / 2</c>. Negative fade
+        /// fractions are treated as zero; fades that together would exceed the whole
+        /// window are scaled down proportionally so they meet without overlapping.
+        /// </summary>
         public static double[] TukeyWindow(int window, double leftTukeyWindow, double rightTukeyWindow)
         {
             double[] windowFunction = new double[window];
-            int nLeft = (int)Math.Round(leftTukeyWindow * (window - 1.0) * 0.5);
-            int nRight = (int)Math.Round((window - 1.0) * (1.0 - rightTukeyWindow * 0.5));
+            if (window == 0)
+            {
+                return windowFunction;
+            }
+            if (window == 1)
+            {
+                windowFunction[0] = 1.0;
+                return windowFunction;
+            }
+
+            double left = Math.Max(0.0, leftTukeyWindow);
+            double right = Math.Max(0.0, rightTukeyWindow);
+            double total = left + right;
+            if (total > 2.0)
+            {
+                left *= 2.0 / total;
+                right *= 2.0 / total;
+            }
+
+            int nLeft = (int)Math.Round(left * (window - 1.0) * 0.5);
+            int nRight = right > 0
+                ? (int)Math.Round((window - 1.0) * (1.0 - right * 0.5))
+                : window;
 
             for (int i = 0; i < nLeft; i++)
             {
-                windowFunction[i] = 0.5 * (1 + Math.Cos(Math.PI * (2.0 * i / (leftTukeyWindow * (window - 1.0)) - 1.0)));
+                windowFunction[i] = 0.5 * (1 + Math.Cos(Math.PI * (2.0 * i / (left * (window - 1.0)) - 1.0)));
             }
 
-            for (int i = nLeft; i < nRight; i++)
+            for (int i = nLeft; i < Math.Min(nRight, window); i++)
             {
                 windowFunction[i] = 1.0;
             }
 
-            for (int i = nRight; i < window; i++)
+            for (int i = Math.Max(nLeft, nRight); i < window; i++)
             {
-                windowFunction[i] = 0.5 * (1 + Math.Cos(Math.PI * (2.0 * i / (rightTukeyWindow * (window - 1.0)) - 2.0 / rightTukeyWindow + 1.0)));
-                if (!double.IsFinite(windowFunction[i]))
-                    windowFunction[i] = 1;
+                windowFunction[i] = 0.5 * (1 + Math.Cos(Math.PI * (2.0 * i / (right * (window - 1.0)) - 2.0 / right + 1.0)));
             }
 
             return windowFunction;

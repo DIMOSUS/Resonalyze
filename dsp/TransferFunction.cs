@@ -35,42 +35,29 @@ public static class TransferFunction
 
         foreach (TransferFunctionFrame frame in frames)
         {
-            var reference = new Complex[fftLength];
-            var target = new Complex[fftLength];
-            for (int i = 0; i < sampleCount; i++)
-            {
-                reference[i] = new Complex(frame.Reference[i], 0.0);
-                target[i] = new Complex(frame.Target[i], 0.0);
-            }
-
-            Fourier.Forward(reference, FourierOptions.Matlab);
-            Fourier.Forward(target, FourierOptions.Matlab);
-
-            for (int bin = 0; bin < fftLength; bin++)
-            {
-                Complex referenceBin = reference[bin];
-                Complex targetBin = target[bin];
-                crossSpectrum[bin] += targetBin * Complex.Conjugate(referenceBin);
-                referencePowerSpectrum[bin] += MagnitudeSquared(referenceBin);
-                targetPowerSpectrum[bin] += MagnitudeSquared(targetBin);
-            }
+            AccumulateFrameSpectra(
+                frame.Reference,
+                frame.Target,
+                sampleCount,
+                crossSpectrum,
+                referencePowerSpectrum,
+                targetPowerSpectrum);
         }
 
-        var relative = new Complex[fftLength];
         var coherence = new double[fftLength / 2 + 1];
-        for (int bin = 0; bin < fftLength; bin++)
+        for (int bin = 0; bin < coherence.Length; bin++)
         {
-            relative[bin] = crossSpectrum[bin] / (referencePowerSpectrum[bin] + epsilon);
-            if (bin < coherence.Length)
-            {
-                double denominator = referencePowerSpectrum[bin] * targetPowerSpectrum[bin];
-                coherence[bin] = denominator > 0
-                    ? Math.Clamp(MagnitudeSquared(crossSpectrum[bin]) / denominator, 0.0, 1.0)
-                    : 0.0;
-            }
+            double denominator = referencePowerSpectrum[bin] * targetPowerSpectrum[bin];
+            coherence[bin] = denominator > 0
+                ? Math.Clamp(MagnitudeSquared(crossSpectrum[bin]) / denominator, 0.0, 1.0)
+                : 0.0;
         }
 
-        Fourier.Inverse(relative, FourierOptions.Matlab);
+        Complex[] relative = InverseH1Response(
+            crossSpectrum,
+            referencePowerSpectrum,
+            epsilon,
+            filter: null);
 
         var impulseResponse = new double[fftLength];
         double peakMagnitude = 0;
@@ -91,6 +78,62 @@ public static class TransferFunction
             impulseResponse,
             peakIndex,
             frames.Count >= 2 ? coherence : null);
+    }
+
+    // Forward-transforms one zero-padded frame pair and adds its cross- and
+    // auto-spectra to the running sums.
+    private static void AccumulateFrameSpectra(
+        IReadOnlyList<double> reference,
+        IReadOnlyList<double> target,
+        int sampleCount,
+        Complex[] crossSpectrum,
+        double[] referencePowerSpectrum,
+        double[]? targetPowerSpectrum)
+    {
+        int fftLength = crossSpectrum.Length;
+        var referenceSpectrum = new Complex[fftLength];
+        var targetSpectrum = new Complex[fftLength];
+        for (int i = 0; i < sampleCount; i++)
+        {
+            referenceSpectrum[i] = new Complex(reference[i], 0.0);
+            targetSpectrum[i] = new Complex(target[i], 0.0);
+        }
+
+        Fourier.Forward(referenceSpectrum, FourierOptions.Matlab);
+        Fourier.Forward(targetSpectrum, FourierOptions.Matlab);
+
+        for (int bin = 0; bin < fftLength; bin++)
+        {
+            crossSpectrum[bin] += targetSpectrum[bin] * Complex.Conjugate(referenceSpectrum[bin]);
+            referencePowerSpectrum[bin] += MagnitudeSquared(referenceSpectrum[bin]);
+            if (targetPowerSpectrum != null)
+            {
+                targetPowerSpectrum[bin] += MagnitudeSquared(targetSpectrum[bin]);
+            }
+        }
+    }
+
+    // The H1 estimate cross / (auto + eps), optionally shaped by a spectral
+    // filter, transformed back to the time domain.
+    private static Complex[] InverseH1Response(
+        Complex[] crossSpectrum,
+        double[] referencePowerSpectrum,
+        double epsilon,
+        IReadOnlyList<double>? filter)
+    {
+        int fftLength = crossSpectrum.Length;
+        var relative = new Complex[fftLength];
+        for (int bin = 0; bin < fftLength; bin++)
+        {
+            relative[bin] = crossSpectrum[bin] / (referencePowerSpectrum[bin] + epsilon);
+            if (filter != null && filter.Count == fftLength)
+            {
+                relative[bin] *= filter[bin];
+            }
+        }
+
+        Fourier.Inverse(relative, FourierOptions.Matlab);
+        return relative;
     }
 
     private static double MagnitudeSquared(Complex value) =>
@@ -284,7 +327,7 @@ public static class TransferFunction
         double sum = 0;
         for (int k = center - halfWidth + 1; k <= center + halfWidth; k++)
         {
-            double weight = Lanczos(position - k, halfWidth);
+            double weight = DspMath.LanczosKernel(position - k, halfWidth);
             if (weight != 0)
             {
                 sum += samples[WrapIndex(k, samples.Length)] * weight;
@@ -292,21 +335,6 @@ public static class TransferFunction
         }
 
         return sum;
-    }
-
-    private static double Lanczos(double x, int a)
-    {
-        if (x == 0)
-        {
-            return 1.0;
-        }
-        if (x <= -a || x >= a)
-        {
-            return 0.0;
-        }
-
-        double piX = Math.PI * x;
-        return a * Math.Sin(piX) * Math.Sin(piX / a) / (piX * piX);
     }
 
     internal static int WrapIndex(int index, int length)
@@ -337,36 +365,21 @@ public static class TransferFunction
         }
 
         int fftLength = DspMath.NextPowerOfTwo(checked(referenceMic.Count * 2));
-        var reference = new Complex[fftLength];
-        var target = new Complex[fftLength];
+        var crossSpectrum = new Complex[fftLength];
+        var referencePowerSpectrum = new double[fftLength];
+        AccumulateFrameSpectra(
+            referenceMic,
+            targetMic,
+            referenceMic.Count,
+            crossSpectrum,
+            referencePowerSpectrum,
+            targetPowerSpectrum: null);
 
-        for (int i = 0; i < referenceMic.Count; i++)
-        {
-            reference[i] = new Complex(referenceMic[i], 0.0);
-            target[i] = new Complex(targetMic[i], 0.0);
-        }
-
-        Fourier.Forward(reference, FourierOptions.Matlab);
-        Fourier.Forward(target, FourierOptions.Matlab);
-
-        var relative = new Complex[fftLength];
-        for (int bin = 0; bin < fftLength; bin++)
-        {
-            Complex numerator = target[bin] * Complex.Conjugate(reference[bin]);
-            double denominator =
-                reference[bin].Magnitude * reference[bin].Magnitude + epsilon;
-            relative[bin] = numerator / denominator;
-        }
-
-        if (filter != null && filter.Count == fftLength)
-        {
-            for (int bin = 0; bin < fftLength; bin++)
-            {
-                relative[bin] *= filter[bin];
-            }
-        }
-
-        Fourier.Inverse(relative, FourierOptions.Matlab);
+        Complex[] relative = InverseH1Response(
+            crossSpectrum,
+            referencePowerSpectrum,
+            epsilon,
+            filter);
 
         var impulseResponse = new double[fftLength];
         for (int i = 0; i < impulseResponse.Length; i++)

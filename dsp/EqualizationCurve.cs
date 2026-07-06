@@ -9,13 +9,20 @@ namespace Resonalyze.Dsp;
 public readonly record struct PeqBand(double FrequencyHz, double Q, double GainDb)
 {
     /// <summary>
+    /// True for a band that contributes nothing: zero gain or degenerate frequency/Q
+    /// (e.g. a half-filled PEQ slot). Such bands are skipped when the curve is
+    /// evaluated or realized as biquads.
+    /// </summary>
+    public bool IsTransparent => GainDb == 0 || Q <= 0 || FrequencyHz <= 0;
+
+    /// <summary>
     /// Magnitude contribution of this band at <paramref name="frequencyHz"/>, in dB.
     /// Returns 0 for a transparent or degenerate band (no gain, non-positive Q,
     /// centre or query frequency).
     /// </summary>
     public double MagnitudeDbAt(double frequencyHz)
     {
-        if (GainDb == 0 || Q <= 0 || FrequencyHz <= 0 || frequencyHz <= 0)
+        if (IsTransparent || frequencyHz <= 0)
         {
             return 0;
         }

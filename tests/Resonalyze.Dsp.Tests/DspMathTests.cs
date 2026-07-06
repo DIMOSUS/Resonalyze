@@ -22,4 +22,15 @@ public sealed class DspMathTests
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             DspMath.NextPowerOfTwo(value));
     }
+
+    [Theory]
+    [InlineData(0, 8, 0)]
+    [InlineData(7, 8, 7)]
+    [InlineData(8, 8, 0)]
+    [InlineData(-1, 8, 7)]
+    [InlineData(-9, 8, 7)]
+    public void WrapIndex_WrapsIntoRange(int index, int length, int expected)
+    {
+        Assert.Equal(expected, DspMath.WrapIndex(index, length));
+    }
 }

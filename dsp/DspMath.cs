@@ -22,6 +22,13 @@ public static class DspMath
         return a * Math.Sin(piX) * Math.Sin(piX / a) / (piX * piX);
     }
 
+    /// <summary>Maps an index into [0, length) with negative indices wrapping.</summary>
+    public static int WrapIndex(int index, int length)
+    {
+        int wrapped = index % length;
+        return wrapped < 0 ? wrapped + length : wrapped;
+    }
+
     public static int NextPowerOfTwo(int value)
     {
         if (value <= 0)

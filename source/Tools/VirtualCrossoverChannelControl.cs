@@ -13,9 +13,6 @@ namespace Resonalyze;
 /// </summary>
 public partial class VirtualCrossoverChannelControl : UserControl
 {
-    // The speed of sound at ~20 °C; the delay readout in millimeters is the
-    // sanity check against a ruler measurement of the physical driver offset.
-    private const double SpeedOfSoundMillimetersPerMs = 343.0;
 
     private string channelName = "A";
     private bool suppressChangeEvents;
@@ -315,7 +312,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
     // The ruler-check readout: the delay expressed as a distance in air.
     private void UpdateDelayDistance()
     {
-        double millimeters = (double)numericDelay.Value * SpeedOfSoundMillimetersPerMs;
+        double millimeters = (double)numericDelay.Value * Acoustics.SpeedOfSoundAt20CMetersPerSecond;
         labelDelayMm.Text = $"= {millimeters:0.#} mm";
     }
 

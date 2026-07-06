@@ -337,11 +337,8 @@ public static class TransferFunction
         return sum;
     }
 
-    internal static int WrapIndex(int index, int length)
-    {
-        int wrapped = index % length;
-        return wrapped < 0 ? wrapped + length : wrapped;
-    }
+    internal static int WrapIndex(int index, int length) =>
+        DspMath.WrapIndex(index, length);
 
     public static double[] ComputeRelativeIr(
         IReadOnlyList<double> referenceMic,

@@ -52,6 +52,9 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         buttonSave.Click += (_, _) => CommitGateEditors();
         CancelButton = buttonCancel;
         InitializeToolTips();
+        // The designer file owns Dispose; the manually created tooltip is not in
+        // its components container, so release it here.
+        Disposed += (_, _) => toolTip.Dispose();
     }
 
     public double GateOffsetMs => (double)numericGateOffset.Value;
@@ -179,11 +182,8 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         }
     }
 
-    private static decimal Clamp(DarkNumericUpDown control, double value)
-    {
-        decimal candidate = double.IsFinite(value) ? (decimal)value : 0m;
-        return Math.Clamp(candidate, control.Minimum, control.Maximum);
-    }
+    private static decimal Clamp(DarkNumericUpDown control, double value) =>
+        control.ClampValue(value);
 
     private void InitializeToolTips()
     {

@@ -40,6 +40,9 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         CancelButton = buttonCancel;
         buttonApply.Click += ApplyClick;
         WireOptionControls();
+        // The designer file owns Dispose; the manually created tooltip is not in
+        // its components container, so release it here.
+        Disposed += (_, _) => toolTip.Dispose();
         toolTip.SetToolTip(
             labelPreview,
             "The proposal that Apply writes into the channels: crossover\r\n" +
@@ -306,7 +309,5 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     }
 
     private static string FormatHz(double frequencyHz) =>
-        frequencyHz >= 1_000
-            ? $"{frequencyHz / 1_000:0.##} kHz"
-            : $"{frequencyHz:0} Hz";
+        FrequencyText.Format(frequencyHz);
 }

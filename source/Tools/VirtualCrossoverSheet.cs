@@ -11,7 +11,6 @@ namespace Resonalyze;
 /// </summary>
 internal static class VirtualCrossoverSheet
 {
-    private const double SpeedOfSoundMillimetersPerMs = 343.0;
 
     public static string FormatText(
         VirtualCrossoverProjectFile project,
@@ -41,7 +40,7 @@ internal static class VirtualCrossoverSheet
             builder.AppendLine($"  Gain       {Signed(channel.GainDb)} dB");
             builder.AppendLine(
                 $"  Delay      {Number(channel.DelayMs, "0.00")} ms" +
-                $"  (= {Number(channel.DelayMs * SpeedOfSoundMillimetersPerMs, "0.#")} mm)");
+                $"  (= {Number(channel.DelayMs * Acoustics.SpeedOfSoundAt20CMetersPerSecond, "0.#")} mm)");
             builder.AppendLine(
                 $"  Polarity   {(channel.InvertPolarity ? "Inverted" : "Normal")}");
             builder.AppendLine($"  Crossover  {DescribeCrossover(channel)}");
@@ -91,9 +90,9 @@ internal static class VirtualCrossoverSheet
         return $"{kind} {family} {edge.SlopeDbPerOctave} dB/oct @ {Number(edge.FrequencyHz, "0.###")} Hz";
     }
 
-    private static string Signed(double value) =>
+    internal static string Signed(double value) =>
         value.ToString("+0.0;-0.0;0.0", CultureInfo.InvariantCulture);
 
-    private static string Number(double value, string format) =>
+    internal static string Number(double value, string format) =>
         value.ToString(format, CultureInfo.InvariantCulture);
 }

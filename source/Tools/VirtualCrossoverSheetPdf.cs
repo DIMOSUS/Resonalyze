@@ -19,16 +19,22 @@ namespace Resonalyze;
 internal static class VirtualCrossoverSheetPdf
 {
     private const int FilterCardColumns = 4;
-    private const double SpeedOfSoundMillimetersPerMs = 343.0;
 
     private static readonly Color CaptionColor = Color.FromRgb(90, 90, 90);
     private static readonly Color CardBorderColor = Color.FromRgb(210, 210, 210);
 
+    // Print-friendly (white background) variants of the on-screen channel
+    // palette, hue for hue, one per possible channel so colours never repeat.
     private static readonly OxyColor[] ChainColors =
     [
-        OxyColor.FromRgb(0x1F, 0x77, 0xB4),
-        OxyColor.FromRgb(0xE0, 0x7A, 0x28),
-        OxyColor.FromRgb(0x2C, 0xA0, 0x50)
+        OxyColor.FromRgb(0x1F, 0x77, 0xB4),   // A: blue
+        OxyColor.FromRgb(0xE0, 0x7A, 0x28),   // B: orange
+        OxyColor.FromRgb(0x2C, 0xA0, 0x50),   // C: green
+        OxyColor.FromRgb(0x8A, 0x56, 0xC8),   // D: purple
+        OxyColor.FromRgb(0x1F, 0x9A, 0xA8),   // E: cyan
+        OxyColor.FromRgb(0xC8, 0x50, 0x6E),   // F: pink
+        OxyColor.FromRgb(0x9A, 0x8A, 0x20),   // G: olive
+        OxyColor.FromRgb(0x5A, 0x9A, 0x28)    // H: lime
     ];
 
     public static void Export(
@@ -148,7 +154,7 @@ internal static class VirtualCrossoverSheetPdf
             table,
             "Delay",
             $"{Number(channel.DelayMs, "0.00")} ms   " +
-            $"(= {Number(channel.DelayMs * SpeedOfSoundMillimetersPerMs, "0.#")} mm in air)");
+            $"(= {Number(channel.DelayMs * Acoustics.SpeedOfSoundAt20CMetersPerSecond, "0.#")} mm in air)");
         AddRow(table, "Polarity", channel.InvertPolarity ? "Inverted" : "Normal");
         AddRow(table, "Crossover", VirtualCrossoverSheet.DescribeCrossover(channel));
         if (channel.PeqBands.Count > 0 || channel.PeqPreampDb != 0)
@@ -322,8 +328,8 @@ internal static class VirtualCrossoverSheetPdf
     }
 
     private static string Signed(double value) =>
-        value.ToString("+0.0;-0.0;0.0", CultureInfo.InvariantCulture);
+        VirtualCrossoverSheet.Signed(value);
 
     private static string Number(double value, string format) =>
-        value.ToString(format, CultureInfo.InvariantCulture);
+        VirtualCrossoverSheet.Number(value, format);
 }

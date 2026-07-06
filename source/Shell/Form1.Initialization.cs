@@ -242,8 +242,10 @@ public partial class Form1
         calibrationCache.Clear();
         if (virtualCrossoverPanel != null)
         {
-            virtualCrossoverPanel.Calibration =
-                GetMicrophoneCalibration(MicrophoneCalibrationMode.Degrees0);
+            virtualCrossoverPanel.ConfigureCalibration(
+                GetMicrophoneCalibration,
+                HasMicrophoneCalibration(MicrophoneCalibrationMode.Degrees0),
+                HasMicrophoneCalibration(MicrophoneCalibrationMode.Degrees90));
         }
     }
 

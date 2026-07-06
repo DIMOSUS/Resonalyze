@@ -23,6 +23,13 @@ public partial class VirtualCrossoverPanel : UserControl
     private const string CurveTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.00}";
     private const int SaveDebounceMilliseconds = 2_000;
 
+    // The channel-list bounds. The minimum matches the summed-response metric's
+    // need for at least two channels; the maximum matches the project format's
+    // capacity. The default is the count shown before the list became resizable.
+    private const int MinChannelCount = 2;
+    private const int MaxChannelCount = VirtualCrossoverProjectFile.MaximumChannelCount;
+    private const int DefaultChannelCount = 3;
+
     private const string NoSourcesHint =
         "Pick a measurement for at least one channel (Source...).\n" +
         "Every source needs a loopback transfer IR recorded at the same\n" +
@@ -34,7 +41,12 @@ public partial class VirtualCrossoverPanel : UserControl
     [
         OxyColor.FromRgb(86, 156, 255),   // A: blue
         OxyColor.FromRgb(255, 150, 64),   // B: orange
-        OxyColor.FromRgb(96, 210, 120)    // C: green
+        OxyColor.FromRgb(96, 210, 120),   // C: green
+        OxyColor.FromRgb(200, 130, 255),  // D: purple
+        OxyColor.FromRgb(80, 210, 220),   // E: cyan
+        OxyColor.FromRgb(240, 100, 140),  // F: pink
+        OxyColor.FromRgb(210, 200, 90),   // G: yellow
+        OxyColor.FromRgb(140, 200, 90)    // H: lime
     ];
 
     private readonly System.Windows.Forms.Timer saveTimer = new()
@@ -80,17 +92,15 @@ public partial class VirtualCrossoverPanel : UserControl
     public VirtualCrossoverPanel()
     {
         InitializeComponent();
-        channels.Add(new ChannelRuntime(virtualCrossoverChannelControl1));
-        channels.Add(new ChannelRuntime(virtualCrossoverChannelControl2));
-        channels.Add(new ChannelRuntime(virtualCrossoverChannelControl3));
-        for (int i = 0; i < channels.Count; i++)
-        {
-            // The block header and curve checkboxes carry the channel's plot
-            // color, so a curve is traceable to its block at a glance.
-            OxyColor color = ChannelColors[i];
-            channels[i].Control.SetAccentColor(
-                Color.FromArgb(color.R, color.G, color.B));
-        }
+        // The scrolling channel list (and the panel itself when the window is
+        // narrow) use native scrollbars; theme them dark so they match the app
+        // instead of showing the default light bar.
+        Ui.DarkScrollBars.Apply(channelListPanel);
+        Ui.DarkScrollBars.Apply(this);
+        // The channel blocks are created dynamically into the scrolling list so
+        // the tool can host more channels than fit the window. Start with the
+        // default count; the loaded project resizes the list to its own count.
+        SetChannelCount(DefaultChannelCount);
 
         // Same idea for the shared curves: the toggles wear their plot colors.
         checkBoxShowSum.ForeColor = Color.FromArgb(SumColor.R, SumColor.G, SumColor.B);
@@ -111,6 +121,8 @@ public partial class VirtualCrossoverPanel : UserControl
         buttonPhaseGate.Click += (_, _) => OpenPhaseGateDialog();
         buttonSessionImport.Click += async (_, _) => await ImportSessionAsync();
         buttonSessionExport.Click += (_, _) => ExportSession();
+        buttonAddChannel.Click += (_, _) => AddChannel();
+        buttonRemoveChannel.Click += (_, _) => RemoveChannel();
 
         saveTimer.Tick += (_, _) => FlushProject();
         // The designer file owns Dispose; the unsaved project state and the
@@ -129,11 +141,18 @@ public partial class VirtualCrossoverPanel : UserControl
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal MeasurementHistoryService? HistoryService { get; set; }
 
-    /// <summary>Microphone calibration applied to the magnitude curves. Wired by the host form.</summary>
-    [System.ComponentModel.Browsable(false)]
-    [System.ComponentModel.DesignerSerializationVisibility(
-        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    internal CalibrationFile? Calibration { get; set; }
+    /// <summary>
+    /// Microphone calibration applied to the magnitude curves, resolved from the
+    /// panel's own <see cref="comboBoxCalibration"/> selection (Off / 0° / 90°).
+    /// Null when calibration is off or unavailable.
+    /// </summary>
+    private CalibrationFile? Calibration { get; set; }
+
+    // Resolves a calibration file for a given mode; supplied by the host form,
+    // which owns the configured 0°/90° paths. Null until the host wires it.
+    private Func<MicrophoneCalibrationMode, CalibrationFile?>? calibrationResolver;
+    private bool hasZeroDegreeCalibration;
+    private bool hasNinetyDegreeCalibration;
 
     /// <summary>
     /// Saves the given curve as a Captured Frequency Response overlay and returns
@@ -169,11 +188,10 @@ public partial class VirtualCrossoverPanel : UserControl
     private async Task ApplyProjectAsync(VirtualCrossoverProjectFile newProject)
     {
         project = newProject;
-        // Older files may carry two channels; the UI always shows three.
-        while (project.Channels.Count < channels.Count)
-        {
-            project.Channels.Add(new VirtualCrossoverChannelSettings());
-        }
+        // Match the block list to the project's channel count (validated into the
+        // supported range on load), so an imported 2- or 6-channel session shows
+        // exactly its channels.
+        SetChannelCount(project.Channels.Count);
 
         suppressProjectEvents = true;
         try
@@ -199,6 +217,8 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             suppressProjectEvents = false;
         }
+
+        RefreshCalibrationCombo();
 
         foreach (ChannelRuntime channel in channels)
         {
@@ -240,25 +260,194 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
+    // ------------------------------------------------------------ calibration
+
+    /// <summary>
+    /// Wires the microphone calibration source. The host owns the configured
+    /// 0°/90° files, so it supplies both a resolver and which profiles exist; the
+    /// panel offers the available ones in its own Off / 0° / 90° selector. Called
+    /// again whenever the configured files change, refreshing the selector.
+    /// </summary>
+    internal void ConfigureCalibration(
+        Func<MicrophoneCalibrationMode, CalibrationFile?> resolver,
+        bool hasZeroDegree,
+        bool hasNinetyDegree)
+    {
+        calibrationResolver = resolver;
+        hasZeroDegreeCalibration = hasZeroDegree;
+        hasNinetyDegreeCalibration = hasNinetyDegree;
+        RefreshCalibrationCombo();
+    }
+
+    // Rebuilds the selector's items from the available profiles and the persisted
+    // mode, then resolves the calibration the curves use. A profile that is no
+    // longer configured falls back to Off (the helper's default selection).
+    private void RefreshCalibrationCombo()
+    {
+        suppressProjectEvents = true;
+        try
+        {
+            MicrophoneCalibrationComboHelper.Configure(
+                comboBoxCalibration,
+                project.CalibrationMode,
+                hasZeroDegreeCalibration,
+                hasNinetyDegreeCalibration);
+        }
+        finally
+        {
+            suppressProjectEvents = false;
+        }
+
+        ResolveCalibration();
+        RedrawAll();
+    }
+
+    // Sets the calibration file from the selector's current mode. Off (or an
+    // absent resolver) yields no calibration, matching the loopback-referenced
+    // default.
+    private void ResolveCalibration()
+    {
+        MicrophoneCalibrationMode mode =
+            MicrophoneCalibrationComboHelper.GetSelectedMode(comboBoxCalibration);
+        Calibration = mode == MicrophoneCalibrationMode.Off
+            ? null
+            : calibrationResolver?.Invoke(mode);
+    }
+
+    private void OnCalibrationChanged()
+    {
+        if (suppressProjectEvents)
+        {
+            return;
+        }
+
+        project.CalibrationMode =
+            MicrophoneCalibrationComboHelper.GetSelectedMode(comboBoxCalibration);
+        ResolveCalibration();
+        ScheduleSave();
+        RedrawAll();
+    }
+
     // ----------------------------------------------------------------- wiring
 
     private void WirePanelEvents()
     {
-        foreach (ChannelRuntime channel in channels)
-        {
-            ChannelRuntime captured = channel;
-            channel.Control.SettingsChanged += (_, _) => OnChannelSettingsChanged(captured);
-            channel.Control.SourceClicked += (_, _) => ShowSourceMenu(captured);
-            channel.Control.PeqLoadClicked += (_, _) => LoadPeq(captured);
-            channel.Control.PeqClearClicked += (_, _) => ClearPeq(captured);
-        }
-
         checkBoxShowSum.CheckedChanged += (_, _) => OnViewChanged();
         checkBoxShowLoss.CheckedChanged += (_, _) => OnViewChanged();
         // In a two-radio group every toggle flips radioViewPhase, so listening
         // to it alone reacts exactly once per mode switch.
         radioViewPhase.CheckedChanged += (_, _) => OnViewModeChanged();
         comboBoxSmoothing.SelectedIndexChanged += (_, _) => OnViewChanged();
+        comboBoxCalibration.SelectedIndexChanged += (_, _) => OnCalibrationChanged();
+    }
+
+    // ----------------------------------------------------------- channel list
+
+    // A channel block is created per runtime and added to the scrolling list, so
+    // the block count is a plain runtime decision (persisted in the project) with
+    // no fixed designer controls. Colour and name follow the block's index.
+    private ChannelRuntime CreateChannelControl(int index)
+    {
+        // The block keeps its own designer-defined size, which the control scales
+        // for the current DPI (AutoScaleMode.Font); overriding it here with raw
+        // pixels would clip its scaled content on high-DPI displays.
+        var control = new VirtualCrossoverChannelControl
+        {
+            BackColor = Color.FromArgb(46, 51, 62),
+            BorderStyle = BorderStyle.FixedSingle,
+            Font = new Font("Segoe UI", 9F),
+            ForeColor = Color.White,
+            Margin = new Padding(0, 0, 0, 6),
+            ChannelName = ChannelNameFor(index)
+        };
+
+        // The block header and curve checkboxes carry the channel's plot colour,
+        // so a curve is traceable to its block at a glance.
+        OxyColor color = ChannelColors[index];
+        control.SetAccentColor(Color.FromArgb(color.R, color.G, color.B));
+
+        var runtime = new ChannelRuntime(control);
+        control.SettingsChanged += (_, _) => OnChannelSettingsChanged(runtime);
+        control.SourceClicked += (_, _) => ShowSourceMenu(runtime);
+        control.PeqLoadClicked += (_, _) => LoadPeq(runtime);
+        control.PeqClearClicked += (_, _) => ClearPeq(runtime);
+        return runtime;
+    }
+
+    // Channel names run A, B, C… by index; the eight-channel cap keeps them to a
+    // single letter.
+    private static string ChannelNameFor(int index) =>
+        ((char)('A' + index)).ToString();
+
+    // Grows or shrinks the block list to the requested count (clamped to the
+    // valid range) without touching the project — the callers own persistence.
+    private void SetChannelCount(int count)
+    {
+        count = Math.Clamp(count, MinChannelCount, MaxChannelCount);
+
+        while (channels.Count > count)
+        {
+            ChannelRuntime removed = channels[^1];
+            channels.RemoveAt(channels.Count - 1);
+            channelListPanel.Controls.Remove(removed.Control);
+            removed.Control.Dispose();
+        }
+
+        while (channels.Count < count)
+        {
+            ChannelRuntime added = CreateChannelControl(channels.Count);
+            channels.Add(added);
+            channelListPanel.Controls.Add(added.Control);
+        }
+
+        UpdateChannelButtons();
+    }
+
+    private void UpdateChannelButtons()
+    {
+        buttonAddChannel.Enabled = channels.Count < MaxChannelCount;
+        buttonRemoveChannel.Enabled = channels.Count > MinChannelCount;
+    }
+
+    // Appends a channel: a fresh block and a matching empty project entry, so the
+    // new channel simply has no source until the user picks one.
+    private void AddChannel()
+    {
+        if (channels.Count >= MaxChannelCount)
+        {
+            return;
+        }
+
+        var settings = new VirtualCrossoverChannelSettings();
+        project.Channels.Add(settings);
+        SetChannelCount(channels.Count + 1);
+        // Bind the new block to its settings the same way ApplyProjectAsync does.
+        ChannelRuntime added = channels[^1];
+        added.Settings = settings;
+        ApplySettingsToControl(added);
+
+        ScheduleSave();
+        RedrawAll();
+    }
+
+    // Drops the last channel and its project entry. Its resolved measurement goes
+    // with the disposed block; the remaining channels are untouched.
+    private void RemoveChannel()
+    {
+        if (channels.Count <= MinChannelCount)
+        {
+            return;
+        }
+
+        SetChannelCount(channels.Count - 1);
+        if (project.Channels.Count > channels.Count)
+        {
+            project.Channels.RemoveRange(
+                channels.Count, project.Channels.Count - channels.Count);
+        }
+
+        ScheduleSave();
+        RedrawAll();
     }
 
     private void OnChannelSettingsChanged(ChannelRuntime channel)
@@ -839,6 +1028,12 @@ public partial class VirtualCrossoverPanel : UserControl
         toolTip.SetToolTip(
             comboBoxSmoothing,
             "Fractional-octave smoothing of the magnitude curves.");
+        toolTip.SetToolTip(
+            comboBoxCalibration,
+            "Microphone calibration applied to the magnitude curves.\r\n" +
+            "The measurement is loopback-referenced, so this is\r\n" +
+            "optional; 0° / 90° appear when their files are configured\r\n" +
+            "in Record Settings.");
         toolTip.SetToolTip(
             buttonAutoDelay,
             "Align the channels in two stages: band-limited first\r\n" +
@@ -1632,6 +1827,13 @@ public partial class VirtualCrossoverPanel : UserControl
         try
         {
             await Task.Run(() => ComputeAutoAlignment(processed, alignment, log));
+            // The panel (or its form) may have been closed during the compute;
+            // applying results would then touch disposed controls.
+            if (IsDisposed || !IsHandleCreated)
+            {
+                return;
+            }
+
             ApplyAlignmentResult(processed, alignment, log);
         }
         catch (Exception exception)
@@ -1641,7 +1843,10 @@ public partial class VirtualCrossoverPanel : UserControl
         }
         finally
         {
-            SetAutoDelayBusy(false);
+            if (!IsDisposed)
+            {
+                SetAutoDelayBusy(false);
+            }
         }
     }
 

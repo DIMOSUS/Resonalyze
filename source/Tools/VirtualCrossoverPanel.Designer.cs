@@ -31,9 +31,9 @@ namespace Resonalyze
         {
             mainPlotView = new OxyPlot.WindowsForms.PlotView();
             dspPlotView = new OxyPlot.WindowsForms.PlotView();
-            virtualCrossoverChannelControl1 = new VirtualCrossoverChannelControl();
-            virtualCrossoverChannelControl2 = new VirtualCrossoverChannelControl();
-            virtualCrossoverChannelControl3 = new VirtualCrossoverChannelControl();
+            channelListPanel = new FlowLayoutPanel();
+            buttonAddChannel = new Button();
+            buttonRemoveChannel = new Button();
             labelView = new Label();
             checkBoxShowSum = new CheckBox();
             checkBoxShowLoss = new CheckBox();
@@ -46,6 +46,7 @@ namespace Resonalyze
             buttonCaptureOverlay = new Button();
             buttonExport = new Button();
             buttonPhaseGate = new Button();
+            comboBoxCalibration = new DarkComboBox();
             buttonSessionImport = new Button();
             buttonSessionExport = new Button();
             labelMetric = new Label();
@@ -55,10 +56,10 @@ namespace Resonalyze
             // mainPlotView
             // 
             mainPlotView.BackColor = Color.FromArgb(40, 44, 80);
-            mainPlotView.Location = new Point(349, 9);
+            mainPlotView.Location = new Point(354, 9);
             mainPlotView.Name = "mainPlotView";
             mainPlotView.PanCursor = Cursors.Hand;
-            mainPlotView.Size = new Size(818, 392);
+            mainPlotView.Size = new Size(813, 392);
             mainPlotView.TabIndex = 1;
             mainPlotView.Text = "plotView1";
             mainPlotView.ZoomHorizontalCursor = Cursors.SizeWE;
@@ -78,53 +79,50 @@ namespace Resonalyze
             dspPlotView.ZoomRectangleCursor = Cursors.SizeNWSE;
             dspPlotView.ZoomVerticalCursor = Cursors.SizeNS;
             // 
-            // virtualCrossoverChannelControl1
+            // channelListPanel
             // 
-            virtualCrossoverChannelControl1.BackColor = Color.FromArgb(46, 51, 62);
-            virtualCrossoverChannelControl1.BorderStyle = BorderStyle.FixedSingle;
-            virtualCrossoverChannelControl1.Font = new Font("Segoe UI", 9F);
-            virtualCrossoverChannelControl1.ForeColor = Color.White;
-            virtualCrossoverChannelControl1.Location = new Point(9, 9);
-            virtualCrossoverChannelControl1.MaximumSize = new Size(334, 226);
-            virtualCrossoverChannelControl1.MinimumSize = new Size(334, 226);
-            virtualCrossoverChannelControl1.Name = "virtualCrossoverChannelControl1";
-            virtualCrossoverChannelControl1.Size = new Size(334, 226);
-            virtualCrossoverChannelControl1.TabIndex = 3;
+            channelListPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
+            channelListPanel.AutoScroll = true;
+            channelListPanel.BackColor = Color.FromArgb(40, 44, 54);
+            channelListPanel.FlowDirection = FlowDirection.TopDown;
+            channelListPanel.Location = new Point(6, 6);
+            channelListPanel.Name = "channelListPanel";
+            channelListPanel.Size = new Size(347, 664);
+            channelListPanel.TabIndex = 3;
+            channelListPanel.WrapContents = false;
             // 
-            // virtualCrossoverChannelControl2
+            // buttonAddChannel
             // 
-            virtualCrossoverChannelControl2.BackColor = Color.FromArgb(46, 51, 62);
-            virtualCrossoverChannelControl2.BorderStyle = BorderStyle.FixedSingle;
-            virtualCrossoverChannelControl2.ChannelName = "B";
-            virtualCrossoverChannelControl2.Font = new Font("Segoe UI", 9F);
-            virtualCrossoverChannelControl2.ForeColor = Color.White;
-            virtualCrossoverChannelControl2.Location = new Point(9, 240);
-            virtualCrossoverChannelControl2.MaximumSize = new Size(334, 226);
-            virtualCrossoverChannelControl2.MinimumSize = new Size(334, 226);
-            virtualCrossoverChannelControl2.Name = "virtualCrossoverChannelControl2";
-            virtualCrossoverChannelControl2.Size = new Size(334, 226);
-            virtualCrossoverChannelControl2.TabIndex = 4;
+            buttonAddChannel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+            buttonAddChannel.BackColor = Color.FromArgb(46, 51, 67);
+            buttonAddChannel.FlatStyle = FlatStyle.Popup;
+            buttonAddChannel.ForeColor = Color.White;
+            buttonAddChannel.Location = new Point(6, 676);
+            buttonAddChannel.Name = "buttonAddChannel";
+            buttonAddChannel.Size = new Size(158, 24);
+            buttonAddChannel.TabIndex = 4;
+            buttonAddChannel.Text = "Add channel";
+            buttonAddChannel.UseVisualStyleBackColor = false;
             // 
-            // virtualCrossoverChannelControl3
+            // buttonRemoveChannel
             // 
-            virtualCrossoverChannelControl3.BackColor = Color.FromArgb(46, 51, 62);
-            virtualCrossoverChannelControl3.BorderStyle = BorderStyle.FixedSingle;
-            virtualCrossoverChannelControl3.ChannelName = "C";
-            virtualCrossoverChannelControl3.Font = new Font("Segoe UI", 9F);
-            virtualCrossoverChannelControl3.ForeColor = Color.White;
-            virtualCrossoverChannelControl3.Location = new Point(9, 471);
-            virtualCrossoverChannelControl3.MaximumSize = new Size(334, 226);
-            virtualCrossoverChannelControl3.MinimumSize = new Size(334, 226);
-            virtualCrossoverChannelControl3.Name = "virtualCrossoverChannelControl3";
-            virtualCrossoverChannelControl3.Size = new Size(334, 226);
-            virtualCrossoverChannelControl3.TabIndex = 5;
+            buttonRemoveChannel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+            buttonRemoveChannel.BackColor = Color.FromArgb(46, 51, 67);
+            buttonRemoveChannel.FlatStyle = FlatStyle.Popup;
+            buttonRemoveChannel.ForeColor = Color.White;
+            buttonRemoveChannel.Location = new Point(171, 676);
+            buttonRemoveChannel.Name = "buttonRemoveChannel";
+            buttonRemoveChannel.Size = new Size(158, 24);
+            buttonRemoveChannel.TabIndex = 5;
+            buttonRemoveChannel.Text = "Remove channel";
+            buttonRemoveChannel.UseVisualStyleBackColor = false;
             // 
             // labelView
             // 
             labelView.AutoSize = true;
             labelView.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelView.ForeColor = Color.FromArgb(210, 214, 222);
-            labelView.Location = new Point(349, 414);
+            labelView.Location = new Point(354, 414);
             labelView.Name = "labelView";
             labelView.Size = new Size(33, 15);
             labelView.TabIndex = 6;
@@ -208,9 +206,9 @@ namespace Resonalyze
             buttonAutoDelay.BackColor = Color.FromArgb(46, 51, 67);
             buttonAutoDelay.FlatStyle = FlatStyle.Popup;
             buttonAutoDelay.ForeColor = Color.White;
-            buttonAutoDelay.Location = new Point(349, 503);
+            buttonAutoDelay.Location = new Point(354, 503);
             buttonAutoDelay.Name = "buttonAutoDelay";
-            buttonAutoDelay.Size = new Size(130, 24);
+            buttonAutoDelay.Size = new Size(125, 24);
             buttonAutoDelay.TabIndex = 12;
             buttonAutoDelay.Text = "Auto delay";
             buttonAutoDelay.UseVisualStyleBackColor = false;
@@ -220,9 +218,9 @@ namespace Resonalyze
             buttonAutoSetup.BackColor = Color.FromArgb(46, 51, 67);
             buttonAutoSetup.FlatStyle = FlatStyle.Popup;
             buttonAutoSetup.ForeColor = Color.White;
-            buttonAutoSetup.Location = new Point(349, 473);
+            buttonAutoSetup.Location = new Point(354, 473);
             buttonAutoSetup.Name = "buttonAutoSetup";
-            buttonAutoSetup.Size = new Size(130, 24);
+            buttonAutoSetup.Size = new Size(125, 24);
             buttonAutoSetup.TabIndex = 19;
             buttonAutoSetup.Text = "Auto crossover...";
             buttonAutoSetup.UseVisualStyleBackColor = false;
@@ -231,9 +229,9 @@ namespace Resonalyze
             // 
             buttonCaptureOverlay.FlatStyle = FlatStyle.Popup;
             buttonCaptureOverlay.ForeColor = Color.White;
-            buttonCaptureOverlay.Location = new Point(349, 642);
+            buttonCaptureOverlay.Location = new Point(354, 642);
             buttonCaptureOverlay.Name = "buttonCaptureOverlay";
-            buttonCaptureOverlay.Size = new Size(130, 24);
+            buttonCaptureOverlay.Size = new Size(125, 24);
             buttonCaptureOverlay.TabIndex = 13;
             buttonCaptureOverlay.Text = "Capture to overlay";
             buttonCaptureOverlay.UseVisualStyleBackColor = true;
@@ -242,9 +240,9 @@ namespace Resonalyze
             // 
             buttonExport.FlatStyle = FlatStyle.Popup;
             buttonExport.ForeColor = Color.White;
-            buttonExport.Location = new Point(349, 672);
+            buttonExport.Location = new Point(354, 672);
             buttonExport.Name = "buttonExport";
-            buttonExport.Size = new Size(130, 24);
+            buttonExport.Size = new Size(125, 24);
             buttonExport.TabIndex = 14;
             buttonExport.Text = "Export...";
             buttonExport.UseVisualStyleBackColor = true;
@@ -260,13 +258,23 @@ namespace Resonalyze
             buttonPhaseGate.Text = "Gate...";
             buttonPhaseGate.UseVisualStyleBackColor = true;
             // 
+            // comboBoxCalibration
+            // 
+            comboBoxCalibration.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxCalibration.ForeColor = Color.White;
+            comboBoxCalibration.Location = new Point(961, 413);
+            comboBoxCalibration.MinimumSize = new Size(36, 19);
+            comboBoxCalibration.Name = "comboBoxCalibration";
+            comboBoxCalibration.Size = new Size(110, 19);
+            comboBoxCalibration.TabIndex = 20;
+            // 
             // buttonSessionImport
             // 
             buttonSessionImport.FlatStyle = FlatStyle.Popup;
             buttonSessionImport.ForeColor = Color.White;
-            buttonSessionImport.Location = new Point(349, 612);
+            buttonSessionImport.Location = new Point(354, 612);
             buttonSessionImport.Name = "buttonSessionImport";
-            buttonSessionImport.Size = new Size(130, 24);
+            buttonSessionImport.Size = new Size(125, 24);
             buttonSessionImport.TabIndex = 17;
             buttonSessionImport.Text = "Load session...";
             buttonSessionImport.UseVisualStyleBackColor = true;
@@ -275,9 +283,9 @@ namespace Resonalyze
             // 
             buttonSessionExport.FlatStyle = FlatStyle.Popup;
             buttonSessionExport.ForeColor = Color.White;
-            buttonSessionExport.Location = new Point(349, 582);
+            buttonSessionExport.Location = new Point(354, 582);
             buttonSessionExport.Name = "buttonSessionExport";
-            buttonSessionExport.Size = new Size(130, 24);
+            buttonSessionExport.Size = new Size(125, 24);
             buttonSessionExport.TabIndex = 18;
             buttonSessionExport.Text = "Save session...";
             buttonSessionExport.UseVisualStyleBackColor = true;
@@ -287,7 +295,7 @@ namespace Resonalyze
             labelMetric.AutoSize = true;
             labelMetric.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelMetric.ForeColor = Color.FromArgb(230, 184, 0);
-            labelMetric.Location = new Point(349, 437);
+            labelMetric.Location = new Point(354, 437);
             labelMetric.Name = "labelMetric";
             labelMetric.Size = new Size(95, 15);
             labelMetric.TabIndex = 15;
@@ -297,9 +305,9 @@ namespace Resonalyze
             // 
             labelCrossoverWarning.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelCrossoverWarning.ForeColor = Color.FromArgb(235, 110, 95);
-            labelCrossoverWarning.Location = new Point(349, 452);
+            labelCrossoverWarning.Location = new Point(354, 452);
             labelCrossoverWarning.Name = "labelCrossoverWarning";
-            labelCrossoverWarning.Size = new Size(818, 16);
+            labelCrossoverWarning.Size = new Size(813, 16);
             labelCrossoverWarning.TabIndex = 19;
             labelCrossoverWarning.Visible = false;
             // 
@@ -322,13 +330,14 @@ namespace Resonalyze
             Controls.Add(buttonCaptureOverlay);
             Controls.Add(buttonExport);
             Controls.Add(buttonPhaseGate);
+            Controls.Add(comboBoxCalibration);
             Controls.Add(buttonSessionImport);
             Controls.Add(buttonSessionExport);
             Controls.Add(labelMetric);
             Controls.Add(labelCrossoverWarning);
-            Controls.Add(virtualCrossoverChannelControl3);
-            Controls.Add(virtualCrossoverChannelControl2);
-            Controls.Add(virtualCrossoverChannelControl1);
+            Controls.Add(channelListPanel);
+            Controls.Add(buttonAddChannel);
+            Controls.Add(buttonRemoveChannel);
             Controls.Add(dspPlotView);
             Controls.Add(mainPlotView);
             Font = new Font("Segoe UI", 9F);
@@ -343,9 +352,9 @@ namespace Resonalyze
         #endregion
         private OxyPlot.WindowsForms.PlotView mainPlotView;
         private OxyPlot.WindowsForms.PlotView dspPlotView;
-        private VirtualCrossoverChannelControl virtualCrossoverChannelControl1;
-        private VirtualCrossoverChannelControl virtualCrossoverChannelControl2;
-        private VirtualCrossoverChannelControl virtualCrossoverChannelControl3;
+        private FlowLayoutPanel channelListPanel;
+        private Button buttonAddChannel;
+        private Button buttonRemoveChannel;
         private Label labelView;
         private CheckBox checkBoxShowSum;
         private CheckBox checkBoxShowLoss;
@@ -358,6 +367,7 @@ namespace Resonalyze
         private Button buttonCaptureOverlay;
         private Button buttonExport;
         private Button buttonPhaseGate;
+        private DarkComboBox comboBoxCalibration;
         private Button buttonSessionImport;
         private Button buttonSessionExport;
         private Label labelMetric;

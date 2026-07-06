@@ -239,10 +239,10 @@ namespace Resonalyze
             // 
             comboBoxHighPassSlope.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxHighPassSlope.ForeColor = Color.White;
-            comboBoxHighPassSlope.Location = new Point(246, 114);
+            comboBoxHighPassSlope.Location = new Point(242, 114);
             comboBoxHighPassSlope.MinimumSize = new Size(36, 19);
             comboBoxHighPassSlope.Name = "comboBoxHighPassSlope";
-            comboBoxHighPassSlope.Size = new Size(80, 19);
+            comboBoxHighPassSlope.Size = new Size(76, 19);
             comboBoxHighPassSlope.TabIndex = 13;
             // 
             // labelLowPass
@@ -287,10 +287,10 @@ namespace Resonalyze
             // 
             comboBoxLowPassSlope.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxLowPassSlope.ForeColor = Color.White;
-            comboBoxLowPassSlope.Location = new Point(246, 140);
+            comboBoxLowPassSlope.Location = new Point(242, 140);
             comboBoxLowPassSlope.MinimumSize = new Size(36, 19);
             comboBoxLowPassSlope.Name = "comboBoxLowPassSlope";
-            comboBoxLowPassSlope.Size = new Size(80, 19);
+            comboBoxLowPassSlope.Size = new Size(76, 19);
             comboBoxLowPassSlope.TabIndex = 17;
             // 
             // labelPeq
@@ -435,10 +435,10 @@ namespace Resonalyze
             Controls.Add(checkBoxBypass);
             Font = new Font("Segoe UI", 9F);
             ForeColor = Color.White;
-            MaximumSize = new Size(334, 226);
-            MinimumSize = new Size(334, 226);
+            MaximumSize = new Size(324, 226);
+            MinimumSize = new Size(324, 226);
             Name = "VirtualCrossoverChannelControl";
-            Size = new Size(332, 224);
+            Size = new Size(324, 226);
             (numericGain).EndInit();
             (numericDelay).EndInit();
             (numericHighPassHz).EndInit();

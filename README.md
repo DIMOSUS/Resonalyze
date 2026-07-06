@@ -114,7 +114,7 @@ file is provided with every release.
   measurements (`Main ⊕ Compare`) with Compare delay/polarity controls, plus a
   **sum-loss** curve — accounts for delay, polarity, and phase the way dB-curve
   math cannot
-- **Virtual DSP** tool: run up to three measured drivers through virtual
+- **Virtual DSP** tool: run up to eight measured drivers through virtual
   DSP chains — gain, delay, polarity, Butterworth / Linkwitz-Riley / Bessel
   crossovers, and imported PEQ — and see their complex sum, sum loss, phase
   tracking, auto crossover proposals, auto delay, gated phase view, overlay
@@ -1215,9 +1215,13 @@ where the signal is going before pressing **Play**.
 
 The **Virtual DSP** (under the **Tools** tab) is the summation-prediction
 workflow taken to its conclusion: measure each driver once, then design the
-whole DSP setup virtually. Up to three channels (A, B, C) each pick a
-measurement — from a file or from History — and run it through a virtual DSP
-chain:
+whole DSP setup virtually. Channels (A, B, C, …) each pick a measurement — from a
+file or from History — and run it through a virtual DSP chain. **Add channel** /
+**Remove channel** grow the setup from two up to eight channels; the blocks live
+in a scrolling list, so a many-way system stays in one window without crowding
+the plots.
+
+Each channel runs through:
 
 - **Gain** (dB) — relative levels are only honest when the measurements share
   one playback chain; compensate any difference here
@@ -1259,10 +1263,14 @@ crossover window turns tuning into a number you can minimize — or use the
 classic null test: invert one channel and tune the delay for the deepest notch.
 
 Editing a chain recomputes the prediction on a background task, so dragging a
-gain, delay, or crossover value stays responsive even with three channels
+gain, delay, or crossover value stays responsive even with several channels
 loaded; a burst of rapid edits is coalesced into a single trailing redraw that
 always lands on the latest settings, and the previous curves stay on screen
 until the new frame is ready.
+
+A **calibration** selector (Off / 0° / 90°) applies your microphone correction to
+the magnitude curves, drawing on the same profiles configured in Record Settings;
+it defaults to Off because the measurements are loopback-referenced.
 
 - **Auto crossover...** estimates each channel's usable band and driver type
   (subwoofer, woofer, midbass, midrange, or tweeter), then asks which filter

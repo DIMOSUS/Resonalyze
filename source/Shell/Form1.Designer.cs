@@ -85,7 +85,7 @@ namespace Resonalyze
             plotView1.Location = new Point(12, 52);
             plotView1.Name = "plotView1";
             plotView1.PanCursor = Cursors.Hand;
-            plotView1.Size = new Size(1182, 704);
+            plotView1.Size = new Size(1182, 768);
             plotView1.TabIndex = 1;
             plotView1.Text = "plotView1";
             plotView1.ZoomHorizontalCursor = Cursors.SizeWE;
@@ -97,7 +97,7 @@ namespace Resonalyze
             overlays.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             overlays.BorderStyle = BorderStyle.FixedSingle;
             overlays.Controls.Add(overlayPanel1);
-            overlays.Location = new Point(1200, 415);
+            overlays.Location = new Point(1200, 479);
             overlays.Name = "overlays";
             overlays.Size = new Size(154, 341);
             overlays.TabIndex = 6;
@@ -211,7 +211,7 @@ namespace Resonalyze
             buttonOverlayShowAll.FlatStyle = FlatStyle.Popup;
             buttonOverlayShowAll.Font = new Font("Segoe UI", 10F);
             buttonOverlayShowAll.ForeColor = Color.White;
-            buttonOverlayShowAll.Location = new Point(1200, 389);
+            buttonOverlayShowAll.Location = new Point(1200, 453);
             buttonOverlayShowAll.Name = "buttonOverlayShowAll";
             buttonOverlayShowAll.Size = new Size(73, 23);
             buttonOverlayShowAll.TabIndex = 20;
@@ -228,7 +228,7 @@ namespace Resonalyze
             buttonOverlayHideAll.FlatStyle = FlatStyle.Popup;
             buttonOverlayHideAll.Font = new Font("Segoe UI", 10F);
             buttonOverlayHideAll.ForeColor = Color.White;
-            buttonOverlayHideAll.Location = new Point(1281, 389);
+            buttonOverlayHideAll.Location = new Point(1281, 453);
             buttonOverlayHideAll.Name = "buttonOverlayHideAll";
             buttonOverlayHideAll.Size = new Size(73, 23);
             buttonOverlayHideAll.TabIndex = 22;
@@ -329,7 +329,7 @@ namespace Resonalyze
             timeAlignmentPanel.ForeColor = Color.White;
             timeAlignmentPanel.Location = new Point(12, 52);
             timeAlignmentPanel.Name = "timeAlignmentPanel";
-            timeAlignmentPanel.Size = new Size(1182, 704);
+            timeAlignmentPanel.Size = new Size(1182, 768);
             timeAlignmentPanel.TabIndex = 27;
             timeAlignmentPanel.Visible = false;
             // 
@@ -344,7 +344,7 @@ namespace Resonalyze
             eqWizardPanel.Location = new Point(12, 52);
             eqWizardPanel.Name = "eqWizardPanel";
             eqWizardPanel.Padding = new Padding(6);
-            eqWizardPanel.Size = new Size(1182, 704);
+            eqWizardPanel.Size = new Size(1182, 768);
             eqWizardPanel.TabIndex = 28;
             eqWizardPanel.Visible = false;
             // 
@@ -358,7 +358,7 @@ namespace Resonalyze
             signalGeneratorPanel.ForeColor = Color.White;
             signalGeneratorPanel.Location = new Point(12, 52);
             signalGeneratorPanel.Name = "signalGeneratorPanel";
-            signalGeneratorPanel.Size = new Size(1182, 704);
+            signalGeneratorPanel.Size = new Size(1182, 768);
             signalGeneratorPanel.TabIndex = 29;
             signalGeneratorPanel.Visible = false;
             // 
@@ -373,7 +373,7 @@ namespace Resonalyze
             virtualCrossoverPanel.Location = new Point(12, 52);
             virtualCrossoverPanel.Name = "virtualCrossoverPanel";
             virtualCrossoverPanel.Padding = new Padding(6);
-            virtualCrossoverPanel.Size = new Size(1182, 704);
+            virtualCrossoverPanel.Size = new Size(1182, 768);
             virtualCrossoverPanel.TabIndex = 31;
             virtualCrossoverPanel.Visible = false;
             // 
@@ -384,7 +384,7 @@ namespace Resonalyze
             eqResultsPanel.BorderStyle = BorderStyle.FixedSingle;
             eqResultsPanel.Font = new Font("Segoe UI", 9F);
             eqResultsPanel.ForeColor = Color.FromArgb(225, 228, 235);
-            eqResultsPanel.Location = new Point(1200, 415);
+            eqResultsPanel.Location = new Point(1200, 479);
             eqResultsPanel.Name = "eqResultsPanel";
             eqResultsPanel.Padding = new Padding(8);
             eqResultsPanel.Size = new Size(154, 341);
@@ -396,7 +396,7 @@ namespace Resonalyze
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(1366, 768);
+            ClientSize = new Size(1366, 832);
             Controls.Add(chromeTitleBar);
             Controls.Add(eqResultsPanel);
             Controls.Add(virtualCrossoverPanel);
@@ -413,7 +413,7 @@ namespace Resonalyze
             Controls.Add(overlays);
             FormBorderStyle = FormBorderStyle.None;
             Icon = (Icon)resources.GetObject("$this.Icon");
-            MinimumSize = new Size(1366, 768);
+            MinimumSize = new Size(1366, 832);
             Name = "Form1";
             StartPosition = FormStartPosition.CenterScreen;
             Text = "Resonalyze";

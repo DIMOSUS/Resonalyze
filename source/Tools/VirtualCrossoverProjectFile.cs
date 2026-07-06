@@ -120,14 +120,14 @@ public sealed class VirtualCrossoverChannelSettings
 /// <summary>
 /// Persists the Virtual DSP tool state (channels, their DSP chains and the
 /// plot view flags) so a tuning session survives an application restart. The
-/// channel list is sized for two channels today but the format carries any count
-/// up to <see cref="MaximumChannelCount"/> for a future n-way UI.
+/// channel count is user-resizable in the tool, from two up to
+/// <see cref="MaximumChannelCount"/>.
 /// </summary>
 public sealed class VirtualCrossoverProjectFile
 {
     public const string CurrentFormat = "resonalyze-virtual-crossover";
     public const int CurrentVersion = 1;
-    public const int MaximumChannelCount = 3;
+    public const int MaximumChannelCount = 8;
     private const string FileName = "virtual-crossover.json";
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
@@ -158,6 +158,12 @@ public sealed class VirtualCrossoverProjectFile
     public bool ShowLossCurve { get; set; }
     public bool ShowPhaseView { get; set; }
     public int SmoothingInverseOctaves { get; set; } = 12;
+
+    // Microphone calibration applied to the magnitude curves. The measurement is
+    // loopback-referenced, so calibration is optional and off by default.
+    // Additive: older files lack the field and default to Off.
+    public MicrophoneCalibrationMode CalibrationMode { get; set; } =
+        MicrophoneCalibrationMode.Off;
 
     // Phase-view gate, mirroring the Phase mode: a Tukey window of left + plateau
     // + right milliseconds whose left shoulder ends at the gate offset, so room
@@ -309,6 +315,11 @@ public sealed class VirtualCrossoverProjectFile
         {
             throw new InvalidDataException(
                 "The virtual crossover smoothing setting is invalid.");
+        }
+        if (!Enum.IsDefined(CalibrationMode))
+        {
+            throw new InvalidDataException(
+                "The virtual crossover calibration mode is invalid.");
         }
         if (PhaseGateOffsetMs is { } gateOffset &&
             (!double.IsFinite(gateOffset) || gateOffset is < 0 or > 10_000))

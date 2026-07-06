@@ -132,6 +132,37 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void SaveAndLoad_RoundTripsAMaxChannelProjectAndCalibrationMode()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = new VirtualCrossoverProjectFile
+            {
+                CalibrationMode = MicrophoneCalibrationMode.Degrees90
+            };
+            while (original.Channels.Count <
+                VirtualCrossoverProjectFile.MaximumChannelCount)
+            {
+                original.Channels.Add(new VirtualCrossoverChannelSettings());
+            }
+
+            original.Save(root);
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Equal(
+                VirtualCrossoverProjectFile.MaximumChannelCount,
+                loaded.Channels.Count);
+            Assert.Equal(MicrophoneCalibrationMode.Degrees90, loaded.CalibrationMode);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Save_RejectsInvalidChannelValues()
     {
         var negativeDelay = new VirtualCrossoverProjectFile();
@@ -150,6 +181,20 @@ public sealed class VirtualCrossoverProjectFileTests
         var tooFewChannels = new VirtualCrossoverProjectFile();
         tooFewChannels.Channels.RemoveRange(1, 2);
         Assert.Throws<InvalidDataException>(() => tooFewChannels.Validate());
+
+        var tooManyChannels = new VirtualCrossoverProjectFile();
+        while (tooManyChannels.Channels.Count <=
+            VirtualCrossoverProjectFile.MaximumChannelCount)
+        {
+            tooManyChannels.Channels.Add(new VirtualCrossoverChannelSettings());
+        }
+        Assert.Throws<InvalidDataException>(() => tooManyChannels.Validate());
+
+        var badCalibrationMode = new VirtualCrossoverProjectFile
+        {
+            CalibrationMode = (MicrophoneCalibrationMode)42
+        };
+        Assert.Throws<InvalidDataException>(() => badCalibrationMode.Validate());
 
         var badSmoothing = new VirtualCrossoverProjectFile
         {

@@ -22,7 +22,10 @@ namespace Resonalyze.Options
             numericRightWindow.ValueChanged += TukeyWindow_ValueChanged;
             SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
             InitializeToolTips();
-            FormClosed += BDOpt_FormClosed;
+            // Disposed, not FormClosed: a dialog disposed without ever having been
+            // shown (e.g. the docked host closing it while the owner is minimized)
+            // never raises FormClosed, which leaked the measurement subscription.
+            Disposed += BDOpt_Disposed;
         }
 
         public void Init(ExpSweepMeasurement expSweepMeasurement, WaterfallGenerateOptions burstDecayGenOptions)
@@ -144,7 +147,7 @@ namespace Resonalyze.Options
             UpdateIrPreview();
         }
 
-        private void BDOpt_FormClosed(object? sender, FormClosedEventArgs e)
+        private void BDOpt_Disposed(object? sender, EventArgs e)
         {
             if (expSweepMeasurement != null)
             {

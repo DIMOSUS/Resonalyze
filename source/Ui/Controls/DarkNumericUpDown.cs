@@ -31,6 +31,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     private decimal? defaultValue;
     private BorderStyle borderStyle = BorderStyle.None;
     private bool readOnly;
+    private bool initializing;
 
     public DarkNumericUpDown()
     {
@@ -86,6 +87,14 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
             }
 
             minimum = value;
+            if (initializing)
+            {
+                // Between BeginInit and EndInit the designer sets properties in
+                // arbitrary order; defer the range/value reconciliation to EndInit
+                // so Value is never clamped against a not-yet-assigned bound.
+                return;
+            }
+
             if (maximum < minimum)
             {
                 maximum = minimum;
@@ -109,6 +118,11 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
             }
 
             maximum = value;
+            if (initializing)
+            {
+                return;
+            }
+
             if (minimum > maximum)
             {
                 minimum = maximum;
@@ -242,6 +256,12 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         get => value;
         set
         {
+            if (initializing)
+            {
+                this.value = value;
+                return;
+            }
+
             decimal newValue = Clamp(RoundToDecimalPlaces(value));
             if (this.value == newValue)
             {
@@ -795,10 +815,21 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
 
     public void BeginInit()
     {
+        initializing = true;
     }
 
     public void EndInit()
     {
+        initializing = false;
+        // Reconcile the batched assignments now that every property has landed:
+        // designer property order can no longer clamp Value against a default bound.
+        if (maximum < minimum)
+        {
+            maximum = minimum;
+        }
+
+        value = Clamp(RoundToDecimalPlaces(value));
+        UpdateEditorText();
         LayoutEditor();
         Invalidate();
     }

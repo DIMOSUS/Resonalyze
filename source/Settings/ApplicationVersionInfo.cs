@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 
 namespace Resonalyze;
@@ -26,29 +27,69 @@ internal static class ApplicationVersionInfo
                 string.Equals(attribute.Key, "SparklePublicKey", StringComparison.Ordinal))?
             .Value;
 
-    public static bool IsOlderThan(string otherVersion)
+    public static bool IsOlderThan(string otherVersion) =>
+        IsOlderThan(GetInformationalVersion(), otherVersion);
+
+    // Exposed for tests: pure comparison of two raw version strings.
+    internal static bool IsOlderThan(string currentRawVersion, string otherVersion)
     {
-        string currentRawVersion = GetInformationalVersion();
-        if (!TryParseComparableVersion(currentRawVersion, out Version? current, out bool currentPrerelease) ||
-            !TryParseComparableVersion(otherVersion, out Version? other, out bool otherPrerelease))
+        if (!TryParseComparableVersion(currentRawVersion, out Version? current, out string? currentPrerelease) ||
+            !TryParseComparableVersion(otherVersion, out Version? other, out string? otherPrerelease))
         {
             return false;
         }
 
-        Version currentVersion = current!;
-        Version otherVersionComparable = other!;
-        int versionCompare = currentVersion.CompareTo(otherVersionComparable);
+        int versionCompare = current!.CompareTo(other!);
         if (versionCompare != 0)
         {
             return versionCompare < 0;
         }
 
-        if (currentPrerelease && IsDevelopmentBuild(currentRawVersion))
+        if (currentPrerelease != null && IsDevelopmentBuild(currentRawVersion))
         {
             return false;
         }
 
-        return currentPrerelease && !otherPrerelease;
+        return ComparePrereleaseIdentifiers(currentPrerelease, otherPrerelease) < 0;
+    }
+
+    // SemVer 2.0 §11: a prerelease sorts before its release; identifiers are compared
+    // dot by dot — numerics numerically, alphanumerics ordinally, numeric before
+    // alphanumeric — and a shorter identifier list sorts before a longer equal prefix.
+    private static int ComparePrereleaseIdentifiers(string? current, string? other)
+    {
+        if (current == null)
+        {
+            return other == null ? 0 : 1;
+        }
+        if (other == null)
+        {
+            return -1;
+        }
+
+        string[] currentIdentifiers = current.Split('.');
+        string[] otherIdentifiers = other.Split('.');
+        int sharedCount = Math.Min(currentIdentifiers.Length, otherIdentifiers.Length);
+        for (int i = 0; i < sharedCount; i++)
+        {
+            bool currentIsNumeric = int.TryParse(
+                currentIdentifiers[i], NumberStyles.None, CultureInfo.InvariantCulture, out int currentNumber);
+            bool otherIsNumeric = int.TryParse(
+                otherIdentifiers[i], NumberStyles.None, CultureInfo.InvariantCulture, out int otherNumber);
+            int compare = (currentIsNumeric, otherIsNumeric) switch
+            {
+                (true, true) => currentNumber.CompareTo(otherNumber),
+                (true, false) => -1,
+                (false, true) => 1,
+                _ => string.CompareOrdinal(currentIdentifiers[i], otherIdentifiers[i])
+            };
+            if (compare != 0)
+            {
+                return compare;
+            }
+        }
+
+        return currentIdentifiers.Length.CompareTo(otherIdentifiers.Length);
     }
 
     private static string GetInformationalVersion()
@@ -65,9 +106,9 @@ internal static class ApplicationVersionInfo
     private static bool TryParseComparableVersion(
         string rawVersion,
         out Version? version,
-        out bool prerelease)
+        out string? prerelease)
     {
-        prerelease = false;
+        prerelease = null;
         version = null;
         if (string.IsNullOrWhiteSpace(rawVersion))
         {
@@ -89,7 +130,7 @@ internal static class ApplicationVersionInfo
         int prereleaseSeparator = normalized.IndexOf('-');
         if (prereleaseSeparator >= 0)
         {
-            prerelease = true;
+            prerelease = normalized[(prereleaseSeparator + 1)..];
             normalized = normalized[..prereleaseSeparator];
         }
 

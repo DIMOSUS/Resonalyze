@@ -56,11 +56,6 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 
 ## Measurement orchestrators
 
-- [ ] **`CurrentLevels` torn reads.** `ExpSweepMeasurement.CurrentLevels` (an
-  ~50-byte `InputLevelMeterSnapshot` struct) is written from audio worker
-  threads and read from the UI without synchronization; a torn read can show a
-  momentarily inconsistent meter (display-only; same family as the
-  `UpdatePeakInfo` item below).
 - [ ] **Verify the reused ASIO session on hardware.** Averaged sweeps now keep
   one open ASIO session across runs (the driver plays silence between runs and
   only the capture accumulator restarts). Verified by construction only — run
@@ -163,19 +158,13 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 ## Plotting
 
 - [ ] **`LogarithmicClipAxis` label trim.** Edge tick labels can be trimmed at
-  the plot boundary.
-- [ ] **Dead `FourierCSD` enum value.** Unused member of the transform enum;
-  remove or implement.
+  the plot boundary. Purely visual; needs a Windows render to reproduce before
+  a fix can be verified — deferred with the other live-app checks.
 
 ## Custom controls (dark theme)
 
 - [ ] **Per-paint Pen/Brush churn.** Dark controls allocate pens/brushes in
   every `OnPaint`; cache per-color instances.
-- [ ] **`DarkComboBox` keyboard/focus gaps.** Swallows Enter (so a dialog's
-  AcceptButton never fires from a combo) and doesn't take focus on click.
-- [ ] **`DarkNumericUpDown.BeginInit` is a no-op.** Designer property order
-  can clamp `Value` against a not-yet-set `Minimum`/`Maximum`; implement real
-  init batching.
 - [ ] **Tools menu rebuilt on every open.** Rebuilding the drop-down each time
   is wasted work and loses per-item state; build once and update.
 
@@ -185,26 +174,14 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   object are touched by the UI thread, `Task.Run` plot builds and
   audio-callback events, guarded case by case with ad-hoc locks and flags
   (`closingInProgress`, `calibrationCache`, `reportedCalibrationProblems`).
-  The torn-read items in this file are symptoms; the structural fix is moving
+  The now-fixed torn-read items were symptoms; the structural fix is moving
   per-mode state into services/controllers so new code does not need manual
   guarding. Incremental — carve out one concern at a time, calibration state
   is a natural first candidate.
-- [ ] **`UpdatePeakInfo` unsynchronized pair read.** Peak value and peak index
-  are read as two separate volatile-ish reads and can disagree; publish them
-  as one immutable pair.
-- [ ] **Options dialogs leak handlers on handle-less close.** `FormClosed`
-  unsubscribe never runs when a dialog is disposed without having shown;
-  unsubscribe in `Dispose` as well.
 - [ ] **`WireLiveApply` covers only dialog-open controls.** Controls created
   after wiring never get live-apply behavior.
-- [ ] **`CloseReason.WindowsShutDown` ignored.** `Form1_FormClosing` cancels
-  the close to run async teardown even during OS shutdown; detect shutdown and
-  do a fast synchronous flush instead.
 
 ## Update path / installer
 
-- [ ] **Prerelease identifiers ignored in version comparison.**
-  `1.2.0-rc.1` → `1.2.0-rc.2` does not prompt for an update; compare full
-  SemVer including prerelease ids.
 - [ ] **Uninstaller leaves settings behind.** Offer (or document) removal of
   the settings/history files on uninstall.

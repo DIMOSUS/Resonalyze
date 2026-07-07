@@ -19,7 +19,7 @@ namespace Resonalyze.Options
         {
             InitializeComponent();
             InitializeToolTips();
-            FormClosed += (_, _) => toolTip.Dispose();
+            Disposed += (_, _) => toolTip.Dispose();
         }
 
         public void Init(ExpSweepMeasurement expSweepMeasurement, ImpulseResponseOptions opt)

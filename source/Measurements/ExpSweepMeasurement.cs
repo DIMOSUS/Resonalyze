@@ -23,6 +23,14 @@ namespace Resonalyze
         private volatile bool inProgress;
         private volatile bool waitingForAverageConfirmation;
         private bool disposed;
+        // Results are published from the measurement worker and read by the UI
+        // without locks. Each impulse response travels with its peak index as one
+        // immutable reference so a reader can never pair a new response with a
+        // stale index. The level snapshot is a multi-field struct and is kept
+        // boxed for the same reason: a reference swap is atomic, a struct copy is not.
+        private volatile MeasurementImpulseResponse? sweepDeconvolutionResult;
+        private volatile MeasurementImpulseResponse? transferResult;
+        private volatile object currentLevels = InputLevelMeterSnapshot.Empty;
 
         public event Action<bool>? Completed;
         public event Action? ImpulseResponseChanged;
@@ -30,10 +38,12 @@ namespace Resonalyze
         internal event Action<InputLevelMeterSnapshot>? LevelsAvailable;
 
         public ExponentialSineSweep? Sweep { get; private set; }
-        public Complex[]? SweepDeconvolutionImpulseResponse { get; private set; }
-        public int SweepDeconvolutionPeakIndex { get; private set; }
-        public Complex[]? TransferImpulseResponse { get; private set; }
-        public int TransferPeakIndex { get; private set; }
+        public MeasurementImpulseResponse? SweepDeconvolution => sweepDeconvolutionResult;
+        public MeasurementImpulseResponse? Transfer => transferResult;
+        public Complex[]? SweepDeconvolutionImpulseResponse => sweepDeconvolutionResult?.ImpulseResponse;
+        public int SweepDeconvolutionPeakIndex => sweepDeconvolutionResult?.PeakIndex ?? 0;
+        public Complex[]? TransferImpulseResponse => transferResult?.ImpulseResponse;
+        public int TransferPeakIndex => transferResult?.PeakIndex ?? 0;
         public double[]? TransferCoherence { get; private set; }
         public float[]? MicrophoneRecordedSamples { get; private set; }
         public float[]? LoopbackRecordedSamples { get; private set; }
@@ -65,8 +75,11 @@ namespace Resonalyze
         public Exception? LastError { get; private set; }
         public int RecordedSamples => soundRecorder?.ReadSamples ?? 0;
         public bool WaitingForAverageConfirmation => waitingForAverageConfirmation;
-        internal InputLevelMeterSnapshot CurrentLevels { get; private set; } =
-            InputLevelMeterSnapshot.Empty;
+        internal InputLevelMeterSnapshot CurrentLevels
+        {
+            get => (InputLevelMeterSnapshot)currentLevels;
+            private set => currentLevels = value;
+        }
 
         public void Init(
             int octaves,
@@ -110,10 +123,8 @@ namespace Resonalyze
             AsioInputChannelOffset = asioInputChannelOffset;
             AsioLoopbackInputChannelOffset = asioLoopbackInputChannelOffset;
             AsioOutputChannelOffset = asioOutputChannelOffset;
-            SweepDeconvolutionImpulseResponse = null;
-            SweepDeconvolutionPeakIndex = 0;
-            TransferImpulseResponse = null;
-            TransferPeakIndex = 0;
+            sweepDeconvolutionResult = null;
+            transferResult = null;
             TransferCoherence = null;
             MicrophoneRecordedSamples = null;
             LoopbackRecordedSamples = null;
@@ -206,10 +217,8 @@ namespace Resonalyze
                 cancellationTokenSource?.Dispose();
                 cancellationTokenSource = new CancellationTokenSource();
                 inProgress = true;
-                SweepDeconvolutionImpulseResponse = null;
-                SweepDeconvolutionPeakIndex = 0;
-                TransferImpulseResponse = null;
-                TransferPeakIndex = 0;
+                sweepDeconvolutionResult = null;
+                transferResult = null;
                 TransferCoherence = null;
                 MicrophoneRecordedSamples = null;
                 LoopbackRecordedSamples = null;
@@ -331,16 +340,18 @@ namespace Resonalyze
                 WaveLoopbackDeviceNumber,
                 AverageRunCount,
                 ConfirmEachAverageRun);
-            SweepDeconvolutionImpulseResponse = sweepDeconvolutionImpulseResponse.ToArray();
-            SweepDeconvolutionPeakIndex = sweepDeconvolutionPeakIndex;
-            TransferImpulseResponse = transferImpulseResponse?.ToArray();
+            sweepDeconvolutionResult = new MeasurementImpulseResponse(
+                sweepDeconvolutionImpulseResponse.ToArray(),
+                sweepDeconvolutionPeakIndex);
+            transferResult = transferImpulseResponse != null
+                ? new MeasurementImpulseResponse(
+                    transferImpulseResponse.ToArray(),
+                    transferPeakIndex!.Value)
+                : null;
             TransferCoherence = transferCoherence?.ToArray();
             MicrophoneRecordedSamples = null;
             LoopbackRecordedSamples = null;
             MeasurementMode = measurementMode;
-            TransferPeakIndex = transferImpulseResponse != null
-                ? transferPeakIndex!.Value
-                : 0;
             AverageRunCount = Math.Clamp(averageRunCount, 1, 64);
             AcceptedAverageRunCount = Math.Clamp(
                 acceptedAverageRunCount,
@@ -819,10 +830,14 @@ namespace Resonalyze
 
         private void ApplyAverageResult(SweepAverageResult result)
         {
-            SweepDeconvolutionImpulseResponse = result.SweepImpulseResponse;
-            SweepDeconvolutionPeakIndex = result.SweepPeakIndex;
-            TransferImpulseResponse = result.TransferImpulseResponse;
-            TransferPeakIndex = result.TransferPeakIndex;
+            sweepDeconvolutionResult = new MeasurementImpulseResponse(
+                result.SweepImpulseResponse,
+                result.SweepPeakIndex);
+            transferResult = result.TransferImpulseResponse != null
+                ? new MeasurementImpulseResponse(
+                    result.TransferImpulseResponse,
+                    result.TransferPeakIndex)
+                : null;
             TransferCoherence = result.TransferCoherence;
             MicrophoneRecordedSamples = result.MicrophoneRecordedSamples;
             LoopbackRecordedSamples = result.LoopbackRecordedSamples;
@@ -1177,6 +1192,14 @@ namespace Resonalyze
             GC.SuppressFinalize(this);
         }
     }
+
+    /// <summary>
+    /// An impulse response published together with the index of its peak as one
+    /// immutable reference, so cross-thread readers always see a matching pair.
+    /// </summary>
+    public sealed record MeasurementImpulseResponse(
+        Complex[] ImpulseResponse,
+        int PeakIndex);
 }
 
 public readonly record struct SweepAverageProgress(

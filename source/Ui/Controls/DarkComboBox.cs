@@ -85,6 +85,11 @@ public sealed class DarkComboBox : UserControl
                 return;
             }
 
+            if (!ContainsFocus)
+            {
+                Focus();
+            }
+
             buttonPressed = true;
             buttonPanel.Invalidate();
         };
@@ -132,6 +137,11 @@ public sealed class DarkComboBox : UserControl
             if (e.Button != MouseButtons.Left || !Enabled)
             {
                 return;
+            }
+
+            if (!ContainsFocus)
+            {
+                Focus();
             }
 
             resetPressed = true;
@@ -453,7 +463,7 @@ public sealed class DarkComboBox : UserControl
 
     protected override bool IsInputKey(Keys keyData)
     {
-        return keyData is Keys.Up or Keys.Down or Keys.Space or Keys.Enter
+        return keyData is Keys.Up or Keys.Down or Keys.Space
             ? true
             : base.IsInputKey(keyData);
     }
@@ -465,11 +475,12 @@ public sealed class DarkComboBox : UserControl
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
+        // Enter is deliberately not handled: like a native ComboBox, it must
+        // reach the dialog so an AcceptButton can fire while the combo has focus.
         switch (keyData)
         {
             case Keys.F4:
             case Keys.Space:
-            case Keys.Enter:
             case Keys.Alt | Keys.Down:
                 ToggleDropDown();
                 return true;
@@ -490,8 +501,19 @@ public sealed class DarkComboBox : UserControl
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
-        if (e.Button == MouseButtons.Left &&
-            !buttonPanel.Bounds.Contains(e.Location) &&
+        if (e.Button != MouseButtons.Left)
+        {
+            return;
+        }
+
+        // A UserControl does not take focus on click by itself; without this the
+        // combo never shows keyboard focus and arrow keys keep going elsewhere.
+        if (Enabled && !ContainsFocus)
+        {
+            Focus();
+        }
+
+        if (!buttonPanel.Bounds.Contains(e.Location) &&
             !(resetPanel.Visible && resetPanel.Bounds.Contains(e.Location)) &&
             !ShouldSuppressToggle())
         {

@@ -207,16 +207,18 @@ internal sealed class MeasurementHistoryService
         ExpSweepMeasurement measurement,
         MeasurementSessionSnapshot? session)
     {
-        Complex[] sweep = measurement.SweepDeconvolutionImpulseResponse
+        MeasurementImpulseResponse sweepDeconvolution = measurement.SweepDeconvolution
             ?? throw new InvalidOperationException("Measurement has no sweep-deconvolution IR.");
-        Complex[]? transfer = measurement.TransferImpulseResponse?.ToArray();
+        MeasurementImpulseResponse? transferResult = measurement.Transfer;
+        Complex[] sweep = sweepDeconvolution.ImpulseResponse;
+        Complex[]? transfer = transferResult?.ImpulseResponse.ToArray();
         MeasurementHistoryPreview preview = MeasurementHistoryPreviewBuilder.Build(
             sweep,
-            measurement.SweepDeconvolutionPeakIndex,
+            sweepDeconvolution.PeakIndex,
             measurement.SampleRate,
             measurement.MeasurementMode,
             transfer,
-            transfer != null ? measurement.TransferPeakIndex : null);
+            transferResult?.PeakIndex);
 
         return new MeasurementHistorySnapshot
         {
@@ -226,8 +228,8 @@ internal sealed class MeasurementHistoryService
             SweepDurationSeconds = measurement.Sweep?.ComputedDuration ?? 0.0,
             PlayChannel = measurement.PlaybackChannel,
             MeasurementMode = measurement.MeasurementMode,
-            SweepDeconvolutionPeakIndex = measurement.SweepDeconvolutionPeakIndex,
-            TransferPeakIndex = transfer != null ? measurement.TransferPeakIndex : null,
+            SweepDeconvolutionPeakIndex = sweepDeconvolution.PeakIndex,
+            TransferPeakIndex = transferResult?.PeakIndex,
             AverageRunCount = measurement.AverageRunCount,
             AcceptedAverageRunCount = measurement.AcceptedAverageRunCount,
             SweepDeconvolutionImpulseResponse = sweep.ToArray(),

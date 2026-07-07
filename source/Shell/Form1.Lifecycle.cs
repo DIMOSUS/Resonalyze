@@ -39,6 +39,20 @@ public partial class Form1
             return;
         }
 
+        if (e.CloseReason == CloseReason.WindowsShutDown)
+        {
+            // Cancelling the close during OS shutdown makes Windows report the app
+            // as blocking shutdown, and the process may be killed before the async
+            // teardown finishes. Persist user data synchronously and let the close
+            // proceed; device teardown is left to the OS.
+            closingPrepared = true;
+            startupAudioWarmupCancellation?.Cancel();
+            FlushMeasurementSettings();
+            overlayCollection.FlushPendingSaves();
+            PersistCurrentSessionState();
+            return;
+        }
+
         e.Cancel = true;
         if (closingInProgress)
         {

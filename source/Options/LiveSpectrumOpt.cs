@@ -31,7 +31,7 @@ namespace Resonalyze.Options
             windowComboBox.SelectionChangeCommitted += (_, _) => CaptureUserWindow();
             overlapComboBox.SelectionChangeCommitted += (_, _) => CaptureUserOverlap();
             InitializeToolTips();
-            FormClosed += (_, _) => toolTip.Dispose();
+            Disposed += (_, _) => toolTip.Dispose();
         }
 
         public void Init(

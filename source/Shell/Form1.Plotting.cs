@@ -297,13 +297,13 @@ public partial class Form1
         }
 
         string transferPeak;
-        if (expSweepMeasurement.TransferImpulseResponse == null)
+        if (expSweepMeasurement.Transfer is not { } transfer)
         {
             transferPeak = "--";
         }
         else
         {
-            int peakSamples = expSweepMeasurement.TransferPeakIndex;
+            int peakSamples = transfer.PeakIndex;
             double peakMs = expSweepMeasurement.SampleRate > 0
                 ? peakSamples * 1000.0 / expSweepMeasurement.SampleRate
                 : 0;

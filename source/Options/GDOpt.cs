@@ -22,7 +22,10 @@ public partial class GDOpt : Form
         ConfigureResetDefaults();
         SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
         InitializeToolTips();
-        FormClosed += GDOpt_FormClosed;
+        // Disposed, not FormClosed: a dialog disposed without ever having been
+        // shown (e.g. the docked host closing it while the owner is minimized)
+        // never raises FormClosed, which leaked the measurement subscription.
+        Disposed += GDOpt_Disposed;
     }
 
     public void Init(
@@ -94,14 +97,14 @@ public partial class GDOpt : Form
     private void buttonFit_Click(object? sender, EventArgs e)
     {
         if (expSweepMeasurement is not { } measurement ||
-            measurement.TransferImpulseResponse is not { Length: > 0 } ||
+            measurement.Transfer is not { ImpulseResponse.Length: > 0 } transfer ||
             measurement.SampleRate <= 0)
         {
             System.Media.SystemSounds.Beep.Play();
             return;
         }
 
-        double onsetMs = measurement.TransferPeakIndex * 1000.0 / measurement.SampleRate;
+        double onsetMs = transfer.PeakIndex * 1000.0 / measurement.SampleRate;
         numericGateOffset.Value = ClampToControl(numericGateOffset, onsetMs);
     }
 
@@ -144,7 +147,7 @@ public partial class GDOpt : Form
         UpdateIrPreview();
     }
 
-    private void GDOpt_FormClosed(object? sender, FormClosedEventArgs e)
+    private void GDOpt_Disposed(object? sender, EventArgs e)
     {
         if (expSweepMeasurement != null)
         {

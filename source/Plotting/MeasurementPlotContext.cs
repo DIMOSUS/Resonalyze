@@ -41,23 +41,23 @@ internal sealed class MeasurementPlotContext
     // on HasTransferImpulseResponse; the sweep deconvolution is reserved for harmonics/noise.
     public IImpulseMeasurement CreatePrimaryMeasurement()
     {
-        Complex[] transferIr = expSweepMeasurement.TransferImpulseResponse
+        MeasurementImpulseResponse transfer = expSweepMeasurement.Transfer
             ?? throw new InvalidOperationException(
                 "Transfer impulse response is not available.");
         return new ImpulseMeasurementView(
-            transferIr,
-            expSweepMeasurement.TransferPeakIndex,
+            transfer.ImpulseResponse,
+            transfer.PeakIndex,
             expSweepMeasurement.SampleRate);
     }
 
     public IImpulseMeasurement CreateSweepDeconvolutionMeasurement()
     {
-        Complex[] sweepIr = expSweepMeasurement.SweepDeconvolutionImpulseResponse
+        MeasurementImpulseResponse sweepDeconvolution = expSweepMeasurement.SweepDeconvolution
             ?? throw new InvalidOperationException(
                 "Sweep deconvolution impulse response is not available.");
         return new ImpulseMeasurementView(
-            sweepIr,
-            expSweepMeasurement.SweepDeconvolutionPeakIndex,
+            sweepDeconvolution.ImpulseResponse,
+            sweepDeconvolution.PeakIndex,
             expSweepMeasurement.SampleRate,
             expSweepMeasurement.HarmonicIROffset);
     }

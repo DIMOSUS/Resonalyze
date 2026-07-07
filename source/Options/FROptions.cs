@@ -23,7 +23,10 @@ namespace Resonalyze.Options
             numericRightWindow.ValueChanged += TukeyWindow_ValueChanged;
             SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
             InitializeToolTips();
-            FormClosed += FROptions_FormClosed;
+            // Disposed, not FormClosed: a dialog disposed without ever having been
+            // shown (e.g. the docked host closing it while the owner is minimized)
+            // never raises FormClosed, which leaked the measurement subscription.
+            Disposed += FROptions_Disposed;
         }
 
         public void Init(
@@ -137,7 +140,7 @@ namespace Resonalyze.Options
             UpdateIrPreview();
         }
 
-        private void FROptions_FormClosed(object? sender, FormClosedEventArgs e)
+        private void FROptions_Disposed(object? sender, EventArgs e)
         {
             if (expSweepMeasurement != null)
             {

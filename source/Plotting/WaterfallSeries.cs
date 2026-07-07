@@ -67,7 +67,6 @@ namespace Resonalyze
     public enum WaterfallMode
     {
         Fourier,
-        FourierCSD,
         BurstDecay
     }
 

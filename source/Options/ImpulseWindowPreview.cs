@@ -420,17 +420,17 @@ internal static class ImpulseWindowPreview
         return source switch
         {
             IrPreviewSource.SweepDeconvolution =>
-                measurement.SweepDeconvolutionImpulseResponse is { Length: > 0 } sweepIr
+                measurement.SweepDeconvolution is { ImpulseResponse.Length: > 0 } sweepResult
                     ? new IrSource(
-                        sweepIr,
-                        measurement.SweepDeconvolutionPeakIndex,
+                        sweepResult.ImpulseResponse,
+                        sweepResult.PeakIndex,
                         false,
                         "Sweep IR Window")
                     : null,
             IrPreviewSource.TransferFromStart =>
-                measurement.TransferImpulseResponse is { Length: > 0 } transferIr
+                measurement.Transfer is { ImpulseResponse.Length: > 0 } transferResult
                     ? new IrSource(
-                        transferIr,
+                        transferResult.ImpulseResponse,
                         0,
                         true,
                         "Transfer IR Window")
@@ -438,10 +438,10 @@ internal static class ImpulseWindowPreview
                         measurement,
                         IrPreviewSource.SweepDeconvolution),
             _ =>
-                measurement.TransferImpulseResponse is { Length: > 0 } primaryTransferIr
+                measurement.Transfer is { ImpulseResponse.Length: > 0 } primaryTransferResult
                     ? new IrSource(
-                        primaryTransferIr,
-                        measurement.TransferPeakIndex,
+                        primaryTransferResult.ImpulseResponse,
+                        primaryTransferResult.PeakIndex,
                         false,
                         "Transfer IR Window")
                     : SelectImpulseResponse(

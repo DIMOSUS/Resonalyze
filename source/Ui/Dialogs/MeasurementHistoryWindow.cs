@@ -26,7 +26,7 @@ internal partial class MeasurementHistoryWindow : Form
         StartPosition = FormStartPosition.CenterParent;
         ConfigureNewSessionButton();
         ConfigureGrid();
-        FormClosed += (_, _) =>
+        Disposed += (_, _) =>
         {
             historyToolTip.Dispose();
             activeEntryFont.Dispose();

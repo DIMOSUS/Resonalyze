@@ -65,8 +65,10 @@ public sealed class ImpulseResponseFile
     public static ImpulseResponseFile Capture(ExpSweepMeasurement measurement)
     {
         ArgumentNullException.ThrowIfNull(measurement);
-        Complex[] sweepImpulseResponse = measurement.SweepDeconvolutionImpulseResponse
+        MeasurementImpulseResponse sweepDeconvolution = measurement.SweepDeconvolution
             ?? throw new InvalidOperationException("There is no impulse response to save.");
+        MeasurementImpulseResponse? transfer = measurement.Transfer;
+        Complex[] sweepImpulseResponse = sweepDeconvolution.ImpulseResponse;
         ExponentialSineSweep sweep = measurement.Sweep
             ?? throw new InvalidOperationException("The sweep measurement is not initialized.");
 
@@ -75,16 +77,17 @@ public sealed class ImpulseResponseFile
         double[]? transferRealSamples = null;
         double[]? transferImaginarySamples = null;
         int? transferPeakIndex = null;
-        if (measurement.TransferImpulseResponse is { Length: > 0 } transferImpulseResponse)
+        if (transfer is { ImpulseResponse.Length: > 0 })
         {
             (transferRealSamples, transferImaginarySamples) =
-                ConvertSamples(transferImpulseResponse, "Transfer impulse response");
-            transferPeakIndex = measurement.TransferPeakIndex;
+                ConvertSamples(transfer.ImpulseResponse, "Transfer impulse response");
+            transferPeakIndex = transfer.PeakIndex;
         }
+        InputLevelMeterSnapshot levels = measurement.CurrentLevels;
         LevelSnapshotFileEntry? microphoneLevels =
-            CreateLevelSnapshotFileEntry(measurement.CurrentLevels.Microphone);
+            CreateLevelSnapshotFileEntry(levels.Microphone);
         LevelSnapshotFileEntry? loopbackLevels =
-            CreateLevelSnapshotFileEntry(measurement.CurrentLevels.Loopback);
+            CreateLevelSnapshotFileEntry(levels.Loopback);
 
         return new ImpulseResponseFile
         {
@@ -95,7 +98,7 @@ public sealed class ImpulseResponseFile
             SweepDurationSeconds = sweep.ComputedDuration,
             PlayChannel = measurement.PlaybackChannel,
             MeasurementMode = measurement.MeasurementMode,
-            SweepDeconvolutionPeakIndex = measurement.SweepDeconvolutionPeakIndex,
+            SweepDeconvolutionPeakIndex = sweepDeconvolution.PeakIndex,
             AverageRunCount = measurement.AverageRunCount,
             AcceptedAverageRunCount = measurement.AcceptedAverageRunCount,
             TransferPeakIndex = transferPeakIndex,
@@ -104,13 +107,11 @@ public sealed class ImpulseResponseFile
             PreviewFrequencyResponse = CreatePreviewFileEntry(
                 MeasurementHistoryPreviewBuilder.Build(
                     sweepImpulseResponse,
-                    measurement.SweepDeconvolutionPeakIndex,
+                    sweepDeconvolution.PeakIndex,
                     measurement.SampleRate,
                     measurement.MeasurementMode,
-                    measurement.TransferImpulseResponse,
-                    measurement.TransferImpulseResponse is { Length: > 0 }
-                        ? measurement.TransferPeakIndex
-                        : null)),
+                    transfer?.ImpulseResponse,
+                    transferPeakIndex)),
             SweepDeconvolutionRealSamples = sweepRealSamples,
             SweepDeconvolutionImaginarySamples = sweepImaginarySamples,
             TransferRealSamples = transferRealSamples,

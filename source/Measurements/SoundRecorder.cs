@@ -11,10 +11,11 @@ namespace Resonalyze
         private readonly object sync = new();
         private readonly List<SampleWaiter> sampleWaiters = new();
         private WaveInEvent? waveSource;
-        private List<float>[] samples = Array.Empty<List<float>>();
+        private CaptureAccumulator? accumulator;
+        private float[][] decodeScratch = Array.Empty<float[]>();
+        private int expectedTotalSamples;
         private TaskCompletionSource<bool>? firstBufferReady;
         private TaskCompletionSource<bool>? recordingStopped;
-        private int sequenceStart;
         private bool disposed;
 
         public event Action<float[]>? SequenceReady;
@@ -22,7 +23,7 @@ namespace Resonalyze
         internal event Action<AudioChannelLevel[]>? LevelsAvailable;
 
         public int Sequence { get; set; }
-        public int ReadSamples { get; private set; }
+        public int ReadSamples => accumulator?.ReadSamples ?? 0;
         public int SampleRate { get; private set; }
         public int Bits { get; private set; }
         public int ChannelCount { get; private set; }
@@ -32,7 +33,8 @@ namespace Resonalyze
             int sampleRate,
             int bits,
             int channelCount,
-            int inputDeviceNumber = -1)
+            int inputDeviceNumber = -1,
+            int expectedSamples = 0)
         {
             ThrowIfDisposed();
             if (bits is not (16 or 24))
@@ -53,6 +55,7 @@ namespace Resonalyze
             Bits = bits;
             ChannelCount = channelCount;
             InputDeviceNumber = inputDeviceNumber;
+            expectedTotalSamples = expectedSamples;
             ResetBuffers();
         }
 
@@ -143,16 +146,13 @@ namespace Resonalyze
             }
         }
 
+        // Meaningful only without sequence extraction (the accumulator drops the
+        // consumed prefix in sequence mode); no current caller mixes the two.
         public float[][] GetSamplesSnapshot()
         {
             lock (sync)
             {
-                var snapshot = new float[samples.Length][];
-                for (int channel = 0; channel < samples.Length; channel++)
-                {
-                    snapshot[channel] = samples[channel].ToArray();
-                }
-                return snapshot;
+                return accumulator?.Snapshot() ?? Array.Empty<float[]>();
             }
         }
 
@@ -161,49 +161,40 @@ namespace Resonalyze
             int bytesPerSample = Bits / 8;
             int bytesPerFrame = bytesPerSample * ChannelCount;
             int frameCount = args.BytesRecorded / bytesPerFrame;
-            List<float[][]> readySequences = new();
+
+            // Decode and meter on reusable scratch outside the lock; only bounded
+            // array copies happen inside it (mirrors AsioFullDuplexSession).
+            EnsureScratch(frameCount);
             var peaks = new double[ChannelCount];
             var sumSquares = new double[ChannelCount];
+            for (int frame = 0; frame < frameCount; frame++)
+            {
+                int frameOffset = frame * bytesPerFrame;
+                for (int channel = 0; channel < ChannelCount; channel++)
+                {
+                    int sampleOffset = frameOffset + channel * bytesPerSample;
+                    float sample = ReadPcmSample(args.Buffer, sampleOffset, bytesPerSample);
+                    decodeScratch[channel][frame] = sample;
+                    double magnitude = Math.Abs(sample);
+                    peaks[channel] = Math.Max(peaks[channel], magnitude);
+                    sumSquares[channel] += sample * sample;
+                }
+            }
 
+            List<float[][]>? readySequences;
             lock (sync)
             {
-                for (int frame = 0; frame < frameCount; frame++)
+                if (accumulator == null)
                 {
-                    int frameOffset = frame * bytesPerFrame;
-                    for (int channel = 0; channel < ChannelCount; channel++)
-                    {
-                        int sampleOffset = frameOffset + channel * bytesPerSample;
-                        float sample = ReadPcmSample(args.Buffer, sampleOffset, bytesPerSample);
-                        samples[channel].Add(sample);
-                        double magnitude = Math.Abs(sample);
-                        peaks[channel] = Math.Max(peaks[channel], magnitude);
-                        sumSquares[channel] += sample * sample;
-                    }
-                    ReadSamples++;
+                    return;
                 }
 
-                if (Sequence > 0)
-                {
-                    while (ReadSamples - sequenceStart >= Sequence)
-                    {
-                        var sequence = new float[ChannelCount][];
-                        for (int channel = 0; channel < ChannelCount; channel++)
-                        {
-                            sequence[channel] = new float[Sequence];
-                            samples[channel].CopyTo(
-                                sequenceStart,
-                                sequence[channel],
-                                0,
-                                Sequence);
-                        }
-                        sequenceStart += Sequence;
-                        readySequences.Add(sequence);
-                    }
-                }
+                accumulator.Append(decodeScratch, frameCount);
+                readySequences = accumulator.ExtractReadySequences();
 
                 for (int i = sampleWaiters.Count - 1; i >= 0; i--)
                 {
-                    if (ReadSamples >= sampleWaiters[i].SampleCount)
+                    if (accumulator.ReadSamples >= sampleWaiters[i].SampleCount)
                     {
                         sampleWaiters[i].Complete();
                         sampleWaiters.RemoveAt(i);
@@ -214,10 +205,30 @@ namespace Resonalyze
             firstBufferReady?.TrySetResult(true);
             LevelsAvailable?.Invoke(
                 AudioLevelMetering.MeasureChannels(peaks, sumSquares, frameCount));
+            if (readySequences == null)
+            {
+                return;
+            }
+
             foreach (float[][] sequence in readySequences)
             {
                 SequenceReady?.Invoke(sequence[0]);
                 SequenceChannelsReady?.Invoke(sequence);
+            }
+        }
+
+        private void EnsureScratch(int frames)
+        {
+            if (decodeScratch.Length == ChannelCount &&
+                decodeScratch[0].Length >= frames)
+            {
+                return;
+            }
+
+            decodeScratch = new float[ChannelCount][];
+            for (int channel = 0; channel < ChannelCount; channel++)
+            {
+                decodeScratch[channel] = new float[frames];
             }
         }
 
@@ -255,13 +266,12 @@ namespace Resonalyze
         {
             lock (sync)
             {
-                ReadSamples = 0;
-                sequenceStart = 0;
-                samples = new List<float>[ChannelCount];
-                for (int channel = 0; channel < ChannelCount; channel++)
-                {
-                    samples[channel] = new List<float>(SampleRate);
-                }
+                // At least one second pre-allocated; a known recording length
+                // (e.g. the sweep) avoids growth re-allocations mid-capture.
+                accumulator = new CaptureAccumulator(
+                    ChannelCount,
+                    Sequence,
+                    Math.Max(expectedTotalSamples, SampleRate));
 
                 foreach (SampleWaiter waiter in sampleWaiters)
                 {

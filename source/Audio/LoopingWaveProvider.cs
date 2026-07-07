@@ -21,6 +21,15 @@ internal sealed class LoopingWaveProvider : IWaveProvider
             int read = source.Read(buffer, offset + totalRead, count - totalRead);
             if (read == 0)
             {
+                if (source.Position == 0)
+                {
+                    // An empty (or stuck) source would loop forever inside the
+                    // audio callback; emit silence for the remainder instead.
+                    Array.Clear(buffer, offset + totalRead, count - totalRead);
+                    totalRead = count;
+                    break;
+                }
+
                 source.Position = 0;
                 continue;
             }

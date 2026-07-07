@@ -48,7 +48,9 @@ internal static class AsioInputProbe
             new LoopingWaveProvider(silence),
             sampleRate,
             autoStop: false,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            expectedTotalSamples: (int)((long)sampleRate * milliseconds / 1000) + sampleRate)
+            .ConfigureAwait(false);
         try
         {
             await Task.Delay(milliseconds, cancellationToken).ConfigureAwait(false);

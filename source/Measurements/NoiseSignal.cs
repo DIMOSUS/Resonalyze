@@ -44,6 +44,16 @@ public sealed class NoiseSignal : IDisposable
         SampleRate = sampleRate;
         RequestedDuration = requestedDuration;
         Samples = checked((int)(sampleRate * requestedDuration));
+        if (noiseColor == NoiseColor.PinkPeriodic)
+        {
+            // The buffer is looped by playback; a length that is not a whole
+            // number of periods puts a phase jump at every loop seam, and the
+            // analyzer's rectangular window assumes exact periodicity.
+            int period = Math.Max(2, periodLength);
+            Samples = period * Math.Max(
+                1,
+                (int)Math.Round(sampleRate * requestedDuration / (double)period));
+        }
 
         FloatData = new float[Samples];
 

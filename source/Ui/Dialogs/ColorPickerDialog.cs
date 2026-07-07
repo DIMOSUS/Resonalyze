@@ -328,9 +328,11 @@ internal sealed class ColorSpectrum : Control
         {
             args.Graphics.FillRectangle(saturationBrush, ClientRectangle);
         }
+        // Color.Transparent is transparent WHITE; GDI+ interpolates the raw
+        // channels, so mid-gradient it brightens instead of purely darkening.
         using (var valueBrush = new LinearGradientBrush(
             ClientRectangle,
-            Color.Transparent,
+            Color.FromArgb(0, Color.Black),
             Color.Black,
             LinearGradientMode.Vertical))
         {
@@ -409,11 +411,15 @@ internal sealed class HueSlider : Control
     {
         base.OnPaint(args);
         int height = Math.Max(1, ClientSize.Height - 1);
-        for (int y = 0; y < ClientSize.Height; y++)
+        // One reusable pen; this paints per mouse-move while dragging the hue.
+        using (var pen = new Pen(Color.Black))
         {
-            double rowHue = y / (double)height * 360.0;
-            using var pen = new Pen(HsvColor.ToColor(rowHue, 1, 1));
-            args.Graphics.DrawLine(pen, 0, y, ClientSize.Width, y);
+            for (int y = 0; y < ClientSize.Height; y++)
+            {
+                double rowHue = y / (double)height * 360.0;
+                pen.Color = HsvColor.ToColor(rowHue, 1, 1);
+                args.Graphics.DrawLine(pen, 0, y, ClientSize.Width, y);
+            }
         }
 
         float markerY = (float)(hue / 360.0 * height);

@@ -99,7 +99,71 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   `AsioDeviceCatalog.FindDriverIndex`/`FindChannelIndex` and
   `AudioDeviceCatalog.FindDeviceIndex` return index 0 when the saved
   driver/channel/device no longer exists, so the options UI silently shows a
-  different device than the one configured. Surface "(missing)" instead.
+  different device than the one configured. Worst case: a vanished separate
+  Wave loopback device maps to "Default recording device" instead of the
+  "Same as microphone device" sentinel — the configuration silently changes
+  meaning. Surface "(missing)" / fall back to the sentinel instead.
+
+## Options panels
+
+- [ ] **Mono recording device irreversibly resets the loopback channel.**
+  `MeasurementOptions` forces the loopback combo to "None" when the selected
+  device reports one channel; selecting a stereo device again does not restore
+  the previous choice, and the next apply persists `null` — measurements stop
+  working. Keep the last user choice in a shadow field (the pattern
+  `LiveSpectrumOpt` already uses) and restore it.
+- [ ] **Missing 90° calibration silently downgrades the persisted mode.**
+  `MicrophoneCalibrationComboHelper` drops the `Degrees90` entry when the file
+  is absent, so `FindIndex` lands on "Off" and the next apply persists it —
+  the user's preference is permanently lost. Keep the entry (marked "(file
+  missing)") or preserve the stored mode.
+- [ ] **ASIO driver opened twice when the measurement panel opens.**
+  `Init` runs `RefreshSampleRateOptions` and `RefreshAsioDriverInfo`, each of
+  which instantiates `AsioOut` (a synchronous COM driver open that can take
+  seconds). Fetch the driver info and supported rates in one open, ideally off
+  the UI thread.
+- [ ] **Five IR-preview panels are one copy-pasted class.** `FROptions`,
+  `GDOpt`, `PROpt`, `BDOpt`, `WaterfallOptions` duplicate the
+  `ImpulseResponseChanged` subscribe/unsubscribe dance, the `BeginInvoke`
+  marshal and the clamping helper — and have already drifted (only `GDOpt`
+  suppresses the 3–6 redundant preview renders during `Init`). Extract a
+  shared base.
+- [ ] **`SetOptions` reads bits from the measurement, not the control.**
+  Three sources of truth for the sample size in `MeasurementOptions`; harmless
+  while the control is read-only, a silent no-op the day it is enabled.
+- [ ] **`TukeyWindowControlHelper` silently clamps window values** when the
+  window length shrinks (fires `ValueChanged` → live apply persists the
+  clamped value with no feedback) and overrides the designer maxima.
+- [ ] **`LiveSpectrumOpt` shadow fields update only on
+  `SelectionChangeCommitted`** — a programmatic combo change is displayed but
+  never persisted; also three identical floor-index loops worth one helper.
+
+## UI chrome
+
+- [ ] **`ChromeTitleBar` caches the DPI scale once at `Initialize`.** No
+  `DpiChanged` handling: moving the window to a monitor with different DPI
+  (PerMonitorV2) leaves the bar height, button widths and tab layout at the
+  old scale. Refresh the cached metrics and re-run layout on DPI change.
+- [ ] **Top-edge resize grip still dead over child controls.** The
+  HTTRANSPARENT fix covers the title-bar panel itself; points over the tab
+  buttons and window buttons (which reach y=0) still hit-test as client.
+  Standard chrome resolves this per child; low value, document or fix later.
+- [ ] **`ColorPickerDialog` preview panel is not double-buffered** and the
+  hue slider repaints its full rainbow per mouse-move; caching the rainbow in
+  a bitmap (invalidated on resize) would finish what the pen-reuse fix
+  started.
+
+## PDF export
+
+- [ ] **~90 duplicated lines between the two PDF exporters.**
+  `LoadBanner`/`AddImage`/`AddFilterCards` are byte-identical in
+  `TuningSheetPdf` and `VirtualCrossoverSheetPdf`; extract a shared helper.
+  MigraDoc 6 supports `AddImage("base64:...")`, which would also remove the
+  temp-file dance entirely.
+- [ ] **No deconvolution flatness test.** The sweep + inverse-filter math was
+  verified numerically during review (in-band ripple < 0.01 dB), but nothing
+  in the test suite pins it; a `SyntheticMeasurement`-style flatness test
+  would lock the `2/N` scaling and envelope compensation down.
 
 ## Audio capture layer
 

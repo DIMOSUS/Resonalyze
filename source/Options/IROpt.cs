@@ -24,7 +24,9 @@ namespace Resonalyze.Options
 
         public void Init(ExpSweepMeasurement expSweepMeasurement, ImpulseResponseOptions opt)
         {
-            numericLength.Value = opt.Length;
+            // The settings file clamps to a wider range than the control; an
+            // out-of-range persisted value must not throw when the panel opens.
+            numericLength.Value = numericLength.ClampValue(opt.Length);
             checkLogarithmic.Checked = opt.Logarithmic;
             checkBoxShowImpulse.Checked = opt.ShowImpulse;
         }

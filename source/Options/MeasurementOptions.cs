@@ -90,6 +90,7 @@ namespace Resonalyze.Options
             comboBoxRecordingDevice.SelectedIndexChanged += comboBoxRecordingDevice_SelectedIndexChanged;
             comboBoxWaveLoopbackDevice.SelectedIndexChanged += comboBoxWaveLoopbackDevice_SelectedIndexChanged;
             comboBoxWaveLoopbackChannel.SelectedIndexChanged += comboBoxWaveLoopbackChannel_SelectedIndexChanged;
+            comboBoxWaveInputChannel.SelectedIndexChanged += comboBoxWaveInputChannel_SelectedIndexChanged;
             comboBoxAsioDriver.SelectedIndexChanged += comboBoxAsioDriver_SelectedIndexChanged;
             buttonAsioInputProbe.Click += buttonAsioInputProbe_Click;
             buttonAsioControlPanel.Click += buttonAsioControlPanel_Click;
@@ -110,8 +111,10 @@ namespace Resonalyze.Options
         {
             initializing = true;
             this.expSweepMeasurement = expSweepMeasurement;
-            ExponentialSineSweep sweep = expSweepMeasurement.Sweep
-                ?? throw new InvalidOperationException("Sweep measurement is not initialized.");
+            if (expSweepMeasurement.Sweep == null)
+            {
+                throw new InvalidOperationException("Sweep measurement is not initialized.");
+            }
             numericUpDownBits.Value = settings.Bits is 16 or 24 ? settings.Bits : 24;
 
             comboBoxChannel.Items.Clear();
@@ -178,10 +181,17 @@ namespace Resonalyze.Options
                 UpdateComboBoxToolTip(comboBoxAsioDriver);
             }
 
-            numericUpDownRequestedDuration.Value = (int)(settings.RequestedDurationSeconds * 1000.0);
-            numericUpDownComputeDuration.Value =
-                (int)(sweep.CalculateDuration(settings.RequestedDurationSeconds) * 1000.0);
-            numericUpDownOctaves.Value = settings.Octaves;
+            // Clamped: the settings file is not normalized against the control
+            // ranges, and (int) truncation used to shave a millisecond off
+            // durations that are not exactly representable in binary.
+            numericUpDownRequestedDuration.Value = numericUpDownRequestedDuration.ClampValue(
+                Math.Round(settings.RequestedDurationSeconds * 1000.0));
+            numericUpDownOctaves.Value = numericUpDownOctaves.ClampValue(settings.Octaves);
+            numericUpDownComputeDuration.Value = numericUpDownComputeDuration.ClampValue(
+                Math.Round(ExponentialSineSweep.CalculateDuration(
+                    settings.Octaves,
+                    settings.RequestedDurationSeconds,
+                    settings.SampleRate) * 1000.0));
             numericUpDownAverageRunCount.Value = Math.Clamp(settings.AverageRunCount, 1, 64);
             checkBoxConfirmEachAverageRun.Checked = settings.ConfirmEachAverageRun;
             microphoneCalibration0DegreesPath = settings.MicrophoneCalibration0DegreesPath;
@@ -388,18 +398,30 @@ namespace Resonalyze.Options
 
         private void numericUpDownRequestedDuration_ValueChanged(object sender, EventArgs e)
         {
-            ExponentialSineSweep? sweep = expSweepMeasurement?.Sweep;
-            if (sweep == null)
-            {
-                return;
-            }
-
-            numericUpDownComputeDuration.Value =
-                (int)(sweep.CalculateDuration((int)numericUpDownRequestedDuration.Value * 0.001) * 1000.0);
+            // Computed from the values shown in the panel, not from the last
+            // generated sweep's state (which is stale until the next run).
+            numericUpDownComputeDuration.Value = numericUpDownComputeDuration.ClampValue(
+                Math.Round(ExponentialSineSweep.CalculateDuration(
+                    (int)numericUpDownOctaves.Value,
+                    (double)numericUpDownRequestedDuration.Value * 0.001,
+                    GetSelectedSampleRate()) * 1000.0));
         }
 
         private void comboBoxAudioBackend_SelectedIndexChanged(object sender, EventArgs e) =>
             HandleAudioConfigurationChanged();
+
+        private void comboBoxWaveInputChannel_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            if (initializing)
+            {
+                return;
+            }
+
+            // With a separate loopback device the microphone channel choice
+            // changes how many channels the device must open, and therefore
+            // which sample rates it supports.
+            RefreshSampleRateOptions(GetSelectedSampleRate());
+        }
 
         private void comboBoxPlaybackDevice_SelectedIndexChanged(object? sender, EventArgs e)
         {
@@ -845,6 +867,13 @@ namespace Resonalyze.Options
                         outputChannelOffset,
                         milliseconds: 1000,
                         CancellationToken.None);
+                // The docked panel can be closed while the ~1 s capture runs;
+                // touching the disposed form would throw out of an async void
+                // handler and kill the process.
+                if (IsDisposed)
+                {
+                    return;
+                }
                 MessageBox.Show(
                     this,
                     FormatAsioInputProbeResults(results),
@@ -854,6 +883,10 @@ namespace Resonalyze.Options
             }
             catch (Exception exception)
             {
+                if (IsDisposed)
+                {
+                    return;
+                }
                 MessageBox.Show(
                     this,
                     exception.Message,
@@ -863,8 +896,11 @@ namespace Resonalyze.Options
             }
             finally
             {
-                buttonAsioInputProbe.Text = "Test ASIO Inputs";
-                UpdateAudioBackendControls();
+                if (!IsDisposed)
+                {
+                    buttonAsioInputProbe.Text = "Test ASIO Inputs";
+                    UpdateAudioBackendControls();
+                }
             }
         }
 
@@ -893,10 +929,15 @@ namespace Resonalyze.Options
             }
 
             RefreshSampleRateOptions(GetSelectedSampleRate());
-            RefreshAsioDriverInfo(
-                GetSelectedAsioInputChannelOffset(),
-                GetSelectedAsioOutputChannelOffset(),
-                GetSelectedAsioLoopbackInputChannelOffset());
+            if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio)
+            {
+                // Opening the ASIO driver is a synchronous COM instantiation
+                // that can take seconds; don't pay it for Wave-side changes.
+                RefreshAsioDriverInfo(
+                    GetSelectedAsioInputChannelOffset(),
+                    GetSelectedAsioOutputChannelOffset(),
+                    GetSelectedAsioLoopbackInputChannelOffset());
+            }
             UpdateAudioBackendControls();
         }
 
@@ -1008,9 +1049,13 @@ namespace Resonalyze.Options
 
         private int GetSelectedWaveRecordingChannelCount()
         {
-            return comboBoxWaveLoopbackChannel.SelectedItem is InputChannelOption { Offset: not null }
-                ? 2
-                : 1;
+            // The microphone on channel 2 (offset 1) needs a 2-channel format
+            // even without a loopback selection.
+            int loopbackChannels =
+                comboBoxWaveLoopbackChannel.SelectedItem is InputChannelOption { Offset: not null }
+                    ? 2
+                    : 1;
+            return Math.Max(GetSelectedWaveInputChannelOffset() + 1, loopbackChannels);
         }
 
         private int GetSelectedAsioInputChannelOffset()

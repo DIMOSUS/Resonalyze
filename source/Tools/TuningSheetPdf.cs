@@ -101,9 +101,10 @@ internal static class TuningSheetPdf
                 {
                     File.Delete(temp);
                 }
-                catch (IOException)
+                catch (Exception)
                 {
-                    // Best effort cleanup.
+                    // Best-effort cleanup; a leftover temp image must not fail
+                    // (or mask the failure of) an export.
                 }
             }
         }

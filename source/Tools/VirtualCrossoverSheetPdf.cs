@@ -121,9 +121,10 @@ internal static class VirtualCrossoverSheetPdf
                 {
                     File.Delete(temp);
                 }
-                catch (IOException)
+                catch (Exception)
                 {
-                    // Best effort cleanup.
+                    // Best-effort cleanup; a leftover temp image must not fail
+                    // (or mask the failure of) an export.
                 }
             }
         }
@@ -271,6 +272,15 @@ internal static class VirtualCrossoverSheetPdf
             TextColor = OxyColors.Black,
             IsLegendVisible = true
         };
+        // OxyPlot 2.x renders no legend unless one is explicitly added; the
+        // per-series channel titles were invisible in the exported sheet.
+        model.Legends.Add(new OxyPlot.Legends.Legend
+        {
+            LegendPosition = OxyPlot.Legends.LegendPosition.TopRight,
+            LegendTextColor = OxyColors.Black,
+            LegendBorder = OxyColors.Gray,
+            LegendBackground = OxyColors.White
+        });
 
         double minDb = -6;
         double maxDb = 6;

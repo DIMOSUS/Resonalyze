@@ -13,7 +13,8 @@ public partial class Form1
     protected override void WndProc(ref Message m)
     {
         if (m.Msg == ChromeTitleBar.WmNcHitTest &&
-            !chromeTitleBar.IsCustomMaximized)
+            !chromeTitleBar.IsCustomMaximized &&
+            WindowState == FormWindowState.Normal)
         {
             base.WndProc(ref m);
             if ((int)m.Result == ChromeTitleBar.HtClient)
@@ -22,7 +23,8 @@ public partial class Form1
                     ChromeTitleBar.GetPointFromLParam(m.LParam));
                 m.Result = ChromeTitleBar.GetResizeHitTest(
                     point,
-                    ClientSize);
+                    ClientSize,
+                    chromeTitleBar.ScaledResizeGripSize);
             }
             return;
         }

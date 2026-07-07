@@ -397,12 +397,13 @@ namespace Resonalyze
             }
             catch (OperationCanceledException)
             {
-                return false;
+                // A live capture only ends when the user stops it; cancellation
+                // is the normal completion, not a failure.
+                success = true;
             }
             catch (Exception exception)
             {
                 LastError = exception;
-                return false;
             }
             finally
             {
@@ -465,13 +466,52 @@ namespace Resonalyze
             {
                 await loopback.StartRecordingAsync(cancellationToken).ConfigureAwait(false);
             }
-            player.Init(stream);
 
-            while (true)
+            // A looping provider keeps the excitation seamless: restarting playback
+            // per pass (the old play-to-end loop) left an audible gap at every loop
+            // boundary and a hole in the captured noise.
+            stream.Position = 0;
+            player.Init(new LoopingWaveProvider(stream));
+            await PlayUntilCancelledAsync(player, cancellationToken).ConfigureAwait(false);
+        }
+
+        private static async Task PlayUntilCancelledAsync(
+            WaveOutEvent player,
+            CancellationToken cancellationToken)
+        {
+            var stopped = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+            void PlaybackStopped(object? sender, StoppedEventArgs args)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                stream.Position = 0;
-                await PlayToEndAsync(player, cancellationToken).ConfigureAwait(false);
+                if (args.Exception != null)
+                {
+                    stopped.TrySetException(args.Exception);
+                }
+                else
+                {
+                    stopped.TrySetResult(true);
+                }
+            }
+
+            player.PlaybackStopped += PlaybackStopped;
+            using CancellationTokenRegistration registration =
+                cancellationToken.Register(() =>
+                {
+                    player.Stop();
+                    stopped.TrySetCanceled(cancellationToken);
+                });
+
+            try
+            {
+                player.Play();
+                // The looping provider never runs dry; only cancellation or a
+                // device error ends playback.
+                await stopped.Task.ConfigureAwait(false);
+            }
+            finally
+            {
+                player.PlaybackStopped -= PlaybackStopped;
             }
         }
 
@@ -511,40 +551,6 @@ namespace Resonalyze
             }
         }
 
-        private static async Task PlayToEndAsync(WaveOutEvent player, CancellationToken cancellationToken)
-        {
-            var stopped = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-            void PlaybackStopped(object? sender, StoppedEventArgs args)
-            {
-                if (args.Exception != null)
-                {
-                    stopped.TrySetException(args.Exception);
-                }
-                else
-                {
-                    stopped.TrySetResult(true);
-                }
-            }
-
-            player.PlaybackStopped += PlaybackStopped;
-            using CancellationTokenRegistration registration =
-                cancellationToken.Register(() =>
-                {
-                    player.Stop();
-                    stopped.TrySetCanceled(cancellationToken);
-                });
-
-            try
-            {
-                player.Play();
-                await stopped.Task.ConfigureAwait(false);
-            }
-            finally
-            {
-                player.PlaybackStopped -= PlaybackStopped;
-            }
-        }
 
         private void ProcessSequenceChannels(float[][] sequence)
         {
@@ -775,38 +781,20 @@ namespace Resonalyze
                 ? WindowType.Rectangular
                 : LiveSpectrumOptions.WindowType;
 
-        private int GetRequiredWaveInputChannelCount()
-        {
-            int lastChannel = WaveInputChannelOffset;
-            if (WaveLoopbackInputChannelOffset.HasValue)
-            {
-                lastChannel = Math.Max(lastChannel, WaveLoopbackInputChannelOffset.Value);
-            }
+        private int GetRequiredWaveInputChannelCount() =>
+            CaptureChannelLayout.RequiredWaveInputChannelCount(
+                WaveInputChannelOffset,
+                WaveLoopbackInputChannelOffset);
 
-            return lastChannel + 1;
-        }
+        private int GetAsioCaptureFirstInputOffset() =>
+            CaptureChannelLayout.AsioFirstInputOffset(
+                AsioInputChannelOffset,
+                AsioLoopbackInputChannelOffset);
 
-        private int GetAsioCaptureFirstInputOffset()
-        {
-            if (AsioLoopbackInputChannelOffset.HasValue)
-            {
-                return Math.Min(AsioInputChannelOffset, AsioLoopbackInputChannelOffset.Value);
-            }
-
-            return AsioInputChannelOffset;
-        }
-
-        private int GetAsioCaptureInputChannelCount()
-        {
-            int firstInputOffset = GetAsioCaptureFirstInputOffset();
-            int lastInputOffset = AsioInputChannelOffset;
-            if (AsioLoopbackInputChannelOffset.HasValue)
-            {
-                lastInputOffset = Math.Max(lastInputOffset, AsioLoopbackInputChannelOffset.Value);
-            }
-
-            return lastInputOffset - firstInputOffset + 1;
-        }
+        private int GetAsioCaptureInputChannelCount() =>
+            CaptureChannelLayout.AsioInputChannelCount(
+                AsioInputChannelOffset,
+                AsioLoopbackInputChannelOffset);
 
         private int GetMicrophoneSequenceIndex() =>
             PairsSeparateLoopbackDevice

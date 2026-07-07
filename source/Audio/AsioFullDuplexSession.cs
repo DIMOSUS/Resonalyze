@@ -11,11 +11,15 @@ internal sealed class AsioFullDuplexSession : IDisposable
     private readonly int inputChannelOffset;
     private readonly int outputChannelOffset;
     private readonly int driverRecordChannelCount;
+    private readonly AsioSampleConverter sampleConverter = new();
     private AsioOut? driver;
-    private List<float>[] samples = Array.Empty<List<float>>();
+    private CaptureAccumulator? accumulator;
+    private float[][] convertScratch = Array.Empty<float[]>();
+    private double[] meterPeaks = Array.Empty<double>();
+    private double[] meterSumSquares = Array.Empty<double>();
+    private int expectedTotalSamples;
     private TaskCompletionSource<bool>? firstBufferReady;
     private TaskCompletionSource<bool>? playbackStopped;
-    private int sequenceStart;
     private bool disposed;
 
     public event Action<float[]>? SequenceReady;
@@ -49,14 +53,15 @@ internal sealed class AsioFullDuplexSession : IDisposable
     }
 
     public int Sequence { get; set; }
-    public int ReadSamples { get; private set; }
+    public int ReadSamples => accumulator?.ReadSamples ?? 0;
     public int ChannelCount { get; }
 
     public async Task StartAsync(
         IWaveProvider playbackProvider,
         int sampleRate,
         bool autoStop,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int expectedTotalSamples = 0)
     {
         ThrowIfDisposed();
         if (sampleRate <= 0)
@@ -64,6 +69,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
             throw new ArgumentOutOfRangeException(nameof(sampleRate));
         }
 
+        this.expectedTotalSamples = expectedTotalSamples;
         StopAndDisposeDriver();
         ResetBuffers();
 
@@ -103,7 +109,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
 
         using CancellationTokenRegistration registration =
             cancellationToken.Register(() => firstBufferReady.TrySetCanceled(cancellationToken));
-        await firstBufferReady.Task;
+        await firstBufferReady.Task.ConfigureAwait(false);
     }
 
     public Task WaitForSamplesAsync(int sampleCount, CancellationToken cancellationToken)
@@ -152,7 +158,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
 
         try
         {
-            await stoppedTask.WaitAsync(StopTimeout);
+            await stoppedTask.WaitAsync(StopTimeout).ConfigureAwait(false);
         }
         catch (TimeoutException exception)
         {
@@ -166,17 +172,14 @@ internal sealed class AsioFullDuplexSession : IDisposable
         }
     }
 
+    // Meaningful only without sequence extraction (the accumulator drops the
+    // consumed prefix in sequence mode); no current caller mixes the two.
     public float[][] GetSamplesSnapshot()
     {
         lock (sync)
         {
-            var snapshot = new float[samples.Length][];
-            for (int channel = 0; channel < samples.Length; channel++)
-            {
-                snapshot[channel] = samples[channel].ToArray();
-            }
-
-            return snapshot;
+            return accumulator?.Snapshot()
+                ?? Array.Empty<float[]>();
         }
     }
 
@@ -201,6 +204,10 @@ internal sealed class AsioFullDuplexSession : IDisposable
         GC.SuppressFinalize(this);
     }
 
+    // Runs inside the ASIO buffer-switch callback: NAudio fills the playback
+    // buffers only after this handler returns, so every microsecond spent here
+    // delays the output. Conversion and level metering therefore run on reusable
+    // scratch buffers outside the lock; only bounded array copies happen inside.
     private void ReceiveAudio(object? sender, AsioAudioAvailableEventArgs args)
     {
         if (args.InputBuffers.Length < driverRecordChannelCount)
@@ -211,51 +218,46 @@ internal sealed class AsioFullDuplexSession : IDisposable
             return;
         }
 
-        List<float[][]> readySequences = new();
-        var peaks = new double[ChannelCount];
-        var sumSquares = new double[ChannelCount];
+        int frames = args.SamplesPerBuffer;
+        EnsureScratch(frames);
+        double[] peaks = meterPeaks;
+        double[] sumSquares = meterSumSquares;
+        for (int channel = 0; channel < ChannelCount; channel++)
+        {
+            float[] scratch = convertScratch[channel];
+            sampleConverter.Convert(
+                args.InputBuffers[inputChannelOffset + channel],
+                args.AsioSampleType,
+                scratch,
+                frames);
+            double peak = 0;
+            double sum = 0;
+            for (int i = 0; i < frames; i++)
+            {
+                double sample = scratch[i];
+                double magnitude = Math.Abs(sample);
+                peak = Math.Max(peak, magnitude);
+                sum += sample * sample;
+            }
 
+            peaks[channel] = peak;
+            sumSquares[channel] = sum;
+        }
+
+        List<float[][]>? readySequences;
         lock (sync)
         {
-            for (int frame = 0; frame < args.SamplesPerBuffer; frame++)
+            if (accumulator == null)
             {
-                for (int channel = 0; channel < ChannelCount; channel++)
-                {
-                    int asioChannel = inputChannelOffset + channel;
-                    float sample = AsioSampleBufferReader.ReadSample(
-                        args.InputBuffers[asioChannel],
-                        frame,
-                        args.AsioSampleType);
-                    samples[channel].Add(sample);
-                    double magnitude = Math.Abs(sample);
-                    peaks[channel] = Math.Max(peaks[channel], magnitude);
-                    sumSquares[channel] += sample * sample;
-                }
-                ReadSamples++;
+                return;
             }
 
-            if (Sequence > 0)
-            {
-                while (ReadSamples - sequenceStart >= Sequence)
-                {
-                    var sequence = new float[ChannelCount][];
-                    for (int channel = 0; channel < ChannelCount; channel++)
-                    {
-                        sequence[channel] = new float[Sequence];
-                        samples[channel].CopyTo(
-                            sequenceStart,
-                            sequence[channel],
-                            0,
-                            Sequence);
-                    }
-                    sequenceStart += Sequence;
-                    readySequences.Add(sequence);
-                }
-            }
+            accumulator.Append(convertScratch, frames);
+            readySequences = accumulator.ExtractReadySequences();
 
             for (int i = sampleWaiters.Count - 1; i >= 0; i--)
             {
-                if (ReadSamples >= sampleWaiters[i].SampleCount)
+                if (accumulator.ReadSamples >= sampleWaiters[i].SampleCount)
                 {
                     sampleWaiters[i].Complete();
                     sampleWaiters.RemoveAt(i);
@@ -265,14 +267,37 @@ internal sealed class AsioFullDuplexSession : IDisposable
 
         firstBufferReady?.TrySetResult(true);
         LevelsAvailable?.Invoke(
-            AudioLevelMetering.MeasureChannels(
-                peaks,
-                sumSquares,
-                args.SamplesPerBuffer));
+            AudioLevelMetering.MeasureChannels(peaks, sumSquares, frames));
+        if (readySequences == null)
+        {
+            return;
+        }
+
         foreach (float[][] sequence in readySequences)
         {
             SequenceReady?.Invoke(sequence[0]);
             SequenceChannelsReady?.Invoke(sequence);
+        }
+    }
+
+    private void EnsureScratch(int frames)
+    {
+        if (meterPeaks.Length != ChannelCount)
+        {
+            meterPeaks = new double[ChannelCount];
+            meterSumSquares = new double[ChannelCount];
+        }
+
+        if (convertScratch.Length == ChannelCount &&
+            convertScratch[0].Length >= frames)
+        {
+            return;
+        }
+
+        convertScratch = new float[ChannelCount][];
+        for (int channel = 0; channel < ChannelCount; channel++)
+        {
+            convertScratch[channel] = new float[frames];
         }
     }
 
@@ -292,13 +317,13 @@ internal sealed class AsioFullDuplexSession : IDisposable
     {
         lock (sync)
         {
-            ReadSamples = 0;
-            sequenceStart = 0;
-            samples = new List<float>[ChannelCount];
-            for (int channel = 0; channel < ChannelCount; channel++)
-            {
-                samples[channel] = new List<float>();
-            }
+            // Pre-allocating the expected recording length keeps List-style
+            // growth re-allocations out of the ASIO callback; live (sequence)
+            // mode stays bounded via the accumulator's tail trimming instead.
+            accumulator = new CaptureAccumulator(
+                ChannelCount,
+                Sequence,
+                Math.Max(expectedTotalSamples, 8192));
 
             foreach (SoundRecorderSampleWaiter waiter in sampleWaiters)
             {

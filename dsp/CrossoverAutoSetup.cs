@@ -379,56 +379,12 @@ public static class CrossoverAutoSetup
         return EqualizationCurve.LogFrequencyGrid(low, high, count).ToArray();
     }
 
-    // Linear interpolation in dB over log frequency, clamped to the curve's
-    // endpoints. Measured driver curves span the whole audio band, so a grid
-    // point outside the measured range means the driver has simply rolled off —
-    // holding the endpoint value is the right behaviour, not dropping the point.
-    private static double InterpolateDb(IReadOnlyList<SignalPoint> points, double frequencyHz)
-    {
-        int count = points.Count;
-        if (count == 0)
-        {
-            return double.NegativeInfinity;
-        }
-        if (frequencyHz <= points[0].X)
-        {
-            return points[0].Y;
-        }
-        if (frequencyHz >= points[count - 1].X)
-        {
-            return points[count - 1].Y;
-        }
-
-        int lo = 0;
-        int hi = count - 1;
-        while (hi - lo > 1)
-        {
-            int mid = (lo + hi) / 2;
-            if (points[mid].X <= frequencyHz)
-            {
-                lo = mid;
-            }
-            else
-            {
-                hi = mid;
-            }
-        }
-
-        SignalPoint a = points[lo];
-        SignalPoint b = points[hi];
-        if (!double.IsFinite(a.Y) || !double.IsFinite(b.Y))
-        {
-            return double.NaN;
-        }
-        if (b.X <= a.X)
-        {
-            return a.Y;
-        }
-
-        double t = (Math.Log(frequencyHz) - Math.Log(a.X)) /
-                   (Math.Log(b.X) - Math.Log(a.X));
-        return a.Y + t * (b.Y - a.Y);
-    }
+    // Endpoint-clamped interpolation: measured driver curves span the whole audio
+    // band, so a grid point outside the measured range means the driver has simply
+    // rolled off — holding the endpoint value is the right behaviour, not dropping
+    // the point.
+    private static double InterpolateDb(IReadOnlyList<SignalPoint> points, double frequencyHz) =>
+        CurveSampling.InterpolateDbLog(points, frequencyHz, clampEnds: true);
 
     // Average level (dB over linear amplitude) of the curve inside a band.
     private static double AverageLevelDb(

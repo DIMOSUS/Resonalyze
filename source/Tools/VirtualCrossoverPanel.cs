@@ -185,13 +185,25 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         initialized = true;
-        _ = LoadProjectAsync();
+        LoadProjectSafely();
     }
 
     // ---------------------------------------------------------------- project
 
-    private Task LoadProjectAsync() =>
-        ApplyProjectAsync(VirtualCrossoverProjectFile.LoadOrDefault());
+    // Fire-and-forget with a guard: an exception in the async load would
+    // otherwise vanish into an unobserved task.
+    private async void LoadProjectSafely()
+    {
+        try
+        {
+            await ApplyProjectAsync(VirtualCrossoverProjectFile.LoadOrDefault());
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"Virtual DSP project load failed: {exception}");
+        }
+    }
 
     // Binds a project (the internal autosave or an imported session) to the UI:
     // controls, view flags, and freshly re-resolved sources.
@@ -266,10 +278,12 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             project.Save();
         }
-        catch
+        catch (Exception exception)
         {
             // The project file is a convenience; failing to save it must never
             // break the tool (e.g. a read-only install directory).
+            System.Diagnostics.Debug.WriteLine(
+                $"Virtual DSP project save failed: {exception}");
         }
     }
 
@@ -401,10 +415,9 @@ public partial class VirtualCrossoverPanel : UserControl
         return runtime;
     }
 
-    // Channel names run A, B, C… by index; the eight-channel cap keeps them to a
-    // single letter.
+    // Channel names run A, B, C… by index; shared with the tuning sheets.
     private static string ChannelNameFor(int index) =>
-        ((char)('A' + index)).ToString();
+        VirtualCrossoverSheet.ChannelName(index);
 
     // Grows or shrinks the block list to the requested count (clamped to the
     // valid range) without touching the project — the callers own persistence.
@@ -1319,11 +1332,11 @@ public partial class VirtualCrossoverPanel : UserControl
     }
 
     private List<ProcessedChannel> ProcessChannels(
-        IReadOnlyDictionary<ChannelRuntime, AlignmentOverride>? alignmentOverrides = null)
+        IReadOnlyDictionary<ChannelRuntime, AlignmentOverride>? alignmentOverrides = null,
+        Dictionary<ChannelRuntime, ProcessedChannelCache>? searchCache = null)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.ProcessChannels");
         var processed = new List<ProcessedChannel>();
-        bool useCache = alignmentOverrides == null;
         for (int i = 0; i < channels.Count; i++)
         {
             ChannelRuntime channel = channels[i];
@@ -1364,18 +1377,23 @@ public partial class VirtualCrossoverPanel : UserControl
                 }
             }
 
-            ProcessedChannelCacheKey? cacheKey = useCache
-                ? new ProcessedChannelCacheKey(ir, channel.SampleRate, chain)
-                : null;
-            if (cacheKey != null &&
-                channel.ProcessedCache?.Key.Equals(cacheKey) == true)
+            // The shared per-channel cache serves interactive redraws (UI thread
+            // only). The alignment search runs on a background thread, so it gets
+            // its own thread-confined cache instead — most channels keep a stable
+            // chain between junction searches, so they hit it, and the shared
+            // cache is never touched off the UI thread.
+            var cacheKey = new ProcessedChannelCacheKey(ir, channel.SampleRate, chain);
+            ProcessedChannelCache? cached = alignmentOverrides == null
+                ? channel.ProcessedCache
+                : searchCache?.GetValueOrDefault(channel);
+            if (cached?.Key.Equals(cacheKey) == true)
             {
                 using (AppProfiler.Zone("VirtualDSP.ProcessChannels.CacheHit"))
                 {
                     processed.Add(new ProcessedChannel(
                         channel,
-                        channel.ProcessedCache.ImpulseResponse,
-                        channel.ProcessedCache.PeakIndex,
+                        cached.ImpulseResponse,
+                        cached.PeakIndex,
                         ChannelColors[i]));
                 }
 
@@ -1395,12 +1413,14 @@ public partial class VirtualCrossoverPanel : UserControl
                 peakIndex = VirtualCrossoverAnalysis.FindPeakIndex(result);
             }
 
-            if (cacheKey != null)
+            var freshCache = new ProcessedChannelCache(cacheKey, result, peakIndex);
+            if (alignmentOverrides == null)
             {
-                channel.ProcessedCache = new ProcessedChannelCache(
-                    cacheKey,
-                    result,
-                    peakIndex);
+                channel.ProcessedCache = freshCache;
+            }
+            else if (searchCache != null)
+            {
+                searchCache[channel] = freshCache;
             }
 
             using (AppProfiler.Zone("VirtualDSP.ProcessChannels.AddResult"))
@@ -1644,7 +1664,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // The read-out lives in the host's right-side panel (where overlays sit in
         // analysis modes), as a compact per-junction column with the full banded
         // breakdown on hover.
-        List<MetricEntry> entries = BuildMetricEntries(processed, magnitudes, sumCurve);
+        List<VirtualCrossoverMetric.Entry> entries = BuildMetricEntries(processed, magnitudes, sumCurve);
         MetricChanged?.Invoke(
             FormatMetricCompact(entries),
             entries.Count > 0 ? FormatMetricDetail(entries) : string.Empty);
@@ -1678,25 +1698,15 @@ public partial class VirtualCrossoverPanel : UserControl
         return (magnitudes, sumCurve);
     }
 
-    // One sum-loss read-out: a junction pair (or the total across the crossover
-    // window), its average and dip in dB, and the band it was measured over.
-    private readonly record struct MetricEntry(
-        string Junction,
-        double AverageDb,
-        double? DipDb,
-        double LowHz,
-        double HighHz,
-        bool IsTotal);
-
     // Builds the sum-loss read-outs for a processed set without touching any
     // control, so they can feed the label, its tooltip, and the Auto delay log
     // from one computation. Empty when there is no metric (fewer than two channels).
-    private List<MetricEntry> BuildMetricEntries(
+    private List<VirtualCrossoverMetric.Entry> BuildMetricEntries(
         List<ProcessedChannel> processed,
         List<AnalysisCurve>? magnitudes,
         AnalysisCurve? sumCurve)
     {
-        var entries = new List<MetricEntry>();
+        var entries = new List<VirtualCrossoverMetric.Entry>();
         if (magnitudes == null || sumCurve == null)
         {
             return entries;
@@ -1718,7 +1728,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 sumCurve.Points, channelPoints, pair.BandLowHz, pair.BandHighHz);
             if (pairLoss.HasValue)
             {
-                entries.Add(new MetricEntry(
+                entries.Add(new VirtualCrossoverMetric.Entry(
                     $"{pair.Lower.Channel.Control.ChannelName}/" +
                     $"{pair.Upper.Channel.Control.ChannelName}",
                     pairLoss.Value,
@@ -1736,68 +1746,23 @@ public partial class VirtualCrossoverPanel : UserControl
             sumCurve.Points, channelPoints, minHz, maxHz);
         if (loss.HasValue)
         {
-            entries.Add(new MetricEntry(
+            entries.Add(new VirtualCrossoverMetric.Entry(
                 "total", loss.Value, dip, minHz, maxHz, IsTotal: true));
         }
 
         return entries;
     }
 
-    // Compact single line for the label: no frequency ranges, so it stays short
-    // with many channels.
-    private static string FormatMetricLabel(IReadOnlyList<MetricEntry> entries)
-    {
-        if (entries.Count == 0)
-        {
-            return "Sum loss avg: —";
-        }
+    // The metric text renderings live in VirtualCrossoverMetric, where they are
+    // unit-tested.
+    private static string FormatMetricLabel(IReadOnlyList<VirtualCrossoverMetric.Entry> entries) =>
+        VirtualCrossoverMetric.FormatLabel(entries);
 
-        IEnumerable<string> parts = entries.Select(entry =>
-        {
-            string body = $"{entry.AverageDb:0.0} dB" +
-                (entry.DipDb.HasValue ? $", dip {entry.DipDb.Value:0.0} dB" : "");
-            return entry.IsTotal ? "total " + body : $"{entry.Junction} {body}";
-        });
-        return "Sum loss avg: " + string.Join("   ", parts);
-    }
+    private static string FormatMetricCompact(IReadOnlyList<VirtualCrossoverMetric.Entry> entries) =>
+        VirtualCrossoverMetric.FormatCompact(entries);
 
-    // Compact per-junction column for the narrow host read-out panel: a monospace
-    // "name  avg / dip" line each, no frequency ranges (those are on hover).
-    private static string FormatMetricCompact(IReadOnlyList<MetricEntry> entries)
-    {
-        if (entries.Count == 0)
-        {
-            return "Sum loss (dB)\r\n  avg / dip\r\n\r\n—";
-        }
-
-        var builder = new System.Text.StringBuilder("Sum loss (dB)\r\n  avg / dip\r\n\r\n");
-        foreach (MetricEntry entry in entries)
-        {
-            string name = (entry.IsTotal ? "Total" : entry.Junction).PadRight(6);
-            string dip = entry.DipDb.HasValue ? $"{entry.DipDb.Value,5:0.0}" : "    —";
-            builder.AppendLine($"{name}{entry.AverageDb,5:0.0} /{dip}");
-        }
-
-        return builder.ToString().TrimEnd();
-    }
-
-    // Full multi-line breakdown for the tooltip and the Auto delay log, one
-    // read-out per line, including the band each was measured over.
-    private static string FormatMetricDetail(IReadOnlyList<MetricEntry> entries)
-    {
-        if (entries.Count == 0)
-        {
-            return "Sum loss avg: —";
-        }
-
-        return "Sum loss avg\r\n" + string.Join("\r\n", entries.Select(entry =>
-        {
-            string name = entry.IsTotal ? "Total" : entry.Junction;
-            string dip = entry.DipDb.HasValue ? $", dip {entry.DipDb.Value:0.0} dB" : "";
-            return $"{name}: {entry.AverageDb:0.0} dB avg{dip} " +
-                $"({FormatHz(entry.LowHz)} – {FormatHz(entry.HighHz)})";
-        }));
-    }
+    private static string FormatMetricDetail(IReadOnlyList<VirtualCrossoverMetric.Entry> entries) =>
+        VirtualCrossoverMetric.FormatDetail(entries);
 
     // The spread of alignment delays, above which the setup is flagged. A driver
     // whose crossover has pathological group delay (a narrow or steep low-
@@ -1847,11 +1812,6 @@ public partial class VirtualCrossoverPanel : UserControl
         labelCrossoverWarning.Visible = true;
     }
 
-    private static string FormatHz(double frequencyHz) =>
-        frequencyHz >= 1_000
-            ? $"{frequencyHz / 1_000:0.#} kHz"
-            : $"{frequencyHz:0} Hz";
-
     // Bounds of the stage-2 fine-search span. The span scales with the
     // crossover frequency (half its period) because the coarse arrival error
     // grows with the period — but it never drops below half a millisecond:
@@ -1878,17 +1838,6 @@ public partial class VirtualCrossoverPanel : UserControl
     // from a seed that still lands a little off.
     private const double PhatSeedMinCoefficient = 0.15;
 
-    // Tie-break preferences among near-equal alignment candidates. An inverted
-    // winner must beat the best non-inverted candidate by a real margin: room
-    // reflections routinely hand a (flip + half-period shift) impostor a few
-    // hundredths of a dB inside the pair band, while a genuinely flipped
-    // driver wins by the full arrival-prior penalty of its non-inverted
-    // impostors (>= ~0.3 dB, see PriorPenaltyDbAtSigma). Among equals of one
-    // polarity, the candidate closest to the measured arrivals wins — the
-    // physically minimal correction.
-    private const double InvertPreferenceMarginDb = 0.25;
-    private const double DelayTieMarginDb = 0.1;
-
     // How much better (in score dB) a wide-window optimum must be before it
     // unseats the arrival-anchored fine pick. The narrow window is centered on
     // the coarse arrival, which at a high crossover can be a whole lobe off (its
@@ -1897,30 +1846,12 @@ public partial class VirtualCrossoverPanel : UserControl
     // unless a distinctly better summation exists elsewhere.
     private const double WideWindowPromotionMarginDb = 0.2;
 
+    // The invert-preference and delay-tie margins live with the selection
+    // logic in AlignmentSelection (Resonalyze.Dsp), where they are unit-tested.
     private static AlignmentCandidate SelectCandidate(
         IReadOnlyList<AlignmentCandidate> candidates,
-        double baseDeltaMs)
-    {
-        AlignmentCandidate best = candidates[0];
-        if (best.InvertPolarity)
-        {
-            AlignmentCandidate? bestNormal = candidates
-                .Where(item => !item.InvertPolarity)
-                .OrderByDescending(item => item.ScoreDb)
-                .FirstOrDefault();
-            if (bestNormal != null &&
-                bestNormal.ScoreDb >= best.ScoreDb - InvertPreferenceMarginDb)
-            {
-                best = bestNormal;
-            }
-        }
-
-        return candidates
-            .Where(item => item.InvertPolarity == best.InvertPolarity &&
-                item.ScoreDb >= best.ScoreDb - DelayTieMarginDb)
-            .OrderBy(item => Math.Abs(item.DelayMs - baseDeltaMs))
-            .First();
-    }
+        double baseDeltaMs) =>
+        AlignmentSelection.Select(candidates, baseDeltaMs);
 
     // Two-stage alignment. Stage 1: Time-Alignment-style band-limited first
     // arrivals give a coarse delay per channel (robust, no phase ambiguity).
@@ -1993,7 +1924,10 @@ public partial class VirtualCrossoverPanel : UserControl
         catch (Exception exception)
         {
             System.Diagnostics.Debug.WriteLine($"Auto delay failed: {exception}");
-            System.Media.SystemSounds.Beep.Play();
+            if (!IsDisposed && IsHandleCreated)
+            {
+                ShowError("Auto delay failed.", exception.Message);
+            }
         }
         finally
         {
@@ -2068,6 +2002,11 @@ public partial class VirtualCrossoverPanel : UserControl
         Dictionary<ChannelRuntime, AlignmentOverride> alignment,
         System.Text.StringBuilder log)
     {
+        // Thread-confined FFT cache for the junction searches below: between
+        // consecutive searches only the overrides of one or two channels change,
+        // so the other channels' processed IRs are reused instead of re-FFT'd.
+        var searchCache = new Dictionary<ChannelRuntime, ProcessedChannelCache>();
+
         // Stage 1: coarse offsets from band-limited first arrivals, refined by the
         // GCC-PHAT peak where it is trustworthy. Arrivals of different drivers are
         // only comparable inside a SHARED band — a woofer's envelope in its own low
@@ -2189,7 +2128,7 @@ public partial class VirtualCrossoverPanel : UserControl
             // not account for, mis-aligning that channel by the shift.
             var searchAlignment = new Dictionary<ChannelRuntime, AlignmentOverride>(alignment);
             searchAlignment.Remove(channel);
-            List<ProcessedChannel> current = ProcessChannels(searchAlignment);
+            List<ProcessedChannel> current = ProcessChannels(searchAlignment, searchCache);
             Complex[] variableIr = current
                 .First(item => item.Channel == channel).ImpulseResponse;
             var neighborIrs = new List<Complex[]>
@@ -2440,27 +2379,10 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // The crossover frequency between two adjacent channels: the lower one's
-    // low-pass corner when set, the upper one's high-pass corner otherwise, and
-    // the geometric mean of their band centers as the filterless fallback.
     private static double GetPairCrossoverHz(
         VirtualCrossoverChannelSettings lower,
-        VirtualCrossoverChannelSettings upper)
-    {
-        if (lower.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass)
-        {
-            return lower.LowPassEdge.FrequencyHz;
-        }
-        if (upper.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass)
-        {
-            return upper.HighPassEdge.FrequencyHz;
-        }
-
-        (double lowerLow, double lowerHigh) = GetChannelBand(lower);
-        (double upperLow, double upperHigh) = GetChannelBand(upper);
-        return Math.Sqrt(
-            Math.Sqrt(lowerLow * lowerHigh) * Math.Sqrt(upperLow * upperHigh));
-    }
+        VirtualCrossoverChannelSettings upper) =>
+        VirtualCrossoverJunctions.GetPairCrossoverHz(lower, upper);
 
     // Adjacent channels along the spectrum with their shared junction: the pair
     // crossover frequency and the band (an octave to each side) where the two
@@ -2501,21 +2423,9 @@ public partial class VirtualCrossoverPanel : UserControl
         return pairs;
     }
 
-    // The band a channel actually plays in: its crossover corners when set, the
-    // full range otherwise. Used to order the channels along the spectrum.
     private static (double LowHz, double HighHz) GetChannelBand(
-        VirtualCrossoverChannelSettings settings)
-    {
-        double lowHz =
-            settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass
-                ? settings.HighPassEdge.FrequencyHz
-                : 20;
-        double highHz =
-            settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass
-                ? settings.LowPassEdge.FrequencyHz
-                : 20_000;
-        return highHz > lowHz ? (lowHz, highHz) : (20, 20_000);
-    }
+        VirtualCrossoverChannelSettings settings) =>
+        VirtualCrossoverJunctions.GetChannelBand(settings);
 
     private AnalysisCurve BuildMagnitudeCurve(
         Complex[] impulseResponse,

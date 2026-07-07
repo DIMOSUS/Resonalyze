@@ -11,11 +11,6 @@ namespace Resonalyze;
 
 internal sealed class TimeAlignmentPanelController : IDisposable
 {
-    private const double SpeedOfSoundAt20C = 343.2;
-    private const int DelayTableFirstColumn = 18;
-    // Widened past the old 34 so a Compare cell "value (Δ)" fits without touching the
-    // Strongest Peak column.
-    private const int DelayTableSecondColumn = 37;
 
     private readonly Form owner;
     private readonly TimeAlignmentOptions options;
@@ -302,20 +297,16 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             ? measurement.SampleRate * 0.5
             : 20_000);
         var model = CreatePreviewPlotModel("Bandpass Window");
-        model.Axes.Add(new LogarithmicAxis
+        var frequencyAxis = new LogarithmicAxis
         {
             Position = AxisPosition.Bottom,
             Minimum = 20,
             Maximum = maxFrequency,
             AbsoluteMaximum = 20_000,
-            AbsoluteMinimum = 20,
-            MajorGridlineColor = OxyColor.FromRgb(55, 62, 78),
-            MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineColor = OxyColor.FromRgb(48, 54, 70),
-            MinorGridlineStyle = LineStyle.Dot,
-            TextColor = OxyColors.White,
-            TicklineColor = OxyColors.White
-        });
+            AbsoluteMinimum = 20
+        };
+        ApplyPreviewAxisStyle(frequencyAxis);
+        model.Axes.Add(frequencyAxis);
         var dbAxis = CreateDecibelAxis();
         dbAxis.AbsoluteMinimum = -80;
         dbAxis.AbsoluteMaximum = 0;
@@ -441,22 +432,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             out double minDb);
 
         var model = CreatePreviewPlotModel("Envelope Around Peak");
-        model.Axes.Add(new LinearAxis
-        {
-            Position = AxisPosition.Bottom,
-            AbsoluteMinimum = minMilliseconds,
-            AbsoluteMaximum = maxMilliseconds,
-            Minimum = minMilliseconds,
-            Maximum = maxMilliseconds,
-            MajorStep = 25,
-            MajorGridlineColor = OxyColor.FromRgb(55, 62, 78),
-            MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineColor = OxyColor.FromRgb(48, 54, 70),
-            MinorGridlineStyle = LineStyle.Dot,
-            TextColor = OxyColors.White,
-            TicklineColor = OxyColors.White,
-            Title = "ms from peak"
-        });
+        model.Axes.Add(CreateMillisecondsAxis(minMilliseconds, maxMilliseconds));
         var dbAxis = CreateDecibelAxis();
         dbAxis.AbsoluteMaximum = maxDb + 30;
         dbAxis.AbsoluteMinimum = minDb - 10;
@@ -520,7 +496,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             Color = color,
             StrokeThickness = strokeThickness
         };
-        for (int offset = -radius; offset <= radius; offset += step)
+        double localMaxDb = maxDb;
+        double localMinDb = minDb;
+        void AddPoint(int offset)
         {
             int index = WrapIndex(result.EnvelopePeakIndex + offset, envelope.Length);
             double milliseconds = offset * 1000.0 / sampleRate + xOffsetMilliseconds;
@@ -528,10 +506,45 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             double decibels = DataHelper.AmplitudeToDecibels(relativeAmplitude);
             double clampedDecibels = Math.Max(-80, decibels);
             series.Points.Add(new DataPoint(milliseconds, clampedDecibels));
-            maxDb = Math.Max(maxDb, clampedDecibels);
-            minDb = Math.Min(minDb, clampedDecibels);
+            localMaxDb = Math.Max(localMaxDb, clampedDecibels);
+            localMinDb = Math.Min(localMinDb, clampedDecibels);
         }
 
+        // Min/max pooling per decimation bucket: sampling every Nth value would
+        // skip a narrow reflection peak entirely, hiding the very feature the
+        // markers point at.
+        for (int bucketStart = -radius; bucketStart <= radius; bucketStart += step)
+        {
+            int bucketEnd = Math.Min(radius, bucketStart + step - 1);
+            int minOffset = bucketStart;
+            int maxOffset = bucketStart;
+            double minValue = double.PositiveInfinity;
+            double maxValue = double.NegativeInfinity;
+            for (int offset = bucketStart; offset <= bucketEnd; offset++)
+            {
+                double value = envelope[
+                    WrapIndex(result.EnvelopePeakIndex + offset, envelope.Length)];
+                if (value < minValue)
+                {
+                    minValue = value;
+                    minOffset = offset;
+                }
+                if (value > maxValue)
+                {
+                    maxValue = value;
+                    maxOffset = offset;
+                }
+            }
+
+            AddPoint(Math.Min(minOffset, maxOffset));
+            if (minOffset != maxOffset)
+            {
+                AddPoint(Math.Max(minOffset, maxOffset));
+            }
+        }
+
+        maxDb = localMaxDb;
+        minDb = localMinDb;
         return series;
     }
 
@@ -668,22 +681,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private PlotModel CreateEmptyEnvelopePreviewModel()
     {
         var model = CreatePreviewPlotModel("Envelope Around Peak");
-        model.Axes.Add(new LinearAxis
-        {
-            Position = AxisPosition.Bottom,
-            AbsoluteMinimum = -50,
-            AbsoluteMaximum = 50,
-            Minimum = -50,
-            Maximum = 50,
-            MajorStep = 25,
-            MajorGridlineColor = OxyColor.FromRgb(55, 62, 78),
-            MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineColor = OxyColor.FromRgb(48, 54, 70),
-            MinorGridlineStyle = LineStyle.Dot,
-            TextColor = OxyColors.White,
-            TicklineColor = OxyColors.White,
-            Title = "ms from peak"
-        });
+        model.Axes.Add(CreateMillisecondsAxis(-50, 50));
         var dbAxis = CreateDecibelAxis();
         dbAxis.AbsoluteMaximum = 0;
         dbAxis.AbsoluteMinimum = -80;
@@ -817,11 +815,11 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         // Header split into segments so the two peak labels carry a light colour accent
         // matching their envelope markers, while keeping the column alignment.
         AppendStatusText(
-            "Measured delay:".PadRight(DelayTableFirstColumn),
+            "Measured delay:".PadRight(DelayTableText.FirstColumn),
             UiPalette.TextPrimarySoft,
             resultTableFont);
         AppendStatusText(
-            "First Arrival".PadRight(DelayTableSecondColumn - DelayTableFirstColumn),
+            "First Arrival".PadRight(DelayTableText.SecondColumn - DelayTableText.FirstColumn),
             UiPalette.TimeAlignmentFirstArrival,
             resultTableFont);
         AppendStatusText(
@@ -874,34 +872,13 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     }
 
     private static double DelayMeters(double delayMilliseconds) =>
-        Math.Abs(delayMilliseconds) * SpeedOfSoundAt20C / 1000.0;
+        Math.Abs(delayMilliseconds) * Acoustics.SpeedOfSoundAt20CMetersPerSecond / 1000.0;
 
-    // "value" for a Source cell; "value (+delta)" for a Compare cell where a reference
-    // is given. The delta always carries an explicit sign.
     private static string FormatValueWithDelta(
         double value,
         double? reference,
-        string valueFormat)
-    {
-        string text = value.ToString(valueFormat);
-        if (reference.HasValue)
-        {
-            double delta = value - reference.Value;
-            text += " (" + FormatSignedDelta(delta, valueFormat) + ")";
-        }
-
-        return text;
-    }
-
-    // Signs the delta from its rounded magnitude, so a delta that rounds to zero
-    // reads "+0,000" rather than a spurious "-0,000" (or "-+0,000") from a tiny
-    // negative value the format would otherwise sign.
-    private static string FormatSignedDelta(double delta, string valueFormat)
-    {
-        string magnitude = Math.Abs(delta).ToString(valueFormat);
-        bool negative = delta < 0 && magnitude.Any(character => character is > '0' and <= '9');
-        return (negative ? "-" : "+") + magnitude;
-    }
+        string valueFormat) =>
+        DelayTableText.FormatValueWithDelta(value, reference, valueFormat);
 
     private void AppendLevelLine(string label, InputLevelMeterEntry entry)
     {
@@ -930,9 +907,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         string label,
         string firstArrival,
         string strongestPeak) =>
-        label.PadRight(DelayTableFirstColumn) +
-        firstArrival.PadRight(DelayTableSecondColumn - DelayTableFirstColumn) +
-        strongestPeak;
+        DelayTableText.FormatLine(label, firstArrival, strongestPeak);
 
     private void AppendStatusText(string text, Color color, Font? font = null)
     {
@@ -953,7 +928,19 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             return;
         }
 
-        Clipboard.SetText(value);
+        try
+        {
+            Clipboard.SetText(value);
+        }
+        catch (System.Runtime.InteropServices.ExternalException)
+        {
+            // The clipboard is a shared resource; another process may hold it
+            // (remote desktop, clipboard managers). Losing one copy click must
+            // not crash the app.
+            System.Media.SystemSounds.Beep.Play();
+            return;
+        }
+
         System.Media.SystemSounds.Asterisk.Play();
     }
 
@@ -977,29 +964,16 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         int lineStart = statusTextBox.GetFirstCharIndexFromLine(line);
         int column = Math.Max(0, index - lineStart);
-        value = column >= DelayTableSecondColumn
-            ? GetDelayTableValue(lineText, DelayTableSecondColumn)
-            : column >= DelayTableFirstColumn
-                ? GetDelayTableValue(lineText, DelayTableFirstColumn)
+        value = column >= DelayTableText.SecondColumn
+            ? GetDelayTableValue(lineText, DelayTableText.SecondColumn)
+            : column >= DelayTableText.FirstColumn
+                ? GetDelayTableValue(lineText, DelayTableText.FirstColumn)
                 : string.Empty;
         return !string.IsNullOrWhiteSpace(value);
     }
 
-    private static string GetDelayTableValue(string line, int startColumn)
-    {
-        if (line.Length <= startColumn)
-        {
-            return string.Empty;
-        }
-
-        int endColumn = startColumn == DelayTableFirstColumn
-            ? Math.Min(DelayTableSecondColumn, line.Length)
-            : line.Length;
-        string cell = line[startColumn..endColumn].Trim();
-        // Copy just the value, not the Compare "(Δ)" suffix.
-        int deltaStart = cell.IndexOf(" (", StringComparison.Ordinal);
-        return deltaStart >= 0 ? cell[..deltaStart] : cell;
-    }
+    private static string GetDelayTableValue(string line, int startColumn) =>
+        DelayTableText.GetValue(line, startColumn);
 
     private static string FormatConfidence(double confidenceDecibels)
     {
@@ -1039,48 +1013,53 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             TitleFontSize = 10
         };
 
-    private static LinearAxis CreateDecibelAxis() =>
-        new()
+    private static LinearAxis CreateDecibelAxis()
+    {
+        var axis = new LinearAxis
         {
             Position = AxisPosition.Left,
             Minimum = -80,
             Maximum = 3,
             MajorStep = 20,
-            MajorGridlineColor = OxyColor.FromRgb(55, 62, 78),
-            MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineColor = OxyColor.FromRgb(48, 54, 70),
-            MinorGridlineStyle = LineStyle.Dot,
-            TextColor = OxyColors.White,
-            TicklineColor = OxyColors.White,
             Title = "dB"
         };
-
-    private static decimal ClampDecimal(double value, DarkNumericUpDown numeric)
-    {
-        decimal decimalValue = (decimal)value;
-        return Math.Min(numeric.Maximum, Math.Max(numeric.Minimum, decimalValue));
+        ApplyPreviewAxisStyle(axis);
+        return axis;
     }
 
-    private static int WrapIndex(int index, int length)
+    private static LinearAxis CreateMillisecondsAxis(double minimum, double maximum)
     {
-        int wrapped = index % length;
-        return wrapped < 0 ? wrapped + length : wrapped;
-    }
-
-    private static int NormalizeWrappedOffset(int offset, int length)
-    {
-        int halfLength = length / 2;
-        if (offset > halfLength)
+        var axis = new LinearAxis
         {
-            return offset - length;
-        }
-        if (offset < -halfLength)
-        {
-            return offset + length;
-        }
-
-        return offset;
+            Position = AxisPosition.Bottom,
+            AbsoluteMinimum = minimum,
+            AbsoluteMaximum = maximum,
+            Minimum = minimum,
+            Maximum = maximum,
+            MajorStep = 25,
+            Title = "ms from peak"
+        };
+        ApplyPreviewAxisStyle(axis);
+        return axis;
     }
+
+    // The shared dark-preview look of every axis on the two side plots.
+    private static void ApplyPreviewAxisStyle(Axis axis)
+    {
+        axis.MajorGridlineColor = OxyColor.FromRgb(55, 62, 78);
+        axis.MajorGridlineStyle = LineStyle.Solid;
+        axis.MinorGridlineColor = OxyColor.FromRgb(48, 54, 70);
+        axis.MinorGridlineStyle = LineStyle.Dot;
+        axis.TextColor = OxyColors.White;
+        axis.TicklineColor = OxyColors.White;
+    }
+
+    private static decimal ClampDecimal(double value, DarkNumericUpDown numeric) =>
+        numeric.ClampValue(value);
+
+    private static int WrapIndex(int index, int length) =>
+        Resonalyze.Dsp.DspMath.WrapIndex(index, length);
+
 
 }
 

@@ -77,14 +77,15 @@ internal static class AudioDeviceWarmup
             settings.PlaybackChannel);
         var loopingWarmup = new LoopingWaveProvider(warmupSignal);
 
+        int prerollSamples = Math.Max(
+            1,
+            (int)Math.Round(settings.SampleRate * AsioPrerollDuration.TotalSeconds));
         await session.StartAsync(
             loopingWarmup,
             settings.SampleRate,
             autoStop: false,
-            linkedCancellation.Token);
-        int prerollSamples = Math.Max(
-            1,
-            (int)Math.Round(settings.SampleRate * AsioPrerollDuration.TotalSeconds));
+            linkedCancellation.Token,
+            expectedTotalSamples: prerollSamples + settings.SampleRate);
         await session.WaitForSamplesAsync(prerollSamples, linkedCancellation.Token);
         await session.StopAsync();
     }
@@ -135,43 +136,23 @@ internal static class AudioDeviceWarmup
     }
 
     private static int GetRequiredWaveInputChannelCount(
-        MeasurementSettingsFile.SweepMeasurementSettings settings)
-    {
-        int maxChannelOffset = settings.WaveInputChannelOffset;
-        int? loopbackOffset = GetEffectiveWaveLoopbackInputChannelOffset(settings);
-        if (loopbackOffset.HasValue)
-        {
-            maxChannelOffset = Math.Max(
-                maxChannelOffset,
-                loopbackOffset.Value);
-        }
-
-        return maxChannelOffset + 1;
-    }
+        MeasurementSettingsFile.SweepMeasurementSettings settings) =>
+        CaptureChannelLayout.RequiredWaveInputChannelCount(
+            settings.WaveInputChannelOffset,
+            GetEffectiveWaveLoopbackInputChannelOffset(settings));
 
     private static int GetAsioCaptureFirstInputOffset(
-        MeasurementSettingsFile.SweepMeasurementSettings settings)
-    {
-        int? loopbackOffset = GetEffectiveAsioLoopbackInputChannelOffset(settings);
-        return loopbackOffset.HasValue
-            ? Math.Min(
-                settings.AsioInputChannelOffset,
-                loopbackOffset.Value)
-            : settings.AsioInputChannelOffset;
-    }
+        MeasurementSettingsFile.SweepMeasurementSettings settings) =>
+        CaptureChannelLayout.AsioFirstInputOffset(
+            settings.AsioInputChannelOffset,
+            GetEffectiveAsioLoopbackInputChannelOffset(settings));
 
     private static int GetRequiredAsioInputChannelCount(
         MeasurementSettingsFile.SweepMeasurementSettings settings,
-        int firstInputOffset)
-    {
-        int? loopbackOffset = GetEffectiveAsioLoopbackInputChannelOffset(settings);
-        int lastInputOffset = loopbackOffset.HasValue
-            ? Math.Max(
-                settings.AsioInputChannelOffset,
-                loopbackOffset.Value)
-            : settings.AsioInputChannelOffset;
-        return lastInputOffset - firstInputOffset + 1;
-    }
+        int firstInputOffset) =>
+        CaptureChannelLayout.AsioInputChannelCount(
+            settings.AsioInputChannelOffset,
+            GetEffectiveAsioLoopbackInputChannelOffset(settings));
 
     private static int? GetEffectiveWaveLoopbackInputChannelOffset(
         MeasurementSettingsFile.SweepMeasurementSettings settings)

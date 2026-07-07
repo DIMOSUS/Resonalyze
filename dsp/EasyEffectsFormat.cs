@@ -22,6 +22,9 @@ public sealed class EasyEffectsFormat : IEqProfileFormat
         for (int i = 0; i < curve.Bands.Count; i++)
         {
             PeqBand band = curve.Bands[i];
+            // The Bell band schema used by real EasyEffects presets: frequency,
+            // gain, mode, mute, q, slope, solo, type. There is no "width" field —
+            // a Bell's bandwidth is expressed by q alone.
             bands[$"band{i}"] = new Dictionary<string, object?>
             {
                 ["type"] = "Bell",
@@ -31,8 +34,7 @@ public sealed class EasyEffectsFormat : IEqProfileFormat
                 ["mute"] = false,
                 ["gain"] = band.GainDb,
                 ["frequency"] = band.FrequencyHz,
-                ["q"] = band.Q,
-                ["width"] = band.Q
+                ["q"] = band.Q
             };
         }
 

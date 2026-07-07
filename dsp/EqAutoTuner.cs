@@ -258,55 +258,12 @@ public static class EqAutoTuner
         var result = new double[grid.Count];
         for (int i = 0; i < grid.Count; i++)
         {
-            result[i] = InterpolateDb(points, grid[i]);
+            // No end clamp: points outside the measured range read NaN and are
+            // excluded from the fit.
+            result[i] = CurveSampling.InterpolateDbLog(points, grid[i], clampEnds: false);
         }
 
         return result;
-    }
-
-    // Linear interpolation in dB over log frequency. Assumes ascending X; returns
-    // NaN outside the curve's range or across a NaN gap so those points are ignored.
-    private static double InterpolateDb(
-        IReadOnlyList<SignalPoint> points,
-        double frequencyHz)
-    {
-        int count = points.Count;
-        if (count == 0 ||
-            frequencyHz < points[0].X ||
-            frequencyHz > points[count - 1].X)
-        {
-            return double.NaN;
-        }
-
-        int lo = 0;
-        int hi = count - 1;
-        while (hi - lo > 1)
-        {
-            int mid = (lo + hi) / 2;
-            if (points[mid].X <= frequencyHz)
-            {
-                lo = mid;
-            }
-            else
-            {
-                hi = mid;
-            }
-        }
-
-        SignalPoint a = points[lo];
-        SignalPoint b = points[hi];
-        if (!double.IsFinite(a.Y) || !double.IsFinite(b.Y))
-        {
-            return double.NaN;
-        }
-        if (b.X <= a.X)
-        {
-            return a.Y;
-        }
-
-        double t = (Math.Log(frequencyHz) - Math.Log(a.X)) /
-                   (Math.Log(b.X) - Math.Log(a.X));
-        return a.Y + t * (b.Y - a.Y);
     }
 
     private static double Clamp(double value, double min, double max) =>

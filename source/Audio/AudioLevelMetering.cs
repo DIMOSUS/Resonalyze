@@ -4,6 +4,29 @@ namespace Resonalyze;
 
 internal static class AudioLevelMetering
 {
+    /// <summary>Peak/RMS level of one recorded channel.</summary>
+    public static AudioChannelLevel MeasureSamples(IReadOnlyList<float> samples)
+    {
+        ArgumentNullException.ThrowIfNull(samples);
+
+        double peak = 0;
+        double sumSquares = 0;
+        for (int i = 0; i < samples.Count; i++)
+        {
+            double magnitude = Math.Abs(samples[i]);
+            peak = Math.Max(peak, magnitude);
+            sumSquares += (double)samples[i] * samples[i];
+        }
+
+        double rms = samples.Count > 0
+            ? Math.Sqrt(sumSquares / samples.Count)
+            : 0;
+        return new AudioChannelLevel(
+            DataHelper.AmplitudeToDecibels(peak),
+            DataHelper.AmplitudeToDecibels(rms),
+            peak >= 0.999);
+    }
+
     public static AudioChannelLevel[] MeasureChannels(
         double[] peaks,
         double[] sumSquares,

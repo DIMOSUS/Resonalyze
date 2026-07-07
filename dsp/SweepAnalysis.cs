@@ -13,21 +13,12 @@ public static class SweepAnalysis
         IReadOnlyList<float> inverseFilter,
         double normalization = 2.0)
     {
-        ArgumentNullException.ThrowIfNull(recorded);
         ArgumentNullException.ThrowIfNull(inverseFilter);
 
-        double[] recordedSamples = new double[recorded.Count];
-        double[] inverseFilterSamples = new double[inverseFilter.Count];
-        for (int i = 0; i < recorded.Count; i++)
-        {
-            recordedSamples[i] = recorded[i];
-        }
-        for (int i = 0; i < inverseFilter.Count; i++)
-        {
-            inverseFilterSamples[i] = inverseFilter[i];
-        }
-
-        return DeconvolveWithInverseFilter(recordedSamples, inverseFilterSamples, normalization);
+        return DeconvolveWithInverseFilter(
+            recorded,
+            ToDoubles(inverseFilter),
+            normalization);
     }
 
     public static SweepDeconvolutionResult DeconvolveWithInverseFilter(
@@ -37,13 +28,21 @@ public static class SweepAnalysis
     {
         ArgumentNullException.ThrowIfNull(recorded);
 
-        double[] recordedSamples = new double[recorded.Count];
-        for (int i = 0; i < recorded.Count; i++)
+        return DeconvolveWithInverseFilter(
+            ToDoubles(recorded),
+            inverseFilter,
+            normalization);
+    }
+
+    private static double[] ToDoubles(IReadOnlyList<float> samples)
+    {
+        double[] result = new double[samples.Count];
+        for (int i = 0; i < samples.Count; i++)
         {
-            recordedSamples[i] = recorded[i];
+            result[i] = samples[i];
         }
 
-        return DeconvolveWithInverseFilter(recordedSamples, inverseFilter, normalization);
+        return result;
     }
 
     public static SweepDeconvolutionResult DeconvolveWithInverseFilter(

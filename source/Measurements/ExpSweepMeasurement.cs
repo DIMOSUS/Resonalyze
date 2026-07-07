@@ -147,7 +147,8 @@ namespace Resonalyze
                 sampleRate,
                 bits,
                 recorderChannelCount,
-                inputDeviceNumber);
+                inputDeviceNumber,
+                expectedSamples: Sweep.SweepSamples + sampleRate * 2);
             soundRecorder.LevelsAvailable += separateLoopbackDevice
                 ? HandleMicrophoneOnlyLevels
                 : HandleWaveLevelsAvailable;
@@ -159,7 +160,8 @@ namespace Resonalyze
                     sampleRate,
                     bits,
                     WaveLoopbackInputChannelOffset!.Value + 1,
-                    WaveLoopbackDeviceNumber!.Value);
+                    WaveLoopbackDeviceNumber!.Value,
+                    expectedSamples: Sweep.SweepSamples + sampleRate * 2);
                 loopbackRecorder.LevelsAvailable += HandleLoopbackOnlyLevels;
             }
         }
@@ -420,7 +422,7 @@ namespace Resonalyze
                         accumulator.AcceptedRuns,
                         SweepAverageProgressState.Running));
                     CapturedSweepSamples captured = AudioBackend == AudioBackend.Asio
-                        ? await CaptureAsioAsync(sweep, cancellationToken)
+                        ? await CaptureAsioAsync(sweep, cancellationToken).ConfigureAwait(false)
                         : await CaptureWaveAsync(sweep, recorder, cancellationToken).ConfigureAwait(false);
                     SweepRunAnalysis analysis = AnalyzeCapturedRun(captured, sweep);
                     accumulator.Add(analysis);
@@ -431,7 +433,7 @@ namespace Resonalyze
                             run,
                             requestedRuns,
                             accumulator.AcceptedRuns,
-                            cancellationToken);
+                            cancellationToken).ConfigureAwait(false);
                     }
                 }
 
@@ -504,7 +506,7 @@ namespace Resonalyze
 
             try
             {
-                await waitTask.WaitAsync(cancellationToken);
+                await waitTask.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -629,10 +631,13 @@ namespace Resonalyze
                 stream,
                 SampleRate,
                 autoStop: false,
-                cancellationToken);
+                cancellationToken,
+                expectedTotalSamples: sweep.SweepSamples + SampleRate * 2)
+                .ConfigureAwait(false);
             int requiredSamples = session.ReadSamples + sweep.SweepSamples + SampleRate;
-            await session.WaitForSamplesAsync(requiredSamples, cancellationToken);
-            await session.StopAsync();
+            await session.WaitForSamplesAsync(requiredSamples, cancellationToken)
+                .ConfigureAwait(false);
+            await session.StopAsync().ConfigureAwait(false);
 
             int microphoneIndex = AsioInputChannelOffset - firstInputOffset;
             int? loopbackIndex = AsioLoopbackInputChannelOffset.HasValue
@@ -870,53 +875,23 @@ namespace Resonalyze
             return levels;
         }
 
-        private static AudioChannelLevel MeasureRecordedChannel(float[] samples)
-        {
-            double peak = 0;
-            double sumSquares = 0;
-            for (int i = 0; i < samples.Length; i++)
-            {
-                double magnitude = Math.Abs(samples[i]);
-                peak = Math.Max(peak, magnitude);
-                sumSquares += samples[i] * samples[i];
-            }
+        private static AudioChannelLevel MeasureRecordedChannel(float[] samples) =>
+            AudioLevelMetering.MeasureSamples(samples);
 
-            double rms = samples.Length > 0
-                ? Math.Sqrt(sumSquares / samples.Length)
-                : 0;
-            return new AudioChannelLevel(
-                DataHelper.AmplitudeToDecibels(peak),
-                DataHelper.AmplitudeToDecibels(rms),
-                peak >= 0.999);
-        }
+        private int GetRequiredWaveInputChannelCount() =>
+            CaptureChannelLayout.RequiredWaveInputChannelCount(
+                WaveInputChannelOffset,
+                WaveLoopbackInputChannelOffset);
 
-        private int GetRequiredWaveInputChannelCount()
-        {
-            int maxChannelOffset = WaveInputChannelOffset;
-            if (WaveLoopbackInputChannelOffset.HasValue)
-            {
-                maxChannelOffset = Math.Max(
-                    maxChannelOffset,
-                    WaveLoopbackInputChannelOffset.Value);
-            }
+        private int GetAsioCaptureFirstInputOffset() =>
+            CaptureChannelLayout.AsioFirstInputOffset(
+                AsioInputChannelOffset,
+                AsioLoopbackInputChannelOffset);
 
-            return maxChannelOffset + 1;
-        }
-
-        private int GetAsioCaptureFirstInputOffset()
-        {
-            return AsioLoopbackInputChannelOffset.HasValue
-                ? Math.Min(AsioInputChannelOffset, AsioLoopbackInputChannelOffset.Value)
-                : AsioInputChannelOffset;
-        }
-
-        private int GetRequiredAsioInputChannelCount(int firstInputOffset)
-        {
-            int lastInputOffset = AsioLoopbackInputChannelOffset.HasValue
-                ? Math.Max(AsioInputChannelOffset, AsioLoopbackInputChannelOffset.Value)
-                : AsioInputChannelOffset;
-            return lastInputOffset - firstInputOffset + 1;
-        }
+        private int GetRequiredAsioInputChannelCount(int firstInputOffset) =>
+            CaptureChannelLayout.AsioInputChannelCount(
+                AsioInputChannelOffset,
+                AsioLoopbackInputChannelOffset);
 
         private static int FindPeakIndex(IReadOnlyList<double> samples)
         {

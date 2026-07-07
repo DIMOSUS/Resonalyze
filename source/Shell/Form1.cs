@@ -86,6 +86,9 @@ namespace Resonalyze
         private bool closingPrepared;
         private bool closingInProgress;
         private bool resourcesDisposed;
+        // Set on CloseReason.WindowsShutDown: DisposeAppResources must skip its
+        // blocking device teardown while the OS is waiting for the process to exit.
+        private bool shutdownFastClose;
         private bool updateCheckStarted;
         private bool measurementSettingsSavePending;
         private readonly System.Windows.Forms.Timer measurementSettingsSaveTimer = new()

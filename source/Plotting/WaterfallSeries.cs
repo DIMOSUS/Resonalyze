@@ -1,3 +1,4 @@
+using System.Globalization;
 using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.Series;
@@ -88,7 +89,8 @@ namespace Resonalyze
     {
         public WaterfallSeries()
         {
-            TrackerFormatString = "X: {0:0.000}\r\nY: {1:0.000}\r\nIterations: {2}";
+            // {0} is the series title by convention; the coordinates are {1}/{2}.
+            TrackerFormatString = "X: {1:0.000}\r\nY: {2:0.000}";
             RawSlices = new List<Slice>();
             ResampleSlices = new List<Slice>();
             GenerateOptions = new WaterfallGenerateOptions();
@@ -96,6 +98,12 @@ namespace Resonalyze
 
         public List<Slice> RawSlices { get; }
         public List<Slice> ResampleSlices { get; }
+
+        private int rawSlicesRevision;
+        private int resampledRevision = -1;
+        private double resampledMinFrequency = double.NaN;
+        private double resampledMaxFrequency = double.NaN;
+        private int resampledWidth = -1;
 
         /// <summary>
         /// Gets or sets the color axis.
@@ -135,8 +143,7 @@ namespace Resonalyze
                     this.TrackerFormatString,
                     string.Empty,
                     p.X,
-                    p.Y,
-                    999)
+                    p.Y)
             };
         }
 
@@ -269,7 +276,10 @@ namespace Resonalyze
                     if (labelAcc > labelStep)
                     {
                         labelAcc = 0;
-                        rc.DrawText(new ScreenPoint(corner.X + width, corner.Y), Math.Round(pointSeries[i].TimeOffset * 1000, 2).ToString() + "ms", OxyColors.Aqua);
+                        rc.DrawText(
+                            new ScreenPoint(corner.X + width, corner.Y),
+                            (pointSeries[i].TimeOffset * 1000).ToString("0.##", CultureInfo.InvariantCulture) + "ms",
+                            OxyColors.Aqua);
                     }
                 }
             }
@@ -292,6 +302,13 @@ namespace Resonalyze
 
                     ScreenPoint cornerUp = Lerp(p4, p5, frequencyPosition);
                     ScreenPoint cornerDown = Lerp(p0, p6, frequencyPosition);
+
+                    // A slice with no usable data resamples to an empty list;
+                    // indexing it by pixel column would throw inside Render.
+                    if (ResampleSlices[slice].Data.Count < width)
+                    {
+                        continue;
+                    }
 
                     for (int pInd = 0; pInd < width; pInd++)
                     {
@@ -338,7 +355,10 @@ namespace Resonalyze
                 {
                     ScreenPoint pos = Lerp(p5, p6, label / GenerateOptions.Periods);
 
-                    rc.DrawText(pos, Math.Round(label).ToString() + " periods", OxyColors.Aqua);
+                    rc.DrawText(
+                        pos,
+                        Math.Round(label).ToString(CultureInfo.InvariantCulture) + " periods",
+                        OxyColors.Aqua);
                 }
             }
 
@@ -376,6 +396,7 @@ namespace Resonalyze
         public void FillFourierWaterfallData(IImpulseMeasurement measurement)
         {
             RawSlices.Clear();
+            rawSlicesRevision++;
 
             int window = GenerateOptions.Window;
             int step = GenerateOptions.Step;
@@ -451,6 +472,22 @@ namespace Resonalyze
 
         public void Resample(double minFrequency, double maxFrequency, int width)
         {
+            // Render calls this on every plot invalidation (pan, resize, label
+            // refresh); re-smoothing all slices is only needed when the view
+            // window or the underlying data actually changed.
+            if (resampledRevision == rawSlicesRevision &&
+                resampledMinFrequency == minFrequency &&
+                resampledMaxFrequency == maxFrequency &&
+                resampledWidth == width)
+            {
+                return;
+            }
+
+            resampledRevision = rawSlicesRevision;
+            resampledMinFrequency = minFrequency;
+            resampledMaxFrequency = maxFrequency;
+            resampledWidth = width;
+
             ResampleSlices.Clear();
             if (GenerateOptions.WaterfallMode == WaterfallMode.Fourier)
             {

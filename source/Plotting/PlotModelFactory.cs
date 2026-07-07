@@ -718,8 +718,22 @@ internal sealed class PlotModelFactory
             noiseMeasurement.SampleRate,
             noiseMeasurement.SequenceLength,
             liveSpectrumOptions.SmoothingInverseOctaves);
-        int count = Math.Min(magnitudePoints.Count, coherencePoints.Count);
+        int count = magnitudePoints.Count;
         double threshold = thresholdPercent / 100.0;
+
+        // The two resamplers use different grids (fixed 20-20 kHz vs bin-width
+        // and Nyquist bounded, with empty bands skipped), so coherence must be
+        // matched to each magnitude point by frequency, not by index. Missing
+        // coverage counts as trusted, so a degenerate coherence set cannot
+        // blank the whole live trace.
+        var trustedFlags = new bool[count];
+        int cursor = 0;
+        for (int i = 0; i < count; i++)
+        {
+            trustedFlags[i] =
+                NearestCoherence(coherencePoints, magnitudePoints[i].X, ref cursor) >=
+                threshold;
+        }
 
         var trusted = new LineSeries
         {
@@ -736,7 +750,7 @@ internal sealed class PlotModelFactory
             TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
         };
 
-        bool IsTrusted(int index) => coherencePoints[index].Y >= threshold;
+        bool IsTrusted(int index) => trustedFlags[index];
 
         for (int i = 0; i < count; i++)
         {
@@ -756,6 +770,34 @@ internal sealed class PlotModelFactory
         }
 
         return (trusted, untrusted);
+    }
+
+    // Nearest coherence sample for a frequency; both point lists are sorted by
+    // X, so a forward-moving cursor keeps the whole pairing pass linear.
+    private static double NearestCoherence(
+        List<SignalPoint> coherencePoints,
+        double frequency,
+        ref int cursor)
+    {
+        if (coherencePoints.Count == 0)
+        {
+            return 1.0;
+        }
+
+        while (cursor + 1 < coherencePoints.Count &&
+            coherencePoints[cursor + 1].X <= frequency)
+        {
+            cursor++;
+        }
+
+        double value = coherencePoints[cursor].Y;
+        if (cursor + 1 < coherencePoints.Count &&
+            coherencePoints[cursor + 1].X - frequency < frequency - coherencePoints[cursor].X)
+        {
+            value = coherencePoints[cursor + 1].Y;
+        }
+
+        return value;
     }
 
     private List<SignalPoint> ResampleCoherence(

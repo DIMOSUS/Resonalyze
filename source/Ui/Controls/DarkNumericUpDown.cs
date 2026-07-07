@@ -545,6 +545,14 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
             return true;
         }
 
+        if (keyData == Keys.Enter)
+        {
+            // A dialog's AcceptButton consumes Enter before the editor's KeyDown
+            // ever fires; commit here so the accept handler reads the typed text
+            // rather than the last committed value.
+            CommitEditorText();
+        }
+
         return base.ProcessCmdKey(ref msg, keyData);
     }
 
@@ -599,24 +607,8 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         }
     }
 
-    private bool TryParseEditorText(out decimal parsed)
-    {
-        string text = editor.Text.Trim();
-        if (decimal.TryParse(
-            text,
-            NumberStyles.Number,
-            CultureInfo.CurrentCulture,
-            out parsed))
-        {
-            return true;
-        }
-
-        return decimal.TryParse(
-            text,
-            NumberStyles.Number,
-            CultureInfo.InvariantCulture,
-            out parsed);
-    }
+    private bool TryParseEditorText(out decimal parsed) =>
+        NumericTextParser.TryParse(editor.Text, CultureInfo.CurrentCulture, out parsed);
 
     private void UpdateEditorText()
     {
@@ -642,13 +634,17 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         return currentValue.ToString(format, CultureInfo.CurrentCulture);
     }
 
+    // Commit first: stepping must apply to what the user typed, not overwrite
+    // uncommitted editor text with lastCommitted ± increment.
     private void StepUp()
     {
+        CommitEditorText();
         Value += increment;
     }
 
     private void StepDown()
     {
+        CommitEditorText();
         Value -= increment;
     }
 

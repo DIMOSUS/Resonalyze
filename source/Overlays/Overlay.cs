@@ -535,6 +535,7 @@ public sealed class Overlay
     private readonly ToolStripItem exportDeviationMenuItem;
     private readonly ToolStripItem settingsMenuItem;
     private readonly System.Windows.Forms.Timer longPressTimer;
+    private readonly System.Windows.Forms.Timer offsetSaveTimer;
     private int captureMenuOpenedAt;
     private bool captureMenuSpuriousCloseGuard;
     private bool longPressTriggered;
@@ -628,6 +629,12 @@ public sealed class Overlay
         longPressTimer = new System.Windows.Forms.Timer { Interval = 500 };
         longPressTimer.Tick += LongPressTimerTick;
 
+        // Persisting the slot serializes every captured point and flushes to
+        // disk; debounce it so holding the offset spinner arrow doesn't fsync
+        // on each tick. The redraw itself stays immediate.
+        offsetSaveTimer = new System.Windows.Forms.Timer { Interval = 500 };
+        offsetSaveTimer.Tick += OffsetSaveTimerTick;
+
         toolTip.SetToolTip(offsetControl, "Overlay vertical offset (dB)");
         toolTip.SetToolTip(checkBox, "Show / hide this overlay");
         toolTip.SetToolTip(
@@ -657,6 +664,9 @@ public sealed class Overlay
 
     public void Prepare(Mode mode)
     {
+        // A pending debounced offset save must land before the slot state is
+        // replaced from disk, or the last spinner change would be dropped.
+        FlushPendingOffsetSave();
         ResetState();
         if (mode == Mode.None)
         {
@@ -1969,12 +1979,34 @@ public sealed class Overlay
         {
             UpdateDrawPoints();
         }
-        TrySaveCurrentState("Overlay changes could not be saved.");
+        offsetSaveTimer.Stop();
+        offsetSaveTimer.Start();
         if (wasChecked)
         {
             Show();
         }
-        collection.NotifyCapturedOverlayChanged();
+        // Only captured slots feed other overlays (operations consume their
+        // draw points); a target or operation offset cannot change any input.
+        if (kind == OverlayKind.Captured)
+        {
+            collection.NotifyCapturedOverlayChanged();
+        }
+    }
+
+    private void OffsetSaveTimerTick(object? sender, EventArgs e)
+    {
+        FlushPendingOffsetSave();
+    }
+
+    private void FlushPendingOffsetSave()
+    {
+        if (!offsetSaveTimer.Enabled)
+        {
+            return;
+        }
+
+        offsetSaveTimer.Stop();
+        TrySaveCurrentState("Overlay changes could not be saved.");
     }
 
     private void CheckBoxChanged(object? sender, EventArgs e)

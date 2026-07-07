@@ -446,6 +446,20 @@ internal sealed class LiveSpectrumController : IDisposable
                 updateOverlayAvailability();
                 updateRecordButton();
                 updatePlotLabels();
+                // A user stop cancels the capture and reports success; reaching
+                // here with an error means the device or driver failed mid-run,
+                // which used to reset the UI silently.
+                if (!success &&
+                    measurement.LastError is Exception error &&
+                    !owner.IsDisposed)
+                {
+                    MessageBox.Show(
+                        owner,
+                        $"The live measurement failed.\r\n\r\n{error.Message}",
+                        "Live Spectrum",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                }
             });
         }
         catch (InvalidOperationException)

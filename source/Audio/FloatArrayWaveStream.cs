@@ -63,7 +63,8 @@ internal sealed class FloatArrayWaveStream : WaveStream
 
     private static void WriteFloat(byte[] destination, int offset, float value)
     {
-        byte[] bytes = BitConverter.GetBytes(value);
-        Array.Copy(bytes, 0, destination, offset, sizeof(float));
+        // No per-sample byte[] allocation: this runs once per sample over
+        // buffers up to minutes long when the signal is prepared.
+        BitConverter.TryWriteBytes(destination.AsSpan(offset), value);
     }
 }

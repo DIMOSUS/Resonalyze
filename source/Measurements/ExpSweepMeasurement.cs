@@ -893,23 +893,6 @@ namespace Resonalyze
                 AsioInputChannelOffset,
                 AsioLoopbackInputChannelOffset);
 
-        private static int FindPeakIndex(IReadOnlyList<double> samples)
-        {
-            double maxMagnitude = 0;
-            int peakIndex = 0;
-            for (int i = 0; i < samples.Count; i++)
-            {
-                double magnitude = Math.Abs(samples[i]);
-                if (magnitude > maxMagnitude)
-                {
-                    maxMagnitude = magnitude;
-                    peakIndex = i;
-                }
-            }
-
-            return peakIndex;
-        }
-
         private static int FindPeakIndex(IReadOnlyList<Complex> samples)
         {
             double maxMagnitude = 0;

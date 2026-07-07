@@ -283,6 +283,7 @@ public partial class Form1
             {
                 buttonRecord.Text = expSweepMeasurement.LastError == null ? "Aborted" : "Error";
                 SetImpulseResponseAvailability(false);
+                ShowMeasurementError("The measurement failed.", expSweepMeasurement.LastError);
             }
 
             UpdatePeakInfo();

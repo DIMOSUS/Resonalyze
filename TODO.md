@@ -3,6 +3,95 @@
 Items found during the two review passes (PR #1, PR #2) that were deliberately
 reported instead of fixed. Grouped by area, highest-value items marked ★.
 
+## DSP library (`dsp/`)
+
+- [ ] **`CalibrationFile` swallows a missing/unreadable file.** `HasData` makes
+  it detectable, but nothing surfaces an error to the user — measurements just
+  run uncalibrated. Add a `TryLoad`-style factory that reports the failure.
+  Related: this is the only dsp class doing filesystem I/O; aligning it with
+  the "parser accepts text" pattern of the EQ formats would simplify both
+  error handling and tests.
+- [ ] **`EqAutoTuner` greedy fit has no polish pass.** Band gain is fixed from
+  the residual at the peak before Q is chosen (no joint gain/Q optimization),
+  there is no final coordinate-descent pass (`CrossoverAutoSetup` already has
+  one to borrow), and the preamp is rounded to integer dB *before* the fit.
+- [ ] **`CrossoverAutoSetup.Optimizer.Score()` recomputes every channel** on
+  each junction/gain trial (~300–1500 calls per junction). Filter magnitudes
+  are cached, but the amplitudes of untouched channels are not.
+- [ ] **Naive neighbor-to-neighbor phase unwrap** (`DataHelper`): one noisy
+  bin shifts the whole tail by ±2π; the 100 Hz threshold softens but doesn't
+  cure it. Consider magnitude/coherence-weighted unwrapping.
+- [ ] **Duplication:** the coherence formula lives twice
+  (`SpectrumAnalysis.ComputeCoherence` vs inline in
+  `TransferFunction.ComputeAveragedRelativeIr`); `DspChannelChain.Response`
+  re-implements `PreparedDspResponse.Create`;
+  `SweepAnalysis.DeconvolveWithInverseFilter` has three overloads with manual
+  float→double conversion; the single-frame `TransferFunction.ComputeRelativeIr`
+  is dead outside tests.
+- [ ] **`FrequencyResponseOptions` is a grab-bag** mixing FR windows,
+  phase/group-delay gates and a dozen UI visibility flags (`ShowHd2`,
+  `ShowGroupDelay`, …) — presentation flags leaked into the DSP library.
+- [ ] **`DataHelper` is a ~1160-line god-object**; split into
+  Spectrum/Phase/Impulse/Resampling modules.
+- [ ] **Undocumented magic numbers in harmonic analysis** (`DataHelper`):
+  window bounds `h+0.03`/`h−0.5`, THD window `5.5…1.5`, silent doubling of
+  harmonic smoothing. Document or name them.
+
+## Virtual DSP / Time Alignment
+
+- [ ] ★ **Extract `ComputeAutoAlignment` into a testable service.** The
+  two-stage Auto-delay orchestrator (~250 lines in `VirtualCrossoverPanel`:
+  retries, wide-window promotion, candidate tie-breaks) is untested panel
+  code. Highest-value extraction left from the PR #1 review.
+- [ ] **Time Alignment analysis is not cached** — `RefreshAnalysis`
+  (`TimeAlignmentPanelController`) recomputes Hilbert + GCC-PHAT on every tab
+  show even when inputs are unchanged. Needs a live-app check to avoid stale
+  display.
+- [ ] **Crossover wizard breaks at 150 %+ DPI**
+  (`VirtualCrossoverAutoSetupDialog`): extra channel rows use hardcoded pixel
+  offsets (`RowTop = 42`, `RowStep = 28`), so rows 4–8 can overlap scaled
+  designer controls. Verify on Windows and switch to layout-panel positioning.
+- [ ] **Project-file version has no migration path**
+  (`VirtualCrossoverProjectFile.Validate`): any version mismatch throws, so
+  after a future format change the autosave is silently replaced. Decide on a
+  migrate-or-backup policy.
+- [ ] **Split `VirtualCrossoverPanel` (~2.9k lines)** into partial
+  classes/controllers (after the `ComputeAutoAlignment` extraction).
+- [ ] **`BuildPhasePoints` duplicates the Tukey gate construction** of
+  `DataHelper.ExtractGatedWindowedImpulse` and will drift from Phase mode.
+- [ ] **Small duplication:** `ChannelName` exists twice (panel vs
+  `VirtualCrossoverSheet`), `Signed`/`Number` formatters twice (Sheet vs
+  SheetPdf).
+- [ ] **File-format selection by `FilterIndex`** (`LoadPeq`,
+  `ExportTuningSheet`) is implicitly coupled to `EqProfileFormats.All` order;
+  reordering the list silently breaks the dialogs.
+- [ ] **`DelayTableText` parses rendered fixed-width columns** (18/37 chars)
+  for copy-values instead of holding a value model (format+parse are at least
+  co-located and tested now).
+
+## Audio capture layer
+
+- [ ] **Merge the `SoundRecorder` / `AsioFullDuplexSession` twins.** The
+  accumulator core is shared, but the paired waiter classes, stop-timeout
+  machinery and events (~150 lines) are still duplicated.
+- [ ] **ASIO converts channels `0..offset+count` instead of a window from
+  `InputChannelOffset`** (`AsioFullDuplexSession`): a mic on input 7 converts
+  all 8 channels per callback. Possibly a NAudio `SetChannelOffset` workaround
+  — needs hardware to verify before changing.
+- [ ] **Wave backend still uses legacy MME** (`WaveInEvent`/`WaveOutEvent`)
+  with hidden mixer resampling and extra latency; migrate to WASAPI
+  (exclusive/shared) with a device-compatibility pass.
+- [ ] **Synchronous `LevelsAvailable` subscribers can still stall the ASIO
+  callback** if a subscriber does a blocking `Invoke` to the UI thread; verify
+  live (the meter itself now coalesces, but the contract isn't enforced).
+- [ ] **Dual-device level-binding duplication** —
+  `HandleMicrophoneOnlyLevels`/`HandleLoopbackOnlyLevels`/
+  `RaiseCombinedDualDeviceLevels`/`CreateEntry` nearly verbatim in both
+  `ExpSweepMeasurement` and `NoiseMeasurement`.
+- [ ] **`GetSamplesSnapshot` copies the whole buffer under the callback
+  lock**; safe only because it's called after `StopAsync`, which the contract
+  doesn't enforce.
+
 ## Overlays
 
 - [ ] ★ **Cache the target-overlay render path.** `Overlay.cs` rebuilds the

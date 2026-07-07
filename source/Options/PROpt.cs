@@ -4,10 +4,8 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Options
 {
-    public partial class PROpt : Form
+    public partial class PROpt : ImpulsePreviewOptionsForm
     {
-        private readonly ToolTip toolTip = new();
-        private ExpSweepMeasurement? expSweepMeasurement;
         private Func<CompareAnalysisSource?>? getCompare;
 
         public PROpt()
@@ -22,10 +20,6 @@ namespace Resonalyze.Options
             ConfigureResetDefaults();
             SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
             InitializeToolTips();
-            // Disposed, not FormClosed: a dialog disposed without ever having been
-            // shown (e.g. the docked host closing it while the owner is minimized)
-            // never raises FormClosed, which leaked the measurement subscription.
-            Disposed += PROpt_Disposed;
         }
 
         public void Init(
@@ -33,30 +27,23 @@ namespace Resonalyze.Options
             FrequencyResponseOptions opt,
             Func<CompareAnalysisSource?>? getCompare = null)
         {
-            if (!ReferenceEquals(this.expSweepMeasurement, expSweepMeasurement))
-            {
-                if (this.expSweepMeasurement != null)
-                {
-                    this.expSweepMeasurement.ImpulseResponseChanged -= ExpSweepMeasurement_ImpulseResponseChanged;
-                }
-
-                expSweepMeasurement.ImpulseResponseChanged += ExpSweepMeasurement_ImpulseResponseChanged;
-            }
-
-            this.expSweepMeasurement = expSweepMeasurement;
+            AttachMeasurement(expSweepMeasurement);
             this.getCompare = getCompare;
-            numericGateOffset.Value = ClampToControl(numericGateOffset, opt.PhaseGateOffsetMs);
-            numericWindow.Value = ClampToControl(numericWindow, opt.PhasePlateauMs);
-            numericLeftWindow.Value = ClampToControl(numericLeftWindow, opt.PhaseLeftMs);
-            numericRightWindow.Value = ClampToControl(numericRightWindow, opt.PhaseRightMs);
-            comboSmoothingInverseOctaves.SelectedItem =
-                SmoothingPresetOptions.Normalize(opt.SmoothingInverseOctaves);
-            numericOffset.Value = ClampToControl(numericOffset, opt.PhaseDetrendMs);
-            checkBoxUnwrap.Checked = opt.Unwrap;
-            checkBoxShowMeasured.Checked = opt.ShowMeasuredPhase;
-            checkBoxShowMinimum.Checked = opt.ShowMinimumPhase;
-            checkBoxShowExcess.Checked = opt.ShowExcessPhase;
-            checkBoxShowCoherence.Checked = opt.ShowCoherence;
+            InitializeControls(() =>
+            {
+                numericGateOffset.Value = ClampToControl(numericGateOffset, opt.PhaseGateOffsetMs);
+                numericWindow.Value = ClampToControl(numericWindow, opt.PhasePlateauMs);
+                numericLeftWindow.Value = ClampToControl(numericLeftWindow, opt.PhaseLeftMs);
+                numericRightWindow.Value = ClampToControl(numericRightWindow, opt.PhaseRightMs);
+                comboSmoothingInverseOctaves.SelectedItem =
+                    SmoothingPresetOptions.Normalize(opt.SmoothingInverseOctaves);
+                numericOffset.Value = ClampToControl(numericOffset, opt.PhaseDetrendMs);
+                checkBoxUnwrap.Checked = opt.Unwrap;
+                checkBoxShowMeasured.Checked = opt.ShowMeasuredPhase;
+                checkBoxShowMinimum.Checked = opt.ShowMinimumPhase;
+                checkBoxShowExcess.Checked = opt.ShowExcessPhase;
+                checkBoxShowCoherence.Checked = opt.ShowCoherence;
+            });
             UpdateMinFrequencyLabel();
             UpdateIrPreview();
         }
@@ -99,7 +86,7 @@ namespace Resonalyze.Options
         {
             // Phase analysis (and therefore τ) only works with a transfer IR, so
             // gate the auto-estimate on the same condition as Fit and the plot.
-            if (expSweepMeasurement is not { } measurement ||
+            if (Measurement is not { } measurement ||
                 measurement.TransferImpulseResponse is not { Length: > 0 } ||
                 measurement.InProgress)
             {
@@ -130,7 +117,7 @@ namespace Resonalyze.Options
         // Snap the gate offset to the transfer IR peak (deterministic, gate-independent).
         private void buttonFit_Click(object? sender, EventArgs e)
         {
-            if (expSweepMeasurement is not { } measurement ||
+            if (Measurement is not { } measurement ||
                 measurement.Transfer is not { ImpulseResponse.Length: > 0 } transfer ||
                 measurement.SampleRate <= 0)
             {
@@ -168,54 +155,22 @@ namespace Resonalyze.Options
         // Re-draws the preview after the Compare selection changes while docked.
         public void RefreshComparePreview() => UpdateIrPreview();
 
-        private void UpdateIrPreview()
+        protected override void RenderIrPreview()
         {
-            if (expSweepMeasurement == null || expSweepMeasurement.SampleRate <= 0)
+            if (Measurement == null || Measurement.SampleRate <= 0)
             {
                 return;
             }
 
             ImpulseWindowPreview.UpdateGated(
                 irPlotView,
-                expSweepMeasurement,
+                Measurement,
                 (double)numericGateOffset.Value,
                 (double)numericLeftWindow.Value,
                 (double)numericWindow.Value,
                 (double)numericRightWindow.Value,
                 IrPreviewSource.Primary,
                 getCompare?.Invoke());
-        }
-
-        private static decimal ClampToControl(DarkNumericUpDown control, double value)
-        {
-            decimal candidate = double.IsFinite(value) ? (decimal)value : 0m;
-            return Math.Clamp(candidate, control.Minimum, control.Maximum);
-        }
-
-        private void ExpSweepMeasurement_ImpulseResponseChanged()
-        {
-            if (IsDisposed)
-            {
-                return;
-            }
-
-            if (IsHandleCreated && InvokeRequired)
-            {
-                BeginInvoke((MethodInvoker)UpdateIrPreview);
-                return;
-            }
-
-            UpdateIrPreview();
-        }
-
-        private void PROpt_Disposed(object? sender, EventArgs e)
-        {
-            if (expSweepMeasurement != null)
-            {
-                expSweepMeasurement.ImpulseResponseChanged -= ExpSweepMeasurement_ImpulseResponseChanged;
-            }
-
-            toolTip.Dispose();
         }
 
         private void InitializeToolTips()

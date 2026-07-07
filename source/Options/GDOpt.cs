@@ -4,12 +4,9 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Options;
 
-public partial class GDOpt : Form
+public partial class GDOpt : ImpulsePreviewOptionsForm
 {
-    private readonly ToolTip toolTip = new();
-    private ExpSweepMeasurement? expSweepMeasurement;
     private Func<CompareAnalysisSource?>? getCompare;
-    private bool initializing;
 
     public GDOpt()
     {
@@ -22,10 +19,6 @@ public partial class GDOpt : Form
         ConfigureResetDefaults();
         SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
         InitializeToolTips();
-        // Disposed, not FormClosed: a dialog disposed without ever having been
-        // shown (e.g. the docked host closing it while the owner is minimized)
-        // never raises FormClosed, which leaked the measurement subscription.
-        Disposed += GDOpt_Disposed;
     }
 
     public void Init(
@@ -33,20 +26,9 @@ public partial class GDOpt : Form
         FrequencyResponseOptions opt,
         Func<CompareAnalysisSource?>? getCompare = null)
     {
-        if (!ReferenceEquals(this.expSweepMeasurement, expSweepMeasurement))
-        {
-            if (this.expSweepMeasurement != null)
-            {
-                this.expSweepMeasurement.ImpulseResponseChanged -= ExpSweepMeasurement_ImpulseResponseChanged;
-            }
-
-            this.expSweepMeasurement = expSweepMeasurement;
-            this.expSweepMeasurement.ImpulseResponseChanged += ExpSweepMeasurement_ImpulseResponseChanged;
-        }
-
+        AttachMeasurement(expSweepMeasurement);
         this.getCompare = getCompare;
-        initializing = true;
-        try
+        InitializeControls(() =>
         {
             numericGateOffset.Value = ClampToControl(numericGateOffset, opt.GroupDelayGateOffsetMs);
             numericWindow.Value = ClampToControl(numericWindow, opt.GroupDelayPlateauMs);
@@ -56,11 +38,7 @@ public partial class GDOpt : Form
                 SmoothingPresetOptions.Normalize(opt.SmoothingInverseOctaves);
             checkBoxShowGroupDelay.Checked = opt.ShowGroupDelay;
             checkBoxShowCoherence.Checked = opt.ShowCoherence;
-        }
-        finally
-        {
-            initializing = false;
-        }
+        });
 
         UpdateMinFrequencyLabel();
         UpdateIrPreview();
@@ -96,7 +74,7 @@ public partial class GDOpt : Form
     // Snap the gate offset to the transfer IR peak (deterministic, gate-independent).
     private void buttonFit_Click(object? sender, EventArgs e)
     {
-        if (expSweepMeasurement is not { } measurement ||
+        if (Measurement is not { } measurement ||
             measurement.Transfer is not { ImpulseResponse.Length: > 0 } transfer ||
             measurement.SampleRate <= 0)
         {
@@ -131,57 +109,25 @@ public partial class GDOpt : Form
             : "Reliable from ≈ — Hz";
     }
 
-    private void ExpSweepMeasurement_ImpulseResponseChanged()
-    {
-        if (IsDisposed)
-        {
-            return;
-        }
-
-        if (IsHandleCreated && InvokeRequired)
-        {
-            BeginInvoke((MethodInvoker)UpdateIrPreview);
-            return;
-        }
-
-        UpdateIrPreview();
-    }
-
-    private void GDOpt_Disposed(object? sender, EventArgs e)
-    {
-        if (expSweepMeasurement != null)
-        {
-            expSweepMeasurement.ImpulseResponseChanged -= ExpSweepMeasurement_ImpulseResponseChanged;
-        }
-
-        toolTip.Dispose();
-    }
-
     // Re-draws the preview after the Compare selection changes while docked.
     public void RefreshComparePreview() => UpdateIrPreview();
 
-    private void UpdateIrPreview()
+    protected override void RenderIrPreview()
     {
-        if (initializing || expSweepMeasurement == null || expSweepMeasurement.SampleRate <= 0)
+        if (Measurement == null || Measurement.SampleRate <= 0)
         {
             return;
         }
 
         ImpulseWindowPreview.UpdateGated(
             irPlotView,
-            expSweepMeasurement,
+            Measurement,
             (double)numericGateOffset.Value,
             (double)numericLeftWindow.Value,
             (double)numericWindow.Value,
             (double)numericRightWindow.Value,
             IrPreviewSource.Primary,
             getCompare?.Invoke());
-    }
-
-    private static decimal ClampToControl(DarkNumericUpDown control, double value)
-    {
-        decimal candidate = double.IsFinite(value) ? (decimal)value : 0m;
-        return Math.Clamp(candidate, control.Minimum, control.Maximum);
     }
 
     private void InitializeToolTips()

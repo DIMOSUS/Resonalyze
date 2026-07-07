@@ -61,9 +61,6 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   only the capture accumulator restarts). Verified by construction only — run
   an averaged ASIO measurement on real hardware (ideally with a slow driver)
   before relying on it.
-- [ ] **Third copy of the level-metering math.** `ChannelLevelAccumulator`
-  (peak/RMS/dB + 0.999 full-scale threshold) duplicates
-  `AudioLevelMetering` and the recorder metering loops.
 
 ## Options panels
 
@@ -77,12 +74,6 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   which instantiates `AsioOut` (a synchronous COM driver open that can take
   seconds). Fetch the driver info and supported rates in one open, ideally off
   the UI thread.
-- [ ] **Five IR-preview panels are one copy-pasted class.** `FROptions`,
-  `GDOpt`, `PROpt`, `BDOpt`, `WaterfallOptions` duplicate the
-  `ImpulseResponseChanged` subscribe/unsubscribe dance, the `BeginInvoke`
-  marshal and the clamping helper — and have already drifted (only `GDOpt`
-  suppresses the 3–6 redundant preview renders during `Init`). Extract a
-  shared base.
 - [ ] **`SetOptions` reads bits from the measurement, not the control.**
   Three sources of truth for the sample size in `MeasurementOptions`; harmless
   while the control is read-only, a silent no-op the day it is enabled.
@@ -113,13 +104,10 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 
 ## PDF export
 
-- [ ] **~90 duplicated lines between the two PDF exporters.**
-  `LoadBanner`/`AddImage`/`AddFilterCards` are byte-identical in
-  `TuningSheetPdf` and `VirtualCrossoverSheetPdf` (as are the small
-  `Signed`/`Number` formatters, whose only remaining copy is in
-  `TuningSheetPdf`); extract a shared helper. MigraDoc 6 supports
-  `AddImage("base64:...")`, which would also remove the temp-file dance
-  entirely.
+- [ ] **The PDF images still go through temp files.** The shared `PdfSheet`
+  helper centralised the temp-file dance, but MigraDoc 6 supports
+  `AddImage("base64:...")`, which would remove it entirely (needs a Windows
+  render check that the sheets stay pixel-identical).
 - [ ] **No deconvolution flatness test.** The sweep + inverse-filter math was
   verified numerically during review (in-band ripple < 0.01 dB), but nothing
   in the test suite pins it; a `SyntheticMeasurement`-style flatness test
@@ -127,9 +115,12 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 
 ## Audio capture layer
 
-- [ ] **Merge the `SoundRecorder` / `AsioFullDuplexSession` twins.** The
-  accumulator core is shared, but the paired waiter classes, stop-timeout
-  machinery and events (~150 lines) are still duplicated.
+- [ ] **`SoundRecorder` / `AsioFullDuplexSession` remain separate classes.**
+  The waiter registry, stop-timeout machinery, accumulator core and metering
+  math are shared now; what is left duplicated is the thin device glue (the
+  start/first-buffer/stopped signal choreography and the event triple). A full
+  merge would need a common device abstraction — low value until the WASAPI
+  migration below forces one.
 - [ ] **ASIO converts channels `0..offset+count` instead of a window from
   `InputChannelOffset`** (`AsioFullDuplexSession`): a mic on input 7 converts
   all 8 channels per callback. Possibly a NAudio `SetChannelOffset` workaround
@@ -140,10 +131,6 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 - [ ] **Synchronous `LevelsAvailable` subscribers can still stall the ASIO
   callback** if a subscriber does a blocking `Invoke` to the UI thread; verify
   live (the meter itself now coalesces, but the contract isn't enforced).
-- [ ] **Dual-device level-binding duplication** —
-  `HandleMicrophoneOnlyLevels`/`HandleLoopbackOnlyLevels`/
-  `RaiseCombinedDualDeviceLevels`/`CreateEntry` nearly verbatim in both
-  `ExpSweepMeasurement` and `NoiseMeasurement`.
 - [ ] **`GetSamplesSnapshot` copies the whole buffer under the callback
   lock**; safe only because it's called after `StopAsync`, which the contract
   doesn't enforce.

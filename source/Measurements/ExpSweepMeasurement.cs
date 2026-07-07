@@ -12,11 +12,9 @@ namespace Resonalyze
     public sealed class ExpSweepMeasurement : IDisposable
     {
         private readonly object stateSync = new();
-        private readonly object levelSync = new();
+        private readonly DualDeviceLevelCombiner dualDeviceLevels = new();
         private SoundRecorder? soundRecorder;
         private SoundRecorder? loopbackRecorder;
-        private AudioChannelLevel[] latestMicrophoneLevels = Array.Empty<AudioChannelLevel>();
-        private AudioChannelLevel[] latestLoopbackLevels = Array.Empty<AudioChannelLevel>();
         private CancellationTokenSource? cancellationTokenSource;
         private Task<bool>? measurementTask;
         private TaskCompletionSource<bool>? averageConfirmation;
@@ -140,11 +138,7 @@ namespace Resonalyze
             Sweep.FillData(octaves, requestedDuration, bits, sampleRate);
 
             DisposeRecorders();
-            lock (levelSync)
-            {
-                latestMicrophoneLevels = Array.Empty<AudioChannelLevel>();
-                latestLoopbackLevels = Array.Empty<AudioChannelLevel>();
-            }
+            dualDeviceLevels.Reset();
 
             bool separateLoopbackDevice = UsesSeparateWaveLoopbackDevice;
             soundRecorder = new SoundRecorder();
@@ -374,45 +368,24 @@ namespace Resonalyze
         }
 
         // With a separate loopback device, the microphone and loopback levels arrive from two
-        // independent recorders. Keep the latest of each and raise a combined snapshot so both
-        // meters update live.
+        // independent recorders; the combiner keeps the latest of each so both meters update live.
         private void HandleMicrophoneOnlyLevels(AudioChannelLevel[] channels)
         {
-            lock (levelSync)
-            {
-                latestMicrophoneLevels = channels;
-            }
+            dualDeviceLevels.SetMicrophone(channels);
             RaiseCombinedDualDeviceLevels();
         }
 
         private void HandleLoopbackOnlyLevels(AudioChannelLevel[] channels)
         {
-            lock (levelSync)
-            {
-                latestLoopbackLevels = channels;
-            }
+            dualDeviceLevels.SetLoopback(channels);
             RaiseCombinedDualDeviceLevels();
         }
 
         private void RaiseCombinedDualDeviceLevels()
         {
-            AudioChannelLevel[] microphoneChannels;
-            AudioChannelLevel[] loopbackChannels;
-            lock (levelSync)
-            {
-                microphoneChannels = latestMicrophoneLevels;
-                loopbackChannels = latestLoopbackLevels;
-            }
-
-            InputLevelMeterEntry microphone = CreateEntry(
-                TryGetLevel(microphoneChannels, WaveInputChannelOffset),
-                fullScaleReference: false);
-            InputLevelMeterEntry loopback = CreateEntry(
-                WaveLoopbackInputChannelOffset is int loopbackChannel
-                    ? TryGetLevel(loopbackChannels, loopbackChannel)
-                    : null,
-                fullScaleReference: true);
-            RaiseLevels(new InputLevelMeterSnapshot(microphone, loopback));
+            RaiseLevels(dualDeviceLevels.Combine(
+                WaveInputChannelOffset,
+                WaveLoopbackInputChannelOffset));
         }
 
         private async Task<bool> RunCoreAsync(CancellationToken cancellationToken)
@@ -655,7 +628,7 @@ namespace Resonalyze
                     owner.AsioOutputChannelOffset,
                     owner.GetRequiredAsioInputChannelCount(firstInputOffset));
                 session.LevelsAvailable += channels => owner.RaiseLevels(
-                    MapLevelsByIndex(
+                    InputLevelMapping.Map(
                         channels,
                         owner.AsioInputChannelOffset - firstInputOffset,
                         owner.AsioLoopbackInputChannelOffset.HasValue
@@ -886,65 +859,20 @@ namespace Resonalyze
             int? loopbackIndex)
         {
             AudioChannelLevel[] measuredLevels = MeasureRecordedChannels(sampleChannels);
-            return MapLevelsByIndex(measuredLevels, microphoneIndex, loopbackIndex);
+            return InputLevelMapping.Map(measuredLevels, microphoneIndex, loopbackIndex);
         }
 
         private InputLevelMeterSnapshot MapWaveLevels(AudioChannelLevel[] channels)
         {
-            return MapLevelsByIndex(
+            return InputLevelMapping.Map(
                 channels,
                 WaveInputChannelOffset,
                 WaveLoopbackInputChannelOffset);
         }
 
-        private static InputLevelMeterSnapshot MapLevelsByIndex(
-            AudioChannelLevel[] channels,
-            int microphoneIndex,
-            int? loopbackIndex)
-        {
-            InputLevelMeterEntry microphone = CreateEntry(
-                TryGetLevel(channels, microphoneIndex),
-                fullScaleReference: false);
-            InputLevelMeterEntry loopback = CreateEntry(
-                loopbackIndex.HasValue
-                    ? TryGetLevel(channels, loopbackIndex.Value)
-                    : null,
-                fullScaleReference: true);
-            return new InputLevelMeterSnapshot(
-                microphone,
-                loopback);
-        }
-
         private void RaiseLevels(InputLevelMeterSnapshot snapshot)
         {
             LevelsAvailable?.Invoke(snapshot);
-        }
-
-        private static AudioChannelLevel? TryGetLevel(
-            AudioChannelLevel[] channels,
-            int channelIndex)
-        {
-            return (uint)channelIndex < (uint)channels.Length
-                ? channels[channelIndex]
-                : null;
-        }
-
-        private static InputLevelMeterEntry CreateEntry(
-            AudioChannelLevel? level,
-            bool fullScaleReference)
-        {
-            if (level == null)
-            {
-                return InputLevelMeterEntry.Unavailable;
-            }
-
-            AudioChannelLevel value = level.Value;
-            return new InputLevelMeterEntry(
-                true,
-                value.PeakDbFs,
-                value.RmsDbFs,
-                !fullScaleReference && value.FullScale,
-                fullScaleReference && value.FullScale);
         }
 
         private static AudioChannelLevel[] MeasureRecordedChannels(float[][] sampleChannels)
@@ -1145,13 +1073,13 @@ namespace Resonalyze
                     return InputLevelMeterEntry.Unavailable;
                 }
 
-                double rms = Math.Sqrt(sumSquares / sampleCount);
+                AudioChannelLevel level = AudioLevelMetering.Measure(peak, sumSquares, sampleCount);
                 return new InputLevelMeterEntry(
                     true,
-                    DataHelper.AmplitudeToDecibels(peak),
-                    DataHelper.AmplitudeToDecibels(rms),
-                    !fullScaleReference && peak >= 0.999,
-                    fullScaleReference && peak >= 0.999);
+                    level.PeakDbFs,
+                    level.RmsDbFs,
+                    !fullScaleReference && level.FullScale,
+                    fullScaleReference && level.FullScale);
             }
         }
 

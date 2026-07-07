@@ -4,6 +4,22 @@ namespace Resonalyze;
 
 internal static class AudioLevelMetering
 {
+    /// <summary>Peak amplitude at or above which a channel counts as full scale.</summary>
+    public const double FullScaleThreshold = 0.999;
+
+    /// <summary>
+    /// The one Peak/RMS/dB summary all metering paths share: from an
+    /// accumulated peak, sum of squares and sample count.
+    /// </summary>
+    public static AudioChannelLevel Measure(double peak, double sumSquares, long sampleCount)
+    {
+        double rms = Math.Sqrt(Math.Max(sumSquares, 0) / Math.Max(sampleCount, 1));
+        return new AudioChannelLevel(
+            DataHelper.AmplitudeToDecibels(peak),
+            DataHelper.AmplitudeToDecibels(rms),
+            peak >= FullScaleThreshold);
+    }
+
     /// <summary>Peak/RMS level of one recorded channel.</summary>
     public static AudioChannelLevel MeasureSamples(IReadOnlyList<float> samples)
     {
@@ -18,13 +34,7 @@ internal static class AudioLevelMetering
             sumSquares += (double)samples[i] * samples[i];
         }
 
-        double rms = samples.Count > 0
-            ? Math.Sqrt(sumSquares / samples.Count)
-            : 0;
-        return new AudioChannelLevel(
-            DataHelper.AmplitudeToDecibels(peak),
-            DataHelper.AmplitudeToDecibels(rms),
-            peak >= 0.999);
+        return Measure(peak, sumSquares, samples.Count);
     }
 
     public static AudioChannelLevel[] MeasureChannels(
@@ -40,15 +50,9 @@ internal static class AudioLevelMetering
         }
 
         var levels = new AudioChannelLevel[peaks.Length];
-        double safeSampleCount = Math.Max(sampleCount, 1);
         for (int i = 0; i < peaks.Length; i++)
         {
-            double peak = Math.Clamp(peaks[i], 0, 1);
-            double rms = Math.Sqrt(Math.Max(sumSquares[i], 0) / safeSampleCount);
-            levels[i] = new AudioChannelLevel(
-                DataHelper.AmplitudeToDecibels(peak),
-                DataHelper.AmplitudeToDecibels(rms),
-                peak >= 0.999);
+            levels[i] = Measure(Math.Clamp(peaks[i], 0, 1), sumSquares[i], sampleCount);
         }
 
         return levels;

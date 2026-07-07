@@ -1,14 +1,11 @@
 using System.Globalization;
-using System.Reflection;
 using MigraDoc.DocumentObjectModel;
 using MigraDoc.DocumentObjectModel.Tables;
-using MigraDoc.Rendering;
 using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.Series;
 using OxyPlot.WindowsForms;
 using Resonalyze.Dsp;
-using Color = MigraDoc.DocumentObjectModel.Color;
 
 namespace Resonalyze;
 
@@ -16,13 +13,9 @@ namespace Resonalyze;
 // (MigraDoc / PDFsharp, same style as TuningSheetPdf): the product banner, the
 // title, a combined graph of every channel's DSP chain, and one section per
 // channel with the values to dial into the DSP plus its PEQ band cards.
+// The shared layout (scaffold, images, filter cards) lives in PdfSheet.
 internal static class VirtualCrossoverSheetPdf
 {
-    private const int FilterCardColumns = 4;
-
-    private static readonly Color CaptionColor = Color.FromRgb(90, 90, 90);
-    private static readonly Color CardBorderColor = Color.FromRgb(210, 210, 210);
-
     // Print-friendly (white background) variants of the on-screen channel
     // palette, hue for hue, one per possible channel so colours never repeat.
     private static readonly OxyColor[] ChainColors =
@@ -45,96 +38,45 @@ internal static class VirtualCrossoverSheetPdf
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        var tempImages = new List<string>();
-        try
+        string subtitleText =
+            $"Generated {DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}";
+        if (!string.IsNullOrWhiteSpace(metricLine))
         {
-            var document = new Document();
-            Style normalStyle = document.Styles["Normal"]!;
-            normalStyle.Font.Name = "Segoe UI";
-            normalStyle.Font.Size = 11;
-
-            Section section = document.AddSection();
-            PageSetup pageSetup = section.PageSetup!;
-            pageSetup.PageFormat = PageFormat.A4;
-            pageSetup.TopMargin = Unit.FromCentimeter(1.2);
-            pageSetup.BottomMargin = Unit.FromCentimeter(1.2);
-            pageSetup.LeftMargin = Unit.FromCentimeter(1.5);
-            pageSetup.RightMargin = Unit.FromCentimeter(1.5);
-
-            byte[]? banner = LoadBanner();
-            if (banner != null)
-            {
-                AddImage(section, banner, Unit.FromCentimeter(11), tempImages);
-            }
-
-            Paragraph titleParagraph = section.AddParagraph("Virtual DSP");
-            titleParagraph.Format.Alignment = ParagraphAlignment.Center;
-            titleParagraph.Format.Font.Size = 24;
-            titleParagraph.Format.Font.Bold = true;
-            titleParagraph.Format.SpaceBefore = Unit.FromMillimeter(3);
-
-            string subtitleText =
-                $"Generated {DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}";
-            if (!string.IsNullOrWhiteSpace(metricLine))
-            {
-                subtitleText += $"   ·   {metricLine}";
-            }
-
-            Paragraph subtitle = section.AddParagraph(subtitleText);
-            subtitle.Format.Alignment = ParagraphAlignment.Center;
-            subtitle.Format.Font.Size = 9;
-            subtitle.Format.Font.Color = Colors.Gray;
-            subtitle.Format.SpaceAfter = Unit.FromMillimeter(4);
-
-            var participating = new List<(int Index, VirtualCrossoverChannelSettings Channel)>();
-            for (int i = 0; i < project.Channels.Count; i++)
-            {
-                if (project.Channels[i].HasSource)
-                {
-                    participating.Add((i, project.Channels[i]));
-                }
-            }
-
-            if (participating.Count > 0)
-            {
-                AddImage(
-                    section,
-                    RenderChainsGraph(participating, sampleRate),
-                    Unit.FromCentimeter(17),
-                    tempImages);
-            }
-
-            foreach ((int index, VirtualCrossoverChannelSettings channel) in participating)
-            {
-                AddChannelSection(section, index, channel);
-            }
-
-            var renderer = new PdfDocumentRenderer { Document = document };
-            renderer.RenderDocument();
-            renderer.PdfDocument.Save(filePath);
+            subtitleText += $"   ·   {metricLine}";
         }
-        finally
+
+        using var sheet = new PdfSheet("Virtual DSP", subtitleText);
+
+        var participating = new List<(int Index, VirtualCrossoverChannelSettings Channel)>();
+        for (int i = 0; i < project.Channels.Count; i++)
         {
-            foreach (string temp in tempImages)
+            if (project.Channels[i].HasSource)
             {
-                try
-                {
-                    File.Delete(temp);
-                }
-                catch (Exception)
-                {
-                    // Best-effort cleanup; a leftover temp image must not fail
-                    // (or mask the failure of) an export.
-                }
+                participating.Add((i, project.Channels[i]));
             }
         }
+
+        if (participating.Count > 0)
+        {
+            sheet.AddImage(
+                RenderChainsGraph(participating, sampleRate),
+                Unit.FromCentimeter(17));
+        }
+
+        foreach ((int index, VirtualCrossoverChannelSettings channel) in participating)
+        {
+            AddChannelSection(sheet, index, channel);
+        }
+
+        sheet.Save(filePath);
     }
 
     private static void AddChannelSection(
-        Section section,
+        PdfSheet sheet,
         int index,
         VirtualCrossoverChannelSettings channel)
     {
+        Section section = sheet.Section;
         Paragraph heading = section.AddParagraph(
             $"Channel {VirtualCrossoverSheet.ChannelName(index)} — {channel.DisplayName}");
         heading.Format.Font.Bold = true;
@@ -144,7 +86,7 @@ internal static class VirtualCrossoverSheetPdf
 
         var table = section.AddTable();
         table.Borders.Width = 0.5;
-        table.Borders.Color = CardBorderColor;
+        table.Borders.Color = PdfSheet.CardBorderColor;
         Column labelColumn = table.AddColumn(Unit.FromCentimeter(3.0));
         labelColumn.LeftPadding = Unit.FromMillimeter(2);
         Column valueColumn = table.AddColumn(Unit.FromCentimeter(11.0));
@@ -166,95 +108,17 @@ internal static class VirtualCrossoverSheetPdf
                 $"{channel.PeqSourceName ?? "custom"}, preamp {Signed(channel.PeqPreampDb)} dB");
         }
 
-        AddFilterCards(section, channel.PeqBands);
+        sheet.AddFilterCards(channel.PeqBands);
     }
 
     private static void AddRow(Table table, string label, string value)
     {
         Row row = table.AddRow();
         Paragraph caption = row.Cells[0].AddParagraph(label);
-        caption.Format.Font.Color = CaptionColor;
+        caption.Format.Font.Color = PdfSheet.CaptionColor;
 
         Paragraph valueParagraph = row.Cells[1].AddParagraph(value);
         valueParagraph.Format.Font.Bold = true;
-    }
-
-    private static void AddFilterCards(Section section, IReadOnlyList<PeqBand> bands)
-    {
-        if (bands.Count == 0)
-        {
-            return;
-        }
-
-        var table = section.AddTable();
-        for (int c = 0; c < FilterCardColumns; c++)
-        {
-            Column cardColumn = table.AddColumn(Unit.FromCentimeter(4.3));
-            cardColumn.LeftPadding = Unit.FromMillimeter(2.5);
-            cardColumn.RightPadding = Unit.FromMillimeter(2.5);
-        }
-
-        Row? row = null;
-        for (int i = 0; i < bands.Count; i++)
-        {
-            int column = i % FilterCardColumns;
-            if (column == 0)
-            {
-                row = table.AddRow();
-                row.TopPadding = Unit.FromMillimeter(2);
-                row.BottomPadding = Unit.FromMillimeter(2);
-            }
-
-            Cell cell = row!.Cells[column];
-            cell.Borders.Width = 0.5;
-            cell.Borders.Color = CardBorderColor;
-
-            PeqBand band = bands[i];
-            Paragraph name = cell.AddParagraph($"Filter {i + 1}");
-            name.Format.Font.Bold = true;
-            name.Format.Font.Size = 13;
-
-            Paragraph type = cell.AddParagraph("PK");
-            type.Format.Font.Color = CaptionColor;
-            type.Format.Font.Size = 9;
-
-            cell.AddParagraph($"{Number(band.FrequencyHz, "0")} Hz").Format.Font.Size = 12;
-            Paragraph gain = cell.AddParagraph($"{Signed(band.GainDb)} dB");
-            gain.Format.Font.Bold = true;
-            gain.Format.Font.Size = 12;
-            cell.AddParagraph($"Q {Number(band.Q, "0.0")}").Format.Font.Size = 12;
-        }
-    }
-
-    private static void AddImage(
-        Section section,
-        byte[] pngBytes,
-        Unit width,
-        List<string> tempImages)
-    {
-        string tempPath = Path.Combine(Path.GetTempPath(), $"resonalyze_{Guid.NewGuid():N}.png");
-        File.WriteAllBytes(tempPath, pngBytes);
-        tempImages.Add(tempPath);
-
-        Paragraph paragraph = section.AddParagraph();
-        paragraph.Format.Alignment = ParagraphAlignment.Center;
-        var image = paragraph.AddImage(tempPath);
-        image.Width = width;
-        image.LockAspectRatio = true;
-    }
-
-    private static byte[]? LoadBanner()
-    {
-        using Stream? stream = Assembly.GetExecutingAssembly()
-            .GetManifestResourceStream("Resonalyze.banner.jpg");
-        if (stream == null)
-        {
-            return null;
-        }
-
-        using var memory = new MemoryStream();
-        stream.CopyTo(memory);
-        return memory.ToArray();
     }
 
     // A compact white graph of every participating channel's DSP chain magnitude

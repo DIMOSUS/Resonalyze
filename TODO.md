@@ -69,6 +69,38 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   for copy-values instead of holding a value model (format+parse are at least
   co-located and tested now).
 
+## Measurement orchestrators
+
+- [ ] **`CurrentLevels` torn reads.** `ExpSweepMeasurement.CurrentLevels` (an
+  ~50-byte `InputLevelMeterSnapshot` struct) is written from audio worker
+  threads and read from the UI without synchronization; a torn read can show a
+  momentarily inconsistent meter (display-only; same family as the
+  `UpdatePeakInfo` item below).
+- [ ] **`RestoreImpulseResponse` regenerates the whole sweep.** Restoring a
+  measurement from a file or history calls `Init` → `Sweep.FillData`, which
+  synthesizes the full sweep and inverse filter just to satisfy
+  `HarmonicIROffset`; playback data isn't needed until the next run. Make the
+  generation lazy.
+- [ ] **New `AsioFullDuplexSession` per averaging run.** Every run of an
+  averaged sweep re-initializes the ASIO driver; slow drivers add seconds per
+  run. Reuse one session across the run loop.
+- [ ] **A stop failure demotes a finished measurement.** In
+  `RunCoreAsync`'s finally, a recorder stop timeout sets `success = false`
+  after `ApplyAverageResult` already published results and raised
+  `ImpulseResponseChanged` — the UI shows "Error" and skips the history entry
+  for a measurement whose data is fine. Decide the intended semantics.
+- [ ] **Third copy of the level-metering math.** `ChannelLevelAccumulator`
+  (peak/RMS/dB + 0.999 full-scale threshold) duplicates
+  `AudioLevelMetering` and the recorder metering loops.
+
+## Audio device catalogs
+
+- [ ] **Missing device silently becomes the first one.**
+  `AsioDeviceCatalog.FindDriverIndex`/`FindChannelIndex` and
+  `AudioDeviceCatalog.FindDeviceIndex` return index 0 when the saved
+  driver/channel/device no longer exists, so the options UI silently shows a
+  different device than the one configured. Surface "(missing)" instead.
+
 ## Audio capture layer
 
 - [ ] **Merge the `SoundRecorder` / `AsioFullDuplexSession` twins.** The

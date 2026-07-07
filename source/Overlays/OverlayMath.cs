@@ -216,7 +216,12 @@ public static class OverlayMath
                 : ApplyOperation(aValue, bValue, operation, wrapPhaseDifference);
             if (useAmplitudeSpace)
             {
-                value = DataHelper.AmplitudeToDecibels(value);
+                // A non-positive amplitude difference has no dB representation;
+                // emit NaN so the plot draws an honest gap instead of the
+                // -160 dB floor the conversion would clamp to.
+                value = value > 0
+                    ? DataHelper.AmplitudeToDecibels(value)
+                    : double.NaN;
             }
             if (!double.IsInfinity(value))
             {

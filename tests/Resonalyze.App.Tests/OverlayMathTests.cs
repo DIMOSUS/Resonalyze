@@ -36,6 +36,58 @@ public sealed class OverlayMathTests
     }
 
     [Fact]
+    public void CalculateOperation_AmplitudeSpaceDifferenceKeepsPositiveResults()
+    {
+        // A is 6 dB above B everywhere, so the amplitude difference is positive
+        // and has a real dB value.
+        OverlayPoint[] a =
+        [
+            new OverlayPoint(100, 6),
+            new OverlayPoint(1_000, 6)
+        ];
+        OverlayPoint[] b =
+        [
+            new OverlayPoint(100, 0),
+            new OverlayPoint(1_000, 0)
+        ];
+
+        OverlayPoint[] result = OverlayMath.CalculateOperation(
+            a,
+            b,
+            OverlayOperation.AMinusB,
+            useAmplitudeSpace: true);
+
+        Assert.All(result, point => Assert.True(double.IsFinite(point.Y)));
+    }
+
+    [Fact]
+    public void CalculateOperation_AmplitudeSpaceDifferenceGapsNegativeResults()
+    {
+        // B is louder than A, so the amplitude difference is negative: there is
+        // no dB value for it. The curve must show a gap (NaN), not a -160 dB
+        // floor pretending to be data.
+        OverlayPoint[] a =
+        [
+            new OverlayPoint(100, 0),
+            new OverlayPoint(1_000, 0)
+        ];
+        OverlayPoint[] b =
+        [
+            new OverlayPoint(100, 6),
+            new OverlayPoint(1_000, 6)
+        ];
+
+        OverlayPoint[] result = OverlayMath.CalculateOperation(
+            a,
+            b,
+            OverlayOperation.AMinusB,
+            useAmplitudeSpace: true);
+
+        Assert.NotEmpty(result);
+        Assert.All(result, point => Assert.True(double.IsNaN(point.Y)));
+    }
+
+    [Fact]
     public void CalculateOperation_BlendCrossfadesAroundCenterFrequency()
     {
         OverlayPoint[] a =

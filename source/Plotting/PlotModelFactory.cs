@@ -619,10 +619,15 @@ internal sealed class PlotModelFactory
             Title = "Live Transfer Function",
             TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
         };
-        series.Points.AddRange(
-            OxyPlotAdapter.ToDataPoints(ResampleLiveSpectrumMagnitude(accumulatedData)));
+        UpdateNoiseSeries(series, accumulatedData);
         return series;
     }
+
+    // The ~30 fps live redraw refills the existing series in place; reusing the
+    // series object (and its point list's capacity) avoids re-allocating plot
+    // objects on every tick.
+    public void UpdateNoiseSeries(LineSeries series, double[] magnitude) =>
+        FillPoints(series, ResampleLiveSpectrumMagnitude(magnitude));
 
     public LineSeries BuildPeakHoldSeries(double[] peakHoldData)
     {
@@ -634,9 +639,20 @@ internal sealed class PlotModelFactory
             Title = "Peak Hold",
             TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
         };
-        series.Points.AddRange(
-            OxyPlotAdapter.ToDataPoints(ResampleLiveSpectrumMagnitude(peakHoldData)));
+        UpdatePeakHoldSeries(series, peakHoldData);
         return series;
+    }
+
+    public void UpdatePeakHoldSeries(LineSeries series, double[] peakHoldData) =>
+        FillPoints(series, ResampleLiveSpectrumMagnitude(peakHoldData));
+
+    private static void FillPoints(LineSeries series, List<SignalPoint> points)
+    {
+        series.Points.Clear();
+        foreach (SignalPoint point in points)
+        {
+            series.Points.Add(new DataPoint(point.X, point.Y));
+        }
     }
 
     private List<SignalPoint> ResampleLiveSpectrumMagnitude(double[] magnitude)
@@ -673,6 +689,13 @@ internal sealed class PlotModelFactory
             liveSpectrumOptions.SmoothingInverseOctaves);
     }
 
+    public void UpdateCoherenceSeries(LineSeries series, double[] coherence) =>
+        FillPoints(series, ResampleCoherence(
+            coherence,
+            noiseMeasurement.SampleRate,
+            noiseMeasurement.SequenceLength,
+            liveSpectrumOptions.SmoothingInverseOctaves));
+
     private LineSeries BuildCoherenceSeries(
         double[] coherence,
         int sampleRate,
@@ -689,15 +712,11 @@ internal sealed class PlotModelFactory
             LineStyle = LineStyle.Dash,
             TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} \u03B3\u00B2" // γ²
         };
-        foreach (SignalPoint point in ResampleCoherence(
+        FillPoints(series, ResampleCoherence(
             coherence,
             sampleRate,
             fftLength,
-            smoothingInverseOctaves))
-        {
-            series.Points.Add(new DataPoint(point.X, point.Y));
-        }
-
+            smoothingInverseOctaves));
         return series;
     }
 
@@ -708,6 +727,31 @@ internal sealed class PlotModelFactory
     /// points so the two lines join seamlessly.
     /// </summary>
     public (LineSeries Trusted, LineSeries Untrusted) BuildNoiseSeriesSegmented(
+        double[] magnitude,
+        double[] coherence,
+        int thresholdPercent)
+    {
+        var trusted = new LineSeries
+        {
+            Color = OxyColor.FromRgb(255, 0, 127),
+            Title = "Live Transfer Function",
+            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
+        };
+        var untrusted = new LineSeries
+        {
+            Color = OxyColor.FromAColor(140, OxyColor.FromRgb(170, 170, 170)),
+            LineStyle = LineStyle.Dash,
+            StrokeThickness = 1.0,
+            Title = "Low coherence",
+            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
+        };
+        UpdateNoiseSeriesSegmented(trusted, untrusted, magnitude, coherence, thresholdPercent);
+        return (trusted, untrusted);
+    }
+
+    public void UpdateNoiseSeriesSegmented(
+        LineSeries trusted,
+        LineSeries untrusted,
         double[] magnitude,
         double[] coherence,
         int thresholdPercent)
@@ -735,23 +779,10 @@ internal sealed class PlotModelFactory
                 threshold;
         }
 
-        var trusted = new LineSeries
-        {
-            Color = OxyColor.FromRgb(255, 0, 127),
-            Title = "Live Transfer Function",
-            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
-        };
-        var untrusted = new LineSeries
-        {
-            Color = OxyColor.FromAColor(140, OxyColor.FromRgb(170, 170, 170)),
-            LineStyle = LineStyle.Dash,
-            StrokeThickness = 1.0,
-            Title = "Low coherence",
-            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
-        };
-
         bool IsTrusted(int index) => trustedFlags[index];
 
+        trusted.Points.Clear();
+        untrusted.Points.Clear();
         for (int i = 0; i < count; i++)
         {
             bool trustedHere = IsTrusted(i);
@@ -768,8 +799,6 @@ internal sealed class PlotModelFactory
                 frequency,
                 !trustedHere || boundary ? decibels : double.NaN));
         }
-
-        return (trusted, untrusted);
     }
 
     // Nearest coherence sample for a frequency; both point lists are sorted by

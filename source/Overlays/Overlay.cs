@@ -590,6 +590,7 @@ public sealed class Overlay
 
     // Target kind.
     private bool targetConfigured;
+    private readonly TargetOverlayCurveBuilder targetCurveBuilder = new();
     private int targetSourceSlot;
     private TargetPreset targetPreset = TargetPreset.HarmanRoom;
     private double targetTiltDbPerOctave;
@@ -696,6 +697,30 @@ public sealed class Overlay
         {
             Debug.WriteLine(
                 $"Failed to load overlay slot {Index} for {mode}: {exception}");
+            QuarantineCorruptSlot(mode, exception);
+        }
+    }
+
+    // A slot file that fails to load used to present as an empty slot and the
+    // next capture silently overwrote it. Setting it aside keeps the damaged
+    // data recoverable and makes each broken file warn exactly once.
+    private void QuarantineCorruptSlot(Mode mode, Exception error)
+    {
+        try
+        {
+            string? quarantinePath = OverlayFile.QuarantineCorruptFile(mode, Index);
+            if (quarantinePath != null)
+            {
+                ShowStorageError(
+                    $"Overlay slot {Index} for {mode} could not be loaded; " +
+                    $"the file was kept as {Path.GetFileName(quarantinePath)}.",
+                    error);
+            }
+        }
+        catch
+        {
+            // A transiently locked file stays in place and is retried on the
+            // next mode switch; quarantining must never break the switch itself.
         }
     }
 
@@ -795,7 +820,7 @@ public sealed class Overlay
     // Builds this Target overlay's shape on the default grid for the EQ Wizard
     // plot, returning a self-contained curve description (no plot mutation).
     internal EqWizardCurve? BuildTargetWizardCurve() =>
-        BuildTargetWizardCurveOn(DefaultTargetGrid);
+        BuildTargetWizardCurveOn(TargetOverlayCurveBuilder.DefaultTargetGrid);
 
     // Same target shape, evaluated at the supplied frequencies so it lines up
     // point-for-point with the source curve (needed for an exact area fill).
@@ -970,17 +995,13 @@ public sealed class Overlay
     {
         double offset = (double)offsetControl.Value;
 
-        // The target shape and its tolerance band are parametric over frequency, so
-        // always build them on the full grid — they must never be clipped to the
-        // measurement, even when its coverage is partial or absent.
-        TargetCurveResult result = OverlayMath.BuildTarget(
-            DefaultTargetGrid,
+        // The shape and tolerance band are constant between edits; the builder
+        // caches them so the ~30 fps live redraw does not rebuild the grid math.
+        TargetOverlayShape shape = targetCurveBuilder.BuildShape(
             spec,
             offset,
-            toleranceDb,
-            0,
-            TargetDeviationMode.None);
-        if (result.Target.Length < 2)
+            toleranceDb);
+        if (shape.Target.Length < 2)
         {
             return false;
         }
@@ -988,26 +1009,24 @@ public sealed class Overlay
         // Deviation / EQ correction compares against the incoming curve, so it is
         // built from the source and clipped to wherever that curve has data (gaps
         // appear where, for example, coherence is below the threshold).
-        OverlayPoint[] deviation = Array.Empty<OverlayPoint>();
-        if (deviationMode != TargetDeviationMode.None &&
-            ResolveTargetSource(sourceSlot) is { Length: >= 2 } source)
-        {
-            deviation = OverlayMath.BuildTarget(
-                source,
-                spec,
-                offset,
-                0,
-                smoothing,
-                deviationMode).Deviation;
-        }
+        DataPoint[] deviation =
+            deviationMode != TargetDeviationMode.None &&
+            ResolveTargetSource(sourceSlot) is { Length: >= 2 } source
+                ? TargetOverlayCurveBuilder.BuildDeviation(
+                    source,
+                    spec,
+                    offset,
+                    smoothing,
+                    deviationMode)
+                : Array.Empty<DataPoint>();
 
         byte alpha = (byte)Math.Round(opacity / 100.0 * 255);
         OxyColor lineColor = OxyColor.FromArgb(alpha, color.R, color.G, color.B);
         string? trackerFormat = OverlayCollection.GetTrackerFormatString(SeriesMode);
 
         // Tolerance band first so the curves draw on top of it.
-        if (result.ToleranceUpper.Length >= 2 &&
-            result.ToleranceLower.Length == result.ToleranceUpper.Length)
+        if (shape.ToleranceUpper.Length >= 2 &&
+            shape.ToleranceLower.Length == shape.ToleranceUpper.Length)
         {
             var band = new OxyPlot.Series.AreaSeries
             {
@@ -1016,8 +1035,8 @@ public sealed class Overlay
                 StrokeThickness = 0,
                 Tag = GetTag("tolerance")
             };
-            band.Points.AddRange(result.ToleranceUpper.Select(p => new DataPoint(p.X, p.Y)));
-            band.Points2.AddRange(result.ToleranceLower.Select(p => new DataPoint(p.X, p.Y)));
+            band.Points.AddRange(shape.ToleranceUpper);
+            band.Points2.AddRange(shape.ToleranceLower);
             model.Series.Add(band);
         }
 
@@ -1033,7 +1052,7 @@ public sealed class Overlay
         {
             targetSeries.TrackerFormatString = trackerFormat;
         }
-        targetSeries.Points.AddRange(result.Target.Select(p => new DataPoint(p.X, p.Y)));
+        targetSeries.Points.AddRange(shape.Target);
         model.Series.Add(targetSeries);
 
         if (deviation.Length >= 2)
@@ -1053,8 +1072,7 @@ public sealed class Overlay
             {
                 deviationSeries.TrackerFormatString = trackerFormat;
             }
-            deviationSeries.Points.AddRange(
-                deviation.Select(p => new DataPoint(p.X, p.Y)));
+            deviationSeries.Points.AddRange(deviation);
             model.Series.Add(deviationSeries);
         }
 
@@ -1085,26 +1103,6 @@ public sealed class Overlay
             settings.LineStyle,
             settings.Name.Length > 0 ? settings.Name : Title);
         RefreshPlot(model);
-    }
-
-    // Log-spaced 20 Hz … 20 kHz grid used to draw a target shape and its tolerance
-    // band when no measurement curve is on the plot to supply frequencies.
-    private static readonly OverlayPoint[] DefaultTargetGrid = BuildDefaultTargetGrid();
-
-    private static OverlayPoint[] BuildDefaultTargetGrid()
-    {
-        const double minHz = 20.0;
-        const double maxHz = 20_000.0;
-        const int count = 512;
-        var grid = new OverlayPoint[count];
-        double logMin = Math.Log10(minHz);
-        double logStep = (Math.Log10(maxHz) - logMin) / (count - 1);
-        for (int i = 0; i < count; i++)
-        {
-            grid[i] = new OverlayPoint(Math.Pow(10.0, logMin + i * logStep), 0.0);
-        }
-
-        return grid;
     }
 
     private TargetCurveSpec CurrentTargetSpec() => new(

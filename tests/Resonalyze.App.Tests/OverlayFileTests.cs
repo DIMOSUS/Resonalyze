@@ -563,6 +563,133 @@ public sealed class OverlayFileTests
         CreateMinimalOverlay(mode, slot).Save(root);
     }
 
+    [Fact]
+    public void Load_ThrowsOnCorruptJson()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            string path = OverlayFile.GetPath(Mode.FrequencyResponse, 3, root);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "{ not valid json");
+
+            Assert.ThrowsAny<Exception>(() =>
+                OverlayFile.Load(Mode.FrequencyResponse, 3, root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void QuarantineCorruptFile_MovesSlotFileAsideAndPreservesContent()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            string path = OverlayFile.GetPath(Mode.FrequencyResponse, 3, root);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "{ not valid json");
+
+            string? quarantinePath = OverlayFile.QuarantineCorruptFile(
+                Mode.FrequencyResponse,
+                3,
+                root);
+
+            Assert.Equal(path + ".corrupt", quarantinePath);
+            Assert.False(File.Exists(path));
+            Assert.Equal("{ not valid json", File.ReadAllText(quarantinePath!));
+            // The slot now loads as empty instead of failing again.
+            Assert.Null(OverlayFile.Load(Mode.FrequencyResponse, 3, root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Load_ReturnsTheCachedInstanceWhileTheFileIsUnchanged()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            CreateMinimalOverlay(Mode.FrequencyResponse, 6).Save(root);
+
+            OverlayFile? first = OverlayFile.Load(Mode.FrequencyResponse, 6, root);
+            OverlayFile? second = OverlayFile.Load(Mode.FrequencyResponse, 6, root);
+
+            Assert.NotNull(first);
+            Assert.Same(first, second);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Load_ReloadsAfterSaveInvalidatesTheCache()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            CreateMinimalOverlay(Mode.FrequencyResponse, 6).Save(root);
+            OverlayFile? original = OverlayFile.Load(Mode.FrequencyResponse, 6, root);
+
+            OverlayFile updated = CreateMinimalOverlay(Mode.FrequencyResponse, 6);
+            updated.Title = "Renamed after the first load";
+            updated.Save(root);
+            OverlayFile? reloaded = OverlayFile.Load(Mode.FrequencyResponse, 6, root);
+
+            Assert.NotNull(original);
+            Assert.NotNull(reloaded);
+            Assert.NotSame(original, reloaded);
+            Assert.Equal("Renamed after the first load", reloaded.Title);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Load_ReturnsNullAfterDeleteEvenWhenCached()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            CreateMinimalOverlay(Mode.FrequencyResponse, 6).Save(root);
+            Assert.NotNull(OverlayFile.Load(Mode.FrequencyResponse, 6, root));
+
+            OverlayFile.Delete(Mode.FrequencyResponse, 6, root);
+
+            Assert.Null(OverlayFile.Load(Mode.FrequencyResponse, 6, root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void QuarantineCorruptFile_ReturnsNullWhenSlotFileIsAbsent()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            Assert.Null(OverlayFile.QuarantineCorruptFile(
+                Mode.FrequencyResponse,
+                3,
+                root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static OverlayFile CreateMinimalOverlay(Mode mode, int slot)
     {
         return new OverlayFile

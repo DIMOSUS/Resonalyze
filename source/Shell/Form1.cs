@@ -35,6 +35,8 @@ namespace Resonalyze
         private readonly NoiseMeasurement noiseMeasurement = new();
         private readonly Dictionary<string, CalibrationFile> calibrationCache = new(
             StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> reportedCalibrationProblems = new(
+            StringComparer.OrdinalIgnoreCase);
         private readonly WaterfallGenerateOptions waterfallGenOptions = new()
         {
             WaterfallMode = WaterfallMode.Fourier,
@@ -176,6 +178,41 @@ namespace Resonalyze
                 "Measurement",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
+        }
+
+        // A configured calibration that fails to load must not silently produce
+        // uncalibrated curves. Warned once per path per session; queued through
+        // BeginInvoke so a plot build is never interrupted by a modal dialog.
+        // Called from Task.Run plot builds, so the set is guarded by a lock.
+        private void WarnCalibrationProblemOnce(string path, string? reason)
+        {
+            if (closingInProgress)
+            {
+                return;
+            }
+            lock (reportedCalibrationProblems)
+            {
+                if (!reportedCalibrationProblems.Add(path))
+                {
+                    return;
+                }
+            }
+
+            TryBeginInvokeOnUiThread(() =>
+            {
+                if (closingInProgress)
+                {
+                    return;
+                }
+
+                MessageBox.Show(
+                    this,
+                    "The selected microphone calibration could not be loaded; " +
+                    $"curves are shown uncalibrated.\r\n\r\n{reason ?? path}",
+                    "Microphone calibration",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            });
         }
 
         private SignalGeneratorPlaybackSettings CreateSignalGeneratorPlaybackSettings() =>

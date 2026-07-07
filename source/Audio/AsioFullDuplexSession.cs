@@ -81,35 +81,81 @@ internal sealed class AsioFullDuplexSession : IDisposable
             InputChannelOffset = 0,
             ChannelOffset = outputChannelOffset
         };
-        if (!driver.IsSampleRateSupported(sampleRate))
+        try
         {
-            throw new InvalidOperationException(
-                $"ASIO driver '{driverName}' does not support {sampleRate} Hz.");
-        }
-        if (inputChannelOffset < 0 ||
-            driverRecordChannelCount > driver.DriverInputChannelCount)
-        {
-            throw new InvalidOperationException(
-                $"ASIO input channel {inputChannelOffset + 1} is not available for driver '{driverName}'.");
-        }
-        if (outputChannelOffset < 0 ||
-            outputChannelOffset + playbackProvider.WaveFormat.Channels > driver.DriverOutputChannelCount)
-        {
-            throw new InvalidOperationException(
-                $"ASIO output channel pair starting at {outputChannelOffset + 1} is not available for driver '{driverName}'.");
-        }
+            if (!driver.IsSampleRateSupported(sampleRate))
+            {
+                throw new InvalidOperationException(
+                    $"ASIO driver '{driverName}' does not support {sampleRate} Hz.");
+            }
+            if (inputChannelOffset < 0 ||
+                driverRecordChannelCount > driver.DriverInputChannelCount)
+            {
+                throw new InvalidOperationException(
+                    $"ASIO input channel {inputChannelOffset + 1} is not available for driver '{driverName}'.");
+            }
+            if (outputChannelOffset < 0 ||
+                outputChannelOffset + playbackProvider.WaveFormat.Channels > driver.DriverOutputChannelCount)
+            {
+                throw new InvalidOperationException(
+                    $"ASIO output channel pair starting at {outputChannelOffset + 1} is not available for driver '{driverName}'.");
+            }
 
-        driver.AudioAvailable += ReceiveAudio;
-        driver.PlaybackStopped += PlaybackStopped;
-        driver.InitRecordAndPlayback(
-            playbackProvider,
-            driverRecordChannelCount,
-            sampleRate);
-        driver.Play();
+            driver.AudioAvailable += ReceiveAudio;
+            driver.PlaybackStopped += PlaybackStopped;
+            driver.InitRecordAndPlayback(
+                playbackProvider,
+                driverRecordChannelCount,
+                sampleRate);
+            driver.Play();
 
-        using CancellationTokenRegistration registration =
-            cancellationToken.Register(() => firstBufferReady.TrySetCanceled(cancellationToken));
-        await firstBufferReady.Task.ConfigureAwait(false);
+            using CancellationTokenRegistration registration =
+                cancellationToken.Register(() => firstBufferReady.TrySetCanceled(cancellationToken));
+            await firstBufferReady.Task.ConfigureAwait(false);
+        }
+        catch
+        {
+            // A driver that fails validation or playback startup (or never
+            // produces the first callback before cancellation) must be detached
+            // here; otherwise it keeps running with live callbacks until the
+            // owner's teardown gets around to disposing the session.
+            StopAndDisposeDriver();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Starts a fresh capture on the running driver. An averaged sweep reuses
+    /// the open ASIO session across runs — the driver keeps playing whatever
+    /// the provider produces (silence after the sweep ends) and only the
+    /// accumulator restarts, instead of paying a full driver re-initialization
+    /// (seconds on slow drivers) for every run.
+    /// </summary>
+    public void ResetCapture(int expectedTotalSamples)
+    {
+        ThrowIfDisposed();
+        this.expectedTotalSamples = expectedTotalSamples;
+        ResetBuffers();
+    }
+
+    /// <summary>
+    /// Stops accumulating samples while the driver keeps running (and keeps
+    /// raising level meters) — used between averaging runs, where minutes of a
+    /// confirmation pause would otherwise grow the capture buffer with
+    /// silence. <see cref="ResetCapture"/> starts the next run's capture.
+    /// </summary>
+    public void PauseCapture()
+    {
+        ThrowIfDisposed();
+        lock (sync)
+        {
+            accumulator = null;
+            foreach (SoundRecorderSampleWaiter waiter in sampleWaiters)
+            {
+                waiter.Cancel();
+            }
+            sampleWaiters.Clear();
+        }
     }
 
     public Task WaitForSamplesAsync(int sampleCount, CancellationToken cancellationToken)
@@ -244,23 +290,23 @@ internal sealed class AsioFullDuplexSession : IDisposable
             sumSquares[channel] = sum;
         }
 
-        List<float[][]>? readySequences;
+        // A paused capture (accumulator == null) skips accumulation but keeps
+        // metering, so the input meter stays live between averaging runs.
+        List<float[][]>? readySequences = null;
         lock (sync)
         {
-            if (accumulator == null)
+            if (accumulator != null)
             {
-                return;
-            }
+                accumulator.Append(convertScratch, frames);
+                readySequences = accumulator.ExtractReadySequences();
 
-            accumulator.Append(convertScratch, frames);
-            readySequences = accumulator.ExtractReadySequences();
-
-            for (int i = sampleWaiters.Count - 1; i >= 0; i--)
-            {
-                if (accumulator.ReadSamples >= sampleWaiters[i].SampleCount)
+                for (int i = sampleWaiters.Count - 1; i >= 0; i--)
                 {
-                    sampleWaiters[i].Complete();
-                    sampleWaiters.RemoveAt(i);
+                    if (accumulator.ReadSamples >= sampleWaiters[i].SampleCount)
+                    {
+                        sampleWaiters[i].Complete();
+                        sampleWaiters.RemoveAt(i);
+                    }
                 }
             }
         }

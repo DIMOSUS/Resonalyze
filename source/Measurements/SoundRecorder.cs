@@ -81,11 +81,22 @@ namespace Resonalyze
             };
             waveSource.DataAvailable += ReceiveData;
             waveSource.RecordingStopped += RecordingStopped;
-            waveSource.StartRecording();
+            try
+            {
+                waveSource.StartRecording();
 
-            using CancellationTokenRegistration registration =
-                cancellationToken.Register(() => firstBufferReady.TrySetCanceled(cancellationToken));
-            await firstBufferReady.Task.ConfigureAwait(false);
+                using CancellationTokenRegistration registration =
+                    cancellationToken.Register(() => firstBufferReady.TrySetCanceled(cancellationToken));
+                await firstBufferReady.Task.ConfigureAwait(false);
+            }
+            catch
+            {
+                // If the device fails to start, stops before the first buffer,
+                // or the caller cancels while waiting for that first buffer, do
+                // not leave an active WaveInEvent (and its callbacks) behind.
+                StopAndDisposeSource();
+                throw;
+            }
         }
 
         public Task WaitForSamplesAsync(int sampleCount, CancellationToken cancellationToken)

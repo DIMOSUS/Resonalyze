@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -11,6 +12,15 @@ public sealed class OverlayFile
     public const string CurrentFormat = "resonalyze-overlay";
     public const int CurrentVersion = 5;
     public const int MaximumSlotCount = 12;
+
+    // Every mode switch re-reads all 12 slot files; the cache turns the
+    // unchanged case into a stat call. In-app Save/Delete/Quarantine invalidate
+    // their entry, external edits are caught by the write-stamp check. Loaded
+    // instances are never mutated by callers (ApplyFile copies the values out).
+    private static readonly ConcurrentDictionary<
+        string,
+        (DateTime WriteTimeUtc, long Length, OverlayFile File)> LoadCache =
+        new(StringComparer.OrdinalIgnoreCase);
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -123,6 +133,9 @@ public sealed class OverlayFile
             }
 
             File.Move(temporaryPath, path, overwrite: true);
+            // Invalidate rather than store `this`: the cache must only hold
+            // instances that no caller can mutate, i.e. those Load creates.
+            LoadCache.TryRemove(path, out _);
         }
         finally
         {
@@ -139,9 +152,18 @@ public sealed class OverlayFile
         string? rootDirectory = null)
     {
         string path = GetPath(mode, slot, rootDirectory);
-        if (!File.Exists(path))
+        var info = new FileInfo(path);
+        if (!info.Exists)
         {
+            LoadCache.TryRemove(path, out _);
             return null;
+        }
+
+        if (LoadCache.TryGetValue(path, out var cached) &&
+            cached.WriteTimeUtc == info.LastWriteTimeUtc &&
+            cached.Length == info.Length)
+        {
+            return cached.File;
         }
 
         using FileStream stream = new(
@@ -161,7 +183,30 @@ public sealed class OverlayFile
                 "The overlay file does not match its mode and slot.");
         }
 
+        LoadCache[path] = (info.LastWriteTimeUtc, info.Length, file);
         return file;
+    }
+
+    /// <summary>
+    /// Moves a slot file that failed to load aside as "&lt;name&gt;.corrupt" so
+    /// the next save cannot silently overwrite the damaged data. Returns the
+    /// quarantine path, or null when there is no slot file to move.
+    /// </summary>
+    public static string? QuarantineCorruptFile(
+        Mode mode,
+        int slot,
+        string? rootDirectory = null)
+    {
+        string path = GetPath(mode, slot, rootDirectory);
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        string quarantinePath = path + ".corrupt";
+        File.Move(path, quarantinePath, overwrite: true);
+        LoadCache.TryRemove(path, out _);
+        return quarantinePath;
     }
 
     public static void Delete(
@@ -170,6 +215,7 @@ public sealed class OverlayFile
         string? rootDirectory = null)
     {
         string path = GetPath(mode, slot, rootDirectory);
+        LoadCache.TryRemove(path, out _);
         if (File.Exists(path))
         {
             File.Delete(path);

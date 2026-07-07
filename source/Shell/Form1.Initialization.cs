@@ -162,6 +162,7 @@ public partial class Form1
 
     private CalibrationFile? GetMicrophoneCalibration(MicrophoneCalibrationMode mode)
     {
+        WarnIfConfiguredCalibrationMissing(mode);
         if (mode == MicrophoneCalibrationMode.Degrees90 &&
             GetMicrophoneCalibrationPath(MicrophoneCalibrationMode.Degrees90) == null)
         {
@@ -174,13 +175,43 @@ public partial class Form1
             return null;
         }
 
-        if (!calibrationCache.TryGetValue(path, out CalibrationFile? calibrationFile))
+        // Plot models are built on Task.Run workers, and two rapid refreshes
+        // can run concurrently — the cache dictionary must not be mutated
+        // unsynchronized (the lock is reentrant for the approximation path).
+        lock (calibrationCache)
         {
-            calibrationFile = new CalibrationFile(path);
-            calibrationCache[path] = calibrationFile;
-        }
+            if (!calibrationCache.TryGetValue(path, out CalibrationFile? calibrationFile))
+            {
+                calibrationFile = new CalibrationFile(path);
+                calibrationCache[path] = calibrationFile;
+                if (!calibrationFile.HasData)
+                {
+                    WarnCalibrationProblemOnce(path, calibrationFile.LoadError);
+                }
+            }
 
-        return calibrationFile;
+            return calibrationFile;
+        }
+    }
+
+    // GetMicrophoneCalibrationPath maps a configured-but-deleted file to null,
+    // which used to silently disable the correction for every plot.
+    private void WarnIfConfiguredCalibrationMissing(MicrophoneCalibrationMode mode)
+    {
+        string? configured = mode switch
+        {
+            MicrophoneCalibrationMode.Degrees0 =>
+                measurementSettings.Measurement.MicrophoneCalibration0DegreesPath,
+            MicrophoneCalibrationMode.Degrees90 =>
+                measurementSettings.Measurement.MicrophoneCalibration90DegreesPath,
+            _ => null
+        };
+        if (!string.IsNullOrWhiteSpace(configured) && !File.Exists(configured))
+        {
+            WarnCalibrationProblemOnce(
+                configured,
+                $"Calibration file not found: {configured}");
+        }
     }
 
     private CalibrationFile? GetApproximateNinetyDegreeCalibration()
@@ -193,18 +224,21 @@ public partial class Form1
         }
 
         string cacheKey = $"approx90:{zeroDegreePath}";
-        if (!calibrationCache.TryGetValue(cacheKey, out CalibrationFile? calibrationFile))
+        lock (calibrationCache)
         {
-            CalibrationFile zeroDegreeCalibration =
-                GetMicrophoneCalibration(MicrophoneCalibrationMode.Degrees0)
-                ?? throw new InvalidOperationException(
-                    "0 degree microphone calibration is not available.");
-            calibrationFile = CalibrationFile.CreateNinetyDegreeApproximation(
-                zeroDegreeCalibration);
-            calibrationCache[cacheKey] = calibrationFile;
-        }
+            if (!calibrationCache.TryGetValue(cacheKey, out CalibrationFile? calibrationFile))
+            {
+                CalibrationFile zeroDegreeCalibration =
+                    GetMicrophoneCalibration(MicrophoneCalibrationMode.Degrees0)
+                    ?? throw new InvalidOperationException(
+                        "0 degree microphone calibration is not available.");
+                calibrationFile = CalibrationFile.CreateNinetyDegreeApproximation(
+                    zeroDegreeCalibration);
+                calibrationCache[cacheKey] = calibrationFile;
+            }
 
-        return calibrationFile;
+            return calibrationFile;
+        }
     }
 
     private string? GetMicrophoneCalibrationPath(MicrophoneCalibrationMode mode)
@@ -240,7 +274,10 @@ public partial class Form1
 
     private void RefreshCalibrationConsumers()
     {
-        calibrationCache.Clear();
+        lock (calibrationCache)
+        {
+            calibrationCache.Clear();
+        }
         if (virtualCrossoverPanel != null)
         {
             virtualCrossoverPanel.ConfigureCalibration(

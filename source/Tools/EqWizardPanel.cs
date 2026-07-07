@@ -765,7 +765,7 @@ public partial class EqWizardPanel : UserControl
             AddExtension = true,
             DefaultExt = formats[0].Extension,
             FileName = "eq",
-            Filter = BuildFormatFilter(formats) + "|" + TuningSheetFilter,
+            Filter = EqFormatFileDialogs.BuildFilter(formats, TuningSheetFilter),
             Title = "Export PEQ"
         };
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
@@ -773,20 +773,21 @@ public partial class EqWizardPanel : UserControl
             return;
         }
 
-        int selected = dialog.FilterIndex - 1;
+        IEqProfileFormat? format = EqFormatFileDialogs.ResolveFormat(
+            formats, dialog.FilterIndex);
         EqualizationCurve curve = BuildEqualizationCurve();
         try
         {
-            if (selected >= formats.Count)
+            if (format == null)
             {
-                // The tuning sheet is the last filter entry; its title is the file name.
+                // The tuning sheet is the trailing filter entry; its title is
+                // the file name.
                 string title = System.IO.Path.GetFileNameWithoutExtension(dialog.FileName);
                 (double minHz, double maxHz) = GetFrequencyWindow();
                 TuningSheetPdf.Export(dialog.FileName, title, curve, minHz, maxHz, lastStats);
             }
             else
             {
-                IEqProfileFormat format = formats[Math.Clamp(selected, 0, formats.Count - 1)];
                 System.IO.File.WriteAllText(dialog.FileName, format.Export(curve));
             }
         }
@@ -804,7 +805,7 @@ public partial class EqWizardPanel : UserControl
         using var dialog = new OpenFileDialog
         {
             CheckFileExists = true,
-            Filter = BuildFormatFilter(formats),
+            Filter = EqFormatFileDialogs.BuildFilter(formats),
             Title = "Import PEQ"
         };
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
@@ -812,7 +813,9 @@ public partial class EqWizardPanel : UserControl
             return;
         }
 
-        IEqProfileFormat format = formats[Math.Clamp(dialog.FilterIndex - 1, 0, formats.Count - 1)];
+        // No trailing entry, so the index always resolves to a format.
+        IEqProfileFormat format =
+            EqFormatFileDialogs.ResolveFormat(formats, dialog.FilterIndex)!;
         EqualizationCurve curve;
         try
         {
@@ -828,11 +831,6 @@ public partial class EqWizardPanel : UserControl
         checkBoxBypass.Checked = false;
         ApplyEqualizationCurve(curve);
     }
-
-    private static string BuildFormatFilter(IReadOnlyList<IEqProfileFormat> formats) =>
-        string.Join(
-            "|",
-            formats.Select(format => $"{format.Name} (*.{format.Extension})|*.{format.Extension}"));
 
     private void ShowFileError(string message, Exception exception)
     {

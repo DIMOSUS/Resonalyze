@@ -867,9 +867,7 @@ public partial class VirtualCrossoverPanel : UserControl
         using var dialog = new OpenFileDialog
         {
             CheckFileExists = true,
-            Filter = string.Join(
-                "|",
-                formats.Select(format => $"{format.Name} (*.{format.Extension})|*.{format.Extension}")),
+            Filter = EqFormatFileDialogs.BuildFilter(formats),
             Title = $"Load channel {channel.Control.ChannelName} PEQ"
         };
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
@@ -877,7 +875,9 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        IEqProfileFormat chosen = formats[Math.Clamp(dialog.FilterIndex - 1, 0, formats.Count - 1)];
+        // No trailing entry, so the index always resolves to a format.
+        IEqProfileFormat chosen =
+            EqFormatFileDialogs.ResolveFormat(formats, dialog.FilterIndex)!;
         EqualizationCurve curve;
         try
         {

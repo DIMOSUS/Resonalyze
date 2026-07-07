@@ -61,8 +61,15 @@ internal sealed class MeasurementSettingsFile
     public void Save()
     {
         SchemaVersion = CurrentSchemaVersion;
-        using FileStream stream = File.Create(PathOnDisk);
-        JsonSerializer.Serialize(stream, this, SerializerOptions);
+        // Temp file + move keeps the settings intact if the write is interrupted;
+        // a corrupted file silently loads as defaults.
+        string tempPath = PathOnDisk + ".tmp";
+        using (FileStream stream = File.Create(tempPath))
+        {
+            JsonSerializer.Serialize(stream, this, SerializerOptions);
+        }
+
+        File.Move(tempPath, PathOnDisk, overwrite: true);
     }
 
     public void ApplyTo(

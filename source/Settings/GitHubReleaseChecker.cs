@@ -39,15 +39,22 @@ internal static class GitHubReleaseChecker
             return null;
         }
 
-        string releaseUrl = string.IsNullOrWhiteSpace(latest.HtmlUrl)
-            ? ReleasesPageUrl
-            : latest.HtmlUrl;
+        // The URL ends up in Process.Start with ShellExecute; never pass through
+        // anything but an https github.com link, even from a trusted API.
+        string releaseUrl = IsTrustedReleaseUrl(latest.HtmlUrl)
+            ? latest.HtmlUrl!
+            : ReleasesPageUrl;
         bool updateAvailable = ApplicationVersionInfo.IsOlderThan(latest.TagName);
         return new ReleaseCheckResult(
             latest.TagName,
             releaseUrl,
             updateAvailable);
     }
+
+    internal static bool IsTrustedReleaseUrl(string? url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out Uri? parsed) &&
+        parsed.Scheme == Uri.UriSchemeHttps &&
+        string.Equals(parsed.Host, "github.com", StringComparison.OrdinalIgnoreCase);
 
     private static HttpClient CreateHttpClient()
     {

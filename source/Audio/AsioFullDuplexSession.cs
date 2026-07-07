@@ -81,35 +81,47 @@ internal sealed class AsioFullDuplexSession : IDisposable
             InputChannelOffset = 0,
             ChannelOffset = outputChannelOffset
         };
-        if (!driver.IsSampleRateSupported(sampleRate))
+        try
         {
-            throw new InvalidOperationException(
-                $"ASIO driver '{driverName}' does not support {sampleRate} Hz.");
-        }
-        if (inputChannelOffset < 0 ||
-            driverRecordChannelCount > driver.DriverInputChannelCount)
-        {
-            throw new InvalidOperationException(
-                $"ASIO input channel {inputChannelOffset + 1} is not available for driver '{driverName}'.");
-        }
-        if (outputChannelOffset < 0 ||
-            outputChannelOffset + playbackProvider.WaveFormat.Channels > driver.DriverOutputChannelCount)
-        {
-            throw new InvalidOperationException(
-                $"ASIO output channel pair starting at {outputChannelOffset + 1} is not available for driver '{driverName}'.");
-        }
+            if (!driver.IsSampleRateSupported(sampleRate))
+            {
+                throw new InvalidOperationException(
+                    $"ASIO driver '{driverName}' does not support {sampleRate} Hz.");
+            }
+            if (inputChannelOffset < 0 ||
+                driverRecordChannelCount > driver.DriverInputChannelCount)
+            {
+                throw new InvalidOperationException(
+                    $"ASIO input channel {inputChannelOffset + 1} is not available for driver '{driverName}'.");
+            }
+            if (outputChannelOffset < 0 ||
+                outputChannelOffset + playbackProvider.WaveFormat.Channels > driver.DriverOutputChannelCount)
+            {
+                throw new InvalidOperationException(
+                    $"ASIO output channel pair starting at {outputChannelOffset + 1} is not available for driver '{driverName}'.");
+            }
 
-        driver.AudioAvailable += ReceiveAudio;
-        driver.PlaybackStopped += PlaybackStopped;
-        driver.InitRecordAndPlayback(
-            playbackProvider,
-            driverRecordChannelCount,
-            sampleRate);
-        driver.Play();
+            driver.AudioAvailable += ReceiveAudio;
+            driver.PlaybackStopped += PlaybackStopped;
+            driver.InitRecordAndPlayback(
+                playbackProvider,
+                driverRecordChannelCount,
+                sampleRate);
+            driver.Play();
 
-        using CancellationTokenRegistration registration =
-            cancellationToken.Register(() => firstBufferReady.TrySetCanceled(cancellationToken));
-        await firstBufferReady.Task.ConfigureAwait(false);
+            using CancellationTokenRegistration registration =
+                cancellationToken.Register(() => firstBufferReady.TrySetCanceled(cancellationToken));
+            await firstBufferReady.Task.ConfigureAwait(false);
+        }
+        catch
+        {
+            // A driver that fails validation or playback startup (or never
+            // produces the first callback before cancellation) must be detached
+            // here; otherwise it keeps running with live callbacks until the
+            // owner's teardown gets around to disposing the session.
+            StopAndDisposeDriver();
+            throw;
+        }
     }
 
     /// <summary>

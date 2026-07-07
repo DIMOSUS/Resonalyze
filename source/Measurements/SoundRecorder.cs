@@ -13,6 +13,8 @@ namespace Resonalyze
         private WaveInEvent? waveSource;
         private CaptureAccumulator? accumulator;
         private float[][] decodeScratch = Array.Empty<float[]>();
+        private double[] meterPeaks = Array.Empty<double>();
+        private double[] meterSumSquares = Array.Empty<double>();
         private int expectedTotalSamples;
         private TaskCompletionSource<bool>? firstBufferReady;
         private TaskCompletionSource<bool>? recordingStopped;
@@ -165,8 +167,10 @@ namespace Resonalyze
             // Decode and meter on reusable scratch outside the lock; only bounded
             // array copies happen inside it (mirrors AsioFullDuplexSession).
             EnsureScratch(frameCount);
-            var peaks = new double[ChannelCount];
-            var sumSquares = new double[ChannelCount];
+            double[] peaks = meterPeaks;
+            double[] sumSquares = meterSumSquares;
+            Array.Clear(peaks);
+            Array.Clear(sumSquares);
             for (int frame = 0; frame < frameCount; frame++)
             {
                 int frameOffset = frame * bytesPerFrame;
@@ -219,6 +223,12 @@ namespace Resonalyze
 
         private void EnsureScratch(int frames)
         {
+            if (meterPeaks.Length != ChannelCount)
+            {
+                meterPeaks = new double[ChannelCount];
+                meterSumSquares = new double[ChannelCount];
+            }
+
             if (decodeScratch.Length == ChannelCount &&
                 decodeScratch[0].Length >= frames)
             {

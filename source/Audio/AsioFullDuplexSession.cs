@@ -15,6 +15,8 @@ internal sealed class AsioFullDuplexSession : IDisposable
     private AsioOut? driver;
     private CaptureAccumulator? accumulator;
     private float[][] convertScratch = Array.Empty<float[]>();
+    private double[] meterPeaks = Array.Empty<double>();
+    private double[] meterSumSquares = Array.Empty<double>();
     private int expectedTotalSamples;
     private TaskCompletionSource<bool>? firstBufferReady;
     private TaskCompletionSource<bool>? playbackStopped;
@@ -218,8 +220,8 @@ internal sealed class AsioFullDuplexSession : IDisposable
 
         int frames = args.SamplesPerBuffer;
         EnsureScratch(frames);
-        var peaks = new double[ChannelCount];
-        var sumSquares = new double[ChannelCount];
+        double[] peaks = meterPeaks;
+        double[] sumSquares = meterSumSquares;
         for (int channel = 0; channel < ChannelCount; channel++)
         {
             float[] scratch = convertScratch[channel];
@@ -280,6 +282,12 @@ internal sealed class AsioFullDuplexSession : IDisposable
 
     private void EnsureScratch(int frames)
     {
+        if (meterPeaks.Length != ChannelCount)
+        {
+            meterPeaks = new double[ChannelCount];
+            meterSumSquares = new double[ChannelCount];
+        }
+
         if (convertScratch.Length == ChannelCount &&
             convertScratch[0].Length >= frames)
         {

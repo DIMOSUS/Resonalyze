@@ -183,11 +183,19 @@ namespace Resonalyze
         // A configured calibration that fails to load must not silently produce
         // uncalibrated curves. Warned once per path per session; queued through
         // BeginInvoke so a plot build is never interrupted by a modal dialog.
+        // Called from Task.Run plot builds, so the set is guarded by a lock.
         private void WarnCalibrationProblemOnce(string path, string? reason)
         {
-            if (closingInProgress || !reportedCalibrationProblems.Add(path))
+            if (closingInProgress)
             {
                 return;
+            }
+            lock (reportedCalibrationProblems)
+            {
+                if (!reportedCalibrationProblems.Add(path))
+                {
+                    return;
+                }
             }
 
             TryBeginInvokeOnUiThread(() =>

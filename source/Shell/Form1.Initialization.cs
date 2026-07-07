@@ -175,17 +175,23 @@ public partial class Form1
             return null;
         }
 
-        if (!calibrationCache.TryGetValue(path, out CalibrationFile? calibrationFile))
+        // Plot models are built on Task.Run workers, and two rapid refreshes
+        // can run concurrently — the cache dictionary must not be mutated
+        // unsynchronized (the lock is reentrant for the approximation path).
+        lock (calibrationCache)
         {
-            calibrationFile = new CalibrationFile(path);
-            calibrationCache[path] = calibrationFile;
-            if (!calibrationFile.HasData)
+            if (!calibrationCache.TryGetValue(path, out CalibrationFile? calibrationFile))
             {
-                WarnCalibrationProblemOnce(path, calibrationFile.LoadError);
+                calibrationFile = new CalibrationFile(path);
+                calibrationCache[path] = calibrationFile;
+                if (!calibrationFile.HasData)
+                {
+                    WarnCalibrationProblemOnce(path, calibrationFile.LoadError);
+                }
             }
-        }
 
-        return calibrationFile;
+            return calibrationFile;
+        }
     }
 
     // GetMicrophoneCalibrationPath maps a configured-but-deleted file to null,
@@ -218,18 +224,21 @@ public partial class Form1
         }
 
         string cacheKey = $"approx90:{zeroDegreePath}";
-        if (!calibrationCache.TryGetValue(cacheKey, out CalibrationFile? calibrationFile))
+        lock (calibrationCache)
         {
-            CalibrationFile zeroDegreeCalibration =
-                GetMicrophoneCalibration(MicrophoneCalibrationMode.Degrees0)
-                ?? throw new InvalidOperationException(
-                    "0 degree microphone calibration is not available.");
-            calibrationFile = CalibrationFile.CreateNinetyDegreeApproximation(
-                zeroDegreeCalibration);
-            calibrationCache[cacheKey] = calibrationFile;
-        }
+            if (!calibrationCache.TryGetValue(cacheKey, out CalibrationFile? calibrationFile))
+            {
+                CalibrationFile zeroDegreeCalibration =
+                    GetMicrophoneCalibration(MicrophoneCalibrationMode.Degrees0)
+                    ?? throw new InvalidOperationException(
+                        "0 degree microphone calibration is not available.");
+                calibrationFile = CalibrationFile.CreateNinetyDegreeApproximation(
+                    zeroDegreeCalibration);
+                calibrationCache[cacheKey] = calibrationFile;
+            }
 
-        return calibrationFile;
+            return calibrationFile;
+        }
     }
 
     private string? GetMicrophoneCalibrationPath(MicrophoneCalibrationMode mode)
@@ -265,7 +274,10 @@ public partial class Form1
 
     private void RefreshCalibrationConsumers()
     {
-        calibrationCache.Clear();
+        lock (calibrationCache)
+        {
+            calibrationCache.Clear();
+        }
         if (virtualCrossoverPanel != null)
         {
             virtualCrossoverPanel.ConfigureCalibration(

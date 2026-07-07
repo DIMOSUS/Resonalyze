@@ -54,7 +54,8 @@ public partial class Form1
             UpdateOverlayAvailability,
             UpdateRecordButtonForCurrentMode,
             UpdatePlotLabelsPanel,
-            liveSpectrumOptions);
+            liveSpectrumOptions,
+            () => closingInProgress);
         ModeController createdModeController = new(
             ChangeModeAsync,
             SetActiveModeTab,

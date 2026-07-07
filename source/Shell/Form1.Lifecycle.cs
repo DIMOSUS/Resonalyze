@@ -48,6 +48,7 @@ public partial class Form1
         closingInProgress = true;
         Enabled = false;
         FlushMeasurementSettings();
+        overlayCollection.FlushPendingSaves();
         PersistCurrentSessionState();
         startupAudioWarmupCancellation?.Cancel();
         await Task.WhenAll(

@@ -95,6 +95,16 @@ public sealed class OverlayCollection
     public OxyPlot.WindowsForms.PlotView PlotView { get; }
     public Form1 Form { get; }
 
+    // Lands any debounced offset saves immediately; the shell calls this on
+    // close so an offset changed within the debounce window still persists.
+    public void FlushPendingSaves()
+    {
+        foreach (Overlay overlay in overlays)
+        {
+            overlay.FlushPendingOffsetSave();
+        }
+    }
+
     public void Prepare(Mode mode)
     {
         Mode overlayMode = OverlayModeFor(mode);
@@ -1998,7 +2008,7 @@ public sealed class Overlay
         FlushPendingOffsetSave();
     }
 
-    private void FlushPendingOffsetSave()
+    internal void FlushPendingOffsetSave()
     {
         if (!offsetSaveTimer.Enabled)
         {

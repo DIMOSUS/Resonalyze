@@ -462,6 +462,38 @@ namespace Resonalyze.Dsp
             return data;
         }
 
+        /// <summary>
+        /// Wrapped or unwrapped gated phase (radians) using the same gate
+        /// construction as <see cref="GetPhase"/>, referenced to an absolute
+        /// sample position (fractional samples allowed, so a τ reference is
+        /// not limited to whole samples). For callers that render their own
+        /// phase view (the Virtual DSP tool) without drifting from the Phase
+        /// mode's gating.
+        /// </summary>
+        public static List<SignalPoint> GetGatedPhaseData(
+            IImpulseMeasurement measurement,
+            double gateOffsetMs,
+            double leftMs,
+            double plateauMs,
+            double rightMs,
+            double referenceSamples,
+            bool unwrap)
+        {
+            Complex[] spectrum = BuildPhaseSpectrum(
+                measurement,
+                gateOffsetMs,
+                leftMs,
+                plateauMs,
+                rightMs,
+                out int extractionStart);
+            return BuildMeasuredPhase(
+                spectrum,
+                extractionStart,
+                referenceSamples,
+                measurement.SampleRate,
+                unwrap);
+        }
+
         public static AnalysisCurve GetPhase(
             IImpulseMeasurement measurement,
             double gateOffsetMs,
@@ -472,21 +504,13 @@ namespace Resonalyze.Dsp
             double smoothingInverseOctaves,
             bool unwrap)
         {
-            Complex[] spectrum = BuildPhaseSpectrum(
+            List<SignalPoint> phase = GetGatedPhaseData(
                 measurement,
                 gateOffsetMs,
                 leftMs,
                 plateauMs,
                 rightMs,
-                out int extractionStart);
-
-            double referenceSamples =
-                detrendMilliseconds * measurement.SampleRate / 1000.0;
-            List<SignalPoint> phase = BuildMeasuredPhase(
-                spectrum,
-                extractionStart,
-                referenceSamples,
-                measurement.SampleRate,
+                detrendMilliseconds * measurement.SampleRate / 1000.0,
                 unwrap);
 
             List<SignalPoint> data = new(phase.Count);

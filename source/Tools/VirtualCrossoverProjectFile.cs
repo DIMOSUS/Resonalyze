@@ -134,6 +134,11 @@ public sealed class VirtualCrossoverChannelSettings
 public sealed class VirtualCrossoverProjectFile
 {
     public const string CurrentFormat = "resonalyze-virtual-crossover";
+
+    // Bump on an incompatible schema change and add a per-version migration
+    // step in LoadOrDefault before Validate. Files from a NEWER version
+    // (a downgraded app) are never migrated: LoadOrDefault backs them up and
+    // starts fresh, LoadFrom rejects them with an explicit error.
     public const int CurrentVersion = 1;
     public const int MaximumChannelCount = 8;
     private const string FileName = "virtual-crossover.json";
@@ -269,15 +274,18 @@ public sealed class VirtualCrossoverProjectFile
     }
 
     /// <summary>
-    /// Loads the saved project, falling back to a fresh two-channel default when
-    /// the file is missing, unreadable or from an unknown version — the tool state
-    /// is a convenience, so it must never block startup.
+    /// Loads the saved project, falling back to a fresh default when the file
+    /// is missing, unreadable or from an unknown version — the tool state is a
+    /// convenience, so it must never block startup. A file that exists but
+    /// cannot be used is renamed to <c>.backup</c> first: the next scheduled
+    /// save overwrites the project path, and a downgrade or a bug must not
+    /// cost the user their tuning session.
     /// </summary>
     public static VirtualCrossoverProjectFile LoadOrDefault(string? rootDirectory = null)
     {
+        string path = GetPath(rootDirectory);
         try
         {
-            string path = GetPath(rootDirectory);
             if (!File.Exists(path))
             {
                 return new VirtualCrossoverProjectFile();
@@ -288,21 +296,33 @@ public sealed class VirtualCrossoverProjectFile
                 FileMode.Open,
                 FileAccess.Read,
                 FileShare.Read);
-            VirtualCrossoverProjectFile? file =
+            VirtualCrossoverProjectFile file =
                 JsonSerializer.Deserialize<VirtualCrossoverProjectFile>(
                     stream,
-                    SerializerOptions);
-            if (file == null)
-            {
-                return new VirtualCrossoverProjectFile();
-            }
-
+                    SerializerOptions)
+                ?? throw new InvalidDataException("The project file is empty.");
             file.Validate();
             return file;
         }
         catch
         {
+            BackupUnusableFile(path);
             return new VirtualCrossoverProjectFile();
+        }
+    }
+
+    private static void BackupUnusableFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Move(path, path + ".backup", overwrite: true);
+            }
+        }
+        catch
+        {
+            // Best effort (the file may be locked); startup must not block.
         }
     }
 

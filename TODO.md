@@ -37,10 +37,6 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 
 ## Virtual DSP / Time Alignment
 
-- [ ] ★ **Extract `ComputeAutoAlignment` into a testable service.** The
-  two-stage Auto-delay orchestrator (~250 lines in `VirtualCrossoverPanel`:
-  retries, wide-window promotion, candidate tie-breaks) is untested panel
-  code. Highest-value extraction left from the PR #1 review.
 - [ ] **Time Alignment analysis is not cached** — `RefreshAnalysis`
   (`TimeAlignmentPanelController`) recomputes Hilbert + GCC-PHAT on every tab
   show even when inputs are unchanged. Needs a live-app check to avoid stale
@@ -49,20 +45,11 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   (`VirtualCrossoverAutoSetupDialog`): extra channel rows use hardcoded pixel
   offsets (`RowTop = 42`, `RowStep = 28`), so rows 4–8 can overlap scaled
   designer controls. Verify on Windows and switch to layout-panel positioning.
-- [ ] **Project-file version has no migration path**
-  (`VirtualCrossoverProjectFile.Validate`): any version mismatch throws, so
-  after a future format change the autosave is silently replaced. Decide on a
-  migrate-or-backup policy.
-- [ ] **Split `VirtualCrossoverPanel` (~2.9k lines)** into partial
-  classes/controllers (after the `ComputeAutoAlignment` extraction).
-- [ ] **`BuildPhasePoints` duplicates the Tukey gate construction** of
-  `DataHelper.ExtractGatedWindowedImpulse` and will drift from Phase mode.
-- [ ] **Small duplication:** `ChannelName` exists twice (panel vs
-  `VirtualCrossoverSheet`), `Signed`/`Number` formatters twice (Sheet vs
-  SheetPdf).
-- [ ] **File-format selection by `FilterIndex`** (`LoadPeq`,
-  `ExportTuningSheet`) is implicitly coupled to `EqProfileFormats.All` order;
-  reordering the list silently breaks the dialogs.
+- [ ] **The project-file `.backup` rename is silent.** An unusable autosave
+  is preserved next to the project file now, but nothing tells the user it
+  happened or that a `.backup` is there to recover from.
+- [ ] **Split `VirtualCrossoverPanel` (~2.6k lines)** into partial
+  classes/controllers.
 - [ ] **`DelayTableText` parses rendered fixed-width columns** (18/37 chars)
   for copy-values instead of holding a value model (format+parse are at least
   co-located and tested now).
@@ -133,9 +120,11 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 
 - [ ] **~90 duplicated lines between the two PDF exporters.**
   `LoadBanner`/`AddImage`/`AddFilterCards` are byte-identical in
-  `TuningSheetPdf` and `VirtualCrossoverSheetPdf`; extract a shared helper.
-  MigraDoc 6 supports `AddImage("base64:...")`, which would also remove the
-  temp-file dance entirely.
+  `TuningSheetPdf` and `VirtualCrossoverSheetPdf` (as are the small
+  `Signed`/`Number` formatters, whose only remaining copy is in
+  `TuningSheetPdf`); extract a shared helper. MigraDoc 6 supports
+  `AddImage("base64:...")`, which would also remove the temp-file dance
+  entirely.
 - [ ] **No deconvolution flatness test.** The sweep + inverse-filter math was
   verified numerically during review (in-band ripple < 0.01 dB), but nothing
   in the test suite pins it; a `SyntheticMeasurement`-style flatness test

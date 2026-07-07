@@ -2136,44 +2136,21 @@ public partial class VirtualCrossoverPanel : UserControl
         double gateOffsetMs,
         double detrendMs)
     {
-        // The same gate construction as the Phase mode: a Tukey window of
-        // left + plateau + right whose left shoulder ends at the gate offset,
-        // zero-padded to the fixed FFT length so the frequency grid is constant.
-        int length = DataHelper.GatedFftLength;
-        int gateOffset = (int)Math.Round(gateOffsetMs / 1_000.0 * sampleRate);
-        int left = MillisecondsToSamples(
-            gatePreview?.LeftMs ?? project.PhaseGateLeftMs, sampleRate);
-        int plateau = MillisecondsToSamples(
-            gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs, sampleRate);
-        int right = MillisecondsToSamples(
-            gatePreview?.RightMs ?? project.PhaseGateRightMs, sampleRate);
-
-        int gate = Math.Clamp(left + plateau + right, 1, length);
-        left = Math.Min(left, gate);
-        right = Math.Min(right, gate - left);
-
-        double[] tukey = Windowing.TukeyWindow(
-            gate,
-            (double)left / gate * 2.0,
-            (double)right / gate * 2.0);
-        double[] window = new double[length];
-        Array.Copy(tukey, window, gate);
-
-        int gateStart = gateOffset - left;
-        // The τ detrend is the phase reference. GetPhaseData re-references to a
-        // whole sample (the view's PeakIndex); the fractional remainder is
-        // applied per point below, so τ resolution is not limited to samples.
-        double detrendSamples = detrendMs / 1_000.0 * sampleRate;
-        int referenceSample = Math.Clamp(
-            (int)Math.Round(detrendSamples), 0, impulseResponse.Length - 1);
-        double residualSeconds = (detrendSamples - referenceSample) / sampleRate;
-
-        var view = new ImpulseMeasurementView(impulseResponse, referenceSample, sampleRate);
-        // GetPhaseData extracts at PeakIndex + offset and re-references the phase
-        // to PeakIndex, so every curve built with the same τ is directly
-        // comparable regardless of where the gate sits.
-        List<SignalPoint> phase = DataHelper.GetPhaseData(
-            view, gateStart - referenceSample, length, window, unwrap: false);
+        // The gate construction is shared with the Phase mode (DataHelper's
+        // gated extraction): a Tukey window of left + plateau + right whose
+        // left shoulder ends at the gate offset, zero-padded to the fixed FFT
+        // length so the frequency grid is constant. The τ detrend is the
+        // fractional-sample phase reference; every curve built with the same τ
+        // is directly comparable regardless of where its gate sits.
+        var view = new ImpulseMeasurementView(impulseResponse, 0, sampleRate);
+        List<SignalPoint> phase = DataHelper.GetGatedPhaseData(
+            view,
+            gateOffsetMs,
+            gatePreview?.LeftMs ?? project.PhaseGateLeftMs,
+            gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs,
+            gatePreview?.RightMs ?? project.PhaseGateRightMs,
+            referenceSamples: detrendMs / 1_000.0 * sampleRate,
+            unwrap: false);
 
         var points = new List<SignalPoint>(phase.Count);
         foreach (SignalPoint point in phase)
@@ -2183,16 +2160,11 @@ public partial class VirtualCrossoverPanel : UserControl
                 continue;
             }
 
-            double corrected = point.Y + Math.Tau * point.X * residualSeconds;
-            corrected = Math.Atan2(Math.Sin(corrected), Math.Cos(corrected));
-            points.Add(new SignalPoint(point.X, corrected / Math.PI * 180.0));
+            points.Add(new SignalPoint(point.X, point.Y / Math.PI * 180.0));
         }
 
         return points;
     }
-
-    private static int MillisecondsToSamples(double milliseconds, int sampleRate) =>
-        (int)Math.Round(Math.Max(0.0, milliseconds) * sampleRate / 1_000.0);
 
     // Opens the manual phase-gate dialog: the gate offset and Tukey shoulders
     // with a live preview of every processed channel IR, so reflections can be

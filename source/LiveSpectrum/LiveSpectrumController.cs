@@ -37,6 +37,16 @@ internal sealed class LiveSpectrumController : IDisposable
     private double[]? peakHoldMagnitude;
     private long peakHoldResumeTick;
     private LiveSpectrumSnapshot? lastSnapshot;
+    // The ~30 fps redraw reuses these series and refills their points in place;
+    // recreating the plot objects (and their point lists) every tick was pure
+    // allocation churn. They are removed from and re-added to the model each
+    // tick, which keeps today's z-order against overlays.
+    private LineSeries? peakHoldSeries;
+    private LineSeries? mainSeries;
+    private LineSeries? trustedSeries;
+    private LineSeries? untrustedSeries;
+    private LineSeries? coherenceSeries;
+    private PlotModel? attachedModel;
 
     public LiveSpectrumController(
         Form owner,
@@ -314,14 +324,28 @@ internal sealed class LiveSpectrumController : IDisposable
 
     private void AddLiveSpectrumSeries(PlotModel model, LiveSpectrumSnapshot snapshot)
     {
+        // A reused series must never sit in two models at once: detach the set
+        // from the previous model when the plot model has been rebuilt.
+        if (attachedModel != null && !ReferenceEquals(attachedModel, model))
+        {
+            RemoveLiveSpectrumSeries(attachedModel);
+        }
+        attachedModel = model;
+
         if (liveSpectrumOptions.PeakHold)
         {
             UpdatePeakHold(snapshot.Magnitude);
             if (peakHoldMagnitude != null)
             {
-                LineSeries peakHoldSeries =
-                    plotModelFactory.BuildPeakHoldSeries(peakHoldMagnitude);
-                peakHoldSeries.Tag = LiveSpectrumPeakHoldTag;
+                if (peakHoldSeries == null)
+                {
+                    peakHoldSeries = plotModelFactory.BuildPeakHoldSeries(peakHoldMagnitude);
+                    peakHoldSeries.Tag = LiveSpectrumPeakHoldTag;
+                }
+                else
+                {
+                    plotModelFactory.UpdatePeakHoldSeries(peakHoldSeries, peakHoldMagnitude);
+                }
                 model.Series.Add(peakHoldSeries);
             }
         }
@@ -331,32 +355,57 @@ internal sealed class LiveSpectrumController : IDisposable
             if (snapshot.Coherence != null &&
                 liveSpectrumOptions.CoherenceThresholdPercent > 0)
             {
-                (LineSeries trusted, LineSeries untrusted) =
-                    plotModelFactory.BuildNoiseSeriesSegmented(
+                if (trustedSeries == null || untrustedSeries == null)
+                {
+                    (trustedSeries, untrustedSeries) =
+                        plotModelFactory.BuildNoiseSeriesSegmented(
+                            snapshot.Magnitude,
+                            snapshot.Coherence,
+                            liveSpectrumOptions.CoherenceThresholdPercent);
+                    // Keep the trusted (above-threshold) curve as the canonical primary
+                    // trace so the current-measurement target source uses it, not the
+                    // low-coherence segment.
+                    untrustedSeries.Tag = LiveSpectrumLowCoherenceTag;
+                    trustedSeries.Tag = LiveSpectrumTag;
+                }
+                else
+                {
+                    plotModelFactory.UpdateNoiseSeriesSegmented(
+                        trustedSeries,
+                        untrustedSeries,
                         snapshot.Magnitude,
                         snapshot.Coherence,
                         liveSpectrumOptions.CoherenceThresholdPercent);
-                // Keep the trusted (above-threshold) curve as the canonical primary
-                // trace so the current-measurement target source uses it, not the
-                // low-coherence segment.
-                untrusted.Tag = LiveSpectrumLowCoherenceTag;
-                trusted.Tag = LiveSpectrumTag;
-                model.Series.Add(untrusted);
-                model.Series.Add(trusted);
+                }
+                model.Series.Add(untrustedSeries);
+                model.Series.Add(trustedSeries);
             }
             else
             {
-                LineSeries series = plotModelFactory.BuildNoiseSeries(snapshot.Magnitude);
-                series.Tag = LiveSpectrumTag;
-                model.Series.Add(series);
+                if (mainSeries == null)
+                {
+                    mainSeries = plotModelFactory.BuildNoiseSeries(snapshot.Magnitude);
+                    mainSeries.Tag = LiveSpectrumTag;
+                }
+                else
+                {
+                    plotModelFactory.UpdateNoiseSeries(mainSeries, snapshot.Magnitude);
+                }
+                model.Series.Add(mainSeries);
             }
         }
 
         if (snapshot.Coherence != null && liveSpectrumOptions.ShowCoherence)
         {
-            LineSeries coherenceSeries =
-                plotModelFactory.BuildCoherenceSeries(snapshot.Coherence);
-            coherenceSeries.Tag = LiveSpectrumCoherenceTag;
+            if (coherenceSeries == null)
+            {
+                coherenceSeries = plotModelFactory.BuildCoherenceSeries(snapshot.Coherence);
+                coherenceSeries.Tag = LiveSpectrumCoherenceTag;
+            }
+            else
+            {
+                plotModelFactory.UpdateCoherenceSeries(coherenceSeries, snapshot.Coherence);
+            }
             model.Series.Add(coherenceSeries);
         }
     }

@@ -74,14 +74,11 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   threads and read from the UI without synchronization; a torn read can show a
   momentarily inconsistent meter (display-only; same family as the
   `UpdatePeakInfo` item below).
-- [ ] **`RestoreImpulseResponse` regenerates the whole sweep.** Restoring a
-  measurement from a file or history calls `Init` → `Sweep.FillData`, which
-  synthesizes the full sweep and inverse filter just to satisfy
-  `HarmonicIROffset`; playback data isn't needed until the next run. Make the
-  generation lazy.
-- [ ] **New `AsioFullDuplexSession` per averaging run.** Every run of an
-  averaged sweep re-initializes the ASIO driver; slow drivers add seconds per
-  run. Reuse one session across the run loop.
+- [ ] **Verify the reused ASIO session on hardware.** Averaged sweeps now keep
+  one open ASIO session across runs (the driver plays silence between runs and
+  only the capture accumulator restarts). Verified by construction only — run
+  an averaged ASIO measurement on real hardware (ideally with a slow driver)
+  before relying on it.
 - [ ] **Third copy of the level-metering math.** `ChannelLevelAccumulator`
   (peak/RMS/dB + 0.999 full-scale threshold) duplicates
   `AudioLevelMetering` and the recorder metering loops.
@@ -169,22 +166,13 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 
 ## Overlays
 
-- [ ] ★ **Cache the target-overlay render path.** `Overlay.cs` rebuilds the
-  constant target/tolerance curves on every live tick (~30 fps) even though
-  they only change when the user edits the target. Cache the built curves and
-  invalidate on edit. The clean way in: extract the pure curve math out of
-  `Overlay.cs` into a testable class, and introduce an `OverlaySlotState`
-  record to replace the triple field-mapping between overlay, slot file and
-  UI state.
-- [ ] **Slot files re-read per mode switch.** All 12 overlay slot JSON files
-  are re-read from disk on every mode switch; cache them and reload only on
-  external change.
+- [ ] **Introduce an `OverlaySlotState` record** to replace the triple
+  field-mapping between overlay, slot file and UI state (the render-path
+  caching and the pure-math extraction from `Overlay.cs` are done; this
+  structural half remains).
 
 ## Plotting
 
-- [ ] **Live-path allocation churn.** The live spectrum rebuilds fresh series
-  objects plus several list copies on every 30 fps tick; reuse series and
-  update points in place.
 - [ ] **`LogarithmicClipAxis` label trim.** Edge tick labels can be trimmed at
   the plot boundary.
 - [ ] **Dead `FourierCSD` enum value.** Unused member of the transform enum;

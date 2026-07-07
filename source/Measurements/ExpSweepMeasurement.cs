@@ -409,6 +409,7 @@ namespace Resonalyze
             ExponentialSineSweep sweep = Sweep!;
             SoundRecorder recorder = soundRecorder!;
             bool success = false;
+            AsioSweepCapture? asioCapture = null;
 
             try
             {
@@ -421,9 +422,18 @@ namespace Resonalyze
                         requestedRuns,
                         accumulator.AcceptedRuns,
                         SweepAverageProgressState.Running));
-                    CapturedSweepSamples captured = AudioBackend == AudioBackend.Asio
-                        ? await CaptureAsioAsync(sweep, cancellationToken).ConfigureAwait(false)
-                        : await CaptureWaveAsync(sweep, recorder, cancellationToken).ConfigureAwait(false);
+                    CapturedSweepSamples captured;
+                    if (AudioBackend == AudioBackend.Asio)
+                    {
+                        asioCapture ??= new AsioSweepCapture(this, sweep);
+                        captured = await asioCapture.CaptureRunAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        captured = await CaptureWaveAsync(sweep, recorder, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
                     SweepRunAnalysis analysis = AnalyzeCapturedRun(captured, sweep);
                     accumulator.Add(analysis);
 
@@ -451,6 +461,10 @@ namespace Resonalyze
             {
                 try
                 {
+                    if (asioCapture != null)
+                    {
+                        await asioCapture.DisposeAsync().ConfigureAwait(false);
+                    }
                     await recorder.StopRecordingAsync().ConfigureAwait(false);
                     SoundRecorder? loopback = loopbackRecorder;
                     if (loopback != null)
@@ -460,7 +474,7 @@ namespace Resonalyze
                 }
                 catch (Exception exception)
                 {
-                    // A recorder stop failure must not demote results that were
+                    // A device stop failure must not demote results that were
                     // already published: ApplyAverageResult has run and raised
                     // ImpulseResponseChanged, so the captured data is complete
                     // regardless of how the device teardown went.
@@ -606,51 +620,102 @@ namespace Resonalyze
                 ValidateSharedDeviceStereo: false);
         }
 
-        private async Task<CapturedSweepSamples> CaptureAsioAsync(
-            ExponentialSineSweep sweep,
-            CancellationToken cancellationToken)
+        // Owns the ASIO session for a whole measurement. The driver is opened
+        // once and kept running across the averaging runs (re-initializing it
+        // per run costs seconds on slow drivers); each run restarts only the
+        // capture accumulator and rewinds the sweep stream.
+        private sealed class AsioSweepCapture : IAsyncDisposable
         {
-            int firstInputOffset = GetAsioCaptureFirstInputOffset();
-            int inputChannelCount = GetRequiredAsioInputChannelCount(firstInputOffset);
+            private readonly ExpSweepMeasurement owner;
+            private readonly ExponentialSineSweep sweep;
+            private readonly AsioFullDuplexSession session;
+            private readonly FloatArrayWaveStream stream;
+            private readonly int firstInputOffset;
+            private bool started;
 
-            using var session = new AsioFullDuplexSession(
-                AsioDriverName ?? string.Empty,
-                firstInputOffset,
-                AsioOutputChannelOffset,
-                inputChannelCount);
-            session.LevelsAvailable += channels => RaiseLevels(
-                MapLevelsByIndex(
-                    channels,
-                    AsioInputChannelOffset - firstInputOffset,
-                    AsioLoopbackInputChannelOffset.HasValue
-                        ? AsioLoopbackInputChannelOffset.Value - firstInputOffset
-                        : null));
-            using FloatArrayWaveStream stream = FloatArrayWaveStream.FromMonoSamples(
-                sweep.SweepData,
-                SampleRate,
-                PlaybackChannel);
+            public AsioSweepCapture(ExpSweepMeasurement owner, ExponentialSineSweep sweep)
+            {
+                this.owner = owner;
+                this.sweep = sweep;
+                firstInputOffset = owner.GetAsioCaptureFirstInputOffset();
+                session = new AsioFullDuplexSession(
+                    owner.AsioDriverName ?? string.Empty,
+                    firstInputOffset,
+                    owner.AsioOutputChannelOffset,
+                    owner.GetRequiredAsioInputChannelCount(firstInputOffset));
+                session.LevelsAvailable += channels => owner.RaiseLevels(
+                    MapLevelsByIndex(
+                        channels,
+                        owner.AsioInputChannelOffset - firstInputOffset,
+                        owner.AsioLoopbackInputChannelOffset.HasValue
+                            ? owner.AsioLoopbackInputChannelOffset.Value - firstInputOffset
+                            : null));
+                stream = FloatArrayWaveStream.FromMonoSamples(
+                    sweep.SweepData,
+                    owner.SampleRate,
+                    owner.PlaybackChannel);
+            }
 
-            await session.StartAsync(
-                stream,
-                SampleRate,
-                autoStop: false,
-                cancellationToken,
-                expectedTotalSamples: sweep.SweepSamples + SampleRate * 2)
-                .ConfigureAwait(false);
-            int requiredSamples = session.ReadSamples + sweep.SweepSamples + SampleRate;
-            await session.WaitForSamplesAsync(requiredSamples, cancellationToken)
-                .ConfigureAwait(false);
-            await session.StopAsync().ConfigureAwait(false);
+            public async Task<CapturedSweepSamples> CaptureRunAsync(
+                CancellationToken cancellationToken)
+            {
+                int expectedTotalSamples = sweep.SweepSamples + owner.SampleRate * 2;
+                if (!started)
+                {
+                    stream.Position = 0;
+                    await session.StartAsync(
+                        stream,
+                        owner.SampleRate,
+                        autoStop: false,
+                        cancellationToken,
+                        expectedTotalSamples)
+                        .ConfigureAwait(false);
+                    started = true;
+                }
+                else
+                {
+                    // The stream has run out (the driver is playing silence);
+                    // a fresh accumulator starts this run's capture and the
+                    // rewind replays the sweep. Reset first so the capture is
+                    // guaranteed to contain the sweep from its first sample.
+                    session.ResetCapture(expectedTotalSamples);
+                    stream.Position = 0;
+                }
 
-            int microphoneIndex = AsioInputChannelOffset - firstInputOffset;
-            int? loopbackIndex = AsioLoopbackInputChannelOffset.HasValue
-                ? AsioLoopbackInputChannelOffset.Value - firstInputOffset
-                : null;
-            return new CapturedSweepSamples(
-                session.GetSamplesSnapshot(),
-                microphoneIndex,
-                loopbackIndex,
-                ValidateSharedDeviceStereo: false);
+                int requiredSamples =
+                    session.ReadSamples + sweep.SweepSamples + owner.SampleRate;
+                await session.WaitForSamplesAsync(requiredSamples, cancellationToken)
+                    .ConfigureAwait(false);
+
+                float[][] samples = session.GetSamplesSnapshot();
+                // Between runs the driver keeps playing silence; pausing the
+                // capture keeps a minutes-long confirmation wait from growing
+                // the buffer while the level meter stays live.
+                session.PauseCapture();
+
+                int microphoneIndex = owner.AsioInputChannelOffset - firstInputOffset;
+                int? loopbackIndex = owner.AsioLoopbackInputChannelOffset.HasValue
+                    ? owner.AsioLoopbackInputChannelOffset.Value - firstInputOffset
+                    : null;
+                return new CapturedSweepSamples(
+                    samples,
+                    microphoneIndex,
+                    loopbackIndex,
+                    ValidateSharedDeviceStereo: false);
+            }
+
+            public async ValueTask DisposeAsync()
+            {
+                try
+                {
+                    await session.StopAsync().ConfigureAwait(false);
+                }
+                finally
+                {
+                    session.Dispose();
+                    stream.Dispose();
+                }
+            }
         }
 
         private static async Task PlayToEndAsync(WaveOutEvent player, CancellationToken cancellationToken)

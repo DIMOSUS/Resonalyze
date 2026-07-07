@@ -610,6 +610,70 @@ public sealed class OverlayFileTests
     }
 
     [Fact]
+    public void Load_ReturnsTheCachedInstanceWhileTheFileIsUnchanged()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            CreateMinimalOverlay(Mode.FrequencyResponse, 6).Save(root);
+
+            OverlayFile? first = OverlayFile.Load(Mode.FrequencyResponse, 6, root);
+            OverlayFile? second = OverlayFile.Load(Mode.FrequencyResponse, 6, root);
+
+            Assert.NotNull(first);
+            Assert.Same(first, second);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Load_ReloadsAfterSaveInvalidatesTheCache()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            CreateMinimalOverlay(Mode.FrequencyResponse, 6).Save(root);
+            OverlayFile? original = OverlayFile.Load(Mode.FrequencyResponse, 6, root);
+
+            OverlayFile updated = CreateMinimalOverlay(Mode.FrequencyResponse, 6);
+            updated.Title = "Renamed after the first load";
+            updated.Save(root);
+            OverlayFile? reloaded = OverlayFile.Load(Mode.FrequencyResponse, 6, root);
+
+            Assert.NotNull(original);
+            Assert.NotNull(reloaded);
+            Assert.NotSame(original, reloaded);
+            Assert.Equal("Renamed after the first load", reloaded.Title);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Load_ReturnsNullAfterDeleteEvenWhenCached()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            CreateMinimalOverlay(Mode.FrequencyResponse, 6).Save(root);
+            Assert.NotNull(OverlayFile.Load(Mode.FrequencyResponse, 6, root));
+
+            OverlayFile.Delete(Mode.FrequencyResponse, 6, root);
+
+            Assert.Null(OverlayFile.Load(Mode.FrequencyResponse, 6, root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void QuarantineCorruptFile_ReturnsNullWhenSlotFileIsAbsent()
     {
         string root = CreateTemporaryDirectory();

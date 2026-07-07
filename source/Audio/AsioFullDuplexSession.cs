@@ -112,6 +112,40 @@ internal sealed class AsioFullDuplexSession : IDisposable
         await firstBufferReady.Task.ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Starts a fresh capture on the running driver. An averaged sweep reuses
+    /// the open ASIO session across runs — the driver keeps playing whatever
+    /// the provider produces (silence after the sweep ends) and only the
+    /// accumulator restarts, instead of paying a full driver re-initialization
+    /// (seconds on slow drivers) for every run.
+    /// </summary>
+    public void ResetCapture(int expectedTotalSamples)
+    {
+        ThrowIfDisposed();
+        this.expectedTotalSamples = expectedTotalSamples;
+        ResetBuffers();
+    }
+
+    /// <summary>
+    /// Stops accumulating samples while the driver keeps running (and keeps
+    /// raising level meters) — used between averaging runs, where minutes of a
+    /// confirmation pause would otherwise grow the capture buffer with
+    /// silence. <see cref="ResetCapture"/> starts the next run's capture.
+    /// </summary>
+    public void PauseCapture()
+    {
+        ThrowIfDisposed();
+        lock (sync)
+        {
+            accumulator = null;
+            foreach (SoundRecorderSampleWaiter waiter in sampleWaiters)
+            {
+                waiter.Cancel();
+            }
+            sampleWaiters.Clear();
+        }
+    }
+
     public Task WaitForSamplesAsync(int sampleCount, CancellationToken cancellationToken)
     {
         if (sampleCount <= 0)
@@ -244,23 +278,23 @@ internal sealed class AsioFullDuplexSession : IDisposable
             sumSquares[channel] = sum;
         }
 
-        List<float[][]>? readySequences;
+        // A paused capture (accumulator == null) skips accumulation but keeps
+        // metering, so the input meter stays live between averaging runs.
+        List<float[][]>? readySequences = null;
         lock (sync)
         {
-            if (accumulator == null)
+            if (accumulator != null)
             {
-                return;
-            }
+                accumulator.Append(convertScratch, frames);
+                readySequences = accumulator.ExtractReadySequences();
 
-            accumulator.Append(convertScratch, frames);
-            readySequences = accumulator.ExtractReadySequences();
-
-            for (int i = sampleWaiters.Count - 1; i >= 0; i--)
-            {
-                if (accumulator.ReadSamples >= sampleWaiters[i].SampleCount)
+                for (int i = sampleWaiters.Count - 1; i >= 0; i--)
                 {
-                    sampleWaiters[i].Complete();
-                    sampleWaiters.RemoveAt(i);
+                    if (accumulator.ReadSamples >= sampleWaiters[i].SampleCount)
+                    {
+                        sampleWaiters[i].Complete();
+                        sampleWaiters.RemoveAt(i);
+                    }
                 }
             }
         }

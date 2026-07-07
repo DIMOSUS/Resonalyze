@@ -17,10 +17,28 @@ public sealed class ExponentialSineSweep : IDisposable
 {
     private PcmStreamSet? streamSet;
     private bool disposed;
+    private bool generated;
+    private float[] sweepData = Array.Empty<float>();
+    private float[] inverseFilter = Array.Empty<float>();
 
-    public float[] SweepData { get; private set; } = Array.Empty<float>();
-    public float[] InverseFilter { get; private set; } = Array.Empty<float>();
-    public float[] Frequencies { get; private set; } = Array.Empty<float>();
+    public float[] SweepData
+    {
+        get
+        {
+            EnsureGenerated();
+            return sweepData;
+        }
+    }
+
+    public float[] InverseFilter
+    {
+        get
+        {
+            EnsureGenerated();
+            return inverseFilter;
+        }
+    }
+
     public int SampleRate { get; private set; }
     public int SweepSamples { get; private set; }
     public int BitsPerSample { get; private set; }
@@ -73,6 +91,12 @@ public sealed class ExponentialSineSweep : IDisposable
         return cycleCount * 2.0 * Math.PI / phaseFactor;
     }
 
+    /// <summary>
+    /// Sets the sweep parameters and the resulting sample count. The signal
+    /// itself is synthesized lazily on first use: restoring a measurement from
+    /// a file or History only needs the parameters (for HarmonicIROffset and
+    /// the panels), not megabytes of sweep and inverse-filter data.
+    /// </summary>
     public void FillData(
         int octaves,
         double requestedDuration,
@@ -87,54 +111,70 @@ public sealed class ExponentialSineSweep : IDisposable
         SampleRate = sampleRate;
         RequestedDuration = requestedDuration;
 
-        double frequencyRatio = Math.Pow(2.0, octaves);
-        double logarithmicRatio = Math.Log(frequencyRatio);
-        double phaseFactor = (Math.PI / frequencyRatio) / logarithmicRatio;
         double exactLength = ComputeQuantizedSweepLength(
             octaves,
             requestedDuration,
             sampleRate);
-        int sampleCount = Math.Max(1, (int)Math.Round(exactLength));
+        SweepSamples = Math.Max(1, (int)Math.Round(exactLength));
 
-        SweepSamples = sampleCount;
-        SweepData = new float[sampleCount];
-        InverseFilter = new float[sampleCount];
-        Frequencies = new float[sampleCount];
+        generated = false;
+        sweepData = Array.Empty<float>();
+        inverseFilter = Array.Empty<float>();
+        streamSet?.Dispose();
+        streamSet = null;
+    }
 
-        double octaveLength = sampleCount / (double)octaves;
+    private void EnsureGenerated()
+    {
+        ThrowIfDisposed();
+        if (generated)
+        {
+            return;
+        }
+        if (SweepSamples <= 0)
+        {
+            throw new InvalidOperationException("The sweep is not configured.");
+        }
+
+        double frequencyRatio = Math.Pow(2.0, Octaves);
+        double logarithmicRatio = Math.Log(frequencyRatio);
+        double phaseFactor = (Math.PI / frequencyRatio) / logarithmicRatio;
+        double exactLength = ComputeQuantizedSweepLength(
+            Octaves,
+            RequestedDuration,
+            SampleRate);
+        int sampleCount = SweepSamples;
+
+        sweepData = new float[sampleCount];
+        inverseFilter = new float[sampleCount];
+
+        double octaveLength = sampleCount / (double)Octaves;
         for (int i = 0; i < sampleCount; i++)
         {
             double exponentialPosition = Math.Exp(i / (double)sampleCount * logarithmicRatio);
-            Frequencies[i] =
-                (float)(sampleRate / 2.0 / frequencyRatio * (exactLength / sampleCount) * exponentialPosition);
-            SweepData[i] =
+            sweepData[i] =
                 (float)Math.Sin(phaseFactor * exactLength * exponentialPosition) *
                 (float)Math.Min(i / octaveLength, 1.0);
         }
 
         // Time reversal performs the deconvolution. The exponential envelope compensates
         // for the sweep spending progressively less time per hertz at high frequencies.
-        double inverseScale = octaves * Math.Log(2.0) / (1.0 - Math.Pow(2.0, -octaves));
-        double perSampleDecay = Math.Pow(2.0, octaves / (double)sampleCount);
+        double inverseScale = Octaves * Math.Log(2.0) / (1.0 - Math.Pow(2.0, -Octaves));
+        double perSampleDecay = Math.Pow(2.0, Octaves / (double)sampleCount);
         for (int i = 0; i < sampleCount; i++)
         {
-            InverseFilter[i] =
-                (float)(SweepData[sampleCount - i - 1] * Math.Pow(perSampleDecay, -i) * inverseScale);
+            inverseFilter[i] =
+                (float)(sweepData[sampleCount - i - 1] * Math.Pow(perSampleDecay, -i) * inverseScale);
         }
 
-        streamSet?.Dispose();
-        streamSet = new PcmStreamSet(SweepData, sampleRate, bitsPerSample);
+        streamSet = new PcmStreamSet(sweepData, SampleRate, BitsPerSample);
+        generated = true;
     }
 
     public RawSourceWaveStream GetStream(PlaybackChannel channel)
     {
-        ThrowIfDisposed();
-        if (streamSet == null)
-        {
-            throw new InvalidOperationException("The sweep is not generated.");
-        }
-
-        return streamSet.GetStream(channel);
+        EnsureGenerated();
+        return streamSet!.GetStream(channel);
     }
 
     private static void ValidateGenerationParameters(

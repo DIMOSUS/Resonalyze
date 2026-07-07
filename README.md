@@ -1401,14 +1401,18 @@ Third-party package licenses are listed in
 ## Contributing
 
 Bug reports, reproducible measurement cases, DSP corrections, and focused pull
-requests are welcome. When reporting a measurement issue, include:
+requests are welcome. Known technical debt and improvement ideas are collected
+in [TODO.md](TODO.md) — a good place to look for a first contribution.
+
+When reporting a measurement issue, include:
 
 - audio interface and driver
 - sample rate and bit depth
 - measurement mode
 - relevant analysis settings
 - expected and actual behavior
-- a screenshot or exception stack trace
+- a screenshot or exception stack trace — unexpected errors are appended to
+  `crash.log` next to `Resonalyze.exe`, so check there for the full stack trace
 
 ## License
 

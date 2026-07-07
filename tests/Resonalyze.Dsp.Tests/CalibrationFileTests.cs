@@ -117,6 +117,59 @@ public sealed class CalibrationFileTests
             .HasData);
     }
 
+    [Fact]
+    public void LoadError_ReportsMissingFile()
+    {
+        string missing = Path.Combine(
+            Path.GetTempPath(),
+            $"resonalyze-calibration-missing-{Guid.NewGuid():N}.txt");
+
+        var calibration = new CalibrationFile(missing);
+
+        Assert.False(calibration.HasData);
+        Assert.Contains("not found", calibration.LoadError);
+    }
+
+    [Fact]
+    public void LoadError_ReportsFileWithoutParsablePairs()
+    {
+        string path = WriteCalibrationFile(
+            "# header only\n" +
+            "no numbers here\n");
+
+        var calibration = new CalibrationFile(path);
+
+        Assert.False(calibration.HasData);
+        Assert.Contains("no frequency/level pairs", calibration.LoadError);
+    }
+
+    [Fact]
+    public void LoadError_IsNullForValidFile()
+    {
+        string path = WriteCalibrationFile(
+            "20 2.5\n" +
+            "20000 2.5\n");
+
+        var calibration = new CalibrationFile(path);
+
+        Assert.True(calibration.HasData);
+        Assert.Null(calibration.LoadError);
+    }
+
+    [Fact]
+    public void LoadError_PropagatesThroughNinetyDegreeApproximation()
+    {
+        string missing = Path.Combine(
+            Path.GetTempPath(),
+            $"resonalyze-calibration-missing-{Guid.NewGuid():N}.txt");
+
+        CalibrationFile approximation =
+            CalibrationFile.CreateNinetyDegreeApproximation(new CalibrationFile(missing));
+
+        Assert.False(approximation.HasData);
+        Assert.Contains("not found", approximation.LoadError);
+    }
+
     private static string WriteCalibrationFile(string text)
     {
         string path = Path.Combine(

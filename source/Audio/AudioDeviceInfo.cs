@@ -40,17 +40,34 @@ public static class AudioDeviceCatalog
         return devices;
     }
 
+    /// <summary>
+    /// Index of the device with the given number, or -1 when it is absent.
+    /// Callers must keep an absent device visible (see
+    /// <see cref="CreateMissingDevice"/>) instead of remapping the selection —
+    /// falling back to another entry would silently re-target the persisted
+    /// configuration on the next apply.
+    /// </summary>
     public static int FindDeviceIndex(
         IReadOnlyList<AudioDeviceInfo> devices,
         int deviceNumber)
     {
-        int index = devices
-            .Select((device, i) => new { device, i })
-            .FirstOrDefault(candidate =>
-                candidate.device.DeviceNumber == deviceNumber)
-            ?.i ?? 0;
-        return index;
+        for (int i = 0; i < devices.Count; i++)
+        {
+            if (devices[i].DeviceNumber == deviceNumber)
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
+
+    /// <summary>
+    /// Placeholder entry for a persisted device that is not currently present,
+    /// keeping its number so an apply re-persists the same configuration.
+    /// </summary>
+    public static AudioDeviceInfo CreateMissingDevice(int deviceNumber) =>
+        new(deviceNumber, $"(missing) Device #{deviceNumber}");
 
     public static IReadOnlyList<int> GetSupportedWaveSampleRates(
         int playbackDeviceNumber,

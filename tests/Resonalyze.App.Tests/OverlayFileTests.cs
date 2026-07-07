@@ -563,6 +563,69 @@ public sealed class OverlayFileTests
         CreateMinimalOverlay(mode, slot).Save(root);
     }
 
+    [Fact]
+    public void Load_ThrowsOnCorruptJson()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            string path = OverlayFile.GetPath(Mode.FrequencyResponse, 3, root);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "{ not valid json");
+
+            Assert.ThrowsAny<Exception>(() =>
+                OverlayFile.Load(Mode.FrequencyResponse, 3, root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void QuarantineCorruptFile_MovesSlotFileAsideAndPreservesContent()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            string path = OverlayFile.GetPath(Mode.FrequencyResponse, 3, root);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "{ not valid json");
+
+            string? quarantinePath = OverlayFile.QuarantineCorruptFile(
+                Mode.FrequencyResponse,
+                3,
+                root);
+
+            Assert.Equal(path + ".corrupt", quarantinePath);
+            Assert.False(File.Exists(path));
+            Assert.Equal("{ not valid json", File.ReadAllText(quarantinePath!));
+            // The slot now loads as empty instead of failing again.
+            Assert.Null(OverlayFile.Load(Mode.FrequencyResponse, 3, root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void QuarantineCorruptFile_ReturnsNullWhenSlotFileIsAbsent()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            Assert.Null(OverlayFile.QuarantineCorruptFile(
+                Mode.FrequencyResponse,
+                3,
+                root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static OverlayFile CreateMinimalOverlay(Mode mode, int slot)
     {
         return new OverlayFile

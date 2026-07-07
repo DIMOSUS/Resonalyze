@@ -460,8 +460,11 @@ namespace Resonalyze
                 }
                 catch (Exception exception)
                 {
+                    // A recorder stop failure must not demote results that were
+                    // already published: ApplyAverageResult has run and raised
+                    // ImpulseResponseChanged, so the captured data is complete
+                    // regardless of how the device teardown went.
                     LastError ??= exception;
-                    success = false;
                 }
 
                 lock (stateSync)

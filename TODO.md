@@ -5,12 +5,10 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 
 ## DSP library (`dsp/`)
 
-- [ ] **`CalibrationFile` swallows a missing/unreadable file.** `HasData` makes
-  it detectable, but nothing surfaces an error to the user — measurements just
-  run uncalibrated. Add a `TryLoad`-style factory that reports the failure.
-  Related: this is the only dsp class doing filesystem I/O; aligning it with
-  the "parser accepts text" pattern of the EQ formats would simplify both
-  error handling and tests.
+- [ ] **`CalibrationFile` does filesystem I/O in the dsp layer.** The silent
+  failures are fixed (`LoadError` is surfaced in the options panel and once per
+  session at plot time), but aligning the class with the "parser accepts text"
+  pattern of the EQ formats would still simplify error handling and tests.
 - [ ] **`EqAutoTuner` greedy fit has no polish pass.** Band gain is fixed from
   the residual at the peak before Q is chosen (no joint gain/Q optimization),
   there is no final coordinate-descent pass (`CrossoverAutoSetup` already has
@@ -84,39 +82,17 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 - [ ] **New `AsioFullDuplexSession` per averaging run.** Every run of an
   averaged sweep re-initializes the ASIO driver; slow drivers add seconds per
   run. Reuse one session across the run loop.
-- [ ] **A stop failure demotes a finished measurement.** In
-  `RunCoreAsync`'s finally, a recorder stop timeout sets `success = false`
-  after `ApplyAverageResult` already published results and raised
-  `ImpulseResponseChanged` — the UI shows "Error" and skips the history entry
-  for a measurement whose data is fine. Decide the intended semantics.
 - [ ] **Third copy of the level-metering math.** `ChannelLevelAccumulator`
   (peak/RMS/dB + 0.999 full-scale threshold) duplicates
   `AudioLevelMetering` and the recorder metering loops.
 
-## Audio device catalogs
-
-- [ ] **Missing device silently becomes the first one.**
-  `AsioDeviceCatalog.FindDriverIndex`/`FindChannelIndex` and
-  `AudioDeviceCatalog.FindDeviceIndex` return index 0 when the saved
-  driver/channel/device no longer exists, so the options UI silently shows a
-  different device than the one configured. Worst case: a vanished separate
-  Wave loopback device maps to "Default recording device" instead of the
-  "Same as microphone device" sentinel — the configuration silently changes
-  meaning. Surface "(missing)" / fall back to the sentinel instead.
-
 ## Options panels
 
-- [ ] **Mono recording device irreversibly resets the loopback channel.**
-  `MeasurementOptions` forces the loopback combo to "None" when the selected
-  device reports one channel; selecting a stereo device again does not restore
-  the previous choice, and the next apply persists `null` — measurements stop
-  working. Keep the last user choice in a shadow field (the pattern
-  `LiveSpectrumOpt` already uses) and restore it.
-- [ ] **Missing 90° calibration silently downgrades the persisted mode.**
-  `MicrophoneCalibrationComboHelper` drops the `Degrees90` entry when the file
-  is absent, so `FindIndex` lands on "Off" and the next apply persists it —
-  the user's preference is permanently lost. Keep the entry (marked "(file
-  missing)") or preserve the stored mode.
+- [ ] **Loopback channel can still persist as `null` across a restart.** The
+  in-session loss is fixed (a shadow field restores the choice when a stereo
+  device is selected again), but applying while a mono/missing device is
+  selected persists "None"; after a restart there is nothing to restore. Would
+  need the preferred offset persisted separately from the effective one.
 - [ ] **ASIO driver opened twice when the measurement panel opens.**
   `Init` runs `RefreshSampleRateOptions` and `RefreshAsioDriverInfo`, each of
   which instantiates `AsioOut` (a synchronous COM driver open that can take
@@ -131,12 +107,15 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 - [ ] **`SetOptions` reads bits from the measurement, not the control.**
   Three sources of truth for the sample size in `MeasurementOptions`; harmless
   while the control is read-only, a silent no-op the day it is enabled.
-- [ ] **`TukeyWindowControlHelper` silently clamps window values** when the
-  window length shrinks (fires `ValueChanged` → live apply persists the
-  clamped value with no feedback) and overrides the designer maxima.
+- [ ] **`TukeyWindowControlHelper` clamps are irreversible.** Shrinking the
+  window length clamps the fade values (semantically required, and visible in
+  the controls), but growing it back does not restore them; a shadow-value
+  restore like the loopback-channel one would make the clamp reversible.
 - [ ] **`LiveSpectrumOpt` shadow fields update only on
-  `SelectionChangeCommitted`** — a programmatic combo change is displayed but
-  never persisted; also three identical floor-index loops worth one helper.
+  `SelectionChangeCommitted`.** Re-verified: the R reset button raises
+  `SelectionChangeCommitted` too, so no current path loses a change — this is
+  fragility for future programmatic writes, not an active bug. Also three
+  identical floor-index loops worth one helper.
 
 ## UI chrome
 
@@ -200,22 +179,12 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 - [ ] **Slot files re-read per mode switch.** All 12 overlay slot JSON files
   are re-read from disk on every mode switch; cache them and reload only on
   external change.
-- [ ] **Calculated A−B clamps instead of gapping.** Amplitude-space
-  subtraction clamps negative results to −160 dB; a NaN gap in the curve would
-  be honest instead of drawing a floor.
-- [ ] **Corrupt slot files fail silently.** A corrupt slot JSON presents as an
-  empty slot and can be silently overwritten; surface a warning and keep the
-  damaged file (e.g. rename to `.corrupt`).
 
 ## Plotting
 
 - [ ] **Live-path allocation churn.** The live spectrum rebuilds fresh series
   objects plus several list copies on every 30 fps tick; reuse series and
   update points in place.
-- [ ] **`fftLength` off by 2.** Reconstructing the FFT length from the
-  coherence array length is off by 2, giving a systematic (tiny) frequency
-  skew in the live transfer function; pass the real FFT length through instead
-  of deriving it.
 - [ ] **`LogarithmicClipAxis` label trim.** Edge tick labels can be trimmed at
   the plot boundary.
 - [ ] **Dead `FourierCSD` enum value.** Unused member of the transform enum;

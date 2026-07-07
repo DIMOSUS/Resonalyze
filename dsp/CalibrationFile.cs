@@ -18,10 +18,20 @@ namespace Resonalyze.Dsp
         {
             if (!System.IO.File.Exists(file))
             {
+                LoadError = $"Calibration file not found: {file}";
                 return;
             }
 
-            string[] lines = System.IO.File.ReadAllLines(file);
+            string[] lines;
+            try
+            {
+                lines = System.IO.File.ReadAllLines(file);
+            }
+            catch (Exception exception)
+            {
+                LoadError = $"Calibration file could not be read: {exception.Message}";
+                return;
+            }
 
             foreach (string line in lines)
             {
@@ -32,6 +42,11 @@ namespace Resonalyze.Dsp
             }
 
             calibration.Sort((left, right) => left.X.CompareTo(right.X));
+            if (calibration.Count < 2)
+            {
+                LoadError =
+                    $"Calibration file contains no frequency/level pairs: {file}";
+            }
         }
 
         private CalibrationFile(
@@ -40,6 +55,7 @@ namespace Resonalyze.Dsp
         {
             this.baseCalibration = baseCalibration;
             this.decibelOffset = decibelOffset;
+            LoadError = baseCalibration.LoadError;
         }
 
         /// <summary>
@@ -48,6 +64,14 @@ namespace Resonalyze.Dsp
         /// the 0 dB fallback of a missing or unparsable file.
         /// </summary>
         public bool HasData => baseCalibration?.HasData ?? calibration.Count >= 2;
+
+        /// <summary>
+        /// Human-readable reason why no usable correction was loaded (missing
+        /// file, unreadable file, or no parsable frequency/level pairs), or null
+        /// when the calibration loaded. Callers surface this instead of letting
+        /// a measurement silently run uncalibrated.
+        /// </summary>
+        public string? LoadError { get; }
 
         public static CalibrationFile CreateNinetyDegreeApproximation(
             CalibrationFile zeroDegreeCalibration) =>

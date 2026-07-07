@@ -162,6 +162,7 @@ public partial class Form1
 
     private CalibrationFile? GetMicrophoneCalibration(MicrophoneCalibrationMode mode)
     {
+        WarnIfConfiguredCalibrationMissing(mode);
         if (mode == MicrophoneCalibrationMode.Degrees90 &&
             GetMicrophoneCalibrationPath(MicrophoneCalibrationMode.Degrees90) == null)
         {
@@ -178,9 +179,33 @@ public partial class Form1
         {
             calibrationFile = new CalibrationFile(path);
             calibrationCache[path] = calibrationFile;
+            if (!calibrationFile.HasData)
+            {
+                WarnCalibrationProblemOnce(path, calibrationFile.LoadError);
+            }
         }
 
         return calibrationFile;
+    }
+
+    // GetMicrophoneCalibrationPath maps a configured-but-deleted file to null,
+    // which used to silently disable the correction for every plot.
+    private void WarnIfConfiguredCalibrationMissing(MicrophoneCalibrationMode mode)
+    {
+        string? configured = mode switch
+        {
+            MicrophoneCalibrationMode.Degrees0 =>
+                measurementSettings.Measurement.MicrophoneCalibration0DegreesPath,
+            MicrophoneCalibrationMode.Degrees90 =>
+                measurementSettings.Measurement.MicrophoneCalibration90DegreesPath,
+            _ => null
+        };
+        if (!string.IsNullOrWhiteSpace(configured) && !File.Exists(configured))
+        {
+            WarnCalibrationProblemOnce(
+                configured,
+                $"Calibration file not found: {configured}");
+        }
     }
 
     private CalibrationFile? GetApproximateNinetyDegreeCalibration()

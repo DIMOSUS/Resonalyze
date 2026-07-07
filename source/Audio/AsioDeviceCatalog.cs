@@ -32,28 +32,33 @@ public static class AsioDeviceCatalog
         }
     }
 
+    /// <summary>
+    /// Index of the named driver; 0 (the first driver) when no name is saved
+    /// yet; -1 when the saved driver is not in the list. A missing driver must
+    /// stay visible as its own entry instead of remapping to another driver,
+    /// or the next apply silently re-targets the persisted configuration.
+    /// </summary>
     public static int FindDriverIndex(
         IReadOnlyList<AsioDeviceInfo> drivers,
         string? driverName)
     {
-        if (drivers.Count == 0)
-        {
-            return -1;
-        }
         if (string.IsNullOrWhiteSpace(driverName))
         {
-            return 0;
+            return drivers.Count == 0 ? -1 : 0;
         }
 
-        int index = drivers
-            .Select((driver, position) => new { driver, position })
-            .FirstOrDefault(item =>
-                string.Equals(
-                    item.driver.DriverName,
-                    driverName,
-                    StringComparison.OrdinalIgnoreCase))
-            ?.position ?? -1;
-        return index >= 0 ? index : 0;
+        for (int i = 0; i < drivers.Count; i++)
+        {
+            if (string.Equals(
+                drivers[i].DriverName,
+                driverName,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     public static AsioDriverInfo GetDriverInfo(
@@ -131,20 +136,24 @@ public static class AsioDeviceCatalog
         }
     }
 
+    /// <summary>
+    /// Index of the channel with the given offset, or -1 when the driver does
+    /// not report it (fewer channels, or the driver failed to open). Callers
+    /// keep the offset visible as a "(missing)" entry so it survives an apply.
+    /// </summary>
     public static int FindChannelIndex(
         IReadOnlyList<AsioChannelInfo> channels,
         int offset)
     {
-        if (channels.Count == 0)
+        for (int i = 0; i < channels.Count; i++)
         {
-            return -1;
+            if (channels[i].Offset == offset)
+            {
+                return i;
+            }
         }
 
-        int index = channels
-            .Select((channel, position) => new { channel, position })
-            .FirstOrDefault(item => item.channel.Offset == offset)
-            ?.position ?? -1;
-        return index >= 0 ? index : 0;
+        return -1;
     }
 
     public static bool IsLoopbackChannel(AsioChannelInfo channel)

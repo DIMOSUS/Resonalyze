@@ -164,6 +164,27 @@ public sealed class OverlayFile
         return file;
     }
 
+    /// <summary>
+    /// Moves a slot file that failed to load aside as "&lt;name&gt;.corrupt" so
+    /// the next save cannot silently overwrite the damaged data. Returns the
+    /// quarantine path, or null when there is no slot file to move.
+    /// </summary>
+    public static string? QuarantineCorruptFile(
+        Mode mode,
+        int slot,
+        string? rootDirectory = null)
+    {
+        string path = GetPath(mode, slot, rootDirectory);
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        string quarantinePath = path + ".corrupt";
+        File.Move(path, quarantinePath, overwrite: true);
+        return quarantinePath;
+    }
+
     public static void Delete(
         Mode mode,
         int slot,

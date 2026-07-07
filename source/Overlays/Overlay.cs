@@ -696,6 +696,30 @@ public sealed class Overlay
         {
             Debug.WriteLine(
                 $"Failed to load overlay slot {Index} for {mode}: {exception}");
+            QuarantineCorruptSlot(mode, exception);
+        }
+    }
+
+    // A slot file that fails to load used to present as an empty slot and the
+    // next capture silently overwrote it. Setting it aside keeps the damaged
+    // data recoverable and makes each broken file warn exactly once.
+    private void QuarantineCorruptSlot(Mode mode, Exception error)
+    {
+        try
+        {
+            string? quarantinePath = OverlayFile.QuarantineCorruptFile(mode, Index);
+            if (quarantinePath != null)
+            {
+                ShowStorageError(
+                    $"Overlay slot {Index} for {mode} could not be loaded; " +
+                    $"the file was kept as {Path.GetFileName(quarantinePath)}.",
+                    error);
+            }
+        }
+        catch
+        {
+            // A transiently locked file stays in place and is retried on the
+            // next mode switch; quarantining must never break the switch itself.
         }
     }
 

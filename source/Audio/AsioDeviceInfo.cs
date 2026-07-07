@@ -1,8 +1,9 @@
 namespace Resonalyze;
 
-public sealed record AsioDeviceInfo(string DriverName)
+public sealed record AsioDeviceInfo(string DriverName, bool Missing = false)
 {
-    public override string ToString() => DriverName;
+    public override string ToString() =>
+        Missing ? $"(missing) {DriverName}" : DriverName;
 }
 
 public sealed record AsioChannelInfo(int Offset, string Name)

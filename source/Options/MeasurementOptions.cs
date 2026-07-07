@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using Resonalyze.Dsp;
 
 namespace Resonalyze.Options
 {
@@ -27,6 +28,11 @@ namespace Resonalyze.Options
         private bool initializing;
         private string? microphoneCalibration0DegreesPath;
         private string? microphoneCalibration90DegreesPath;
+        // Remembers the loopback channel choice while a mono or missing
+        // recording device forces the combo to "None", so selecting a stereo
+        // device again restores it instead of losing it on the next apply.
+        private int? preferredWaveLoopbackChannelOffset;
+        private bool updatingWaveLoopbackSelection;
 
         private DarkComboBox comboBoxPlaybackDevice => waveAudioBackendPanel.ComboBoxPlaybackDevice;
 
@@ -137,7 +143,8 @@ namespace Resonalyze.Options
             playbackDevices = AudioDeviceCatalog.GetPlaybackDevices();
             comboBoxPlaybackDevice.Items.Clear();
             comboBoxPlaybackDevice.Items.AddRange(playbackDevices.Cast<object>().ToArray());
-            comboBoxPlaybackDevice.SelectedIndex = AudioDeviceCatalog.FindDeviceIndex(
+            SelectDeviceOrShowMissing(
+                comboBoxPlaybackDevice,
                 playbackDevices,
                 settings.OutputDeviceNumber);
             ConfigureDropDownWidth(comboBoxPlaybackDevice);
@@ -146,7 +153,8 @@ namespace Resonalyze.Options
             recordingDevices = AudioDeviceCatalog.GetRecordingDevices();
             comboBoxRecordingDevice.Items.Clear();
             comboBoxRecordingDevice.Items.AddRange(recordingDevices.Cast<object>().ToArray());
-            comboBoxRecordingDevice.SelectedIndex = AudioDeviceCatalog.FindDeviceIndex(
+            SelectDeviceOrShowMissing(
+                comboBoxRecordingDevice,
                 recordingDevices,
                 settings.InputDeviceNumber);
             ConfigureDropDownWidth(comboBoxRecordingDevice);
@@ -157,11 +165,18 @@ namespace Resonalyze.Options
                 SharedLoopbackDeviceSentinel,
                 "Same as microphone device"));
             comboBoxWaveLoopbackDevice.Items.AddRange(recordingDevices.Cast<object>().ToArray());
-            comboBoxWaveLoopbackDevice.SelectedIndex = settings.WaveLoopbackDeviceNumber.HasValue
-                ? 1 + AudioDeviceCatalog.FindDeviceIndex(
+            if (settings.WaveLoopbackDeviceNumber is int loopbackDeviceNumber)
+            {
+                SelectDeviceOrShowMissing(
+                    comboBoxWaveLoopbackDevice,
                     recordingDevices,
-                    settings.WaveLoopbackDeviceNumber.Value)
-                : 0;
+                    loopbackDeviceNumber,
+                    itemOffset: 1);
+            }
+            else
+            {
+                comboBoxWaveLoopbackDevice.SelectedIndex = 0;
+            }
             ConfigureDropDownWidth(comboBoxWaveLoopbackDevice);
             UpdateComboBoxToolTip(comboBoxWaveLoopbackDevice);
 
@@ -171,12 +186,25 @@ namespace Resonalyze.Options
 
             asioDrivers = AsioDeviceCatalog.GetDrivers();
             comboBoxAsioDriver.Items.Clear();
-            if (asioDrivers.Count > 0)
+            comboBoxAsioDriver.Items.AddRange(asioDrivers.Cast<object>().ToArray());
+            int asioDriverIndex = AsioDeviceCatalog.FindDriverIndex(
+                asioDrivers,
+                settings.AsioDriverName);
+            if (asioDriverIndex < 0 && !string.IsNullOrWhiteSpace(settings.AsioDriverName))
             {
-                comboBoxAsioDriver.Items.AddRange(asioDrivers.Cast<object>().ToArray());
-                comboBoxAsioDriver.SelectedIndex = AsioDeviceCatalog.FindDriverIndex(
-                    asioDrivers,
-                    settings.AsioDriverName);
+                // The saved driver is currently absent (uninstalled, or the ASIO
+                // subsystem is unavailable). Keep it selectable so an apply
+                // re-persists the same name instead of another driver or null.
+                comboBoxAsioDriver.Items.Add(
+                    new AsioDeviceInfo(settings.AsioDriverName, Missing: true));
+                asioDriverIndex = comboBoxAsioDriver.Items.Count - 1;
+            }
+            if (asioDriverIndex >= 0)
+            {
+                comboBoxAsioDriver.SelectedIndex = asioDriverIndex;
+            }
+            if (comboBoxAsioDriver.Items.Count > 0)
+            {
                 ConfigureDropDownWidth(comboBoxAsioDriver);
                 UpdateComboBoxToolTip(comboBoxAsioDriver);
             }
@@ -350,9 +378,27 @@ namespace Resonalyze.Options
                 }
             }
 
-            return dialog.ShowDialog(this) == DialogResult.OK
-                ? dialog.FileName
-                : currentPath;
+            if (dialog.ShowDialog(this) != DialogResult.OK)
+            {
+                return currentPath;
+            }
+
+            // Probe the pick immediately: a file that cannot be parsed would
+            // otherwise fail silently at plot time and leave every measurement
+            // uncalibrated. The selection is kept so the user can fix the file.
+            var probe = new CalibrationFile(dialog.FileName);
+            if (!probe.HasData)
+            {
+                MessageBox.Show(
+                    this,
+                    "The selected calibration file could not be loaded; measurements " +
+                    $"will be shown uncalibrated until it is fixed.\r\n\r\n{probe.LoadError}",
+                    "Microphone calibration",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+
+            return dialog.FileName;
         }
 
         private void UpdateCalibrationButtons()
@@ -373,19 +419,21 @@ namespace Resonalyze.Options
             string? path)
         {
             string? normalized = NormalizeCalibrationPath(path);
-            bool missing = normalized != null && !File.Exists(normalized);
+            // Covers a deleted file and an existing-but-unparsable one; both
+            // silently disable the correction at plot time otherwise.
+            string? problem = normalized == null
+                ? null
+                : new CalibrationFile(normalized).LoadError;
             selectButton.Text = normalized == null
                 ? "Select file..."
                 : Path.GetFileName(normalized);
-            selectButton.ForeColor = missing ? Color.LightSalmon : Color.White;
+            selectButton.ForeColor = problem != null ? Color.LightSalmon : Color.White;
             clearButton.Enabled = normalized != null;
             deviceToolTip.SetToolTip(
                 selectButton,
                 normalized == null
                     ? "No calibration file selected."
-                    : missing
-                        ? $"Calibration file not found: {normalized}"
-                        : normalized);
+                    : problem ?? normalized);
             deviceToolTip.SetToolTip(
                 clearButton,
                 normalized == null
@@ -453,6 +501,10 @@ namespace Resonalyze.Options
                 return;
             }
 
+            if (!updatingWaveLoopbackSelection)
+            {
+                preferredWaveLoopbackChannelOffset = GetSelectedWaveLoopbackChannelOffset();
+            }
             UpdateWaveLoopbackControls();
             RefreshSampleRateOptions(GetSelectedSampleRate());
         }
@@ -646,15 +698,34 @@ namespace Resonalyze.Options
                     .ToArray());
             comboBoxAsioOutputChannel.Items.AddRange(
                 asioDriverInfo.OutputChannels.Cast<object>().ToArray());
-            comboBoxAsioInputChannel.SelectedIndex = AsioDeviceCatalog.FindChannelIndex(
+            // With no driver selected at all there is nothing to preserve; with a
+            // named driver that cannot be opened (busy/uninstalled) the saved
+            // channel routing must not collapse to channel 1 / "None" and get
+            // re-persisted by the next apply.
+            bool preserveOffsets = !string.IsNullOrWhiteSpace(asioDriverInfo.DriverName);
+            comboBoxAsioInputChannel.SelectedIndex = SelectAsioChannelIndex(
+                comboBoxAsioInputChannel,
                 asioDriverInfo.InputChannels,
-                preferredInputOffset);
-            comboBoxAsioLoopbackChannel.SelectedIndex = FindInputChannelOptionIndex(
+                preferredInputOffset,
+                preserveOffsets);
+            int loopbackIndex = FindInputChannelOptionIndex(
                 comboBoxAsioLoopbackChannel,
                 preferredLoopbackOffset);
-            comboBoxAsioOutputChannel.SelectedIndex = AsioDeviceCatalog.FindChannelIndex(
+            if (loopbackIndex < 0 &&
+                preserveOffsets &&
+                preferredLoopbackOffset is int missingLoopbackOffset)
+            {
+                comboBoxAsioLoopbackChannel.Items.Add(new InputChannelOption(
+                    missingLoopbackOffset,
+                    $"{missingLoopbackOffset + 1}: (missing)"));
+                loopbackIndex = comboBoxAsioLoopbackChannel.Items.Count - 1;
+            }
+            comboBoxAsioLoopbackChannel.SelectedIndex = Math.Max(0, loopbackIndex);
+            comboBoxAsioOutputChannel.SelectedIndex = SelectAsioChannelIndex(
+                comboBoxAsioOutputChannel,
                 asioDriverInfo.OutputChannels,
-                preferredOutputOffset);
+                preferredOutputOffset,
+                preserveOffsets);
 
             UpdateAsioStatusLabels();
         }
@@ -710,6 +781,7 @@ namespace Resonalyze.Options
                 preferredLoopbackOffset.HasValue
                     ? preferredLoopbackOffset.Value == 1 ? 2 : 1
                     : 0;
+            preferredWaveLoopbackChannelOffset = preferredLoopbackOffset;
             UpdateWaveLoopbackControls();
         }
 
@@ -725,8 +797,23 @@ namespace Resonalyze.Options
             bool supportsLoopback = SelectedRecordingDeviceSupportsWaveLoopback();
             if (!supportsLoopback && comboBoxWaveLoopbackChannel.Items.Count > 0)
             {
-                comboBoxWaveLoopbackChannel.SelectedIndex = 0;
+                // Forced, not a user choice: the preferred offset is kept so a
+                // stereo device restores it below.
+                SetWaveLoopbackSelection(0);
                 loopbackSelected = false;
+            }
+            else if (supportsLoopback &&
+                !loopbackSelected &&
+                preferredWaveLoopbackChannelOffset is int rememberedOffset)
+            {
+                int rememberedIndex = FindInputChannelOptionIndex(
+                    comboBoxWaveLoopbackChannel,
+                    rememberedOffset);
+                if (rememberedIndex >= 0)
+                {
+                    SetWaveLoopbackSelection(rememberedIndex);
+                    loopbackSelected = true;
+                }
             }
             comboBoxWaveLoopbackChannel.Enabled =
                 comboBoxAudioBackend.SelectedIndex != (int)AudioBackend.Asio &&
@@ -765,6 +852,25 @@ namespace Resonalyze.Options
             labelWaveLoopbackStatus.ForeColor = supportsLoopback
                 ? Color.LightGray
                 : Color.LightSalmon;
+        }
+
+        private void SetWaveLoopbackSelection(int index)
+        {
+            if (comboBoxWaveLoopbackChannel.SelectedIndex == index)
+            {
+                return;
+            }
+
+            bool wasUpdating = updatingWaveLoopbackSelection;
+            updatingWaveLoopbackSelection = true;
+            try
+            {
+                comboBoxWaveLoopbackChannel.SelectedIndex = index;
+            }
+            finally
+            {
+                updatingWaveLoopbackSelection = wasUpdating;
+            }
         }
 
         private Font NormalStatusFont =>
@@ -819,7 +925,46 @@ namespace Resonalyze.Options
                 }
             }
 
-            return 0;
+            return -1;
+        }
+
+        // A persisted device that is not currently present stays visible as a
+        // "(missing)" entry with its original number, so an apply cannot
+        // silently re-target the configuration to another device.
+        private static void SelectDeviceOrShowMissing(
+            DarkComboBox comboBox,
+            IReadOnlyList<AudioDeviceInfo> devices,
+            int deviceNumber,
+            int itemOffset = 0)
+        {
+            int index = AudioDeviceCatalog.FindDeviceIndex(devices, deviceNumber);
+            if (index >= 0)
+            {
+                comboBox.SelectedIndex = itemOffset + index;
+                return;
+            }
+
+            comboBox.Items.Add(AudioDeviceCatalog.CreateMissingDevice(deviceNumber));
+            comboBox.SelectedIndex = comboBox.Items.Count - 1;
+        }
+
+        // Same idea for ASIO channels: an offset the driver does not currently
+        // report (fewer channels, or the driver failed to open — e.g. it is in
+        // use by another application) must survive the panel round-trip.
+        private static int SelectAsioChannelIndex(
+            DarkComboBox comboBox,
+            IReadOnlyList<AsioChannelInfo> channels,
+            int preferredOffset,
+            bool preserveMissingOffset)
+        {
+            int index = AsioDeviceCatalog.FindChannelIndex(channels, preferredOffset);
+            if (index >= 0 || !preserveMissingOffset)
+            {
+                return index;
+            }
+
+            comboBox.Items.Add(new AsioChannelInfo(preferredOffset, "(missing)"));
+            return comboBox.Items.Count - 1;
         }
 
         private void ValidateSelectedAsioDriver(int sampleRate)

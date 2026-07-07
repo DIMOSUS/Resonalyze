@@ -29,23 +29,48 @@ public sealed class ExponentialSineSweep : IDisposable
     public double ComputedDuration =>
         SampleRate > 0 ? SweepSamples / (double)SampleRate : 0.0;
 
-    public double CalculateDuration(double requestedDuration)
+    /// <summary>
+    /// The duration the sweep will actually have for the given parameters,
+    /// after cycle quantization. Static so the option panels can preview a
+    /// configuration without depending on the last generated sweep's state.
+    /// Degenerate inputs return 0 instead of throwing — this feeds display
+    /// fields on settings-load paths.
+    /// </summary>
+    public static double CalculateDuration(
+        int octaves,
+        double requestedDuration,
+        int sampleRate)
     {
-        ValidateGenerationParameters(Octaves, requestedDuration, BitsPerSample, SampleRate);
+        if (octaves <= 0 ||
+            sampleRate <= 0 ||
+            !double.IsFinite(requestedDuration) ||
+            requestedDuration <= 0)
+        {
+            return 0.0;
+        }
 
-        double frequencyRatio = Math.Pow(2.0, Octaves);
+        double exactLength = ComputeQuantizedSweepLength(
+            octaves,
+            requestedDuration,
+            sampleRate);
+        return Math.Max(1, (int)Math.Round(exactLength)) / (double)sampleRate;
+    }
+
+    // Quantizing the phase count makes the sweep end at a full cycle. This reduces
+    // the discontinuity at the boundary without changing the requested duration materially.
+    private static double ComputeQuantizedSweepLength(
+        int octaves,
+        double requestedDuration,
+        int sampleRate)
+    {
+        double frequencyRatio = Math.Pow(2.0, octaves);
         double logarithmicRatio = Math.Log(frequencyRatio);
-        double targetLength = SampleRate * requestedDuration;
         double phaseFactor = (Math.PI / frequencyRatio) / logarithmicRatio;
-
-        // Quantizing the phase count makes the sweep end at a full cycle. This reduces
-        // the discontinuity at the boundary without changing the requested duration materially.
+        double targetLength = sampleRate * requestedDuration;
         double cycleCount = Math.Max(
             1,
             Math.Round(phaseFactor * targetLength / (2.0 * Math.PI)));
-        double exactLength = cycleCount * 2.0 * Math.PI / phaseFactor;
-
-        return Math.Max(1, (int)Math.Round(exactLength)) / (double)SampleRate;
+        return cycleCount * 2.0 * Math.PI / phaseFactor;
     }
 
     public void FillData(
@@ -65,11 +90,10 @@ public sealed class ExponentialSineSweep : IDisposable
         double frequencyRatio = Math.Pow(2.0, octaves);
         double logarithmicRatio = Math.Log(frequencyRatio);
         double phaseFactor = (Math.PI / frequencyRatio) / logarithmicRatio;
-        double targetLength = sampleRate * requestedDuration;
-        double cycleCount = Math.Max(
-            1,
-            Math.Round(phaseFactor * targetLength / (2.0 * Math.PI)));
-        double exactLength = cycleCount * 2.0 * Math.PI / phaseFactor;
+        double exactLength = ComputeQuantizedSweepLength(
+            octaves,
+            requestedDuration,
+            sampleRate);
         int sampleCount = Math.Max(1, (int)Math.Round(exactLength));
 
         SweepSamples = sampleCount;

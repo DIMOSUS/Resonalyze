@@ -14,6 +14,7 @@ internal sealed class ChromeTitleBar : Panel
     public const int HtClient = 1;
 
     private const int WmNcLeftButtonDown = 0xA1;
+    private const int HtTransparent = -1;
     private const int HtCaption = 2;
     private const int HtLeft = 10;
     private const int HtRight = 11;
@@ -49,6 +50,34 @@ internal sealed class ChromeTitleBar : Panel
     }
 
     public bool IsCustomMaximized => isCustomMaximized;
+
+    public int ScaledResizeGripSize => Scale(ResizeGripSize);
+
+    // The title bar panel covers the whole top strip of the borderless form, so
+    // WM_NCHITTEST for the top resize grip never reaches the form — without
+    // this the window cannot be resized from its top edge at all. Returning
+    // HTTRANSPARENT hands the hit test to the form, whose WndProc maps the
+    // strip to HTTOP/HTTOPLEFT/HTTOPRIGHT.
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WmNcHitTest &&
+            initialized &&
+            !isCustomMaximized &&
+            form.WindowState == FormWindowState.Normal)
+        {
+            Point clientPoint = PointToClient(GetPointFromLParam(m.LParam));
+            int grip = ScaledResizeGripSize;
+            if (clientPoint.Y <= grip ||
+                clientPoint.X <= grip ||
+                clientPoint.X >= Width - grip)
+            {
+                m.Result = (IntPtr)HtTransparent;
+                return;
+            }
+        }
+
+        base.WndProc(ref m);
+    }
 
     // Wires the title bar to its owning form. Called once after the designer has
     // added the control to the form.
@@ -135,12 +164,15 @@ internal sealed class ChromeTitleBar : Panel
         return new Point(x, y);
     }
 
-    public static IntPtr GetResizeHitTest(Point point, Size clientSize)
+    public static IntPtr GetResizeHitTest(Point point, Size clientSize) =>
+        GetResizeHitTest(point, clientSize, ResizeGripSize);
+
+    public static IntPtr GetResizeHitTest(Point point, Size clientSize, int gripSize)
     {
-        bool left = point.X <= ResizeGripSize;
-        bool right = point.X >= clientSize.Width - ResizeGripSize;
-        bool top = point.Y <= ResizeGripSize;
-        bool bottom = point.Y >= clientSize.Height - ResizeGripSize;
+        bool left = point.X <= gripSize;
+        bool right = point.X >= clientSize.Width - gripSize;
+        bool top = point.Y <= gripSize;
+        bool bottom = point.Y >= clientSize.Height - gripSize;
 
         if (left && top)
         {
@@ -464,7 +496,11 @@ internal sealed class ChromeTitleBar : Panel
 
     private void ToggleMaximized()
     {
-        if (isCustomMaximized)
+        // Dragging the caption lets Windows Aero-snap the borderless form into a
+        // REAL WindowState.Maximized without isCustomMaximized ever being set;
+        // treating that state as "not maximized" here would capture the
+        // maximized bounds into restoreBounds and lose the original size.
+        if (isCustomMaximized || form.WindowState == FormWindowState.Maximized)
         {
             RestoreWindowBounds();
             return;
@@ -475,7 +511,7 @@ internal sealed class ChromeTitleBar : Panel
 
     private void MaximizeToCurrentScreen()
     {
-        if (form.WindowState == FormWindowState.Minimized)
+        if (form.WindowState != FormWindowState.Normal)
         {
             return;
         }
@@ -489,6 +525,14 @@ internal sealed class ChromeTitleBar : Panel
 
     private void RestoreWindowBounds()
     {
+        if (form.WindowState == FormWindowState.Maximized)
+        {
+            // Snap-maximized: let Windows restore the pre-snap bounds it kept.
+            form.WindowState = FormWindowState.Normal;
+            isCustomMaximized = false;
+            return;
+        }
+
         if (!isCustomMaximized)
         {
             return;

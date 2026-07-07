@@ -46,13 +46,12 @@ internal static class DarkScrollBars
         }
 
         EnsureDarkAppMode();
+        // Always subscribe: WinForms can recreate the handle (RecreateHandle on
+        // certain property changes), which would silently revert the theme.
+        control.HandleCreated += (_, _) => ApplyTheme(control);
         if (control.IsHandleCreated)
         {
             ApplyTheme(control);
-        }
-        else
-        {
-            control.HandleCreated += (_, _) => ApplyTheme(control);
         }
     }
 

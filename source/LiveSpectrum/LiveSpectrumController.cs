@@ -19,6 +19,9 @@ internal sealed class LiveSpectrumController : IDisposable
     private readonly Action updateRecordButton;
     private readonly Action updatePlotLabels;
     private readonly LiveSpectrumOptions liveSpectrumOptions;
+    // Same guard the sweep path has (Form1.ShowMeasurementError): no modal
+    // error dialog while the owner is tearing down.
+    private readonly Func<bool> suppressErrorDialogs;
     // The live transfer-function curve carries a CurveTag (like every analysis curve)
     // so overlays can bind to it by key; the remaining live-spectrum helper series stay
     // string-tagged for internal bookkeeping only.
@@ -46,7 +49,8 @@ internal sealed class LiveSpectrumController : IDisposable
         Action updateOverlayAvailability,
         Action updateRecordButton,
         Action updatePlotLabels,
-        LiveSpectrumOptions liveSpectrumOptions)
+        LiveSpectrumOptions liveSpectrumOptions,
+        Func<bool> suppressErrorDialogs)
     {
         this.owner = owner;
         this.measurement = measurement;
@@ -59,6 +63,7 @@ internal sealed class LiveSpectrumController : IDisposable
         this.updateRecordButton = updateRecordButton;
         this.updatePlotLabels = updatePlotLabels;
         this.liveSpectrumOptions = liveSpectrumOptions;
+        this.suppressErrorDialogs = suppressErrorDialogs;
         measurement.Completed += MeasurementCompleted;
         timer.Tick += TimerTick;
     }
@@ -446,6 +451,21 @@ internal sealed class LiveSpectrumController : IDisposable
                 updateOverlayAvailability();
                 updateRecordButton();
                 updatePlotLabels();
+                // A user stop cancels the capture and reports success; reaching
+                // here with an error means the device or driver failed mid-run,
+                // which used to reset the UI silently.
+                if (!success &&
+                    measurement.LastError is Exception error &&
+                    !owner.IsDisposed &&
+                    !suppressErrorDialogs())
+                {
+                    MessageBox.Show(
+                        owner,
+                        $"The live measurement failed.\r\n\r\n{error.Message}",
+                        "Live Spectrum",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                }
             });
         }
         catch (InvalidOperationException)

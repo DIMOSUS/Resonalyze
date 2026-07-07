@@ -108,6 +108,9 @@ internal sealed class ApplicationUpdateDialog : Form
         }
 
         CancelButton = cancelButton;
+        // Same runtime DPI scaling as the other hand-laid-out dialogs; without
+        // it the fixed pixel geometry clips the scaled text at 150 %+.
+        OverlayDialogControls.ApplyRuntimeDpiScale(this);
         ResumeLayout(false);
     }
 }

@@ -12,6 +12,7 @@ internal partial class MeasurementHistoryWindow : Form
     private readonly Font activeEntryFont;
     private readonly ToolTip historyToolTip = new() { ShowAlways = true };
     private Guid? activeEntryId;
+    private bool suppressSelectionEvents;
 
     public event Action<Guid>? EntryActivated;
     public event Action<Guid>? SaveRequested;
@@ -25,7 +26,11 @@ internal partial class MeasurementHistoryWindow : Form
         StartPosition = FormStartPosition.CenterParent;
         ConfigureNewSessionButton();
         ConfigureGrid();
-        FormClosed += (_, _) => historyToolTip.Dispose();
+        FormClosed += (_, _) =>
+        {
+            historyToolTip.Dispose();
+            activeEntryFont.Dispose();
+        };
         historyDataGridView.SelectionChanged += HistoryDataGridView_SelectionChanged;
         historyDataGridView.CellContentClick += HistoryDataGridView_CellContentClick;
         historyDataGridView.CellDoubleClick += HistoryDataGridView_CellDoubleClick;
@@ -45,6 +50,9 @@ internal partial class MeasurementHistoryWindow : Form
     {
         this.activeEntryId = activeEntryId;
         historyDataGridView.SuspendLayout();
+        // Rows.Clear/Add/SelectRow each raise SelectionChanged, and every one
+        // rebuilt the whole preview plot; the explicit pass below is enough.
+        suppressSelectionEvents = true;
         try
         {
             historyDataGridView.Rows.Clear();
@@ -75,6 +83,7 @@ internal partial class MeasurementHistoryWindow : Form
         }
         finally
         {
+            suppressSelectionEvents = false;
             historyDataGridView.ResumeLayout();
         }
 
@@ -90,14 +99,22 @@ internal partial class MeasurementHistoryWindow : Form
         }
 
         int nextSelection = Math.Min(rowIndex, historyDataGridView.Rows.Count - 2);
-        historyDataGridView.Rows.RemoveAt(rowIndex);
-        rowEntryIds.RemoveAt(rowIndex);
-
-        if (nextSelection >= 0 && nextSelection < historyDataGridView.Rows.Count)
+        suppressSelectionEvents = true;
+        try
         {
-            historyDataGridView.ClearSelection();
-            historyDataGridView.Rows[nextSelection].Selected = true;
-            historyDataGridView.CurrentCell = historyDataGridView.Rows[nextSelection].Cells[0];
+            historyDataGridView.Rows.RemoveAt(rowIndex);
+            rowEntryIds.RemoveAt(rowIndex);
+
+            if (nextSelection >= 0 && nextSelection < historyDataGridView.Rows.Count)
+            {
+                historyDataGridView.ClearSelection();
+                historyDataGridView.Rows[nextSelection].Selected = true;
+                historyDataGridView.CurrentCell = historyDataGridView.Rows[nextSelection].Cells[0];
+            }
+        }
+        finally
+        {
+            suppressSelectionEvents = false;
         }
 
         ApplyRowStyles();
@@ -184,6 +201,11 @@ internal partial class MeasurementHistoryWindow : Form
 
     private void HistoryDataGridView_SelectionChanged(object? sender, EventArgs e)
     {
+        if (suppressSelectionEvents)
+        {
+            return;
+        }
+
         ApplyRowStyles();
         UpdatePreview();
     }
@@ -198,7 +220,12 @@ internal partial class MeasurementHistoryWindow : Form
         Guid entryId = rowEntryIds[e.RowIndex];
         if (e.ColumnIndex == 2)
         {
-            SaveRequested?.Invoke(entryId);
+            // File-backed rows render "-" here; the click must stay inert.
+            if (historyDataGridView.Rows[e.RowIndex].Tag is
+                MeasurementHistoryEntry { CanSave: true })
+            {
+                SaveRequested?.Invoke(entryId);
+            }
         }
         else if (e.ColumnIndex == 3)
         {

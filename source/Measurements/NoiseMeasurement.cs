@@ -657,7 +657,7 @@ namespace Resonalyze
             {
                 foreach (float[][] frame in reframer.Push(sequence))
                 {
-                    AccumulateSequence(frame);
+                    AccumulateTransferSequence(frame);
                 }
             }
         }
@@ -690,11 +690,6 @@ namespace Resonalyze
                 GetAveragingTimeConstant(LiveSpectrumOptions.AveragingSpeed);
             infiniteAveraging = LiveSpectrumOptions.AveragingSpeed == AveragingSpeed.Infinite;
             transferAlpha = AlphaFromTimeConstant(frameInterval, transferSeconds);
-        }
-
-        private void AccumulateSequence(float[][] sequence)
-        {
-            AccumulateTransferSequence(sequence);
         }
 
         private void AccumulateTransferSequence(float[][] sequence)

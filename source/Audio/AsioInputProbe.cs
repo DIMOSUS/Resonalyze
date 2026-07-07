@@ -72,7 +72,11 @@ internal static class AsioInputProbe
                     channel.Name,
                     ToDecibels(GetPeak(data)),
                     ToDecibels(GetRms(data)),
-                    index == 0 ? 1.0 : GetCorrelation(samples[0], data));
+                    index == 0
+                        ? 1.0
+                        : samples.Length > 0
+                            ? GetCorrelation(samples[0], data)
+                            : 0.0);
             })
             .ToArray();
     }

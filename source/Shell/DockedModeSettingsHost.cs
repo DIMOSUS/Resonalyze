@@ -21,7 +21,6 @@ internal sealed class DockedModeSettingsHost : IDisposable
         this.anchorControl = anchorControl;
 
         owner.LocationChanged += OwnerLayoutChanged;
-        owner.Resize += OwnerLayoutChanged;
         owner.SizeChanged += OwnerLayoutChanged;
         anchorControl.SizeChanged += OwnerLayoutChanged;
     }
@@ -102,7 +101,6 @@ internal sealed class DockedModeSettingsHost : IDisposable
 
         disposed = true;
         owner.LocationChanged -= OwnerLayoutChanged;
-        owner.Resize -= OwnerLayoutChanged;
         owner.SizeChanged -= OwnerLayoutChanged;
         anchorControl.SizeChanged -= OwnerLayoutChanged;
         Close();
@@ -151,7 +149,7 @@ internal sealed class DockedModeSettingsHost : IDisposable
                         button.Enabled = false;
                         try
                         {
-                            await apply();
+                            await ApplySafelyAsync(dialog, apply);
                         }
                         finally
                         {
@@ -167,6 +165,29 @@ internal sealed class DockedModeSettingsHost : IDisposable
         if (applyOnChange)
         {
             WireLiveApply(dialog, apply);
+        }
+    }
+
+    // Both apply paths run in async void contexts (a Click handler and a
+    // BeginInvoke continuation); an exception escaping them would kill the
+    // process instead of surfacing as a dialog.
+    private static async Task ApplySafelyAsync(Form dialog, Func<Task> apply)
+    {
+        try
+        {
+            await apply();
+        }
+        catch (Exception exception)
+        {
+            if (!dialog.IsDisposed)
+            {
+                MessageBox.Show(
+                    dialog,
+                    $"Applying the settings failed.\r\n\r\n{exception.Message}",
+                    "Settings",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
         }
     }
 
@@ -205,7 +226,7 @@ internal sealed class DockedModeSettingsHost : IDisposable
             pending = false;
             try
             {
-                await apply();
+                await ApplySafelyAsync(dialog, apply);
             }
             finally
             {
@@ -347,7 +368,10 @@ internal sealed class DockedModeSettingsHost : IDisposable
 
     private void DialogFormClosing(object? sender, FormClosingEventArgs e)
     {
-        if (allowProgrammaticClose)
+        // Only swallow direct user closes (the docked panel has no close UI of
+        // its own); cancelling owner/shutdown closes would block app exit and
+        // Windows logoff.
+        if (allowProgrammaticClose || e.CloseReason != CloseReason.UserClosing)
         {
             return;
         }

@@ -161,6 +161,23 @@ namespace Resonalyze
             }
         }
 
+        // Measurement failures used to surface only as an "Error" record button;
+        // the stored exception text was never shown to the user.
+        private void ShowMeasurementError(string summary, Exception? error)
+        {
+            if (error == null || closingInProgress)
+            {
+                return;
+            }
+
+            MessageBox.Show(
+                this,
+                $"{summary}\r\n\r\n{error.Message}",
+                "Measurement",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+
         private SignalGeneratorPlaybackSettings CreateSignalGeneratorPlaybackSettings() =>
             new(
                 expSweepMeasurement.AudioBackend,

@@ -39,23 +39,25 @@ namespace Resonalyze.Options
 
             this.expSweepMeasurement = expSweepMeasurement;
 
-            numericSampleRate.Value = expSweepMeasurement.SampleRate;
+            numericSampleRate.Value = numericSampleRate.ClampValue(expSweepMeasurement.SampleRate);
 
-            numericWindow.Value = waterfallGenerateOptions.Window;
-            numericSlices.Value = waterfallGenerateOptions.SliceCount;
+            // The settings file clamps to wider ranges than the controls; an
+            // out-of-range persisted value must not throw when the panel opens.
+            numericWindow.Value = numericWindow.ClampValue(waterfallGenerateOptions.Window);
+            numericSlices.Value = numericSlices.ClampValue(waterfallGenerateOptions.SliceCount);
             lastNonZeroStep = waterfallGenerateOptions.Step == 0 ? 1 : waterfallGenerateOptions.Step;
-            numericStep.Value = lastNonZeroStep;
-            numericCaptureTime.Value = (decimal)CalcCapturedTime;
+            numericStep.Value = numericStep.ClampValue((double)lastNonZeroStep);
+            numericCaptureTime.Value = numericCaptureTime.ClampValue((double)CalcCapturedTime);
 
-            numericLeftWindow.Value = waterfallGenerateOptions.LeftTukeyWindow;
-            numericRightWindow.Value = waterfallGenerateOptions.RightTukeyWindow;
+            numericLeftWindow.Value = numericLeftWindow.ClampValue(waterfallGenerateOptions.LeftTukeyWindow);
+            numericRightWindow.Value = numericRightWindow.ClampValue(waterfallGenerateOptions.RightTukeyWindow);
 
-            numericDbRange.Value = waterfallGenerateOptions.DbRange;
+            numericDbRange.Value = numericDbRange.ClampValue(waterfallGenerateOptions.DbRange);
 
             comboSmoothingInverseOctaves.SelectedItem =
                 SmoothingPresetOptions.Normalize(waterfallGenerateOptions.SmoothingInverseOctaves);
 
-            numericOffset.Value = waterfallGenerateOptions.Offset;
+            numericOffset.Value = numericOffset.ClampValue(waterfallGenerateOptions.Offset);
             UpdateTukeyWindowLimits();
             UpdateIrPreview();
         }

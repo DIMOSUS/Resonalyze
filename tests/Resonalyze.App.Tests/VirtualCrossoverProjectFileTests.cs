@@ -91,12 +91,16 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.Equal(3, missing.Channels.Count);
             Assert.True(missing.ShowSumCurve);
 
-            File.WriteAllText(
-                VirtualCrossoverProjectFile.GetPath(root),
-                "{ not json ");
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            File.WriteAllText(path, "{ not json ");
             VirtualCrossoverProjectFile corrupt =
                 VirtualCrossoverProjectFile.LoadOrDefault(root);
             Assert.Equal(3, corrupt.Channels.Count);
+
+            // The unusable file is parked as .backup so the next scheduled
+            // save cannot silently destroy it.
+            Assert.False(File.Exists(path));
+            Assert.Equal("{ not json ", File.ReadAllText(path + ".backup"));
         }
         finally
         {
@@ -105,7 +109,7 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
-    public void LoadOrDefault_FallsBackOnAnUnknownVersion()
+    public void LoadOrDefault_FallsBackOnAnUnknownVersion_AndBacksTheFileUp()
     {
         string root = CreateTemporaryDirectory();
         try
@@ -115,15 +119,64 @@ public sealed class VirtualCrossoverProjectFileTests
             future.Save(root);
 
             string path = VirtualCrossoverProjectFile.GetPath(root);
-            File.WriteAllText(
-                path,
-                File.ReadAllText(path).Replace(
-                    $"\"version\": {VirtualCrossoverProjectFile.CurrentVersion}",
-                    $"\"version\": {VirtualCrossoverProjectFile.CurrentVersion + 1}"));
+            string futureText = File.ReadAllText(path).Replace(
+                $"\"version\": {VirtualCrossoverProjectFile.CurrentVersion}",
+                $"\"version\": {VirtualCrossoverProjectFile.CurrentVersion + 1}");
+            File.WriteAllText(path, futureText);
 
             VirtualCrossoverProjectFile loaded =
                 VirtualCrossoverProjectFile.LoadOrDefault(root);
             Assert.Equal(0, loaded.Channels[0].GainDb);
+
+            // A downgraded app keeps the newer session parked next to the
+            // fresh default instead of overwriting it on the next save.
+            Assert.False(File.Exists(path));
+            Assert.Equal(futureText, File.ReadAllText(path + ".backup"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_ReplacesAnOlderBackup()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path + ".backup", "older backup");
+            File.WriteAllText(path, "{ newer garbage ");
+
+            VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Equal("{ newer garbage ", File.ReadAllText(path + ".backup"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_DoesNotDisturbAValidFileOrItsBackup()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = new VirtualCrossoverProjectFile();
+            original.Channels[0].GainDb = -4;
+            original.Save(root);
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            Assert.Equal(-4, loaded.Channels[0].GainDb);
+            Assert.True(File.Exists(path));
+            Assert.False(File.Exists(path + ".backup"));
         }
         finally
         {

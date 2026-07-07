@@ -16,18 +16,24 @@ internal sealed class MeasurementHistoryPersistence
         Converters = { new JsonStringEnumConverter() }
     };
 
-    private static string PathOnDisk => Path.Combine(AppContext.BaseDirectory, FileName);
+    private readonly string pathOnDisk;
+
+    public MeasurementHistoryPersistence(string? pathOnDisk = null)
+    {
+        this.pathOnDisk = pathOnDisk
+            ?? Path.Combine(AppContext.BaseDirectory, FileName);
+    }
 
     public IReadOnlyList<MeasurementHistoryEntry> Load()
     {
         try
         {
-            if (!File.Exists(PathOnDisk))
+            if (!File.Exists(pathOnDisk))
             {
                 return Array.Empty<MeasurementHistoryEntry>();
             }
 
-            using FileStream stream = File.OpenRead(PathOnDisk);
+            using FileStream stream = File.OpenRead(pathOnDisk);
             StoreFile? file = JsonSerializer.Deserialize<StoreFile>(stream, SerializerOptions);
             if (file?.SchemaVersion != CurrentSchemaVersion)
             {
@@ -77,8 +83,15 @@ internal sealed class MeasurementHistoryPersistence
                 .ToList()
         };
 
-        using FileStream stream = File.Create(PathOnDisk);
-        JsonSerializer.Serialize(stream, file, SerializerOptions);
+        // Temp file + move keeps the store intact if the write is interrupted;
+        // a corrupted store silently wipes the whole history list on next load.
+        string tempPath = pathOnDisk + ".tmp";
+        using (FileStream stream = File.Create(tempPath))
+        {
+            JsonSerializer.Serialize(stream, file, SerializerOptions);
+        }
+
+        File.Move(tempPath, pathOnDisk, overwrite: true);
     }
 
     private sealed class StoreFile

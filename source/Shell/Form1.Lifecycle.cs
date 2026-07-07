@@ -38,8 +38,17 @@ public partial class Form1
         }
 
         e.Cancel = true;
+        if (closingInProgress)
+        {
+            // A second close request while the aborts are still awaited would
+            // re-run the whole teardown; the first pass finishes the close.
+            return;
+        }
+
+        closingInProgress = true;
         Enabled = false;
         FlushMeasurementSettings();
+        overlayCollection.FlushPendingSaves();
         PersistCurrentSessionState();
         startupAudioWarmupCancellation?.Cancel();
         await Task.WhenAll(

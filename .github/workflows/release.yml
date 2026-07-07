@@ -94,6 +94,10 @@ jobs:
         env:
           SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_KEY }}
         run: |
+          if ([string]::IsNullOrWhiteSpace($env:SPARKLE_PUBLIC_KEY)) {
+            throw "SPARKLE_PUBLIC_KEY repository secret is required: a build without the embedded key cannot verify update signatures."
+          }
+
           $version = "${{ steps.version.outputs.version }}"
           $publishDirectory = Join-Path $env:RUNNER_TEMP "publish-${{ matrix.rid }}"
 
@@ -152,6 +156,10 @@ jobs:
         env:
           SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_KEY }}
         run: |
+          if ([string]::IsNullOrWhiteSpace($env:SPARKLE_PUBLIC_KEY)) {
+            throw "SPARKLE_PUBLIC_KEY repository secret is required: a build without the embedded key cannot verify update signatures."
+          }
+
           $version = "${{ needs.prepare.outputs.version }}"
           $publishDirectory = Join-Path $env:RUNNER_TEMP "publish-win-x64"
 

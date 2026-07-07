@@ -21,7 +21,11 @@ public static class OverlayTextFile
         IEnumerable<string> lines = points.Select(point => string.Create(
             CultureInfo.InvariantCulture,
             $"{point.X:R} {point.Y:R}"));
-        File.WriteAllLines(path, lines);
+        // Temp file + move so an interrupted export cannot truncate an existing
+        // file the user picked (mirrors OverlayFile.Save).
+        string tempPath = path + ".tmp";
+        File.WriteAllLines(tempPath, lines);
+        File.Move(tempPath, path, overwrite: true);
     }
 
     public static OverlayPoint[] Import(string path)

@@ -122,6 +122,13 @@ public partial class Form1
             }
 
             await WaitForStartupAudioWarmupAsync();
+            if (expSweepMeasurement.InProgress)
+            {
+                // A second click can arrive while the warm-up is awaited;
+                // starting again would call Init on a running measurement.
+                return;
+            }
+
             PrepareSweepMeasurementForRun();
             EnterMeasurementRunningState();
             _ = expSweepMeasurement.RunAsync();

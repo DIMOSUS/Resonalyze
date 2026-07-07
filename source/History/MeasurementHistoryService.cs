@@ -6,12 +6,13 @@ internal sealed class MeasurementHistoryService
 {
     public const int MaxInMemoryHistoryEntries = 10;
 
-    private readonly MeasurementHistoryPersistence persistence = new();
+    private readonly MeasurementHistoryPersistence persistence;
     private readonly List<MeasurementHistoryEntry> entries;
 
-    public MeasurementHistoryService()
+    public MeasurementHistoryService(MeasurementHistoryPersistence? persistence = null)
     {
-        entries = persistence.Load().ToList();
+        this.persistence = persistence ?? new MeasurementHistoryPersistence();
+        entries = this.persistence.Load().ToList();
     }
 
     public event Action? Changed;
@@ -62,6 +63,7 @@ internal sealed class MeasurementHistoryService
             MoveToStart(entry);
         }
 
+        RetainSingleFileBackedSnapshot(entry);
         persistence.Save(entries);
         OnChanged();
         return entry.Id;
@@ -106,6 +108,7 @@ internal sealed class MeasurementHistoryService
             MoveToStart(entry);
         }
 
+        RetainSingleFileBackedSnapshot(entry);
         persistence.Save(entries);
         OnChanged();
     }
@@ -147,6 +150,7 @@ internal sealed class MeasurementHistoryService
         entry.Snapshot = CreateSnapshot(file, entry.Session);
         entry.Metadata = MeasurementHistorySnapshotMetadata.FromSnapshot(entry.Snapshot);
         entry.Preview = entry.Snapshot.Preview;
+        RetainSingleFileBackedSnapshot(entry);
         return entry.Snapshot;
     }
 
@@ -282,6 +286,21 @@ internal sealed class MeasurementHistoryService
             }
 
             entries.Remove(oldestUnsaved);
+        }
+    }
+
+    // A snapshot holds the complete impulse responses (tens of megabytes), so at
+    // most one file-backed entry keeps one cached — its file remains the source
+    // of truth and an evicted snapshot is reloaded on demand. Unsaved entries
+    // always keep theirs: memory is their only storage.
+    private void RetainSingleFileBackedSnapshot(MeasurementHistoryEntry keep)
+    {
+        foreach (MeasurementHistoryEntry entry in entries)
+        {
+            if (!ReferenceEquals(entry, keep) && entry.IsFileBacked)
+            {
+                entry.Snapshot = null;
+            }
         }
     }
 

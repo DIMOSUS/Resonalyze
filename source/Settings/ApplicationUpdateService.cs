@@ -65,7 +65,7 @@ internal static class ApplicationUpdateService
             return;
         }
 
-        if (!IsInstalledBuild())
+        if (!IsInstalledBuild() || !HasSignaturePublicKey())
         {
             OpenReleasePage(latestReleaseUrl);
             return;
@@ -104,16 +104,20 @@ internal static class ApplicationUpdateService
         Initialize(owner);
     }
 
+    private static bool HasSignaturePublicKey() =>
+        !string.IsNullOrWhiteSpace(ApplicationVersionInfo.GetSparklePublicKey());
+
     private static SparkleUpdater CreateUpdater(Form? owner)
     {
+        // Always Strict: falling back to UseIfPossible when the embedded key is
+        // missing would make a build without a key silently accept unsigned
+        // updates. StartAutomaticUpdate routes keyless builds to the release
+        // page instead of the updater.
         string publicKey = ApplicationVersionInfo.GetSparklePublicKey() ?? string.Empty;
-        SecurityMode securityMode = string.IsNullOrWhiteSpace(publicKey)
-            ? SecurityMode.UseIfPossible
-            : SecurityMode.Strict;
 
         var sparkleUpdater = new SparkleUpdater(
             AppCastUrl,
-            new Ed25519Checker(securityMode, publicKey, string.Empty))
+            new Ed25519Checker(SecurityMode.Strict, publicKey, string.Empty))
         {
             UIFactory = new UIFactory(owner?.Icon),
             RelaunchAfterUpdate = false,

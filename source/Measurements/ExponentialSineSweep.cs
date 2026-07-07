@@ -15,14 +15,12 @@ public enum PlaybackChannel : byte
 /// </summary>
 public sealed class ExponentialSineSweep : IDisposable
 {
-    private MemoryStream[] memoryStreams = Array.Empty<MemoryStream>();
-    private RawSourceWaveStream[] sourceStreams = Array.Empty<RawSourceWaveStream>();
+    private PcmStreamSet? streamSet;
     private bool disposed;
 
     public float[] SweepData { get; private set; } = Array.Empty<float>();
     public float[] InverseFilter { get; private set; } = Array.Empty<float>();
     public float[] Frequencies { get; private set; } = Array.Empty<float>();
-    public byte[][] SweepByteData { get; private set; } = Array.Empty<byte[]>();
     public int SampleRate { get; private set; }
     public int SweepSamples { get; private set; }
     public int BitsPerSample { get; private set; }
@@ -100,82 +98,19 @@ public sealed class ExponentialSineSweep : IDisposable
                 (float)(SweepData[sampleCount - i - 1] * Math.Pow(perSampleDecay, -i) * inverseScale);
         }
 
-        BuildPlaybackStreams();
+        streamSet?.Dispose();
+        streamSet = new PcmStreamSet(SweepData, sampleRate, bitsPerSample);
     }
 
     public RawSourceWaveStream GetStream(PlaybackChannel channel)
     {
         ThrowIfDisposed();
-        if (!Enum.IsDefined(channel))
+        if (streamSet == null)
         {
-            throw new ArgumentOutOfRangeException(nameof(channel));
+            throw new InvalidOperationException("The sweep is not generated.");
         }
 
-        return sourceStreams[(int)channel];
-    }
-
-    private void BuildPlaybackStreams()
-    {
-        DisposeStreams();
-        int channelModeCount = Enum.GetValues<PlaybackChannel>().Length;
-        SweepByteData = new byte[channelModeCount][];
-        memoryStreams = new MemoryStream[channelModeCount];
-        sourceStreams = new RawSourceWaveStream[channelModeCount];
-
-        foreach (PlaybackChannel channel in Enum.GetValues<PlaybackChannel>())
-        {
-            int outputChannelCount = channel == PlaybackChannel.Mono ? 1 : 2;
-            int bytesPerSample = BitsPerSample / 8;
-            int maxValue = int.MaxValue >> (32 - BitsPerSample);
-            byte[] data = new byte[SweepSamples * bytesPerSample * outputChannelCount];
-
-            for (int sampleIndex = 0; sampleIndex < SweepSamples; sampleIndex++)
-            {
-                int sample = (int)(SweepData[sampleIndex] * maxValue);
-                sample *= (int)Math.Pow(256, 4 - bytesPerSample);
-                byte[] bytes = BitConverter.GetBytes(sample);
-                WriteSample(data, sampleIndex, bytes, bytesPerSample, outputChannelCount, channel);
-            }
-
-            int channelIndex = (int)channel;
-            SweepByteData[channelIndex] = data;
-            memoryStreams[channelIndex] = new MemoryStream(data, writable: false);
-            sourceStreams[channelIndex] = new RawSourceWaveStream(
-                memoryStreams[channelIndex],
-                new WaveFormat(SampleRate, BitsPerSample, outputChannelCount));
-        }
-    }
-
-    private static void WriteSample(
-        byte[] destination,
-        int sampleIndex,
-        byte[] source,
-        int bytesPerSample,
-        int channelCount,
-        PlaybackChannel channel)
-    {
-        int frameOffset = sampleIndex * bytesPerSample * channelCount;
-        int sourceOffset = 4 - bytesPerSample;
-
-        if (channel == PlaybackChannel.Mono)
-        {
-            Array.Copy(source, sourceOffset, destination, frameOffset, bytesPerSample);
-            return;
-        }
-
-        if (channel is PlaybackChannel.Left or PlaybackChannel.Stereo)
-        {
-            Array.Copy(source, sourceOffset, destination, frameOffset, bytesPerSample);
-        }
-        if (channel is PlaybackChannel.Right or PlaybackChannel.Stereo)
-        {
-            Array.Copy(
-                source,
-                sourceOffset,
-                destination,
-                frameOffset + bytesPerSample,
-                bytesPerSample);
-        }
+        return streamSet.GetStream(channel);
     }
 
     private static void ValidateGenerationParameters(
@@ -207,21 +142,6 @@ public sealed class ExponentialSineSweep : IDisposable
         ObjectDisposedException.ThrowIf(disposed, this);
     }
 
-    private void DisposeStreams()
-    {
-        foreach (RawSourceWaveStream stream in sourceStreams)
-        {
-            stream.Dispose();
-        }
-        foreach (MemoryStream stream in memoryStreams)
-        {
-            stream.Dispose();
-        }
-
-        sourceStreams = Array.Empty<RawSourceWaveStream>();
-        memoryStreams = Array.Empty<MemoryStream>();
-    }
-
     public void Dispose()
     {
         if (disposed)
@@ -230,7 +150,8 @@ public sealed class ExponentialSineSweep : IDisposable
         }
 
         disposed = true;
-        DisposeStreams();
+        streamSet?.Dispose();
+        streamSet = null;
         GC.SuppressFinalize(this);
     }
 }

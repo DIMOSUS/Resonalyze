@@ -613,8 +613,9 @@ public partial class EqWizardPanel : UserControl
     }
 
     // Fits the PEQ bands and preamp automatically so Source + EQ approaches Target,
-    // then writes the result into the controls.
-    private void AutoTune()
+    // then writes the result into the controls. The fit runs on a worker thread —
+    // tuning up to 32 bands takes long enough to visibly freeze the UI.
+    private async void AutoTune()
     {
         TargetOverlayOption? selected = SelectedTargetOverlay;
         // Pass a neutral EQ so the render gives the raw source and a target aligned
@@ -637,8 +638,32 @@ public partial class EqWizardPanel : UserControl
         var target = render.Target.Points
             .Select(point => new SignalPoint(point.X, point.Y))
             .ToList();
+        EqAutoTuner.Options options = CreateAutoTuneOptions();
 
-        EqualizationCurve tuned = EqAutoTuner.Tune(source, target, CreateAutoTuneOptions());
+        EqualizationCurve tuned;
+        buttonAutoTune.Enabled = false;
+        try
+        {
+            tuned = await Task.Run(() => EqAutoTuner.Tune(source, target, options));
+        }
+        catch (Exception exception)
+        {
+            ShowFileError("Auto Tune failed.", exception);
+            return;
+        }
+        finally
+        {
+            if (!IsDisposed)
+            {
+                buttonAutoTune.Enabled = true;
+            }
+        }
+
+        if (IsDisposed)
+        {
+            return;
+        }
+
         // A freshly tuned EQ should be audible/visible, so leave bypass off.
         checkBoxBypass.Checked = false;
         ApplyEqualizationCurve(tuned);
@@ -691,18 +716,18 @@ public partial class EqWizardPanel : UserControl
                 if (i < curve.Bands.Count)
                 {
                     PeqBand band = curve.Bands[i];
-                    slot.FrequencyInput.Value = Clamp(slot.FrequencyInput, band.FrequencyHz);
-                    slot.QInput.Value = Clamp(slot.QInput, band.Q);
-                    slot.GainInput.Value = Clamp(slot.GainInput, band.GainDb);
+                    slot.FrequencyInput.Value = slot.FrequencyInput.ClampValue(band.FrequencyHz);
+                    slot.QInput.Value = slot.QInput.ClampValue(band.Q);
+                    slot.GainInput.Value = slot.GainInput.ClampValue(band.GainDb);
                 }
                 else
                 {
                     // No band for this slot: leave it transparent.
-                    slot.GainInput.Value = Clamp(slot.GainInput, 0);
+                    slot.GainInput.Value = slot.GainInput.ClampValue(0);
                 }
             }
 
-            NumericGain.Value = Clamp(NumericGain, curve.PreampDb);
+            NumericGain.Value = NumericGain.ClampValue(curve.PreampDb);
         }
         finally
         {
@@ -726,13 +751,6 @@ public partial class EqWizardPanel : UserControl
         }
 
         return (minHz, maxHz);
-    }
-
-    // Rounds to the control's precision and clamps to its range.
-    private static decimal Clamp(DarkNumericUpDown control, double value)
-    {
-        decimal rounded = (decimal)Math.Round(value, control.DecimalPlaces);
-        return Math.Clamp(rounded, control.Minimum, control.Maximum);
     }
 
     private const string TuningSheetFilter = "Tuning sheet (PDF) (*.pdf)|*.pdf";

@@ -124,18 +124,48 @@ public sealed class ImpulseResponseFile
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         Validate();
 
-        await using FileStream stream = new(
-            path,
-            FileMode.Create,
-            FileAccess.Write,
-            FileShare.None,
-            bufferSize: 64 * 1024,
-            useAsync: true);
-        await JsonSerializer.SerializeAsync(
-            stream,
-            this,
-            SerializerOptions,
-            cancellationToken);
+        // Write to a sibling temp file first: creating the target directly would
+        // truncate it before writing, so a failure mid-write (crash, full disk)
+        // destroys the previously saved measurement. The final move is atomic.
+        string tempPath = path + ".tmp";
+        try
+        {
+            await using (FileStream stream = new(
+                tempPath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 64 * 1024,
+                useAsync: true))
+            {
+                await JsonSerializer.SerializeAsync(
+                    stream,
+                    this,
+                    SerializerOptions,
+                    cancellationToken);
+            }
+
+            File.Move(tempPath, path, overwrite: true);
+        }
+        catch
+        {
+            TryDeleteFile(tempPath);
+            throw;
+        }
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 
     public static async Task<ImpulseResponseFile> LoadAsync(

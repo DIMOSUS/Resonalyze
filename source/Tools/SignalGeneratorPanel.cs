@@ -17,7 +17,7 @@ public partial class SignalGeneratorPanel : UserControl
 {
     private IWavePlayer? player;
     private WaveStream? playbackStream;
-    private MemoryStream? playbackMemoryStream;
+    private PcmStreamSet? pcmStreams;
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -80,6 +80,9 @@ public partial class SignalGeneratorPanel : UserControl
                 SelectedSignalType,
                 (double)numericFrequency.Value,
                 (double)numericLevel.Value / 100.0);
+            // 10 ms ramps: an abrupt start/end is an audible click, unfriendly
+            // to tweeters at the levels this tool is used at.
+            SignalFade.ApplyFadeInOut(monoSamples, settings.SampleRate / 100);
 
             if (settings.Backend == AudioBackend.Asio)
             {
@@ -95,11 +98,11 @@ public partial class SignalGeneratorPanel : UserControl
                 {
                     DeviceNumber = settings.WaveOutputDeviceNumber
                 };
-                playbackStream = CreatePcmStream(
+                pcmStreams = new PcmStreamSet(
                     monoSamples,
                     settings.SampleRate,
-                    settings.BitsPerSample,
-                    settings.PlaybackChannel);
+                    settings.BitsPerSample);
+                playbackStream = pcmStreams.GetStream(settings.PlaybackChannel);
             }
 
             player.Init(playbackStream);
@@ -191,31 +194,6 @@ public partial class SignalGeneratorPanel : UserControl
         return result;
     }
 
-    private RawSourceWaveStream CreatePcmStream(
-        IReadOnlyList<float> monoSamples,
-        int sampleRate,
-        int bitsPerSample,
-        PlaybackChannel channel)
-    {
-        int outputChannelCount = channel == PlaybackChannel.Mono ? 1 : 2;
-        int bytesPerSample = bitsPerSample / 8;
-        int maxValue = int.MaxValue >> (32 - bitsPerSample);
-        var data = new byte[monoSamples.Count * bytesPerSample * outputChannelCount];
-
-        for (int sampleIndex = 0; sampleIndex < monoSamples.Count; sampleIndex++)
-        {
-            int sample = (int)(Math.Clamp(monoSamples[sampleIndex], -1.0f, 1.0f) * maxValue);
-            sample *= (int)Math.Pow(256, 4 - bytesPerSample);
-            byte[] bytes = BitConverter.GetBytes(sample);
-            WriteSample(data, sampleIndex, bytes, bytesPerSample, outputChannelCount, channel);
-        }
-
-        playbackMemoryStream = new MemoryStream(data, writable: false);
-        return new RawSourceWaveStream(
-            playbackMemoryStream,
-            new WaveFormat(sampleRate, bitsPerSample, outputChannelCount));
-    }
-
     private void PlayerPlaybackStopped(object? sender, StoppedEventArgs e)
     {
         void UpdateUi()
@@ -236,7 +214,15 @@ public partial class SignalGeneratorPanel : UserControl
 
         if (InvokeRequired)
         {
-            BeginInvoke((Action)UpdateUi);
+            try
+            {
+                BeginInvoke((Action)UpdateUi);
+            }
+            catch (InvalidOperationException)
+            {
+                // The handle was destroyed between the guard and the call.
+                DisposePlayback();
+            }
             return;
         }
 
@@ -271,8 +257,8 @@ public partial class SignalGeneratorPanel : UserControl
 
         playbackStream?.Dispose();
         playbackStream = null;
-        playbackMemoryStream?.Dispose();
-        playbackMemoryStream = null;
+        pcmStreams?.Dispose();
+        pcmStreams = null;
     }
 
     internal void RefreshAudioSettings()
@@ -323,38 +309,6 @@ public partial class SignalGeneratorPanel : UserControl
             SignalGeneratorType.WhiteNoise => NoiseColor.White,
             _ => NoiseColor.PinkPeriodic
         };
-
-    private static void WriteSample(
-        byte[] destination,
-        int sampleIndex,
-        byte[] source,
-        int bytesPerSample,
-        int channelCount,
-        PlaybackChannel channel)
-    {
-        int frameOffset = sampleIndex * bytesPerSample * channelCount;
-        int sourceOffset = 4 - bytesPerSample;
-
-        if (channel == PlaybackChannel.Mono)
-        {
-            Array.Copy(source, sourceOffset, destination, frameOffset, bytesPerSample);
-            return;
-        }
-
-        if (channel is PlaybackChannel.Left or PlaybackChannel.Stereo)
-        {
-            Array.Copy(source, sourceOffset, destination, frameOffset, bytesPerSample);
-        }
-        if (channel is PlaybackChannel.Right or PlaybackChannel.Stereo)
-        {
-            Array.Copy(
-                source,
-                sourceOffset,
-                destination,
-                frameOffset + bytesPerSample,
-                bytesPerSample);
-        }
-    }
 
     private enum SignalGeneratorType
     {

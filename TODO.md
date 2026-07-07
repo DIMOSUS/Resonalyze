@@ -192,6 +192,14 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 
 ## Shell
 
+- [ ] ★ **`Form1` is still the concurrency hub.** ~40 mutable fields on one
+  object are touched by the UI thread, `Task.Run` plot builds and
+  audio-callback events, guarded case by case with ad-hoc locks and flags
+  (`closingInProgress`, `calibrationCache`, `reportedCalibrationProblems`).
+  The torn-read items in this file are symptoms; the structural fix is moving
+  per-mode state into services/controllers so new code does not need manual
+  guarding. Incremental — carve out one concern at a time, calibration state
+  is a natural first candidate.
 - [ ] **`UpdatePeakInfo` unsynchronized pair read.** Peak value and peak index
   are read as two separate volatile-ish reads and can disagree; publish them
   as one immutable pair.

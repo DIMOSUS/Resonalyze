@@ -438,12 +438,20 @@ internal sealed class LiveSpectrumController : IDisposable
             return;
         }
 
-        owner.BeginInvoke((MethodInvoker)delegate
+        try
         {
-            timer.Stop();
-            updateOverlayAvailability();
-            updateRecordButton();
-            updatePlotLabels();
-        });
+            owner.BeginInvoke((MethodInvoker)delegate
+            {
+                timer.Stop();
+                updateOverlayAvailability();
+                updateRecordButton();
+                updatePlotLabels();
+            });
+        }
+        catch (InvalidOperationException)
+        {
+            // The handle was destroyed between the guard and the call while the
+            // form closes; Dispose stops the timer.
+        }
     }
 }

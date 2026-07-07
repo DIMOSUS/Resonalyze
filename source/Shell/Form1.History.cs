@@ -34,12 +34,7 @@ public partial class Form1
 
     private void HandleHistoryChanged()
     {
-        if (IsDisposed || !IsHandleCreated)
-        {
-            return;
-        }
-
-        BeginInvoke((MethodInvoker)delegate
+        TryBeginInvokeOnUiThread(() =>
         {
             dockedHistoryHost.InvokeIfOpen<MeasurementHistoryWindow>(dialog =>
             {
@@ -54,6 +49,13 @@ public partial class Form1
 
     private async void HandleHistoryEntryActivated(Guid entryId)
     {
+        // Restoring a snapshot while a sweep is running would call Init on an
+        // active measurement and fail; ignore the activation instead.
+        if (expSweepMeasurement.InProgress)
+        {
+            return;
+        }
+
         try
         {
             MeasurementHistorySnapshot? snapshot =

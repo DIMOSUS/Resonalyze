@@ -82,6 +82,7 @@ namespace Resonalyze
         private Guid? currentHistoryEntryId;
         private bool hasCurrentImpulseResponse;
         private bool closingPrepared;
+        private bool closingInProgress;
         private bool resourcesDisposed;
         private bool updateCheckStarted;
         private bool measurementSettingsSavePending;
@@ -137,6 +138,27 @@ namespace Resonalyze
             WireControllerEvents();
             InitializeStartupState();
             WireFormEvents();
+        }
+
+        // BeginInvoke can still throw if the handle is destroyed between the guard
+        // and the call — measurement events arrive from audio worker threads while
+        // the form closes on the UI thread.
+        private bool TryBeginInvokeOnUiThread(Action action)
+        {
+            if (IsDisposed || !IsHandleCreated)
+            {
+                return false;
+            }
+
+            try
+            {
+                BeginInvoke(action);
+                return true;
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
         }
 
         private SignalGeneratorPlaybackSettings CreateSignalGeneratorPlaybackSettings() =>

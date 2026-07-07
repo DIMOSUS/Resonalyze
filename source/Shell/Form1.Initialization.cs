@@ -268,12 +268,7 @@ public partial class Form1
 
     private void HandleMeasurementCompleted(bool success)
     {
-        if (IsDisposed || !IsHandleCreated)
-        {
-            return;
-        }
-
-        BeginInvoke((MethodInvoker)delegate
+        TryBeginInvokeOnUiThread(() =>
         {
             if (success)
             {
@@ -301,12 +296,7 @@ public partial class Form1
 
     private void HandleAverageProgressChanged(SweepAverageProgress progress)
     {
-        if (IsDisposed || !IsHandleCreated)
-        {
-            return;
-        }
-
-        BeginInvoke((MethodInvoker)delegate
+        TryBeginInvokeOnUiThread(() =>
         {
             buttonRecord.Text = progress.State == SweepAverageProgressState.WaitingForConfirmation
                 ? $"Next run ({progress.CurrentRun + 1}/{progress.TotalRuns})"

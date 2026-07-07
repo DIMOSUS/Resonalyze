@@ -6,6 +6,10 @@ internal sealed class InputLevelMeterController : IDisposable
     private readonly InputLevelMeterPanel panel;
     private readonly ExpSweepMeasurement sweepMeasurement;
     private readonly NoiseMeasurement noiseMeasurement;
+    // Levels arrive on audio worker threads on every buffer, which outpaces the
+    // message pump at small ASIO buffer sizes; coalesce to a single queued UI
+    // update carrying the newest snapshot.
+    private readonly CoalescingDispatcher<InputLevelMeterSnapshot> dispatcher;
     private bool disposed;
 
     public InputLevelMeterController(
@@ -18,9 +22,12 @@ internal sealed class InputLevelMeterController : IDisposable
         this.panel = panel;
         this.sweepMeasurement = sweepMeasurement;
         this.noiseMeasurement = noiseMeasurement;
+        dispatcher = new CoalescingDispatcher<InputLevelMeterSnapshot>(
+            TryPostToOwner,
+            ApplyOnUiThread);
 
-        sweepMeasurement.LevelsAvailable += ApplyLevels;
-        noiseMeasurement.LevelsAvailable += ApplyLevels;
+        sweepMeasurement.LevelsAvailable += HandleLevels;
+        noiseMeasurement.LevelsAvailable += HandleLevels;
     }
 
     public void Clear()
@@ -30,7 +37,14 @@ internal sealed class InputLevelMeterController : IDisposable
             return;
         }
 
-        owner.BeginInvoke((MethodInvoker)panel.ClearLevels);
+        try
+        {
+            owner.BeginInvoke((MethodInvoker)panel.ClearLevels);
+        }
+        catch (InvalidOperationException)
+        {
+            // The handle was destroyed between the guard and the call.
+        }
     }
 
     public void Dispose()
@@ -41,17 +55,43 @@ internal sealed class InputLevelMeterController : IDisposable
         }
 
         disposed = true;
-        sweepMeasurement.LevelsAvailable -= ApplyLevels;
-        noiseMeasurement.LevelsAvailable -= ApplyLevels;
+        sweepMeasurement.LevelsAvailable -= HandleLevels;
+        noiseMeasurement.LevelsAvailable -= HandleLevels;
     }
 
-    private void ApplyLevels(InputLevelMeterSnapshot snapshot)
+    private void HandleLevels(InputLevelMeterSnapshot snapshot)
     {
-        if (disposed || owner.IsDisposed || !owner.IsHandleCreated)
+        if (disposed)
         {
             return;
         }
 
-        owner.BeginInvoke((MethodInvoker)(() => panel.SetLevels(snapshot)));
+        dispatcher.Offer(snapshot);
+    }
+
+    private bool TryPostToOwner(Action drain)
+    {
+        if (disposed || owner.IsDisposed || !owner.IsHandleCreated)
+        {
+            return false;
+        }
+
+        try
+        {
+            owner.BeginInvoke(drain);
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    private void ApplyOnUiThread(InputLevelMeterSnapshot snapshot)
+    {
+        if (!disposed && !panel.IsDisposed)
+        {
+            panel.SetLevels(snapshot);
+        }
     }
 }

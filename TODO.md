@@ -157,14 +157,17 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 
 ## Shell
 
-- [ ] ★ **`Form1` is still the concurrency hub.** ~40 mutable fields on one
-  object are touched by the UI thread, `Task.Run` plot builds and
-  audio-callback events, guarded case by case with ad-hoc locks and flags
-  (`closingInProgress`, `calibrationCache`, `reportedCalibrationProblems`).
-  The now-fixed torn-read items were symptoms; the structural fix is moving
-  per-mode state into services/controllers so new code does not need manual
-  guarding. Incremental — carve out one concern at a time, calibration state
-  is a natural first candidate.
+- [ ] ★ **`Form1` is still the concurrency hub.** Mutable state on one object
+  is touched by the UI thread, `Task.Run` plot builds and audio-callback
+  events, guarded case by case with ad-hoc flags (`closingInProgress`,
+  `closingPrepared`, `shutdownFastClose`). The first carve-outs are done: the
+  calibration cache + warn-once bookkeeping (`MicrophoneCalibrationService`),
+  the startup warm-up task/cancellation pair (`StartupAudioWarmup`), the
+  settings-save debounce (`DebouncedSaver`), the Compare selection read by
+  plot-build workers (`CompareSelection`) and the record-button long-press
+  state machine (`ButtonLongPressBehavior`) own their state now. Still on
+  Form1: history/current-IR state, overlay slot tracking and the lifecycle
+  flags — keep carving one concern at a time.
 - [ ] **`WireLiveApply` covers only dialog-open controls.** Controls created
   after wiring never get live-apply behavior.
 

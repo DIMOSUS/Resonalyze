@@ -44,8 +44,8 @@ public partial class Form1
                     opt => opt.Init(
                         expSweepMeasurement,
                         frequencyResponseOptions,
-                        HasMicrophoneCalibration(MicrophoneCalibrationMode.Degrees0),
-                        HasMicrophoneCalibration(MicrophoneCalibrationMode.Degrees90)),
+                        microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees0),
+                        microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees90)),
                     opt => opt.SetOptions(frequencyResponseOptions))),
             [ModeTab.Phase] = new(
                 ModeTab.Phase,
@@ -59,7 +59,7 @@ public partial class Form1
                 OpenSettings: () => ToggleModeOptions(
                     ModeTab.Phase,
                     () => new PROpt(),
-                    opt => opt.Init(expSweepMeasurement, phaseResponseOptions, GetCompareAnalysisSource),
+                    opt => opt.Init(expSweepMeasurement, phaseResponseOptions, compareSelection.GetAnalysisSource),
                     opt => opt.SetOptions(phaseResponseOptions))),
             [ModeTab.GroupDelay] = new(
                 ModeTab.GroupDelay,
@@ -73,7 +73,7 @@ public partial class Form1
                 OpenSettings: () => ToggleModeOptions(
                     ModeTab.GroupDelay,
                     () => new GDOpt(),
-                    opt => opt.Init(expSweepMeasurement, groupDelayOptions, GetCompareAnalysisSource),
+                    opt => opt.Init(expSweepMeasurement, groupDelayOptions, compareSelection.GetAnalysisSource),
                     opt => opt.SetOptions(groupDelayOptions))),
             [ModeTab.Waterfall] = new(
                 ModeTab.Waterfall,

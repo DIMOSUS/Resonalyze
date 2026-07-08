@@ -1,4 +1,3 @@
-using System.Numerics;
 using Resonalyze.History;
 using Resonalyze.Options;
 
@@ -27,8 +26,8 @@ public partial class Form1
         compareMenuStrip.Items.Add(new ToolStripSeparator());
 
         ToolStripMenuItem clearItem = new("Clear");
-        clearItem.Enabled = compareMeasurement != null;
-        clearItem.Click += (_, _) => ClearCompareMeasurement();
+        clearItem.Enabled = compareSelection.Current != null;
+        clearItem.Click += (_, _) => compareSelection.Clear();
         compareMenuStrip.Items.Add(clearItem);
 
         compareMenuStrip.Show(buttonCompare, new Point(0, buttonCompare.Height));
@@ -82,7 +81,7 @@ public partial class Form1
             ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(dialog.FileName);
             MeasurementHistorySnapshot snapshot =
                 MeasurementHistoryService.CreateSnapshot(file);
-            SetCompareMeasurement(
+            compareSelection.Set(
                 Path.GetFileName(dialog.FileName),
                 dialog.FileName,
                 snapshot);
@@ -111,7 +110,7 @@ public partial class Form1
                 return;
             }
 
-            SetCompareMeasurement(
+            compareSelection.Set(
                 entry.FileNameOrDisplayName,
                 entry.SourceFilePath,
                 snapshot);
@@ -127,24 +126,6 @@ public partial class Form1
         }
     }
 
-    private void SetCompareMeasurement(
-        string displayName,
-        string? sourceFilePath,
-        MeasurementHistorySnapshot snapshot)
-    {
-        compareMeasurement = new CompareMeasurementSelection(
-            displayName,
-            sourceFilePath,
-            snapshot);
-        OnCompareMeasurementChanged();
-    }
-
-    private void ClearCompareMeasurement()
-    {
-        compareMeasurement = null;
-        OnCompareMeasurementChanged();
-    }
-
     // Compare drives Time Alignment, the Phase / Group Delay plots, and the gated IR
     // preview inside their docked settings, so refresh whichever of those is live.
     private void OnCompareMeasurementChanged()
@@ -154,27 +135,6 @@ public partial class Form1
         RefreshCurrentModePlot();
         dockedModeSettingsHost.InvokeIfOpen<PROpt>(dialog => dialog.RefreshComparePreview());
         dockedModeSettingsHost.InvokeIfOpen<GDOpt>(dialog => dialog.RefreshComparePreview());
-    }
-
-    // Exposes the Compare measurement's impulse responses for the mode plots: the
-    // transfer IR (Phase / Group Delay / Impulse) and the sweep-deconvolution IR
-    // (Frequency Response). Each consumer checks the response it needs, so a Compare
-    // without a transfer IR still contributes a Frequency Response curve.
-    internal CompareAnalysisSource? GetCompareAnalysisSource()
-    {
-        if (compareMeasurement is not { } selection ||
-            selection.Snapshot.SweepDeconvolutionImpulseResponse is not { Length: > 0 } sweepIr)
-        {
-            return null;
-        }
-
-        return new CompareAnalysisSource(
-            selection.DisplayName,
-            selection.Snapshot.SampleRate,
-            selection.Snapshot.TransferImpulseResponse ?? Array.Empty<Complex>(),
-            selection.Snapshot.TransferPeakIndex ?? 0,
-            sweepIr,
-            selection.Snapshot.SweepDeconvolutionPeakIndex);
     }
 
     // The complex (vector) sum of the Main and Compare transfer responses for the
@@ -198,21 +158,15 @@ public partial class Form1
             .ToArray();
     }
 
-    private TimeAlignmentCompareMeasurement? GetTimeAlignmentCompareMeasurement() =>
-        compareMeasurement == null
-            ? null
-            : new TimeAlignmentCompareMeasurement(
-                compareMeasurement.DisplayName,
-                compareMeasurement.Snapshot);
-
     private void UpdateCompareButton()
     {
-        buttonCompare.Text = compareMeasurement?.DisplayName ?? "Compare";
+        CompareMeasurementSelection? selection = compareSelection.Current;
+        buttonCompare.Text = selection?.DisplayName ?? "Compare";
         toolTip1.SetToolTip(
             buttonCompare,
-            compareMeasurement == null
+            selection == null
                 ? "Choose a second impulse response for comparison"
-                : BuildCompareButtonToolTip(compareMeasurement));
+                : BuildCompareButtonToolTip(selection));
     }
 
     private static string BuildCompareHistoryItemText(MeasurementHistoryEntry entry)
@@ -235,20 +189,4 @@ public partial class Form1
 
         return selection.DisplayName;
     }
-
-    private sealed record CompareMeasurementSelection(
-        string DisplayName,
-        string? SourceFilePath,
-        MeasurementHistorySnapshot Snapshot);
 }
-
-// The Compare measurement's impulse responses used by the mode plots: the transfer IR
-// (Phase / Group Delay / Impulse and the gated IR preview) and the sweep-deconvolution
-// IR (Frequency Response magnitude). Matching sample rate is validated by the consumers.
-public readonly record struct CompareAnalysisSource(
-    string DisplayName,
-    int SampleRate,
-    Complex[] TransferImpulseResponse,
-    int TransferPeakIndex,
-    Complex[] SweepDeconvolutionImpulseResponse,
-    int SweepDeconvolutionPeakIndex);

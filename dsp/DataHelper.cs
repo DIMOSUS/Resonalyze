@@ -485,25 +485,29 @@ namespace Resonalyze.Dsp
                     continue;
                 }
 
+                bool reliable = spectrum[i].Magnitude >= minReliableMagnitude &&
+                    (coherence == null ||
+                     CoherenceAt(coherence, f, sampleRate) >= UnwrapCoherenceFloor);
+
                 if (f < minFrequency || !hasAnchor)
                 {
                     // Below the unwrap floor the output stays wrapped (unchanged
-                    // behavior); the running bin still seeds the anchor so the
-                    // unwrap continues seamlessly from the last one.
+                    // behavior); a running bin seeds the anchor only when it
+                    // passes the same reliability gate, so a garbage bin near the
+                    // floor cannot offset the first unwrapped branch by 2π.
                     data.Add(new SignalPoint(f, wrapped));
-                    anchorFrequency = f;
-                    anchorPhase = wrapped;
-                    hasAnchor = true;
+                    if (reliable)
+                    {
+                        anchorFrequency = f;
+                        anchorPhase = wrapped;
+                        hasAnchor = true;
+                    }
                     continue;
                 }
 
                 double predicted = anchorPhase + slope * (f - anchorFrequency);
                 double branch = Math.Round((predicted - wrapped) / Math.Tau);
                 double unwrappedPhase = wrapped + Math.Tau * branch;
-
-                bool reliable = spectrum[i].Magnitude >= minReliableMagnitude &&
-                    (coherence == null ||
-                     CoherenceAt(coherence, f, sampleRate) >= UnwrapCoherenceFloor);
                 if (reliable && f > anchorFrequency)
                 {
                     double localSlope =

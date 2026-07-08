@@ -64,6 +64,34 @@ public sealed class PhaseUnwrapTests
     }
 
     [Fact]
+    public void Unwrap_DoesNotAnchorOnAGarbageBinBelowTheFloor()
+    {
+        // A garbage null just below the 100 Hz unwrap floor (bin 8 = 93.75 Hz)
+        // must stay display-only: if it seeded the anchor, the first reliable
+        // bin above the floor would branch against its phase (3.33 rad away
+        // from the true value here) and carry a spurious +2π into everything
+        // that follows.
+        var spectrum = new Complex[TransformLength];
+        for (int k = 0; k < TransformLength; k++)
+        {
+            double phase = -Math.Tau * k * DelaySamples / TransformLength;
+            spectrum[k] = Complex.FromPolarCoordinates(1.0, phase);
+        }
+        SetBinWithMirror(spectrum, bin: 8, magnitude: 1e-4, phase: 3.0);
+        MathNet.Numerics.IntegralTransforms.Fourier.Inverse(
+            spectrum,
+            MathNet.Numerics.IntegralTransforms.FourierOptions.Matlab);
+        var measurement = new SyntheticMeasurement(
+            spectrum,
+            SampleRate,
+            maxMagnitudeIndex: 0);
+
+        List<SignalPoint> phaseData = GetUnwrappedPhase(measurement, coherence: null);
+
+        AssertTailOnDelayLine(phaseData);
+    }
+
+    [Fact]
     public void Unwrap_WithUniformlyHighCoherence_MatchesTheUnweightedResult()
     {
         var response = new Complex[TransformLength];

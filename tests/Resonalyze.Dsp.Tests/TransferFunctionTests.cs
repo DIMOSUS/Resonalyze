@@ -197,7 +197,64 @@ public sealed class TransferFunctionTests
         Assert.NotNull(result.Coherence);
         Assert.Equal(delay, result.PeakIndex);
         Assert.Equal(1.0, result.ImpulseResponse[delay], precision: 9);
-        Assert.All(result.Coherence!, value => Assert.InRange(value, 0.0, 1.0));
+        // Identical frames are perfectly coherent: every interior bin must read ~1,
+        // not merely "somewhere in [0, 1]".
+        for (int bin = 1; bin < result.Coherence!.Length - 1; bin++)
+        {
+            Assert.InRange(result.Coherence[bin], 0.999, 1.0 + 1e-9);
+        }
+    }
+
+    [Fact]
+    public void ComputeAveragedRelativeIr_IncoherentFramesDropCoherenceBelowOne()
+    {
+        // Reference is an impulse (flat spectrum); each target is the same delayed
+        // impulse plus an uncorrelated spike whose sign alternates across frames. The
+        // spikes sum to zero, so the averaged H1 still recovers the clean delay, but
+        // their power inflates the target auto-spectrum and pushes coherence well
+        // below one at every bin. A vacuous "in [0,1]" check would miss this.
+        const int delay = 9;
+        double[] reference = CreateImpulse(128);
+        double[] target = Delay(reference, delay);
+
+        var frames = new List<TransferFunctionFrame>();
+        double[] signs = [1.0, -1.0, 1.0, -1.0];
+        foreach (double sign in signs)
+        {
+            double[] noisy = (double[])target.Clone();
+            noisy[40] += sign * 0.5; // uncorrelated with the reference impulse
+            frames.Add(new TransferFunctionFrame(reference, noisy));
+        }
+
+        TransferEstimateResult result = TransferFunction.ComputeAveragedRelativeIr(frames);
+
+        Assert.NotNull(result.Coherence);
+        double maxCoherence = 0;
+        for (int bin = 1; bin < result.Coherence!.Length - 1; bin++)
+        {
+            maxCoherence = Math.Max(maxCoherence, result.Coherence[bin]);
+        }
+        Assert.True(maxCoherence < 0.95, $"Expected coherence below 1 everywhere, peak was {maxCoherence:0.###}.");
+
+        // The zero-mean spikes cancel in the average, so the delay is still clean.
+        Assert.Equal(delay, result.PeakIndex);
+        Assert.Equal(1.0, result.ImpulseResponse[delay], precision: 9);
+    }
+
+    [Fact]
+    public void RefineAround_DegenerateCorrelationReportsNoRefinementWithoutNaN()
+    {
+        // An all-zero IR whitens to an empty band (weightSum 0, normalizer 0), so the
+        // refinement must bail out cleanly rather than divide by zero.
+        PhaseTransformCorrelation correlation =
+            TransferFunction.ComputePhaseTransformFromResponse(new double[128]);
+
+        PhaseTransformDelay delay = correlation.RefineAround(coarseLagSamples: 10, searchRadiusSamples: 4);
+
+        Assert.Equal(0.0, delay.PeakCorrelation);
+        Assert.False(delay.Refined);
+        Assert.Equal(10, delay.LagSamples);
+        Assert.False(double.IsNaN(delay.PeakCorrelation) || double.IsInfinity(delay.PeakCorrelation));
     }
 
     private static double[] CreateImpulse(int length)

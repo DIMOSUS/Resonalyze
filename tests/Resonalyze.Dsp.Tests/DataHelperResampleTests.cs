@@ -35,6 +35,29 @@ public sealed class DataHelperResampleTests
     }
 
     [Fact]
+    public void LogarithmicResample_PlacesAnIsolatedFeatureAtTheCorrectOutputFrequency()
+    {
+        // A single distinct bin at 1 kHz against a flat 0 dB floor. With a very small
+        // smoothing width the Lanczos window collapses to +/-2 input bins (10 Hz
+        // apart), and the kernel is exactly zero at those integer offsets, so the
+        // 1 kHz output point reads ONLY the 1 kHz bin. This pins LogPositionToFrequency,
+        // the BinarySearchX centre, and the kernel weighting together: a frequency-axis
+        // inversion or an off-by-one centre would read a 0 dB neighbour instead of -6.
+        List<SignalPoint> input = BuildLinearGrid(startHz: 10, stepHz: 10, count: 2000, decibels: 0.0);
+        input[99] = new SignalPoint(1_000.0, -6.0); // bin index 99 -> 1000 Hz
+
+        // steps = 3 over [100, 10000] puts output[1] at the geometric mean = 1000 Hz.
+        List<SignalPoint> output = DataHelper.LogarithmicResample(
+            input, start: 100, stop: 10_000, steps: 3, smoothingOctaves: 0.01);
+
+        Assert.Equal(1_000.0, output[1].X, precision: 6);
+        Assert.Equal(-6.0, output[1].Y, precision: 6);
+        // The flat-floor endpoints stay at 0 dB, confirming the feature did not leak.
+        Assert.Equal(0.0, output[0].Y, precision: 6);
+        Assert.Equal(0.0, output[2].Y, precision: 6);
+    }
+
+    [Fact]
     public void SmoothLinear_PreservesConstantLevel()
     {
         List<SignalPoint> input = BuildLinearGrid(

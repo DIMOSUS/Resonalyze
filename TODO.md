@@ -5,10 +5,13 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 
 ## DSP library (`dsp/`)
 
-- [ ] **`CalibrationFile` does filesystem I/O in the dsp layer.** The silent
-  failures are fixed (`LoadError` is surfaced in the options panel and once per
-  session at plot time), but aligning the class with the "parser accepts text"
-  pattern of the EQ formats would still simplify error handling and tests.
+- [x] **`CalibrationFile` does filesystem I/O in the dsp layer** — done.
+  Added `CalibrationFile.Parse(text, sourceName?)`, a pure parser matching the
+  EQ formats' "parser accepts text" shape; the shared `ParseText` does all line
+  parsing/sorting and the `CalibrationFile(string file)` constructor stays a
+  thin I/O wrapper (`LoadFromFile` owns the two filesystem `LoadError`
+  messages), so every caller is untouched and the content-error message is
+  unchanged. Tests can now parse from text without temp files.
 - [ ] **`EqAutoTuner` greedy fit has no polish pass.** Band gain is fixed from
   the residual at the peak before Q is chosen (no joint gain/Q optimization),
   there is no final coordinate-descent pass (`CrossoverAutoSetup` already has
@@ -32,8 +35,13 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 - [ ] **`FrequencyResponseOptions` is a grab-bag** mixing FR windows,
   phase/group-delay gates and a dozen UI visibility flags (`ShowHd2`,
   `ShowGroupDelay`, …) — presentation flags leaked into the DSP library.
-- [ ] **`DataHelper` is a ~1160-line god-object**; split into
-  Spectrum/Phase/Impulse/Resampling modules.
+- [x] **`DataHelper` is a ~1160-line god-object** — done (move-only). Split
+  into a `partial` static class across `DataHelper.cs` (core: dB conversion,
+  `ExtractWindow`, the option types), `DataHelper.Spectrum.cs`,
+  `DataHelper.Phase.cs` (phase + group delay), `DataHelper.Impulse.cs`
+  (impulse + autocorrelation) and `DataHelper.Resampling.cs`. Verified
+  byte-identical: the sorted non-blank member lines of the union equal the
+  original exactly, and the 287 dsp tests pass untouched.
 - [x] **Undocumented magic numbers in harmonic analysis** (`DataHelper`) —
   done. Named and documented: `HarmonicWindowUpperGuard`/`HarmonicWindowLowerReach`
   (the `h+0.03`/`h−0.5` isolation window), `ThdWindowUpperHarmonic`/

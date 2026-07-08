@@ -244,7 +244,11 @@ namespace Resonalyze.Options
                 NormalizeCalibrationPath(microphoneCalibration90DegreesPath);
 
             int sampleRate = GetSelectedSampleRate();
-            int bits = expSweepMeasurement.Bits;
+            // Read the bit depth from the control, the single UI source of truth,
+            // matching GetSupportedSampleRates. Equal to expSweepMeasurement.Bits
+            // while the control is read-only, so this is a no-op today; it stops
+            // silently ignoring the control the day it becomes editable.
+            int bits = (int)numericUpDownBits.Value;
             PlaybackChannel playbackChannel = (PlaybackChannel)comboBoxChannel.SelectedIndex;
             double requestedDuration = (double)numericUpDownRequestedDuration.Value * 0.001;
             int octaves = (int)numericUpDownOctaves.Value;

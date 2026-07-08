@@ -88,18 +88,24 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   which instantiates `AsioOut` (a synchronous COM driver open that can take
   seconds). Fetch the driver info and supported rates in one open, ideally off
   the UI thread.
-- [ ] **`SetOptions` reads bits from the measurement, not the control.**
-  Three sources of truth for the sample size in `MeasurementOptions`; harmless
-  while the control is read-only, a silent no-op the day it is enabled.
+- [x] **`SetOptions` reads bits from the measurement, not the control** — done.
+  `MeasurementOptions` now reads the bit depth from `numericUpDownBits` (the
+  single UI source of truth, matching `GetSupportedSampleRates`). Behavior is
+  unchanged while the control is read-only; it stops silently ignoring the
+  control the day it becomes editable.
 - [ ] **`TukeyWindowControlHelper` clamps are irreversible.** Shrinking the
   window length clamps the fade values (semantically required, and visible in
   the controls), but growing it back does not restore them; a shadow-value
   restore like the loopback-channel one would make the clamp reversible.
+  *Deferred to a Windows session:* it is a deliberate behavior change with
+  control-value re-entrancy across three panels (FR/Waterfall/BurstDecay) that
+  needs a live render check, not a Linux compile.
 - [ ] **`LiveSpectrumOpt` shadow fields update only on
   `SelectionChangeCommitted`.** Re-verified: the R reset button raises
   `SelectionChangeCommitted` too, so no current path loses a change — this is
-  fragility for future programmatic writes, not an active bug. Also three
-  identical floor-index loops worth one helper.
+  fragility for future programmatic writes, not an active bug. (The three
+  identical floor-index loops are now one shared `FloorIndex` helper; the
+  shadow-on-committed behavior is left as-is by design.)
 
 ## UI chrome
 

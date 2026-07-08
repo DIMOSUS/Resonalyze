@@ -46,10 +46,12 @@ public sealed class CompareSelectionTests
         var selection = new CompareSelection();
         Complex[] sweepIr = [new(1, 0), new(0.5, 0)];
         Complex[] transferIr = [new(0.25, 0)];
+        double[] coherence = [1.0, 0.5, 0.9];
         selection.Set("a.json", null, CreateSnapshot(
             sweepIr,
             transferIr,
-            transferPeakIndex: 7));
+            transferPeakIndex: 7,
+            coherence));
 
         CompareAnalysisSource? source = selection.GetAnalysisSource();
 
@@ -60,6 +62,7 @@ public sealed class CompareSelectionTests
         Assert.Equal(3, source.Value.SweepDeconvolutionPeakIndex);
         Assert.Same(transferIr, source.Value.TransferImpulseResponse);
         Assert.Equal(7, source.Value.TransferPeakIndex);
+        Assert.Same(coherence, source.Value.TransferCoherence);
     }
 
     [Fact]
@@ -88,7 +91,8 @@ public sealed class CompareSelectionTests
     private static MeasurementHistorySnapshot CreateSnapshot(
         Complex[]? sweepIr = null,
         Complex[]? transferIr = null,
-        int? transferPeakIndex = null) =>
+        int? transferPeakIndex = null,
+        double[]? coherence = null) =>
         new()
         {
             SampleRate = 48_000,
@@ -96,6 +100,7 @@ public sealed class CompareSelectionTests
             SweepDeconvolutionPeakIndex = 3,
             TransferImpulseResponse = transferIr,
             TransferPeakIndex = transferPeakIndex,
+            TransferCoherence = coherence,
             MeterSnapshot = InputLevelMeterSnapshot.Empty,
             Preview = new MeasurementHistoryPreview()
         };

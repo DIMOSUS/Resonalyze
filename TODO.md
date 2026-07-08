@@ -16,9 +16,6 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 - [ ] **`CrossoverAutoSetup.Optimizer.Score()` recomputes every channel** on
   each junction/gain trial (~300–1500 calls per junction). Filter magnitudes
   are cached, but the amplitudes of untouched channels are not.
-- [ ] **Naive neighbor-to-neighbor phase unwrap** (`DataHelper`): one noisy
-  bin shifts the whole tail by ±2π; the 100 Hz threshold softens but doesn't
-  cure it. Consider magnitude/coherence-weighted unwrapping.
 - [ ] **Duplication:** the coherence formula lives twice
   (`SpectrumAnalysis.ComputeCoherence` vs inline in
   `TransferFunction.ComputeAveragedRelativeIr`); `DspChannelChain.Response`

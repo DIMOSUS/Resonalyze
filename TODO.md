@@ -70,8 +70,23 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   `BackupNoticePath`, and the Virtual DSP panel shows a one-time notice telling
   the user their unreadable session was moved aside and a `.backup` exists to
   recover from.
-- [ ] **Split `VirtualCrossoverPanel` (~2.6k lines)** into partial
-  classes/controllers.
+- [~] **`VirtualCrossoverPanel` (~2.6k lines) — correctness kernels extracted;
+  a cosmetic partial-split was deliberately rejected.** A move-only partial
+  split would not reduce coupling — it just spreads the God-object across files.
+  Instead the genuinely non-UI, correctness-critical logic was pulled out into
+  tested units: `VirtualCrossoverSourceRules` (the source-compatibility decision,
+  previously hand-rolled as two inverse predicates that could drift),
+  `VirtualCrossoverAnalysis.SumLossCurve` (the one per-point sum-loss definition
+  now shared by the drawn curve, `AverageSumLossDb` and `MinimumSumLossDb` — the
+  drawn "Sum loss" curve had reimplemented the tested formula on an untested
+  path), `PreparedDspResponse.GroupDelayMs` (a pure τ_g routine that lived in the
+  panel), and the band arithmetic (`GetCrossoverWindow`/`BandCenterHz`/
+  `OverlapBand`) into `VirtualCrossoverJunctions`. All are unit-tested (dsp on
+  Linux, junction/source rules on Windows CI). The panel remains a large
+  view-controller by nature (~60-70% is irreducible WinForms/OxyPlot wiring);
+  deeper extractions (decouple `ChannelRuntime` from its control, then the
+  process/alignment cores) are deferred to a Windows session where the
+  interactive paths can be exercised.
 - [ ] **`DelayTableText` parses rendered fixed-width columns** (18/37 chars)
   for copy-values instead of holding a value model (format+parse are at least
   co-located and tested now). *Deferred:* the current form is clean and tested;

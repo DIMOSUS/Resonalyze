@@ -100,6 +100,30 @@ public sealed class PreparedDspResponse
         return Response(z1, delay);
     }
 
+    /// <summary>
+    /// Filter group delay τ_g = -dφ/dω at <paramref name="frequencyHz"/>, in
+    /// milliseconds, read from the complex response by a central difference
+    /// (-Im(H'/H) / 2π). Working from the complex response avoids phase
+    /// unwrapping, which a coarse log grid could alias at a steep crossover.
+    /// </summary>
+    public double GroupDelayMs(double frequencyHz)
+    {
+        double delta = Math.Max(frequencyHz * 1e-3, 1e-6);
+        double lowFrequency = Math.Max(frequencyHz - delta, 1e-3);
+        double highFrequency = frequencyHz + delta;
+        Complex low = Response(lowFrequency);
+        Complex high = Response(highFrequency);
+        Complex center = Response(frequencyHz);
+        if (center.Magnitude < 1e-20)
+        {
+            return 0;
+        }
+
+        Complex derivative = (high - low) / (highFrequency - lowFrequency);
+        double phaseSlope = (derivative / center).Imaginary; // dφ/df
+        return -phaseSlope / (2.0 * Math.PI) * 1000.0;
+    }
+
     public void ApplyToSpectrum(Complex[] spectrum)
     {
         if (sections.Length == 0)

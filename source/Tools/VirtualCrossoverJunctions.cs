@@ -50,4 +50,50 @@ internal static class VirtualCrossoverJunctions
         return Math.Sqrt(
             Math.Sqrt(lowerLow * lowerHigh) * Math.Sqrt(upperLow * upperHigh));
     }
+
+    /// <summary>
+    /// Geometric-mean centre of a channel's playing band, used to order the
+    /// channels along the spectrum.
+    /// </summary>
+    public static double BandCenterHz(VirtualCrossoverChannelSettings settings)
+    {
+        (double lowHz, double highHz) = GetChannelBand(settings);
+        return Math.Sqrt(lowHz * highHz);
+    }
+
+    /// <summary>
+    /// An octave to each side of a handover frequency, clamped to the audio band:
+    /// the overlap region where two adjacent drivers genuinely sum.
+    /// </summary>
+    public static (double LowHz, double HighHz) OverlapBand(double centerHz) =>
+        (Math.Max(20, centerHz / 2), Math.Min(20_000, centerHz * 2));
+
+    /// <summary>
+    /// The frequency window worth plotting for a set of channels: an octave below
+    /// the lowest crossover corner to an octave above the highest, clamped to the
+    /// audio band, or a sensible default when no channel is filtered.
+    /// </summary>
+    public static (double MinHz, double MaxHz) GetCrossoverWindow(
+        IEnumerable<VirtualCrossoverChannelSettings> channels)
+    {
+        var corners = new List<double>();
+        foreach (VirtualCrossoverChannelSettings settings in channels)
+        {
+            if (settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass)
+            {
+                corners.Add(settings.LowPassEdge.FrequencyHz);
+            }
+            if (settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass)
+            {
+                corners.Add(settings.HighPassEdge.FrequencyHz);
+            }
+        }
+
+        if (corners.Count == 0)
+        {
+            return (100, 10_000);
+        }
+
+        return (Math.Max(20, corners.Min() / 2), Math.Min(20_000, corners.Max() * 2));
+    }
 }

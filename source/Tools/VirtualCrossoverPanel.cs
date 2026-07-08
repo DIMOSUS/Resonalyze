@@ -196,13 +196,34 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         try
         {
-            await ApplyProjectAsync(VirtualCrossoverProjectFile.LoadOrDefault());
+            VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadOrDefault();
+            await ApplyProjectAsync(loaded);
+            NotifyIfProjectBackedUp(loaded.BackupNoticePath);
         }
         catch (Exception exception)
         {
             System.Diagnostics.Debug.WriteLine(
                 $"Virtual DSP project load failed: {exception}");
         }
+    }
+
+    // Tell the user, once, when their unreadable session file was moved aside so
+    // they know a .backup exists to recover from (previously a silent rename).
+    private void NotifyIfProjectBackedUp(string? backupPath)
+    {
+        if (backupPath == null || IsDisposed)
+        {
+            return;
+        }
+
+        MessageBox.Show(
+            this,
+            "The saved Virtual DSP session could not be opened, so it was moved " +
+            $"aside to:\r\n\r\n{backupPath}\r\n\r\nA fresh session was started; your " +
+            "previous file is preserved there for recovery.",
+            "Virtual DSP",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
     }
 
     // Binds a project (the internal autosave or an imported session) to the UI:

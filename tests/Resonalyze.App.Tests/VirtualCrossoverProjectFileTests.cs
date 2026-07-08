@@ -132,6 +132,9 @@ public sealed class VirtualCrossoverProjectFileTests
             // fresh default instead of overwriting it on the next save.
             Assert.False(File.Exists(path));
             Assert.Equal(futureText, File.ReadAllText(path + ".backup"));
+
+            // The path is surfaced so the tool can tell the user a backup exists.
+            Assert.Equal(path + ".backup", loaded.BackupNoticePath);
         }
         finally
         {
@@ -177,6 +180,7 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.Equal(-4, loaded.Channels[0].GainDb);
             Assert.True(File.Exists(path));
             Assert.False(File.Exists(path + ".backup"));
+            Assert.Null(loaded.BackupNoticePath);
         }
         finally
         {

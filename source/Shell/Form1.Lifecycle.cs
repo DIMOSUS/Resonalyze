@@ -51,7 +51,7 @@ public partial class Form1
             startupAudioWarmup.Cancel();
             FlushMeasurementSettings();
             overlayCollection.FlushPendingSaves();
-            PersistCurrentSessionState();
+            sessionTracker.PersistCurrentSessionState();
             return;
         }
 
@@ -67,7 +67,7 @@ public partial class Form1
         Enabled = false;
         FlushMeasurementSettings();
         overlayCollection.FlushPendingSaves();
-        PersistCurrentSessionState();
+        sessionTracker.PersistCurrentSessionState();
         startupAudioWarmup.Cancel();
         await Task.WhenAll(
             expSweepMeasurement.AbortAsync(),

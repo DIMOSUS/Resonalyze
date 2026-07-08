@@ -58,8 +58,11 @@ public partial class Form1
         measurementSettings.CaptureFrom(
             expSweepMeasurement,
             frequencyResponseOptions,
+            frequencyResponseVisibility,
             phaseResponseOptions,
+            phaseResponseVisibility,
             groupDelayOptions,
+            groupDelayVisibility,
             impulseResponseOptions,
             waterfallGenOptions,
             burstDecayGenOptions,

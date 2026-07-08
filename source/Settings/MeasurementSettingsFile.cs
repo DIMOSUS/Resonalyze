@@ -75,8 +75,11 @@ internal sealed class MeasurementSettingsFile
     public void ApplyTo(
         ExpSweepMeasurement measurement,
         FrequencyResponseOptions frequencyResponse,
+        CurveVisibilityOptions frequencyResponseVisibility,
         FrequencyResponseOptions phaseResponse,
+        CurveVisibilityOptions phaseResponseVisibility,
         FrequencyResponseOptions groupDelay,
+        CurveVisibilityOptions groupDelayVisibility,
         ImpulseResponseOptions impulseResponse,
         WaterfallGenerateOptions waterfall,
         WaterfallGenerateOptions burstDecay,
@@ -84,9 +87,9 @@ internal sealed class MeasurementSettingsFile
         TimeAlignmentOptions timeAlignment)
     {
         Measurement.ApplyTo(measurement);
-        FrequencyResponse.ApplyTo(frequencyResponse);
-        PhaseResponse.ApplyTo(phaseResponse);
-        GroupDelay.ApplyTo(groupDelay);
+        FrequencyResponse.ApplyTo(frequencyResponse, frequencyResponseVisibility);
+        PhaseResponse.ApplyTo(phaseResponse, phaseResponseVisibility);
+        GroupDelay.ApplyTo(groupDelay, groupDelayVisibility);
         ImpulseResponse.ApplyTo(impulseResponse);
         Waterfall.ApplyTo(waterfall, WaterfallMode.Fourier);
         BurstDecay.ApplyTo(burstDecay, WaterfallMode.BurstDecay);
@@ -97,8 +100,11 @@ internal sealed class MeasurementSettingsFile
     public void CaptureFrom(
         ExpSweepMeasurement measurement,
         FrequencyResponseOptions frequencyResponse,
+        CurveVisibilityOptions frequencyResponseVisibility,
         FrequencyResponseOptions phaseResponse,
+        CurveVisibilityOptions phaseResponseVisibility,
         FrequencyResponseOptions groupDelay,
+        CurveVisibilityOptions groupDelayVisibility,
         ImpulseResponseOptions impulseResponse,
         WaterfallGenerateOptions waterfall,
         WaterfallGenerateOptions burstDecay,
@@ -107,9 +113,9 @@ internal sealed class MeasurementSettingsFile
     {
         SchemaVersion = CurrentSchemaVersion;
         Measurement = SweepMeasurementSettings.Capture(measurement);
-        FrequencyResponse = FrequencyResponseSettings.Capture(frequencyResponse);
-        PhaseResponse = FrequencyResponseSettings.Capture(phaseResponse);
-        GroupDelay = FrequencyResponseSettings.Capture(groupDelay);
+        FrequencyResponse = FrequencyResponseSettings.Capture(frequencyResponse, frequencyResponseVisibility);
+        PhaseResponse = FrequencyResponseSettings.Capture(phaseResponse, phaseResponseVisibility);
+        GroupDelay = FrequencyResponseSettings.Capture(groupDelay, groupDelayVisibility);
         ImpulseResponse = ImpulseResponseSettings.Capture(impulseResponse);
         Waterfall = WaterfallSettings.Capture(waterfall);
         BurstDecay = WaterfallSettings.Capture(burstDecay);
@@ -245,7 +251,8 @@ internal sealed class MeasurementSettingsFile
         public double GroupDelayRightMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayRightMs;
 
         public static FrequencyResponseSettings Capture(
-            FrequencyResponseOptions options) =>
+            FrequencyResponseOptions options,
+            CurveVisibilityOptions visibility) =>
             new()
             {
                 Window = options.Window,
@@ -256,16 +263,16 @@ internal sealed class MeasurementSettingsFile
                 Unwrap = options.Unwrap,
                 UseCalibration = options.UseCalibration,
                 CalibrationMode = options.CalibrationMode,
-                ShowCoherence = options.ShowCoherence,
-                ShowMeasuredPhase = options.ShowMeasuredPhase,
-                ShowMinimumPhase = options.ShowMinimumPhase,
-                ShowExcessPhase = options.ShowExcessPhase,
-                ShowPrimary = options.ShowPrimary,
-                ShowHd2 = options.ShowHd2,
-                ShowHd3 = options.ShowHd3,
-                ShowHd4 = options.ShowHd4,
-                ShowThdPlusNoise = options.ShowThdPlusNoise,
-                ShowGroupDelay = options.ShowGroupDelay,
+                ShowCoherence = visibility.ShowCoherence,
+                ShowMeasuredPhase = visibility.ShowMeasuredPhase,
+                ShowMinimumPhase = visibility.ShowMinimumPhase,
+                ShowExcessPhase = visibility.ShowExcessPhase,
+                ShowPrimary = visibility.ShowPrimary,
+                ShowHd2 = visibility.ShowHd2,
+                ShowHd3 = visibility.ShowHd3,
+                ShowHd4 = visibility.ShowHd4,
+                ShowThdPlusNoise = visibility.ShowThdPlusNoise,
+                ShowGroupDelay = visibility.ShowGroupDelay,
                 PhaseGateOffsetMs = options.PhaseGateOffsetMs,
                 PhaseLeftMs = options.PhaseLeftMs,
                 PhasePlateauMs = options.PhasePlateauMs,
@@ -277,7 +284,7 @@ internal sealed class MeasurementSettingsFile
                 GroupDelayRightMs = options.GroupDelayRightMs
             };
 
-        public void ApplyTo(FrequencyResponseOptions options)
+        public void ApplyTo(FrequencyResponseOptions options, CurveVisibilityOptions visibility)
         {
             // Lower bound matches the UI (numericWindow.Minimum = 4); clamping to a
             // higher floor would corrupt small windows on a settings/history roundtrip.
@@ -290,16 +297,16 @@ internal sealed class MeasurementSettingsFile
             options.Offset = Clamp(Offset, -32768, 32768);
             options.Unwrap = Unwrap;
             options.CalibrationMode = NormalizeCalibrationMode(CalibrationMode, UseCalibration);
-            options.ShowCoherence = ShowCoherence;
-            options.ShowMeasuredPhase = ShowMeasuredPhase;
-            options.ShowMinimumPhase = ShowMinimumPhase;
-            options.ShowExcessPhase = ShowExcessPhase;
-            options.ShowPrimary = ShowPrimary;
-            options.ShowHd2 = ShowHd2;
-            options.ShowHd3 = ShowHd3;
-            options.ShowHd4 = ShowHd4;
-            options.ShowThdPlusNoise = ShowThdPlusNoise;
-            options.ShowGroupDelay = ShowGroupDelay;
+            visibility.ShowCoherence = ShowCoherence;
+            visibility.ShowMeasuredPhase = ShowMeasuredPhase;
+            visibility.ShowMinimumPhase = ShowMinimumPhase;
+            visibility.ShowExcessPhase = ShowExcessPhase;
+            visibility.ShowPrimary = ShowPrimary;
+            visibility.ShowHd2 = ShowHd2;
+            visibility.ShowHd3 = ShowHd3;
+            visibility.ShowHd4 = ShowHd4;
+            visibility.ShowThdPlusNoise = ShowThdPlusNoise;
+            visibility.ShowGroupDelay = ShowGroupDelay;
             options.PhaseGateOffsetMs = ClampMilliseconds(PhaseGateOffsetMs, 0.0, 2000.0);
             options.PhaseLeftMs = ClampMilliseconds(PhaseLeftMs, 0.0, 1000.0);
             options.PhasePlateauMs = ClampMilliseconds(PhasePlateauMs, 0.0, 1000.0);

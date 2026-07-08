@@ -25,6 +25,7 @@ namespace Resonalyze.Options
         public void Init(
             ExpSweepMeasurement expSweepMeasurement,
             FrequencyResponseOptions opt,
+            CurveVisibilityOptions visibility,
             Func<CompareAnalysisSource?>? getCompare = null)
         {
             AttachMeasurement(expSweepMeasurement);
@@ -39,16 +40,16 @@ namespace Resonalyze.Options
                     SmoothingPresetOptions.Normalize(opt.SmoothingInverseOctaves);
                 numericOffset.Value = ClampToControl(numericOffset, opt.PhaseDetrendMs);
                 checkBoxUnwrap.Checked = opt.Unwrap;
-                checkBoxShowMeasured.Checked = opt.ShowMeasuredPhase;
-                checkBoxShowMinimum.Checked = opt.ShowMinimumPhase;
-                checkBoxShowExcess.Checked = opt.ShowExcessPhase;
-                checkBoxShowCoherence.Checked = opt.ShowCoherence;
+                checkBoxShowMeasured.Checked = visibility.ShowMeasuredPhase;
+                checkBoxShowMinimum.Checked = visibility.ShowMinimumPhase;
+                checkBoxShowExcess.Checked = visibility.ShowExcessPhase;
+                checkBoxShowCoherence.Checked = visibility.ShowCoherence;
             });
             UpdateMinFrequencyLabel();
             UpdateIrPreview();
         }
 
-        public void SetOptions(FrequencyResponseOptions opt)
+        public void SetOptions(FrequencyResponseOptions opt, CurveVisibilityOptions visibility)
         {
             opt.PhaseGateOffsetMs = (double)numericGateOffset.Value;
             opt.PhasePlateauMs = (double)numericWindow.Value;
@@ -60,10 +61,10 @@ namespace Resonalyze.Options
                     : SmoothingPresetOptions.SupportedInverseOctaves[0];
             opt.PhaseDetrendMs = (double)numericOffset.Value;
             opt.Unwrap = checkBoxUnwrap.Checked;
-            opt.ShowMeasuredPhase = checkBoxShowMeasured.Checked;
-            opt.ShowMinimumPhase = checkBoxShowMinimum.Checked;
-            opt.ShowExcessPhase = checkBoxShowExcess.Checked;
-            opt.ShowCoherence = checkBoxShowCoherence.Checked;
+            visibility.ShowMeasuredPhase = checkBoxShowMeasured.Checked;
+            visibility.ShowMinimumPhase = checkBoxShowMinimum.Checked;
+            visibility.ShowExcessPhase = checkBoxShowExcess.Checked;
+            visibility.ShowCoherence = checkBoxShowCoherence.Checked;
             UpdateIrPreview();
         }
 

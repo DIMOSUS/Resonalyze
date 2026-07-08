@@ -28,6 +28,9 @@ internal sealed class PlotModelFactory
     private readonly FrequencyResponseOptions frequencyResponseOptions;
     private readonly FrequencyResponseOptions phaseResponseOptions;
     private readonly FrequencyResponseOptions groupDelayOptions;
+    private readonly CurveVisibilityOptions frequencyResponseVisibility;
+    private readonly CurveVisibilityOptions phaseResponseVisibility;
+    private readonly CurveVisibilityOptions groupDelayVisibility;
     private readonly ImpulseResponseOptions impulseResponseOptions;
     private readonly LiveSpectrumOptions liveSpectrumOptions;
     private readonly WaterfallGenerateOptions waterfallGenOptions;
@@ -41,6 +44,9 @@ internal sealed class PlotModelFactory
         FrequencyResponseOptions frequencyResponseOptions,
         FrequencyResponseOptions phaseResponseOptions,
         FrequencyResponseOptions groupDelayOptions,
+        CurveVisibilityOptions frequencyResponseVisibility,
+        CurveVisibilityOptions phaseResponseVisibility,
+        CurveVisibilityOptions groupDelayVisibility,
         ImpulseResponseOptions impulseResponseOptions,
         LiveSpectrumOptions liveSpectrumOptions,
         WaterfallGenerateOptions waterfallGenOptions,
@@ -53,6 +59,9 @@ internal sealed class PlotModelFactory
         this.frequencyResponseOptions = frequencyResponseOptions;
         this.phaseResponseOptions = phaseResponseOptions;
         this.groupDelayOptions = groupDelayOptions;
+        this.frequencyResponseVisibility = frequencyResponseVisibility;
+        this.phaseResponseVisibility = phaseResponseVisibility;
+        this.groupDelayVisibility = groupDelayVisibility;
         this.impulseResponseOptions = impulseResponseOptions;
         this.liveSpectrumOptions = liveSpectrumOptions;
         this.waterfallGenOptions = waterfallGenOptions;
@@ -92,7 +101,8 @@ internal sealed class PlotModelFactory
         {
             IReadOnlyList<AnalysisCurve> curves = measurementContext.CreateFrequencyResponseCurves(
                 frequencyResponseOptions,
-                GetCalibration(frequencyResponseOptions));
+                GetCalibration(frequencyResponseOptions),
+                frequencyResponseVisibility.ToSpectrumCurves());
             foreach (AnalysisCurve curve in curves)
             {
                 AddLineSeries(
@@ -111,8 +121,7 @@ internal sealed class PlotModelFactory
                     compare.Measurement,
                     frequencyResponseOptions,
                     GetCalibration(frequencyResponseOptions),
-                    includePrimary: true,
-                    includeHarmonics: false);
+                    frequencyResponseVisibility.ToSpectrumCurves() & SpectrumCurves.Primary);
                 foreach (AnalysisCurve curve in compareCurves)
                 {
                     AddCompareLineSeries(
@@ -126,7 +135,8 @@ internal sealed class PlotModelFactory
 
             AddMeasurementCoherenceIfAvailable(
                 model,
-                frequencyResponseOptions);
+                frequencyResponseOptions,
+                frequencyResponseVisibility.ShowCoherence);
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
                  !measurementContext.HasTransferImpulseResponse)
@@ -150,7 +160,7 @@ internal sealed class PlotModelFactory
         {
             const string phaseTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.0}\u00B0";
 
-            if (phaseResponseOptions.ShowMeasuredPhase)
+            if (phaseResponseVisibility.ShowMeasuredPhase)
             {
                 AnalysisCurve curve = DataHelper.GetPhase(
                     measurementContext.CreatePrimaryMeasurement(),
@@ -174,7 +184,7 @@ internal sealed class PlotModelFactory
                     phaseResponseOptions.Unwrap);
             }
 
-            if (phaseResponseOptions.ShowMinimumPhase)
+            if (phaseResponseVisibility.ShowMinimumPhase)
             {
                 AnalysisCurve minimumPhaseCurve = DataHelper.GetMinimumPhase(
                     measurementContext.CreatePrimaryMeasurement(),
@@ -194,7 +204,7 @@ internal sealed class PlotModelFactory
                     phaseUnwrapped: true);
             }
 
-            if (phaseResponseOptions.ShowExcessPhase)
+            if (phaseResponseVisibility.ShowExcessPhase)
             {
                 AnalysisCurve excessPhaseCurve = DataHelper.GetExcessPhase(
                     measurementContext.CreatePrimaryMeasurement(),
@@ -221,7 +231,7 @@ internal sealed class PlotModelFactory
             // smoothing so the two responses can be read on the same terms.
             if (TryCreateCompareMeasurement() is { } compare)
             {
-                if (phaseResponseOptions.ShowMeasuredPhase)
+                if (phaseResponseVisibility.ShowMeasuredPhase)
                 {
                     AnalysisCurve compareCurve = DataHelper.GetPhase(
                         compare.Measurement,
@@ -242,7 +252,7 @@ internal sealed class PlotModelFactory
                         phaseResponseOptions.Unwrap);
                 }
 
-                if (phaseResponseOptions.ShowMinimumPhase)
+                if (phaseResponseVisibility.ShowMinimumPhase)
                 {
                     AnalysisCurve compareCurve = DataHelper.GetMinimumPhase(
                         compare.Measurement,
@@ -260,7 +270,7 @@ internal sealed class PlotModelFactory
                         phaseUnwrapped: true);
                 }
 
-                if (phaseResponseOptions.ShowExcessPhase)
+                if (phaseResponseVisibility.ShowExcessPhase)
                 {
                     AnalysisCurve compareCurve = DataHelper.GetExcessPhase(
                         compare.Measurement,
@@ -283,13 +293,14 @@ internal sealed class PlotModelFactory
 
             AddMeasurementCoherenceIfAvailable(
                 model,
-                phaseResponseOptions);
+                phaseResponseOptions,
+                phaseResponseVisibility.ShowCoherence);
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
                  !measurementContext.HasTransferImpulseResponse &&
-                 (phaseResponseOptions.ShowMeasuredPhase ||
-                  phaseResponseOptions.ShowMinimumPhase ||
-                  phaseResponseOptions.ShowExcessPhase))
+                 (phaseResponseVisibility.ShowMeasuredPhase ||
+                  phaseResponseVisibility.ShowMinimumPhase ||
+                  phaseResponseVisibility.ShowExcessPhase))
         {
             AddRequiresTransferIrAnnotation(model);
         }
@@ -349,10 +360,10 @@ internal sealed class PlotModelFactory
         // Group delay is only meaningful with a transfer IR (loopback timing).
         if (measurementContext.CanIncludeCurves(includeCurves) &&
             measurementContext.HasTransferImpulseResponse &&
-            (groupDelayOptions.ShowGroupDelay || groupDelayOptions.ShowCoherence))
+            (groupDelayVisibility.ShowGroupDelay || groupDelayVisibility.ShowCoherence))
         {
             const string groupDelayTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.000} ms";
-            if (groupDelayOptions.ShowGroupDelay)
+            if (groupDelayVisibility.ShowGroupDelay)
             {
                 // The gate is positioned by its Gate offset (left-shoulder-end) within the
                 // transfer IR; the group delay reads absolute, referenced to the IR start.
@@ -395,11 +406,12 @@ internal sealed class PlotModelFactory
 
             AddMeasurementCoherenceIfAvailable(
                 model,
-                groupDelayOptions);
+                groupDelayOptions,
+                groupDelayVisibility.ShowCoherence);
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
                  !measurementContext.HasTransferImpulseResponse &&
-                 groupDelayOptions.ShowGroupDelay)
+                 groupDelayVisibility.ShowGroupDelay)
         {
             AddRequiresTransferIrAnnotation(model);
         }
@@ -944,9 +956,10 @@ internal sealed class PlotModelFactory
 
     private void AddMeasurementCoherenceIfAvailable(
         PlotModel model,
-        FrequencyResponseOptions options)
+        FrequencyResponseOptions options,
+        bool showCoherence)
     {
-        if (!options.ShowCoherence ||
+        if (!showCoherence ||
             expSweepMeasurement.TransferCoherence is not { Length: > 1 } coherence ||
             expSweepMeasurement.SampleRate <= 0)
         {

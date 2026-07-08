@@ -67,23 +67,24 @@ internal sealed class MeasurementPlotContext
     // only representation that carries the harmonic time offsets.
     public IReadOnlyList<AnalysisCurve> CreateFrequencyResponseCurves(
         FrequencyResponseOptions options,
-        CalibrationFile? calibration)
+        CalibrationFile? calibration,
+        SpectrumCurves curves)
     {
-        var curves = new List<AnalysisCurve>();
-        curves.AddRange(DataHelper.GetSpectrum(
+        // The primary comes from a cleaner primary measurement, the harmonics from
+        // the sweep deconvolution; mask the requested set per computational scope.
+        var result = new List<AnalysisCurve>();
+        result.AddRange(DataHelper.GetSpectrum(
             CreatePrimaryMeasurement(),
             options,
             calibration,
-            includePrimary: true,
-            includeHarmonics: false));
+            curves & SpectrumCurves.Primary));
 
-        curves.AddRange(DataHelper.GetSpectrum(
+        result.AddRange(DataHelper.GetSpectrum(
             CreateSweepDeconvolutionMeasurement(),
             options,
             calibration,
-            includePrimary: false,
-            includeHarmonics: true));
+            curves & SpectrumCurves.Harmonics));
 
-        return curves;
+        return result;
     }
 }

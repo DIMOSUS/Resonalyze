@@ -386,6 +386,7 @@ internal sealed class HueSlider : Control
 {
     private double hue;
     private bool dragging;
+    private Bitmap? rainbowCache;
 
     public HueSlider()
     {
@@ -410,26 +411,55 @@ internal sealed class HueSlider : Control
     protected override void OnPaint(PaintEventArgs args)
     {
         base.OnPaint(args);
-        int height = Math.Max(1, ClientSize.Height - 1);
-        // One reusable pen; this paints per mouse-move while dragging the hue.
-        using (var pen = new Pen(Color.Black))
+        int width = Math.Max(1, ClientSize.Width);
+        int height = Math.Max(1, ClientSize.Height);
+
+        // The rainbow depends only on size, but was redrawn line-by-line on every
+        // paint — including every mouse-move while dragging. Cache it and rebuild
+        // only when the control resizes.
+        if (rainbowCache == null || rainbowCache.Width != width || rainbowCache.Height != height)
         {
-            for (int y = 0; y < ClientSize.Height; y++)
-            {
-                double rowHue = y / (double)height * 360.0;
-                pen.Color = HsvColor.ToColor(rowHue, 1, 1);
-                args.Graphics.DrawLine(pen, 0, y, ClientSize.Width, y);
-            }
+            rainbowCache?.Dispose();
+            rainbowCache = BuildRainbow(width, height);
         }
 
-        float markerY = (float)(hue / 360.0 * height);
+        args.Graphics.DrawImageUnscaled(rainbowCache, 0, 0);
+
+        int span = Math.Max(1, height - 1);
+        float markerY = (float)(hue / 360.0 * span);
         using var markerPen = new Pen(Color.White, 2);
         args.Graphics.DrawRectangle(
             markerPen,
             1,
-            Math.Clamp(markerY - 2, 0, ClientSize.Height - 4),
-            ClientSize.Width - 3,
+            Math.Clamp(markerY - 2, 0, height - 4),
+            width - 3,
             4);
+    }
+
+    private static Bitmap BuildRainbow(int width, int height)
+    {
+        var bitmap = new Bitmap(width, height);
+        int span = Math.Max(1, height - 1);
+        using var graphics = Graphics.FromImage(bitmap);
+        using var pen = new Pen(Color.Black);
+        for (int y = 0; y < height; y++)
+        {
+            double rowHue = y / (double)span * 360.0;
+            pen.Color = HsvColor.ToColor(rowHue, 1, 1);
+            graphics.DrawLine(pen, 0, y, width, y);
+        }
+
+        return bitmap;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            rainbowCache?.Dispose();
+        }
+
+        base.Dispose(disposing);
     }
 
     protected override void OnMouseDown(MouseEventArgs args)

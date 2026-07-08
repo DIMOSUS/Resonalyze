@@ -65,14 +65,18 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   (`VirtualCrossoverAutoSetupDialog`): extra channel rows use hardcoded pixel
   offsets (`RowTop = 42`, `RowStep = 28`), so rows 4–8 can overlap scaled
   designer controls. Verify on Windows and switch to layout-panel positioning.
-- [ ] **The project-file `.backup` rename is silent.** An unusable autosave
-  is preserved next to the project file now, but nothing tells the user it
-  happened or that a `.backup` is there to recover from.
+- [x] **The project-file `.backup` rename is silent** — done.
+  `LoadOrDefault` now surfaces the created backup path through
+  `BackupNoticePath`, and the Virtual DSP panel shows a one-time notice telling
+  the user their unreadable session was moved aside and a `.backup` exists to
+  recover from.
 - [ ] **Split `VirtualCrossoverPanel` (~2.6k lines)** into partial
   classes/controllers.
 - [ ] **`DelayTableText` parses rendered fixed-width columns** (18/37 chars)
   for copy-values instead of holding a value model (format+parse are at least
-  co-located and tested now).
+  co-located and tested now). *Deferred:* the current form is clean and tested;
+  a value model would push the change into the panel's click-position→cell
+  mapping, which is UI interaction best verified on Windows, for low payoff.
 
 ## Measurement orchestrators
 
@@ -123,10 +127,10 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   HTTRANSPARENT fix covers the title-bar panel itself; points over the tab
   buttons and window buttons (which reach y=0) still hit-test as client.
   Standard chrome resolves this per child; low value, document or fix later.
-- [ ] **`ColorPickerDialog` preview panel is not double-buffered** and the
-  hue slider repaints its full rainbow per mouse-move; caching the rainbow in
-  a bitmap (invalidated on resize) would finish what the pen-reuse fix
-  started.
+- [x] **`ColorPickerDialog` hue slider repaints its full rainbow per
+  mouse-move** — done. The rainbow (which depends only on size) is cached in a
+  bitmap, rebuilt only on resize and disposed with the slider; the preview panel
+  already sets `DoubleBuffered`.
 
 ## PDF export
 
@@ -177,10 +181,14 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 
 ## Custom controls (dark theme)
 
-- [ ] **Per-paint Pen/Brush churn.** Dark controls allocate pens/brushes in
-  every `OnPaint`; cache per-color instances.
-- [ ] **Tools menu rebuilt on every open.** Rebuilding the drop-down each time
-  is wasted work and loses per-item state; build once and update.
+- [ ] **Per-paint Pen/Brush churn** — verified low value, left as is. Most of
+  the dark-control paint brushes are genuinely state-dependent (Enabled / hover
+  / pressed / focus), so only ~2 constant-palette pens per control could be
+  cached; trading two allocations per (non-hot) repaint for app-lifetime static
+  GDI handles isn't worth it. Revisit only if the palette becomes dynamic.
+- [x] **Tools menu rebuilt on every open** — done. `ChromeTitleBar` builds the
+  Tools drop-down once (the tab actions are fixed at wire-up) and re-shows it;
+  the single menu is disposed with the control.
 
 ## Shell
 
@@ -200,7 +208,10 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   transient UI bits (compare menu strip) — inherently form-bound; further
   slicing is optional polish rather than a concurrency risk.
 - [ ] **`WireLiveApply` covers only dialog-open controls.** Controls created
-  after wiring never get live-apply behavior.
+  after wiring never get live-apply behavior. *Deferred to a Windows session:*
+  the fix hooks `ControlAdded` recursively and re-enters the same apply
+  debounce, so it needs a live check that dynamically-added rows (e.g. the
+  crossover auto-setup channels) apply exactly once.
 
 ## Update path / installer
 

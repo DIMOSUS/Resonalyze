@@ -281,6 +281,15 @@ public sealed class VirtualCrossoverProjectFile
     /// save overwrites the project path, and a downgrade or a bug must not
     /// cost the user their tuning session.
     /// </summary>
+    /// <summary>
+    /// When <see cref="LoadOrDefault"/> could not use an existing file and moved
+    /// it aside, this holds the path of the <c>.backup</c> it created so the tool
+    /// can tell the user their previous session was preserved. Null on a clean
+    /// load (or when the aside-move itself failed). Not serialized.
+    /// </summary>
+    [JsonIgnore]
+    public string? BackupNoticePath { get; private set; }
+
     public static VirtualCrossoverProjectFile LoadOrDefault(string? rootDirectory = null)
     {
         string path = GetPath(rootDirectory);
@@ -306,24 +315,30 @@ public sealed class VirtualCrossoverProjectFile
         }
         catch
         {
-            BackupUnusableFile(path);
-            return new VirtualCrossoverProjectFile();
+            return new VirtualCrossoverProjectFile
+            {
+                BackupNoticePath = BackupUnusableFile(path)
+            };
         }
     }
 
-    private static void BackupUnusableFile(string path)
+    private static string? BackupUnusableFile(string path)
     {
         try
         {
             if (File.Exists(path))
             {
-                File.Move(path, path + ".backup", overwrite: true);
+                string backupPath = path + ".backup";
+                File.Move(path, backupPath, overwrite: true);
+                return backupPath;
             }
         }
         catch
         {
             // Best effort (the file may be locked); startup must not block.
         }
+
+        return null;
     }
 
     public void Validate()

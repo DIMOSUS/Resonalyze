@@ -362,17 +362,34 @@ internal sealed class ChromeTitleBar : Panel
             return;
         }
 
-        toolsMenu?.Dispose();
-        toolsMenu = new ContextMenuStrip
+        // The tab actions are fixed at wire-up time, so the menu is identical on
+        // every open — build it once and just re-show it.
+        toolsMenu ??= BuildToolsMenu(tabActions);
+        toolsMenu.Show(toolsDropDownButton, new Point(0, toolsDropDownButton.Height));
+    }
+
+    private ContextMenuStrip BuildToolsMenu(IReadOnlyDictionary<ModeTab, Action> tabActions)
+    {
+        var menu = new ContextMenuStrip
         {
             BackColor = UiPalette.ButtonBackground,
             ForeColor = UiPalette.TitleBarTextBright,
             ShowImageMargin = false
         };
-        AddToolsMenuItem(toolsMenu, "Virtual DSP", ModeTab.ToolsVirtualCrossover, tabActions);
-        AddToolsMenuItem(toolsMenu, "EQ Wizard", ModeTab.ToolsEqWizard, tabActions);
-        AddToolsMenuItem(toolsMenu, "Signal Generator", ModeTab.ToolsSignalGenerator, tabActions);
-        toolsMenu.Show(toolsDropDownButton, new Point(0, toolsDropDownButton.Height));
+        AddToolsMenuItem(menu, "Virtual DSP", ModeTab.ToolsVirtualCrossover, tabActions);
+        AddToolsMenuItem(menu, "EQ Wizard", ModeTab.ToolsEqWizard, tabActions);
+        AddToolsMenuItem(menu, "Signal Generator", ModeTab.ToolsSignalGenerator, tabActions);
+        return menu;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            toolsMenu?.Dispose();
+        }
+
+        base.Dispose(disposing);
     }
 
     private void AddToolsMenuItem(

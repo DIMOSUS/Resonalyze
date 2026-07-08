@@ -115,6 +115,26 @@ namespace Resonalyze.Dsp
     {
         private const double MinimumAmplitude = 1e-8;
 
+        // Harmonic isolation geometry, expressed in harmonic-number space because
+        // HarmonicIROffset(h) maps a (fractional) harmonic number to the IR index
+        // where that distortion packet sits — the offset grows with h, so a larger
+        // number is an earlier sample. An HDn packet is windowed from a hair above
+        // its own harmonic (n + guard, the earliest edge) down to halfway toward
+        // the next-lower harmonic (n - half), which brackets the packet while
+        // excluding its neighbours.
+        private const double HarmonicWindowUpperGuard = 0.03;
+        private const double HarmonicWindowLowerReach = 0.5;
+
+        // THD+N integrates everything from just below the fundamental (1.5, halfway
+        // between the linear response and HD2) up past the fifth harmonic (5.5),
+        // capturing HD2..HD5 plus the noise between them in one window.
+        private const double ThdWindowLowerHarmonic = 1.5;
+        private const double ThdWindowUpperHarmonic = 5.5;
+
+        // Harmonic and THD curves are far noisier than the primary response, so
+        // they are smoothed over twice the primary's fractional-octave width.
+        private const double HarmonicSmoothingWidthFactor = 2.0;
+
         public static double AmplitudeToDecibels(double amplitude)
         {
             return 20.0 * Math.Log10(Math.Max(amplitude, MinimumAmplitude));
@@ -261,8 +281,8 @@ namespace Resonalyze.Dsp
 
                 int peak = peakIndex - (int)measurement.HarmonicIROffset(h);
 
-                int hStart = peakIndex - (int)measurement.HarmonicIROffset(h + 0.03);
-                int hEnd = peakIndex - (int)measurement.HarmonicIROffset(h - 0.5);
+                int hStart = peakIndex - (int)measurement.HarmonicIROffset(h + HarmonicWindowUpperGuard);
+                int hEnd = peakIndex - (int)measurement.HarmonicIROffset(h - HarmonicWindowLowerReach);
                 int hLength = hEnd - hStart;
 
                 int leftOffset = peak - hStart;
@@ -279,7 +299,7 @@ namespace Resonalyze.Dsp
                     1024,
                     frequencyResponseOptions.UseCalibration ? calibration : null,
                     frequencyResponseOptions.SmoothingInverseOctaves > 0
-                        ? 2.0 / frequencyResponseOptions.SmoothingInverseOctaves
+                        ? HarmonicSmoothingWidthFactor / frequencyResponseOptions.SmoothingInverseOctaves
                         : 0.0);
                 curves.Add(new AnalysisCurve(
                     $"HD{h}",
@@ -294,8 +314,8 @@ namespace Resonalyze.Dsp
 
             if (wantThd)
             {
-                int hStart = peakIndex - (int)measurement.HarmonicIROffset(5.5);
-                int hEnd = peakIndex - (int)measurement.HarmonicIROffset(1.5);
+                int hStart = peakIndex - (int)measurement.HarmonicIROffset(ThdWindowUpperHarmonic);
+                int hEnd = peakIndex - (int)measurement.HarmonicIROffset(ThdWindowLowerHarmonic);
                 int hLength = hEnd - hStart;
 
                 double leftTukeyWindow = 0.05;
@@ -310,7 +330,7 @@ namespace Resonalyze.Dsp
                     1024,
                     frequencyResponseOptions.UseCalibration ? calibration : null,
                     frequencyResponseOptions.SmoothingInverseOctaves > 0
-                        ? 2.0 / frequencyResponseOptions.SmoothingInverseOctaves
+                        ? HarmonicSmoothingWidthFactor / frequencyResponseOptions.SmoothingInverseOctaves
                         : 0.0);
                 curves.Add(new AnalysisCurve(
                     "THD+N",

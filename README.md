@@ -107,6 +107,10 @@ file is provided with every release.
   estimate to lift the signal-to-noise ratio, with a per-frequency **coherence**
   (γ²) curve in the Frequency Response, Phase, and Group Delay views and an
   optional confirm-between-runs pause for spatial averaging
+- Noise-robust **reliability-anchored phase unwrapping**: deep nulls and
+  low-coherence bands are bridged by a slope prediction instead of anchoring
+  the unwrap, so one noisy bin can no longer throw the whole phase tail off by
+  a multiple of 360°
 - Selectable microphone calibration profiles (**0°** / **90°**) applied per view,
   with lenient parsing of common `.txt` / `.cal` / `.frd` / `.csv` correction files
 - Time Alignment with sub-sample delay estimation from the transfer IR, refined
@@ -474,6 +478,15 @@ readable. **Find τ** estimates it either from the dominant arrival (peak) or fr
 the energy-weighted average group delay (slope). Entering the same τ on two
 measurements lines up their phase for a direct comparison — for example, a
 midrange and a tweeter on the same axis.
+
+Unwrapped phase uses a **reliability-anchored** algorithm instead of naive
+bin-to-bin accumulation: each bin takes the 360° branch closest to a phase
+predicted from the last trustworthy bin and the running phase slope. Bins near
+the noise floor — or with low **coherence**, when the measurement carries a γ²
+estimate from averaged runs — are still displayed but never trusted as anchors,
+so deep nulls, reflection notches, and masked bands are bridged cleanly and a
+single bad bin can no longer shift the entire remaining curve by a multiple of
+360°. On clean data the result is identical to the classic unwrap.
 
 Group Delay reads absolute delay referenced to the start of the transfer IR, so a
 peak well into the impulse response reports its true arrival time.

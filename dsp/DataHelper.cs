@@ -326,7 +326,8 @@ namespace Resonalyze.Dsp
             int offset,
             int length,
             double[] window,
-            bool unwrap)
+            bool unwrap,
+            IReadOnlyList<double>? coherence = null)
         {
             Complex[] spectrum = ExtractWindow(
                 measurement,
@@ -343,7 +344,8 @@ namespace Resonalyze.Dsp
                 extractionStart: offset,
                 referenceSamples: 0,
                 measurement.SampleRate,
-                unwrap);
+                unwrap,
+                coherence);
         }
 
         // Fixed analysis length for the gated phase / group-delay FFTs. The gate
@@ -413,24 +415,61 @@ namespace Resonalyze.Dsp
             return spectrum;
         }
 
+        // Reliability gates for the unwrapped phase: bins this far below the peak
+        // magnitude — or with squared coherence below the floor, when coherence is
+        // available — still contribute their phase to the output, but never anchor
+        // the unwrap, so one noisy or masked bin cannot shift the whole tail by 2π.
+        // The magnitude gate matches the group-delay validity gate; γ² = 0.5 is the
+        // point where less than half the measured energy is coherent with the
+        // reference and the per-bin phase variance makes branch choices unsafe.
+        private const double UnwrapMagnitudeGateDb = -30.0;
+        private const double UnwrapCoherenceFloor = 0.5;
+        // Blend factor for the running dφ/df estimate used to predict the next
+        // bin's phase; the smoothing keeps a single jittery-but-reliable bin from
+        // steering the branch choice for the bins that follow.
+        private const double UnwrapSlopeBlend = 0.25;
+
         // Measured phase (radians) referenced to an absolute sample, for bins
         // 1..n/2-1. The reference is shared across measurements (common origin), so
         // setting it equal across two captures preserves their relative phase; setting
         // it to a measurement's own arrival flattens that curve.
+        //
+        // Unwrapping is anchored to reliable bins: each bin takes the 2π branch
+        // closest to the phase predicted from the last reliable anchor and a running
+        // slope estimate. Unreliable bins (nulls, noise-floor, low coherence) get a
+        // branch too, but never become anchors, so the unwrap bridges them instead
+        // of accumulating their phase noise into the tail. With every bin reliable
+        // and a zero slope this reduces to the classic nearest-to-previous choice.
         private static List<SignalPoint> BuildMeasuredPhase(
             Complex[] spectrum,
             int extractionStart,
             double referenceSamples,
             int sampleRate,
-            bool unwrap)
+            bool unwrap,
+            IReadOnlyList<double>? coherence = null)
         {
             int n = spectrum.Length;
             double referenceShift = referenceSamples - extractionStart;
             var data = new List<SignalPoint>(n / 2);
 
             const double minFrequency = 100;
-            double phaseAccumulator = 0.0;
-            double prevWrapped = 0.0;
+
+            double maxMagnitude = 0.0;
+            if (unwrap)
+            {
+                for (int i = 1; i < n / 2; i++)
+                {
+                    maxMagnitude = Math.Max(maxMagnitude, spectrum[i].Magnitude);
+                }
+            }
+            double minReliableMagnitude =
+                maxMagnitude * Math.Pow(10.0, UnwrapMagnitudeGateDb / 20.0);
+
+            bool hasAnchor = false;
+            bool hasSlope = false;
+            double anchorFrequency = 0.0;
+            double anchorPhase = 0.0;
+            double slope = 0.0; // rad per Hz
 
             for (int i = 1; i < n / 2; i++)
             {
@@ -446,20 +485,76 @@ namespace Resonalyze.Dsp
                     continue;
                 }
 
-                if (i > 1 && f >= minFrequency)
+                bool reliable = spectrum[i].Magnitude >= minReliableMagnitude &&
+                    (coherence == null ||
+                     CoherenceAt(coherence, f, sampleRate) >= UnwrapCoherenceFloor);
+
+                if (f < minFrequency || !hasAnchor)
                 {
-                    double delta = wrapped - prevWrapped;
-                    if (delta > Math.PI)
-                        phaseAccumulator -= Math.Tau;
-                    else if (delta < -Math.PI)
-                        phaseAccumulator += Math.Tau;
+                    // Below the unwrap floor the output stays wrapped (unchanged
+                    // behavior); a running bin seeds the anchor only when it
+                    // passes the same reliability gate, so a garbage bin near the
+                    // floor cannot offset the first unwrapped branch by 2π.
+                    data.Add(new SignalPoint(f, wrapped));
+                    if (reliable)
+                    {
+                        anchorFrequency = f;
+                        anchorPhase = wrapped;
+                        hasAnchor = true;
+                    }
+                    continue;
                 }
 
-                prevWrapped = wrapped;
-                data.Add(new SignalPoint(f, wrapped + phaseAccumulator));
+                double predicted = anchorPhase + slope * (f - anchorFrequency);
+                double branch = Math.Round((predicted - wrapped) / Math.Tau);
+                double unwrappedPhase = wrapped + Math.Tau * branch;
+                if (reliable && f > anchorFrequency)
+                {
+                    double localSlope =
+                        (unwrappedPhase - anchorPhase) / (f - anchorFrequency);
+                    slope = hasSlope
+                        ? UnwrapSlopeBlend * localSlope + (1.0 - UnwrapSlopeBlend) * slope
+                        : localSlope;
+                    hasSlope = true;
+                    anchorFrequency = f;
+                    anchorPhase = unwrappedPhase;
+                }
+
+                data.Add(new SignalPoint(f, unwrappedPhase));
             }
 
             return data;
+        }
+
+        // Squared coherence at a frequency, linearly interpolated from an array
+        // covering 0..Nyquist in uniform bins (length fftLength/2 + 1 — the layout
+        // produced by TransferFunction.ComputeAveragedRelativeIr), so the coherence
+        // grid does not need to match the phase FFT grid. Degenerate inputs count
+        // as trusted, mirroring how the plots treat missing coherence coverage.
+        private static double CoherenceAt(
+            IReadOnlyList<double> coherence,
+            double frequency,
+            int sampleRate)
+        {
+            if (coherence.Count < 2 || sampleRate <= 0)
+            {
+                return 1.0;
+            }
+
+            double position = frequency * (coherence.Count - 1) * 2.0 / sampleRate;
+            if (position <= 0.0)
+            {
+                return coherence[0];
+            }
+            if (position >= coherence.Count - 1)
+            {
+                return coherence[coherence.Count - 1];
+            }
+
+            int index = (int)Math.Floor(position);
+            double fraction = position - index;
+            return coherence[index] +
+                (coherence[index + 1] - coherence[index]) * fraction;
         }
 
         /// <summary>
@@ -477,7 +572,8 @@ namespace Resonalyze.Dsp
             double plateauMs,
             double rightMs,
             double referenceSamples,
-            bool unwrap)
+            bool unwrap,
+            IReadOnlyList<double>? coherence = null)
         {
             Complex[] spectrum = BuildPhaseSpectrum(
                 measurement,
@@ -491,7 +587,8 @@ namespace Resonalyze.Dsp
                 extractionStart,
                 referenceSamples,
                 measurement.SampleRate,
-                unwrap);
+                unwrap,
+                coherence);
         }
 
         public static AnalysisCurve GetPhase(
@@ -502,7 +599,8 @@ namespace Resonalyze.Dsp
             double rightMs,
             double detrendMilliseconds,
             double smoothingInverseOctaves,
-            bool unwrap)
+            bool unwrap,
+            IReadOnlyList<double>? coherence = null)
         {
             List<SignalPoint> phase = GetGatedPhaseData(
                 measurement,
@@ -511,7 +609,8 @@ namespace Resonalyze.Dsp
                 plateauMs,
                 rightMs,
                 detrendMilliseconds * measurement.SampleRate / 1000.0,
-                unwrap);
+                unwrap,
+                coherence);
 
             List<SignalPoint> data = new(phase.Count);
             foreach (SignalPoint point in phase)
@@ -613,7 +712,8 @@ namespace Resonalyze.Dsp
             double plateauMs,
             double rightMs,
             double detrendMilliseconds,
-            double smoothingInverseOctaves)
+            double smoothingInverseOctaves,
+            IReadOnlyList<double>? coherence = null)
         {
             Complex[] spectrum = BuildPhaseSpectrum(
                 measurement,
@@ -634,7 +734,8 @@ namespace Resonalyze.Dsp
                 extractionStart,
                 referenceSamples,
                 measurement.SampleRate,
-                unwrap: true);
+                unwrap: true,
+                coherence);
 
             int n = spectrum.Length;
             double[] magnitude = new double[n];

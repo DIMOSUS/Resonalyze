@@ -160,7 +160,8 @@ internal sealed class PlotModelFactory
                     phaseResponseOptions.PhaseRightMs,
                     phaseResponseOptions.PhaseDetrendMs,
                     phaseResponseOptions.SmoothingInverseOctaves,
-                    phaseResponseOptions.Unwrap);
+                    phaseResponseOptions.Unwrap,
+                    expSweepMeasurement.TransferCoherence);
 
                 // Measured phase can be either representation; tag it so overlay
                 // math knows whether a difference must use the wrapped formula.
@@ -202,7 +203,8 @@ internal sealed class PlotModelFactory
                     phaseResponseOptions.PhasePlateauMs,
                     phaseResponseOptions.PhaseRightMs,
                     phaseResponseOptions.PhaseDetrendMs,
-                    phaseResponseOptions.SmoothingInverseOctaves);
+                    phaseResponseOptions.SmoothingInverseOctaves,
+                    expSweepMeasurement.TransferCoherence);
 
                 // Excess phase stays continuous (unwrapped) regardless of the detrend
                 // choice; a residual slope is still an unwrapped representation.
@@ -229,7 +231,8 @@ internal sealed class PlotModelFactory
                         phaseResponseOptions.PhaseRightMs,
                         phaseResponseOptions.PhaseDetrendMs,
                         phaseResponseOptions.SmoothingInverseOctaves,
-                        phaseResponseOptions.Unwrap);
+                        phaseResponseOptions.Unwrap,
+                        compare.Coherence);
                     AddCompareLineSeries(
                         model,
                         compareCurve,
@@ -266,7 +269,8 @@ internal sealed class PlotModelFactory
                         phaseResponseOptions.PhasePlateauMs,
                         phaseResponseOptions.PhaseRightMs,
                         phaseResponseOptions.PhaseDetrendMs,
-                        phaseResponseOptions.SmoothingInverseOctaves);
+                        phaseResponseOptions.SmoothingInverseOctaves,
+                        compare.Coherence);
                     AddCompareLineSeries(
                         model,
                         compareCurve,
@@ -1040,7 +1044,8 @@ internal sealed class PlotModelFactory
     // Builds a view over the Compare transfer IR so the gated phase / group-delay
     // math runs on it identically. Requires a matching sample rate, otherwise the
     // gate (in ms) and the frequency axis would not align with the main measurement.
-    private (IImpulseMeasurement Measurement, string DisplayName)? TryCreateCompareMeasurement()
+    private (IImpulseMeasurement Measurement, string DisplayName, double[]? Coherence)?
+        TryCreateCompareMeasurement()
     {
         if (getCompareSource?.Invoke() is not { } compare)
         {
@@ -1056,7 +1061,8 @@ internal sealed class PlotModelFactory
         int peakIndex = Math.Clamp(compare.TransferPeakIndex, 0, transferIr.Length - 1);
         return (
             new ImpulseMeasurementView(transferIr, peakIndex, compare.SampleRate),
-            compare.DisplayName);
+            compare.DisplayName,
+            compare.TransferCoherence);
     }
 
     // The Compare sweep-deconvolution measurement, used for the Frequency Response

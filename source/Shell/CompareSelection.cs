@@ -52,7 +52,8 @@ internal sealed class CompareSelection
             selection.Snapshot.TransferImpulseResponse ?? Array.Empty<Complex>(),
             selection.Snapshot.TransferPeakIndex ?? 0,
             sweepIr,
-            selection.Snapshot.SweepDeconvolutionPeakIndex);
+            selection.Snapshot.SweepDeconvolutionPeakIndex,
+            selection.Snapshot.TransferCoherence);
     }
 
     public TimeAlignmentCompareMeasurement? GetTimeAlignmentMeasurement() =>
@@ -77,4 +78,5 @@ public readonly record struct CompareAnalysisSource(
     Complex[] TransferImpulseResponse,
     int TransferPeakIndex,
     Complex[] SweepDeconvolutionImpulseResponse,
-    int SweepDeconvolutionPeakIndex);
+    int SweepDeconvolutionPeakIndex,
+    double[]? TransferCoherence = null);

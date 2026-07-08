@@ -42,7 +42,7 @@ public partial class Form1
             liveSpectrumOptions,
             waterfallGenOptions,
             burstDecayGenOptions);
-        createdPlotModelFactory.SetCompareSourceProvider(GetCompareAnalysisSource);
+        createdPlotModelFactory.SetCompareSourceProvider(compareSelection.GetAnalysisSource);
         LiveSpectrumController createdLiveSpectrumController = new(
             this,
             noiseMeasurement,
@@ -79,7 +79,7 @@ public partial class Form1
             expSweepMeasurement,
             () => SaveMeasurementSettings(),
             () => plotModelFactory.ImpulseResponseFileName,
-            GetTimeAlignmentCompareMeasurement);
+            compareSelection.GetTimeAlignmentMeasurement);
         InputLevelMeterController createdInputLevelMeterController = new(
             this,
             inputLevelMeterPanel,
@@ -130,6 +130,7 @@ public partial class Form1
             FlushMeasurementSettingsIfClosed(dockedMeasurementSettingsHost);
         };
         dockedHistoryHost.StateChanged += (_, _) => UpdateHistoryButton();
+        compareSelection.Changed += OnCompareMeasurementChanged;
         expSweepMeasurement.Completed += HandleMeasurementCompleted;
         expSweepMeasurement.AverageProgressChanged += HandleAverageProgressChanged;
         measurementHistoryService.Changed += HandleHistoryChanged;
@@ -179,10 +180,6 @@ public partial class Form1
 
     private void WireFormEvents()
     {
-        recordButtonLongPressTimer.Tick += RecordButtonLongPressTimer_Tick;
-        buttonRecord.MouseDown += buttonRecord_MouseDown;
-        buttonRecord.MouseLeave += buttonRecord_MouseLeave;
-        buttonRecord.MouseUp += buttonRecord_MouseUp;
         buttonCompare.Click += buttonCompare_Click;
         FormClosing += Form1_FormClosing;
         Shown += Form1_Shown;

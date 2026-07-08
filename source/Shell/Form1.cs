@@ -89,14 +89,9 @@ namespace Resonalyze
         private bool updateCheckStarted;
         private readonly DebouncedSaver measurementSettingsSaver;
         private readonly StartupAudioWarmup startupAudioWarmup;
-        private readonly System.Windows.Forms.Timer recordButtonLongPressTimer = new()
-        {
-            Interval = RecordButtonLongPressMilliseconds
-        };
-        private CompareMeasurementSelection? compareMeasurement;
+        private readonly ButtonLongPressBehavior recordButtonLongPress;
+        private readonly CompareSelection compareSelection = new();
         private ContextMenuStrip? compareMenuStrip;
-        private bool recordButtonLongPressTriggered;
-        private bool suppressNextRecordButtonClick;
 
         public Form1()
         {
@@ -109,6 +104,15 @@ namespace Resonalyze
                 MeasurementSettingsSaveDelayMilliseconds,
                 measurementSettings.Save);
             startupAudioWarmup = new StartupAudioWarmup(WarmUpStartupAudioAsync);
+            recordButtonLongPress = new ButtonLongPressBehavior(
+                buttonRecord,
+                RecordButtonLongPressMilliseconds,
+                CanLongPressCancelMeasurementSeries,
+                async () =>
+                {
+                    buttonRecord.Text = "Aborting...";
+                    await expSweepMeasurement.AbortAsync();
+                });
             microphoneCalibration = new MicrophoneCalibrationService(
                 GetConfiguredMicrophoneCalibrationPath,
                 ShowCalibrationProblem);

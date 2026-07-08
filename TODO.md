@@ -162,11 +162,12 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   events, guarded case by case with ad-hoc flags (`closingInProgress`,
   `closingPrepared`, `shutdownFastClose`). The first carve-outs are done: the
   calibration cache + warn-once bookkeeping (`MicrophoneCalibrationService`),
-  the startup warm-up task/cancellation pair (`StartupAudioWarmup`) and the
-  settings-save debounce (`DebouncedSaver`) own their state now. Still on
-  Form1: compare selection, record-button long-press, history/current-IR
-  state, overlay slot tracking and the lifecycle flags — keep carving one
-  concern at a time.
+  the startup warm-up task/cancellation pair (`StartupAudioWarmup`), the
+  settings-save debounce (`DebouncedSaver`), the Compare selection read by
+  plot-build workers (`CompareSelection`) and the record-button long-press
+  state machine (`ButtonLongPressBehavior`) own their state now. Still on
+  Form1: history/current-IR state, overlay slot tracking and the lifecycle
+  flags — keep carving one concern at a time.
 - [ ] **`WireLiveApply` covers only dialog-open controls.** Controls created
   after wiring never get live-apply behavior.
 

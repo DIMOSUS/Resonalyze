@@ -65,10 +65,8 @@ public partial class Form1
 
     private async void buttonRecord_Click(object sender, EventArgs e)
     {
-        recordButtonLongPressTimer.Stop();
-        if (suppressNextRecordButtonClick)
+        if (recordButtonLongPress.ConsumeClickSuppression())
         {
-            suppressNextRecordButtonClick = false;
             return;
         }
 
@@ -133,42 +131,6 @@ public partial class Form1
             EnterMeasurementRunningState();
             _ = expSweepMeasurement.RunAsync();
         }
-    }
-
-    private void buttonRecord_MouseDown(object? sender, MouseEventArgs e)
-    {
-        if (e.Button != MouseButtons.Left || !CanLongPressCancelMeasurementSeries())
-        {
-            return;
-        }
-
-        recordButtonLongPressTriggered = false;
-        suppressNextRecordButtonClick = false;
-        recordButtonLongPressTimer.Start();
-    }
-
-    private void buttonRecord_MouseUp(object? sender, MouseEventArgs e)
-    {
-        recordButtonLongPressTimer.Stop();
-    }
-
-    private void buttonRecord_MouseLeave(object? sender, EventArgs e)
-    {
-        recordButtonLongPressTimer.Stop();
-    }
-
-    private async void RecordButtonLongPressTimer_Tick(object? sender, EventArgs e)
-    {
-        recordButtonLongPressTimer.Stop();
-        if (!CanLongPressCancelMeasurementSeries() || recordButtonLongPressTriggered)
-        {
-            return;
-        }
-
-        recordButtonLongPressTriggered = true;
-        suppressNextRecordButtonClick = true;
-        buttonRecord.Text = "Aborting...";
-        await expSweepMeasurement.AbortAsync();
     }
 
     private bool CanLongPressCancelMeasurementSeries() =>

@@ -10,43 +10,29 @@ namespace Resonalyze.Dsp
     /// </summary>
     public sealed class CalibrationFile
     {
+        // Matches File.ReadAllLines' line breaking so the text and file paths parse
+        // byte-identically.
+        private static readonly string[] LineSeparators = ["\r\n", "\r", "\n"];
+
         private readonly List<SignalPoint> calibration = new();
         private readonly CalibrationFile? baseCalibration;
         private readonly Func<double, double>? decibelOffset;
 
+        /// <summary>
+        /// Loads a calibration curve from a file on disk. Filesystem problems
+        /// (missing or unreadable file) and the content problem (no parsable
+        /// frequency/level pairs) are surfaced through <see cref="LoadError"/>
+        /// rather than thrown.
+        /// </summary>
         public CalibrationFile(string file)
+            : this(LoadFromFile(file))
         {
-            if (!System.IO.File.Exists(file))
-            {
-                LoadError = $"Calibration file not found: {file}";
-                return;
-            }
+        }
 
-            string[] lines;
-            try
-            {
-                lines = System.IO.File.ReadAllLines(file);
-            }
-            catch (Exception exception)
-            {
-                LoadError = $"Calibration file could not be read: {exception.Message}";
-                return;
-            }
-
-            foreach (string line in lines)
-            {
-                if (TryParseCalibrationPoint(line, out double f, out double db))
-                {
-                    calibration.Add(new SignalPoint(f, DataHelper.DecibelsToAmplitude(db)));
-                }
-            }
-
-            calibration.Sort((left, right) => left.X.CompareTo(right.X));
-            if (calibration.Count < 2)
-            {
-                LoadError =
-                    $"Calibration file contains no frequency/level pairs: {file}";
-            }
+        private CalibrationFile(ParseResult result)
+        {
+            calibration.AddRange(result.Points);
+            LoadError = result.LoadError;
         }
 
         private CalibrationFile(
@@ -57,6 +43,64 @@ namespace Resonalyze.Dsp
             this.decibelOffset = decibelOffset;
             LoadError = baseCalibration.LoadError;
         }
+
+        /// <summary>
+        /// Parses a calibration curve from in-memory text without touching the
+        /// filesystem, mirroring the "parser accepts text" shape of the EQ profile
+        /// formats. Only the content-level problem — fewer than two parsable
+        /// frequency/level pairs — can arise here and surfaces through
+        /// <see cref="LoadError"/>; <paramref name="sourceName"/>, when supplied, is
+        /// woven into that message so a file-backed load reads identically.
+        /// </summary>
+        public static CalibrationFile Parse(string text, string? sourceName = null)
+        {
+            ArgumentNullException.ThrowIfNull(text);
+            return new CalibrationFile(ParseText(text, sourceName));
+        }
+
+        private static ParseResult LoadFromFile(string file)
+        {
+            if (!System.IO.File.Exists(file))
+            {
+                return new ParseResult([], $"Calibration file not found: {file}");
+            }
+
+            string text;
+            try
+            {
+                text = System.IO.File.ReadAllText(file);
+            }
+            catch (Exception exception)
+            {
+                return new ParseResult(
+                    [],
+                    $"Calibration file could not be read: {exception.Message}");
+            }
+
+            return ParseText(text, file);
+        }
+
+        private static ParseResult ParseText(string text, string? sourceName)
+        {
+            var points = new List<SignalPoint>();
+            foreach (string line in text.Split(LineSeparators, StringSplitOptions.None))
+            {
+                if (TryParseCalibrationPoint(line, out double f, out double db))
+                {
+                    points.Add(new SignalPoint(f, DataHelper.DecibelsToAmplitude(db)));
+                }
+            }
+
+            points.Sort((left, right) => left.X.CompareTo(right.X));
+            string? loadError = points.Count >= 2
+                ? null
+                : sourceName is null
+                    ? "Calibration file contains no frequency/level pairs."
+                    : $"Calibration file contains no frequency/level pairs: {sourceName}";
+            return new ParseResult(points, loadError);
+        }
+
+        private readonly record struct ParseResult(List<SignalPoint> Points, string? LoadError);
 
         /// <summary>
         /// True when at least two calibration points were loaded, i.e.

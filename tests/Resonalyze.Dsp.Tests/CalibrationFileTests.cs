@@ -170,6 +170,69 @@ public sealed class CalibrationFileTests
         Assert.Contains("not found", approximation.LoadError);
     }
 
+    [Fact]
+    public void Parse_MatchesFileLoad_ForIdenticalText()
+    {
+        const string text =
+            "# Frequency dB\n" +
+            "20 2.5\n" +
+            "1000,2.5,10\n" +
+            "20000\t2.5\n";
+        string path = WriteCalibrationFile(text);
+
+        var parsed = CalibrationFile.Parse(text);
+        var loaded = new CalibrationFile(path);
+
+        Assert.Equal(loaded.HasData, parsed.HasData);
+        Assert.Equal(
+            loaded.GetDecibelCorrection(1000),
+            parsed.GetDecibelCorrection(1000),
+            precision: 12);
+        Assert.Null(parsed.LoadError);
+    }
+
+    [Fact]
+    public void Parse_HandlesCrlfLineEndings()
+    {
+        var calibration = CalibrationFile.Parse(
+            "20 2.5\r\n1000 2.5\r\n20000 2.5\r\n");
+
+        Assert.True(calibration.HasData);
+        Assert.Equal(2.5, calibration.GetDecibelCorrection(1000), precision: 6);
+    }
+
+    [Fact]
+    public void Parse_WithoutParsablePairs_ReportsContentLoadError()
+    {
+        var calibration = CalibrationFile.Parse("# header only\nno numbers here\n");
+
+        Assert.False(calibration.HasData);
+        Assert.Contains("no frequency/level pairs", calibration.LoadError);
+    }
+
+    [Fact]
+    public void Parse_WithSourceName_WeavesItIntoTheLoadError()
+    {
+        var calibration = CalibrationFile.Parse("garbage", sourceName: "mic.cal");
+
+        Assert.Contains("mic.cal", calibration.LoadError);
+    }
+
+    [Fact]
+    public void Parse_WithoutSourceName_OmitsPathFromLoadError()
+    {
+        var calibration = CalibrationFile.Parse("garbage");
+
+        Assert.NotNull(calibration.LoadError);
+        Assert.DoesNotContain(":", calibration.LoadError);
+    }
+
+    [Fact]
+    public void Parse_NullText_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => CalibrationFile.Parse(null!));
+    }
+
     private static string WriteCalibrationFile(string text)
     {
         string path = Path.Combine(

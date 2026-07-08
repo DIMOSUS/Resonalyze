@@ -202,6 +202,21 @@ public sealed class CalibrationFileTests
     }
 
     [Fact]
+    public void FileLoad_HandlesCrlfFile()
+    {
+        // Exercises the actual File.ReadAllText + line split on Windows endings —
+        // the one line the parser refactor changed (ReadAllLines -> ReadAllText)
+        // that the text-only Parse tests do not cover through disk.
+        string crlfPath = WriteCalibrationFile("20 2.5\r\n1000 2.5\r\n20000 2.5\r\n");
+
+        var calibration = new CalibrationFile(crlfPath);
+
+        Assert.True(calibration.HasData);
+        Assert.Null(calibration.LoadError);
+        Assert.Equal(2.5, calibration.GetDecibelCorrection(1000), precision: 6);
+    }
+
+    [Fact]
     public void Parse_WithoutParsablePairs_ReportsContentLoadError()
     {
         var calibration = CalibrationFile.Parse("# header only\nno numbers here\n");

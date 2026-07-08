@@ -44,8 +44,8 @@ public partial class Form1
                     opt => opt.Init(
                         expSweepMeasurement,
                         frequencyResponseOptions,
-                        HasMicrophoneCalibration(MicrophoneCalibrationMode.Degrees0),
-                        HasMicrophoneCalibration(MicrophoneCalibrationMode.Degrees90)),
+                        microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees0),
+                        microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees90)),
                     opt => opt.SetOptions(frequencyResponseOptions))),
             [ModeTab.Phase] = new(
                 ModeTab.Phase,

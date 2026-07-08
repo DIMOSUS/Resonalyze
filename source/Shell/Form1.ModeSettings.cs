@@ -86,21 +86,12 @@ public partial class Form1
             return;
         }
 
-        measurementSettingsSavePending = true;
-        measurementSettingsSaveTimer.Stop();
-        measurementSettingsSaveTimer.Start();
+        measurementSettingsSaver.Schedule();
     }
 
     private void FlushMeasurementSettings()
     {
-        measurementSettingsSaveTimer.Stop();
-        if (!measurementSettingsSavePending)
-        {
-            return;
-        }
-
-        measurementSettingsSavePending = false;
-        measurementSettings.Save();
+        measurementSettingsSaver.Flush();
     }
 
     private DialogResult ShowSettingsDialog(Form dialog)
@@ -144,8 +135,8 @@ public partial class Form1
             {
                 opt.Init(
                     liveSpectrumOptions,
-                    HasMicrophoneCalibration(MicrophoneCalibrationMode.Degrees0),
-                    HasMicrophoneCalibration(MicrophoneCalibrationMode.Degrees90));
+                    microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees0),
+                    microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees90));
                 opt.ResetAverageRequested += liveSpectrumController.ResetAverage;
             },
             ApplyLiveSpectrumOptionsAsync,

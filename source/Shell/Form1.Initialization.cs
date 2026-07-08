@@ -34,7 +34,7 @@ public partial class Form1
         PlotModelFactory createdPlotModelFactory = new(
             expSweepMeasurement,
             noiseMeasurement,
-            GetMicrophoneCalibration,
+            microphoneCalibration.Get,
             frequencyResponseOptions,
             phaseResponseOptions,
             groupDelayOptions,
@@ -155,50 +155,8 @@ public partial class Form1
         _ = SelectModeAsync(ModeTab.Frequency);
     }
 
-    private bool HasMicrophoneCalibration(MicrophoneCalibrationMode mode) =>
-        mode == MicrophoneCalibrationMode.Degrees90
-            ? HasApproximateNinetyDegreeCalibration()
-            : GetMicrophoneCalibrationPath(mode) != null;
-
-    private CalibrationFile? GetMicrophoneCalibration(MicrophoneCalibrationMode mode)
-    {
-        WarnIfConfiguredCalibrationMissing(mode);
-        if (mode == MicrophoneCalibrationMode.Degrees90 &&
-            GetMicrophoneCalibrationPath(MicrophoneCalibrationMode.Degrees90) == null)
-        {
-            return GetApproximateNinetyDegreeCalibration();
-        }
-
-        string? path = GetMicrophoneCalibrationPath(mode);
-        if (path == null)
-        {
-            return null;
-        }
-
-        // Plot models are built on Task.Run workers, and two rapid refreshes
-        // can run concurrently — the cache dictionary must not be mutated
-        // unsynchronized (the lock is reentrant for the approximation path).
-        lock (calibrationCache)
-        {
-            if (!calibrationCache.TryGetValue(path, out CalibrationFile? calibrationFile))
-            {
-                calibrationFile = new CalibrationFile(path);
-                calibrationCache[path] = calibrationFile;
-                if (!calibrationFile.HasData)
-                {
-                    WarnCalibrationProblemOnce(path, calibrationFile.LoadError);
-                }
-            }
-
-            return calibrationFile;
-        }
-    }
-
-    // GetMicrophoneCalibrationPath maps a configured-but-deleted file to null,
-    // which used to silently disable the correction for every plot.
-    private void WarnIfConfiguredCalibrationMissing(MicrophoneCalibrationMode mode)
-    {
-        string? configured = mode switch
+    private string? GetConfiguredMicrophoneCalibrationPath(MicrophoneCalibrationMode mode) =>
+        mode switch
         {
             MicrophoneCalibrationMode.Degrees0 =>
                 measurementSettings.Measurement.MicrophoneCalibration0DegreesPath,
@@ -206,90 +164,21 @@ public partial class Form1
                 measurementSettings.Measurement.MicrophoneCalibration90DegreesPath,
             _ => null
         };
-        if (!string.IsNullOrWhiteSpace(configured) && !File.Exists(configured))
-        {
-            WarnCalibrationProblemOnce(
-                configured,
-                $"Calibration file not found: {configured}");
-        }
-    }
-
-    private CalibrationFile? GetApproximateNinetyDegreeCalibration()
-    {
-        string? zeroDegreePath = GetMicrophoneCalibrationPath(
-            MicrophoneCalibrationMode.Degrees0);
-        if (zeroDegreePath == null)
-        {
-            return null;
-        }
-
-        string cacheKey = $"approx90:{zeroDegreePath}";
-        lock (calibrationCache)
-        {
-            if (!calibrationCache.TryGetValue(cacheKey, out CalibrationFile? calibrationFile))
-            {
-                CalibrationFile zeroDegreeCalibration =
-                    GetMicrophoneCalibration(MicrophoneCalibrationMode.Degrees0)
-                    ?? throw new InvalidOperationException(
-                        "0 degree microphone calibration is not available.");
-                calibrationFile = CalibrationFile.CreateNinetyDegreeApproximation(
-                    zeroDegreeCalibration);
-                calibrationCache[cacheKey] = calibrationFile;
-            }
-
-            return calibrationFile;
-        }
-    }
-
-    private string? GetMicrophoneCalibrationPath(MicrophoneCalibrationMode mode)
-    {
-        string? path = mode switch
-        {
-            MicrophoneCalibrationMode.Degrees0 =>
-                measurementSettings.Measurement.MicrophoneCalibration0DegreesPath,
-            MicrophoneCalibrationMode.Degrees90 =>
-                measurementSettings.Measurement.MicrophoneCalibration90DegreesPath,
-            _ => null
-        };
-        if (!string.IsNullOrWhiteSpace(path))
-        {
-            return File.Exists(path) ? path : null;
-        }
-
-        if (mode == MicrophoneCalibrationMode.Degrees0)
-        {
-            string legacyPath = Path.Combine(AppContext.BaseDirectory, "calibration.txt");
-            if (File.Exists(legacyPath))
-            {
-                return legacyPath;
-            }
-        }
-
-        return null;
-    }
-
-    private bool HasApproximateNinetyDegreeCalibration() =>
-        GetMicrophoneCalibrationPath(MicrophoneCalibrationMode.Degrees90) != null ||
-        GetMicrophoneCalibrationPath(MicrophoneCalibrationMode.Degrees0) != null;
 
     private void RefreshCalibrationConsumers()
     {
-        lock (calibrationCache)
-        {
-            calibrationCache.Clear();
-        }
+        microphoneCalibration.InvalidateCache();
         if (virtualCrossoverPanel != null)
         {
             virtualCrossoverPanel.ConfigureCalibration(
-                GetMicrophoneCalibration,
-                HasMicrophoneCalibration(MicrophoneCalibrationMode.Degrees0),
-                HasMicrophoneCalibration(MicrophoneCalibrationMode.Degrees90));
+                microphoneCalibration.Get,
+                microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees0),
+                microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees90));
         }
     }
 
     private void WireFormEvents()
     {
-        measurementSettingsSaveTimer.Tick += MeasurementSettingsSaveTimer_Tick;
         recordButtonLongPressTimer.Tick += RecordButtonLongPressTimer_Tick;
         buttonRecord.MouseDown += buttonRecord_MouseDown;
         buttonRecord.MouseLeave += buttonRecord_MouseLeave;
@@ -297,11 +186,6 @@ public partial class Form1
         buttonCompare.Click += buttonCompare_Click;
         FormClosing += Form1_FormClosing;
         Shown += Form1_Shown;
-    }
-
-    private void MeasurementSettingsSaveTimer_Tick(object? sender, EventArgs e)
-    {
-        FlushMeasurementSettings();
     }
 
     private void HandleMeasurementCompleted(bool success)

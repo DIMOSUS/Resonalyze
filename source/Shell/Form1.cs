@@ -33,10 +33,7 @@ namespace Resonalyze
         private readonly OverlayCollection overlayCollection;
         private readonly ExpSweepMeasurement expSweepMeasurement = new();
         private readonly NoiseMeasurement noiseMeasurement = new();
-        private readonly Dictionary<string, CalibrationFile> calibrationCache = new(
-            StringComparer.OrdinalIgnoreCase);
-        private readonly HashSet<string> reportedCalibrationProblems = new(
-            StringComparer.OrdinalIgnoreCase);
+        private readonly MicrophoneCalibrationService microphoneCalibration;
         private readonly WaterfallGenerateOptions waterfallGenOptions = new()
         {
             WaterfallMode = WaterfallMode.Fourier,
@@ -90,19 +87,14 @@ namespace Resonalyze
         // blocking device teardown while the OS is waiting for the process to exit.
         private bool shutdownFastClose;
         private bool updateCheckStarted;
-        private bool measurementSettingsSavePending;
-        private readonly System.Windows.Forms.Timer measurementSettingsSaveTimer = new()
-        {
-            Interval = MeasurementSettingsSaveDelayMilliseconds
-        };
+        private readonly DebouncedSaver measurementSettingsSaver;
+        private readonly StartupAudioWarmup startupAudioWarmup;
         private readonly System.Windows.Forms.Timer recordButtonLongPressTimer = new()
         {
             Interval = RecordButtonLongPressMilliseconds
         };
         private CompareMeasurementSelection? compareMeasurement;
         private ContextMenuStrip? compareMenuStrip;
-        private CancellationTokenSource? startupAudioWarmupCancellation;
-        private Task? startupAudioWarmupTask;
         private bool recordButtonLongPressTriggered;
         private bool suppressNextRecordButtonClick;
 
@@ -113,6 +105,13 @@ namespace Resonalyze
             PlotInteraction.EnableDoubleClickAxisReset(plotView1);
             plotView1.Paint += (_, _) => AppProfiler.FrameMark("main-plot");
             measurementSettings = MeasurementSettingsFile.LoadOrDefault();
+            measurementSettingsSaver = new DebouncedSaver(
+                MeasurementSettingsSaveDelayMilliseconds,
+                measurementSettings.Save);
+            startupAudioWarmup = new StartupAudioWarmup(WarmUpStartupAudioAsync);
+            microphoneCalibration = new MicrophoneCalibrationService(
+                GetConfiguredMicrophoneCalibrationPath,
+                ShowCalibrationProblem);
             Form1ControllerDependencies dependencies = CreateControllerDependencies();
             overlayCollection = dependencies.OverlayCollection;
             plotLabelsPanelController = dependencies.PlotLabelsPanelController;
@@ -184,21 +183,15 @@ namespace Resonalyze
         }
 
         // A configured calibration that fails to load must not silently produce
-        // uncalibrated curves. Warned once per path per session; queued through
-        // BeginInvoke so a plot build is never interrupted by a modal dialog.
-        // Called from Task.Run plot builds, so the set is guarded by a lock.
-        private void WarnCalibrationProblemOnce(string path, string? reason)
+        // uncalibrated curves. MicrophoneCalibrationService already deduplicates
+        // (once per path per session) and calls this from Task.Run plot builds,
+        // so the warning is queued through BeginInvoke — a plot build is never
+        // interrupted by a modal dialog.
+        private void ShowCalibrationProblem(string path, string? reason)
         {
             if (closingInProgress)
             {
                 return;
-            }
-            lock (reportedCalibrationProblems)
-            {
-                if (!reportedCalibrationProblems.Add(path))
-                {
-                    return;
-                }
             }
 
             TryBeginInvokeOnUiThread(() =>

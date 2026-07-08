@@ -48,7 +48,7 @@ public partial class Form1
             // Dispose that follows the close from blocking on it).
             closingPrepared = true;
             shutdownFastClose = true;
-            startupAudioWarmupCancellation?.Cancel();
+            startupAudioWarmup.Cancel();
             FlushMeasurementSettings();
             overlayCollection.FlushPendingSaves();
             PersistCurrentSessionState();
@@ -68,12 +68,12 @@ public partial class Form1
         FlushMeasurementSettings();
         overlayCollection.FlushPendingSaves();
         PersistCurrentSessionState();
-        startupAudioWarmupCancellation?.Cancel();
+        startupAudioWarmup.Cancel();
         await Task.WhenAll(
             expSweepMeasurement.AbortAsync(),
             timeAlignmentController.AbortAsync(),
             liveSpectrumController.AbortAsync(),
-            startupAudioWarmupTask ?? Task.CompletedTask);
+            startupAudioWarmup.WaitAsync());
 
         DisposeAppResources();
         closingPrepared = true;
@@ -94,18 +94,16 @@ public partial class Form1
             // synchronously on in-flight work, which would stall shutdown on the
             // very teardown the fast-close path avoids. Cancelling is enough —
             // the process is about to exit and the OS reclaims devices and timers.
-            startupAudioWarmupCancellation?.Cancel();
+            startupAudioWarmup.Cancel();
             return;
         }
 
-        startupAudioWarmupCancellation?.Cancel();
-        startupAudioWarmupCancellation?.Dispose();
+        startupAudioWarmup.Dispose();
         compareMenuStrip?.Dispose();
         dockedModeSettingsHost.Dispose();
         dockedMeasurementSettingsHost.Dispose();
         dockedHistoryHost.Dispose();
-        measurementSettingsSaveTimer.Stop();
-        measurementSettingsSaveTimer.Dispose();
+        measurementSettingsSaver.Dispose();
         recordButtonLongPressTimer.Stop();
         recordButtonLongPressTimer.Dispose();
         inputLevelMeterController.Dispose();

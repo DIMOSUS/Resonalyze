@@ -81,7 +81,7 @@ public partial class Form1
         {
             if (!liveSpectrumController.InProgress)
             {
-                await WaitForStartupAudioWarmupAsync();
+                await startupAudioWarmup.WaitAsync();
             }
 
             await liveSpectrumController.ToggleAsync();
@@ -121,7 +121,7 @@ public partial class Form1
                 return;
             }
 
-            await WaitForStartupAudioWarmupAsync();
+            await startupAudioWarmup.WaitAsync();
             if (expSweepMeasurement.InProgress)
             {
                 // A second click can arrive while the warm-up is awaited;
@@ -227,15 +227,10 @@ public partial class Form1
 
     private void StartStartupAudioWarmup()
     {
-        if (startupAudioWarmupTask != null ||
-            measurementSettings.Measurement.AudioBackend != AudioBackend.Asio)
+        if (measurementSettings.Measurement.AudioBackend == AudioBackend.Asio)
         {
-            return;
+            startupAudioWarmup.Start();
         }
-
-        startupAudioWarmupCancellation = new CancellationTokenSource();
-        startupAudioWarmupTask =
-            WarmUpStartupAudioAsync(startupAudioWarmupCancellation.Token);
     }
 
     private async Task WarmUpStartupAudioAsync(CancellationToken cancellationToken)
@@ -264,21 +259,4 @@ public partial class Form1
         }
     }
 
-    private async Task WaitForStartupAudioWarmupAsync()
-    {
-        Task? task = startupAudioWarmupTask;
-        if (task == null || task.IsCompleted)
-        {
-            return;
-        }
-
-        try
-        {
-            await task;
-        }
-        catch
-        {
-            // Warm-up failures are intentionally non-fatal.
-        }
-    }
 }

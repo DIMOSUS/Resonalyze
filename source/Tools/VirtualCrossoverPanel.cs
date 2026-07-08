@@ -738,14 +738,21 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         // A mismatched sample rate is not a dead end: the user picks whether the
-        // new measurement wins (clearing the incompatible channels) or loses.
-        List<ChannelRuntime> mismatched = channels
-            .Where(other => other != channel &&
-                other.TransferImpulseResponse != null &&
-                other.SampleRate != snapshot.SampleRate)
-            .ToList();
-        if (mismatched.Count > 0)
+        // new measurement wins (clearing the incompatible channels) or loses. The
+        // compatibility decision is shared with the silent reload path.
+        VirtualCrossoverSourceRules.Decision decision = VirtualCrossoverSourceRules.Evaluate(
+            hasTransferIr: true,
+            candidateSampleRate: snapshot.SampleRate,
+            otherResolvedSampleRates: channels
+                .Where(other => other != channel && other.TransferImpulseResponse != null)
+                .Select(other => other.SampleRate));
+        if (decision == VirtualCrossoverSourceRules.Decision.NeedsConfirmClear)
         {
+            List<ChannelRuntime> mismatched = channels
+                .Where(other => other != channel &&
+                    other.TransferImpulseResponse != null &&
+                    other.SampleRate != snapshot.SampleRate)
+                .ToList();
             string mismatchedList = string.Join(
                 ", ",
                 mismatched.Select(other =>
@@ -832,15 +839,17 @@ public partial class VirtualCrossoverPanel : UserControl
                 snapshot = MeasurementHistoryService.CreateSnapshot(file);
             }
 
-            // The same compatibility rules as TryAcceptSource: the file behind a
-            // stored path may have been replaced since the project was saved. An
-            // incompatible source stays unresolved (the button shows the warning
-            // glyph) instead of silently producing a physically wrong sum.
-            bool compatible = channels.All(other =>
-                other == channel ||
-                other.TransferImpulseResponse == null ||
-                other.SampleRate == snapshot?.SampleRate);
-            if (compatible &&
+            // The same compatibility decision as TryAcceptSource (the file behind a
+            // stored path may have been replaced since the project was saved), but
+            // here an incompatible source stays unresolved — the button shows the
+            // warning glyph — instead of prompting: a silent reload cannot ask.
+            VirtualCrossoverSourceRules.Decision decision = VirtualCrossoverSourceRules.Evaluate(
+                hasTransferIr: snapshot?.TransferImpulseResponse is { Length: > 0 },
+                candidateSampleRate: snapshot?.SampleRate ?? 0,
+                otherResolvedSampleRates: channels
+                    .Where(other => other != channel && other.TransferImpulseResponse != null)
+                    .Select(other => other.SampleRate));
+            if (decision == VirtualCrossoverSourceRules.Decision.Accept &&
                 snapshot?.TransferImpulseResponse is { Length: > 0 } transferIr)
             {
                 channel.TransferImpulseResponse = transferIr;
@@ -1624,19 +1633,11 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             // The signed dB gap between the complex sum and the phase-blind
             // magnitude sum of the processed channels (<= 0 by the triangle
-            // inequality); all curves share the same fixed log grid.
-            int count = magnitudes.Min(curve => curve.Points.Count);
-            count = Math.Min(count, sumCurve.Points.Count);
-            var points = new List<SignalPoint>(count);
-            for (int i = 0; i < count; i++)
-            {
-                double magnitudeSum = magnitudes.Sum(
-                    curve => DataHelper.DecibelsToAmplitude(curve.Points[i].Y));
-                points.Add(new SignalPoint(
-                    sumCurve.Points[i].X,
-                    sumCurve.Points[i].Y - DataHelper.AmplitudeToDecibels(magnitudeSum)));
-            }
-
+            // inequality); shares the one SumLossCurve definition with the metric,
+            // so the drawn curve and the measured loss cannot drift apart.
+            List<SignalPoint> points = VirtualCrossoverAnalysis.SumLossCurve(
+                sumCurve.Points,
+                magnitudes.Select(curve => curve.Points).ToList());
             AddCurve(model, "Sum loss", points, LossColor, 1.8, LineStyle.Dash);
         }
     }
@@ -1646,32 +1647,10 @@ public partial class VirtualCrossoverPanel : UserControl
     // The frequency window the metric and Auto delay operate in: around the
     // corner frequencies the channels actually use (one octave to each side),
     // or a broad midband default when no crossover is configured yet.
-    private (double MinHz, double MaxHz) GetCrossoverWindow(
-        List<ProcessedChannel> processed)
-    {
-        var corners = new List<double>();
-        foreach (ProcessedChannel item in processed)
-        {
-            VirtualCrossoverChannelSettings settings = item.Channel.Settings;
-            if (settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass)
-            {
-                corners.Add(settings.LowPassEdge.FrequencyHz);
-            }
-            if (settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass)
-            {
-                corners.Add(settings.HighPassEdge.FrequencyHz);
-            }
-        }
-
-        if (corners.Count == 0)
-        {
-            return (100, 10_000);
-        }
-
-        return (
-            Math.Max(20, corners.Min() / 2),
-            Math.Min(20_000, corners.Max() * 2));
-    }
+    private static (double MinHz, double MaxHz) GetCrossoverWindow(
+        List<ProcessedChannel> processed) =>
+        VirtualCrossoverJunctions.GetCrossoverWindow(
+            processed.Select(item => item.Channel.Settings));
 
     private void UpdateMetric(
         List<ProcessedChannel> processed,
@@ -2057,11 +2036,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private static List<ProcessedChannel> OrderByBand(List<ProcessedChannel> processed) =>
         processed
-            .OrderBy(item =>
-            {
-                (double lowHz, double highHz) = GetChannelBand(item.Channel.Settings);
-                return Math.Sqrt(lowHz * highHz);
-            })
+            .OrderBy(item => VirtualCrossoverJunctions.BandCenterHz(item.Channel.Settings))
             .ToList();
 
     private static List<AdjacentPair> GetAdjacentPairs(List<ProcessedChannel> byBand)
@@ -2071,20 +2046,17 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             double pairHz = GetPairCrossoverHz(
                 byBand[i].Channel.Settings, byBand[i + 1].Channel.Settings);
+            (double bandLowHz, double bandHighHz) = VirtualCrossoverJunctions.OverlapBand(pairHz);
             pairs.Add(new AdjacentPair(
                 byBand[i],
                 byBand[i + 1],
                 pairHz,
-                Math.Max(20, pairHz / 2),
-                Math.Min(20_000, pairHz * 2)));
+                bandLowHz,
+                bandHighHz));
         }
 
         return pairs;
     }
-
-    private static (double LowHz, double HighHz) GetChannelBand(
-        VirtualCrossoverChannelSettings settings) =>
-        VirtualCrossoverJunctions.GetChannelBand(settings);
 
     private AnalysisCurve BuildMagnitudeCurve(
         Complex[] impulseResponse,
@@ -2311,33 +2283,9 @@ public partial class VirtualCrossoverPanel : UserControl
         DspPlotMode mode) => mode switch
     {
         DspPlotMode.Phase => response.Response(frequency).Phase / Math.PI * 180.0,
-        DspPlotMode.GroupDelay => GroupDelayMilliseconds(response, frequency),
+        DspPlotMode.GroupDelay => response.GroupDelayMs(frequency),
         _ => DataHelper.AmplitudeToDecibels(response.Response(frequency).Magnitude)
     };
-
-    // Filter group delay τ_g = -dφ/dω, read from the complex response by a central
-    // difference: -Im(H'(f)/H(f)) / (2π), in milliseconds. Working from the
-    // complex response avoids phase unwrapping, which a coarse log grid could alias
-    // at a steep crossover.
-    private static double GroupDelayMilliseconds(
-        PreparedDspResponse response,
-        double frequency)
-    {
-        double delta = Math.Max(frequency * 1e-3, 1e-6);
-        double lowFrequency = Math.Max(frequency - delta, 1e-3);
-        double highFrequency = frequency + delta;
-        Complex low = response.Response(lowFrequency);
-        Complex high = response.Response(highFrequency);
-        Complex center = response.Response(frequency);
-        if (center.Magnitude < 1e-20)
-        {
-            return 0;
-        }
-
-        Complex derivative = (high - low) / (highFrequency - lowFrequency);
-        double phaseSlope = (derivative / center).Imaginary; // dφ/df
-        return -phaseSlope / (2.0 * Math.PI) * 1000.0;
-    }
 
     // ------------------------------------------------------- capture / export
 

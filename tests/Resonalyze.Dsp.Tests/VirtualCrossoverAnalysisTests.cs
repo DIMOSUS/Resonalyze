@@ -358,6 +358,51 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void SumLossCurve_IsThePerPointComplexVsMagnitudeSumGap()
+    {
+        // Two identical +0 dB channels: their phase-blind magnitude sum is +6.02 dB,
+        // so the loss at each point is the sum curve minus 6.02.
+        var channel = new List<SignalPoint>
+        {
+            new(500, 0.0), new(1_000, 0.0), new(2_000, 0.0)
+        };
+        var sum = new List<SignalPoint>
+        {
+            new(500, 6.0206), new(1_000, 0.0), new(2_000, 6.0206)
+        };
+
+        List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(sum, [channel, channel]);
+
+        Assert.Equal(3, loss.Count);
+        Assert.Equal(500, loss[0].X);
+        Assert.Equal(0.0, loss[0].Y, 3);
+        Assert.Equal(-6.0206, loss[1].Y, 3);
+        Assert.Equal(0.0, loss[2].Y, 3);
+    }
+
+    [Fact]
+    public void SumLossCurve_TruncatesToTheShortestGrid()
+    {
+        var shortChannel = new List<SignalPoint> { new(500, 0.0) };
+        var sum = new List<SignalPoint> { new(500, 0.0), new(1_000, 0.0) };
+
+        Assert.Single(VirtualCrossoverAnalysis.SumLossCurve(sum, [shortChannel]));
+    }
+
+    [Fact]
+    public void GroupDelayMs_OfAPureDelay_EqualsTheDelay()
+    {
+        // A pure delay has a constant group delay equal to the delay itself.
+        PreparedDspResponse prepared =
+            PreparedDspResponse.Create(new DspChannelChain(DelayMs: 1.5), SampleRate);
+
+        foreach (double frequency in new[] { 100.0, 1_000.0, 5_000.0 })
+        {
+            Assert.Equal(1.5, prepared.GroupDelayMs(frequency), 2);
+        }
+    }
+
+    [Fact]
     public void FindBestAlignment_DetectsAnInvertedChannel()
     {
         // The variable channel is a delayed AND inverted copy: the search must

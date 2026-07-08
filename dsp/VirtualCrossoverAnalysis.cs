@@ -948,6 +948,44 @@ public static class VirtualCrossoverAnalysis
     }
 
     /// <summary>
+    /// The per-point summation-loss curve (dB, &lt;= 0): the complex sum minus the
+    /// phase-blind magnitude sum of the channel curves, over their shared index
+    /// grid (truncated to the shortest). This is the single definition the panel's
+    /// drawn "Sum loss" curve, <see cref="AverageSumLossDb"/> and
+    /// <see cref="MinimumSumLossDb"/> all read, so the drawn and measured loss
+    /// cannot drift apart.
+    /// </summary>
+    public static List<SignalPoint> SumLossCurve(
+        IReadOnlyList<SignalPoint> sumCurve,
+        IReadOnlyList<IReadOnlyList<SignalPoint>> channelCurves)
+    {
+        ArgumentNullException.ThrowIfNull(sumCurve);
+        ArgumentNullException.ThrowIfNull(channelCurves);
+
+        int count = sumCurve.Count;
+        foreach (IReadOnlyList<SignalPoint> curve in channelCurves)
+        {
+            count = Math.Min(count, curve.Count);
+        }
+
+        var points = new List<SignalPoint>(Math.Max(0, count));
+        for (int i = 0; i < count; i++)
+        {
+            double magnitudeSum = 0;
+            foreach (IReadOnlyList<SignalPoint> curve in channelCurves)
+            {
+                magnitudeSum += DataHelper.DecibelsToAmplitude(curve[i].Y);
+            }
+
+            points.Add(new SignalPoint(
+                sumCurve[i].X,
+                sumCurve[i].Y - DataHelper.AmplitudeToDecibels(magnitudeSum)));
+        }
+
+        return points;
+    }
+
+    /// <summary>
     /// The average summation loss (dB, &lt;= 0) inside the frequency window: how
     /// far the complex sum falls short of the phase-blind magnitude sum. The
     /// curves must share one frequency grid (index-aligned).
@@ -965,32 +1003,18 @@ public static class VirtualCrossoverAnalysis
             return null;
         }
 
-        int count = sumCurve.Count;
-        foreach (IReadOnlyList<SignalPoint> curve in channelCurves)
-        {
-            count = Math.Min(count, curve.Count);
-        }
-
         double total = 0;
         int samples = 0;
-        for (int i = 0; i < count; i++)
+        foreach (SignalPoint point in SumLossCurve(sumCurve, channelCurves))
         {
-            double frequency = sumCurve[i].X;
-            if (frequency < minFrequencyHz || frequency > maxFrequencyHz)
+            if (point.X < minFrequencyHz || point.X > maxFrequencyHz)
             {
                 continue;
             }
 
-            double magnitudeSum = 0;
-            foreach (IReadOnlyList<SignalPoint> curve in channelCurves)
+            if (double.IsFinite(point.Y))
             {
-                magnitudeSum += DataHelper.DecibelsToAmplitude(curve[i].Y);
-            }
-
-            double loss = sumCurve[i].Y - DataHelper.AmplitudeToDecibels(magnitudeSum);
-            if (double.IsFinite(loss))
-            {
-                total += loss;
+                total += point.Y;
                 samples++;
             }
         }
@@ -1018,31 +1042,17 @@ public static class VirtualCrossoverAnalysis
             return null;
         }
 
-        int count = sumCurve.Count;
-        foreach (IReadOnlyList<SignalPoint> curve in channelCurves)
-        {
-            count = Math.Min(count, curve.Count);
-        }
-
         double? minimum = null;
-        for (int i = 0; i < count; i++)
+        foreach (SignalPoint point in SumLossCurve(sumCurve, channelCurves))
         {
-            double frequency = sumCurve[i].X;
-            if (frequency < minFrequencyHz || frequency > maxFrequencyHz)
+            if (point.X < minFrequencyHz || point.X > maxFrequencyHz)
             {
                 continue;
             }
 
-            double magnitudeSum = 0;
-            foreach (IReadOnlyList<SignalPoint> curve in channelCurves)
+            if (double.IsFinite(point.Y) && (minimum == null || point.Y < minimum))
             {
-                magnitudeSum += DataHelper.DecibelsToAmplitude(curve[i].Y);
-            }
-
-            double loss = sumCurve[i].Y - DataHelper.AmplitudeToDecibels(magnitudeSum);
-            if (double.IsFinite(loss) && (minimum == null || loss < minimum))
-            {
-                minimum = loss;
+                minimum = point.Y;
             }
         }
 

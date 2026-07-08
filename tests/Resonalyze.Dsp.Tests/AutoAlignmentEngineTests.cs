@@ -115,6 +115,26 @@ public sealed class AutoAlignmentEngineTests
     }
 
     [Fact]
+    public void Compute_ReferenceIsNotTheBottomChannel_WalksDownward()
+    {
+        // Mirror image of the two-way test: here the TWEETER arrives latest, so it
+        // becomes the reference at band index 1 and the woofer (index 0) is aligned
+        // through the downward-walk branch (byBand[i+1] / pairs[i]) — the opposite
+        // index arithmetic to the upward walk every other test exercises.
+        var woofer = new TestChannel("W", DelayedImpulse(0.0));
+        var tweeter = new TestChannel("T", DelayedImpulse(1.0));
+        var log = new StringBuilder();
+
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
+            Run([woofer, tweeter], [1_000], log);
+
+        Assert.False(alignment.ContainsKey(tweeter)); // reference stays put
+        Assert.InRange(alignment[woofer].DelayMs, 0.95, 1.05);
+        Assert.False(alignment[woofer].InvertPolarity);
+        Assert.Contains("Reference: T", log.ToString());
+    }
+
+    [Fact]
     public void Compute_DetectsAnInvertedChannel()
     {
         var woofer = new TestChannel("W", DelayedImpulse(1.0));

@@ -11,11 +11,8 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Options
 {
-    public partial class FROptions : Form
+    public partial class FROptions : ImpulsePreviewOptionsForm
     {
-        private readonly ToolTip toolTip = new();
-        private ExpSweepMeasurement? expSweepMeasurement;
-
         public FROptions()
         {
             InitializeComponent();
@@ -23,10 +20,6 @@ namespace Resonalyze.Options
             numericRightWindow.ValueChanged += TukeyWindow_ValueChanged;
             SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
             InitializeToolTips();
-            // Disposed, not FormClosed: a dialog disposed without ever having been
-            // shown (e.g. the docked host closing it while the owner is minimized)
-            // never raises FormClosed, which leaked the measurement subscription.
-            Disposed += FROptions_Disposed;
         }
 
         public void Init(
@@ -35,34 +28,27 @@ namespace Resonalyze.Options
             bool hasZeroDegreeCalibration,
             bool hasNinetyDegreeCalibration)
         {
-            if (!ReferenceEquals(this.expSweepMeasurement, expSweepMeasurement))
+            AttachMeasurement(expSweepMeasurement);
+            InitializeControls(() =>
             {
-                if (this.expSweepMeasurement != null)
-                {
-                    this.expSweepMeasurement.ImpulseResponseChanged -= ExpSweepMeasurement_ImpulseResponseChanged;
-                }
-
-                expSweepMeasurement.ImpulseResponseChanged += ExpSweepMeasurement_ImpulseResponseChanged;
-            }
-
-            this.expSweepMeasurement = expSweepMeasurement;
-            numericWindow.Value = frequencyResponseOptions.Window;
-            numericLeftWindow.Value = frequencyResponseOptions.LeftTukeyWindow;
-            numericRightWindow.Value = frequencyResponseOptions.RightTukeyWindow;
-            comboSmoothingInverseOctaves.SelectedItem =
-                SmoothingPresetOptions.Normalize(frequencyResponseOptions.SmoothingInverseOctaves);
-            MicrophoneCalibrationComboHelper.Configure(
-                comboCalibration,
-                frequencyResponseOptions.CalibrationMode,
-                hasZeroDegreeCalibration,
-                hasNinetyDegreeCalibration);
-            checkBoxShowPrimary.Checked = frequencyResponseOptions.ShowPrimary;
-            checkBoxShowCoherence.Checked = frequencyResponseOptions.ShowCoherence;
-            checkBoxShowHd2.Checked = frequencyResponseOptions.ShowHd2;
-            checkBoxShowHd3.Checked = frequencyResponseOptions.ShowHd3;
-            checkBoxShowHd4.Checked = frequencyResponseOptions.ShowHd4;
-            checkBoxShowThdPlusNoise.Checked = frequencyResponseOptions.ShowThdPlusNoise;
-            UpdateTukeyWindowLimits();
+                numericWindow.Value = frequencyResponseOptions.Window;
+                numericLeftWindow.Value = frequencyResponseOptions.LeftTukeyWindow;
+                numericRightWindow.Value = frequencyResponseOptions.RightTukeyWindow;
+                comboSmoothingInverseOctaves.SelectedItem =
+                    SmoothingPresetOptions.Normalize(frequencyResponseOptions.SmoothingInverseOctaves);
+                MicrophoneCalibrationComboHelper.Configure(
+                    comboCalibration,
+                    frequencyResponseOptions.CalibrationMode,
+                    hasZeroDegreeCalibration,
+                    hasNinetyDegreeCalibration);
+                checkBoxShowPrimary.Checked = frequencyResponseOptions.ShowPrimary;
+                checkBoxShowCoherence.Checked = frequencyResponseOptions.ShowCoherence;
+                checkBoxShowHd2.Checked = frequencyResponseOptions.ShowHd2;
+                checkBoxShowHd3.Checked = frequencyResponseOptions.ShowHd3;
+                checkBoxShowHd4.Checked = frequencyResponseOptions.ShowHd4;
+                checkBoxShowThdPlusNoise.Checked = frequencyResponseOptions.ShowThdPlusNoise;
+                UpdateTukeyWindowLimits();
+            });
             UpdateIrPreview();
         }
 
@@ -106,48 +92,22 @@ namespace Resonalyze.Options
                 numericRightWindow);
         }
 
-        private void UpdateIrPreview()
+        protected override void RenderIrPreview()
         {
-            if (expSweepMeasurement == null)
+            if (Measurement == null)
             {
                 return;
             }
 
             ImpulseWindowPreview.Update(
                 irPlotView,
-                expSweepMeasurement,
+                Measurement,
                 (int)numericWindow.Value,
                 (int)numericLeftWindow.Value,
                 (int)numericRightWindow.Value,
                 offset: 0,
                 // FR magnitude is now windowed on the transfer IR, so preview that window.
                 IrPreviewSource.Primary);
-        }
-
-        private void ExpSweepMeasurement_ImpulseResponseChanged()
-        {
-            if (IsDisposed)
-            {
-                return;
-            }
-
-            if (IsHandleCreated && InvokeRequired)
-            {
-                BeginInvoke((MethodInvoker)UpdateIrPreview);
-                return;
-            }
-
-            UpdateIrPreview();
-        }
-
-        private void FROptions_Disposed(object? sender, EventArgs e)
-        {
-            if (expSweepMeasurement != null)
-            {
-                expSweepMeasurement.ImpulseResponseChanged -= ExpSweepMeasurement_ImpulseResponseChanged;
-            }
-
-            toolTip.Dispose();
         }
 
         private void InitializeToolTips()

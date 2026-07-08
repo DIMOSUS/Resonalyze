@@ -10,11 +10,8 @@ using System.Windows.Forms;
 
 namespace Resonalyze.Options
 {
-    public partial class BDOpt : Form
+    public partial class BDOpt : ImpulsePreviewOptionsForm
     {
-        private readonly ToolTip toolTip = new();
-        private ExpSweepMeasurement? expSweepMeasurement;
-
         public BDOpt()
         {
             InitializeComponent();
@@ -22,43 +19,31 @@ namespace Resonalyze.Options
             numericRightWindow.ValueChanged += TukeyWindow_ValueChanged;
             SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
             InitializeToolTips();
-            // Disposed, not FormClosed: a dialog disposed without ever having been
-            // shown (e.g. the docked host closing it while the owner is minimized)
-            // never raises FormClosed, which leaked the measurement subscription.
-            Disposed += BDOpt_Disposed;
         }
 
         public void Init(ExpSweepMeasurement expSweepMeasurement, WaterfallGenerateOptions burstDecayGenOptions)
         {
-            if (!ReferenceEquals(this.expSweepMeasurement, expSweepMeasurement))
+            AttachMeasurement(expSweepMeasurement);
+            InitializeControls(() =>
             {
-                if (this.expSweepMeasurement != null)
-                {
-                    this.expSweepMeasurement.ImpulseResponseChanged -= ExpSweepMeasurement_ImpulseResponseChanged;
-                }
+                numericSampleRate.Value = expSweepMeasurement.SampleRate;
 
-                expSweepMeasurement.ImpulseResponseChanged += ExpSweepMeasurement_ImpulseResponseChanged;
-            }
+                numericWindow.Value = burstDecayGenOptions.Window;
+                numericCaptureTime.Value = (decimal)CalcCapturedTime;
 
-            this.expSweepMeasurement = expSweepMeasurement;
+                numericLeftWindow.Value = burstDecayGenOptions.LeftTukeyWindow;
+                numericRightWindow.Value = burstDecayGenOptions.RightTukeyWindow;
 
-            numericSampleRate.Value = expSweepMeasurement.SampleRate;
+                numericDbRange.Value = burstDecayGenOptions.DbRange;
 
-            numericWindow.Value = burstDecayGenOptions.Window;
-            numericCaptureTime.Value = (decimal)CalcCapturedTime;
+                comboSmoothingInverseOctaves.SelectedItem =
+                    SmoothingPresetOptions.Normalize(burstDecayGenOptions.SmoothingInverseOctaves);
 
-            numericLeftWindow.Value = burstDecayGenOptions.LeftTukeyWindow;
-            numericRightWindow.Value = burstDecayGenOptions.RightTukeyWindow;
+                numericOffset.Value = burstDecayGenOptions.Offset;
 
-            numericDbRange.Value = burstDecayGenOptions.DbRange;
-
-            comboSmoothingInverseOctaves.SelectedItem =
-                SmoothingPresetOptions.Normalize(burstDecayGenOptions.SmoothingInverseOctaves);
-
-            numericOffset.Value = burstDecayGenOptions.Offset;
-
-            numericPeriods.Value = (int)burstDecayGenOptions.Periods;
-            UpdateTukeyWindowLimits();
+                numericPeriods.Value = (int)burstDecayGenOptions.Periods;
+                UpdateTukeyWindowLimits();
+            });
             UpdateIrPreview();
         }
 
@@ -86,7 +71,7 @@ namespace Resonalyze.Options
         {
             get
             {
-                int sampleRate = expSweepMeasurement?.SampleRate ?? 0;
+                int sampleRate = Measurement?.SampleRate ?? 0;
                 return sampleRate > 0
                     ? (double)numericWindow.Value / sampleRate * 1000.0
                     : 0;
@@ -114,47 +99,21 @@ namespace Resonalyze.Options
                 numericRightWindow);
         }
 
-        private void UpdateIrPreview()
+        protected override void RenderIrPreview()
         {
-            if (expSweepMeasurement == null)
+            if (Measurement == null)
             {
                 return;
             }
 
             ImpulseWindowPreview.Update(
                 irPlotView,
-                expSweepMeasurement,
+                Measurement,
                 (int)numericWindow.Value,
                 (int)numericLeftWindow.Value,
                 (int)numericRightWindow.Value,
                 (int)numericOffset.Value,
                 IrPreviewSource.Primary);
-        }
-
-        private void ExpSweepMeasurement_ImpulseResponseChanged()
-        {
-            if (IsDisposed)
-            {
-                return;
-            }
-
-            if (IsHandleCreated && InvokeRequired)
-            {
-                BeginInvoke((MethodInvoker)UpdateIrPreview);
-                return;
-            }
-
-            UpdateIrPreview();
-        }
-
-        private void BDOpt_Disposed(object? sender, EventArgs e)
-        {
-            if (expSweepMeasurement != null)
-            {
-                expSweepMeasurement.ImpulseResponseChanged -= ExpSweepMeasurement_ImpulseResponseChanged;
-            }
-
-            toolTip.Dispose();
         }
 
         private void InitializeToolTips()

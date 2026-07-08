@@ -13,12 +13,10 @@ namespace Resonalyze
     {
         private readonly object stateSync = new();
         private readonly object dataSync = new();
-        private readonly object levelSync = new();
+        private readonly DualDeviceLevelCombiner dualDeviceLevels = new();
         private SoundRecorder? soundRecorder;
         private SoundRecorder? loopbackRecorder;
         private LoopbackSequencePairer? loopbackPairer;
-        private AudioChannelLevel[] latestMicrophoneLevels = Array.Empty<AudioChannelLevel>();
-        private AudioChannelLevel[] latestLoopbackLevels = Array.Empty<AudioChannelLevel>();
         private CancellationTokenSource? cancellationTokenSource;
         private Task<bool>? measurementTask;
         private ChannelWriter<float[][]>? sequenceWriter;
@@ -130,11 +128,7 @@ namespace Resonalyze
                 SequenceLength);
 
             DisposeRecorders();
-            lock (levelSync)
-            {
-                latestMicrophoneLevels = Array.Empty<AudioChannelLevel>();
-                latestLoopbackLevels = Array.Empty<AudioChannelLevel>();
-            }
+            dualDeviceLevels.Reset();
 
             bool separateLoopbackDevice = PairsSeparateLoopbackDevice;
             soundRecorder = new SoundRecorder();
@@ -567,85 +561,36 @@ namespace Resonalyze
             RaiseLevels(channels);
         }
 
-        // Separate loopback device: microphone and loopback levels come from two recorders.
-        // Keep the latest of each and raise a combined snapshot so both meters update live.
+        // Separate loopback device: microphone and loopback levels come from two recorders;
+        // the combiner keeps the latest of each so both meters update live.
         private void HandleMicrophoneOnlyLevels(AudioChannelLevel[] channels)
         {
-            lock (levelSync)
-            {
-                latestMicrophoneLevels = channels;
-            }
+            dualDeviceLevels.SetMicrophone(channels);
             RaiseCombinedDualDeviceLevels();
         }
 
         private void HandleLoopbackOnlyLevels(AudioChannelLevel[] channels)
         {
-            lock (levelSync)
-            {
-                latestLoopbackLevels = channels;
-            }
+            dualDeviceLevels.SetLoopback(channels);
             RaiseCombinedDualDeviceLevels();
         }
 
         private void RaiseCombinedDualDeviceLevels()
         {
-            AudioChannelLevel[] microphoneChannels;
-            AudioChannelLevel[] loopbackChannels;
-            lock (levelSync)
-            {
-                microphoneChannels = latestMicrophoneLevels;
-                loopbackChannels = latestLoopbackLevels;
-            }
-
-            InputLevelMeterEntry microphone = CreateLevelEntry(
-                microphoneChannels,
+            LevelsAvailable?.Invoke(dualDeviceLevels.Combine(
                 WaveInputChannelOffset,
-                loopbackReference: false);
-            InputLevelMeterEntry loopback = WaveLoopbackInputChannelOffset is int loopbackChannel
-                ? CreateLevelEntry(loopbackChannels, loopbackChannel, loopbackReference: true)
-                : InputLevelMeterEntry.Unavailable;
-            LevelsAvailable?.Invoke(new InputLevelMeterSnapshot(microphone, loopback));
+                WaveLoopbackInputChannelOffset));
         }
-
-        private static InputLevelMeterEntry CreateLevelEntry(
-            AudioChannelLevel[] channels,
-            int index,
-            bool loopbackReference) =>
-            (uint)index < (uint)channels.Length
-                ? new InputLevelMeterEntry(
-                    true,
-                    channels[index].PeakDbFs,
-                    channels[index].RmsDbFs,
-                    !loopbackReference && channels[index].FullScale,
-                    loopbackReference && channels[index].FullScale)
-                : InputLevelMeterEntry.Unavailable;
 
         private void RaiseLevels(AudioChannelLevel[] channels)
         {
-            int microphoneIndex = GetMicrophoneSequenceIndex();
-            int? loopbackIndex = GetLoopbackSequenceIndex();
-
-            InputLevelMeterEntry microphone =
-                (uint)microphoneIndex < (uint)channels.Length
-                ? new InputLevelMeterEntry(
-                    true,
-                    channels[microphoneIndex].PeakDbFs,
-                    channels[microphoneIndex].RmsDbFs,
-                    channels[microphoneIndex].FullScale,
-                    false)
-                : InputLevelMeterEntry.Unavailable;
-            InputLevelMeterEntry loopback =
-                loopbackIndex.HasValue && (uint)loopbackIndex.Value < (uint)channels.Length
-                    ? new InputLevelMeterEntry(
-                        true,
-                        channels[loopbackIndex.Value].PeakDbFs,
-                        channels[loopbackIndex.Value].RmsDbFs,
-                        channels[loopbackIndex.Value].FullScale,
-                        true)
-                    : InputLevelMeterEntry.Unavailable;
-            LevelsAvailable?.Invoke(new InputLevelMeterSnapshot(
-                microphone,
-                loopback));
+            // The shared mapping flags a full-scale loopback as the reference (not
+            // clipped), matching the dual-device path above; this path used to set
+            // both flags at once.
+            LevelsAvailable?.Invoke(InputLevelMapping.Map(
+                channels,
+                GetMicrophoneSequenceIndex(),
+                GetLoopbackSequenceIndex()));
         }
 
         private async Task ProcessSequencesAsync(

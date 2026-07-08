@@ -9,10 +9,8 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 namespace Resonalyze.Options
 {
-    public partial class WaterfallOptions : Form
+    public partial class WaterfallOptions : ImpulsePreviewOptionsForm
     {
-        private readonly ToolTip toolTip = new();
-        private ExpSweepMeasurement? expSweepMeasurement;
         private decimal lastNonZeroStep = 4;
 
         public WaterfallOptions()
@@ -22,46 +20,34 @@ namespace Resonalyze.Options
             numericRightWindow.ValueChanged += TukeyWindow_ValueChanged;
             SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
             InitializeToolTips();
-            // Disposed, not FormClosed: a dialog disposed without ever having been
-            // shown (e.g. the docked host closing it while the owner is minimized)
-            // never raises FormClosed, which leaked the measurement subscription.
-            Disposed += WaterfallOptions_Disposed;
         }
 
         public void Init(ExpSweepMeasurement expSweepMeasurement, WaterfallGenerateOptions waterfallGenerateOptions)
         {
-            if (!ReferenceEquals(this.expSweepMeasurement, expSweepMeasurement))
+            AttachMeasurement(expSweepMeasurement);
+            InitializeControls(() =>
             {
-                if (this.expSweepMeasurement != null)
-                {
-                    this.expSweepMeasurement.ImpulseResponseChanged -= ExpSweepMeasurement_ImpulseResponseChanged;
-                }
+                numericSampleRate.Value = numericSampleRate.ClampValue(expSweepMeasurement.SampleRate);
 
-                expSweepMeasurement.ImpulseResponseChanged += ExpSweepMeasurement_ImpulseResponseChanged;
-            }
+                // The settings file clamps to wider ranges than the controls; an
+                // out-of-range persisted value must not throw when the panel opens.
+                numericWindow.Value = numericWindow.ClampValue(waterfallGenerateOptions.Window);
+                numericSlices.Value = numericSlices.ClampValue(waterfallGenerateOptions.SliceCount);
+                lastNonZeroStep = waterfallGenerateOptions.Step == 0 ? 1 : waterfallGenerateOptions.Step;
+                numericStep.Value = numericStep.ClampValue((double)lastNonZeroStep);
+                numericCaptureTime.Value = numericCaptureTime.ClampValue((double)CalcCapturedTime);
 
-            this.expSweepMeasurement = expSweepMeasurement;
+                numericLeftWindow.Value = numericLeftWindow.ClampValue(waterfallGenerateOptions.LeftTukeyWindow);
+                numericRightWindow.Value = numericRightWindow.ClampValue(waterfallGenerateOptions.RightTukeyWindow);
 
-            numericSampleRate.Value = numericSampleRate.ClampValue(expSweepMeasurement.SampleRate);
+                numericDbRange.Value = numericDbRange.ClampValue(waterfallGenerateOptions.DbRange);
 
-            // The settings file clamps to wider ranges than the controls; an
-            // out-of-range persisted value must not throw when the panel opens.
-            numericWindow.Value = numericWindow.ClampValue(waterfallGenerateOptions.Window);
-            numericSlices.Value = numericSlices.ClampValue(waterfallGenerateOptions.SliceCount);
-            lastNonZeroStep = waterfallGenerateOptions.Step == 0 ? 1 : waterfallGenerateOptions.Step;
-            numericStep.Value = numericStep.ClampValue((double)lastNonZeroStep);
-            numericCaptureTime.Value = numericCaptureTime.ClampValue((double)CalcCapturedTime);
+                comboSmoothingInverseOctaves.SelectedItem =
+                    SmoothingPresetOptions.Normalize(waterfallGenerateOptions.SmoothingInverseOctaves);
 
-            numericLeftWindow.Value = numericLeftWindow.ClampValue(waterfallGenerateOptions.LeftTukeyWindow);
-            numericRightWindow.Value = numericRightWindow.ClampValue(waterfallGenerateOptions.RightTukeyWindow);
-
-            numericDbRange.Value = numericDbRange.ClampValue(waterfallGenerateOptions.DbRange);
-
-            comboSmoothingInverseOctaves.SelectedItem =
-                SmoothingPresetOptions.Normalize(waterfallGenerateOptions.SmoothingInverseOctaves);
-
-            numericOffset.Value = numericOffset.ClampValue(waterfallGenerateOptions.Offset);
-            UpdateTukeyWindowLimits();
+                numericOffset.Value = numericOffset.ClampValue(waterfallGenerateOptions.Offset);
+                UpdateTukeyWindowLimits();
+            });
             UpdateIrPreview();
         }
 
@@ -89,7 +75,7 @@ namespace Resonalyze.Options
         {
             get
             {
-                int sampleRate = expSweepMeasurement?.SampleRate ?? 0;
+                int sampleRate = Measurement?.SampleRate ?? 0;
                 return sampleRate > 0
                     ? (double)numericSlices.Value * (double)numericStep.Value / sampleRate * 1000.0
                     : 0;
@@ -133,47 +119,21 @@ namespace Resonalyze.Options
                 numericRightWindow);
         }
 
-        private void UpdateIrPreview()
+        protected override void RenderIrPreview()
         {
-            if (expSweepMeasurement == null)
+            if (Measurement == null)
             {
                 return;
             }
 
             ImpulseWindowPreview.Update(
                 irPlotView,
-                expSweepMeasurement,
+                Measurement,
                 (int)numericWindow.Value,
                 (int)numericLeftWindow.Value,
                 (int)numericRightWindow.Value,
                 (int)numericOffset.Value,
                 IrPreviewSource.Primary);
-        }
-
-        private void ExpSweepMeasurement_ImpulseResponseChanged()
-        {
-            if (IsDisposed)
-            {
-                return;
-            }
-
-            if (IsHandleCreated && InvokeRequired)
-            {
-                BeginInvoke((MethodInvoker)UpdateIrPreview);
-                return;
-            }
-
-            UpdateIrPreview();
-        }
-
-        private void WaterfallOptions_Disposed(object? sender, EventArgs e)
-        {
-            if (expSweepMeasurement != null)
-            {
-                expSweepMeasurement.ImpulseResponseChanged -= ExpSweepMeasurement_ImpulseResponseChanged;
-            }
-
-            toolTip.Dispose();
         }
 
         private void InitializeToolTips()

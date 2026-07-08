@@ -4,9 +4,8 @@ namespace Resonalyze;
 
 internal sealed class AsioFullDuplexSession : IDisposable
 {
-    private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(3);
     private readonly object sync = new();
-    private readonly List<SoundRecorderSampleWaiter> sampleWaiters = new();
+    private readonly SampleWaiterRegistry sampleWaiters = new();
     private readonly string driverName;
     private readonly int inputChannelOffset;
     private readonly int outputChannelOffset;
@@ -150,11 +149,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
         lock (sync)
         {
             accumulator = null;
-            foreach (SoundRecorderSampleWaiter waiter in sampleWaiters)
-            {
-                waiter.Cancel();
-            }
-            sampleWaiters.Clear();
+            sampleWaiters.CancelAll();
         }
     }
 
@@ -172,20 +167,18 @@ internal sealed class AsioFullDuplexSession : IDisposable
                 return Task.CompletedTask;
             }
 
-            var waiter = new SoundRecorderSampleWaiter(sampleCount, cancellationToken);
-            sampleWaiters.Add(waiter);
-            return waiter.Task;
+            return sampleWaiters.Add(sampleCount, cancellationToken);
         }
     }
 
     public async Task StopAsync()
     {
         AsioOut? activeDriver;
-        Task stoppedTask;
+        TaskCompletionSource<bool>? stoppedSignal;
         lock (sync)
         {
             activeDriver = driver;
-            stoppedTask = playbackStopped?.Task ?? Task.CompletedTask;
+            stoppedSignal = playbackStopped;
         }
 
         if (activeDriver == null)
@@ -195,22 +188,11 @@ internal sealed class AsioFullDuplexSession : IDisposable
 
         try
         {
-            activeDriver.Stop();
-        }
-        catch (InvalidOperationException)
-        {
-            playbackStopped?.TrySetResult(true);
-        }
-
-        try
-        {
-            await stoppedTask.WaitAsync(StopTimeout).ConfigureAwait(false);
-        }
-        catch (TimeoutException exception)
-        {
-            throw new TimeoutException(
-                $"The ASIO driver did not stop within {StopTimeout.TotalSeconds:0} seconds.",
-                exception);
+            await AudioCaptureStop.StopAndWaitAsync(
+                activeDriver.Stop,
+                stoppedSignal,
+                stoppedSignal?.Task ?? Task.CompletedTask,
+                "The ASIO driver").ConfigureAwait(false);
         }
         finally
         {
@@ -240,11 +222,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
         StopAndDisposeDriver();
         lock (sync)
         {
-            foreach (SoundRecorderSampleWaiter waiter in sampleWaiters)
-            {
-                waiter.Cancel();
-            }
-            sampleWaiters.Clear();
+            sampleWaiters.CancelAll();
         }
 
         GC.SuppressFinalize(this);
@@ -299,15 +277,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
             {
                 accumulator.Append(convertScratch, frames);
                 readySequences = accumulator.ExtractReadySequences();
-
-                for (int i = sampleWaiters.Count - 1; i >= 0; i--)
-                {
-                    if (accumulator.ReadSamples >= sampleWaiters[i].SampleCount)
-                    {
-                        sampleWaiters[i].Complete();
-                        sampleWaiters.RemoveAt(i);
-                    }
-                }
+                sampleWaiters.CompleteUpTo(accumulator.ReadSamples);
             }
         }
 
@@ -371,11 +341,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
                 Sequence,
                 Math.Max(expectedTotalSamples, 8192));
 
-            foreach (SoundRecorderSampleWaiter waiter in sampleWaiters)
-            {
-                waiter.Cancel();
-            }
-            sampleWaiters.Clear();
+            sampleWaiters.CancelAll();
         }
     }
 
@@ -411,38 +377,10 @@ internal sealed class AsioFullDuplexSession : IDisposable
     }
 
     private static TaskCompletionSource<bool> NewSignal() =>
-        new(TaskCreationOptions.RunContinuationsAsynchronously);
+        SampleWaiterRegistry.NewSignal();
 
     private void ThrowIfDisposed()
     {
         ObjectDisposedException.ThrowIf(disposed, this);
-    }
-
-    private sealed class SoundRecorderSampleWaiter
-    {
-        private readonly TaskCompletionSource<bool> completion = NewSignal();
-        private readonly CancellationTokenRegistration registration;
-
-        public SoundRecorderSampleWaiter(int sampleCount, CancellationToken cancellationToken)
-        {
-            SampleCount = sampleCount;
-            registration = cancellationToken.Register(() =>
-                completion.TrySetCanceled(cancellationToken));
-        }
-
-        public int SampleCount { get; }
-        public Task Task => completion.Task;
-
-        public void Complete()
-        {
-            registration.Dispose();
-            completion.TrySetResult(true);
-        }
-
-        public void Cancel()
-        {
-            registration.Dispose();
-            completion.TrySetCanceled();
-        }
     }
 }

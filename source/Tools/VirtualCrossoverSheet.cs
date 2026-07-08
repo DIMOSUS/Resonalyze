@@ -91,8 +91,8 @@ internal static class VirtualCrossoverSheet
     }
 
     internal static string Signed(double value) =>
-        value.ToString("+0.0;-0.0;0.0", CultureInfo.InvariantCulture);
+        SheetFormat.Signed(value);
 
     internal static string Number(double value, string format) =>
-        value.ToString(format, CultureInfo.InvariantCulture);
+        SheetFormat.Number(value, format);
 }

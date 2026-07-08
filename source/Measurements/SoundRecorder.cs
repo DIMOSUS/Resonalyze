@@ -7,9 +7,8 @@ namespace Resonalyze
     /// </summary>
     public sealed class SoundRecorder : IDisposable
     {
-        private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(3);
         private readonly object sync = new();
-        private readonly List<SampleWaiter> sampleWaiters = new();
+        private readonly SampleWaiterRegistry sampleWaiters = new();
         private WaveInEvent? waveSource;
         private CaptureAccumulator? accumulator;
         private float[][] decodeScratch = Array.Empty<float[]>();
@@ -113,20 +112,18 @@ namespace Resonalyze
                     return Task.CompletedTask;
                 }
 
-                var waiter = new SampleWaiter(sampleCount, cancellationToken);
-                sampleWaiters.Add(waiter);
-                return waiter.Task;
+                return sampleWaiters.Add(sampleCount, cancellationToken);
             }
         }
 
         public async Task StopRecordingAsync()
         {
             WaveInEvent? source;
-            Task stoppedTask;
+            TaskCompletionSource<bool>? stoppedSignal;
             lock (sync)
             {
                 source = waveSource;
-                stoppedTask = recordingStopped?.Task ?? Task.CompletedTask;
+                stoppedSignal = recordingStopped;
             }
 
             if (source == null)
@@ -136,22 +133,11 @@ namespace Resonalyze
 
             try
             {
-                source.StopRecording();
-            }
-            catch (InvalidOperationException)
-            {
-                recordingStopped?.TrySetResult(true);
-            }
-
-            try
-            {
-                await stoppedTask.WaitAsync(StopTimeout).ConfigureAwait(false);
-            }
-            catch (TimeoutException exception)
-            {
-                throw new TimeoutException(
-                    $"The audio input did not stop within {StopTimeout.TotalSeconds:0} seconds.",
-                    exception);
+                await AudioCaptureStop.StopAndWaitAsync(
+                    source.StopRecording,
+                    stoppedSignal,
+                    stoppedSignal?.Task ?? Task.CompletedTask,
+                    "The audio input").ConfigureAwait(false);
             }
             finally
             {
@@ -206,15 +192,7 @@ namespace Resonalyze
 
                 accumulator.Append(decodeScratch, frameCount);
                 readySequences = accumulator.ExtractReadySequences();
-
-                for (int i = sampleWaiters.Count - 1; i >= 0; i--)
-                {
-                    if (accumulator.ReadSamples >= sampleWaiters[i].SampleCount)
-                    {
-                        sampleWaiters[i].Complete();
-                        sampleWaiters.RemoveAt(i);
-                    }
-                }
+                sampleWaiters.CompleteUpTo(accumulator.ReadSamples);
             }
 
             firstBufferReady?.TrySetResult(true);
@@ -294,11 +272,7 @@ namespace Resonalyze
                     Sequence,
                     Math.Max(expectedTotalSamples, SampleRate));
 
-                foreach (SampleWaiter waiter in sampleWaiters)
-                {
-                    waiter.Cancel();
-                }
-                sampleWaiters.Clear();
+                sampleWaiters.CancelAll();
             }
         }
 
@@ -333,7 +307,7 @@ namespace Resonalyze
         }
 
         private static TaskCompletionSource<bool> NewSignal() =>
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
+            SampleWaiterRegistry.NewSignal();
 
         private void ThrowIfDisposed()
         {
@@ -354,41 +328,9 @@ namespace Resonalyze
             StopAndDisposeSource();
             lock (sync)
             {
-                foreach (SampleWaiter waiter in sampleWaiters)
-                {
-                    waiter.Cancel();
-                }
-                sampleWaiters.Clear();
+                sampleWaiters.CancelAll();
             }
             GC.SuppressFinalize(this);
-        }
-
-        private sealed class SampleWaiter
-        {
-            private readonly TaskCompletionSource<bool> completion = NewSignal();
-            private readonly CancellationTokenRegistration registration;
-
-            public SampleWaiter(int sampleCount, CancellationToken cancellationToken)
-            {
-                SampleCount = sampleCount;
-                registration = cancellationToken.Register(() =>
-                    completion.TrySetCanceled(cancellationToken));
-            }
-
-            public int SampleCount { get; }
-            public Task Task => completion.Task;
-
-            public void Complete()
-            {
-                registration.Dispose();
-                completion.TrySetResult(true);
-            }
-
-            public void Cancel()
-            {
-                registration.Dispose();
-                completion.TrySetCanceled();
-            }
         }
     }
 }

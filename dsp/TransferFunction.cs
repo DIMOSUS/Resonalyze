@@ -44,14 +44,15 @@ public static class TransferFunction
                 targetPowerSpectrum);
         }
 
-        var coherence = new double[fftLength / 2 + 1];
-        for (int bin = 0; bin < coherence.Length; bin++)
-        {
-            double denominator = referencePowerSpectrum[bin] * targetPowerSpectrum[bin];
-            coherence[bin] = denominator > 0
-                ? Math.Clamp(MagnitudeSquared(crossSpectrum[bin]) / denominator, 0.0, 1.0)
-                : 0.0;
-        }
+        // γ² from the shared cross/auto-spectra formula; epsilon 0 keeps the
+        // previous denominator > 0 gate. Only the first half is retained — the
+        // upper half mirrors it for the real inputs here.
+        double[] coherence = SpectrumAnalysis
+            .ComputeCoherence(
+                crossSpectrum,
+                referencePowerSpectrum,
+                targetPowerSpectrum,
+                epsilon: 0.0)[..(fftLength / 2 + 1)];
 
         Complex[] relative = InverseH1Response(
             crossSpectrum,

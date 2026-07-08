@@ -13,24 +13,12 @@ public static class SweepAnalysis
         IReadOnlyList<float> inverseFilter,
         double normalization = 2.0)
     {
+        ArgumentNullException.ThrowIfNull(recorded);
         ArgumentNullException.ThrowIfNull(inverseFilter);
 
         return DeconvolveWithInverseFilter(
-            recorded,
-            ToDoubles(inverseFilter),
-            normalization);
-    }
-
-    public static SweepDeconvolutionResult DeconvolveWithInverseFilter(
-        IReadOnlyList<float> recorded,
-        IReadOnlyList<double> inverseFilter,
-        double normalization = 2.0)
-    {
-        ArgumentNullException.ThrowIfNull(recorded);
-
-        return DeconvolveWithInverseFilter(
             ToDoubles(recorded),
-            inverseFilter,
+            ToDoubles(inverseFilter),
             normalization);
     }
 

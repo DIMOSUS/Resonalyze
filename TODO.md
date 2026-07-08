@@ -16,21 +16,30 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 - [ ] **`CrossoverAutoSetup.Optimizer.Score()` recomputes every channel** on
   each junction/gain trial (~300–1500 calls per junction). Filter magnitudes
   are cached, but the amplitudes of untouched channels are not.
-- [ ] **Duplication:** the coherence formula lives twice
-  (`SpectrumAnalysis.ComputeCoherence` vs inline in
-  `TransferFunction.ComputeAveragedRelativeIr`); `DspChannelChain.Response`
-  re-implements `PreparedDspResponse.Create`;
-  `SweepAnalysis.DeconvolveWithInverseFilter` has three overloads with manual
-  float→double conversion; the single-frame `TransferFunction.ComputeRelativeIr`
-  is dead outside tests.
+- [ ] **Duplication (partly resolved, partly deliberate):** the coherence
+  formula no longer lives twice — `TransferFunction.ComputeAveragedRelativeIr`
+  now calls `SpectrumAnalysis.ComputeCoherence`. The unused
+  `SweepAnalysis.DeconvolveWithInverseFilter(float, double)` overload was
+  removed; the remaining two share the single `ToDoubles` converter.
+  **Kept by design:** `DspChannelChain.Response` looks like a re-implementation
+  of `PreparedDspResponse` but is the independent per-frequency reference the
+  DSP tests use as an oracle (`PreparedDspResponse_MatchesDspChannelChainResponse`,
+  `ApplyChain_MatchesReference`) — merging it would make those checks tautological.
+  The single-frame `TransferFunction.ComputeRelativeIr` is unused in production
+  but shares all its internals with the averaged path (no code is duplicated) and
+  is the directly-tested single-frame H1 primitive with a `filter` parameter, so
+  it stays as a tested entry point.
 - [ ] **`FrequencyResponseOptions` is a grab-bag** mixing FR windows,
   phase/group-delay gates and a dozen UI visibility flags (`ShowHd2`,
   `ShowGroupDelay`, …) — presentation flags leaked into the DSP library.
 - [ ] **`DataHelper` is a ~1160-line god-object**; split into
   Spectrum/Phase/Impulse/Resampling modules.
-- [ ] **Undocumented magic numbers in harmonic analysis** (`DataHelper`):
-  window bounds `h+0.03`/`h−0.5`, THD window `5.5…1.5`, silent doubling of
-  harmonic smoothing. Document or name them.
+- [x] **Undocumented magic numbers in harmonic analysis** (`DataHelper`) —
+  done. Named and documented: `HarmonicWindowUpperGuard`/`HarmonicWindowLowerReach`
+  (the `h+0.03`/`h−0.5` isolation window), `ThdWindowUpperHarmonic`/
+  `ThdWindowLowerHarmonic` (`5.5…1.5`) and `HarmonicSmoothingWidthFactor` (the
+  `2×` smoothing width harmonic/THD curves use over the primary). No behavior
+  change.
 
 ## Virtual DSP / Time Alignment
 
@@ -105,10 +114,11 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   helper centralised the temp-file dance, but MigraDoc 6 supports
   `AddImage("base64:...")`, which would remove it entirely (needs a Windows
   render check that the sheets stay pixel-identical).
-- [ ] **No deconvolution flatness test.** The sweep + inverse-filter math was
-  verified numerically during review (in-band ripple < 0.01 dB), but nothing
-  in the test suite pins it; a `SyntheticMeasurement`-style flatness test
-  would lock the `2/N` scaling and envelope compensation down.
+- [x] **No deconvolution flatness test** — done.
+  `SweepDeconvolutionFlatnessTests` regenerates an exponential sine sweep and
+  its inverse filter, deconvolves the unity round-trip, and asserts the in-band
+  magnitude is flat (measured ripple 0.04 dB around a 0.01 dB mean), pinning the
+  `2/N` scaling and the inverse-filter envelope compensation.
 
 ## Audio capture layer
 

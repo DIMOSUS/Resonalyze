@@ -80,8 +80,9 @@ public partial class Form1
             return;
         }
 
-        activeOverlaySlotsByMode[OverlayCollection.OverlayModeFor(CurrentMode)] =
-            overlayCollection.CaptureActiveSlots(CurrentMode);
+        activeOverlaySlots.Store(
+            OverlayCollection.OverlayModeFor(CurrentMode),
+            overlayCollection.CaptureActiveSlots(CurrentMode));
     }
 
     private void RestoreActiveOverlaySlotsForCurrentMode()
@@ -95,9 +96,7 @@ public partial class Form1
         }
 
         Mode overlayMode = OverlayCollection.OverlayModeFor(CurrentMode);
-        if (activeOverlaySlotsByMode.TryGetValue(
-                overlayMode,
-                out List<int>? activeSlots))
+        if (activeOverlaySlots.TryGet(overlayMode, out List<int> activeSlots))
         {
             overlayCollection.RestoreActiveSlots(CurrentMode, activeSlots);
         }
@@ -138,19 +137,7 @@ public partial class Form1
                 Points = points
             };
             file.Save();
-
-            if (!activeOverlaySlotsByMode.TryGetValue(
-                    Mode.FrequencyResponse,
-                    out List<int>? active))
-            {
-                active = new List<int>();
-                activeOverlaySlotsByMode[Mode.FrequencyResponse] = active;
-            }
-            if (!active.Contains(slot))
-            {
-                active.Add(slot);
-            }
-
+            activeOverlaySlots.MarkActive(Mode.FrequencyResponse, slot);
             return slot;
         }
 
@@ -327,5 +314,5 @@ public partial class Form1
     }
 
     private bool CanDrawCurrentMeasurement() =>
-        hasCurrentImpulseResponse && !expSweepMeasurement.InProgress;
+        sessionTracker.HasImpulseResponse && !expSweepMeasurement.InProgress;
 }

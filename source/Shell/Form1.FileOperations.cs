@@ -60,21 +60,7 @@ public partial class Form1
                 ImpulseResponseFile file =
                     ImpulseResponseFile.Capture(expSweepMeasurement);
                 await file.SaveAsync(dialog.FileName);
-                if (currentHistoryEntryId.HasValue)
-                {
-                    measurementHistoryService.MarkSaved(
-                        currentHistoryEntryId.Value,
-                        dialog.FileName,
-                        file,
-                        CaptureCurrentSessionSnapshot());
-                }
-                else
-                {
-                    currentHistoryEntryId = measurementHistoryService.AddOrUpdateLoadedFile(
-                        dialog.FileName,
-                        file,
-                        CaptureCurrentSessionSnapshot());
-                }
+                sessionTracker.MarkSavedFile(dialog.FileName, file);
                 SetImpulseResponseSourceFile(dialog.FileName);
                 UpdateLastImpulseResponseDirectory(dialog.FileName);
                 RefreshCurrentModePlot();
@@ -141,10 +127,7 @@ public partial class Form1
                     file.AcceptedAverageRunCount);
                 expSweepMeasurement.RestoreLevelSnapshot(file.GetMeterSnapshot());
                 ApplyLoadedImpulseResponseState(dialog.FileName);
-                currentHistoryEntryId = measurementHistoryService.AddOrUpdateLoadedFile(
-                    dialog.FileName,
-                    file,
-                    CaptureCurrentSessionSnapshot());
+                sessionTracker.MarkLoadedFile(dialog.FileName, file);
             }
             catch (Exception exception)
             {

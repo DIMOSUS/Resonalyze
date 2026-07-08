@@ -21,7 +21,7 @@ public partial class Form1
 
     private void SetImpulseResponseAvailability(bool available)
     {
-        hasCurrentImpulseResponse = available;
+        sessionTracker.SetImpulseResponseAvailable(available);
         commandController.SetSaveAvailable(available);
         commandController.SetLoadAvailable(true);
     }
@@ -29,8 +29,7 @@ public partial class Form1
     private void EnterMeasurementRunningState()
     {
         buttonRecord.Text = "Running...";
-        currentHistoryEntryId = null;
-        hasCurrentImpulseResponse = false;
+        sessionTracker.Reset();
         SetImpulseResponseSourceFile(null);
         UpdatePeakInfo();
         commandController.SetSaveAvailable(false);
@@ -45,7 +44,7 @@ public partial class Form1
         {
             UpdateLastImpulseResponseDirectory(filePath);
         }
-        hasCurrentImpulseResponse = true;
+        sessionTracker.SetImpulseResponseAvailable(true);
         UpdatePeakInfo();
         RefreshCurrentModePlot();
     }

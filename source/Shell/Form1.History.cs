@@ -26,8 +26,8 @@ public partial class Form1
                 dialog.NewSessionRequested += HandleNewSessionRequested;
                 dialog.SetEntries(
                     measurementHistoryService.Entries,
-                    currentHistoryEntryId,
-                    currentHistoryEntryId);
+                    sessionTracker.CurrentEntryId,
+                    sessionTracker.CurrentEntryId);
             },
             async _ => await Task.CompletedTask);
     }
@@ -41,8 +41,8 @@ public partial class Form1
                 Guid? selectedEntryId = dialog.SelectedEntryId;
                 dialog.SetEntries(
                     measurementHistoryService.Entries,
-                    selectedEntryId ?? currentHistoryEntryId,
-                    currentHistoryEntryId);
+                    selectedEntryId ?? sessionTracker.CurrentEntryId,
+                    sessionTracker.CurrentEntryId);
             });
         });
     }
@@ -68,9 +68,9 @@ public partial class Form1
             // Before leaving the current entry, write the live working state back
             // into it so that returning later restores the latest mode/settings/
             // overlays rather than the state captured at save time.
-            if (currentHistoryEntryId != entryId)
+            if (sessionTracker.CurrentEntryId != entryId)
             {
-                PersistCurrentSessionState();
+                sessionTracker.PersistCurrentSessionState();
             }
 
             // File-backed entries keep their file name in the plot titles (the same
@@ -78,7 +78,7 @@ public partial class Form1
             string? sourceFilePath = measurementHistoryService.FindById(entryId)
                 ?.SourceFilePath;
             await RestoreHistorySnapshotAsync(snapshot, sourceFilePath);
-            currentHistoryEntryId = entryId;
+            sessionTracker.MarkRestored(entryId);
             dockedHistoryHost.InvokeIfOpen<MeasurementHistoryWindow>(dialog =>
             {
                 dialog.SetEntries(
@@ -137,7 +137,7 @@ public partial class Form1
                 dialog.FileName,
                 file,
                 snapshot.Session);
-            if (currentHistoryEntryId == entryId)
+            if (sessionTracker.CurrentEntryId == entryId)
             {
                 SetImpulseResponseSourceFile(dialog.FileName);
                 UpdateLastImpulseResponseDirectory(dialog.FileName);
@@ -162,10 +162,7 @@ public partial class Form1
             return;
         }
 
-        if (currentHistoryEntryId == entryId)
-        {
-            currentHistoryEntryId = null;
-        }
+        sessionTracker.ForgetEntry(entryId);
 
         dockedHistoryHost.InvokeIfOpen<MeasurementHistoryWindow>(dialog =>
         {
@@ -173,7 +170,7 @@ public partial class Form1
             dialog.SetEntries(
                 measurementHistoryService.Entries,
                 dialog.SelectedEntryId,
-                currentHistoryEntryId);
+                sessionTracker.CurrentEntryId);
         });
     }
 
@@ -204,7 +201,7 @@ public partial class Form1
 
         ApplyMeasurementConfigurationToControllers();
         SetImpulseResponseSourceFile(sourceFilePath);
-        hasCurrentImpulseResponse = true;
+        sessionTracker.SetImpulseResponseAvailable(true);
         UpdatePeakInfo();
 
         if (snapshot.Session != null)
@@ -247,7 +244,7 @@ public partial class Form1
     // overlays' own on-disk files are left intact.
     private async Task StartNewSessionAsync()
     {
-        PersistCurrentSessionState();
+        sessionTracker.PersistCurrentSessionState();
 
         if (liveSpectrumController.InProgress)
         {
@@ -255,7 +252,7 @@ public partial class Form1
         }
         liveSpectrumController.ForgetLastCurve();
 
-        currentHistoryEntryId = null;
+        sessionTracker.Reset();
         SetImpulseResponseAvailability(false);
         SetImpulseResponseSourceFile(null);
 
@@ -271,21 +268,6 @@ public partial class Form1
 
         dockedHistoryHost.InvokeIfOpen<MeasurementHistoryWindow>(dialog =>
             dialog.SetEntries(measurementHistoryService.Entries, null, null));
-    }
-
-    // Writes the live working state (mode + per-mode settings + active overlays)
-    // back into the currently-selected history entry. Safe to call when nothing is
-    // selected or no measurement is loaded.
-    private void PersistCurrentSessionState()
-    {
-        if (!currentHistoryEntryId.HasValue || !hasCurrentImpulseResponse)
-        {
-            return;
-        }
-
-        measurementHistoryService.UpdateSession(
-            currentHistoryEntryId.Value,
-            CaptureCurrentSessionSnapshot());
     }
 
     private MeasurementSessionSnapshot CaptureCurrentSessionSnapshot()

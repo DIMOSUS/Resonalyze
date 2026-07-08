@@ -72,14 +72,13 @@ namespace Resonalyze
         private readonly MeasurementSettingsFile measurementSettings;
         private readonly MeasurementHistoryService measurementHistoryService = new();
         private readonly IReadOnlyDictionary<ModeTab, ModeDescriptor> modeDescriptors;
-        private readonly Dictionary<Mode, List<int>> activeOverlaySlotsByMode = new();
+        private readonly ActiveOverlaySlotTracker activeOverlaySlots = new();
         private readonly PlotLabelsPanelController plotLabelsPanelController;
         private readonly InputLevelMeterController inputLevelMeterController;
         private readonly DockedModeSettingsHost dockedModeSettingsHost;
         private readonly DockedModeSettingsHost dockedMeasurementSettingsHost;
         private readonly DockedModeSettingsHost dockedHistoryHost;
-        private Guid? currentHistoryEntryId;
-        private bool hasCurrentImpulseResponse;
+        private readonly MeasurementSessionTracker sessionTracker;
         private bool closingPrepared;
         private bool closingInProgress;
         private bool resourcesDisposed;
@@ -116,6 +115,9 @@ namespace Resonalyze
             microphoneCalibration = new MicrophoneCalibrationService(
                 GetConfiguredMicrophoneCalibrationPath,
                 ShowCalibrationProblem);
+            sessionTracker = new MeasurementSessionTracker(
+                measurementHistoryService,
+                CaptureCurrentSessionSnapshot);
             Form1ControllerDependencies dependencies = CreateControllerDependencies();
             overlayCollection = dependencies.OverlayCollection;
             plotLabelsPanelController = dependencies.PlotLabelsPanelController;

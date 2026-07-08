@@ -164,10 +164,14 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   calibration cache + warn-once bookkeeping (`MicrophoneCalibrationService`),
   the startup warm-up task/cancellation pair (`StartupAudioWarmup`), the
   settings-save debounce (`DebouncedSaver`), the Compare selection read by
-  plot-build workers (`CompareSelection`) and the record-button long-press
-  state machine (`ButtonLongPressBehavior`) own their state now. Still on
-  Form1: history/current-IR state, overlay slot tracking and the lifecycle
-  flags — keep carving one concern at a time.
+  plot-build workers (`CompareSelection`), the record-button long-press
+  state machine (`ButtonLongPressBehavior`), the current-measurement/history
+  identity (`MeasurementSessionTracker`) and the per-mode overlay-slot memory
+  (`ActiveOverlaySlotTracker`) own their state now. What remains on Form1 is
+  the lifecycle/close flags (`closingPrepared`, `closingInProgress`,
+  `resourcesDisposed`, `shutdownFastClose`, `updateCheckStarted`) and the
+  transient UI bits (compare menu strip) — inherently form-bound; further
+  slicing is optional polish rather than a concurrency risk.
 - [ ] **`WireLiveApply` covers only dialog-open controls.** Controls created
   after wiring never get live-apply behavior.
 

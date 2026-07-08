@@ -139,18 +139,24 @@ namespace Resonalyze.Options
                     : CoherenceLimits[0];
         }
 
-        private static int FindCoherenceLimitIndex(int thresholdPercent)
+        private static int FindCoherenceLimitIndex(int thresholdPercent) =>
+            FloorIndex(CoherenceLimits, thresholdPercent);
+
+        // Index of the largest entry that does not exceed target, or 0 when target
+        // sits below the whole array. Shared by the coherence-limit, overlap and
+        // sequence-length combos, whose option arrays are all ascending.
+        private static int FloorIndex(IReadOnlyList<int> ascending, int target)
         {
-            int normalizedIndex = 0;
-            for (int index = 0; index < CoherenceLimits.Length; index++)
+            int index = 0;
+            for (int i = 0; i < ascending.Count; i++)
             {
-                if (thresholdPercent >= CoherenceLimits[index])
+                if (target >= ascending[i])
                 {
-                    normalizedIndex = index;
+                    index = i;
                 }
             }
 
-            return normalizedIndex;
+            return index;
         }
 
         private sealed class CoherenceLimitOption
@@ -264,19 +270,8 @@ namespace Resonalyze.Options
             public override string ToString() => DisplayName;
         }
 
-        private static int FindOverlapIndex(int overlapPercent)
-        {
-            int normalizedIndex = 0;
-            for (int index = 0; index < OverlapPercents.Length; index++)
-            {
-                if (overlapPercent >= OverlapPercents[index])
-                {
-                    normalizedIndex = index;
-                }
-            }
-
-            return normalizedIndex;
-        }
+        private static int FindOverlapIndex(int overlapPercent) =>
+            FloorIndex(OverlapPercents, overlapPercent);
 
         private sealed class OverlapOption
         {
@@ -293,19 +288,8 @@ namespace Resonalyze.Options
             }
         }
 
-        private static int NormalizeSequenceLength(int sequenceLength)
-        {
-            int normalized = SequenceLengths[0];
-            foreach (int candidate in SequenceLengths)
-            {
-                if (sequenceLength >= candidate)
-                {
-                    normalized = candidate;
-                }
-            }
-
-            return normalized;
-        }
+        private static int NormalizeSequenceLength(int sequenceLength) =>
+            SequenceLengths[FloorIndex(SequenceLengths, sequenceLength)];
 
         private int FindNoiseColorIndex(NoiseColor noiseColor)
         {

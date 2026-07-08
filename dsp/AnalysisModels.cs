@@ -21,6 +21,25 @@ public enum AnalysisCurveKind
 }
 
 /// <summary>
+/// Selects which frequency-response curves <see cref="DataHelper.GetSpectrum"/>
+/// computes. The DSP layer takes this instead of reading presentation-layer
+/// visibility flags: callers translate their own "show" state (and any
+/// computational scoping) into this set.
+/// </summary>
+[System.Flags]
+public enum SpectrumCurves
+{
+    None = 0,
+    Primary = 1 << 0,
+    SecondHarmonic = 1 << 1,
+    ThirdHarmonic = 1 << 2,
+    FourthHarmonic = 1 << 3,
+    ThdPlusNoise = 1 << 4,
+    Harmonics = SecondHarmonic | ThirdHarmonic | FourthHarmonic | ThdPlusNoise,
+    All = Primary | Harmonics
+}
+
+/// <summary>
 /// Contains one named analysis curve produced by the DSP layer.
 /// </summary>
 public sealed record AnalysisCurve(

@@ -31,13 +31,6 @@ namespace Resonalyze.Dsp
                 ? MicrophoneCalibrationMode.Degrees0
                 : MicrophoneCalibrationMode.Off;
         }
-        public bool ShowCoherence { get; set; } = true;
-
-        // Phase-mode curve visibility. Ignored by the other modes that reuse this
-        // options type.
-        public bool ShowMeasuredPhase { get; set; } = true;
-        public bool ShowMinimumPhase { get; set; } = true;
-        public bool ShowExcessPhase { get; set; } = true;
 
         // Phase-mode windowing (milliseconds): the Tukey gate is left + plateau + right
         // with the peak at the fade-in/plateau boundary. PhaseDetrendMs is the τ used
@@ -84,17 +77,6 @@ namespace Resonalyze.Dsp
             return gateMs > 0.0 ? 1000.0 / gateMs : 0.0;
         }
 
-        // Frequency-response curve visibility. Ignored by the other modes that reuse
-        // this options type.
-        public bool ShowPrimary { get; set; } = true;
-        public bool ShowHd2 { get; set; } = true;
-        public bool ShowHd3 { get; set; } = true;
-        public bool ShowHd4 { get; set; } = true;
-        public bool ShowThdPlusNoise { get; set; } = true;
-
-        // Group-delay-mode curve visibility. Ignored by the other modes that reuse
-        // this options type.
-        public bool ShowGroupDelay { get; set; } = true;
     }
 
     public sealed class ImpulseResponseOptions

@@ -61,6 +61,11 @@ namespace Resonalyze
             // the shared value.
             SmoothingInverseOctaves = FrequencyResponseOptions.DefaultGroupDelaySmoothingInverseOctaves,
         };
+        // Per-mode curve visibility (presentation flags), one instance per
+        // frequency-response-family mode, mirroring the options objects above.
+        private readonly CurveVisibilityOptions frequencyResponseVisibility = new();
+        private readonly CurveVisibilityOptions phaseResponseVisibility = new();
+        private readonly CurveVisibilityOptions groupDelayVisibility = new();
         private readonly ImpulseResponseOptions impulseResponseOptions = new();
         private readonly LiveSpectrumOptions liveSpectrumOptions = new();
         private readonly TimeAlignmentOptions timeAlignmentOptions = new();

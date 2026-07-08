@@ -83,23 +83,21 @@ namespace Resonalyze.Dsp
             IImpulseMeasurement measurement,
             FrequencyResponseOptions frequencyResponseOptions,
             CalibrationFile? calibration,
-            bool includePrimary = true,
-            bool includeHarmonics = true)
+            SpectrumCurves curves)
         {
-            var curves = new List<AnalysisCurve>();
+            var result = new List<AnalysisCurve>();
             int peakIndex = measurement.PeakIndex;
 
-            // Each curve is gated by the caller's computational scope
-            // (includePrimary / includeHarmonics) AND the user's per-curve
-            // visibility flag.
-            bool wantHd2 = includeHarmonics && frequencyResponseOptions.ShowHd2;
-            bool wantHd3 = includeHarmonics && frequencyResponseOptions.ShowHd3;
-            bool wantHd4 = includeHarmonics && frequencyResponseOptions.ShowHd4;
-            bool wantThd = includeHarmonics && frequencyResponseOptions.ShowThdPlusNoise;
+            // The caller decides which curves to compute; visibility flags and any
+            // computational scoping are already folded into this set.
+            bool wantHd2 = (curves & SpectrumCurves.SecondHarmonic) != 0;
+            bool wantHd3 = (curves & SpectrumCurves.ThirdHarmonic) != 0;
+            bool wantHd4 = (curves & SpectrumCurves.FourthHarmonic) != 0;
+            bool wantThd = (curves & SpectrumCurves.ThdPlusNoise) != 0;
 
-            if (includePrimary && frequencyResponseOptions.ShowPrimary)
+            if ((curves & SpectrumCurves.Primary) != 0)
             {
-                curves.Add(GetPrimarySpectrum(
+                result.Add(GetPrimarySpectrum(
                     measurement,
                     frequencyResponseOptions,
                     calibration));
@@ -107,7 +105,7 @@ namespace Resonalyze.Dsp
 
             if (!wantHd2 && !wantHd3 && !wantHd4 && !wantThd)
             {
-                return curves;
+                return result;
             }
 
             for (int h = 2; h < 5; h++)
@@ -145,7 +143,7 @@ namespace Resonalyze.Dsp
                     frequencyResponseOptions.SmoothingInverseOctaves > 0
                         ? HarmonicSmoothingWidthFactor / frequencyResponseOptions.SmoothingInverseOctaves
                         : 0.0);
-                curves.Add(new AnalysisCurve(
+                result.Add(new AnalysisCurve(
                     $"HD{h}",
                     data,
                     h switch
@@ -176,13 +174,13 @@ namespace Resonalyze.Dsp
                     frequencyResponseOptions.SmoothingInverseOctaves > 0
                         ? HarmonicSmoothingWidthFactor / frequencyResponseOptions.SmoothingInverseOctaves
                         : 0.0);
-                curves.Add(new AnalysisCurve(
+                result.Add(new AnalysisCurve(
                     "THD+N",
                     data,
                     AnalysisCurveKind.ThdPlusNoise));
             }
 
-            return curves;
+            return result;
         }
 
         // Oversampling length shared by the spectrum, phase and minimum-phase

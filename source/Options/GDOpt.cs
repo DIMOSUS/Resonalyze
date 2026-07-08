@@ -24,6 +24,7 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
     public void Init(
         ExpSweepMeasurement expSweepMeasurement,
         FrequencyResponseOptions opt,
+        CurveVisibilityOptions visibility,
         Func<CompareAnalysisSource?>? getCompare = null)
     {
         AttachMeasurement(expSweepMeasurement);
@@ -36,15 +37,15 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
             numericRightWindow.Value = ClampToControl(numericRightWindow, opt.GroupDelayRightMs);
             comboSmoothingInverseOctaves.SelectedItem =
                 SmoothingPresetOptions.Normalize(opt.SmoothingInverseOctaves);
-            checkBoxShowGroupDelay.Checked = opt.ShowGroupDelay;
-            checkBoxShowCoherence.Checked = opt.ShowCoherence;
+            checkBoxShowGroupDelay.Checked = visibility.ShowGroupDelay;
+            checkBoxShowCoherence.Checked = visibility.ShowCoherence;
         });
 
         UpdateMinFrequencyLabel();
         UpdateIrPreview();
     }
 
-    public void SetOptions(FrequencyResponseOptions opt)
+    public void SetOptions(FrequencyResponseOptions opt, CurveVisibilityOptions visibility)
     {
         opt.GroupDelayGateOffsetMs = (double)numericGateOffset.Value;
         opt.GroupDelayPlateauMs = (double)numericWindow.Value;
@@ -54,8 +55,8 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
             comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
                 ? inverseOctaves
                 : SmoothingPresetOptions.SupportedInverseOctaves[0];
-        opt.ShowGroupDelay = checkBoxShowGroupDelay.Checked;
-        opt.ShowCoherence = checkBoxShowCoherence.Checked;
+        visibility.ShowGroupDelay = checkBoxShowGroupDelay.Checked;
+        visibility.ShowCoherence = checkBoxShowCoherence.Checked;
         UpdateIrPreview();
     }
 

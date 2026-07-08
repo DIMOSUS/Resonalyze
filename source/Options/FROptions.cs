@@ -25,6 +25,7 @@ namespace Resonalyze.Options
         public void Init(
             ExpSweepMeasurement expSweepMeasurement,
             FrequencyResponseOptions frequencyResponseOptions,
+            CurveVisibilityOptions visibility,
             bool hasZeroDegreeCalibration,
             bool hasNinetyDegreeCalibration)
         {
@@ -41,18 +42,20 @@ namespace Resonalyze.Options
                     frequencyResponseOptions.CalibrationMode,
                     hasZeroDegreeCalibration,
                     hasNinetyDegreeCalibration);
-                checkBoxShowPrimary.Checked = frequencyResponseOptions.ShowPrimary;
-                checkBoxShowCoherence.Checked = frequencyResponseOptions.ShowCoherence;
-                checkBoxShowHd2.Checked = frequencyResponseOptions.ShowHd2;
-                checkBoxShowHd3.Checked = frequencyResponseOptions.ShowHd3;
-                checkBoxShowHd4.Checked = frequencyResponseOptions.ShowHd4;
-                checkBoxShowThdPlusNoise.Checked = frequencyResponseOptions.ShowThdPlusNoise;
+                checkBoxShowPrimary.Checked = visibility.ShowPrimary;
+                checkBoxShowCoherence.Checked = visibility.ShowCoherence;
+                checkBoxShowHd2.Checked = visibility.ShowHd2;
+                checkBoxShowHd3.Checked = visibility.ShowHd3;
+                checkBoxShowHd4.Checked = visibility.ShowHd4;
+                checkBoxShowThdPlusNoise.Checked = visibility.ShowThdPlusNoise;
                 UpdateTukeyWindowLimits();
             });
             UpdateIrPreview();
         }
 
-        public void SetOptions(FrequencyResponseOptions frequencyResponseOptions)
+        public void SetOptions(
+            FrequencyResponseOptions frequencyResponseOptions,
+            CurveVisibilityOptions visibility)
         {
             frequencyResponseOptions.Window = (int)numericWindow.Value;
             frequencyResponseOptions.LeftTukeyWindow = (int)numericLeftWindow.Value;
@@ -63,12 +66,12 @@ namespace Resonalyze.Options
                     : SmoothingPresetOptions.SupportedInverseOctaves[0];
             frequencyResponseOptions.CalibrationMode =
                 MicrophoneCalibrationComboHelper.GetSelectedMode(comboCalibration);
-            frequencyResponseOptions.ShowPrimary = checkBoxShowPrimary.Checked;
-            frequencyResponseOptions.ShowCoherence = checkBoxShowCoherence.Checked;
-            frequencyResponseOptions.ShowHd2 = checkBoxShowHd2.Checked;
-            frequencyResponseOptions.ShowHd3 = checkBoxShowHd3.Checked;
-            frequencyResponseOptions.ShowHd4 = checkBoxShowHd4.Checked;
-            frequencyResponseOptions.ShowThdPlusNoise = checkBoxShowThdPlusNoise.Checked;
+            visibility.ShowPrimary = checkBoxShowPrimary.Checked;
+            visibility.ShowCoherence = checkBoxShowCoherence.Checked;
+            visibility.ShowHd2 = checkBoxShowHd2.Checked;
+            visibility.ShowHd3 = checkBoxShowHd3.Checked;
+            visibility.ShowHd4 = checkBoxShowHd4.Checked;
+            visibility.ShowThdPlusNoise = checkBoxShowThdPlusNoise.Checked;
             UpdateIrPreview();
         }
 

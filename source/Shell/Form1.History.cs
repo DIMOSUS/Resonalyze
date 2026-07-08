@@ -277,13 +277,13 @@ public partial class Form1
             ActiveMode = modeController.ActiveTab,
             FrequencyResponse =
                 MeasurementSettingsFile.FrequencyResponseSettings.Capture(
-                    frequencyResponseOptions),
+                    frequencyResponseOptions, frequencyResponseVisibility),
             PhaseResponse =
                 MeasurementSettingsFile.FrequencyResponseSettings.Capture(
-                    phaseResponseOptions),
+                    phaseResponseOptions, phaseResponseVisibility),
             GroupDelay =
                 MeasurementSettingsFile.FrequencyResponseSettings.Capture(
-                    groupDelayOptions),
+                    groupDelayOptions, groupDelayVisibility),
             ImpulseResponse =
                 MeasurementSettingsFile.ImpulseResponseSettings.Capture(
                     impulseResponseOptions),
@@ -307,9 +307,9 @@ public partial class Form1
         MeasurementSessionSnapshot session,
         int sampleRate)
     {
-        session.FrequencyResponse.ApplyTo(frequencyResponseOptions);
-        session.PhaseResponse.ApplyTo(phaseResponseOptions);
-        session.GroupDelay.ApplyTo(groupDelayOptions);
+        session.FrequencyResponse.ApplyTo(frequencyResponseOptions, frequencyResponseVisibility);
+        session.PhaseResponse.ApplyTo(phaseResponseOptions, phaseResponseVisibility);
+        session.GroupDelay.ApplyTo(groupDelayOptions, groupDelayVisibility);
         session.ImpulseResponse.ApplyTo(impulseResponseOptions);
         session.Waterfall.ApplyTo(waterfallGenOptions, WaterfallMode.Fourier);
         session.BurstDecay.ApplyTo(burstDecayGenOptions, WaterfallMode.BurstDecay);

@@ -44,9 +44,10 @@ public partial class Form1
                     opt => opt.Init(
                         expSweepMeasurement,
                         frequencyResponseOptions,
+                        frequencyResponseVisibility,
                         microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees0),
                         microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees90)),
-                    opt => opt.SetOptions(frequencyResponseOptions))),
+                    opt => opt.SetOptions(frequencyResponseOptions, frequencyResponseVisibility))),
             [ModeTab.Phase] = new(
                 ModeTab.Phase,
                 Mode.PhaseResponse,
@@ -59,8 +60,8 @@ public partial class Form1
                 OpenSettings: () => ToggleModeOptions(
                     ModeTab.Phase,
                     () => new PROpt(),
-                    opt => opt.Init(expSweepMeasurement, phaseResponseOptions, compareSelection.GetAnalysisSource),
-                    opt => opt.SetOptions(phaseResponseOptions))),
+                    opt => opt.Init(expSweepMeasurement, phaseResponseOptions, phaseResponseVisibility, compareSelection.GetAnalysisSource),
+                    opt => opt.SetOptions(phaseResponseOptions, phaseResponseVisibility))),
             [ModeTab.GroupDelay] = new(
                 ModeTab.GroupDelay,
                 Mode.GroupDelay,
@@ -73,8 +74,8 @@ public partial class Form1
                 OpenSettings: () => ToggleModeOptions(
                     ModeTab.GroupDelay,
                     () => new GDOpt(),
-                    opt => opt.Init(expSweepMeasurement, groupDelayOptions, compareSelection.GetAnalysisSource),
-                    opt => opt.SetOptions(groupDelayOptions))),
+                    opt => opt.Init(expSweepMeasurement, groupDelayOptions, groupDelayVisibility, compareSelection.GetAnalysisSource),
+                    opt => opt.SetOptions(groupDelayOptions, groupDelayVisibility))),
             [ModeTab.Waterfall] = new(
                 ModeTab.Waterfall,
                 Mode.CumulativeSpectrumDecay,

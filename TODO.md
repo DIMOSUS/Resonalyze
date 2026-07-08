@@ -32,9 +32,15 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   but shares all its internals with the averaged path (no code is duplicated) and
   is the directly-tested single-frame H1 primitive with a `filter` parameter, so
   it stays as a tested entry point.
-- [ ] **`FrequencyResponseOptions` is a grab-bag** mixing FR windows,
-  phase/group-delay gates and a dozen UI visibility flags (`ShowHd2`,
-  `ShowGroupDelay`, …) — presentation flags leaked into the DSP library.
+- [x] **`FrequencyResponseOptions` is a grab-bag** — done. The ten `Show*`
+  visibility flags were moved off the DSP `FrequencyResponseOptions` into a new
+  source-side `CurveVisibilityOptions` (one per mode). `DataHelper.GetSpectrum`
+  now takes an explicit `SpectrumCurves` flags enum instead of reading `Show*`;
+  `PlotModelFactory` reads the phase/GD/coherence flags from the visibility
+  object. The persisted settings DTO keeps its own `Show*` block, so the on-disk
+  YAML is unchanged (no migration). Coverage was extended so the move is
+  CI-verifiable: a dsp `SpectrumCurves`→curves test, a `ToSpectrumCurves()`
+  translation test, and PlotModelFactory flag-gating tests.
 - [x] **`DataHelper` is a ~1160-line god-object** — done (move-only). Split
   into a `partial` static class across `DataHelper.cs` (core: dB conversion,
   `ExtractWindow`, the option types), `DataHelper.Spectrum.cs`,

@@ -46,8 +46,7 @@ internal static class MeasurementHistoryPreviewBuilder
             measurement,
             PreviewOptions,
             EmptyCalibration,
-            includePrimary: true,
-            includeHarmonics: false)[0];
+            SpectrumCurves.Primary)[0];
 
         List<double> frequencies = [];
         List<double> magnitudesDb = [];

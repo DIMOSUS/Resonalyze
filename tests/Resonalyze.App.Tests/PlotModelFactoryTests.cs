@@ -114,13 +114,13 @@ public sealed class PlotModelFactoryTests
     {
         using var measurement = CreateTransferMeasurement();
         using var noiseMeasurement = new NoiseMeasurement();
-        var groupDelayOptions = new FrequencyResponseOptions { ShowGroupDelay = false };
+        var groupDelayVisibility = new CurveVisibilityOptions { ShowGroupDelay = false };
         PlotModelFactory factory =
-            CreateFactory(measurement, noiseMeasurement, groupDelayOptions: groupDelayOptions);
+            CreateFactory(measurement, noiseMeasurement, groupDelayVisibility: groupDelayVisibility);
 
         Assert.Empty(factory.CreateGroupDelay(includeCurves: true).Series);
 
-        groupDelayOptions.ShowGroupDelay = true;
+        groupDelayVisibility.ShowGroupDelay = true;
         Assert.NotEmpty(factory.CreateGroupDelay(includeCurves: true).Series);
     }
 
@@ -129,9 +129,9 @@ public sealed class PlotModelFactoryTests
     {
         using var measurement = CreateTransferMeasurement();
         using var noiseMeasurement = new NoiseMeasurement();
-        var groupDelayOptions = new FrequencyResponseOptions { ShowGroupDelay = true };
+        var groupDelayVisibility = new CurveVisibilityOptions { ShowGroupDelay = true };
         PlotModelFactory factory =
-            CreateFactory(measurement, noiseMeasurement, groupDelayOptions: groupDelayOptions);
+            CreateFactory(measurement, noiseMeasurement, groupDelayVisibility: groupDelayVisibility);
 
         List<CurveTag> mainTags = factory.CreateGroupDelay(includeCurves: true).Series
             .OfType<LineSeries>()
@@ -169,6 +169,86 @@ public sealed class PlotModelFactoryTests
             tag => tag.Source == CurveSource.Compare &&
                 tag.Key == "GroupDelay:Primary:Compare");
     }
+
+    [Fact]
+    public void FrequencyResponse_ShowPrimaryFlag_GatesThePrimaryCurve()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement();
+
+        var hidden = new CurveVisibilityOptions { ShowPrimary = false };
+        Assert.DoesNotContain(
+            "Frequency Response",
+            SeriesTitles(CreateFactory(
+                    measurement, noiseMeasurement, frequencyResponseVisibility: hidden)
+                .CreateFrequencyResponse(includeCurves: true)));
+
+        var shown = new CurveVisibilityOptions { ShowPrimary = true };
+        Assert.Contains(
+            "Frequency Response",
+            SeriesTitles(CreateFactory(
+                    measurement, noiseMeasurement, frequencyResponseVisibility: shown)
+                .CreateFrequencyResponse(includeCurves: true)));
+    }
+
+    [Theory]
+    [InlineData(nameof(CurveVisibilityOptions.ShowMeasuredPhase), "Phase")]
+    [InlineData(nameof(CurveVisibilityOptions.ShowMinimumPhase), "Minimum Phase")]
+    [InlineData(nameof(CurveVisibilityOptions.ShowExcessPhase), "Excess Phase")]
+    public void PhaseResponse_VisibilityFlagGatesItsCurve(string flag, string title)
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement();
+
+        var hidden = PhaseAllOff();
+        Assert.DoesNotContain(
+            title,
+            SeriesTitles(CreateFactory(
+                    measurement, noiseMeasurement, phaseResponseVisibility: hidden)
+                .CreatePhaseResponse(includeCurves: true)));
+
+        var shown = PhaseAllOff();
+        typeof(CurveVisibilityOptions).GetProperty(flag)!.SetValue(shown, true);
+        Assert.Contains(
+            title,
+            SeriesTitles(CreateFactory(
+                    measurement, noiseMeasurement, phaseResponseVisibility: shown)
+                .CreatePhaseResponse(includeCurves: true)));
+    }
+
+    [Fact]
+    public void PhaseResponse_ShowCoherenceFlag_GatesTheCoherenceCurve()
+    {
+        using var measurement = CreateTransferMeasurementWithCoherence();
+        using var noiseMeasurement = new NoiseMeasurement();
+
+        var hidden = PhaseAllOff();
+        hidden.ShowCoherence = false;
+        Assert.DoesNotContain(
+            "Coherence",
+            SeriesTitles(CreateFactory(
+                    measurement, noiseMeasurement, phaseResponseVisibility: hidden)
+                .CreatePhaseResponse(includeCurves: true)));
+
+        var shown = PhaseAllOff();
+        shown.ShowCoherence = true;
+        Assert.Contains(
+            "Coherence",
+            SeriesTitles(CreateFactory(
+                    measurement, noiseMeasurement, phaseResponseVisibility: shown)
+                .CreatePhaseResponse(includeCurves: true)));
+    }
+
+    private static CurveVisibilityOptions PhaseAllOff() => new()
+    {
+        ShowMeasuredPhase = false,
+        ShowMinimumPhase = false,
+        ShowExcessPhase = false,
+        ShowCoherence = false
+    };
+
+    private static IReadOnlyList<string> SeriesTitles(OxyPlot.PlotModel model) =>
+        model.Series.OfType<LineSeries>().Select(series => series.Title).ToList();
 
     [Fact]
     public void ComplexSum_OfTwoIdenticalTransferResponses_AddsSixDecibels()
@@ -457,11 +537,37 @@ public sealed class PlotModelFactoryTests
         return measurement;
     }
 
+    private static ExpSweepMeasurement CreateTransferMeasurementWithCoherence()
+    {
+        var transferImpulse = new Complex[2048];
+        transferImpulse[64] = Complex.One;
+        double[] coherence = new double[1025];
+        Array.Fill(coherence, 0.9);
+
+        var measurement = new ExpSweepMeasurement();
+        measurement.RestoreImpulseResponse(
+            octaves: 12,
+            sampleRate: 44_100,
+            bits: 24,
+            sweepDurationSeconds: 1.0,
+            playChannel: PlaybackChannel.Mono,
+            sweepDeconvolutionImpulseResponse: transferImpulse,
+            sweepDeconvolutionPeakIndex: 64,
+            measurementMode: SweepMeasurementMode.LoopbackTransfer,
+            transferImpulseResponse: transferImpulse,
+            transferPeakIndex: 64,
+            transferCoherence: coherence);
+        return measurement;
+    }
+
     private static PlotModelFactory CreateFactory(
         ExpSweepMeasurement measurement,
         NoiseMeasurement noiseMeasurement,
         ImpulseResponseOptions? impulseOptions = null,
-        FrequencyResponseOptions? groupDelayOptions = null)
+        FrequencyResponseOptions? groupDelayOptions = null,
+        CurveVisibilityOptions? frequencyResponseVisibility = null,
+        CurveVisibilityOptions? phaseResponseVisibility = null,
+        CurveVisibilityOptions? groupDelayVisibility = null)
     {
         string calibrationPath = Path.Combine(
             Path.GetTempPath(),
@@ -474,6 +580,9 @@ public sealed class PlotModelFactoryTests
             new FrequencyResponseOptions(),
             new FrequencyResponseOptions(),
             groupDelayOptions ?? new FrequencyResponseOptions(),
+            frequencyResponseVisibility ?? new CurveVisibilityOptions(),
+            phaseResponseVisibility ?? new CurveVisibilityOptions(),
+            groupDelayVisibility ?? new CurveVisibilityOptions(),
             impulseOptions ?? new ImpulseResponseOptions(),
             new LiveSpectrumOptions(),
             new WaterfallGenerateOptions(),

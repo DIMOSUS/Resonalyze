@@ -847,11 +847,26 @@ When the whitened peak is weak or pinned to the window edge, the estimate falls
 back to the envelope's own fractional peak, so the result is never worse than the
 plain envelope.
 
+When the record was captured with averaging and carries a coherence (γ²) curve,
+the whitening is additionally weighted by it: bands whose phase does not repeat
+across the averages — noise, non-linear distortion, non-averaging reflections —
+get less say in the correlation than clean, repeatable bands, while every in-band
+bin keeps at least a quarter of its weight so the occupied bandwidth (and the peak
+sharpness that follows from it) is preserved. Repeatable content, including
+harmonic distortion, reads as coherent and is not suppressed.
+
 The payoff is delay estimates such as `87.0 samples` or `1.972 ms` resolved to a
 hundredth of a sample instead of a coarse integer, and refined against the true
 acoustic arrival rather than the driver-tinted envelope shape. For time
 alignment, this is a serious practical upgrade: smaller timing adjustments become
 visible, repeatable, and easier to trust.
+
+Each arrival also carries a GCC-PHAT **alignment confidence** — the normalized
+height of the whitened correlation peak, shown as `Alignment: NN%` — together with
+whether the sub-sample position came from the correlation (`GCC-PHAT`) or fell back
+to the envelope. It is separate from the meter-based signal-quality readout: a high
+signal level with a low alignment confidence means the level was fine but the delay
+itself is only coarsely located.
 
 When the strongest peak lands well after the first arrival — the classic
 narrowband-subwoofer case, where room modes ring louder than the direct sound

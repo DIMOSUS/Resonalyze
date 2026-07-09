@@ -51,6 +51,17 @@ public sealed class RealMeasurementArrivalTests
     private static (int SampleRate, Complex[] Ir) LoadTransferIr(string fileName)
     {
         string path = Path.Combine(FindTestDataDirectory(), fileName);
+        // assets/test_data is a submodule; a clone without it leaves the
+        // directory empty, and the raw FileNotFoundException would send
+        // whoever hits it in the wrong direction.
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException(
+                $"{fileName} is missing - initialize the measurement-data " +
+                "submodule with 'git submodule update --init assets/test_data'.",
+                path);
+        }
+
         using FileStream stream = File.OpenRead(path);
         using JsonDocument document = JsonDocument.Parse(stream);
         JsonElement root = document.RootElement;

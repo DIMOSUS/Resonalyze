@@ -289,6 +289,69 @@ public sealed class SpectrumAnalysisTests
                 [1.0, 2.0]));
     }
 
+    [Theory]
+    [InlineData(WindowType.Hann)]
+    [InlineData(WindowType.FlatTop)]
+    [InlineData(WindowType.BlackmanHarris)]
+    [InlineData(WindowType.Rectangular)]
+    public void ComputeInputMagnitudeSpectrum_EqualsSqrtOfPowerSpectrum(WindowType windowType)
+    {
+        const int length = 512;
+        const int bin = 40;
+        float[] signal = CreateSine(length, bin);
+
+        TransferSpectrumFrame frame =
+            SpectrumAnalysis.ComputeTransferSpectrumFrame(signal, signal, windowType);
+        double[] magnitude = SpectrumAnalysis.ComputeInputMagnitudeSpectrum(
+            frame.TargetPowerSpectrum,
+            windowType,
+            length);
+        double[] power = SpectrumAnalysis.ComputePowerSpectrum(signal, windowType);
+
+        // The RTA magnitude is coherent-gain-normalized just like the trusted
+        // single-block power spectrum, so it must equal its square root exactly
+        // (same window, same |FFT|², same scale).
+        Assert.Equal(power.Length, magnitude.Length);
+        for (int i = 0; i < magnitude.Length; i++)
+        {
+            Assert.Equal(Math.Sqrt(power[i]), magnitude[i], precision: 9);
+        }
+    }
+
+    [Theory]
+    [InlineData(WindowType.Hann)]
+    [InlineData(WindowType.FlatTop)]
+    [InlineData(WindowType.BlackmanHarris)]
+    [InlineData(WindowType.Rectangular)]
+    public void ComputeInputMagnitudeSpectrum_ToneLevelIsWindowInvariant(WindowType windowType)
+    {
+        const int length = 512;
+        const int bin = 40;
+        // A full-scale tone sitting exactly on a bin: coherent-gain
+        // normalization must recover the same peak amplitude for every window.
+        float[] signal = CreateSine(length, bin);
+
+        TransferSpectrumFrame frame =
+            SpectrumAnalysis.ComputeTransferSpectrumFrame(signal, signal, windowType);
+        double[] magnitude = SpectrumAnalysis.ComputeInputMagnitudeSpectrum(
+            frame.TargetPowerSpectrum,
+            windowType,
+            length);
+
+        // For an on-bin tone the peak-bin magnitude is windowSum/2, and the
+        // coherent-gain scale is length/windowSum, so their product is length/2
+        // for every window (the window sum cancels). Allow 2% for the tiny
+        // double-frequency leakage into the bin.
+        Assert.InRange(magnitude[bin], length / 2.0 * 0.98, length / 2.0 * 1.02);
+    }
+
+    [Fact]
+    public void ComputeInputMagnitudeSpectrum_RejectsTooShortFrame()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            SpectrumAnalysis.ComputeInputMagnitudeSpectrum([1.0], WindowType.Hann, 1));
+    }
+
     private static float[] CreateImpulse(int length)
     {
         var impulse = new float[length];

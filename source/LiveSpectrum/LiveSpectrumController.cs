@@ -30,6 +30,7 @@ internal sealed class LiveSpectrumController : IDisposable
     private const string LiveSpectrumLowCoherenceTag = "live-spectrum:low-coherence";
     private const string LiveSpectrumCoherenceTag = "live-spectrum:coherence";
     private const string LiveSpectrumPeakHoldTag = "live-spectrum:peak-hold";
+    private const string LiveSpectrumInputMagnitudeTag = "live-spectrum:input-magnitude";
     private const string OverloadAnnotationTag = "live-spectrum:overload";
     private const long PeakHoldSuppressionMs = 1000;
     private bool disposed;
@@ -46,6 +47,7 @@ internal sealed class LiveSpectrumController : IDisposable
     private LineSeries? trustedSeries;
     private LineSeries? untrustedSeries;
     private LineSeries? coherenceSeries;
+    private LineSeries? inputMagnitudeSeries;
     private PlotModel? attachedModel;
 
     public LiveSpectrumController(
@@ -395,6 +397,25 @@ internal sealed class LiveSpectrumController : IDisposable
             }
         }
 
+        // Reference-free RTA magnitude of the microphone input, overlaid on the
+        // same dB axis. It is independent of coherence and the reference channel,
+        // so it is never split or dimmed by the coherence threshold.
+        if (snapshot.InputMagnitude != null && liveSpectrumOptions.ShowInputMagnitude)
+        {
+            if (inputMagnitudeSeries == null)
+            {
+                inputMagnitudeSeries =
+                    plotModelFactory.BuildInputMagnitudeSeries(snapshot.InputMagnitude);
+                inputMagnitudeSeries.Tag = LiveSpectrumInputMagnitudeTag;
+            }
+            else
+            {
+                plotModelFactory.UpdateInputMagnitudeSeries(
+                    inputMagnitudeSeries, snapshot.InputMagnitude);
+            }
+            model.Series.Add(inputMagnitudeSeries);
+        }
+
         if (snapshot.Coherence != null && liveSpectrumOptions.ShowCoherence)
         {
             if (coherenceSeries == null)
@@ -477,7 +498,8 @@ internal sealed class LiveSpectrumController : IDisposable
                 Equals(series.Tag, LiveSpectrumTag) ||
                 Equals(series.Tag, LiveSpectrumLowCoherenceTag) ||
                 Equals(series.Tag, LiveSpectrumCoherenceTag) ||
-                Equals(series.Tag, LiveSpectrumPeakHoldTag))
+                Equals(series.Tag, LiveSpectrumPeakHoldTag) ||
+                Equals(series.Tag, LiveSpectrumInputMagnitudeTag))
             .ToList();
         foreach (OxyPlot.Series.Series series in liveSpectrumSeries)
         {

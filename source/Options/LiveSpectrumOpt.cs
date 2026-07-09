@@ -96,6 +96,7 @@ namespace Resonalyze.Options
                 FindCoherenceLimitIndex(options.CoherenceThresholdPercent);
 
             checkMainCurve.Checked = options.ShowMainCurve;
+            checkInputMagnitude.Checked = options.ShowInputMagnitude;
             checkPeakHold.Checked = options.PeakHold;
             checkCoherence.Checked = options.ShowCoherence;
             MicrophoneCalibrationComboHelper.Configure(
@@ -131,6 +132,7 @@ namespace Resonalyze.Options
                     ? averagingOption.Speed
                     : AveragingSpeed.Medium;
             options.ShowMainCurve = checkMainCurve.Checked;
+            options.ShowInputMagnitude = checkInputMagnitude.Checked;
             options.PeakHold = checkPeakHold.Checked;
             options.ShowCoherence = checkCoherence.Checked;
             options.CoherenceThresholdPercent =
@@ -347,6 +349,9 @@ namespace Resonalyze.Options
             toolTip.SetToolTip(
                 checkMainCurve,
                 "Shows the main live trace (the spectrum / transfer-function curve).");
+            toolTip.SetToolTip(
+                checkInputMagnitude,
+                "Overlays a reference-free RTA curve: the plain magnitude spectrum of the microphone input alone, with no division by the loopback reference. Independent of coherence.");
             toolTip.SetToolTip(
                 checkPeakHold,
                 "Overlays a peak-hold envelope that retains the maximum level seen on the curve until reset.");

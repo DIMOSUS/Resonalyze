@@ -52,6 +52,8 @@ namespace Resonalyze.Options
             labelCurves = new Label();
             labelMainCurve = new Label();
             checkMainCurve = new CheckBox();
+            labelInputMagnitude = new Label();
+            checkInputMagnitude = new CheckBox();
             SuspendLayout();
             //
             // comboCalibration
@@ -205,7 +207,7 @@ namespace Resonalyze.Options
             //
             label8.AutoSize = true;
             label8.ForeColor = SystemColors.ControlLight;
-            label8.Location = new Point(12, 309);
+            label8.Location = new Point(12, 332);
             label8.Name = "label8";
             label8.Size = new Size(60, 15);
             label8.TabIndex = 59;
@@ -215,7 +217,7 @@ namespace Resonalyze.Options
             //
             checkPeakHold.AutoSize = true;
             checkPeakHold.ForeColor = SystemColors.ControlLight;
-            checkPeakHold.Location = new Point(238, 309);
+            checkPeakHold.Location = new Point(238, 332);
             checkPeakHold.Name = "checkPeakHold";
             checkPeakHold.Size = new Size(15, 14);
             checkPeakHold.TabIndex = 60;
@@ -225,7 +227,7 @@ namespace Resonalyze.Options
             //
             label9.AutoSize = true;
             label9.ForeColor = SystemColors.ControlLight;
-            label9.Location = new Point(12, 286);
+            label9.Location = new Point(12, 309);
             label9.Name = "label9";
             label9.Size = new Size(64, 15);
             label9.TabIndex = 62;
@@ -235,7 +237,7 @@ namespace Resonalyze.Options
             //
             checkCoherence.AutoSize = true;
             checkCoherence.ForeColor = SystemColors.ControlLight;
-            checkCoherence.Location = new Point(238, 286);
+            checkCoherence.Location = new Point(238, 309);
             checkCoherence.Name = "checkCoherence";
             checkCoherence.Size = new Size(15, 14);
             checkCoherence.TabIndex = 63;
@@ -267,7 +269,7 @@ namespace Resonalyze.Options
             buttonResetAverage.BackColor = Color.FromArgb(50, 55, 80);
             buttonResetAverage.FlatStyle = FlatStyle.Popup;
             buttonResetAverage.ForeColor = Color.White;
-            buttonResetAverage.Location = new Point(12, 335);
+            buttonResetAverage.Location = new Point(12, 358);
             buttonResetAverage.Name = "buttonResetAverage";
             buttonResetAverage.Size = new Size(241, 23);
             buttonResetAverage.TabIndex = 61;
@@ -304,14 +306,36 @@ namespace Resonalyze.Options
             checkMainCurve.TabIndex = 68;
             checkMainCurve.UseVisualStyleBackColor = true;
             //
+            // labelInputMagnitude
+            //
+            labelInputMagnitude.AutoSize = true;
+            labelInputMagnitude.ForeColor = SystemColors.ControlLight;
+            labelInputMagnitude.Location = new Point(12, 286);
+            labelInputMagnitude.Name = "labelInputMagnitude";
+            labelInputMagnitude.Size = new Size(67, 15);
+            labelInputMagnitude.TabIndex = 69;
+            labelInputMagnitude.Text = "RTA (input)";
+            //
+            // checkInputMagnitude
+            //
+            checkInputMagnitude.AutoSize = true;
+            checkInputMagnitude.ForeColor = SystemColors.ControlLight;
+            checkInputMagnitude.Location = new Point(238, 286);
+            checkInputMagnitude.Name = "checkInputMagnitude";
+            checkInputMagnitude.Size = new Size(15, 14);
+            checkInputMagnitude.TabIndex = 70;
+            checkInputMagnitude.UseVisualStyleBackColor = true;
+            //
             // LiveSpectrumOpt
             //
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 370);
+            ClientSize = new Size(265, 393);
             Controls.Add(signalTypeComboBox);
             Controls.Add(labelSignalType);
+            Controls.Add(checkInputMagnitude);
+            Controls.Add(labelInputMagnitude);
             Controls.Add(checkMainCurve);
             Controls.Add(labelMainCurve);
             Controls.Add(labelCurves);
@@ -370,5 +394,7 @@ namespace Resonalyze.Options
         private Label labelCurves;
         private Label labelMainCurve;
         private CheckBox checkMainCurve;
+        private Label labelInputMagnitude;
+        private CheckBox checkInputMagnitude;
     }
 }

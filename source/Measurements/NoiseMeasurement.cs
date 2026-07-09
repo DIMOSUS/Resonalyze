@@ -286,7 +286,15 @@ namespace Resonalyze
                 crossSpectrum,
                 referencePowerSpectrum,
                 targetPowerSpectrum);
-            return new LiveSpectrumSnapshot(magnitude, coherence);
+            // The microphone auto-power is already accumulated for coherence, so the
+            // reference-free RTA magnitude comes for free: normalize it by the same
+            // window's coherent gain the frame was measured with so its level is
+            // window-independent, matching ComputePowerSpectrum's convention.
+            double[] inputMagnitude = SpectrumAnalysis.ComputeInputMagnitudeSpectrum(
+                targetPowerSpectrum,
+                EffectiveWindowType,
+                SequenceLength);
+            return new LiveSpectrumSnapshot(magnitude, coherence, inputMagnitude);
         }
 
         private static double AlphaFromTimeConstant(double frameInterval, double timeConstant)

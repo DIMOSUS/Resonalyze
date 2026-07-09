@@ -683,7 +683,17 @@ cumulative average indefinitely. **Reset Average** clears the running average an
 peak-hold envelope without restarting the measurement.
 
 **Main curve** (on by default) shows the primary live trace itself; turning it
-off leaves only the optional peak-hold and coherence curves.
+off leaves only the optional RTA, peak-hold, and coherence curves.
+
+**RTA (input)** (off by default) overlays a reference-free real-time analyzer
+curve: the plain magnitude spectrum of the microphone input **alone**, with no
+division by the loopback reference. It is what a classic RTA shows — the actual
+spectral content the microphone hears — and is drawn on the same dB axis as the
+transfer function. Because it is a single-channel level rather than a ratio, its
+vertical position is uncalibrated (it floats with input gain), and coherence does
+not apply to it, so it is never dimmed by the **Coherence Limit**. Its level is
+normalized by the analysis window's coherent gain, so switching windows does not
+shift it.
 
 **Peak Hold** overlays a second curve that retains the maximum level seen on the
 trace until it is reset. **Coherence** (on by default) toggles the γ² curve

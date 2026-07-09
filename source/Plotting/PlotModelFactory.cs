@@ -645,6 +645,21 @@ internal sealed class PlotModelFactory
     public void UpdateNoiseSeries(LineSeries series, double[] magnitude) =>
         FillPoints(series, ResampleLiveSpectrumMagnitude(magnitude));
 
+    public LineSeries BuildInputMagnitudeSeries(double[] inputMagnitude)
+    {
+        var series = new LineSeries
+        {
+            Color = OxyColor.FromRgb(80, 170, 255),
+            Title = "Input Spectrum (RTA)",
+            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
+        };
+        UpdateInputMagnitudeSeries(series, inputMagnitude);
+        return series;
+    }
+
+    public void UpdateInputMagnitudeSeries(LineSeries series, double[] inputMagnitude) =>
+        FillPoints(series, ResampleLiveSpectrumMagnitude(inputMagnitude));
+
     public LineSeries BuildPeakHoldSeries(double[] peakHoldData)
     {
         var series = new LineSeries

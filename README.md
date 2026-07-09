@@ -914,11 +914,17 @@ modal or reflected peak is not mistaken for the driver's real timing.
 The mode recalculates immediately when you switch into **Time Alignment**, and
 also updates live as soon as you change the bandpass settings.
 
-It reports signal quality using the stored meter snapshot from the same
-measurement record:
+It reports signal quality using the analysis envelope and the stored meter
+snapshot from the same measurement record:
 
-- color-coded `Excellent`, `Good`, `Fair`, or `Poor` confidence based on the
-  peak-to-background envelope ratio
+- a color-coded `Excellent`, `Good`, `Fair`, or `Poor` **signal grade** from the
+  recording's SNR — the strongest envelope peak against the rest of the record
+- the **first-arrival prominence** — the first arrival's envelope level relative
+  to the strongest peak. A low value means the pick sits on a broad leading
+  edge (normal physics for band-limited low-frequency drivers), so its exact
+  position is less sharply defined; it says nothing bad about the recording
+  itself, which is why it is reported separately instead of being folded into
+  the signal grade
 - microphone peak and RMS levels in dBFS
 - loopback peak and RMS levels in dBFS
 - a `CLIP` warning for an overloaded microphone input

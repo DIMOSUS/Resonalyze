@@ -48,6 +48,32 @@ public sealed class RealMeasurementArrivalTests
         Assert.InRange(midArrivalMs, 7.7, 8.3);
     }
 
+    [Fact]
+    public void WooferBroadbandAnalysis_SeparatesSignalGradeFromArrivalProminence()
+    {
+        // The Time Alignment panel scenario that motivated the split: this
+        // recording's SNR is excellent (~50 dB), while the first arrival sits
+        // ~25 dB down the woofer's slow leading edge, 2 ms before the in-room
+        // peak. One folded "quality" figure read this as Fair (24.9 dB); the
+        // two numbers must tell the two stories separately.
+        (int sampleRate, Complex[] ir) = LoadTransferIr("l woof.json");
+        var samples = new double[ir.Length];
+        for (int i = 0; i < samples.Length; i++)
+        {
+            samples[i] = ir[i].Real;
+        }
+
+        TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
+            samples, sampleRate, new TimeAlignmentAnalysisOptions
+            {
+                WrapPeakPositions = true
+            });
+
+        Assert.InRange(result.SignalToNoiseDecibels, 48.0, 52.0);
+        Assert.InRange(result.FirstArrivalProminenceDecibels, -27.0, -22.0);
+        Assert.True(result.StrongestPeakIsSeparateArrival);
+    }
+
     private static (int SampleRate, Complex[] Ir) LoadTransferIr(string fileName)
     {
         string path = Path.Combine(FindTestDataDirectory(), fileName);

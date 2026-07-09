@@ -137,6 +137,25 @@ public sealed class TimeAlignmentAnalysisTests
     }
 
     [Fact]
+    public void Analyze_CleanImpulseHasZeroProminenceGapAndHighSnr()
+    {
+        // A clean single arrival: the first arrival IS the strongest peak, so
+        // the prominence gap is exactly 0 dB, and the signal grade reflects the
+        // recording's SNR (peak vs the Hilbert-skirt-plus-silence remainder) —
+        // the two figures a single folded "quality" number used to conflate.
+        var impulseResponse = new double[8_192];
+        impulseResponse[300] = 1.0;
+
+        TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, new TimeAlignmentAnalysisOptions());
+
+        Assert.Equal(0.0, result.FirstArrivalProminenceDecibels, precision: 12);
+        Assert.True(
+            result.SignalToNoiseDecibels > 30,
+            $"SNR {result.SignalToNoiseDecibels:0.0} dB should be high for a clean impulse.");
+    }
+
+    [Fact]
     public void Analyze_FirstArrivalDoesNotSitOnTheHilbertSkirtOfACleanImpulse()
     {
         // The discrete Hilbert envelope of a delta has a 1/t skirt whose odd-offset

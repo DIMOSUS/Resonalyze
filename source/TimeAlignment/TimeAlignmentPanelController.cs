@@ -790,15 +790,46 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             UiPalette.WarningAmber);
     }
 
+    // Two separate figures that a single "quality" number used to conflate:
+    // the recording's SNR (strongest envelope peak vs the rest of the record)
+    // grades the measurement, while the first-arrival prominence (its level
+    // relative to the strongest peak) grades how sharply defined the pick is.
+    // A woofer's broad leading edge gives a low prominence on an excellent
+    // recording — that is physics, not a bad measurement, and it must not
+    // drag the signal grade down.
     private void AppendSignalQuality(string title, TimeAlignmentAnalysisResult result)
     {
-        string confidence = FormatConfidence(result.ConfidenceDecibels);
-        Color confidenceColor = GetConfidenceColor(confidence);
-        AppendStatusText($"{title} Quality: ", UiPalette.TextPrimarySoft);
+        string signalGrade = FormatConfidence(result.SignalToNoiseDecibels);
+        AppendStatusText($"{title} Signal: ", UiPalette.TextPrimarySoft);
         AppendStatusText(
-            $"{confidence} ({result.ConfidenceDecibels:0.0} dB)\r\n",
-            confidenceColor);
+            $"{signalGrade} ({result.SignalToNoiseDecibels:0.0} dB SNR)\r\n",
+            GetConfidenceColor(signalGrade));
+
+        double prominence = result.FirstArrivalProminenceDecibels;
+        AppendStatusText("First arrival: ", UiPalette.TextPrimarySoft);
+        if (prominence >= -1.0)
+        {
+            AppendStatusText(
+                "coincides with the strongest peak\r\n",
+                UiPalette.SuccessGreen);
+            return;
+        }
+
+        string hint = prominence <= BroadRiseProminenceDb
+            ? " — broad rise, normal for low-frequency drivers"
+            : string.Empty;
+        Color color = prominence >= BroadRiseProminenceDb
+            ? UiPalette.SuccessGreenSoft
+            : UiPalette.TextSecondarySoft;
+        AppendStatusText(
+            $"{prominence:0.0} dB re strongest peak{hint}\r\n",
+            color);
     }
+
+    // Below this the first arrival sits far down a slow leading edge; typical
+    // for band-limited low-frequency drivers, where the envelope rises over
+    // milliseconds before the in-room energy peaks.
+    private const double BroadRiseProminenceDb = -12.0;
 
     // The GCC-PHAT trust for the first arrival: how sharply the whitened correlation
     // located the sub-sample delay. RefinedByPhat=false means the whitened peak was

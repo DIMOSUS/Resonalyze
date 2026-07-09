@@ -21,7 +21,16 @@ public readonly record struct TimeAlignmentAnalysisResult(
     double EnvelopePeak,
     int StrongestEnvelopePeakIndex,
     double StrongestEnvelopePeak,
-    double ConfidenceDecibels,
+    // How clean the recording is: the strongest envelope peak against the RMS
+    // of the rest of the record. It grades the measurement, not the pick.
+    double SignalToNoiseDecibels,
+    // How pronounced the first arrival is: its envelope level relative to the
+    // strongest peak, <= 0 dB (0 when they coincide). A low value means the
+    // pick sits on a broad leading edge — physically normal for band-limited
+    // low-frequency drivers — so its exact position carries less certainty,
+    // however clean the recording. This is what used to be folded into a
+    // single "quality" figure and misread great woofer measurements as fair.
+    double FirstArrivalProminenceDecibels,
     double FirstArrivalPeakSample,
     double FirstArrivalDelayMilliseconds,
     double StrongestPeakSample,
@@ -140,8 +149,11 @@ public static class TimeAlignmentAnalysis
             strongestPeak,
             SignalEnvelope.EstimatePeakConfidenceDecibels(
                 envelope,
-                envelopePeakIndex,
-                envelopePeak),
+                strongestPeakIndex,
+                strongestPeak),
+            strongestPeak > 0.0
+                ? DataHelper.AmplitudeToDecibels(envelopePeak / strongestPeak)
+                : 0.0,
             firstArrivalPeakSample,
             firstArrivalPeakSample * 1000.0 / sampleRate,
             strongestPeakSample,

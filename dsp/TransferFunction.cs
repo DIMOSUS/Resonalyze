@@ -156,8 +156,10 @@ public static class TransferFunction
     /// <see cref="TransferEstimateResult.Coherence"/>, length
     /// <c>fftLength / 2 + 1</c>). When supplied and length-matched, each in-band bin
     /// is scaled by a floored-linear coherence weight, so bins whose phase does not
-    /// repeat across averages (noise, non-linear distortion, non-averaging
-    /// reflections) carry less say in the whitened correlation. It must come from
+    /// repeat across averages (noise, level- or drift-varying distortion,
+    /// non-averaging reflections) carry less say in the whitened correlation.
+    /// Repeatable content — including stationary harmonic distortion — reads as
+    /// coherent and is not de-weighted. It must come from
     /// the same transfer FFT that produced <paramref name="impulseResponse"/>; a
     /// null or wrong-length array is ignored and leaves the result bit-identical.
     /// </param>

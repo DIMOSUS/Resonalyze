@@ -859,7 +859,8 @@ plain envelope.
 
 When the record was captured with averaging and carries a coherence (γ²) curve,
 the whitening is additionally weighted by it: bands whose phase does not repeat
-across the averages — noise, non-linear distortion, non-averaging reflections —
+across the averages — noise, level- or drift-varying distortion, non-averaging
+reflections —
 get less say in the correlation than clean, repeatable bands, while every in-band
 bin keeps at least a quarter of its weight so the occupied bandwidth (and the peak
 sharpness that follows from it) is preserved. Repeatable content, including
@@ -871,10 +872,10 @@ acoustic arrival rather than the driver-tinted envelope shape. For time
 alignment, this is a serious practical upgrade: smaller timing adjustments become
 visible, repeatable, and easier to trust.
 
-Each arrival also carries a GCC-PHAT **alignment confidence** — the normalized
-height of the whitened correlation peak, shown as `Alignment: NN%` — together with
-whether the sub-sample position came from the correlation (`GCC-PHAT`) or fell back
-to the envelope. It is separate from the meter-based signal-quality readout: a high
+The first arrival — the one the panel aligns by — also shows a GCC-PHAT
+**alignment confidence**: the normalized height of the whitened correlation peak,
+displayed as `Alignment: NN%`, together with whether the sub-sample position came
+from the correlation (`GCC-PHAT`) or fell back to the envelope. It is separate from the meter-based signal-quality readout: a high
 signal level with a low alignment confidence means the level was fine but the delay
 itself is only coarsely located.
 

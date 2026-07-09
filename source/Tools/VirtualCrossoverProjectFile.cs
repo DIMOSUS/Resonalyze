@@ -274,14 +274,6 @@ public sealed class VirtualCrossoverProjectFile
     }
 
     /// <summary>
-    /// Loads the saved project, falling back to a fresh default when the file
-    /// is missing, unreadable or from an unknown version — the tool state is a
-    /// convenience, so it must never block startup. A file that exists but
-    /// cannot be used is renamed to <c>.backup</c> first: the next scheduled
-    /// save overwrites the project path, and a downgrade or a bug must not
-    /// cost the user their tuning session.
-    /// </summary>
-    /// <summary>
     /// When <see cref="LoadOrDefault"/> could not use an existing file and moved
     /// it aside, this holds the path of the <c>.backup</c> it created so the tool
     /// can tell the user their previous session was preserved. Null on a clean
@@ -290,6 +282,14 @@ public sealed class VirtualCrossoverProjectFile
     [JsonIgnore]
     public string? BackupNoticePath { get; private set; }
 
+    /// <summary>
+    /// Loads the saved project, falling back to a fresh default when the file
+    /// is missing, unreadable or from an unknown version — the tool state is a
+    /// convenience, so it must never block startup. A file that exists but
+    /// cannot be used is renamed to <c>.backup</c> first: the next scheduled
+    /// save overwrites the project path, and a downgrade or a bug must not
+    /// cost the user their tuning session.
+    /// </summary>
     public static VirtualCrossoverProjectFile LoadOrDefault(string? rootDirectory = null)
     {
         string path = GetPath(rootDirectory);

@@ -60,14 +60,23 @@ public static class TimeAlignmentAnalysis
             throw new ArgumentOutOfRangeException(nameof(sampleRate));
         }
 
-        double[] analysisSignal = options.UseBandpassWindow
-            ? ApplyBandpassWindow(
-                impulseResponse,
+        double[] analysisSignal;
+        double[]? kernelEnvelope = null;
+        if (options.UseBandpassWindow)
+        {
+            double[] window = BandpassWindow.Create(
+                impulseResponse.Count,
                 sampleRate,
                 options.BandpassCenterHz,
                 options.BandpassPassOctaves,
-                options.BandpassFadeOctaves)
-            : impulseResponse.ToArray();
+                options.BandpassFadeOctaves);
+            analysisSignal = ApplyBandpassWindow(impulseResponse, window);
+            kernelEnvelope = BuildKernelEnvelope(window);
+        }
+        else
+        {
+            analysisSignal = impulseResponse.ToArray();
+        }
 
         double[] envelope = SignalEnvelope.Envelope(analysisSignal);
         PeakSearchResult peakSearchResult = SignalEnvelope.FindPeak(
@@ -78,7 +87,8 @@ public static class TimeAlignmentAnalysis
                 Mode = PeakSearchMode.FirstArrival,
                 FirstPeakThresholdBelowMaxDb = options.FirstPeakThresholdBelowMaxDb,
                 FirstPeakMinimumSnrDb = options.FirstPeakMinimumSnrDb,
-                SearchWindowMilliseconds = options.PeakSearchWindowMilliseconds
+                SearchWindowMilliseconds = options.PeakSearchWindowMilliseconds,
+                AnalysisKernelEnvelope = kernelEnvelope
             });
 
         int envelopePeakIndex = peakSearchResult.SelectedIndex;
@@ -189,10 +199,7 @@ public static class TimeAlignmentAnalysis
 
     private static double[] ApplyBandpassWindow(
         IReadOnlyList<double> signal,
-        int sampleRate,
-        double centerHz,
-        double passOctaves,
-        double fadeOctaves)
+        double[] window)
     {
         var spectrum = new Complex[signal.Count];
         for (int i = 0; i < signal.Count; i++)
@@ -201,12 +208,6 @@ public static class TimeAlignmentAnalysis
         }
 
         Fourier.Forward(spectrum, FourierOptions.Matlab);
-        double[] window = BandpassWindow.Create(
-            spectrum.Length,
-            sampleRate,
-            centerHz,
-            passOctaves,
-            fadeOctaves);
         for (int i = 0; i < spectrum.Length; i++)
         {
             spectrum[i] *= window[i];
@@ -221,6 +222,32 @@ public static class TimeAlignmentAnalysis
         }
 
         return filtered;
+    }
+
+    // The time response of the zero-phase bandpass mask, as an analytic
+    // envelope indexed by |offset| from the kernel centre. The kernel is real
+    // and even, so its IFFT sits centred at index 0 and the envelope's first
+    // half is exactly the by-offset curve the sidelobe rejection needs: an
+    // arrival can pre-ring at a given distance no louder than this envelope
+    // says, which is what separates the window's own ringing from a genuine
+    // earlier arrival.
+    private static double[] BuildKernelEnvelope(double[] window)
+    {
+        var spectrum = new Complex[window.Length];
+        for (int i = 0; i < window.Length; i++)
+        {
+            spectrum[i] = new Complex(window[i], 0.0);
+        }
+
+        Fourier.Inverse(spectrum, FourierOptions.Matlab);
+
+        var kernel = new double[window.Length];
+        for (int i = 0; i < kernel.Length; i++)
+        {
+            kernel[i] = spectrum[i].Real;
+        }
+
+        return SignalEnvelope.Envelope(kernel);
     }
 
     private static double FindFractionalPeakOffset(

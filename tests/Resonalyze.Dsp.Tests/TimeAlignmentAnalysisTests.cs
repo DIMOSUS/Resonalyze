@@ -179,6 +179,46 @@ public sealed class TimeAlignmentAnalysisTests
     }
 
     [Fact]
+    public void Analyze_ReverberantBassKeepsTheGenuineDirectArrival()
+    {
+        // Field regression from the crossover Auto delay: a midbass direct sound
+        // ~9 dB below a reverberant reflection cluster, analyzed in a narrow low
+        // band (88-350 Hz, gentle fades, 15 dB threshold). In a room the
+        // mirrored position after the cluster is always energized, so a
+        // mirror-symmetry test alone read the direct sound as pre-ringing and
+        // shifted the first arrival ~8 ms late. The kernel-level ceiling must
+        // keep it: at 7.6 ms distance the analysis window cannot ring at -9 dB.
+        var impulseResponse = new double[65_536];
+        void Add(double ms, double amplitude) =>
+            impulseResponse[(int)Math.Round(ms * SampleRate / 1000.0)] += amplitude;
+        Add(11.466, 0.35); // direct sound
+        Add(14.8, 0.25);
+        Add(16.5, 0.4);
+        Add(17.9, 0.55);
+        Add(19.41, 1.0);   // strongest reflection
+        Add(20.8, 0.7);
+        Add(22.6, 0.55);
+        Add(24.9, 0.45);
+        Add(27.5, 0.35);   // keeps the direct sound's mirror position hot
+        Add(30.4, 0.3);
+        Add(33.8, 0.22);
+        Add(38.0, 0.15);
+
+        TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, new TimeAlignmentAnalysisOptions
+            {
+                UseBandpassWindow = true,
+                BandpassCenterHz = Math.Sqrt(88.0 * 350.0),
+                BandpassPassOctaves = Math.Log2(350.0 / 88.0),
+                BandpassFadeOctaves = 1.0,
+                FirstPeakThresholdBelowMaxDb = 15
+            });
+
+        double firstArrivalMs = result.FirstArrivalPeakSample * 1000.0 / SampleRate;
+        Assert.InRange(firstArrivalMs, 11.0, 12.5);
+    }
+
+    [Fact]
     public void Analyze_AGenuineWeakEarlyArrivalSurvivesSidelobeRejection()
     {
         // A -10 dB direct arrival 5 ms before a strong reflection, analyzed in

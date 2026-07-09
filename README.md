@@ -1348,10 +1348,13 @@ it defaults to Off because the measurements are loopback-referenced.
 - **Auto delay** aligns in two stages: band-limited first arrivals — refined by a
   GCC-PHAT cross-correlation where it carries a reliable peak — set the coarse
   offsets, then a fractional-delay search minimizes the sum-loss metric at each
-  junction. It weighs every near-optimal candidate against an arrival-based prior
-  and a physical tie-break, so it does not add delay or flip polarity without a
-  real improvement — sidestepping the flip-plus-half-period impostor a steep
-  crossover can otherwise hide. The search runs on a background task with a busy
+  junction. Each candidate is scored by its in-band average loss *and* how far
+  its deepest smoothed notch falls below that average, so a solution that only
+  looks good on average while hiding a sharp cancellation at the crossover
+  loses to a slightly lossier but flat one. It weighs every near-optimal
+  candidate against an arrival-based prior and a physical tie-break, so it does
+  not add delay or flip polarity without a real improvement — sidestepping the
+  flip-plus-half-period impostor a steep crossover can otherwise hide. The search runs on a background task with a busy
   indicator, so the window stays responsive during the few seconds it takes. If
   the resulting delays span more than ~10 ms — usually a sign that one channel's
   crossover has excessive group delay (a narrow or steep low-frequency band-pass)

@@ -11,11 +11,14 @@ public readonly record struct AlignmentResult(double DelayMs, bool InvertPolarit
 
 /// <summary>
 /// One near-optimal solution of an alignment search: a local optimum of the
-/// prior-penalized average-loss score. Near a steep crossover several such
-/// candidates — the true alignment and its (flip + half-period shift)
-/// impostors — can score within fractions of a dB of each other inside the
-/// pair band, so the caller may need external evidence to pick between them.
-/// <see cref="LossDb"/> is the raw in-band average without the prior penalty;
+/// prior-penalized average-loss score, further penalized by how far its
+/// deepest smoothed notch falls below its own average (see
+/// <see cref="VirtualCrossoverAnalysis.DipExcessPenaltyWeight"/>). Near a
+/// steep crossover several such candidates — the true alignment and its
+/// (flip + half-period shift) impostors — can score within fractions of a dB
+/// of each other inside the pair band, so the caller may need external
+/// evidence to pick between them.
+/// <see cref="LossDb"/> is the raw in-band average without the penalties;
 /// <see cref="DipDb"/> is the deepest 1/6-octave-smoothed loss notch — the
 /// number that separates a smooth shallow loss from a sharp cancellation the
 /// average barely notices.
@@ -719,13 +722,30 @@ public static class VirtualCrossoverAnalysis
     private const double CandidateGapDb = 1.5;
     private const int MaxAlignmentCandidates = 4;
 
+    /// <summary>
+    /// How much a candidate's deepest smoothed notch counts against its score,
+    /// per dB the notch falls below the candidate's own in-band average
+    /// (penalty = weight × (DipDb − LossDb), ≤ 0). The average alone cannot
+    /// tell a smooth −0.7 dB loss from a −0.7 dB average hiding a −5 dB
+    /// cancellation notch, so without this the selection tie-breaks (closeness
+    /// to the arrival, the wide-window promotion margin) treat them as a
+    /// near-tie and routinely keep the notched one. Penalizing the excess over
+    /// the average — not the dip itself — leaves a uniformly lossy candidate
+    /// unpunished twice. Same weight as the dip penalty in
+    /// <see cref="CrossoverAutoSetup"/>.
+    /// </summary>
+    public const double DipExcessPenaltyWeight = 0.5;
+
     // Coarse grid, then two refinement passes per surviving local optimum —
     // the same grid scheme as the correlation search, but scoring each delay
     // by the metric the tool actually reports: the log-frequency-weighted
     // average summation loss. Both polarities are evaluated at every delay
     // (they share the rotated spectrum), and the better one is kept alongside
     // the delay. Every local optimum of the coarse grid within the candidate
-    // gap is refined and reported, best first.
+    // gap is refined and reported, best first. The dip-excess penalty is folded
+    // into each optimum's score only after refinement: within one lobe the dip
+    // varies slowly with delay, so it re-ranks the lobes against each other
+    // without needing to be paid on every grid point.
     private static List<AlignmentCandidate> SearchAlignmentCandidatesByLoss(
         List<AlignmentBin> bins,
         double minDelayMs,
@@ -860,6 +880,24 @@ public static class VirtualCrossoverAnalysis
             refined.Add(best);
         }
 
+        // Enrich every local optimum with the diagnostics the grid score alone
+        // hides — the raw in-band average (no prior) and the deepest smoothed
+        // notch — and fold the dip excess into the score before any ranking,
+        // so a notch-ridden optimum cannot slip through the candidate cut and
+        // the downstream near-tie margins as the "equal" of a smooth one.
+        for (int i = 0; i < refined.Count; i++)
+        {
+            (double lossDb, double dipDb) = DetailedLoss(
+                refined[i].DelayMs, refined[i].InvertPolarity);
+            refined[i] = refined[i] with
+            {
+                ScoreDb = refined[i].ScoreDb
+                    + DipExcessPenaltyWeight * (dipDb - lossDb),
+                LossDb = lossDb,
+                DipDb = dipDb,
+            };
+        }
+
         // Best first; drop shadows of a better candidate in the same basin and
         // everything far behind the winner.
         refined.Sort((a, b) => b.ScoreDb.CompareTo(a.ScoreDb));
@@ -881,8 +919,6 @@ public static class VirtualCrossoverAnalysis
             }
         }
 
-        // Enrich the survivors with the diagnostics the score alone hides: the
-        // raw in-band average (no prior) and the deepest smoothed notch.
         (double LossDb, double DipDb) DetailedLoss(double delayMs, bool invert)
         {
             var losses = new double[bins.Count];
@@ -927,13 +963,6 @@ public static class VirtualCrossoverAnalysis
             }
 
             return (total / weightSum, dip);
-        }
-
-        for (int i = 0; i < results.Count; i++)
-        {
-            (double lossDb, double dipDb) = DetailedLoss(
-                results[i].DelayMs, results[i].InvertPolarity);
-            results[i] = results[i] with { LossDb = lossDb, DipDb = dipDb };
         }
 
         return results;

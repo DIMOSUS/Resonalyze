@@ -489,13 +489,63 @@ public sealed class VirtualCrossoverAnalysisTests
             !item.InvertPolarity && Math.Abs(item.DelayMs) < 0.1);
         // Best first.
         Assert.True(candidates[0].ScoreDb >= candidates[^1].ScoreDb);
-        // Without a prior the score IS the raw in-band average, and the dip
-        // (a minimum) can never sit above it.
+        // Without a prior the score is the raw in-band average plus the
+        // dip-excess penalty; the dip (a minimum) can never sit above the
+        // average.
         Assert.All(candidates, item =>
         {
-            Assert.Equal(item.ScoreDb, item.LossDb, 9);
+            Assert.Equal(
+                item.LossDb + VirtualCrossoverAnalysis.DipExcessPenaltyWeight
+                    * (item.DipDb - item.LossDb),
+                item.ScoreDb,
+                9);
             Assert.True(item.DipDb <= item.LossDb + 1e-9);
         });
+    }
+
+    [Fact]
+    public void FindAlignmentCandidates_DipExcessOutranksASlightlyBetterAverage()
+    {
+        // An asymmetric junction (LR 12 dB high-pass vs Butterworth 48 dB
+        // low-pass) with an in-band reflection on the woofer. The raw-average
+        // optimum is an inverted lobe whose good average hides a deep smoothed
+        // notch; a neighbouring non-inverted lobe averages slightly worse but
+        // stays much flatter. Ranked by average alone the notched impostor
+        // would reach the selection tie-breaks as the winner; the dip-excess
+        // penalty must put the flat lobe first.
+        var tweeterIr = new Complex[8_192];
+        tweeterIr[480] = Complex.One;
+        Complex[] tweeter = VirtualCrossoverAnalysis.ApplyChain(
+            tweeterIr,
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.HighPass,
+                HighPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.LinkwitzRiley, 1_000, 12))),
+            SampleRate);
+
+        var wooferIr = new Complex[8_192];
+        wooferIr[480] = Complex.One;
+        wooferIr[480 + 96] = new Complex(0.7, 0); // reflection 2 ms after the arrival
+        Complex[] woofer = VirtualCrossoverAnalysis.ApplyChain(
+            wooferIr,
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.LowPass,
+                new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_000, 48))),
+            SampleRate);
+
+        IReadOnlyList<AlignmentCandidate> candidates =
+            VirtualCrossoverAnalysis.FindAlignmentCandidates(
+                tweeter, [woofer], SampleRate, 500, 2_000, -3, 3);
+
+        AlignmentCandidate winner = candidates[0];
+        AlignmentCandidate notched = candidates.Single(item =>
+            item.InvertPolarity && Math.Abs(item.DelayMs - 0.73) < 0.15);
+        Assert.False(winner.InvertPolarity);
+        Assert.InRange(winner.DelayMs, 1.1, 1.4);
+        // The impostor averages better yet notches deeper — and loses.
+        Assert.True(notched.LossDb > winner.LossDb);
+        Assert.True(notched.DipDb < winner.DipDb);
+        Assert.True(notched.ScoreDb < winner.ScoreDb);
     }
 
     [Fact]

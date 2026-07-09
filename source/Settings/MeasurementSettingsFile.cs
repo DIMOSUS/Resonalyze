@@ -407,6 +407,7 @@ internal sealed class MeasurementSettingsFile
         public WindowType WindowType { get; set; } = WindowType.Hann;
         public AveragingSpeed AveragingSpeed { get; set; } = AveragingSpeed.Medium;
         public bool ShowMainCurve { get; set; } = true;
+        public bool ShowInputMagnitude { get; set; }
         public bool PeakHold { get; set; }
         public bool ShowCoherence { get; set; } = true;
         public int CoherenceThresholdPercent { get; set; } = 25;
@@ -431,6 +432,7 @@ internal sealed class MeasurementSettingsFile
                     ? options.AveragingSpeed
                     : AveragingSpeed.Medium,
                 ShowMainCurve = options.ShowMainCurve,
+                ShowInputMagnitude = options.ShowInputMagnitude,
                 PeakHold = options.PeakHold,
                 ShowCoherence = options.ShowCoherence,
                 CoherenceThresholdPercent =
@@ -454,6 +456,7 @@ internal sealed class MeasurementSettingsFile
                 ? AveragingSpeed
                 : AveragingSpeed.Medium;
             options.ShowMainCurve = ShowMainCurve;
+            options.ShowInputMagnitude = ShowInputMagnitude;
             options.PeakHold = PeakHold;
             options.ShowCoherence = ShowCoherence;
             options.CoherenceThresholdPercent =

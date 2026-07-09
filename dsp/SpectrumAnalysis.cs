@@ -54,6 +54,52 @@ public static class SpectrumAnalysis
         return power;
     }
 
+    /// <summary>
+    /// Converts an accumulated single-input auto-power spectrum — the windowed,
+    /// not-yet-gain-corrected |FFT|² produced as the target power by
+    /// <see cref="ComputeTransferSpectrumFrame"/> — into a tone-calibrated
+    /// magnitude spectrum. The result is normalized by the analysis window's
+    /// coherent gain, so a tone reads the same level regardless of window, the
+    /// same convention as <see cref="ComputePowerSpectrum"/>. This is the
+    /// reference-free RTA magnitude: it reflects the input level alone with no
+    /// division by any reference channel, so unlike the H1 transfer function it
+    /// carries neither coherence nor phase. <paramref name="frameLength"/> is the
+    /// pre-FFT block length the auto-power was measured with (twice the bin count
+    /// for a real signal); it is needed to recover the window's coherent gain.
+    /// By the identity sqrt(|FFT|²)·scale, the result equals the square root of
+    /// <see cref="ComputePowerSpectrum"/> of the same block bin-for-bin.
+    /// </summary>
+    public static double[] ComputeInputMagnitudeSpectrum(
+        IReadOnlyList<double> autoPowerSpectrum,
+        WindowType windowType,
+        int frameLength)
+    {
+        ArgumentNullException.ThrowIfNull(autoPowerSpectrum);
+        if (frameLength < 2)
+        {
+            throw new ArgumentOutOfRangeException(nameof(frameLength));
+        }
+
+        double[] window = Windowing.CreateAnalysisWindow(windowType, frameLength);
+        double windowSum = 0.0;
+        for (int i = 0; i < frameLength; i++)
+        {
+            windowSum += window[i];
+        }
+
+        double coherentGain = windowSum / frameLength;
+        double scale = coherentGain > 0.0 ? 1.0 / coherentGain : 1.0;
+
+        var magnitude = new double[autoPowerSpectrum.Count];
+        for (int i = 0; i < magnitude.Length; i++)
+        {
+            double power = autoPowerSpectrum[i];
+            magnitude[i] = power > 0.0 ? Math.Sqrt(power) * scale : 0.0;
+        }
+
+        return magnitude;
+    }
+
     public static double[] ComputeTransferMagnitudeSpectrum(
         IReadOnlyList<float> reference,
         IReadOnlyList<float> target,

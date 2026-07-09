@@ -62,6 +62,13 @@ namespace Resonalyze.Options
         /// <summary>Shows the main live trace (the spectrum / transfer-function curve).</summary>
         public bool ShowMainCurve { get; set; } = true;
 
+        /// <summary>
+        /// Overlays a reference-free RTA curve: the plain magnitude spectrum of the
+        /// measured (microphone) input, with no division by the loopback reference.
+        /// Off by default.
+        /// </summary>
+        public bool ShowInputMagnitude { get; set; }
+
         /// <summary>Shows a peak-hold envelope curve of the displayed trace.</summary>
         public bool PeakHold { get; set; }
 

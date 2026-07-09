@@ -1,0 +1,126 @@
+{
+  "format": "resonalyze-virtual-crossover",
+  "version": 1,
+  "savedAtUtc": "2026-07-09T18:47:54.5854981+00:00",
+  "channels": [
+    {
+      "enabled": true,
+      "bypass": false,
+      "displayName": "sub woof closed window.json",
+      "sourceFilePath": "sub woof closed window.json",
+      "historyEntryId": null,
+      "gainDb": 0,
+      "delayMs": 0,
+      "invertPolarity": false,
+      "crossoverKind": "LowPass",
+      "lowPassEdge": {
+        "family": "Butterworth",
+        "frequencyHz": 80,
+        "slopeDbPerOctave": 24
+      },
+      "highPassEdge": {
+        "family": "Butterworth",
+        "frequencyHz": 10,
+        "slopeDbPerOctave": 24
+      },
+      "peqPreampDb": 0,
+      "peqBands": [],
+      "peqSourceName": null,
+      "showRawCurve": false,
+      "showProcessedCurve": true,
+      "hasSource": true
+    },
+    {
+      "enabled": true,
+      "bypass": false,
+      "displayName": "l woof.json",
+      "sourceFilePath": "l woof.json",
+      "historyEntryId": null,
+      "gainDb": 0,
+      "delayMs": 4.78,
+      "invertPolarity": false,
+      "crossoverKind": "BandPass",
+      "lowPassEdge": {
+        "family": "Butterworth",
+        "frequencyHz": 175,
+        "slopeDbPerOctave": 24
+      },
+      "highPassEdge": {
+        "family": "Butterworth",
+        "frequencyHz": 80,
+        "slopeDbPerOctave": 24
+      },
+      "peqPreampDb": 0,
+      "peqBands": [],
+      "peqSourceName": null,
+      "showRawCurve": false,
+      "showProcessedCurve": true,
+      "hasSource": true
+    },
+    {
+      "enabled": true,
+      "bypass": false,
+      "displayName": "l mid.json",
+      "sourceFilePath": "l mid.json",
+      "historyEntryId": null,
+      "gainDb": 0,
+      "delayMs": 8.62,
+      "invertPolarity": false,
+      "crossoverKind": "BandPass",
+      "lowPassEdge": {
+        "family": "Butterworth",
+        "frequencyHz": 1300,
+        "slopeDbPerOctave": 24
+      },
+      "highPassEdge": {
+        "family": "Butterworth",
+        "frequencyHz": 175,
+        "slopeDbPerOctave": 24
+      },
+      "peqPreampDb": 0,
+      "peqBands": [],
+      "peqSourceName": null,
+      "showRawCurve": false,
+      "showProcessedCurve": true,
+      "hasSource": true
+    },
+    {
+      "enabled": true,
+      "bypass": false,
+      "displayName": "l twr.json",
+      "sourceFilePath": "l twr.json",
+      "historyEntryId": null,
+      "gainDb": -5,
+      "delayMs": 8.46,
+      "invertPolarity": false,
+      "crossoverKind": "HighPass",
+      "lowPassEdge": {
+        "family": "LinkwitzRiley",
+        "frequencyHz": 2000,
+        "slopeDbPerOctave": 24
+      },
+      "highPassEdge": {
+        "family": "Butterworth",
+        "frequencyHz": 1800,
+        "slopeDbPerOctave": 24
+      },
+      "peqPreampDb": 0,
+      "peqBands": [],
+      "peqSourceName": null,
+      "showRawCurve": false,
+      "showProcessedCurve": true,
+      "hasSource": true
+    }
+  ],
+  "showSumCurve": true,
+  "showLossCurve": true,
+  "showPhaseView": false,
+  "smoothingInverseOctaves": 3,
+  "dspPlotMode": "GroupDelay",
+  "calibrationMode": "Degrees90",
+  "phaseGateOffsetMs": 14.45,
+  "phaseGateLeftMs": 10,
+  "phaseGatePlateauMs": 1,
+  "phaseGateRightMs": 1,
+  "phaseDetrendMs": 15.82
+}

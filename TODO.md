@@ -87,6 +87,41 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
     log-weighted kernel (brittle). Covered instead by a relative test (aligned ~0
     vs offset cancellation) that pins the diagnostics as non-vacuous.
 
+- [x] **GCC-PHAT coherence weighting + alignment confidence** — done. The
+  time-alignment refinement whitened every in-band bin to unit magnitude, giving a
+  noisy/low-SNR bin exactly as much say in the sub-sample delay as a clean one (the
+  classic PHAT weakness). It now folds the measured γ² (already computed by
+  `ComputeAveragedRelativeIr`, previously unused here) into the whitening: each bin
+  is scaled by a floored-linear weight `1 − (1−0.25)·(1−γ²)`, so bins whose phase
+  does not repeat across averages carry ≤ their share while every in-band bin keeps
+  ≥ 25% of its weight (bandwidth preserved — no spectral hole to ring back as side
+  lobes). Design + invariants were run through a multi-agent design panel and
+  adversarial verification; the two load-bearing invariants were also re-proved by
+  hand: (1) the complement form makes flat/unit γ² a **bit-exact** no-op for any
+  floor, and null/wrong-length γ² is ignored, so every existing caller and all 356
+  prior dsp tests stay green; (2) γ² is folded to both Hermitian halves identically,
+  keeping the whitened spectrum conjugate-symmetric (real IFFT). Also surfaced the
+  refinement's own trust: `TimeAlignmentAnalysisResult` now carries per-arrival
+  `…Confidence` ([0,1] PHAT peak height) + `…RefinedByPhat`, shown in the panel as an
+  "Alignment: NN% (GCC-PHAT / envelope fallback)" line. 9 new cross-platform dsp
+  tests (no-op bit-identical, flat-non-unity invariance, length-mismatch degrade,
+  Hermitian/real guard, corrupted-band improvement, distortion caveat, confidence);
+  365 dsp tests green.
+  **Honest limitations (documented, not hidden):**
+  - Coherence weighting suppresses only non-repeatable content. Repeatable harmonic
+    distortion reports γ²≈1 and is **not** suppressed — pinned by a caveat test.
+  - The weight shifts the absolute PHAT peak correlation slightly (usually up, as
+    noise bins are demoted), so the fixed 0.2 trust gate should be re-eyeballed on
+    real captures; a fully low-coherence capture legitimately drops below it and
+    falls back to the envelope parabola (acceptable).
+  - The strict `Count == fftLength/2+1` gate rejects wrong-length arrays but cannot
+    detect a same-length *stale* γ²; the contract (γ² must come from the same
+    transfer FFT as the IR) is documented on the API.
+  - **App wiring is unbuilt on this Linux env** (`source/` is `net10.0-windows`):
+    the `TimeAlignmentPanelController` plumbing (source record + two `Analyze`
+    calls + the confidence line) is mechanical and verified against real signatures,
+    but needs a Windows build + a live sanity check of the new "Alignment:" line.
+
 ## Virtual DSP / Time Alignment
 
 - [ ] **Time Alignment analysis is not cached** — `RefreshAnalysis`

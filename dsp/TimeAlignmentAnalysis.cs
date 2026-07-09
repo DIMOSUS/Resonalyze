@@ -27,14 +27,25 @@ public readonly record struct TimeAlignmentAnalysisResult(
     double StrongestPeakSample,
     double StrongestDelayMilliseconds,
     double StrongestPeakSeparationMilliseconds,
-    bool StrongestPeakIsSeparateArrival);
+    bool StrongestPeakIsSeparateArrival,
+    // Per-arrival GCC-PHAT trust: the normalized whitened-correlation peak height in
+    // [0, 1] used to refine each arrival (magnitude-based, so polarity-blind). The
+    // RefinedByPhat flag is false when the peak was too weak (below the trust gate)
+    // and the envelope parabola set the sample instead — a sub-gate confidence next
+    // to RefinedByPhat=false is the honest "this alignment is coarse" signal, not a
+    // trustworthy sub-sample figure.
+    double FirstArrivalConfidence,
+    bool FirstArrivalRefinedByPhat,
+    double StrongestConfidence,
+    bool StrongestRefinedByPhat);
 
 public static class TimeAlignmentAnalysis
 {
     public static TimeAlignmentAnalysisResult Analyze(
         IReadOnlyList<double> impulseResponse,
         int sampleRate,
-        TimeAlignmentAnalysisOptions options)
+        TimeAlignmentAnalysisOptions options,
+        IReadOnlyList<double>? coherence = null)
     {
         ArgumentNullException.ThrowIfNull(impulseResponse);
         ArgumentNullException.ThrowIfNull(options);
@@ -81,12 +92,15 @@ public static class TimeAlignmentAnalysis
         // whitened correlation sharpens its position, independent of the driver's
         // magnitude shape, and falls back to the envelope parabola when weak.
         PhaseTransformCorrelation phaseTransform =
-            TransferFunction.ComputePhaseTransformFromResponse(analysisSignal);
+            TransferFunction.ComputePhaseTransformFromResponse(
+                analysisSignal, coherence: coherence);
         int refineRadius = ComputePhatSearchRadius(sampleRate);
-        double firstArrivalPeakSample = RefineArrivalSample(
+        RefinedArrival firstArrival = RefineArrivalSample(
             phaseTransform, envelope, envelopePeakIndex, refineRadius);
-        double strongestPeakSample = RefineArrivalSample(
+        RefinedArrival strongest = RefineArrivalSample(
             phaseTransform, envelope, strongestPeakIndex, refineRadius);
+        double firstArrivalPeakSample = firstArrival.Sample;
+        double strongestPeakSample = strongest.Sample;
 
         // When the strongest peak is a distinct, clearly later arrival than the
         // first, it is a reflection or a room mode rather than the direct sound —
@@ -123,7 +137,11 @@ public static class TimeAlignmentAnalysis
             strongestPeakSample,
             strongestPeakSample * 1000.0 / sampleRate,
             separationMilliseconds,
-            strongestIsSeparateArrival);
+            strongestIsSeparateArrival,
+            firstArrival.Confidence,
+            firstArrival.RefinedByPhat,
+            strongest.Confidence,
+            strongest.RefinedByPhat);
     }
 
     // The minimum normalized GCC-PHAT peak height for its refined lag to be
@@ -142,16 +160,31 @@ public static class TimeAlignmentAnalysis
     private static int ComputePhatSearchRadius(int sampleRate) =>
         Math.Clamp((int)Math.Round(sampleRate * 0.0001), 2, 8);
 
-    private static double RefineArrivalSample(
+    // A refined arrival position plus the GCC-PHAT trust it was refined with.
+    // RefinedByPhat is true when the whitened correlation drove the sample; false
+    // when its peak was too weak and the envelope parabola set it instead. Confidence
+    // is the PHAT peak height on both branches, so the caller always sees the same
+    // [0, 1] measure the trust decision used.
+    private readonly record struct RefinedArrival(
+        double Sample,
+        double Confidence,
+        bool RefinedByPhat);
+
+    private static RefinedArrival RefineArrivalSample(
         PhaseTransformCorrelation phaseTransform,
         IReadOnlyList<double> envelope,
         int coarseIndex,
         int searchRadius)
     {
         PhaseTransformDelay phat = phaseTransform.RefineAround(coarseIndex, searchRadius);
-        return phat.Refined && phat.PeakCorrelation >= PhatTrustCoefficient
+        bool refinedByPhat = phat.Refined && phat.PeakCorrelation >= PhatTrustCoefficient;
+        double sample = refinedByPhat
             ? phat.LagSamples
             : coarseIndex + FindFractionalPeakOffset(envelope, coarseIndex);
+        return new RefinedArrival(
+            sample,
+            Math.Clamp(phat.PeakCorrelation, 0.0, 1.0),
+            refinedByPhat);
     }
 
     private static double[] ApplyBandpassWindow(

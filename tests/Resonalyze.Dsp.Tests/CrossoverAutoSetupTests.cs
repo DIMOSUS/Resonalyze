@@ -102,6 +102,28 @@ public sealed class CrossoverAutoSetupTests
     }
 
     [Fact]
+    public void Propose_MidbassHandoversStayInItsSensibleRange()
+    {
+        // A three-way with an explicit Midbass driver exercises the Midbass row of
+        // SensibleRange (80-500 Hz), which the other systems never hit. Its lower
+        // handover to the sub lands inside that range; the upper handover to the
+        // tweeter is pulled higher by the tweeter's own range but must stay ordered.
+        var sub = new AutoSetupSource(BandCurve(20, 120, 0), DriverType.Subwoofer);
+        var midbass = new AutoSetupSource(BandCurve(100, 800, 0), DriverType.Midbass);
+        var tweeter = new AutoSetupSource(BandCurve(2_000, 20_000, 0), DriverType.Tweeter);
+
+        IReadOnlyList<CrossoverProposal> proposals = CrossoverAutoSetup.Propose(
+            [sub, midbass, tweeter], Options());
+
+        Assert.Equal(3, proposals.Count);
+        double subToMidbass = proposals[0].LowPassEdge!.Value.FrequencyHz;
+        double midbassToTweeter = proposals[1].LowPassEdge!.Value.FrequencyHz;
+        Assert.InRange(subToMidbass, 80, 500); // midbass sensible-range low side
+        Assert.True(subToMidbass < midbassToTweeter, "Handovers must stay ordered.");
+        Assert.InRange(midbassToTweeter, 500, 2_000);
+    }
+
+    [Fact]
     public void EstimateBand_ReadsEdgesLevelAndType()
     {
         Assert.Equal(

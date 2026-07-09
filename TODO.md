@@ -55,6 +55,38 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   `2×` smoothing width harmonic/THD curves use over the primary). No behavior
   change.
 
+- [x] **DSP test-coverage quality pass** — done. An audit of the dsp suite (real
+  cobertura line/branch numbers plus a per-module adversarial review of test
+  *meaningfulness*, not just presence) found one entirely-untested module and a
+  systemic "constant-input" smell (resampler, calibration, HD/THD isolation
+  exercised only on flat data, so the interesting math ran but was never pinned).
+  Closed with ~60 new tests, all cross-platform and CI-verifiable:
+  `WaterfallAnalysis` (was 0%: Morlet localisation/decay, frequency-grid geometry,
+  resample dB/floor); the degrees-domain phase API (`GetPhase`/`GetMinimumPhase`/
+  `GetExcessPhase`/`EstimatePhaseDetrend`); `LogarithmicResample`/`CalibrationFile`
+  known-answer tests on *non-constant* data; `DspMath.LanczosKernel`; window
+  coefficients; the `SignalEnvelope` SNR gate; `TransferFunction` coherence<1 and
+  the PHAT degenerate guard; the `AutoAlignmentEngine` downward walk;
+  `PeakingBiquad` digital-vs-analog off-centre; `CrossoverAutoSetup` Midbass;
+  `VirtualCrossover` degenerate window + loss diagnostics; `EqAutoTuner` NaN mask /
+  clamp / Q fallback; and MiniDSP/GraphicEQ/EasyEffects/Calibration numeric
+  payloads. Overall dsp line coverage 89% → 95%, branch 83% → 89%.
+  **Deliberate residuals (not shipped as tests, would have asserted unreachable or
+  tautological behaviour):**
+  - `TimeAlignmentAnalysis.ToSignedDelaySamples` subtraction branch: the peak
+    search is capped at `length/2`, so a detected arrival never lands above the
+    wrap pivot through the public `Analyze`. Only the pivot and comparison
+    direction are pinned (a no-op test); the negative-arrival arithmetic is not
+    reachable at the API boundary.
+  - `FindBandLimitedCorrelationDelay` collapse fallback (`highHz <= lowHz`): only
+    reachable when `centerFrequencyHz > Nyquist`, which the app never passes, and
+    the fallback does not actually reorder the band when `lowHz > 0.95·Nyquist`.
+    Latent robustness gap, not a live bug; the reachable Nyquist clamp is tested.
+  - `SearchAlignmentCandidatesByLoss` exact 1/f-weighted `LossDb`/`DipDb` values:
+    a byte-exact known-answer would have to re-derive the 1/6-octave-smoothed
+    log-weighted kernel (brittle). Covered instead by a relative test (aligned ~0
+    vs offset cancellation) that pins the diagnostics as non-vacuous.
+
 ## Virtual DSP / Time Alignment
 
 - [ ] **Time Alignment analysis is not cached** — `RefreshAnalysis`

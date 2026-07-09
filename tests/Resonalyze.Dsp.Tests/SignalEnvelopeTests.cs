@@ -118,6 +118,56 @@ public sealed class SignalEnvelopeTests
     }
 
     [Fact]
+    public void FindFractionalPeakOffset_FlatTripleReturnsZero()
+    {
+        // previous - 2*center + next == 0: the parabola is degenerate, so the offset
+        // must be exactly the flat-guard value rather than a division by ~zero.
+        Assert.Equal(0.0, SignalEnvelope.FindFractionalPeakOffset(1.0, 1.0, 1.0));
+    }
+
+    [Fact]
+    public void FindFractionalPeakOffset_ReturnsTheParabolicVertex()
+    {
+        // 0.5 * (previous - next) / (previous - 2*center + next)
+        // = 0.5 * (1 - 2) / (1 - 8 + 2) = 0.5 * (-1) / (-5) = 0.1.
+        Assert.Equal(0.1, SignalEnvelope.FindFractionalPeakOffset(1.0, 4.0, 2.0), precision: 12);
+    }
+
+    [Fact]
+    public void FindPeak_SnrGateRejectsASubNoiseEarlyBumpUnlessSnrIsRelaxed()
+    {
+        // A 0.01 noise bed with an early bump (0.08) and a much later strong peak
+        // (1.0). The bump clears the -25 dB-below-max threshold (0.056), so only the
+        // SNR gate can decide it. Raising FirstPeakMinimumSnrDb lifts the noise-based
+        // threshold above the bump; relaxing it lets the bump through. This is the
+        // only lever that changes, so the flip pins the SNR branch.
+        var envelope = new double[2_000];
+        Array.Fill(envelope, 0.01);
+        envelope[100] = 0.08; // early candidate arrival
+        envelope[500] = 1.0;  // dominant peak
+
+        PeakSearchResult strict = SignalEnvelope.FindPeak(
+            envelope, 48_000,
+            new PeakSearchOptions
+            {
+                Mode = PeakSearchMode.FirstArrival,
+                FirstPeakThresholdBelowMaxDb = 25,
+                FirstPeakMinimumSnrDb = 30,
+            });
+        PeakSearchResult relaxed = SignalEnvelope.FindPeak(
+            envelope, 48_000,
+            new PeakSearchOptions
+            {
+                Mode = PeakSearchMode.FirstArrival,
+                FirstPeakThresholdBelowMaxDb = 25,
+                FirstPeakMinimumSnrDb = 0,
+            });
+
+        Assert.Equal(500, strict.SelectedIndex);  // sub-SNR bump rejected -> strongest peak
+        Assert.Equal(100, relaxed.SelectedIndex);  // bump accepted as the first arrival
+    }
+
+    [Fact]
     public void EstimatePeakConfidenceDecibels_ExcludesWrappedPeakNeighborhood()
     {
         double[] envelope = Enumerable.Repeat(0.01, 1000).ToArray();

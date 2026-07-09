@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.Dsp.Tests;
@@ -97,7 +99,72 @@ public sealed class CalibrationFileTests
 
         double correction = calibration.GetDecibelCorrection(20_000);
 
-        Assert.InRange(correction, 1.0, 3.5);
+        // The final 1000->5000 Hz segment has a real +2 dB slope; above the range the
+        // correction must HOLD the last point (3.0 dB), not extrapolate the slope
+        // upward. The previous 1.0-3.5 window passed even for a wrong hold value.
+        Assert.Equal(3.0, correction, precision: 6);
+    }
+
+    [Fact]
+    public void ManyPointCurve_BinarySearchLandsOnTheCorrectSegment()
+    {
+        // A 200-point curve forces the interior binary-search descent (right = mid-1,
+        // left = mid+1) that the 3-point files never reach — those resolve on the
+        // first probe. A step at 1500 Hz makes each flat plateau an exact known value,
+        // so a wrong search comparison would read the other plateau.
+        var text = new StringBuilder();
+        foreach (double frequency in EqualizationCurve.LogFrequencyGrid(20, 20_000, 200))
+        {
+            double db = frequency < 1_500 ? 0.0 : 6.0;
+            text.Append(frequency.ToString("R", CultureInfo.InvariantCulture))
+                .Append(' ')
+                .Append(db.ToString(CultureInfo.InvariantCulture))
+                .Append('\n');
+        }
+
+        CalibrationFile calibration = CalibrationFile.Parse(text.ToString());
+
+        Assert.Equal(0.0, calibration.GetDecibelCorrection(200), precision: 5);   // low plateau
+        Assert.Equal(6.0, calibration.GetDecibelCorrection(8_000), precision: 5); // high plateau
+    }
+
+    [Fact]
+    public void SmoothingOctaves_WidensTheAveragingWindow()
+    {
+        // A single 12 dB spike on an otherwise flat curve. A narrow smoothing window
+        // keeps most of the spike; a wide one averages in the flat neighbours and
+        // pulls the correction down. Equal results would mean smoothingOctaves is
+        // ignored — the constant-curve tests could never show this.
+        IReadOnlyList<double> grid = EqualizationCurve.LogFrequencyGrid(20, 20_000, 200);
+        double spikeHz = grid.OrderBy(f => Math.Abs(f - 1_000)).First();
+        var text = new StringBuilder();
+        foreach (double frequency in grid)
+        {
+            double db = frequency == spikeHz ? 12.0 : 0.0;
+            text.Append(frequency.ToString("R", CultureInfo.InvariantCulture))
+                .Append(' ')
+                .Append(db.ToString(CultureInfo.InvariantCulture))
+                .Append('\n');
+        }
+
+        CalibrationFile calibration = CalibrationFile.Parse(text.ToString());
+        double narrow = calibration.GetDecibelCorrection(spikeHz, smoothingOctaves: 0.2);
+        double wide = calibration.GetDecibelCorrection(spikeHz, smoothingOctaves: 2.0);
+
+        Assert.True(narrow > wide + 1.0, $"Narrow smoothing {narrow:0.00} dB should exceed wide {wide:0.00} dB.");
+        Assert.InRange(narrow, 0.0, 12.0);
+        Assert.InRange(wide, 0.0, 12.0);
+    }
+
+    [Fact]
+    public void MissingFile_YieldsNoCorrection()
+    {
+        string missing = Path.Combine(
+            Path.GetTempPath(), $"resonalyze-missing-{Guid.NewGuid():N}.txt");
+
+        var calibration = new CalibrationFile(missing);
+
+        Assert.Equal(0.0, calibration.GetDecibelCorrection(1_000));
     }
 
     [Fact]

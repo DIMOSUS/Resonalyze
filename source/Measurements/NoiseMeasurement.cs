@@ -662,25 +662,22 @@ namespace Resonalyze
                         return;
                     }
 
-                    if (infiniteAveraging)
-                    {
-                        // Honest cumulative mean: seed with the first real frame.
-                        accumulatedCrossSpectrum = frame.CrossSpectrum.ToArray();
-                        accumulatedReferencePowerSpectrum =
-                            frame.ReferencePowerSpectrum.ToArray();
-                        accumulatedTargetPowerSpectrum =
-                            frame.TargetPowerSpectrum.ToArray();
-                        averagedFrameCount = 1;
-                        sequencesCounter++;
-                        return;
-                    }
-
-                    accumulatedCrossSpectrum = new Complex[frame.CrossSpectrum.Length];
+                    // Seed the accumulators with the first real frame for every
+                    // averaging mode. Cross- and reference-power carry the same
+                    // running scale as target-power, so H1 magnitude and coherence
+                    // divide it out regardless of the seed; but the RTA overlay
+                    // reads sqrt(target-power) directly, so a zero seed would make
+                    // it start sqrt(alpha) low and ramp up over the averaging time
+                    // constant even for a steady input. Seeding gives an unbiased
+                    // running estimate from the first frame instead.
+                    accumulatedCrossSpectrum = frame.CrossSpectrum.ToArray();
                     accumulatedReferencePowerSpectrum =
-                        new double[frame.ReferencePowerSpectrum.Length];
+                        frame.ReferencePowerSpectrum.ToArray();
                     accumulatedTargetPowerSpectrum =
-                        new double[frame.TargetPowerSpectrum.Length];
+                        frame.TargetPowerSpectrum.ToArray();
                     averagedFrameCount = 1;
+                    sequencesCounter++;
+                    return;
                 }
 
                 double alpha = infiniteAveraging

@@ -123,22 +123,30 @@ public static class SignalEnvelope
             Math.Pow(10.0, Math.Max(0, options.FirstPeakMinimumSnrDb) / 20.0);
         double threshold = Math.Max(thresholdFromMax, thresholdFromNoise);
 
+        var candidates = new List<int>();
         for (int i = 1; i < searchEnd - 1; i++)
         {
-            if (envelope[i] < threshold)
-            {
-                continue;
-            }
-
-            if (envelope[i] >= envelope[i - 1] &&
+            if (envelope[i] >= threshold &&
+                envelope[i] >= envelope[i - 1] &&
                 envelope[i] >= envelope[i + 1])
             {
-                return new PeakSearchResult(
-                    i,
-                    strongestIndex,
-                    strongestPeak,
-                    false);
+                candidates.Add(i);
             }
+        }
+
+        int firstArrivalIndex = EliminatePreRingingSidelobes(
+            envelope,
+            candidates,
+            options.AnalysisKernelEnvelope,
+            threshold,
+            strongestPeak);
+        if (firstArrivalIndex >= 0)
+        {
+            return new PeakSearchResult(
+                firstArrivalIndex,
+                strongestIndex,
+                strongestPeak,
+                false);
         }
 
         return new PeakSearchResult(
@@ -156,6 +164,141 @@ public static class SignalEnvelope
         ArgumentNullException.ThrowIfNull(envelope);
         double noiseRms = EstimateEnvelopeNoiseRms(envelope, peakIndex);
         return DataHelper.AmplitudeToDecibels(peak / Math.Max(noiseRms, 1e-12));
+    }
+
+    // The analysis chain ahead of the peak search is zero-phase (the bandpass
+    // window and the discrete Hilbert transform's own 1/t skirt), so every
+    // arrival drags an exactly symmetric train of pre-ringing lobes in front of
+    // it. The stronger ones clear the first-arrival threshold and used to read
+    // as earlier "arrivals" milliseconds before the true wavefront — the cleaner
+    // the measurement, the more of them survived the noise gate. The kernel that
+    // makes the ringing is known, so a candidate is tested against physics, not
+    // heuristics: an arrival of height H can produce at offset d a lobe no
+    // higher than H times the kernel envelope at d. A candidate above that
+    // ceiling (with a 6 dB superposition margin) cannot be pre-ring and is a
+    // genuine arrival; a candidate at or below it is corroborated by symmetry —
+    // an exactly even kernel puts an equal lobe at the mirrored position after
+    // the peak, and decay/reflections only add energy on the late side, so the
+    // mirror cannot hide a lobe. Level-and-mirror together keep genuine early
+    // arrivals in reverberant rooms (their level exceeds the kernel ceiling at
+    // their distance) while rejecting the kernel's own ring exactly.
+    private const double SidelobeLevelMarginRatio = 2.0;
+    private const double SidelobeSymmetryRatio = 0.5;
+    private const int SidelobeMirrorNeighborhood = 2;
+
+    // Walks the threshold-passing local maxima from the latest to the earliest,
+    // dropping every candidate that reads as a pre-ringing sidelobe of an
+    // already-accepted later peak — a weak first arrival is itself a sidelobe
+    // reference, so its own pre-ring cannot masquerade as an even earlier
+    // arrival. Returns the earliest surviving candidate, or -1 when none pass.
+    private static int EliminatePreRingingSidelobes(
+        IReadOnlyList<double> envelope,
+        IReadOnlyList<int> candidates,
+        IReadOnlyList<double>? kernelEnvelope,
+        double threshold,
+        double strongestPeak)
+    {
+        // Beyond this offset not even the strongest peak can ring above the
+        // candidate threshold, so no threshold-passing candidate can be anyone's
+        // sidelobe there — it bounds the peak-comparison loop.
+        int ringReachLimit = 0;
+        int reachCap = envelope.Count / 2;
+        for (int d = 1; d <= reachCap; d++)
+        {
+            if (strongestPeak * KernelRingLevel(kernelEnvelope, d) *
+                SidelobeLevelMarginRatio >= threshold)
+            {
+                ringReachLimit = d;
+            }
+        }
+
+        var accepted = new List<int>();
+        int firstArrival = -1;
+        for (int k = candidates.Count - 1; k >= 0; k--)
+        {
+            int candidate = candidates[k];
+            bool isSidelobe = false;
+            for (int a = accepted.Count - 1; a >= 0; a--)
+            {
+                int peakIndex = accepted[a];
+                if (peakIndex - candidate > ringReachLimit)
+                {
+                    break;
+                }
+
+                if (IsPreRingingSidelobeOf(
+                        envelope, candidate, peakIndex, kernelEnvelope))
+                {
+                    isSidelobe = true;
+                    break;
+                }
+            }
+
+            if (!isSidelobe)
+            {
+                accepted.Add(candidate);
+                firstArrival = candidate;
+            }
+        }
+
+        return firstArrival;
+    }
+
+    // The analysis kernel's envelope level at |offset| samples from its centre,
+    // relative to the centre peak. With no explicit kernel the only zero-phase
+    // ringing left is the discrete Hilbert transform's skirt, whose envelope
+    // pedestal is 2/(pi*n) — the delta worst case; smoother arrivals ring less.
+    private static double KernelRingLevel(
+        IReadOnlyList<double>? kernelEnvelope,
+        int offset)
+    {
+        if (kernelEnvelope == null || kernelEnvelope.Count == 0)
+        {
+            return Math.Min(1.0, 2.0 / (Math.PI * Math.Max(1, offset)));
+        }
+
+        if (offset >= kernelEnvelope.Count || kernelEnvelope[0] <= 0.0)
+        {
+            return 0.0;
+        }
+
+        return kernelEnvelope[offset] / kernelEnvelope[0];
+    }
+
+    private static bool IsPreRingingSidelobeOf(
+        IReadOnlyList<double> envelope,
+        int candidateIndex,
+        int peakIndex,
+        IReadOnlyList<double>? kernelEnvelope)
+    {
+        // An arrival of this peak's height cannot ring louder than its kernel
+        // envelope allows at this distance; a candidate above that ceiling is a
+        // genuine arrival, however hot the mirror side is.
+        int distance = peakIndex - candidateIndex;
+        double ringCeiling = envelope[peakIndex] *
+            KernelRingLevel(kernelEnvelope, distance) *
+            SidelobeLevelMarginRatio;
+        if (envelope[candidateIndex] > ringCeiling)
+        {
+            return false;
+        }
+
+        // The peak's integer index is up to half a sample off the true lobe
+        // centre, so read the mirror as the maximum over a small neighbourhood —
+        // a deep null one sample off the exact mirror must not disguise a
+        // sidelobe as a genuine arrival. Clamp the neighbourhood so it never
+        // touches the peak's own lobe.
+        int neighborhood = Math.Min(SidelobeMirrorNeighborhood, distance - 1);
+        int mirrorIndex = 2 * peakIndex - candidateIndex;
+        double mirrorLevel = 0.0;
+        int first = Math.Max(0, mirrorIndex - neighborhood);
+        int last = Math.Min(envelope.Count - 1, mirrorIndex + neighborhood);
+        for (int i = first; i <= last; i++)
+        {
+            mirrorLevel = Math.Max(mirrorLevel, envelope[i]);
+        }
+
+        return mirrorLevel >= envelope[candidateIndex] * SidelobeSymmetryRatio;
     }
 
     private static (int Index, double Peak) FindStrongestPeak(
@@ -233,6 +376,16 @@ public sealed class PeakSearchOptions
     public double FirstPeakThresholdBelowMaxDb { get; init; } = 25;
     public double FirstPeakMinimumSnrDb { get; init; } = 12;
     public double SearchWindowMilliseconds { get; init; } = 80;
+
+    /// <summary>
+    /// Envelope of the zero-phase analysis kernel that filtered the signal
+    /// (e.g. the bandpass window's time response), indexed by |offset| in
+    /// samples from the kernel centre; entry 0 is the kernel peak and the scale
+    /// is arbitrary. The first-arrival search uses it as the exact ceiling of
+    /// pre-ringing sidelobe levels at each distance. Null when the signal was
+    /// not filtered — only the Hilbert transform's own skirt is assumed then.
+    /// </summary>
+    public IReadOnlyList<double>? AnalysisKernelEnvelope { get; init; }
 }
 
 public readonly record struct PeakSearchResult(

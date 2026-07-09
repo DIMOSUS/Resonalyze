@@ -12,9 +12,13 @@ left; this file says **who** should take **what** and **how** to work.
   paths to the solution) instead of editing `global.json`.
 - Build everything with `-p:EnableWindowsTargeting=true` on Linux:
   `dotnet build source/Resonalyze.sln -c Release -p:EnableWindowsTargeting=true`.
-- `tests/Resonalyze.Dsp.Tests` runs locally (280 tests, deterministic,
-  synthetic). `tests/Resonalyze.App.Tests` compiles locally but **runs only on
-  the Windows CI** — push a PR to execute it.
+- `tests/Resonalyze.Dsp.Tests` runs locally (deterministic; mostly synthetic,
+  plus real-measurement regressions). `tests/Resonalyze.App.Tests` compiles
+  locally but **runs only on the Windows CI** — push a PR to execute it.
+- `assets/test_data` is a submodule (Resonalyze-test-data, ~230 MB of real
+  transfer IRs) read by `RealMeasurementArrivalTests` — run
+  `git submodule update --init assets/test_data` once per clone, or those
+  tests fail with a pointer to this command.
 - Workflow used so far: verify every TODO claim against the code before
   fixing → fix → build + dsp tests → update `TODO.md` honestly (record
   deliberate non-fixes and residuals) → commit → PR → squash-merge on green

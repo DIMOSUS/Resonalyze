@@ -28,6 +28,8 @@ dotnet run --project source/Resonalyze.csproj -c Tracy
 
 Platform constraint: `source/` (the app) and `tests/Resonalyze.App.Tests/` target `net10.0-windows` and only build/run on Windows. `dsp/` and `tests/Resonalyze.Dsp.Tests/` target plain `net10.0` and are cross-platform — on a Linux environment, only the DSP library and its tests can be built and run.
 
+Test data: `assets/test_data` is a git submodule ([Resonalyze-test-data](https://github.com/DIMOSUS/Resonalyze-test-data), ~230 MB of real transfer IRs). Some dsp tests read it; run `git submodule update --init assets/test_data` once per clone, or those tests fail with a message pointing here.
+
 ## Architecture
 
 Two projects, with a deliberate boundary:
@@ -47,7 +49,7 @@ Key structural points:
 
 ## Testing Conventions
 
-Tests use xUnit. DSP tests are deterministic and synthetic: `tests/Resonalyze.Dsp.Tests/SyntheticMeasurement.cs` implements `IImpulseMeasurement` so analysis code is exercised against generated impulses/filters/delays rather than recordings. App tests focus on file formats and non-UI logic (overlay files, impulse-response files, plot model construction, PDF sheets).
+Tests use xUnit. DSP tests are deterministic and synthetic: `tests/Resonalyze.Dsp.Tests/SyntheticMeasurement.cs` implements `IImpulseMeasurement` so analysis code is exercised against generated impulses/filters/delays rather than recordings. The exception is `RealMeasurementArrivalTests`, which pins field regressions against the real measurements in the `assets/test_data` submodule. App tests focus on file formats and non-UI logic (overlay files, impulse-response files, plot model construction, PDF sheets).
 
 ## Code Style
 

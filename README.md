@@ -325,7 +325,18 @@ the output turned down and verify the signal path before running a measurement.
 
 ## Quick Start
 
-Clone the repository and open:
+Clone the repository together with the measurement-data submodule
+([Resonalyze-test-data](https://github.com/DIMOSUS/Resonalyze-test-data),
+~230 MB of real transfer IRs that back the regression tests):
+
+```powershell
+git clone --recurse-submodules https://github.com/DIMOSUS/Resonalyze.git
+# or, in an existing clone:
+git submodule update --init assets/test_data
+```
+
+The app builds and runs without the submodule — only the real-data tests in
+`Resonalyze.Dsp.Tests` need it. Then open:
 
 ```text
 source/Resonalyze.sln
@@ -843,6 +854,22 @@ The delay estimator uses a deliberately robust two-stage chain:
   strongest peak are detected robustly — this is the coarse, polarity-blind anchor
 - a **GCC-PHAT** (phase-transform) correlation, computed from the transfer IR's
   own spectrum, that refines each anchor to sub-sample precision
+
+The first-arrival search rejects **pre-ringing sidelobes**: the zero-phase
+stages of the chain (the bandpass window and the Hilbert envelope itself) ring
+exactly symmetrically around each arrival, and the stronger of those early
+lobes clear the arrival threshold — on a clean measurement they used to read as
+an arrival up to several milliseconds before the true wavefront, and the better
+the SNR, the more of them survived the noise gate. The kernel that makes the
+ringing is known, so each candidate is tested against physics rather than
+heuristics: an arrival can pre-ring at a given distance no louder than the
+analysis kernel's own envelope allows there. A candidate above that ceiling is
+a genuine arrival no matter how the surroundings look — which is what keeps
+weak direct sound alive in reverberant bass, where everything around a
+reflection cluster is energized. A candidate at or below the ceiling is
+confirmed as pre-ring by its mirror twin: an exactly even kernel puts an equal
+lobe at the mirrored position after the peak, and room decay only adds energy
+on the late side, so the mirror cannot hide a lobe.
 
 That second stage is what makes the numbers trustworthy. The transfer IR's
 spectrum already carries the microphone-to-loopback cross-phase, so whitening it

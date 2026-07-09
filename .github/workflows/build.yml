@@ -20,6 +20,9 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          # The dsp test suite reads real measurement files from the
+          # assets/test_data submodule (Resonalyze-test-data).
+          submodules: true
 
       - name: Determine version
         id: version

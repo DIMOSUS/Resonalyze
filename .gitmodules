@@ -1,0 +1,3 @@
+[submodule "assets/test_data"]
+	path = assets/test_data
+	url = https://github.com/DIMOSUS/Resonalyze-test-data.git

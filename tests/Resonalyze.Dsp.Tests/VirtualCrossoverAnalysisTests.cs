@@ -538,8 +538,11 @@ public sealed class VirtualCrossoverAnalysisTests
         double arrivalMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
             ir, SampleRate, 20, 1_000);
 
-        // 480 samples at 48 kHz = 10 ms; the LR24 group delay adds a fraction.
-        Assert.InRange(arrivalMs, 9.5, 11.5);
+        // 480 samples at 48 kHz = 10 ms; the LR24 low-pass group delay adds a small
+        // fraction of a millisecond. The previous ±1.5 ms window was wide enough to
+        // pass even if the estimate ignored the offset entirely; this tighter window
+        // (commensurate with the actual group delay) requires it to track the arrival.
+        Assert.InRange(arrivalMs, 10.0, 10.6);
     }
 
     [Fact]

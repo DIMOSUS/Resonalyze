@@ -844,6 +844,20 @@ The delay estimator uses a deliberately robust two-stage chain:
 - a **GCC-PHAT** (phase-transform) correlation, computed from the transfer IR's
   own spectrum, that refines each anchor to sub-sample precision
 
+The first-arrival search rejects **pre-ringing sidelobes**: every zero-phase
+stage in the chain (the bandpass window, the band limits of the measurement,
+the Hilbert envelope itself) rings exactly symmetrically around each arrival,
+and the stronger of those early lobes clear the arrival threshold — on a clean
+measurement they used to read as an arrival up to several milliseconds before
+the true wavefront, and the better the SNR, the more of them survived the noise
+gate. A candidate peak that is well below a nearby later arrival *and* has a
+counterpart at the mirrored position after it, at a comparable level, is
+recognized as that arrival's pre-ring and skipped. A genuine earlier arrival
+has no such mirror twin (room decay only adds energy on the late side), so it
+is kept — the honest limit being that an arrival closer to a much stronger one
+than a few main-lobe widths is below what that analysis bandwidth can resolve
+and reads as one arrival.
+
 That second stage is what makes the numbers trustworthy. The transfer IR's
 spectrum already carries the microphone-to-loopback cross-phase, so whitening it
 to unit magnitude over a soft band mask (built from where the response actually

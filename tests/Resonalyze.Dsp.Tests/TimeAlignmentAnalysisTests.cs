@@ -119,8 +119,9 @@ public sealed class TimeAlignmentAnalysisTests
         // A flat-spectrum delta whitens to a sharp GCC-PHAT peak at its arrival, which
         // coincides with the strongest envelope peak, so that arrival refines by PHAT
         // with a strong, in-range confidence — the number the UI shows to say "trust
-        // this alignment". (The first-arrival envelope index leads the analytic peak by
-        // a few samples, so its confidence is reported but not asserted high here.)
+        // this alignment". Sidelobe rejection puts the first arrival on the same
+        // sample (the Hilbert skirt's own bumps are mirror-symmetric and read as
+        // pre-ringing), so it refines by PHAT just as well.
         var impulseResponse = new double[8_192];
         impulseResponse[300] = 1.0;
 
@@ -133,6 +134,72 @@ public sealed class TimeAlignmentAnalysisTests
             result.StrongestConfidence > 0.2,
             $"Strongest confidence {result.StrongestConfidence:0.000} should clear the trust gate.");
         Assert.True(result.StrongestRefinedByPhat);
+    }
+
+    [Fact]
+    public void Analyze_FirstArrivalDoesNotSitOnTheHilbertSkirtOfACleanImpulse()
+    {
+        // The discrete Hilbert envelope of a delta has a 1/t skirt whose odd-offset
+        // bumps are local maxima; the first one above the -25 dB threshold sits
+        // ~11 samples early and used to be reported as the first arrival on every
+        // clean, high-SNR measurement. The skirt is mirror-symmetric, so sidelobe
+        // rejection must put the first arrival on the true peak.
+        var impulseResponse = new double[8_192];
+        impulseResponse[300] = 1.0;
+
+        TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, new TimeAlignmentAnalysisOptions());
+
+        Assert.InRange(result.FirstArrivalPeakSample, 299.5, 300.5);
+        Assert.Equal(result.StrongestEnvelopePeakIndex, result.EnvelopePeakIndex);
+    }
+
+    [Fact]
+    public void Analyze_BandpassPreRingingDoesNotPullTheFirstArrivalEarly()
+    {
+        // The zero-phase bandpass window rings symmetrically around the arrival;
+        // at 1 kHz / 1 octave its -24 dB pre-lobe clears the -25 dB threshold
+        // ~2.1 ms before the true peak and used to be reported as the first
+        // arrival — a ~72 cm alignment error on a clean measurement. The mirror
+        // test must reject the whole pre-ring train.
+        var impulseResponse = new double[32_768];
+        impulseResponse[300] = 1.0;
+
+        TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, new TimeAlignmentAnalysisOptions
+            {
+                UseBandpassWindow = true,
+                BandpassCenterHz = 1000,
+                BandpassPassOctaves = 1,
+                BandpassFadeOctaves = 0.5
+            });
+
+        Assert.InRange(result.FirstArrivalPeakSample, 299.5, 300.5);
+        Assert.True(result.FirstArrivalRefinedByPhat);
+    }
+
+    [Fact]
+    public void Analyze_AGenuineWeakEarlyArrivalSurvivesSidelobeRejection()
+    {
+        // A -10 dB direct arrival 5 ms before a strong reflection, analyzed in
+        // the same band that rings: the early arrival has no mirror counterpart
+        // in the reflection's tail, so it must be kept as the first arrival while
+        // its own pre-ring (and the reflection's) is still rejected.
+        var impulseResponse = new double[32_768];
+        impulseResponse[300] = 0.316;
+        impulseResponse[540] = 1.0;
+
+        TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, new TimeAlignmentAnalysisOptions
+            {
+                UseBandpassWindow = true,
+                BandpassCenterHz = 1000,
+                BandpassPassOctaves = 1,
+                BandpassFadeOctaves = 0.5
+            });
+
+        Assert.InRange(result.FirstArrivalPeakSample, 297.0, 302.0);
+        Assert.InRange(result.StrongestPeakSample, 539.0, 541.0);
     }
 
     [Fact]

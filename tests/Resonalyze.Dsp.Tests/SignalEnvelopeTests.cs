@@ -168,6 +168,66 @@ public sealed class SignalEnvelopeTests
     }
 
     [Fact]
+    public void FindPeak_RejectsASymmetricPreRingingSidelobeOfAStrongerPeak()
+    {
+        // A zero-phase kernel rings symmetrically: the early bump at 14 has an
+        // equal-height mirror at 26 around the main peak at 20, so it must be
+        // read as pre-ringing, not as an earlier arrival.
+        var envelope = new double[64];
+        envelope[13] = 0.05;
+        envelope[14] = 0.2;
+        envelope[15] = 0.05;
+        envelope[19] = 0.5;
+        envelope[20] = 1.0;
+        envelope[21] = 0.5;
+        envelope[25] = 0.05;
+        envelope[26] = 0.2;
+        envelope[27] = 0.05;
+
+        PeakSearchResult result = SignalEnvelope.FindPeak(
+            envelope,
+            sampleRate: 48_000,
+            new PeakSearchOptions
+            {
+                Mode = PeakSearchMode.FirstArrival,
+                FirstPeakThresholdBelowMaxDb = 25,
+                FirstPeakMinimumSnrDb = 0,
+                SearchWindowMilliseconds = 1
+            });
+
+        Assert.Equal(20, result.SelectedIndex);
+        Assert.False(result.FallbackUsed);
+    }
+
+    [Fact]
+    public void FindPeak_KeepsAGenuineEarlyArrivalWithoutAMirrorCounterpart()
+    {
+        // Same early bump, but nothing at the mirrored position after the main
+        // peak — a genuine earlier arrival, so it must stay the first arrival.
+        var envelope = new double[64];
+        envelope[13] = 0.05;
+        envelope[14] = 0.2;
+        envelope[15] = 0.05;
+        envelope[19] = 0.5;
+        envelope[20] = 1.0;
+        envelope[21] = 0.5;
+
+        PeakSearchResult result = SignalEnvelope.FindPeak(
+            envelope,
+            sampleRate: 48_000,
+            new PeakSearchOptions
+            {
+                Mode = PeakSearchMode.FirstArrival,
+                FirstPeakThresholdBelowMaxDb = 25,
+                FirstPeakMinimumSnrDb = 0,
+                SearchWindowMilliseconds = 1
+            });
+
+        Assert.Equal(14, result.SelectedIndex);
+        Assert.False(result.FallbackUsed);
+    }
+
+    [Fact]
     public void EstimatePeakConfidenceDecibels_ExcludesWrappedPeakNeighborhood()
     {
         double[] envelope = Enumerable.Repeat(0.01, 1000).ToArray();

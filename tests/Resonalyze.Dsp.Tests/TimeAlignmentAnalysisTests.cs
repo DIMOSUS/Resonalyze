@@ -112,4 +112,48 @@ public sealed class TimeAlignmentAnalysisTests
 
         Assert.False(result.StrongestPeakIsSeparateArrival);
     }
+
+    [Fact]
+    public void Analyze_ReportsHighConfidenceAndPhatRefinementForTheStrongestArrival()
+    {
+        // A flat-spectrum delta whitens to a sharp GCC-PHAT peak at its arrival, which
+        // coincides with the strongest envelope peak, so that arrival refines by PHAT
+        // with a strong, in-range confidence — the number the UI shows to say "trust
+        // this alignment". (The first-arrival envelope index leads the analytic peak by
+        // a few samples, so its confidence is reported but not asserted high here.)
+        var impulseResponse = new double[8_192];
+        impulseResponse[300] = 1.0;
+
+        TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, new TimeAlignmentAnalysisOptions());
+
+        Assert.InRange(result.FirstArrivalConfidence, 0.0, 1.0);
+        Assert.InRange(result.StrongestConfidence, 0.0, 1.0);
+        Assert.True(
+            result.StrongestConfidence > 0.2,
+            $"Strongest confidence {result.StrongestConfidence:0.000} should clear the trust gate.");
+        Assert.True(result.StrongestRefinedByPhat);
+    }
+
+    [Fact]
+    public void Analyze_FlatUnityCoherence_ReproducesTheNullResultExactly()
+    {
+        // Threading coherence must be a no-op when it is flat/unity: an all-ones γ² of
+        // the correct half-spectrum length must reproduce the null-coherence samples
+        // and confidences bit-for-bit, proving the plumbing does not perturb the path.
+        var impulseResponse = new double[8_192];
+        impulseResponse[300] = 1.0;
+        // fftLength = NextPowerOfTwo(8192) = 8192 -> half spectrum length 4097.
+        double[] ones = Enumerable.Repeat(1.0, 8_192 / 2 + 1).ToArray();
+
+        TimeAlignmentAnalysisResult baseline = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, new TimeAlignmentAnalysisOptions());
+        TimeAlignmentAnalysisResult weighted = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, new TimeAlignmentAnalysisOptions(), ones);
+
+        Assert.Equal(baseline.FirstArrivalPeakSample, weighted.FirstArrivalPeakSample);
+        Assert.Equal(baseline.StrongestPeakSample, weighted.StrongestPeakSample);
+        Assert.Equal(baseline.FirstArrivalConfidence, weighted.FirstArrivalConfidence);
+        Assert.Equal(baseline.StrongestConfidence, weighted.StrongestConfidence);
+    }
 }

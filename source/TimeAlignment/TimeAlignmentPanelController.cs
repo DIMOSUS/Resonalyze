@@ -138,7 +138,8 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             TimeAlignmentAnalysisResult mainResult = TimeAlignmentAnalysis.Analyze(
                 mainSource.TransferImpulseResponse,
                 mainSource.SampleRate,
-                CreateAnalysisOptions(wrapPeakPositions: true));
+                CreateAnalysisOptions(wrapPeakPositions: true),
+                mainSource.TransferCoherence);
             TimeAlignmentCompareAnalysis? compareAnalysis =
                 AnalyzeCompare(mainSource, out string? compareWarning);
             SetMeasurementResultStatus(
@@ -174,6 +175,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 measurement.PlaybackChannel,
                 measurement.MeasurementMode,
                 Array.ConvertAll(transferImpulseResponse, sample => sample.Real),
+                measurement.TransferCoherence,
                 measurement.CurrentLevels);
             message = string.Empty;
             return true;
@@ -241,6 +243,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             Array.ConvertAll(
                 snapshot.TransferImpulseResponse!,
                 sample => sample.Real),
+            snapshot.TransferCoherence,
             snapshot.MeterSnapshot);
 
     private TimeAlignmentAnalysisOptions CreateAnalysisOptions(bool wrapPeakPositions) =>
@@ -378,7 +381,8 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             TimeAlignmentAnalysisResult compareResult = TimeAlignmentAnalysis.Analyze(
                 compareSource.TransferImpulseResponse,
                 compareSource.SampleRate,
-                CreateAnalysisOptions(wrapPeakPositions: true));
+                CreateAnalysisOptions(wrapPeakPositions: true),
+                compareSource.TransferCoherence);
             return new TimeAlignmentCompareAnalysis(compareSource, compareResult);
         }
         catch (Exception exception)
@@ -760,6 +764,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         TimeAlignmentAnalysisResult? reference = null)
     {
         AppendSignalQuality(title, result);
+        AppendAlignmentConfidence(result);
         AppendLevelLine("Mic", levels.Microphone);
         AppendLevelLine("Loopback", levels.Loopback);
         AppendSeparator();
@@ -793,6 +798,28 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         AppendStatusText(
             $"{confidence} ({result.ConfidenceDecibels:0.0} dB)\r\n",
             confidenceColor);
+    }
+
+    // The GCC-PHAT trust for the first arrival: how sharply the whitened correlation
+    // located the sub-sample delay. RefinedByPhat=false means the whitened peak was
+    // too weak and the envelope parabola set the position, so the figure is the
+    // honest "coarse alignment" signal rather than a trustworthy sub-sample number.
+    private void AppendAlignmentConfidence(TimeAlignmentAnalysisResult result)
+    {
+        int percent = (int)Math.Round(
+            Math.Clamp(result.FirstArrivalConfidence, 0.0, 1.0) * 100.0);
+        string method = result.FirstArrivalRefinedByPhat
+            ? "GCC-PHAT"
+            : "envelope fallback";
+        Color color = !result.FirstArrivalRefinedByPhat
+            ? UiPalette.TextSecondarySoft
+            : result.FirstArrivalConfidence >= 0.6
+                ? UiPalette.SuccessGreen
+                : result.FirstArrivalConfidence >= 0.4
+                    ? UiPalette.SuccessGreenSoft
+                    : UiPalette.WarningAmber;
+        AppendStatusText("Alignment: ", UiPalette.TextPrimarySoft);
+        AppendStatusText($"{percent}% ({method})\r\n", color);
     }
 
     private void AppendSeparator()
@@ -1081,6 +1108,10 @@ internal readonly record struct TimeAlignmentAnalysisSource(
     PlaybackChannel PlayChannel,
     SweepMeasurementMode MeasurementMode,
     double[] TransferImpulseResponse,
+    // The γ² half spectrum that produced TransferImpulseResponse (null for <2
+    // averages or a snapshot without it). Fed to the GCC-PHAT refinement so
+    // low-coherence bins carry less weight in the sub-sample alignment.
+    double[]? TransferCoherence,
     InputLevelMeterSnapshot Levels);
 
 internal sealed class StatusRichTextBox : RichTextBox

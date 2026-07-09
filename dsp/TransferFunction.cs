@@ -151,9 +151,20 @@ public static class TransferFunction
     /// The correlation is indexed to match the impulse response, so envelope-peak
     /// lags refine directly.
     /// </summary>
+    /// <param name="coherence">
+    /// Optional per-bin γ² (the half spectrum from
+    /// <see cref="TransferEstimateResult.Coherence"/>, length
+    /// <c>fftLength / 2 + 1</c>). When supplied and length-matched, each in-band bin
+    /// is scaled by a floored-linear coherence weight, so bins whose phase does not
+    /// repeat across averages (noise, non-linear distortion, non-averaging
+    /// reflections) carry less say in the whitened correlation. It must come from
+    /// the same transfer FFT that produced <paramref name="impulseResponse"/>; a
+    /// null or wrong-length array is ignored and leaves the result bit-identical.
+    /// </param>
     public static PhaseTransformCorrelation ComputePhaseTransformFromResponse(
         IReadOnlyList<double> impulseResponse,
-        double referenceGate = 0.02)
+        double referenceGate = 0.02,
+        IReadOnlyList<double>? coherence = null)
     {
         ArgumentNullException.ThrowIfNull(impulseResponse);
         if (impulseResponse.Count == 0)
@@ -174,8 +185,17 @@ public static class TransferFunction
             gateReference[bin] = spectrum[bin].Magnitude;
         }
 
-        return BuildPhaseTransform(spectrum, gateReference, filter: null, referenceGate);
+        return BuildPhaseTransform(spectrum, gateReference, filter: null, referenceGate, coherence);
     }
+
+    // The lowest fraction of its whitened phasor a fully incoherent (γ²=0) in-band
+    // bin keeps. A floored-linear map — not a bin-selector — because sub-sample
+    // refinement precision follows the Cramér-Rao bound (∝ 1/(SNR·B_rms²)): it comes
+    // from broadband phase agreement, so keeping every in-band bin at ≥ this share of
+    // its weight preserves occupied bandwidth (and avoids punching a spectral hole
+    // that would ring back as the very side lobes the soft gate exists to suppress),
+    // while still demoting untrustworthy bins 4:1 against coherent ones.
+    private const double CoherenceWeightFloor = 0.25;
 
     // Shared core: whiten the cross-spectrum to unit magnitude, weight it by a soft
     // band mask taken from where the gate reference has energy, and inverse-
@@ -184,7 +204,8 @@ public static class TransferFunction
         Complex[] crossSpectrum,
         double[] gateReference,
         IReadOnlyList<double>? filter,
-        double referenceGate)
+        double referenceGate,
+        IReadOnlyList<double>? coherence = null)
     {
         int fftLength = crossSpectrum.Length;
         double maxReference = 0;
@@ -192,6 +213,13 @@ public static class TransferFunction
         {
             maxReference = Math.Max(maxReference, gateReference[bin]);
         }
+
+        // γ² is the DC..Nyquist half spectrum (length fftLength/2 + 1). Only apply it
+        // when the length matches exactly: a different length means a different
+        // frequency grid, and folding by this FFT's length would misattribute SNR to
+        // the wrong bins — a full-weight no-op is strictly safer than mis-indexing.
+        int half = fftLength / 2;
+        bool useCoherence = coherence != null && coherence.Count == half + 1;
 
         // A soft band mask instead of a hard energy gate. Bins fade in over a
         // raised cosine between gateLow and gateHigh of the reference peak, so the
@@ -209,6 +237,29 @@ public static class TransferFunction
             if (bandWeight <= 0)
             {
                 continue;
+            }
+
+            if (useCoherence)
+            {
+                // Fold the full-spectrum bin onto its half-spectrum γ² partner. Bin i
+                // and its Hermitian mirror fftLength-i fold to the same index, so both
+                // get an identical real weight and the whitened spectrum stays
+                // conjugate-symmetric (the inverse transform stays real).
+                int folded = bin <= half ? bin : fftLength - bin;
+                double g2 = coherence![folded];
+                if (!(g2 > 0))
+                {
+                    g2 = 0; // also maps NaN to the floor rather than corrupting the weight
+                }
+                else if (g2 > 1)
+                {
+                    g2 = 1;
+                }
+
+                // Complement form (not the affine floor + (1-floor)*g2): at g2==1 it is
+                // 1 - (1-floor)*0 = 1.0 bit-exactly for any floor, so flat/unit coherence
+                // is a guaranteed no-op regardless of the constant.
+                bandWeight *= 1.0 - (1.0 - CoherenceWeightFloor) * (1.0 - g2);
             }
 
             double magnitude = crossSpectrum[bin].Magnitude;

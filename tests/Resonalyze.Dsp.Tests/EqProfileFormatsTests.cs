@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Resonalyze.Dsp.Tests;
 
 public sealed class EqProfileFormatsTests
@@ -82,6 +84,47 @@ public sealed class EqProfileFormatsTests
     }
 
     [Fact]
+    public void EasyEffects_ReadsAnEqualizerAtTheRootWithoutTheOutputWrapper()
+    {
+        // Older presets have the equalizer at the JSON root (no "output" wrapper) and
+        // some place bands directly under the equalizer (no "left" host).
+        string json =
+            "{ \"num-bands\": 1, \"output-gain\": -2," +
+            " \"band0\": { \"type\": \"Bell\", \"frequency\": 1000, \"gain\": 6, \"q\": 1 } }";
+
+        EqualizationCurve curve = new EasyEffectsFormat().Import(json);
+
+        Assert.Equal(-2, curve.PreampDb, 4);
+        Assert.Single(curve.Bands);
+        Assert.Equal(1000, curve.Bands[0].FrequencyHz, 4);
+    }
+
+    [Fact]
+    public void EasyEffects_ValidJsonThatIsNotAPreset_ReturnsEmptyCurve()
+    {
+        EqualizationCurve curve = new EasyEffectsFormat().Import("{ \"something\": 1, \"else\": true }");
+
+        Assert.Empty(curve.Bands);
+    }
+
+    [Fact]
+    public void EasyEffects_DropsDegenerateBellBands()
+    {
+        // A Bell band with q = 0 and one with a negative frequency are degenerate and
+        // must be rejected by the TryReadBand guard, leaving only the valid band.
+        string json =
+            "{ \"output\": { \"equalizer\": { \"output-gain\": 0, \"left\": {" +
+            " \"band0\": { \"type\": \"Bell\", \"frequency\": 1000, \"gain\": 6, \"q\": 0 }," +
+            " \"band1\": { \"type\": \"Bell\", \"frequency\": -100, \"gain\": 3, \"q\": 1 }," +
+            " \"band2\": { \"type\": \"Bell\", \"frequency\": 4000, \"gain\": -3, \"q\": 2 } } } } }";
+
+        EqualizationCurve curve = new EasyEffectsFormat().Import(json);
+
+        Assert.Single(curve.Bands);
+        Assert.Equal(4000, curve.Bands[0].FrequencyHz, 4);
+    }
+
+    [Fact]
     public void CamillaDsp_ExportHasPeakingFiltersAndPipeline()
     {
         string yaml = new CamillaDspYamlFormat().Export(SampleCurve());
@@ -133,12 +176,72 @@ public sealed class EqProfileFormatsTests
     }
 
     [Fact]
+    public void MiniDsp_ExportsThePreampGainAndBandCoefficients()
+    {
+        // These export-only formats have no round-trip safety net, so their numeric
+        // payload is otherwise unverified. Pin the actual coefficients: a leading
+        // gain biquad for the -6 dB preamp plus one biquad per band, matching
+        // PeakingBiquad.Compute at 48 kHz.
+        EqualizationCurve curve = SampleCurve();
+        string text = new MiniDspFormat().Export(curve);
+
+        double[] b0 = Coefficients(text, "b0=");
+        double[] a2 = Coefficients(text, "a2=");
+
+        Assert.Equal(1 + curve.Bands.Count, b0.Length); // preamp + bands
+        Assert.Equal(Math.Pow(10.0, curve.PreampDb / 20.0), b0[0], 6); // 10^(-6/20)
+
+        BiquadCoefficients firstBand = PeakingBiquad.Compute(curve.Bands[0], 48_000);
+        Assert.Equal(firstBand.B0, b0[1], 6);
+        Assert.Equal(firstBand.A2, a2[1], 6);
+    }
+
+    private static double[] Coefficients(string text, string prefix) => text
+        .Split('\n')
+        .Where(line => line.StartsWith(prefix, StringComparison.Ordinal))
+        .Select(line => double.Parse(
+            line[prefix.Length..].TrimEnd(',', '\r'), CultureInfo.InvariantCulture))
+        .ToArray();
+
+    [Fact]
     public void GraphicEq_ExportsFrequencyGainPairs()
     {
         string text = new GraphicEqFormat().Export(SampleCurve());
 
         Assert.StartsWith("GraphicEQ:", text);
         Assert.Contains(";", text);
+    }
+
+    [Fact]
+    public void GraphicEq_ExportsAscendingFrequenciesWithMatchingGains()
+    {
+        EqualizationCurve curve = SampleCurve();
+        string text = new GraphicEqFormat().Export(curve);
+
+        string[] pairs = text["GraphicEQ: ".Length..]
+            .Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        double[] freqs = pairs
+            .Select(p => double.Parse(p.Split(' ')[0], CultureInfo.InvariantCulture))
+            .ToArray();
+        double[] gains = pairs
+            .Select(p => double.Parse(p.Split(' ')[1], CultureInfo.InvariantCulture))
+            .ToArray();
+
+        Assert.Equal(64, pairs.Length);
+        Assert.Equal(20.0, freqs[0]);
+        Assert.Equal(20_000.0, freqs[^1]);
+        // The frequency column is strictly ascending; the gain column is not — if the
+        // two columns were swapped this would fail, pinning the column order.
+        for (int i = 1; i < freqs.Length; i++)
+        {
+            Assert.True(freqs[i] > freqs[i - 1], "Frequencies must ascend.");
+        }
+        // The gain at each grid point is the curve's magnitude there (to one decimal).
+        IReadOnlyList<double> grid = EqualizationCurve.LogFrequencyGrid(20, 20_000, 64);
+        for (int i = 0; i < grid.Count; i++)
+        {
+            Assert.Equal(Math.Round(curve.MagnitudeDbAt(grid[i]), 1), gains[i], 3);
+        }
     }
 
     [Fact]

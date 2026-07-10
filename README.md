@@ -1346,7 +1346,10 @@ The filters are evaluated as the **digital biquad cascades a real DSP runs**
 miniDSP-class hardware up to Nyquist, not just an analog textbook curve.
 
 The acoustic plot shows raw and processed curves per channel, the complex
-**Sum**, and the **Sum loss** curve, with a **Phase view** toggle to check that
+**Sum**, and the **Sum loss** curve (blanked where every channel is filtered
+more than 40 dB below the loudest point — out there the "loss" would be the
+phase arithmetic of noise floors, not audible summation), with a **Phase view**
+toggle to check that
 the channels track each other through the crossover region. The Phase view has a
 manual **Gate...** dialog with an IR preview, Tukey left / plateau / right
 window controls, gate offset, and a shared τ detrend so reflections can be cut
@@ -1379,9 +1382,14 @@ it defaults to Off because the measurements are loopback-referenced.
   narrowing the window past an outer driver adds a subsonic / brickwall
   band-limit on that channel.
 - **Auto delay** aligns in two stages: band-limited first arrivals — refined by a
-  GCC-PHAT cross-correlation where it carries a reliable peak — set the coarse
-  offsets, then a fractional-delay search minimizes the sum-loss metric at each
-  junction. Each candidate is scored by its in-band average loss *and* how far
+  GCC-PHAT cross-correlation where it carries a reliable, unambiguous peak (a
+  junction whose corners leave a spectral gap degenerates the correlation into
+  near-equal lobes, and a near-tie between its peak and trough sends the seed
+  back to the arrival estimate) — set the coarse offsets, then a
+  fractional-delay search minimizes the sum-loss metric at each junction,
+  reading the same direct-sound gate as the displayed metric so late room
+  reflections the alignment cannot change do not steer it. Each candidate is
+  scored by its in-band average loss *and* how far
   its deepest smoothed notch falls below that average, so a solution that only
   looks good on average while hiding a sharp cancellation at the crossover
   loses to a slightly lossier but flat one. It weighs every near-optimal

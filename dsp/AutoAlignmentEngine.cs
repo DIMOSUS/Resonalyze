@@ -65,7 +65,23 @@ public sealed record StereoAlignmentPlan(
     IAlignmentChannel BridgeRight,
     double BridgeBandLowHz,
     double BridgeBandHighHz,
-    double SceneOffsetMs);
+    double SceneOffsetMs,
+    IReadOnlyList<StereoPairLink>? PairLinks = null);
+
+/// <summary>
+/// One L/R driver pair below the bridge, with the band both sides actually
+/// share (the intersection of their playing bands). The right descent uses it
+/// to aim its gentle prior at the delay that would land the right driver's
+/// arrival exactly the scene offset ahead of the left one's — the "Δ" the
+/// metric panel verifies afterwards — so a lobe that is a whole period off
+/// the other side pays the prior penalty even when its own-side junction sum
+/// looks perfect.
+/// </summary>
+public sealed record StereoPairLink(
+    IAlignmentChannel Left,
+    IAlignmentChannel Right,
+    double BandLowHz,
+    double BandHighHz);
 
 /// <summary>
 /// Re-runs the caller's channel processing with the given delay/polarity
@@ -293,13 +309,20 @@ public static class AutoAlignmentEngine
         return timeline;
     }
 
-    // Fine-aligns one channel against its settled neighbor at their shared
-    // junction and writes the result into the alignment map: the stage-2 body
-    // shared by the mono walk and the stereo right-side descent. A physically
-    // impossible negative delay is converted into a uniform shift of every
-    // OTHER channel in <paramref name="shiftScope"/> (a uniform shift preserves
-    // the alignment) — in a stereo run the scope must span BOTH sides, or the
-    // shift would silently break the inter-side scene offset.
+    // Fine-aligns one channel against its settled neighbor(s) and writes the
+    // result into the alignment map: the stage-2 body shared by the mono walk
+    // and the stereo right-side descent. With a SECONDARY settled neighbor
+    // (the shared mono subwoofer below a descent channel) the search optimizes
+    // BOTH junctions at once: both neighbors join the fixed set, the band
+    // spans both junctions, and the window covers both junctions' coarse
+    // bases — otherwise the channel buys a perfect upper junction while
+    // parking a whole period off its lower one. An external prior (the
+    // cross-side Δ-consistent delay) replaces the base as the gentle
+    // tie-break when supplied. A physically impossible negative delay is
+    // converted into a uniform shift of every OTHER channel in
+    // <paramref name="shiftScope"/> (a uniform shift preserves the alignment)
+    // — in a stereo run the scope must span BOTH sides, or the shift would
+    // silently break the inter-side scene offset.
     private static void AlignChannelAtJunction(
         IAlignmentChannel channel,
         IAlignmentChannel neighborChannel,
@@ -308,16 +331,36 @@ public static class AutoAlignmentEngine
         IReadOnlyList<AlignmentSnapshot> shiftScope,
         AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
-        StringBuilder log)
+        StringBuilder log,
+        IAlignmentChannel? secondaryNeighbor = null,
+        AlignmentJunction? secondaryPair = null,
+        double? priorOverrideMs = null)
     {
+        double primaryBase = alignment.GetValueOrDefault(neighborChannel).DelayMs
+            + timeline[neighborChannel] - timeline[channel];
+        double secondaryBase = secondaryNeighbor != null
+            ? alignment.GetValueOrDefault(secondaryNeighbor).DelayMs
+                + timeline[secondaryNeighbor] - timeline[channel]
+            : primaryBase;
+        double bandLowHz = Math.Min(
+            pair.BandLowHz, secondaryPair?.BandLowHz ?? pair.BandLowHz);
+        double bandHighHz = Math.Max(
+            pair.BandHighHz, secondaryPair?.BandHighHz ?? pair.BandHighHz);
+        double halfPeriodMs = Math.Max(
+            500.0 / pair.CrossoverHz,
+            secondaryPair != null ? 500.0 / secondaryPair.CrossoverHz : 0);
+        // The anchor of the near-tie selection and (absent an external prior)
+        // of the quadratic lobe deterrent: between the two coarse bases when
+        // both junctions constrain the channel.
+        double anchorMs = priorOverrideMs ?? (primaryBase + secondaryBase) / 2.0;
+
         // One junction search: candidates of the prior-penalized loss score in
-        // a window around the coarse delta (the PHAT-seeded timeline, arrival
-        // envelope where PHAT was untrusted). The window is half the period of
-        // THIS junction's crossover — wide enough to absorb the coarse error
+        // a window spanning the coarse base(s) (the PHAT-seeded timeline,
+        // arrival envelope where PHAT was untrusted) plus half a period of the
+        // slowest involved crossover — wide enough to absorb the coarse error
         // (which grows with the period), narrow enough not to span two
-        // same-polarity lobes. The base doubles as a soft prior: a quadratic dB
-        // penalty that deters far lobes.
-        (IReadOnlyList<AlignmentCandidate> Candidates, double BaseDelta, double HalfPeriodMs)
+        // same-polarity lobes of one base.
+        (IReadOnlyList<AlignmentCandidate> Candidates, double WindowLowMs, double WindowHighMs)
             SearchJunction(double? windowOverrideMs = null)
         {
             // Reprocess so the settled neighbors participate with their new
@@ -338,34 +381,43 @@ public static class AutoAlignmentEngine
             {
                 current.First(item => item.Channel == neighborChannel).ImpulseResponse
             };
+            if (secondaryNeighbor != null)
+            {
+                neighborIrs.Add(current
+                    .First(item => item.Channel == secondaryNeighbor).ImpulseResponse);
+            }
 
-            double halfPeriodMs = 500.0 / pair.CrossoverHz;
             double rangeMs = windowOverrideMs ?? Math.Clamp(
                 halfPeriodMs, MinFineAlignmentRangeMs, MaxFineAlignmentRangeMs);
-            double baseDelta = alignment.GetValueOrDefault(neighborChannel).DelayMs
-                + timeline[neighborChannel] - timeline[channel];
+            double windowLowMs = Math.Min(primaryBase, secondaryBase) - rangeMs;
+            double windowHighMs = Math.Max(primaryBase, secondaryBase) + rangeMs;
             IReadOnlyList<AlignmentCandidate> candidates =
                 VirtualCrossoverAnalysis.FindAlignmentCandidates(
                     variableIr,
                     neighborIrs,
                     channel.SampleRate,
-                    pair.BandLowHz,
-                    pair.BandHighHz,
-                    baseDelta - rangeMs,
-                    baseDelta + rangeMs,
-                    priorDelayMs: baseDelta,
-                    priorSigmaMs: rangeMs / 2);
-            return (candidates, baseDelta, halfPeriodMs);
+                    bandLowHz,
+                    bandHighHz,
+                    windowLowMs,
+                    windowHighMs,
+                    priorDelayMs: anchorMs,
+                    priorSigmaMs: (windowHighMs - windowLowMs) / 4.0);
+            return (candidates, windowLowMs, windowHighMs);
         }
 
         {
-            (IReadOnlyList<AlignmentCandidate> candidates, double baseDelta,
-                double halfPeriodMs) = SearchJunction();
+            (IReadOnlyList<AlignmentCandidate> candidates,
+                double windowLow, double windowHigh) = SearchJunction();
             log.AppendLine(
                 $"Channel {channel.Name}: " +
-                $"vs {neighborChannel.Name} " +
-                $"in {pair.BandLowHz:0}-{pair.BandHighHz:0} Hz, " +
-                $"base {baseDelta:0.000} ms, candidates " +
+                $"vs {neighborChannel.Name}" +
+                (secondaryNeighbor != null ? $" + {secondaryNeighbor.Name}" : "") +
+                $" in {bandLowHz:0}-{bandHighHz:0} Hz, " +
+                $"base {primaryBase:0.000}" +
+                (secondaryNeighbor != null ? $" / {secondaryBase:0.000}" : "") +
+                $" ms, prior {anchorMs:0.000} ms" +
+                (priorOverrideMs != null ? " (cross-side)" : "") +
+                ", candidates " +
                 string.Join("; ", candidates.Select(item =>
                     $"{item.DelayMs:0.000} ms" +
                     $"{(item.InvertPolarity ? " inv" : "")} " +
@@ -373,8 +425,8 @@ public static class AutoAlignmentEngine
                     $"dip {item.DipDb:0.0} dB)")));
 
             AlignmentCandidate chosen = candidates.Count > 0
-                ? AlignmentSelection.Select(candidates, baseDelta)
-                : new AlignmentCandidate(baseDelta, false, 0);
+                ? AlignmentSelection.Select(candidates, anchorMs)
+                : new AlignmentCandidate(anchorMs, false, 0);
             if (candidates.Count > 0 && chosen != candidates[0])
             {
                 log.AppendLine(
@@ -388,11 +440,10 @@ public static class AutoAlignmentEngine
             // Diagnostic wide sweep: the same junction searched across a much
             // wider window so lobes beyond the working range appear in the log.
             // Purely informational — the chosen result above is untouched.
-            (IReadOnlyList<AlignmentCandidate> wide, double wideBase, _) =
+            (IReadOnlyList<AlignmentCandidate> wide, double wideLow, double wideHigh) =
                 SearchJunction(windowOverrideMs: DiagnosticFineRangeMs);
             log.AppendLine(
-                $"  [diag] wide +-{DiagnosticFineRangeMs:0.0} ms " +
-                $"(base {wideBase:0.000} ms): " +
+                $"  [diag] wide {wideLow:0.000}..{wideHigh:0.000} ms: " +
                 (wide.Count > 0
                     ? string.Join("; ", wide.Select(item =>
                         $"{item.DelayMs:0.000} ms" +
@@ -401,17 +452,15 @@ public static class AutoAlignmentEngine
                         $"dip {item.DipDb:0.0} dB)"))
                     : "none"));
 
-            double fineRangeMs = Math.Clamp(
-                halfPeriodMs, MinFineAlignmentRangeMs, MaxFineAlignmentRangeMs);
-
             // A result pinned to the window edge means the optimum lies beyond
             // the coarse estimate's reach — retry once, widened but still short
             // of a full period so the search cannot land on the next lobe. The
             // edge hit means the base itself is suspect, so the retry relaxes
             // the prior along with the window.
             double retryRangeMs = Math.Min(1.8 * halfPeriodMs, 3.0);
-            if (retryRangeMs > fineRangeMs &&
-                Math.Abs(chosen.DelayMs - baseDelta) >= fineRangeMs - 0.02)
+            bool atEdge = chosen.DelayMs <= windowLow + 0.02 ||
+                chosen.DelayMs >= windowHigh - 0.02;
+            if (retryRangeMs > (windowHigh - windowLow) / 2.0 && atEdge)
             {
                 (IReadOnlyList<AlignmentCandidate> retried, _, _) =
                     SearchJunction(windowOverrideMs: retryRangeMs);
@@ -421,7 +470,7 @@ public static class AutoAlignmentEngine
                     // taking retried[0] raw would let the widened window hand
                     // the result to a (flip + half-period) impostor that the
                     // invert margin and the arrival tie-break exist to reject.
-                    chosen = AlignmentSelection.Select(retried, baseDelta);
+                    chosen = AlignmentSelection.Select(retried, anchorMs);
                 }
 
                 log.AppendLine(
@@ -435,10 +484,12 @@ public static class AutoAlignmentEngine
             // at a high crossover, and the narrow window cannot reach the true
             // summation optimum a few periods away. AlignmentSelection applies
             // the same flip/tie rules to the wide set, and the margin ensures a
-            // mere lobe/flip impostor cannot pull the result off the arrival.
+            // mere lobe/flip impostor cannot pull the result off the arrival —
+            // and with a cross-side prior in the scores, a promotion that walks
+            // away from the other side's timing pays for that distance too.
             if (wide.Count > 0)
             {
-                AlignmentCandidate wideChosen = AlignmentSelection.Select(wide, wideBase);
+                AlignmentCandidate wideChosen = AlignmentSelection.Select(wide, anchorMs);
                 if (wideChosen.ScoreDb > chosen.ScoreDb + WideWindowPromotionMarginDb)
                 {
                     log.AppendLine(
@@ -663,6 +714,53 @@ public static class AutoAlignmentEngine
         // only measured.
         Dictionary<IAlignmentChannel, double> rightTimeline =
             BuildArrivalTimeline(rightByBand, plan.RightPairs, log);
+
+        // The delay that would land this right channel's arrival exactly the
+        // scene offset ahead of its settled left counterpart's, measured by
+        // envelope arrivals in the pair's shared band. Used as the search
+        // prior: a gentle, polarity-blind pull toward the other side's timing
+        // that breaks near-ties between lobes the junction sum cannot
+        // distinguish. Unmeasurable (silent band, low SNR) falls back to null
+        // and the search keeps its own-side anchor.
+        double? CrossSideTargetMs(IAlignmentChannel rightChannel)
+        {
+            StereoPairLink? link = plan.PairLinks?.FirstOrDefault(
+                item => item.Right == rightChannel);
+            if (link == null)
+            {
+                return null;
+            }
+
+            var searchAlignment =
+                new Dictionary<IAlignmentChannel, AlignmentOverride>(alignment);
+            searchAlignment.Remove(rightChannel);
+            IReadOnlyList<AlignmentSnapshot> current = reprocess(searchAlignment);
+            TimeAlignmentAnalysisResult leftArrival =
+                VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                    current.First(item => item.Channel == link.Left).ImpulseResponse,
+                    link.Left.SampleRate, link.BandLowHz, link.BandHighHz);
+            TimeAlignmentAnalysisResult rightRaw =
+                VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                    current.First(item => item.Channel == rightChannel).ImpulseResponse,
+                    rightChannel.SampleRate, link.BandLowHz, link.BandHighHz);
+            if (!leftArrival.IsValid || !rightRaw.IsValid ||
+                leftArrival.SignalToNoiseDecibels < BridgeMinimumSnrDb ||
+                rightRaw.SignalToNoiseDecibels < BridgeMinimumSnrDb)
+            {
+                return null;
+            }
+
+            double target = leftArrival.FirstArrivalDelayMilliseconds
+                - plan.SceneOffsetMs
+                - rightRaw.FirstArrivalDelayMilliseconds;
+            log.AppendLine(
+                $"  cross-side prior {rightChannel.Name}: target {target:0.000} ms " +
+                $"(L arrival {leftArrival.FirstArrivalDelayMilliseconds:0.000}, " +
+                $"raw R {rightRaw.FirstArrivalDelayMilliseconds:0.000} ms " +
+                $"in {link.BandLowHz:0}-{link.BandHighHz:0} Hz)");
+            return target;
+        }
+
         void AlignRight(int index, int neighborIndex, AlignmentJunction pair)
         {
             IAlignmentChannel channel = rightByBand[index].Channel;
@@ -673,9 +771,26 @@ public static class AutoAlignmentEngine
                 return;
             }
 
+            // The neighbor on the FAR side of the walk joins the search as a
+            // second fixed reference when it is already final — during the
+            // descent that is the shared mono channel below. Without it the
+            // channel optimizes its junction toward the bridge and can park a
+            // whole period off the junction it shares with the settled mono —
+            // a perfect upper sum bought with a ruined subwoofer handover.
+            IAlignmentChannel? secondary = null;
+            AlignmentJunction? secondaryPair = null;
+            int otherIndex = index + (index - neighborIndex);
+            if (otherIndex >= 0 && otherIndex < rightByBand.Count &&
+                plan.MonoChannels.Contains(rightByBand[otherIndex].Channel))
+            {
+                secondary = rightByBand[otherIndex].Channel;
+                secondaryPair = plan.RightPairs[Math.Min(index, otherIndex)];
+            }
+
             AlignChannelAtJunction(
                 channel, neighbor, pair,
-                rightTimeline, allChannels, reprocess, alignment, log);
+                rightTimeline, allChannels, reprocess, alignment, log,
+                secondary, secondaryPair, CrossSideTargetMs(channel));
         }
         for (int i = bridgeIndex - 1; i >= 0; i--)
         {

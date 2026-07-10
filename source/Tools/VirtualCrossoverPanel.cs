@@ -2898,6 +2898,31 @@ public partial class VirtualCrossoverPanel : UserControl
             return pairs;
         }
 
+        // The L/R pair links (the shared playing band of each stereo pair)
+        // aim the descent's gentle prior at the cross-side-consistent delay —
+        // the same Δ the metric panel verifies afterwards.
+        var pairLinks = new List<StereoPairLink>();
+        foreach (SideAlignmentChannel right in rightSide.Where(side => side.RightSide))
+        {
+            SideAlignmentChannel? left = leftSide.FirstOrDefault(
+                side => side.Runtime == right.Runtime && !side.RightSide);
+            if (left == null)
+            {
+                continue;
+            }
+
+            (double leftLow, double leftHigh) =
+                VirtualCrossoverJunctions.GetChannelBand(left.Settings);
+            (double rightLow, double rightHigh) =
+                VirtualCrossoverJunctions.GetChannelBand(right.Settings);
+            double lowHz = Math.Max(leftLow, rightLow);
+            double highHz = Math.Min(leftHigh, rightHigh);
+            if (highHz > lowHz)
+            {
+                pairLinks.Add(new StereoPairLink(left, right, lowHz, highHz));
+            }
+        }
+
         List<AlignmentSnapshot> leftByBand = ByBand(leftSide);
         List<AlignmentSnapshot> rightByBand = ByBand(rightSide);
         AutoAlignmentEngine.ComputeStereo(
@@ -2913,7 +2938,8 @@ public partial class VirtualCrossoverPanel : UserControl
                 bridgeRight,
                 bridgeBandLowHz,
                 bridgeBandHighHz,
-                sceneOffsetMs),
+                sceneOffsetMs,
+                pairLinks),
             Reprocess,
             alignment,
             log);

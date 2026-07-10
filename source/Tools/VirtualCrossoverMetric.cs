@@ -119,7 +119,9 @@ internal static class VirtualCrossoverMetric
                     ? $"{delta.Channel}: {delta.DeltaMs.Value:+0.000;-0.000} ms " +
                       $"({FrequencyText.Format(delta.LowHz)} \u2013 " +
                       $"{FrequencyText.Format(delta.HighHz)})"
-                    : $"{delta.Channel}: \u2014 (no measurable arrival)"));
+                    : $"{delta.Channel}: \u2014 (no measurable arrival)")) +
+            "\r\nLow-band envelopes rise slowly, so the lowest rows carry " +
+            "extra tolerance (a fraction of a millisecond is noise there).";
     }
 
     /// <summary>

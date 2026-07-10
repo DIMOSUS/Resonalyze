@@ -102,6 +102,12 @@ public sealed class StereoAlignmentRealDataTests
         const double SceneOffsetMs = 0.25;
         const double BridgeBandLowHz = 1_800;
         const double BridgeBandHighHz = 12_000;
+        List<StereoPairLink> pairLinks =
+        [
+            new(leftWoof, rightWoof, 80, 175),
+            new(leftMid, rightMid, 175, 1_300),
+            new(leftTwr, rightTwr, 1_800, 12_000)
+        ];
         var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
         var log = new StringBuilder();
         AutoAlignmentEngine.ComputeStereo(
@@ -115,7 +121,8 @@ public sealed class StereoAlignmentRealDataTests
                 rightTwr,
                 BridgeBandLowHz,
                 BridgeBandHighHz,
-                SceneOffsetMs),
+                SceneOffsetMs,
+                pairLinks),
             Reprocess,
             alignment,
             log);
@@ -156,6 +163,27 @@ public sealed class StereoAlignmentRealDataTests
 
         // The pinned right sub junction is reported, not tuned.
         Assert.Contains("mono, timed by the left side", log.ToString());
+
+        // The field regression this cabin exposed: the right woofer used to
+        // optimize ONLY its junction toward the bridge and parked a whole
+        // 175 Hz period off the shared sub (junction avg −4.9 dB, and 5.4 ms
+        // away from the left woofer). With the joint two-neighbor search it
+        // must sit within a cabin-width of the left woofer and keep the sub
+        // handover healthy on BOTH sides.
+        double leftWoofDelay = alignment.GetValueOrDefault(leftWoof).DelayMs;
+        double rightWoofDelay = alignment.GetValueOrDefault(rightWoof).DelayMs;
+        Assert.InRange(Math.Abs(leftWoofDelay - rightWoofDelay), 0, 1.5);
+
+        (double LossDb, double DipDb)? rightSubJunction =
+            VirtualCrossoverAnalysis.MeasureSumLoss(
+                final.First(item => item.Channel == rightWoof).ImpulseResponse,
+                new List<Complex[]>
+                {
+                    final.First(item => item.Channel == sub).ImpulseResponse
+                },
+                rightWoof.SampleRate, 40, 160);
+        Assert.NotNull(rightSubJunction);
+        Assert.InRange(rightSubJunction.Value.LossDb, -1.5, 0);
     }
 
     private static (int SampleRate, Complex[] Ir) LoadTransferIr(string fileName)

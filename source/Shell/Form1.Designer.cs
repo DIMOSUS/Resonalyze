@@ -71,7 +71,7 @@ namespace Resonalyze
             buttonRecord.ForeColor = Color.White;
             buttonRecord.Location = new Point(3, 3);
             buttonRecord.Name = "buttonRecord";
-            buttonRecord.Size = new Size(142, 23);
+            buttonRecord.Size = new Size(210, 23);
             buttonRecord.TabIndex = 0;
             buttonRecord.Text = "Start";
             buttonRecord.UseCompatibleTextRendering = true;
@@ -86,7 +86,7 @@ namespace Resonalyze
             plotView1.Location = new Point(12, 52);
             plotView1.Name = "plotView1";
             plotView1.PanCursor = Cursors.Hand;
-            plotView1.Size = new Size(1310, 768);
+            plotView1.Size = new Size(1246, 768);
             plotView1.TabIndex = 1;
             plotView1.Text = "plotView1";
             plotView1.ZoomHorizontalCursor = Cursors.SizeWE;
@@ -98,9 +98,9 @@ namespace Resonalyze
             overlays.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             overlays.BorderStyle = BorderStyle.FixedSingle;
             overlays.Controls.Add(overlayPanel1);
-            overlays.Location = new Point(1328, 479);
+            overlays.Location = new Point(1268, 479);
             overlays.Name = "overlays";
-            overlays.Size = new Size(154, 341);
+            overlays.Size = new Size(214, 341);
             overlays.TabIndex = 6;
             // 
             // overlayPanel1
@@ -111,7 +111,7 @@ namespace Resonalyze
             overlayPanel1.Controls.Add(checkBox1);
             overlayPanel1.Location = new Point(3, 3);
             overlayPanel1.Name = "overlayPanel1";
-            overlayPanel1.Size = new Size(146, 25);
+            overlayPanel1.Size = new Size(206, 25);
             overlayPanel1.TabIndex = 3;
             // 
             // buttonSaveOverlay
@@ -121,7 +121,7 @@ namespace Resonalyze
             buttonSaveOverlay.ForeColor = Color.White;
             buttonSaveOverlay.Location = new Point(23, 3);
             buttonSaveOverlay.Name = "buttonSaveOverlay";
-            buttonSaveOverlay.Size = new Size(55, 19);
+            buttonSaveOverlay.Size = new Size(38, 19);
             buttonSaveOverlay.TabIndex = 1;
             buttonSaveOverlay.Text = "1";
             buttonSaveOverlay.UseCompatibleTextRendering = true;
@@ -133,7 +133,7 @@ namespace Resonalyze
             numericUpDown1.DecimalPlaces = 0;
             numericUpDown1.ForeColor = Color.White;
             numericUpDown1.Increment = new decimal(new int[] { 1, 0, 0, 0 });
-            numericUpDown1.Location = new Point(84, 3);
+            numericUpDown1.Location = new Point(145, 3);
             numericUpDown1.Maximum = new decimal(new int[] { 180, 0, 0, 0 });
             numericUpDown1.Minimum = new decimal(new int[] { 180, 0, 0, int.MinValue });
             numericUpDown1.MinimumSize = new Size(36, 19);
@@ -164,7 +164,7 @@ namespace Resonalyze
             buttonRecordOpt.ForeColor = Color.White;
             buttonRecordOpt.Location = new Point(3, 32);
             buttonRecordOpt.Name = "buttonRecordOpt";
-            buttonRecordOpt.Size = new Size(142, 24);
+            buttonRecordOpt.Size = new Size(210, 24);
             buttonRecordOpt.TabIndex = 8;
             buttonRecordOpt.Text = "⛭ Record Settings";
             buttonRecordOpt.UseCompatibleTextRendering = true;
@@ -180,7 +180,7 @@ namespace Resonalyze
             buttonSave.ForeColor = Color.White;
             buttonSave.Location = new Point(3, 62);
             buttonSave.Name = "buttonSave";
-            buttonSave.Size = new Size(69, 23);
+            buttonSave.Size = new Size(100, 23);
             buttonSave.TabIndex = 18;
             buttonSave.Text = "Save";
             toolTip1.SetToolTip(buttonSave, "Save Impulse Response");
@@ -195,9 +195,9 @@ namespace Resonalyze
             buttonLoad.FlatStyle = FlatStyle.Popup;
             buttonLoad.Font = new Font("Segoe UI", 10F);
             buttonLoad.ForeColor = Color.White;
-            buttonLoad.Location = new Point(76, 62);
+            buttonLoad.Location = new Point(109, 62);
             buttonLoad.Name = "buttonLoad";
-            buttonLoad.Size = new Size(69, 23);
+            buttonLoad.Size = new Size(104, 23);
             buttonLoad.TabIndex = 19;
             buttonLoad.Text = "Load";
             toolTip1.SetToolTip(buttonLoad, "Load Impulse Response");
@@ -212,9 +212,9 @@ namespace Resonalyze
             buttonOverlayShowAll.FlatStyle = FlatStyle.Popup;
             buttonOverlayShowAll.Font = new Font("Segoe UI", 10F);
             buttonOverlayShowAll.ForeColor = Color.White;
-            buttonOverlayShowAll.Location = new Point(1328, 453);
+            buttonOverlayShowAll.Location = new Point(1268, 453);
             buttonOverlayShowAll.Name = "buttonOverlayShowAll";
-            buttonOverlayShowAll.Size = new Size(73, 23);
+            buttonOverlayShowAll.Size = new Size(100, 23);
             buttonOverlayShowAll.TabIndex = 20;
             buttonOverlayShowAll.Text = "Show all";
             toolTip1.SetToolTip(buttonOverlayShowAll, "Show all overlays for this mode");
@@ -229,9 +229,9 @@ namespace Resonalyze
             buttonOverlayHideAll.FlatStyle = FlatStyle.Popup;
             buttonOverlayHideAll.Font = new Font("Segoe UI", 10F);
             buttonOverlayHideAll.ForeColor = Color.White;
-            buttonOverlayHideAll.Location = new Point(1409, 453);
+            buttonOverlayHideAll.Location = new Point(1374, 453);
             buttonOverlayHideAll.Name = "buttonOverlayHideAll";
-            buttonOverlayHideAll.Size = new Size(73, 23);
+            buttonOverlayHideAll.Size = new Size(108, 23);
             buttonOverlayHideAll.TabIndex = 22;
             buttonOverlayHideAll.Text = "Hide all";
             toolTip1.SetToolTip(buttonOverlayHideAll, "Hide all overlays for this mode");
@@ -246,9 +246,9 @@ namespace Resonalyze
             buttonCurrentModeSettings.FlatStyle = FlatStyle.Popup;
             buttonCurrentModeSettings.Font = new Font("Segoe UI Emoji", 10F);
             buttonCurrentModeSettings.ForeColor = Color.White;
-            buttonCurrentModeSettings.Location = new Point(1332, 309);
+            buttonCurrentModeSettings.Location = new Point(1268, 309);
             buttonCurrentModeSettings.Name = "buttonCurrentModeSettings";
-            buttonCurrentModeSettings.Size = new Size(150, 23);
+            buttonCurrentModeSettings.Size = new Size(214, 23);
             buttonCurrentModeSettings.TabIndex = 21;
             buttonCurrentModeSettings.Text = "🔧 Mode Settings...";
             buttonCurrentModeSettings.UseCompatibleTextRendering = true;
@@ -264,9 +264,9 @@ namespace Resonalyze
             panel1.Controls.Add(buttonRecordOpt);
             panel1.Controls.Add(buttonSave);
             panel1.Controls.Add(buttonLoad);
-            panel1.Location = new Point(1332, 146);
+            panel1.Location = new Point(1264, 146);
             panel1.Name = "panel1";
-            panel1.Size = new Size(150, 119);
+            panel1.Size = new Size(218, 119);
             panel1.TabIndex = 23;
             // 
             // buttonCompare
@@ -278,7 +278,7 @@ namespace Resonalyze
             buttonCompare.ForeColor = Color.White;
             buttonCompare.Location = new Point(3, 91);
             buttonCompare.Name = "buttonCompare";
-            buttonCompare.Size = new Size(142, 23);
+            buttonCompare.Size = new Size(210, 23);
             buttonCompare.TabIndex = 31;
             buttonCompare.Text = "Compare";
             buttonCompare.UseCompatibleTextRendering = true;
@@ -290,9 +290,9 @@ namespace Resonalyze
             inputLevelMeterPanel.BackColor = Color.FromArgb(38, 42, 52);
             inputLevelMeterPanel.Font = new Font("Segoe UI", 8.75F, FontStyle.Bold);
             inputLevelMeterPanel.ForeColor = Color.FromArgb(225, 230, 240);
-            inputLevelMeterPanel.Location = new Point(1332, 52);
+            inputLevelMeterPanel.Location = new Point(1264, 52);
             inputLevelMeterPanel.Name = "inputLevelMeterPanel";
-            inputLevelMeterPanel.Size = new Size(150, 88);
+            inputLevelMeterPanel.Size = new Size(218, 88);
             inputLevelMeterPanel.TabIndex = 24;
             // 
             // buttonHistory
@@ -302,9 +302,9 @@ namespace Resonalyze
             buttonHistory.FlatStyle = FlatStyle.Popup;
             buttonHistory.Font = new Font("Segoe UI Emoji", 10F, FontStyle.Regular, GraphicsUnit.Point, 0);
             buttonHistory.ForeColor = Color.White;
-            buttonHistory.Location = new Point(1332, 280);
+            buttonHistory.Location = new Point(1268, 280);
             buttonHistory.Name = "buttonHistory";
-            buttonHistory.Size = new Size(150, 23);
+            buttonHistory.Size = new Size(214, 23);
             buttonHistory.TabIndex = 25;
             buttonHistory.Text = "History";
             buttonHistory.UseCompatibleTextRendering = true;
@@ -330,7 +330,7 @@ namespace Resonalyze
             timeAlignmentPanel.ForeColor = Color.White;
             timeAlignmentPanel.Location = new Point(12, 52);
             timeAlignmentPanel.Name = "timeAlignmentPanel";
-            timeAlignmentPanel.Size = new Size(1310, 768);
+            timeAlignmentPanel.Size = new Size(1246, 768);
             timeAlignmentPanel.TabIndex = 27;
             timeAlignmentPanel.Visible = false;
             // 
@@ -345,7 +345,7 @@ namespace Resonalyze
             eqWizardPanel.Location = new Point(12, 52);
             eqWizardPanel.Name = "eqWizardPanel";
             eqWizardPanel.Padding = new Padding(6);
-            eqWizardPanel.Size = new Size(1310, 768);
+            eqWizardPanel.Size = new Size(1246, 768);
             eqWizardPanel.TabIndex = 28;
             eqWizardPanel.Visible = false;
             // 
@@ -359,7 +359,7 @@ namespace Resonalyze
             signalGeneratorPanel.ForeColor = Color.White;
             signalGeneratorPanel.Location = new Point(12, 52);
             signalGeneratorPanel.Name = "signalGeneratorPanel";
-            signalGeneratorPanel.Size = new Size(1310, 768);
+            signalGeneratorPanel.Size = new Size(1246, 768);
             signalGeneratorPanel.TabIndex = 29;
             signalGeneratorPanel.Visible = false;
             // 
@@ -374,7 +374,7 @@ namespace Resonalyze
             virtualCrossoverPanel.Location = new Point(12, 52);
             virtualCrossoverPanel.Name = "virtualCrossoverPanel";
             virtualCrossoverPanel.Padding = new Padding(6);
-            virtualCrossoverPanel.Size = new Size(1310, 768);
+            virtualCrossoverPanel.Size = new Size(1246, 768);
             virtualCrossoverPanel.TabIndex = 31;
             virtualCrossoverPanel.Visible = false;
             // 
@@ -385,33 +385,34 @@ namespace Resonalyze
             eqResultsPanel.BorderStyle = BorderStyle.FixedSingle;
             eqResultsPanel.Font = new Font("Segoe UI", 9F);
             eqResultsPanel.ForeColor = Color.FromArgb(225, 228, 235);
-            eqResultsPanel.Location = new Point(1328, 479);
+            eqResultsPanel.Location = new Point(1268, 479);
             eqResultsPanel.Name = "eqResultsPanel";
             eqResultsPanel.Padding = new Padding(8);
-            eqResultsPanel.Size = new Size(154, 341);
+            eqResultsPanel.Size = new Size(214, 341);
             eqResultsPanel.TabIndex = 30;
             eqResultsPanel.Visible = false;
-            //
+            // 
             // virtualDspMetricLabel
-            //
+            // 
             virtualDspMetricLabel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             virtualDspMetricLabel.BackColor = Color.FromArgb(20, 22, 30);
             virtualDspMetricLabel.BorderStyle = BorderStyle.FixedSingle;
             virtualDspMetricLabel.Font = new Font("Consolas", 9F);
             virtualDspMetricLabel.ForeColor = Color.FromArgb(230, 184, 0);
-            virtualDspMetricLabel.Location = new Point(1328, 479);
+            virtualDspMetricLabel.Location = new Point(1268, 479);
             virtualDspMetricLabel.Name = "virtualDspMetricLabel";
             virtualDspMetricLabel.Padding = new Padding(8);
-            virtualDspMetricLabel.Size = new Size(154, 341);
+            virtualDspMetricLabel.Size = new Size(214, 341);
             virtualDspMetricLabel.TabIndex = 31;
             virtualDspMetricLabel.Visible = false;
-            //
+            // 
             // Form1
-            //
+            // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
             ClientSize = new Size(1494, 832);
+            Controls.Add(overlays);
             Controls.Add(chromeTitleBar);
             Controls.Add(eqResultsPanel);
             Controls.Add(virtualDspMetricLabel);
@@ -426,7 +427,6 @@ namespace Resonalyze
             Controls.Add(buttonCurrentModeSettings);
             Controls.Add(buttonOverlayShowAll);
             Controls.Add(plotView1);
-            Controls.Add(overlays);
             FormBorderStyle = FormBorderStyle.None;
             Icon = (Icon)resources.GetObject("$this.Icon");
             MinimumSize = new Size(1494, 832);

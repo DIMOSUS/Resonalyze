@@ -64,7 +64,7 @@ namespace Resonalyze
             mainPlotView.Location = new Point(358, 9);
             mainPlotView.Name = "mainPlotView";
             mainPlotView.PanCursor = Cursors.Hand;
-            mainPlotView.Size = new Size(934, 392);
+            mainPlotView.Size = new Size(870, 392);
             mainPlotView.TabIndex = 1;
             mainPlotView.Text = "plotView1";
             mainPlotView.ZoomHorizontalCursor = Cursors.SizeWE;
@@ -77,7 +77,7 @@ namespace Resonalyze
             dspPlotView.Location = new Point(489, 499);
             dspPlotView.Name = "dspPlotView";
             dspPlotView.PanCursor = Cursors.Hand;
-            dspPlotView.Size = new Size(803, 256);
+            dspPlotView.Size = new Size(739, 256);
             dspPlotView.TabIndex = 2;
             dspPlotView.Text = "plotView2";
             dspPlotView.ZoomHorizontalCursor = Cursors.SizeWE;
@@ -301,7 +301,7 @@ namespace Resonalyze
             labelCrossoverWarning.ForeColor = Color.FromArgb(235, 110, 95);
             labelCrossoverWarning.Location = new Point(358, 434);
             labelCrossoverWarning.Name = "labelCrossoverWarning";
-            labelCrossoverWarning.Size = new Size(934, 16);
+            labelCrossoverWarning.Size = new Size(870, 16);
             labelCrossoverWarning.TabIndex = 19;
             labelCrossoverWarning.Visible = false;
             // 
@@ -399,7 +399,7 @@ namespace Resonalyze
             ForeColor = Color.White;
             Name = "VirtualCrossoverPanel";
             Padding = new Padding(6);
-            Size = new Size(1310, 770);
+            Size = new Size(1246, 770);
             dspModePanel.ResumeLayout(false);
             dspModePanel.PerformLayout();
             ResumeLayout(false);

@@ -276,11 +276,101 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
       - name: Download release files
         uses: actions/download-artifact@v8
         with:
           path: release
           merge-multiple: true
+
+      - name: Collect commits since the previous release
+        id: commits
+        shell: bash
+        run: |
+          tag="${{ needs.prepare.outputs.ref_name }}"
+          if git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
+            end="$tag"
+          else
+            end="HEAD"
+          fi
+
+          previous=$(git describe --tags --abbrev=0 "$end^" 2> /dev/null || true)
+          if [ -n "$previous" ]; then
+            range="$previous..$end"
+          else
+            range="$end"
+          fi
+
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+          git log "$range" --no-merges --format='### %s%n%b' > commit-log.md
+          git log "$range" --no-merges --format='- %s' > fallback-notes.md
+
+      - name: Draft release notes with Claude
+        id: draft
+        continue-on-error: true
+        shell: bash
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "ANTHROPIC_API_KEY secret is not set; skipping the AI draft." >&2
+            exit 1
+          fi
+
+          system_prompt=$(cat << 'EOF'
+          You write GitHub release notes for Resonalyze, a Windows desktop
+          application for acoustic measurements: impulse and frequency
+          response, loopback-referenced time alignment, live transfer
+          functions, EQ design, and virtual DSP crossover simulation.
+          The user message is the commit log since the previous release:
+          each commit is a "### subject" heading followed by its
+          description. Respond with Markdown release notes and nothing
+          else — no preamble, no code fences around the whole answer:
+          - Group user-visible changes under "## New", "## Improvements",
+            and "## Fixes"; omit sections that would be empty.
+          - One bullet per change, phrased for end users; fold commits
+            that iterate on the same feature into a single bullet.
+          - Skip purely internal work (refactoring, tests, CI) unless it
+            is all the release contains.
+          EOF
+          )
+
+          jq -n \
+            --arg system "$system_prompt" \
+            --rawfile log commit-log.md \
+            '{model: "claude-sonnet-5", max_tokens: 2000, system: $system,
+              messages: [{role: "user", content: $log}]}' > request.json
+
+          curl -sS --fail-with-body https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d @request.json > response.json
+
+          jq -er '[.content[] | select(.type == "text") | .text] | join("\n")' \
+            response.json > draft-notes.md
+          test -s draft-notes.md
+
+      - name: Compose release notes
+        shell: bash
+        run: |
+          if [ "${{ steps.draft.outcome }}" == "success" ] && [ -s draft-notes.md ]; then
+            cat draft-notes.md > notes.md
+          else
+            echo "AI drafting failed; falling back to the raw commit list." >&2
+            echo "## Changes" > notes.md
+            cat fallback-notes.md >> notes.md
+          fi
+
+          previous="${{ steps.commits.outputs.previous }}"
+          if [ -n "$previous" ]; then
+            printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
+              "${{ github.repository }}" "$previous" "${{ needs.prepare.outputs.ref_name }}" >> notes.md
+          fi
 
       - name: Create release
         env:
@@ -289,5 +379,5 @@ jobs:
           gh release create "${{ needs.prepare.outputs.ref_name }}" release/* \
             --repo "${{ github.repository }}" \
             --title "Resonalyze ${{ needs.prepare.outputs.ref_name }}" \
-            --generate-notes \
+            --notes-file notes.md \
             --verify-tag

@@ -180,7 +180,7 @@ namespace Resonalyze
             envelopePlotView.MinimumSize = new Size(320, 240);
             envelopePlotView.Name = "envelopePlotView";
             envelopePlotView.PanCursor = Cursors.Hand;
-            envelopePlotView.Size = new Size(713, 320);
+            envelopePlotView.Size = new Size(654, 320);
             envelopePlotView.TabIndex = 12;
             envelopePlotView.Text = "envelopePlotView";
             envelopePlotView.ZoomHorizontalCursor = Cursors.SizeWE;
@@ -198,7 +198,7 @@ namespace Resonalyze
             statusTextBox.Name = "statusTextBox";
             statusTextBox.ReadOnly = true;
             statusTextBox.ScrollBars = RichTextBoxScrollBars.None;
-            statusTextBox.Size = new Size(713, 415);
+            statusTextBox.Size = new Size(654, 415);
             statusTextBox.TabIndex = 13;
             statusTextBox.Text = "Run a loopback measurement or load an impulse response file with transfer IR.";
             // 
@@ -235,7 +235,7 @@ namespace Resonalyze
             Font = new Font("Segoe UI", 9F);
             ForeColor = Color.White;
             Name = "TimeAlignmentPanel";
-            Size = new Size(1310, 770);
+            Size = new Size(1246, 770);
             (bandpassCenterNumeric).EndInit();
             (bandpassPassOctavesNumeric).EndInit();
             (bandpassFadeOctavesNumeric).EndInit();

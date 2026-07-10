@@ -169,6 +169,19 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   slip that survived the per-side sum optimization), and optionally a
   candidate-list re-pick to fix it for free. Also: L/R polarity consistency
   per band.
+- [ ] **`SceneLockToleranceMs = 0.05` is aggressive for pairs whose
+  localizable band is narrow and low** (e.g. reaching only ~300–400 Hz):
+  the band passes the minimum-width admission, but the temporal certainty of
+  such a narrow-band envelope arrival is typically worse than 0.05 ms, so the
+  lock can pin the channel inside the measurement noise. Acceptable today
+  thanks to the guards around it — the minimum lock-band width, the SNR gate,
+  the lock refusing an invalid arrival, and the scene-preserving co-move that
+  recovers junction quality afterwards — but non-blocking risk, recorded
+  2026-07-10. Follow-up: make the tolerance a function of the lock band's
+  width/center (roughly: a fraction of the band-center period, floored at
+  0.05 ms), or of an explicit arrival-uncertainty estimate (envelope rise
+  time / FirstArrivalProminence), so a wide tweeter band keeps the tight pin
+  while a barely-localizable pair gets an honest slack.
 - [x] **Stereo level (ILD) read-out next to Δ** — done: the metric block
   gained a "Level Δ L−R (dB)" row per pair (`MeasureBandLevelDb`: gated,
   log-frequency-weighted band level of each processed side; gated by the

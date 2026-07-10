@@ -772,13 +772,17 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private async Task ChooseSourceFileAsync(ChannelRuntime channel)
     {
+        // The side is captured NOW: the user can flip the L/R selector while
+        // the file loads below, and the measurement must still land on the
+        // side whose Source button was clicked.
+        bool rightSide = channel.ActiveRight;
         using var dialog = new OpenFileDialog
         {
             CheckFileExists = true,
             Filter = "Resonalyze impulse response (*.json)|*.json|All files (*.*)|*.*",
             Multiselect = false,
             RestoreDirectory = true,
-            Title = $"Choose channel {channel.Control.ChannelName} impulse response"
+            Title = $"Choose channel {SideLabel(channel, rightSide)} impulse response"
         };
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
         {
@@ -791,6 +795,7 @@ public partial class VirtualCrossoverPanel : UserControl
             MeasurementHistorySnapshot snapshot = MeasurementHistoryService.CreateSnapshot(file);
             if (!TryAcceptSource(
                 channel,
+                rightSide,
                 snapshot,
                 Path.GetFileName(dialog.FileName),
                 dialog.FileName,
@@ -807,6 +812,9 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private async Task SelectHistoryEntryAsync(ChannelRuntime channel, Guid entryId)
     {
+        // Same side capture as ChooseSourceFileAsync: the snapshot load is
+        // asynchronous and the L/R selector stays live meanwhile.
+        bool rightSide = channel.ActiveRight;
         try
         {
             MeasurementHistoryEntry? entry = HistoryService?.FindById(entryId);
@@ -820,6 +828,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
             TryAcceptSource(
                 channel,
+                rightSide,
                 snapshot,
                 entry.FileNameOrDisplayName,
                 entry.SourceFilePath,
@@ -836,6 +845,7 @@ public partial class VirtualCrossoverPanel : UserControl
     // sharing one sample rate, so both are enforced here with an explanation.
     private bool TryAcceptSource(
         ChannelRuntime channel,
+        bool rightSide,
         MeasurementHistorySnapshot snapshot,
         string displayName,
         string? sourceFilePath,
@@ -855,7 +865,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // compatibility decision is shared with the silent reload path, and it
         // scans EVERY resolved side of every pair — the virtual sums of both
         // sides read one shared rate.
-        ChannelSideState targetState = channel.SideState(channel.ActiveRight);
+        ChannelSideState targetState = channel.SideState(rightSide);
         VirtualCrossoverSourceRules.Decision decision = VirtualCrossoverSourceRules.Evaluate(
             hasTransferIr: true,
             candidateSampleRate: snapshot.SampleRate,
@@ -892,14 +902,16 @@ public partial class VirtualCrossoverPanel : UserControl
             }
         }
 
-        channel.TransferImpulseResponse = transferIr;
-        channel.ProcessedCache = null;
-        channel.TransferPeakIndex = Math.Clamp(
+        targetState.TransferImpulseResponse = transferIr;
+        targetState.ProcessedCache = null;
+        targetState.TransferPeakIndex = Math.Clamp(
             snapshot.TransferPeakIndex ?? 0, 0, transferIr.Length - 1);
-        channel.SampleRate = snapshot.SampleRate;
-        channel.Settings.DisplayName = displayName;
-        channel.Settings.SourceFilePath = sourceFilePath;
-        channel.Settings.HistoryEntryId = historyEntryId;
+        targetState.SampleRate = snapshot.SampleRate;
+        VirtualCrossoverChannelSettings targetSettings =
+            channel.SideSettings(rightSide);
+        targetSettings.DisplayName = displayName;
+        targetSettings.SourceFilePath = sourceFilePath;
+        targetSettings.HistoryEntryId = historyEntryId;
 
         UpdateSourceButton(channel);
         UpdateSideRadioTexts();
@@ -2153,8 +2165,14 @@ public partial class VirtualCrossoverPanel : UserControl
         // The background compute iterates the live channel list and its live
         // settings, so everything that can mutate them must be locked out too:
         // add/remove change the list (and dispose controls), a session import
-        // replaces the whole configuration mid-search.
+        // replaces the whole configuration mid-search. The side radios flip
+        // the mutable ActiveRight the single-side run reads through — flipping
+        // mid-run would hand the worker the other side's measurements and land
+        // the results on the wrong side's settings.
         buttonSessionImport.Enabled = !busy;
+        radioSideLeft.Enabled = !busy;
+        radioSideRight.Enabled = !busy;
+        numericSceneOffset.Enabled = !busy;
         UpdateChannelButtons();
         foreach (ChannelRuntime channel in channels)
         {

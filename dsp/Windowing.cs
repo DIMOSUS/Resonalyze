@@ -20,11 +20,30 @@ namespace Resonalyze.Dsp
         /// <summary>
         /// Builds a symmetric analysis window of the requested type and length.
         /// </summary>
+        // One-entry cache for the analysis window: a live session recomputes
+        // the same (type, length) window thousands of times — once per
+        // analysis frame plus once per UI snapshot — each costing `length`
+        // trig calls and an allocation right next to the audio pipeline. The
+        // cached array is SHARED: callers must treat it as read-only (all
+        // in-repo callers only multiply by its values).
+        private sealed record CachedAnalysisWindow(
+            WindowType Type,
+            int Length,
+            double[] Window);
+
+        private static volatile CachedAnalysisWindow? analysisWindowCache;
+
         public static double[] CreateAnalysisWindow(WindowType windowType, int length)
         {
             if (length < 1)
             {
                 throw new ArgumentOutOfRangeException(nameof(length));
+            }
+
+            CachedAnalysisWindow? cached = analysisWindowCache;
+            if (cached != null && cached.Type == windowType && cached.Length == length)
+            {
+                return cached.Window;
             }
 
             var window = new double[length];
@@ -33,6 +52,7 @@ namespace Resonalyze.Dsp
                 window[i] = AnalysisWindowValue(windowType, i, length);
             }
 
+            analysisWindowCache = new CachedAnalysisWindow(windowType, length, window);
             return window;
         }
 

@@ -503,3 +503,23 @@ re-verified.
   surface, the branch-vs-tag build mismatch and auto-published AI notes are
   fixed: inputs go through env + strict regex, every job checks out the tag,
   the release is created as a draft.)
+
+### Live Spectrum cold-start (batch 7 tails)
+
+- [ ] ★ **The ASIO/Wave capture callback still allocates on the audio thread**:
+  sequence extraction builds jagged float arrays + a List and invokes
+  subscribers inline; the first pass through that branch (JIT + allocation)
+  can overrun a 64–128-sample ASIO budget. Target shape: callback → convert
+  into a preallocated SPSC ring slot → return; a background thread reframes/
+  FFTs from the ring. (`ArrayPool` is the halfway option but the sequence
+  arrays flow into the Channel with unclear return discipline.)
+- [ ] **Level meter allocates a fresh `AudioChannelLevel[]` per callback**
+  (up to ~750/s at 64-sample buffers): accumulate peak/sumSquares in the
+  callback and snapshot at 20–30 Hz.
+- [ ] **First live plot frame is heavy on the UI thread** (snapshot clones +
+  RTA computed even when hidden + first resample + OxyPlot series/capacity
+  growth): compute the RTA magnitude only when `ShowInputMagnitude`, and
+  consider pre-building the series before playback starts. A lock-free
+  callback probe ring (duration vs ASIO budget + allocated bytes) is the
+  measurement tool if hitches persist after the one-period buffer and the
+  DSP warm-up.

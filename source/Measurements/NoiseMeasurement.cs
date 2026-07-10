@@ -129,8 +129,20 @@ namespace Resonalyze
 
             signal?.Dispose();
             signal = new NoiseSignal();
+            // Periodic pink repeats one FFT-length period exactly, and both
+            // playback paths loop the stream seamlessly — so ONE period is the
+            // whole signal. Materializing the full requested duration used to
+            // allocate ~35 MB of LOH arrays (60 s mono floats + the stereo
+            // playback copy) at the start of a live session, for a visible
+            // memory spike and cold-start page-commit work right next to the
+            // first audio callbacks. Non-periodic colours still need the full
+            // length (a short loop of aperiodic noise would seam audibly).
+            double signalDuration =
+                LiveSpectrumOptions.NoiseColor == NoiseColor.PinkPeriodic
+                    ? SequenceLength / (double)sampleRate
+                    : requestedDuration;
             signal.FillData(
-                requestedDuration,
+                signalDuration,
                 bits,
                 sampleRate,
                 LiveSpectrumOptions.NoiseColor,
@@ -417,6 +429,13 @@ namespace Resonalyze
             {
                 UpdateAveragingParameters();
             }
+            // Warm the whole analysis path BEFORE the driver starts: the first
+            // real frame otherwise pays MathNet's FFT initialization, the JIT
+            // of every spectrum method and the first large-array commits while
+            // the audio callbacks are already running on a millisecond budget —
+            // audible as cold-start dropouts in the first seconds.
+            WarmUpAnalysisPath();
+
             var reframer = new OverlapReframer(SequenceLength, hopSize);
             Task processingTask = ProcessSequencesAsync(
                 sequenceChannel.Reader,
@@ -780,6 +799,34 @@ namespace Resonalyze
                 sequence[loopbackIndex.Value],
                 sequence[microphoneIndex],
                 EffectiveWindowType);
+        }
+
+        // One synthetic frame through the exact code path the live analysis
+        // runs (window creation, both forward FFTs, H1, coherence, the RTA
+        // magnitude): everything is JIT-compiled and MathNet's internals are
+        // initialized before the first real capture block, off the audio
+        // thread's budget. A few milliseconds once per start.
+        private void WarmUpAnalysisPath()
+        {
+            var reference = new float[SequenceLength];
+            var target = new float[SequenceLength];
+            reference[0] = 1.0f;
+            target[0] = 1.0f;
+            TransferSpectrumFrame frame = SpectrumAnalysis.ComputeTransferSpectrumFrame(
+                reference,
+                target,
+                EffectiveWindowType);
+            _ = SpectrumAnalysis.ComputeH1MagnitudeSpectrum(
+                frame.CrossSpectrum,
+                frame.ReferencePowerSpectrum);
+            _ = SpectrumAnalysis.ComputeCoherence(
+                frame.CrossSpectrum,
+                frame.ReferencePowerSpectrum,
+                frame.TargetPowerSpectrum);
+            _ = SpectrumAnalysis.ComputeInputMagnitudeSpectrum(
+                frame.TargetPowerSpectrum,
+                EffectiveWindowType,
+                SequenceLength);
         }
 
         // Periodic pink noise is exactly one FFT-length period, so every analysis block

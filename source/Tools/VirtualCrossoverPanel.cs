@@ -1729,6 +1729,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     $"{pair.Upper.Channel.Control.ChannelName}",
                     pairLoss.Value,
                     pairDip,
+                    ComputePairNullDepthDb(processed, channelPoints, pair),
                     pair.BandLowHz,
                     pair.BandHighHz,
                     IsTotal: false));
@@ -1743,10 +1744,48 @@ public partial class VirtualCrossoverPanel : UserControl
         if (loss.HasValue)
         {
             entries.Add(new VirtualCrossoverMetric.Entry(
-                "total", loss.Value, dip, minHz, maxHz, IsTotal: true));
+                "total", loss.Value, dip, NullDb: null, minHz, maxHz, IsTotal: true));
         }
 
         return entries;
+    }
+
+    // The classic tuner's polarity-flip check, computed instead of performed:
+    // the full processed sum with the pair's upper channel inverted, read as
+    // the deepest sum-loss notch inside the pair band. A phase-aligned pair
+    // cancels coherently there, so the deeper this null, the better the pair's
+    // phase match — without touching the actual polarity switch. Display-only
+    // by design: a whole-period delay error keeps the phase at the crossover
+    // frequency aligned and can null just as deeply (verified on real
+    // measurements, where a two-period cycle skip out-nulled the true
+    // alignment), so this figure must never drive a search or selection.
+    private double? ComputePairNullDepthDb(
+        List<ProcessedChannel> processed,
+        List<IReadOnlyList<SignalPoint>> channelPoints,
+        AdjacentPair pair)
+    {
+        List<Complex[]> responses = processed
+            .Select(item => item == pair.Upper
+                ? InvertPolarity(item.ImpulseResponse)
+                : item.ImpulseResponse)
+            .ToList();
+        Complex[] flippedSum = VirtualCrossoverAnalysis.SumImpulseResponses(responses);
+        int anchor = processed.Min(item => item.PeakIndex);
+        AnalysisCurve flippedCurve = BuildMagnitudeCurve(
+            flippedSum, anchor, processed[0].Channel.SampleRate);
+        return VirtualCrossoverAnalysis.MinimumSumLossDb(
+            flippedCurve.Points, channelPoints, pair.BandLowHz, pair.BandHighHz);
+    }
+
+    private static Complex[] InvertPolarity(Complex[] impulseResponse)
+    {
+        var inverted = new Complex[impulseResponse.Length];
+        for (int i = 0; i < inverted.Length; i++)
+        {
+            inverted[i] = -impulseResponse[i];
+        }
+
+        return inverted;
     }
 
     // The metric text renderings live in VirtualCrossoverMetric, where they are

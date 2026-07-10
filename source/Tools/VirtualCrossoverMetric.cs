@@ -10,12 +10,16 @@ internal static class VirtualCrossoverMetric
 {
     /// <summary>
     /// One sum-loss read-out: a junction pair (or the total across the crossover
-    /// window), its average and dip in dB, and the band it was measured over.
+    /// window), its average and dip in dB, the polarity-flip null depth (the
+    /// deepest notch of the sum with the pair's upper channel inverted — the
+    /// classic tuner's check: a phase-aligned pair cancels into a deep null;
+    /// junction entries only), and the band it was measured over.
     /// </summary>
     internal readonly record struct Entry(
         string Junction,
         double AverageDb,
         double? DipDb,
+        double? NullDb,
         double LowHz,
         double HighHz,
         bool IsTotal);
@@ -34,7 +38,8 @@ internal static class VirtualCrossoverMetric
         IEnumerable<string> parts = entries.Select(entry =>
         {
             string body = $"{entry.AverageDb:0.0} dB" +
-                (entry.DipDb.HasValue ? $", dip {entry.DipDb.Value:0.0} dB" : "");
+                (entry.DipDb.HasValue ? $", dip {entry.DipDb.Value:0.0} dB" : "") +
+                (entry.NullDb.HasValue ? $", null {entry.NullDb.Value:0.0} dB" : "");
             return entry.IsTotal ? "total " + body : $"{entry.Junction} {body}";
         });
         return "Sum loss avg: " + string.Join("   ", parts);
@@ -42,22 +47,26 @@ internal static class VirtualCrossoverMetric
 
     /// <summary>
     /// Compact per-junction column for the narrow host read-out panel: a
-    /// monospace "name  avg / dip" line each, no frequency ranges (those are on
-    /// hover).
+    /// monospace "name  avg / dip / null" line each, no frequency ranges (those
+    /// are on hover).
     /// </summary>
     public static string FormatCompact(IReadOnlyList<Entry> entries)
     {
         if (entries.Count == 0)
         {
-            return "Sum loss (dB)\r\n  avg / dip\r\n\r\n—";
+            return "Sum loss (dB)\r\n  avg / dip / null\r\n\r\n—";
         }
 
-        var builder = new System.Text.StringBuilder("Sum loss (dB)\r\n  avg / dip\r\n\r\n");
+        var builder = new System.Text.StringBuilder(
+            "Sum loss (dB)\r\n  avg / dip / null\r\n\r\n");
         foreach (Entry entry in entries)
         {
             string name = (entry.IsTotal ? "Total" : entry.Junction).PadRight(6);
             string dip = entry.DipDb.HasValue ? $"{entry.DipDb.Value,5:0.0}" : "    —";
-            builder.AppendLine($"{name}{entry.AverageDb,5:0.0} /{dip}");
+            string flipNull = entry.NullDb.HasValue
+                ? $"{entry.NullDb.Value,5:0.0}"
+                : "    —";
+            builder.AppendLine($"{name}{entry.AverageDb,5:0.0} /{dip} /{flipNull}");
         }
 
         return builder.ToString().TrimEnd();
@@ -78,7 +87,10 @@ internal static class VirtualCrossoverMetric
         {
             string name = entry.IsTotal ? "Total" : entry.Junction;
             string dip = entry.DipDb.HasValue ? $", dip {entry.DipDb.Value:0.0} dB" : "";
-            return $"{name}: {entry.AverageDb:0.0} dB avg{dip} " +
+            string flipNull = entry.NullDb.HasValue
+                ? $", flip null {entry.NullDb.Value:0.0} dB"
+                : "";
+            return $"{name}: {entry.AverageDb:0.0} dB avg{dip}{flipNull} " +
                 $"({FrequencyText.Format(entry.LowHz)} – {FrequencyText.Format(entry.HighHz)})";
         }));
     }

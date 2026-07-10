@@ -1354,9 +1354,16 @@ the channels track each other through the crossover region. The Phase view has a
 manual **Gate...** dialog with an IR preview, Tukey left / plateau / right
 window controls, gate offset, and a shared τ detrend so reflections can be cut
 out without breaking relative phase. A second plot shows each DSP chain's own
-magnitude and phase (without the driver). A **Sum loss avg** read-out over the
-crossover window turns tuning into a number you can minimize — or use the
-classic null test: invert one channel and tune the delay for the deepest notch.
+magnitude and phase (without the driver). A **Sum loss** read-out (avg / dip /
+null per junction plus a total) turns tuning into numbers you can minimize. The
+**null** figure is the classic tuner's polarity-flip check computed for you:
+the deepest notch the sum develops in the pair band with the junction's upper
+channel inverted — the deeper it drops, the better the pair's phase match at
+the handover. One caveat the read-out inherits from the physics: a
+whole-period delay error keeps the phase at the crossover frequency aligned
+and nulls just as deeply, so read it as confirmation of a candidate alignment,
+not as a lobe selector — the avg/dip figures and the arrival-anchored Auto
+delay are what guard against cycle skips.
 
 Editing a chain recomputes the prediction on a background task, so dragging a
 gain, delay, or crossover value stays responsive even with several channels

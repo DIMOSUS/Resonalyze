@@ -5,10 +5,10 @@ namespace Resonalyze.App.Tests;
 public sealed class VirtualCrossoverMetricTests
 {
     private static readonly VirtualCrossoverMetric.Entry Junction =
-        new("A/B", -1.23, -6.5, 900, 3_600, IsTotal: false);
+        new("A/B", -1.23, -6.5, -17.4, 900, 3_600, IsTotal: false);
 
     private static readonly VirtualCrossoverMetric.Entry Total =
-        new("total", -0.8, null, 100, 10_000, IsTotal: true);
+        new("total", -0.8, null, null, 100, 10_000, IsTotal: true);
 
     [Fact]
     public void FormatLabel_EmptyShowsPlaceholder()
@@ -26,7 +26,8 @@ public sealed class VirtualCrossoverMetricTests
             string text = VirtualCrossoverMetric.FormatLabel([Junction, Total]);
 
             Assert.Equal(
-                "Sum loss avg: A/B -1.2 dB, dip -6.5 dB   total -0.8 dB",
+                "Sum loss avg: A/B -1.2 dB, dip -6.5 dB, null -17.4 dB   " +
+                "total -0.8 dB",
                 text);
         });
     }
@@ -38,9 +39,9 @@ public sealed class VirtualCrossoverMetricTests
         {
             string text = VirtualCrossoverMetric.FormatCompact([Junction, Total]);
 
-            Assert.StartsWith("Sum loss (dB)\r\n  avg / dip\r\n\r\n", text);
-            Assert.Contains("A/B    -1.2 / -6.5", text);
-            Assert.Contains("Total  -0.8 /    —", text);
+            Assert.StartsWith("Sum loss (dB)\r\n  avg / dip / null\r\n\r\n", text);
+            Assert.Contains("A/B    -1.2 / -6.5 /-17.4", text);
+            Assert.Contains("Total  -0.8 /    — /    —", text);
         });
     }
 
@@ -52,7 +53,8 @@ public sealed class VirtualCrossoverMetricTests
             string text = VirtualCrossoverMetric.FormatDetail([Junction]);
 
             Assert.Equal(
-                "Sum loss avg\r\nA/B: -1.2 dB avg, dip -6.5 dB (900 Hz – 3.6 kHz)",
+                "Sum loss avg\r\nA/B: -1.2 dB avg, dip -6.5 dB, " +
+                "flip null -17.4 dB (900 Hz – 3.6 kHz)",
                 text);
         });
     }

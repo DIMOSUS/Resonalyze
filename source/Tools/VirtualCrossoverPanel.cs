@@ -2229,21 +2229,22 @@ public partial class VirtualCrossoverPanel : UserControl
             }
         }
 
-        // The same reliability gate the engine's inter-side decisions apply:
-        // a formally valid arrival with a near-noise record would print a
-        // precise-looking Δ the user might chase with manual delays — an
-        // honest "—" is the right read-out there.
-        static bool Reliable(TimeAlignmentAnalysisResult arrival) =>
+        // The same reliability gate the engine's inter-side decisions apply,
+        // per side: a formally valid arrival with a near-noise record would
+        // print a precise-looking figure the user might chase with manual
+        // delays — an honest "—" is the right read-out there. The Δ column
+        // follows automatically (it needs both sides).
+        static double? ReliableArrivalMs(TimeAlignmentAnalysisResult arrival) =>
             arrival.IsValid &&
-            arrival.SignalToNoiseDecibels >= AutoAlignmentEngine.MinimumArrivalSnrDb;
+            arrival.SignalToNoiseDecibels >= AutoAlignmentEngine.MinimumArrivalSnrDb
+                ? arrival.FirstArrivalDelayMilliseconds
+                : null;
 
         return jobs
             .Select(job => new VirtualCrossoverMetric.StereoDelta(
                 job.Channel,
-                Reliable(job.Left.Arrival!.Value) && Reliable(job.Right.Arrival!.Value)
-                    ? job.Left.Arrival!.Value.FirstArrivalDelayMilliseconds -
-                        job.Right.Arrival!.Value.FirstArrivalDelayMilliseconds
-                    : null,
+                ReliableArrivalMs(job.Left.Arrival!.Value),
+                ReliableArrivalMs(job.Right.Arrival!.Value),
                 job.LowHz,
                 job.HighHz))
             .ToList();

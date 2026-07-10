@@ -2083,6 +2083,7 @@ public partial class VirtualCrossoverPanel : UserControl
         public int ProcessedPeak { get; set; }
         public bool ProcessedFromCache { get; set; }
         public TimeAlignmentAnalysisResult? Arrival { get; set; }
+        public double? LevelDb { get; set; }
         public bool ArrivalFromCache { get; set; }
     }
 
@@ -2166,6 +2167,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     arrival.LowHz == lowHz && arrival.HighHz == highHz)
                 {
                     side.Arrival = arrival.Result;
+                    side.LevelDb = arrival.LevelDb;
                     side.ArrivalFromCache = true;
                 }
 
@@ -2203,6 +2205,9 @@ public partial class VirtualCrossoverPanel : UserControl
                                 VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
                                     side.ProcessedIr, side.SampleRate,
                                     job.LowHz, job.HighHz);
+                            side.LevelDb = VirtualCrossoverAnalysis.MeasureBandLevelDb(
+                                side.ProcessedIr, side.SampleRate,
+                                job.LowHz, job.HighHz);
                         }
                     }
                 }
@@ -2223,7 +2228,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     {
                         side.State.ArrivalCache =
                             (side.ProcessedIr!, job.LowHz, job.HighHz,
-                                side.Arrival!.Value);
+                                side.Arrival!.Value, side.LevelDb);
                     }
                 }
             }
@@ -2233,20 +2238,32 @@ public partial class VirtualCrossoverPanel : UserControl
         // per side: a formally valid arrival with a near-noise record would
         // print a precise-looking figure the user might chase with manual
         // delays — an honest "—" is the right read-out there. The Δ column
-        // follows automatically (it needs both sides).
-        static double? ReliableArrivalMs(TimeAlignmentAnalysisResult arrival) =>
+        // follows automatically (it needs both sides), and the level Δ is
+        // gated the same way: a band that cannot place an arrival is reading
+        // its noise floor, not a driver level.
+        static bool Reliable(TimeAlignmentAnalysisResult arrival) =>
             arrival.IsValid &&
-            arrival.SignalToNoiseDecibels >= AutoAlignmentEngine.MinimumArrivalSnrDb
-                ? arrival.FirstArrivalDelayMilliseconds
-                : null;
+            arrival.SignalToNoiseDecibels >= AutoAlignmentEngine.MinimumArrivalSnrDb;
 
         return jobs
-            .Select(job => new VirtualCrossoverMetric.StereoDelta(
-                job.Channel,
-                ReliableArrivalMs(job.Left.Arrival!.Value),
-                ReliableArrivalMs(job.Right.Arrival!.Value),
-                job.LowHz,
-                job.HighHz))
+            .Select(job =>
+            {
+                TimeAlignmentAnalysisResult left = job.Left.Arrival!.Value;
+                TimeAlignmentAnalysisResult right = job.Right.Arrival!.Value;
+                bool leftReliable = Reliable(left);
+                bool rightReliable = Reliable(right);
+                return new VirtualCrossoverMetric.StereoDelta(
+                    job.Channel,
+                    leftReliable ? left.FirstArrivalDelayMilliseconds : null,
+                    rightReliable ? right.FirstArrivalDelayMilliseconds : null,
+                    job.LowHz,
+                    job.HighHz,
+                    leftReliable && rightReliable &&
+                    job.Left.LevelDb is { } leftLevel &&
+                    job.Right.LevelDb is { } rightLevel
+                        ? leftLevel - rightLevel
+                        : null);
+            })
             .ToList();
     }
 
@@ -3635,12 +3652,15 @@ public partial class VirtualCrossoverPanel : UserControl
         public int SampleRate { get; set; }
         public ProcessedChannelCache? ProcessedCache { get; set; }
 
-        // The band-limited envelope arrival of this side's PROCESSED response,
-        // keyed by the processed array's identity and the measured band — the
-        // Δ L−R read-out re-runs on every redraw, and the Hilbert analysis of
-        // a full-length IR is far too heavy to repeat when nothing changed.
+        // The band-limited envelope arrival and gated band level of this
+        // side's PROCESSED response, keyed by the processed array's identity
+        // and the measured band — the L/R/Δ read-out re-runs on every redraw,
+        // and the Hilbert analysis of a full-length IR is far too heavy to
+        // repeat when nothing changed. The level rides in the same cache
+        // entry: it is measured over the same band from the same response.
         public (Complex[] ProcessedIr, double LowHz, double HighHz,
-            TimeAlignmentAnalysisResult Result)? ArrivalCache { get; set; }
+            TimeAlignmentAnalysisResult Result, double? LevelDb)?
+            ArrivalCache { get; set; }
 
         // Invalidation counter for in-flight asynchronous source loads: a
         // load captures the revision when it starts (BeginSourceLoad, which

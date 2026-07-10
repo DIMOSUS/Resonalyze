@@ -1087,6 +1087,67 @@ public static class VirtualCrossoverAnalysis
     }
 
     /// <summary>
+    /// The gated band level (dB) of one processed response: the same
+    /// direct-sound Tukey gate as the alignment spectra, anchored at the
+    /// response's own peak, then the log-frequency-weighted mean of the bin
+    /// magnitudes in dB inside the band. The absolute figure carries an
+    /// arbitrary reference (the raw transfer-spectrum scale), so it is meant
+    /// for DIFFERENCES between responses measured over the same band — e.g.
+    /// the L−R level asymmetry of a stereo pair, the companion of the
+    /// arrival Δ: timing (ITD) and level (ILD) steer the image together.
+    /// Null when the band holds no bins.
+    /// </summary>
+    public static double? MeasureBandLevelDb(
+        Complex[] impulseResponse,
+        int sampleRate,
+        double minFrequencyHz,
+        double maxFrequencyHz)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponse);
+        if (impulseResponse.Length == 0)
+        {
+            throw new ArgumentException(
+                "The impulse response is empty.",
+                nameof(impulseResponse));
+        }
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+        if (!(minFrequencyHz > 0) || !(maxFrequencyHz > minFrequencyHz))
+        {
+            throw new ArgumentException("The band is invalid.");
+        }
+
+        int anchor = FindPeakIndex(impulseResponse);
+        int leftFade = Math.Min(AlignmentGateFadeSamples, anchor);
+        double[] gate = Windowing.TukeyWindow(
+            AlignmentGateLengthSamples,
+            2.0 * leftFade / AlignmentGateLengthSamples,
+            2.0 * AlignmentGateFadeSamples / AlignmentGateLengthSamples);
+        int length = AlignmentGateLengthSamples;
+        Complex[] spectrum = ForwardSpectrum(
+            GateDirectSound(impulseResponse, anchor - leftFade, gate), length);
+
+        int firstBin = Math.Max(
+            1, (int)Math.Ceiling(minFrequencyHz * length / sampleRate));
+        int lastBin = Math.Min(
+            length / 2 - 1, (int)Math.Floor(maxFrequencyHz * length / sampleRate));
+        double total = 0;
+        double weightSum = 0;
+        for (int bin = firstBin; bin <= lastBin; bin++)
+        {
+            double frequencyHz = bin * (double)sampleRate / length;
+            double weight = 1.0 / frequencyHz;
+            total += weight * 20.0 * Math.Log10(
+                Math.Max(spectrum[bin].Magnitude, 1e-12));
+            weightSum += weight;
+        }
+
+        return weightSum > 0 ? total / weightSum : null;
+    }
+
+    /// <summary>
     /// A reusable junction-loss probe for searches that slide ONE channel
     /// against fixed neighbors: the gated alignment spectra are built once
     /// from the responses as given, and every probe rotates the variable

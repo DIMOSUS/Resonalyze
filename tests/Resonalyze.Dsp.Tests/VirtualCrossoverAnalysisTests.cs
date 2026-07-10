@@ -742,6 +742,39 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void MeasureBandLevelDb_ReadsTheGainDifferenceBetweenResponses()
+    {
+        // The absolute figure carries an arbitrary reference; the contract is
+        // the DIFFERENCE between two responses over the same band — here an
+        // exact virtual -6 dB gain stage.
+        Complex[] reference = UnitImpulse(8_192, 480);
+        Complex[] quieter = VirtualCrossoverAnalysis.ApplyChain(
+            reference,
+            new DspChannelChain(GainDb: -6),
+            SampleRate);
+
+        double? referenceLevel = VirtualCrossoverAnalysis.MeasureBandLevelDb(
+            reference, SampleRate, 300, 3_000);
+        double? quieterLevel = VirtualCrossoverAnalysis.MeasureBandLevelDb(
+            quieter, SampleRate, 300, 3_000);
+
+        Assert.NotNull(referenceLevel);
+        Assert.NotNull(quieterLevel);
+        Assert.Equal(6.0, referenceLevel.Value - quieterLevel.Value, 2);
+    }
+
+    [Fact]
+    public void MeasureBandLevelDb_BandWithoutBinsReturnsNull()
+    {
+        // 23 990 - 23 999 Hz at 48 kHz falls between the last usable FFT bin
+        // and Nyquist: no bins, no level.
+        Complex[] ir = UnitImpulse(8_192, 480);
+
+        Assert.Null(VirtualCrossoverAnalysis.MeasureBandLevelDb(
+            ir, SampleRate, 23_990, 23_999));
+    }
+
+    [Fact]
     public void AnalyzeBandLimitedArrival_RefusesABandNarrowerThanAThirdOctave()
     {
         // The band used to be widened to at least half an octave behind the

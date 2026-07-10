@@ -67,21 +67,25 @@ internal static class VirtualCrossoverMetric
     }
 
     /// <summary>
-    /// One channel pair's final inter-side timing read-out: the two sides'
+    /// One channel pair's final inter-side read-out: the two sides'
     /// band-limited envelope arrivals (their fully processed responses,
     /// delays included) in the pair's shared band, in ms from the transfer
-    /// IR start. A side is null when its arrival is unmeasurable or
-    /// unreliable (a silent band, a near-noise record). Delta is left minus
-    /// right, so positive means the RIGHT side leads — the same sign
-    /// convention as the Auto delay scene offset, so after a stereo run
-    /// every row should read the offset.
+    /// IR start, plus the sides' gated band-level difference in dB. A side's
+    /// arrival is null when it is unmeasurable or unreliable (a silent band,
+    /// a near-noise record); the level delta is null under the same gate.
+    /// The timing delta is left minus right, so positive means the RIGHT
+    /// side leads — the same sign convention as the Auto delay scene offset,
+    /// so after a stereo run every row should read the offset. The level
+    /// delta is also left minus right: positive = the LEFT side is louder
+    /// at the microphone.
     /// </summary>
     internal readonly record struct StereoDelta(
         string Channel,
         double? LeftMs,
         double? RightMs,
         double LowHz,
-        double HighHz)
+        double HighHz,
+        double? LevelDeltaDb = null)
     {
         public double? DeltaMs => LeftMs.HasValue && RightMs.HasValue
             ? LeftMs.Value - RightMs.Value
@@ -90,7 +94,9 @@ internal static class VirtualCrossoverMetric
 
     /// <summary>
     /// Compact per-channel arrival block for the host read-out panel,
-    /// appended below the sum-loss column: one L / R / delta row per pair.
+    /// appended below the sum-loss column: one L / R / delta row per pair,
+    /// then the pairs' level asymmetry (the ILD companion of the timing
+    /// delta).
     /// </summary>
     public static string FormatStereoDeltasCompact(IReadOnlyList<StereoDelta> deltas)
     {
@@ -112,6 +118,16 @@ internal static class VirtualCrossoverMetric
             builder.AppendLine(
                 $"{delta.Channel.PadRight(3)}" +
                 $"{Side(delta.LeftMs)}{Side(delta.RightMs)}{deltaText}");
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("Level \u0394 L\u2212R (dB)");
+        foreach (StereoDelta delta in deltas)
+        {
+            string levelText = delta.LevelDeltaDb.HasValue
+                ? $"{delta.LevelDeltaDb.Value,7:+0.0;-0.0}"
+                : "      \u2014";
+            builder.AppendLine($"{delta.Channel.PadRight(3)}{levelText}");
         }
 
         return builder.ToString().TrimEnd();
@@ -144,13 +160,21 @@ internal static class VirtualCrossoverMetric
                 string deltaText = delta.DeltaMs.HasValue
                     ? $"{delta.DeltaMs.Value:+0.000;-0.000} ms"
                     : "\u2014";
+                string levelText = delta.LevelDeltaDb.HasValue
+                    ? $", level {delta.LevelDeltaDb.Value:+0.0;-0.0} dB"
+                    : string.Empty;
                 return $"{delta.Channel}: L {Side(delta.LeftMs)} / " +
-                    $"R {Side(delta.RightMs)} ms, \u0394 {deltaText} " +
+                    $"R {Side(delta.RightMs)} ms, \u0394 {deltaText}{levelText} " +
                     $"({FrequencyText.Format(delta.LowHz)} \u2013 " +
                     $"{FrequencyText.Format(delta.HighHz)})";
             })) +
             "\r\nLow-band envelopes rise slowly, so the lowest rows carry " +
-            "extra tolerance (a fraction of a millisecond is noise there).";
+            "extra tolerance (a fraction of a millisecond is noise there)." +
+            "\r\nLevel \u0394 is the gated band level of the processed sides " +
+            "(positive: LEFT louder).\r\nTrim the louder side's gain by ear " +
+            "to center the image alongside the timing \u2014\r\na single " +
+            "microphone underestimates the binaural difference (no head " +
+            "shadow).";
     }
 
     /// <summary>

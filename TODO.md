@@ -169,7 +169,12 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   slip that survived the per-side sum optimization), and optionally a
   candidate-list re-pick to fix it for free. Also: L/R polarity consistency
   per band.
-- [ ] **Stereo level (ILD) read-out next to Δ** — field-confirmed follow-up
+- [x] **Stereo level (ILD) read-out next to Δ** — done: the metric block
+  gained a "Level Δ L−R (dB)" row per pair (`MeasureBandLevelDb`: gated,
+  log-frequency-weighted band level of each processed side; gated by the
+  same per-side arrival reliability; tooltip explains the sign and the
+  single-mic-vs-binaural gap). Deliberately a diagnostic, no auto gain trim.
+  Original note — field-confirmed follow-up
   (2026-07-10): with the cascade's delays in the car the user reported the
   scene "dead center" and same-channel drivers indistinguishable by ear, but
   full centering ALSO needed a manual −3…−4 dB trim of the LEFT mid+tweeter:

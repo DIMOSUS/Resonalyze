@@ -1395,13 +1395,18 @@ window controls, gate offset, and a shared τ detrend so reflections can be cut
 out without breaking relative phase. A second plot shows each DSP chain's own
 magnitude and phase (without the driver). A **Sum loss** read-out (avg / dip
 per junction plus a total) turns tuning into numbers you can minimize, and a
-**Δ L−R** block below it reports each stereo pair's final inter-side timing:
-the difference of the two sides' band-limited envelope arrivals in the pair's
-shared band, fully processed chains included. Positive means the right side
-leads — the same sign convention as the scene offset, so after a stereo Auto
-delay every row should read the offset. A pair whose arrival cannot be
-measured reliably (a silent band, or a near-noise record) shows an honest
-dash instead of a precise-looking number.
+**Δ L−R** block below it reports each stereo pair's final inter-side state:
+the two sides' band-limited envelope arrivals in the pair's shared band
+(fully processed chains included) with their difference — positive means the
+right side leads, the same sign convention as the scene offset, so after a
+stereo Auto delay every row should read the offset — and, below the timing, a
+**Level Δ L−R** row per pair: the gated band-level asymmetry of the two sides
+(positive: left louder). Timing (ITD) and level (ILD) steer the image
+together, so this is the read-out for the by-ear gain trim that finishes the
+centering; note a single microphone underestimates the binaural difference
+(no head shadow), so expect to trim a little more than it shows. A side whose
+arrival cannot be measured reliably (a silent band, or a near-noise record)
+shows an honest dash instead of a precise-looking number.
 
 Editing a chain recomputes the prediction on a background task, so dragging a
 gain, delay, or crossover value stays responsive even with several channels

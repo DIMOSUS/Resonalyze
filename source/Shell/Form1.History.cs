@@ -9,6 +9,13 @@ public partial class Form1
     // stale async loads are dropped instead of overwriting a newer selection.
     private long historyRestoreRevision;
 
+    // Serializes the restore itself: the restore mutates the current IR, the
+    // controllers and the mode across several awaits, so two interleaved
+    // restores could half-apply each other even with the revision token —
+    // the gate makes each restore atomic and the token then guarantees the
+    // newest one runs (or re-runs) last.
+    private readonly SemaphoreSlim historyRestoreGate = new(1, 1);
+
     private void buttonHistory_Click(object sender, EventArgs e)
     {
         if (dockedHistoryHost.IsOpen)
@@ -87,13 +94,26 @@ public partial class Form1
             // way a freshly saved or loaded IR does); in-memory entries have none.
             string? sourceFilePath = measurementHistoryService.FindById(entryId)
                 ?.SourceFilePath;
-            await RestoreHistorySnapshotAsync(snapshot, sourceFilePath);
-            if (revision != historyRestoreRevision)
+            await historyRestoreGate.WaitAsync();
+            try
             {
-                return;
-            }
+                if (revision != historyRestoreRevision)
+                {
+                    return;
+                }
 
-            sessionTracker.MarkRestored(entryId);
+                await RestoreHistorySnapshotAsync(snapshot, sourceFilePath);
+                if (revision != historyRestoreRevision)
+                {
+                    return;
+                }
+
+                sessionTracker.MarkRestored(entryId);
+            }
+            finally
+            {
+                historyRestoreGate.Release();
+            }
             dockedHistoryHost.InvokeIfOpen<MeasurementHistoryWindow>(dialog =>
             {
                 dialog.SetEntries(

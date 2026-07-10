@@ -531,6 +531,54 @@ public sealed class VirtualCrossoverAnalysisTests
         });
     }
 
+    [Theory]
+    [InlineData(1_000, 1.0, 6.0)]   // an utterly ordinary band
+    [InlineData(4_000, 2.0, -8.0)]
+    public void RequiredTailSamples_OrdinaryPeqStaysAtTheMinimumPadding(
+        double frequencyHz,
+        double q,
+        double gainDb)
+    {
+        // The pole radius must be read in the ADDITIVE feedback convention
+        // BiquadCoefficients uses (z² − A1·z − A2): the textbook 1 + a1 + a2
+        // formulas mis-read every ordinary stable section as unstable and
+        // pinned the padding at the 262144-sample maximum — ballooning every
+        // Virtual DSP / Auto delay FFT for any crossover or PEQ.
+        var chain = new DspChannelChain(Peq: new EqualizationCurve(
+            new[] { new PeqBand(frequencyHz, q, gainDb) }));
+        PreparedDspResponse prepared = PreparedDspResponse.Create(chain, 48_000);
+
+        int tail = prepared.RequiredTailSamples(120.0, 8_192, 262_144);
+
+        Assert.Equal(8_192, tail);
+    }
+
+    [Fact]
+    public void RequiredTailSamples_CrossoverStaysAtTheMinimumPadding()
+    {
+        var chain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.LowPass,
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24)));
+        PreparedDspResponse prepared = PreparedDspResponse.Create(chain, 48_000);
+
+        Assert.Equal(8_192, prepared.RequiredTailSamples(120.0, 8_192, 262_144));
+    }
+
+    [Fact]
+    public void RequiredTailSamples_LowFrequencyHighQPeqIsLongButFinite()
+    {
+        // 20 Hz / Q 10 rings for ~100k samples to −120 dB at 48 kHz — well
+        // past the floor but comfortably under the cap; hitting the cap would
+        // mean the section was misread as unstable.
+        var chain = new DspChannelChain(Peq: new EqualizationCurve(
+            new[] { new PeqBand(20, 10, 12) }));
+        PreparedDspResponse prepared = PreparedDspResponse.Create(chain, 48_000);
+
+        int tail = prepared.RequiredTailSamples(120.0, 8_192, 262_144);
+
+        Assert.InRange(tail, 50_000, 262_143);
+    }
+
     [Fact]
     public void ApplyChain_LowFrequencyHighQPeqDoesNotWrapIntoTheEarlyResponse()
     {

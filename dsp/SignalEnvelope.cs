@@ -156,12 +156,22 @@ public static class SignalEnvelope
             true);
     }
 
+    // For stationary Gaussian noise the Hilbert envelope is Rayleigh-
+    // distributed, and the RMS of its lowest quartile is ~0.370 of the full
+    // envelope RMS. The quartile floor is deliberately robust (reverb decay
+    // must not count as noise), but reported as-is it would flatter the SNR
+    // by ~8.6 dB — so the REPORTED figure compensates the known bias back to
+    // the full-envelope noise RMS. The first-arrival threshold keeps the raw
+    // robust floor: there under-estimating noise is the safe direction.
+    private const double RayleighLowestQuartileRmsRatio = 0.370;
+
     public static double EstimatePeakConfidenceDecibels(
         IReadOnlyList<double> envelope,
         double peak)
     {
         ArgumentNullException.ThrowIfNull(envelope);
-        double noiseRms = EstimateEnvelopeNoiseRms(envelope);
+        double noiseRms = EstimateEnvelopeNoiseRms(envelope)
+            / RayleighLowestQuartileRmsRatio;
         return DataHelper.AmplitudeToDecibels(peak / Math.Max(noiseRms, 1e-12));
     }
 

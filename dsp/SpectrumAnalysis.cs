@@ -31,7 +31,7 @@ public static class SpectrumAnalysis
         }
 
         int length = samples.Count;
-        double[] window = Windowing.CreateAnalysisWindow(windowType, length);
+        double[] window = Windowing.SharedAnalysisWindow(windowType, length);
         var spectrum = new Complex[length];
         double windowSum = 0.0;
         for (int i = 0; i < length; i++)
@@ -87,7 +87,7 @@ public static class SpectrumAnalysis
             throw new ArgumentOutOfRangeException(nameof(frameLength));
         }
 
-        double[] window = Windowing.CreateAnalysisWindow(windowType, frameLength);
+        double[] window = Windowing.SharedAnalysisWindow(windowType, frameLength);
         double windowSum = 0.0;
         for (int i = 0; i < frameLength; i++)
         {
@@ -145,7 +145,7 @@ public static class SpectrumAnalysis
             throw new ArgumentException("Samples must not be empty.", nameof(reference));
         }
 
-        double[] window = Windowing.CreateAnalysisWindow(windowType, reference.Count);
+        double[] window = Windowing.SharedAnalysisWindow(windowType, reference.Count);
         var referenceSpectrum = new Complex[reference.Count];
         var targetSpectrum = new Complex[target.Count];
         for (int i = 0; i < reference.Count; i++)

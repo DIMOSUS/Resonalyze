@@ -245,7 +245,11 @@ public sealed class SignalEnvelopeTests
             envelope,
             peak: 1.0);
 
-        Assert.InRange(confidence, 39.9, 40.1);
+        // peak/floor is 40 dB; the reported figure compensates the Rayleigh
+        // bias of the quartile floor (+20·log10(0.370) ≈ −8.64 dB), so the
+        // metric reads peak vs the FULL envelope noise RMS, not vs the
+        // flattering quartile.
+        Assert.InRange(confidence, 31.2, 31.5);
     }
 
     [Fact]
@@ -266,7 +270,9 @@ public sealed class SignalEnvelopeTests
             envelope,
             peak: 1.0);
 
-        Assert.InRange(confidence, 59.9, 60.1);
+        // 60 dB against the raw floor, minus the Rayleigh-bias compensation
+        // (≈ 8.64 dB) — and nowhere near the ~20 dB the reverb-tail mean gave.
+        Assert.InRange(confidence, 51.2, 51.5);
     }
 
     private static double[] CreateSine(int length, int bin, double amplitude)

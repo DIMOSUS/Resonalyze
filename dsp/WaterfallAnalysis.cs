@@ -128,7 +128,13 @@ public static class WaterfallAnalysis
 
         double periodsTime = periods / frequency;
         double periodsSamples = sampleRate * periodsTime;
-        double availableLimit = Math.Min((double)measuredSamples, rawData.Count - 1);
+        // measuredSamples counts REAL samples, so the last measured index is
+        // measuredSamples − 1 — and the interpolation taps are clamped to it
+        // too, so points just inside the boundary do not blend the FFT's
+        // zero-padding into the last measured readings.
+        int lastMeasuredIndex = (int)Math.Min(
+            Math.Min((long)measuredSamples - 1, rawData.Count - 1),
+            int.MaxValue);
         var data = new List<SignalPoint>(width);
 
         for (int i = 0; i < width; i++)
@@ -137,24 +143,29 @@ public static class WaterfallAnalysis
             double samplePosition = peakOffsetSamples + interp * periodsSamples;
             data.Add(new SignalPoint(
                 interp * periods,
-                samplePosition <= availableLimit
-                    ? DataHelper.AmplitudeToDecibels(SmoothSample(rawData, samplePosition))
+                samplePosition <= lastMeasuredIndex
+                    ? DataHelper.AmplitudeToDecibels(
+                        SmoothSample(rawData, samplePosition, lastMeasuredIndex))
                     : double.NaN));
         }
 
         return data;
     }
 
-    private static double SmoothSample(IReadOnlyList<SignalPoint> rawData, double index)
+    private static double SmoothSample(
+        IReadOnlyList<SignalPoint> rawData,
+        double index,
+        int maxIndex)
     {
         const int radius = 2;
         int centerIndex = (int)Math.Round(index);
+        int limit = Math.Min(maxIndex, rawData.Count - 1);
 
         double weightSum = 0;
         double weightedSum = 0;
 
         for (int sampleIndex = Math.Max(centerIndex - radius, 0);
-            sampleIndex <= Math.Min(centerIndex + radius, rawData.Count - 1);
+            sampleIndex <= Math.Min(centerIndex + radius, limit);
             sampleIndex++)
         {
             double weight = DataHelper.LanczosKernel(index - sampleIndex, radius);

@@ -29,6 +29,15 @@ namespace Resonalyze
         private int sequencesCounter;
         private long lastDropTickMs;
         private int droppedFrameTotal;
+        // Bumped on every dropped capture block; the processing loop compares it
+        // against the generation it has consumed and resets the reframer, so no
+        // FFT frame is ever built across the discontinuity a drop leaves behind.
+        private long dropGeneration;
+        // Frames the coherence estimate must accumulate before it is shown at
+        // all: below this the EMA has too few effective degrees of freedom and
+        // the estimate reads near 1 regardless of the real channel relation.
+        private const int MinCoherenceFrames = 4;
+        private AveragingSpeed appliedAveragingSpeed;
         private volatile bool inProgress;
         private bool disposed;
 
@@ -265,6 +274,7 @@ namespace Resonalyze
             Complex[] crossSpectrum;
             double[] referencePowerSpectrum;
             double[] targetPowerSpectrum;
+            int frameCount;
             lock (dataSync)
             {
                 if (accumulatedCrossSpectrum == null ||
@@ -277,15 +287,24 @@ namespace Resonalyze
                 crossSpectrum = (Complex[])accumulatedCrossSpectrum.Clone();
                 referencePowerSpectrum = (double[])accumulatedReferencePowerSpectrum.Clone();
                 targetPowerSpectrum = (double[])accumulatedTargetPowerSpectrum.Clone();
+                frameCount = averagedFrameCount;
             }
 
             double[] magnitude = SpectrumAnalysis.ComputeH1MagnitudeSpectrum(
                 crossSpectrum,
                 referencePowerSpectrum);
-            double[] coherence = SpectrumAnalysis.ComputeCoherence(
-                crossSpectrum,
-                referencePowerSpectrum,
-                targetPowerSpectrum);
+            // γ² of a single frame is identically 1 in every energized bin
+            // whatever the real relation between the channels, and the first
+            // few EMA frames are barely better — the display would mark the
+            // whole curve "trusted" exactly when no statistics exist yet. Until
+            // a few frames have accumulated the coherence is UNKNOWN (null),
+            // not perfect.
+            double[]? coherence = frameCount >= MinCoherenceFrames
+                ? SpectrumAnalysis.ComputeCoherence(
+                    crossSpectrum,
+                    referencePowerSpectrum,
+                    targetPowerSpectrum)
+                : null;
             // The microphone auto-power is already accumulated for coherence, so the
             // reference-free RTA magnitude comes for free: normalize it by the same
             // window's coherent gain the frame was measured with so its level is
@@ -337,6 +356,21 @@ namespace Resonalyze
         {
             lock (dataSync)
             {
+                // A Slow accumulation is not a valid Fast average (and vice
+                // versa): grafting the new alpha onto the old mode's memory
+                // mixes two different statistics — the curve keeps the long
+                // memory of the previous mode for its whole decay. Switching
+                // the averaging speed starts the new mode's statistics from
+                // scratch, like the explicit Reset does.
+                if (LiveSpectrumOptions.AveragingSpeed != appliedAveragingSpeed)
+                {
+                    accumulatedCrossSpectrum = null;
+                    accumulatedReferencePowerSpectrum = null;
+                    accumulatedTargetPowerSpectrum = null;
+                    sequencesCounter = 0;
+                    averagedFrameCount = 0;
+                }
+
                 UpdateAveragingParameters();
             }
         }
@@ -357,6 +391,9 @@ namespace Resonalyze
         {
             Interlocked.Increment(ref droppedFrameTotal);
             Interlocked.Exchange(ref lastDropTickMs, Environment.TickCount64);
+            // Consumed by the processing loop: a drop means the next dequeued
+            // block is NOT contiguous with the reframer's buffered tail.
+            Interlocked.Increment(ref dropGeneration);
         }
 
         private async Task<bool> RunCoreAsync(CancellationToken cancellationToken)
@@ -606,8 +643,22 @@ namespace Resonalyze
             OverlapReframer reframer,
             CancellationToken cancellationToken)
         {
+            long consumedDropGeneration = Interlocked.Read(ref dropGeneration);
             await foreach (float[][] sequence in reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
+                // A dropped block means this sequence is not contiguous with
+                // the reframer's buffered tail: an FFT frame built across the
+                // seam reads the artificial step as a broadband burst and
+                // poisons H1, coherence and the EMA for seconds after the
+                // overload indicator clears. Start from a clean buffer instead
+                // of splicing over the hole.
+                long generation = Interlocked.Read(ref dropGeneration);
+                if (generation != consumedDropGeneration)
+                {
+                    consumedDropGeneration = generation;
+                    reframer.Reset();
+                }
+
                 foreach (float[][] frame in reframer.Push(sequence))
                 {
                     AccumulateTransferSequence(frame);
@@ -643,6 +694,7 @@ namespace Resonalyze
                 GetAveragingTimeConstant(LiveSpectrumOptions.AveragingSpeed);
             infiniteAveraging = LiveSpectrumOptions.AveragingSpeed == AveragingSpeed.Infinite;
             transferAlpha = AlphaFromTimeConstant(frameInterval, transferSeconds);
+            appliedAveragingSpeed = LiveSpectrumOptions.AveragingSpeed;
         }
 
         private void AccumulateTransferSequence(float[][] sequence)

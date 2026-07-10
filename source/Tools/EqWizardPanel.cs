@@ -60,6 +60,7 @@ public partial class EqWizardPanel : UserControl
     private LineAnnotation toMarker = null!;
     private RectangleAnnotation rangeFill = null!;
     private int selectedBandIndex = -1;
+    private long autoTuneRevision;
     private EqTuneStats? lastStats;
     private bool suppressTargetOffsetEvents;
     private bool suppressRedraw;
@@ -482,6 +483,13 @@ public partial class EqWizardPanel : UserControl
     // measurement (if any) and the target shape, plus the shared bottom legend.
     private void DrawSelectedCurves()
     {
+        // Every input the Auto Tune fit consumes funnels through here when it
+        // changes (target selection, offsets, smoothing, band edits, source
+        // switches), so any redraw orphans an in-flight fit computed against
+        // the previous state. Over-invalidation is safe: the stale result is
+        // simply dropped and the user re-runs Auto Tune.
+        autoTuneRevision++;
+
         // Auto Tune applies many control changes at once; it redraws once at the end
         // instead of on every intermediate change.
         if (suppressRedraw)
@@ -640,6 +648,13 @@ public partial class EqWizardPanel : UserControl
             .ToList();
         EqAutoTuner.Options options = CreateAutoTuneOptions();
 
+        // Only the Auto Tune button is disabled while the fit runs — the user
+        // can still switch the target, offsets, smoothing, the band limit or
+        // the whole history measurement. A result computed against the old
+        // inputs must not be written over the new state, so anything that
+        // changes the fit's inputs bumps this revision and orphans the result.
+        long revision = ++autoTuneRevision;
+
         EqualizationCurve tuned;
         buttonAutoTune.Enabled = false;
         try
@@ -659,7 +674,7 @@ public partial class EqWizardPanel : UserControl
             }
         }
 
-        if (IsDisposed)
+        if (IsDisposed || revision != autoTuneRevision)
         {
             return;
         }

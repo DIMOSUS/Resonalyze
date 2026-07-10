@@ -410,3 +410,61 @@ re-verified.
   garbage stretches now, but short noisy nulls still enter `SmoothLinear` at
   full weight; magnitude curves behave the same). Optional: reliability-
   weighted smoothing.
+
+### Batch 5 tails (Live Spectrum / sweep / EQ export / overlays / history / provenance)
+
+- [ ] ★ **Measurement provenance model.** Files store no backend, timing
+  quality, dropped-frame/clipping history, excitation range, effective average
+  count or calibration id — a dual-device Wave capture loads back
+  indistinguishable from sample-synchronous ASIO, and Time Alignment/Virtual
+  DSP cannot see that absolute phase and delay are suspect. Ties together the
+  dual-device item above; consumers should declare their requirements
+  (Time Alignment → synchronous timing required, HD → valid packet
+  separation, ...).
+- [ ] ★ **Sweep runs are accepted unconditionally** (`AcceptedRuns++` inside
+  `Add()`; "Confirm each run" fires only *after* accumulation and cannot
+  reject). One clipped/knocked run irreversibly contaminates the average. Fix:
+  Capture → quality checks (clipping, loopback energy, duration, peak-delay
+  vs median, IR correlation vs running reference) → Accept/Retry/Skip →
+  Accumulate. Also: runs are pre-aligned by the GLOBAL sweep-IR peak (a
+  reflection outrunning the direct sound mis-aligns the whole run — bound the
+  shift and cross-correlate against a reference run); the stored raw samples
+  are only the LAST run's (rename or store per-run); Wave RMS integrates the
+  lead-in/tail silence (compute over the active sweep interval only).
+- [ ] **Wave dual-device pairing is callback-ordered** (`LoopbackSequencePairer`
+  dequeues first-come): no timestamps, no drift estimate, a lost callback
+  shifts every later pair by a whole block. Practical fix short of full
+  synchronization: allow RTA only and disable H1/coherence/phase-dependent
+  results on independent Wave devices. (Live-spectrum drop-glue, cold-start
+  γ²=1 and the mode-switch statistics mix are fixed.)
+- [ ] **EMA coherence has no effective average count** (overlap-correlated
+  frames, alpha-dependent memory): expose K_eff ≈ (2−α)/α (reduced for
+  overlap) alongside the curve and feed it to the same debias the sweep path
+  uses.
+- [ ] **EQ Wizard fits the ANALOG peaking prototype while Virtual DSP and the
+  exports run RBJ digital biquads** — ~3–4 dB apart at 18–20 kHz (48 kHz
+  rate). Fit and preview should evaluate `PeakingBiquad.Compute` +
+  `BiquadResponse` at the measurement rate; the analog model stays as an
+  explicit choice. Needs its own validation (fits change near Nyquist).
+- [ ] **miniDSP export needs a target-device profile**: the sample rate is now
+  a constructor parameter surfaced in the format name (48 kHz default), but
+  device biquad limits are not checked and the preamp burns a biquad slot
+  instead of mapping to the device's gain control.
+- [ ] **Overlay curves are assumed sorted/unique/finite in X**
+  (`CalculateOperation`'s forward-only cursor): normalize imported overlays
+  once (drop non-finite, sort, merge duplicate frequencies). (The branch-cut
+  phase interpolation and the linear-Hz→log-f interpolation are fixed.)
+- [ ] **History entries reference LIVE overlay slots** (`ActiveOverlaySlots`
+  numbers into mutable global storage): restoring an old session shows
+  whatever the slots hold TODAY. Store immutable overlay snapshots
+  (content-addressed revisions) in the history entry.
+- [ ] **History index lives beside the executable and dies silently**: no
+  write-permission handling (`Save()` throws unguarded in Program Files-style
+  installs), and any schema-version mismatch or parse error loads as an EMPTY
+  list with no backup/notification — mirror the project-file
+  backup-on-invalid policy, distinguish empty/unsupported/corrupted, and
+  consider %LocalAppData%.
+- [ ] **Virtual DSP history-source loading has the same stale-async race the
+  EQ Auto Tune and history restore just got guards for**
+  (`SelectHistoryEntryAsync` applies a slow snapshot over a newer selection):
+  per-channel source revision or CancellationTokenSource.

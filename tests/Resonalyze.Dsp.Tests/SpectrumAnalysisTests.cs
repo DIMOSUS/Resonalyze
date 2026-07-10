@@ -90,9 +90,9 @@ public sealed class SpectrumAnalysisTests
 
         double[] power = SpectrumAnalysis.ComputePowerSpectrum(ones);
 
-        // Coherent-gain normalization makes the windowed result match the
-        // rectangular-window level: |X[0]| = N, so power = N^2.
-        Assert.Equal((double)length * length, power[0], precision: 3);
+        // Tone-calibrated (dBFS) scale: a DC level of 1.0 reads amplitude 1.0
+        // regardless of the FFT length.
+        Assert.Equal(1.0, power[0], precision: 3);
     }
 
     [Theory]
@@ -109,8 +109,8 @@ public sealed class SpectrumAnalysisTests
         double[] power = SpectrumAnalysis.ComputePowerSpectrum(ones, windowType);
 
         // Coherent-gain normalization cancels the window sum, so DC always
-        // reads the rectangular-equivalent level regardless of window.
-        Assert.Equal((double)length * length, power[0], precision: 3);
+        // reads the true 1.0 level regardless of window.
+        Assert.Equal(1.0, power[0], precision: 3);
     }
 
     [Fact]
@@ -177,6 +177,27 @@ public sealed class SpectrumAnalysisTests
         }
 
         Assert.Equal(bin, peakBin);
+    }
+
+    [Theory]
+    [InlineData(1_024)]
+    [InlineData(4_096)]
+    public void ComputeInputMagnitudeSpectrum_ToneLevelIsFftLengthInvariant(int length)
+    {
+        // The same full-scale tone must read amplitude 1.0 whatever the FFT
+        // size — the RTA level used to jump 6.02 dB per doubling, on the same
+        // dB axis as the length-invariant H1 transfer gain.
+        int bin = length / 16;
+        float[] signal = CreateSine(length, bin);
+
+        TransferSpectrumFrame frame =
+            SpectrumAnalysis.ComputeTransferSpectrumFrame(signal, signal, WindowType.Hann);
+        double[] magnitude = SpectrumAnalysis.ComputeInputMagnitudeSpectrum(
+            frame.TargetPowerSpectrum,
+            WindowType.Hann,
+            length);
+
+        Assert.InRange(magnitude[bin], 0.98, 1.02);
     }
 
     [Fact]
@@ -389,11 +410,10 @@ public sealed class SpectrumAnalysisTests
             windowType,
             length);
 
-        // For an on-bin tone the peak-bin magnitude is windowSum/2, and the
-        // coherent-gain scale is length/windowSum, so their product is length/2
-        // for every window (the window sum cancels). Allow 2% for the tiny
-        // double-frequency leakage into the bin.
-        Assert.InRange(magnitude[bin], length / 2.0 * 0.98, length / 2.0 * 1.02);
+        // Tone calibration: a full-scale on-bin sine reads amplitude 1.0 for
+        // every window AND every FFT length (the level used to jump 6 dB per
+        // FFT-size doubling). Allow 2% for the tiny double-frequency leakage.
+        Assert.InRange(magnitude[bin], 0.98, 1.02);
     }
 
     [Fact]

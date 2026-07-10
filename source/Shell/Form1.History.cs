@@ -5,6 +5,10 @@ namespace Resonalyze;
 
 public partial class Form1
 {
+    // Monotonic token for history restores: the newest activation wins and
+    // stale async loads are dropped instead of overwriting a newer selection.
+    private long historyRestoreRevision;
+
     private void buttonHistory_Click(object sender, EventArgs e)
     {
         if (dockedHistoryHost.IsOpen)
@@ -56,11 +60,17 @@ public partial class Form1
             return;
         }
 
+        // Two rapid activations race: a slow file-backed entry can finish
+        // loading AFTER a fast cached one and silently overwrite it, leaving
+        // the UI on the earlier selection. The newest activation wins; stale
+        // loads are dropped at every await boundary (the same revision guard
+        // the async plot rebuild uses).
+        long revision = ++historyRestoreRevision;
         try
         {
             MeasurementHistorySnapshot? snapshot =
                 await measurementHistoryService.GetSnapshotAsync(entryId);
-            if (snapshot == null)
+            if (snapshot == null || revision != historyRestoreRevision)
             {
                 return;
             }
@@ -78,6 +88,11 @@ public partial class Form1
             string? sourceFilePath = measurementHistoryService.FindById(entryId)
                 ?.SourceFilePath;
             await RestoreHistorySnapshotAsync(snapshot, sourceFilePath);
+            if (revision != historyRestoreRevision)
+            {
+                return;
+            }
+
             sessionTracker.MarkRestored(entryId);
             dockedHistoryHost.InvokeIfOpen<MeasurementHistoryWindow>(dialog =>
             {

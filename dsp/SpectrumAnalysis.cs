@@ -42,12 +42,19 @@ public static class SpectrumAnalysis
 
         Fourier.Forward(spectrum, FourierOptions.Matlab);
 
+        // Tone calibration (dBFS): a full-scale bin-centred sine reads
+        // amplitude 1.0 for any FFT length and any window — |X_k| = N·CG/2,
+        // so the amplitude is 2|X_k|/(N·CG). Without the 2/N the level jumped
+        // 6 dB per FFT-size doubling. DC has no conjugate mirror, so it takes
+        // half the scale (a DC level of 1.0 also reads 1.0).
         double coherentGain = windowSum / length;
-        double scale = coherentGain > 0.0 ? 1.0 / coherentGain : 1.0;
+        double scale = coherentGain > 0.0
+            ? 2.0 / (length * coherentGain)
+            : 2.0 / length;
         var power = new double[length / 2];
         for (int i = 0; i < power.Length; i++)
         {
-            double magnitude = spectrum[i].Magnitude * scale;
+            double magnitude = spectrum[i].Magnitude * (i == 0 ? scale * 0.5 : scale);
             power[i] = magnitude * magnitude;
         }
 
@@ -88,13 +95,23 @@ public static class SpectrumAnalysis
         }
 
         double coherentGain = windowSum / frameLength;
-        double scale = coherentGain > 0.0 ? 1.0 / coherentGain : 1.0;
+
+        // Tone calibration (dBFS): a full-scale bin-centred sine has
+        // |X_k| = N·CG/2, so the amplitude is 2|X_k|/(N·CG) — INDEPENDENT of
+        // the FFT length. Without the 2/N the same input jumped 6 dB per
+        // FFT-size doubling, on the same axis as the length-invariant H1
+        // transfer gain. DC (no conjugate mirror) takes half the scale,
+        // matching ComputePowerSpectrum bin for bin.
+        double scale = coherentGain > 0.0
+            ? 2.0 / (frameLength * coherentGain)
+            : 2.0 / frameLength;
 
         var magnitude = new double[autoPowerSpectrum.Count];
         for (int i = 0; i < magnitude.Length; i++)
         {
             double power = autoPowerSpectrum[i];
-            magnitude[i] = power > 0.0 ? Math.Sqrt(power) * scale : 0.0;
+            double binScale = i == 0 ? scale * 0.5 : scale;
+            magnitude[i] = power > 0.0 ? Math.Sqrt(power) * binScale : 0.0;
         }
 
         return magnitude;

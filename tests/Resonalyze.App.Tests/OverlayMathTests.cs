@@ -17,22 +17,58 @@ public sealed class OverlayMathTests
         OverlayOperation operation,
         double[] expectedValues)
     {
+        // Interpolation is logarithmic in frequency, so x = 2 — the GEOMETRIC
+        // midpoint of the b span [1, 4] — reads the midpoint value 12.
         OverlayPoint[] a =
         [
             new OverlayPoint(1, 10),
             new OverlayPoint(2, 14),
-            new OverlayPoint(3, 20)
+            new OverlayPoint(4, 20)
         ];
         OverlayPoint[] b =
         [
             new OverlayPoint(1, 8),
-            new OverlayPoint(3, 16)
+            new OverlayPoint(4, 16)
         ];
 
         OverlayPoint[] result =
             OverlayMath.CalculateOperation(a, b, operation);
 
-        Assert.Equal(expectedValues, result.Select(point => point.Y));
+        Assert.Equal(expectedValues.Length, result.Length);
+        for (int i = 0; i < expectedValues.Length; i++)
+        {
+            Assert.Equal(expectedValues[i], result[i].Y, precision: 9);
+        }
+    }
+
+    [Fact]
+    public void CalculateOperation_WrappedPhaseInterpolatesThroughTheBranchCut()
+    {
+        // B steps from +170° to −170°: physically the short way passes through
+        // ±180°. A linear blend of the raw numbers would read 0° at the
+        // geometric midpoint and the wrapped difference could never recover
+        // the lost branch; the phasor interpolation must read ±180°.
+        OverlayPoint[] a =
+        [
+            new OverlayPoint(1_000, 0),
+            new OverlayPoint(Math.Sqrt(2) * 1_000, 0),
+            new OverlayPoint(2_000, 0)
+        ];
+        OverlayPoint[] b =
+        [
+            new OverlayPoint(1_000, 170),
+            new OverlayPoint(2_000, -170)
+        ];
+
+        OverlayPoint[] result = OverlayMath.CalculateOperation(
+            a,
+            b,
+            OverlayOperation.AMinusB,
+            wrapPhaseDifference: true);
+
+        Assert.Equal(3, result.Length);
+        // A − B at the midpoint: 0 − (±180) wraps to ±180, never to 0.
+        Assert.Equal(180.0, Math.Abs(result[1].Y), precision: 6);
     }
 
     [Fact]

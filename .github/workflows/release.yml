@@ -373,7 +373,7 @@ jobs:
           jq -n \
             --arg system "$system_prompt" \
             --rawfile log commit-log.md \
-            '{model: "claude-sonnet-5", max_tokens: 2000, system: $system,
+            '{model: "claude-opus-4-8", max_tokens: 3000, system: $system,
               messages: [{role: "user", content: $log}]}' > request.json
 
           curl -sS --fail-with-body https://api.anthropic.com/v1/messages \
@@ -382,9 +382,15 @@ jobs:
             -H "content-type: application/json" \
             -d @request.json > response.json
 
+          stop_reason=$(jq -r '.stop_reason' response.json)
+          if [ "$stop_reason" != "end_turn" ]; then
+            echo "Unexpected stop_reason: $stop_reason" >&2
+            exit 1
+          fi
+
           jq -er '[.content[] | select(.type == "text") | .text] | join("\n")' \
             response.json > draft-notes.md
-          test -s draft-notes.md
+          grep -q '[^[:space:]]' draft-notes.md
 
       - name: Compose release notes
         shell: bash

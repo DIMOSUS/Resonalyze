@@ -126,16 +126,19 @@ public sealed class OverlayMathTests
     [Fact]
     public void CalculateOperation_BlendCrossfadesAroundCenterFrequency()
     {
+        // x = 2 is the GEOMETRIC midpoint of the b span [1, 4] (interpolation
+        // is logarithmic in frequency), so b(2) = 12; it is also the blend
+        // centre, so the result is the plain average (14 + 12) / 2 = 13.
         OverlayPoint[] a =
         [
             new OverlayPoint(1, 10),
             new OverlayPoint(2, 14),
-            new OverlayPoint(3, 20)
+            new OverlayPoint(4, 20)
         ];
         OverlayPoint[] b =
         [
             new OverlayPoint(1, 8),
-            new OverlayPoint(3, 16)
+            new OverlayPoint(4, 16)
         ];
 
         OverlayPoint[] result = OverlayMath.CalculateOperation(

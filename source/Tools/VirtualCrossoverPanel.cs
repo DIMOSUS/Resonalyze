@@ -1884,6 +1884,20 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
+        // The stereo Δ block and the opposite-side sum read BOTH sides'
+        // processed responses; their caches make an unchanged configuration
+        // free. Same staleness rule as above.
+        List<VirtualCrossoverMetric.StereoDelta> stereoDeltas =
+            await ComputeStereoDeltasAsync();
+        AnalysisCurve? oppositeSum =
+            checkBoxShowSum.Checked && !radioViewPhase.Checked
+                ? await ComputeOppositeSumCurveAsync()
+                : null;
+        if (mainPlotView.IsDisposed || revision != displayRevision)
+        {
+            return;
+        }
+
         RemoveCurveSeries(model);
         hintAnnotation.Text = processed.Count == 0 ? NoSourcesHint : string.Empty;
 
@@ -1892,7 +1906,7 @@ public partial class VirtualCrossoverPanel : UserControl
         (List<AnalysisCurve>? magnitudes, AnalysisCurve? sumCurve) =
             BuildMetricCurves(processed);
 
-        UpdateMetric(processed, magnitudes, sumCurve);
+        UpdateMetric(processed, magnitudes, sumCurve, stereoDeltas);
         UpdateCrossoverWarning(processed);
 
         if (processed.Count > 0)
@@ -1903,7 +1917,7 @@ public partial class VirtualCrossoverPanel : UserControl
             }
             else
             {
-                DrawMagnitudeCurves(model, processed, magnitudes, sumCurve);
+                DrawMagnitudeCurves(model, processed, magnitudes, sumCurve, oppositeSum);
             }
         }
 
@@ -1915,7 +1929,8 @@ public partial class VirtualCrossoverPanel : UserControl
         PlotModel model,
         List<ProcessedChannel> processed,
         List<AnalysisCurve>? magnitudes,
-        AnalysisCurve? sumCurve)
+        AnalysisCurve? sumCurve,
+        AnalysisCurve? oppositeSumCurve = null)
     {
         for (int i = 0; i < processed.Count; i++)
         {
@@ -1959,6 +1974,18 @@ public partial class VirtualCrossoverPanel : UserControl
         if (checkBoxShowSum.Checked)
         {
             AddCurve(model, "Sum", sumCurve.Points, SumColor, 2.4, LineStyle.Solid);
+            if (oppositeSumCurve != null)
+            {
+                // The other side's sum, dashed and translucent: the two tunes
+                // compare at a glance without flipping the L/R selector.
+                AddCurve(
+                    model,
+                    $"Sum {(project.ActiveSideRight ? "L" : "R")}",
+                    oppositeSumCurve.Points,
+                    OxyColor.FromAColor(110, SumColor),
+                    1.8,
+                    LineStyle.Dash);
+            }
         }
 
         if (checkBoxShowLoss.Checked)
@@ -1987,15 +2014,278 @@ public partial class VirtualCrossoverPanel : UserControl
     private void UpdateMetric(
         List<ProcessedChannel> processed,
         List<AnalysisCurve>? magnitudes,
-        AnalysisCurve? sumCurve)
+        AnalysisCurve? sumCurve,
+        IReadOnlyList<VirtualCrossoverMetric.StereoDelta>? stereoDeltas = null)
     {
         // The read-out lives in the host's right-side panel (where overlays sit in
         // analysis modes), as a compact per-junction column with the full banded
-        // breakdown on hover.
+        // breakdown on hover. The stereo Δ block (final L−R envelope arrival
+        // difference per pair) appends below the sum-loss column.
         List<VirtualCrossoverMetric.Entry> entries = BuildMetricEntries(processed, magnitudes, sumCurve);
-        MetricChanged?.Invoke(
-            FormatMetricCompact(entries),
-            entries.Count > 0 ? FormatMetricDetail(entries) : string.Empty);
+        string compact = FormatMetricCompact(entries);
+        string detail = entries.Count > 0 ? FormatMetricDetail(entries) : string.Empty;
+        if (stereoDeltas is { Count: > 0 })
+        {
+            compact += "\r\n\r\n" +
+                VirtualCrossoverMetric.FormatStereoDeltasCompact(stereoDeltas);
+            detail += (detail.Length > 0 ? "\r\n\r\n" : string.Empty) +
+                VirtualCrossoverMetric.FormatStereoDeltasDetail(stereoDeltas);
+        }
+
+        MetricChanged?.Invoke(compact, detail);
+    }
+
+    // One channel side snapshotted on the UI thread for background processing
+    // (the stereo Δ read-out and the opposite-side sum): the background pass
+    // reads nothing mutable. Processed/Arrival start from the side's caches
+    // and are filled on a miss.
+    private sealed class SideProcessJob
+    {
+        public required ChannelSideState State { get; init; }
+        public required Complex[] TransferIr { get; init; }
+        public required int SampleRate { get; init; }
+        public required DspChannelChain Chain { get; init; }
+        public required ProcessedChannelCacheKey Key { get; init; }
+        public Complex[]? ProcessedIr { get; set; }
+        public int ProcessedPeak { get; set; }
+        public bool ProcessedFromCache { get; set; }
+        public TimeAlignmentAnalysisResult? Arrival { get; set; }
+        public bool ArrivalFromCache { get; set; }
+    }
+
+    private sealed record StereoDeltaJob(
+        string Channel,
+        double LowHz,
+        double HighHz,
+        SideProcessJob Left,
+        SideProcessJob Right);
+
+    /// <summary>
+    /// The final per-pair L−R timing: both sides' fully processed responses
+    /// (current delays included) get their band-limited envelope arrival read
+    /// in the pair's shared band, and the difference (positive: right leads —
+    /// the scene-offset convention) feeds the metric read-out. Only complete
+    /// stereo pairs measure: mono pairs have one response, bypassed or muted
+    /// sides are not a final tune. Heavy work runs off the UI thread and both
+    /// the processed IRs and the arrivals are cached per side, so an unchanged
+    /// configuration costs nothing on redraw.
+    /// </summary>
+    private async Task<List<VirtualCrossoverMetric.StereoDelta>> ComputeStereoDeltasAsync()
+    {
+        var jobs = new List<StereoDeltaJob>();
+        foreach (ChannelRuntime channel in channels)
+        {
+            if (channel.Pair.Mono)
+            {
+                continue;
+            }
+
+            VirtualCrossoverChannelSettings leftSettings = channel.SideSettings(false);
+            VirtualCrossoverChannelSettings rightSettings = channel.SideSettings(true);
+            ChannelSideState leftState = channel.PhysicalSideState(false);
+            ChannelSideState rightState = channel.PhysicalSideState(true);
+            if (!leftSettings.Enabled || !rightSettings.Enabled ||
+                leftSettings.Bypass || rightSettings.Bypass ||
+                leftState.TransferImpulseResponse is not { } leftIr ||
+                rightState.TransferImpulseResponse is not { } rightIr)
+            {
+                continue;
+            }
+
+            (double leftLow, double leftHigh) =
+                VirtualCrossoverJunctions.GetChannelBand(leftSettings);
+            (double rightLow, double rightHigh) =
+                VirtualCrossoverJunctions.GetChannelBand(rightSettings);
+            double lowHz = Math.Max(leftLow, rightLow);
+            double highHz = Math.Min(leftHigh, rightHigh);
+            if (highHz <= lowHz)
+            {
+                continue;
+            }
+
+            SideProcessJob Snapshot(
+                ChannelSideState state,
+                VirtualCrossoverChannelSettings settings,
+                Complex[] ir)
+            {
+                DspChannelChain chain = settings.ToChain();
+                var key = new ProcessedChannelCacheKey(ir, state.SampleRate, chain);
+                var side = new SideProcessJob
+                {
+                    State = state,
+                    TransferIr = ir,
+                    SampleRate = state.SampleRate,
+                    Chain = chain,
+                    Key = key
+                };
+                if (state.ProcessedCache?.Key.Equals(key) == true)
+                {
+                    side.ProcessedIr = state.ProcessedCache.ImpulseResponse;
+                    side.ProcessedPeak = state.ProcessedCache.PeakIndex;
+                    side.ProcessedFromCache = true;
+                }
+                if (side.ProcessedIr != null &&
+                    state.ArrivalCache is { } arrival &&
+                    ReferenceEquals(arrival.ProcessedIr, side.ProcessedIr) &&
+                    arrival.LowHz == lowHz && arrival.HighHz == highHz)
+                {
+                    side.Arrival = arrival.Result;
+                    side.ArrivalFromCache = true;
+                }
+
+                return side;
+            }
+
+            jobs.Add(new StereoDeltaJob(
+                channel.Control.ChannelName,
+                lowHz,
+                highHz,
+                Snapshot(leftState, leftSettings, leftIr),
+                Snapshot(rightState, rightSettings, rightIr)));
+        }
+
+        bool anyWork = jobs.Any(job =>
+            job.Left.Arrival == null || job.Right.Arrival == null);
+        if (anyWork)
+        {
+            await Task.Run(() =>
+            {
+                foreach (StereoDeltaJob job in jobs)
+                {
+                    foreach (SideProcessJob side in new[] { job.Left, job.Right })
+                    {
+                        if (side.ProcessedIr == null)
+                        {
+                            side.ProcessedIr = VirtualCrossoverAnalysis.ApplyChain(
+                                side.TransferIr, side.Chain, side.SampleRate);
+                            side.ProcessedPeak =
+                                VirtualCrossoverAnalysis.FindPeakIndex(side.ProcessedIr);
+                        }
+                        if (side.Arrival == null)
+                        {
+                            side.Arrival =
+                                VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                                    side.ProcessedIr, side.SampleRate,
+                                    job.LowHz, job.HighHz);
+                        }
+                    }
+                }
+            });
+
+            // Cache write-back stays on the UI thread, like every other cache
+            // in this panel.
+            foreach (StereoDeltaJob job in jobs)
+            {
+                foreach (SideProcessJob side in new[] { job.Left, job.Right })
+                {
+                    if (!side.ProcessedFromCache)
+                    {
+                        side.State.ProcessedCache = new ProcessedChannelCache(
+                            side.Key, side.ProcessedIr!, side.ProcessedPeak);
+                    }
+                    if (!side.ArrivalFromCache)
+                    {
+                        side.State.ArrivalCache =
+                            (side.ProcessedIr!, job.LowHz, job.HighHz,
+                                side.Arrival!.Value);
+                    }
+                }
+            }
+        }
+
+        return jobs
+            .Select(job => new VirtualCrossoverMetric.StereoDelta(
+                job.Channel,
+                job.Left.Arrival!.Value.IsValid && job.Right.Arrival!.Value.IsValid
+                    ? job.Left.Arrival!.Value.FirstArrivalDelayMilliseconds -
+                        job.Right.Arrival!.Value.FirstArrivalDelayMilliseconds
+                    : null,
+                job.LowHz,
+                job.HighHz))
+            .ToList();
+    }
+
+    /// <summary>
+    /// The complex-sum magnitude of the OPPOSITE side (dashed and translucent
+    /// on the plot), so the two sides' tunes compare at a glance without
+    /// flipping back and forth. Mono channels contribute their single response
+    /// to both sides' sums, exactly as they do physically. Null when the
+    /// opposite side has fewer than two participating channels — a "sum" of
+    /// one driver is just that driver. Shares the per-side processed caches
+    /// with everything else, so an unchanged opposite side costs nothing.
+    /// </summary>
+    private async Task<AnalysisCurve?> ComputeOppositeSumCurveAsync()
+    {
+        bool oppositeRight = !project.ActiveSideRight;
+        var jobs = new List<SideProcessJob>();
+        foreach (ChannelRuntime channel in channels)
+        {
+            VirtualCrossoverChannelSettings settings =
+                channel.SideSettings(oppositeRight);
+            ChannelSideState state = channel.SideState(oppositeRight);
+            if (!settings.Enabled ||
+                state.TransferImpulseResponse is not { } ir)
+            {
+                continue;
+            }
+
+            DspChannelChain chain = settings.Bypass
+                ? DspChannelChain.Identity
+                : settings.ToChain();
+            var key = new ProcessedChannelCacheKey(ir, state.SampleRate, chain);
+            var side = new SideProcessJob
+            {
+                State = state,
+                TransferIr = ir,
+                SampleRate = state.SampleRate,
+                Chain = chain,
+                Key = key
+            };
+            if (state.ProcessedCache?.Key.Equals(key) == true)
+            {
+                side.ProcessedIr = state.ProcessedCache.ImpulseResponse;
+                side.ProcessedPeak = state.ProcessedCache.PeakIndex;
+                side.ProcessedFromCache = true;
+            }
+
+            jobs.Add(side);
+        }
+
+        if (jobs.Count < 2)
+        {
+            return null;
+        }
+
+        if (jobs.Any(side => side.ProcessedIr == null))
+        {
+            await Task.Run(() =>
+            {
+                foreach (SideProcessJob side in jobs)
+                {
+                    if (side.ProcessedIr == null)
+                    {
+                        side.ProcessedIr = VirtualCrossoverAnalysis.ApplyChain(
+                            side.TransferIr, side.Chain, side.SampleRate);
+                        side.ProcessedPeak =
+                            VirtualCrossoverAnalysis.FindPeakIndex(side.ProcessedIr);
+                    }
+                }
+            });
+
+            foreach (SideProcessJob side in jobs)
+            {
+                if (!side.ProcessedFromCache)
+                {
+                    side.State.ProcessedCache = new ProcessedChannelCache(
+                        side.Key, side.ProcessedIr!, side.ProcessedPeak);
+                }
+            }
+        }
+
+        Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
+            jobs.Select(side => side.ProcessedIr!).ToList());
+        int anchor = jobs.Min(side => side.ProcessedPeak);
+        return BuildMagnitudeCurve(sum, anchor, jobs[0].SampleRate);
     }
 
     // The magnitude curves and complex sum the metric reads, built the same way
@@ -2061,7 +2351,6 @@ public partial class VirtualCrossoverPanel : UserControl
                     $"{pair.Upper.Channel.Control.ChannelName}",
                     pairLoss.Value,
                     pairDip,
-                    ComputePairNullDepthDb(processed, channelPoints, pair),
                     pair.BandLowHz,
                     pair.BandHighHz,
                     IsTotal: false));
@@ -2076,48 +2365,10 @@ public partial class VirtualCrossoverPanel : UserControl
         if (loss.HasValue)
         {
             entries.Add(new VirtualCrossoverMetric.Entry(
-                "total", loss.Value, dip, NullDb: null, minHz, maxHz, IsTotal: true));
+                "total", loss.Value, dip, minHz, maxHz, IsTotal: true));
         }
 
         return entries;
-    }
-
-    // The classic tuner's polarity-flip check, computed instead of performed:
-    // the full processed sum with the pair's upper channel inverted, read as
-    // the deepest sum-loss notch inside the pair band. A phase-aligned pair
-    // cancels coherently there, so the deeper this null, the better the pair's
-    // phase match — without touching the actual polarity switch. Display-only
-    // by design: a whole-period delay error keeps the phase at the crossover
-    // frequency aligned and can null just as deeply (verified on real
-    // measurements, where a two-period cycle skip out-nulled the true
-    // alignment), so this figure must never drive a search or selection.
-    private double? ComputePairNullDepthDb(
-        List<ProcessedChannel> processed,
-        List<IReadOnlyList<SignalPoint>> channelPoints,
-        AdjacentPair pair)
-    {
-        List<Complex[]> responses = processed
-            .Select(item => item == pair.Upper
-                ? InvertPolarity(item.ImpulseResponse)
-                : item.ImpulseResponse)
-            .ToList();
-        Complex[] flippedSum = VirtualCrossoverAnalysis.SumImpulseResponses(responses);
-        int anchor = processed.Min(item => item.PeakIndex);
-        AnalysisCurve flippedCurve = BuildMagnitudeCurve(
-            flippedSum, anchor, processed[0].Channel.SampleRate);
-        return VirtualCrossoverAnalysis.MinimumSumLossDb(
-            flippedCurve.Points, channelPoints, pair.BandLowHz, pair.BandHighHz);
-    }
-
-    private static Complex[] InvertPolarity(Complex[] impulseResponse)
-    {
-        var inverted = new Complex[impulseResponse.Length];
-        for (int i = 0; i < inverted.Length; i++)
-        {
-            inverted[i] = -impulseResponse[i];
-        }
-
-        return inverted;
     }
 
     // The metric text renderings live in VirtualCrossoverMetric, where they are
@@ -3309,12 +3560,20 @@ public partial class VirtualCrossoverPanel : UserControl
         public int SampleRate { get; set; }
         public ProcessedChannelCache? ProcessedCache { get; set; }
 
+        // The band-limited envelope arrival of this side's PROCESSED response,
+        // keyed by the processed array's identity and the measured band — the
+        // Δ L−R read-out re-runs on every redraw, and the Hilbert analysis of
+        // a full-length IR is far too heavy to repeat when nothing changed.
+        public (Complex[] ProcessedIr, double LowHz, double HighHz,
+            TimeAlignmentAnalysisResult Result)? ArrivalCache { get; set; }
+
         public void Clear()
         {
             TransferImpulseResponse = null;
             TransferPeakIndex = 0;
             SampleRate = 0;
             ProcessedCache = null;
+            ArrivalCache = null;
         }
     }
 

@@ -14,11 +14,12 @@ public static class EqProfileFormats
         new GenericCsvFormat(),
         new EasyEffectsFormat(),
         new CamillaDspYamlFormat(),
-        // Biquad coefficients are rate-specific, and the two miniDSP families
-        // process at different internal rates (2x4 at 48 kHz, HD/DDRC-class at
-        // 96 kHz) — one dialog entry per rate, each labeled with it, so the
-        // user picks the one matching the device instead of silently getting
-        // 48 kHz coefficients.
+        // Biquad coefficients are rate-specific, and biquad-consuming devices
+        // process at different internal rates (car DSPs commonly at 44.1 kHz,
+        // miniDSP 2x4 at 48 kHz, HD/DDRC-class at 96 kHz) — one dialog entry
+        // per rate, each labeled with it, so the user picks the one matching
+        // the device instead of silently getting 48 kHz coefficients.
+        new MiniDspFormat(44_100),
         new MiniDspFormat(48_000),
         new MiniDspFormat(96_000),
         new GraphicEqFormat()

@@ -492,12 +492,16 @@ midrange and a tweeter on the same axis.
 
 Unwrapped phase uses a **reliability-anchored** algorithm instead of naive
 bin-to-bin accumulation: each bin takes the 360° branch closest to a phase
-predicted from the last trustworthy bin and the running phase slope. Bins near
-the noise floor — or with low **coherence**, when the measurement carries a γ²
-estimate from averaged runs — are still displayed but never trusted as anchors,
-so deep nulls, reflection notches, and masked bands are bridged cleanly and a
-single bad bin can no longer shift the entire remaining curve by a multiple of
-360°. On clean data the result is identical to the classic unwrap.
+predicted from the last trustworthy bin and the running phase slope. Bins well
+below the local magnitude envelope (so one tall resonance cannot disqualify a
+quieter but repeatable band) — or with low **coherence**, when the measurement
+carries a γ² estimate from averaged runs — are still displayed but never
+trusted as anchors, so deep nulls, reflection notches, and masked bands are
+bridged cleanly and a single bad bin can no longer shift the entire remaining
+curve by a multiple of 360°. A dead stretch too long to bridge honestly (the
+turn count inside it is genuinely unknowable) is blanked instead of guessed,
+and the curve restarts as a fresh segment after it. On clean data the result
+is identical to the classic unwrap.
 
 Group Delay reads absolute delay referenced to the start of the transfer IR, so a
 peak well into the impulse response reports its true arrival time. The curve is
@@ -916,7 +920,10 @@ itself is only coarsely located.
 When the strongest peak lands well after the first arrival — the classic
 narrowband-subwoofer case, where room modes ring louder than the direct sound
 long after it — Time Alignment flags it and points you at the first arrival, so a
-modal or reflected peak is not mistaken for the driver's real timing.
+modal or reflected peak is not mistaken for the driver's real timing. The flag
+requires a real valley (6 dB) between the two peaks: a low-frequency driver's
+direct sound can keep rising for milliseconds, and a shoulder of that one wave
+packet peaking later is its rise time, not a reflection.
 
 The mode recalculates immediately when you switch into **Time Alignment**, and
 also updates live as soon as you change the bandpass settings.
@@ -925,7 +932,9 @@ It reports signal quality using the analysis envelope and the stored meter
 snapshot from the same measurement record:
 
 - a color-coded `Excellent`, `Good`, `Fair`, or `Poor` **signal grade** from the
-  recording's SNR — the strongest envelope peak against the rest of the record
+  recording's SNR — the strongest envelope peak against the record's noise
+  floor (the RMS of its quietest quarter, so reflections and modal decay do
+  not count as noise the way an average over the whole record would)
 - the **first-arrival prominence** — the first arrival's envelope level relative
   to the strongest peak. A low value means the pick sits on a broad leading
   edge (normal physics for band-limited low-frequency drivers), so its exact

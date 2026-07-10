@@ -228,8 +228,10 @@ public sealed class SignalEnvelopeTests
     }
 
     [Fact]
-    public void EstimatePeakConfidenceDecibels_ExcludesWrappedPeakNeighborhood()
+    public void EstimatePeakConfidenceDecibels_ReadsTheQuietFloorNotThePeak()
     {
+        // A flat 0.01 floor with a peak cluster (wrapping the array end): the
+        // noise estimate must read the floor, so peak/floor = 40 dB.
         double[] envelope = Enumerable.Repeat(0.01, 1000).ToArray();
         envelope[998] = 1.0;
         envelope[999] = 1.0;
@@ -241,10 +243,30 @@ public sealed class SignalEnvelopeTests
 
         double confidence = SignalEnvelope.EstimatePeakConfidenceDecibels(
             envelope,
-            peakIndex: 2,
             peak: 1.0);
 
         Assert.InRange(confidence, 39.9, 40.1);
+    }
+
+    [Fact]
+    public void EstimatePeakConfidenceDecibels_ReverbTailDoesNotCountAsNoise()
+    {
+        // Half the record is a −20 dB reverb tail over a 0.001 floor. The old
+        // everything-but-the-peak mean read the tail as noise (~ −20 dB SNR
+        // reference → ~20 dB grade); the quietest-quarter floor must grade the
+        // recording by its true 60 dB headroom.
+        double[] envelope = Enumerable.Repeat(0.001, 1000).ToArray();
+        for (int i = 100; i < 600; i++)
+        {
+            envelope[i] = 0.1;
+        }
+        envelope[100] = 1.0;
+
+        double confidence = SignalEnvelope.EstimatePeakConfidenceDecibels(
+            envelope,
+            peak: 1.0);
+
+        Assert.InRange(confidence, 59.9, 60.1);
     }
 
     private static double[] CreateSine(int length, int bin, double amplitude)

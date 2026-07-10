@@ -262,6 +262,91 @@ public sealed class TimeAlignmentAnalysisTests
     }
 
     [Fact]
+    public void Analyze_ZeroSignalReportsAnInvalidResult()
+    {
+        // A silent IR (or a bandpass entirely outside the measured band): every
+        // zero sample used to pass the collapsed thresholds and the sidelobe
+        // walk returned a confident-looking delay near the end of the search
+        // window. The result must say "no signal", not invent an alignment.
+        var impulseResponse = new double[8_192];
+
+        TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, new TimeAlignmentAnalysisOptions());
+
+        Assert.False(result.IsValid);
+        Assert.Equal(0.0, result.FirstArrivalDelayMilliseconds);
+        Assert.Equal(0.0, result.StrongestDelayMilliseconds);
+        Assert.Equal(0.0, result.FirstArrivalConfidence);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void Analyze_TinyImpulseResponsesDoNotThrow(int length)
+    {
+        // The search-end floor of 3 (needed by the parabolic refinement) used
+        // to run the peak scan past the end of a 1-2 sample envelope.
+        var impulseResponse = new double[length];
+        impulseResponse[0] = 1.0;
+
+        TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, new TimeAlignmentAnalysisOptions());
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void Analyze_ABroadLowFrequencyRiseIsNotASeparateArrival()
+    {
+        // Two impulses 1.5 ms apart under a 200 Hz octave bandpass merge into
+        // one wave packet: the first local maximum sits ~3 ms before the
+        // strongest, but the envelope never dips between them (valley −0.2 dB).
+        // The separation alone used to call this "a room mode or reflection" —
+        // a band-limited driver's own rise time, misread. The valley test must
+        // keep the flag down while the separation still exceeds the threshold.
+        var impulseResponse = new double[65_536];
+        impulseResponse[4_000] = 0.9;
+        impulseResponse[4_072] = 1.0;
+
+        TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, new TimeAlignmentAnalysisOptions
+            {
+                UseBandpassWindow = true,
+                BandpassCenterHz = 200,
+                BandpassPassOctaves = 1,
+                BandpassFadeOctaves = 0.5,
+                FirstPeakThresholdBelowMaxDb = 15
+            });
+
+        Assert.True(result.StrongestPeakSeparationMilliseconds > 1.0);
+        Assert.False(result.StrongestPeakIsSeparateArrival);
+    }
+
+    [Fact]
+    public void Analyze_TwoArrivalsWithARealValleyStayFlagged()
+    {
+        // The same band, but the impulses sit far enough apart (2.5 ms) that
+        // the envelope dips ~22 dB between them — a genuine second arrival the
+        // valley test must not suppress.
+        var impulseResponse = new double[65_536];
+        impulseResponse[4_000] = 0.75;
+        impulseResponse[4_120] = 1.0;
+
+        TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, new TimeAlignmentAnalysisOptions
+            {
+                UseBandpassWindow = true,
+                BandpassCenterHz = 200,
+                BandpassPassOctaves = 1,
+                BandpassFadeOctaves = 0.5,
+                FirstPeakThresholdBelowMaxDb = 15
+            });
+
+        Assert.True(result.StrongestPeakIsSeparateArrival);
+    }
+
+    [Fact]
     public void Analyze_FlatUnityCoherence_ReproducesTheNullResultExactly()
     {
         // Threading coherence must be a no-op when it is flat/unity: an all-ones γ² of

@@ -114,6 +114,130 @@ public sealed class PhaseUnwrapTests
         }
     }
 
+    [Fact]
+    public void Unwrap_UnwrapsBelowOneHundredHertzToo()
+    {
+        // A 20 ms delay accumulates −720° already by 100 Hz. The old unwrap
+        // floor returned WRAPPED phase for every bin below 100 Hz (±180°
+        // wiggles that contradicted GetExcessPhase's "always unwrapped"
+        // contract and stepped at the boundary); the unwrap must start at the
+        // first reliable bin instead and keep the whole curve on the delay line.
+        const int LongDelaySamples = 960;
+        var spectrum = new Complex[TransformLength];
+        for (int k = 0; k < TransformLength; k++)
+        {
+            double binPhase = -Math.Tau * k * LongDelaySamples / TransformLength;
+            spectrum[k] = Complex.FromPolarCoordinates(1.0, binPhase);
+        }
+        MathNet.Numerics.IntegralTransforms.Fourier.Inverse(
+            spectrum,
+            MathNet.Numerics.IntegralTransforms.FourierOptions.Matlab);
+        var measurement = new SyntheticMeasurement(
+            spectrum,
+            SampleRate,
+            maxMagnitudeIndex: 0);
+
+        List<SignalPoint> phase = GetUnwrappedPhase(measurement, coherence: null);
+
+        List<SignalPoint> lowBins = phase
+            .Where(point => point.X >= 30 && point.X <= 99)
+            .ToList();
+        Assert.NotEmpty(lowBins);
+        foreach (SignalPoint point in lowBins.Concat(
+            phase.Where(item => item.X >= 100 && item.X <= 18_000)))
+        {
+            double expected = -Math.Tau * point.X * LongDelaySamples / SampleRate;
+            Assert.InRange(point.Y, expected - 1.0, expected + 1.0);
+        }
+    }
+
+    [Fact]
+    public void Unwrap_BlanksAGapTooLongToBridge()
+    {
+        // The band from 1 to 8 kHz is dead (−80 dB): the turn count inside it
+        // is genuinely unknowable (an all-pass or a crossover transition could
+        // hide whole turns), so the bridged points must read NaN and a fresh
+        // segment must start after the gap — not one confident continuous line
+        // through guessed branches.
+        var spectrum = new Complex[TransformLength];
+        for (int k = 0; k < TransformLength; k++)
+        {
+            double f = Math.Min(k, TransformLength - k)
+                * (double)SampleRate / TransformLength;
+            double magnitude = f is > 1_000 and < 8_000 ? 1e-4 : 1.0;
+            double binPhase = -Math.Tau * k * DelaySamples / TransformLength;
+            spectrum[k] = Complex.FromPolarCoordinates(magnitude, binPhase);
+        }
+        MathNet.Numerics.IntegralTransforms.Fourier.Inverse(
+            spectrum,
+            MathNet.Numerics.IntegralTransforms.FourierOptions.Matlab);
+        var measurement = new SyntheticMeasurement(
+            spectrum,
+            SampleRate,
+            maxMagnitudeIndex: 0);
+
+        List<SignalPoint> phase = GetUnwrappedPhase(measurement, coherence: null);
+
+        // The head stays on the absolute delay line.
+        foreach (SignalPoint point in phase.Where(item => item.X is >= 100 and <= 950))
+        {
+            double expected = -Math.Tau * point.X * DelaySamples / SampleRate;
+            Assert.InRange(point.Y, expected - 1.0, expected + 1.0);
+        }
+        // Deep inside the gap the guessed bridge is blanked.
+        List<SignalPoint> gap = phase
+            .Where(point => point.X is >= 2_000 and <= 7_000)
+            .ToList();
+        Assert.NotEmpty(gap);
+        Assert.All(gap, point => Assert.True(double.IsNaN(point.Y)));
+        // After the gap a fresh finite segment continues.
+        List<SignalPoint> tail = phase
+            .Where(point => point.X is >= 9_000 and <= 18_000)
+            .ToList();
+        Assert.NotEmpty(tail);
+        Assert.All(tail, point => Assert.True(double.IsFinite(point.Y)));
+    }
+
+    [Fact]
+    public void Unwrap_AQuietBandStaysAnchoredNextToATallResonance()
+    {
+        // The whole audible band sits 34 dB below a low-frequency resonance
+        // (a subwoofer's cabin peak): against the old GLOBAL −30 dB gate that
+        // disqualified every bin above the resonance from anchoring, and the
+        // slope-frozen bridge lost turns of this 20 ms delay. The gate reads a
+        // local octave-smoothed envelope now, so a quiet but locally consistent
+        // band anchors normally and the tail stays on the absolute delay line.
+        const int LongDelaySamples = 960;
+        var spectrum = new Complex[TransformLength];
+        for (int k = 0; k < TransformLength; k++)
+        {
+            double f = Math.Min(k, TransformLength - k)
+                * (double)SampleRate / TransformLength;
+            double magnitude = f < 100 ? 50.0 : 1.0;
+            double binPhase = -Math.Tau * k * LongDelaySamples / TransformLength;
+            spectrum[k] = Complex.FromPolarCoordinates(magnitude, binPhase);
+        }
+        MathNet.Numerics.IntegralTransforms.Fourier.Inverse(
+            spectrum,
+            MathNet.Numerics.IntegralTransforms.FourierOptions.Matlab);
+        var measurement = new SyntheticMeasurement(
+            spectrum,
+            SampleRate,
+            maxMagnitudeIndex: 0);
+
+        List<SignalPoint> phase = GetUnwrappedPhase(measurement, coherence: null);
+
+        List<SignalPoint> tail = phase
+            .Where(point => point.X >= 1_000 && point.X <= 18_000)
+            .ToList();
+        Assert.NotEmpty(tail);
+        foreach (SignalPoint point in tail)
+        {
+            double expected = -Math.Tau * point.X * LongDelaySamples / SampleRate;
+            Assert.InRange(point.Y, expected - 1.0, expected + 1.0);
+        }
+    }
+
     private static List<SignalPoint> GetUnwrappedPhase(
         SyntheticMeasurement measurement,
         IReadOnlyList<double>? coherence)

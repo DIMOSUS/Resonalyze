@@ -140,6 +140,17 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 mainSource.SampleRate,
                 CreateAnalysisOptions(wrapPeakPositions: true),
                 mainSource.TransferCoherence);
+            if (!mainResult.IsValid)
+            {
+                SetStatusText(
+                    "No signal in the analysis band.\r\n" +
+                    "The transfer IR carries no energy inside the current " +
+                    "band-pass window — widen or move the band, or check " +
+                    "that the measurement actually captured the driver.");
+                ClearEnvelopePreview();
+                return;
+            }
+
             TimeAlignmentCompareAnalysis? compareAnalysis =
                 AnalyzeCompare(mainSource, out string? compareWarning);
             SetMeasurementResultStatus(
@@ -383,6 +394,12 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 compareSource.SampleRate,
                 CreateAnalysisOptions(wrapPeakPositions: true),
                 compareSource.TransferCoherence);
+            if (!compareResult.IsValid)
+            {
+                warning = "Compare: no signal in the analysis band.";
+                return null;
+            }
+
             return new TimeAlignmentCompareAnalysis(compareSource, compareResult);
         }
         catch (Exception exception)

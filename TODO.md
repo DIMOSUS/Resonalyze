@@ -124,6 +124,39 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 
 ## Virtual DSP / Time Alignment
 
+- [✗] **Phase-slope (residual group delay) as an Auto delay score prior —
+  REFUTED on the user's real measurements** (probed 2026-07-10, five junctions
+  of the left 4-way + right mid/twr from `assets/test_data`). The idea:
+  penalize candidates whose inter-channel phase slope across the pair band is
+  non-flat, since a lobe impostor differs by exactly one period of residual
+  delay. The probe measured the flat-slope delay per junction (wrap-safe
+  adjacent-bin phase increments of the gated cross-spectrum, two weightings —
+  both agree) and compared it with the summation winner and the user's manual
+  tune. Result: at the true alignment the inter-channel phase slope is NOT
+  flat — it carries the honest group-delay difference of drivers plus
+  non-matched crossover filters, and that reaches a FULL period at real
+  junctions: left woof/mid true lobe sits 1.02 T from the flat-slope point;
+  right mid/twr (the gapped BW24 LP 1300 / HP 1800 junction) true lobe sits
+  1.82 T away while the flat-slope point lands on the old field-failure
+  answer (~mid +2.0 ms) — flat phase slope is mathematically the GCC-PHAT
+  peak, so this prior would re-trust exactly the PHAT lobe position the
+  `PhatSeedMinDominance` gate was added to distrust. Any weight strong enough
+  to separate lobes (≥0.5 dB/T) flips the right mid/twr winner to a wrong
+  inverted candidate. Do not implement as a score term; at most surface the
+  per-candidate residual GD as a log diagnostic. Side finding, positive: on
+  every junction with a known manual reference the current score+selection
+  already reproduces the user's tune (mid/twr left −0.154 vs manual −0.16 ms;
+  woof/mid left 3.878 vs manual 3.84 — via the normal-polarity margin, which
+  won by only 0.02 dB there, see next item; right mid/twr −0.635 vs manual
+  ~0.68 on the mid side).
+- [ ] **`AlignmentSelection` normal-polarity margin near-miss on real data**:
+  at the user's left woof/mid junction the inverted impostor out-scores the
+  true normal candidate by 0.23 dB — the 0.25 dB
+  `DefaultInvertPreferenceMarginDb` saves the pick by just 0.02 dB. One noisier
+  measurement could flip it. Worth revisiting with more field measurements
+  (margin as a function of junction frequency / band coherence, or an
+  independent polarity witness such as `EstimatePolarity` on the band-passed
+  arrivals) before touching the constant.
 - [ ] **Time Alignment analysis is not cached** — `RefreshAnalysis`
   (`TimeAlignmentPanelController`) recomputes Hilbert + GCC-PHAT on every tab
   show even when inputs are unchanged. Needs a live-app check to avoid stale

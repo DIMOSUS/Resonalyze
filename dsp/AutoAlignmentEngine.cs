@@ -92,6 +92,17 @@ public static class AutoAlignmentEngine
     // from a seed that still lands a little off.
     private const double PhatSeedMinCoefficient = 0.15;
 
+    // The minimum dominance (Confidence: |best extremum| minus |its rival|) the
+    // PHAT correlation must show before its peak position is trusted as the seed.
+    // A junction whose corners leave a spectral gap (e.g. LP 1300 / HP 1800)
+    // narrows the effective overlap, and the whitened correlation degenerates
+    // into a comb of near-equal lobes: the peak coefficient still looks healthy,
+    // but which lobe it sits on is decided by noise — trusting it can move the
+    // seed whole periods off the arrival estimate (a cycle skip the prior then
+    // cements). Peak-vs-trough closeness is exactly that lobe ambiguity, so a
+    // near-tie sends the seed back to the polarity-blind arrival envelope.
+    private const double PhatSeedMinDominance = 0.1;
+
     // How much better (in score dB) a wide-window optimum must be before it
     // unseats the arrival-anchored fine pick. The narrow window is centered on
     // the coarse arrival, which at a high crossover can be a whole lobe off (its
@@ -180,7 +191,9 @@ public static class AutoAlignmentEngine
                     DiagnosticCorrelationRangeMs,
                     centerLagMs: lowerArrival - upperArrival,
                     phaseTransform: true);
-            bool trustPhat = phat.PositivePeak.Coefficient >= PhatSeedMinCoefficient;
+            bool trustPhat =
+                phat.PositivePeak.Coefficient >= PhatSeedMinCoefficient &&
+                phat.Confidence >= PhatSeedMinDominance;
             double increment =
                 trustPhat ? -phat.PositivePeak.DelayMs : upperArrival - lowerArrival;
             timeline[pair.Upper.Channel] = timeline[pair.Lower.Channel] + increment;
@@ -203,7 +216,8 @@ public static class AutoAlignmentEngine
                 $"(peaks {lowerPeakMs:0.000} / {upperPeakMs:0.000} ms), " +
                 $"diff {upperArrival - lowerArrival:+0.000;-0.000} ms, " +
                 $"phat peak {phat.PositivePeak.DelayMs:+0.000;-0.000} ms " +
-                $"(r {phat.PositivePeak.Coefficient:+0.000;-0.000}) -> seed " +
+                $"(r {phat.PositivePeak.Coefficient:+0.000;-0.000}, " +
+                $"dom {phat.Confidence:0.000}) -> seed " +
                 $"{(trustPhat ? "phat" : "arrival")}");
         }
 

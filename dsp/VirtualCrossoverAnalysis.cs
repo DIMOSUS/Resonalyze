@@ -525,6 +525,19 @@ public static class VirtualCrossoverAnalysis
         double LogWeight,
         double MagnitudeSum);
 
+    // The direct-sound gate applied to every response before the alignment
+    // spectra are taken: the same shape as the panel's default frequency-
+    // response window (4096 samples, 256-sample cosine fades, anchored one
+    // fade-length before the earliest channel peak). Reading the full IR
+    // instead would fold the entire room decay into every bin — hundreds of
+    // milliseconds of reverberation whose comb structure the alignment cannot
+    // change — so the search would optimize (and be misled by) reflections
+    // while the panel displays the gated direct sound. One gate shared by all
+    // channels, like the metric's shared anchor, so the loss keeps its 0 dB
+    // ceiling.
+    private const int AlignmentGateLengthSamples = 4096;
+    private const int AlignmentGateFadeSamples = 256;
+
     // The per-bin spectra inside the frequency window, decimated to a bounded
     // bin count so the search stays fast for long IRs. The fixed channels act
     // as one combined source (superposition).
@@ -553,15 +566,31 @@ public static class VirtualCrossoverAnalysis
             throw new ArgumentException("The search window is invalid.");
         }
 
-        int length = DspMath.NextPowerOfTwo(Math.Max(
-            variableImpulseResponse.Length,
-            fixedImpulseResponses.Max(ir => ir.Length)));
+        int anchor = FindPeakIndex(variableImpulseResponse);
+        foreach (Complex[] ir in fixedImpulseResponses)
+        {
+            anchor = Math.Min(anchor, FindPeakIndex(ir));
+        }
 
-        Complex[] variableSpectrum = ForwardSpectrum(variableImpulseResponse, length);
+        // The earliest arrival must land on the window's plateau, never inside
+        // the fade-in: a fade would attenuate the channels' arrivals unequally
+        // (they sit at different fade depths) and bias the loss. When the peak
+        // sits closer to the start than a full fade, the fade shrinks to fit.
+        int leftFadeSamples = Math.Min(AlignmentGateFadeSamples, anchor);
+        int gateStart = anchor - leftFadeSamples;
+        double[] gate = Windowing.TukeyWindow(
+            AlignmentGateLengthSamples,
+            2.0 * leftFadeSamples / AlignmentGateLengthSamples,
+            2.0 * AlignmentGateFadeSamples / AlignmentGateLengthSamples);
+
+        int length = AlignmentGateLengthSamples;
+        Complex[] variableSpectrum = ForwardSpectrum(
+            GateDirectSound(variableImpulseResponse, gateStart, gate), length);
         var fixedSpectrum = new Complex[length];
         foreach (Complex[] ir in fixedImpulseResponses)
         {
-            Complex[] spectrum = ForwardSpectrum(ir, length);
+            Complex[] spectrum = ForwardSpectrum(
+                GateDirectSound(ir, gateStart, gate), length);
             for (int i = 0; i < length; i++)
             {
                 fixedSpectrum[i] += spectrum[i];
@@ -968,6 +997,21 @@ public static class VirtualCrossoverAnalysis
         return results;
     }
 
+    private static Complex[] GateDirectSound(
+        Complex[] impulseResponse,
+        int gateStart,
+        double[] gate)
+    {
+        var gated = new Complex[gate.Length];
+        int count = Math.Min(gate.Length, impulseResponse.Length - gateStart);
+        for (int i = 0; i < count; i++)
+        {
+            gated[i] = impulseResponse[gateStart + i] * gate[i];
+        }
+
+        return gated;
+    }
+
     private static Complex[] ForwardSpectrum(Complex[] impulseResponse, int length)
     {
         var spectrum = new Complex[length];
@@ -977,10 +1021,22 @@ public static class VirtualCrossoverAnalysis
     }
 
     /// <summary>
+    /// How far below the loudest in-curve level the channels' combined magnitude
+    /// may fall before the summation loss stops being measured at that point.
+    /// Where every channel is filtered that far down, the "loss" is the phase
+    /// arithmetic of two noise floors — it swings to deep fake dips well outside
+    /// any driver's band — so those points become NaN: the drawn curve breaks
+    /// and the average/dip read-outs skip them.
+    /// </summary>
+    public const double SumLossLevelGateDb = 40;
+
+    /// <summary>
     /// The per-point summation-loss curve (dB, &lt;= 0): the complex sum minus the
     /// phase-blind magnitude sum of the channel curves, over their shared index
-    /// grid (truncated to the shortest). This is the single definition the panel's
-    /// drawn "Sum loss" curve, <see cref="AverageSumLossDb"/> and
+    /// grid (truncated to the shortest). Points where the combined magnitude sits
+    /// more than <see cref="SumLossLevelGateDb"/> below its in-curve peak read
+    /// NaN (see there). This is the single definition the panel's drawn
+    /// "Sum loss" curve, <see cref="AverageSumLossDb"/> and
     /// <see cref="MinimumSumLossDb"/> all read, so the drawn and measured loss
     /// cannot drift apart.
     /// </summary>
@@ -997,7 +1053,8 @@ public static class VirtualCrossoverAnalysis
             count = Math.Min(count, curve.Count);
         }
 
-        var points = new List<SignalPoint>(Math.Max(0, count));
+        var magnitudeSums = new double[Math.Max(0, count)];
+        double peakMagnitude = 0;
         for (int i = 0; i < count; i++)
         {
             double magnitudeSum = 0;
@@ -1006,9 +1063,23 @@ public static class VirtualCrossoverAnalysis
                 magnitudeSum += DataHelper.DecibelsToAmplitude(curve[i].Y);
             }
 
+            magnitudeSums[i] = magnitudeSum;
+            if (double.IsFinite(magnitudeSum))
+            {
+                peakMagnitude = Math.Max(peakMagnitude, magnitudeSum);
+            }
+        }
+
+        double gateFloor =
+            peakMagnitude * DataHelper.DecibelsToAmplitude(-SumLossLevelGateDb);
+        var points = new List<SignalPoint>(Math.Max(0, count));
+        for (int i = 0; i < count; i++)
+        {
             points.Add(new SignalPoint(
                 sumCurve[i].X,
-                sumCurve[i].Y - DataHelper.AmplitudeToDecibels(magnitudeSum)));
+                magnitudeSums[i] >= gateFloor
+                    ? sumCurve[i].Y - DataHelper.AmplitudeToDecibels(magnitudeSums[i])
+                    : double.NaN));
         }
 
         return points;

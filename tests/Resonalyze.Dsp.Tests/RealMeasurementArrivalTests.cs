@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text;
 using System.Text.Json;
 
 namespace Resonalyze.Dsp.Tests;
@@ -73,6 +74,82 @@ public sealed class RealMeasurementArrivalTests
         Assert.InRange(result.FirstArrivalProminenceDecibels, -27.0, -22.0);
         Assert.True(result.StrongestPeakIsSeparateArrival);
     }
+
+    [Fact]
+    public void RightMidTweeterPair_AutoDelayStaysOnTheDirectArrivalLobe()
+    {
+        // The right channel's C/D junction (mid BP 175-1300 vs tweeter HP 1800,
+        // -5 dB) leaves a spectral gap between the corners, so the whitened
+        // pair correlation degenerates into near-equal lobes. The field failure:
+        // its peak (r 0.47, but peak-vs-trough dominance only 0.02) was trusted
+        // as the stage-2 seed and sat two 1300 Hz periods off the arrival — Auto
+        // delay proposed 2.22 ms for the mid where the summation optimum (the
+        // user's manual pick) sits near 0.68 ms. The seed dominance gate plus
+        // the direct-sound-gated loss must keep the result on the arrival lobe.
+        (int midRate, Complex[] midIr) = LoadTransferIr("r mid.json");
+        (int twrRate, Complex[] twrIr) = LoadTransferIr("r twr.json");
+        var midChain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.BandPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1300, 24),
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 175, 24)));
+        var twrChain = new DspChannelChain(
+            GainDb: -5,
+            Crossover: new CrossoverSpec(
+                CrossoverKind.HighPass,
+                HighPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.Butterworth, 1800, 24)));
+
+        var mid = new AlignmentTestChannel("C:mid", midRate, midIr, midChain);
+        var twr = new AlignmentTestChannel("D:twr", twrRate, twrIr, twrChain);
+        AlignmentTestChannel[] channels = [mid, twr];
+
+        AlignmentSnapshot Snapshot(AlignmentTestChannel channel, AlignmentOverride over)
+        {
+            Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+                channel.RawIr,
+                channel.BaseChain with
+                {
+                    DelayMs = over.DelayMs,
+                    InvertPolarity = over.InvertPolarity
+                },
+                channel.SampleRate);
+            return new AlignmentSnapshot(
+                channel, processed, VirtualCrossoverAnalysis.FindPeakIndex(processed));
+        }
+
+        List<AlignmentSnapshot> baseSnapshots = channels
+            .Select(channel => Snapshot(channel, default))
+            .ToList();
+        var junctions = new List<AlignmentJunction>
+        {
+            new(baseSnapshots[0], baseSnapshots[1], 1300, 650, 2600)
+        };
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+
+        AutoAlignmentEngine.Compute(
+            baseSnapshots,
+            junctions,
+            overrides => channels
+                .Select(channel => Snapshot(
+                    channel, overrides.GetValueOrDefault(channel)))
+                .ToList(),
+            alignment,
+            new StringBuilder());
+
+        // A uniform shift of both channels is the same alignment, so the pin is
+        // the net mid-vs-tweeter delay: the arrival lobe, not 2 periods later.
+        double netDelayMs = alignment.GetValueOrDefault(mid).DelayMs
+            - alignment.GetValueOrDefault(twr).DelayMs;
+        Assert.InRange(netDelayMs, 0.3, 1.0);
+        Assert.False(alignment.GetValueOrDefault(mid).InvertPolarity);
+        Assert.False(alignment.GetValueOrDefault(twr).InvertPolarity);
+    }
+
+    private sealed record AlignmentTestChannel(
+        string Name,
+        int SampleRate,
+        Complex[] RawIr,
+        DspChannelChain BaseChain) : IAlignmentChannel;
 
     private static (int SampleRate, Complex[] Ir) LoadTransferIr(string fileName)
     {

@@ -34,6 +34,11 @@ namespace Resonalyze
             channelListPanel = new FlowLayoutPanel();
             buttonAddChannel = new Button();
             buttonRemoveChannel = new Button();
+            sideSelectorPanel = new Panel();
+            radioSideLeft = new RadioButton();
+            radioSideRight = new RadioButton();
+            labelSceneOffset = new Label();
+            numericSceneOffset = new DarkNumericUpDown();
             labelView = new Label();
             checkBoxShowSum = new CheckBox();
             checkBoxShowLoss = new CheckBox();
@@ -56,6 +61,8 @@ namespace Resonalyze
             radioDspPhase = new RadioButton();
             radioDspGroupDelay = new RadioButton();
             dspModePanel.SuspendLayout();
+            sideSelectorPanel.SuspendLayout();
+            (numericSceneOffset).BeginInit();
             SuspendLayout();
             // 
             // mainPlotView
@@ -92,7 +99,7 @@ namespace Resonalyze
             channelListPanel.FlowDirection = FlowDirection.TopDown;
             channelListPanel.Location = new Point(6, 6);
             channelListPanel.Name = "channelListPanel";
-            channelListPanel.Size = new Size(347, 716);
+            channelListPanel.Size = new Size(347, 684);
             channelListPanel.TabIndex = 3;
             channelListPanel.WrapContents = false;
             // 
@@ -102,7 +109,7 @@ namespace Resonalyze
             buttonAddChannel.BackColor = Color.FromArgb(46, 51, 67);
             buttonAddChannel.FlatStyle = FlatStyle.Popup;
             buttonAddChannel.ForeColor = Color.White;
-            buttonAddChannel.Location = new Point(6, 732);
+            buttonAddChannel.Location = new Point(6, 700);
             buttonAddChannel.Name = "buttonAddChannel";
             buttonAddChannel.Size = new Size(158, 24);
             buttonAddChannel.TabIndex = 4;
@@ -115,13 +122,81 @@ namespace Resonalyze
             buttonRemoveChannel.BackColor = Color.FromArgb(46, 51, 67);
             buttonRemoveChannel.FlatStyle = FlatStyle.Popup;
             buttonRemoveChannel.ForeColor = Color.White;
-            buttonRemoveChannel.Location = new Point(171, 732);
+            buttonRemoveChannel.Location = new Point(171, 700);
             buttonRemoveChannel.Name = "buttonRemoveChannel";
             buttonRemoveChannel.Size = new Size(158, 24);
             buttonRemoveChannel.TabIndex = 5;
             buttonRemoveChannel.Text = "Remove channel";
             buttonRemoveChannel.UseVisualStyleBackColor = false;
-            // 
+            //
+            // sideSelectorPanel
+            //
+            // The side radios live in their own container so they form a radio
+            // group of their own — as direct panel children they would join the
+            // Magnitude/Phase view group.
+            sideSelectorPanel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+            sideSelectorPanel.BackColor = Color.FromArgb(40, 44, 54);
+            sideSelectorPanel.Controls.Add(radioSideLeft);
+            sideSelectorPanel.Controls.Add(radioSideRight);
+            sideSelectorPanel.Location = new Point(6, 730);
+            sideSelectorPanel.Name = "sideSelectorPanel";
+            sideSelectorPanel.Size = new Size(347, 24);
+            sideSelectorPanel.TabIndex = 21;
+            //
+            // radioSideLeft
+            //
+            radioSideLeft.AutoSize = true;
+            radioSideLeft.Checked = true;
+            radioSideLeft.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            radioSideLeft.ForeColor = Color.FromArgb(210, 214, 222);
+            radioSideLeft.Location = new Point(0, 2);
+            radioSideLeft.Name = "radioSideLeft";
+            radioSideLeft.Size = new Size(120, 19);
+            radioSideLeft.TabIndex = 0;
+            radioSideLeft.TabStop = true;
+            radioSideLeft.Text = "L";
+            radioSideLeft.UseVisualStyleBackColor = true;
+            //
+            // radioSideRight
+            //
+            radioSideRight.AutoSize = true;
+            radioSideRight.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            radioSideRight.ForeColor = Color.FromArgb(210, 214, 222);
+            radioSideRight.Location = new Point(171, 2);
+            radioSideRight.Name = "radioSideRight";
+            radioSideRight.Size = new Size(120, 19);
+            radioSideRight.TabIndex = 1;
+            radioSideRight.Text = "R";
+            radioSideRight.UseVisualStyleBackColor = true;
+            //
+            // labelSceneOffset
+            //
+            labelSceneOffset.AutoSize = true;
+            labelSceneOffset.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            labelSceneOffset.ForeColor = Color.FromArgb(210, 214, 222);
+            labelSceneOffset.Location = new Point(358, 532);
+            labelSceneOffset.Name = "labelSceneOffset";
+            labelSceneOffset.Size = new Size(90, 15);
+            labelSceneOffset.TabIndex = 22;
+            labelSceneOffset.Text = "L/R offset, ms";
+            //
+            // numericSceneOffset
+            //
+            numericSceneOffset.BackColor = Color.FromArgb(55, 60, 72);
+            numericSceneOffset.DecimalPlaces = 2;
+            numericSceneOffset.ForeColor = Color.White;
+            numericSceneOffset.Increment = new decimal(new int[] { 5, 0, 0, 131072 });
+            numericSceneOffset.Location = new Point(358, 550);
+            numericSceneOffset.Maximum = new decimal(new int[] { 5, 0, 0, 0 });
+            numericSceneOffset.Minimum = new decimal(new int[] { 5, 0, 0, int.MinValue });
+            numericSceneOffset.MinimumSize = new Size(36, 19);
+            numericSceneOffset.Name = "numericSceneOffset";
+            numericSceneOffset.Size = new Size(125, 19);
+            numericSceneOffset.TabIndex = 23;
+            numericSceneOffset.TextAlign = HorizontalAlignment.Right;
+            numericSceneOffset.ThousandsSeparator = false;
+            numericSceneOffset.Value = new decimal(new int[] { 25, 0, 0, 131072 });
+            //
             // labelView
             // 
             labelView.AutoSize = true;
@@ -211,7 +286,7 @@ namespace Resonalyze
             buttonAutoDelay.BackColor = Color.FromArgb(46, 51, 67);
             buttonAutoDelay.FlatStyle = FlatStyle.Popup;
             buttonAutoDelay.ForeColor = Color.White;
-            buttonAutoDelay.Location = new Point(358, 529);
+            buttonAutoDelay.Location = new Point(358, 577);
             buttonAutoDelay.Name = "buttonAutoDelay";
             buttonAutoDelay.Size = new Size(125, 24);
             buttonAutoDelay.TabIndex = 12;
@@ -393,6 +468,9 @@ namespace Resonalyze
             Controls.Add(channelListPanel);
             Controls.Add(buttonAddChannel);
             Controls.Add(buttonRemoveChannel);
+            Controls.Add(sideSelectorPanel);
+            Controls.Add(labelSceneOffset);
+            Controls.Add(numericSceneOffset);
             Controls.Add(dspPlotView);
             Controls.Add(mainPlotView);
             Font = new Font("Segoe UI", 9F);
@@ -402,6 +480,9 @@ namespace Resonalyze
             Size = new Size(1246, 770);
             dspModePanel.ResumeLayout(false);
             dspModePanel.PerformLayout();
+            sideSelectorPanel.ResumeLayout(false);
+            sideSelectorPanel.PerformLayout();
+            (numericSceneOffset).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -412,6 +493,11 @@ namespace Resonalyze
         private FlowLayoutPanel channelListPanel;
         private Button buttonAddChannel;
         private Button buttonRemoveChannel;
+        private Panel sideSelectorPanel;
+        private RadioButton radioSideLeft;
+        private RadioButton radioSideRight;
+        private Label labelSceneOffset;
+        private DarkNumericUpDown numericSceneOffset;
         private Label labelView;
         private CheckBox checkBoxShowSum;
         private CheckBox checkBoxShowLoss;

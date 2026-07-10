@@ -925,7 +925,7 @@ public static class VirtualCrossoverAnalysis
         for (int i = 0; i < refined.Count; i++)
         {
             (double lossDb, double dipDb) = DetailedLoss(
-                refined[i].DelayMs, refined[i].InvertPolarity);
+                bins, weightSum, refined[i].DelayMs, refined[i].InvertPolarity);
             refined[i] = refined[i] with
             {
                 ScoreDb = refined[i].ScoreDb
@@ -957,53 +957,97 @@ public static class VirtualCrossoverAnalysis
             }
         }
 
-        (double LossDb, double DipDb) DetailedLoss(double delayMs, bool invert)
+        return results;
+    }
+
+    // The raw in-band average loss (no prior/penalties) and the deepest
+    // 1/6-octave-smoothed loss notch of one delay/polarity choice.
+    private static (double LossDb, double DipDb) DetailedLoss(
+        List<AlignmentBin> bins,
+        double weightSum,
+        double delayMs,
+        bool invert)
+    {
+        var losses = new double[bins.Count];
+        double total = 0;
+        for (int i = 0; i < bins.Count; i++)
         {
-            var losses = new double[bins.Count];
-            double total = 0;
-            for (int i = 0; i < bins.Count; i++)
-            {
-                AlignmentBin bin = bins[i];
-                Complex variable = bin.Variable * Complex.Exp(
-                    new Complex(0, -bin.OmegaMs * delayMs));
-                Complex sum = invert
-                    ? bin.FixedSum - variable
-                    : bin.FixedSum + variable;
-                double lossDb = 20 * Math.Log10(Math.Max(
-                    sum.Magnitude / bin.MagnitudeSum, MinBinAmplitudeRatio));
-                losses[i] = lossDb;
-                total += bin.LogWeight * lossDb;
-            }
-
-            // The dip reads the minimum of a 1/6-octave moving average, so a
-            // single-bin modal notch cannot pose as the junction's dip while a
-            // genuine cancellation trough still reads at full depth.
-            double halfWindowRatio = Math.Pow(2, 1.0 / 12);
-            double dip = 0;
-            double windowSum = 0;
-            int lo = 0;
-            int hi = 0;
-            for (int i = 0; i < bins.Count; i++)
-            {
-                double center = bins[i].OmegaMs;
-                while (hi < bins.Count && bins[hi].OmegaMs <= center * halfWindowRatio)
-                {
-                    windowSum += losses[hi];
-                    hi++;
-                }
-                while (bins[lo].OmegaMs < center / halfWindowRatio)
-                {
-                    windowSum -= losses[lo];
-                    lo++;
-                }
-
-                dip = Math.Min(dip, windowSum / (hi - lo));
-            }
-
-            return (total / weightSum, dip);
+            AlignmentBin bin = bins[i];
+            Complex variable = bin.Variable * Complex.Exp(
+                new Complex(0, -bin.OmegaMs * delayMs));
+            Complex sum = invert
+                ? bin.FixedSum - variable
+                : bin.FixedSum + variable;
+            double lossDb = 20 * Math.Log10(Math.Max(
+                sum.Magnitude / bin.MagnitudeSum, MinBinAmplitudeRatio));
+            losses[i] = lossDb;
+            total += bin.LogWeight * lossDb;
         }
 
-        return results;
+        // The dip reads the minimum of a 1/6-octave moving average, so a
+        // single-bin modal notch cannot pose as the junction's dip while a
+        // genuine cancellation trough still reads at full depth.
+        double halfWindowRatio = Math.Pow(2, 1.0 / 12);
+        double dip = 0;
+        double windowSum = 0;
+        int lo = 0;
+        int hi = 0;
+        for (int i = 0; i < bins.Count; i++)
+        {
+            double center = bins[i].OmegaMs;
+            while (hi < bins.Count && bins[hi].OmegaMs <= center * halfWindowRatio)
+            {
+                windowSum += losses[hi];
+                hi++;
+            }
+            while (bins[lo].OmegaMs < center / halfWindowRatio)
+            {
+                windowSum -= losses[lo];
+                lo++;
+            }
+
+            dip = Math.Min(dip, windowSum / (hi - lo));
+        }
+
+        return (total / weightSum, dip);
+    }
+
+    /// <summary>
+    /// Measures the summation loss of already-settled responses without any
+    /// search: the same gated, log-frequency-weighted average and 1/6-octave
+    /// dip the alignment score reads, at the responses' current timing. Used
+    /// for junctions no search may touch (a mono channel pinned by the other
+    /// side's pass). Null when the band holds no usable bins.
+    /// </summary>
+    public static (double LossDb, double DipDb)? MeasureSumLoss(
+        Complex[] variableImpulseResponse,
+        IReadOnlyList<Complex[]> fixedImpulseResponses,
+        int sampleRate,
+        double minFrequencyHz,
+        double maxFrequencyHz)
+    {
+        // The delay window only gates parameter validation here — the
+        // measurement itself evaluates the responses exactly as given.
+        List<AlignmentBin> bins = BuildAlignmentBins(
+            variableImpulseResponse,
+            fixedImpulseResponses,
+            sampleRate,
+            minFrequencyHz,
+            maxFrequencyHz,
+            minDelayMs: -1,
+            maxDelayMs: 1);
+        if (bins.Count == 0)
+        {
+            return null;
+        }
+
+        double weightSum = 0;
+        foreach (AlignmentBin bin in bins)
+        {
+            weightSum += bin.LogWeight;
+        }
+
+        return DetailedLoss(bins, weightSum, delayMs: 0, invert: false);
     }
 
     private static Complex[] GateDirectSound(

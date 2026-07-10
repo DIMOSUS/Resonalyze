@@ -21,7 +21,10 @@ public sealed class VirtualCrossoverProjectFileTests
                 PhaseGateRightMs = 2.0,
                 PhaseDetrendMs = 13.07
             };
-            original.Channels[0] = new VirtualCrossoverChannelSettings
+            original.StereoSceneOffsetMs = -0.4;
+            original.ActiveSideRight = true;
+            original.Pairs[0].Mono = true;
+            original.Pairs[0].Left = new VirtualCrossoverChannelSettings
             {
                 Enabled = false,
                 Bypass = true,
@@ -53,10 +56,13 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.Equal(original.PhaseGatePlateauMs, loaded.PhaseGatePlateauMs);
             Assert.Equal(original.PhaseGateRightMs, loaded.PhaseGateRightMs);
             Assert.Equal(original.PhaseDetrendMs, loaded.PhaseDetrendMs);
-            Assert.Equal(original.Channels.Count, loaded.Channels.Count);
+            Assert.Equal(original.StereoSceneOffsetMs, loaded.StereoSceneOffsetMs);
+            Assert.Equal(original.ActiveSideRight, loaded.ActiveSideRight);
+            Assert.Equal(original.Pairs.Count, loaded.Pairs.Count);
+            Assert.True(loaded.Pairs[0].Mono);
 
-            VirtualCrossoverChannelSettings expected = original.Channels[0];
-            VirtualCrossoverChannelSettings actual = loaded.Channels[0];
+            VirtualCrossoverChannelSettings expected = original.Pairs[0].Left;
+            VirtualCrossoverChannelSettings actual = loaded.Pairs[0].Left;
             Assert.Equal(expected.Enabled, actual.Enabled);
             Assert.Equal(expected.Bypass, actual.Bypass);
             Assert.Equal(expected.DisplayName, actual.DisplayName);
@@ -88,14 +94,14 @@ public sealed class VirtualCrossoverProjectFileTests
         {
             VirtualCrossoverProjectFile missing =
                 VirtualCrossoverProjectFile.LoadOrDefault(root);
-            Assert.Equal(3, missing.Channels.Count);
+            Assert.Equal(3, missing.Pairs.Count);
             Assert.True(missing.ShowSumCurve);
 
             string path = VirtualCrossoverProjectFile.GetPath(root);
             File.WriteAllText(path, "{ not json ");
             VirtualCrossoverProjectFile corrupt =
                 VirtualCrossoverProjectFile.LoadOrDefault(root);
-            Assert.Equal(3, corrupt.Channels.Count);
+            Assert.Equal(3, corrupt.Pairs.Count);
 
             // The unusable file is parked as .backup so the next scheduled
             // save cannot silently destroy it.
@@ -115,7 +121,7 @@ public sealed class VirtualCrossoverProjectFileTests
         try
         {
             var future = new VirtualCrossoverProjectFile();
-            future.Channels[0].GainDb = -10;
+            future.Pairs[0].Left.GainDb = -10;
             future.Save(root);
 
             string path = VirtualCrossoverProjectFile.GetPath(root);
@@ -126,7 +132,7 @@ public sealed class VirtualCrossoverProjectFileTests
 
             VirtualCrossoverProjectFile loaded =
                 VirtualCrossoverProjectFile.LoadOrDefault(root);
-            Assert.Equal(0, loaded.Channels[0].GainDb);
+            Assert.Equal(0, loaded.Pairs[0].Left.GainDb);
 
             // A downgraded app keeps the newer session parked next to the
             // fresh default instead of overwriting it on the next save.
@@ -170,14 +176,14 @@ public sealed class VirtualCrossoverProjectFileTests
         try
         {
             var original = new VirtualCrossoverProjectFile();
-            original.Channels[0].GainDb = -4;
+            original.Pairs[0].Left.GainDb = -4;
             original.Save(root);
 
             VirtualCrossoverProjectFile loaded =
                 VirtualCrossoverProjectFile.LoadOrDefault(root);
 
             string path = VirtualCrossoverProjectFile.GetPath(root);
-            Assert.Equal(-4, loaded.Channels[0].GainDb);
+            Assert.Equal(-4, loaded.Pairs[0].Left.GainDb);
             Assert.True(File.Exists(path));
             Assert.False(File.Exists(path + ".backup"));
             Assert.Null(loaded.BackupNoticePath);
@@ -199,10 +205,10 @@ public sealed class VirtualCrossoverProjectFileTests
                 CalibrationMode = MicrophoneCalibrationMode.Degrees90,
                 DspPlotMode = DspPlotMode.GroupDelay
             };
-            while (original.Channels.Count <
+            while (original.Pairs.Count <
                 VirtualCrossoverProjectFile.MaximumChannelCount)
             {
-                original.Channels.Add(new VirtualCrossoverChannelSettings());
+                original.Pairs.Add(new VirtualCrossoverChannelPairSettings());
             }
 
             original.Save(root);
@@ -211,7 +217,7 @@ public sealed class VirtualCrossoverProjectFileTests
 
             Assert.Equal(
                 VirtualCrossoverProjectFile.MaximumChannelCount,
-                loaded.Channels.Count);
+                loaded.Pairs.Count);
             Assert.Equal(MicrophoneCalibrationMode.Degrees90, loaded.CalibrationMode);
             Assert.Equal(DspPlotMode.GroupDelay, loaded.DspPlotMode);
         }
@@ -225,29 +231,36 @@ public sealed class VirtualCrossoverProjectFileTests
     public void Save_RejectsInvalidChannelValues()
     {
         var negativeDelay = new VirtualCrossoverProjectFile();
-        negativeDelay.Channels[0].DelayMs = -1;
+        negativeDelay.Pairs[0].Left.DelayMs = -1;
         Assert.Throws<InvalidDataException>(() => negativeDelay.Validate());
 
         var badSlope = new VirtualCrossoverProjectFile();
-        badSlope.Channels[0].LowPassEdge = new CrossoverEdge(
+        badSlope.Pairs[0].Left.LowPassEdge = new CrossoverEdge(
             CrossoverFilterFamily.LinkwitzRiley, 1_000, 18);
         Assert.Throws<InvalidDataException>(() => badSlope.Validate());
 
         var badBand = new VirtualCrossoverProjectFile();
-        badBand.Channels[0].PeqBands = [new PeqBand(0, 1.0, 3.0)];
+        badBand.Pairs[0].Right.PeqBands = [new PeqBand(0, 1.0, 3.0)];
         Assert.Throws<InvalidDataException>(() => badBand.Validate());
 
         var tooFewChannels = new VirtualCrossoverProjectFile();
-        tooFewChannels.Channels.RemoveRange(1, 2);
+        tooFewChannels.Pairs.RemoveRange(1, 2);
         Assert.Throws<InvalidDataException>(() => tooFewChannels.Validate());
 
         var tooManyChannels = new VirtualCrossoverProjectFile();
-        while (tooManyChannels.Channels.Count <=
+        while (tooManyChannels.Pairs.Count <=
             VirtualCrossoverProjectFile.MaximumChannelCount)
         {
-            tooManyChannels.Channels.Add(new VirtualCrossoverChannelSettings());
+            tooManyChannels.Pairs.Add(new VirtualCrossoverChannelPairSettings());
         }
         Assert.Throws<InvalidDataException>(() => tooManyChannels.Validate());
+
+        var badSceneOffset = new VirtualCrossoverProjectFile
+        {
+            StereoSceneOffsetMs =
+                VirtualCrossoverProjectFile.MaximumSceneOffsetMs + 1
+        };
+        Assert.Throws<InvalidDataException>(() => badSceneOffset.Validate());
 
         var badCalibrationMode = new VirtualCrossoverProjectFile
         {
@@ -296,16 +309,16 @@ public sealed class VirtualCrossoverProjectFileTests
         try
         {
             var original = new VirtualCrossoverProjectFile { ShowLossCurve = true };
-            original.Channels[0].DisplayName = "woofer";
-            original.Channels[0].SourceFilePath = @"C:\m\woofer.json";
-            original.Channels[0].DelayMs = 1.25;
+            original.Pairs[0].Left.DisplayName = "woofer";
+            original.Pairs[0].Left.SourceFilePath = @"C:\m\woofer.json";
+            original.Pairs[0].Right.DelayMs = 1.25;
 
             original.SaveTo(path);
             VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadFrom(path);
 
             Assert.True(loaded.ShowLossCurve);
-            Assert.Equal("woofer", loaded.Channels[0].DisplayName);
-            Assert.Equal(1.25, loaded.Channels[0].DelayMs);
+            Assert.Equal("woofer", loaded.Pairs[0].Left.DisplayName);
+            Assert.Equal(1.25, loaded.Pairs[0].Right.DelayMs);
         }
         finally
         {
@@ -337,6 +350,80 @@ public sealed class VirtualCrossoverProjectFileTests
         {
             Directory.Delete(root, recursive: true);
         }
+    }
+
+    [Fact]
+    public void LoadOrDefault_MigratesAVersion1SingleSidedProjectToPairs()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            // A real v1 payload shape: a "channels" list, no "pairs".
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, """
+                {
+                  "format": "resonalyze-virtual-crossover",
+                  "version": 1,
+                  "channels": [
+                    {
+                      "displayName": "woofer.json",
+                      "sourceFilePath": "C:\\m\\woofer.json",
+                      "gainDb": -2.5,
+                      "delayMs": 4.78,
+                      "invertPolarity": true,
+                      "crossoverKind": "LowPass",
+                      "lowPassEdge": { "family": "Butterworth", "frequencyHz": 175, "slopeDbPerOctave": 24 }
+                    },
+                    { "displayName": "", "gainDb": 0, "delayMs": 0 }
+                  ],
+                  "showSumCurve": true
+                }
+                """);
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            // The historical single-sided channels become the LEFT sides of
+            // fresh pairs; the right sides start empty and nothing is lost.
+            Assert.Equal(VirtualCrossoverProjectFile.CurrentVersion, loaded.Version);
+            Assert.Null(loaded.BackupNoticePath);
+            Assert.Equal(2, loaded.Pairs.Count);
+            Assert.Empty(loaded.Channels);
+            VirtualCrossoverChannelSettings woofer = loaded.Pairs[0].Left;
+            Assert.Equal("woofer.json", woofer.DisplayName);
+            Assert.Equal(-2.5, woofer.GainDb);
+            Assert.Equal(4.78, woofer.DelayMs);
+            Assert.True(woofer.InvertPolarity);
+            Assert.Equal(CrossoverKind.LowPass, woofer.CrossoverKind);
+            Assert.False(loaded.Pairs[0].Mono);
+            Assert.False(loaded.Pairs[0].Right.HasSource);
+
+            // The migrated project persists as v2 and round-trips.
+            loaded.Save(root);
+            VirtualCrossoverProjectFile reloaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+            Assert.Equal(2, reloaded.Pairs.Count);
+            Assert.Equal("woofer.json", reloaded.Pairs[0].Left.DisplayName);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SideFor_MonoPairAnswersWithTheLeftSideForBothViews()
+    {
+        var pair = new VirtualCrossoverChannelPairSettings { Mono = true };
+        pair.Left.GainDb = -3;
+        pair.Right.GainDb = 12;
+
+        Assert.Same(pair.Left, pair.SideFor(rightSide: false));
+        Assert.Same(pair.Left, pair.SideFor(rightSide: true));
+
+        pair.Mono = false;
+        Assert.Same(pair.Right, pair.SideFor(rightSide: true));
     }
 
     [Fact]

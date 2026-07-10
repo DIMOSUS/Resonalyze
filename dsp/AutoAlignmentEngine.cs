@@ -45,6 +45,29 @@ public sealed record AlignmentJunction(
     double BandHighHz);
 
 /// <summary>
+/// The inputs of a stereo alignment run (see
+/// <see cref="AutoAlignmentEngine.ComputeStereo"/>). Mono channels appear in
+/// BOTH by-band lists as the same <see cref="IAlignmentChannel"/> instance and
+/// are tuned once, by the left pass. The bridge is the highest-frequency pair
+/// with sources on both sides; its band is the top channels' own playing band.
+/// <see cref="SceneOffsetMs"/> is positive when the right side should LEAD
+/// (arrive earlier at the microphone) by that much — the "image toward the
+/// dash center" convention for a left-seated listener; negative for a
+/// right-seated one.
+/// </summary>
+public sealed record StereoAlignmentPlan(
+    IReadOnlyList<AlignmentSnapshot> LeftChannelsByBand,
+    IReadOnlyList<AlignmentJunction> LeftPairs,
+    IReadOnlyList<AlignmentSnapshot> RightChannelsByBand,
+    IReadOnlyList<AlignmentJunction> RightPairs,
+    IReadOnlyCollection<IAlignmentChannel> MonoChannels,
+    IAlignmentChannel BridgeLeft,
+    IAlignmentChannel BridgeRight,
+    double BridgeBandLowHz,
+    double BridgeBandHighHz,
+    double SceneOffsetMs);
+
+/// <summary>
 /// Re-runs the caller's channel processing with the given delay/polarity
 /// overrides applied (a channel absent from the map processes with zero
 /// delay and normal polarity) and returns fresh snapshots. Called from the
@@ -154,12 +177,52 @@ public static class AutoAlignmentEngine
         List<AlignmentSnapshot> byBand = channelsByBand.ToList();
         AppendCorrelationAlignmentDiagnostics(log, pairs);
 
-        // Stage 1: coarse offsets from band-limited first arrivals, refined by the
-        // GCC-PHAT peak where it is trustworthy. Arrivals of different drivers are
-        // only comparable inside a SHARED band — a woofer's envelope in its own low
-        // band rises milliseconds later than a tweeter's in its high band. So each
-        // adjacent pair is measured around its own crossover frequency, and the
-        // pairwise differences chain into one relative timeline that seeds stage 2.
+        Dictionary<IAlignmentChannel, double> timeline =
+            BuildArrivalTimeline(byBand, pairs, log);
+
+        // The relatively latest channel is the fixed reference; everyone else is
+        // delayed toward it, so the coarse deltas are non-negative.
+        double latest = timeline.Values.Max();
+        IAlignmentChannel reference =
+            timeline.First(pair => pair.Value == latest).Key;
+        log.AppendLine($"Reference: {reference.Name}");
+
+        // Stage 2: sequential pairwise fine alignment, walking outward from the
+        // reference along the band order. Each channel is phase-correlated
+        // against its already-settled neighbor only, inside their shared pair
+        // band, so the search window is sized by THAT junction — a mid channel
+        // must not have its low-junction window squeezed to the period of its
+        // high junction. An arrival error at a low junction then propagates
+        // through the chain and moves the whole upper group together, which a
+        // per-channel search against all fixed channels at once cannot do.
+        int referenceIndex = byBand.FindIndex(item => item.Channel == reference);
+        for (int i = referenceIndex - 1; i >= 0; i--)
+        {
+            AlignChannelAtJunction(
+                byBand[i].Channel, byBand[i + 1].Channel, pairs[i],
+                timeline, byBand, reprocess, alignment, log);
+        }
+        for (int i = referenceIndex + 1; i < byBand.Count; i++)
+        {
+            AlignChannelAtJunction(
+                byBand[i].Channel, byBand[i - 1].Channel, pairs[i - 1],
+                timeline, byBand, reprocess, alignment, log);
+        }
+    }
+
+    // Stage 1: coarse offsets from band-limited first arrivals, refined by the
+    // GCC-PHAT peak where it is trustworthy. Arrivals of different drivers are
+    // only comparable inside a SHARED band — a woofer's envelope in its own low
+    // band rises milliseconds later than a tweeter's in its high band. So each
+    // adjacent pair is measured around its own crossover frequency, and the
+    // pairwise differences chain into one relative timeline. Only the
+    // differences matter downstream, so the anchor value of the first channel
+    // is arbitrary (zero).
+    private static Dictionary<IAlignmentChannel, double> BuildArrivalTimeline(
+        IReadOnlyList<AlignmentSnapshot> byBand,
+        IReadOnlyList<AlignmentJunction> pairs,
+        StringBuilder log)
+    {
         var timeline = new Dictionary<IAlignmentChannel, double>
         {
             [byBand[0].Channel] = 0
@@ -227,33 +290,26 @@ public static class AutoAlignmentEngine
                 $"{(trustPhat ? "phat" : "arrival")}");
         }
 
-        // The relatively latest channel is the fixed reference; everyone else is
-        // delayed toward it, so the coarse deltas are non-negative.
-        double latest = timeline.Values.Max();
-        IAlignmentChannel reference =
-            timeline.First(pair => pair.Value == latest).Key;
-        log.AppendLine($"Reference: {reference.Name}");
+        return timeline;
+    }
 
-        // Stage 2: sequential pairwise fine alignment, walking outward from the
-        // reference along the band order. Each channel is phase-correlated
-        // against its already-settled neighbor only, inside their shared pair
-        // band, so the search window is sized by THAT junction — a mid channel
-        // must not have its low-junction window squeezed to the period of its
-        // high junction. An arrival error at a low junction then propagates
-        // through the chain and moves the whole upper group together, which a
-        // per-channel search against all fixed channels at once cannot do.
-        int referenceIndex = byBand.FindIndex(item => item.Channel == reference);
-        var searchOrder =
-            new List<(AlignmentSnapshot Target, AlignmentSnapshot Neighbor, AlignmentJunction Pair)>();
-        for (int i = referenceIndex - 1; i >= 0; i--)
-        {
-            searchOrder.Add((byBand[i], byBand[i + 1], pairs[i]));
-        }
-        for (int i = referenceIndex + 1; i < byBand.Count; i++)
-        {
-            searchOrder.Add((byBand[i], byBand[i - 1], pairs[i - 1]));
-        }
-
+    // Fine-aligns one channel against its settled neighbor at their shared
+    // junction and writes the result into the alignment map: the stage-2 body
+    // shared by the mono walk and the stereo right-side descent. A physically
+    // impossible negative delay is converted into a uniform shift of every
+    // OTHER channel in <paramref name="shiftScope"/> (a uniform shift preserves
+    // the alignment) — in a stereo run the scope must span BOTH sides, or the
+    // shift would silently break the inter-side scene offset.
+    private static void AlignChannelAtJunction(
+        IAlignmentChannel channel,
+        IAlignmentChannel neighborChannel,
+        AlignmentJunction pair,
+        IReadOnlyDictionary<IAlignmentChannel, double> timeline,
+        IReadOnlyList<AlignmentSnapshot> shiftScope,
+        AlignmentReprocessor reprocess,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        StringBuilder log)
+    {
         // One junction search: candidates of the prior-penalized loss score in
         // a window around the coarse delta (the PHAT-seeded timeline, arrival
         // envelope where PHAT was untrusted). The window is half the period of
@@ -262,11 +318,7 @@ public static class AutoAlignmentEngine
         // same-polarity lobes. The base doubles as a soft prior: a quadratic dB
         // penalty that deters far lobes.
         (IReadOnlyList<AlignmentCandidate> Candidates, double BaseDelta, double HalfPeriodMs)
-            SearchJunction(
-                IAlignmentChannel channel,
-                IAlignmentChannel neighborChannel,
-                AlignmentJunction junction,
-                double? windowOverrideMs = null)
+            SearchJunction(double? windowOverrideMs = null)
         {
             // Reprocess so the settled neighbors participate with their new
             // delays and polarities. The searched channel is dropped from the
@@ -287,7 +339,7 @@ public static class AutoAlignmentEngine
                 current.First(item => item.Channel == neighborChannel).ImpulseResponse
             };
 
-            double halfPeriodMs = 500.0 / junction.CrossoverHz;
+            double halfPeriodMs = 500.0 / pair.CrossoverHz;
             double rangeMs = windowOverrideMs ?? Math.Clamp(
                 halfPeriodMs, MinFineAlignmentRangeMs, MaxFineAlignmentRangeMs);
             double baseDelta = alignment.GetValueOrDefault(neighborChannel).DelayMs
@@ -297,8 +349,8 @@ public static class AutoAlignmentEngine
                     variableIr,
                     neighborIrs,
                     channel.SampleRate,
-                    junction.BandLowHz,
-                    junction.BandHighHz,
+                    pair.BandLowHz,
+                    pair.BandHighHz,
                     baseDelta - rangeMs,
                     baseDelta + rangeMs,
                     priorDelayMs: baseDelta,
@@ -306,15 +358,12 @@ public static class AutoAlignmentEngine
             return (candidates, baseDelta, halfPeriodMs);
         }
 
-        foreach ((AlignmentSnapshot target, AlignmentSnapshot neighbor, AlignmentJunction pair)
-            in searchOrder)
         {
-            IAlignmentChannel channel = target.Channel;
             (IReadOnlyList<AlignmentCandidate> candidates, double baseDelta,
-                double halfPeriodMs) = SearchJunction(channel, neighbor.Channel, pair);
+                double halfPeriodMs) = SearchJunction();
             log.AppendLine(
                 $"Channel {channel.Name}: " +
-                $"vs {neighbor.Channel.Name} " +
+                $"vs {neighborChannel.Name} " +
                 $"in {pair.BandLowHz:0}-{pair.BandHighHz:0} Hz, " +
                 $"base {baseDelta:0.000} ms, candidates " +
                 string.Join("; ", candidates.Select(item =>
@@ -340,9 +389,7 @@ public static class AutoAlignmentEngine
             // wider window so lobes beyond the working range appear in the log.
             // Purely informational — the chosen result above is untouched.
             (IReadOnlyList<AlignmentCandidate> wide, double wideBase, _) =
-                SearchJunction(
-                    channel, neighbor.Channel, pair,
-                    windowOverrideMs: DiagnosticFineRangeMs);
+                SearchJunction(windowOverrideMs: DiagnosticFineRangeMs);
             log.AppendLine(
                 $"  [diag] wide +-{DiagnosticFineRangeMs:0.0} ms " +
                 $"(base {wideBase:0.000} ms): " +
@@ -366,8 +413,8 @@ public static class AutoAlignmentEngine
             if (retryRangeMs > fineRangeMs &&
                 Math.Abs(chosen.DelayMs - baseDelta) >= fineRangeMs - 0.02)
             {
-                (IReadOnlyList<AlignmentCandidate> retried, _, _) = SearchJunction(
-                    channel, neighbor.Channel, pair, windowOverrideMs: retryRangeMs);
+                (IReadOnlyList<AlignmentCandidate> retried, _, _) =
+                    SearchJunction(windowOverrideMs: retryRangeMs);
                 if (retried.Count > 0)
                 {
                     // Through the same selection rules as the primary pick:
@@ -409,31 +456,7 @@ public static class AutoAlignmentEngine
             {
                 // A physically impossible negative delay: push every channel by
                 // the deficit instead — a uniform shift preserves the alignment.
-                double shift = -newDelay;
-                foreach (AlignmentSnapshot item in byBand)
-                {
-                    if (item.Channel != channel)
-                    {
-                        AlignmentOverride currentAlignment =
-                            alignment.GetValueOrDefault(item.Channel);
-                        double shifted = currentAlignment.DelayMs + shift;
-                        if (shifted > MaxDelayMs)
-                        {
-                            // The shift is only alignment-preserving while it is
-                            // uniform; a channel pinned at the ceiling breaks the
-                            // relative delays silently, so say so in the log.
-                            log.AppendLine(
-                                $"  WARNING: uniform shift +{shift:0.000} ms pushes " +
-                                $"{item.Channel.Name} past the {MaxDelayMs:0} ms " +
-                                $"delay limit ({shifted:0.000} ms, clamped) — " +
-                                "the relative alignment is no longer preserved.");
-                        }
-                        alignment[item.Channel] = currentAlignment with
-                        {
-                            DelayMs = Math.Min(MaxDelayMs, shifted)
-                        };
-                    }
-                }
+                ShiftAllExcept(shiftScope, channel, -newDelay, alignment, log);
                 newDelay = 0;
             }
 
@@ -441,6 +464,250 @@ public static class AutoAlignmentEngine
                 Math.Clamp(Math.Round(newDelay, 2), 0, MaxDelayMs),
                 chosen.InvertPolarity);
         }
+    }
+
+    // A uniform delay shift of every channel in the scope but one: the standard
+    // way to "advance" a channel that would otherwise need a negative delay.
+    // Uniformity is what preserves the alignment, so the scope must cover every
+    // channel whose relative timing has already been settled.
+    private static void ShiftAllExcept(
+        IReadOnlyList<AlignmentSnapshot> scope,
+        IAlignmentChannel except,
+        double shiftMs,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        StringBuilder log)
+    {
+        foreach (AlignmentSnapshot item in scope)
+        {
+            if (item.Channel != except)
+            {
+                AlignmentOverride currentAlignment =
+                    alignment.GetValueOrDefault(item.Channel);
+                double shifted = currentAlignment.DelayMs + shiftMs;
+                if (shifted > MaxDelayMs)
+                {
+                    // The shift is only alignment-preserving while it is
+                    // uniform; a channel pinned at the ceiling breaks the
+                    // relative delays silently, so say so in the log.
+                    log.AppendLine(
+                        $"  WARNING: uniform shift +{shiftMs:0.000} ms pushes " +
+                        $"{item.Channel.Name} past the {MaxDelayMs:0} ms " +
+                        $"delay limit ({shifted:0.000} ms, clamped) — " +
+                        "the relative alignment is no longer preserved.");
+                }
+                alignment[item.Channel] = currentAlignment with
+                {
+                    DelayMs = Math.Min(MaxDelayMs, shifted)
+                };
+            }
+        }
+    }
+
+    /// <summary>
+    /// Stereo alignment cascade over two sides that never meet at a crossover:
+    /// (1) the left side aligns exactly like <see cref="Compute"/> (any mono
+    /// channels — typically the shared subwoofer — are part of that walk and
+    /// are FINAL afterwards); (2) the bridge fits the right top channel to the
+    /// settled left top by band-limited envelope arrivals in the top band,
+    /// honoring <see cref="StereoAlignmentPlan.SceneOffsetMs"/>; (3) the right
+    /// side descends junction by junction from the bridged top, skipping mono
+    /// channels (their right-side junction is measured and logged, not tuned);
+    /// (4) the union of both sides is shifted so the minimum delay is exactly
+    /// zero. Every uniform shift spans BOTH sides, preserving the scene offset
+    /// the bridge established.
+    /// </summary>
+    public static void ComputeStereo(
+        StereoAlignmentPlan plan,
+        AlignmentReprocessor reprocess,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        StringBuilder log)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(reprocess);
+        ArgumentNullException.ThrowIfNull(alignment);
+        ArgumentNullException.ThrowIfNull(log);
+        List<AlignmentSnapshot> rightByBand = plan.RightChannelsByBand.ToList();
+        if (rightByBand.Count == 0 ||
+            plan.RightPairs.Count != rightByBand.Count - 1)
+        {
+            throw new ArgumentException(
+                "One junction is required between each adjacent right channel pair.",
+                nameof(plan));
+        }
+        int bridgeIndex = rightByBand.FindIndex(
+            item => item.Channel == plan.BridgeRight);
+        if (bridgeIndex < 0 ||
+            plan.LeftChannelsByBand.All(item => item.Channel != plan.BridgeLeft))
+        {
+            throw new ArgumentException(
+                "The bridge channels must be members of their side's channel list.",
+                nameof(plan));
+        }
+        if (plan.MonoChannels.Contains(plan.BridgeRight))
+        {
+            throw new ArgumentException(
+                "A mono channel cannot be the stereo bridge.",
+                nameof(plan));
+        }
+        if (plan.MonoChannels.Any(mono =>
+            plan.LeftChannelsByBand.All(item => item.Channel != mono)))
+        {
+            throw new ArgumentException(
+                "Every mono channel must be part of the left walk that tunes it.",
+                nameof(plan));
+        }
+
+        // Stage L: the left side, exactly like a mono run.
+        Compute(plan.LeftChannelsByBand, plan.LeftPairs, reprocess, alignment, log);
+
+        // The union of both sides: the scope of every uniform shift from here
+        // on. Shifting one side alone would silently break the inter-side
+        // offset the bridge establishes.
+        var allChannels = new List<AlignmentSnapshot>(plan.LeftChannelsByBand);
+        foreach (AlignmentSnapshot item in rightByBand)
+        {
+            if (allChannels.All(existing => existing.Channel != item.Channel))
+            {
+                allChannels.Add(item);
+            }
+        }
+
+        // Stage bridge: envelope arrivals in the top band, NOT a cross-
+        // correlation — same-band L/R drivers sit in different spots with
+        // different room paths, and their cross-correlation at high
+        // frequencies is lobe-ambiguous noise (probed on real car
+        // measurements: r ~0.3, dominance ~0.01), while the envelope arrival
+        // is the quantity the stereo image follows up there. A positive scene
+        // offset makes the right side LEAD (arrive earlier), pulling the image
+        // toward the right — the dash-center convention for a left-seated
+        // driver; a right-seated driver enters a negative offset.
+        IReadOnlyList<AlignmentSnapshot> settled = reprocess(alignment);
+        double leftArrival = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+            settled.First(item => item.Channel == plan.BridgeLeft).ImpulseResponse,
+            plan.BridgeLeft.SampleRate,
+            plan.BridgeBandLowHz,
+            plan.BridgeBandHighHz);
+        double rightArrival = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+            settled.First(item => item.Channel == plan.BridgeRight).ImpulseResponse,
+            plan.BridgeRight.SampleRate,
+            plan.BridgeBandLowHz,
+            plan.BridgeBandHighHz);
+        double bridgeDelay = leftArrival - rightArrival - plan.SceneOffsetMs;
+        log.AppendLine(
+            $"Bridge {plan.BridgeLeft.Name} -> {plan.BridgeRight.Name}: " +
+            $"band {plan.BridgeBandLowHz:0}-{plan.BridgeBandHighHz:0} Hz, " +
+            $"arrivals L {leftArrival:0.000} / R {rightArrival:0.000} ms, " +
+            $"scene offset {plan.SceneOffsetMs:+0.000;-0.000} ms " +
+            $"(positive: right leads) -> right delay {bridgeDelay:0.000} ms");
+        if (bridgeDelay < 0)
+        {
+            // The right top must be ADVANCED — typical when the right side is
+            // the far one. Impossible directly, so everything settled so far
+            // is delayed by the deficit and the right top starts at zero.
+            double shift = -bridgeDelay;
+            ShiftAllExcept(allChannels, plan.BridgeRight, shift, alignment, log);
+            bridgeDelay = 0;
+            log.AppendLine(
+                $"  advanced via a uniform +{shift:0.000} ms shift " +
+                "of every settled channel");
+        }
+        // The bridge sets only the timing; the polarity of the right top stays
+        // with the channel's own switch (arrivals are polarity-blind, and a
+        // symmetric install wires both tweeters alike).
+        alignment[plan.BridgeRight] = new AlignmentOverride(
+            Math.Clamp(Math.Round(bridgeDelay, 2), 0, MaxDelayMs), false);
+
+        // Stage R: descent from the bridged top toward the low end (and up
+        // from it, if the caller had to bridge a non-top pair) — the same walk
+        // as stage 2, referenced to the bridge. Mono channels are final from
+        // the left pass: never searched again, their right-side junction is
+        // only measured.
+        Dictionary<IAlignmentChannel, double> rightTimeline =
+            BuildArrivalTimeline(rightByBand, plan.RightPairs, log);
+        void AlignRight(int index, int neighborIndex, AlignmentJunction pair)
+        {
+            IAlignmentChannel channel = rightByBand[index].Channel;
+            IAlignmentChannel neighbor = rightByBand[neighborIndex].Channel;
+            if (plan.MonoChannels.Contains(channel))
+            {
+                MeasureFixedJunction(pair, channel, neighbor, reprocess, alignment, log);
+                return;
+            }
+
+            AlignChannelAtJunction(
+                channel, neighbor, pair,
+                rightTimeline, allChannels, reprocess, alignment, log);
+        }
+        for (int i = bridgeIndex - 1; i >= 0; i--)
+        {
+            AlignRight(i, i + 1, plan.RightPairs[i]);
+        }
+        for (int i = bridgeIndex + 1; i < rightByBand.Count; i++)
+        {
+            AlignRight(i, i - 1, plan.RightPairs[i - 1]);
+        }
+
+        // Final normalization: the smallest total latency that preserves every
+        // relation — the minimum proposed delay lands exactly at zero.
+        // (Channels without an entry sit at zero, so this only acts when a
+        // uniform shift raised the whole field.)
+        double minimum = allChannels.Min(
+            item => alignment.GetValueOrDefault(item.Channel).DelayMs);
+        if (minimum > 0.005)
+        {
+            foreach (AlignmentSnapshot item in allChannels)
+            {
+                AlignmentOverride current = alignment.GetValueOrDefault(item.Channel);
+                alignment[item.Channel] = current with
+                {
+                    DelayMs = Math.Round(current.DelayMs - minimum, 2)
+                };
+            }
+            log.AppendLine(
+                $"Normalized: -{minimum:0.000} ms off every channel " +
+                "(minimum delay back to zero)");
+        }
+    }
+
+    // A junction whose both sides are already final — the mono subwoofer
+    // pinned by the left pass against a settled right channel. Nothing is
+    // searched; the resulting loss belongs in the log because it is the price
+    // of sharing one mono channel between two differently-timed sides.
+    private static void MeasureFixedJunction(
+        AlignmentJunction pair,
+        IAlignmentChannel monoChannel,
+        IAlignmentChannel otherChannel,
+        AlignmentReprocessor reprocess,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        StringBuilder log)
+    {
+        IReadOnlyList<AlignmentSnapshot> current = reprocess(alignment);
+        Complex[] mono = current
+            .First(item => item.Channel == monoChannel).ImpulseResponse;
+        Complex[] other = current
+            .First(item => item.Channel == otherChannel).ImpulseResponse;
+        (double LossDb, double DipDb)? loss = VirtualCrossoverAnalysis.MeasureSumLoss(
+            mono,
+            new List<Complex[]> { other },
+            monoChannel.SampleRate,
+            pair.BandLowHz,
+            pair.BandHighHz);
+        if (loss is not { } measured)
+        {
+            log.AppendLine(
+                $"Junction {monoChannel.Name}/{otherChannel.Name} (mono, fixed): " +
+                "no bins in the pair band");
+            return;
+        }
+
+        log.AppendLine(
+            $"Junction {monoChannel.Name}/{otherChannel.Name} " +
+            $"(mono, timed by the left side): avg {measured.LossDb:0.00} dB, " +
+            $"dip {measured.DipDb:0.0} dB " +
+            $"in {pair.BandLowHz:0}-{pair.BandHighHz:0} Hz" +
+            (measured.LossDb < -1.0 || measured.DipDb < -6.0
+                ? " — WARNING: consider a compromise mono delay by hand"
+                : string.Empty));
     }
 
     private static void AppendCorrelationAlignmentDiagnostics(

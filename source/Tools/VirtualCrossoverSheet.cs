@@ -27,34 +27,38 @@ internal static class VirtualCrossoverSheet
             builder.AppendLine(metricLine);
         }
 
-        for (int i = 0; i < project.Channels.Count; i++)
+        for (int i = 0; i < project.Pairs.Count; i++)
         {
-            VirtualCrossoverChannelSettings channel = project.Channels[i];
-            if (!channel.HasSource)
+            foreach ((VirtualCrossoverChannelSettings channel, string sideSuffix)
+                in SideSections(project.Pairs[i]))
             {
-                continue;
-            }
-
-            builder.AppendLine();
-            builder.AppendLine($"Channel {ChannelName(i)} — {channel.DisplayName}");
-            builder.AppendLine($"  Gain       {Signed(channel.GainDb)} dB");
-            builder.AppendLine(
-                $"  Delay      {Number(channel.DelayMs, "0.00")} ms" +
-                $"  (= {Number(channel.DelayMs * Acoustics.SpeedOfSoundAt20CMetersPerSecond, "0.#")} mm)");
-            builder.AppendLine(
-                $"  Polarity   {(channel.InvertPolarity ? "Inverted" : "Normal")}");
-            builder.AppendLine($"  Crossover  {DescribeCrossover(channel)}");
-            if (channel.PeqBands.Count > 0 || channel.PeqPreampDb != 0)
-            {
-                builder.AppendLine(
-                    $"  PEQ        {channel.PeqSourceName ?? "custom"}, " +
-                    $"preamp {Signed(channel.PeqPreampDb)} dB");
-                for (int band = 0; band < channel.PeqBands.Count; band++)
+                if (!channel.HasSource)
                 {
-                    PeqBand peq = channel.PeqBands[band];
+                    continue;
+                }
+
+                builder.AppendLine();
+                builder.AppendLine(
+                    $"Channel {ChannelName(i)}{sideSuffix} — {channel.DisplayName}");
+                builder.AppendLine($"  Gain       {Signed(channel.GainDb)} dB");
+                builder.AppendLine(
+                    $"  Delay      {Number(channel.DelayMs, "0.00")} ms" +
+                    $"  (= {Number(channel.DelayMs * Acoustics.SpeedOfSoundAt20CMetersPerSecond, "0.#")} mm)");
+                builder.AppendLine(
+                    $"  Polarity   {(channel.InvertPolarity ? "Inverted" : "Normal")}");
+                builder.AppendLine($"  Crossover  {DescribeCrossover(channel)}");
+                if (channel.PeqBands.Count > 0 || channel.PeqPreampDb != 0)
+                {
                     builder.AppendLine(
-                        $"    Filter {band + 1}: ON PK Fc {Number(peq.FrequencyHz, "0.###")} Hz " +
-                        $"Gain {Signed(peq.GainDb)} dB Q {Number(peq.Q, "0.0#")}");
+                        $"  PEQ        {channel.PeqSourceName ?? "custom"}, " +
+                        $"preamp {Signed(channel.PeqPreampDb)} dB");
+                    for (int band = 0; band < channel.PeqBands.Count; band++)
+                    {
+                        PeqBand peq = channel.PeqBands[band];
+                        builder.AppendLine(
+                            $"    Filter {band + 1}: ON PK Fc {Number(peq.FrequencyHz, "0.###")} Hz " +
+                            $"Gain {Signed(peq.GainDb)} dB Q {Number(peq.Q, "0.0#")}");
+                    }
                 }
             }
         }
@@ -63,6 +67,25 @@ internal static class VirtualCrossoverSheet
     }
 
     public static string ChannelName(int index) => ((char)('A' + index)).ToString();
+
+    /// <summary>
+    /// The printable sides of one channel pair: a mono pair is a single
+    /// "(mono)" section, a stereo pair prints its left and right sides
+    /// separately.
+    /// </summary>
+    internal static IEnumerable<(VirtualCrossoverChannelSettings Settings, string SideSuffix)>
+        SideSections(VirtualCrossoverChannelPairSettings pair)
+    {
+        ArgumentNullException.ThrowIfNull(pair);
+        if (pair.Mono)
+        {
+            yield return (pair.Left, " (mono)");
+            yield break;
+        }
+
+        yield return (pair.Left, " L");
+        yield return (pair.Right, " R");
+    }
 
     public static string DescribeCrossover(VirtualCrossoverChannelSettings channel)
     {

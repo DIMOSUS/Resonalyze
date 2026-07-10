@@ -126,9 +126,36 @@ public sealed class VirtualCrossoverChannelSettings
 }
 
 /// <summary>
-/// Persists the Virtual DSP tool state (channels, their DSP chains and the
-/// plot view flags) so a tuning session survives an application restart. The
-/// channel count is user-resizable in the tool, from two up to
+/// One speaker of the car as the Virtual DSP tool models it since schema v2: a
+/// left/right PAIR of measurement + DSP chain sets under one channel letter.
+/// A mono pair (the shared subwoofer) has one physical driver serving both
+/// sides: only <see cref="Left"/> is meaningful and it participates in both
+/// side views and both sides' calculations.
+/// </summary>
+public sealed class VirtualCrossoverChannelPairSettings
+{
+    public bool Mono { get; set; }
+    public VirtualCrossoverChannelSettings Left { get; set; } = new();
+    public VirtualCrossoverChannelSettings Right { get; set; } = new();
+
+    /// <summary>
+    /// The settings the given side view edits and computes with: a mono pair
+    /// always answers with its single (left) set.
+    /// </summary>
+    public VirtualCrossoverChannelSettings SideFor(bool rightSide) =>
+        Mono || !rightSide ? Left : Right;
+
+    public void Validate()
+    {
+        Left.Validate();
+        Right.Validate();
+    }
+}
+
+/// <summary>
+/// Persists the Virtual DSP tool state (channel pairs, their DSP chains and
+/// the plot view flags) so a tuning session survives an application restart.
+/// The pair count is user-resizable in the tool, from two up to
 /// <see cref="MaximumChannelCount"/>.
 /// </summary>
 public sealed class VirtualCrossoverProjectFile
@@ -136,12 +163,19 @@ public sealed class VirtualCrossoverProjectFile
     public const string CurrentFormat = "resonalyze-virtual-crossover";
 
     // Bump on an incompatible schema change and add a per-version migration
-    // step in LoadOrDefault before Validate. Files from a NEWER version
-    // (a downgraded app) are never migrated: LoadOrDefault backs them up and
-    // starts fresh, LoadFrom rejects them with an explicit error.
-    public const int CurrentVersion = 1;
+    // step in Migrate below. Files from a NEWER version (a downgraded app)
+    // are never migrated: LoadOrDefault backs them up and starts fresh,
+    // LoadFrom rejects them with an explicit error.
+    public const int CurrentVersion = 2;
     public const int MaximumChannelCount = 8;
     private const string FileName = "virtual-crossover.json";
+
+    /// <summary>
+    /// The widest scene offset (ms) the stereo Auto delay accepts: beyond a
+    /// couple of milliseconds an inter-side lead is no longer an image shift
+    /// but an audible echo, so a larger magnitude is a typo.
+    /// </summary>
+    public const double MaximumSceneOffsetMs = 5;
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -157,14 +191,27 @@ public sealed class VirtualCrossoverProjectFile
     public int Version { get; set; } = CurrentVersion;
     public DateTimeOffset SavedAtUtc { get; set; }
 
-    // One entry per channel block in the tool (A, B, C); a channel without a
-    // source simply does not participate in the sum.
-    public List<VirtualCrossoverChannelSettings> Channels { get; set; } =
+    // Schema v1 payload, kept only so old files deserialize for migration:
+    // Migrate moves these into Pairs (as the left side) and empties the list.
+    // v2 files serialize it as an empty array.
+    public List<VirtualCrossoverChannelSettings> Channels { get; set; } = new();
+
+    // One entry per channel block in the tool (A, B, C), each an L/R pair; a
+    // side without a source simply does not participate in that side's sum.
+    public List<VirtualCrossoverChannelPairSettings> Pairs { get; set; } =
     [
-        new VirtualCrossoverChannelSettings(),
-        new VirtualCrossoverChannelSettings(),
-        new VirtualCrossoverChannelSettings()
+        new VirtualCrossoverChannelPairSettings(),
+        new VirtualCrossoverChannelPairSettings(),
+        new VirtualCrossoverChannelPairSettings()
     ];
+
+    // The stereo Auto delay scene offset (ms): positive makes the right side
+    // LEAD (arrive earlier), pulling the image toward the dash center for a
+    // left-seated driver; right-seated drivers use a negative value.
+    public double StereoSceneOffsetMs { get; set; } = 0.25;
+
+    // Which side the tool currently displays and edits (view state).
+    public bool ActiveSideRight { get; set; }
 
     // Acoustic-plot view state shared by all channels.
     public bool ShowSumCurve { get; set; } = true;
@@ -269,8 +316,31 @@ public sealed class VirtualCrossoverProjectFile
                 stream,
                 SerializerOptions)
             ?? throw new InvalidDataException("The session file is empty.");
+        Migrate(file);
         file.Validate();
         return file;
+    }
+
+    // Per-version upgrade steps, applied before validation. Newer-than-current
+    // versions are deliberately NOT touched: validation rejects them and the
+    // callers handle that (backup + fresh, or an explicit import error).
+    private static void Migrate(VirtualCrossoverProjectFile file)
+    {
+        if (file.Version == 1)
+        {
+            // v1 stored single-sided channels; they become the LEFT side of a
+            // pair (the historical measurements were the user's only side) and
+            // the right side starts empty.
+            file.Pairs = file.Channels
+                .Select(channel => new VirtualCrossoverChannelPairSettings
+                {
+                    Left = channel,
+                    Right = new VirtualCrossoverChannelSettings()
+                })
+                .ToList();
+            file.Channels = new List<VirtualCrossoverChannelSettings>();
+            file.Version = 2;
+        }
     }
 
     /// <summary>
@@ -310,6 +380,7 @@ public sealed class VirtualCrossoverProjectFile
                     stream,
                     SerializerOptions)
                 ?? throw new InvalidDataException("The project file is empty.");
+            Migrate(file);
             file.Validate();
             return file;
         }
@@ -353,10 +424,15 @@ public sealed class VirtualCrossoverProjectFile
             throw new InvalidDataException(
                 $"Unsupported virtual crossover version {Version}.");
         }
-        if (Channels.Count is < 2 or > MaximumChannelCount)
+        if (Pairs.Count is < 2 or > MaximumChannelCount)
         {
             throw new InvalidDataException(
                 "The virtual crossover channel count is invalid.");
+        }
+        if (!double.IsFinite(StereoSceneOffsetMs) ||
+            Math.Abs(StereoSceneOffsetMs) > MaximumSceneOffsetMs)
+        {
+            throw new InvalidDataException("The stereo scene offset is invalid.");
         }
         if (!OverlaySmoothing.IsValid(SmoothingInverseOctaves))
         {
@@ -391,9 +467,9 @@ public sealed class VirtualCrossoverProjectFile
             throw new InvalidDataException("The phase gate window is invalid.");
         }
 
-        foreach (VirtualCrossoverChannelSettings channel in Channels)
+        foreach (VirtualCrossoverChannelPairSettings pair in Pairs)
         {
-            channel.Validate();
+            pair.Validate();
         }
     }
 

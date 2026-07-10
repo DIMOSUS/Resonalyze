@@ -124,6 +124,91 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 
 ## Virtual DSP / Time Alignment
 
+- [✗] **Phase-slope (residual group delay) as an Auto delay score prior —
+  REFUTED on the user's real measurements** (probed 2026-07-10, five junctions
+  of the left 4-way + right mid/twr from `assets/test_data`). The idea:
+  penalize candidates whose inter-channel phase slope across the pair band is
+  non-flat, since a lobe impostor differs by exactly one period of residual
+  delay. The probe measured the flat-slope delay per junction (wrap-safe
+  adjacent-bin phase increments of the gated cross-spectrum, two weightings —
+  both agree) and compared it with the summation winner and the user's manual
+  tune. Result: at the true alignment the inter-channel phase slope is NOT
+  flat — it carries the honest group-delay difference of drivers plus
+  non-matched crossover filters, and that reaches a FULL period at real
+  junctions: left woof/mid true lobe sits 1.02 T from the flat-slope point;
+  right mid/twr (the gapped BW24 LP 1300 / HP 1800 junction) true lobe sits
+  1.82 T away while the flat-slope point lands on the old field-failure
+  answer (~mid +2.0 ms) — flat phase slope is mathematically the GCC-PHAT
+  peak, so this prior would re-trust exactly the PHAT lobe position the
+  `PhatSeedMinDominance` gate was added to distrust. Any weight strong enough
+  to separate lobes (≥0.5 dB/T) flips the right mid/twr winner to a wrong
+  inverted candidate. Do not implement as a score term; at most surface the
+  per-candidate residual GD as a log diagnostic. Side finding, positive: on
+  every junction with a known manual reference the current score+selection
+  already reproduces the user's tune (mid/twr left −0.154 vs manual −0.16 ms;
+  woof/mid left 3.878 vs manual 3.84 — via the normal-polarity margin, which
+  won by only 0.02 dB there, see next item; right mid/twr −0.635 vs manual
+  ~0.68 on the mid side).
+  **Follow-up (same day, after the scene-preserving co-move shifted the D
+  pair −0.52 ms):** re-probed at the final cascade state, asking whether the
+  flat-slope point now agrees with the validated tune. It does not — the
+  verdict got stronger: the C/D flat-slope residual reads −1.36 T on the left
+  and +1.71 T on the right (B/C: −1.06 / −0.87 T), i.e. the two sides want
+  OPPOSITE corrections (left +0.53 ms, right −1.84 ms), so no scene-preserving
+  pair move can satisfy the slope criterion on both sides even in principle.
+  On the left the loss-optimal co-move went in exactly the opposite direction
+  from the flat-slope point's wish while landing on the user's hand tune. The
+  per-side filter+driver group-delay asymmetry is real and side-asymmetric;
+  the refutation stands.
+- [ ] **Stereo scene diagnostics (Δ per band)**: the stereo Auto delay cascade
+  (left walk → arrival bridge with the scene offset → right descent) is in;
+  the complementary *verification* layer is not — per-band L−R arrival
+  differences of the FINAL tune, compared across bands (probe showed 0.06 ms
+  repeatability on real measurements), with a warning when a band's Δ walks
+  off the top pair's by a sizable fraction of its junction period (a period
+  slip that survived the per-side sum optimization), and optionally a
+  candidate-list re-pick to fix it for free. Also: L/R polarity consistency
+  per band.
+- [ ] **`SceneLockToleranceMs = 0.05` is aggressive for pairs whose
+  localizable band is narrow and low** (e.g. reaching only ~300–400 Hz):
+  the band passes the minimum-width admission, but the temporal certainty of
+  such a narrow-band envelope arrival is typically worse than 0.05 ms, so the
+  lock can pin the channel inside the measurement noise. Acceptable today
+  thanks to the guards around it — the minimum lock-band width, the SNR gate,
+  the lock refusing an invalid arrival, and the scene-preserving co-move that
+  recovers junction quality afterwards — but non-blocking risk, recorded
+  2026-07-10. Follow-up: make the tolerance a function of the lock band's
+  width/center (roughly: a fraction of the band-center period, floored at
+  0.05 ms), or of an explicit arrival-uncertainty estimate (envelope rise
+  time / FirstArrivalProminence), so a wide tweeter band keeps the tight pin
+  while a barely-localizable pair gets an honest slack.
+- [x] **Stereo level (ILD) read-out next to Δ** — done: the metric block
+  gained a "Level Δ L−R (dB)" row per pair (`MeasureBandLevelDb`: gated,
+  log-frequency-weighted band level of each processed side; gated by the
+  same per-side arrival reliability; tooltip explains the sign and the
+  single-mic-vs-binaural gap). Deliberately a diagnostic, no auto gain trim.
+  Original note — field-confirmed follow-up
+  (2026-07-10): with the cascade's delays in the car the user reported the
+  scene "dead center" and same-channel drivers indistinguishable by ear, but
+  full centering ALSO needed a manual −3…−4 dB trim of the LEFT mid+tweeter:
+  level steers the image alongside timing. The same asymmetry shows in the
+  measurements — gated band level L−R of the final processed sides on
+  `assets/test_data`: mid +1.6 dB (175–1300; +1.2 in 300–1300), twr +0.6 dB,
+  woof +4.3 dB — same sign, smaller magnitude than perceived, as expected:
+  one omni mic at the head position sees no head shadow, so the effective
+  binaural ILD is larger than the measured single-point figure. Feature: a
+  per-pair L−R level column in the metric block (measured in the pair's
+  shared band, same gate as the sum loss) as a *diagnostic* — do NOT auto-trim
+  gains from it (it under-corrects vs binaural perception and taste); at most
+  a gentle hint when the localization-band level asymmetry exceeds ~2 dB.
+- [ ] **`AlignmentSelection` normal-polarity margin near-miss on real data**:
+  at the user's left woof/mid junction the inverted impostor out-scores the
+  true normal candidate by 0.23 dB — the 0.25 dB
+  `DefaultInvertPreferenceMarginDb` saves the pick by just 0.02 dB. One noisier
+  measurement could flip it. Worth revisiting with more field measurements
+  (margin as a function of junction frequency / band coherence, or an
+  independent polarity witness such as `EstimatePolarity` on the band-passed
+  arrivals) before touching the constant.
 - [ ] **Time Alignment analysis is not cached** — `RefreshAnalysis`
   (`TimeAlignmentPanelController`) recomputes Hilbert + GCC-PHAT on every tab
   show even when inputs are unchanged. Needs a live-app check to avoid stale

@@ -54,6 +54,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
     internal DarkNumericUpDown GainInput => numericGain;
     internal DarkNumericUpDown DelayInput => numericDelay;
     internal CheckBox InvertCheckBox => checkBoxInvert;
+    internal CheckBox MonoCheckBox => checkBoxMono;
     internal DarkComboBox CrossoverKindComboBox => comboBoxCrossoverKind;
     internal DarkNumericUpDown HighPassFrequencyInput => numericHighPassHz;
     internal DarkComboBox HighPassFamilyComboBox => comboBoxHighPassFamily;
@@ -256,6 +257,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
             RaiseSettingsChanged();
         };
         checkBoxInvert.CheckedChanged += (_, _) => RaiseSettingsChanged();
+        checkBoxMono.CheckedChanged += (_, _) => RaiseSettingsChanged();
         comboBoxCrossoverKind.SelectedIndexChanged += (_, _) =>
         {
             UpdateCrossoverAvailability();

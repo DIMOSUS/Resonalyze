@@ -37,6 +37,7 @@ namespace Resonalyze
             numericDelay = new DarkNumericUpDown();
             labelDelayMm = new Label();
             checkBoxInvert = new CheckBox();
+            checkBoxMono = new CheckBox();
             labelCrossover = new Label();
             comboBoxCrossoverKind = new DarkComboBox();
             labelMeasuredPolarity = new Label();
@@ -160,11 +161,23 @@ namespace Resonalyze
             checkBoxInvert.ForeColor = Color.FromArgb(210, 214, 222);
             checkBoxInvert.Location = new Point(78, 62);
             checkBoxInvert.Name = "checkBoxInvert";
-            checkBoxInvert.Size = new Size(100, 19);
+            checkBoxInvert.Size = new Size(60, 19);
             checkBoxInvert.TabIndex = 7;
-            checkBoxInvert.Text = "Invert polarity";
+            checkBoxInvert.Text = "Invert";
             checkBoxInvert.UseVisualStyleBackColor = true;
-            // 
+            //
+            // checkBoxMono
+            //
+            checkBoxMono.AutoSize = true;
+            checkBoxMono.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            checkBoxMono.ForeColor = Color.FromArgb(210, 214, 222);
+            checkBoxMono.Location = new Point(150, 62);
+            checkBoxMono.Name = "checkBoxMono";
+            checkBoxMono.Size = new Size(60, 19);
+            checkBoxMono.TabIndex = 27;
+            checkBoxMono.Text = "Mono";
+            checkBoxMono.UseVisualStyleBackColor = true;
+            //
             // labelCrossover
             // 
             labelCrossover.AutoSize = true;
@@ -414,6 +427,7 @@ namespace Resonalyze
             Controls.Add(numericDelay);
             Controls.Add(labelDelayMm);
             Controls.Add(checkBoxInvert);
+            Controls.Add(checkBoxMono);
             Controls.Add(labelCrossover);
             Controls.Add(comboBoxCrossoverKind);
             Controls.Add(labelMeasuredPolarity);
@@ -457,6 +471,7 @@ namespace Resonalyze
         private DarkNumericUpDown numericDelay;
         private Label labelDelayMm;
         private CheckBox checkBoxInvert;
+        private CheckBox checkBoxMono;
         private Label labelCrossover;
         private DarkComboBox comboBoxCrossoverKind;
         private Label labelMeasuredPolarity;

@@ -7,7 +7,8 @@ public sealed class VirtualCrossoverSheetTests
     private static VirtualCrossoverProjectFile CreateProject()
     {
         var project = new VirtualCrossoverProjectFile();
-        project.Channels[0] = new VirtualCrossoverChannelSettings
+        project.Pairs[0].Mono = true;
+        project.Pairs[0].Left = new VirtualCrossoverChannelSettings
         {
             DisplayName = "woofer.json",
             SourceFilePath = @"C:\m\woofer.json",
@@ -20,14 +21,22 @@ public sealed class VirtualCrossoverSheetTests
             PeqBands = [new PeqBand(120, 2.0, -4.0)],
             PeqSourceName = "woofer-peq.txt"
         };
-        project.Channels[1] = new VirtualCrossoverChannelSettings
+        project.Pairs[1].Left = new VirtualCrossoverChannelSettings
         {
             DisplayName = "tweeter.json",
             SourceFilePath = @"C:\m\tweeter.json",
             CrossoverKind = CrossoverKind.HighPass,
             HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 2_000, 18)
         };
-        // The third channel has no source and must not appear on the sheet.
+        project.Pairs[1].Right = new VirtualCrossoverChannelSettings
+        {
+            DisplayName = "tweeter R.json",
+            SourceFilePath = @"C:\m\tweeter R.json",
+            CrossoverKind = CrossoverKind.HighPass,
+            HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 2_000, 18),
+            DelayMs = 0.68
+        };
+        // The third pair has no source and must not appear on the sheet.
         return project;
     }
 
@@ -37,7 +46,8 @@ public sealed class VirtualCrossoverSheetTests
         string text = VirtualCrossoverSheet.FormatText(CreateProject(), "Sum loss avg: -1.8 dB");
 
         Assert.Contains("Sum loss avg: -1.8 dB", text);
-        Assert.Contains("Channel A — woofer.json", text);
+        // The mono pair prints ONE section; the stereo pair prints both sides.
+        Assert.Contains("Channel A (mono) — woofer.json", text);
         Assert.Contains("-2.5 dB", text);
         Assert.Contains("0.42 ms", text);
         Assert.Contains("144.1 mm", text);
@@ -46,7 +56,9 @@ public sealed class VirtualCrossoverSheetTests
         Assert.Contains("woofer-peq.txt, preamp -1.5 dB", text);
         Assert.Contains("Filter 1: ON PK Fc 120 Hz Gain -4.0 dB Q 2.0", text);
 
-        Assert.Contains("Channel B — tweeter.json", text);
+        Assert.Contains("Channel B L — tweeter.json", text);
+        Assert.Contains("Channel B R — tweeter R.json", text);
+        Assert.Contains("0.68 ms", text);
         Assert.Contains("High-pass Butterworth 18 dB/oct @ 2000 Hz", text);
         Assert.Contains("Normal", text);
 

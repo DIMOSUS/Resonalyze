@@ -742,6 +742,71 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void MeasureBandLevelDb_ReadsTheGainDifferenceBetweenResponses()
+    {
+        // The absolute figure carries an arbitrary reference; the contract is
+        // the DIFFERENCE between two responses over the same band — here an
+        // exact virtual -6 dB gain stage.
+        Complex[] reference = UnitImpulse(8_192, 480);
+        Complex[] quieter = VirtualCrossoverAnalysis.ApplyChain(
+            reference,
+            new DspChannelChain(GainDb: -6),
+            SampleRate);
+
+        double? referenceLevel = VirtualCrossoverAnalysis.MeasureBandLevelDb(
+            reference, SampleRate, 300, 3_000);
+        double? quieterLevel = VirtualCrossoverAnalysis.MeasureBandLevelDb(
+            quieter, SampleRate, 300, 3_000);
+
+        Assert.NotNull(referenceLevel);
+        Assert.NotNull(quieterLevel);
+        Assert.Equal(6.0, referenceLevel.Value - quieterLevel.Value, 2);
+    }
+
+    [Fact]
+    public void MeasureBandLevelDb_BandWithoutBinsReturnsNull()
+    {
+        // 23 990 - 23 999 Hz at 48 kHz falls between the last usable FFT bin
+        // and Nyquist: no bins, no level.
+        Complex[] ir = UnitImpulse(8_192, 480);
+
+        Assert.Null(VirtualCrossoverAnalysis.MeasureBandLevelDb(
+            ir, SampleRate, 23_990, 23_999));
+    }
+
+    [Fact]
+    public void AnalyzeBandLimitedArrival_RefusesABandNarrowerThanAThirdOctave()
+    {
+        // The band used to be widened to at least half an octave behind the
+        // caller's back, so a deliberately exact band (an L/R shared band, a
+        // localization sub-band) was silently replaced by a different
+        // question. Now the band passes through as given and a band too
+        // narrow to place an arrival in is refused as invalid — not answered
+        // with a plausible-looking number from a wider band.
+        Complex[] ir = UnitImpulse(8_192, 480);
+
+        TimeAlignmentAnalysisResult narrow =
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                ir, SampleRate, 1_000, 1_100);
+
+        Assert.False(narrow.IsValid);
+    }
+
+    [Fact]
+    public void AnalyzeBandLimitedArrival_AcceptsExactlyAThirdOctave()
+    {
+        Complex[] ir = UnitImpulse(8_192, 480);
+
+        TimeAlignmentAnalysisResult result =
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                ir, SampleRate, 1_000,
+                1_000 * VirtualCrossoverAnalysis.MinimumArrivalBandRatio);
+
+        Assert.True(result.IsValid);
+        Assert.InRange(result.FirstArrivalDelayMilliseconds, 9.5, 10.5);
+    }
+
+    [Fact]
     public void FindBandLimitedCorrelationDelay_ReturnsDelayToAddToSecondSignal()
     {
         Complex[] first = UnitImpulse(8_192, 2_000);

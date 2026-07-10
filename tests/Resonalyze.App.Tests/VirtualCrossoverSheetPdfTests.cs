@@ -9,15 +9,19 @@ public sealed class VirtualCrossoverSheetPdfTests
     public void Export_WritesAValidPdfFile()
     {
         var project = new VirtualCrossoverProjectFile();
-        project.Channels[0].SourceFilePath = "sub.json";
-        project.Channels[0].DisplayName = "Sub";
-        project.Channels[0].GainDb = -3.0;
-        project.Channels[0].DelayMs = 1.5;
-        project.Channels[0].CrossoverKind = CrossoverKind.LowPass;
-        project.Channels[1].SourceFilePath = "top.json";
-        project.Channels[1].DisplayName = "Top";
-        project.Channels[1].CrossoverKind = CrossoverKind.HighPass;
-        project.Channels[1].PeqBands.Add(new PeqBand(1000, 2.0, -3.0));
+        project.Pairs[0].Mono = true;
+        project.Pairs[0].Left.SourceFilePath = "sub.json";
+        project.Pairs[0].Left.DisplayName = "Sub";
+        project.Pairs[0].Left.GainDb = -3.0;
+        project.Pairs[0].Left.DelayMs = 1.5;
+        project.Pairs[0].Left.CrossoverKind = CrossoverKind.LowPass;
+        project.Pairs[1].Left.SourceFilePath = "top.json";
+        project.Pairs[1].Left.DisplayName = "Top";
+        project.Pairs[1].Left.CrossoverKind = CrossoverKind.HighPass;
+        project.Pairs[1].Left.PeqBands.Add(new PeqBand(1000, 2.0, -3.0));
+        project.Pairs[1].Right.SourceFilePath = "top r.json";
+        project.Pairs[1].Right.DisplayName = "Top R";
+        project.Pairs[1].Right.CrossoverKind = CrossoverKind.HighPass;
 
         string path = Path.Combine(Path.GetTempPath(), $"vdsp_{Guid.NewGuid():N}.pdf");
         try

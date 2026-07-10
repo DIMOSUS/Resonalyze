@@ -119,11 +119,13 @@ file is provided with every release.
   measurements (`Main ⊕ Compare`) with Compare delay/polarity controls, plus a
   **sum-loss** curve — accounts for delay, polarity, and phase the way dB-curve
   math cannot
-- **Virtual DSP** tool: run up to eight measured drivers through virtual
-  DSP chains — gain, delay, polarity, Butterworth / Linkwitz-Riley / Bessel
-  crossovers, and imported PEQ — and see their complex sum, sum loss, phase
-  tracking, auto crossover proposals, auto delay, gated phase view, overlay
-  capture, sessions, and tuning-sheet export
+- **Virtual DSP** tool: run up to eight measured L/R driver pairs (with mono
+  channels for a shared subwoofer) through virtual DSP chains — gain, delay,
+  polarity, Butterworth / Linkwitz-Riley / Bessel crossovers, and imported
+  PEQ — and see their complex sum, sum loss, the opposite side's sum, phase
+  tracking, per-pair Δ L−R timing, auto crossover proposals, a stereo-aware
+  auto delay with a scene offset, gated phase view, overlay capture, sessions,
+  and tuning-sheet export
 - Live Spectrum: real-time loopback transfer function with selectable excitation
   (leakage-free periodic pink, pink, brown/red, white noise) and coherence
 - Frequency response, phase, group delay, waterfall, Burst Decay, and
@@ -193,7 +195,8 @@ Resonalyze is built around a focused engineering workflow:
   the crossover frequencies, filter families, slopes, and cut-only gains that
   flatten the summed magnitude (favoring tight, minimally overlapping splits),
   and **Auto delay** aligns each junction's delay and polarity against the
-  phase-aware sum.
+  phase-aware sum — across both stereo sides in one run, holding a
+  configurable L/R scene offset between the sides.
 - **Practical loudspeaker alignment**
   Time Alignment reports first arrival and strongest peak, each refined to
   sub-sample precision by a GCC-PHAT cross-correlation, plus distance at 20 °C,
@@ -1294,8 +1297,8 @@ between tools and DSPs:
 
 - **Import + export:** Equalizer APO, REW filter settings, Generic CSV,
   EasyEffects (JSON), CamillaDSP (YAML)
-- **Export only:** miniDSP biquads (RBJ coefficients), GraphicEQ (Wavelet /
-  JamesDSP)
+- **Export only:** miniDSP biquads (RBJ coefficients, at 44.1 / 48 / 96 kHz to
+  match the DSP's internal rate), GraphicEQ (Wavelet / JamesDSP)
 
 Import is deliberately lenient: comments, blank lines, disabled (`OFF`) filters,
 non-peaking filter types, and malformed entries are skipped rather than rejected.
@@ -1335,11 +1338,15 @@ where the signal is going before pressing **Play**.
 
 The **Virtual DSP** (under the **Tools** tab) is the summation-prediction
 workflow taken to its conclusion: measure each driver once, then design the
-whole DSP setup virtually. Channels (A, B, C, …) each pick a measurement — from a
-file or from History — and run it through a virtual DSP chain. **Add channel** /
-**Remove channel** grow the setup from two up to eight channels; the blocks live
-in a scrolling list, so a many-way system stays in one window without crowding
-the plots.
+whole DSP setup virtually. Channels (A, B, C, …) are stereo **L/R pairs**: each
+side picks its own measurement — from a file or from History — and runs its own
+virtual DSP chain. Tight **L / R** selector radios switch which side the block's
+controls edit (the plots follow), **L→R** / **R→L** buttons copy chain settings
+across sides for the channels you tick in a small dialog, and a **Mono**
+checkbox turns a pair into a single shared driver — the typical one-subwoofer
+car layout — that feeds both sides' sums. **Add channel** / **Remove channel**
+grow the setup from two up to eight pairs; the blocks live in a scrolling list,
+so a many-way system stays in one window without crowding the plots.
 
 Each channel runs through:
 
@@ -1347,7 +1354,7 @@ Each channel runs through:
   one playback chain; compensate any difference here
 - **Delay** (ms) with a live **mm** read-out — the ruler check against the
   physical driver offset (343 m/s)
-- **Invert polarity** — the DSP polarity switch
+- **Invert** — the DSP polarity switch
 - **Crossover** — Off, low-pass, high-pass, or band-pass; each edge picks
   **Butterworth** (6–48 dB/oct), **Linkwitz-Riley** (12/24/48 dB/oct), or
   **Bessel** (6–48 dB/oct, near-constant group delay) with its own corner
@@ -1375,8 +1382,10 @@ The filters are evaluated as the **digital biquad cascades a real DSP runs**
 (bilinear transform at the measurement sample rate), so the prediction matches
 miniDSP-class hardware up to Nyquist, not just an analog textbook curve.
 
-The acoustic plot shows raw and processed curves per channel, the complex
-**Sum**, and the **Sum loss** curve (blanked where every channel is filtered
+The acoustic plot shows raw and processed curves per channel for the active
+side, the complex **Sum**, the **opposite side's Sum** as a dashed translucent
+curve (so the two sides' tunes compare at a glance without flipping back and
+forth), and the **Sum loss** curve (blanked where every channel is filtered
 more than 40 dB below the loudest point — out there the "loss" would be the
 phase arithmetic of noise floors, not audible summation), with a **Phase view**
 toggle to check that
@@ -1384,16 +1393,20 @@ the channels track each other through the crossover region. The Phase view has a
 manual **Gate...** dialog with an IR preview, Tukey left / plateau / right
 window controls, gate offset, and a shared τ detrend so reflections can be cut
 out without breaking relative phase. A second plot shows each DSP chain's own
-magnitude and phase (without the driver). A **Sum loss** read-out (avg / dip /
-null per junction plus a total) turns tuning into numbers you can minimize. The
-**null** figure is the classic tuner's polarity-flip check computed for you:
-the deepest notch the sum develops in the pair band with the junction's upper
-channel inverted — the deeper it drops, the better the pair's phase match at
-the handover. One caveat the read-out inherits from the physics: a
-whole-period delay error keeps the phase at the crossover frequency aligned
-and nulls just as deeply, so read it as confirmation of a candidate alignment,
-not as a lobe selector — the avg/dip figures and the arrival-anchored Auto
-delay are what guard against cycle skips.
+magnitude and phase (without the driver). A **Sum loss** read-out (avg / dip
+per junction plus a total) turns tuning into numbers you can minimize, and a
+**Δ L−R** block below it reports each stereo pair's final inter-side state:
+the two sides' band-limited envelope arrivals in the pair's shared band
+(fully processed chains included) with their difference — positive means the
+right side leads, the same sign convention as the scene offset, so after a
+stereo Auto delay every row should read the offset — and, below the timing, a
+**Level Δ L−R** row per pair: the gated band-level asymmetry of the two sides
+(positive: left louder). Timing (ITD) and level (ILD) steer the image
+together, so this is the read-out for the by-ear gain trim that finishes the
+centering; note a single microphone underestimates the binaural difference
+(no head shadow), so expect to trim a little more than it shows. A side whose
+arrival cannot be measured reliably (a silent band, or a near-noise record)
+shows an honest dash instead of a precise-looking number.
 
 Editing a chain recomputes the prediction on a background task, so dragging a
 gain, delay, or crossover value stays responsive even with several channels
@@ -1441,12 +1454,29 @@ it defaults to Off because the measurements are loopback-referenced.
   crossover has excessive group delay (a narrow or steep low-frequency band-pass)
   — a banner flags the lagging driver so you can soften its filter instead of
   dialing in an absurd bulk delay.
+  With stereo pairs, Auto delay tunes **both sides in one run**: the left side
+  aligns first, the top pair is bridged by band-limited envelope arrivals
+  honoring the **L/R offset** field — positive makes the right side lead,
+  pulling the image toward the dash center for a left-seated listener (the
+  field's tooltip carries the sign cheat-sheet) — with the right top's polarity
+  matched to the left's, and the right side then descends junction by junction
+  from the bridged top. Pairs whose shared band reaches the localization region
+  are pinned to the scene: their right channel lands exactly the offset behind
+  its left counterpart (±0.05 ms of junction fine-tuning), because the stereo
+  image outranks the handover there, while pure low-frequency pairs keep the
+  free junction search with the cross-side timing as a gentle prior only. A
+  final scene-preserving pass may then shift BOTH sides of a pair by one shared
+  delta — which cannot touch the image — to recover junction summation the pin
+  cost. A **Mono** channel (the shared subwoofer) is timed by the left pass
+  alone; its junction against the right side is measured and reported, with a
+  warning when only a manual compromise delay would serve both sides.
 - **Capture to overlay** saves the predicted sum as a Captured overlay in
   Frequency Response — compare it against real measurements and target curves,
   or feed it onward to the EQ Wizard.
 - **Export…** writes the whole setup as a tuning sheet (printable PDF or plain
-  text): per channel the gain, delay in ms and mm, polarity, crossover filters,
-  and PEQ bands — exactly the list you type into the DSP.
+  text): for every side of every pair (a mono pair prints once) the gain, delay
+  in ms and mm, polarity, crossover filters, and PEQ bands — exactly the list
+  you type into the DSP, both sides in one sheet.
 - **Save session... / Load session...** exports or imports the complete session
   JSON (sources, chains, gate, and view state) for sharing or archiving.
 

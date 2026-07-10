@@ -47,12 +47,21 @@ internal static class VirtualCrossoverSheetPdf
 
         using var sheet = new PdfSheet("Virtual DSP", subtitleText);
 
-        var participating = new List<(int Index, VirtualCrossoverChannelSettings Channel)>();
-        for (int i = 0; i < project.Channels.Count; i++)
+        // Both sides of every pair print in one sheet; a mono pair prints
+        // once. On the graph the right side reuses the pair's hue dashed.
+        var participating =
+            new List<(int Index, string SideSuffix, bool Dashed,
+                VirtualCrossoverChannelSettings Channel)>();
+        for (int i = 0; i < project.Pairs.Count; i++)
         {
-            if (project.Channels[i].HasSource)
+            foreach ((VirtualCrossoverChannelSettings channel, string sideSuffix)
+                in VirtualCrossoverSheet.SideSections(project.Pairs[i]))
             {
-                participating.Add((i, project.Channels[i]));
+                if (channel.HasSource)
+                {
+                    participating.Add(
+                        (i, sideSuffix, sideSuffix == " R", channel));
+                }
             }
         }
 
@@ -63,9 +72,10 @@ internal static class VirtualCrossoverSheetPdf
                 Unit.FromCentimeter(17));
         }
 
-        foreach ((int index, VirtualCrossoverChannelSettings channel) in participating)
+        foreach ((int index, string sideSuffix, _, VirtualCrossoverChannelSettings channel)
+            in participating)
         {
-            AddChannelSection(sheet, index, channel);
+            AddChannelSection(sheet, index, sideSuffix, channel);
         }
 
         sheet.Save(filePath);
@@ -74,11 +84,13 @@ internal static class VirtualCrossoverSheetPdf
     private static void AddChannelSection(
         PdfSheet sheet,
         int index,
+        string sideSuffix,
         VirtualCrossoverChannelSettings channel)
     {
         Section section = sheet.Section;
         Paragraph heading = section.AddParagraph(
-            $"Channel {VirtualCrossoverSheet.ChannelName(index)} — {channel.DisplayName}");
+            $"Channel {VirtualCrossoverSheet.ChannelName(index)}{sideSuffix} — " +
+            channel.DisplayName);
         heading.Format.Font.Bold = true;
         heading.Format.Font.Size = 15;
         heading.Format.SpaceBefore = Unit.FromMillimeter(5);
@@ -121,10 +133,12 @@ internal static class VirtualCrossoverSheetPdf
         valueParagraph.Format.Font.Bold = true;
     }
 
-    // A compact white graph of every participating channel's DSP chain magnitude
-    // (gain + crossover + PEQ; the delay has no magnitude effect).
+    // A compact white graph of every participating channel side's DSP chain
+    // magnitude (gain + crossover + PEQ; the delay has no magnitude effect).
+    // Left and right sides of one pair share a hue; the right side is dashed.
     private static byte[] RenderChainsGraph(
-        IReadOnlyList<(int Index, VirtualCrossoverChannelSettings Channel)> channels,
+        IReadOnlyList<(int Index, string SideSuffix, bool Dashed,
+            VirtualCrossoverChannelSettings Channel)> channels,
         int sampleRate)
     {
         IReadOnlyList<double> grid = EqualizationCurve.LogFrequencyGrid(20, 20_000, 200);
@@ -148,14 +162,16 @@ internal static class VirtualCrossoverSheetPdf
 
         double minDb = -6;
         double maxDb = 6;
-        foreach ((int index, VirtualCrossoverChannelSettings channel) in channels)
+        foreach ((int index, string sideSuffix, bool dashed,
+            VirtualCrossoverChannelSettings channel) in channels)
         {
             DspChannelChain chain = channel.ToChain() with { DelayMs = 0 };
             var series = new LineSeries
             {
                 Color = ChainColors[index % ChainColors.Length],
                 StrokeThickness = 2,
-                Title = $"Channel {VirtualCrossoverSheet.ChannelName(index)}"
+                LineStyle = dashed ? LineStyle.Dash : LineStyle.Solid,
+                Title = $"Channel {VirtualCrossoverSheet.ChannelName(index)}{sideSuffix}"
             };
             foreach (double frequency in grid)
             {

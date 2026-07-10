@@ -296,6 +296,37 @@ public static class VirtualCrossoverAnalysis
         Complex[] impulseResponse,
         int sampleRate,
         double lowFrequencyHz,
+        double highFrequencyHz) =>
+        AnalyzeBandLimitedArrival(
+            impulseResponse, sampleRate, lowFrequencyHz, highFrequencyHz)
+            .FirstArrivalDelayMilliseconds;
+
+    /// <summary>
+    /// The minimum band width (as a high/low frequency ratio: a third of an
+    /// octave) a band-limited arrival analysis accepts. Narrower bands leave
+    /// the envelope detector too few in-band periods to place an arrival, so
+    /// <see cref="AnalyzeBandLimitedArrival"/> refuses them as invalid instead
+    /// of silently widening the band — an arrival measured outside the band
+    /// the caller asked for answers a different question. Callers admitting
+    /// shared bands (the stereo bridge, the L/R pair links) test against the
+    /// same figure.
+    /// </summary>
+    public static readonly double MinimumArrivalBandRatio = Math.Pow(2.0, 1.0 / 3.0);
+
+    /// <summary>
+    /// The full band-limited arrival analysis behind
+    /// <see cref="FindBandLimitedArrivalMs"/>, including the quality figures
+    /// the bare delay hides: <c>IsValid</c> (a silent band reports zeros, not
+    /// a real arrival) and the record's signal-to-noise. Callers whose result
+    /// hinges on ONE arrival pair — the stereo bridge — must gate on these
+    /// instead of trusting the number. The band is analyzed exactly as given
+    /// (clamped to the audible range); a band narrower than
+    /// <see cref="MinimumArrivalBandRatio"/> is refused as invalid.
+    /// </summary>
+    public static TimeAlignmentAnalysisResult AnalyzeBandLimitedArrival(
+        Complex[] impulseResponse,
+        int sampleRate,
+        double lowFrequencyHz,
         double highFrequencyHz)
     {
         ArgumentNullException.ThrowIfNull(impulseResponse);
@@ -311,7 +342,13 @@ public static class VirtualCrossoverAnalysis
         }
 
         double low = Math.Clamp(lowFrequencyHz, 20, 20_000);
-        double high = Math.Clamp(highFrequencyHz, low * Math.Sqrt(2.0), 20_000);
+        double high = Math.Min(highFrequencyHz, 20_000);
+        if (high < low * MinimumArrivalBandRatio)
+        {
+            return new TimeAlignmentAnalysisResult(
+                Array.Empty<double>(), 0, 0.0, 0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, false, 0.0, false, 0.0, false, IsValid: false);
+        }
 
         var samples = new double[impulseResponse.Length];
         for (int i = 0; i < samples.Length; i++)
@@ -322,7 +359,7 @@ public static class VirtualCrossoverAnalysis
         // Gentle spectral fades and a moderate threshold: the zero-phase bandpass
         // rings symmetrically around the arrival, and steep edges plus a deep
         // threshold would let the detector fire on a pre-ringing lobe.
-        TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
+        return TimeAlignmentAnalysis.Analyze(
             samples,
             sampleRate,
             new TimeAlignmentAnalysisOptions
@@ -332,8 +369,7 @@ public static class VirtualCrossoverAnalysis
                 BandpassPassOctaves = Math.Log2(high / low),
                 BandpassFadeOctaves = 1.0,
                 FirstPeakThresholdBelowMaxDb = 15
-        });
-        return result.FirstArrivalDelayMilliseconds;
+            });
     }
 
     /// <summary>
@@ -925,7 +961,7 @@ public static class VirtualCrossoverAnalysis
         for (int i = 0; i < refined.Count; i++)
         {
             (double lossDb, double dipDb) = DetailedLoss(
-                refined[i].DelayMs, refined[i].InvertPolarity);
+                bins, weightSum, refined[i].DelayMs, refined[i].InvertPolarity);
             refined[i] = refined[i] with
             {
                 ScoreDb = refined[i].ScoreDb
@@ -957,53 +993,222 @@ public static class VirtualCrossoverAnalysis
             }
         }
 
-        (double LossDb, double DipDb) DetailedLoss(double delayMs, bool invert)
+        return results;
+    }
+
+    // The raw in-band average loss (no prior/penalties) and the deepest
+    // 1/6-octave-smoothed loss notch of one delay/polarity choice.
+    private static (double LossDb, double DipDb) DetailedLoss(
+        List<AlignmentBin> bins,
+        double weightSum,
+        double delayMs,
+        bool invert)
+    {
+        var losses = new double[bins.Count];
+        double total = 0;
+        for (int i = 0; i < bins.Count; i++)
         {
-            var losses = new double[bins.Count];
-            double total = 0;
-            for (int i = 0; i < bins.Count; i++)
-            {
-                AlignmentBin bin = bins[i];
-                Complex variable = bin.Variable * Complex.Exp(
-                    new Complex(0, -bin.OmegaMs * delayMs));
-                Complex sum = invert
-                    ? bin.FixedSum - variable
-                    : bin.FixedSum + variable;
-                double lossDb = 20 * Math.Log10(Math.Max(
-                    sum.Magnitude / bin.MagnitudeSum, MinBinAmplitudeRatio));
-                losses[i] = lossDb;
-                total += bin.LogWeight * lossDb;
-            }
-
-            // The dip reads the minimum of a 1/6-octave moving average, so a
-            // single-bin modal notch cannot pose as the junction's dip while a
-            // genuine cancellation trough still reads at full depth.
-            double halfWindowRatio = Math.Pow(2, 1.0 / 12);
-            double dip = 0;
-            double windowSum = 0;
-            int lo = 0;
-            int hi = 0;
-            for (int i = 0; i < bins.Count; i++)
-            {
-                double center = bins[i].OmegaMs;
-                while (hi < bins.Count && bins[hi].OmegaMs <= center * halfWindowRatio)
-                {
-                    windowSum += losses[hi];
-                    hi++;
-                }
-                while (bins[lo].OmegaMs < center / halfWindowRatio)
-                {
-                    windowSum -= losses[lo];
-                    lo++;
-                }
-
-                dip = Math.Min(dip, windowSum / (hi - lo));
-            }
-
-            return (total / weightSum, dip);
+            AlignmentBin bin = bins[i];
+            Complex variable = bin.Variable * Complex.Exp(
+                new Complex(0, -bin.OmegaMs * delayMs));
+            Complex sum = invert
+                ? bin.FixedSum - variable
+                : bin.FixedSum + variable;
+            double lossDb = 20 * Math.Log10(Math.Max(
+                sum.Magnitude / bin.MagnitudeSum, MinBinAmplitudeRatio));
+            losses[i] = lossDb;
+            total += bin.LogWeight * lossDb;
         }
 
-        return results;
+        // The dip reads the minimum of a 1/6-octave moving average, so a
+        // single-bin modal notch cannot pose as the junction's dip while a
+        // genuine cancellation trough still reads at full depth.
+        double halfWindowRatio = Math.Pow(2, 1.0 / 12);
+        double dip = 0;
+        double windowSum = 0;
+        int lo = 0;
+        int hi = 0;
+        for (int i = 0; i < bins.Count; i++)
+        {
+            double center = bins[i].OmegaMs;
+            while (hi < bins.Count && bins[hi].OmegaMs <= center * halfWindowRatio)
+            {
+                windowSum += losses[hi];
+                hi++;
+            }
+            while (bins[lo].OmegaMs < center / halfWindowRatio)
+            {
+                windowSum -= losses[lo];
+                lo++;
+            }
+
+            dip = Math.Min(dip, windowSum / (hi - lo));
+        }
+
+        return (total / weightSum, dip);
+    }
+
+    /// <summary>
+    /// Measures the summation loss of already-settled responses without any
+    /// search: the same gated, log-frequency-weighted average and 1/6-octave
+    /// dip the alignment score reads, at the responses' current timing. Used
+    /// for junctions no search may touch (a mono channel pinned by the other
+    /// side's pass). Null when the band holds no usable bins.
+    /// </summary>
+    public static (double LossDb, double DipDb)? MeasureSumLoss(
+        Complex[] variableImpulseResponse,
+        IReadOnlyList<Complex[]> fixedImpulseResponses,
+        int sampleRate,
+        double minFrequencyHz,
+        double maxFrequencyHz)
+    {
+        // The delay window only gates parameter validation here — the
+        // measurement itself evaluates the responses exactly as given.
+        List<AlignmentBin> bins = BuildAlignmentBins(
+            variableImpulseResponse,
+            fixedImpulseResponses,
+            sampleRate,
+            minFrequencyHz,
+            maxFrequencyHz,
+            minDelayMs: -1,
+            maxDelayMs: 1);
+        if (bins.Count == 0)
+        {
+            return null;
+        }
+
+        double weightSum = 0;
+        foreach (AlignmentBin bin in bins)
+        {
+            weightSum += bin.LogWeight;
+        }
+
+        return DetailedLoss(bins, weightSum, delayMs: 0, invert: false);
+    }
+
+    /// <summary>
+    /// The gated band level (dB) of one processed response: the same
+    /// direct-sound Tukey gate as the alignment spectra, anchored at the
+    /// response's own peak, then the log-frequency-weighted mean of the bin
+    /// magnitudes in dB inside the band. The absolute figure carries an
+    /// arbitrary reference (the raw transfer-spectrum scale), so it is meant
+    /// for DIFFERENCES between responses measured over the same band — e.g.
+    /// the L−R level asymmetry of a stereo pair, the companion of the
+    /// arrival Δ: timing (ITD) and level (ILD) steer the image together.
+    /// Null when the band holds no bins.
+    /// </summary>
+    public static double? MeasureBandLevelDb(
+        Complex[] impulseResponse,
+        int sampleRate,
+        double minFrequencyHz,
+        double maxFrequencyHz)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponse);
+        if (impulseResponse.Length == 0)
+        {
+            throw new ArgumentException(
+                "The impulse response is empty.",
+                nameof(impulseResponse));
+        }
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+        if (!(minFrequencyHz > 0) || !(maxFrequencyHz > minFrequencyHz))
+        {
+            throw new ArgumentException("The band is invalid.");
+        }
+
+        int anchor = FindPeakIndex(impulseResponse);
+        int leftFade = Math.Min(AlignmentGateFadeSamples, anchor);
+        double[] gate = Windowing.TukeyWindow(
+            AlignmentGateLengthSamples,
+            2.0 * leftFade / AlignmentGateLengthSamples,
+            2.0 * AlignmentGateFadeSamples / AlignmentGateLengthSamples);
+        int length = AlignmentGateLengthSamples;
+        Complex[] spectrum = ForwardSpectrum(
+            GateDirectSound(impulseResponse, anchor - leftFade, gate), length);
+
+        int firstBin = Math.Max(
+            1, (int)Math.Ceiling(minFrequencyHz * length / sampleRate));
+        int lastBin = Math.Min(
+            length / 2 - 1, (int)Math.Floor(maxFrequencyHz * length / sampleRate));
+        double total = 0;
+        double weightSum = 0;
+        for (int bin = firstBin; bin <= lastBin; bin++)
+        {
+            double frequencyHz = bin * (double)sampleRate / length;
+            double weight = 1.0 / frequencyHz;
+            total += weight * 20.0 * Math.Log10(
+                Math.Max(spectrum[bin].Magnitude, 1e-12));
+            weightSum += weight;
+        }
+
+        return weightSum > 0 ? total / weightSum : null;
+    }
+
+    /// <summary>
+    /// A reusable junction-loss probe for searches that slide ONE channel
+    /// against fixed neighbors: the gated alignment spectra are built once
+    /// from the responses as given, and every probe rotates the variable
+    /// spectrum by e^{-jωΔ} — exactly an extra Δ ms of delay — instead of
+    /// re-running the channels' full DSP chains per candidate delta.
+    /// <c>Evaluate(0)</c> reproduces <see cref="MeasureSumLoss"/> on the same
+    /// responses. The direct-sound gate stays anchored where the responses
+    /// currently sit, which is exact for the probes' small deltas (a fraction
+    /// of the gate length).
+    /// </summary>
+    public sealed class SumLossEvaluator
+    {
+        private readonly List<AlignmentBin> bins;
+        private readonly double weightSum;
+
+        private SumLossEvaluator(List<AlignmentBin> bins, double weightSum)
+        {
+            this.bins = bins;
+            this.weightSum = weightSum;
+        }
+
+        /// <summary>
+        /// Builds an evaluator over the given band — the same gate, bins and
+        /// weights as <see cref="MeasureSumLoss"/>. Null when the band holds
+        /// no usable bins.
+        /// </summary>
+        public static SumLossEvaluator? Create(
+            Complex[] variableImpulseResponse,
+            IReadOnlyList<Complex[]> fixedImpulseResponses,
+            int sampleRate,
+            double minFrequencyHz,
+            double maxFrequencyHz)
+        {
+            List<AlignmentBin> bins = BuildAlignmentBins(
+                variableImpulseResponse,
+                fixedImpulseResponses,
+                sampleRate,
+                minFrequencyHz,
+                maxFrequencyHz,
+                minDelayMs: -1,
+                maxDelayMs: 1);
+            if (bins.Count == 0)
+            {
+                return null;
+            }
+
+            double weightSum = 0;
+            foreach (AlignmentBin bin in bins)
+            {
+                weightSum += bin.LogWeight;
+            }
+
+            return new SumLossEvaluator(bins, weightSum);
+        }
+
+        /// <summary>
+        /// The in-band average loss and 1/6-octave dip with the variable
+        /// channel delayed by <paramref name="extraDelayMs"/> more.
+        /// </summary>
+        public (double LossDb, double DipDb) Evaluate(double extraDelayMs) =>
+            DetailedLoss(bins, weightSum, extraDelayMs, invert: false);
     }
 
     private static Complex[] GateDirectSound(

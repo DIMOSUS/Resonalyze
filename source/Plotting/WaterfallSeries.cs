@@ -527,12 +527,19 @@ namespace Resonalyze
                         RawSlices[slice].Frequency,
                         OxyPlotAdapter.ToSignalPoints(RawSlices[slice].Data));
 
+                    // Only GenerateOptions.Window samples of the raw envelope are
+                    // measured data (the rest is FFT zero-padding), and the IR
+                    // peak sits a left fade after the gate start — pass both so
+                    // the periods axis is peak-anchored and points past the
+                    // measured record read NaN instead of a fabricated decay.
                     List<SignalPoint> resampled = WaterfallAnalysis.ResampleBurstDecaySlice(
                         rawSlice.Data,
                         rawSlice.Frequency,
                         RawSlices[slice].SampleRate,
                         width,
-                        GenerateOptions.Periods).ToList();
+                        GenerateOptions.Periods,
+                        measuredSamples: GenerateOptions.Window,
+                        peakOffsetSamples: Math.Max(0, GenerateOptions.LeftTukeyWindow)).ToList();
 
                     ResampleSlices[slice] = new Slice(
                         OxyPlotAdapter.ToDataPoints(resampled),

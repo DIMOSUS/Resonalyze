@@ -62,8 +62,15 @@ public sealed class SyntheticDelayTests
     }
 
     [Fact]
-    public void GroupDelay_MarksBinsMoreThanThirtyDecibelsBelowPeakAsNaN()
+    public void GroupDelay_MarksBinsFarBelowTheLocalEnvelopeAsNaN()
     {
+        // The validity gate reads against the LOCAL octave-smoothed energy
+        // envelope (a smooth quiet shelf — a differencer's low end here — is a
+        // measured response and stays valid; the old global −30 dB gate blanked
+        // it), while a stretch below the −60 dB global backstop is true silence
+        // and must still read NaN. A differencer with content only in the first
+        // two samples: everything is defined, so the curve is finite down to
+        // the deep global floor and NaN below it.
         var response = new Complex[TransformLength];
         response[0] = Complex.One;
         response[1] = -Complex.One;
@@ -80,13 +87,18 @@ public sealed class SyntheticDelayTests
             rightMs: 0,
             smoothingInverseOctaves: 0).Points;
 
+        // |H(f)| = 2·sin(πf/fs) crosses −60 dB re its Nyquist peak at
+        // f ≈ fs/π · 10^(−60/20) ≈ 15 Hz: below that the global backstop
+        // gates, above it the locally-consistent slope is a valid reading.
         SignalPoint firstValidPoint =
             groupDelay.First(point => !double.IsNaN(point.Y));
-
-        Assert.InRange(firstValidPoint.X, 450.0, 550.0);
+        Assert.InRange(firstValidPoint.X, 5.0, 50.0);
         Assert.All(
             groupDelay.Where(point => point.X < firstValidPoint.X),
             point => Assert.True(double.IsNaN(point.Y)));
+        Assert.All(
+            groupDelay.Where(point => point.X is > 100 and < 18_000),
+            point => Assert.True(double.IsFinite(point.Y)));
     }
 
     [Fact]
@@ -123,6 +135,91 @@ public sealed class SyntheticDelayTests
                 point.Y,
                 expectedDelayMilliseconds - 1e-6,
                 expectedDelayMilliseconds + 1e-6));
+    }
+
+    [Fact]
+    public void GroupDelay_AQuietBandSurvivesNextToATallResonance()
+    {
+        // A 50 Hz resonance whose spectral line rings ~47 dB above a broadband
+        // arrival (a subwoofer's cabin peak next to the rest of the system).
+        // The old validity gate compared every bin against the GLOBAL energy
+        // maximum, so the resonance blanked the measured mid band to NaN; the
+        // local-envelope gate must keep it, and the −60 dB global backstop
+        // must not swallow it either.
+        var response = new Complex[65_536];
+        response[1_000] = Complex.One;
+        for (int i = 0; i < 4_800; i++)
+        {
+            response[1_000 + i] += new Complex(
+                Math.Sin(2.0 * Math.PI * 50.0 * i / SampleRate)
+                    * Math.Exp(-i / 480.0),
+                0);
+        }
+        var measurement = new SyntheticMeasurement(
+            response,
+            SampleRate,
+            maxMagnitudeIndex: 1_000);
+
+        IReadOnlyList<SignalPoint> groupDelay = DataHelper.GetGroupDelay(
+            measurement,
+            gateOffsetMs: 1_000 * 1000.0 / SampleRate,
+            leftMs: 5,
+            plateauMs: 500,
+            rightMs: 500,
+            smoothingInverseOctaves: 0).Points;
+
+        // The old global gate blanked this band completely (it sits ~52 dB
+        // below the resonance line); the local gate keeps it, apart from the
+        // genuine deep interference notches the local rule still gates.
+        List<SignalPoint> midBand = groupDelay
+            .Where(point => point.X is >= 500 and <= 5_000)
+            .ToList();
+        Assert.NotEmpty(midBand);
+        double finiteShare =
+            midBand.Count(point => double.IsFinite(point.Y)) / (double)midBand.Count;
+        Assert.True(
+            finiteShare > 0.9,
+            $"only {finiteShare:P0} of the mid band survived the gate");
+    }
+
+    [Fact]
+    public void GatedPhase_ReadsTheCyclicTailLikeGroupDelayDoes()
+    {
+        // The dialog advertises ONE gate for phase and group delay, and GD has
+        // always read a left shoulder that precedes the IR start from the
+        // cyclic tail (the transfer IR is circular; negative time lives there).
+        // Phase used to zero-pad the same region — silently a different signal.
+        // Pin the wrap: content placed in negative time (the buffer's end) must
+        // reach the phase curve.
+        const int peakSample = 5;
+        var clean = new Complex[TransformLength];
+        clean[peakSample] = Complex.One;
+        var withTail = (Complex[])clean.Clone();
+        withTail[^20] = new Complex(0.3, 0); // −20 samples, inside the shoulder
+
+        List<SignalPoint> cleanPhase = DataHelper.GetGatedPhaseData(
+            new SyntheticMeasurement(clean, SampleRate, peakSample),
+            gateOffsetMs: peakSample * 1000.0 / SampleRate,
+            leftMs: 48 * 1000.0 / SampleRate,
+            plateauMs: 256 * 1000.0 / SampleRate,
+            rightMs: 64 * 1000.0 / SampleRate,
+            referenceSamples: 0,
+            unwrap: false);
+        List<SignalPoint> tailPhase = DataHelper.GetGatedPhaseData(
+            new SyntheticMeasurement(withTail, SampleRate, peakSample),
+            gateOffsetMs: peakSample * 1000.0 / SampleRate,
+            leftMs: 48 * 1000.0 / SampleRate,
+            plateauMs: 256 * 1000.0 / SampleRate,
+            rightMs: 64 * 1000.0 / SampleRate,
+            referenceSamples: 0,
+            unwrap: false);
+
+        double maxDifference = cleanPhase
+            .Zip(tailPhase, (a, b) => Math.Abs(a.Y - b.Y))
+            .Max();
+        Assert.True(
+            maxDifference > 0.1,
+            $"the cyclic tail never reached the phase (max diff {maxDifference:0.0000} rad)");
     }
 
     [Fact]

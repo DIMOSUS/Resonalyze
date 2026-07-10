@@ -87,6 +87,48 @@ public sealed class MinimumPhaseTests
         Assert.Throws<ArgumentException>(() => MinimumPhase.FromMagnitude([]));
     }
 
+    [Theory]
+    [InlineData(1e-12)]
+    [InlineData(1e+12)]
+    public void FromMagnitude_IsInvariantToOverallGain(double gain)
+    {
+        // Minimum phase is determined by the SHAPE of log|H|: an overall gain
+        // only moves the zeroth cepstral coefficient. With an absolute floor a
+        // quiet measurement's spectrum sank into the clamp and its phase
+        // changed with its level — the floor must be relative to the peak.
+        double[] magnitude = new double[Length];
+        for (int i = 0; i < Length; i++)
+        {
+            double f = Math.Min(i, Length - i) / (double)Length;
+            magnitude[i] = 0.01 + Math.Exp(-Math.Pow((f - 0.1) / 0.05, 2.0));
+        }
+
+        double[] reference = MinimumPhase.FromMagnitude(magnitude);
+        double[] scaled = MinimumPhase.FromMagnitude(
+            Array.ConvertAll(magnitude, value => value * gain));
+
+        for (int i = 0; i < Length; i++)
+        {
+            Assert.Equal(reference[i], scaled[i], 9);
+        }
+    }
+
+    [Fact]
+    public void FromMagnitude_NonFiniteBinsDoNotPoisonTheCepstrum()
+    {
+        // A NaN magnitude used to slip through Math.Max into the log and turn
+        // the whole cepstrum — and every phase bin — into NaN.
+        double[] magnitude = new double[Length];
+        Array.Fill(magnitude, 1.0);
+        magnitude[100] = double.NaN;
+        magnitude[200] = double.PositiveInfinity;
+        magnitude[300] = -1.0;
+
+        double[] phase = MinimumPhase.FromMagnitude(magnitude);
+
+        Assert.All(phase, value => Assert.True(double.IsFinite(value)));
+    }
+
     private static Complex[] TransferFunction(double[] impulse)
     {
         var buffer = new Complex[Length];

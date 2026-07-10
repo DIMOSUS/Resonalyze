@@ -336,6 +336,22 @@ public sealed class ImpulseResponseFile
         }
         if (TransferCoherence != null)
         {
+            // The pipeline produces exactly N/2 + 1 coherence bins for a
+            // transfer IR of length N; anything else would draw the curve on a
+            // wrong frequency grid, because the FFT length is reconstructed
+            // from the coherence itself.
+            if (TransferRealSamples == null)
+            {
+                throw new InvalidDataException(
+                    "Transfer coherence requires transfer impulse response samples.");
+            }
+            if (TransferCoherence.Length != TransferRealSamples.Length / 2 + 1)
+            {
+                throw new InvalidDataException(
+                    "Transfer coherence length does not match the transfer impulse response " +
+                    $"({TransferCoherence.Length} bins for {TransferRealSamples.Length} samples).");
+            }
+
             for (int i = 0; i < TransferCoherence.Length; i++)
             {
                 double value = TransferCoherence[i];

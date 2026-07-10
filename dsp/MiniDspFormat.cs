@@ -10,10 +10,26 @@ namespace Resonalyze.Dsp;
 /// </summary>
 public sealed class MiniDspFormat : IEqProfileFormat
 {
-    private const double SampleRateHz = 48_000;
+    // Biquad coefficients are only meaningful for the sample rate they were
+    // computed at: the same file applied on a device processing at a different
+    // rate lands every band on a different frequency and Q. The rate is a
+    // constructor parameter and part of the visible format name, so the user
+    // picks the file knowing which device family it fits instead of silently
+    // getting 48 kHz coefficients.
+    private readonly double sampleRateHz;
     private const string CoefficientFormat = "0.00000000";
 
-    public string Name => "miniDSP biquads";
+    public MiniDspFormat(double sampleRateHz = 48_000)
+    {
+        if (!double.IsFinite(sampleRateHz) || sampleRateHz <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRateHz));
+        }
+
+        this.sampleRateHz = sampleRateHz;
+    }
+
+    public string Name => $"miniDSP biquads ({sampleRateHz / 1000:0.#} kHz devices)";
     public string Extension => "txt";
     public bool CanImport => false;
     public bool CanExport => true;
@@ -34,7 +50,7 @@ public sealed class MiniDspFormat : IEqProfileFormat
 
         foreach (PeqBand band in curve.Bands)
         {
-            AppendBiquad(builder, index++, PeakingBiquad.Compute(band, SampleRateHz));
+            AppendBiquad(builder, index++, PeakingBiquad.Compute(band, sampleRateHz));
         }
 
         return builder.ToString();

@@ -116,7 +116,7 @@ public static class SignalEnvelope
             envelope.Count,
             sampleRate,
             options.SearchWindowMilliseconds);
-        double noiseRms = EstimateEnvelopeNoiseRms(envelope, strongestIndex);
+        double noiseRms = EstimateEnvelopeNoiseRms(envelope);
         double thresholdFromMax = strongestPeak *
             Math.Pow(10.0, -Math.Abs(options.FirstPeakThresholdBelowMaxDb) / 20.0);
         double thresholdFromNoise = noiseRms *
@@ -156,13 +156,22 @@ public static class SignalEnvelope
             true);
     }
 
+    // For stationary Gaussian noise the Hilbert envelope is Rayleigh-
+    // distributed, and the RMS of its lowest quartile is ~0.370 of the full
+    // envelope RMS. The quartile floor is deliberately robust (reverb decay
+    // must not count as noise), but reported as-is it would flatter the SNR
+    // by ~8.6 dB — so the REPORTED figure compensates the known bias back to
+    // the full-envelope noise RMS. The first-arrival threshold keeps the raw
+    // robust floor: there under-estimating noise is the safe direction.
+    private const double RayleighLowestQuartileRmsRatio = 0.370;
+
     public static double EstimatePeakConfidenceDecibels(
         IReadOnlyList<double> envelope,
-        int peakIndex,
         double peak)
     {
         ArgumentNullException.ThrowIfNull(envelope);
-        double noiseRms = EstimateEnvelopeNoiseRms(envelope, peakIndex);
+        double noiseRms = EstimateEnvelopeNoiseRms(envelope)
+            / RayleighLowestQuartileRmsRatio;
         return DataHelper.AmplitudeToDecibels(peak / Math.Max(noiseRms, 1e-12));
     }
 
@@ -328,39 +337,43 @@ public static class SignalEnvelope
     {
         int requestedSamples = (int)Math.Round(
             Math.Max(1, searchWindowMilliseconds) * sampleRate / 1000.0);
-        return Math.Clamp(requestedSamples, 3, Math.Max(3, envelopeLength / 2));
+        // The floor of 3 exists for the parabolic refinement, but it must never
+        // exceed the envelope itself — a 1–2 sample input would otherwise be
+        // read past its end.
+        int cap = Math.Min(envelopeLength, Math.Max(3, envelopeLength / 2));
+        return Math.Clamp(requestedSamples, Math.Min(3, cap), cap);
     }
 
-    private static double EstimateEnvelopeNoiseRms(
-        IReadOnlyList<double> envelope,
-        int peakIndex)
-    {
-        int exclusionRadius = Math.Max(8, envelope.Count / 50);
-        double sumSquares = 0;
-        int count = 0;
-        for (int i = 0; i < envelope.Count; i++)
-        {
-            if (CircularDistance(i, peakIndex, envelope.Count) <= exclusionRadius)
-            {
-                continue;
-            }
+    // The fraction of the envelope (its quietest samples) the noise-floor
+    // estimate averages over.
+    private const double NoiseFloorQuantile = 0.25;
 
-            sumSquares += envelope[i] * envelope[i];
-            count++;
+    // Noise floor as the RMS of the quietest quarter of the envelope. An
+    // acoustic IR's remainder is NOT noise — it is reflections, modal decay and
+    // driver ringing — so a mean over everything-but-the-peak (the previous
+    // estimate) read reverberation as noise: it misgraded clean reverberant
+    // recordings and, worse, inflated the noise-based first-arrival threshold
+    // until a genuine weak direct sound was cut out of the candidate list. The
+    // quietest-quantile RMS reads the true floor as long as decay and arrivals
+    // occupy less than three quarters of the record, which holds for any IR
+    // with usable headroom around its reverb tail.
+    private static double EstimateEnvelopeNoiseRms(IReadOnlyList<double> envelope)
+    {
+        var sorted = new double[envelope.Count];
+        for (int i = 0; i < sorted.Length; i++)
+        {
+            sorted[i] = envelope[i];
+        }
+        Array.Sort(sorted);
+
+        int count = Math.Max(1, (int)(sorted.Length * NoiseFloorQuantile));
+        double sumSquares = 0;
+        for (int i = 0; i < count; i++)
+        {
+            sumSquares += sorted[i] * sorted[i];
         }
 
-        return count > 0
-            ? Math.Sqrt(sumSquares / count)
-            : 0;
-    }
-
-    private static int CircularDistance(
-        int index,
-        int centerIndex,
-        int length)
-    {
-        int distance = Math.Abs(index - centerIndex);
-        return Math.Min(distance, length - distance);
+        return Math.Sqrt(sumSquares / count);
     }
 }
 

@@ -150,7 +150,9 @@ namespace Resonalyze.Options
                 "Shows the total harmonic distortion + noise curve.");
             toolTip.SetToolTip(
                 irPlotView,
-                "Preview of the sweep-deconvolution impulse response and the analysis window used for this mode.");
+                "Preview of the transfer impulse response and the analysis window used " +
+                "for the primary curve. The harmonic curves window the sweep-deconvolution " +
+                "IR with automatically derived windows.");
         }
     }
 }

@@ -21,8 +21,10 @@ public readonly record struct TimeAlignmentAnalysisResult(
     double EnvelopePeak,
     int StrongestEnvelopePeakIndex,
     double StrongestEnvelopePeak,
-    // How clean the recording is: the strongest envelope peak against the RMS
-    // of the rest of the record. It grades the measurement, not the pick.
+    // How clean the recording is: the strongest envelope peak against the
+    // noise floor (the RMS of the record's quietest quarter, so reflections
+    // and modal decay do not count as noise). It grades the measurement, not
+    // the pick.
     double SignalToNoiseDecibels,
     // How pronounced the first arrival is: its envelope level relative to the
     // strongest peak, <= 0 dB (0 when they coincide). A low value means the
@@ -46,7 +48,13 @@ public readonly record struct TimeAlignmentAnalysisResult(
     double FirstArrivalConfidence,
     bool FirstArrivalRefinedByPhat,
     double StrongestConfidence,
-    bool StrongestRefinedByPhat);
+    bool StrongestRefinedByPhat,
+    // False when the analysis band carried no energy at all (silence, or a
+    // bandpass entirely outside the measured band): with a flat-zero envelope
+    // every sample "passes" the thresholds and the peak walk would fabricate a
+    // confident-looking delay near the end of the search window. An invalid
+    // result reports zeros and must not be shown as an alignment.
+    bool IsValid = true);
 
 public static class TimeAlignmentAnalysis
 {
@@ -105,6 +113,17 @@ public static class TimeAlignmentAnalysis
         double strongestPeak = peakSearchResult.StrongestPeak;
         int strongestPeakIndex = peakSearchResult.StrongestIndex;
 
+        // No energy anywhere in the search window: nothing downstream is
+        // meaningful (thresholds collapse to zero and every zero sample reads
+        // as a "peak"), so return an explicitly invalid result instead of a
+        // fabricated delay.
+        if (!(strongestPeak > 0.0) || !double.IsFinite(strongestPeak))
+        {
+            return new TimeAlignmentAnalysisResult(
+                envelope, 0, 0.0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                false, 0.0, false, 0.0, false, IsValid: false);
+        }
+
         // Refine each arrival to sub-sample precision with a GCC-PHAT correlation
         // of the transfer IR (its spectrum already carries the microphone/loopback
         // cross-phase). The envelope peak stays the robust coarse anchor; the
@@ -124,12 +143,17 @@ public static class TimeAlignmentAnalysis
         // When the strongest peak is a distinct, clearly later arrival than the
         // first, it is a reflection or a room mode rather than the direct sound —
         // the usual narrowband-subwoofer trap. Flag it so the reader trusts the
-        // first arrival. The coarse index gap drives the flag so wrapping does not.
+        // first arrival. The coarse index gap drives the flag so wrapping does
+        // not, and a genuine second arrival must be separated by a real valley:
+        // a band-limited low-frequency driver's direct sound keeps rising for
+        // milliseconds, and an early shoulder of that one wave packet peaking
+        // later must not be called a reflection.
         double separationMilliseconds =
             (strongestPeakIndex - envelopePeakIndex) * 1000.0 / sampleRate;
         bool strongestIsSeparateArrival =
             strongestPeakIndex != envelopePeakIndex &&
-            separationMilliseconds >= SeparateArrivalThresholdMilliseconds;
+            separationMilliseconds >= SeparateArrivalThresholdMilliseconds &&
+            HasValleyBetween(envelope, envelopePeakIndex, strongestPeakIndex);
 
         if (options.WrapPeakPositions)
         {
@@ -149,7 +173,6 @@ public static class TimeAlignmentAnalysis
             strongestPeak,
             SignalEnvelope.EstimatePeakConfidenceDecibels(
                 envelope,
-                strongestPeakIndex,
                 strongestPeak),
             strongestPeak > 0.0
                 ? DataHelper.AmplitudeToDecibels(envelopePeak / strongestPeak)
@@ -176,11 +199,38 @@ public static class TimeAlignmentAnalysis
     // smeared direct sound.
     private const double SeparateArrivalThresholdMilliseconds = 1.0;
 
+    // How deep the envelope must dip between the two peaks before they count as
+    // separate arrivals: two events have a real valley between them, one broad
+    // rise does not.
+    private const double SeparateArrivalValleyDb = 6.0;
+
+    private static bool HasValleyBetween(
+        IReadOnlyList<double> envelope,
+        int firstIndex,
+        int secondIndex)
+    {
+        int from = Math.Min(firstIndex, secondIndex);
+        int to = Math.Max(firstIndex, secondIndex);
+        double valley = double.MaxValue;
+        for (int i = from; i <= to; i++)
+        {
+            valley = Math.Min(valley, envelope[i]);
+        }
+
+        double reference = Math.Min(envelope[firstIndex], envelope[secondIndex]);
+        return valley <= reference *
+            Math.Pow(10.0, -SeparateArrivalValleyDb / 20.0);
+    }
+
     // A short refinement window (~0.1 ms) around the envelope peak: wide enough to
     // absorb the envelope's sub-sample bias, narrow enough not to slide onto a
-    // neighbouring reflection.
+    // neighbouring reflection. The cap is in samples only as a backstop — at
+    // 32 it no longer shrinks the window in TIME at high sample rates the way
+    // the old cap of 8 did (192 kHz used to get ±0.04 ms instead of ~0.1 ms).
+    private const double PhatSearchRadiusSeconds = 0.0001;
+
     private static int ComputePhatSearchRadius(int sampleRate) =>
-        Math.Clamp((int)Math.Round(sampleRate * 0.0001), 2, 8);
+        Math.Clamp((int)Math.Round(sampleRate * PhatSearchRadiusSeconds), 2, 32);
 
     // A refined arrival position plus the GCC-PHAT trust it was refined with.
     // RefinedByPhat is true when the whitened correlation drove the sample; false

@@ -299,3 +299,227 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 
 - [ ] **Uninstaller leaves settings behind.** Offer (or document) removal of
   the settings/history files on uninstall.
+
+## External review tails (verified, deliberately deferred — designed changes, not patches)
+
+Items from the four external review batches (July 2026, PR #24) whose claims
+were verified against the code but whose fixes need their own design and
+validation. Each entry records the verdict so the claim does not have to be
+re-verified.
+
+### Measurement / transfer layer
+
+- [ ] ★ **Dual-device Wave loopback is an untrusted timing reference but
+  produces an indistinguishable `LoopbackTransfer` measurement.** Independent
+  clocks mean an arbitrary inter-device offset (changes per run by a buffer)
+  plus drift as a frequency-dependent phase error; Time Alignment still offers
+  fractional-millisecond read-outs. Fix: a timing-quality field
+  (sample-synchronous / shared-device / independent-devices) through
+  `ExpSweepMeasurement`, history snapshots and the IR file format, with the
+  Time Alignment panel warning or refusing on independent devices, and phase/GD
+  marked timing-uncertain.
+- [ ] **H1 has no excitation mask and an absolute epsilon.** Below the sweep
+  band `Gxy/Gxx` divides noise by noise and the garbage bins ring back through
+  the IFFT; the absolute epsilon's strength also varies with the average count.
+  Fix: relative regularization + a soft excitation taper at the known sweep
+  edges. Changes every measured transfer IR — needs validation against fresh
+  raw captures (the test-data submodule stores only final IRs).
+
+### Harmonics / THD
+
+- [ ] ★ **THD+N is not THD+N: one FFT over the HD2..HD5 region sums the
+  packets complex-wise** (phase-dependent, shifts change the result without
+  changing energy). Fix: per-harmonic windows → per-harmonic spectra → move
+  each onto the fundamental axis → sum energies; estimate noise separately and
+  add it in energy. (The HDn display axis itself is fixed: curves now draw at
+  the excitation frequency with calibration applied at the product frequency.)
+- [ ] ★ **Harmonic curves and the primary curve have different reference
+  levels** (sweep-deconvolution amplitude vs mic/loopback transfer), so their
+  vertical distance is not a distortion percentage. Fix: HDn relative to the
+  H1 linear packet of the *same* ESS decomposition; the transfer H1 stays as
+  the primary display curve.
+- [ ] **No overlap check between harmonic packets.** Long decay (bass, short
+  sweeps, car cabins) leaks one packet's tail into the next window; the curves
+  stay confident-looking. Fix: compute the available separation and warn when
+  energy near the window edge has not fallen by a set margin.
+- [ ] **No end-to-end ESS nonlinearity test.** The isolation test pins window
+  geometry only. Fix: y = x + a2·x² + a3·x³ through a real ESS +
+  deconvolution, assert HD2/HD3 frequency and level against the known a2/a3.
+
+### Auto Crossover
+
+- [ ] ★ **The scalar summation model is physically wrong in three ways**:
+  family-based amplitude-vs-power summation (the real sum depends on the
+  complex phase at each frequency, not the family name), sequential mixed
+  summation that is non-associative for 3+ channels, and a magnitude-only
+  objective that ignores the measured phase entirely (Auto delay afterwards
+  cannot fix mismatched slopes/orders with one delay). The optimizer's live
+  preview shares the model, so it confirms its own objective; the flatness
+  tests call the same `SummedResponseDb` and are tautological. Fix: complex
+  per-channel responses (measured IR × exact digital filter response) with at
+  least a final complex-sum check per candidate, plus an independent
+  complex-sum oracle in the tests.
+- [ ] **`EstimateBand` merges disjoint islands into one band** (first/last bin
+  above a global threshold): an isolated resonance above a dead gap extends
+  HighHz and misclassifies the driver. Fix: the most significant contiguous
+  segment above threshold with bounded gap tolerance.
+
+### EQ Wizard
+
+- [ ] ★ **No boostability/reliability mask**: the fitter sees only dB curves
+  and will boost a deep interference null (wasting headroom and blocking an
+  octave). Fix: mask from coherence + null depth/width + driver band; a
+  cuts-only mode (sensible default for car tuning). (The clipping-profile
+  half of this batch is fixed: `TotalGainMaxDb` caps preamp + band peak, the
+  wizard passes 0.)
+- [ ] **Band spacing ignores the chosen Q** (fixed ±0.33/±1 oct blocks);
+  **gain is fixed before Q is searched** (over-corrects broad areas; already
+  noted above with the missing polish pass); **the objective treats boosts and
+  cuts symmetrically** (no boost/high-Q/band-count regularization). All three
+  fold into the same redesign of the greedy loop: frequency × Q × gain search
+  with width-based spacing and a boost-penalized score, then a
+  coordinate-descent polish over all bands + preamp.
+
+### Waterfall / Burst Decay
+
+- [ ] **Wavelet time-support validity is not tracked**: at low frequencies the
+  Morlet kernel outlasts the analysis window and the envelope is window-shaped,
+  not system-shaped. The `Slice.SliceMinValidFrequency` metadata path already
+  exists but always receives 0 — compute the frequency below which the kernel's
+  effective support exceeds the window and mark/limit slices there. (The
+  fabricated post-window decay, the pre-peak axis zero and the above-Nyquist
+  grid are fixed.)
+- [ ] **Waterfall renders nothing silently below 8 slices** (`RawSlices.Count
+  < 8` guard in `WaterfallSeries.Render`): corrupted settings or narrow ranges
+  show an empty plot with no explanation. Show a message (or clamp the
+  controls so the state is unreachable).
+
+### Time Alignment / unwrap (deferred from earlier batches)
+
+- [ ] **GCC-PHAT confidence is peak height, not uniqueness**: a single
+  spectral line or a narrowband subwoofer reads ~100% while the delay is
+  poorly conditioned (bounded in practice by the ±0.1 ms anchored refinement
+  window). Fix: fold RMS bandwidth / peak curvature / peak-to-second-peak into
+  the confidence, or rename the figure. Needs its own validation pass on real
+  measurements.
+- [ ] **`WrapPeakPositions` cannot actually produce negative delays** — the
+  peak search is capped at length/2, so the upper-half branch of
+  `ToSignedDelaySamples` is unreachable (harmless for the loopback workflow,
+  where delays are non-negative; the API promises more than it does).
+- [ ] **Display smoothing includes low-reliability bins** (unwrap blanks long
+  garbage stretches now, but short noisy nulls still enter `SmoothLinear` at
+  full weight; magnitude curves behave the same). Optional: reliability-
+  weighted smoothing.
+
+### Batch 5 tails (Live Spectrum / sweep / EQ export / overlays / history / provenance)
+
+- [ ] ★ **Measurement provenance model.** Files store no backend, timing
+  quality, dropped-frame/clipping history, excitation range, effective average
+  count or calibration id — a dual-device Wave capture loads back
+  indistinguishable from sample-synchronous ASIO, and Time Alignment/Virtual
+  DSP cannot see that absolute phase and delay are suspect. Ties together the
+  dual-device item above; consumers should declare their requirements
+  (Time Alignment → synchronous timing required, HD → valid packet
+  separation, ...).
+- [ ] ★ **Sweep runs are accepted unconditionally** (`AcceptedRuns++` inside
+  `Add()`; "Confirm each run" fires only *after* accumulation and cannot
+  reject). One clipped/knocked run irreversibly contaminates the average. Fix:
+  Capture → quality checks (clipping, loopback energy, duration, peak-delay
+  vs median, IR correlation vs running reference) → Accept/Retry/Skip →
+  Accumulate. Also: runs are pre-aligned by the GLOBAL sweep-IR peak (a
+  reflection outrunning the direct sound mis-aligns the whole run — bound the
+  shift and cross-correlate against a reference run); the stored raw samples
+  are only the LAST run's (rename or store per-run); Wave RMS integrates the
+  lead-in/tail silence (compute over the active sweep interval only).
+- [ ] **Wave dual-device pairing is callback-ordered** (`LoopbackSequencePairer`
+  dequeues first-come): no timestamps, no drift estimate, a lost callback
+  shifts every later pair by a whole block. Practical fix short of full
+  synchronization: allow RTA only and disable H1/coherence/phase-dependent
+  results on independent Wave devices. (Live-spectrum drop-glue, cold-start
+  γ²=1 and the mode-switch statistics mix are fixed.)
+- [ ] **EMA coherence has no effective average count** (overlap-correlated
+  frames, alpha-dependent memory): expose K_eff ≈ (2−α)/α (reduced for
+  overlap) alongside the curve and feed it to the same debias the sweep path
+  uses.
+- [ ] **EQ Wizard fits the ANALOG peaking prototype while Virtual DSP and the
+  exports run RBJ digital biquads** — ~3–4 dB apart at 18–20 kHz (48 kHz
+  rate). Fit and preview should evaluate `PeakingBiquad.Compute` +
+  `BiquadResponse` at the measurement rate; the analog model stays as an
+  explicit choice. Needs its own validation (fits change near Nyquist).
+- [ ] **miniDSP export needs a target-device profile**: the sample rate is now
+  a constructor parameter surfaced in the format name (48 kHz default), but
+  device biquad limits are not checked and the preamp burns a biquad slot
+  instead of mapping to the device's gain control.
+- [ ] **Overlay curves are assumed sorted/unique/finite in X**
+  (`CalculateOperation`'s forward-only cursor): normalize imported overlays
+  once (drop non-finite, sort, merge duplicate frequencies). (The branch-cut
+  phase interpolation and the linear-Hz→log-f interpolation are fixed.)
+- [ ] **History entries reference LIVE overlay slots** (`ActiveOverlaySlots`
+  numbers into mutable global storage): restoring an old session shows
+  whatever the slots hold TODAY. Store immutable overlay snapshots
+  (content-addressed revisions) in the history entry.
+- [ ] **History index lives beside the executable and dies silently**: no
+  write-permission handling (`Save()` throws unguarded in Program Files-style
+  installs), and any schema-version mismatch or parse error loads as an EMPTY
+  list with no backup/notification — mirror the project-file
+  backup-on-invalid policy, distinguish empty/unsupported/corrupted, and
+  consider %LocalAppData%.
+- [ ] **Virtual DSP history-source loading has the same stale-async race the
+  EQ Auto Tune and history restore just got guards for**
+  (`SelectHistoryEntryAsync` applies a slow snapshot over a newer selection):
+  per-channel source revision or CancellationTokenSource.
+
+### Batch 6 tails (calibration / generator / device lifecycle / autocorrelation / files / release)
+
+- [ ] **Estimated 90° calibration looks real**: `Has(Degrees90)` is true when
+  the 90° curve is approximated from the 0° file, and the UI labels it plainly
+  "90 degrees". Label it "estimated from 0°" and record the fact in the
+  measurement provenance (ties into the provenance model above).
+- [ ] **Signal Generator materializes whole signals in memory** (mono array +
+  full playback copy; ASIO always a stereo float copy): 600 s at 192 kHz is
+  ~1.3 GiB, 384+ kHz worse. Needs a streaming IWaveProvider generating blocks.
+  (The above-Nyquist sine refusal and the sample-rate-independent brown-noise
+  corner are fixed.)
+- [ ] **Subscriber exceptions escape into the real-time audio callbacks**
+  (`LevelsAvailable`/`SequenceReady`/... invoked directly from ASIO/Wave
+  callbacks): one throwing UI subscriber can kill the driver. Route through a
+  bounded dispatcher or isolate each subscriber.
+- [ ] **Autocorrelation windows are sample-count-fixed** (offset 64, length
+  2048, 3 ms display): the physical analysis window shrinks 4× at 192 kHz and
+  the promised 3 ms does not even exist at 768 kHz. Parametrize in
+  milliseconds. The /correlation[0] normalization is the standard BIASED
+  estimator — fine for display, but note it under-reads long-lag periodicity;
+  an N−k (or overlap-energy) normalization is the alternative if the mode is
+  ever used for periodicity detection.
+- [ ] **Measurement files validate only after full deserialization**: a
+  crafted file can declare hundreds of millions of samples and hit OOM before
+  `Validate()` runs. Add a file-size cap before parsing, a max-samples cap,
+  and `OutOfMemoryException` handling. (The coherence-length ↔ transfer-IR
+  consistency check is in.)
+- [ ] **Release toolchain is unpinned** (`choco install innosetup`, latest
+  NetSparkle appcast tool, actions by major tag): pin exact versions (and
+  SHAs for actions) once the current-good versions are confirmed — an
+  unverified pin would break the release instead. (The shell-injection
+  surface, the branch-vs-tag build mismatch and auto-published AI notes are
+  fixed: inputs go through env + strict regex, every job checks out the tag,
+  the release is created as a draft.)
+
+### Live Spectrum cold-start (batch 7 tails)
+
+- [ ] ★ **The ASIO/Wave capture callback still allocates on the audio thread**:
+  sequence extraction builds jagged float arrays + a List and invokes
+  subscribers inline; the first pass through that branch (JIT + allocation)
+  can overrun a 64–128-sample ASIO budget. Target shape: callback → convert
+  into a preallocated SPSC ring slot → return; a background thread reframes/
+  FFTs from the ring. (`ArrayPool` is the halfway option but the sequence
+  arrays flow into the Channel with unclear return discipline.)
+- [ ] **Level meter allocates a fresh `AudioChannelLevel[]` per callback**
+  (up to ~750/s at 64-sample buffers): accumulate peak/sumSquares in the
+  callback and snapshot at 20–30 Hz.
+- [ ] **First live plot frame is heavy on the UI thread** (snapshot clones +
+  RTA computed even when hidden + first resample + OxyPlot series/capacity
+  growth): compute the RTA magnitude only when `ShowInputMagnitude`, and
+  consider pre-building the series before playback starts. A lock-free
+  callback probe ring (duration vs ASIO budget + allocated bytes) is the
+  measurement tool if hitches persist after the one-period buffer and the
+  DSP warm-up.

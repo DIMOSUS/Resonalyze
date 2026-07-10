@@ -50,6 +50,22 @@ internal sealed class SampleWaiterRegistry
         waiters.Clear();
     }
 
+    /// <summary>
+    /// Faults every pending waiter. Called when the capture stops
+    /// unexpectedly (device unplugged, driver error): a waiter blocked on a
+    /// sample count that will never arrive used to hang forever — the stop
+    /// event completed only the first-buffer and stopped signals.
+    /// </summary>
+    public void FaultAll(Exception exception)
+    {
+        foreach (SampleWaiter waiter in waiters)
+        {
+            waiter.Fault(exception);
+        }
+
+        waiters.Clear();
+    }
+
     private sealed class SampleWaiter
     {
         private readonly TaskCompletionSource<bool> completion = NewSignal();
@@ -75,6 +91,12 @@ internal sealed class SampleWaiterRegistry
         {
             registration.Dispose();
             completion.TrySetCanceled();
+        }
+
+        public void Fault(Exception exception)
+        {
+            registration.Dispose();
+            completion.TrySetException(exception);
         }
     }
 }

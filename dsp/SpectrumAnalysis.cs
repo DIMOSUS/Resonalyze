@@ -31,7 +31,7 @@ public static class SpectrumAnalysis
         }
 
         int length = samples.Count;
-        double[] window = Windowing.CreateAnalysisWindow(windowType, length);
+        double[] window = Windowing.SharedAnalysisWindow(windowType, length);
         var spectrum = new Complex[length];
         double windowSum = 0.0;
         for (int i = 0; i < length; i++)
@@ -42,12 +42,19 @@ public static class SpectrumAnalysis
 
         Fourier.Forward(spectrum, FourierOptions.Matlab);
 
+        // Tone calibration (dBFS): a full-scale bin-centred sine reads
+        // amplitude 1.0 for any FFT length and any window — |X_k| = N·CG/2,
+        // so the amplitude is 2|X_k|/(N·CG). Without the 2/N the level jumped
+        // 6 dB per FFT-size doubling. DC has no conjugate mirror, so it takes
+        // half the scale (a DC level of 1.0 also reads 1.0).
         double coherentGain = windowSum / length;
-        double scale = coherentGain > 0.0 ? 1.0 / coherentGain : 1.0;
+        double scale = coherentGain > 0.0
+            ? 2.0 / (length * coherentGain)
+            : 2.0 / length;
         var power = new double[length / 2];
         for (int i = 0; i < power.Length; i++)
         {
-            double magnitude = spectrum[i].Magnitude * scale;
+            double magnitude = spectrum[i].Magnitude * (i == 0 ? scale * 0.5 : scale);
             power[i] = magnitude * magnitude;
         }
 
@@ -80,7 +87,7 @@ public static class SpectrumAnalysis
             throw new ArgumentOutOfRangeException(nameof(frameLength));
         }
 
-        double[] window = Windowing.CreateAnalysisWindow(windowType, frameLength);
+        double[] window = Windowing.SharedAnalysisWindow(windowType, frameLength);
         double windowSum = 0.0;
         for (int i = 0; i < frameLength; i++)
         {
@@ -88,13 +95,23 @@ public static class SpectrumAnalysis
         }
 
         double coherentGain = windowSum / frameLength;
-        double scale = coherentGain > 0.0 ? 1.0 / coherentGain : 1.0;
+
+        // Tone calibration (dBFS): a full-scale bin-centred sine has
+        // |X_k| = N·CG/2, so the amplitude is 2|X_k|/(N·CG) — INDEPENDENT of
+        // the FFT length. Without the 2/N the same input jumped 6 dB per
+        // FFT-size doubling, on the same axis as the length-invariant H1
+        // transfer gain. DC (no conjugate mirror) takes half the scale,
+        // matching ComputePowerSpectrum bin for bin.
+        double scale = coherentGain > 0.0
+            ? 2.0 / (frameLength * coherentGain)
+            : 2.0 / frameLength;
 
         var magnitude = new double[autoPowerSpectrum.Count];
         for (int i = 0; i < magnitude.Length; i++)
         {
             double power = autoPowerSpectrum[i];
-            magnitude[i] = power > 0.0 ? Math.Sqrt(power) * scale : 0.0;
+            double binScale = i == 0 ? scale * 0.5 : scale;
+            magnitude[i] = power > 0.0 ? Math.Sqrt(power) * binScale : 0.0;
         }
 
         return magnitude;
@@ -128,7 +145,7 @@ public static class SpectrumAnalysis
             throw new ArgumentException("Samples must not be empty.", nameof(reference));
         }
 
-        double[] window = Windowing.CreateAnalysisWindow(windowType, reference.Count);
+        double[] window = Windowing.SharedAnalysisWindow(windowType, reference.Count);
         var referenceSpectrum = new Complex[reference.Count];
         var targetSpectrum = new Complex[target.Count];
         for (int i = 0; i < reference.Count; i++)
@@ -193,6 +210,31 @@ public static class SpectrumAnalysis
                 ? magnitude * magnitude / denominator
                 : 0.0;
             coherence[i] = Math.Clamp(value, 0.0, 1.0);
+        }
+
+        return coherence;
+    }
+
+    /// <summary>
+    /// Removes the small-sample positive bias of the raw γ² estimate, in place.
+    /// The MSC estimator over K averages has E[γ̂²] = 1/K for fully incoherent
+    /// signals — at K = 2 pure noise reads ~0.5, exactly at the thresholds the
+    /// unwrap and PHAT weighting trust — so raw values are rescaled by the
+    /// standard first-order correction (K·γ̂² − 1)/(K − 1), which maps the null
+    /// expectation to 0 and keeps 1 at 1. With one average (no estimate at all)
+    /// everything collapses to 0. Returns the same array for chaining.
+    /// </summary>
+    public static double[] DebiasCoherence(double[] coherence, int averageCount)
+    {
+        ArgumentNullException.ThrowIfNull(coherence);
+        for (int i = 0; i < coherence.Length; i++)
+        {
+            coherence[i] = averageCount <= 1
+                ? 0.0
+                : Math.Clamp(
+                    (averageCount * coherence[i] - 1.0) / (averageCount - 1.0),
+                    0.0,
+                    1.0);
         }
 
         return coherence;

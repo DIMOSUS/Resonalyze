@@ -33,7 +33,10 @@ public static class WaterfallAnalysis
         double frequencyStep = (double)measurement.SampleRate / spectrum.Length;
         double frequencyRatio = Math.Pow(2.0, 0.5 * smoothingOctaves);
 
-        double initFrequency = 20000;
+        // The grid never reaches past Nyquist: at sample rates below 40 kHz a
+        // fixed 20 kHz start would generate wavelet slices for frequencies the
+        // capture physically cannot contain.
+        double initFrequency = Math.Min(20_000.0, measurement.SampleRate * 0.49);
         var frequencies = new List<double>(100);
         while (initFrequency >= frequencyStep * 4 && initFrequency >= 20)
         {
@@ -78,12 +81,24 @@ public static class WaterfallAnalysis
         return result;
     }
 
+    /// <summary>
+    /// Resamples one burst-decay envelope onto a periods axis.
+    /// <paramref name="measuredSamples"/> is how much of the raw envelope is
+    /// real data (the analysis window length): everything past it is the
+    /// zero-padding of the FFT, not an observed decay, so those points read
+    /// NaN instead of a fabricated cliff to the floor — at 20 Hz a 30-period
+    /// axis spans 1.5 s while a default window measures only 85 ms.
+    /// <paramref name="peakOffsetSamples"/> anchors period 0 on the IR peak
+    /// (the raw envelope starts a left-fade earlier, at the gate start).
+    /// </summary>
     public static IReadOnlyList<SignalPoint> ResampleBurstDecaySlice(
         IReadOnlyList<SignalPoint> rawData,
         double frequency,
         int sampleRate,
         int width,
-        double periods)
+        double periods,
+        int measuredSamples = int.MaxValue,
+        int peakOffsetSamples = 0)
     {
         ArgumentNullException.ThrowIfNull(rawData);
         if (rawData.Count == 0)
@@ -106,33 +121,51 @@ public static class WaterfallAnalysis
         {
             throw new ArgumentOutOfRangeException(nameof(periods));
         }
+        if (peakOffsetSamples < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(peakOffsetSamples));
+        }
 
         double periodsTime = periods / frequency;
         double periodsSamples = sampleRate * periodsTime;
+        // measuredSamples counts REAL samples, so the last measured index is
+        // measuredSamples − 1 — and the interpolation taps are clamped to it
+        // too, so points just inside the boundary do not blend the FFT's
+        // zero-padding into the last measured readings.
+        int lastMeasuredIndex = (int)Math.Min(
+            Math.Min((long)measuredSamples - 1, rawData.Count - 1),
+            int.MaxValue);
         var data = new List<SignalPoint>(width);
 
         for (int i = 0; i < width; i++)
         {
             double interp = (double)i / width;
-            double samplePosition = interp * periodsSamples;
+            double samplePosition = peakOffsetSamples + interp * periodsSamples;
             data.Add(new SignalPoint(
                 interp * periods,
-                DataHelper.AmplitudeToDecibels(SmoothSample(rawData, samplePosition))));
+                samplePosition <= lastMeasuredIndex
+                    ? DataHelper.AmplitudeToDecibels(
+                        SmoothSample(rawData, samplePosition, lastMeasuredIndex))
+                    : double.NaN));
         }
 
         return data;
     }
 
-    private static double SmoothSample(IReadOnlyList<SignalPoint> rawData, double index)
+    private static double SmoothSample(
+        IReadOnlyList<SignalPoint> rawData,
+        double index,
+        int maxIndex)
     {
         const int radius = 2;
         int centerIndex = (int)Math.Round(index);
+        int limit = Math.Min(maxIndex, rawData.Count - 1);
 
         double weightSum = 0;
         double weightedSum = 0;
 
         for (int sampleIndex = Math.Max(centerIndex - radius, 0);
-            sampleIndex <= Math.Min(centerIndex + radius, rawData.Count - 1);
+            sampleIndex <= Math.Min(centerIndex + radius, limit);
             sampleIndex++)
         {
             double weight = DataHelper.LanczosKernel(index - sampleIndex, radius);

@@ -531,6 +531,124 @@ public sealed class VirtualCrossoverAnalysisTests
         });
     }
 
+    [Theory]
+    [InlineData(1_000, 1.0, 6.0)]   // an utterly ordinary band
+    [InlineData(4_000, 2.0, -8.0)]
+    public void RequiredTailSamples_OrdinaryPeqStaysAtTheMinimumPadding(
+        double frequencyHz,
+        double q,
+        double gainDb)
+    {
+        // The pole radius must be read in the ADDITIVE feedback convention
+        // BiquadCoefficients uses (z² − A1·z − A2): the textbook 1 + a1 + a2
+        // formulas mis-read every ordinary stable section as unstable and
+        // pinned the padding at the 262144-sample maximum — ballooning every
+        // Virtual DSP / Auto delay FFT for any crossover or PEQ.
+        var chain = new DspChannelChain(Peq: new EqualizationCurve(
+            new[] { new PeqBand(frequencyHz, q, gainDb) }));
+        PreparedDspResponse prepared = PreparedDspResponse.Create(chain, 48_000);
+
+        int tail = prepared.RequiredTailSamples(120.0, 8_192, 262_144);
+
+        Assert.Equal(8_192, tail);
+    }
+
+    [Fact]
+    public void RequiredTailSamples_CrossoverStaysAtTheMinimumPadding()
+    {
+        var chain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.LowPass,
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24)));
+        PreparedDspResponse prepared = PreparedDspResponse.Create(chain, 48_000);
+
+        Assert.Equal(8_192, prepared.RequiredTailSamples(120.0, 8_192, 262_144));
+    }
+
+    [Fact]
+    public void RequiredTailSamples_LowFrequencyHighQPeqIsLongButFinite()
+    {
+        // 20 Hz / Q 10 rings for ~100k samples to −120 dB at 48 kHz — well
+        // past the floor but comfortably under the cap; hitting the cap would
+        // mean the section was misread as unstable.
+        var chain = new DspChannelChain(Peq: new EqualizationCurve(
+            new[] { new PeqBand(20, 10, 12) }));
+        PreparedDspResponse prepared = PreparedDspResponse.Create(chain, 48_000);
+
+        int tail = prepared.RequiredTailSamples(120.0, 8_192, 262_144);
+
+        Assert.InRange(tail, 50_000, 262_143);
+    }
+
+    [Fact]
+    public void ApplyChain_LowFrequencyHighQPeqDoesNotWrapIntoTheEarlyResponse()
+    {
+        // A 20 Hz / Q 10 / +12 dB peaking filter rings for hundreds of
+        // milliseconds — far past the old fixed 8192-sample tail. With the IR
+        // length near the FFT boundary the ring wrapped circularly into the
+        // early response, corrupting the IR, the phase and every alignment
+        // sum built on it. The padding now follows the chain's slowest pole.
+        var ir = new Complex[57_000];
+        ir[24_000] = Complex.One;
+        var chain = new DspChannelChain(Peq: new EqualizationCurve(
+            new[] { new PeqBand(20, 10, 12) }));
+
+        Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(ir, chain, 48_000);
+
+        double peak = 0;
+        for (int i = 0; i < processed.Length; i++)
+        {
+            peak = Math.Max(peak, processed[i].Magnitude);
+        }
+        double preArrival = 0;
+        for (int i = 0; i < 23_000; i++)
+        {
+            preArrival = Math.Max(preArrival, processed[i].Magnitude);
+        }
+
+        Assert.True(
+            preArrival < peak * 1e-4,
+            $"wrap-around energy before the arrival: {20 * Math.Log10(preArrival / peak):0.0} dB re peak");
+    }
+
+    [Fact]
+    public void FindAlignmentCandidates_ReportsEachPolaritysOwnOptimumAtAGappedJunction()
+    {
+        // The field regime where the polarity curves run shallow and nearly
+        // tied: a gapped junction (LP 1300 / HP 1800 leaves a 0.66-octave
+        // spectral hole). Candidates are seeded per polarity, so the list must
+        // carry the best lobe of EACH polarity — AlignmentSelection's
+        // normal-polarity preference needs the runner-up polarity present to
+        // have anything to prefer. Also pins that a candidate's polarity is
+        // its own optimum: refinement never flips it.
+        Complex[] woofer = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(16_384, 400),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.LowPass,
+                new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_300, 24))),
+            SampleRate);
+        Complex[] tweeter = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(16_384, 400),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.HighPass,
+                HighPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.Butterworth, 1_800, 24))),
+            SampleRate);
+
+        IReadOnlyList<AlignmentCandidate> candidates =
+            VirtualCrossoverAnalysis.FindAlignmentCandidates(
+                tweeter, [woofer], SampleRate, 650, 2_600, -1.5, 1.5);
+
+        AlignmentCandidate bestNormal = candidates.First(item => !item.InvertPolarity);
+        AlignmentCandidate bestInverted = candidates.First(item => item.InvertPolarity);
+        // The true handover (no delay, no flip) wins; the flipped lobe half a
+        // period off stays in the list as a genuine near-tie the downstream
+        // selection rules must see.
+        Assert.Equal(bestNormal, candidates[0]);
+        Assert.InRange(bestNormal.DelayMs, -0.05, 0.25);
+        Assert.InRange(bestInverted.DelayMs, -0.4, -0.05);
+        Assert.True(bestInverted.ScoreDb > bestNormal.ScoreDb - 0.5);
+    }
+
     [Fact]
     public void FindAlignmentCandidates_DipExcessOutranksASlightlyBetterAverage()
     {

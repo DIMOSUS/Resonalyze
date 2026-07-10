@@ -138,6 +138,41 @@ public sealed class ExcessDelayTests
             () => ExcessDelay.Estimate(spectrum, 0));
     }
 
+    [Fact]
+    public void Peak_LandsOnTheDirectArrivalNotAStrongerReflection()
+    {
+        // A weak direct arrival followed by a 3x stronger reflection — the same
+        // trap Time Alignment handles. The global envelope maximum sits on the
+        // reflection; the τ Peak reference must land on the direct arrival, or
+        // the excess-phase detrend tilts the whole curve by the reflection path.
+        double[] impulse = new double[8_192];
+        impulse[100] = 0.3;
+        impulse[500] = 1.0;
+        var buffer = new Complex[8_192];
+        for (int i = 0; i < impulse.Length; i++)
+        {
+            buffer[i] = new Complex(impulse[i], 0.0);
+        }
+        Fourier.Forward(buffer, FourierOptions.Matlab);
+
+        ExcessDelayResult result = ExcessDelay.Estimate(buffer, SampleRate);
+
+        Assert.True(result.IsValid);
+        Assert.InRange(result.PeakDelaySamples, 99.0, 101.0);
+    }
+
+    [Fact]
+    public void Estimate_ZeroSpectrumIsInvalid()
+    {
+        // A zero spectrum used to produce a zero excess response whose "peak"
+        // read as a perfectly valid τ = 0 — and an auto-τ button would write it.
+        var spectrum = new Complex[Length];
+
+        ExcessDelayResult result = ExcessDelay.Estimate(spectrum, SampleRate);
+
+        Assert.False(result.IsValid);
+    }
+
     private static Complex[] SpectrumOfImpulseAt(int index)
     {
         double[] impulse = new double[Length];

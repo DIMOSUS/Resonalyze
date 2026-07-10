@@ -404,7 +404,10 @@ real-time analysis without capturing an IR, use the additional
    averaging.
 4. Start a recording to generate and capture the exponential sine sweep. With
    averaging enabled the runs are combined into one transfer IR and a coherence
-   (γ²) curve.
+   (γ²) curve, debiased by the number of runs: the raw estimate over K averages
+   reads 1/K even for pure noise (0.5 at two runs — estimator bias, not
+   information), so the stored figure maps that null expectation to 0 and stays
+   comparable across run counts.
 5. Watch the compact input level meter to confirm microphone level, loopback
    presence, and headroom before trusting the measurement.
 6. Select the analysis view you need.
@@ -485,19 +488,25 @@ The Phase view can show three independently toggled curves:
   reflections) that an equalizer cannot fix.
 
 A **τ** (delay) value detrends the linear-phase slope so the excess phase becomes
-readable. **Find τ** estimates it either from the dominant arrival (peak) or from
-the energy-weighted average group delay (slope). Entering the same τ on two
-measurements lines up their phase for a direct comparison — for example, a
-midrange and a tweeter on the same axis.
+readable. **Find τ** estimates it either from the first prominent arrival of the
+excess energy (peak — found with the same first-arrival detector Time Alignment
+uses, so a room mode ringing louder than the direct sound does not capture the
+reference) or from the energy-weighted average group delay (slope). Entering the
+same τ on two measurements lines up their phase for a direct comparison — for
+example, a midrange and a tweeter on the same axis.
 
 Unwrapped phase uses a **reliability-anchored** algorithm instead of naive
 bin-to-bin accumulation: each bin takes the 360° branch closest to a phase
-predicted from the last trustworthy bin and the running phase slope. Bins near
-the noise floor — or with low **coherence**, when the measurement carries a γ²
-estimate from averaged runs — are still displayed but never trusted as anchors,
-so deep nulls, reflection notches, and masked bands are bridged cleanly and a
-single bad bin can no longer shift the entire remaining curve by a multiple of
-360°. On clean data the result is identical to the classic unwrap.
+predicted from the last trustworthy bin and the running phase slope. Bins well
+below the local magnitude envelope (so one tall resonance cannot disqualify a
+quieter but repeatable band) — or with low **coherence**, when the measurement
+carries a γ² estimate from averaged runs — are still displayed but never
+trusted as anchors, so deep nulls, reflection notches, and masked bands are
+bridged cleanly and a single bad bin can no longer shift the entire remaining
+curve by a multiple of 360°. A dead stretch too long to bridge honestly (the
+turn count inside it is genuinely unknowable) is blanked instead of guessed,
+and the curve restarts as a fresh segment after it. On clean data the result
+is identical to the classic unwrap.
 
 Group Delay reads absolute delay referenced to the start of the transfer IR, so a
 peak well into the impulse response reports its true arrival time. The curve is
@@ -525,7 +534,13 @@ IR-based views — frequency response, phase, group delay, impulse response,
 waterfall, Burst Decay, and autocorrelation — are computed from this transfer
 IR. Harmonic distortion, THD, and THD+N curves use the ordinary
 sweep-deconvolution response instead, because the harmonic separation belongs to
-the sweep analysis itself.
+the sweep analysis itself. The HD2–HD4 curves draw at the **excitation**
+frequency (a second-harmonic hump caused by a 1 kHz drive appears at 1 kHz,
+not at its 2 kHz product; microphone calibration is applied at the product
+frequency first), so each curve ends at Nyquist/n. Note the harmonic curves
+are on the sweep-deconvolution scale while the primary curve is
+loopback-normalized — their vertical distance is not yet a calibrated
+distortion percentage.
 
 The group-delay reference is the start of the transfer IR, so reported delay is
 absolute rather than relative to a response peak.
@@ -916,7 +931,10 @@ itself is only coarsely located.
 When the strongest peak lands well after the first arrival — the classic
 narrowband-subwoofer case, where room modes ring louder than the direct sound
 long after it — Time Alignment flags it and points you at the first arrival, so a
-modal or reflected peak is not mistaken for the driver's real timing.
+modal or reflected peak is not mistaken for the driver's real timing. The flag
+requires a real valley (6 dB) between the two peaks: a low-frequency driver's
+direct sound can keep rising for milliseconds, and a shoulder of that one wave
+packet peaking later is its rise time, not a reflection.
 
 The mode recalculates immediately when you switch into **Time Alignment**, and
 also updates live as soon as you change the bandpass settings.
@@ -925,7 +943,9 @@ It reports signal quality using the analysis envelope and the stored meter
 snapshot from the same measurement record:
 
 - a color-coded `Excellent`, `Good`, `Fair`, or `Poor` **signal grade** from the
-  recording's SNR — the strongest envelope peak against the rest of the record
+  recording's SNR — the strongest envelope peak against the record's noise
+  floor (the RMS of its quietest quarter, so reflections and modal decay do
+  not count as noise the way an average over the whole record would)
 - the **first-arrival prominence** — the first arrival's envelope level relative
   to the strongest peak. A low value means the pick sits on a broad leading
   edge (normal physics for band-limited low-frequency drivers), so its exact
@@ -1338,7 +1358,10 @@ Each channel runs through:
   overlay capture, and Auto delay without clearing its source or settings
 - **Bypass** — feed the channel's raw measured signal into the sum with the
   whole chain skipped (no gain, delay, polarity, crossover, or PEQ), for an A/B
-  against the processed result; unlike Mute, the channel stays in the sum
+  against the processed result; unlike Mute, the channel stays in the sum.
+  Auto delay refuses to run while any participating channel is bypassed — the
+  proposed delay and polarity could not act on the raw signal, yet the channel
+  would still steer every other channel's alignment
 - **IR polarity** — a measured Normal / Inverted / Unknown indicator read from
   the transfer IR, independent of the virtual polarity switch
 
@@ -1409,7 +1432,10 @@ it defaults to Off because the measurements are loopback-referenced.
   loses to a slightly lossier but flat one. It weighs every near-optimal
   candidate against an arrival-based prior and a physical tie-break, so it does
   not add delay or flip polarity without a real improvement — sidestepping the
-  flip-plus-half-period impostor a steep crossover can otherwise hide. The search runs on a background task with a busy
+  flip-plus-half-period impostor a steep crossover can otherwise hide. Each
+  polarity seeds its own candidates, so the non-inverted optimum is always on
+  the table for that preference even where the inverted curve edges it
+  everywhere. The search runs on a background task with a busy
   indicator, so the window stays responsive during the few seconds it takes. If
   the resulting delays span more than ~10 ms — usually a sign that one channel's
   crossover has excessive group delay (a narrow or steep low-frequency band-pass)

@@ -62,4 +62,31 @@ public sealed class SpectrumHarmonicIsolationTests
         Assert.True(thd > -100.0, $"THD+N should include the HD2 packet, was {thd:0.#} dB.");
         Assert.True(thd > hd3 + 40.0, "THD+N must dominate the empty HD3 window.");
     }
+
+    [Fact]
+    public void GetSpectrum_DrawsHd2AtTheExcitationFrequency()
+    {
+        // The HD2 packet here is a tone at ~5.5 kHz — a second-harmonic PRODUCT
+        // at 5.5 kHz, which the driver produced while the sweep fundamental was
+        // at ~2.7 kHz. The standard distortion axis is the excitation
+        // frequency, so the curve's peak must draw near 2.7 kHz (it used to
+        // draw at the product's 5.5 kHz), and the curve cannot extend past
+        // Nyquist/2, where the product would pass Nyquist.
+        IReadOnlyList<AnalysisCurve> curves = DataHelper.GetSpectrum(
+            WithHd2PacketOnly(),
+            new FrequencyResponseOptions(),
+            calibration: null,
+            SpectrumCurves.SecondHarmonic);
+        AnalysisCurve hd2 = curves.Single(
+            c => c.Kind == AnalysisCurveKind.SecondHarmonic);
+
+        SignalPoint peak = hd2.Points.MaxBy(p => p.Y);
+        // Packet tone: 12 cycles over 105 samples at 48 kHz ≈ 5486 Hz output,
+        // ≈ 2743 Hz excitation. Generous range: the short packet is spectrally
+        // broad and the display smoothing widens it further.
+        Assert.InRange(peak.X, 1_800, 4_000);
+        Assert.True(
+            hd2.Points[^1].X <= SampleRate * 0.5 / 2 + 1,
+            $"HD2 axis must end at Nyquist/2, ended at {hd2.Points[^1].X:0} Hz.");
+    }
 }

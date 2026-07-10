@@ -36,8 +36,9 @@ public sealed class ImpulseResponseFileTests
             },
             SweepDeconvolutionRealSamples = [0.125, 0.5, 1.0, -0.25],
             TransferPeakIndex = 1,
-            TransferRealSamples = [0.25, 1.0, -0.5],
-            TransferImaginarySamples = [0, 0.125, 0],
+            // Coherence must be N/2 + 1 bins for an N-sample transfer IR.
+            TransferRealSamples = [0.25, 1.0, -0.5, 0.125],
+            TransferImaginarySamples = [0, 0.125, 0, 0],
             TransferCoherence = [0.91, 0.82, 0.73]
         };
 
@@ -98,7 +99,12 @@ public sealed class ImpulseResponseFileTests
                 sweepSamples);
             Assert.Equal(1, loaded.TransferPeakIndex);
             Assert.Equal(
-                [new Complex(0.25, 0), new Complex(1, 0.125), new Complex(-0.5, 0)],
+                [
+                    new Complex(0.25, 0),
+                    new Complex(1, 0.125),
+                    new Complex(-0.5, 0),
+                    new Complex(0.125, 0)
+                ],
                 transferSamples);
             Assert.NotNull(loaded.TransferCoherence);
             Assert.Equal([0.91, 0.82, 0.73], loaded.TransferCoherence);

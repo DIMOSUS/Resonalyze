@@ -53,10 +53,14 @@ public sealed class RealMeasurementArrivalTests
     public void WooferBroadbandAnalysis_SeparatesSignalGradeFromArrivalProminence()
     {
         // The Time Alignment panel scenario that motivated the split: this
-        // recording's SNR is excellent (~50 dB), while the first arrival sits
-        // ~25 dB down the woofer's slow leading edge, 2 ms before the in-room
-        // peak. One folded "quality" figure read this as Fair (24.9 dB); the
-        // two numbers must tell the two stories separately.
+        // recording is clean, while the first arrival sits ~25 dB down the
+        // woofer's slow leading edge, 2 ms before the in-room peak. One folded
+        // "quality" figure read this as Fair (24.9 dB); the two numbers must
+        // tell the two stories separately. The SNR pin: ~64 dB against the
+        // record's noise floor (quietest-quarter RMS, compensated for the
+        // Rayleigh bias of that quartile) — the earlier everything-but-the-
+        // peak estimate read the reverb tail as noise and deflated the same
+        // recording to ~50 dB.
         (int sampleRate, Complex[] ir) = LoadTransferIr("l woof.json");
         var samples = new double[ir.Length];
         for (int i = 0; i < samples.Length; i++)
@@ -70,9 +74,13 @@ public sealed class RealMeasurementArrivalTests
                 WrapPeakPositions = true
             });
 
-        Assert.InRange(result.SignalToNoiseDecibels, 48.0, 52.0);
+        Assert.InRange(result.SignalToNoiseDecibels, 61.0, 68.0);
         Assert.InRange(result.FirstArrivalProminenceDecibels, -27.0, -22.0);
-        Assert.True(result.StrongestPeakIsSeparateArrival);
+        // The first arrival is a shoulder ON that leading edge: the envelope
+        // never dips 6 dB between it and the in-room peak, so the two are one
+        // wave packet and the "separate arrival (room mode/reflection)" hint
+        // must stay down — it used to fire here on the driver's own rise time.
+        Assert.False(result.StrongestPeakIsSeparateArrival);
     }
 
     [Fact]

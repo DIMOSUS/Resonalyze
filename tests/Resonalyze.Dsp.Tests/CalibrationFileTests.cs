@@ -129,12 +129,13 @@ public sealed class CalibrationFileTests
     }
 
     [Fact]
-    public void SmoothingOctaves_WidensTheAveragingWindow()
+    public void Correction_ReproducesTheFilePointsExactly()
     {
-        // A single 12 dB spike on an otherwise flat curve. A narrow smoothing window
-        // keeps most of the spike; a wide one averages in the flat neighbours and
-        // pulls the correction down. Equal results would mean smoothingOctaves is
-        // ignored — the constant-curve tests could never show this.
+        // A single 12 dB spike on an otherwise flat curve: the correction must
+        // read back EXACTLY 12 dB at the calibrated point. The old
+        // Lanczos-smoothed lookup silently half-octave-averaged the spike to
+        // ~5.6 dB (and overshot near steps even at zero smoothing) — a
+        // calibration must reproduce its own points.
         IReadOnlyList<double> grid = EqualizationCurve.LogFrequencyGrid(20, 20_000, 200);
         double spikeHz = grid.OrderBy(f => Math.Abs(f - 1_000)).First();
         var text = new StringBuilder();
@@ -148,12 +149,33 @@ public sealed class CalibrationFileTests
         }
 
         CalibrationFile calibration = CalibrationFile.Parse(text.ToString());
-        double narrow = calibration.GetDecibelCorrection(spikeHz, smoothingOctaves: 0.2);
-        double wide = calibration.GetDecibelCorrection(spikeHz, smoothingOctaves: 2.0);
 
-        Assert.True(narrow > wide + 1.0, $"Narrow smoothing {narrow:0.00} dB should exceed wide {wide:0.00} dB.");
-        Assert.InRange(narrow, 0.0, 12.0);
-        Assert.InRange(wide, 0.0, 12.0);
+        Assert.Equal(12.0, calibration.GetDecibelCorrection(spikeHz), precision: 6);
+    }
+
+    [Fact]
+    public void Correction_InterpolatesLinearlyInLogFrequencyAndDecibels()
+    {
+        // Two points an octave apart: the geometric midpoint frequency must
+        // read the arithmetic midpoint of the dB values.
+        CalibrationFile calibration = CalibrationFile.Parse("1000 0\n2000 6\n");
+
+        Assert.Equal(
+            3.0,
+            calibration.GetDecibelCorrection(1000 * Math.Sqrt(2.0)),
+            precision: 6);
+    }
+
+    [Fact]
+    public void Correction_DuplicateFrequenciesAreMergedNotNaN()
+    {
+        // Duplicate frequencies used to make an interpolation segment
+        // zero-width and push NaN into the correction.
+        CalibrationFile calibration = CalibrationFile.Parse("1000 0\n1000 6\n2000 6\n");
+
+        double correction = calibration.GetDecibelCorrection(1_500);
+
+        Assert.True(double.IsFinite(correction));
     }
 
     [Fact]

@@ -26,9 +26,14 @@ namespace Resonalyze.Dsp;
 public static class MinimumPhase
 {
     /// <summary>
-    /// Default magnitude floor. Magnitudes below this are clamped before taking the
-    /// logarithm so that nulls and the noise floor do not produce log singularities.
-    /// Matches <see cref="DataHelper"/>'s minimum amplitude.
+    /// Default magnitude floor, RELATIVE to the spectrum's own peak (−160 dB).
+    /// Magnitudes below the scaled floor are clamped before taking the logarithm
+    /// so that nulls and the noise floor do not produce log singularities. The
+    /// floor scales with the input because minimum phase is physically invariant
+    /// to an overall gain (a constant added to log|H| only moves the zeroth
+    /// cepstral coefficient): an ABSOLUTE floor made a quiet measurement's phase
+    /// depend on its level — the H1 transfer scale follows the microphone and
+    /// loopback input levels, so this is a real capture case, not an API one.
     /// </summary>
     public const double DefaultMagnitudeFloor = 1e-8;
 
@@ -37,7 +42,10 @@ public static class MinimumPhase
     /// magnitude spectrum (bins covering 0 … sample rate).
     /// </summary>
     /// <param name="magnitude">Linear magnitude per FFT bin, length N.</param>
-    /// <param name="magnitudeFloor">Lower clamp applied before the logarithm.</param>
+    /// <param name="magnitudeFloor">
+    /// Lower clamp applied before the logarithm, as a fraction of the spectrum's
+    /// maximum finite magnitude.
+    /// </param>
     /// <returns>Minimum phase in radians, length N.</returns>
     public static double[] FromMagnitude(
         IReadOnlyList<double> magnitude,
@@ -56,10 +64,25 @@ public static class MinimumPhase
         }
 
         int length = magnitude.Count;
+        double maxMagnitude = 0.0;
+        for (int i = 0; i < length; i++)
+        {
+            double value = magnitude[i];
+            if (double.IsFinite(value) && value > maxMagnitude)
+            {
+                maxMagnitude = value;
+            }
+        }
+
+        // NaN/Infinity/negative bins clamp to the floor instead of poisoning
+        // the whole cepstrum through Math.Max and the FFT.
+        double floor = Math.Max(maxMagnitude * magnitudeFloor, double.Epsilon);
         double[] logMagnitude = new double[length];
         for (int i = 0; i < length; i++)
         {
-            logMagnitude[i] = Math.Log(Math.Max(magnitude[i], magnitudeFloor));
+            double value = magnitude[i];
+            logMagnitude[i] = Math.Log(
+                double.IsFinite(value) && value > floor ? value : floor);
         }
 
         return FromLogMagnitude(logMagnitude);

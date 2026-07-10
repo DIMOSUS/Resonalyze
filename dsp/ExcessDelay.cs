@@ -11,8 +11,12 @@ namespace Resonalyze.Dsp;
 /// Two estimators are returned because they answer different questions and only
 /// coincide when the excess is essentially a pure delay:
 /// <list type="bullet">
-/// <item><b>Peak</b> — the dominant arrival (the mode of the excess energy). Robust
-/// against reflections; the right reference for a "bulk delay" readout.</item>
+/// <item><b>Peak</b> — the first arrival of the excess energy: the earliest
+/// prominent envelope peak, found with the same first-arrival detector Time
+/// Alignment uses, so a late reflection or room mode that rings louder than the
+/// direct sound does not capture the τ reference. The right reference for a
+/// "bulk delay" readout. Falls back to the strongest peak when the excess energy
+/// leads the window (a negative-lag dominant).</item>
 /// <item><b>Slope</b> — the energy-weighted mean group delay, i.e. the temporal
 /// centroid of the excess energy. By the group-delay/centroid theorem this is the τ
 /// that defines the linear trend of the excess phase, so it is the value to subtract
@@ -70,7 +74,20 @@ public static class ExcessDelay
             excessResponse[i] = excessSpectrum[i].Real;
         }
 
-        double peakSamples = EstimatePeakLag(excessResponse);
+        // A spectrum with no energy would "peak" at lag 0 and read as a valid
+        // τ = 0; report it as invalid instead so a caller does not silently
+        // write a fabricated reference.
+        double totalEnergy = 0.0;
+        for (int i = 0; i < n; i++)
+        {
+            totalEnergy += excessResponse[i] * excessResponse[i];
+        }
+        if (!(totalEnergy > 0.0) || !double.IsFinite(totalEnergy))
+        {
+            return new ExcessDelayResult(0, 0, 0, 0, IsValid: false);
+        }
+
+        double peakSamples = EstimatePeakLag(excessResponse, sampleRate);
         double slopeSamples = EstimateCentroidLag(excessResponse);
 
         return new ExcessDelayResult(
@@ -80,9 +97,16 @@ public static class ExcessDelay
             slopeSamples * 1000.0 / sampleRate);
     }
 
-    // Dominant arrival: the envelope's global maximum, refined to sub-sample with a
-    // parabolic fit over circular neighbours, expressed as a signed lag.
-    private static double EstimatePeakLag(double[] signal)
+    // First arrival of the excess energy, refined to sub-sample with a parabolic
+    // fit over circular neighbours, expressed as a signed lag. The global
+    // envelope maximum alone is NOT the arrival: a room reflection or mode can
+    // ring louder than the direct sound (the exact trap Time Alignment handles),
+    // and putting the τ reference on it tilts the whole excess-phase curve. So
+    // when the dominant energy sits at a causal (positive) lag, the same
+    // first-arrival detector walks back to the earliest prominent peak; a
+    // negative-lag dominant (excess energy leading the window) keeps the global
+    // maximum, which the first-arrival search cannot reach.
+    private static double EstimatePeakLag(double[] signal, int sampleRate)
     {
         double[] envelope = SignalEnvelope.Envelope(signal);
         int n = envelope.Length;
@@ -95,6 +119,26 @@ public static class ExcessDelay
             {
                 peak = envelope[i];
                 peakIndex = i;
+            }
+        }
+
+        if (peakIndex <= n / 2)
+        {
+            PeakSearchResult firstArrival = SignalEnvelope.FindPeak(
+                envelope,
+                sampleRate,
+                new PeakSearchOptions
+                {
+                    Mode = PeakSearchMode.FirstArrival,
+                    SearchWindowMilliseconds = n * 500.0 / sampleRate
+                });
+            // Only a strictly EARLIER prominent arrival replaces the global
+            // maximum: when the dominant energy already is the earliest event
+            // (a near-pure delay peaking at lag ~0), the detector can only
+            // offer a skirt bump after it, never the peak itself.
+            if (firstArrival.SelectedIndex < peakIndex)
+            {
+                peakIndex = firstArrival.SelectedIndex;
             }
         }
 
@@ -137,4 +181,8 @@ public readonly record struct ExcessDelayResult(
     double PeakDelaySamples,
     double PeakDelayMilliseconds,
     double SlopeDelaySamples,
-    double SlopeDelayMilliseconds);
+    double SlopeDelayMilliseconds,
+    // False when the gated spectrum carried no energy at all: a zero excess
+    // response "peaks" at lag 0, and an auto-τ caller would silently write a
+    // fabricated 0 ms reference.
+    bool IsValid = true);

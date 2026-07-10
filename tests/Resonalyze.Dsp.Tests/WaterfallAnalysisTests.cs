@@ -150,11 +150,13 @@ public sealed class WaterfallAnalysisTests
     }
 
     [Fact]
-    public void ResampleBurstDecaySlice_ReturnsTheFloorBeyondTheRawDataRange()
+    public void ResampleBurstDecaySlice_BlanksPointsBeyondTheRawDataRange()
     {
-        // periodsSamples = 48000 * 10 / 1000 = 480; the raw envelope is only 20 samples
-        // long, so late output points fall past it and must read the -160 dB floor
-        // rather than NaN/garbage.
+        // periodsSamples = 48000 * 10 / 1000 = 480; the raw envelope is only 20
+        // samples long, so late output points fall past everything measured.
+        // They used to read the -160 dB floor — a fabricated instant decay to
+        // silence (at 20 Hz a 30-period axis spans 1.5 s of a 85 ms record);
+        // unobserved time must read NaN.
         var rawData = Enumerable.Range(0, 20)
             .Select(i => new SignalPoint(i, 0.5))
             .ToList();
@@ -162,7 +164,49 @@ public sealed class WaterfallAnalysisTests
         IReadOnlyList<SignalPoint> resampled = WaterfallAnalysis.ResampleBurstDecaySlice(
             rawData, frequency: 1_000.0, sampleRate: SampleRate, width: 50, periods: 10.0);
 
-        Assert.Equal(DataHelper.AmplitudeToDecibels(0.0), resampled[^1].Y, precision: 6);
+        Assert.True(double.IsNaN(resampled[^1].Y));
+        // The measured head still reads normally.
+        Assert.Equal(DataHelper.AmplitudeToDecibels(0.5), resampled[0].Y, precision: 6);
+    }
+
+    [Fact]
+    public void ResampleBurstDecaySlice_BlanksZeroPaddingBeyondTheMeasuredWindow()
+    {
+        // The raw envelope is longer than the measured window (the FFT's zero
+        // padding rings past it): measuredSamples marks where real data ends,
+        // and the axis is anchored on the peak (a left fade into the record).
+        var rawData = Enumerable.Range(0, 480)
+            .Select(i => new SignalPoint(i, 0.5))
+            .ToList();
+
+        IReadOnlyList<SignalPoint> resampled = WaterfallAnalysis.ResampleBurstDecaySlice(
+            rawData,
+            frequency: 1_000.0,
+            sampleRate: SampleRate,
+            width: 48,
+            periods: 10.0,
+            measuredSamples: 240,
+            peakOffsetSamples: 8);
+
+        // samplePosition = 8 + i/48 * 480: crosses 240 between i = 23 and 24.
+        Assert.True(double.IsFinite(resampled[23].Y));
+        Assert.True(double.IsNaN(resampled[24].Y));
+    }
+
+    [Fact]
+    public void BuildBurstDecayRawSlices_GridStaysBelowNyquist()
+    {
+        // At 32 kHz a fixed 20 kHz grid start would generate slices for
+        // frequencies the capture cannot contain.
+        var response = new Complex[Window];
+        response[100] = Complex.One;
+        var measurement = new SyntheticMeasurement(response, 32_000, 100);
+
+        IReadOnlyList<BurstDecaySlice> slices = WaterfallAnalysis.BuildBurstDecayRawSlices(
+            measurement, 0, Window, Hann(Window), smoothingOctaves: 1.0);
+
+        Assert.NotEmpty(slices);
+        Assert.All(slices, slice => Assert.True(slice.Frequency < 16_000));
     }
 
     [Fact]

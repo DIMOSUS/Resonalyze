@@ -203,8 +203,20 @@ public static class OverlayMath
                 continue;
             }
 
-            double position = (aPoint.X - left.X) / (right.X - left.X);
-            double bValue = left.Y + (right.Y - left.Y) * position;
+            // Acoustic curves live on a logarithmic frequency axis, so the
+            // interpolation position is logarithmic too — on sparse imported
+            // curves a linear-Hz blend lands visibly off between octave-spaced
+            // points. (Linear fallback only for degenerate non-positive X.)
+            double position = left.X > 0 && aPoint.X > 0
+                ? Math.Log(aPoint.X / left.X) / Math.Log(right.X / left.X)
+                : (aPoint.X - left.X) / (right.X - left.X);
+            // Wrapped phase must interpolate through the branch cut: a curve
+            // stepping from +170° to −170° passes through ±180°, not through 0°
+            // the way a linear blend of the raw numbers would — and the wrap of
+            // the difference afterwards cannot recover the lost branch.
+            double bValue = wrapPhaseDifference
+                ? InterpolateWrappedDegrees(left.Y, right.Y, position)
+                : left.Y + (right.Y - left.Y) * position;
             double aValue = aPoint.Y;
             if (useAmplitudeSpace)
             {
@@ -248,6 +260,21 @@ public static class OverlayMath
                 Math.Abs(WrapDegrees(a - b, wrapPhaseDifference)),
             _ => double.NaN
         };
+    }
+
+    // Interpolates between two wrapped phase readings along the SHORT way
+    // around the circle, by blending the unit phasors and taking the angle of
+    // the result.
+    private static double InterpolateWrappedDegrees(
+        double fromDegrees,
+        double toDegrees,
+        double position)
+    {
+        double from = fromDegrees * Math.PI / 180.0;
+        double to = toDegrees * Math.PI / 180.0;
+        double x = (1.0 - position) * Math.Cos(from) + position * Math.Cos(to);
+        double y = (1.0 - position) * Math.Sin(from) + position * Math.Sin(to);
+        return Math.Atan2(y, x) * 180.0 / Math.PI;
     }
 
     // Maps a phase difference in degrees to the shortest angular distance in (-180, 180]

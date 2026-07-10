@@ -82,6 +82,13 @@ namespace Resonalyze.Dsp
         }
 
         // Gated windowed spectrum for phase analysis (the impulse FFT'd in place).
+        // wrap: true, matching GetGroupDelay exactly: the dialog advertises ONE
+        // gate for both, and phase must stay the mathematical integral of the
+        // group delay. A gate whose left shoulder runs before the IR start
+        // (offset < left fade) reads the cyclic tail — the transfer IR is
+        // circular by construction, so its negative-time content lives there —
+        // where zero-padding used to silently feed phase and GD two different
+        // signals.
         private static Complex[] BuildPhaseSpectrum(
             IImpulseMeasurement measurement,
             double gateOffsetMs,
@@ -96,21 +103,40 @@ namespace Resonalyze.Dsp
                 leftMs,
                 plateauMs,
                 rightMs,
-                wrap: false,
+                wrap: true,
                 out extractionStart);
             Fourier.Forward(spectrum, FourierOptions.Matlab);
             return spectrum;
         }
 
-        // Reliability gates for the unwrapped phase: bins this far below the peak
-        // magnitude — or with squared coherence below the floor, when coherence is
-        // available — still contribute their phase to the output, but never anchor
-        // the unwrap, so one noisy or masked bin cannot shift the whole tail by 2π.
-        // The magnitude gate matches the group-delay validity gate; γ² = 0.5 is the
-        // point where less than half the measured energy is coherent with the
-        // reference and the per-bin phase variance makes branch choices unsafe.
+        // Reliability gates for the unwrapped phase: bins this far below the LOCAL
+        // magnitude envelope — or with squared coherence below the floor, when
+        // coherence is available — still contribute their phase to the output, but
+        // never anchor the unwrap, so one noisy or masked bin cannot shift the
+        // whole tail by 2π. The magnitude gate reads against an octave-smoothed
+        // local envelope rather than the global curve maximum: one tall resonance
+        // (a subwoofer's cabin peak) must not disqualify a quieter but perfectly
+        // repeatable band tens of dB below it. An absolute backstop against the
+        // global maximum still rejects true silence — inside a wide dead band the
+        // local envelope IS the noise floor and would otherwise pass itself.
+        // γ² = 0.5 is the point where less than half the measured energy is
+        // coherent with the reference and branch choices become unsafe.
         private const double UnwrapMagnitudeGateDb = -30.0;
+        private const double UnwrapAbsoluteFloorDb = -60.0;
+        private const double UnwrapEnvelopeOctaves = 1.0;
         private const double UnwrapCoherenceFloor = 0.5;
+
+        // How far the unwrap may bridge an unreliable stretch before conceding the
+        // branch is unknowable. Inside a gap the turn count is genuinely lost —
+        // an all-pass section or a crossover transition can add whole turns that
+        // no slope extrapolation can see — so past these limits the bridged points
+        // are blanked (NaN) and a fresh wrapped segment starts, instead of drawing
+        // one confident continuous line through guessed branches. Both limits must
+        // be exceeded: a gap narrow in hertz carries few delay turns (turns =
+        // τ·Δf) and bridges safely however many octaves it spans near DC, and a
+        // gap narrow in octaves is a local feature the running slope handles.
+        private const int UnwrapMaxBridgeBins = 64;
+        private const double UnwrapMaxBridgeOctaves = 1.0 / 3.0;
         // Blend factor for the running dφ/df estimate used to predict the next
         // bin's phase; the smoothing keeps a single jittery-but-reliable bin from
         // steering the branch choice for the bins that follow.
@@ -125,8 +151,11 @@ namespace Resonalyze.Dsp
         // closest to the phase predicted from the last reliable anchor and a running
         // slope estimate. Unreliable bins (nulls, noise-floor, low coherence) get a
         // branch too, but never become anchors, so the unwrap bridges them instead
-        // of accumulating their phase noise into the tail. With every bin reliable
-        // and a zero slope this reduces to the classic nearest-to-previous choice.
+        // of accumulating their phase noise into the tail. A gap that runs past the
+        // bridge limits is conceded instead of guessed: its points are blanked and
+        // a fresh wrapped segment starts at the next reliable bin. With every bin
+        // reliable and a zero slope this reduces to the classic nearest-to-previous
+        // choice.
         private static List<SignalPoint> BuildMeasuredPhase(
             Complex[] spectrum,
             int extractionStart,
@@ -139,24 +168,35 @@ namespace Resonalyze.Dsp
             double referenceShift = referenceSamples - extractionStart;
             var data = new List<SignalPoint>(n / 2);
 
-            const double minFrequency = 100;
-
-            double maxMagnitude = 0.0;
+            double[] localEnvelope = Array.Empty<double>();
+            double absoluteFloor = 0.0;
             if (unwrap)
             {
+                double maxMagnitude = 0.0;
+                var magnitude = new double[n / 2];
                 for (int i = 1; i < n / 2; i++)
                 {
-                    maxMagnitude = Math.Max(maxMagnitude, spectrum[i].Magnitude);
+                    magnitude[i] = spectrum[i].Magnitude;
+                    maxMagnitude = Math.Max(maxMagnitude, magnitude[i]);
                 }
+
+                localEnvelope = SmoothBinsHann(
+                    magnitude,
+                    UnwrapEnvelopeOctaves,
+                    sampleRate / (double)n,
+                    minHalfWidthHz: 0.0);
+                absoluteFloor =
+                    maxMagnitude * Math.Pow(10.0, UnwrapAbsoluteFloorDb / 20.0);
             }
-            double minReliableMagnitude =
-                maxMagnitude * Math.Pow(10.0, UnwrapMagnitudeGateDb / 20.0);
+            double localGateRatio = Math.Pow(10.0, UnwrapMagnitudeGateDb / 20.0);
 
             bool hasAnchor = false;
             bool hasSlope = false;
             double anchorFrequency = 0.0;
             double anchorPhase = 0.0;
             double slope = 0.0; // rad per Hz
+            int unreliableRun = 0;
+            double lastReliableFrequency = 0.0;
 
             for (int i = 1; i < n / 2; i++)
             {
@@ -172,46 +212,99 @@ namespace Resonalyze.Dsp
                     continue;
                 }
 
-                bool reliable = spectrum[i].Magnitude >= minReliableMagnitude &&
+                bool reliable = spectrum[i].Magnitude >= absoluteFloor &&
+                    spectrum[i].Magnitude >= localEnvelope[i] * localGateRatio &&
                     (coherence == null ||
                      CoherenceAt(coherence, f, sampleRate) >= UnwrapCoherenceFloor);
 
-                if (f < minFrequency || !hasAnchor)
+                if (!hasAnchor)
                 {
-                    // Below the unwrap floor the output stays wrapped (unchanged
-                    // behavior); a running bin seeds the anchor only when it
-                    // passes the same reliability gate, so a garbage bin near the
-                    // floor cannot offset the first unwrapped branch by 2π.
+                    // Before the first reliable bin the output stays wrapped; a
+                    // bin seeds the anchor only when it passes the reliability
+                    // gate, so a garbage bin near the bottom of the band cannot
+                    // offset the first unwrapped branch by 2π.
                     data.Add(new SignalPoint(f, wrapped));
                     if (reliable)
                     {
                         anchorFrequency = f;
                         anchorPhase = wrapped;
                         hasAnchor = true;
+                        lastReliableFrequency = f;
                     }
+                    continue;
+                }
+
+                if (reliable && IsBridgeTooLong(unreliableRun, lastReliableFrequency, f))
+                {
+                    // The turn count inside the gap is unknowable — blank the
+                    // guessed bridge and restart a fresh wrapped segment here,
+                    // claiming no branch relation across the gap.
+                    for (int back = 1; back <= unreliableRun; back++)
+                    {
+                        data[^back] = new SignalPoint(data[^back].X, double.NaN);
+                    }
+
+                    hasSlope = false;
+                    slope = 0.0;
+                    anchorFrequency = f;
+                    anchorPhase = wrapped;
+                    unreliableRun = 0;
+                    lastReliableFrequency = f;
+                    data.Add(new SignalPoint(f, wrapped));
                     continue;
                 }
 
                 double predicted = anchorPhase + slope * (f - anchorFrequency);
                 double branch = Math.Round((predicted - wrapped) / Math.Tau);
                 double unwrappedPhase = wrapped + Math.Tau * branch;
-                if (reliable && f > anchorFrequency)
+                if (reliable)
                 {
-                    double localSlope =
-                        (unwrappedPhase - anchorPhase) / (f - anchorFrequency);
-                    slope = hasSlope
-                        ? UnwrapSlopeBlend * localSlope + (1.0 - UnwrapSlopeBlend) * slope
-                        : localSlope;
-                    hasSlope = true;
-                    anchorFrequency = f;
-                    anchorPhase = unwrappedPhase;
+                    unreliableRun = 0;
+                    lastReliableFrequency = f;
+                    if (f > anchorFrequency)
+                    {
+                        double localSlope =
+                            (unwrappedPhase - anchorPhase) / (f - anchorFrequency);
+                        slope = hasSlope
+                            ? UnwrapSlopeBlend * localSlope + (1.0 - UnwrapSlopeBlend) * slope
+                            : localSlope;
+                        hasSlope = true;
+                        anchorFrequency = f;
+                        anchorPhase = unwrappedPhase;
+                    }
+                }
+                else
+                {
+                    unreliableRun++;
                 }
 
                 data.Add(new SignalPoint(f, unwrappedPhase));
             }
 
+            // A gap still open at Nyquist gets the same honesty: if it already
+            // exceeded the bridge limits, its guessed points are blanked too.
+            if (unwrap && data.Count > 0 &&
+                IsBridgeTooLong(unreliableRun, lastReliableFrequency, data[^1].X))
+            {
+                for (int back = 1; back <= unreliableRun; back++)
+                {
+                    data[^back] = new SignalPoint(data[^back].X, double.NaN);
+                }
+            }
+
             return data;
         }
+
+        // Both limits must be exceeded before a bridge is declared unknowable —
+        // see the constants above for why each alone is not enough.
+        private static bool IsBridgeTooLong(
+            int unreliableRun,
+            double lastReliableFrequency,
+            double frequency) =>
+            unreliableRun >= UnwrapMaxBridgeBins &&
+            lastReliableFrequency > 0.0 &&
+            frequency >= lastReliableFrequency *
+                Math.Pow(2.0, UnwrapMaxBridgeOctaves);
 
         // Squared coherence at a frequency, linearly interpolated from an array
         // covering 0..Nyquist in uniform bins (length fftLength/2 + 1 — the layout
@@ -554,10 +647,18 @@ namespace Resonalyze.Dsp
                 return new AnalysisCurve("Group Delay", new List<SignalPoint>());
             }
 
-            // The gate compares energies (|H|²), so the dB threshold divides by 10.
-            double relativeGate = maxEnergy * Math.Pow(10.0, magnitudeGateDb / 10.0);
+            // The validity gate reads against a LOCAL octave-smoothed energy
+            // envelope, like the unwrap's reliability gate: one tall resonance
+            // must not blank a quieter but perfectly measured band 30+ dB below
+            // it. The −60 dB global backstop (the same figure as the unwrap's)
+            // still rejects true silence, where the local envelope IS the noise
+            // floor and would otherwise pass itself. Energies compare as |H|²,
+            // so the dB thresholds divide by 10.
+            double[] localEnvelope = SmoothBinsHann(
+                smoothedEnergy, 1.0, binWidthHz, minHalfWidthHz: 0.0);
+            double globalGate = maxEnergy * Math.Pow(10.0, -60.0 / 10.0);
             double absoluteGate = 1e-16;
-            double minEnergy = Math.Max(relativeGate, absoluteGate);
+            double localGateRatio = Math.Pow(10.0, magnitudeGateDb / 10.0);
 
             List<SignalPoint> data = new(halfLength);
 
@@ -571,7 +672,11 @@ namespace Resonalyze.Dsp
                 double f = i * binWidthHz;
 
                 // Regions with no coherent energy anywhere in the smoothing window
-                // (outside the sweep band, true silence) stay gated out.
+                // (outside the sweep band, true silence, deep local notches) stay
+                // gated out.
+                double minEnergy = Math.Max(
+                    Math.Max(localEnvelope[i] * localGateRatio, globalGate),
+                    absoluteGate);
                 if (smoothedEnergy[i] < minEnergy)
                 {
                     data.Add(new SignalPoint(f, double.NaN));

@@ -73,6 +73,58 @@ public sealed class PreparedDspResponse
     public bool IsTimeDomainScaleOnly =>
         delayMs == 0 && sections.Length == 0;
 
+    /// <summary>
+    /// Zero-padding (samples) needed for this chain's ringing to decay by
+    /// <paramref name="targetDecayDb"/> before a circular FFT would wrap the
+    /// tail into the early response. Follows the slowest pole of the biquad
+    /// cascade: a 20 Hz / Q 10 peaking filter rings for ~13.8·Q/(π·f) × ln10/…
+    /// hundreds of milliseconds — far past any fixed pad sized for crossovers.
+    /// Clamped to [<paramref name="minSamples"/>, <paramref name="maxSamples"/>];
+    /// a numerically unstable section (pole radius ≥ 1) gets the maximum.
+    /// </summary>
+    public int RequiredTailSamples(double targetDecayDb, int minSamples, int maxSamples)
+    {
+        double maxRadius = 0.0;
+        foreach (BiquadCoefficients section in sections)
+        {
+            // BiquadCoefficients uses the ADDITIVE feedback convention
+            // (y[n] = … + A1·y[n−1] + A2·y[n−2], denominator
+            // 1 − A1·z⁻¹ − A2·z⁻²), so the poles are the roots of
+            // z² − A1·z − A2 = 0 — NOT the textbook 1 + a1·z⁻¹ + a2·z⁻² form,
+            // whose formulas mis-read every ordinary stable section here as
+            // unstable and pinned the padding at the maximum.
+            double discriminant = section.A1 * section.A1 + 4.0 * section.A2;
+            double radius;
+            if (discriminant < 0.0)
+            {
+                // Complex conjugate poles: |p|² = the roots' product = −A2.
+                radius = Math.Sqrt(Math.Max(0.0, -section.A2));
+            }
+            else
+            {
+                double root = Math.Sqrt(discriminant);
+                radius = Math.Max(
+                    Math.Abs((section.A1 + root) * 0.5),
+                    Math.Abs((section.A1 - root) * 0.5));
+            }
+
+            maxRadius = Math.Max(maxRadius, radius);
+        }
+
+        if (maxRadius >= 1.0)
+        {
+            return maxSamples;
+        }
+        if (maxRadius <= 0.0)
+        {
+            return minSamples;
+        }
+
+        double required = Math.Log(
+            Math.Pow(10.0, -Math.Abs(targetDecayDb) / 20.0)) / Math.Log(maxRadius);
+        return (int)Math.Clamp(Math.Ceiling(required), minSamples, maxSamples);
+    }
+
     public Complex[] ApplyTimeDomainScale(Complex[] impulseResponse, int length)
     {
         var result = new Complex[length];

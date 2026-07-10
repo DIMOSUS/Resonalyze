@@ -458,6 +458,19 @@ namespace Resonalyze.Dsp
             return (slopeMs, peakMs);
         }
 
+        // Minimal energy-weighted smoothing applied even when display smoothing is
+        // off: wide enough to bridge single-bin interference nulls (whose group
+        // delay legitimately diverges but carries almost no energy), narrow enough
+        // to leave the visible curve unchanged elsewhere.
+        private const double GroupDelayStabilizationOctaves = 1.0 / 48.0;
+
+        // The smoothing window never narrows below the gate's own spectral
+        // resolution (1/T for a gate of duration T): features narrower than that
+        // cannot be resolved by the gate in the first place, and it is exactly
+        // the scale of the interference nulls of the longest in-gate reflection,
+        // whose group-delay spikes the energy weighting is meant to absorb.
+        private const double GroupDelayResolutionHalfWidthFactor = 0.5;
+
         public static AnalysisCurve GetGroupDelay(
             IImpulseMeasurement measurement,
             double gateOffsetMs,
@@ -496,23 +509,57 @@ namespace Resonalyze.Dsp
             Fourier.Forward(timeWeightedSpectrum, FourierOptions.Matlab);
 
             int halfLength = n / 2;
+            double binWidthHz = measurement.SampleRate / (double)n;
 
-            double maxMagnitude = 0.0;
+            // Per-bin numerator and denominator of τg = Re[T·conj(H)] / |H|². Smoothing
+            // them separately and dividing the averages makes the result energy-weighted:
+            // near-null bins (where the per-bin ratio legitimately spikes to ±tens of ms)
+            // enter with weight |H|² ≈ 0, so the curve follows the delay of the dominant
+            // energy instead of the singularity.
+            double[] numerator = new double[halfLength];
+            double[] energy = new double[halfLength];
             for (int i = 1; i < halfLength; i++)
             {
-                maxMagnitude = Math.Max(maxMagnitude, spectrum[i].Magnitude);
+                Complex h = spectrum[i];
+                Complex t = timeWeightedSpectrum[i];
+                numerator[i] = t.Real * h.Real + t.Imaginary * h.Imaginary;
+                energy[i] = h.Real * h.Real + h.Imaginary * h.Imaginary;
             }
 
-            if (maxMagnitude <= 0.0)
+            double smoothingOctaves = smoothingInverseOctaves > 0.0
+                ? 1.0 / smoothingInverseOctaves
+                : GroupDelayStabilizationOctaves;
+            int sampleRate = measurement.SampleRate;
+            int gateSamples = Math.Clamp(
+                MillisecondsToSamples(leftMs, sampleRate) +
+                MillisecondsToSamples(plateauMs, sampleRate) +
+                MillisecondsToSamples(rightMs, sampleRate),
+                1,
+                GatedFftLength);
+            double minHalfWidthHz =
+                GroupDelayResolutionHalfWidthFactor * sampleRate / gateSamples;
+            double[] smoothedNumerator =
+                SmoothBinsHann(numerator, smoothingOctaves, binWidthHz, minHalfWidthHz);
+            double[] smoothedEnergy =
+                SmoothBinsHann(energy, smoothingOctaves, binWidthHz, minHalfWidthHz);
+
+            double maxEnergy = 0.0;
+            for (int i = 1; i < halfLength; i++)
+            {
+                maxEnergy = Math.Max(maxEnergy, smoothedEnergy[i]);
+            }
+
+            if (maxEnergy <= 0.0)
             {
                 return new AnalysisCurve("Group Delay", new List<SignalPoint>());
             }
 
-            double relativeGate = maxMagnitude * Math.Pow(10.0, magnitudeGateDb / 20.0);
-            double absoluteGate = 1e-8;
-            double minMagnitude = Math.Max(relativeGate, absoluteGate);
+            // The gate compares energies (|H|²), so the dB threshold divides by 10.
+            double relativeGate = maxEnergy * Math.Pow(10.0, magnitudeGateDb / 10.0);
+            double absoluteGate = 1e-16;
+            double minEnergy = Math.Max(relativeGate, absoluteGate);
 
-            List<SignalPoint> data = new();
+            List<SignalPoint> data = new(halfLength);
 
             // The gate buffer starts at extractionStart; adding it back makes the group
             // delay absolute (referenced to the IR start), so a peak well into the IR
@@ -521,29 +568,68 @@ namespace Resonalyze.Dsp
 
             for (int i = 1; i < halfLength; i++)
             {
-                double magnitude = spectrum[i].Magnitude;
-                double f = i * measurement.SampleRate / (double)n;
+                double f = i * binWidthHz;
 
-                // Skip nulls/noise-floor bins before dividing: a near-zero spectrum
-                // would otherwise yield NaN/Infinity and poison the later smoothing.
-                if (magnitude < minMagnitude)
+                // Regions with no coherent energy anywhere in the smoothing window
+                // (outside the sweep band, true silence) stay gated out.
+                if (smoothedEnergy[i] < minEnergy)
                 {
                     data.Add(new SignalPoint(f, double.NaN));
                     continue;
                 }
 
-                Complex groupDelay = timeWeightedSpectrum[i] / spectrum[i];
-                double delayMilliseconds = (groupDelay.Real + absoluteStartTime) * 1000.0;
-
-                data.Add(new SignalPoint(f, delayMilliseconds));
-            }
-
-            if (smoothingInverseOctaves > 0.0 && data.Count > 1)
-            {
-                data = SmoothLinear(data, 1.0 / smoothingInverseOctaves);
+                double delaySeconds = smoothedNumerator[i] / smoothedEnergy[i];
+                data.Add(new SignalPoint(f, (delaySeconds + absoluteStartTime) * 1000.0));
             }
 
             return new AnalysisCurve("Group Delay", data);
+        }
+
+        // Hann-weighted fractional-octave moving average over the linear FFT bin
+        // grid (bin 0 excluded). A strictly non-negative kernel, unlike the Lanczos
+        // used for display smoothing: the group-delay division needs the smoothed
+        // energy to stay positive, and a signed kernel could cancel it near sharp
+        // spectral transitions and reintroduce the very spikes being removed.
+        private static double[] SmoothBinsHann(
+            double[] source,
+            double smoothingOctaves,
+            double binWidthHz,
+            double minHalfWidthHz)
+        {
+            int count = source.Length;
+            double[] result = new double[count];
+            double frequencyRatio = Math.Pow(2.0, smoothingOctaves * 0.5);
+            double halfWidthFloor = Math.Max(minHalfWidthHz, binWidthHz * 2.0);
+
+            for (int i = 1; i < count; i++)
+            {
+                double frequency = i * binWidthHz;
+                double halfDelta = Math.Max(
+                    frequency * (frequencyRatio - 1.0),
+                    halfWidthFloor);
+                int win = (int)Math.Ceiling(halfDelta / binWidthHz);
+
+                double weightedSum = 0.0;
+                double weightSum = 0.0;
+                for (int j = Math.Max(i - win, 1);
+                    j <= Math.Min(i + win, count - 1);
+                    j++)
+                {
+                    double x = (j - i) * binWidthHz / halfDelta;
+                    if (Math.Abs(x) >= 1.0)
+                    {
+                        continue;
+                    }
+
+                    double weight = 0.5 * (1.0 + Math.Cos(Math.PI * x));
+                    weightedSum += source[j] * weight;
+                    weightSum += weight;
+                }
+
+                result[i] = weightSum > 0.0 ? weightedSum / weightSum : source[i];
+            }
+
+            return result;
         }
     }
 }

@@ -5,9 +5,9 @@ namespace Resonalyze.App.Tests;
 
 /// <summary>
 /// The Compare selection moved off Form1 into <see cref="CompareSelection"/>;
-/// these pin the analysis-source mapping the mode plots rely on (a Compare
-/// without a transfer IR still contributes a Frequency Response curve) and
-/// the Changed notification driving the UI refresh.
+/// these pin the analysis-source mapping the mode plots rely on (all Compare
+/// analysis runs on the transfer IR — loopback is mandatory) and the Changed
+/// notification driving the UI refresh.
 /// </summary>
 public sealed class CompareSelectionTests
 {
@@ -44,45 +44,28 @@ public sealed class CompareSelectionTests
     public void GetAnalysisSource_MapsTheSnapshotResponses()
     {
         var selection = new CompareSelection();
-        Complex[] sweepIr = [new(1, 0), new(0.5, 0)];
         Complex[] transferIr = [new(0.25, 0)];
         double[] coherence = [1.0, 0.5, 0.9];
         selection.Set("a.json", null, CreateSnapshot(
-            sweepIr,
-            transferIr,
+            transferIr: transferIr,
             transferPeakIndex: 7,
-            coherence));
+            coherence: coherence));
 
         CompareAnalysisSource? source = selection.GetAnalysisSource();
 
         Assert.NotNull(source);
         Assert.Equal("a.json", source!.Value.DisplayName);
         Assert.Equal(48_000, source.Value.SampleRate);
-        Assert.Same(sweepIr, source.Value.SweepDeconvolutionImpulseResponse);
-        Assert.Equal(3, source.Value.SweepDeconvolutionPeakIndex);
         Assert.Same(transferIr, source.Value.TransferImpulseResponse);
         Assert.Equal(7, source.Value.TransferPeakIndex);
         Assert.Same(coherence, source.Value.TransferCoherence);
     }
 
     [Fact]
-    public void GetAnalysisSource_WithoutTransferIr_StillContributesTheSweepIr()
+    public void GetAnalysisSource_ReturnsNullWithoutATransferIr()
     {
         var selection = new CompareSelection();
         selection.Set("a.json", null, CreateSnapshot());
-
-        CompareAnalysisSource? source = selection.GetAnalysisSource();
-
-        Assert.NotNull(source);
-        Assert.Empty(source!.Value.TransferImpulseResponse);
-        Assert.Equal(0, source.Value.TransferPeakIndex);
-    }
-
-    [Fact]
-    public void GetAnalysisSource_ReturnsNullForAnEmptySweepIr()
-    {
-        var selection = new CompareSelection();
-        selection.Set("a.json", null, CreateSnapshot(sweepIr: Array.Empty<Complex>()));
 
         Assert.Null(selection.GetAnalysisSource());
         Assert.NotNull(selection.GetTimeAlignmentMeasurement());

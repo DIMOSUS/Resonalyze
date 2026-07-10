@@ -180,7 +180,7 @@ namespace Resonalyze
             envelopePlotView.MinimumSize = new Size(320, 240);
             envelopePlotView.Name = "envelopePlotView";
             envelopePlotView.PanCursor = Cursors.Hand;
-            envelopePlotView.Size = new Size(580, 320);
+            envelopePlotView.Size = new Size(713, 320);
             envelopePlotView.TabIndex = 12;
             envelopePlotView.Text = "envelopePlotView";
             envelopePlotView.ZoomHorizontalCursor = Cursors.SizeWE;
@@ -192,13 +192,13 @@ namespace Resonalyze
             statusTextBox.BackColor = Color.FromArgb(40, 44, 54);
             statusTextBox.BorderStyle = BorderStyle.None;
             statusTextBox.DetectUrls = false;
-            statusTextBox.Font = new Font("Segoe UI", 11F, FontStyle.Bold, GraphicsUnit.Point, 204);
+            statusTextBox.Font = new Font("Segoe UI", 10F, FontStyle.Bold, GraphicsUnit.Point, 204);
             statusTextBox.ForeColor = Color.FromArgb(190, 195, 205);
             statusTextBox.Location = new Point(580, 18);
             statusTextBox.Name = "statusTextBox";
             statusTextBox.ReadOnly = true;
             statusTextBox.ScrollBars = RichTextBoxScrollBars.None;
-            statusTextBox.Size = new Size(580, 412);
+            statusTextBox.Size = new Size(713, 415);
             statusTextBox.TabIndex = 13;
             statusTextBox.Text = "Run a loopback measurement or load an impulse response file with transfer IR.";
             // 
@@ -235,7 +235,7 @@ namespace Resonalyze
             Font = new Font("Segoe UI", 9F);
             ForeColor = Color.White;
             Name = "TimeAlignmentPanel";
-            Size = new Size(1182, 770);
+            Size = new Size(1310, 770);
             (bandpassCenterNumeric).EndInit();
             (bandpassPassOctavesNumeric).EndInit();
             (bandpassFadeOctavesNumeric).EndInit();

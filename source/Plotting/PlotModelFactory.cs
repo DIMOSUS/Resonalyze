@@ -115,7 +115,7 @@ internal sealed class PlotModelFactory
 
             // Overlay the Compare magnitude (primary only; harmonics stay Main-only to
             // keep the plot readable), computed with the identical options/calibration.
-            if (TryCreateCompareSweepMeasurement() is { } compare)
+            if (TryCreateCompareMeasurement() is { } compare)
             {
                 IReadOnlyList<AnalysisCurve> compareCurves = DataHelper.GetSpectrum(
                     compare.Measurement,
@@ -1069,9 +1069,11 @@ internal sealed class PlotModelFactory
         }
     }
 
-    // Builds a view over the Compare transfer IR so the gated phase / group-delay
-    // math runs on it identically. Requires a matching sample rate, otherwise the
-    // gate (in ms) and the frequency axis would not align with the main measurement.
+    // Builds a view over the Compare transfer IR so the gated magnitude / phase /
+    // group-delay math runs on it identically to the main curve (which is also
+    // built from the transfer IR — loopback is mandatory for every measurement).
+    // Requires a matching sample rate, otherwise the gate (in ms) and the
+    // frequency axis would not align with the main measurement.
     private (IImpulseMeasurement Measurement, string DisplayName, double[]? Coherence)?
         TryCreateCompareMeasurement()
     {
@@ -1091,31 +1093,6 @@ internal sealed class PlotModelFactory
             new ImpulseMeasurementView(transferIr, peakIndex, compare.SampleRate),
             compare.DisplayName,
             compare.TransferCoherence);
-    }
-
-    // The Compare sweep-deconvolution measurement, used for the Frequency Response
-    // magnitude (which is built from the sweep IR, like the main curve). Harmonics are
-    // not offered for Compare, so no harmonic-offset function is needed.
-    private (IImpulseMeasurement Measurement, string DisplayName)? TryCreateCompareSweepMeasurement()
-    {
-        if (getCompareSource?.Invoke() is not { } compare)
-        {
-            return null;
-        }
-
-        if (compare.SweepDeconvolutionImpulseResponse is not { Length: > 0 } sweepIr ||
-            compare.SampleRate != expSweepMeasurement.SampleRate)
-        {
-            return null;
-        }
-
-        int peakIndex = Math.Clamp(
-            compare.SweepDeconvolutionPeakIndex,
-            0,
-            sweepIr.Length - 1);
-        return (
-            new ImpulseMeasurementView(sweepIr, peakIndex, compare.SampleRate),
-            compare.DisplayName);
     }
 
     // The complex (vector) sum of the Main and Compare transfer responses, i.e.

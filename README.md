@@ -500,7 +500,14 @@ single bad bin can no longer shift the entire remaining curve by a multiple of
 360°. On clean data the result is identical to the classic unwrap.
 
 Group Delay reads absolute delay referenced to the start of the transfer IR, so a
-peak well into the impulse response reports its true arrival time.
+peak well into the impulse response reports its true arrival time. The curve is
+computed energy-weighted: the numerator and the energy of the per-bin group-delay
+ratio are smoothed separately and divided afterwards, so near-null bins — where
+the raw ratio legitimately spikes to tens of milliseconds while carrying almost
+no energy — follow the delay of the dominant energy instead of the singularity.
+The smoothing window never narrows below the gate's own spectral resolution
+(features finer than 1/T cannot be resolved by a gate of duration T anyway), so
+interference-null spikes stay suppressed even with display smoothing off.
 
 ## Audio Backends
 

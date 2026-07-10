@@ -154,8 +154,6 @@ public sealed class PlotModelFactoryTests
                 "Reference",
                 44_100,
                 compareIr,
-                64,
-                compareIr,
                 64));
 
         List<CurveTag> comparedTags = factory.CreateGroupDelay(includeCurves: true).Series
@@ -267,8 +265,6 @@ public sealed class PlotModelFactoryTests
                 "Reference",
                 44_100,
                 compareIr,
-                64,
-                compareIr,
                 64));
 
         AnalysisCurve? sum = factory.TryBuildComplexSumCurve();
@@ -306,7 +302,7 @@ public sealed class PlotModelFactoryTests
         compareIr[54] = Complex.One;
         factory.SetCompareSourceProvider(
             () => new CompareAnalysisSource(
-                "Reference", 44_100, compareIr, 54, compareIr, 54));
+                "Reference", 44_100, compareIr, 54));
 
         double delayMs = 10.0 / 44_100.0 * 1_000.0;
         AnalysisCurve? aligned = factory.TryBuildComplexSumCurve(delayMs);
@@ -340,7 +336,7 @@ public sealed class PlotModelFactoryTests
         compareIr[64] = Complex.One;
         factory.SetCompareSourceProvider(
             () => new CompareAnalysisSource(
-                "Reference", 44_100, compareIr, 64, compareIr, 64));
+                "Reference", 44_100, compareIr, 64));
 
         // An identical response in opposite polarity sums to silence everywhere.
         AnalysisCurve? cancelled = factory.TryBuildComplexSumCurve(
@@ -363,13 +359,13 @@ public sealed class PlotModelFactoryTests
         // A Compare at a different sample rate cannot be summed sample-wise.
         factory.SetCompareSourceProvider(
             () => new CompareAnalysisSource(
-                "Reference", 48_000, compareIr, 64, compareIr, 64));
+                "Reference", 48_000, compareIr, 64));
         Assert.Null(factory.TryBuildComplexSumCurve());
 
         // A Compare without a transfer IR has no loopback time reference.
         factory.SetCompareSourceProvider(
             () => new CompareAnalysisSource(
-                "Reference", 44_100, Array.Empty<Complex>(), 0, compareIr, 64));
+                "Reference", 44_100, Array.Empty<Complex>(), 0));
         Assert.Null(factory.TryBuildComplexSumCurve());
     }
 
@@ -387,7 +383,7 @@ public sealed class PlotModelFactoryTests
         compareIr[64] = Complex.One;
         factory.SetCompareSourceProvider(
             () => new CompareAnalysisSource(
-                "Reference", 44_100, compareIr, 64, compareIr, 64));
+                "Reference", 44_100, compareIr, 64));
 
         // Identical, in-phase responses: the magnitude sum and the complex sum are both
         // exactly double the amplitude, so the phase-blind addition loses nothing.
@@ -407,7 +403,7 @@ public sealed class PlotModelFactoryTests
         compareIr[64] = Complex.One;
         factory.SetCompareSourceProvider(
             () => new CompareAnalysisSource(
-                "Reference", 44_100, compareIr, 64, compareIr, 64));
+                "Reference", 44_100, compareIr, 64));
 
         // Opposite polarity: the complex sum cancels to near silence while the magnitude
         // sum stays at full level, so the real sum falls far below it (a large negative gap).

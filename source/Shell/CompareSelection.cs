@@ -34,14 +34,14 @@ internal sealed class CompareSelection
         Changed?.Invoke();
     }
 
-    // Exposes the Compare measurement's impulse responses for the mode plots: the
-    // transfer IR (Phase / Group Delay / Impulse) and the sweep-deconvolution IR
-    // (Frequency Response). Each consumer checks the response it needs, so a Compare
-    // without a transfer IR still contributes a Frequency Response curve.
+    // Exposes the Compare measurement's transfer IR for the mode plots (Frequency
+    // Response / Phase / Group Delay and the gated IR preview). Loopback is mandatory
+    // for every measurement, so all Compare analysis runs on the transfer IR — the
+    // same source the main curves are built from.
     public CompareAnalysisSource? GetAnalysisSource()
     {
         if (current is not { } selection ||
-            selection.Snapshot.SweepDeconvolutionImpulseResponse is not { Length: > 0 } sweepIr)
+            selection.Snapshot.TransferImpulseResponse is not { Length: > 0 } transferIr)
         {
             return null;
         }
@@ -49,10 +49,8 @@ internal sealed class CompareSelection
         return new CompareAnalysisSource(
             selection.DisplayName,
             selection.Snapshot.SampleRate,
-            selection.Snapshot.TransferImpulseResponse ?? Array.Empty<Complex>(),
+            transferIr,
             selection.Snapshot.TransferPeakIndex ?? 0,
-            sweepIr,
-            selection.Snapshot.SweepDeconvolutionPeakIndex,
             selection.Snapshot.TransferCoherence);
     }
 
@@ -69,14 +67,12 @@ internal sealed record CompareMeasurementSelection(
     string? SourceFilePath,
     MeasurementHistorySnapshot Snapshot);
 
-// The Compare measurement's impulse responses used by the mode plots: the transfer IR
-// (Phase / Group Delay / Impulse and the gated IR preview) and the sweep-deconvolution
-// IR (Frequency Response magnitude). Matching sample rate is validated by the consumers.
+// The Compare measurement's transfer IR used by the mode plots (Frequency Response
+// magnitude, Phase / Group Delay and the gated IR preview). Matching sample rate is
+// validated by the consumers.
 public readonly record struct CompareAnalysisSource(
     string DisplayName,
     int SampleRate,
     Complex[] TransferImpulseResponse,
     int TransferPeakIndex,
-    Complex[] SweepDeconvolutionImpulseResponse,
-    int SweepDeconvolutionPeakIndex,
     double[]? TransferCoherence = null);

@@ -161,6 +161,49 @@ public sealed class SyntheticDelayTests
                 expectedDelayMilliseconds + 1e-6));
     }
 
+    [Fact]
+    public void GroupDelay_ReflectionNulls_DoNotSpike()
+    {
+        // A 0.7 reflection 5 ms behind the arrival combs the spectrum every 200 Hz.
+        // At each null the per-bin group delay legitimately diverges to about
+        // -aΔ/(1-a) ≈ -11.7 ms, but those bins carry almost no energy: the
+        // energy-weighted evaluation must keep the curve near the real arrivals
+        // even with display smoothing off.
+        const int peakSample = 100;
+        const int reflectionDelaySamples = 240; // 5 ms at 48 kHz.
+        var response = new Complex[8192];
+        response[peakSample] = Complex.One;
+        response[peakSample + reflectionDelaySamples] = new Complex(0.7, 0.0);
+        var measurement = new SyntheticMeasurement(
+            response,
+            SampleRate,
+            maxMagnitudeIndex: peakSample);
+
+        IReadOnlyList<SignalPoint> groupDelay = DataHelper.GetGroupDelay(
+            measurement,
+            gateOffsetMs: peakSample * 1000.0 / SampleRate,
+            leftMs: 1.0,
+            plateauMs: 2.0,
+            rightMs: 6.0, // The reflection sits inside the gate.
+            smoothingInverseOctaves: 0).Points;
+
+        double arrivalMilliseconds = peakSample * 1000.0 / SampleRate;
+        List<SignalPoint> analysisBand = groupDelay
+            .Where(point => point.X >= 300 && point.X <= 20_000)
+            .Where(point => !double.IsNaN(point.Y))
+            .ToList();
+
+        Assert.NotEmpty(analysisBand);
+        // The legitimate comb oscillation stays within aΔ/(1+a) ≈ +2.1 ms of the
+        // arrival; anything approaching the raw -11.7 ms null excursion is a spike.
+        Assert.All(
+            analysisBand,
+            point => Assert.InRange(
+                point.Y,
+                arrivalMilliseconds - 2.5,
+                arrivalMilliseconds + 3.5));
+    }
+
     private static SyntheticMeasurement CreateDelayedImpulse()
     {
         var response = new Complex[TransformLength];

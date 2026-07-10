@@ -23,11 +23,11 @@ public sealed class StereoAlignmentTests
         public Complex[] Ir { get; } = ir;
     }
 
-    private static Complex[] ImpulseAtMs(double offsetMs)
+    private static Complex[] ImpulseAtMs(double offsetMs, double amplitude = 1.0)
     {
         var ir = new Complex[IrLength];
         int position = BasePosition + (int)Math.Round(offsetMs / 1000.0 * SampleRate);
-        ir[position] = Complex.One;
+        ir[position] = amplitude;
         return ir;
     }
 
@@ -56,15 +56,20 @@ public sealed class StereoAlignmentTests
         TestChannel[] Left, TestChannel[] Right,
         Dictionary<IAlignmentChannel, AlignmentOverride> Alignment,
         StringBuilder Log)
-        RunStereo(double sceneOffsetMs, double rightLateMs = 1.5)
+        RunStereo(
+            double sceneOffsetMs,
+            double rightLateMs = 1.5,
+            double leftTopAmplitude = 1.0,
+            double rightTopAmplitude = 1.0)
     {
         var sub = new TestChannel("sub", ImpulseAtMs(2.0));
         var leftWoof = new TestChannel("L woof", ImpulseAtMs(1.0));
         var leftMid = new TestChannel("L mid", ImpulseAtMs(0.4));
-        var leftTwr = new TestChannel("L twr", ImpulseAtMs(0.0));
+        var leftTwr = new TestChannel("L twr", ImpulseAtMs(0.0, leftTopAmplitude));
         var rightWoof = new TestChannel("R woof", ImpulseAtMs(1.0 + rightLateMs));
         var rightMid = new TestChannel("R mid", ImpulseAtMs(0.4 + rightLateMs));
-        var rightTwr = new TestChannel("R twr", ImpulseAtMs(0.0 + rightLateMs));
+        var rightTwr = new TestChannel(
+            "R twr", ImpulseAtMs(0.0 + rightLateMs, rightTopAmplitude));
 
         TestChannel[] leftByBand = [sub, leftWoof, leftMid, leftTwr];
         TestChannel[] rightByBand = [sub, rightWoof, rightMid, rightTwr];
@@ -227,6 +232,107 @@ public sealed class StereoAlignmentTests
 
         // The right pass reports the pinned junction instead of tuning it.
         Assert.Contains("mono, timed by the left side", log.ToString());
+    }
+
+    [Fact]
+    public void ComputeStereo_BridgeMatchesTheRightTopPolarityToTheLeft()
+    {
+        // The right tweeter is wired backwards (negative impulse). The
+        // arrival-based bridge is polarity-blind, so without the explicit sign
+        // match the whole right side would align to a flipped reference and
+        // end up in opposite global polarity — the bridge must invert it.
+        (TestChannel _, TestChannel[] left, TestChannel[] right,
+            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+            RunStereo(sceneOffsetMs: 0.25, rightTopAmplitude: -1.0);
+
+        Assert.False(alignment.GetValueOrDefault(left[2]).InvertPolarity);
+        Assert.True(alignment.GetValueOrDefault(right[2]).InvertPolarity);
+        // The descent then aligns the (positive) right mid against the
+        // corrected top: no compensating flip below.
+        Assert.False(alignment.GetValueOrDefault(right[1]).InvertPolarity);
+    }
+
+    [Fact]
+    public void ComputeStereo_BridgeFollowsAnInvertedLeftTop()
+    {
+        // BOTH tops are wired backwards. The left walk inverts the left top at
+        // its own junction (it sums better flipped against the positive mid);
+        // the bridge must then flip the right top too, so the EFFECTIVE
+        // acoustic signs of the two tops agree: raw sign XOR invert must be
+        // equal on both sides.
+        (TestChannel _, TestChannel[] left, TestChannel[] right,
+            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+            RunStereo(
+                sceneOffsetMs: 0.25,
+                leftTopAmplitude: -1.0,
+                rightTopAmplitude: -1.0);
+
+        bool leftInvert = alignment.GetValueOrDefault(left[2]).InvertPolarity;
+        bool rightInvert = alignment.GetValueOrDefault(right[2]).InvertPolarity;
+        // Both raw signs are negative, so equal effective signs mean equal
+        // invert flags — and the left walk is expected to have flipped its top.
+        Assert.True(leftInvert);
+        Assert.Equal(leftInvert, rightInvert);
+    }
+
+    [Fact]
+    public void ComputeStereo_RefusesAnUnmeasurableBridgeWithoutTouchingTheRightSide()
+    {
+        // The right top is silent: its band-limited arrival is invalid, and a
+        // best-effort bridge would time the whole right side by garbage
+        // (0 − 0 − offset). The cascade must refuse with an explanation, and
+        // the right side must carry no proposals the caller could apply.
+        var sub = new TestChannel("sub", ImpulseAtMs(2.0));
+        var leftWoof = new TestChannel("L woof", ImpulseAtMs(1.0));
+        var leftTwr = new TestChannel("L twr", ImpulseAtMs(0.0));
+        var rightWoof = new TestChannel("R woof", ImpulseAtMs(2.5));
+        var rightTwr = new TestChannel("R twr", new Complex[IrLength]);
+        TestChannel[] all = [sub, leftWoof, leftTwr, rightWoof, rightTwr];
+
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            all.Select(channel =>
+                Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+
+        List<AlignmentSnapshot> initial = all
+            .Select(channel => Snapshot(channel, default))
+            .ToList();
+        AlignmentSnapshot Of(TestChannel channel) =>
+            initial.First(item => item.Channel == channel);
+        List<AlignmentSnapshot> leftByBand = [Of(sub), Of(leftWoof), Of(leftTwr)];
+        List<AlignmentSnapshot> rightByBand = [Of(sub), Of(rightWoof), Of(rightTwr)];
+        List<AlignmentJunction> leftPairs =
+        [
+            Junction(leftByBand[0], leftByBand[1], 80),
+            Junction(leftByBand[1], leftByBand[2], 2_500)
+        ];
+        List<AlignmentJunction> rightPairs =
+        [
+            Junction(rightByBand[0], rightByBand[1], 80),
+            Junction(rightByBand[1], rightByBand[2], 2_500)
+        ];
+
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+        InvalidOperationException refusal = Assert.Throws<InvalidOperationException>(
+            () => AutoAlignmentEngine.ComputeStereo(
+                new StereoAlignmentPlan(
+                    leftByBand,
+                    leftPairs,
+                    rightByBand,
+                    rightPairs,
+                    new HashSet<IAlignmentChannel> { sub },
+                    leftTwr,
+                    rightTwr,
+                    BridgeBandLowHz: 2_500,
+                    BridgeBandHighHz: 12_000,
+                    SceneOffsetMs: 0.25),
+                Reprocess,
+                alignment,
+                new StringBuilder()));
+
+        Assert.Contains("bridge", refusal.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.False(alignment.ContainsKey(rightTwr));
+        Assert.False(alignment.ContainsKey(rightWoof));
     }
 
     [Fact]

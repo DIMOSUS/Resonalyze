@@ -582,21 +582,52 @@ public static class AutoAlignmentEngine
         // toward the right — the dash-center convention for a left-seated
         // driver; a right-seated driver enters a negative offset.
         IReadOnlyList<AlignmentSnapshot> settled = reprocess(alignment);
-        double leftArrival = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-            settled.First(item => item.Channel == plan.BridgeLeft).ImpulseResponse,
-            plan.BridgeLeft.SampleRate,
-            plan.BridgeBandLowHz,
-            plan.BridgeBandHighHz);
-        double rightArrival = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-            settled.First(item => item.Channel == plan.BridgeRight).ImpulseResponse,
-            plan.BridgeRight.SampleRate,
-            plan.BridgeBandLowHz,
-            plan.BridgeBandHighHz);
+        TimeAlignmentAnalysisResult leftBridge =
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                settled.First(item => item.Channel == plan.BridgeLeft).ImpulseResponse,
+                plan.BridgeLeft.SampleRate,
+                plan.BridgeBandLowHz,
+                plan.BridgeBandHighHz);
+        TimeAlignmentAnalysisResult rightBridge =
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                settled.First(item => item.Channel == plan.BridgeRight).ImpulseResponse,
+                plan.BridgeRight.SampleRate,
+                plan.BridgeBandLowHz,
+                plan.BridgeBandHighHz);
+
+        // The bridge is the SINGLE link between the sides, so its arrivals are
+        // gated instead of trusted: a silent band reports zeros (IsValid off),
+        // and a near-noise arrival would time one whole side by garbage —
+        // either way the honest outcome is a refusal with the reason, not a
+        // plausible-looking wrong alignment.
+        if (!leftBridge.IsValid || !rightBridge.IsValid ||
+            leftBridge.SignalToNoiseDecibels < BridgeMinimumSnrDb ||
+            rightBridge.SignalToNoiseDecibels < BridgeMinimumSnrDb)
+        {
+            throw new InvalidOperationException(
+                "The stereo bridge could not be measured in " +
+                $"{plan.BridgeBandLowHz:0}-{plan.BridgeBandHighHz:0} Hz: " +
+                $"{plan.BridgeLeft.Name} " +
+                (leftBridge.IsValid
+                    ? $"SNR {leftBridge.SignalToNoiseDecibels:0.0} dB"
+                    : "has no energy in the band") +
+                $", {plan.BridgeRight.Name} " +
+                (rightBridge.IsValid
+                    ? $"SNR {rightBridge.SignalToNoiseDecibels:0.0} dB"
+                    : "has no energy in the band") +
+                $" (minimum {BridgeMinimumSnrDb:0} dB). " +
+                "Check the top pair's sources and crossover band.");
+        }
+
+        double leftArrival = leftBridge.FirstArrivalDelayMilliseconds;
+        double rightArrival = rightBridge.FirstArrivalDelayMilliseconds;
         double bridgeDelay = leftArrival - rightArrival - plan.SceneOffsetMs;
         log.AppendLine(
             $"Bridge {plan.BridgeLeft.Name} -> {plan.BridgeRight.Name}: " +
             $"band {plan.BridgeBandLowHz:0}-{plan.BridgeBandHighHz:0} Hz, " +
-            $"arrivals L {leftArrival:0.000} / R {rightArrival:0.000} ms, " +
+            $"arrivals L {leftArrival:0.000} / R {rightArrival:0.000} ms " +
+            $"(SNR {leftBridge.SignalToNoiseDecibels:0.0} / " +
+            $"{rightBridge.SignalToNoiseDecibels:0.0} dB), " +
             $"scene offset {plan.SceneOffsetMs:+0.000;-0.000} ms " +
             $"(positive: right leads) -> right delay {bridgeDelay:0.000} ms");
         if (bridgeDelay < 0)
@@ -611,11 +642,19 @@ public static class AutoAlignmentEngine
                 $"  advanced via a uniform +{shift:0.000} ms shift " +
                 "of every settled channel");
         }
-        // The bridge sets only the timing; the polarity of the right top stays
-        // with the channel's own switch (arrivals are polarity-blind, and a
-        // symmetric install wires both tweeters alike).
         alignment[plan.BridgeRight] = new AlignmentOverride(
             Math.Clamp(Math.Round(bridgeDelay, 2), 0, MaxDelayMs), false);
+
+        // The arrival is polarity-blind, so the right top's polarity is chosen
+        // HERE, after the delay is fixed: the left walk may well have inverted
+        // the left top (its own junction decides that), and every other right
+        // driver aligns to the right top afterwards — a mismatched top sign
+        // would flip the whole right side against the left and cancel
+        // center-panned content. With the delay pinned there is no lobe
+        // ambiguity left: the effective acoustic signs of the two settled tops
+        // are simply compared (sum-loss comparison of the two signs as the
+        // fallback when a sign is unreadable).
+        ChooseBridgePolarity(plan, reprocess, alignment, log);
 
         // Stage R: descent from the bridged top toward the low end (and up
         // from it, if the caller had to bridge a non-top pair) — the same walk
@@ -667,6 +706,75 @@ public static class AutoAlignmentEngine
                 $"Normalized: -{minimum:0.000} ms off every channel " +
                 "(minimum delay back to zero)");
         }
+    }
+
+    // The minimum record signal-to-noise (dB) either bridge arrival must carry
+    // before the bridge is trusted. Clean measurements run 40-70 dB; a figure
+    // below this is a mis-picked band or a broken capture, and the bridge is
+    // the one number that times a whole side.
+    private const double BridgeMinimumSnrDb = 12;
+
+    // Decides the right bridge channel's polarity once its delay is already in
+    // the alignment map. Primary evidence: the measured acoustic signs of the
+    // two settled top responses (EstimatePolarity on the processed IRs — the
+    // left one includes whatever inversion its own junction chose). Fallback
+    // when a sign is unreadable: the bridge-band sum loss of the two possible
+    // signs — with the delay fixed only two hypotheses exist, so the lobe
+    // ambiguity that bans loss-driven polarity searches does not apply.
+    private static void ChooseBridgePolarity(
+        StereoAlignmentPlan plan,
+        AlignmentReprocessor reprocess,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        StringBuilder log)
+    {
+        IReadOnlyList<AlignmentSnapshot> bridged = reprocess(alignment);
+        Complex[] leftTop = bridged
+            .First(item => item.Channel == plan.BridgeLeft).ImpulseResponse;
+        Complex[] rightTop = bridged
+            .First(item => item.Channel == plan.BridgeRight).ImpulseResponse;
+
+        PolarityEstimate leftSign = VirtualCrossoverAnalysis.EstimatePolarity(leftTop);
+        PolarityEstimate rightSign = VirtualCrossoverAnalysis.EstimatePolarity(rightTop);
+        bool invert;
+        string reason;
+        if (leftSign != PolarityEstimate.Unknown &&
+            rightSign != PolarityEstimate.Unknown)
+        {
+            invert = leftSign != rightSign;
+            reason = $"measured signs L {leftSign} / R {rightSign}";
+        }
+        else
+        {
+            var invertedRightTop = new Complex[rightTop.Length];
+            for (int i = 0; i < rightTop.Length; i++)
+            {
+                invertedRightTop[i] = -rightTop[i];
+            }
+
+            var leftOnly = new List<Complex[]> { leftTop };
+            (double LossDb, double DipDb)? normalLoss =
+                VirtualCrossoverAnalysis.MeasureSumLoss(
+                    rightTop, leftOnly, plan.BridgeRight.SampleRate,
+                    plan.BridgeBandLowHz, plan.BridgeBandHighHz);
+            (double LossDb, double DipDb)? invertedLoss =
+                VirtualCrossoverAnalysis.MeasureSumLoss(
+                    invertedRightTop, leftOnly, plan.BridgeRight.SampleRate,
+                    plan.BridgeBandLowHz, plan.BridgeBandHighHz);
+            invert = invertedLoss.HasValue && normalLoss.HasValue &&
+                invertedLoss.Value.LossDb > normalLoss.Value.LossDb;
+            reason = "sign unreadable, bridge-band loss " +
+                $"normal {normalLoss?.LossDb:0.00} / " +
+                $"inverted {invertedLoss?.LossDb:0.00} dB";
+        }
+
+        if (invert)
+        {
+            alignment[plan.BridgeRight] =
+                alignment[plan.BridgeRight] with { InvertPolarity = true };
+        }
+
+        log.AppendLine(
+            $"  bridge polarity: {(invert ? "inverted" : "normal")} ({reason})");
     }
 
     // A junction whose both sides are already final — the mono subwoofer

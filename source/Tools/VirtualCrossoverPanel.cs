@@ -90,6 +90,13 @@ public partial class VirtualCrossoverPanel : UserControl
     private bool savePending;
     private bool autoDelayBusy;
 
+    // Bumped whenever the displayed side (or the whole project) changes: a
+    // redraw pass that started before the bump computed the OLD side's IRs,
+    // and drawing them against the new side's live settings would paint one
+    // mixed frame before the pending repaint corrects it. Stale passes check
+    // this after their await and skip the paint instead.
+    private long displayRevision;
+
     public VirtualCrossoverPanel()
     {
         InitializeComponent();
@@ -232,6 +239,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private async Task ApplyProjectAsync(VirtualCrossoverProjectFile newProject)
     {
         project = newProject;
+        displayRevision++;
         // Match the block list to the project's channel count (validated into the
         // supported range on load), so an imported 2- or 6-channel session shows
         // exactly its channels.
@@ -274,20 +282,21 @@ public partial class VirtualCrossoverPanel : UserControl
 
         foreach (ChannelRuntime channel in channels)
         {
-            // Both sides resolve up front (the stereo Auto delay needs them
-            // simultaneously), each after discarding the previous project's
-            // resolved measurement so an imported side without a source does
-            // not keep stale audio.
+            // BOTH physical slots are wiped first — through the effective
+            // accessor a mono pair's real right slot is unreachable, and a
+            // stale measurement from the previous project would otherwise
+            // resurface the moment the pair stops being mono. Then both sides
+            // resolve up front (the stereo Auto delay needs them together); a
+            // mono pair resolves its single slot once.
+            channel.PhysicalSideState(false).Clear();
+            channel.PhysicalSideState(true).Clear();
             foreach (bool rightSide in new[] { false, true })
             {
-                // A mono pair has one state slot; its second iteration would
-                // just wipe and re-resolve what the first one loaded.
                 if (channel.Pair.Mono && rightSide)
                 {
                     continue;
                 }
 
-                channel.SideState(rightSide).Clear();
                 await ResolveSourceAsync(channel, rightSide, showErrors: false);
             }
 
@@ -439,6 +448,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         bool rightSide = radioSideRight.Checked;
         project.ActiveSideRight = rightSide;
+        displayRevision++;
         suppressProjectEvents = true;
         try
         {
@@ -627,11 +637,51 @@ public partial class VirtualCrossoverPanel : UserControl
 
         if (wasMono != monoNow)
         {
+            if (monoNow)
+            {
+                // The right slot becomes unreachable behind the mono routing;
+                // dropping its runtime now means nothing stale can hide there.
+                // The right SETTINGS survive, so unchecking restores the side
+                // through a normal re-resolve below.
+                channel.PhysicalSideState(true).Clear();
+            }
+            else
+            {
+                // Back to stereo: the right side re-resolves from its persisted
+                // source reference through the usual compatibility validation
+                // instead of resurfacing whatever cache the slot last held.
+                ReresolveRightSide(channel);
+            }
+
             UpdateSideRadioTexts();
         }
 
         ScheduleSave();
         RedrawAll();
+    }
+
+    // Fire-and-forget with a guard, like LoadProjectSafely: called from a
+    // synchronous settings-changed handler.
+    private async void ReresolveRightSide(ChannelRuntime channel)
+    {
+        try
+        {
+            channel.PhysicalSideState(true).Clear();
+            await ResolveSourceAsync(channel, rightSide: true, showErrors: false);
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            UpdateSourceButton(channel);
+            UpdateSideRadioTexts();
+            RedrawAll();
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"Virtual DSP right-side re-resolve failed: {exception}");
+        }
     }
 
     private void OnViewModeChanged()
@@ -772,10 +822,12 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private async Task ChooseSourceFileAsync(ChannelRuntime channel)
     {
-        // The side is captured NOW: the user can flip the L/R selector while
-        // the file loads below, and the measurement must still land on the
-        // side whose Source button was clicked.
+        // The side AND the pair are captured NOW: the user can flip the L/R
+        // selector — or import a whole different session — while the file
+        // loads below, and the measurement must land on the side whose Source
+        // button was clicked, or nowhere at all.
         bool rightSide = channel.ActiveRight;
+        VirtualCrossoverChannelPairSettings pair = channel.Pair;
         using var dialog = new OpenFileDialog
         {
             CheckFileExists = true,
@@ -792,6 +844,13 @@ public partial class VirtualCrossoverPanel : UserControl
         try
         {
             ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(dialog.FileName);
+            if (IsDisposed || channel.Pair != pair)
+            {
+                // A session import replaced the configuration mid-load: the
+                // completed read belongs to a pair that is no longer bound.
+                return;
+            }
+
             MeasurementHistorySnapshot snapshot = MeasurementHistoryService.CreateSnapshot(file);
             if (!TryAcceptSource(
                 channel,
@@ -812,16 +871,19 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private async Task SelectHistoryEntryAsync(ChannelRuntime channel, Guid entryId)
     {
-        // Same side capture as ChooseSourceFileAsync: the snapshot load is
-        // asynchronous and the L/R selector stays live meanwhile.
+        // Same side/pair capture as ChooseSourceFileAsync: the snapshot load
+        // is asynchronous and both the L/R selector and session import stay
+        // live meanwhile.
         bool rightSide = channel.ActiveRight;
+        VirtualCrossoverChannelPairSettings pair = channel.Pair;
         try
         {
             MeasurementHistoryEntry? entry = HistoryService?.FindById(entryId);
             MeasurementHistorySnapshot? snapshot = HistoryService == null
                 ? null
                 : await HistoryService.GetSnapshotAsync(entryId);
-            if (entry == null || snapshot == null)
+            if (entry == null || snapshot == null ||
+                IsDisposed || channel.Pair != pair)
             {
                 return;
             }
@@ -1645,10 +1707,14 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // One channel whose processed IR the cache does not already hold, snapshotted
     // so the background task reads nothing but the immutable transfer IR and the
-    // value-typed chain.
+    // value-typed chain. The concrete side STATE is captured too: the cache
+    // write happens after an await, and by then the active side may have
+    // flipped — writing through the runtime's delegating property would then
+    // stamp one side's FFT into the other side's cache slot.
     private sealed record PendingChannel(
         int Index,
         ChannelRuntime Channel,
+        ChannelSideState State,
         Complex[] TransferIr,
         int SampleRate,
         DspChannelChain Chain,
@@ -1668,8 +1734,9 @@ public partial class VirtualCrossoverPanel : UserControl
         for (int i = 0; i < channels.Count; i++)
         {
             ChannelRuntime channel = channels[i];
+            ChannelSideState state = channel.SideState(channel.ActiveRight);
             if (!channel.Settings.Enabled ||
-                channel.TransferImpulseResponse is not { } ir)
+                state.TransferImpulseResponse is not { } ir)
             {
                 continue;
             }
@@ -1677,19 +1744,20 @@ public partial class VirtualCrossoverPanel : UserControl
             DspChannelChain chain = channel.Settings.Bypass
                 ? DspChannelChain.Identity
                 : channel.Settings.ToChain();
-            var key = new ProcessedChannelCacheKey(ir, channel.SampleRate, chain);
-            if (channel.ProcessedCache?.Key.Equals(key) == true)
+            var key = new ProcessedChannelCacheKey(ir, state.SampleRate, chain);
+            if (state.ProcessedCache?.Key.Equals(key) == true)
             {
                 results[i] = new ProcessedChannel(
                     channel,
-                    channel.ProcessedCache.ImpulseResponse,
-                    channel.ProcessedCache.PeakIndex,
+                    state.ProcessedCache.ImpulseResponse,
+                    state.ProcessedCache.PeakIndex,
                     ChannelColors[i]);
                 continue;
             }
 
             jobs.Add(new PendingChannel(
-                i, channel, ir, channel.SampleRate, chain, key, ChannelColors[i]));
+                i, channel, state, ir, state.SampleRate, chain, key,
+                ChannelColors[i]));
         }
 
         if (jobs.Count > 0)
@@ -1707,7 +1775,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
             foreach ((PendingChannel job, Complex[] result, int peak) in computed)
             {
-                job.Channel.ProcessedCache = new ProcessedChannelCache(job.Key, result, peak);
+                job.State.ProcessedCache = new ProcessedChannelCache(job.Key, result, peak);
                 results[job.Index] = new ProcessedChannel(job.Channel, result, peak, job.Color);
             }
         }
@@ -1727,9 +1795,16 @@ public partial class VirtualCrossoverPanel : UserControl
         // The heavy ApplyChain FFTs run off the UI thread; the existing curves stay
         // on screen until the new data is ready, so there is no clear-then-fill
         // flicker during the compute.
+        long revision = displayRevision;
         List<ProcessedChannel> processed = await ProcessChannelsAsync();
         if (mainPlotView.IsDisposed)
         {
+            return;
+        }
+        if (revision != displayRevision)
+        {
+            // The displayed side flipped mid-compute: these IRs belong to the
+            // previous side, and the side switch has already queued a repaint.
             return;
         }
 
@@ -2363,8 +2438,29 @@ public partial class VirtualCrossoverPanel : UserControl
 
         SideAlignmentChannel bridgeLeft = leftSide.First(
             item => item.Runtime == bridgeRight.Runtime && !item.RightSide);
-        (double bridgeBandLowHz, double bridgeBandHighHz) =
+        // The two sides carry independent crossover settings, so the bridge
+        // band is the INTERSECTION of their playing bands: measured in one
+        // side's exclusive range, the arrival would time signal the other
+        // side does not even reproduce. No usable overlap → refuse with the
+        // reason instead of bridging on noise.
+        (double leftBandLowHz, double leftBandHighHz) =
             VirtualCrossoverJunctions.GetChannelBand(bridgeLeft.Settings);
+        (double rightBandLowHz, double rightBandHighHz) =
+            VirtualCrossoverJunctions.GetChannelBand(bridgeRight.Settings);
+        double bridgeBandLowHz = Math.Max(leftBandLowHz, rightBandLowHz);
+        double bridgeBandHighHz = Math.Min(leftBandHighHz, rightBandHighHz);
+        if (bridgeBandHighHz < bridgeBandLowHz * Math.Pow(2.0, 1.0 / 3.0))
+        {
+            ShowError(
+                "The stereo bridge has no usable shared band.",
+                $"The top pair's crossover bands barely overlap: " +
+                $"{bridgeLeft.Name} plays {leftBandLowHz:0}-{leftBandHighHz:0} Hz, " +
+                $"{bridgeRight.Name} plays {rightBandLowHz:0}-{rightBandHighHz:0} Hz. " +
+                "Align the pair's crossover settings so the sides share at " +
+                "least a third of an octave and run Auto delay again.");
+            return;
+        }
+
         double sceneOffsetMs = project.StereoSceneOffsetMs;
 
         var log = new System.Text.StringBuilder();
@@ -2889,9 +2985,12 @@ public partial class VirtualCrossoverPanel : UserControl
             BuildMetricCurves(metricChannels);
         string metricLine = FormatMetricLabel(
             BuildMetricEntries(metricChannels, metricMagnitudes, metricSum));
-        int sampleRate = channels
-            .Where(channel => channel.TransferImpulseResponse != null)
-            .Select(channel => channel.SampleRate)
+        // The sheet prints BOTH sides, so the rate comes from any physically
+        // resolved side — reading only the active side through the delegating
+        // properties would fall back to 48 kHz when, say, the shown left side
+        // is empty and every 44.1 kHz source sits on the right.
+        int sampleRate = ResolvedSidesExcept(null)
+            .Select(item => item.State.SampleRate)
             .FirstOrDefault(48_000);
         try
         {
@@ -3165,8 +3264,18 @@ public partial class VirtualCrossoverPanel : UserControl
         public VirtualCrossoverChannelPairSettings Pair { get; set; } = new();
         public bool ActiveRight { get; set; }
 
+        // The EFFECTIVE side slot: what the views and calculations read — a
+        // mono pair routes both sides to its single left slot.
         public ChannelSideState SideState(bool rightSide) =>
             Pair.Mono || !rightSide ? leftState : rightState;
+
+        // The PHYSICAL side slot, mono routing ignored. Lifetime management
+        // (project load, mono toggling) must use this one: through the
+        // effective accessor a mono pair's real right slot is unreachable, so
+        // a stale measurement could hide there and resurface the moment the
+        // pair stops being mono.
+        public ChannelSideState PhysicalSideState(bool rightSide) =>
+            rightSide ? rightState : leftState;
         public VirtualCrossoverChannelSettings SideSettings(bool rightSide) =>
             Pair.SideFor(rightSide);
         private ChannelSideState Active => SideState(ActiveRight);

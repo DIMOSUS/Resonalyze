@@ -296,6 +296,23 @@ public static class VirtualCrossoverAnalysis
         Complex[] impulseResponse,
         int sampleRate,
         double lowFrequencyHz,
+        double highFrequencyHz) =>
+        AnalyzeBandLimitedArrival(
+            impulseResponse, sampleRate, lowFrequencyHz, highFrequencyHz)
+            .FirstArrivalDelayMilliseconds;
+
+    /// <summary>
+    /// The full band-limited arrival analysis behind
+    /// <see cref="FindBandLimitedArrivalMs"/>, including the quality figures
+    /// the bare delay hides: <c>IsValid</c> (a silent band reports zeros, not
+    /// a real arrival) and the record's signal-to-noise. Callers whose result
+    /// hinges on ONE arrival pair — the stereo bridge — must gate on these
+    /// instead of trusting the number.
+    /// </summary>
+    public static TimeAlignmentAnalysisResult AnalyzeBandLimitedArrival(
+        Complex[] impulseResponse,
+        int sampleRate,
+        double lowFrequencyHz,
         double highFrequencyHz)
     {
         ArgumentNullException.ThrowIfNull(impulseResponse);
@@ -322,7 +339,7 @@ public static class VirtualCrossoverAnalysis
         // Gentle spectral fades and a moderate threshold: the zero-phase bandpass
         // rings symmetrically around the arrival, and steep edges plus a deep
         // threshold would let the detector fire on a pre-ringing lobe.
-        TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
+        return TimeAlignmentAnalysis.Analyze(
             samples,
             sampleRate,
             new TimeAlignmentAnalysisOptions
@@ -332,8 +349,7 @@ public static class VirtualCrossoverAnalysis
                 BandpassPassOctaves = Math.Log2(high / low),
                 BandpassFadeOctaves = 1.0,
                 FirstPeakThresholdBelowMaxDb = 15
-        });
-        return result.FirstArrivalDelayMilliseconds;
+            });
     }
 
     /// <summary>

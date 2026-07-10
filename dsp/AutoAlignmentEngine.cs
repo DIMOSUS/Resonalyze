@@ -334,7 +334,8 @@ public static class AutoAlignmentEngine
         StringBuilder log,
         IAlignmentChannel? secondaryNeighbor = null,
         AlignmentJunction? secondaryPair = null,
-        double? priorOverrideMs = null)
+        double? priorOverrideMs = null,
+        double? sceneLockToleranceMs = null)
     {
         double primaryBase = alignment.GetValueOrDefault(neighborChannel).DelayMs
             + timeline[neighborChannel] - timeline[channel];
@@ -391,6 +392,14 @@ public static class AutoAlignmentEngine
                 halfPeriodMs, MinFineAlignmentRangeMs, MaxFineAlignmentRangeMs);
             double windowLowMs = Math.Min(primaryBase, secondaryBase) - rangeMs;
             double windowHighMs = Math.Max(primaryBase, secondaryBase) + rangeMs;
+            if (sceneLockToleranceMs is { } lockTolerance && windowOverrideMs == null)
+            {
+                // The scene mandate: the window IS the tolerance around the
+                // cross-side target — the search only fine-tunes the junction
+                // sum (and decides polarity) inside it.
+                windowLowMs = anchorMs - lockTolerance;
+                windowHighMs = anchorMs + lockTolerance;
+            }
             IReadOnlyList<AlignmentCandidate> candidates =
                 VirtualCrossoverAnalysis.FindAlignmentCandidates(
                     variableIr,
@@ -417,6 +426,9 @@ public static class AutoAlignmentEngine
                 (secondaryNeighbor != null ? $" / {secondaryBase:0.000}" : "") +
                 $" ms, prior {anchorMs:0.000} ms" +
                 (priorOverrideMs != null ? " (cross-side)" : "") +
+                (sceneLockToleranceMs is { } tol
+                    ? $", SCENE-LOCKED \u00b1{tol:0.00} ms"
+                    : "") +
                 ", candidates " +
                 string.Join("; ", candidates.Select(item =>
                     $"{item.DelayMs:0.000} ms" +
@@ -460,7 +472,8 @@ public static class AutoAlignmentEngine
             double retryRangeMs = Math.Min(1.8 * halfPeriodMs, 3.0);
             bool atEdge = chosen.DelayMs <= windowLow + 0.02 ||
                 chosen.DelayMs >= windowHigh - 0.02;
-            if (retryRangeMs > (windowHigh - windowLow) / 2.0 && atEdge)
+            if (sceneLockToleranceMs == null &&
+                retryRangeMs > (windowHigh - windowLow) / 2.0 && atEdge)
             {
                 (IReadOnlyList<AlignmentCandidate> retried, _, _) =
                     SearchJunction(windowOverrideMs: retryRangeMs);
@@ -487,7 +500,7 @@ public static class AutoAlignmentEngine
             // mere lobe/flip impostor cannot pull the result off the arrival —
             // and with a cross-side prior in the scores, a promotion that walks
             // away from the other side's timing pays for that distance too.
-            if (wide.Count > 0)
+            if (wide.Count > 0 && sceneLockToleranceMs == null)
             {
                 AlignmentCandidate wideChosen = AlignmentSelection.Select(wide, anchorMs);
                 if (wideChosen.ScoreDb > chosen.ScoreDb + WideWindowPromotionMarginDb)
@@ -787,10 +800,23 @@ public static class AutoAlignmentEngine
                 secondaryPair = plan.RightPairs[Math.Min(index, otherIndex)];
             }
 
+            // The scene mandate: pairs reaching the localization region are
+            // pinned to the cross-side target; pure low-frequency pairs keep
+            // the free joint-junction search (no localization there, soft
+            // envelopes, summation is what remains audible).
+            double? crossTarget = CrossSideTargetMs(channel);
+            StereoPairLink? channelLink = plan.PairLinks?.FirstOrDefault(
+                item => item.Right == channel);
+            double? sceneLock = crossTarget != null &&
+                channelLink is { } lockLink &&
+                lockLink.BandHighHz >= SceneLockMinimumBandHighHz
+                    ? SceneLockToleranceMs
+                    : null;
+
             AlignChannelAtJunction(
                 channel, neighbor, pair,
                 rightTimeline, allChannels, reprocess, alignment, log,
-                secondary, secondaryPair, CrossSideTargetMs(channel));
+                secondary, secondaryPair, crossTarget, sceneLock);
         }
         for (int i = bridgeIndex - 1; i >= 0; i--)
         {
@@ -800,6 +826,12 @@ public static class AutoAlignmentEngine
         {
             AlignRight(i, i - 1, plan.RightPairs[i - 1]);
         }
+
+        // Scene-preserving re-balance: with right channels pinned to the
+        // scene, their junction sums pay the price — moving BOTH sides of a
+        // pair by one shared delta keeps the pair's L-R timing (the scene)
+        // untouched while trading junction loss between the sides.
+        RebalancePairsKeepingScene(plan, reprocess, alignment, log);
 
         // Final normalization: the smallest total latency that preserves every
         // relation — the minimum proposed delay lands exactly at zero.
@@ -828,6 +860,24 @@ public static class AutoAlignmentEngine
     // below this is a mis-picked band or a broken capture, and the bridge is
     // the one number that times a whole side.
     private const double BridgeMinimumSnrDb = 12;
+
+    // The scene mandate for the right descent: a channel whose pair band
+    // reaches into the localization region is PINNED to the cross-side target
+    // (the left counterpart's settled arrival minus the scene offset) and may
+    // fine-tune its junction sum only within this tolerance — the stereo
+    // image outranks the junction handover. Pairs living entirely below the
+    // localization region (the woofers) keep the free joint-junction search:
+    // the ear does not localize there, low-band envelope arrivals are soft,
+    // and the summation is what remains audible.
+    private const double SceneLockToleranceMs = 0.05;
+    private const double SceneLockMinimumBandHighHz = 300;
+
+    // The scene-preserving re-balance pass: both sides of a pair may move by
+    // the SAME delta (which leaves the pair's L-R timing untouched) to trade
+    // junction loss between the sides. Bounded search, and a move must buy at
+    // least the minimum gain in the mean adjacent-junction loss to apply.
+    private const double PairComoveSearchRangeMs = 1.2;
+    private const double PairComoveMinimumGainDb = 0.05;
 
     // Decides the right bridge channel's polarity once its delay is already in
     // the alignment map. Primary evidence: the measured acoustic signs of the
@@ -890,6 +940,147 @@ public static class AutoAlignmentEngine
 
         log.AppendLine(
             $"  bridge polarity: {(invert ? "inverted" : "normal")} ({reason})");
+    }
+
+    // Moves both sides of one linked pair by the same delta — the pair's L-R
+    // timing (the scene) is invariant under a co-move — searching for the
+    // delta that minimizes the MEAN loss of every junction adjacent to the
+    // pair on both sides. The left side may get slightly worse: by the scene
+    // mandate the pinned right channel could not chase its own junction
+    // optimum, and this is the only lever that can recover junction quality
+    // without touching the image. Top pair first, so lower pairs re-balance
+    // against the already-settled uppers.
+    private static void RebalancePairsKeepingScene(
+        StereoAlignmentPlan plan,
+        AlignmentReprocessor reprocess,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        StringBuilder log)
+    {
+        if (plan.PairLinks == null)
+        {
+            return;
+        }
+
+        foreach (StereoPairLink link in plan.PairLinks
+            .Where(item => item.BandHighHz >= SceneLockMinimumBandHighHz)
+            .OrderByDescending(item => item.BandHighHz))
+        {
+            AlignmentOverride leftOverride = alignment.GetValueOrDefault(link.Left);
+            AlignmentOverride rightOverride = alignment.GetValueOrDefault(link.Right);
+
+            // Every junction the pair's channels take part in, on either side.
+            List<AlignmentJunction> adjacent = plan.LeftPairs
+                .Where(pair => pair.Lower.Channel == link.Left ||
+                    pair.Upper.Channel == link.Left)
+                .Concat(plan.RightPairs.Where(pair =>
+                    pair.Lower.Channel == link.Right ||
+                    pair.Upper.Channel == link.Right))
+                .ToList();
+            if (adjacent.Count == 0)
+            {
+                continue;
+            }
+
+            double Score(double deltaMs)
+            {
+                var trial = new Dictionary<IAlignmentChannel, AlignmentOverride>(alignment)
+                {
+                    [link.Left] = leftOverride with
+                    {
+                        DelayMs = leftOverride.DelayMs + deltaMs
+                    },
+                    [link.Right] = rightOverride with
+                    {
+                        DelayMs = rightOverride.DelayMs + deltaMs
+                    }
+                };
+                IReadOnlyList<AlignmentSnapshot> current = reprocess(trial);
+                Complex[] IrOf(IAlignmentChannel channel) =>
+                    current.First(item => item.Channel == channel).ImpulseResponse;
+
+                double total = 0;
+                int count = 0;
+                foreach (AlignmentJunction junction in adjacent)
+                {
+                    (double LossDb, double DipDb)? loss =
+                        VirtualCrossoverAnalysis.MeasureSumLoss(
+                            IrOf(junction.Upper.Channel),
+                            new List<Complex[]> { IrOf(junction.Lower.Channel) },
+                            junction.Upper.Channel.SampleRate,
+                            junction.BandLowHz,
+                            junction.BandHighHz);
+                    if (loss is { } measured)
+                    {
+                        // The same dip-excess penalty the candidate scores
+                        // carry: a mean of averages alone would happily buy a
+                        // hundredth of a dB with a deep narrow cancellation
+                        // notch on the other side's junction.
+                        total += measured.LossDb +
+                            VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
+                            (measured.DipDb - measured.LossDb);
+                        count++;
+                    }
+                }
+
+                return count > 0 ? total / count : double.NegativeInfinity;
+            }
+
+            // Negative deltas may not push either channel below zero.
+            double minDelta = -Math.Min(
+                Math.Min(leftOverride.DelayMs, rightOverride.DelayMs),
+                PairComoveSearchRangeMs);
+            double baseline = Score(0);
+            double bestDelta = 0;
+            double bestScore = baseline;
+            for (double delta = minDelta; delta <= PairComoveSearchRangeMs + 1e-9;
+                delta += 0.1)
+            {
+                double score = Score(delta);
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestDelta = delta;
+                }
+            }
+            for (double delta = Math.Max(minDelta, bestDelta - 0.1);
+                delta <= Math.Min(PairComoveSearchRangeMs, bestDelta + 0.1) + 1e-9;
+                delta += 0.02)
+            {
+                double score = Score(delta);
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestDelta = delta;
+                }
+            }
+
+            if (bestDelta != 0 && bestScore > baseline + PairComoveMinimumGainDb)
+            {
+                bestDelta = Math.Round(bestDelta, 2);
+                alignment[link.Left] = leftOverride with
+                {
+                    DelayMs = Math.Clamp(
+                        Math.Round(leftOverride.DelayMs + bestDelta, 2), 0, MaxDelayMs)
+                };
+                alignment[link.Right] = rightOverride with
+                {
+                    DelayMs = Math.Clamp(
+                        Math.Round(rightOverride.DelayMs + bestDelta, 2), 0, MaxDelayMs)
+                };
+                log.AppendLine(
+                    $"Co-move {link.Left.Name}+{link.Right.Name}: " +
+                    $"{bestDelta:+0.00;-0.00} ms to both sides " +
+                    $"(mean dip-penalized junction loss {baseline:0.00} -> " +
+                    $"{bestScore:0.00} dB; scene untouched)");
+            }
+            else
+            {
+                log.AppendLine(
+                    $"Co-move {link.Left.Name}+{link.Right.Name}: kept " +
+                    $"(best gain {bestScore - baseline:0.00} dB below the " +
+                    $"{PairComoveMinimumGainDb:0.00} dB threshold)");
+            }
+        }
     }
 
     // A junction whose both sides are already final — the mono subwoofer

@@ -184,6 +184,29 @@ public sealed class StereoAlignmentRealDataTests
                 rightWoof.SampleRate, 40, 160);
         Assert.NotNull(rightSubJunction);
         Assert.InRange(rightSubJunction.Value.LossDb, -1.5, 0);
+
+        // The scene mandate: the mids live squarely in the localization
+        // region, so their pair is PINNED to the scene offset (±0.05 ms plus
+        // the arrival detector's ~0.06 ms repeatability) — the field failure
+        // had them drifting 0.43 ms left of the target because nothing
+        // constrained the descent below the bridge.
+        double leftMidArrival = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+            final.First(item => item.Channel == leftMid).ImpulseResponse,
+            leftMid.SampleRate, 175, 1_300);
+        double rightMidArrival = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+            final.First(item => item.Channel == rightMid).ImpulseResponse,
+            rightMid.SampleRate, 175, 1_300);
+        Assert.InRange(leftMidArrival - rightMidArrival, 0.10, 0.40);
+
+        // The scene-preserving co-move may shift a pair, but never its L−R
+        // timing: the tweeter pair still reads the scene offset at the end.
+        double leftTwrArrival = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+            final.First(item => item.Channel == leftTwr).ImpulseResponse,
+            leftTwr.SampleRate, BridgeBandLowHz, BridgeBandHighHz);
+        double rightTwrArrival = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+            final.First(item => item.Channel == rightTwr).ImpulseResponse,
+            rightTwr.SampleRate, BridgeBandLowHz, BridgeBandHighHz);
+        Assert.InRange(leftTwrArrival - rightTwrArrival, 0.15, 0.35);
     }
 
     private static (int SampleRate, Complex[] Ir) LoadTransferIr(string fileName)

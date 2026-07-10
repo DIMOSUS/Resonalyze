@@ -169,6 +169,20 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   slip that survived the per-side sum optimization), and optionally a
   candidate-list re-pick to fix it for free. Also: L/R polarity consistency
   per band.
+- [ ] **Stereo level (ILD) read-out next to Δ** — field-confirmed follow-up
+  (2026-07-10): with the cascade's delays in the car the user reported the
+  scene "dead center" and same-channel drivers indistinguishable by ear, but
+  full centering ALSO needed a manual −3…−4 dB trim of the LEFT mid+tweeter:
+  level steers the image alongside timing. The same asymmetry shows in the
+  measurements — gated band level L−R of the final processed sides on
+  `assets/test_data`: mid +1.6 dB (175–1300; +1.2 in 300–1300), twr +0.6 dB,
+  woof +4.3 dB — same sign, smaller magnitude than perceived, as expected:
+  one omni mic at the head position sees no head shadow, so the effective
+  binaural ILD is larger than the measured single-point figure. Feature: a
+  per-pair L−R level column in the metric block (measured in the pair's
+  shared band, same gate as the sum loss) as a *diagnostic* — do NOT auto-trim
+  gains from it (it under-corrects vs binaural perception and taste); at most
+  a gentle hint when the localization-band level asymmetry exceeds ~2 dB.
 - [ ] **`AlignmentSelection` normal-polarity margin near-miss on real data**:
   at the user's left woof/mid junction the inverted impostor out-scores the
   true normal candidate by 0.23 dB — the 0.25 dB

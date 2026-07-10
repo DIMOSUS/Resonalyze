@@ -580,7 +580,19 @@ namespace Resonalyze
                     SampleRate,
                     autoStop: false,
                     cancellationToken).ConfigureAwait(false);
-                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+                // Wait on the user's stop AND on the driver's own stop: an
+                // unplugged ASIO device stops delivering callbacks, and a
+                // cancellation-only wait left the measurement frozen — plot
+                // stuck, InProgress true, no Completed, no error.
+                Task stopped = session.StoppedAsync();
+                Task cancelled = Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                Task finished = await Task.WhenAny(stopped, cancelled).ConfigureAwait(false);
+                await finished.ConfigureAwait(false);
+                if (finished == stopped)
+                {
+                    throw new InvalidOperationException(
+                        "The ASIO driver stopped unexpectedly (device removed or driver error).");
+                }
             }
             finally
             {

@@ -170,10 +170,19 @@ public sealed class NoiseSignal : IDisposable
 
     // Brown/red noise (-6 dB/octave) via a leaky integrator of white noise. The
     // leak keeps the random walk from drifting off; the mean is removed and the
-    // result normalized to the same 0.5 peak as the other colours.
+    // result normalized to the same 0.5 peak as the other colours. The leak is
+    // derived from a FIXED corner frequency (fc ≈ Fs·(1−leak)/2π, below which
+    // the −6 dB/oct slope flattens): a fixed 0.99 coefficient put that corner
+    // at ~76 Hz at 48 kHz but ~305 Hz at 192 kHz — the same "Brown" mode
+    // changed its spectral shape with the sample rate.
+    private const double BrownCornerHz = 76.0;
+
     private void FillBrown(Random random)
     {
-        const double leak = 0.99;
+        double leak = Math.Clamp(
+            1.0 - 2.0 * Math.PI * BrownCornerHz / Math.Max(1, SampleRate),
+            0.0,
+            0.99999);
         double value = 0;
         double sum = 0;
         for (int sampleIndex = 0; sampleIndex < Samples; sampleIndex++)

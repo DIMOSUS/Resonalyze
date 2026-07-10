@@ -468,3 +468,38 @@ re-verified.
   EQ Auto Tune and history restore just got guards for**
   (`SelectHistoryEntryAsync` applies a slow snapshot over a newer selection):
   per-channel source revision or CancellationTokenSource.
+
+### Batch 6 tails (calibration / generator / device lifecycle / autocorrelation / files / release)
+
+- [ ] **Estimated 90° calibration looks real**: `Has(Degrees90)` is true when
+  the 90° curve is approximated from the 0° file, and the UI labels it plainly
+  "90 degrees". Label it "estimated from 0°" and record the fact in the
+  measurement provenance (ties into the provenance model above).
+- [ ] **Signal Generator materializes whole signals in memory** (mono array +
+  full playback copy; ASIO always a stereo float copy): 600 s at 192 kHz is
+  ~1.3 GiB, 384+ kHz worse. Needs a streaming IWaveProvider generating blocks.
+  (The above-Nyquist sine refusal and the sample-rate-independent brown-noise
+  corner are fixed.)
+- [ ] **Subscriber exceptions escape into the real-time audio callbacks**
+  (`LevelsAvailable`/`SequenceReady`/... invoked directly from ASIO/Wave
+  callbacks): one throwing UI subscriber can kill the driver. Route through a
+  bounded dispatcher or isolate each subscriber.
+- [ ] **Autocorrelation windows are sample-count-fixed** (offset 64, length
+  2048, 3 ms display): the physical analysis window shrinks 4× at 192 kHz and
+  the promised 3 ms does not even exist at 768 kHz. Parametrize in
+  milliseconds. The /correlation[0] normalization is the standard BIASED
+  estimator — fine for display, but note it under-reads long-lag periodicity;
+  an N−k (or overlap-energy) normalization is the alternative if the mode is
+  ever used for periodicity detection.
+- [ ] **Measurement files validate only after full deserialization**: a
+  crafted file can declare hundreds of millions of samples and hit OOM before
+  `Validate()` runs. Add a file-size cap before parsing, a max-samples cap,
+  and `OutOfMemoryException` handling. (The coherence-length ↔ transfer-IR
+  consistency check is in.)
+- [ ] **Release toolchain is unpinned** (`choco install innosetup`, latest
+  NetSparkle appcast tool, actions by major tag): pin exact versions (and
+  SHAs for actions) once the current-good versions are confirmed — an
+  unverified pin would break the release instead. (The shell-injection
+  surface, the branch-vs-tag build mismatch and auto-published AI notes are
+  fixed: inputs go through env + strict regex, every job checks out the tag,
+  the release is created as a draft.)

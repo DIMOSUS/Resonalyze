@@ -92,6 +92,21 @@ namespace Resonalyze.Dsp
             }
 
             points.Sort((left, right) => left.X.CompareTo(right.X));
+
+            // Duplicate frequencies would make an interpolation segment
+            // zero-width (a division by zero straight into the correction);
+            // merge them by averaging the amplitudes.
+            for (int i = points.Count - 1; i > 0; i--)
+            {
+                if (points[i].X == points[i - 1].X)
+                {
+                    points[i - 1] = new SignalPoint(
+                        points[i - 1].X,
+                        (points[i - 1].Y + points[i].Y) / 2.0);
+                    points.RemoveAt(i);
+                }
+            }
+
             string? loadError = points.Count >= 2
                 ? null
                 : sourceName is null
@@ -194,105 +209,65 @@ namespace Resonalyze.Dsp
                 out value) &&
             double.IsFinite(value);
 
-        public double GetDecibelCorrection(double frequency, double smoothingOctaves = 0.5)
+        // The correction is EXACT piecewise-linear interpolation in
+        // (log frequency, dB) — the natural reading of a calibration file. The
+        // previous Lanczos-smoothed lookup silently half-octave-smoothed every
+        // correction (a +12 dB point read back as ~+5.6 dB) and overshot near
+        // steps even at zero smoothing; a calibration must reproduce its own
+        // points, and any smoothing belongs to the measurement's display
+        // smoothing, not to the correction.
+        public double GetDecibelCorrection(double frequency)
         {
             if (baseCalibration != null && decibelOffset != null)
             {
-                return baseCalibration.GetDecibelCorrection(frequency, smoothingOctaves) +
+                return baseCalibration.GetDecibelCorrection(frequency) +
                     decibelOffset(frequency);
             }
 
-            if (calibration.Count < 2)
+            if (calibration.Count == 0)
             {
                 return 0;
             }
-
-            double a = 2.0;
-            double frequencyRatio = Math.Pow(2.0, smoothingOctaves * 0.5);
-            double halfDeltaFrequency = frequency * (frequencyRatio - 1);
-
-            int BinarySearchX(double searchedX)
+            if (calibration.Count == 1)
             {
-                if (searchedX <= calibration[0].X)
-                    return 0;
-                if (searchedX >= calibration[^1].X)
-                    return calibration.Count - 1;
+                return DataHelper.AmplitudeToDecibels(calibration[0].Y);
+            }
 
-                int left = 0;
-                int right = calibration.Count - 1;
+            // Outside the calibrated range the nearest point's value holds:
+            // extrapolating an edge segment arbitrarily far invents corrections
+            // the file never measured.
+            if (frequency <= calibration[0].X)
+            {
+                return DataHelper.AmplitudeToDecibels(calibration[0].Y);
+            }
+            if (frequency >= calibration[^1].X)
+            {
+                return DataHelper.AmplitudeToDecibels(calibration[^1].Y);
+            }
 
-                while (left <= right)
+            int left = 0;
+            int right = calibration.Count - 1;
+            while (right - left > 1)
+            {
+                int middle = (left + right) / 2;
+                if (calibration[middle].X <= frequency)
                 {
-                    var middle = (left + right) / 2;
-
-                    if (searchedX >= calibration[middle].X && searchedX < calibration[middle + 1].X)
-                    {
-                        return middle;
-                    }
-                    else if (searchedX < calibration[middle].X)
-                    {
-                        right = middle - 1;
-                    }
-                    else
-                    {
-                        left = middle + 1;
-                    }
+                    left = middle;
                 }
-                return -1;
-            }
-
-            int corner = BinarySearchX(frequency);
-
-            if (corner < 1)
-            {
-                // Clamped so a frequency below the calibrated range holds the first
-                // point's value: an unclamped fraction would linearly extrapolate the
-                // first segment's slope arbitrarily far (a file starting at 100 Hz
-                // queried at 20 Hz extrapolates ~80 segment widths), easily driving
-                // the amplitude negative and the correction to the -160 dB floor.
-                double fraction = Math.Clamp(
-                    (calibration[corner + 1].X - frequency) /
-                    (calibration[corner + 1].X - calibration[corner].X),
-                    0.0,
-                    1.0);
-                return DataHelper.AmplitudeToDecibels(
-                    calibration[corner].Y * fraction +
-                    calibration[corner + 1].Y * (1.0 - fraction));
-            }
-
-            if (corner >= a)
-                halfDeltaFrequency = Math.Max(
-                    halfDeltaFrequency,
-                    calibration[corner].X - calibration[corner - (int)a].X);
-
-            double weightSum = 0;
-            double weightedSum = 0;
-
-            void Accumulate(int step, int frequencyIndex)
-            {
-                while ((step < 0 ? frequencyIndex > 0 : frequencyIndex < calibration.Count - 1) &&
-                    (Math.Abs(calibration[frequencyIndex].X - frequency) < halfDeltaFrequency ||
-                     Math.Abs(frequencyIndex - corner) < 3))
+                else
                 {
-                    SignalPoint samplePoint = calibration[frequencyIndex];
-                    double weight = DspMath.LanczosKernel(
-                        (frequency - samplePoint.X) / halfDeltaFrequency * a,
-                        a);
-                    weightedSum += samplePoint.Y * weight;
-                    weightSum += weight;
-                    frequencyIndex += step;
+                    right = middle;
                 }
             }
 
-            Accumulate(-1, corner);
-            Accumulate(1, corner + 1);
-
-            // Lanczos weights are signed, so a degenerate window can sum to ~0 or
-            // negative; fall back to the nearest point instead of a 0 dB correction
-            // that would step discontinuously against the neighbouring frequencies.
-            return weightSum > 1e-9
-                ? DataHelper.AmplitudeToDecibels(weightedSum / weightSum)
-                : DataHelper.AmplitudeToDecibels(calibration[corner].Y);
+            double lowDb = DataHelper.AmplitudeToDecibels(calibration[left].Y);
+            double highDb = DataHelper.AmplitudeToDecibels(calibration[right].Y);
+            double lowX = calibration[left].X;
+            double highX = calibration[right].X;
+            double position = lowX > 0
+                ? Math.Log(frequency / lowX) / Math.Log(highX / lowX)
+                : (frequency - lowX) / (highX - lowX);
+            return lowDb + (highDb - lowDb) * position;
         }
     }
 }

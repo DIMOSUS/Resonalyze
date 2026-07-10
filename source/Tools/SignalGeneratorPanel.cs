@@ -73,6 +73,21 @@ public partial class SignalGeneratorPanel : UserControl
             SignalGeneratorPlaybackSettings settings = GetPlaybackSettings();
             RefreshAudioSettings(settings);
 
+            // A sine above Nyquist does not become ultrasound — it aliases to
+            // an arbitrary audible tone (96 kHz at a 44.1 kHz device plays as
+            // ~7.8 kHz, loud). Refuse instead of silently playing a different
+            // signal than the user asked for.
+            double nyquistLimit = settings.SampleRate * 0.49;
+            if (SelectedSignalType == SignalGeneratorType.Sine &&
+                (double)numericFrequency.Value > nyquistLimit)
+            {
+                labelStatus.Text =
+                    $"Frequency exceeds the device limit " +
+                    $"({nyquistLimit / 1000.0:0.#} kHz at {settings.SampleRate / 1000.0:0.#} kHz).";
+                System.Media.SystemSounds.Beep.Play();
+                return;
+            }
+
             int durationSeconds = (int)numericDuration.Value;
             float[] monoSamples = CreateMonoSamples(
                 settings.SampleRate,

@@ -323,11 +323,31 @@ internal sealed class AsioFullDuplexSession : IDisposable
         {
             firstBufferReady?.TrySetException(args.Exception);
             playbackStopped?.TrySetException(args.Exception);
-            return;
+        }
+        else
+        {
+            playbackStopped?.TrySetResult(true);
         }
 
-        playbackStopped?.TrySetResult(true);
+        // No more samples are coming: a waiter blocked on a sample count the
+        // stopped driver will never deliver used to hang until a manual Abort.
+        lock (sync)
+        {
+            sampleWaiters.FaultAll(
+                args.Exception ??
+                new InvalidOperationException(
+                    "ASIO playback stopped before the requested samples arrived."));
+        }
     }
+
+    /// <summary>
+    /// Completes when the driver stops — successfully on a normal stop, with
+    /// the driver's exception on a failure. A live consumer that otherwise
+    /// waits only on its own cancellation must also await this, or an
+    /// unplugged device leaves it frozen with no error and no completion.
+    /// </summary>
+    public Task StoppedAsync() =>
+        playbackStopped?.Task ?? Task.CompletedTask;
 
     private void ResetBuffers()
     {

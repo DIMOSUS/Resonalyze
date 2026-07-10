@@ -259,6 +259,17 @@ namespace Resonalyze
                     new InvalidOperationException("Recording stopped before the first audio buffer arrived."));
                 recordingStopped?.TrySetResult(true);
             }
+
+            // A waiter blocked on a sample count that will never arrive (the
+            // device unplugged mid-capture) used to hang until a manual Abort:
+            // no more samples are coming, so fault every pending wait.
+            lock (sync)
+            {
+                sampleWaiters.FaultAll(
+                    args.Exception ??
+                    new InvalidOperationException(
+                        "Recording stopped before the requested samples arrived."));
+            }
         }
 
         private void ResetBuffers()

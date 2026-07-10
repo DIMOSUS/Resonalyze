@@ -82,6 +82,13 @@ namespace Resonalyze.Dsp
         }
 
         // Gated windowed spectrum for phase analysis (the impulse FFT'd in place).
+        // wrap: true, matching GetGroupDelay exactly: the dialog advertises ONE
+        // gate for both, and phase must stay the mathematical integral of the
+        // group delay. A gate whose left shoulder runs before the IR start
+        // (offset < left fade) reads the cyclic tail — the transfer IR is
+        // circular by construction, so its negative-time content lives there —
+        // where zero-padding used to silently feed phase and GD two different
+        // signals.
         private static Complex[] BuildPhaseSpectrum(
             IImpulseMeasurement measurement,
             double gateOffsetMs,
@@ -96,7 +103,7 @@ namespace Resonalyze.Dsp
                 leftMs,
                 plateauMs,
                 rightMs,
-                wrap: false,
+                wrap: true,
                 out extractionStart);
             Fourier.Forward(spectrum, FourierOptions.Matlab);
             return spectrum;
@@ -640,10 +647,18 @@ namespace Resonalyze.Dsp
                 return new AnalysisCurve("Group Delay", new List<SignalPoint>());
             }
 
-            // The gate compares energies (|H|²), so the dB threshold divides by 10.
-            double relativeGate = maxEnergy * Math.Pow(10.0, magnitudeGateDb / 10.0);
+            // The validity gate reads against a LOCAL octave-smoothed energy
+            // envelope, like the unwrap's reliability gate: one tall resonance
+            // must not blank a quieter but perfectly measured band 30+ dB below
+            // it. The −60 dB global backstop (the same figure as the unwrap's)
+            // still rejects true silence, where the local envelope IS the noise
+            // floor and would otherwise pass itself. Energies compare as |H|²,
+            // so the dB thresholds divide by 10.
+            double[] localEnvelope = SmoothBinsHann(
+                smoothedEnergy, 1.0, binWidthHz, minHalfWidthHz: 0.0);
+            double globalGate = maxEnergy * Math.Pow(10.0, -60.0 / 10.0);
             double absoluteGate = 1e-16;
-            double minEnergy = Math.Max(relativeGate, absoluteGate);
+            double localGateRatio = Math.Pow(10.0, magnitudeGateDb / 10.0);
 
             List<SignalPoint> data = new(halfLength);
 
@@ -657,7 +672,11 @@ namespace Resonalyze.Dsp
                 double f = i * binWidthHz;
 
                 // Regions with no coherent energy anywhere in the smoothing window
-                // (outside the sweep band, true silence) stay gated out.
+                // (outside the sweep band, true silence, deep local notches) stay
+                // gated out.
+                double minEnergy = Math.Max(
+                    Math.Max(localEnvelope[i] * localGateRatio, globalGate),
+                    absoluteGate);
                 if (smoothedEnergy[i] < minEnergy)
                 {
                     data.Add(new SignalPoint(f, double.NaN));

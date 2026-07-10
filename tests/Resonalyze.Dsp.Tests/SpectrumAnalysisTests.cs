@@ -264,6 +264,57 @@ public sealed class SpectrumAnalysisTests
     }
 
     [Fact]
+    public void DebiasCoherence_MapsTheNullExpectationToZero()
+    {
+        // The raw MSC over K averages reads 1/K for pure noise — at K = 2 that
+        // is 0.5, exactly at the trust thresholds downstream. The correction
+        // must send the null expectation to 0, keep 1 at 1, and collapse the
+        // no-estimate case (K = 1) entirely.
+        Assert.Equal(0.0, SpectrumAnalysis.DebiasCoherence([0.5], 2)[0], 9);
+        Assert.Equal(0.0, SpectrumAnalysis.DebiasCoherence([0.25], 4)[0], 9);
+        Assert.Equal(1.0, SpectrumAnalysis.DebiasCoherence([1.0], 2)[0], 9);
+        Assert.Equal(1.0, SpectrumAnalysis.DebiasCoherence([0.9], 1)[0] + 1.0, 9);
+        // Below the null expectation clamps at zero rather than going negative.
+        Assert.Equal(0.0, SpectrumAnalysis.DebiasCoherence([0.1], 2)[0], 9);
+        // Large K leaves an honest estimate nearly untouched.
+        Assert.Equal(0.9, SpectrumAnalysis.DebiasCoherence([0.9], 1000)[0], 3);
+    }
+
+    [Fact]
+    public void ComputeAveragedRelativeIr_TwoNoiseFramesReadMostlyIncoherent()
+    {
+        // Two frames whose targets are unrelated noise: the raw two-average MSC
+        // averages ~0.5 across the band (estimator bias, not information) and
+        // used to sit exactly at the unwrap trust floor. The stored coherence
+        // is debiased, so it must average well below that.
+        const int length = 2_048;
+        float[] reference = CreateSine(length, bin: 24);
+        var frames = new List<TransferFunctionFrame>();
+        for (int frame = 0; frame < 2; frame++)
+        {
+            var target = new double[length];
+            for (int i = 0; i < length; i++)
+            {
+                // Deterministic pseudo-noise, different per frame.
+                target[i] = Math.Sin(i * (12.9898 + frame * 3.7) + frame * 78.233)
+                    * Math.Sin(i * 0.7301 + frame);
+            }
+            frames.Add(new TransferFunctionFrame(
+                Array.ConvertAll(reference, sample => (double)sample),
+                target));
+        }
+
+        TransferEstimateResult result =
+            TransferFunction.ComputeAveragedRelativeIr(frames);
+
+        Assert.NotNull(result.Coherence);
+        double mean = result.Coherence!.Average();
+        Assert.True(
+            mean < 0.3,
+            $"debiased two-average noise coherence averaged {mean:0.000}");
+    }
+
+    [Fact]
     public void ComputeCoherence_RejectsMismatchedLengths()
     {
         Assert.Throws<ArgumentException>(() =>

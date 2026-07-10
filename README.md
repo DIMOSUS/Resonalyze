@@ -404,7 +404,10 @@ real-time analysis without capturing an IR, use the additional
    averaging.
 4. Start a recording to generate and capture the exponential sine sweep. With
    averaging enabled the runs are combined into one transfer IR and a coherence
-   (γ²) curve.
+   (γ²) curve, debiased by the number of runs: the raw estimate over K averages
+   reads 1/K even for pure noise (0.5 at two runs — estimator bias, not
+   information), so the stored figure maps that null expectation to 0 and stays
+   comparable across run counts.
 5. Watch the compact input level meter to confirm microphone level, loopback
    presence, and headroom before trusting the measurement.
 6. Select the analysis view you need.
@@ -485,10 +488,12 @@ The Phase view can show three independently toggled curves:
   reflections) that an equalizer cannot fix.
 
 A **τ** (delay) value detrends the linear-phase slope so the excess phase becomes
-readable. **Find τ** estimates it either from the dominant arrival (peak) or from
-the energy-weighted average group delay (slope). Entering the same τ on two
-measurements lines up their phase for a direct comparison — for example, a
-midrange and a tweeter on the same axis.
+readable. **Find τ** estimates it either from the first prominent arrival of the
+excess energy (peak — found with the same first-arrival detector Time Alignment
+uses, so a room mode ringing louder than the direct sound does not capture the
+reference) or from the energy-weighted average group delay (slope). Entering the
+same τ on two measurements lines up their phase for a direct comparison — for
+example, a midrange and a tweeter on the same axis.
 
 Unwrapped phase uses a **reliability-anchored** algorithm instead of naive
 bin-to-bin accumulation: each bin takes the 360° branch closest to a phase

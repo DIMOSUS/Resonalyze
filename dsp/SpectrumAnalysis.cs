@@ -198,6 +198,31 @@ public static class SpectrumAnalysis
         return coherence;
     }
 
+    /// <summary>
+    /// Removes the small-sample positive bias of the raw γ² estimate, in place.
+    /// The MSC estimator over K averages has E[γ̂²] = 1/K for fully incoherent
+    /// signals — at K = 2 pure noise reads ~0.5, exactly at the thresholds the
+    /// unwrap and PHAT weighting trust — so raw values are rescaled by the
+    /// standard first-order correction (K·γ̂² − 1)/(K − 1), which maps the null
+    /// expectation to 0 and keeps 1 at 1. With one average (no estimate at all)
+    /// everything collapses to 0. Returns the same array for chaining.
+    /// </summary>
+    public static double[] DebiasCoherence(double[] coherence, int averageCount)
+    {
+        ArgumentNullException.ThrowIfNull(coherence);
+        for (int i = 0; i < coherence.Length; i++)
+        {
+            coherence[i] = averageCount <= 1
+                ? 0.0
+                : Math.Clamp(
+                    (averageCount * coherence[i] - 1.0) / (averageCount - 1.0),
+                    0.0,
+                    1.0);
+        }
+
+        return coherence;
+    }
+
     public static double[] ComputeH1MagnitudeSpectrum(
         IReadOnlyList<Complex> crossSpectrum,
         IReadOnlyList<double> referencePowerSpectrum,

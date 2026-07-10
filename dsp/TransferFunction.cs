@@ -46,13 +46,19 @@ public static class TransferFunction
 
         // γ² from the shared cross/auto-spectra formula; epsilon 0 keeps the
         // previous denominator > 0 gate. Only the first half is retained — the
-        // upper half mirrors it for the real inputs here.
-        double[] coherence = SpectrumAnalysis
-            .ComputeCoherence(
-                crossSpectrum,
-                referencePowerSpectrum,
-                targetPowerSpectrum,
-                epsilon: 0.0)[..(fftLength / 2 + 1)];
+        // upper half mirrors it for the real inputs here. The raw estimate is
+        // debiased by the average count before anything stores or consumes it:
+        // at 2-4 averages the raw MSC of pure noise reads 1/K (0.5 at K=2 —
+        // straddling the very thresholds the unwrap and the PHAT weighting
+        // trust), which is estimator bias, not information.
+        double[] coherence = SpectrumAnalysis.DebiasCoherence(
+            SpectrumAnalysis
+                .ComputeCoherence(
+                    crossSpectrum,
+                    referencePowerSpectrum,
+                    targetPowerSpectrum,
+                    epsilon: 0.0)[..(fftLength / 2 + 1)],
+            frames.Count);
 
         Complex[] relative = InverseH1Response(
             crossSpectrum,

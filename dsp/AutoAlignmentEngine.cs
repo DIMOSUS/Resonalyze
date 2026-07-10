@@ -77,6 +77,12 @@ public static class AutoAlignmentEngine
     private const double MinFineAlignmentRangeMs = 0.5;
     private const double MaxFineAlignmentRangeMs = 2.5;
 
+    // The delay ceiling a proposal may reach, mirroring the UI's per-channel
+    // delay limit. Kept here so the uniform negative-delay shift can detect —
+    // and log — the rare case where clamping a pinned channel breaks the
+    // shift's alignment-preserving property.
+    private const double MaxDelayMs = 100;
+
     // Diagnostics only: a deliberately wide fine-search window (many periods at a
     // high crossover, ~one at a low one) whose candidates are logged but never
     // chosen. It surfaces summation optima that sit several lobes outside the
@@ -364,7 +370,11 @@ public static class AutoAlignmentEngine
                     channel, neighbor.Channel, pair, windowOverrideMs: retryRangeMs);
                 if (retried.Count > 0)
                 {
-                    chosen = retried[0];
+                    // Through the same selection rules as the primary pick:
+                    // taking retried[0] raw would let the widened window hand
+                    // the result to a (flip + half-period) impostor that the
+                    // invert margin and the arrival tie-break exist to reject.
+                    chosen = AlignmentSelection.Select(retried, baseDelta);
                 }
 
                 log.AppendLine(
@@ -406,9 +416,21 @@ public static class AutoAlignmentEngine
                     {
                         AlignmentOverride currentAlignment =
                             alignment.GetValueOrDefault(item.Channel);
+                        double shifted = currentAlignment.DelayMs + shift;
+                        if (shifted > MaxDelayMs)
+                        {
+                            // The shift is only alignment-preserving while it is
+                            // uniform; a channel pinned at the ceiling breaks the
+                            // relative delays silently, so say so in the log.
+                            log.AppendLine(
+                                $"  WARNING: uniform shift +{shift:0.000} ms pushes " +
+                                $"{item.Channel.Name} past the {MaxDelayMs:0} ms " +
+                                $"delay limit ({shifted:0.000} ms, clamped) — " +
+                                "the relative alignment is no longer preserved.");
+                        }
                         alignment[item.Channel] = currentAlignment with
                         {
-                            DelayMs = Math.Min(100, currentAlignment.DelayMs + shift)
+                            DelayMs = Math.Min(MaxDelayMs, shifted)
                         };
                     }
                 }
@@ -416,7 +438,7 @@ public static class AutoAlignmentEngine
             }
 
             alignment[channel] = new AlignmentOverride(
-                Math.Clamp(Math.Round(newDelay, 2), 0, 100),
+                Math.Clamp(Math.Round(newDelay, 2), 0, MaxDelayMs),
                 chosen.InvertPolarity);
         }
     }

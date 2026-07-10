@@ -532,6 +532,45 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void FindAlignmentCandidates_ReportsEachPolaritysOwnOptimumAtAGappedJunction()
+    {
+        // The field regime where the polarity curves run shallow and nearly
+        // tied: a gapped junction (LP 1300 / HP 1800 leaves a 0.66-octave
+        // spectral hole). Candidates are seeded per polarity, so the list must
+        // carry the best lobe of EACH polarity — AlignmentSelection's
+        // normal-polarity preference needs the runner-up polarity present to
+        // have anything to prefer. Also pins that a candidate's polarity is
+        // its own optimum: refinement never flips it.
+        Complex[] woofer = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(16_384, 400),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.LowPass,
+                new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_300, 24))),
+            SampleRate);
+        Complex[] tweeter = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(16_384, 400),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.HighPass,
+                HighPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.Butterworth, 1_800, 24))),
+            SampleRate);
+
+        IReadOnlyList<AlignmentCandidate> candidates =
+            VirtualCrossoverAnalysis.FindAlignmentCandidates(
+                tweeter, [woofer], SampleRate, 650, 2_600, -1.5, 1.5);
+
+        AlignmentCandidate bestNormal = candidates.First(item => !item.InvertPolarity);
+        AlignmentCandidate bestInverted = candidates.First(item => item.InvertPolarity);
+        // The true handover (no delay, no flip) wins; the flipped lobe half a
+        // period off stays in the list as a genuine near-tie the downstream
+        // selection rules must see.
+        Assert.Equal(bestNormal, candidates[0]);
+        Assert.InRange(bestNormal.DelayMs, -0.05, 0.25);
+        Assert.InRange(bestInverted.DelayMs, -0.4, -0.05);
+        Assert.True(bestInverted.ScoreDb > bestNormal.ScoreDb - 0.5);
+    }
+
+    [Fact]
     public void FindAlignmentCandidates_DipExcessOutranksASlightlyBetterAverage()
     {
         // An asymmetric junction (LR 12 dB high-pass vs Butterworth 48 dB

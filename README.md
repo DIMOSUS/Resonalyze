@@ -1338,7 +1338,10 @@ Each channel runs through:
   overlay capture, and Auto delay without clearing its source or settings
 - **Bypass** — feed the channel's raw measured signal into the sum with the
   whole chain skipped (no gain, delay, polarity, crossover, or PEQ), for an A/B
-  against the processed result; unlike Mute, the channel stays in the sum
+  against the processed result; unlike Mute, the channel stays in the sum.
+  Auto delay refuses to run while any participating channel is bypassed — the
+  proposed delay and polarity could not act on the raw signal, yet the channel
+  would still steer every other channel's alignment
 - **IR polarity** — a measured Normal / Inverted / Unknown indicator read from
   the transfer IR, independent of the virtual polarity switch
 
@@ -1409,7 +1412,10 @@ it defaults to Off because the measurements are loopback-referenced.
   loses to a slightly lossier but flat one. It weighs every near-optimal
   candidate against an arrival-based prior and a physical tie-break, so it does
   not add delay or flip polarity without a real improvement — sidestepping the
-  flip-plus-half-period impostor a steep crossover can otherwise hide. The search runs on a background task with a busy
+  flip-plus-half-period impostor a steep crossover can otherwise hide. Each
+  polarity seeds its own candidates, so the non-inverted optimum is always on
+  the table for that preference even where the inverted curve edges it
+  everywhere. The search runs on a background task with a busy
   indicator, so the window stays responsive during the few seconds it takes. If
   the resulting delays span more than ~10 ms — usually a sign that one channel's
   crossover has excessive group delay (a narrow or steep low-frequency band-pass)

@@ -88,6 +88,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private Task? redrawTask;
     private bool redrawPending;
     private bool savePending;
+    private bool autoDelayBusy;
 
     public VirtualCrossoverPanel()
     {
@@ -466,8 +467,10 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private void UpdateChannelButtons()
     {
-        buttonAddChannel.Enabled = channels.Count < MaxChannelCount;
-        buttonRemoveChannel.Enabled = channels.Count > MinChannelCount;
+        buttonAddChannel.Enabled =
+            !autoDelayBusy && channels.Count < MaxChannelCount;
+        buttonRemoveChannel.Enabled =
+            !autoDelayBusy && channels.Count > MinChannelCount;
     }
 
     // Appends a channel: a fresh block and a matching empty project entry, so the
@@ -1863,6 +1866,28 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
+        // A bypassed channel processes through the identity chain, so the
+        // engine's delay/polarity overrides would not move it — yet it would
+        // still take part in the junction walk (even as the settled neighbor
+        // or the reference) and receive a delay that bypass silently ignores
+        // now and applies later, once bypass is switched off. Refuse the run
+        // instead of computing an alignment that is wrong on both counts.
+        List<ProcessedChannel> bypassed = processed
+            .Where(item => item.Channel.Settings.Bypass)
+            .ToList();
+        if (bypassed.Count > 0)
+        {
+            ShowError(
+                "Auto delay cannot run with bypassed channels.",
+                "Bypass feeds the raw measured signal, so the computed delays " +
+                "and polarities would not apply to: " +
+                string.Join(", ", bypassed.Select(
+                    item => item.Channel.Control.ChannelName)) +
+                ".\r\n\r\nDisable Bypass on every participating channel " +
+                "(or mute the channel to exclude it) and run Auto delay again.");
+            return;
+        }
+
         // Without crossovers the search falls back to a broad midband window and
         // the result will shift once the filters are configured — the alignment
         // only matters (and is only well-defined) in the overlap region.
@@ -1897,8 +1922,10 @@ public partial class VirtualCrossoverPanel : UserControl
 
         // The alignment stages are FFT-heavy (~seconds). Run them off the UI
         // thread so the window stays responsive and shows the busy state instead
-        // of hanging. Inputs are locked for the duration, so the background
-        // compute reads a stable snapshot of the settings and IRs.
+        // of hanging. Every input that could mutate the channel list or its
+        // settings (channel controls, add/remove, session import, the auto
+        // commands) is locked for the duration, so the background compute reads
+        // a stable configuration.
         SetAutoDelayBusy(true);
         try
         {
@@ -1935,9 +1962,16 @@ public partial class VirtualCrossoverPanel : UserControl
     // stable snapshot) and shows a wait state.
     private void SetAutoDelayBusy(bool busy)
     {
+        autoDelayBusy = busy;
         buttonAutoDelay.Enabled = !busy;
         buttonAutoDelay.Text = busy ? "Aligning…" : "Auto delay";
         buttonAutoSetup.Enabled = !busy;
+        // The background compute iterates the live channel list and its live
+        // settings, so everything that can mutate them must be locked out too:
+        // add/remove change the list (and dispose controls), a session import
+        // replaces the whole configuration mid-search.
+        buttonSessionImport.Enabled = !busy;
+        UpdateChannelButtons();
         foreach (ChannelRuntime channel in channels)
         {
             channel.Control.Enabled = !busy;

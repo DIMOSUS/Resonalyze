@@ -748,8 +748,10 @@ public static class VirtualCrossoverAnalysis
 
     // Candidate reporting: how far behind the winner a local optimum may score
     // and still be returned, and how many candidates are returned at most.
+    // Each polarity seeds its own optima, so one lobe can contribute two
+    // candidates — the cap leaves room for three lobes even then.
     private const double CandidateGapDb = 1.5;
-    private const int MaxAlignmentCandidates = 4;
+    private const int MaxAlignmentCandidates = 6;
 
     /// <summary>
     /// How much a candidate's deepest smoothed notch counts against its score,
@@ -769,9 +771,13 @@ public static class VirtualCrossoverAnalysis
     // the same grid scheme as the correlation search, but scoring each delay
     // by the metric the tool actually reports: the log-frequency-weighted
     // average summation loss. Both polarities are evaluated at every delay
-    // (they share the rotated spectrum), and the better one is kept alongside
-    // the delay. Every local optimum of the coarse grid within the candidate
-    // gap is refined and reported, best first. The dip-excess penalty is folded
+    // (they share the rotated spectrum), but each polarity seeds and refines
+    // its own local optima: on a max-of-both envelope one polarity edging the
+    // other across a whole basin would hide the loser's peak entirely, and the
+    // downstream preference for normal polarity within a margin
+    // (AlignmentSelection) would have no normal candidate left to prefer.
+    // Every local optimum of the coarse grid within the candidate gap is
+    // refined and reported, best first. The dip-excess penalty is folded
     // into each optimum's score only after refinement: within one lobe the dip
     // varies slowly with delay, so it re-ranks the lobes against each other
     // without needing to be paid on every grid point.
@@ -789,39 +795,39 @@ public static class VirtualCrossoverAnalysis
             weightSum += bin.LogWeight;
         }
 
-        (double LossDb, bool Invert) Evaluate(double delayMs)
+        double EvaluatePolarity(double delayMs, bool invert)
         {
-            double normal = 0;
-            double inverted = 0;
+            double loss = 0;
             foreach (AlignmentBin bin in bins)
             {
                 Complex variable = bin.Variable * Complex.Exp(
                     new Complex(0, -bin.OmegaMs * delayMs));
-                normal += bin.LogWeight * Math.Log10(Math.Max(
-                    (bin.FixedSum + variable).Magnitude / bin.MagnitudeSum,
-                    MinBinAmplitudeRatio));
-                inverted += bin.LogWeight * Math.Log10(Math.Max(
-                    (bin.FixedSum - variable).Magnitude / bin.MagnitudeSum,
+                Complex sum = invert
+                    ? bin.FixedSum - variable
+                    : bin.FixedSum + variable;
+                loss += bin.LogWeight * Math.Log10(Math.Max(
+                    sum.Magnitude / bin.MagnitudeSum,
                     MinBinAmplitudeRatio));
             }
 
-            normal *= 20.0 / weightSum;
-            inverted *= 20.0 / weightSum;
-            return inverted > normal ? (inverted, true) : (normal, false);
+            return loss * 20.0 / weightSum;
         }
 
-        AlignmentCandidate Scored(double delayMs)
+        double PriorPenaltyDb(double delayMs)
         {
-            (double lossDb, bool invert) = Evaluate(delayMs);
-            double score = lossDb;
             if (priorDelayMs is { } prior && priorSigmaMs > 0)
             {
                 double distance = (delayMs - prior) / priorSigmaMs;
-                score -= PriorPenaltyDbAtSigma * distance * distance;
+                return PriorPenaltyDbAtSigma * distance * distance;
             }
 
-            return new AlignmentCandidate(delayMs, invert, score);
+            return 0;
         }
+
+        AlignmentCandidate Scored(double delayMs, bool invert) => new(
+            delayMs,
+            invert,
+            EvaluatePolarity(delayMs, invert) - PriorPenaltyDb(delayMs));
 
         // The coarse grid is evaluated transposed — outer loop over bins, inner
         // over delays — replacing a Complex.Exp per (bin, delay) with one complex
@@ -850,36 +856,28 @@ public static class VirtualCrossoverAnalysis
             }
         }
 
-        var grid = new List<AlignmentCandidate>(gridCount);
-        for (int i = 0; i < gridCount; i++)
+        // Local optima of each polarity's own coarse grid (window edges
+        // included): each is the seed of one correlation lobe of that polarity.
+        var seeds = new List<AlignmentCandidate>();
+        foreach ((double[] accumulated, bool invert) in
+            new[] { (normalDb, false), (invertedDb, true) })
         {
-            double delayMs = minDelayMs + i * coarseStep;
-            double normal = normalDb[i] * 20.0 / weightSum;
-            double inverted = invertedDb[i] * 20.0 / weightSum;
-            (double lossDb, bool invert) = inverted > normal
-                ? (inverted, true)
-                : (normal, false);
-
-            double score = lossDb;
-            if (priorDelayMs is { } prior && priorSigmaMs > 0)
+            var scores = new double[gridCount];
+            for (int i = 0; i < gridCount; i++)
             {
-                double distance = (delayMs - prior) / priorSigmaMs;
-                score -= PriorPenaltyDbAtSigma * distance * distance;
+                scores[i] = accumulated[i] * 20.0 / weightSum
+                    - PriorPenaltyDb(minDelayMs + i * coarseStep);
             }
 
-            grid.Add(new AlignmentCandidate(delayMs, invert, score));
-        }
-
-        // Local optima of the coarse grid (window edges included): each is the
-        // seed of one correlation lobe / polarity basin.
-        var seeds = new List<AlignmentCandidate>();
-        for (int i = 0; i < grid.Count; i++)
-        {
-            bool risesBefore = i == 0 || grid[i].ScoreDb >= grid[i - 1].ScoreDb;
-            bool fallsAfter = i == grid.Count - 1 || grid[i].ScoreDb >= grid[i + 1].ScoreDb;
-            if (risesBefore && fallsAfter)
+            for (int i = 0; i < gridCount; i++)
             {
-                seeds.Add(grid[i]);
+                bool risesBefore = i == 0 || scores[i] >= scores[i - 1];
+                bool fallsAfter = i == gridCount - 1 || scores[i] >= scores[i + 1];
+                if (risesBefore && fallsAfter)
+                {
+                    seeds.Add(new AlignmentCandidate(
+                        minDelayMs + i * coarseStep, invert, scores[i]));
+                }
             }
         }
 
@@ -892,13 +890,14 @@ public static class VirtualCrossoverAnalysis
             {
                 // Clamp the refinement span to the window: a seed on an edge
                 // would otherwise score points outside it, and the reported
-                // score and polarity must belong to an in-window delay.
+                // score must belong to an in-window delay. The polarity stays
+                // the seed's own — each candidate is one polarity's optimum.
                 double from = Math.Max(minDelayMs, best.DelayMs - step);
                 double to = Math.Min(maxDelayMs, best.DelayMs + step);
                 step /= 10.0;
                 for (double delay = from; delay <= to; delay += step)
                 {
-                    AlignmentCandidate candidate = Scored(delay);
+                    AlignmentCandidate candidate = Scored(delay, seed.InvertPolarity);
                     if (candidate.ScoreDb > best.ScoreDb)
                     {
                         best = candidate;
@@ -942,6 +941,7 @@ public static class VirtualCrossoverAnalysis
                 break;
             }
             if (results.All(kept =>
+                kept.InvertPolarity != candidate.InvertPolarity ||
                 Math.Abs(kept.DelayMs - candidate.DelayMs) > coarseStep))
             {
                 results.Add(candidate);

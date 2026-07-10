@@ -98,9 +98,9 @@ namespace Resonalyze
             overlays.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             overlays.BorderStyle = BorderStyle.FixedSingle;
             overlays.Controls.Add(overlayPanel1);
-            overlays.Location = new Point(1268, 479);
+            overlays.Location = new Point(1264, 479);
             overlays.Name = "overlays";
-            overlays.Size = new Size(214, 341);
+            overlays.Size = new Size(218, 341);
             overlays.TabIndex = 6;
             // 
             // overlayPanel1
@@ -180,7 +180,7 @@ namespace Resonalyze
             buttonSave.ForeColor = Color.White;
             buttonSave.Location = new Point(3, 62);
             buttonSave.Name = "buttonSave";
-            buttonSave.Size = new Size(100, 23);
+            buttonSave.Size = new Size(102, 23);
             buttonSave.TabIndex = 18;
             buttonSave.Text = "Save";
             toolTip1.SetToolTip(buttonSave, "Save Impulse Response");
@@ -195,9 +195,9 @@ namespace Resonalyze
             buttonLoad.FlatStyle = FlatStyle.Popup;
             buttonLoad.Font = new Font("Segoe UI", 10F);
             buttonLoad.ForeColor = Color.White;
-            buttonLoad.Location = new Point(109, 62);
+            buttonLoad.Location = new Point(111, 62);
             buttonLoad.Name = "buttonLoad";
-            buttonLoad.Size = new Size(104, 23);
+            buttonLoad.Size = new Size(102, 23);
             buttonLoad.TabIndex = 19;
             buttonLoad.Text = "Load";
             toolTip1.SetToolTip(buttonLoad, "Load Impulse Response");
@@ -212,9 +212,9 @@ namespace Resonalyze
             buttonOverlayShowAll.FlatStyle = FlatStyle.Popup;
             buttonOverlayShowAll.Font = new Font("Segoe UI", 10F);
             buttonOverlayShowAll.ForeColor = Color.White;
-            buttonOverlayShowAll.Location = new Point(1268, 453);
+            buttonOverlayShowAll.Location = new Point(1264, 453);
             buttonOverlayShowAll.Name = "buttonOverlayShowAll";
-            buttonOverlayShowAll.Size = new Size(100, 23);
+            buttonOverlayShowAll.Size = new Size(106, 23);
             buttonOverlayShowAll.TabIndex = 20;
             buttonOverlayShowAll.Text = "Show all";
             toolTip1.SetToolTip(buttonOverlayShowAll, "Show all overlays for this mode");
@@ -229,9 +229,9 @@ namespace Resonalyze
             buttonOverlayHideAll.FlatStyle = FlatStyle.Popup;
             buttonOverlayHideAll.Font = new Font("Segoe UI", 10F);
             buttonOverlayHideAll.ForeColor = Color.White;
-            buttonOverlayHideAll.Location = new Point(1374, 453);
+            buttonOverlayHideAll.Location = new Point(1376, 453);
             buttonOverlayHideAll.Name = "buttonOverlayHideAll";
-            buttonOverlayHideAll.Size = new Size(108, 23);
+            buttonOverlayHideAll.Size = new Size(106, 23);
             buttonOverlayHideAll.TabIndex = 22;
             buttonOverlayHideAll.Text = "Hide all";
             toolTip1.SetToolTip(buttonOverlayHideAll, "Hide all overlays for this mode");
@@ -248,7 +248,7 @@ namespace Resonalyze
             buttonCurrentModeSettings.ForeColor = Color.White;
             buttonCurrentModeSettings.Location = new Point(1268, 309);
             buttonCurrentModeSettings.Name = "buttonCurrentModeSettings";
-            buttonCurrentModeSettings.Size = new Size(214, 23);
+            buttonCurrentModeSettings.Size = new Size(210, 23);
             buttonCurrentModeSettings.TabIndex = 21;
             buttonCurrentModeSettings.Text = "🔧 Mode Settings...";
             buttonCurrentModeSettings.UseCompatibleTextRendering = true;
@@ -304,7 +304,7 @@ namespace Resonalyze
             buttonHistory.ForeColor = Color.White;
             buttonHistory.Location = new Point(1268, 280);
             buttonHistory.Name = "buttonHistory";
-            buttonHistory.Size = new Size(214, 23);
+            buttonHistory.Size = new Size(210, 23);
             buttonHistory.TabIndex = 25;
             buttonHistory.Text = "History";
             buttonHistory.UseCompatibleTextRendering = true;

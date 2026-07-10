@@ -149,6 +149,15 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   woof/mid left 3.878 vs manual 3.84 — via the normal-polarity margin, which
   won by only 0.02 dB there, see next item; right mid/twr −0.635 vs manual
   ~0.68 on the mid side).
+- [ ] **Stereo scene diagnostics (Δ per band)**: the stereo Auto delay cascade
+  (left walk → arrival bridge with the scene offset → right descent) is in;
+  the complementary *verification* layer is not — per-band L−R arrival
+  differences of the FINAL tune, compared across bands (probe showed 0.06 ms
+  repeatability on real measurements), with a warning when a band's Δ walks
+  off the top pair's by a sizable fraction of its junction period (a period
+  slip that survived the per-side sum optimization), and optionally a
+  candidate-list re-pick to fix it for free. Also: L/R polarity consistency
+  per band.
 - [ ] **`AlignmentSelection` normal-polarity margin near-miss on real data**:
   at the user's left woof/mid junction the inverted impostor out-scores the
   true normal candidate by 0.23 dB — the 0.25 dB

@@ -28,6 +28,31 @@ public sealed class EqAutoTunerTests
     }
 
     [Fact]
+    public void Tune_TotalGainCapPreventsAClippingProfile()
+    {
+        // Target sits +10 dB above source with an extra +6 dB local bump: the
+        // unconstrained fit hands out preamp +10 plus a +6 boost band — a
+        // profile that clips by +16 dB before the UI ever shows the headroom.
+        // With the total-gain ceiling the preamp is capped so preamp + band
+        // boost never exceeds 0 dB anywhere; the fitted band shape stays.
+        var bump = new PeqBand(1_000, 2.0, 6.0);
+        IReadOnlyList<SignalPoint> source = Grid(_ => -40.0);
+        IReadOnlyList<SignalPoint> target = Grid(
+            f => -30.0 + bump.MagnitudeDbAt(f));
+
+        EqualizationCurve curve = EqAutoTuner.Tune(
+            source, target, new EqAutoTuner.Options { TotalGainMaxDb = 0 });
+
+        double maxTotal = EqualizationCurve
+            .LogFrequencyGrid(20, 20_000, 400)
+            .Max(f => curve.MagnitudeDbAt(f));
+        Assert.True(
+            maxTotal <= 0.05,
+            $"total EQ gain peaks at {maxTotal:0.0} dB — a clipping profile.");
+        Assert.NotEmpty(curve.Bands);
+    }
+
+    [Fact]
     public void Tune_ConstantLevelDifference_UsesPreampAndNoBands()
     {
         IReadOnlyList<SignalPoint> source = Grid(_ => -40);

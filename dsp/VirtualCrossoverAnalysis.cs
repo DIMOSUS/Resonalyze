@@ -84,9 +84,16 @@ public enum PolarityEstimate
 public static class VirtualCrossoverAnalysis
 {
     // Zero padding appended before the FFT so the chain's delay shift and the
-    // filter ringing tails stay linear instead of wrapping around. 8192 samples
-    // cover ~170 ms at 48 kHz — far beyond any crossover or high-Q PEQ decay.
-    private const int FilterTailPadding = 8192;
+    // filter ringing tails stay linear instead of wrapping around. The floor
+    // (8192 samples ≈ 170 ms at 48 kHz) covers every crossover; the actual pad
+    // follows the chain's slowest pole, because a low-frequency high-Q PEQ
+    // rings far longer — a 20 Hz / Q 10 boost decays only ~9 dB over the old
+    // fixed pad, and the rest wrapped circularly into the early IR, phase and
+    // the alignment sums. The cap bounds the FFT growth for pathological
+    // settings.
+    private const int MinFilterTailPadding = 8192;
+    private const int MaxFilterTailPadding = 262_144;
+    private const double FilterTailDecayDb = 120.0;
 
     /// <summary>
     /// Applies the chain to an impulse response by multiplying its spectrum with
@@ -113,9 +120,11 @@ public static class VirtualCrossoverAnalysis
 
         int delaySamples = (int)Math.Ceiling(
             Math.Max(0.0, chain.DelayMs) / 1_000.0 * sampleRate);
-        int length = DspMath.NextPowerOfTwo(
-            impulseResponse.Length + delaySamples + FilterTailPadding);
         PreparedDspResponse preparedChain = PreparedDspResponse.Create(chain, sampleRate);
+        int tailPadding = preparedChain.RequiredTailSamples(
+            FilterTailDecayDb, MinFilterTailPadding, MaxFilterTailPadding);
+        int length = DspMath.NextPowerOfTwo(
+            impulseResponse.Length + delaySamples + tailPadding);
         if (preparedChain.IsTimeDomainScaleOnly)
         {
             return preparedChain.ApplyTimeDomainScale(impulseResponse, length);

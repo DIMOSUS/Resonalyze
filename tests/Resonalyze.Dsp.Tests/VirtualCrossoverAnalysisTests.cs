@@ -532,6 +532,37 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void ApplyChain_LowFrequencyHighQPeqDoesNotWrapIntoTheEarlyResponse()
+    {
+        // A 20 Hz / Q 10 / +12 dB peaking filter rings for hundreds of
+        // milliseconds — far past the old fixed 8192-sample tail. With the IR
+        // length near the FFT boundary the ring wrapped circularly into the
+        // early response, corrupting the IR, the phase and every alignment
+        // sum built on it. The padding now follows the chain's slowest pole.
+        var ir = new Complex[57_000];
+        ir[24_000] = Complex.One;
+        var chain = new DspChannelChain(Peq: new EqualizationCurve(
+            new[] { new PeqBand(20, 10, 12) }));
+
+        Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(ir, chain, 48_000);
+
+        double peak = 0;
+        for (int i = 0; i < processed.Length; i++)
+        {
+            peak = Math.Max(peak, processed[i].Magnitude);
+        }
+        double preArrival = 0;
+        for (int i = 0; i < 23_000; i++)
+        {
+            preArrival = Math.Max(preArrival, processed[i].Magnitude);
+        }
+
+        Assert.True(
+            preArrival < peak * 1e-4,
+            $"wrap-around energy before the arrival: {20 * Math.Log10(preArrival / peak):0.0} dB re peak");
+    }
+
+    [Fact]
     public void FindAlignmentCandidates_ReportsEachPolaritysOwnOptimumAtAGappedJunction()
     {
         // The field regime where the polarity curves run shallow and nearly

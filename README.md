@@ -534,7 +534,13 @@ IR-based views — frequency response, phase, group delay, impulse response,
 waterfall, Burst Decay, and autocorrelation — are computed from this transfer
 IR. Harmonic distortion, THD, and THD+N curves use the ordinary
 sweep-deconvolution response instead, because the harmonic separation belongs to
-the sweep analysis itself.
+the sweep analysis itself. The HD2–HD4 curves draw at the **excitation**
+frequency (a second-harmonic hump caused by a 1 kHz drive appears at 1 kHz,
+not at its 2 kHz product; microphone calibration is applied at the product
+frequency first), so each curve ends at Nyquist/n. Note the harmonic curves
+are on the sweep-deconvolution scale while the primary curve is
+loopback-normalized — their vertical distance is not yet a calibrated
+distortion percentage.
 
 The group-delay reference is the start of the transfer IR, so reported delay is
 absolute rather than relative to a response peak.

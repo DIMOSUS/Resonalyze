@@ -684,7 +684,11 @@ public partial class EqWizardPanel : UserControl
             MinFrequencyHz = minHz,
             MaxFrequencyHz = maxHz,
             PreampMinDb = (double)NumericGain.Minimum,
-            PreampMaxDb = (double)NumericGain.Maximum
+            PreampMaxDb = (double)NumericGain.Maximum,
+            // The wizard's output is a profile for a real DSP: the total gain
+            // (preamp + bands) must not exceed 0 dB anywhere, or the profile
+            // clips before the user ever sees the headroom read-out.
+            TotalGainMaxDb = 0
         };
 
         if (peqSlots.Count > 0)

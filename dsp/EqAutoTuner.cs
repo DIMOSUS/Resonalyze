@@ -28,6 +28,19 @@ public static class EqAutoTuner
         public double PreampMaxDb { get; init; } = 30;
 
         /// <summary>
+        /// Ceiling on the TOTAL EQ gain (preamp + summed bands) at any
+        /// frequency. A positive preamp stacked under boost bands is a
+        /// clipping DSP profile — the fit used to hand one out and let the UI
+        /// report the damage as a negative headroom afterwards. The preamp is
+        /// capped after the bands are placed, so the fitted shape stays and
+        /// the curve honestly sits below an unreachable target instead.
+        /// Unbounded by default: as a pure curve fit the preamp legitimately
+        /// carries the level difference between arbitrarily referenced source
+        /// and target; a caller producing a profile for a real DSP passes 0.
+        /// </summary>
+        public double TotalGainMaxDb { get; init; } = double.PositiveInfinity;
+
+        /// <summary>
         /// Stop adding bands once the largest remaining error is below this many dB.
         /// </summary>
         public double StopResidualDb { get; init; } = 0.5;
@@ -211,6 +224,25 @@ public static class EqAutoTuner
                 grid,
                 peakIndex,
                 boostHeadroomLimited ? opt.SaturatedBlockOctaves : opt.MinBandSpacingOctaves);
+        }
+
+        // Digital-clipping guard: cap the preamp so preamp + the summed band
+        // boost never exceeds TotalGainMaxDb anywhere. Cuts leave bandPeak at
+        // 0, so a positive preamp survives only up to the ceiling itself.
+        if (double.IsFinite(opt.TotalGainMaxDb))
+        {
+            double bandPeak = 0;
+            for (int i = 0; i < n; i++)
+            {
+                if (valid[i])
+                {
+                    bandPeak = Math.Max(bandPeak, eqSum[i]);
+                }
+            }
+            preamp = Clamp(
+                Math.Min(preamp, Math.Floor(opt.TotalGainMaxDb - bandPeak)),
+                opt.PreampMinDb,
+                opt.PreampMaxDb);
         }
 
         return new EqualizationCurve(bands, preamp);

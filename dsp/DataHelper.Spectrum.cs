@@ -134,12 +134,37 @@ namespace Resonalyze.Dsp
                 double[] window = Windowing.TukeyWindow(hLength, leftTukeyWindow, rightTukeyWindow);
 
                 var data = GetOversampledSpectrumData(measurement, hStart, window);
+
+                // Microphone calibration belongs to the ACTUAL acoustic
+                // frequency of the harmonic (n·f), so it is applied before the
+                // axis moves to the fundamental.
+                if (frequencyResponseOptions.UseCalibration && calibration != null)
+                {
+                    for (int i = 0; i < data.Count; i++)
+                    {
+                        data[i] = new SignalPoint(
+                            data[i].X,
+                            data[i].Y - calibration.GetDecibelCorrection(data[i].X));
+                    }
+                }
+
+                // An HDn bin at output frequency F was excited by the sweep
+                // fundamental at F/n. The standard distortion axis is the
+                // EXCITATION frequency (an HD2 hump caused by a 1 kHz drive
+                // draws at 1 kHz, not at its 2 kHz product), so the curve is
+                // remapped onto the fundamental — and can only reach
+                // Nyquist/n, where the product hits Nyquist.
+                for (int i = 0; i < data.Count; i++)
+                {
+                    data[i] = new SignalPoint(data[i].X / h, data[i].Y);
+                }
+
                 data = LogarithmicResample(
                     data,
                     20,
-                    20000,
+                    Math.Min(20_000.0, measurement.SampleRate * 0.5 / h),
                     1024,
-                    frequencyResponseOptions.UseCalibration ? calibration : null,
+                    calibration: null,
                     frequencyResponseOptions.SmoothingInverseOctaves > 0
                         ? HarmonicSmoothingWidthFactor / frequencyResponseOptions.SmoothingInverseOctaves
                         : 0.0);

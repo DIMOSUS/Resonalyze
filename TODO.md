@@ -299,3 +299,114 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 
 - [ ] **Uninstaller leaves settings behind.** Offer (or document) removal of
   the settings/history files on uninstall.
+
+## External review tails (verified, deliberately deferred — designed changes, not patches)
+
+Items from the four external review batches (July 2026, PR #24) whose claims
+were verified against the code but whose fixes need their own design and
+validation. Each entry records the verdict so the claim does not have to be
+re-verified.
+
+### Measurement / transfer layer
+
+- [ ] ★ **Dual-device Wave loopback is an untrusted timing reference but
+  produces an indistinguishable `LoopbackTransfer` measurement.** Independent
+  clocks mean an arbitrary inter-device offset (changes per run by a buffer)
+  plus drift as a frequency-dependent phase error; Time Alignment still offers
+  fractional-millisecond read-outs. Fix: a timing-quality field
+  (sample-synchronous / shared-device / independent-devices) through
+  `ExpSweepMeasurement`, history snapshots and the IR file format, with the
+  Time Alignment panel warning or refusing on independent devices, and phase/GD
+  marked timing-uncertain.
+- [ ] **H1 has no excitation mask and an absolute epsilon.** Below the sweep
+  band `Gxy/Gxx` divides noise by noise and the garbage bins ring back through
+  the IFFT; the absolute epsilon's strength also varies with the average count.
+  Fix: relative regularization + a soft excitation taper at the known sweep
+  edges. Changes every measured transfer IR — needs validation against fresh
+  raw captures (the test-data submodule stores only final IRs).
+
+### Harmonics / THD
+
+- [ ] ★ **THD+N is not THD+N: one FFT over the HD2..HD5 region sums the
+  packets complex-wise** (phase-dependent, shifts change the result without
+  changing energy). Fix: per-harmonic windows → per-harmonic spectra → move
+  each onto the fundamental axis → sum energies; estimate noise separately and
+  add it in energy. (The HDn display axis itself is fixed: curves now draw at
+  the excitation frequency with calibration applied at the product frequency.)
+- [ ] ★ **Harmonic curves and the primary curve have different reference
+  levels** (sweep-deconvolution amplitude vs mic/loopback transfer), so their
+  vertical distance is not a distortion percentage. Fix: HDn relative to the
+  H1 linear packet of the *same* ESS decomposition; the transfer H1 stays as
+  the primary display curve.
+- [ ] **No overlap check between harmonic packets.** Long decay (bass, short
+  sweeps, car cabins) leaks one packet's tail into the next window; the curves
+  stay confident-looking. Fix: compute the available separation and warn when
+  energy near the window edge has not fallen by a set margin.
+- [ ] **No end-to-end ESS nonlinearity test.** The isolation test pins window
+  geometry only. Fix: y = x + a2·x² + a3·x³ through a real ESS +
+  deconvolution, assert HD2/HD3 frequency and level against the known a2/a3.
+
+### Auto Crossover
+
+- [ ] ★ **The scalar summation model is physically wrong in three ways**:
+  family-based amplitude-vs-power summation (the real sum depends on the
+  complex phase at each frequency, not the family name), sequential mixed
+  summation that is non-associative for 3+ channels, and a magnitude-only
+  objective that ignores the measured phase entirely (Auto delay afterwards
+  cannot fix mismatched slopes/orders with one delay). The optimizer's live
+  preview shares the model, so it confirms its own objective; the flatness
+  tests call the same `SummedResponseDb` and are tautological. Fix: complex
+  per-channel responses (measured IR × exact digital filter response) with at
+  least a final complex-sum check per candidate, plus an independent
+  complex-sum oracle in the tests.
+- [ ] **`EstimateBand` merges disjoint islands into one band** (first/last bin
+  above a global threshold): an isolated resonance above a dead gap extends
+  HighHz and misclassifies the driver. Fix: the most significant contiguous
+  segment above threshold with bounded gap tolerance.
+
+### EQ Wizard
+
+- [ ] ★ **No boostability/reliability mask**: the fitter sees only dB curves
+  and will boost a deep interference null (wasting headroom and blocking an
+  octave). Fix: mask from coherence + null depth/width + driver band; a
+  cuts-only mode (sensible default for car tuning). (The clipping-profile
+  half of this batch is fixed: `TotalGainMaxDb` caps preamp + band peak, the
+  wizard passes 0.)
+- [ ] **Band spacing ignores the chosen Q** (fixed ±0.33/±1 oct blocks);
+  **gain is fixed before Q is searched** (over-corrects broad areas; already
+  noted above with the missing polish pass); **the objective treats boosts and
+  cuts symmetrically** (no boost/high-Q/band-count regularization). All three
+  fold into the same redesign of the greedy loop: frequency × Q × gain search
+  with width-based spacing and a boost-penalized score, then a
+  coordinate-descent polish over all bands + preamp.
+
+### Waterfall / Burst Decay
+
+- [ ] **Wavelet time-support validity is not tracked**: at low frequencies the
+  Morlet kernel outlasts the analysis window and the envelope is window-shaped,
+  not system-shaped. The `Slice.SliceMinValidFrequency` metadata path already
+  exists but always receives 0 — compute the frequency below which the kernel's
+  effective support exceeds the window and mark/limit slices there. (The
+  fabricated post-window decay, the pre-peak axis zero and the above-Nyquist
+  grid are fixed.)
+- [ ] **Waterfall renders nothing silently below 8 slices** (`RawSlices.Count
+  < 8` guard in `WaterfallSeries.Render`): corrupted settings or narrow ranges
+  show an empty plot with no explanation. Show a message (or clamp the
+  controls so the state is unreachable).
+
+### Time Alignment / unwrap (deferred from earlier batches)
+
+- [ ] **GCC-PHAT confidence is peak height, not uniqueness**: a single
+  spectral line or a narrowband subwoofer reads ~100% while the delay is
+  poorly conditioned (bounded in practice by the ±0.1 ms anchored refinement
+  window). Fix: fold RMS bandwidth / peak curvature / peak-to-second-peak into
+  the confidence, or rename the figure. Needs its own validation pass on real
+  measurements.
+- [ ] **`WrapPeakPositions` cannot actually produce negative delays** — the
+  peak search is capped at length/2, so the upper-half branch of
+  `ToSignedDelaySamples` is unreachable (harmless for the loopback workflow,
+  where delays are non-negative; the API promises more than it does).
+- [ ] **Display smoothing includes low-reliability bins** (unwrap blanks long
+  garbage stretches now, but short noisy nulls still enter `SmoothLinear` at
+  full weight; magnitude curves behave the same). Optional: reliability-
+  weighted smoothing.

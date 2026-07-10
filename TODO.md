@@ -149,6 +149,17 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   woof/mid left 3.878 vs manual 3.84 — via the normal-polarity margin, which
   won by only 0.02 dB there, see next item; right mid/twr −0.635 vs manual
   ~0.68 on the mid side).
+  **Follow-up (same day, after the scene-preserving co-move shifted the D
+  pair −0.52 ms):** re-probed at the final cascade state, asking whether the
+  flat-slope point now agrees with the validated tune. It does not — the
+  verdict got stronger: the C/D flat-slope residual reads −1.36 T on the left
+  and +1.71 T on the right (B/C: −1.06 / −0.87 T), i.e. the two sides want
+  OPPOSITE corrections (left +0.53 ms, right −1.84 ms), so no scene-preserving
+  pair move can satisfy the slope criterion on both sides even in principle.
+  On the left the loss-optimal co-move went in exactly the opposite direction
+  from the flat-slope point's wish while landing on the user's hand tune. The
+  per-side filter+driver group-delay asymmetry is real and side-asymmetric;
+  the refutation stands.
 - [ ] **Stereo scene diagnostics (Δ per band)**: the stereo Auto delay cascade
   (left walk → arrival bridge with the scene offset → right descent) is in;
   the complementary *verification* layer is not — per-band L−R arrival

@@ -51,6 +51,13 @@ public sealed class StereoAlignmentTests
     /// The user's shape of system: a shared mono sub, then woof/mid/twr per
     /// side. The left side sits at its base positions; the right side arrives
     /// 1.5 ms later across the board (the far side of the cabin).
+    /// <paramref name="linkBands"/> (woof/mid/twr order, null entries skipped)
+    /// turns on the L/R pair links; <paramref name="rightMidEchoMs"/> gives
+    /// the right mid a second, stronger lobe that far behind its arrival (the
+    /// scene-lock antagonist: correlation-driven searches chase the strong
+    /// lobe, the scene follows the first one); <paramref name="leftLateMs"/>
+    /// pushes the whole left side late (near-delay-ceiling scenarios);
+    /// <paramref name="reprocessCount"/>[0] counts reprocess invocations.
     /// </summary>
     private static (TestChannel Sub,
         TestChannel[] Left, TestChannel[] Right,
@@ -60,14 +67,27 @@ public sealed class StereoAlignmentTests
             double sceneOffsetMs,
             double rightLateMs = 1.5,
             double leftTopAmplitude = 1.0,
-            double rightTopAmplitude = 1.0)
+            double rightTopAmplitude = 1.0,
+            (double LowHz, double HighHz)?[]? linkBands = null,
+            double rightMidEchoMs = 0,
+            double leftLateMs = 0,
+            int[]? reprocessCount = null)
     {
-        var sub = new TestChannel("sub", ImpulseAtMs(2.0));
-        var leftWoof = new TestChannel("L woof", ImpulseAtMs(1.0));
-        var leftMid = new TestChannel("L mid", ImpulseAtMs(0.4));
-        var leftTwr = new TestChannel("L twr", ImpulseAtMs(0.0, leftTopAmplitude));
+        var sub = new TestChannel("sub", ImpulseAtMs(2.0 + leftLateMs));
+        var leftWoof = new TestChannel("L woof", ImpulseAtMs(1.0 + leftLateMs));
+        var leftMid = new TestChannel("L mid", ImpulseAtMs(0.4 + leftLateMs));
+        var leftTwr = new TestChannel(
+            "L twr", ImpulseAtMs(0.0 + leftLateMs, leftTopAmplitude));
         var rightWoof = new TestChannel("R woof", ImpulseAtMs(1.0 + rightLateMs));
-        var rightMid = new TestChannel("R mid", ImpulseAtMs(0.4 + rightLateMs));
+        Complex[] rightMidIr = ImpulseAtMs(
+            0.4 + rightLateMs, rightMidEchoMs > 0 ? 0.6 : 1.0);
+        if (rightMidEchoMs > 0)
+        {
+            int echoPosition = BasePosition + (int)Math.Round(
+                (0.4 + rightLateMs + rightMidEchoMs) / 1000.0 * SampleRate);
+            rightMidIr[echoPosition] += Complex.One;
+        }
+        var rightMid = new TestChannel("R mid", rightMidIr);
         var rightTwr = new TestChannel(
             "R twr", ImpulseAtMs(0.0 + rightLateMs, rightTopAmplitude));
 
@@ -75,10 +95,34 @@ public sealed class StereoAlignmentTests
         TestChannel[] rightByBand = [sub, rightWoof, rightMid, rightTwr];
         TestChannel[] all = [sub, leftWoof, leftMid, leftTwr, rightWoof, rightMid, rightTwr];
 
+        List<StereoPairLink>? pairLinks = null;
+        if (linkBands != null)
+        {
+            (TestChannel Left, TestChannel Right)[] linkChannels =
+                [(leftWoof, rightWoof), (leftMid, rightMid), (leftTwr, rightTwr)];
+            pairLinks = new List<StereoPairLink>();
+            for (int i = 0; i < linkBands.Length; i++)
+            {
+                if (linkBands[i] is { } band)
+                {
+                    pairLinks.Add(new StereoPairLink(
+                        linkChannels[i].Left, linkChannels[i].Right,
+                        band.LowHz, band.HighHz));
+                }
+            }
+        }
+
         IReadOnlyList<AlignmentSnapshot> Reprocess(
-            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
-            all.Select(channel =>
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides)
+        {
+            if (reprocessCount != null)
+            {
+                reprocessCount[0]++;
+            }
+
+            return all.Select(channel =>
                 Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+        }
 
         List<AlignmentSnapshot> initial = all
             .Select(channel => Snapshot(channel, default))
@@ -111,7 +155,8 @@ public sealed class StereoAlignmentTests
                 rightTwr,
                 BridgeBandLowHz: 2_500,
                 BridgeBandHighHz: 12_000,
-                SceneOffsetMs: sceneOffsetMs),
+                SceneOffsetMs: sceneOffsetMs,
+                pairLinks),
             Reprocess,
             alignment,
             log);
@@ -364,5 +409,144 @@ public sealed class StereoAlignmentTests
             overrides => [monoSnapshot, leftSnapshot],
             new Dictionary<IAlignmentChannel, AlignmentOverride>(),
             new StringBuilder()));
+    }
+
+    private static readonly (double LowHz, double HighHz)?[] UserLinkBands =
+        [(80, 175), (400, 2_500), (2_500, 12_000)];
+
+    // The channel's final band-limited envelope arrival with its proposed
+    // delay applied — the quantity the Δ L−R read-out (and the scene) follows.
+    private static double FinalBandArrivalMs(
+        TestChannel channel,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        double lowHz,
+        double highHz)
+    {
+        AlignmentSnapshot snapshot = Snapshot(
+            channel, alignment.GetValueOrDefault(channel));
+        return VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+            snapshot.ImpulseResponse, SampleRate, lowHz, highHz);
+    }
+
+    [Fact]
+    public void ComputeStereo_SceneLockPinsTheMidPairToTheOffset()
+    {
+        // The right mid's response opens with its true arrival and carries a
+        // STRONGER lobe 0.7 ms behind it. Correlation-driven machinery (the
+        // PHAT timeline seed, the junction-sum optimum) chases the strong
+        // lobe, which would park the pair's first arrivals — what the stereo
+        // image follows — 0.7 ms off the scene. The lock must pin the mid to
+        // the cross-side target: first arrivals 0.25 ms apart, right leading.
+        (TestChannel _, TestChannel[] left, TestChannel[] right,
+            Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+            StringBuilder log) = RunStereo(
+                sceneOffsetMs: 0.25,
+                linkBands: UserLinkBands,
+                rightMidEchoMs: 0.7);
+
+        Assert.Contains("SCENE-LOCKED", log.ToString());
+        double delta =
+            FinalBandArrivalMs(left[1], alignment, 400, 2_500) -
+            FinalBandArrivalMs(right[1], alignment, 400, 2_500);
+        Assert.InRange(delta, 0.15, 0.35);
+    }
+
+    [Fact]
+    public void ComputeStereo_PureLowBandPairKeepsTheFreeSearch()
+    {
+        // The woofer link's shared band (80-175 Hz) never reaches the
+        // localization region, so the scene mandate does not apply: the pair
+        // keeps the free joint-junction search and the cross-side target
+        // stays a gentle prior only. The mid link (400-2500 Hz) is locked.
+        (TestChannel _, TestChannel[] _, TestChannel[] _,
+            Dictionary<IAlignmentChannel, AlignmentOverride> _,
+            StringBuilder log) = RunStereo(
+                sceneOffsetMs: 0.25,
+                linkBands: UserLinkBands);
+
+        string[] lines = log.ToString().Split('\n');
+        string woofLine = Array.Find(lines,
+            line => line.StartsWith("Channel R woof:"))!;
+        Assert.NotNull(woofLine);
+        Assert.DoesNotContain("SCENE-LOCKED", woofLine);
+        Assert.Contains("(cross-side)", woofLine);
+        string midLine = Array.Find(lines,
+            line => line.StartsWith("Channel R mid:"))!;
+        Assert.NotNull(midLine);
+        Assert.Contains("SCENE-LOCKED", midLine);
+    }
+
+    [Fact]
+    public void ComputeStereo_NarrowSharedBandGetsNoLockAndNoPrior()
+    {
+        // A link whose shared band is narrower than the arrival analysis
+        // admits (1000-1100 Hz is a seventh of an octave) must not produce a
+        // cross-side target at all — the band is no longer silently widened
+        // into a measurable one — and without a target there is no lock: the
+        // channel falls back to its own-side anchor and the run completes.
+        (TestChannel sub, TestChannel[] left, TestChannel[] right,
+            Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+            StringBuilder log) = RunStereo(
+                sceneOffsetMs: 0.25,
+                linkBands: [null, (1_000, 1_100), null]);
+
+        Assert.DoesNotContain("cross-side prior R mid", log.ToString());
+        Assert.DoesNotContain("SCENE-LOCKED", log.ToString());
+        Assert.All(
+            new[] { sub, left[0], left[1], left[2], right[0], right[1], right[2] },
+            channel => Assert.True(
+                alignment.GetValueOrDefault(channel).DelayMs is >= 0 and <= 100));
+    }
+
+    [Fact]
+    public void ComputeStereo_NearTheDelayCeilingTheSceneSurvives()
+    {
+        // The left side is 99.2 ms late, parking the whole right side just
+        // under the 100 ms delay ceiling. Every pass that adds delay from
+        // here — the co-move above all — must bound its window by the ceiling
+        // UP FRONT: clamping one side after the fact would move the two sides
+        // unequally and silently bend the scene. Both linked pairs must still
+        // read the scene offset at the end and nothing may exceed the limit.
+        (TestChannel sub, TestChannel[] left, TestChannel[] right,
+            Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+            StringBuilder log) = RunStereo(
+                sceneOffsetMs: 0.25,
+                rightLateMs: 0,
+                linkBands: UserLinkBands,
+                leftLateMs: 99.2);
+
+        Assert.Contains("Co-move", log.ToString());
+        Assert.All(
+            new[] { sub, left[0], left[1], left[2], right[0], right[1], right[2] },
+            channel => Assert.True(
+                alignment.GetValueOrDefault(channel).DelayMs is >= 0 and <= 100));
+
+        double twrDelta =
+            FinalBandArrivalMs(left[2], alignment, 2_500, 12_000) -
+            FinalBandArrivalMs(right[2], alignment, 2_500, 12_000);
+        Assert.InRange(twrDelta, 0.15, 0.35);
+        double midDelta =
+            FinalBandArrivalMs(left[1], alignment, 400, 2_500) -
+            FinalBandArrivalMs(right[1], alignment, 400, 2_500);
+        Assert.InRange(midDelta, 0.15, 0.35);
+    }
+
+    [Fact]
+    public void ComputeStereo_ReprocessCallCountStaysBounded()
+    {
+        // The engine's cost unit is one reprocess: every channel's full DSP
+        // chain re-run. The junction walks legitimately spend a couple per
+        // channel; the co-move pass must spend ONE per linked pair (its delta
+        // scan is an analytic spectrum rotation, not a re-render). The old
+        // implementation burned ~40 reprocesses per pair inside the co-move
+        // alone, so this ceiling breaks loudly if per-delta re-rendering ever
+        // creeps back in.
+        int[] count = [0];
+        RunStereo(
+            sceneOffsetMs: 0.25,
+            linkBands: UserLinkBands,
+            reprocessCount: count);
+
+        Assert.InRange(count[0], 1, 40);
     }
 }

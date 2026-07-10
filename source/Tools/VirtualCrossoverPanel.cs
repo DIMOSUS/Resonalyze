@@ -888,12 +888,16 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private async Task ChooseSourceFileAsync(ChannelRuntime channel)
     {
-        // The side AND the pair are captured NOW: the user can flip the L/R
-        // selector — or import a whole different session — while the file
-        // loads below, and the measurement must land on the side whose Source
-        // button was clicked, or nowhere at all.
+        // The CONCRETE slot and settings are captured NOW: the user can flip
+        // the L/R selector, toggle Mono (which reroutes SideState) — or
+        // import a whole different session — while the file loads below, and
+        // the measurement must land in the slot whose Source button was
+        // clicked, or nowhere at all. The revision (taken when the load
+        // starts) guards the landing: any Clear() of the slot or a newer
+        // pick into it refuses this one.
         bool rightSide = channel.ActiveRight;
-        VirtualCrossoverChannelPairSettings pair = channel.Pair;
+        ChannelSideState targetState = channel.SideState(rightSide);
+        VirtualCrossoverChannelSettings targetSettings = channel.SideSettings(rightSide);
         using var dialog = new OpenFileDialog
         {
             CheckFileExists = true,
@@ -907,13 +911,12 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
+        int revision = targetState.BeginSourceLoad();
         try
         {
             ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(dialog.FileName);
-            if (IsDisposed || channel.Pair != pair)
+            if (IsDisposed)
             {
-                // A session import replaced the configuration mid-load: the
-                // completed read belongs to a pair that is no longer bound.
                 return;
             }
 
@@ -921,6 +924,9 @@ public partial class VirtualCrossoverPanel : UserControl
             if (!TryAcceptSource(
                 channel,
                 rightSide,
+                targetState,
+                targetSettings,
+                revision,
                 snapshot,
                 Path.GetFileName(dialog.FileName),
                 dialog.FileName,
@@ -937,19 +943,20 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private async Task SelectHistoryEntryAsync(ChannelRuntime channel, Guid entryId)
     {
-        // Same side/pair capture as ChooseSourceFileAsync: the snapshot load
-        // is asynchronous and both the L/R selector and session import stay
-        // live meanwhile.
+        // Same slot/settings/revision capture as ChooseSourceFileAsync: the
+        // snapshot load is asynchronous and the L/R selector, the Mono
+        // checkbox and session import all stay live meanwhile.
         bool rightSide = channel.ActiveRight;
-        VirtualCrossoverChannelPairSettings pair = channel.Pair;
+        ChannelSideState targetState = channel.SideState(rightSide);
+        VirtualCrossoverChannelSettings targetSettings = channel.SideSettings(rightSide);
+        int revision = targetState.BeginSourceLoad();
         try
         {
             MeasurementHistoryEntry? entry = HistoryService?.FindById(entryId);
             MeasurementHistorySnapshot? snapshot = HistoryService == null
                 ? null
                 : await HistoryService.GetSnapshotAsync(entryId);
-            if (entry == null || snapshot == null ||
-                IsDisposed || channel.Pair != pair)
+            if (entry == null || snapshot == null || IsDisposed)
             {
                 return;
             }
@@ -957,6 +964,9 @@ public partial class VirtualCrossoverPanel : UserControl
             TryAcceptSource(
                 channel,
                 rightSide,
+                targetState,
+                targetSettings,
+                revision,
                 snapshot,
                 entry.FileNameOrDisplayName,
                 entry.SourceFilePath,
@@ -971,14 +981,26 @@ public partial class VirtualCrossoverPanel : UserControl
     // Validates and installs a resolved measurement as the channel's source. The
     // virtual sum only has physical meaning for loopback-referenced transfer IRs
     // sharing one sample rate, so both are enforced here with an explanation.
+    // The target slot and settings are the caller's PRE-AWAIT captures — never
+    // re-derived here, where a mid-load Mono toggle would reroute them — and
+    // the revision refuses a landing the slot has moved past (cleared by a
+    // project import or mono toggle, or superseded by a newer pick).
     private bool TryAcceptSource(
         ChannelRuntime channel,
         bool rightSide,
+        ChannelSideState targetState,
+        VirtualCrossoverChannelSettings targetSettings,
+        int sourceRevision,
         MeasurementHistorySnapshot snapshot,
         string displayName,
         string? sourceFilePath,
         Guid? historyEntryId)
     {
+        if (targetState.SourceRevision != sourceRevision)
+        {
+            return false;
+        }
+
         if (snapshot.TransferImpulseResponse is not { Length: > 0 } transferIr)
         {
             ShowError(
@@ -993,7 +1015,6 @@ public partial class VirtualCrossoverPanel : UserControl
         // compatibility decision is shared with the silent reload path, and it
         // scans EVERY resolved side of every pair — the virtual sums of both
         // sides read one shared rate.
-        ChannelSideState targetState = channel.SideState(rightSide);
         VirtualCrossoverSourceRules.Decision decision = VirtualCrossoverSourceRules.Evaluate(
             hasTransferIr: true,
             candidateSampleRate: snapshot.SampleRate,
@@ -1024,6 +1045,13 @@ public partial class VirtualCrossoverPanel : UserControl
                 return false;
             }
 
+            // The modal dialog pumped messages: a project-import continuation
+            // may have wiped the slot underneath it while the user decided.
+            if (targetState.SourceRevision != sourceRevision)
+            {
+                return false;
+            }
+
             foreach ((ChannelRuntime other, bool otherRight, _) in mismatched)
             {
                 ClearSourceCore(other, otherRight);
@@ -1035,8 +1063,6 @@ public partial class VirtualCrossoverPanel : UserControl
         targetState.TransferPeakIndex = Math.Clamp(
             snapshot.TransferPeakIndex ?? 0, 0, transferIr.Length - 1);
         targetState.SampleRate = snapshot.SampleRate;
-        VirtualCrossoverChannelSettings targetSettings =
-            channel.SideSettings(rightSide);
         targetSettings.DisplayName = displayName;
         targetSettings.SourceFilePath = sourceFilePath;
         targetSettings.HistoryEntryId = historyEntryId;
@@ -1108,6 +1134,12 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
+        // The same in-flight guard as the interactive pickers: rapid mono
+        // off→on→off leaves several of these resolves airborne at once, and
+        // only the latest one — or none, if the slot was cleared after it
+        // started — may land. Snapshot loading below is the await that lets
+        // the UI act meanwhile.
+        int revision = state.BeginSourceLoad();
         try
         {
             MeasurementHistorySnapshot? snapshot = null;
@@ -1134,7 +1166,8 @@ public partial class VirtualCrossoverPanel : UserControl
                 otherResolvedSampleRates: ResolvedSidesExcept(state)
                     .Select(item => item.State.SampleRate));
             if (decision == VirtualCrossoverSourceRules.Decision.Accept &&
-                snapshot?.TransferImpulseResponse is { Length: > 0 } transferIr)
+                snapshot?.TransferImpulseResponse is { Length: > 0 } transferIr &&
+                state.SourceRevision == revision)
             {
                 state.TransferImpulseResponse = transferIr;
                 state.ProcessedCache = null;
@@ -2098,8 +2131,11 @@ public partial class VirtualCrossoverPanel : UserControl
                 VirtualCrossoverJunctions.GetChannelBand(rightSettings);
             double lowHz = Math.Max(leftLow, rightLow);
             double highHz = Math.Min(leftHigh, rightHigh);
-            if (highHz <= lowHz)
+            if (highHz < lowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
             {
+                // The arrival analysis refuses a band this narrow (it is not
+                // widened behind the caller's back), so the row would only
+                // ever read "—" — leave it out entirely.
                 continue;
             }
 
@@ -2193,10 +2229,18 @@ public partial class VirtualCrossoverPanel : UserControl
             }
         }
 
+        // The same reliability gate the engine's inter-side decisions apply:
+        // a formally valid arrival with a near-noise record would print a
+        // precise-looking Δ the user might chase with manual delays — an
+        // honest "—" is the right read-out there.
+        static bool Reliable(TimeAlignmentAnalysisResult arrival) =>
+            arrival.IsValid &&
+            arrival.SignalToNoiseDecibels >= AutoAlignmentEngine.MinimumArrivalSnrDb;
+
         return jobs
             .Select(job => new VirtualCrossoverMetric.StereoDelta(
                 job.Channel,
-                job.Left.Arrival!.Value.IsValid && job.Right.Arrival!.Value.IsValid
+                Reliable(job.Left.Arrival!.Value) && Reliable(job.Right.Arrival!.Value)
                     ? job.Left.Arrival!.Value.FirstArrivalDelayMilliseconds -
                         job.Right.Arrival!.Value.FirstArrivalDelayMilliseconds
                     : null,
@@ -2778,7 +2822,8 @@ public partial class VirtualCrossoverPanel : UserControl
             VirtualCrossoverJunctions.GetChannelBand(bridgeRight.Settings);
         double bridgeBandLowHz = Math.Max(leftBandLowHz, rightBandLowHz);
         double bridgeBandHighHz = Math.Min(leftBandHighHz, rightBandHighHz);
-        if (bridgeBandHighHz < bridgeBandLowHz * Math.Pow(2.0, 1.0 / 3.0))
+        if (bridgeBandHighHz <
+            bridgeBandLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
         {
             ShowError(
                 "The stereo bridge has no usable shared band.",
@@ -2917,7 +2962,10 @@ public partial class VirtualCrossoverPanel : UserControl
                 VirtualCrossoverJunctions.GetChannelBand(right.Settings);
             double lowHz = Math.Max(leftLow, rightLow);
             double highHz = Math.Min(leftHigh, rightHigh);
-            if (highHz > lowHz)
+            // The link's band must satisfy the arrival analysis' own
+            // admission rule — the band is no longer silently widened for a
+            // too-narrow intersection, so such a link could never measure.
+            if (highHz >= lowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
             {
                 pairLinks.Add(new StereoPairLink(left, right, lowHz, highHz));
             }
@@ -3593,6 +3641,17 @@ public partial class VirtualCrossoverPanel : UserControl
         public (Complex[] ProcessedIr, double LowHz, double HighHz,
             TimeAlignmentAnalysisResult Result)? ArrivalCache { get; set; }
 
+        // Invalidation counter for in-flight asynchronous source loads: a
+        // load captures the revision when it starts (BeginSourceLoad, which
+        // also invalidates any OLDER in-flight load into this slot, so the
+        // user's latest pick wins regardless of completion order) and may
+        // write back only while the revision still matches. Clear() bumps it
+        // too: a project import or mono toggle mid-load kills the landing
+        // instead of hiding a stale measurement in a slot that was wiped.
+        public int SourceRevision { get; private set; }
+
+        public int BeginSourceLoad() => ++SourceRevision;
+
         public void Clear()
         {
             TransferImpulseResponse = null;
@@ -3600,6 +3659,7 @@ public partial class VirtualCrossoverPanel : UserControl
             SampleRate = 0;
             ProcessedCache = null;
             ArrivalCache = null;
+            SourceRevision++;
         }
     }
 

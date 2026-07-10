@@ -665,8 +665,8 @@ public static class AutoAlignmentEngine
         // either way the honest outcome is a refusal with the reason, not a
         // plausible-looking wrong alignment.
         if (!leftBridge.IsValid || !rightBridge.IsValid ||
-            leftBridge.SignalToNoiseDecibels < BridgeMinimumSnrDb ||
-            rightBridge.SignalToNoiseDecibels < BridgeMinimumSnrDb)
+            leftBridge.SignalToNoiseDecibels < MinimumArrivalSnrDb ||
+            rightBridge.SignalToNoiseDecibels < MinimumArrivalSnrDb)
         {
             throw new InvalidOperationException(
                 "The stereo bridge could not be measured in " +
@@ -679,7 +679,7 @@ public static class AutoAlignmentEngine
                 (rightBridge.IsValid
                     ? $"SNR {rightBridge.SignalToNoiseDecibels:0.0} dB"
                     : "has no energy in the band") +
-                $" (minimum {BridgeMinimumSnrDb:0} dB). " +
+                $" (minimum {MinimumArrivalSnrDb:0} dB). " +
                 "Check the top pair's sources and crossover band.");
         }
 
@@ -730,20 +730,20 @@ public static class AutoAlignmentEngine
 
         // The delay that would land this right channel's arrival exactly the
         // scene offset ahead of its settled left counterpart's, measured by
-        // envelope arrivals in the pair's shared band. Used as the search
-        // prior: a gentle, polarity-blind pull toward the other side's timing
-        // that breaks near-ties between lobes the junction sum cannot
-        // distinguish. Unmeasurable (silent band, low SNR) falls back to null
-        // and the search keeps its own-side anchor.
-        double? CrossSideTargetMs(IAlignmentChannel rightChannel)
+        // envelope arrivals in the given band. Used as the search prior: a
+        // gentle, polarity-blind pull toward the other side's timing that
+        // breaks near-ties between lobes the junction sum cannot distinguish
+        // — and as the pin of a scene lock, which measures the LOCALIZATION
+        // sub-band of the pair's shared band (the part the scene actually
+        // follows) rather than the full intersection. Unmeasurable (silent
+        // band, low SNR) falls back to null and the search keeps its own-side
+        // anchor.
+        double? CrossSideTargetMs(
+            IAlignmentChannel rightChannel,
+            StereoPairLink link,
+            double bandLowHz,
+            double bandHighHz)
         {
-            StereoPairLink? link = plan.PairLinks?.FirstOrDefault(
-                item => item.Right == rightChannel);
-            if (link == null)
-            {
-                return null;
-            }
-
             var searchAlignment =
                 new Dictionary<IAlignmentChannel, AlignmentOverride>(alignment);
             searchAlignment.Remove(rightChannel);
@@ -751,14 +751,14 @@ public static class AutoAlignmentEngine
             TimeAlignmentAnalysisResult leftArrival =
                 VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
                     current.First(item => item.Channel == link.Left).ImpulseResponse,
-                    link.Left.SampleRate, link.BandLowHz, link.BandHighHz);
+                    link.Left.SampleRate, bandLowHz, bandHighHz);
             TimeAlignmentAnalysisResult rightRaw =
                 VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
                     current.First(item => item.Channel == rightChannel).ImpulseResponse,
-                    rightChannel.SampleRate, link.BandLowHz, link.BandHighHz);
+                    rightChannel.SampleRate, bandLowHz, bandHighHz);
             if (!leftArrival.IsValid || !rightRaw.IsValid ||
-                leftArrival.SignalToNoiseDecibels < BridgeMinimumSnrDb ||
-                rightRaw.SignalToNoiseDecibels < BridgeMinimumSnrDb)
+                leftArrival.SignalToNoiseDecibels < MinimumArrivalSnrDb ||
+                rightRaw.SignalToNoiseDecibels < MinimumArrivalSnrDb)
             {
                 return null;
             }
@@ -770,7 +770,7 @@ public static class AutoAlignmentEngine
                 $"  cross-side prior {rightChannel.Name}: target {target:0.000} ms " +
                 $"(L arrival {leftArrival.FirstArrivalDelayMilliseconds:0.000}, " +
                 $"raw R {rightRaw.FirstArrivalDelayMilliseconds:0.000} ms " +
-                $"in {link.BandLowHz:0}-{link.BandHighHz:0} Hz)");
+                $"in {bandLowHz:0}-{bandHighHz:0} Hz)");
             return target;
         }
 
@@ -801,17 +801,26 @@ public static class AutoAlignmentEngine
             }
 
             // The scene mandate: pairs reaching the localization region are
-            // pinned to the cross-side target; pure low-frequency pairs keep
-            // the free joint-junction search (no localization there, soft
-            // envelopes, summation is what remains audible).
-            double? crossTarget = CrossSideTargetMs(channel);
+            // pinned to the cross-side target, which is then measured in the
+            // localization sub-band alone — the low end of a wide shared band
+            // (soft envelopes, no localization) must not smear the pin. Pure
+            // low-frequency pairs keep the free joint-junction search with
+            // the full-band target as a gentle prior only.
             StereoPairLink? channelLink = plan.PairLinks?.FirstOrDefault(
                 item => item.Right == channel);
-            double? sceneLock = crossTarget != null &&
-                channelLink is { } lockLink &&
-                lockLink.BandHighHz >= SceneLockMinimumBandHighHz
-                    ? SceneLockToleranceMs
-                    : null;
+            bool lockable = channelLink != null && IsSceneLockable(channelLink);
+            double? crossTarget = channelLink == null
+                ? null
+                : CrossSideTargetMs(
+                    channel,
+                    channelLink,
+                    lockable
+                        ? Math.Max(channelLink.BandLowHz, SceneLockLocalizationLowHz)
+                        : channelLink.BandLowHz,
+                    channelLink.BandHighHz);
+            double? sceneLock = lockable && crossTarget != null
+                ? SceneLockToleranceMs
+                : null;
 
             AlignChannelAtJunction(
                 channel, neighbor, pair,
@@ -855,11 +864,15 @@ public static class AutoAlignmentEngine
         }
     }
 
-    // The minimum record signal-to-noise (dB) either bridge arrival must carry
-    // before the bridge is trusted. Clean measurements run 40-70 dB; a figure
-    // below this is a mis-picked band or a broken capture, and the bridge is
-    // the one number that times a whole side.
-    private const double BridgeMinimumSnrDb = 12;
+    /// <summary>
+    /// The minimum record signal-to-noise (dB) a band-limited arrival must
+    /// carry before an inter-side decision trusts it: the bridge arrivals,
+    /// the cross-side descent targets, and the panel's final Δ L−R read-out
+    /// all gate on this. Clean measurements run 40-70 dB; a figure below this
+    /// is a mis-picked band or a broken capture, and the bridge is the one
+    /// number that times a whole side.
+    /// </summary>
+    public const double MinimumArrivalSnrDb = 12;
 
     // The scene mandate for the right descent: a channel whose pair band
     // reaches into the localization region is PINNED to the cross-side target
@@ -870,7 +883,22 @@ public static class AutoAlignmentEngine
     // the ear does not localize there, low-band envelope arrivals are soft,
     // and the summation is what remains audible.
     private const double SceneLockToleranceMs = 0.05;
-    private const double SceneLockMinimumBandHighHz = 300;
+
+    // The lower edge of the localization region. Only the part of a pair's
+    // shared band ABOVE this edge carries scene information, so the lock's
+    // cross-side target is measured in that sub-band — and a pair whose band
+    // merely pokes past the edge (e.g. 80-310 Hz) has too little localizable
+    // content to pin: the lock requires at least a third of an octave above
+    // the edge, the same admission rule the arrival analysis itself applies.
+    private const double SceneLockLocalizationLowHz = 300;
+
+    // Whether a linked pair reaches far enough into the localization region
+    // for the scene to outrank its junction sums: locked in the descent,
+    // co-moved by the re-balance pass.
+    private static bool IsSceneLockable(StereoPairLink link) =>
+        link.BandHighHz >=
+        Math.Max(link.BandLowHz, SceneLockLocalizationLowHz) *
+        VirtualCrossoverAnalysis.MinimumArrivalBandRatio;
 
     // The scene-preserving re-balance pass: both sides of a pair may move by
     // the SAME delta (which leaves the pair's L-R timing untouched) to trade
@@ -945,11 +973,14 @@ public static class AutoAlignmentEngine
     // Moves both sides of one linked pair by the same delta — the pair's L-R
     // timing (the scene) is invariant under a co-move — searching for the
     // delta that minimizes the MEAN loss of every junction adjacent to the
-    // pair on both sides. The left side may get slightly worse: by the scene
+    // pair on either side. The left side may get slightly worse: by the scene
     // mandate the pinned right channel could not chase its own junction
     // optimum, and this is the only lever that can recover junction quality
     // without touching the image. Top pair first, so lower pairs re-balance
-    // against the already-settled uppers.
+    // against the already-settled uppers. The scan is analytic: ONE reprocess
+    // fixes the pair's current responses, each junction gets its gated
+    // spectra built once, and every probed delta is an e^{-jωΔ} rotation of
+    // the moving channel — the probe loop runs no DSP chains at all.
     private static void RebalancePairsKeepingScene(
         StereoAlignmentPlan plan,
         AlignmentReprocessor reprocess,
@@ -962,7 +993,7 @@ public static class AutoAlignmentEngine
         }
 
         foreach (StereoPairLink link in plan.PairLinks
-            .Where(item => item.BandHighHz >= SceneLockMinimumBandHighHz)
+            .Where(IsSceneLockable)
             .OrderByDescending(item => item.BandHighHz))
         {
             AlignmentOverride leftOverride = alignment.GetValueOrDefault(link.Left);
@@ -981,59 +1012,77 @@ public static class AutoAlignmentEngine
                 continue;
             }
 
-            double Score(double deltaMs)
+            IReadOnlyList<AlignmentSnapshot> current = reprocess(alignment);
+            Complex[] IrOf(IAlignmentChannel channel) =>
+                current.First(item => item.Channel == channel).ImpulseResponse;
+
+            // One evaluator per junction: the pair member is the rotated
+            // (moving) channel, its junction neighbor stays fixed. A junction
+            // between the pair and its neighbor never has both ends moving —
+            // the pair's two channels sit on different sides.
+            var evaluators = new List<VirtualCrossoverAnalysis.SumLossEvaluator>();
+            foreach (AlignmentJunction junction in adjacent)
             {
-                var trial = new Dictionary<IAlignmentChannel, AlignmentOverride>(alignment)
+                bool lowerMoves = junction.Lower.Channel == link.Left ||
+                    junction.Lower.Channel == link.Right;
+                IAlignmentChannel mover = lowerMoves
+                    ? junction.Lower.Channel
+                    : junction.Upper.Channel;
+                IAlignmentChannel neighbor = lowerMoves
+                    ? junction.Upper.Channel
+                    : junction.Lower.Channel;
+                VirtualCrossoverAnalysis.SumLossEvaluator? evaluator =
+                    VirtualCrossoverAnalysis.SumLossEvaluator.Create(
+                        IrOf(mover),
+                        new List<Complex[]> { IrOf(neighbor) },
+                        mover.SampleRate,
+                        junction.BandLowHz,
+                        junction.BandHighHz);
+                if (evaluator != null)
                 {
-                    [link.Left] = leftOverride with
-                    {
-                        DelayMs = leftOverride.DelayMs + deltaMs
-                    },
-                    [link.Right] = rightOverride with
-                    {
-                        DelayMs = rightOverride.DelayMs + deltaMs
-                    }
-                };
-                IReadOnlyList<AlignmentSnapshot> current = reprocess(trial);
-                Complex[] IrOf(IAlignmentChannel channel) =>
-                    current.First(item => item.Channel == channel).ImpulseResponse;
-
-                double total = 0;
-                int count = 0;
-                foreach (AlignmentJunction junction in adjacent)
-                {
-                    (double LossDb, double DipDb)? loss =
-                        VirtualCrossoverAnalysis.MeasureSumLoss(
-                            IrOf(junction.Upper.Channel),
-                            new List<Complex[]> { IrOf(junction.Lower.Channel) },
-                            junction.Upper.Channel.SampleRate,
-                            junction.BandLowHz,
-                            junction.BandHighHz);
-                    if (loss is { } measured)
-                    {
-                        // The same dip-excess penalty the candidate scores
-                        // carry: a mean of averages alone would happily buy a
-                        // hundredth of a dB with a deep narrow cancellation
-                        // notch on the other side's junction.
-                        total += measured.LossDb +
-                            VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
-                            (measured.DipDb - measured.LossDb);
-                        count++;
-                    }
+                    evaluators.Add(evaluator);
                 }
-
-                return count > 0 ? total / count : double.NegativeInfinity;
+            }
+            if (evaluators.Count == 0)
+            {
+                continue;
             }
 
-            // Negative deltas may not push either channel below zero.
+            double Score(double deltaMs)
+            {
+                double total = 0;
+                foreach (VirtualCrossoverAnalysis.SumLossEvaluator evaluator
+                    in evaluators)
+                {
+                    (double lossDb, double dipDb) = evaluator.Evaluate(deltaMs);
+                    // The same dip-excess penalty the candidate scores carry:
+                    // a mean of averages alone would happily buy a hundredth
+                    // of a dB with a deep narrow cancellation notch on the
+                    // other side's junction.
+                    total += lossDb +
+                        VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
+                        (dipDb - lossDb);
+                }
+
+                return total / evaluators.Count;
+            }
+
+            // Both bounds are fixed BEFORE the search so the winning delta
+            // applies verbatim to both sides: negative deltas may not push
+            // either channel below zero, positive ones may not push either
+            // past the delay ceiling. Clamping after the fact would move the
+            // two sides unequally and silently bend the very scene this pass
+            // exists to preserve.
             double minDelta = -Math.Min(
                 Math.Min(leftOverride.DelayMs, rightOverride.DelayMs),
                 PairComoveSearchRangeMs);
+            double maxDelta = Math.Min(
+                PairComoveSearchRangeMs,
+                MaxDelayMs - Math.Max(leftOverride.DelayMs, rightOverride.DelayMs));
             double baseline = Score(0);
             double bestDelta = 0;
             double bestScore = baseline;
-            for (double delta = minDelta; delta <= PairComoveSearchRangeMs + 1e-9;
-                delta += 0.1)
+            for (double delta = minDelta; delta <= maxDelta + 1e-9; delta += 0.1)
             {
                 double score = Score(delta);
                 if (score > bestScore)
@@ -1043,7 +1092,7 @@ public static class AutoAlignmentEngine
                 }
             }
             for (double delta = Math.Max(minDelta, bestDelta - 0.1);
-                delta <= Math.Min(PairComoveSearchRangeMs, bestDelta + 0.1) + 1e-9;
+                delta <= Math.Min(maxDelta, bestDelta + 0.1) + 1e-9;
                 delta += 0.02)
             {
                 double score = Score(delta);
@@ -1056,16 +1105,18 @@ public static class AutoAlignmentEngine
 
             if (bestDelta != 0 && bestScore > baseline + PairComoveMinimumGainDb)
             {
-                bestDelta = Math.Round(bestDelta, 2);
+                // Rounded toward the window so the rounding itself cannot
+                // step past a bound the search respected.
+                bestDelta = Math.Clamp(Math.Round(bestDelta, 2),
+                    Math.Ceiling(minDelta * 100) / 100,
+                    Math.Floor(maxDelta * 100) / 100);
                 alignment[link.Left] = leftOverride with
                 {
-                    DelayMs = Math.Clamp(
-                        Math.Round(leftOverride.DelayMs + bestDelta, 2), 0, MaxDelayMs)
+                    DelayMs = Math.Round(leftOverride.DelayMs + bestDelta, 2)
                 };
                 alignment[link.Right] = rightOverride with
                 {
-                    DelayMs = Math.Clamp(
-                        Math.Round(rightOverride.DelayMs + bestDelta, 2), 0, MaxDelayMs)
+                    DelayMs = Math.Round(rightOverride.DelayMs + bestDelta, 2)
                 };
                 log.AppendLine(
                     $"Co-move {link.Left.Name}+{link.Right.Name}: " +

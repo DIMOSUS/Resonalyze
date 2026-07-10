@@ -302,12 +302,26 @@ public static class VirtualCrossoverAnalysis
             .FirstArrivalDelayMilliseconds;
 
     /// <summary>
+    /// The minimum band width (as a high/low frequency ratio: a third of an
+    /// octave) a band-limited arrival analysis accepts. Narrower bands leave
+    /// the envelope detector too few in-band periods to place an arrival, so
+    /// <see cref="AnalyzeBandLimitedArrival"/> refuses them as invalid instead
+    /// of silently widening the band — an arrival measured outside the band
+    /// the caller asked for answers a different question. Callers admitting
+    /// shared bands (the stereo bridge, the L/R pair links) test against the
+    /// same figure.
+    /// </summary>
+    public static readonly double MinimumArrivalBandRatio = Math.Pow(2.0, 1.0 / 3.0);
+
+    /// <summary>
     /// The full band-limited arrival analysis behind
     /// <see cref="FindBandLimitedArrivalMs"/>, including the quality figures
     /// the bare delay hides: <c>IsValid</c> (a silent band reports zeros, not
     /// a real arrival) and the record's signal-to-noise. Callers whose result
     /// hinges on ONE arrival pair — the stereo bridge — must gate on these
-    /// instead of trusting the number.
+    /// instead of trusting the number. The band is analyzed exactly as given
+    /// (clamped to the audible range); a band narrower than
+    /// <see cref="MinimumArrivalBandRatio"/> is refused as invalid.
     /// </summary>
     public static TimeAlignmentAnalysisResult AnalyzeBandLimitedArrival(
         Complex[] impulseResponse,
@@ -328,7 +342,13 @@ public static class VirtualCrossoverAnalysis
         }
 
         double low = Math.Clamp(lowFrequencyHz, 20, 20_000);
-        double high = Math.Clamp(highFrequencyHz, low * Math.Sqrt(2.0), 20_000);
+        double high = Math.Min(highFrequencyHz, 20_000);
+        if (high < low * MinimumArrivalBandRatio)
+        {
+            return new TimeAlignmentAnalysisResult(
+                Array.Empty<double>(), 0, 0.0, 0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, false, 0.0, false, 0.0, false, IsValid: false);
+        }
 
         var samples = new double[impulseResponse.Length];
         for (int i = 0; i < samples.Length; i++)
@@ -1064,6 +1084,70 @@ public static class VirtualCrossoverAnalysis
         }
 
         return DetailedLoss(bins, weightSum, delayMs: 0, invert: false);
+    }
+
+    /// <summary>
+    /// A reusable junction-loss probe for searches that slide ONE channel
+    /// against fixed neighbors: the gated alignment spectra are built once
+    /// from the responses as given, and every probe rotates the variable
+    /// spectrum by e^{-jωΔ} — exactly an extra Δ ms of delay — instead of
+    /// re-running the channels' full DSP chains per candidate delta.
+    /// <c>Evaluate(0)</c> reproduces <see cref="MeasureSumLoss"/> on the same
+    /// responses. The direct-sound gate stays anchored where the responses
+    /// currently sit, which is exact for the probes' small deltas (a fraction
+    /// of the gate length).
+    /// </summary>
+    public sealed class SumLossEvaluator
+    {
+        private readonly List<AlignmentBin> bins;
+        private readonly double weightSum;
+
+        private SumLossEvaluator(List<AlignmentBin> bins, double weightSum)
+        {
+            this.bins = bins;
+            this.weightSum = weightSum;
+        }
+
+        /// <summary>
+        /// Builds an evaluator over the given band — the same gate, bins and
+        /// weights as <see cref="MeasureSumLoss"/>. Null when the band holds
+        /// no usable bins.
+        /// </summary>
+        public static SumLossEvaluator? Create(
+            Complex[] variableImpulseResponse,
+            IReadOnlyList<Complex[]> fixedImpulseResponses,
+            int sampleRate,
+            double minFrequencyHz,
+            double maxFrequencyHz)
+        {
+            List<AlignmentBin> bins = BuildAlignmentBins(
+                variableImpulseResponse,
+                fixedImpulseResponses,
+                sampleRate,
+                minFrequencyHz,
+                maxFrequencyHz,
+                minDelayMs: -1,
+                maxDelayMs: 1);
+            if (bins.Count == 0)
+            {
+                return null;
+            }
+
+            double weightSum = 0;
+            foreach (AlignmentBin bin in bins)
+            {
+                weightSum += bin.LogWeight;
+            }
+
+            return new SumLossEvaluator(bins, weightSum);
+        }
+
+        /// <summary>
+        /// The in-band average loss and 1/6-octave dip with the variable
+        /// channel delayed by <paramref name="extraDelayMs"/> more.
+        /// </summary>
+        public (double LossDb, double DipDb) Evaluate(double extraDelayMs) =>
+            DetailedLoss(bins, weightSum, extraDelayMs, invert: false);
     }
 
     private static Complex[] GateDirectSound(

@@ -131,6 +131,8 @@ public partial class VirtualCrossoverPanel : UserControl
         buttonSessionExport.Click += (_, _) => ExportSession();
         buttonAddChannel.Click += (_, _) => AddChannel();
         buttonRemoveChannel.Click += (_, _) => RemoveChannel();
+        buttonCopyLeftToRight.Click += (_, _) => CopySideSettings(fromRight: false);
+        buttonCopyRightToLeft.Click += (_, _) => CopySideSettings(fromRight: true);
 
         saveTimer.Tick += (_, _) => FlushProject();
         // The designer file owns Dispose; the unsaved project state and the
@@ -477,6 +479,70 @@ public partial class VirtualCrossoverPanel : UserControl
 
         project.StereoSceneOffsetMs = (double)numericSceneOffset.Value;
         ScheduleSave();
+    }
+
+    // The "L→R" / "R→L" commands: copy the DSP-chain part of one side's
+    // settings (gain, crossover, PEQ) onto the other for the channels the user
+    // picks. Sources and delays stay side-specific — each side has its own
+    // measurement and its own arrival — and polarity stays with the alignment.
+    // Mono pairs have one settings set and are not offered.
+    private void CopySideSettings(bool fromRight)
+    {
+        List<ChannelRuntime> candidates = channels
+            .Where(channel => !channel.Pair.Mono)
+            .ToList();
+        if (candidates.Count == 0)
+        {
+            System.Media.SystemSounds.Beep.Play();
+            return;
+        }
+
+        List<string> labels = candidates
+            .Select(channel =>
+            {
+                string source = channel.SideSettings(fromRight).DisplayName;
+                return string.IsNullOrWhiteSpace(source)
+                    ? channel.Control.ChannelName
+                    : $"{channel.Control.ChannelName} — {source}";
+            })
+            .ToList();
+        using var dialog = new VirtualCrossoverCopySideDialog(fromRight, labels);
+        if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
+            dialog.SelectedIndices.Count == 0)
+        {
+            return;
+        }
+
+        bool targetSideShown = project.ActiveSideRight == !fromRight;
+        foreach (int index in dialog.SelectedIndices)
+        {
+            ChannelRuntime channel = candidates[index];
+            CopyChainSettings(
+                channel.SideSettings(fromRight),
+                channel.SideSettings(!fromRight));
+            if (targetSideShown)
+            {
+                ApplySettingsToControl(channel);
+            }
+        }
+
+        ScheduleSave();
+        RedrawAll();
+    }
+
+    // The "what the DSP does" part of one side, copied onto the other. PeqBand
+    // is an immutable record, so a fresh list is a deep enough copy.
+    private static void CopyChainSettings(
+        VirtualCrossoverChannelSettings from,
+        VirtualCrossoverChannelSettings to)
+    {
+        to.GainDb = from.GainDb;
+        to.CrossoverKind = from.CrossoverKind;
+        to.HighPassEdge = from.HighPassEdge;
+        to.LowPassEdge = from.LowPassEdge;
+        to.PeqPreampDb = from.PeqPreampDb;
+        to.PeqBands = from.PeqBands.ToList();
+        to.PeqSourceName = from.PeqSourceName;
     }
 
     // The side radios double as source indicators (● has at least one source,
@@ -1410,6 +1476,16 @@ public partial class VirtualCrossoverPanel : UserControl
             "Show and edit the RIGHT side of every channel pair.\r\n" +
             "● — at least one source is loaded on this side.");
         toolTip.SetToolTip(
+            buttonCopyLeftToRight,
+            "Copy the LEFT side's gain, crossover and PEQ onto the\r\n" +
+            "RIGHT side for the channels you pick. Sources and delays\r\n" +
+            "stay with their side; mono channels are not offered.");
+        toolTip.SetToolTip(
+            buttonCopyRightToLeft,
+            "Copy the RIGHT side's gain, crossover and PEQ onto the\r\n" +
+            "LEFT side for the channels you pick. Sources and delays\r\n" +
+            "stay with their side; mono channels are not offered.");
+        toolTip.SetToolTip(
             buttonAutoSetup,
             "Crossover wizard: detect each channel's driver type from\r\n" +
             "its response, confirm the types, and get a starting point —\r\n" +
@@ -2248,6 +2324,8 @@ public partial class VirtualCrossoverPanel : UserControl
         radioSideLeft.Enabled = !busy;
         radioSideRight.Enabled = !busy;
         numericSceneOffset.Enabled = !busy;
+        buttonCopyLeftToRight.Enabled = !busy;
+        buttonCopyRightToLeft.Enabled = !busy;
         UpdateChannelButtons();
         foreach (ChannelRuntime channel in channels)
         {

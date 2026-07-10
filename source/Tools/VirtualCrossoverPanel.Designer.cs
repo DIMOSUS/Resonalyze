@@ -37,6 +37,8 @@ namespace Resonalyze
             sideSelectorPanel = new Panel();
             radioSideLeft = new RadioButton();
             radioSideRight = new RadioButton();
+            buttonCopyLeftToRight = new Button();
+            buttonCopyRightToLeft = new Button();
             labelSceneOffset = new Label();
             numericSceneOffset = new DarkNumericUpDown();
             labelView = new Label();
@@ -138,6 +140,8 @@ namespace Resonalyze
             sideSelectorPanel.BackColor = Color.FromArgb(40, 44, 54);
             sideSelectorPanel.Controls.Add(radioSideLeft);
             sideSelectorPanel.Controls.Add(radioSideRight);
+            sideSelectorPanel.Controls.Add(buttonCopyLeftToRight);
+            sideSelectorPanel.Controls.Add(buttonCopyRightToLeft);
             sideSelectorPanel.Location = new Point(6, 730);
             sideSelectorPanel.Name = "sideSelectorPanel";
             sideSelectorPanel.Size = new Size(347, 24);
@@ -151,7 +155,7 @@ namespace Resonalyze
             radioSideLeft.ForeColor = Color.FromArgb(210, 214, 222);
             radioSideLeft.Location = new Point(0, 2);
             radioSideLeft.Name = "radioSideLeft";
-            radioSideLeft.Size = new Size(120, 19);
+            radioSideLeft.Size = new Size(50, 19);
             radioSideLeft.TabIndex = 0;
             radioSideLeft.TabStop = true;
             radioSideLeft.Text = "L";
@@ -162,12 +166,36 @@ namespace Resonalyze
             radioSideRight.AutoSize = true;
             radioSideRight.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             radioSideRight.ForeColor = Color.FromArgb(210, 214, 222);
-            radioSideRight.Location = new Point(171, 2);
+            radioSideRight.Location = new Point(52, 2);
             radioSideRight.Name = "radioSideRight";
-            radioSideRight.Size = new Size(120, 19);
+            radioSideRight.Size = new Size(50, 19);
             radioSideRight.TabIndex = 1;
             radioSideRight.Text = "R";
             radioSideRight.UseVisualStyleBackColor = true;
+            //
+            // buttonCopyLeftToRight
+            //
+            buttonCopyLeftToRight.BackColor = Color.FromArgb(46, 51, 67);
+            buttonCopyLeftToRight.FlatStyle = FlatStyle.Popup;
+            buttonCopyLeftToRight.ForeColor = Color.White;
+            buttonCopyLeftToRight.Location = new Point(115, 0);
+            buttonCopyLeftToRight.Name = "buttonCopyLeftToRight";
+            buttonCopyLeftToRight.Size = new Size(56, 23);
+            buttonCopyLeftToRight.TabIndex = 2;
+            buttonCopyLeftToRight.Text = "L→R";
+            buttonCopyLeftToRight.UseVisualStyleBackColor = false;
+            //
+            // buttonCopyRightToLeft
+            //
+            buttonCopyRightToLeft.BackColor = Color.FromArgb(46, 51, 67);
+            buttonCopyRightToLeft.FlatStyle = FlatStyle.Popup;
+            buttonCopyRightToLeft.ForeColor = Color.White;
+            buttonCopyRightToLeft.Location = new Point(177, 0);
+            buttonCopyRightToLeft.Name = "buttonCopyRightToLeft";
+            buttonCopyRightToLeft.Size = new Size(56, 23);
+            buttonCopyRightToLeft.TabIndex = 3;
+            buttonCopyRightToLeft.Text = "R→L";
+            buttonCopyRightToLeft.UseVisualStyleBackColor = false;
             //
             // labelSceneOffset
             //
@@ -496,6 +524,8 @@ namespace Resonalyze
         private Panel sideSelectorPanel;
         private RadioButton radioSideLeft;
         private RadioButton radioSideRight;
+        private Button buttonCopyLeftToRight;
+        private Button buttonCopyRightToLeft;
         private Label labelSceneOffset;
         private DarkNumericUpDown numericSceneOffset;
         private Label labelView;

@@ -28,6 +28,12 @@ internal sealed class MeasurementSettingsFile
     public TimeAlignmentSettings TimeAlignment { get; set; } = new();
     public string? LastImpulseResponseDirectory { get; set; }
 
+    // True when loading reset a loopback configuration that pointed at the
+    // removed separate-loopback-device capability; the shell shows a one-time
+    // notice telling the user to pick a loopback channel again.
+    [JsonIgnore]
+    public bool LegacyDualDeviceLoopbackReset { get; private set; }
+
     private static string PathOnDisk =>
         Path.Combine(AppContext.BaseDirectory, FileName);
 
@@ -50,12 +56,33 @@ internal sealed class MeasurementSettingsFile
                 return new MeasurementSettingsFile();
             }
 
+            settings.MigrateLegacyDualDeviceLoopback();
             return settings;
         }
         catch
         {
             return new MeasurementSettingsFile();
         }
+    }
+
+    // The separate-loopback-device capability was removed: microphone and
+    // loopback are always channels of ONE input device now. A file written by
+    // an older version with the loopback on a DIFFERENT device carries channel
+    // offsets that are meaningless on the shared device (the channels may
+    // legitimately be equal, and the microphone device may be mono), so the
+    // loopback selection is reset to "unset" — the existing loopback-required
+    // flow then walks the user through picking a channel — instead of being
+    // silently misread as a shared-device configuration.
+    internal void MigrateLegacyDualDeviceLoopback()
+    {
+        if (Measurement.WaveLoopbackDeviceNumber is int legacyDevice &&
+            legacyDevice != Measurement.InputDeviceNumber)
+        {
+            Measurement.WaveLoopbackInputChannelOffset = null;
+            LegacyDualDeviceLoopbackReset = true;
+        }
+
+        Measurement.WaveLoopbackDeviceNumber = null;
     }
 
     public void Save()
@@ -136,6 +163,12 @@ internal sealed class MeasurementSettingsFile
         public string? AsioDriverName { get; set; }
         public int WaveInputChannelOffset { get; set; }
         public int? WaveLoopbackInputChannelOffset { get; set; }
+        // Legacy field (pre removal of the separate-loopback-device
+        // capability), kept ONLY so old files deserialize into the migration
+        // (see MigrateLegacyDualDeviceLoopback); always null after loading
+        // and never written back.
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? WaveLoopbackDeviceNumber { get; set; }
         public int AsioInputChannelOffset { get; set; }
         public int? AsioLoopbackInputChannelOffset { get; set; }
         public int AsioOutputChannelOffset { get; set; }

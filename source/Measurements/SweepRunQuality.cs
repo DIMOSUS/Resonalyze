@@ -90,27 +90,36 @@ internal sealed record SweepRunQualityReport(
 {
     public bool IsDegraded => AcceptedRuns < RequestedRuns;
 
-    /// <summary>User-facing summary for the end-of-measurement notice.</summary>
+    /// <summary>
+    /// User-facing summary for the end-of-measurement notice. A run whose
+    /// retry succeeded DID enter the average — its line says so explicitly;
+    /// only a run whose retry also failed is reported as excluded.
+    /// </summary>
     public string Describe()
     {
         var text = new StringBuilder();
         text.Append(
             $"The averaged measurement used {AcceptedRuns} of the " +
-            $"{RequestedRuns} requested sweep runs.\r\n" +
-            "Runs that failed the capture quality checks (each retried once) " +
-            "were excluded from the average:");
-        foreach (SweepRunRejection rejection in Rejections)
+            $"{RequestedRuns} requested sweep runs (a run failing the capture " +
+            "quality checks is retried once):");
+        foreach (IGrouping<int, SweepRunRejection> run in Rejections.GroupBy(
+            rejection => rejection.Run))
         {
+            SweepRunRejection? attempt = run.FirstOrDefault(
+                rejection => !rejection.Retried);
+            SweepRunRejection? retry = run.FirstOrDefault(
+                rejection => rejection.Retried);
             text.Append("\r\n");
-            text.Append($"Run {rejection.Run}");
-            if (rejection.Retried)
-            {
-                text.Append(" (retry)");
-            }
-            text.Append(": ");
-            text.Append(string.Join(", ", rejection.Issues));
+            text.Append(retry != null
+                ? $"Run {run.Key}: excluded from the average (first attempt: " +
+                    $"{JoinIssues(attempt)}; retry: {JoinIssues(retry)})"
+                : $"Run {run.Key}: first attempt rejected ({JoinIssues(attempt)}); " +
+                    "the retry was accepted");
         }
 
         return text.ToString();
     }
+
+    private static string JoinIssues(SweepRunRejection? rejection) =>
+        rejection == null ? "-" : string.Join(", ", rejection.Issues);
 }

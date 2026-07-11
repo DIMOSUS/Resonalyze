@@ -17,10 +17,6 @@ namespace Resonalyze.Options
 
         internal DarkComboBox ComboBoxRecordingDevice => comboBoxRecordingDevice;
 
-        internal Label LabelWaveLoopbackDevice => labelWaveLoopbackDevice;
-
-        internal DarkComboBox ComboBoxWaveLoopbackDevice => comboBoxWaveLoopbackDevice;
-
         internal Label LabelWaveInputChannel => labelWaveInputChannel;
 
         internal DarkComboBox ComboBoxWaveInputChannel => comboBoxWaveInputChannel;

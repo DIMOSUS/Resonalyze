@@ -215,16 +215,45 @@ public partial class Form1
             {
                 DrawSelectedMode(true);
             }
+
+            if (success)
+            {
+                NotifyDegradedSweepAverage();
+            }
         });
+    }
+
+    // Sweep-run acceptance: rejected runs (and their failed retries) are
+    // excluded silently while the measurement is running; the user is told
+    // once, at the end, when the average holds fewer runs than requested.
+    private void NotifyDegradedSweepAverage()
+    {
+        SweepRunQualityReport? report = expSweepMeasurement.QualityReport;
+        if (report is not { IsDegraded: true } || closingInProgress)
+        {
+            return;
+        }
+
+        MessageBox.Show(
+            this,
+            report.Describe(),
+            "Measurement",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
     }
 
     private void HandleAverageProgressChanged(SweepAverageProgress progress)
     {
         TryBeginInvokeOnUiThread(() =>
         {
-            buttonRecord.Text = progress.State == SweepAverageProgressState.WaitingForConfirmation
-                ? $"Next run ({progress.CurrentRun + 1}/{progress.TotalRuns})"
-                : $"Running {progress.CurrentRun}/{progress.TotalRuns}...";
+            buttonRecord.Text = progress.State switch
+            {
+                SweepAverageProgressState.WaitingForConfirmation =>
+                    $"Next run ({progress.CurrentRun + 1}/{progress.TotalRuns})",
+                SweepAverageProgressState.Retrying =>
+                    $"Retrying {progress.CurrentRun}/{progress.TotalRuns}...",
+                _ => $"Running {progress.CurrentRun}/{progress.TotalRuns}..."
+            };
         });
     }
 

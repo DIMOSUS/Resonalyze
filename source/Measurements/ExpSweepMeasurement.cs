@@ -12,9 +12,7 @@ namespace Resonalyze
     public sealed class ExpSweepMeasurement : IDisposable
     {
         private readonly object stateSync = new();
-        private readonly DualDeviceLevelCombiner dualDeviceLevels = new();
         private SoundRecorder? soundRecorder;
-        private SoundRecorder? loopbackRecorder;
         private CancellationTokenSource? cancellationTokenSource;
         private Task<bool>? measurementTask;
         private TaskCompletionSource<bool>? averageConfirmation;
@@ -59,17 +57,15 @@ namespace Resonalyze
         public string? AsioDriverName { get; private set; }
         public int WaveInputChannelOffset { get; private set; }
         public int? WaveLoopbackInputChannelOffset { get; private set; }
-        // When set (and different from the microphone device), the Wave loopback is captured
-        // from this separate input device instead of from another channel of the microphone
-        // device. The two devices run on independent clocks, so the loopback is only
-        // best-effort aligned (see DualDeviceCapture).
-        public int? WaveLoopbackDeviceNumber { get; private set; }
         public int AsioInputChannelOffset { get; private set; }
         public int? AsioLoopbackInputChannelOffset { get; private set; }
         public int AsioOutputChannelOffset { get; private set; }
         public int AverageRunCount { get; private set; } = 1;
         public int AcceptedAverageRunCount { get; private set; } = 1;
         public bool ConfirmEachAverageRun { get; private set; }
+        // Per-run acceptance outcome of the last completed measurement; null until
+        // a measurement ran (or when the result was restored from a file).
+        internal SweepRunQualityReport? QualityReport { get; private set; }
         public Exception? LastError { get; private set; }
         public int RecordedSamples => soundRecorder?.ReadSamples ?? 0;
         public bool WaitingForAverageConfirmation => waitingForAverageConfirmation;
@@ -94,7 +90,6 @@ namespace Resonalyze
             int waveInputChannelOffset = 0,
             int? waveLoopbackInputChannelOffset = null,
             int? asioLoopbackInputChannelOffset = null,
-            int? waveLoopbackDeviceNumber = null,
             int averageRunCount = 1,
             bool confirmEachAverageRun = false)
         {
@@ -117,7 +112,6 @@ namespace Resonalyze
             WaveInputChannelOffset = Math.Clamp(waveInputChannelOffset, 0, 1);
             WaveLoopbackInputChannelOffset = NormalizeOptionalWaveChannel(
                 waveLoopbackInputChannelOffset);
-            WaveLoopbackDeviceNumber = waveLoopbackDeviceNumber;
             AsioInputChannelOffset = asioInputChannelOffset;
             AsioLoopbackInputChannelOffset = asioLoopbackInputChannelOffset;
             AsioOutputChannelOffset = asioOutputChannelOffset;
@@ -130,6 +124,7 @@ namespace Resonalyze
             AverageRunCount = Math.Clamp(averageRunCount, 1, 64);
             AcceptedAverageRunCount = 0;
             ConfirmEachAverageRun = confirmEachAverageRun;
+            QualityReport = null;
             LastError = null;
             CurrentLevels = InputLevelMeterSnapshot.Empty;
 
@@ -138,59 +133,27 @@ namespace Resonalyze
             Sweep.FillData(octaves, requestedDuration, bits, sampleRate);
 
             DisposeRecorders();
-            dualDeviceLevels.Reset();
 
-            bool separateLoopbackDevice = UsesSeparateWaveLoopbackDevice;
             soundRecorder = new SoundRecorder();
-            int recorderChannelCount = audioBackend switch
-            {
-                AudioBackend.Wave when separateLoopbackDevice => WaveInputChannelOffset + 1,
-                AudioBackend.Wave => GetRequiredWaveInputChannelCount(),
-                _ => 1
-            };
+            int recorderChannelCount = audioBackend == AudioBackend.Wave
+                ? GetRequiredWaveInputChannelCount()
+                : 1;
             soundRecorder.Init(
                 sampleRate,
                 bits,
                 recorderChannelCount,
                 inputDeviceNumber,
                 expectedSamples: Sweep.SweepSamples + sampleRate * 2);
-            soundRecorder.LevelsAvailable += separateLoopbackDevice
-                ? HandleMicrophoneOnlyLevels
-                : HandleWaveLevelsAvailable;
-
-            if (separateLoopbackDevice)
-            {
-                loopbackRecorder = new SoundRecorder();
-                loopbackRecorder.Init(
-                    sampleRate,
-                    bits,
-                    WaveLoopbackInputChannelOffset!.Value + 1,
-                    WaveLoopbackDeviceNumber!.Value,
-                    expectedSamples: Sweep.SweepSamples + sampleRate * 2);
-                loopbackRecorder.LevelsAvailable += HandleLoopbackOnlyLevels;
-            }
+            soundRecorder.LevelsAvailable += HandleWaveLevelsAvailable;
         }
-
-        private bool UsesSeparateWaveLoopbackDevice =>
-            AudioBackend == AudioBackend.Wave &&
-            WaveLoopbackInputChannelOffset.HasValue &&
-            WaveLoopbackDeviceNumber.HasValue &&
-            WaveLoopbackDeviceNumber.Value != InputDeviceNumber;
 
         private void DisposeRecorders()
         {
             if (soundRecorder != null)
             {
                 soundRecorder.LevelsAvailable -= HandleWaveLevelsAvailable;
-                soundRecorder.LevelsAvailable -= HandleMicrophoneOnlyLevels;
                 soundRecorder.Dispose();
                 soundRecorder = null;
-            }
-            if (loopbackRecorder != null)
-            {
-                loopbackRecorder.LevelsAvailable -= HandleLoopbackOnlyLevels;
-                loopbackRecorder.Dispose();
-                loopbackRecorder = null;
             }
         }
 
@@ -218,6 +181,7 @@ namespace Resonalyze
                 LoopbackRecordedSamples = null;
                 MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
                 AcceptedAverageRunCount = 0;
+                QualityReport = null;
                 LastError = null;
                 CurrentLevels = InputLevelMeterSnapshot.Empty;
                 measurementTask = RunCoreAsync(cancellationTokenSource.Token);
@@ -331,7 +295,6 @@ namespace Resonalyze
                 WaveInputChannelOffset,
                 WaveLoopbackInputChannelOffset,
                 AsioLoopbackInputChannelOffset,
-                WaveLoopbackDeviceNumber,
                 AverageRunCount,
                 ConfirmEachAverageRun);
             sweepDeconvolutionResult = new MeasurementImpulseResponse(
@@ -367,27 +330,6 @@ namespace Resonalyze
             RaiseLevels(MapWaveLevels(channels));
         }
 
-        // With a separate loopback device, the microphone and loopback levels arrive from two
-        // independent recorders; the combiner keeps the latest of each so both meters update live.
-        private void HandleMicrophoneOnlyLevels(AudioChannelLevel[] channels)
-        {
-            dualDeviceLevels.SetMicrophone(channels);
-            RaiseCombinedDualDeviceLevels();
-        }
-
-        private void HandleLoopbackOnlyLevels(AudioChannelLevel[] channels)
-        {
-            dualDeviceLevels.SetLoopback(channels);
-            RaiseCombinedDualDeviceLevels();
-        }
-
-        private void RaiseCombinedDualDeviceLevels()
-        {
-            RaiseLevels(dualDeviceLevels.Combine(
-                WaveInputChannelOffset,
-                WaveLoopbackInputChannelOffset));
-        }
-
         private async Task<bool> RunCoreAsync(CancellationToken cancellationToken)
         {
             ExponentialSineSweep sweep = Sweep!;
@@ -395,9 +337,23 @@ namespace Resonalyze
             bool success = false;
             AsioSweepCapture? asioCapture = null;
 
+            async Task<CapturedSweepSamples> CaptureOneAsync()
+            {
+                if (AudioBackend == AudioBackend.Asio)
+                {
+                    asioCapture ??= new AsioSweepCapture(this, sweep);
+                    return await asioCapture.CaptureRunAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                return await CaptureWaveAsync(sweep, recorder, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             try
             {
                 var accumulator = new SweepAverageAccumulator();
+                var rejections = new List<SweepRunRejection>();
                 int requestedRuns = AverageRunCount;
                 for (int run = 1; run <= requestedRuns; run++)
                 {
@@ -406,20 +362,31 @@ namespace Resonalyze
                         requestedRuns,
                         accumulator.AcceptedRuns,
                         SweepAverageProgressState.Running));
-                    CapturedSweepSamples captured;
-                    if (AudioBackend == AudioBackend.Asio)
+                    CapturedSweepSamples? captured =
+                        await CaptureOneAsync().ConfigureAwait(false);
+                    IReadOnlyList<string> issues = AssessRunQuality(captured, sweep);
+                    if (issues.Count > 0)
                     {
-                        asioCapture ??= new AsioSweepCapture(this, sweep);
-                        captured = await asioCapture.CaptureRunAsync(cancellationToken)
-                            .ConfigureAwait(false);
+                        // One automatic retry per bad run; a second failure skips
+                        // the run so it cannot contaminate the average.
+                        rejections.Add(new SweepRunRejection(run, Retried: false, issues));
+                        AverageProgressChanged?.Invoke(new SweepAverageProgress(
+                            run,
+                            requestedRuns,
+                            accumulator.AcceptedRuns,
+                            SweepAverageProgressState.Retrying));
+                        captured = await CaptureOneAsync().ConfigureAwait(false);
+                        issues = AssessRunQuality(captured, sweep);
+                        if (issues.Count > 0)
+                        {
+                            rejections.Add(new SweepRunRejection(run, Retried: true, issues));
+                            captured = null;
+                        }
                     }
-                    else
+                    if (captured != null)
                     {
-                        captured = await CaptureWaveAsync(sweep, recorder, cancellationToken)
-                            .ConfigureAwait(false);
+                        accumulator.Add(AnalyzeCapturedRun(captured, sweep));
                     }
-                    SweepRunAnalysis analysis = AnalyzeCapturedRun(captured, sweep);
-                    accumulator.Add(analysis);
 
                     if (ConfirmEachAverageRun && run < requestedRuns)
                     {
@@ -429,6 +396,20 @@ namespace Resonalyze
                             accumulator.AcceptedRuns,
                             cancellationToken).ConfigureAwait(false);
                     }
+                }
+
+                QualityReport = new SweepRunQualityReport(
+                    requestedRuns,
+                    accumulator.AcceptedRuns,
+                    rejections);
+                if (accumulator.AcceptedRuns == 0)
+                {
+                    throw new InvalidOperationException(
+                        "Every sweep run failed the capture quality checks: " +
+                        string.Join(
+                            "; ",
+                            rejections.SelectMany(rejection => rejection.Issues).Distinct()) +
+                        ". Check the input levels and the loopback wiring, then measure again.");
                 }
 
                 ApplyAverageResult(accumulator.BuildResult());
@@ -450,11 +431,6 @@ namespace Resonalyze
                         await asioCapture.DisposeAsync().ConfigureAwait(false);
                     }
                     await recorder.StopRecordingAsync().ConfigureAwait(false);
-                    SoundRecorder? loopback = loopbackRecorder;
-                    if (loopback != null)
-                    {
-                        await loopback.StopRecordingAsync().ConfigureAwait(false);
-                    }
                 }
                 catch (Exception exception)
                 {
@@ -524,12 +500,6 @@ namespace Resonalyze
             SoundRecorder recorder,
             CancellationToken cancellationToken)
         {
-            if (UsesSeparateWaveLoopbackDevice)
-            {
-                return await CaptureWaveDualDeviceAsync(sweep, recorder, loopbackRecorder!, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
             using var player = new WaveOutEvent
             {
                 DeviceNumber = OutputDeviceNumber
@@ -554,54 +524,6 @@ namespace Resonalyze
                 microphoneIndex,
                 loopbackIndex,
                 ValidateSharedDeviceStereo: true);
-        }
-
-        // Microphone and loopback come from two independent Wave devices. Both recorders are
-        // started before playback, then aligned at their first sample and trimmed to a shared
-        // length (best-effort; see DualDeviceCapture). The merged array is [microphone, loopback].
-        private async Task<CapturedSweepSamples> CaptureWaveDualDeviceAsync(
-            ExponentialSineSweep sweep,
-            SoundRecorder microphone,
-            SoundRecorder loopback,
-            CancellationToken cancellationToken)
-        {
-            using var player = new WaveOutEvent
-            {
-                DeviceNumber = OutputDeviceNumber
-            };
-            await microphone.StartRecordingAsync(cancellationToken).ConfigureAwait(false);
-            await loopback.StartRecordingAsync(cancellationToken).ConfigureAwait(false);
-            int microphoneStart = microphone.ReadSamples;
-            int loopbackStart = loopback.ReadSamples;
-
-            RawSourceWaveStream stream = sweep.GetStream(PlaybackChannel);
-            stream.Position = 0;
-            player.Init(stream);
-            await PlayToEndAsync(player, cancellationToken).ConfigureAwait(false);
-            stream.Position = 0;
-
-            int margin = sweep.SweepSamples + SampleRate;
-            await microphone
-                .WaitForSamplesAsync(microphoneStart + margin, cancellationToken)
-                .ConfigureAwait(false);
-            await loopback
-                .WaitForSamplesAsync(loopbackStart + margin, cancellationToken)
-                .ConfigureAwait(false);
-            await microphone.StopRecordingAsync().ConfigureAwait(false);
-            await loopback.StopRecordingAsync().ConfigureAwait(false);
-
-            float[][] merged = DualDeviceCapture.MergeMicrophoneAndLoopback(
-                microphone.GetSamplesSnapshot(),
-                WaveInputChannelOffset,
-                loopback.GetSamplesSnapshot(),
-                WaveLoopbackInputChannelOffset!.Value,
-                microphoneStart,
-                loopbackStart);
-            return new CapturedSweepSamples(
-                merged,
-                MicrophoneIndex: 0,
-                LoopbackIndex: 1,
-                ValidateSharedDeviceStereo: false);
         }
 
         // Owns the ASIO session for a whole measurement. The driver is opened
@@ -735,6 +657,24 @@ namespace Resonalyze
             {
                 player.PlaybackStopped -= PlaybackStopped;
             }
+        }
+
+        private static IReadOnlyList<string> AssessRunQuality(
+            CapturedSweepSamples captured,
+            ExponentialSineSweep sweep)
+        {
+            float[][] channels = captured.SampleChannels;
+            float[] microphone = (uint)captured.MicrophoneIndex < (uint)channels.Length
+                ? channels[captured.MicrophoneIndex]
+                : Array.Empty<float>();
+            float[]? loopback = captured.LoopbackIndex is int loopbackIndex &&
+                (uint)loopbackIndex < (uint)channels.Length
+                    ? channels[loopbackIndex]
+                    : null;
+            return SweepRunQualityCheck.Assess(
+                microphone,
+                loopback,
+                sweep.SweepSamples);
         }
 
         private SweepRunAnalysis AnalyzeCapturedRun(
@@ -1139,5 +1079,8 @@ public readonly record struct SweepAverageProgress(
 public enum SweepAverageProgressState
 {
     Running,
-    WaitingForConfirmation
+    WaitingForConfirmation,
+    // The run failed the capture quality checks and its single automatic
+    // retry is being captured.
+    Retrying
 }

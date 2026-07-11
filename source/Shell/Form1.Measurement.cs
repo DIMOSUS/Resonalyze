@@ -8,6 +8,7 @@ public partial class Form1
     private async void Form1_Shown(object? sender, EventArgs e)
     {
         StartStartupAudioWarmup();
+        NotifyLegacyDualDeviceLoopbackReset();
 
         if (updateCheckStarted)
         {
@@ -131,6 +132,31 @@ public partial class Form1
             EnterMeasurementRunningState();
             _ = expSweepMeasurement.RunAsync();
         }
+    }
+
+    // One-time notice after loading a settings file written by a version that
+    // still captured the loopback from a separate input device: the loopback
+    // selection was reset (its channel offsets are meaningless on the shared
+    // device), so the user must pick a loopback channel again.
+    private void NotifyLegacyDualDeviceLoopbackReset()
+    {
+        if (!measurementSettings.LegacyDualDeviceLoopbackReset)
+        {
+            return;
+        }
+
+        MessageBox.Show(
+            this,
+            "Your previous configuration captured the loopback reference from a " +
+            "separate input device. This capability was removed: the two devices " +
+            "run on independent clocks, which silently degraded phase, group " +
+            "delay and time alignment.\r\n\r\n" +
+            "The loopback must now be a second channel of the microphone device " +
+            "(or ASIO). The loopback selection was reset — open Measurement " +
+            "Options and choose a loopback channel before measuring.",
+            "Loopback configuration reset",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
     }
 
     private bool CanLongPressCancelMeasurementSeries() =>

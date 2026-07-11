@@ -394,15 +394,20 @@ re-verified.
 
 ### Measurement / transfer layer
 
-- [ ] ★ **Dual-device Wave loopback is an untrusted timing reference but
-  produces an indistinguishable `LoopbackTransfer` measurement.** Independent
-  clocks mean an arbitrary inter-device offset (changes per run by a buffer)
-  plus drift as a frequency-dependent phase error; Time Alignment still offers
-  fractional-millisecond read-outs. Fix: a timing-quality field
-  (sample-synchronous / shared-device / independent-devices) through
-  `ExpSweepMeasurement`, history snapshots and the IR file format, with the
-  Time Alignment panel warning or refusing on independent devices, and phase/GD
-  marked timing-uncertain.
+- [x] ★ **Dual-device Wave loopback is an untrusted timing reference but
+  produces an indistinguishable `LoopbackTransfer` measurement** — closed
+  radically (2026-07-11): the separate-loopback-device capability was REMOVED
+  outright instead of being annotated. The microphone and loopback are now
+  always channels of ONE input device (Wave stereo or ASIO), so every capture
+  is sample-synchronous by construction and no timing-quality field is needed
+  for this distinction. Deleted: `DualDeviceCapture`,
+  `LoopbackSequencePairer`, `DualDeviceLevelCombiner`, the second recorder in
+  both measurements, `WaveLoopbackDeviceNumber` end-to-end (Init params,
+  settings DTO — old JSON files load fine, the unknown field is ignored and
+  the loopback falls back to the shared device), and the "Wave loopback
+  device" combo in the settings panel. Historical measurements captured with
+  two devices by older versions remain indistinguishable in old files — noted
+  under the provenance item below.
 - [ ] **H1 has no excitation mask and an absolute epsilon.** Below the sweep
   band `Gxy/Gxx` divides noise by noise and the garbage bins ring back through
   the IFFT; the absolute epsilon's strength also varies with the average count.
@@ -500,28 +505,44 @@ re-verified.
 
 - [ ] ★ **Measurement provenance model.** Files store no backend, timing
   quality, dropped-frame/clipping history, excitation range, effective average
-  count or calibration id — a dual-device Wave capture loads back
-  indistinguishable from sample-synchronous ASIO, and Time Alignment/Virtual
-  DSP cannot see that absolute phase and delay are suspect. Ties together the
-  dual-device item above; consumers should declare their requirements
-  (Time Alignment → synchronous timing required, HD → valid packet
-  separation, ...).
-- [ ] ★ **Sweep runs are accepted unconditionally** (`AcceptedRuns++` inside
-  `Add()`; "Confirm each run" fires only *after* accumulation and cannot
-  reject). One clipped/knocked run irreversibly contaminates the average. Fix:
-  Capture → quality checks (clipping, loopback energy, duration, peak-delay
-  vs median, IR correlation vs running reference) → Accept/Retry/Skip →
-  Accumulate. Also: runs are pre-aligned by the GLOBAL sweep-IR peak (a
-  reflection outrunning the direct sound mis-aligns the whole run — bound the
-  shift and cross-correlate against a reference run); the stored raw samples
-  are only the LAST run's (rename or store per-run); Wave RMS integrates the
-  lead-in/tail silence (compute over the active sweep interval only).
-- [ ] **Wave dual-device pairing is callback-ordered** (`LoopbackSequencePairer`
-  dequeues first-come): no timestamps, no drift estimate, a lost callback
-  shifts every later pair by a whole block. Practical fix short of full
-  synchronization: allow RTA only and disable H1/coherence/phase-dependent
-  results on independent Wave devices. (Live-spectrum drop-glue, cold-start
-  γ²=1 and the mode-switch statistics mix are fixed.)
+  count or calibration id, and Time Alignment/Virtual DSP cannot see when a
+  loaded measurement's absolute phase and delay are suspect. The sharpest
+  offender (dual-device Wave capture) is gone — every NEW capture is
+  sample-synchronous by construction — but files written by older versions
+  with two devices still load indistinguishably, and the other provenance
+  gaps stand. Consumers should declare their requirements (Time Alignment →
+  synchronous timing required, HD → valid packet separation, ...).
+- [x] ★ **Sweep runs are accepted unconditionally** — done (2026-07-11):
+  every captured run now passes `SweepRunQualityCheck` BEFORE
+  `accumulator.Add()`, judging only the unambiguous failures — microphone
+  clipping (shared `FullScaleThreshold`), a silent microphone or loopback
+  (peak < ~-80 dBFS; full-scale loopback stays the reference by the metering
+  convention), and an undersized capture. The check judges the ENTIRE
+  capture: both recorders reset per run (`StartRecordingAsync` →
+  `ResetBuffers`), and the whole snapshot — including the pre-playback
+  roll — feeds the deconvolution, so the checked range and the analyzed
+  range match (PR #26 review catch: an earlier draft skipped the pre-roll
+  and would have accepted a knock that still contaminated the IR). Policy: one
+  automatic retry per bad run (record button shows "Retrying x/y"); a second
+  failure skips the run. At the end, if the average holds fewer runs than
+  requested, an informational modal lists per-run reasons
+  (`SweepRunQualityReport.Describe`); if EVERY run failed, the measurement
+  fails with the aggregated reasons instead of publishing garbage. Unit
+  tests in `SweepRunQualityCheckTests` (Windows CI); the live retry flow
+  needs a hands-on Windows check.
+  **Rejected by the user (2026-07-11), do not resurrect:** the once-planned
+  statistical outlier layer (peak-delay vs median, IR correlation vs a
+  reference run) and the run pre-alignment rework (bounded shift +
+  cross-correlation instead of the global sweep-IR peak) — verdict: the
+  problem is contrived; the unambiguous checks plus the single retry cover
+  the real field failure mode. Minor cosmetic tails left as-is, low value:
+  the stored raw samples are only the LAST run's, and the Wave RMS meter
+  integrates the lead-in/tail silence.
+- [x] **Wave dual-device pairing is callback-ordered** — obsolete (2026-07-11):
+  `LoopbackSequencePairer` and the whole dual-device live path were removed
+  with the separate-loopback-device feature; the live transfer function now
+  only ever sees channels of one device. (Live-spectrum drop-glue, cold-start
+  γ²=1 and the mode-switch statistics mix were fixed earlier and stand.)
 - [ ] **EMA coherence has no effective average count** (overlap-correlated
   frames, alpha-dependent memory): expose K_eff ≈ (2−α)/α (reduced for
   overlap) alongside the curve and feed it to the same debias the sweep path

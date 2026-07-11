@@ -1406,14 +1406,24 @@ it defaults to Off because the measurements are loopback-referenced.
   families to allow (Butterworth / Linkwitz-Riley / Bessel), the
   crossover-frequency window, and whether the two sides of a junction may take
   independent slopes. It searches the crossover frequency, family, slope, and
-  cut-only gains to flatten the summed magnitude — modelling each junction the
-  way its family sums (amplitude for LR/Bessel, power for Butterworth),
-  penalizing wide band overlap, and keeping a practical minimum slope, so it
-  lands on a tight, engineer-sensible split rather than shallow filters that only
-  look flat by overlapping widely. Handovers stay within the sensible range for
-  the two driver types (so a woofer is not crossed up in its roll-off), and
-  narrowing the window past an outer driver adds a subsonic / brickwall
-  band-limit on that channel.
+  cut-only gains to flatten the summed magnitude (a plain amplitude sum — the
+  assumption that Auto delay will bring each junction to its best alignment),
+  penalizing wide band overlap and keeping a practical minimum slope, so it
+  lands on a tight, engineer-sensible split rather than shallow filters that
+  only look flat by overlapping widely. Handovers stay within the sensible
+  range for the two driver types (so a woofer is not crossed up in its
+  roll-off), land on human-friendly frequencies (5 Hz steps below 100 Hz,
+  10 Hz below 1 kHz, 50 Hz above), and junctions below 300 Hz never get slopes
+  steeper than 24 dB/oct — the group delay of a steep low-frequency crossover
+  costs more than the protection it buys. Narrowing the window past an outer
+  driver adds a subsonic / brickwall band-limit on that channel.
+  Apply does more than take the flattest magnitude candidate: the wizard
+  expands ~50 near-optimal variants (always including the conventional
+  all-LR24 setup) and re-ranks them by the junction loss actually achievable
+  after the best per-junction delay, measured on your impulse responses with
+  the same alignment search Auto delay runs — so a candidate whose slopes
+  cannot phase-align at the handover loses to one that can, before you ever
+  run Auto delay. Ties go to the conventional 24 dB/oct proposal.
 - **Auto delay** aligns in two stages: band-limited first arrivals — refined by a
   GCC-PHAT cross-correlation where it carries a reliable, unambiguous peak (a
   junction whose corners leave a spectral gap degenerates the correlation into

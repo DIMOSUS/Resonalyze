@@ -438,17 +438,37 @@ re-verified.
 
 ### Auto Crossover
 
-- [ ] ★ **The scalar summation model is physically wrong in three ways**:
-  family-based amplitude-vs-power summation (the real sum depends on the
-  complex phase at each frequency, not the family name), sequential mixed
-  summation that is non-associative for 3+ channels, and a magnitude-only
-  objective that ignores the measured phase entirely (Auto delay afterwards
-  cannot fix mismatched slopes/orders with one delay). The optimizer's live
-  preview shares the model, so it confirms its own objective; the flatness
-  tests call the same `SummedResponseDb` and are tautological. Fix: complex
-  per-channel responses (measured IR × exact digital filter response) with at
-  least a final complex-sum check per candidate, plus an independent
-  complex-sum oracle in the tests.
+- [x] ★ **The scalar summation model is physically wrong in three ways** —
+  resolved (2026-07-11) after a design discussion with the user. Verdict: the
+  magnitude/delay DECOMPOSITION is intentional and stays (a joint delay ×
+  crossover search was rejected as intractable; the wizard assumes ideal
+  alignment and Auto delay realizes it) — but the three inconsistencies were
+  real and are fixed:
+  (1) family-based amplitude-vs-power summation and the non-associative mixed
+  sum are gone — channels now combine as a plain amplitude sum everywhere,
+  the consistent expression of the ideal-alignment assumption;
+  (2) the "magnitude-only objective cannot see which candidates Auto delay
+  can actually fix" gap is closed by `ProposeRanked`: ~50 near-optimal
+  candidates (per-junction top options crossed, plus a mandatory conventional
+  all-LR24 run) are re-ranked by the junction loss ACHIEVABLE after the best
+  per-junction delay, measured on the channels' IRs with the production
+  alignment search (`FindAlignmentCandidates`) on a shared 32k direct-sound
+  crop, in parallel; the conventional-24 candidate wins ties
+  (`Conventional24PreferenceDb = 0.25`). Real-data cost: 50 candidates ≈ 3.8 s
+  on a 4-core container (pool alone 0.4 s); the two cost cliffs found and
+  fixed on the way: per-candidate arrival analyses (now computed once from
+  the raw channels) and a frequency-independent search window (now
+  ±clamp(1200/fc, 2, 12) ms — the filter group delay it must absorb scales
+  as 1/fc);
+  (3) the tests now include an independent amplitude-sum oracle (exact filter
+  magnitudes, not `SummedResponseDb`'s internals).
+  Also shipped in the same rework, per the user's spec: crossover frequencies
+  search directly on a rounded lattice (5 Hz < 100 Hz, 10 Hz < 1 kHz, 50 Hz
+  above — which also made the magnitude-cache hit, pool of 50 in ~0.4 s), and
+  junctions below 300 Hz never get slopes steeper than 24 dB/oct (group
+  delay). Deliberately NOT revisited: `AchievabilityWeight = 0.5` was chosen
+  on one dataset (the left 4-way) — re-eyeball if field results disagree with
+  the ranking. The dialog's async Apply path needs a live Windows check.
 - [ ] **`EstimateBand` merges disjoint islands into one band** (first/last bin
   above a global threshold): an isolated resonance above a dead gap extends
   HighHz and misclassifies the driver. Fix: the most significant contiguous

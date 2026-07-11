@@ -1,3 +1,4 @@
+using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -32,12 +33,19 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     private readonly List<(CheckBox Box, CrossoverFilterFamily Family)> familyBoxes = new();
     private double sampleRateHz = 48_000;
     private bool initialized;
+    // The channels' measured transfer IRs (Init order). When present, Apply
+    // re-ranks the top candidates by the junction loss achievable after the
+    // best per-junction delay, instead of trusting the magnitude score alone.
+    private IReadOnlyList<Complex[]>? impulseResponses;
 
     public VirtualCrossoverAutoSetupDialog()
     {
         InitializeComponent();
         AcceptButton = buttonApply;
         CancelButton = buttonCancel;
+        // Apply ranks candidates asynchronously; the designer's automatic
+        // DialogResult would close the form at the first await instead.
+        buttonApply.DialogResult = DialogResult.None;
         buttonApply.Click += ApplyClick;
         WireOptionControls();
         // The designer file owns Dispose; the manually created tooltip is not in
@@ -69,9 +77,11 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     public void Init(
         double sampleRateHz,
         IReadOnlyList<(string Name, Color Accent, IReadOnlyList<SignalPoint> MagnitudeDb,
-            DriverBandEstimate Band)> channels)
+            DriverBandEstimate Band)> channels,
+        IReadOnlyList<Complex[]>? impulseResponses = null)
     {
         this.sampleRateHz = sampleRateHz;
+        this.impulseResponses = impulseResponses;
         // Matches the optimizer's Nyquist ceiling; at 44.1 kHz this keeps the full
         // 20 kHz reachable instead of clamping to ~19.8 kHz.
         double ceiling = Math.Min(20_000, sampleRateHz * 0.49);
@@ -298,12 +308,55 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         return $"{family}{edge.SlopeDbPerOctave}";
     }
 
-    private void ApplyClick(object? sender, EventArgs e)
+    private async void ApplyClick(object? sender, EventArgs e)
     {
-        Result = TryPropose();
-        if (Result == null)
+        IReadOnlyList<CrossoverProposal>? quick = TryPropose();
+        if (quick == null)
         {
-            DialogResult = DialogResult.None;
+            System.Media.SystemSounds.Beep.Play();
+            return;
+        }
+
+        if (impulseResponses == null)
+        {
+            Result = quick;
+            DialogResult = DialogResult.OK;
+            return;
+        }
+
+        // The ranked search (candidate pool + achievability post-check on the
+        // measured IRs) runs off the UI thread; a couple of seconds on a
+        // 4-way. The live preview keeps showing the fast magnitude-only
+        // proposal until the ranking lands.
+        var sources = rows
+            .Select(row => new AutoSetupSource(row.MagnitudeDb, TypeOf(row)))
+            .ToList();
+        CrossoverAutoSetupOptions options = CurrentOptions();
+        IReadOnlyList<Complex[]> responses = impulseResponses;
+        string previousPreview = labelPreview.Text;
+        buttonApply.Enabled = false;
+        labelPreview.Text = "Ranking candidates against the measured responses…";
+        try
+        {
+            IReadOnlyList<RankedCrossoverProposal> ranked = await Task.Run(
+                () => CrossoverAutoSetup.ProposeRanked(sources, options, responses));
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            Result = ranked[0].Proposals;
+            DialogResult = DialogResult.OK;
+        }
+        catch (ArgumentException)
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            labelPreview.Text = previousPreview;
+            buttonApply.Enabled = true;
             System.Media.SystemSounds.Beep.Play();
         }
     }

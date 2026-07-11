@@ -3483,7 +3483,10 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         using var dialog = new VirtualCrossoverAutoSetupDialog();
-        dialog.Init(participating[0].SampleRate, dialogChannels);
+        dialog.Init(
+            participating[0].SampleRate,
+            dialogChannels,
+            participating.Select(channel => channel.TransferImpulseResponse!).ToList());
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
             dialog.Result is not { } proposals)
         {

@@ -14,9 +14,6 @@ namespace Resonalyze.Options
 {
     public partial class MeasurementOptions : Form
     {
-        // Sentinel for the "loopback shares the microphone device" entry in the Wave loopback
-        // device list (distinct from -1, which is a real "default device" entry).
-        private const int SharedLoopbackDeviceSentinel = int.MinValue;
         private readonly ToolTip deviceToolTip = new();
         private Font? normalStatusFont;
         private Font? warningStatusFont;
@@ -38,8 +35,6 @@ namespace Resonalyze.Options
 
         private DarkComboBox comboBoxRecordingDevice => waveAudioBackendPanel.ComboBoxRecordingDevice;
 
-        private DarkComboBox comboBoxWaveLoopbackDevice => waveAudioBackendPanel.ComboBoxWaveLoopbackDevice;
-
         private DarkComboBox comboBoxWaveInputChannel => waveAudioBackendPanel.ComboBoxWaveInputChannel;
 
         private DarkComboBox comboBoxWaveLoopbackChannel => waveAudioBackendPanel.ComboBoxWaveLoopbackChannel;
@@ -47,8 +42,6 @@ namespace Resonalyze.Options
         private Label labelPlaybackDevice => waveAudioBackendPanel.LabelPlaybackDevice;
 
         private Label labelRecordingDevice => waveAudioBackendPanel.LabelRecordingDevice;
-
-        private Label labelWaveLoopbackDevice => waveAudioBackendPanel.LabelWaveLoopbackDevice;
 
         private Label labelWaveInputChannel => waveAudioBackendPanel.LabelWaveInputChannel;
 
@@ -94,7 +87,6 @@ namespace Resonalyze.Options
         {
             comboBoxPlaybackDevice.SelectedIndexChanged += comboBoxPlaybackDevice_SelectedIndexChanged;
             comboBoxRecordingDevice.SelectedIndexChanged += comboBoxRecordingDevice_SelectedIndexChanged;
-            comboBoxWaveLoopbackDevice.SelectedIndexChanged += comboBoxWaveLoopbackDevice_SelectedIndexChanged;
             comboBoxWaveLoopbackChannel.SelectedIndexChanged += comboBoxWaveLoopbackChannel_SelectedIndexChanged;
             comboBoxWaveInputChannel.SelectedIndexChanged += comboBoxWaveInputChannel_SelectedIndexChanged;
             comboBoxAsioDriver.SelectedIndexChanged += comboBoxAsioDriver_SelectedIndexChanged;
@@ -159,26 +151,6 @@ namespace Resonalyze.Options
                 settings.InputDeviceNumber);
             ConfigureDropDownWidth(comboBoxRecordingDevice);
             UpdateComboBoxToolTip(comboBoxRecordingDevice);
-
-            comboBoxWaveLoopbackDevice.Items.Clear();
-            comboBoxWaveLoopbackDevice.Items.Add(new AudioDeviceInfo(
-                SharedLoopbackDeviceSentinel,
-                "Same as microphone device"));
-            comboBoxWaveLoopbackDevice.Items.AddRange(recordingDevices.Cast<object>().ToArray());
-            if (settings.WaveLoopbackDeviceNumber is int loopbackDeviceNumber)
-            {
-                SelectDeviceOrShowMissing(
-                    comboBoxWaveLoopbackDevice,
-                    recordingDevices,
-                    loopbackDeviceNumber,
-                    itemOffset: 1);
-            }
-            else
-            {
-                comboBoxWaveLoopbackDevice.SelectedIndex = 0;
-            }
-            ConfigureDropDownWidth(comboBoxWaveLoopbackDevice);
-            UpdateComboBoxToolTip(comboBoxWaveLoopbackDevice);
 
             FillWaveChannelControls(
                 settings.WaveInputChannelOffset,
@@ -298,16 +270,9 @@ namespace Resonalyze.Options
                 comboBoxWaveLoopbackChannel.SelectedItem is InputChannelOption waveLoopback
                     ? waveLoopback.Offset
                     : null;
-            int? waveLoopbackDeviceNumber = GetSelectedWaveLoopbackDeviceNumber();
             int averageRunCount = (int)numericUpDownAverageRunCount.Value;
             bool confirmEachAverageRun = checkBoxConfirmEachAverageRun.Checked;
-            bool separateWaveLoopbackDevice =
-                waveLoopbackDeviceNumber.HasValue &&
-                waveLoopbackDeviceNumber.Value != inputDeviceNumber;
-            // The same channel is only a conflict when both come from one device; separate
-            // devices may legitimately both use, say, the left channel.
             if (audioBackend == AudioBackend.Wave &&
-                !separateWaveLoopbackDevice &&
                 waveLoopbackInputChannelOffset.HasValue &&
                 waveLoopbackInputChannelOffset.Value == waveInputChannelOffset)
             {
@@ -330,7 +295,6 @@ namespace Resonalyze.Options
                 waveInputChannelOffset,
                 waveLoopbackInputChannelOffset,
                 asioLoopbackInputChannelOffset,
-                waveLoopbackDeviceNumber,
                 averageRunCount,
                 confirmEachAverageRun);
         }
@@ -469,9 +433,8 @@ namespace Resonalyze.Options
                 return;
             }
 
-            // With a separate loopback device the microphone channel choice
-            // changes how many channels the device must open, and therefore
-            // which sample rates it supports.
+            // The microphone channel choice changes how many channels the
+            // device must open, and therefore which sample rates it supports.
             RefreshSampleRateOptions(GetSelectedSampleRate());
         }
 
@@ -511,32 +474,6 @@ namespace Resonalyze.Options
             }
             UpdateWaveLoopbackControls();
             RefreshSampleRateOptions(GetSelectedSampleRate());
-        }
-
-        private void comboBoxWaveLoopbackDevice_SelectedIndexChanged(object? sender, EventArgs e)
-        {
-            if (initializing)
-            {
-                return;
-            }
-
-            UpdateComboBoxToolTip(comboBoxWaveLoopbackDevice);
-            UpdateWaveLoopbackControls();
-            RefreshSampleRateOptions(GetSelectedSampleRate());
-        }
-
-        private int? GetSelectedWaveLoopbackDeviceNumber() =>
-            comboBoxWaveLoopbackDevice.SelectedItem is AudioDeviceInfo device &&
-            device.DeviceNumber != SharedLoopbackDeviceSentinel
-                ? device.DeviceNumber
-                : null;
-
-        // The Wave loopback uses a different device than the microphone.
-        private bool UsesSeparateWaveLoopbackDeviceSelected()
-        {
-            int? loopbackDevice = GetSelectedWaveLoopbackDeviceNumber();
-            return loopbackDevice.HasValue &&
-                loopbackDevice.Value != GetSelectedRecordingDeviceNumber();
         }
 
         private void comboBoxAsioDriver_SelectedIndexChanged(object? sender, EventArgs e)
@@ -587,7 +524,6 @@ namespace Resonalyze.Options
             asioAudioBackendPanel.Visible = useAsio;
             comboBoxPlaybackDevice.Enabled = !useAsio;
             comboBoxRecordingDevice.Enabled = !useAsio;
-            comboBoxWaveLoopbackDevice.Enabled = !useAsio;
             comboBoxWaveInputChannel.Enabled = !useAsio;
             comboBoxWaveLoopbackChannel.Enabled = !useAsio &&
                 SelectedRecordingDeviceSupportsWaveLoopback();
@@ -614,7 +550,6 @@ namespace Resonalyze.Options
             labelAsioPlaybackLatencyValue.Enabled = useAsio;
             labelPlaybackDevice.Enabled = !useAsio;
             labelRecordingDevice.Enabled = !useAsio;
-            labelWaveLoopbackDevice.Enabled = !useAsio;
             labelWaveInputChannel.Enabled = !useAsio;
             labelWaveLoopbackChannel.Enabled = !useAsio;
             labelWaveLoopbackStatus.Enabled = !useAsio;
@@ -822,19 +757,6 @@ namespace Resonalyze.Options
             comboBoxWaveLoopbackChannel.Enabled =
                 comboBoxAudioBackend.SelectedIndex != (int)AudioBackend.Asio &&
                 supportsLoopback;
-            // A separate loopback device cannot be sample-accurately synchronised; make that
-            // warning impossible to miss (bold, amber, with a warning marker).
-            if (supportsLoopback && loopbackSelected && UsesSeparateWaveLoopbackDeviceSelected())
-            {
-                labelWaveLoopbackStatus.Text =
-                    "⚠ Separate loopback device is NOT sample-accurate.\r\n" +
-                    "Frequency response is usable, but phase, group delay and time " +
-                    "alignment are degraded. Use the microphone device or ASIO for accurate timing.";
-                labelWaveLoopbackStatus.ForeColor = Color.Gold;
-                labelWaveLoopbackStatus.Font = WarningStatusFont;
-                return;
-            }
-
             // The loopback channel is mandatory: without it there is no transfer IR and no
             // measurement can run. Make an unset loopback impossible to overlook.
             if (!loopbackSelected)
@@ -844,7 +766,7 @@ namespace Resonalyze.Options
                     ? "⚠ Loopback channel is REQUIRED. Select the channel carrying the " +
                         "loopback reference; measurements cannot run without it."
                     : "⚠ Loopback channel is REQUIRED. Select a stereo recording device, " +
-                        "or a separate loopback device, then choose its channel.";
+                        "then choose its channel.";
                 labelWaveLoopbackStatus.ForeColor = Color.Gold;
                 return;
             }
@@ -852,7 +774,7 @@ namespace Resonalyze.Options
             labelWaveLoopbackStatus.Font = NormalStatusFont;
             labelWaveLoopbackStatus.Text = supportsLoopback
                 ? "Stereo input available for Wave loopback."
-                : "Select a stereo recording device, or a separate loopback device.";
+                : "Select a stereo recording device.";
             labelWaveLoopbackStatus.ForeColor = supportsLoopback
                 ? Color.LightGray
                 : Color.LightSalmon;
@@ -883,17 +805,8 @@ namespace Resonalyze.Options
         private Font WarningStatusFont =>
             warningStatusFont ??= new Font(NormalStatusFont, FontStyle.Bold);
 
-        private bool SelectedRecordingDeviceSupportsWaveLoopback()
-        {
-            // A separate loopback device provides the loopback on its own channel, so the
-            // microphone device no longer needs to be stereo.
-            if (UsesSeparateWaveLoopbackDeviceSelected())
-            {
-                return true;
-            }
-
-            return comboBoxRecordingDevice.SelectedItem is AudioDeviceInfo { Channels: >= 2 };
-        }
+        private bool SelectedRecordingDeviceSupportsWaveLoopback() =>
+            comboBoxRecordingDevice.SelectedItem is AudioDeviceInfo { Channels: >= 2 };
 
         private void ValidateSelectedWaveLoopback()
         {
@@ -938,13 +851,12 @@ namespace Resonalyze.Options
         private static void SelectDeviceOrShowMissing(
             DarkComboBox comboBox,
             IReadOnlyList<AudioDeviceInfo> devices,
-            int deviceNumber,
-            int itemOffset = 0)
+            int deviceNumber)
         {
             int index = AudioDeviceCatalog.FindDeviceIndex(devices, deviceNumber);
             if (index >= 0)
             {
-                comboBox.SelectedIndex = itemOffset + index;
+                comboBox.SelectedIndex = index;
                 return;
             }
 
@@ -1125,36 +1037,12 @@ namespace Resonalyze.Options
                         : null);
             }
 
-            int playbackDevice = GetSelectedPlaybackDeviceNumber();
-            int playbackChannels = GetSelectedPlaybackChannelCount();
-            int bits = (int)numericUpDownBits.Value;
-
-            if (!UsesSeparateWaveLoopbackDeviceSelected())
-            {
-                return AudioDeviceCatalog.GetSupportedWaveSampleRates(
-                    playbackDevice,
-                    GetSelectedRecordingDeviceNumber(),
-                    playbackChannels,
-                    GetSelectedWaveRecordingChannelCount(),
-                    bits);
-            }
-
-            // Separate loopback device: a rate must be supported by the playback device, the
-            // microphone device, and the loopback device. Each is captured on its own channel,
-            // so only that channel's count is required from each input device.
-            IReadOnlyList<int> microphoneRates = AudioDeviceCatalog.GetSupportedWaveSampleRates(
-                playbackDevice,
+            return AudioDeviceCatalog.GetSupportedWaveSampleRates(
+                GetSelectedPlaybackDeviceNumber(),
                 GetSelectedRecordingDeviceNumber(),
-                playbackChannels,
-                GetSelectedWaveInputChannelOffset() + 1,
-                bits);
-            IReadOnlyList<int> loopbackRates = AudioDeviceCatalog.GetSupportedWaveSampleRates(
-                playbackDevice,
-                GetSelectedWaveLoopbackDeviceNumber()!.Value,
-                playbackChannels,
-                (GetSelectedWaveLoopbackChannelOffset() ?? 0) + 1,
-                bits);
-            return microphoneRates.Intersect(loopbackRates).ToArray();
+                GetSelectedPlaybackChannelCount(),
+                GetSelectedWaveRecordingChannelCount(),
+                (int)numericUpDownBits.Value);
         }
 
         private int GetSelectedWaveInputChannelOffset() =>

@@ -561,37 +561,20 @@ measurement settings dialog lets you choose:
 
 - playback device
 - recording device (microphone)
-- Wave loopback device (`Same as microphone device` by default, or a separate
-  input device)
 - sample rate from the values supported by the current configuration
 - playback channel
 - microphone input channel (`Left` or `Right`)
 - loopback input channel (`Left` or `Right`) — required
 
-By default the loopback is captured from a second channel of the microphone
-device, so it shares the same clock and stays sample-accurate. If that device
-does not expose a stereo input, choose a separate loopback device (below) or a
-stereo interface; loopback is mandatory, so a mono-only device cannot be used on
-its own.
-
-#### Separate Wave loopback device
-
-You can instead capture the loopback from a **different** input device than the
-microphone (for example, a second interface or a dedicated loopback dongle).
-Pick the device under **Wave loopback device** and choose its loopback channel;
-the microphone and loopback channels may then even be the same number because
-they come from different devices. Sample-rate options are restricted to rates
-supported by the playback device and **both** input devices.
-
-This is a deliberate convenience for users who ask for it, with a real
-limitation: the two devices run on **independent hardware clocks**, so the
-streams cannot be sample-accurately synchronised. Resonalyze starts both
-recorders before playback and aligns them best-effort (at the first recorded
-sample, trimmed to a shared length; the live transfer function pairs blocks in
-arrival order with bounded drift). Magnitude/frequency-response results remain
-usable, but phase, group delay, and time alignment are degraded by the unknown
-start offset and clock drift. For sample-accurate loopback timing, keep the
-loopback on the microphone device or use ASIO.
+The loopback is captured from a second channel of the **same** recording device
+as the microphone, so both signals share one hardware clock and stay
+sample-accurate — the timing every phase, group-delay and time-alignment result
+relies on. This is deliberate: capturing the loopback from a second input
+device would put the two streams on independent clocks with an unknown,
+run-to-run start offset plus drift, silently degrading every timing-sensitive
+result. Resonalyze therefore does not offer a separate loopback device at all;
+loopback is mandatory, so the recording device must expose a stereo input (or
+use ASIO).
 
 ### ASIO
 

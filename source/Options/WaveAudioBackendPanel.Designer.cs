@@ -32,8 +32,6 @@ namespace Resonalyze.Options
             comboBoxPlaybackDevice = new DarkComboBox();
             labelRecordingDevice = new Label();
             comboBoxRecordingDevice = new DarkComboBox();
-            labelWaveLoopbackDevice = new Label();
-            comboBoxWaveLoopbackDevice = new DarkComboBox();
             labelWaveInputChannel = new Label();
             comboBoxWaveInputChannel = new DarkComboBox();
             labelWaveLoopbackChannel = new Label();
@@ -83,32 +81,11 @@ namespace Resonalyze.Options
             comboBoxRecordingDevice.Size = new Size(170, 23);
             comboBoxRecordingDevice.TabIndex = 22;
             //
-            // labelWaveLoopbackDevice
-            //
-            labelWaveLoopbackDevice.AutoSize = true;
-            labelWaveLoopbackDevice.ForeColor = SystemColors.ControlLight;
-            labelWaveLoopbackDevice.Location = new Point(0, 66);
-            labelWaveLoopbackDevice.Name = "labelWaveLoopbackDevice";
-            labelWaveLoopbackDevice.Size = new Size(125, 15);
-            labelWaveLoopbackDevice.TabIndex = 46;
-            labelWaveLoopbackDevice.Text = "Wave loopback device";
-            //
-            // comboBoxWaveLoopbackDevice
-            //
-            comboBoxWaveLoopbackDevice.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxWaveLoopbackDevice.ForeColor = Color.White;
-            comboBoxWaveLoopbackDevice.Location = new Point(141, 58);
-            comboBoxWaveLoopbackDevice.Margin = new Padding(0);
-            comboBoxWaveLoopbackDevice.MinimumSize = new Size(36, 19);
-            comboBoxWaveLoopbackDevice.Name = "comboBoxWaveLoopbackDevice";
-            comboBoxWaveLoopbackDevice.Size = new Size(170, 23);
-            comboBoxWaveLoopbackDevice.TabIndex = 47;
-            //
             // labelWaveInputChannel
             //
             labelWaveInputChannel.AutoSize = true;
             labelWaveInputChannel.ForeColor = SystemColors.ControlLight;
-            labelWaveInputChannel.Location = new Point(0, 95);
+            labelWaveInputChannel.Location = new Point(0, 66);
             labelWaveInputChannel.Name = "labelWaveInputChannel";
             labelWaveInputChannel.Size = new Size(112, 15);
             labelWaveInputChannel.TabIndex = 38;
@@ -118,7 +95,7 @@ namespace Resonalyze.Options
             //
             comboBoxWaveInputChannel.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxWaveInputChannel.ForeColor = Color.White;
-            comboBoxWaveInputChannel.Location = new Point(141, 87);
+            comboBoxWaveInputChannel.Location = new Point(141, 58);
             comboBoxWaveInputChannel.Margin = new Padding(0);
             comboBoxWaveInputChannel.MinimumSize = new Size(36, 19);
             comboBoxWaveInputChannel.Name = "comboBoxWaveInputChannel";
@@ -129,7 +106,7 @@ namespace Resonalyze.Options
             //
             labelWaveLoopbackChannel.AutoSize = true;
             labelWaveLoopbackChannel.ForeColor = SystemColors.ControlLight;
-            labelWaveLoopbackChannel.Location = new Point(0, 124);
+            labelWaveLoopbackChannel.Location = new Point(0, 95);
             labelWaveLoopbackChannel.Name = "labelWaveLoopbackChannel";
             labelWaveLoopbackChannel.Size = new Size(133, 15);
             labelWaveLoopbackChannel.TabIndex = 40;
@@ -139,7 +116,7 @@ namespace Resonalyze.Options
             //
             comboBoxWaveLoopbackChannel.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxWaveLoopbackChannel.ForeColor = Color.White;
-            comboBoxWaveLoopbackChannel.Location = new Point(141, 116);
+            comboBoxWaveLoopbackChannel.Location = new Point(141, 87);
             comboBoxWaveLoopbackChannel.Margin = new Padding(0);
             comboBoxWaveLoopbackChannel.MinimumSize = new Size(36, 19);
             comboBoxWaveLoopbackChannel.Name = "comboBoxWaveLoopbackChannel";
@@ -149,7 +126,7 @@ namespace Resonalyze.Options
             // labelWaveLoopbackStatus
             //
             labelWaveLoopbackStatus.ForeColor = SystemColors.ControlLight;
-            labelWaveLoopbackStatus.Location = new Point(0, 146);
+            labelWaveLoopbackStatus.Location = new Point(0, 117);
             labelWaveLoopbackStatus.Name = "labelWaveLoopbackStatus";
             labelWaveLoopbackStatus.Size = new Size(311, 60);
             labelWaveLoopbackStatus.TabIndex = 42;
@@ -161,8 +138,6 @@ namespace Resonalyze.Options
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
             Controls.Add(labelWaveLoopbackStatus);
-            Controls.Add(comboBoxWaveLoopbackDevice);
-            Controls.Add(labelWaveLoopbackDevice);
             Controls.Add(comboBoxWaveLoopbackChannel);
             Controls.Add(labelWaveLoopbackChannel);
             Controls.Add(comboBoxWaveInputChannel);
@@ -172,7 +147,7 @@ namespace Resonalyze.Options
             Controls.Add(comboBoxPlaybackDevice);
             Controls.Add(labelPlaybackDevice);
             Name = "WaveAudioBackendPanel";
-            Size = new Size(311, 206);
+            Size = new Size(311, 177);
             ResumeLayout(false);
             PerformLayout();
         }
@@ -182,8 +157,6 @@ namespace Resonalyze.Options
         private DarkComboBox comboBoxPlaybackDevice;
         private Label labelRecordingDevice;
         private DarkComboBox comboBoxRecordingDevice;
-        private Label labelWaveLoopbackDevice;
-        private DarkComboBox comboBoxWaveLoopbackDevice;
         private Label labelWaveInputChannel;
         private DarkComboBox comboBoxWaveInputChannel;
         private Label labelWaveLoopbackChannel;

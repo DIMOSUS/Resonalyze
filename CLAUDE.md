@@ -37,7 +37,7 @@ Two projects, with a deliberate boundary:
 - **`dsp/Resonalyze.Dsp`** — pure, UI-free signal-processing library. Depends only on MathNet.Numerics and YamlDotNet. Contains FFT/spectrum analysis, windowing, transfer functions, minimum phase, excess delay, time-alignment analysis, biquad/crossover filters, the EQ auto-tuner, and PEQ profile import/export formats (Equalizer APO, REW, MiniDSP, CamillaDSP, EasyEffects, generic CSV — all implementing `IEqProfileFormat`). The app hands measurement data to this layer through `IImpulseMeasurement` (impulse response + peak index + sample rate).
 - **`source/Resonalyze`** — the WinForms app: audio device I/O, measurement lifecycle, and plotting.
 
-Inside `source/`, the flow is: signal generation and capture (`Measurements/` — `ExponentialSineSweep`, `NoiseSignal`, `SoundRecorder`; `Audio/` — NAudio Wave and ASIO backends, `DualDeviceCapture`, `LoopbackSequencePairer` for loopback-referenced timing) → analysis via the Dsp library → plot presentation (`Plotting/` — `PlotModelFactory` builds OxyPlot models, `OxyPlotAdapter` hosts them).
+Inside `source/`, the flow is: signal generation and capture (`Measurements/` — `ExponentialSineSweep`, `NoiseSignal`, `SoundRecorder`; `Audio/` — NAudio Wave and ASIO backends; microphone and loopback are always channels of ONE input device, so timing stays sample-synchronous) → analysis via the Dsp library → plot presentation (`Plotting/` — `PlotModelFactory` builds OxyPlot models, `OxyPlotAdapter` hosts them).
 
 Key structural points:
 

@@ -154,8 +154,7 @@ internal sealed class LiveSpectrumController : IDisposable
             measurementSettings.WaveInputChannelOffset,
             measurementSettings.WaveLoopbackInputChannelOffset,
             measurementSettings.AsioLoopbackInputChannelOffset,
-            liveSpectrumOptions,
-            measurementSettings.WaveLoopbackDeviceNumber);
+            liveSpectrumOptions);
     }
 
     public async Task ToggleAsync()

@@ -13,10 +13,7 @@ namespace Resonalyze
     {
         private readonly object stateSync = new();
         private readonly object dataSync = new();
-        private readonly DualDeviceLevelCombiner dualDeviceLevels = new();
         private SoundRecorder? soundRecorder;
-        private SoundRecorder? loopbackRecorder;
-        private LoopbackSequencePairer? loopbackPairer;
         private CancellationTokenSource? cancellationTokenSource;
         private Task<bool>? measurementTask;
         private ChannelWriter<float[][]>? sequenceWriter;
@@ -58,29 +55,15 @@ namespace Resonalyze
         public int AsioOutputChannelOffset { get; private set; }
         public int WaveInputChannelOffset { get; private set; }
         public int? WaveLoopbackInputChannelOffset { get; private set; }
-        // When set (and different from the microphone device), the Wave loopback is captured
-        // from this separate input device. Best-effort aligned (see LoopbackSequencePairer).
-        public int? WaveLoopbackDeviceNumber { get; private set; }
         public int SequenceLength { get; private set; }
         public LiveSpectrumOptions LiveSpectrumOptions { get; private set; } = new();
         public Exception? LastError { get; private set; }
         public bool HasConfiguredLoopback =>
             AudioBackend == AudioBackend.Wave
                 ? WaveLoopbackInputChannelOffset.HasValue &&
-                    (UsesSeparateWaveLoopbackDevice ||
-                        WaveLoopbackInputChannelOffset.Value != WaveInputChannelOffset)
+                    WaveLoopbackInputChannelOffset.Value != WaveInputChannelOffset
                 : AsioLoopbackInputChannelOffset.HasValue &&
                     AsioLoopbackInputChannelOffset.Value != AsioInputChannelOffset;
-
-        // Loopback configured on a different Wave device than the microphone.
-        private bool UsesSeparateWaveLoopbackDevice =>
-            AudioBackend == AudioBackend.Wave &&
-            WaveLoopbackInputChannelOffset.HasValue &&
-            WaveLoopbackDeviceNumber.HasValue &&
-            WaveLoopbackDeviceNumber.Value != InputDeviceNumber;
-
-        // True only when a separate loopback device must actually be captured and paired.
-        private bool PairsSeparateLoopbackDevice => UsesSeparateWaveLoopbackDevice;
 
         public void Init(
             int sampleRate,
@@ -97,8 +80,7 @@ namespace Resonalyze
             int waveInputChannelOffset = 0,
             int? waveLoopbackInputChannelOffset = null,
             int? asioLoopbackInputChannelOffset = null,
-            LiveSpectrumOptions? liveSpectrumOptions = null,
-            int? waveLoopbackDeviceNumber = null)
+            LiveSpectrumOptions? liveSpectrumOptions = null)
         {
             ThrowIfDisposed();
             if (InProgress)
@@ -124,7 +106,6 @@ namespace Resonalyze
             WaveInputChannelOffset = Math.Clamp(waveInputChannelOffset, 0, 1);
             WaveLoopbackInputChannelOffset = NormalizeOptionalWaveChannel(
                 waveLoopbackInputChannelOffset);
-            WaveLoopbackDeviceNumber = waveLoopbackDeviceNumber;
             LiveSpectrumOptions = liveSpectrumOptions ?? new LiveSpectrumOptions();
 
             signal?.Dispose();
@@ -149,45 +130,16 @@ namespace Resonalyze
                 SequenceLength);
 
             DisposeRecorders();
-            dualDeviceLevels.Reset();
 
-            bool separateLoopbackDevice = PairsSeparateLoopbackDevice;
             soundRecorder = new SoundRecorder();
-            int recorderChannelCount = separateLoopbackDevice
-                ? WaveInputChannelOffset + 1
-                : GetRequiredWaveInputChannelCount();
             soundRecorder.Init(
                 sampleRate,
                 bits,
-                recorderChannelCount,
+                GetRequiredWaveInputChannelCount(),
                 inputDeviceNumber);
             soundRecorder.Sequence = sequenceLength;
-
-            if (separateLoopbackDevice)
-            {
-                loopbackRecorder = new SoundRecorder();
-                loopbackRecorder.Init(
-                    sampleRate,
-                    bits,
-                    WaveLoopbackInputChannelOffset!.Value + 1,
-                    WaveLoopbackDeviceNumber!.Value);
-                loopbackRecorder.Sequence = sequenceLength;
-                // Microphone block is index 0 of its recorder's channels (single channel
-                // captured), loopback block likewise; the pairer combines them into [mic, loop].
-                loopbackPairer = new LoopbackSequencePairer(
-                    WaveInputChannelOffset,
-                    WaveLoopbackInputChannelOffset!.Value,
-                    ProcessSequenceChannels);
-                soundRecorder.SequenceChannelsReady += loopbackPairer.PushMicrophone;
-                loopbackRecorder.SequenceChannelsReady += loopbackPairer.PushLoopback;
-                soundRecorder.LevelsAvailable += HandleMicrophoneOnlyLevels;
-                loopbackRecorder.LevelsAvailable += HandleLoopbackOnlyLevels;
-            }
-            else
-            {
-                soundRecorder.SequenceChannelsReady += ProcessSequenceChannels;
-                soundRecorder.LevelsAvailable += HandleWaveLevelsAvailable;
-            }
+            soundRecorder.SequenceChannelsReady += ProcessSequenceChannels;
+            soundRecorder.LevelsAvailable += HandleWaveLevelsAvailable;
         }
 
         private void DisposeRecorders()
@@ -196,25 +148,9 @@ namespace Resonalyze
             {
                 soundRecorder.SequenceChannelsReady -= ProcessSequenceChannels;
                 soundRecorder.LevelsAvailable -= HandleWaveLevelsAvailable;
-                soundRecorder.LevelsAvailable -= HandleMicrophoneOnlyLevels;
-                if (loopbackPairer != null)
-                {
-                    soundRecorder.SequenceChannelsReady -= loopbackPairer.PushMicrophone;
-                }
                 soundRecorder.Dispose();
                 soundRecorder = null;
             }
-            if (loopbackRecorder != null)
-            {
-                loopbackRecorder.LevelsAvailable -= HandleLoopbackOnlyLevels;
-                if (loopbackPairer != null)
-                {
-                    loopbackRecorder.SequenceChannelsReady -= loopbackPairer.PushLoopback;
-                }
-                loopbackRecorder.Dispose();
-                loopbackRecorder = null;
-            }
-            loopbackPairer = null;
         }
 
         public Task<bool> RunAsync()
@@ -241,9 +177,6 @@ namespace Resonalyze
                 }
                 Interlocked.Exchange(ref lastDropTickMs, 0);
                 Interlocked.Exchange(ref droppedFrameTotal, 0);
-                // Drop any blocks left queued by a previous run so the first transfer frame
-                // cannot pair a fresh block with a stale one.
-                loopbackPairer?.Reset();
 
                 cancellationTokenSource?.Dispose();
                 cancellationTokenSource = new CancellationTokenSource();
@@ -481,11 +414,6 @@ namespace Resonalyze
                 try
                 {
                     await recorder.StopRecordingAsync().ConfigureAwait(false);
-                    SoundRecorder? loopback = loopbackRecorder;
-                    if (loopback != null)
-                    {
-                        await loopback.StopRecordingAsync().ConfigureAwait(false);
-                    }
                 }
                 catch (Exception exception)
                 {
@@ -519,11 +447,6 @@ namespace Resonalyze
                 DeviceNumber = OutputDeviceNumber
             };
             await recorder.StartRecordingAsync(cancellationToken).ConfigureAwait(false);
-            SoundRecorder? loopback = loopbackRecorder;
-            if (loopback != null)
-            {
-                await loopback.StartRecordingAsync(cancellationToken).ConfigureAwait(false);
-            }
 
             // A looping provider keeps the excitation seamless: restarting playback
             // per pass (the old play-to-end loop) left an audible gap at every loop
@@ -637,32 +560,10 @@ namespace Resonalyze
             RaiseLevels(channels);
         }
 
-        // Separate loopback device: microphone and loopback levels come from two recorders;
-        // the combiner keeps the latest of each so both meters update live.
-        private void HandleMicrophoneOnlyLevels(AudioChannelLevel[] channels)
-        {
-            dualDeviceLevels.SetMicrophone(channels);
-            RaiseCombinedDualDeviceLevels();
-        }
-
-        private void HandleLoopbackOnlyLevels(AudioChannelLevel[] channels)
-        {
-            dualDeviceLevels.SetLoopback(channels);
-            RaiseCombinedDualDeviceLevels();
-        }
-
-        private void RaiseCombinedDualDeviceLevels()
-        {
-            LevelsAvailable?.Invoke(dualDeviceLevels.Combine(
-                WaveInputChannelOffset,
-                WaveLoopbackInputChannelOffset));
-        }
-
         private void RaiseLevels(AudioChannelLevel[] channels)
         {
-            // The shared mapping flags a full-scale loopback as the reference (not
-            // clipped), matching the dual-device path above; this path used to set
-            // both flags at once.
+            // The shared mapping flags a full-scale loopback as the reference
+            // (not clipped); this path used to set both flags at once.
             LevelsAvailable?.Invoke(InputLevelMapping.Map(
                 channels,
                 GetMicrophoneSequenceIndex(),
@@ -853,20 +754,16 @@ namespace Resonalyze
                 AsioLoopbackInputChannelOffset);
 
         private int GetMicrophoneSequenceIndex() =>
-            PairsSeparateLoopbackDevice
-                ? 0
-                : AudioBackend == AudioBackend.Wave
-                    ? WaveInputChannelOffset
-                    : AsioInputChannelOffset - GetAsioCaptureFirstInputOffset();
+            AudioBackend == AudioBackend.Wave
+                ? WaveInputChannelOffset
+                : AsioInputChannelOffset - GetAsioCaptureFirstInputOffset();
 
         private int? GetLoopbackSequenceIndex() =>
-            PairsSeparateLoopbackDevice
-                ? 1
-                : AudioBackend == AudioBackend.Wave
-                    ? WaveLoopbackInputChannelOffset
-                    : AsioLoopbackInputChannelOffset.HasValue
-                        ? AsioLoopbackInputChannelOffset.Value - GetAsioCaptureFirstInputOffset()
-                        : null;
+            AudioBackend == AudioBackend.Wave
+                ? WaveLoopbackInputChannelOffset
+                : AsioLoopbackInputChannelOffset.HasValue
+                    ? AsioLoopbackInputChannelOffset.Value - GetAsioCaptureFirstInputOffset()
+                    : null;
 
         private static int? NormalizeOptionalWaveChannel(int? channel) =>
             channel.HasValue

@@ -63,6 +63,9 @@ namespace Resonalyze
         public int AverageRunCount { get; private set; } = 1;
         public int AcceptedAverageRunCount { get; private set; } = 1;
         public bool ConfirmEachAverageRun { get; private set; }
+        // Per-run acceptance outcome of the last completed measurement; null until
+        // a measurement ran (or when the result was restored from a file).
+        internal SweepRunQualityReport? QualityReport { get; private set; }
         public Exception? LastError { get; private set; }
         public int RecordedSamples => soundRecorder?.ReadSamples ?? 0;
         public bool WaitingForAverageConfirmation => waitingForAverageConfirmation;
@@ -121,6 +124,7 @@ namespace Resonalyze
             AverageRunCount = Math.Clamp(averageRunCount, 1, 64);
             AcceptedAverageRunCount = 0;
             ConfirmEachAverageRun = confirmEachAverageRun;
+            QualityReport = null;
             LastError = null;
             CurrentLevels = InputLevelMeterSnapshot.Empty;
 
@@ -177,6 +181,7 @@ namespace Resonalyze
                 LoopbackRecordedSamples = null;
                 MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
                 AcceptedAverageRunCount = 0;
+                QualityReport = null;
                 LastError = null;
                 CurrentLevels = InputLevelMeterSnapshot.Empty;
                 measurementTask = RunCoreAsync(cancellationTokenSource.Token);
@@ -332,9 +337,23 @@ namespace Resonalyze
             bool success = false;
             AsioSweepCapture? asioCapture = null;
 
+            async Task<CapturedSweepSamples> CaptureOneAsync()
+            {
+                if (AudioBackend == AudioBackend.Asio)
+                {
+                    asioCapture ??= new AsioSweepCapture(this, sweep);
+                    return await asioCapture.CaptureRunAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                return await CaptureWaveAsync(sweep, recorder, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             try
             {
                 var accumulator = new SweepAverageAccumulator();
+                var rejections = new List<SweepRunRejection>();
                 int requestedRuns = AverageRunCount;
                 for (int run = 1; run <= requestedRuns; run++)
                 {
@@ -343,20 +362,31 @@ namespace Resonalyze
                         requestedRuns,
                         accumulator.AcceptedRuns,
                         SweepAverageProgressState.Running));
-                    CapturedSweepSamples captured;
-                    if (AudioBackend == AudioBackend.Asio)
+                    CapturedSweepSamples? captured =
+                        await CaptureOneAsync().ConfigureAwait(false);
+                    IReadOnlyList<string> issues = AssessRunQuality(captured, sweep);
+                    if (issues.Count > 0)
                     {
-                        asioCapture ??= new AsioSweepCapture(this, sweep);
-                        captured = await asioCapture.CaptureRunAsync(cancellationToken)
-                            .ConfigureAwait(false);
+                        // One automatic retry per bad run; a second failure skips
+                        // the run so it cannot contaminate the average.
+                        rejections.Add(new SweepRunRejection(run, Retried: false, issues));
+                        AverageProgressChanged?.Invoke(new SweepAverageProgress(
+                            run,
+                            requestedRuns,
+                            accumulator.AcceptedRuns,
+                            SweepAverageProgressState.Retrying));
+                        captured = await CaptureOneAsync().ConfigureAwait(false);
+                        issues = AssessRunQuality(captured, sweep);
+                        if (issues.Count > 0)
+                        {
+                            rejections.Add(new SweepRunRejection(run, Retried: true, issues));
+                            captured = null;
+                        }
                     }
-                    else
+                    if (captured != null)
                     {
-                        captured = await CaptureWaveAsync(sweep, recorder, cancellationToken)
-                            .ConfigureAwait(false);
+                        accumulator.Add(AnalyzeCapturedRun(captured, sweep));
                     }
-                    SweepRunAnalysis analysis = AnalyzeCapturedRun(captured, sweep);
-                    accumulator.Add(analysis);
 
                     if (ConfirmEachAverageRun && run < requestedRuns)
                     {
@@ -366,6 +396,20 @@ namespace Resonalyze
                             accumulator.AcceptedRuns,
                             cancellationToken).ConfigureAwait(false);
                     }
+                }
+
+                QualityReport = new SweepRunQualityReport(
+                    requestedRuns,
+                    accumulator.AcceptedRuns,
+                    rejections);
+                if (accumulator.AcceptedRuns == 0)
+                {
+                    throw new InvalidOperationException(
+                        "Every sweep run failed the capture quality checks: " +
+                        string.Join(
+                            "; ",
+                            rejections.SelectMany(rejection => rejection.Issues).Distinct()) +
+                        ". Check the input levels and the loopback wiring, then measure again.");
                 }
 
                 ApplyAverageResult(accumulator.BuildResult());
@@ -479,7 +523,8 @@ namespace Resonalyze
                 recorder.GetSamplesSnapshot(),
                 microphoneIndex,
                 loopbackIndex,
-                ValidateSharedDeviceStereo: true);
+                ValidateSharedDeviceStereo: true,
+                AnalysisStartSample: recordingStart);
         }
 
         // Owns the ASIO session for a whole measurement. The driver is opened
@@ -613,6 +658,25 @@ namespace Resonalyze
             {
                 player.PlaybackStopped -= PlaybackStopped;
             }
+        }
+
+        private static IReadOnlyList<string> AssessRunQuality(
+            CapturedSweepSamples captured,
+            ExponentialSineSweep sweep)
+        {
+            float[][] channels = captured.SampleChannels;
+            float[] microphone = (uint)captured.MicrophoneIndex < (uint)channels.Length
+                ? channels[captured.MicrophoneIndex]
+                : Array.Empty<float>();
+            float[]? loopback = captured.LoopbackIndex is int loopbackIndex &&
+                (uint)loopbackIndex < (uint)channels.Length
+                    ? channels[loopbackIndex]
+                    : null;
+            return SweepRunQualityCheck.Assess(
+                microphone,
+                loopback,
+                captured.AnalysisStartSample,
+                sweep.SweepSamples);
         }
 
         private SweepRunAnalysis AnalyzeCapturedRun(
@@ -799,11 +863,15 @@ namespace Resonalyze
             return peakIndex;
         }
 
+        // AnalysisStartSample: first sample of THIS run within the channels. The
+        // Wave recorder accumulates across the averaging runs, so its snapshot
+        // starts with the previous runs' audio; ASIO resets its capture per run.
         private sealed record CapturedSweepSamples(
             float[][] SampleChannels,
             int MicrophoneIndex,
             int? LoopbackIndex,
-            bool ValidateSharedDeviceStereo);
+            bool ValidateSharedDeviceStereo,
+            int AnalysisStartSample = 0);
 
         private sealed record SweepRunAnalysis(
             Complex[] SweepImpulseResponse,
@@ -1017,5 +1085,8 @@ public readonly record struct SweepAverageProgress(
 public enum SweepAverageProgressState
 {
     Running,
-    WaitingForConfirmation
+    WaitingForConfirmation,
+    // The run failed the capture quality checks and its single automatic
+    // retry is being captured.
+    Retrying
 }

@@ -512,16 +512,31 @@ re-verified.
   with two devices still load indistinguishably, and the other provenance
   gaps stand. Consumers should declare their requirements (Time Alignment →
   synchronous timing required, HD → valid packet separation, ...).
-- [ ] ★ **Sweep runs are accepted unconditionally** (`AcceptedRuns++` inside
-  `Add()`; "Confirm each run" fires only *after* accumulation and cannot
-  reject). One clipped/knocked run irreversibly contaminates the average. Fix:
-  Capture → quality checks (clipping, loopback energy, duration, peak-delay
-  vs median, IR correlation vs running reference) → Accept/Retry/Skip →
-  Accumulate. Also: runs are pre-aligned by the GLOBAL sweep-IR peak (a
-  reflection outrunning the direct sound mis-aligns the whole run — bound the
-  shift and cross-correlate against a reference run); the stored raw samples
-  are only the LAST run's (rename or store per-run); Wave RMS integrates the
-  lead-in/tail silence (compute over the active sweep interval only).
+- [~] ★ **Sweep runs are accepted unconditionally** — phase 1 done
+  (2026-07-11): every captured run now passes `SweepRunQualityCheck` BEFORE
+  `accumulator.Add()`, judging only the unambiguous failures — microphone
+  clipping (shared `FullScaleThreshold`), a silent microphone or loopback
+  (peak < ~-80 dBFS; full-scale loopback stays the reference by the metering
+  convention), and an undersized capture. The check reads only THIS run's
+  samples (`AnalysisStartSample` — the Wave recorder accumulates across
+  runs, so a previous run's clip must not reject the next). Policy: one
+  automatic retry per bad run (record button shows "Retrying x/y"); a second
+  failure skips the run. At the end, if the average holds fewer runs than
+  requested, an informational modal lists per-run reasons
+  (`SweepRunQualityReport.Describe`); if EVERY run failed, the measurement
+  fails with the aggregated reasons instead of publishing garbage. Unit
+  tests in `SweepRunQualityCheckTests` (Windows CI); the live retry flow
+  needs a hands-on Windows check.
+  **Remaining phases:** (2) statistical checks — peak-delay vs median, IR
+  correlation vs a reference run — to ship warn-only with logged values
+  first, thresholds set from real multi-run captures (none in test_data);
+  policy for the cold start (first run is unchecked by definition). (3) run
+  pre-alignment: runs are aligned by the GLOBAL sweep-IR peak (a reflection
+  outrunning the direct sound mis-aligns the whole run — bound the shift and
+  cross-correlate against a reference run). Also still open: the stored raw
+  samples are only the LAST run's (rename or store per-run); Wave RMS
+  integrates the lead-in/tail silence (compute over the active sweep
+  interval only).
 - [x] **Wave dual-device pairing is callback-ordered** — obsolete (2026-07-11):
   `LoopbackSequencePairer` and the whole dual-device live path were removed
   with the separate-loopback-device feature; the live transfer function now

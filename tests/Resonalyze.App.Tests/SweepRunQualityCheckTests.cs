@@ -10,7 +10,6 @@ public sealed class SweepRunQualityCheckTests
         IReadOnlyList<string> issues = SweepRunQualityCheck.Assess(
             Tone(SweepSamples, 0.5f),
             Tone(SweepSamples, 0.9f),
-            startSample: 0,
             SweepSamples);
 
         Assert.Empty(issues);
@@ -25,7 +24,6 @@ public sealed class SweepRunQualityCheckTests
         IReadOnlyList<string> issues = SweepRunQualityCheck.Assess(
             microphone,
             Tone(SweepSamples, 0.9f),
-            startSample: 0,
             SweepSamples);
 
         Assert.Contains("the microphone signal clipped", issues);
@@ -37,7 +35,6 @@ public sealed class SweepRunQualityCheckTests
         IReadOnlyList<string> issues = SweepRunQualityCheck.Assess(
             Tone(SweepSamples, 0.5f),
             Tone(SweepSamples, 1.0f),
-            startSample: 0,
             SweepSamples);
 
         Assert.Empty(issues);
@@ -49,7 +46,6 @@ public sealed class SweepRunQualityCheckTests
         IReadOnlyList<string> issues = SweepRunQualityCheck.Assess(
             Tone(SweepSamples, 1e-5f),
             Tone(SweepSamples, 0.9f),
-            startSample: 0,
             SweepSamples);
 
         Assert.Contains("the microphone signal is silent", issues);
@@ -61,7 +57,6 @@ public sealed class SweepRunQualityCheckTests
         IReadOnlyList<string> issues = SweepRunQualityCheck.Assess(
             Tone(SweepSamples, 0.5f),
             new float[SweepSamples],
-            startSample: 0,
             SweepSamples);
 
         Assert.Contains("the loopback reference signal is silent", issues);
@@ -73,7 +68,6 @@ public sealed class SweepRunQualityCheckTests
         IReadOnlyList<string> issues = SweepRunQualityCheck.Assess(
             Tone(SweepSamples, 0.5f),
             loopback: null,
-            startSample: 0,
             SweepSamples);
 
         Assert.Empty(issues);
@@ -85,7 +79,6 @@ public sealed class SweepRunQualityCheckTests
         IReadOnlyList<string> issues = SweepRunQualityCheck.Assess(
             Tone(SweepSamples / 2, 0.5f),
             Tone(SweepSamples / 2, 0.9f),
-            startSample: 0,
             SweepSamples);
 
         Assert.Contains(
@@ -93,10 +86,11 @@ public sealed class SweepRunQualityCheckTests
             issue => issue.StartsWith("the capture is shorter than the sweep"));
     }
 
-    // The Wave recorder accumulates across averaging runs: a clip that
-    // belongs to a PREVIOUS run (before startSample) must not reject this one.
+    // Both recorders reset per run and the whole snapshot (including the
+    // pre-playback roll) feeds the analysis, so a knock BEFORE the sweep
+    // started must be caught too - the checked and analyzed ranges match.
     [Fact]
-    public void Assess_SamplesBeforeStartSampleAreNotJudged()
+    public void Assess_ClipInThePrePlaybackRollIsCaught()
     {
         float[] microphone = Tone(SweepSamples * 2, 0.5f);
         microphone[10] = 1.0f;
@@ -104,22 +98,6 @@ public sealed class SweepRunQualityCheckTests
         IReadOnlyList<string> issues = SweepRunQualityCheck.Assess(
             microphone,
             Tone(SweepSamples * 2, 0.9f),
-            startSample: SweepSamples,
-            SweepSamples);
-
-        Assert.Empty(issues);
-    }
-
-    [Fact]
-    public void Assess_ClipInsideTheCurrentRunIsStillCaught()
-    {
-        float[] microphone = Tone(SweepSamples * 2, 0.5f);
-        microphone[SweepSamples + 10] = 1.0f;
-
-        IReadOnlyList<string> issues = SweepRunQualityCheck.Assess(
-            microphone,
-            Tone(SweepSamples * 2, 0.9f),
-            startSample: SweepSamples,
             SweepSamples);
 
         Assert.Contains("the microphone signal clipped", issues);

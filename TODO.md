@@ -517,9 +517,12 @@ re-verified.
   `accumulator.Add()`, judging only the unambiguous failures — microphone
   clipping (shared `FullScaleThreshold`), a silent microphone or loopback
   (peak < ~-80 dBFS; full-scale loopback stays the reference by the metering
-  convention), and an undersized capture. The check reads only THIS run's
-  samples (`AnalysisStartSample` — the Wave recorder accumulates across
-  runs, so a previous run's clip must not reject the next). Policy: one
+  convention), and an undersized capture. The check judges the ENTIRE
+  capture: both recorders reset per run (`StartRecordingAsync` →
+  `ResetBuffers`), and the whole snapshot — including the pre-playback
+  roll — feeds the deconvolution, so the checked range and the analyzed
+  range match (PR #26 review catch: an earlier draft skipped the pre-roll
+  and would have accepted a knock that still contaminated the IR). Policy: one
   automatic retry per bad run (record button shows "Retrying x/y"); a second
   failure skips the run. At the end, if the average holds fewer runs than
   requested, an informational modal lists per-run reasons

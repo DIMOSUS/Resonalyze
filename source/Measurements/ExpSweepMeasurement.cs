@@ -523,8 +523,7 @@ namespace Resonalyze
                 recorder.GetSamplesSnapshot(),
                 microphoneIndex,
                 loopbackIndex,
-                ValidateSharedDeviceStereo: true,
-                AnalysisStartSample: recordingStart);
+                ValidateSharedDeviceStereo: true);
         }
 
         // Owns the ASIO session for a whole measurement. The driver is opened
@@ -675,7 +674,6 @@ namespace Resonalyze
             return SweepRunQualityCheck.Assess(
                 microphone,
                 loopback,
-                captured.AnalysisStartSample,
                 sweep.SweepSamples);
         }
 
@@ -863,15 +861,11 @@ namespace Resonalyze
             return peakIndex;
         }
 
-        // AnalysisStartSample: first sample of THIS run within the channels. The
-        // Wave recorder accumulates across the averaging runs, so its snapshot
-        // starts with the previous runs' audio; ASIO resets its capture per run.
         private sealed record CapturedSweepSamples(
             float[][] SampleChannels,
             int MicrophoneIndex,
             int? LoopbackIndex,
-            bool ValidateSharedDeviceStereo,
-            int AnalysisStartSample = 0);
+            bool ValidateSharedDeviceStereo);
 
         private sealed record SweepRunAnalysis(
             Complex[] SweepImpulseResponse,

@@ -22,30 +22,29 @@ internal static class SweepRunQualityCheck
 
     /// <summary>
     /// Issues found in the captured run; empty means the run is accepted.
-    /// Samples before <paramref name="startSample"/> belong to previous runs
-    /// (the Wave recorder accumulates across an averaging session) and are
-    /// not judged. A full-scale loopback is NOT flagged: by the metering
-    /// convention the loopback is the reference and routinely sits at full
-    /// scale.
+    /// Judges the ENTIRE capture — both recorders reset per run, and the
+    /// whole snapshot (including the pre-playback roll) feeds the
+    /// deconvolution and transfer analysis, so the checked range and the
+    /// analyzed range must match. A full-scale loopback is NOT flagged: by
+    /// the metering convention the loopback is the reference and routinely
+    /// sits at full scale.
     /// </summary>
     public static IReadOnlyList<string> Assess(
         float[] microphone,
         float[]? loopback,
-        int startSample,
         int expectedSweepSamples)
     {
         ArgumentNullException.ThrowIfNull(microphone);
 
         var issues = new List<string>();
-        int microphoneStart = Math.Clamp(startSample, 0, microphone.Length);
-        if (microphone.Length - microphoneStart < expectedSweepSamples)
+        if (microphone.Length < expectedSweepSamples)
         {
             issues.Add(
                 $"the capture is shorter than the sweep " +
-                $"({microphone.Length - microphoneStart} of {expectedSweepSamples} samples)");
+                $"({microphone.Length} of {expectedSweepSamples} samples)");
         }
 
-        double microphonePeak = Peak(microphone, microphoneStart);
+        double microphonePeak = Peak(microphone);
         if (microphonePeak >= AudioLevelMetering.FullScaleThreshold)
         {
             issues.Add("the microphone signal clipped");
@@ -55,8 +54,7 @@ internal static class SweepRunQualityCheck
             issues.Add("the microphone signal is silent");
         }
 
-        if (loopback != null &&
-            Peak(loopback, Math.Clamp(startSample, 0, loopback.Length)) < SilentPeakThreshold)
+        if (loopback != null && Peak(loopback) < SilentPeakThreshold)
         {
             issues.Add("the loopback reference signal is silent");
         }
@@ -64,10 +62,10 @@ internal static class SweepRunQualityCheck
         return issues;
     }
 
-    private static double Peak(float[] samples, int start)
+    private static double Peak(float[] samples)
     {
         double peak = 0;
-        for (int i = start; i < samples.Length; i++)
+        for (int i = 0; i < samples.Length; i++)
         {
             peak = Math.Max(peak, Math.Abs(samples[i]));
         }

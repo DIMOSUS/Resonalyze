@@ -17,6 +17,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     private sealed record ChannelRow(
         string Name,
         IReadOnlyList<SignalPoint> MagnitudeDb,
+        IReadOnlyList<double>? Coherence,
         Label NameLabel,
         Label BandLabel,
         DarkComboBox TypeComboBox);
@@ -81,7 +82,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     public void Init(
         double sampleRateHz,
         IReadOnlyList<(string Name, Color Accent, IReadOnlyList<SignalPoint> MagnitudeDb,
-            DriverBandEstimate Band)> channels,
+            IReadOnlyList<double>? Coherence, DriverBandEstimate Band)> channels,
         IReadOnlyList<Complex[]>? impulseResponses = null)
     {
         this.sampleRateHz = sampleRateHz;
@@ -104,7 +105,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         for (int i = 0; i < channels.Count; i++)
         {
             (string name, Color accent, IReadOnlyList<SignalPoint> magnitude,
-                DriverBandEstimate band) = channels[i];
+                IReadOnlyList<double>? coherence, DriverBandEstimate band) = channels[i];
             int top = RowTop + i * RowStep;
 
             var nameLabel = new Label
@@ -146,7 +147,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             Controls.Add(nameLabel);
             Controls.Add(bandLabel);
             Controls.Add(typeComboBox);
-            rows.Add(new ChannelRow(name, magnitude, nameLabel, bandLabel, typeComboBox));
+            rows.Add(new ChannelRow(
+                name, magnitude, coherence, nameLabel, bandLabel, typeComboBox));
         }
 
         int extraRows = Math.Max(0, channels.Count - DesignRowCount);
@@ -212,7 +214,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
 
     // One wizard source per channel row, in the row (Init) order.
     private List<AutoSetupSource> CurrentSources() =>
-        rows.Select(row => new AutoSetupSource(row.MagnitudeDb, TypeOf(row))).ToList();
+        rows.Select(row => new AutoSetupSource(row.MagnitudeDb, TypeOf(row), row.Coherence))
+            .ToList();
 
     private DriverType TypeOf(ChannelRow row) =>
         row.TypeComboBox.SelectedItem is DriverType type ? type : DriverType.Woofer;
@@ -310,10 +313,12 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     private string FormatSummary(IReadOnlyList<CrossoverProposal> proposals)
     {
         List<AutoSetupSource> sources = CurrentSources();
+        AutoSetupSource lowSource = sources.OrderBy(source => source.Type).First();
+        AutoSetupSource highSource = sources.OrderBy(source => source.Type).Last();
         DriverBandEstimate low = CrossoverAutoSetup.EstimateBand(
-            sources.OrderBy(source => source.Type).First().MagnitudeDb);
+            lowSource.MagnitudeDb, lowSource.Coherence);
         DriverBandEstimate high = CrossoverAutoSetup.EstimateBand(
-            sources.OrderBy(source => source.Type).Last().MagnitudeDb);
+            highSource.MagnitudeDb, highSource.Coherence);
         double trim = Math.Pow(2.0, 0.5);
 
         var window = CrossoverAutoSetup

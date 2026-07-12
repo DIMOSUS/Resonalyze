@@ -1111,6 +1111,7 @@ public partial class VirtualCrossoverPanel : UserControl
         targetState.TransferPeakIndex = Math.Clamp(
             snapshot.TransferPeakIndex ?? 0, 0, transferIr.Length - 1);
         targetState.SampleRate = snapshot.SampleRate;
+        targetState.TransferCoherence = snapshot.TransferCoherence;
         targetSettings.DisplayName = displayName;
         targetSettings.SourceFilePath = sourceFilePath;
         targetSettings.HistoryEntryId = historyEntryId;
@@ -1222,6 +1223,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 state.TransferPeakIndex = Math.Clamp(
                     snapshot.TransferPeakIndex ?? 0, 0, transferIr.Length - 1);
                 state.SampleRate = snapshot.SampleRate;
+                state.TransferCoherence = snapshot.TransferCoherence;
             }
         }
         catch (Exception exception) when (!showErrors)
@@ -3621,7 +3623,8 @@ public partial class VirtualCrossoverPanel : UserControl
         // 1/3-octave smoothing, independent of the display smoothing.
         var wizardOptions = new FrequencyResponseOptions { SmoothingInverseOctaves = 3 };
         var dialogChannels = new List<(string Name, Color Accent,
-            IReadOnlyList<SignalPoint> MagnitudeDb, DriverBandEstimate Band)>();
+            IReadOnlyList<SignalPoint> MagnitudeDb, IReadOnlyList<double>? Coherence,
+            DriverBandEstimate Band)>();
         try
         {
             foreach (ChannelRuntime channel in participating)
@@ -3633,12 +3636,20 @@ public partial class VirtualCrossoverPanel : UserControl
                         channel.SampleRate),
                     wizardOptions,
                     Calibration);
+                // When the source carried per-bin coherence, resample it onto the
+                // magnitude curve's log grid so the band read discounts the
+                // frequencies the measurement did not trust.
+                IReadOnlyList<double>? coherence =
+                    channel.TransferCoherence is { Length: > 1 } linear
+                        ? CoherencePerPoint(linear, curve.Points, channel.SampleRate)
+                        : null;
                 OxyColor accent = ChannelColors[channels.IndexOf(channel)];
                 dialogChannels.Add((
                     $"{channel.Control.ChannelName} — {channel.Settings.DisplayName}",
                     Color.FromArgb(accent.R, accent.G, accent.B),
                     curve.Points,
-                    CrossoverAutoSetup.EstimateBand(curve.Points)));
+                    coherence,
+                    CrossoverAutoSetup.EstimateBand(curve.Points, coherence)));
             }
         }
         catch (ArgumentException exception)
@@ -3691,6 +3702,40 @@ public partial class VirtualCrossoverPanel : UserControl
 
         ScheduleSave();
         RedrawAll();
+    }
+
+    // Averages a measurement's per-bin coherence (γ², a linear FFT grid over
+    // [0, Nyquist], bin k → k · rate / (2·(len−1))) over each magnitude point's
+    // 1/3-octave band, so the result lines up 1:1 with the wizard's magnitude
+    // curve (which is itself 1/3-octave smoothed) for EstimateBand to consume.
+    private static IReadOnlyList<double> CoherencePerPoint(
+        double[] coherence,
+        IReadOnlyList<SignalPoint> points,
+        int sampleRate)
+    {
+        int fftLength = 2 * (coherence.Length - 1);
+        double lowFactor = Math.Pow(2.0, -1.0 / 6.0);
+        double highFactor = Math.Pow(2.0, 1.0 / 6.0);
+        var values = new double[points.Count];
+        for (int i = 0; i < points.Count; i++)
+        {
+            double frequency = points[i].X;
+            int lo = Math.Max(0, (int)Math.Floor(frequency * lowFactor * fftLength / sampleRate));
+            int hi = Math.Min(
+                coherence.Length - 1,
+                (int)Math.Ceiling(frequency * highFactor * fftLength / sampleRate));
+            double sum = 0;
+            int count = 0;
+            for (int bin = lo; bin <= hi; bin++)
+            {
+                sum += coherence[bin];
+                count++;
+            }
+
+            values[i] = count > 0 ? sum / count : 1.0;
+        }
+
+        return values;
     }
 
     // ---------------------------------------------------------------- session
@@ -3832,6 +3877,13 @@ public partial class VirtualCrossoverPanel : UserControl
         public Complex[]? TransferImpulseResponse { get; set; }
         public int TransferPeakIndex { get; set; }
         public int SampleRate { get; set; }
+
+        // The measurement's per-bin coherence (γ²) on the linear FFT grid, when
+        // the source carried it. Only the auto-crossover wizard reads it, to
+        // discount frequencies the measurement did not trust when reading each
+        // driver's usable band; null when the source had none.
+        public double[]? TransferCoherence { get; set; }
+
         public ProcessedChannelCache? ProcessedCache { get; set; }
 
         // The band-limited envelope arrival and gated band level of this
@@ -3860,6 +3912,7 @@ public partial class VirtualCrossoverPanel : UserControl
             TransferImpulseResponse = null;
             TransferPeakIndex = 0;
             SampleRate = 0;
+            TransferCoherence = null;
             ProcessedCache = null;
             ArrivalCache = null;
             SourceRevision++;
@@ -3916,6 +3969,11 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             get => Active.TransferPeakIndex;
             set => Active.TransferPeakIndex = value;
+        }
+        public double[]? TransferCoherence
+        {
+            get => Active.TransferCoherence;
+            set => Active.TransferCoherence = value;
         }
         public int SampleRate
         {

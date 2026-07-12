@@ -1402,7 +1402,11 @@ the magnitude curves, drawing on the same profiles configured in Record Settings
 it defaults to Off because the measurements are loopback-referenced.
 
 - **Auto crossover...** estimates each channel's usable band and driver type
-  (subwoofer, woofer, midbass, midrange, or tweeter), then asks which filter
+  (subwoofer, woofer, midbass, midrange, or tweeter) — the band read is the most
+  prominent contiguous segment of the response, and when the measurement carries
+  coherence (γ²), a frequency the measurement did not trust cannot anchor a band
+  edge, so a noisy or non-linear resonance can't stretch the band. It then asks
+  which filter
   families to allow (Butterworth / Linkwitz-Riley / Bessel), the
   crossover-frequency window, and whether the two sides of a junction may take
   independent slopes (with that off each driver's own high-pass and low-pass

@@ -264,6 +264,63 @@ public sealed class CrossoverAutoSetupTests
     }
 
     [Fact]
+    public void EstimateBand_UsesCoherenceToRejectAnIncoherentRegion()
+    {
+        // A driver with a real, coherent passband (100-300 Hz) plus a broad,
+        // LOUD but incoherent region up high (2-8 kHz, γ² 0.2 — a rattle, buzz,
+        // or a channel picking up another driver). By magnitude area alone the
+        // loud broad region wins, so without coherence the band is read there.
+        // With coherence it is gated out and the real band is chosen.
+        var mag = new List<SignalPoint>();
+        var coh = new List<double>();
+        foreach (double f in EqualizationCurve.LogFrequencyGrid(20, 20_000, 512))
+        {
+            double y;
+            double g;
+            if (f is >= 100 and <= 300)
+            {
+                (y, g) = (0.0, 0.9);
+            }
+            else if (f is >= 2_000 and <= 8_000)
+            {
+                (y, g) = (3.0, 0.2);
+            }
+            else
+            {
+                (y, g) = (-40.0, 0.2);
+            }
+
+            mag.Add(new SignalPoint(f, y));
+            coh.Add(g);
+        }
+
+        DriverBandEstimate noCoh = CrossoverAutoSetup.EstimateBand(mag);
+        Assert.InRange(noCoh.LowHz, 1_900, 2_100); // the loud incoherent region wins
+
+        DriverBandEstimate withCoh = CrossoverAutoSetup.EstimateBand(mag, coh);
+        Assert.InRange(withCoh.LowHz, 90, 110);
+        Assert.InRange(withCoh.HighHz, 250, 350); // the real coherent band
+
+        // A mismatched-length coherence is ignored, not trusted.
+        DriverBandEstimate mismatched = CrossoverAutoSetup.EstimateBand(mag, new[] { 0.9 });
+        Assert.Equal(noCoh.HighHz, mismatched.HighHz);
+    }
+
+    [Fact]
+    public void EstimateBand_CoherenceDoesNotChopACoherentBand()
+    {
+        // Guard against over-tightening: a clean band whose γ² stays above the
+        // floor everywhere must read identically with and without coherence.
+        var mag = BandCurve(100, 2_000, 0);
+        var coh = Enumerable.Repeat(0.95, mag.Count).ToList();
+
+        DriverBandEstimate noCoh = CrossoverAutoSetup.EstimateBand(mag);
+        DriverBandEstimate withCoh = CrossoverAutoSetup.EstimateBand(mag, coh);
+        Assert.Equal(noCoh.LowHz, withCoh.LowHz);
+        Assert.Equal(noCoh.HighHz, withCoh.HighHz);
+    }
+
+    [Fact]
     public void Propose_WooferToMidrange_KeepsTheCrossoverInTheWooferRange()
     {
         // Regression: a woofer whose measured response extends into the midband

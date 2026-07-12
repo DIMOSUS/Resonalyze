@@ -27,10 +27,16 @@ public sealed record DriverBandEstimate(
     double LevelDb,
     DriverType SuggestedType);
 
-/// <summary>One wizard input: a channel's raw magnitude curve and its (confirmed) driver type.</summary>
+/// <summary>
+/// One wizard input: a channel's raw magnitude curve and its (confirmed) driver
+/// type. <see cref="Coherence"/> is the optional per-point γ² (0..1), aligned
+/// 1:1 with <see cref="MagnitudeDb"/>; when supplied it lets the band estimate
+/// discount frequencies the measurement does not trust. Null when unavailable.
+/// </summary>
 public sealed record AutoSetupSource(
     IReadOnlyList<SignalPoint> MagnitudeDb,
-    DriverType Type);
+    DriverType Type,
+    IReadOnlyList<double>? Coherence = null);
 
 /// <summary>
 /// The proposed DSP starting point for one channel: the crossover filters and a
@@ -119,6 +125,13 @@ public static class CrossoverAutoSetup
     // level. 8 dB sits between the -6 dB textbook edge and the -10 dB the
     // remaining room ripple of a 1/3-octave-smoothed in-room curve asks for.
     private const double BandEdgeDropDb = 8.0;
+
+    // When per-point coherence is supplied to EstimateBand, a frequency whose
+    // γ² is below this cannot anchor a band edge — it is treated as out of band
+    // even if its magnitude clears the threshold. 0.5 matches the phase-unwrap
+    // coherence floor: below it the transfer estimate is dominated by noise or
+    // non-linearity (a breakup resonance, or plain out-of-band SNR).
+    private const double CoherenceFloor = 0.5;
 
     // The widest below-threshold gap EstimateBand bridges inside one band. A
     // driver's own passband can have a narrow interference or room null that
@@ -304,12 +317,30 @@ public static class CrossoverAutoSetup
     /// <summary>
     /// Reads the usable band from a (smoothed) magnitude curve and suggests the
     /// driver class. The reference is an upper percentile of the curve, robust
-    /// against both narrow room dips and single peaks.
+    /// against both narrow room dips and single peaks. When per-point coherence
+    /// is supplied (γ², aligned 1:1 with the magnitude points, 0..1), it is used
+    /// to discount frequencies the measurement does not trust: an incoherent
+    /// point cannot anchor a band edge, and each segment's prominence is weighted
+    /// by γ² — so a noisy or non-linear resonance (low γ²) cannot stretch the
+    /// band the way a genuine, coherent passband does. A null or mismatched-length
+    /// coherence is ignored.
     /// </summary>
-    public static DriverBandEstimate EstimateBand(IReadOnlyList<SignalPoint> magnitudeDb)
+    public static DriverBandEstimate EstimateBand(
+        IReadOnlyList<SignalPoint> magnitudeDb,
+        IReadOnlyList<double>? coherence = null)
     {
         ArgumentNullException.ThrowIfNull(magnitudeDb);
 
+        // Coherence is honoured only when it lines up 1:1 with the magnitude
+        // points; a mismatched length is treated as absent rather than trusted.
+        bool useCoherence = coherence != null && coherence.Count == magnitudeDb.Count;
+        double Gamma(int i) => useCoherence ? coherence![i] : 1.0;
+
+        // The reference is read from the whole curve (not just coherent points):
+        // for a narrow-band driver like a sub, the passband is a small slice of
+        // the log grid, and filtering the percentile down to it would track the
+        // peak and shrink the usable band — over-constraining the crossover. The
+        // 85th percentile is already robust to the out-of-band floor.
         var levels = magnitudeDb
             .Where(point => double.IsFinite(point.Y))
             .Select(point => point.Y)
@@ -325,13 +356,14 @@ public static class CrossoverAutoSetup
         double reference = levels[(int)(levels.Count * 0.85)];
         double threshold = reference - BandEdgeDropDb;
 
-        // Group the above-threshold points into contiguous segments, bridging a
-        // below-threshold gap only while it stays within MaxBandGapOctaves (a
-        // narrow interference/room null the driver's own band can have). The
-        // usable band is then the most PROMINENT segment — the one with the
-        // largest area above threshold, integrated over log-frequency — so an
-        // isolated resonance sitting past a deep dead gap cannot extend the band
-        // and mislabel the driver or skew the crossover bounds.
+        // Group the trusted, above-threshold points into contiguous segments,
+        // bridging a below-threshold gap only while it stays within
+        // MaxBandGapOctaves (a narrow interference/room null the driver's own
+        // band can have). The usable band is then the most PROMINENT segment —
+        // the one with the largest γ²-weighted area above threshold, integrated
+        // over log-frequency — so an isolated resonance past a deep dead gap, or
+        // an incoherent noisy region, cannot extend the band and mislabel the
+        // driver or skew the crossover bounds.
         double bestLow = double.NaN;
         double bestHigh = double.NaN;
         double bestArea = double.NegativeInfinity;
@@ -350,9 +382,11 @@ public static class CrossoverAutoSetup
             }
         }
 
-        foreach (SignalPoint point in magnitudeDb)
+        for (int i = 0; i < magnitudeDb.Count; i++)
         {
-            if (!double.IsFinite(point.Y) || point.Y < threshold)
+            SignalPoint point = magnitudeDb[i];
+            double g2 = Gamma(i);
+            if (!double.IsFinite(point.Y) || point.Y < threshold || g2 < CoherenceFloor)
             {
                 continue;
             }
@@ -372,7 +406,7 @@ public static class CrossoverAutoSetup
                 segLow = point.X;
             }
             segHigh = point.X;
-            segArea += point.Y - threshold;
+            segArea += (point.Y - threshold) * g2;
             lastAboveHz = point.X;
         }
         CloseSegment();
@@ -518,7 +552,8 @@ public static class CrossoverAutoSetup
         double ceiling = Math.Min(20_000, sampleRateHz * 0.49);
         for (int i = 0; i < n; i++)
         {
-            DriverBandEstimate band = EstimateBand(channels[i].MagnitudeDb);
+            DriverBandEstimate band = EstimateBand(
+                channels[i].MagnitudeDb, channels[i].Coherence);
             double low = proposals[i].HighPassEdge?.FrequencyHz ?? band.LowHz;
             double high = proposals[i].LowPassEdge?.FrequencyHz ?? Math.Min(band.HighHz, ceiling);
             if (high <= low)
@@ -1227,7 +1262,9 @@ public static class CrossoverAutoSetup
                 .ToArray();
             inputIndex = ordered.Select(item => item.index).ToArray();
             curves = ordered.Select(item => item.channel.MagnitudeDb).ToArray();
-            bands = ordered.Select(item => EstimateBand(item.channel.MagnitudeDb)).ToArray();
+            bands = ordered
+                .Select(item => EstimateBand(item.channel.MagnitudeDb, item.channel.Coherence))
+                .ToArray();
             types = ordered.Select(item => item.channel.Type).ToArray();
 
             grid = BuildGrid(options.SampleRateHz);

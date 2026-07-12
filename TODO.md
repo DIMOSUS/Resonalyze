@@ -620,6 +620,24 @@ re-verified.
   corrected band levels re-rank the flatness score slightly — woofer/mid 220 →
   250, tweeter 1750 → 1700 — while the 200 Hz search floor and the 200–230
   candidates stay in the top of the pool.
+- [x] **`EstimateBand` honours coherence when available (2026-07-12):** the band
+  read now takes optional per-point γ² (`AutoSetupSource.Coherence`, aligned 1:1
+  with the magnitude points). A frequency below `CoherenceFloor = 0.5` cannot
+  anchor a band edge, and each segment's prominence is γ²-weighted, so a noisy or
+  non-linear region (a breakup resonance, a channel picking up another driver)
+  cannot stretch the band the way a coherent passband does. Deliberately
+  conservative: the reference percentile still reads the whole curve (filtering
+  it to coherent points tracked the peak and shrank narrow-band drivers — a sub's
+  usable band collapsed 133 → 54 Hz, over-constraining its crossover), so on a
+  clean measurement coherence is a no-op. Validated on the real left 4-way: every
+  driver is γ² ≥ 0.5 across its passband, so all four bands are identical with and
+  without coherence — the gate only bites a genuinely untrusted measurement. Two
+  synthetic tests pin it (a loud incoherent region rejected; a coherent band not
+  chopped; mismatched-length coherence ignored). App plumbing (Windows-only,
+  needs a live check): `ChannelSideState.TransferCoherence` stored on source
+  resolve, resampled onto the wizard's 1/3-octave grid by `CoherencePerPoint`,
+  and threaded through the dialog into `AutoSetupSource`. App + App.Tests compile
+  clean under EnableWindowsTargeting.
 
 ### EQ Wizard
 

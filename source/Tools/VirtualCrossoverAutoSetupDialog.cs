@@ -308,6 +308,35 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         return $"{family}{edge.SlopeDbPerOctave}";
     }
 
+    // Every control whose value feeds TryPropose()/CurrentOptions(). Frozen
+    // while the ranking task runs, so the applied result always matches the
+    // settings the user sees; their change handlers would otherwise re-enable
+    // Apply and overwrite the progress text mid-ranking.
+    private IEnumerable<Control> RankingInputControls()
+    {
+        foreach (ChannelRow row in rows)
+        {
+            yield return row.TypeComboBox;
+        }
+
+        foreach ((CheckBox box, CrossoverFilterFamily _) in familyBoxes)
+        {
+            yield return box;
+        }
+
+        yield return minCrossover;
+        yield return maxCrossover;
+        yield return independentSlopes;
+    }
+
+    private void SetRankingInputsEnabled(bool enabled)
+    {
+        foreach (Control control in RankingInputControls())
+        {
+            control.Enabled = enabled;
+        }
+    }
+
     private async void ApplyClick(object? sender, EventArgs e)
     {
         IReadOnlyList<CrossoverProposal>? quick = TryPropose();
@@ -335,6 +364,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         IReadOnlyList<Complex[]> responses = impulseResponses;
         string previousPreview = labelPreview.Text;
         buttonApply.Enabled = false;
+        SetRankingInputsEnabled(false);
         labelPreview.Text = "Ranking candidates against the measured responses…";
         try
         {
@@ -359,6 +389,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
 
             labelPreview.Text = previousPreview;
             buttonApply.Enabled = true;
+            SetRankingInputsEnabled(true);
             System.Media.SystemSounds.Beep.Play();
         }
         catch (Exception exception)

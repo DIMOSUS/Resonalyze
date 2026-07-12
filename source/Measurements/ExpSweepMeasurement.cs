@@ -566,7 +566,7 @@ namespace Resonalyze
             private readonly WasapiCaptureDevice captureDevice;
             private readonly WasapiPlaybackDevice playbackDevice;
             private readonly PcmCaptureSession captureSession;
-            private bool started;
+            private readonly SweepRunAudioOrchestrator orchestrator;
             private int runNumber;
 
             public WasapiSweepCapture(ExpSweepMeasurement owner, ExponentialSineSweep sweep)
@@ -647,6 +647,7 @@ namespace Resonalyze
                     expectedSamples: sweep.SweepSamples + owner.SampleRate * 2);
                 captureSession.LevelsAvailable += channels => owner.RaiseLevels(
                     owner.MapWaveLevels(channels));
+                orchestrator = new SweepRunAudioOrchestrator(captureSession, playbackDevice);
             }
 
             public async Task<CapturedSweepSamples> CaptureRunAsync(
@@ -659,31 +660,14 @@ namespace Resonalyze
                 long renderUnderrunsBefore = playbackDevice.RenderUnderruns;
                 try
                 {
-                    if (!started)
-                    {
-                        await captureSession.StartAsync(cancellationToken).ConfigureAwait(false);
-                        started = true;
-                    }
-                    else
-                    {
-                        // WasapiCapture is not reliably restartable after StopRecording;
-                        // some drivers invalidate its MMDevice RCW. Keep capture alive
-                        // for the complete average and reset only the sample storage.
-                        captureSession.Reset();
-                    }
-                    int recordingStart = captureSession.ReadSamples;
                     RawSourceWaveStream stream = sweep.GetStream(owner.PlaybackChannel);
                     stream.Position = 0;
-                    stage = "starting playback";
-                    await playbackDevice.StartAsync(stream, cancellationToken).ConfigureAwait(false);
-                    stage = "waiting for playback completion";
-                    await playbackDevice.WaitForPlaybackEndAsync(cancellationToken).ConfigureAwait(false);
-
-                    stage = "waiting for the captured tail";
-                    int requiredSamples = recordingStart + sweep.SweepSamples + owner.SampleRate;
-                    await captureSession.WaitForSamplesAsync(requiredSamples, cancellationToken)
-                        .ConfigureAwait(false);
-                    float[][] samples = captureSession.GetSamplesSnapshot();
+                    stage = "running playback and capturing the tail";
+                    float[][] samples = await orchestrator.CaptureAsync(
+                        stream,
+                        sweep.SweepSamples,
+                        owner.SampleRate,
+                        cancellationToken).ConfigureAwait(false);
                     owner.LastAudioSessionDiagnostics = new AudioSessionDiagnostics(
                         owner.AudioBackend.ToString(),
                         captureDevice.EndpointId,
@@ -727,10 +711,6 @@ namespace Resonalyze
                 }
                 finally
                 {
-                    if (started)
-                    {
-                        await captureSession.StopAsync().ConfigureAwait(false);
-                    }
                     await captureSession.DisposeAsync().ConfigureAwait(false);
                 }
             }

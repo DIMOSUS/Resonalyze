@@ -183,6 +183,57 @@ public sealed class WasapiHardwareSmokeTests
         Assert.True(succeeded, measurement.LastError?.ToString());
     }
 
+    [Fact]
+    [Trait("Category", "Hardware")]
+    public async Task AbortedSweepReleasesEndpointsForImmediateReuse()
+    {
+        string? captureId = Environment.GetEnvironmentVariable(
+            "RESONALYZE_WASAPI_CAPTURE_ENDPOINT_ID");
+        string? renderId = Environment.GetEnvironmentVariable(
+            "RESONALYZE_WASAPI_RENDER_ENDPOINT_ID");
+        if (string.IsNullOrWhiteSpace(captureId) || string.IsNullOrWhiteSpace(renderId))
+        {
+            return;
+        }
+
+        int sampleRate;
+        using (var service = new WindowsAudioEndpointService())
+        {
+            sampleRate = Assert.Single(
+                service.GetCaptureEndpoints(), endpoint => endpoint.Id == captureId)
+                .MixFormat.SampleRate;
+        }
+
+        using (var measurement = new ExpSweepMeasurement())
+        {
+            measurement.Init(
+                16,
+                sampleRate,
+                24,
+                5.0,
+                PlaybackChannel.Right,
+                audioBackend: AudioBackend.WasapiShared,
+                waveInputChannelOffset: 0,
+                waveLoopbackInputChannelOffset: 1,
+                wasapiCaptureEndpointId: captureId,
+                wasapiRenderEndpointId: renderId,
+                wasapiBufferMilliseconds: 100);
+
+            Task<bool> running = measurement.RunAsync();
+            await Task.Delay(500);
+            await measurement.AbortAsync();
+
+            Assert.False(await running);
+            Assert.Null(measurement.LastError);
+            Assert.False(measurement.InProgress);
+        }
+
+        await using var capture = new WasapiCaptureDevice(captureId, 100);
+        await using var render = new WasapiPlaybackDevice(renderId, 100);
+        Assert.True(capture.ChannelCount > 0);
+        Assert.True(render.PlaybackFormat.SampleRate > 0);
+    }
+
     [Theory]
     [InlineData(AudioBackend.WasapiShared)]
     [InlineData(AudioBackend.WasapiExclusive)]

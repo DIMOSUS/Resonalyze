@@ -231,11 +231,13 @@ public sealed class WasapiPlaybackDevice : IAudioPlaybackDevice
             throw new InvalidOperationException("WASAPI render is not initialized.");
         int byteCount = checked(frames * format.BlockAlign);
         var buffer = new byte[byteCount];
-        int bytesRead = initializedSource?.Read(buffer, 0, byteCount) ?? 0;
+        IWaveProvider source = initializedSource ??
+            throw new InvalidOperationException("WASAPI render source is not initialized.");
+        AudioRenderBufferRead read = AudioRenderBufferReader.Fill(source, buffer);
         IntPtr destination = render.GetBuffer(frames);
         try
         {
-            if (bytesRead > 0)
+            if (read.BytesRead > 0)
             {
                 // The last source read can be shorter than the WASAPI buffer.
                 // Copy the zero-initialized tail too so no stale device-buffer
@@ -249,9 +251,9 @@ public sealed class WasapiPlaybackDevice : IAudioPlaybackDevice
         {
             render.ReleaseBuffer(
                 frames,
-                bytesRead == 0 ? AudioClientBufferFlags.Silent : AudioClientBufferFlags.None);
+                read.BytesRead == 0 ? AudioClientBufferFlags.Silent : AudioClientBufferFlags.None);
         }
-        return bytesRead == byteCount;
+        return !read.SourceEnded;
     }
 
     public async ValueTask DisposeAsync()

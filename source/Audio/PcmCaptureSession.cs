@@ -1,6 +1,6 @@
 namespace Resonalyze;
 
-public sealed class PcmCaptureSession : IAsyncDisposable
+public sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
 {
     private readonly object sync = new();
     private readonly IAudioCaptureDevice device;

@@ -65,8 +65,10 @@ internal sealed class MeasurementPlotContext
     // Magnitude comes from the transfer IR (referenced by loopback, free of DAC/amp
     // colouration); harmonic distortion comes from the sweep deconvolution, whose
     // linear packet is the denominator every HDn/THD ratio is measured against.
-    // Twice the primary's fractional-octave width: harmonic curves are noisier.
-    private const double HarmonicSmoothingWidthFactor = 2.0;
+    // The harmonic curves are smoothed at the SAME fractional-octave width the user
+    // picked for the primary response, so HD2..HDn read at the same resolution as
+    // HD1 rather than looking heavily blurred beside it.
+    private const double HarmonicSmoothingWidthFactor = 1.0;
 
     /// <summary>
     /// Isolation warnings from the last frequency-response build: an order dropped

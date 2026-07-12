@@ -157,6 +157,98 @@ public sealed class EssDistortionTests
         Assert.Contains(hd2.Points, p => p.X < 2_000 && double.IsFinite(p.Y));
     }
 
+    // A log-frequency grid spanning [low, high] with `count` points.
+    private static double[] LogGrid(double low, double high, int count)
+    {
+        double[] f = new double[count];
+        double logLow = Math.Log(low);
+        double logHigh = Math.Log(high);
+        for (int i = 0; i < count; i++)
+        {
+            f[i] = Math.Exp(logLow + (logHigh - logLow) * i / (count - 1));
+        }
+
+        return f;
+    }
+
+    [Fact]
+    public void SmoothOctaves_ImpulseFwhmEqualsTheRequestedWidth()
+    {
+        // The width is a fractional-octave FWHM, not a Gaussian sigma. Smoothing a
+        // single-bin spike must produce a bump whose full width at half maximum is
+        // the requested width (here 1/3 octave), NOT ~2.35x that — the bug that made
+        // a 1/12 setting blur across a whole octave.
+        const double width = 1.0 / 3.0;
+        double[] f = LogGrid(100, 10_000, 2_048);
+        double[] db = new double[f.Length];
+        int center = f.Length / 2;
+        db[center] = 10.0;
+
+        double[] smoothed = EssDistortion.SmoothOctaves(f, db, width);
+
+        double peak = smoothed[center];
+        Assert.True(peak > 0.0);
+        int left = center;
+        while (left > 0 && smoothed[left] > peak / 2.0)
+        {
+            left--;
+        }
+
+        int right = center;
+        while (right < f.Length - 1 && smoothed[right] > peak / 2.0)
+        {
+            right++;
+        }
+
+        double fwhmOctaves = Math.Log2(f[right] / f[left]);
+        Assert.InRange(fwhmOctaves, width * 0.85, width * 1.15);
+    }
+
+    [Fact]
+    public void SmoothOctaves_TwelfthOctaveStaysLocalNotAnOctaveWide()
+    {
+        // A 1/12-octave smooth must leave a spike essentially gone half an octave
+        // away — the visible symptom the user reported (harmonics blurred beside
+        // HD1) was a spike spreading across a full octave.
+        double[] f = LogGrid(100, 10_000, 4_096);
+        double[] db = new double[f.Length];
+        int center = f.Length / 2;
+        db[center] = 12.0;
+
+        double[] smoothed = EssDistortion.SmoothOctaves(f, db, 1.0 / 12.0);
+
+        int halfOctaveAway = center;
+        while (halfOctaveAway < f.Length - 1 &&
+            Math.Log2(f[halfOctaveAway] / f[center]) < 0.5)
+        {
+            halfOctaveAway++;
+        }
+
+        Assert.True(
+            smoothed[halfOctaveAway] < smoothed[center] * 0.01,
+            $"a 1/12-octave smooth still had {smoothed[halfOctaveAway]:0.000} dB half an octave from a {smoothed[center]:0.0} dB peak");
+    }
+
+    [Fact]
+    public void SmoothOctaves_PreservesNaNGapsAndNoOpAtZeroWidth()
+    {
+        double[] f = LogGrid(100, 10_000, 256);
+        double[] db = new double[f.Length];
+        for (int i = 0; i < db.Length; i++)
+        {
+            db[i] = 3.0;
+        }
+
+        db[100] = double.NaN;
+
+        double[] noOp = EssDistortion.SmoothOctaves(f, db, 0.0);
+        Assert.Equal(db, noOp);
+
+        double[] smoothed = EssDistortion.SmoothOctaves(f, db, 1.0 / 6.0);
+        Assert.True(double.IsNaN(smoothed[100]), "a masked bin must stay a gap");
+        Assert.False(double.IsNaN(smoothed[101]), "a valid neighbour must stay finite");
+    }
+
     private static int NearestGridIndex(double[] frequencies, double target)
     {
         int best = 0;

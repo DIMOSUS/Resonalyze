@@ -417,6 +417,18 @@ re-verified.
 
 ### Harmonics / THD
 
+- [x] **Harmonic curves were over-smoothed vs HD1 (user report 2026-07-12):** at
+  1/12 the HD2..HDn/THD/noise curves looked blurred across a whole octave beside the
+  fundamental. Two stacked causes: (1) `EssDistortion.BuildDbCurve` used the octave
+  value as the Gaussian **sigma**, so its ±3σ support was ~6× the nominal width —
+  the primary response instead treats 1/N as a fractional-octave **window width**;
+  (2) an extra `HarmonicSmoothingWidthFactor = 2.0`. Fixed: the smoothing now
+  interprets the value as an FWHM (sigma = width / 2·√(2·ln2)) via the extracted,
+  unit-tested `EssDistortion.SmoothOctaves`, and the app factor is 1.0 so harmonics
+  read at the SAME resolution the user picked for HD1. New dsp tests pin the FWHM
+  equals the requested width, that a 1/12 smooth is essentially gone half an octave
+  from a spike, and NaN-gap/zero-width behaviour. 505 dsp tests pass. *Windows
+  follow-up:* eyeball the HD curves at 1/12.
 - [x] ★ **THD+N was not THD+N: one FFT over the HD2..HD5 region summed the
   packets complex-wise** (phase-dependent) — reworked (2026-07-12). A new pure DSP
   layer (`EssHarmonicAnalysis` + `EssDistortion`) isolates each harmonic order in

@@ -14,6 +14,8 @@ public sealed record DistortionOptions(
     int GridPoints = 1024,
     double MaxDenominatorDropDb = 45.0,
     double FadeFraction = 0.5,
+    // Fractional-octave smoothing WIDTH (FWHM), e.g. 1/12 for 1/12-octave — the
+    // same convention as the primary response. 0 disables smoothing.
     double SmoothingOctaves = 0.0,
     bool IncludeNoise = false,
     int NoiseWindowLength = 8_192,
@@ -433,28 +435,53 @@ public static class EssDistortion
                 : double.NaN;
         }
 
+        double[] smoothed = SmoothOctaves(frequencies, db, smoothingOctaves);
         var points = new List<SignalPoint>(count);
-        if (smoothingOctaves <= 0.0 || count < 2)
+        for (int i = 0; i < count; i++)
         {
-            for (int i = 0; i < count; i++)
-            {
-                points.Add(new SignalPoint(frequencies[i], db[i]));
-            }
-
-            return points;
+            points.Add(new SignalPoint(frequencies[i], smoothed[i]));
         }
 
+        return points;
+    }
+
+    /// <summary>
+    /// NaN-aware fractional-octave Gaussian smooth of a dB curve on a
+    /// log-frequency grid. <paramref name="widthOctaves"/> is a fractional-octave
+    /// WINDOW WIDTH (the same 1/N the primary response uses, e.g. 1/12), not a
+    /// Gaussian sigma: it is the full width at half maximum, so a "1/12-octave"
+    /// smooth resolves detail at 1/12 octave rather than blurring across a whole
+    /// octave. Masked points (NaN) stay NaN and are never used as neighbours, so a
+    /// gap where a harmonic is unobservable is preserved rather than filled. A
+    /// width &lt;= 0 returns the input unchanged.
+    /// </summary>
+    public static double[] SmoothOctaves(
+        double[] frequencies,
+        double[] db,
+        double widthOctaves)
+    {
+        ArgumentNullException.ThrowIfNull(frequencies);
+        ArgumentNullException.ThrowIfNull(db);
+
+        int count = frequencies.Length;
+        double[] output = new double[count];
+        if (widthOctaves <= 0.0 || count < 2)
+        {
+            Array.Copy(db, output, count);
+            return output;
+        }
+
+        // FWHM = 2·sqrt(2·ln2)·sigma, so convert the requested window width to the
+        // Gaussian sigma that has that width at half maximum.
+        const double fwhmToSigma = 2.354820045;
+        double sigmaOctaves = widthOctaves / fwhmToSigma;
         double octavesPerStep =
             (Math.Log2(frequencies[^1]) - Math.Log2(frequencies[0])) / (count - 1);
-        double sigmaIndices = octavesPerStep > 0.0 ? smoothingOctaves / octavesPerStep : 0.0;
+        double sigmaIndices = octavesPerStep > 0.0 ? sigmaOctaves / octavesPerStep : 0.0;
         if (sigmaIndices <= 0.0)
         {
-            for (int i = 0; i < count; i++)
-            {
-                points.Add(new SignalPoint(frequencies[i], db[i]));
-            }
-
-            return points;
+            Array.Copy(db, output, count);
+            return output;
         }
 
         int radius = (int)Math.Ceiling(3.0 * sigmaIndices);
@@ -466,7 +493,7 @@ public static class EssDistortion
             // where the harmonic is unobservable.
             if (!double.IsFinite(db[i]))
             {
-                points.Add(new SignalPoint(frequencies[i], double.NaN));
+                output[i] = double.NaN;
                 continue;
             }
 
@@ -487,11 +514,9 @@ public static class EssDistortion
                 weightSum += weight;
             }
 
-            points.Add(new SignalPoint(
-                frequencies[i],
-                weightSum > 0.0 ? accumulator / weightSum : double.NaN));
+            output[i] = weightSum > 0.0 ? accumulator / weightSum : double.NaN;
         }
 
-        return points;
+        return output;
     }
 }

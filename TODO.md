@@ -167,9 +167,14 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   let the two sides diverge (e.g. left mid flipped, right tweeter flipped). LR sums
   in-phase, so it never diverged. Fixed by making polarity a property of the DRIVER,
   not the side: (1) each right channel below the bridge INHERITS its left counterpart's
-  sign (via `PairLinks`) and searches only the delay (`AlignChannelAtJunction` gained a
-  `forcedPolarity` that filters candidates to the inherited sign and stamps it even in a
-  window that held only the other sign); (2) the bridge now decides the single global
+  sign (via `PairLinks`) and searches only the delay — `forcedPolarity` is threaded all
+  the way into `FindAlignmentCandidates`/`SearchAlignmentCandidatesByLoss`, which then
+  seed ONLY that polarity's grid, so every candidate is honestly evaluated for the final
+  sign (delay AND score belong to it). *(Review fix: the first cut instead re-stamped the
+  opposite polarity's winner via `with { InvertPolarity }`, keeping a delay ~half a period
+  off and a borrowed score that could even win the wide-window promotion — corrected, with
+  a regression test asserting the forced winner is the genuine same-sign optimum.)*
+  (2) the bridge now decides the single global
   L/R top flip by bridge-band SUM LOSS (robust, and safe because the delay is pinned)
   with a `BridgePolarityMarginDb = 0.5` margin, falling to the first-lobe signs only on
   a near-tie and to "kept matched" when neither is confident — the noisy sign-read is no

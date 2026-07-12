@@ -357,23 +357,6 @@ public static class AutoAlignmentEngine
         // both junctions constrain the channel.
         double anchorMs = priorOverrideMs ?? (primaryBase + secondaryBase) / 2.0;
 
-        // Selects the delay from a candidate list. When the polarity is inherited
-        // from the stereo counterpart, the search only chooses the DELAY: candidates
-        // of the inherited sign are selected among, and the sign is stamped on the
-        // winner even in the rare window that held only the other sign — so the two
-        // sides can never disagree on a driver's polarity.
-        AlignmentCandidate Pick(IReadOnlyList<AlignmentCandidate> items)
-        {
-            if (forcedPolarity is not bool want)
-            {
-                return AlignmentSelection.Select(items, anchorMs);
-            }
-
-            var kept = items.Where(item => item.InvertPolarity == want).ToList();
-            AlignmentCandidate selected = AlignmentSelection.Select(
-                kept.Count > 0 ? kept : items, anchorMs);
-            return selected with { InvertPolarity = want };
-        }
 
         // One junction search: candidates of the prior-penalized loss score in
         // a window spanning the coarse base(s) (the PHAT-seeded timeline,
@@ -430,7 +413,8 @@ public static class AutoAlignmentEngine
                     windowLowMs,
                     windowHighMs,
                     priorDelayMs: anchorMs,
-                    priorSigmaMs: (windowHighMs - windowLowMs) / 4.0);
+                    priorSigmaMs: (windowHighMs - windowLowMs) / 4.0,
+                    forcedPolarity: forcedPolarity);
             return (candidates, windowLowMs, windowHighMs);
         }
 
@@ -457,7 +441,7 @@ public static class AutoAlignmentEngine
                     $"dip {item.DipDb:0.0} dB)")));
 
             AlignmentCandidate chosen = candidates.Count > 0
-                ? Pick(candidates)
+                ? AlignmentSelection.Select(candidates, anchorMs)
                 : new AlignmentCandidate(anchorMs, forcedPolarity ?? false, 0);
             if (candidates.Count > 0 && chosen != candidates[0])
             {
@@ -503,7 +487,7 @@ public static class AutoAlignmentEngine
                     // taking retried[0] raw would let the widened window hand
                     // the result to a (flip + half-period) impostor that the
                     // invert margin and the arrival tie-break exist to reject.
-                    chosen = Pick(retried);
+                    chosen = AlignmentSelection.Select(retried, anchorMs);
                 }
 
                 log.AppendLine(
@@ -523,7 +507,7 @@ public static class AutoAlignmentEngine
             if (wide.Count > 0 && sceneLockToleranceMs == null)
             {
                 AlignmentCandidate wideChosen =
-                    Pick(wide);
+                    AlignmentSelection.Select(wide, anchorMs);
                 if (wideChosen.ScoreDb > chosen.ScoreDb + WideWindowPromotionMarginDb)
                 {
                     log.AppendLine(

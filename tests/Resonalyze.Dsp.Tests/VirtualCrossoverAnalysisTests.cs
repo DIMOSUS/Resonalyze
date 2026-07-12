@@ -650,6 +650,52 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void FindAlignmentCandidates_ForcedPolarityReturnsThatSignHonestlyScored()
+    {
+        // The stereo polarity-inheritance path forces a driver's sign to match its
+        // counterpart's. Forcing must generate ONLY that polarity's grid, so every
+        // candidate is a genuine optimum of that sign — its delay and score belong
+        // to it. Regression against the earlier fake: taking the opposite polarity's
+        // winner and merely re-stamping its InvertPolarity bit, which kept a delay
+        // (~half a period off) and a score that were never evaluated for the sign.
+        Complex[] woofer = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(16_384, 400),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.LowPass,
+                new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_300, 24))),
+            SampleRate);
+        Complex[] tweeter = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(16_384, 400),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.HighPass,
+                HighPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.Butterworth, 1_800, 24))),
+            SampleRate);
+
+        IReadOnlyList<AlignmentCandidate> free =
+            VirtualCrossoverAnalysis.FindAlignmentCandidates(
+                tweeter, [woofer], SampleRate, 650, 2_600, -1.5, 1.5);
+        IReadOnlyList<AlignmentCandidate> forced =
+            VirtualCrossoverAnalysis.FindAlignmentCandidates(
+                tweeter, [woofer], SampleRate, 650, 2_600, -1.5, 1.5,
+                forcedPolarity: true);
+
+        // Only the forced sign is returned.
+        Assert.NotEmpty(forced);
+        Assert.All(forced, candidate => Assert.True(candidate.InvertPolarity));
+
+        // The forced winner IS the free search's inverted optimum — same delay and
+        // score, honestly evaluated — not the (winning) normal candidate re-stamped.
+        AlignmentCandidate freeInverted = free.First(item => item.InvertPolarity);
+        AlignmentCandidate freeNormal = free.First(item => !item.InvertPolarity);
+        Assert.Equal(freeInverted.DelayMs, forced[0].DelayMs, 3);
+        Assert.Equal(freeInverted.ScoreDb, forced[0].ScoreDb, 3);
+        Assert.True(
+            Math.Abs(forced[0].DelayMs - freeNormal.DelayMs) > 0.05,
+            "the forced-inverted delay must be the inverted optimum, not the normal one's");
+    }
+
+    [Fact]
     public void FindAlignmentCandidates_DipExcessOutranksASlightlyBetterAverage()
     {
         // An asymmetric junction (LR 12 dB high-pass vs Butterworth 48 dB

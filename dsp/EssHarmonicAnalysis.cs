@@ -92,10 +92,14 @@ public sealed record HarmonicWindowDefinition(
 }
 
 /// <summary>
-/// A windowed segment's complex spectrum together with everything needed to read
-/// a physical tone amplitude from it independent of window length, window shape
-/// and zero-padding. The single normalization contract every harmonic packet
-/// passes through, so H1 and every Hn are directly comparable.
+/// A harmonic packet's complex spectrum. A packet is a CONTAINED impulse response
+/// (the linear or an harmonic IR), isolated by a unity-plateau window that covers
+/// it: over the plateau the window is 1, so the FFT magnitude IS the packet's
+/// transfer magnitude directly. That is why <see cref="AmplitudeAt"/> reads the
+/// raw magnitude — no coherent-gain division (which is the TONE normalization and
+/// would make |Hn|/|H1| depend on the two windows' lengths). Reading the plateau
+/// magnitude makes the ratio window-length independent, so HDn is an honest ratio.
+/// <see cref="WindowCoherentGain"/> is retained for diagnostics only.
 /// </summary>
 public sealed record WindowedSpectrum(
     Complex[] Bins,
@@ -105,19 +109,19 @@ public sealed record WindowedSpectrum(
     double SampleRateHz)
 {
     /// <summary>
-    /// The physical amplitude of a tone landing on <paramref name="bin"/>.
-    /// Under the Matlab FFT convention a windowed tone of amplitude A produces a
-    /// bin magnitude A·(Σw)/2, so 2·|bin|/Σw recovers A regardless of the window
-    /// length or the zero-pad factor (both fold into Σw / the interpolated grid).
+    /// The packet's transfer magnitude at <paramref name="bin"/>. For an IR sitting
+    /// under the window plateau the windowed FFT equals the IR's DFT, so the raw
+    /// magnitude is the right quantity and it is independent of the window length,
+    /// window shape and zero-pad factor — the invariant that makes |Hn|/|H1| exact.
     /// </summary>
     public double AmplitudeAt(int bin)
     {
-        if (WindowCoherentGain <= 0.0 || (uint)bin >= (uint)Bins.Length)
+        if ((uint)bin >= (uint)Bins.Length)
         {
             return 0.0;
         }
 
-        return 2.0 * Bins[bin].Magnitude / WindowCoherentGain;
+        return Bins[bin].Magnitude;
     }
 
     public double BinFrequencyHz(int bin) => bin * SampleRateHz / FftLength;

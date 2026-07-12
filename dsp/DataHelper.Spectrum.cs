@@ -8,26 +8,6 @@ namespace Resonalyze.Dsp
 {
     public static partial class DataHelper
     {
-        // Harmonic isolation geometry, expressed in harmonic-number space because
-        // HarmonicIROffset(h) maps a (fractional) harmonic number to the IR index
-        // where that distortion packet sits — the offset grows with h, so a larger
-        // number is an earlier sample. An HDn packet is windowed from a hair above
-        // its own harmonic (n + guard, the earliest edge) down to halfway toward
-        // the next-lower harmonic (n - half), which brackets the packet while
-        // excluding its neighbours.
-        private const double HarmonicWindowUpperGuard = 0.03;
-        private const double HarmonicWindowLowerReach = 0.5;
-
-        // THD+N integrates everything from just below the fundamental (1.5, halfway
-        // between the linear response and HD2) up past the fifth harmonic (5.5),
-        // capturing HD2..HD5 plus the noise between them in one window.
-        private const double ThdWindowLowerHarmonic = 1.5;
-        private const double ThdWindowUpperHarmonic = 5.5;
-
-        // Harmonic and THD curves are far noisier than the primary response, so
-        // they are smoothed over twice the primary's fractional-octave width.
-        private const double HarmonicSmoothingWidthFactor = 2.0;
-
         public static List<SignalPoint> GetSpectrumData(
             IImpulseMeasurement measurement,
             int start,
@@ -79,6 +59,13 @@ namespace Resonalyze.Dsp
             return new AnalysisCurve("Frequency Response", data);
         }
 
+        /// <summary>
+        /// The primary (linear) response curve for the requested set. Only
+        /// <see cref="SpectrumCurves.Primary"/> is honoured here; harmonic and THD
+        /// curves are produced by <see cref="EssDistortion"/> from the sweep
+        /// deconvolution, which carries the harmonic packets and normalizes every
+        /// order against the same linear packet.
+        /// </summary>
         public static IReadOnlyList<AnalysisCurve> GetSpectrum(
             IImpulseMeasurement measurement,
             FrequencyResponseOptions frequencyResponseOptions,
@@ -86,123 +73,12 @@ namespace Resonalyze.Dsp
             SpectrumCurves curves)
         {
             var result = new List<AnalysisCurve>();
-            int peakIndex = measurement.PeakIndex;
-
-            // The caller decides which curves to compute; visibility flags and any
-            // computational scoping are already folded into this set.
-            bool wantHd2 = (curves & SpectrumCurves.SecondHarmonic) != 0;
-            bool wantHd3 = (curves & SpectrumCurves.ThirdHarmonic) != 0;
-            bool wantHd4 = (curves & SpectrumCurves.FourthHarmonic) != 0;
-            bool wantThd = (curves & SpectrumCurves.ThdPlusNoise) != 0;
-
             if ((curves & SpectrumCurves.Primary) != 0)
             {
                 result.Add(GetPrimarySpectrum(
                     measurement,
                     frequencyResponseOptions,
                     calibration));
-            }
-
-            if (!wantHd2 && !wantHd3 && !wantHd4 && !wantThd)
-            {
-                return result;
-            }
-
-            for (int h = 2; h < 5; h++)
-            {
-                bool wanted = h switch
-                {
-                    2 => wantHd2,
-                    3 => wantHd3,
-                    _ => wantHd4
-                };
-                if (!wanted)
-                {
-                    continue;
-                }
-
-                int peak = peakIndex - (int)measurement.HarmonicIROffset(h);
-
-                int hStart = peakIndex - (int)measurement.HarmonicIROffset(h + HarmonicWindowUpperGuard);
-                int hEnd = peakIndex - (int)measurement.HarmonicIROffset(h - HarmonicWindowLowerReach);
-                int hLength = hEnd - hStart;
-
-                int leftOffset = peak - hStart;
-
-                double leftTukeyWindow = (double)leftOffset / hLength * 2.0;
-                double rightTukeyWindow = 0.5;
-                double[] window = Windowing.TukeyWindow(hLength, leftTukeyWindow, rightTukeyWindow);
-
-                var data = GetOversampledSpectrumData(measurement, hStart, window);
-
-                // Microphone calibration belongs to the ACTUAL acoustic
-                // frequency of the harmonic (n·f), so it is applied before the
-                // axis moves to the fundamental.
-                if (frequencyResponseOptions.UseCalibration && calibration != null)
-                {
-                    for (int i = 0; i < data.Count; i++)
-                    {
-                        data[i] = new SignalPoint(
-                            data[i].X,
-                            data[i].Y - calibration.GetDecibelCorrection(data[i].X));
-                    }
-                }
-
-                // An HDn bin at output frequency F was excited by the sweep
-                // fundamental at F/n. The standard distortion axis is the
-                // EXCITATION frequency (an HD2 hump caused by a 1 kHz drive
-                // draws at 1 kHz, not at its 2 kHz product), so the curve is
-                // remapped onto the fundamental — and can only reach
-                // Nyquist/n, where the product hits Nyquist.
-                for (int i = 0; i < data.Count; i++)
-                {
-                    data[i] = new SignalPoint(data[i].X / h, data[i].Y);
-                }
-
-                data = LogarithmicResample(
-                    data,
-                    20,
-                    Math.Min(20_000.0, measurement.SampleRate * 0.5 / h),
-                    1024,
-                    calibration: null,
-                    frequencyResponseOptions.SmoothingInverseOctaves > 0
-                        ? HarmonicSmoothingWidthFactor / frequencyResponseOptions.SmoothingInverseOctaves
-                        : 0.0);
-                result.Add(new AnalysisCurve(
-                    $"HD{h}",
-                    data,
-                    h switch
-                    {
-                        2 => AnalysisCurveKind.SecondHarmonic,
-                        3 => AnalysisCurveKind.ThirdHarmonic,
-                        _ => AnalysisCurveKind.FourthHarmonic
-                    }));
-            }
-
-            if (wantThd)
-            {
-                int hStart = peakIndex - (int)measurement.HarmonicIROffset(ThdWindowUpperHarmonic);
-                int hEnd = peakIndex - (int)measurement.HarmonicIROffset(ThdWindowLowerHarmonic);
-                int hLength = hEnd - hStart;
-
-                double leftTukeyWindow = 0.05;
-                double rightTukeyWindow = 0.05;
-                double[] window = Windowing.TukeyWindow(hLength, leftTukeyWindow, rightTukeyWindow);
-
-                var data = GetOversampledSpectrumData(measurement, hStart, window);
-                data = LogarithmicResample(
-                    data,
-                    20,
-                    20000,
-                    1024,
-                    frequencyResponseOptions.UseCalibration ? calibration : null,
-                    frequencyResponseOptions.SmoothingInverseOctaves > 0
-                        ? HarmonicSmoothingWidthFactor / frequencyResponseOptions.SmoothingInverseOctaves
-                        : 0.0);
-                result.Add(new AnalysisCurve(
-                    "THD+N",
-                    data,
-                    AnalysisCurveKind.ThdPlusNoise));
             }
 
             return result;

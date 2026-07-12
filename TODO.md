@@ -417,24 +417,35 @@ re-verified.
 
 ### Harmonics / THD
 
-- [ ] ★ **THD+N is not THD+N: one FFT over the HD2..HD5 region sums the
-  packets complex-wise** (phase-dependent, shifts change the result without
-  changing energy). Fix: per-harmonic windows → per-harmonic spectra → move
-  each onto the fundamental axis → sum energies; estimate noise separately and
-  add it in energy. (The HDn display axis itself is fixed: curves now draw at
-  the excitation frequency with calibration applied at the product frequency.)
-- [ ] ★ **Harmonic curves and the primary curve have different reference
-  levels** (sweep-deconvolution amplitude vs mic/loopback transfer), so their
-  vertical distance is not a distortion percentage. Fix: HDn relative to the
-  H1 linear packet of the *same* ESS decomposition; the transfer H1 stays as
-  the primary display curve.
+- [x] ★ **THD+N was not THD+N: one FFT over the HD2..HD5 region summed the
+  packets complex-wise** (phase-dependent) — reworked (2026-07-12). A new pure DSP
+  layer (`EssHarmonicAnalysis` + `EssDistortion`) isolates each harmonic order in
+  its OWN plateau window, computes each packet's spectrum, maps each onto the
+  excitation axis, and sums the harmonics' ENERGY (√Σ|Hn|²) on a common
+  log-frequency grid — never a complex sum of one shared window. The curve is now
+  honestly named **THD** (not THD+N); a validated noise estimate is deferred (see
+  next item), and the label reverts to THD+N only once that lands.
+- [x] ★ **Harmonic curves and the primary curve had different reference levels** —
+  fixed (2026-07-12). HDn is now `|Hn|/|H1|` against the linear packet of the SAME
+  ESS decomposition (a contained IR read under a unity plateau, so the ratio is
+  window-length independent), drawn against excitation frequency with calibration
+  applied at each product frequency n·f (so a C(n·f)−C(f) difference is honoured);
+  a denominator floor masks a collapsing |H1| to NaN instead of a runaway percent.
+  The loopback transfer stays the primary display curve. Validated by an
+  end-to-end polynomial ESS test (below); real captures can't validate this (the
+  test-data submodule stores only transfer IRs, which carry no harmonic packets).
 - [ ] **No overlap check between harmonic packets.** Long decay (bass, short
   sweeps, car cabins) leaks one packet's tail into the next window; the curves
   stay confident-looking. Fix: compute the available separation and warn when
-  energy near the window edge has not fallen by a set margin.
-- [ ] **No end-to-end ESS nonlinearity test.** The isolation test pins window
-  geometry only. Fix: y = x + a2·x² + a3·x³ through a real ESS +
-  deconvolution, assert HD2/HD3 frequency and level against the known a2/a3.
+  energy near the window edge has not fallen by a set margin. (Next commit of the
+  harmonic rework; the per-order window geometry it needs is already in place.)
+- [x] **No end-to-end ESS nonlinearity test** — added (2026-07-12).
+  `EssPolynomialDistortionTests` drives a real generated ESS through
+  `y = x + a2·x² + a3·x³`, deconvolves with the production inverse filter, and
+  asserts HD2/HD3 land in the right packets, are drawn against excitation
+  frequency, stop at Nyquist/order, match the levels the trig expansion predicts
+  (g1 = 1+3a3/4, H2 = a2/2, H3 = a3/4), and are invariant to a recording time
+  shift. This is what caught (and pins the fix for) the tone-vs-IR normalization.
 
 ### Auto Crossover
 

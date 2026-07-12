@@ -63,15 +63,16 @@ internal sealed class MeasurementPlotContext
     }
 
     // Magnitude comes from the transfer IR (referenced by loopback, free of DAC/amp
-    // colouration); harmonics and THD+N come from the sweep deconvolution, which is the
-    // only representation that carries the harmonic time offsets.
+    // colouration); harmonic distortion comes from the sweep deconvolution, whose
+    // linear packet is the denominator every HDn/THD ratio is measured against.
+    // Twice the primary's fractional-octave width: harmonic curves are noisier.
+    private const double HarmonicSmoothingWidthFactor = 2.0;
+
     public IReadOnlyList<AnalysisCurve> CreateFrequencyResponseCurves(
         FrequencyResponseOptions options,
         CalibrationFile? calibration,
         SpectrumCurves curves)
     {
-        // The primary comes from a cleaner primary measurement, the harmonics from
-        // the sweep deconvolution; mask the requested set per computational scope.
         var result = new List<AnalysisCurve>();
         result.AddRange(DataHelper.GetSpectrum(
             CreatePrimaryMeasurement(),
@@ -79,12 +80,46 @@ internal sealed class MeasurementPlotContext
             calibration,
             curves & SpectrumCurves.Primary));
 
-        result.AddRange(DataHelper.GetSpectrum(
-            CreateSweepDeconvolutionMeasurement(),
-            options,
-            calibration,
-            curves & SpectrumCurves.Harmonics));
-
+        result.AddRange(CreateDistortionCurves(options, calibration, curves));
         return result;
+    }
+
+    private IReadOnlyList<AnalysisCurve> CreateDistortionCurves(
+        FrequencyResponseOptions options,
+        CalibrationFile? calibration,
+        SpectrumCurves curves)
+    {
+        if ((curves & SpectrumCurves.Harmonics) == 0 ||
+            expSweepMeasurement.SweepDeconvolution is not { } deconvolution ||
+            expSweepMeasurement.Sweep is not { SweepSamples: > 0 } sweep ||
+            expSweepMeasurement.Octaves <= 0)
+        {
+            return Array.Empty<AnalysisCurve>();
+        }
+
+        var sweepMetadata = EssSweepMetadata.FromExponentialSweep(
+            expSweepMeasurement.SampleRate,
+            expSweepMeasurement.Octaves,
+            sweep.SweepSamples,
+            deconvolution.PeakIndex);
+
+        Complex[] impulse = deconvolution.ImpulseResponse;
+        double[] real = new double[impulse.Length];
+        for (int i = 0; i < impulse.Length; i++)
+        {
+            real[i] = impulse[i].Real;
+        }
+
+        var distortionOptions = new DistortionOptions(
+            SmoothingOctaves: options.SmoothingInverseOctaves > 0
+                ? HarmonicSmoothingWidthFactor / options.SmoothingInverseOctaves
+                : 0.0);
+
+        return EssDistortion.ComputeDistortionCurves(
+            real,
+            sweepMetadata,
+            distortionOptions,
+            options.UseCalibration ? calibration : null,
+            curves & SpectrumCurves.Harmonics);
     }
 }

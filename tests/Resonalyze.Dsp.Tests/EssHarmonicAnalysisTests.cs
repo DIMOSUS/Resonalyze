@@ -141,109 +141,77 @@ public sealed class EssHarmonicAnalysisTests
     }
 
     // ----- Shared spectral normalization invariants -----
+    //
+    // A packet is a contained impulse response under a unity plateau, so the FFT
+    // magnitude IS the packet's transfer magnitude. These pin the invariant that
+    // makes |Hn|/|H1| honest: the magnitude is independent of window length,
+    // zero-padding, sign and placement, so a ratio of two packets recovers their
+    // amplitude ratio exactly regardless of the two windows' lengths.
 
-    private static readonly double[] EmptyField = new double[20_000];
-
-    private static double[] WithTone(int start, int length, int cyclesPerWindow, double amplitude)
-    {
-        // A pure tone confined to [start, start+length) whose frequency is an
-        // integer number of cycles across the window, so an aligned FFT bin
-        // recovers the amplitude exactly.
-        double[] field = new double[EmptyField.Length];
-        for (int i = 0; i < length; i++)
-        {
-            field[start + i] = amplitude * Math.Cos(2.0 * Math.PI * cyclesPerWindow * i / length);
-        }
-
-        return field;
-    }
+    private const int Field = 20_000;
 
     private static HarmonicWindowDefinition RectWindow(int start, int length) =>
-        new(Order: 1, PeakSample: start, StartSample: start, EndSample: start + length - 1,
+        new(Order: 1, PeakSample: start + length / 2, StartSample: start, EndSample: start + length - 1,
             FadeInSamples: 0, FadeOutSamples: 0);
 
-    private static double RecoveredAmplitude(double[] field, int start, int length, int fftLength, int bin)
+    private static double ImpulseMagnitude(double height, int start, int length, int fftLength, int bin)
     {
+        // A single impulse sitting under the (rectangular, plateau=1) window.
+        double[] field = new double[Field];
+        field[start + length / 2] = height;
         WindowedSpectrum spectrum = EssHarmonicAnalysis.ComputeWindowedSpectrum(
             field, RectWindow(start, length), fftLength, SampleRate);
         return spectrum.AmplitudeAt(bin);
     }
 
     [Fact]
-    public void ComputeWindowedSpectrum_RecoversToneAmplitude()
+    public void ComputeWindowedSpectrum_ReadsAContainedImpulseAsItsHeight()
     {
-        const int length = 1024;
-        const int cycles = 40;
-        double[] field = WithTone(2_000, length, cycles, 0.5);
+        // The impulse has a flat spectrum, so every bin equals its height.
+        Assert.Equal(0.5, ImpulseMagnitude(0.5, 2_000, 1_024, 1_024, 40), 9);
+        Assert.Equal(0.5, ImpulseMagnitude(0.5, 2_000, 1_024, 1_024, 137), 9);
+    }
 
-        double amplitude = RecoveredAmplitude(field, 2_000, length, length, cycles);
-        Assert.Equal(0.5, amplitude, 6);
+    [Fact]
+    public void ComputeWindowedSpectrum_RatioIsIndependentOfTheTwoWindowLengths()
+    {
+        // The load-bearing invariant for HDn: a "harmonic" impulse of 0.02 read
+        // through a 4096-sample window and a "linear" impulse of 1.0 read through a
+        // 1024-sample window still yield a ratio of exactly 0.02.
+        double harmonic = ImpulseMagnitude(0.02, 3_000, 4_096, 8_192, 200);
+        double linear = ImpulseMagnitude(1.0, 3_000, 1_024, 8_192, 200);
+        Assert.Equal(0.02, harmonic / linear, 9);
     }
 
     [Fact]
     public void ComputeWindowedSpectrum_IsInvariantToTimeShift()
     {
-        const int length = 1024;
-        const int cycles = 40;
-        double[] early = WithTone(1_000, length, cycles, 0.5);
-        double[] late = WithTone(6_000, length, cycles, 0.5);
-
-        double a = RecoveredAmplitude(early, 1_000, length, length, cycles);
-        double b = RecoveredAmplitude(late, 6_000, length, length, cycles);
-        Assert.Equal(a, b, 9);
-    }
-
-    [Fact]
-    public void ComputeWindowedSpectrum_IsInvariantToWindowLengthAfterCompensation()
-    {
-        // Same physical tone, two window lengths. The coherent-gain normalization
-        // makes the recovered amplitude identical.
-        const int cycles = 40;
-        double[] shortField = WithTone(2_000, 1_024, cycles, 0.5);
-        double[] longField = WithTone(2_000, 2_048, 2 * cycles, 0.5);
-
-        double shortAmp = RecoveredAmplitude(shortField, 2_000, 1_024, 1_024, cycles);
-        double longAmp = RecoveredAmplitude(longField, 2_000, 2_048, 2_048, 2 * cycles);
-        Assert.Equal(shortAmp, longAmp, 6);
+        double a = ImpulseMagnitude(0.5, 1_000, 1_024, 1_024, 40);
+        double b = ImpulseMagnitude(0.5, 6_000, 1_024, 1_024, 40);
+        Assert.Equal(a, b, 12);
     }
 
     [Fact]
     public void ComputeWindowedSpectrum_ZeroPaddingChangesGridNotLevel()
     {
-        const int length = 1024;
-        const int cycles = 40;
-        double[] field = WithTone(2_000, length, cycles, 0.5);
-
-        double tight = RecoveredAmplitude(field, 2_000, length, length, cycles);
-        // Zero-pad to 2x: the aligned bin is now 2·cycles, same amplitude.
-        double padded = RecoveredAmplitude(field, 2_000, length, 2 * length, 2 * cycles);
-        Assert.Equal(tight, padded, 6);
+        double tight = ImpulseMagnitude(0.5, 2_000, 1_024, 1_024, 40);
+        double padded = ImpulseMagnitude(0.5, 2_000, 1_024, 2_048, 80);
+        Assert.Equal(tight, padded, 9);
     }
 
     [Fact]
     public void ComputeWindowedSpectrum_IsInvariantToSign()
     {
-        const int length = 1024;
-        const int cycles = 40;
-        double[] positive = WithTone(2_000, length, cycles, 0.5);
-        double[] negative = WithTone(2_000, length, cycles, -0.5);
-
-        double a = RecoveredAmplitude(positive, 2_000, length, length, cycles);
-        double b = RecoveredAmplitude(negative, 2_000, length, length, cycles);
-        Assert.Equal(a, b, 9);
+        double a = ImpulseMagnitude(0.5, 2_000, 1_024, 1_024, 40);
+        double b = ImpulseMagnitude(-0.5, 2_000, 1_024, 1_024, 40);
+        Assert.Equal(a, b, 12);
     }
 
     [Fact]
     public void ComputeWindowedSpectrum_ScalingByTwoRaisesLevelBy6Db()
     {
-        const int length = 1024;
-        const int cycles = 40;
-        double[] quiet = WithTone(2_000, length, cycles, 0.25);
-        double[] loud = WithTone(2_000, length, cycles, 0.5);
-
-        double quietAmp = RecoveredAmplitude(quiet, 2_000, length, length, cycles);
-        double loudAmp = RecoveredAmplitude(loud, 2_000, length, length, cycles);
-        double deltaDb = 20.0 * Math.Log10(loudAmp / quietAmp);
-        Assert.Equal(6.0206, deltaDb, 3);
+        double quiet = ImpulseMagnitude(0.25, 2_000, 1_024, 1_024, 40);
+        double loud = ImpulseMagnitude(0.5, 2_000, 1_024, 1_024, 40);
+        Assert.Equal(6.0206, 20.0 * Math.Log10(loud / quiet), 3);
     }
 }

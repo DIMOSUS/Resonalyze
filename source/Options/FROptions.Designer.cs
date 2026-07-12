@@ -248,7 +248,7 @@ namespace Resonalyze.Options
             checkBoxShowThdPlusNoise.Name = "checkBoxShowThdPlusNoise";
             checkBoxShowThdPlusNoise.Size = new Size(99, 19);
             checkBoxShowThdPlusNoise.TabIndex = 52;
-            checkBoxShowThdPlusNoise.Text = "Show THD+N";
+            checkBoxShowThdPlusNoise.Text = "Show THD";
             checkBoxShowThdPlusNoise.UseVisualStyleBackColor = true;
             // 
             // irPlotView

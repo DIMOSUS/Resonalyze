@@ -116,13 +116,15 @@ public sealed class CrossoverAutoSetupTests
     }
 
     [Fact]
-    public void Propose_CrossesACapableTweeterLowAndKeepsItSteep()
+    public void Propose_PrefersTheStandardSlopeOverDraggingTheTweeterLow()
     {
-        // A tweeter that measures clean down to ~1.2 kHz: with independent slopes
-        // the search pulls its handover below the 2–4 kHz ear band, which the
-        // resonance protection permits ONLY by pairing it with a steep enough
-        // high-pass to protect Fs. So the handover is both low (below the ear band)
-        // and steep — and never below its resonance floor.
+        // A tweeter that measures clean down to ~1.2 kHz: rather than pin it
+        // maximally low on a steep 48 dB/oct slope (the specialist choice), the auto
+        // keeps the 24 dB/oct standard and lets the handover sit a little higher —
+        // even into the 2–4 kHz ear-sensitive band. Deviations from 24 must be
+        // justified by the flatness/protection they buy, and a clean tweeter does not
+        // justify one, so the slope stays 24 and the crossover respects the resonance
+        // floor at that slope.
         var sources = new List<AutoSetupSource>
         {
             new(BandCurve(60, 900, 0), DriverType.Midbass),
@@ -134,18 +136,41 @@ public sealed class CrossoverAutoSetupTests
             sources, Options(independentSlopes: true));
 
         CrossoverEdge tweeterHighPass = proposals[2].HighPassEdge!.Value;
+        Assert.Equal(24, tweeterHighPass.SlopeDbPerOctave);
         double resonance = CrossoverAutoSetup.TweeterResonanceHz(
             CrossoverAutoSetup.EstimateBand(BandCurve(1_200, 20_000, 0)).LowHz);
         Assert.True(
-            tweeterHighPass.FrequencyHz < 2_000,
-            $"mid/tweeter handover {tweeterHighPass.FrequencyHz:0} Hz was not pulled below the ear band");
+            tweeterHighPass.FrequencyHz >= CrossoverAutoSetup.TweeterMinCrossoverHz(
+                resonance, 24) - 1,
+            $"tweeter at {tweeterHighPass.FrequencyHz:0} Hz / 24 dB-oct is below its resonance floor");
+    }
+
+    [Fact]
+    public void Propose_StillSteepensWhenTheTweeterIsForcedLow()
+    {
+        // The 24 dB/oct preference is a penalty, not a lock. When the crossover is
+        // constrained below the tweeter's 24 dB/oct resonance floor (here by a low
+        // max-crossover limit), the resonance protection overrides the penalty and
+        // still forces the steep slope that keeps the tweeter safe.
+        var sources = new List<AutoSetupSource>
+        {
+            new(BandCurve(40, 3_000, 0), DriverType.Woofer),
+            new(BandCurve(1_000, 20_000, 0), DriverType.Tweeter)
+        };
+
+        IReadOnlyList<CrossoverProposal> proposals = CrossoverAutoSetup.Propose(
+            sources, Options(maxHz: 1_800, families: CrossoverFilterFamily.LinkwitzRiley));
+
+        CrossoverEdge tweeterHighPass = proposals[1].HighPassEdge!.Value;
+        Assert.True(
+            tweeterHighPass.SlopeDbPerOctave >= 36,
+            $"a tweeter forced below its 24 dB/oct floor must steepen, was {tweeterHighPass.SlopeDbPerOctave}");
+        double resonance = CrossoverAutoSetup.TweeterResonanceHz(
+            CrossoverAutoSetup.EstimateBand(BandCurve(1_000, 20_000, 0)).LowHz);
         Assert.True(
             tweeterHighPass.FrequencyHz >= CrossoverAutoSetup.TweeterMinCrossoverHz(
                 resonance, tweeterHighPass.SlopeDbPerOctave) - 1,
-            $"handover {tweeterHighPass.FrequencyHz:0} Hz / {tweeterHighPass.SlopeDbPerOctave} dB-oct dropped below its resonance floor");
-        Assert.True(
-            tweeterHighPass.SlopeDbPerOctave >= 36,
-            $"a below-ear-band tweeter handover must be steep to protect Fs, was {tweeterHighPass.SlopeDbPerOctave}");
+            "a forced-low tweeter must still respect its resonance floor");
     }
 
     [Fact]

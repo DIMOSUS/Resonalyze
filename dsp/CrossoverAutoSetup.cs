@@ -325,7 +325,22 @@ public static class CrossoverAutoSetup
     // narrower overlap), and the search never goes below a practical slope: a
     // first-order (6 dB/oct) filter protects nothing.
     private const double OverlapPenaltyDbPerOctave = 0.6;
-    private const int MinPracticalSlopeDbPerOctave = 24;
+
+    // The gentlest slope the search will consider. 12 dB/oct is admitted (a gentle
+    // second-order handover is a valid, if specific, choice) but discouraged by the
+    // slope-deviation penalty below; 6 dB/oct protects nothing and stays excluded.
+    private const int MinPracticalSlopeDbPerOctave = 12;
+
+    // 24 dB/oct is the standard car-audio crossover slope, and the score is anchored
+    // to it: every step of the search that deviates — gentler (12/18) or steeper
+    // (36/48) — pays SlopeDeviationPenaltyDb per unit of |log2(slope/24)|, so 18/36
+    // cost ~0.42/0.59 units and 12/48 cost 1.0 unit each. A deviation is therefore
+    // taken only when it earns more than it costs in flatness/protection. This is
+    // what stops the auto dragging the tweeter maximally low on a 48 dB/oct slope
+    // when a standard 24 dB/oct handover a little higher (even into the ear's
+    // sensitive band) is the cleaner, more conventional choice.
+    private const int PreferredSlopeDbPerOctave = 24;
+    private const double SlopeDeviationPenaltyDb = 0.7;
 
     // A driver whose roll-off reaches past its neighbour into a non-adjacent
     // driver's band overlaps where it never should; that overlap is weighted this
@@ -664,13 +679,12 @@ public static class CrossoverAutoSetup
             channels, proposals, options.SampleRateHz, options.SubElevationDb);
     }
 
-    // The slopes a family offers above the practical floor. A shallow crossover
-    // (12/18 dB/oct) leaves adjacent drivers overlapping over a wide span where
-    // they interfere; on a real system the summed dip that leaves is worse than
-    // any group-delay a steeper filter costs, and Auto delay cannot align it
-    // away — so the floor is 24 dB/oct, matching how these systems are tuned by
-    // hand. (A steeper slope is capped from above by the group-delay budget in
-    // AllowedSlopes, which bites only at low junction frequencies.)
+    // The slopes a family offers above the practical floor (12 dB/oct). Shallow
+    // crossovers (12/18) leave adjacent drivers overlapping over a wide span where
+    // they interfere, so they are admitted but discouraged by the slope-deviation
+    // penalty (and the overlap penalty), not forbidden — a gentle handover is a
+    // valid, if specific, choice. (A steeper slope is capped from above by the
+    // group-delay budget in AllowedSlopes, which bites only at low junctions.)
     private static IReadOnlyList<int> PracticalSlopes(CrossoverFilterFamily family) =>
         CrossoverFilter.SupportedSlopes(family)
             .Where(slope => slope >= MinPracticalSlopeDbPerOctave)
@@ -1547,12 +1561,13 @@ public static class CrossoverAutoSetup
         }
 
         // Safety backstop after the descent: the decoupled frequency/slope search
-        // (matched-slope mode in particular, where the frequency and slope passes
-        // alternate) can leave the tweeter's high-pass a single lattice step below
-        // its resonance floor for the slope it ended on. Nudge the crossover up to
-        // the lowest lattice point that protects Fs at that slope, so the guarantee
-        // holds exactly regardless of the descent path. Raising the top junction
-        // never collides with a lower one.
+        // can leave the tweeter's high-pass below its resonance floor for the slope
+        // it ended on (a single lattice step in matched-slope mode; or, now that the
+        // slope-deviation penalty favours a gentler slope, a whole floor's worth when
+        // a low max-crossover limit boxes the junction in). First raise the crossover
+        // to the lowest lattice point that protects Fs at the current slope; if the
+        // max-crossover limit blocks that, steepen the slope instead — either way the
+        // tweeter is never left playing below Fs unprotected.
         private void EnforceTweeterResonanceFloor()
         {
             int last = channelCount - 1;
@@ -1569,9 +1584,24 @@ public static class CrossoverAutoSetup
                 return;
             }
 
-            crossoverHz[j] = Math.Max(
-                crossoverHz[j],
-                Math.Min(options.MaxCrossoverHz, RoundUpToLattice(minFc)));
+            double raised = Math.Min(options.MaxCrossoverHz, RoundUpToLattice(minFc));
+            if (raised >= minFc)
+            {
+                crossoverHz[j] = Math.Max(crossoverHz[j], raised);
+                return;
+            }
+
+            // The max-crossover limit sits below the floor for this slope: steepen to
+            // the gentlest available slope that protects Fs at the current frequency.
+            int floor = SlopeFloor(last, crossoverHz[j]);
+            int? steeper = AllowedSlopes(junctionFamily[j], crossoverHz[j])
+                .Where(slope => slope >= floor)
+                .Cast<int?>()
+                .Min();
+            if (steeper is int slope)
+            {
+                upperSlope[j] = slope;
+            }
         }
 
         /// <summary>
@@ -1726,9 +1756,10 @@ public static class CrossoverAutoSetup
                 crossoverHz[j] = Math.Clamp(
                     RoundToLattice(fc), options.MinCrossoverHz, options.MaxCrossoverHz);
                 junctionFamily[j] = family;
-                // Seed the gentlest budget-admissible slope, not a fixed 24 that a
-                // very low junction's group delay might already blow.
-                int slope = forcedSlope ?? GentlestAdmissibleSlope(family, crossoverHz[j]);
+                // Seed the standard 24 dB/oct (the slope-deviation penalty's anchor),
+                // snapped to the nearest admissible slope so a very low junction whose
+                // group-delay budget rules out 24 still starts somewhere valid.
+                int slope = forcedSlope ?? SeedSlope(family, crossoverHz[j]);
                 lowerSlope[j] = slope;
                 upperSlope[j] = slope;
             }
@@ -1804,6 +1835,24 @@ public static class CrossoverAutoSetup
         {
             IReadOnlyList<int> allowed = AllowedSlopes(family, fcHz);
             return allowed.Count > 0 ? allowed.Min() : PracticalSlopes(family).Min();
+        }
+
+        // The admissible slope closest to the 24 dB/oct standard (the deviation
+        // penalty's anchor), so the descent starts on the conventional slope and only
+        // moves off it when the score rewards it. Falls back to the family floor when
+        // the group-delay budget admits nothing.
+        private int SeedSlope(CrossoverFilterFamily family, double fcHz)
+        {
+            IReadOnlyList<int> allowed = AllowedSlopes(family, fcHz);
+            if (allowed.Count == 0)
+            {
+                return PracticalSlopes(family).Min();
+            }
+
+            return allowed
+                .OrderBy(slope => Math.Abs(
+                    Math.Log2((double)slope / PreferredSlopeDbPerOctave)))
+                .First();
         }
 
         // The steepest practical slope any admitted family offers, ignoring the
@@ -2040,9 +2089,20 @@ public static class CrossoverAutoSetup
         // disagree. Different channels remain free to pick different slopes.
         private void OptimizeChannelSlope(int i)
         {
-            int best = ChannelSlope(i);
+            IReadOnlyList<int> allowed = AllowedChannelSlopes(i);
+            if (allowed.Count == 0)
+            {
+                return;
+            }
+
+            // Start from an ALLOWED slope, not the current one: the seed (or a slope
+            // left by a since-moved frequency) may sit below the resonance floor now,
+            // and it must not be retained just because the flatness/deviation score
+            // prefers it — the enumerated set is already filtered to safe slopes.
+            int best = allowed.Contains(ChannelSlope(i)) ? ChannelSlope(i) : allowed[0];
+            SetChannelSlope(i, best);
             double bestScore = Score();
-            foreach (int slope in AllowedChannelSlopes(i))
+            foreach (int slope in allowed)
             {
                 SetChannelSlope(i, slope);
                 double score = Score();
@@ -2201,8 +2261,31 @@ public static class CrossoverAutoSetup
 
             return Flatness(scratchCombined)
                 + OverlapPenalty(scratchUnits)
-                + FrequencyPlacementPenalty();
+                + FrequencyPlacementPenalty()
+                + SlopeDeviationPenalty();
         }
+
+        // Anchors the search to the 24 dB/oct standard: each crossover shoulder pays
+        // for how far its slope sits from 24, measured symmetrically in log-slope
+        // (|log2(slope/24)|, so 12 and 48 are equidistant). Summed over both shoulders
+        // of every junction, added to the flatness score. A gentler or steeper filter
+        // is chosen only when the flatness/protection it buys outweighs this cost —
+        // in particular a tweeter is not pinned low on 48 dB/oct when a 24 dB/oct
+        // handover a little higher scores nearly as flat.
+        private double SlopeDeviationPenalty()
+        {
+            double total = 0;
+            for (int j = 0; j < channelCount - 1; j++)
+            {
+                total += SlopeDeviationWeight(lowerSlope[j])
+                    + SlopeDeviationWeight(upperSlope[j]);
+            }
+
+            return SlopeDeviationPenaltyDb * total;
+        }
+
+        private static double SlopeDeviationWeight(int slopeDbPerOctave) =>
+            Math.Abs(Math.Log2((double)slopeDbPerOctave / PreferredSlopeDbPerOctave));
 
         // Frequency-placement heuristics that depend only on where the junctions
         // sit (not on the summed magnitude): keep handovers out of the ear's

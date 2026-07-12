@@ -506,6 +506,26 @@ re-verified.
 
 ### Auto Crossover
 
+- [~] **Slope-deviation penalty anchors the auto to 24 dB/oct (user request
+  2026-07-12, DSP done):** the practical slope floor dropped 24 → 12, so the search
+  now spans 12/18/24/36/48, but every shoulder pays `SlopeDeviationPenaltyDb = 0.7`
+  per unit of `|log2(slope/24)|` (12 and 48 = 1.0 unit, 18/36 = 0.42/0.59), summed
+  over both shoulders of each junction and added to the flatness score. 24 dB/oct —
+  the car-audio standard — is thus the default; a gentler or steeper filter is taken
+  only when it earns more than it costs. The descent seeds at 24 (`SeedSlope`, nearest
+  admissible) instead of the gentlest. **User goal met:** the auto no longer drags the
+  tweeter maximally low on a 48 dB/oct slope to escape the ear band — it keeps 24 and
+  lets the handover sit higher (validated on synthetics: 3-way tweeter 1650/48 →
+  **2300/24**, 4-way 2200/48 → **3050/24**; all junctions land on 24). Deviations stay
+  reachable when justified — the resonance floor still OVERRIDES the penalty and forces
+  a steep tweeter when a low max-crossover boxes it in. Fixed two latent bugs the
+  penalty exposed: `OptimizeChannelSlope` could retain a current slope no longer in the
+  allowed set (now starts from an allowed one), and `EnforceTweeterResonanceFloor` now
+  steepens the slope when a max-crossover limit blocks raising the frequency, so a
+  boxed-in tweeter is never left at 24 below its Fs floor. 506 dsp tests pass.
+  *Windows follow-up:* eyeball the wizard on a real measurement.
+
+
 - [x] ★ **The scalar summation model is physically wrong in three ways** —
   resolved (2026-07-11) after a design discussion with the user. Verdict: the
   magnitude/delay DECOMPOSITION is intentional and stays (a joint delay ×

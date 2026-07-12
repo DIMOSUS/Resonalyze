@@ -25,7 +25,7 @@ public sealed class CurveTagTests
     [Theory]
     [InlineData(Mode.FrequencyResponse, AnalysisCurveKind.Primary, "Magnitude")]
     [InlineData(Mode.FrequencyResponse, AnalysisCurveKind.SecondHarmonic, "2nd harmonic")]
-    [InlineData(Mode.FrequencyResponse, AnalysisCurveKind.ThdPlusNoise, "THD")]
+    [InlineData(Mode.FrequencyResponse, AnalysisCurveKind.ThdPlusNoise, "THD+N")]
     [InlineData(Mode.PhaseResponse, AnalysisCurveKind.Primary, "Measured phase")]
     [InlineData(Mode.PhaseResponse, AnalysisCurveKind.MinimumPhase, "Minimum phase")]
     [InlineData(Mode.GroupDelay, AnalysisCurveKind.Primary, "Group delay")]

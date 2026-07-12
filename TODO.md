@@ -422,9 +422,16 @@ re-verified.
   layer (`EssHarmonicAnalysis` + `EssDistortion`) isolates each harmonic order in
   its OWN plateau window, computes each packet's spectrum, maps each onto the
   excitation axis, and sums the harmonics' ENERGY (√Σ|Hn|²) on a common
-  log-frequency grid — never a complex sum of one shared window. The curve is now
-  honestly named **THD** (not THD+N); a validated noise estimate is deferred (see
-  next item), and the label reverts to THD+N only once that lands.
+  log-frequency grid — never a complex sum of one shared window. A separate noise
+  estimate (`EssNoise`) now folds in: THD+N = √(Σ|Hn|² + |N(f)|²)/|H1|, with N(f)
+  read from noise-only regions after the linear decay and ENBW-compensated to be
+  comparable to |H1|. The curve is **THD** only when no confident noise estimate
+  exists, and **THD+N** once one does — the synthetic gate the user required
+  (zero-noise ⇒ THD+N==THD; predictable growth; FFT-length invariance;
+  low-confidence fallback) is met (`EssNoiseTests`). *Real-data caveat (Windows
+  live check):* the noise region sits past the linear packet + a reverb guard; a
+  room whose reverberation outlasts that guard could leak in and lift the floor —
+  eyeball the THD+N floor on a real capture.
 - [x] ★ **Harmonic curves and the primary curve had different reference levels** —
   fixed (2026-07-12). HDn is now `|Hn|/|H1|` against the linear packet of the SAME
   ESS decomposition (a contained IR read under a unity plateau, so the ratio is

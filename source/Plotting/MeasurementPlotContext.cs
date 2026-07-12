@@ -113,7 +113,8 @@ internal sealed class MeasurementPlotContext
         var distortionOptions = new DistortionOptions(
             SmoothingOctaves: options.SmoothingInverseOctaves > 0
                 ? HarmonicSmoothingWidthFactor / options.SmoothingInverseOctaves
-                : 0.0);
+                : 0.0,
+            IncludeNoise: true);
 
         return EssDistortion.ComputeDistortionCurves(
             real,

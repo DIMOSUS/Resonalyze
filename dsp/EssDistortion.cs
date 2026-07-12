@@ -14,7 +14,11 @@ public sealed record DistortionOptions(
     int GridPoints = 1024,
     double MaxDenominatorDropDb = 45.0,
     double FadeFraction = 0.5,
-    double SmoothingOctaves = 0.0)
+    double SmoothingOctaves = 0.0,
+    bool IncludeNoise = false,
+    int NoiseWindowLength = 8_192,
+    int NoiseWindowCount = 6,
+    double MinNoiseConfidence = 0.5)
 {
     public void Validate()
     {
@@ -50,6 +54,8 @@ public sealed record DistortionSpectrum(
     IReadOnlyDictionary<int, double[]> HarmonicAmplitude,
     IReadOnlyDictionary<int, double[]> HarmonicDistortionRatio,
     double[] ThdRatio,
+    double[]? ThdPlusNoiseRatio,
+    NoiseEstimate? Noise,
     bool[] Reliable,
     IReadOnlyList<string> Warnings);
 
@@ -66,7 +72,8 @@ public static class EssDistortion
     public static DistortionSpectrum ComputeDistortion(
         EssHarmonicDecomposition decomposition,
         CalibrationFile? calibration,
-        DistortionOptions options)
+        DistortionOptions options,
+        NoiseEstimate? noise = null)
     {
         ArgumentNullException.ThrowIfNull(decomposition);
         ArgumentNullException.ThrowIfNull(options);
@@ -124,7 +131,15 @@ public static class EssDistortion
             harmonicDistortion[order] = new double[gridPoints];
         }
 
+        // Only trust the noise floor when the estimate is confident enough; below
+        // that THD+N is not produced and the caller falls back to THD.
+        bool useNoise = noise != null && noise.Confidence >= options.MinNoiseConfidence;
+        double[]? noiseOnGrid = useNoise
+            ? NoiseAmplitudeOnGrid(noise!, calibration, frequencies)
+            : null;
+
         double[] thd = new double[gridPoints];
+        double[]? thdPlusNoise = noiseOnGrid != null ? new double[gridPoints] : null;
 
         for (int i = 0; i < gridPoints; i++)
         {
@@ -140,6 +155,10 @@ public static class EssDistortion
                     harmonicDistortion[order][i] = double.NaN;
                 }
                 thd[i] = double.NaN;
+                if (thdPlusNoise != null)
+                {
+                    thdPlusNoise[i] = double.NaN;
+                }
                 continue;
             }
 
@@ -164,6 +183,14 @@ public static class EssDistortion
             thd[i] = contributingHarmonics > 0
                 ? Math.Sqrt(sumOfSquares) / denominator
                 : double.NaN;
+
+            if (thdPlusNoise != null)
+            {
+                double noiseAmplitude = noiseOnGrid![i];
+                thdPlusNoise[i] = double.IsFinite(noiseAmplitude)
+                    ? Math.Sqrt(sumOfSquares + noiseAmplitude * noiseAmplitude) / denominator
+                    : double.NaN;
+            }
         }
 
         return new DistortionSpectrum(
@@ -172,8 +199,52 @@ public static class EssDistortion
             harmonicAmplitude,
             harmonicDistortion,
             thd,
+            thdPlusNoise,
+            useNoise ? noise : null,
             reliable,
             decomposition.Validity.Warnings);
+    }
+
+    // Samples the noise magnitude onto the excitation grid (order 1, so the product
+    // frequency is the grid frequency) and applies calibration at that frequency —
+    // the same treatment as the linear packet, so noise and |H1| stay comparable.
+    private static double[] NoiseAmplitudeOnGrid(
+        NoiseEstimate noise,
+        CalibrationFile? calibration,
+        double[] grid)
+    {
+        double[] frequencies = noise.BinFrequenciesHz;
+        double[] magnitude = noise.Magnitude;
+        double[] result = new double[grid.Length];
+        int cursor = 0;
+        for (int i = 0; i < grid.Length; i++)
+        {
+            double frequency = grid[i];
+            if (frequencies.Length < 2 ||
+                frequency < frequencies[0] || frequency > frequencies[^1])
+            {
+                result[i] = double.NaN;
+                continue;
+            }
+
+            while (cursor < frequencies.Length - 2 && frequencies[cursor + 1] < frequency)
+            {
+                cursor++;
+            }
+
+            double x0 = frequencies[cursor];
+            double x1 = frequencies[cursor + 1];
+            double t = x1 > x0 ? (frequency - x0) / (x1 - x0) : 0.0;
+            double amplitude = magnitude[cursor] + t * (magnitude[cursor + 1] - magnitude[cursor]);
+            if (calibration != null)
+            {
+                amplitude *= Math.Pow(10.0, -calibration.GetDecibelCorrection(frequency) / 20.0);
+            }
+
+            result[i] = amplitude;
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -204,7 +275,10 @@ public static class EssDistortion
             new HarmonicAnalysisOptions(
                 MaxHarmonic: options.MaxHarmonic,
                 FadeFraction: options.FadeFraction));
-        DistortionSpectrum spectrum = ComputeDistortion(decomposition, calibration, options);
+        NoiseEstimate? noise = options.IncludeNoise
+            ? EssNoise.EstimateNoise(deconvolvedImpulse, decomposition, options)
+            : null;
+        DistortionSpectrum spectrum = ComputeDistortion(decomposition, calibration, options, noise);
 
         void AddHarmonic(int order, SpectrumCurves flag, AnalysisCurveKind kind, string name)
         {
@@ -226,9 +300,13 @@ public static class EssDistortion
 
         if ((curves & SpectrumCurves.ThdPlusNoise) != 0)
         {
+            // The curve is THD+N only when a confident noise estimate was folded in;
+            // otherwise it is honestly labelled THD.
+            bool withNoise = spectrum.ThdPlusNoiseRatio != null;
+            double[] ratio = withNoise ? spectrum.ThdPlusNoiseRatio! : spectrum.ThdRatio;
             result.Add(new AnalysisCurve(
-                "THD",
-                BuildDbCurve(spectrum.Frequencies, spectrum.ThdRatio, options.SmoothingOctaves),
+                withNoise ? "THD+N" : "THD",
+                BuildDbCurve(spectrum.Frequencies, ratio, options.SmoothingOctaves),
                 AnalysisCurveKind.ThdPlusNoise));
         }
 

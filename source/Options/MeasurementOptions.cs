@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -57,6 +58,10 @@ namespace Resonalyze.Options
         private Label labelWaveLoopbackChannel => waveAudioBackendPanel.LabelWaveLoopbackChannel;
 
         private Label labelWaveLoopbackStatus => waveAudioBackendPanel.LabelWaveLoopbackStatus;
+
+        private Label labelDeviceSettings => waveAudioBackendPanel.LabelDeviceSettings;
+
+        private Button buttonDeviceSettings => waveAudioBackendPanel.ButtonDeviceSettings;
 
         private DarkComboBox comboBoxAsioDriver => asioAudioBackendPanel.ComboBoxAsioDriver;
 
@@ -157,6 +162,7 @@ namespace Resonalyze.Options
             comboBoxAsioDriver.SelectedIndexChanged += comboBoxAsioDriver_SelectedIndexChanged;
             buttonAsioInputProbe.Click += buttonAsioInputProbe_Click;
             buttonAsioControlPanel.Click += buttonAsioControlPanel_Click;
+            buttonDeviceSettings.Click += buttonDeviceSettings_Click;
 
             deviceToolTip.SetToolTip(
                 comboBoxWaveLoopbackChannel,
@@ -166,6 +172,10 @@ namespace Resonalyze.Options
                 comboBoxAsioLoopbackChannel,
                 "Required. ASIO input channel carrying the loopback reference signal; every " +
                 "analysis is derived from the transfer IR it produces.");
+            deviceToolTip.SetToolTip(
+                buttonDeviceSettings,
+                "Opens the selected driver's control panel to change the hardware sample " +
+                "rate. Falls back to Windows Sound settings when no ASIO driver is selected.");
         }
 
         internal void Init(
@@ -708,6 +718,9 @@ namespace Resonalyze.Options
             labelWaveInputChannel.Enabled = !useAsio;
             labelWaveLoopbackChannel.Enabled = !useAsio;
             labelWaveLoopbackStatus.Enabled = !useAsio;
+            labelDeviceSettings.Visible = useWasapi;
+            buttonDeviceSettings.Visible = useWasapi;
+            buttonDeviceSettings.Enabled = useWasapi;
             labelAsioLoopbackChannel.Enabled = useAsio;
             if (useWasapi)
             {
@@ -794,6 +807,41 @@ namespace Resonalyze.Options
                     this,
                     exception.Message,
                     "ASIO Control Panel",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+        }
+
+        private void buttonDeviceSettings_Click(object? sender, EventArgs e)
+        {
+            try
+            {
+                int preferredSampleRate = GetSelectedSampleRate();
+                int preferredInputOffset = GetSelectedWaveInputChannelOffset();
+                int? preferredLoopbackOffset = GetSelectedWaveLoopbackChannelOffset();
+                if (comboBoxAsioDriver.SelectedItem is AsioDeviceInfo asioDriver)
+                {
+                    AsioDeviceCatalog.ShowControlPanel(asioDriver.DriverName);
+                    LoadWasapiEndpoints();
+                    PopulateDeviceControlsForSelectedBackend(
+                        preferredInputOffset,
+                        preferredLoopbackOffset);
+                    RefreshSampleRateOptions(preferredSampleRate);
+                    UpdateAudioBackendControls();
+                    return;
+                }
+
+                Process.Start(new ProcessStartInfo("control.exe", "mmsys.cpl")
+                {
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception exception)
+            {
+                MessageBox.Show(
+                    this,
+                    exception.Message,
+                    "Device Settings",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
             }

@@ -99,11 +99,12 @@ public sealed class CrossoverRankedProposalTests
         }
     }
 
-    // Below 300 Hz slopes steeper than 24 dB/oct are excluded (group delay);
-    // no candidate in the whole ranked pool may carry one, even with steep
-    // families available and independent slopes on.
+    // No candidate in the whole ranked pool may carry a slope whose filter group
+    // delay blows the budget — the low-frequency guard, now on the delay itself
+    // rather than a fixed frequency. Holds even with steep families and
+    // independent slopes on (a low sub junction still cannot go steep).
     [Fact]
-    public void ProposeRanked_NoSteepSlopesBelow300Hz()
+    public void ProposeRanked_KeepsEveryCrossoverWithinTheGroupDelayBudget()
     {
         var sources = new List<AutoSetupSource>
         {
@@ -125,20 +126,26 @@ public sealed class CrossoverRankedProposalTests
         {
             foreach (CrossoverProposal proposal in candidate.Proposals)
             {
-                foreach (CrossoverEdge? edge in new[]
-                    { proposal.LowPassEdge, proposal.HighPassEdge })
+                if (proposal.LowPassEdge is { } lp)
                 {
-                    if (edge is { } value &&
-                        value.FrequencyHz < CrossoverAutoSetup.SteepSlopeMinimumJunctionHz)
-                    {
-                        Assert.True(
-                            value.SlopeDbPerOctave <=
-                                CrossoverAutoSetup.LowJunctionMaxSlopeDbPerOctave,
-                            $"{value.SlopeDbPerOctave} dB/oct at {value.FrequencyHz} Hz");
-                    }
+                    AssertWithinGroupDelayBudget(lp, highPass: false);
+                }
+
+                if (proposal.HighPassEdge is { } hp)
+                {
+                    AssertWithinGroupDelayBudget(hp, highPass: true);
                 }
             }
         }
+    }
+
+    private static void AssertWithinGroupDelayBudget(CrossoverEdge edge, bool highPass)
+    {
+        double groupDelay = CrossoverFilter.MaxGroupDelaySeconds(edge, highPass, SampleRate);
+        Assert.True(
+            groupDelay <= CrossoverAutoSetup.MaxCrossoverGroupDelaySeconds + 1e-9,
+            $"{edge.SlopeDbPerOctave} dB/oct at {edge.FrequencyHz:0} Hz = " +
+            $"{groupDelay * 1000:0.0} ms group delay");
     }
 
     // Independent oracle for the summation rule: flat unit drivers make the
@@ -370,11 +377,15 @@ public sealed class CrossoverRankedProposalTests
             }
         }
 
-        // …and the sub junction (< 300 Hz) is capped at 24 while the tweeter,
-        // far above, is free to differ — the search is not one system slope.
+        // …and the sub junction sits low enough that a steeper slope would blow
+        // the group-delay budget, so it stays <= 24 while the tweeter, far above,
+        // is free to differ — the search is not one system slope.
+        CrossoverEdge subLowPass = proposals[0].LowPassEdge!.Value;
         Assert.True(
-            proposals[0].LowPassEdge!.Value.FrequencyHz < CrossoverAutoSetup.SteepSlopeMinimumJunctionHz);
-        Assert.True(proposals[0].LowPassEdge!.Value.SlopeDbPerOctave <= 24);
+            CrossoverFilter.MaxGroupDelaySeconds(
+                subLowPass with { SlopeDbPerOctave = 48 }, highPass: false, SampleRate)
+                > CrossoverAutoSetup.MaxCrossoverGroupDelaySeconds);
+        Assert.True(subLowPass.SlopeDbPerOctave <= 24);
     }
 
     // A synthetic 4-way with a hot bass, a rolled-off midbass, and a matched

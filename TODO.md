@@ -638,6 +638,23 @@ re-verified.
   resolve, resampled onto the wizard's 1/3-octave grid by `CoherencePerPoint`,
   and threaded through the dialog into `AutoSetupSource`. App + App.Tests compile
   clean under EnableWindowsTargeting.
+- [x] **Slope cap is now a group-delay budget, not a frequency (2026-07-12):**
+  the flat "< 300 Hz → ≤ 24 dB/oct" cap is gone. A slope is allowed only while
+  the filter's peak group delay stays within `MaxCrossoverGroupDelaySeconds =
+  0.010` (10 ms), computed from the exact biquad cascade by the new
+  `CrossoverFilter.MaxGroupDelaySeconds` (τ = −dφ/dω, peak near the corner,
+  memoized per family/slope/fc). Group delay scales ≈ 1/f_c, so the same slope is
+  fine high up and excluded low down — and a low-GD family (Bessel) may go
+  steeper down low than an LR can. It is identical for LP and HP, so with matched
+  slopes a driver is still held to the gentler of its two junctions; a steep
+  woofer LP with a gentle HP needs independent slopes. Real left 4-way:
+  matched (default) winner sub steepened 75(BS24)→75(BS36) — Bessel 36 at 75 Hz
+  is only ~5.7 ms, which the old flat cap wrongly forbade; with independent
+  slopes on the woofer/mid junction jumps to LR48/LR48 (~5 ms) and the
+  achievability penalty drops 2.70 → 2.05 (the steep woofer LP cleans the
+  handover the user flagged). Two `CrossoverFilter` tests pin the GD values and
+  the LP=HP symmetry; the ranked-pool test now asserts the GD budget across every
+  candidate. Search timing unchanged (~2 s, GD memoized).
 
 ### EQ Wizard
 

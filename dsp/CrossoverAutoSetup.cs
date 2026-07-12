@@ -149,16 +149,17 @@ public static class CrossoverAutoSetup
     private const int CrossoverSlopeDbPerOctave = 24;
 
     /// <summary>
-    /// Below this junction frequency, slopes steeper than
-    /// <see cref="LowJunctionMaxSlopeDbPerOctave"/> are excluded from the
-    /// search: a steep low-frequency crossover carries a large group delay
-    /// (many periods of ringing at an already-long period), which is far more
-    /// audible than the protection it buys.
+    /// A crossover slope is excluded from the search when the filter's peak group
+    /// delay exceeds this budget: a steep low-frequency crossover smears the
+    /// arrival by many periods, more than the protection it buys. The bound is on
+    /// the delay itself, not the frequency, so the same slope is allowed higher up
+    /// (a 48 dB/oct low-pass is fine at a 250 Hz woofer/mid handover, ~5 ms, but
+    /// not at a 75 Hz sub/woofer handover, ~17 ms). Group delay is the same for a
+    /// low-pass and a high-pass, so this bounds both shoulders identically; with
+    /// matched slopes a channel is still held to the gentler of its two junctions,
+    /// so a steep woofer low-pass with a gentle high-pass needs independent slopes.
     /// </summary>
-    public const double SteepSlopeMinimumJunctionHz = 300;
-
-    /// <summary>The steepest slope allowed for junctions below <see cref="SteepSlopeMinimumJunctionHz"/>.</summary>
-    public const int LowJunctionMaxSlopeDbPerOctave = 24;
+    public const double MaxCrossoverGroupDelaySeconds = 0.010;
 
     /// <summary>
     /// The mirror of the low-bass cap, for tweeters: a tweeter crossed below this
@@ -521,8 +522,8 @@ public static class CrossoverAutoSetup
     // they interfere; on a real system the summed dip that leaves is worse than
     // any group-delay a steeper filter costs, and Auto delay cannot align it
     // away — so the floor is 24 dB/oct, matching how these systems are tuned by
-    // hand. (Below SteepSlopeMinimumJunctionHz the slope is also capped at 24 for
-    // group delay, pinning low junctions to exactly 24.)
+    // hand. (A steeper slope is capped from above by the group-delay budget in
+    // AllowedSlopes, which bites only at low junction frequencies.)
     private static IReadOnlyList<int> PracticalSlopes(CrossoverFilterFamily family) =>
         CrossoverFilter.SupportedSlopes(family)
             .Where(slope => slope >= MinPracticalSlopeDbPerOctave)
@@ -1238,6 +1239,12 @@ public static class CrossoverAutoSetup
         private readonly Dictionary<(CrossoverFilterFamily, int, long, bool), double[]> magnitudeCache =
             new();
 
+        // Peak group delay (seconds) per (family, slope, rounded fc): computed
+        // from the exact biquad cascade, memoized because AllowedSlopes probes it
+        // on the same lattice frequencies across the whole search.
+        private readonly Dictionary<(CrossoverFilterFamily, int, long), double> groupDelayCache =
+            new();
+
         // Unit-gain channel amplitudes (driver × its current edges, gain
         // excluded) keyed by the edge choice, plus scratch buffers: scoring a
         // trial allocates nothing, and the lattice-stable frequencies make the
@@ -1577,10 +1584,11 @@ public static class CrossoverAutoSetup
                 : slopes.MinBy(slope => Math.Abs(slope - CrossoverSlopeDbPerOctave));
         }
 
-        // The slopes the search may actually try at this junction frequency:
-        // the family's practical slopes, capped at 24 dB/oct below
-        // SteepSlopeMinimumJunctionHz (group delay), or pinned to the forced
-        // slope of the conventional-candidate run.
+        // The slopes the search may actually try at this junction frequency: the
+        // family's practical slopes, minus any whose filter group delay exceeds
+        // MaxCrossoverGroupDelaySeconds (which bites only low down, where a steep
+        // slope smears the arrival), or pinned to the forced slope of the
+        // conventional-candidate run.
         private IReadOnlyList<int> AllowedSlopes(CrossoverFilterFamily family, double fcHz)
         {
             IReadOnlyList<int> slopes = PracticalSlopes(family);
@@ -1589,9 +1597,28 @@ public static class CrossoverAutoSetup
                 return slopes.Contains(locked) ? [locked] : [];
             }
 
-            return fcHz < SteepSlopeMinimumJunctionHz
-                ? slopes.Where(slope => slope <= LowJunctionMaxSlopeDbPerOctave).ToList()
-                : slopes;
+            return slopes
+                .Where(slope => GroupDelaySeconds(family, slope, fcHz)
+                    <= MaxCrossoverGroupDelaySeconds)
+                .ToList();
+        }
+
+        // Memoized peak group delay of one crossover filter. Group delay is the
+        // same for a low-pass and a high-pass, so the side is irrelevant here; the
+        // fc is rounded to the nearest Hz for the key (the lattice is coarser).
+        private double GroupDelaySeconds(CrossoverFilterFamily family, int slope, double fcHz)
+        {
+            var key = (family, slope, (long)Math.Round(fcHz));
+            if (!groupDelayCache.TryGetValue(key, out double delay))
+            {
+                delay = CrossoverFilter.MaxGroupDelaySeconds(
+                    new CrossoverEdge(family, fcHz, slope),
+                    highPass: false,
+                    options.SampleRateHz);
+                groupDelayCache[key] = delay;
+            }
+
+            return delay;
         }
 
         // The lowest slope a driver of this class may take at a handover of this

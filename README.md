@@ -1428,11 +1428,16 @@ it defaults to Off because the measurements are loopback-referenced.
   result is headroom-safe. Handovers stay within the sensible
   range for the two driver types (so a woofer is not crossed up in its
   roll-off), land on human-friendly frequencies (5 Hz steps below 100 Hz,
-  10 Hz below 1 kHz, 50 Hz above), and junctions below 300 Hz never get slopes
-  steeper than 24 dB/oct — the group delay of a steep low-frequency crossover
-  costs more than the protection it buys, while a shallow filter that lets a
-  driver bleed into a non-adjacent driver's band is heavily penalized (a woofer
-  should not still be audible up at the tweeter). Placement heuristics steer the
+  10 Hz below 1 kHz, 50 Hz above), and a slope is allowed only while the
+  filter's peak group delay stays within 10 ms — a bound on the delay itself,
+  not the frequency, so the same steep slope is fine at a 250 Hz woofer/mid
+  handover (~5 ms) but excluded at a 75 Hz sub/woofer one (~17 ms), and a
+  low-group-delay family (Bessel) can go steeper down low than a Linkwitz-Riley
+  can. Group delay is identical for the low-pass and high-pass sides, so with
+  matched slopes a driver is held to the gentler of its two junctions; a steep
+  woofer low-pass paired with a gentle high-pass needs independent slopes on.
+  A shallow filter that lets a driver bleed into a non-adjacent driver's band is
+  still heavily penalized (a woofer should not be audible up at the tweeter). Placement heuristics steer the
   handovers further: a junction landing in the ear's most sensitive band
   (2–4 kHz) is penalized, and two drivers that share a wide band are crossed
   low — letting the upper (smaller) driver take over as early as it cleanly

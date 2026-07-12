@@ -82,6 +82,66 @@ public static class CrossoverFilter
         return response;
     }
 
+    /// <summary>
+    /// The peak group delay (seconds) this crossover edge adds, read from the
+    /// exact digital biquad cascade. Group delay τ(f) = −dφ/dω is sampled around
+    /// the corner — where a crossover's delay peaks — and the maximum returned:
+    /// the figure that bounds how much a steep low-frequency slope smears the
+    /// arrival. It scales as ≈ 1/f_c for a fixed order, and is the same for the
+    /// low-pass and high-pass sides, so callers may pass either.
+    /// </summary>
+    public static double MaxGroupDelaySeconds(
+        CrossoverEdge edge,
+        bool highPass,
+        double sampleRateHz)
+    {
+        if (sampleRateHz <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRateHz));
+        }
+        if (!(edge.FrequencyHz > 0))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(edge),
+                "The crossover corner frequency must be positive.");
+        }
+
+        CrossoverSpec spec = highPass
+            ? new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: edge)
+            : new CrossoverSpec(CrossoverKind.LowPass, LowPassEdge: edge);
+
+        // An octave-and-a-half either side of the corner captures the peak. The
+        // finite-difference step is small relative to the frequency, keeping the
+        // phase change per step well under π so no unwrapping is needed.
+        double nyquist = sampleRateHz / 2.0;
+        double lo = edge.FrequencyHz / 4.0;
+        double hi = Math.Min(edge.FrequencyHz * 4.0, nyquist * 0.99);
+        const int steps = 400;
+        double max = 0.0;
+        for (int i = 0; i <= steps; i++)
+        {
+            double f = lo * Math.Pow(hi / lo, (double)i / steps);
+            double delta = f * 1e-3;
+            if (f - delta <= 0 || f + delta >= nyquist)
+            {
+                continue;
+            }
+
+            Complex below = Response(spec, f - delta, sampleRateHz);
+            Complex above = Response(spec, f + delta, sampleRateHz);
+            // Arg(H(f−δ)·conj(H(f+δ))) = φ(f−δ) − φ(f+δ), the principal-value
+            // phase increase over 2·δ Hz; τ = that / (2π·2δ).
+            double phaseIncrease = (below * Complex.Conjugate(above)).Phase;
+            double groupDelay = phaseIncrease / (2.0 * Math.PI * 2.0 * delta);
+            if (groupDelay > max)
+            {
+                max = groupDelay;
+            }
+        }
+
+        return max;
+    }
+
     private static Complex EdgeResponse(
         CrossoverEdge edge,
         bool highPass,

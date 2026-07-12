@@ -108,7 +108,7 @@ internal sealed class PlotModelFactory
                 AddLineSeries(
                     model,
                     curve,
-                    "{0}\n{2:0.0} Hz\n{4:0.00} dB",
+                    DistortionTrackerFormat(curve.Kind),
                     Mode.FrequencyResponse,
                     DecibelAxisKey);
             }
@@ -127,7 +127,7 @@ internal sealed class PlotModelFactory
                     AddCompareLineSeries(
                         model,
                         curve,
-                        "{0}\n{2:0.0} Hz\n{4:0.00} dB",
+                        DistortionTrackerFormat(curve.Kind),
                         compare.DisplayName,
                         Mode.FrequencyResponse);
                 }
@@ -145,9 +145,21 @@ internal sealed class PlotModelFactory
         }
 
         PlotModelStyle.AddFrequencyAxis(model);
-        PlotModelStyle.AddDecibelAxis(model);
+        // The primary response is the loopback-referenced transfer magnitude (dBr,
+        // relative to the reference); the harmonic / THD / noise curves are ratios to
+        // the fundamental (dBc, relative to H1). The axis names both.
+        PlotModelStyle.AddDecibelAxis(model, "dBr/dBc");
         return model;
     }
+
+    // The tracker unit for a frequency-response curve: the primary is the transfer
+    // magnitude relative to the loopback reference (dBr), every distortion curve
+    // (HDn / THD / noise floor) is a ratio to the fundamental (dBc). The parenthetical
+    // spells the reference out so the two are not read on the same footing.
+    private static string DistortionTrackerFormat(AnalysisCurveKind kind) =>
+        kind == AnalysisCurveKind.Primary
+            ? "{0}\n{2:0.0} Hz\n{4:0.00} dBr (vs reference)"
+            : "{0}\n{2:0.0} Hz\n{4:0.00} dBc (vs fundamental)";
 
     public PlotModel CreatePhaseResponse(bool includeCurves)
     {

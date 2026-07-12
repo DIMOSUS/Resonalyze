@@ -417,6 +417,18 @@ re-verified.
 
 ### Harmonics / THD
 
+- [~] **Honest dBr/dBc axis + tracker labels (user request 2026-07-12, app-side,
+  needs Windows build):** the frequency-response magnitude is the loopback-referenced
+  transfer function (dimensionless gain, relative to the reference) — NOT dBFS, since
+  the deconvolution divides out the absolute level. The harmonic/THD/noise curves are
+  ratios to the fundamental (|Hn|/|H1|). So the two families are relative to DIFFERENT
+  references. The FR plot's dB axis is now titled `dBr/dBc`, and the curve trackers
+  spell the reference out: the primary reads `… dBr (vs reference)`, every distortion
+  curve (HDn / THD / noise floor) reads `… dBc (vs fundamental)`
+  (`PlotModelFactory.DistortionTrackerFormat`). `AddDecibelAxis` took an optional title
+  so the Live Spectrum plot (which mixes the transfer trace with a raw-input RTA, not a
+  dBc quantity) keeps its plain `dB`. *Compile-only under Windows targeting — verify the
+  axis title and tracker text render in the app.*
 - [x] **Harmonic curves were over-smoothed vs HD1 (user report 2026-07-12):** at
   1/12 the HD2..HDn/THD/noise curves looked blurred across a whole octave beside the
   fundamental. Two stacked causes: (1) `EssDistortion.BuildDbCurve` used the octave

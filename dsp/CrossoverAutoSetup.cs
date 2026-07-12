@@ -258,7 +258,14 @@ public static class CrossoverAutoSetup
     // narrower overlap), and the search never goes below a practical slope: a
     // first-order (6 dB/oct) filter protects nothing.
     private const double OverlapPenaltyDbPerOctave = 0.6;
-    private const int MinPracticalSlopeDbPerOctave = 12;
+    private const int MinPracticalSlopeDbPerOctave = 18;
+
+    // A driver whose roll-off reaches past its neighbour into a non-adjacent
+    // driver's band overlaps where it never should; that overlap is weighted this
+    // much heavier per band of distance than an unavoidable adjacent handover, so
+    // a too-shallow filter (a 12 dB/oct woofer bleeding up to the tweeter) is
+    // pushed to a steeper slope.
+    private const double NonAdjacentOverlapWeight = 4.0;
 
     // A handover in the ear's most sensitive band (2–4 kHz) puts the crossover's
     // phase wobble, lobing and any residual dip right where they are most
@@ -270,6 +277,12 @@ public static class CrossoverAutoSetup
     private const double EarSensitivityHighHz = 4_000;
     private const double EarSensitivitySigmaOctaves = 0.5;
     private const double EarSensitivityWeightDb = 0.5;
+
+    // A subwoofer wants to hand over where it stops being localizable (~80 Hz),
+    // not as low as the flatness search would drag it — a sub crossed at 45 Hz
+    // leaves the woofer carrying real bass. So the sub handover is nudged up
+    // toward the top of its sensible range.
+    private const double SubHandoverUpBiasWeightDb = 0.6;
 
     // When two adjacent drivers share a wide band, the handover can sit anywhere
     // across it; an engineer crosses low, letting the upper (smaller) driver take
@@ -363,10 +376,10 @@ public static class CrossoverAutoSetup
         DriverType.Midbass => (80, 500),
         DriverType.Midrange => (250, 4_000),
         // A quality tweeter crossed low (with a steep filter) covers more of the
-        // critical midrange for a better soundstage; the 1.5 kHz floor lets the
+        // critical midrange for a better soundstage; the 1.7 kHz floor lets the
         // search go there, but only when the measured tweeter band supports it —
         // a tweeter that has rolled off by 2.5 kHz still crosses no lower.
-        DriverType.Tweeter => (1_500, 20_000),
+        DriverType.Tweeter => (1_700, 20_000),
         _ => (20, 20_000)
     };
 
@@ -1817,7 +1830,22 @@ public static class CrossoverAutoSetup
 
                 // The band the two drivers share, and how far above its bottom
                 // this junction sits — both in octaves. A narrow overlap barely
-                // pulls; a wide one pulls firmly toward the low edge.
+                // pulls; a wide one pulls firmly toward the low edge. Skipped for
+                // the subwoofer handover: a sub wants to hand over where it stops
+                // being localizable (~80 Hz), not as low as it can play.
+                if (types[j] == DriverType.Subwoofer)
+                {
+                    // The sub hands over UP toward the top of its sensible range,
+                    // never pulled low.
+                    double subTop = SensibleRange(DriverType.Subwoofer).HighHz;
+                    if (fc < subTop)
+                    {
+                        total += SubHandoverUpBiasWeightDb * Math.Log2(subTop / fc);
+                    }
+
+                    continue;
+                }
+
                 double overlapLow = bands[j + 1].LowHz;
                 double overlapHigh = bands[j].HighHz;
                 if (overlapHigh > overlapLow && fc > overlapLow)
@@ -1869,39 +1897,60 @@ public static class CrossoverAutoSetup
             return Math.Sqrt(sumSquares / count) + DipPenaltyWeight * worstDip;
         }
 
-        // How many octaves adjacent drivers meaningfully overlap, summed over the
-        // junctions. Each driver is normalized to its own passband peak (so gains
-        // and levels drop out) and the overlap is the log-frequency integral of the
-        // two normalized responses' product — near an octave for a clean LR24
-        // handover, several octaves for shallow filters. Steeper slopes shrink it.
+        // How many octaves drivers meaningfully overlap, summed over every pair.
+        // Each driver is normalized to its own passband peak (so gains and levels
+        // drop out) and the overlap is the log-frequency integral of the two
+        // normalized responses' product — near an octave for a clean LR24
+        // handover of adjacent drivers, several octaves for shallow filters.
+        // Adjacent overlap is unavoidable at a handover; a shallow roll-off that
+        // reaches PAST the neighbour into a non-adjacent driver's band (a 12 dB/oct
+        // woofer still audible up at the tweeter) is far worse, so that overlap is
+        // weighted much heavier — which pushes such a driver to a steeper slope.
         private double OverlapPenalty(double[][] amplitudes)
         {
             double octavesPerBin = 1.0 / GridPointsPerOctave;
-            double total = 0;
-            for (int j = 0; j < channelCount - 1; j++)
+            var peaks = new double[channelCount];
+            for (int i = 0; i < channelCount; i++)
             {
-                double[] lower = amplitudes[j];
-                double[] upper = amplitudes[j + 1];
-                double peakLower = 0;
-                double peakUpper = 0;
+                double peak = 0;
+                double[] amplitude = amplitudes[i];
                 for (int k = evalLow; k <= evalHigh; k++)
                 {
-                    peakLower = Math.Max(peakLower, lower[k]);
-                    peakUpper = Math.Max(peakUpper, upper[k]);
+                    peak = Math.Max(peak, amplitude[k]);
                 }
 
-                if (peakLower <= 0 || peakUpper <= 0)
+                peaks[i] = peak;
+            }
+
+            double total = 0;
+            for (int i = 0; i < channelCount; i++)
+            {
+                if (peaks[i] <= 0)
                 {
                     continue;
                 }
 
-                double overlap = 0;
-                for (int k = evalLow; k <= evalHigh; k++)
+                for (int m = i + 1; m < channelCount; m++)
                 {
-                    overlap += lower[k] / peakLower * (upper[k] / peakUpper);
-                }
+                    if (peaks[m] <= 0)
+                    {
+                        continue;
+                    }
 
-                total += overlap * octavesPerBin;
+                    double[] lower = amplitudes[i];
+                    double[] upper = amplitudes[m];
+                    double overlap = 0;
+                    for (int k = evalLow; k <= evalHigh; k++)
+                    {
+                        overlap += lower[k] / peaks[i] * (upper[k] / peaks[m]);
+                    }
+
+                    int distance = m - i;
+                    double weight = distance == 1
+                        ? 1.0
+                        : NonAdjacentOverlapWeight * (distance - 1);
+                    total += weight * overlap * octavesPerBin;
+                }
             }
 
             return OverlapPenaltyDbPerOctave * total;

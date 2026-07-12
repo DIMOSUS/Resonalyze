@@ -3660,19 +3660,33 @@ public partial class VirtualCrossoverPanel : UserControl
 
         for (int i = 0; i < participating.Count; i++)
         {
-            VirtualCrossoverChannelSettings settings = participating[i].Settings;
+            ChannelRuntime channel = participating[i];
             CrossoverProposal proposal = proposals[i];
-            settings.CrossoverKind = proposal.Kind;
-            if (proposal.HighPassEdge is { } highPass)
+            // A crossover is one electrical filter, so both sides of a stereo
+            // pair get the SAME frequencies, families and slopes (and the same
+            // wizard gain) — only delay and the scene-offset trim differ per
+            // side. A mono pair has just its one side.
+            foreach (bool rightSide in new[] { false, true })
             {
-                settings.HighPassEdge = highPass;
+                if (channel.Pair.Mono && rightSide)
+                {
+                    continue;
+                }
+
+                VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
+                settings.CrossoverKind = proposal.Kind;
+                if (proposal.HighPassEdge is { } highPass)
+                {
+                    settings.HighPassEdge = highPass;
+                }
+                if (proposal.LowPassEdge is { } lowPass)
+                {
+                    settings.LowPassEdge = lowPass;
+                }
+                settings.GainDb = proposal.GainDb;
             }
-            if (proposal.LowPassEdge is { } lowPass)
-            {
-                settings.LowPassEdge = lowPass;
-            }
-            settings.GainDb = proposal.GainDb;
-            ApplySettingsToControl(participating[i]);
+
+            ApplySettingsToControl(channel);
         }
 
         ScheduleSave();

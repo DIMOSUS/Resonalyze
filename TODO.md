@@ -544,6 +544,18 @@ re-verified.
   1500 (LR24/LR24, tweeter steep) — matching the user's low-and-steep manual
   choice. Weights are tunable; still gated by the measured tweeter band (a
   tweeter rolled off by 2.5 kHz still crosses no lower).
+  **Follow-up tuning (user feedback 2026-07-12):** (a) L/R now get the SAME
+  crossover — the wizard writes freq/family/slope/gain to BOTH sides of a
+  stereo pair (`OpenAutoSetupWizard`), only delay/scene-level differ per
+  side. (b) Tweeter floor 1500 → **1700** (1500 was too low by ear). (c) The
+  wide-overlap "cross low" rule is skipped for the subwoofer and replaced by
+  an UP nudge toward its ~80 Hz sensible top (`SubHandoverUpBiasWeightDb`) —
+  the sub was landing at 45 Hz. (d) `MinPracticalSlopeDbPerOctave` 12 → **18**
+  and `OverlapPenalty` extended to non-adjacent pairs
+  (`NonAdjacentOverlapWeight`): a 12 dB/oct woofer was bleeding up to the
+  tweeter; both push interior drivers to steeper (24) slopes. Real 4-way now:
+  75 (BS24/BS24) / 250 (LR24/LR24) / 1750 (LR24/LR24) — all steep, sub ~80,
+  mid/tweeter low, matching the user's manual tune.
 - [x] **Virtual DSP redraw multithreaded (2026-07-12):** the interactive redraw
   ran its heavy math on one core — `ProcessChannelsAsync` applied each channel's
   full-length ApplyChain cascade in a sequential `Select` inside one `Task.Run`,

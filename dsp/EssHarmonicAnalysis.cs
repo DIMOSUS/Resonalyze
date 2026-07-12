@@ -139,6 +139,31 @@ public sealed record HarmonicPacket(
     WindowedSpectrum Spectrum);
 
 /// <summary>
+/// How cleanly one packet is isolated in time. The window edges (toward the
+/// neighbouring harmonics) are compared with the packet peak: a well-separated
+/// packet has decayed far below its peak by the edge; a slowly-decaying one (bass,
+/// short sweeps, car cabins) still carries energy there and leaks into — or is
+/// polluted by — the neighbour. <see cref="LeadingEdgeEnergyDb"/> is the edge
+/// toward the higher harmonic (earlier in time), <see cref="TrailingEdgeEnergyDb"/>
+/// toward the lower harmonic (the packet's own decay, later in time).
+/// </summary>
+public sealed record HarmonicPacketValidity(
+    int Order,
+    double LeadingEdgeEnergyDb,
+    double TrailingEdgeEnergyDb,
+    bool IsReliable,
+    string? Warning);
+
+/// <summary>
+/// Per-order isolation quality for a decomposition, plus the human-readable
+/// warnings for the orders whose packets overlap a neighbour.
+/// </summary>
+public sealed record HarmonicValidity(
+    bool IsValid,
+    IReadOnlyList<HarmonicPacketValidity> Packets,
+    IReadOnlyList<string> Warnings);
+
+/// <summary>
 /// The result of separating a deconvolved ESS impulse response into its linear
 /// packet and its harmonic distortion packets, each with a consistently
 /// normalized spectrum. Pure DSP: no calibration, no smoothing, no display
@@ -148,7 +173,8 @@ public sealed record HarmonicPacket(
 public sealed record EssHarmonicDecomposition(
     HarmonicPacket Linear,
     IReadOnlyList<HarmonicPacket> Harmonics,
-    EssSweepMetadata Sweep);
+    EssSweepMetadata Sweep,
+    HarmonicValidity Validity);
 
 /// <summary>
 /// Tuning for <see cref="EssHarmonicAnalysis.AnalyzeEssHarmonics"/>.
@@ -184,6 +210,17 @@ public sealed record HarmonicAnalysisOptions(
 /// </summary>
 public static class EssHarmonicAnalysis
 {
+    // Overlap classification, per Farina-style packet isolation. Edge energy is
+    // read relative to the packet peak: below the reliable margin the packet is
+    // well isolated; above the invalid margin its neighbour is polluted and the
+    // order cannot be trusted; between them it is drawn with a warning.
+    private const double ReliableEdgeDb = -40.0;
+    private const double InvalidEdgeDb = -25.0;
+
+    // Fraction of the window, at each boundary, treated as the "edge" region whose
+    // residual energy signals overlap with the adjacent packet.
+    private const double EdgeRegionFraction = 0.15;
+
     /// <summary>
     /// The time advance of harmonic <paramref name="harmonicOrder"/> relative to
     /// the linear packet for a logarithmic sweep: Δt = L · ln(n) / ln(f2/f1).
@@ -359,6 +396,8 @@ public static class EssHarmonicAnalysis
             options.MaxFftLength);
 
         var packets = new HarmonicPacket[options.MaxHarmonic];
+        var validities = new HarmonicPacketValidity[options.MaxHarmonic - 1];
+        var warnings = new List<string>();
         for (int order = 1; order <= options.MaxHarmonic; order++)
         {
             HarmonicWindowDefinition definition = windows[order - 1];
@@ -368,11 +407,104 @@ public static class EssHarmonicAnalysis
                 fftLength,
                 sweep.SampleRateHz);
             packets[order - 1] = new HarmonicPacket(order, definition, spectrum);
+
+            // The linear packet's later "edge" is the room decay, not a harmonic
+            // neighbour, so only the harmonic packets are checked for overlap.
+            if (order >= 2)
+            {
+                HarmonicPacketValidity validity =
+                    EvaluatePacketOverlap(deconvolvedImpulse, definition);
+                validities[order - 2] = validity;
+                if (validity.Warning != null)
+                {
+                    warnings.Add(validity.Warning);
+                }
+            }
         }
 
         return new EssHarmonicDecomposition(
             packets[0],
             packets.Skip(1).ToArray(),
-            sweep);
+            sweep,
+            new HarmonicValidity(
+                warnings.Count == 0,
+                validities,
+                warnings));
+    }
+
+    // Compares the residual energy at each window edge with the packet peak. A
+    // contained (fast-decaying) packet reads far below its peak at both edges; a
+    // packet that has not decayed by the edge is leaking into its neighbour.
+    private static HarmonicPacketValidity EvaluatePacketOverlap(
+        ReadOnlySpan<double> impulse,
+        HarmonicWindowDefinition window)
+    {
+        int start = Math.Max(0, window.StartSample);
+        int end = Math.Min(impulse.Length - 1, window.EndSample);
+        int length = end - start + 1;
+        if (length < 4)
+        {
+            return new HarmonicPacketValidity(
+                window.Order, double.NegativeInfinity, double.NegativeInfinity, true, null);
+        }
+
+        int peak = Math.Clamp(window.PeakSample, start, end);
+        double peakEnergy = Math.Abs(impulse[peak]);
+        int plateauFrom = Math.Max(start, peak - length / 8);
+        int plateauTo = Math.Min(end, peak + length / 8);
+        for (int i = plateauFrom; i <= plateauTo; i++)
+        {
+            peakEnergy = Math.Max(peakEnergy, Math.Abs(impulse[i]));
+        }
+
+        if (!(peakEnergy > 0.0))
+        {
+            return new HarmonicPacketValidity(
+                window.Order, double.NegativeInfinity, double.NegativeInfinity, true, null);
+        }
+
+        int edgeLength = Math.Max(1, (int)Math.Round(EdgeRegionFraction * length));
+        double leadingDb = EdgeEnergyDb(impulse, start, edgeLength, peakEnergy);
+        double trailingDb = EdgeEnergyDb(impulse, end - edgeLength + 1, edgeLength, peakEnergy);
+
+        double worst = Math.Max(leadingDb, trailingDb);
+        bool reliable = worst <= InvalidEdgeDb;
+        string? warning = null;
+        if (worst > InvalidEdgeDb)
+        {
+            warning = $"HD{window.Order} packet overlaps its neighbour " +
+                $"({worst:0} dB at the window edge); increase the sweep duration " +
+                "or narrow the analysed range.";
+        }
+        else if (worst > ReliableEdgeDb)
+        {
+            warning = $"HD{window.Order} isolation is marginal " +
+                $"({worst:0} dB at the window edge); a longer sweep would help.";
+        }
+
+        return new HarmonicPacketValidity(window.Order, leadingDb, trailingDb, reliable, warning);
+    }
+
+    private static double EdgeEnergyDb(
+        ReadOnlySpan<double> impulse,
+        int from,
+        int length,
+        double peakEnergy)
+    {
+        int start = Math.Max(0, from);
+        int end = Math.Min(impulse.Length, from + length);
+        if (end <= start)
+        {
+            return double.NegativeInfinity;
+        }
+
+        double sumSquares = 0.0;
+        for (int i = start; i < end; i++)
+        {
+            sumSquares += impulse[i] * impulse[i];
+        }
+
+        double rms = Math.Sqrt(sumSquares / (end - start));
+        return rms > 0.0 ? 20.0 * Math.Log10(rms / peakEnergy) : double.NegativeInfinity;
     }
 }

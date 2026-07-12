@@ -434,11 +434,16 @@ re-verified.
   The loopback transfer stays the primary display curve. Validated by an
   end-to-end polynomial ESS test (below); real captures can't validate this (the
   test-data submodule stores only transfer IRs, which carry no harmonic packets).
-- [ ] **No overlap check between harmonic packets.** Long decay (bass, short
-  sweeps, car cabins) leaks one packet's tail into the next window; the curves
-  stay confident-looking. Fix: compute the available separation and warn when
-  energy near the window edge has not fallen by a set margin. (Next commit of the
-  harmonic rework; the per-order window geometry it needs is already in place.)
+- [x] **Overlap check between harmonic packets** — done (2026-07-12). Each
+  harmonic packet's residual energy at its window edges is compared with its peak
+  (`HarmonicPacketValidity`): below −40 dB it is reliable, between −40 and −25 dB
+  it is marginal (warned), above −25 dB it overlaps a neighbour and the order is
+  dropped from the curves AND excluded from THD rather than drawn confidently.
+  Warnings ride on `DistortionSpectrum.Warnings`. Tests pin a contained system
+  (all reliable, no warnings) and a slow-decay packet (flagged, masked, THD
+  excludes it). *Windows follow-up:* the drop already flows through to the app (an
+  overlapping order returns all-NaN, so it is not plotted), but surfacing the
+  warning TEXT next to the plot is a UI hookup that needs a live check.
 - [x] **No end-to-end ESS nonlinearity test** — added (2026-07-12).
   `EssPolynomialDistortionTests` drives a real generated ESS through
   `y = x + a2·x² + a3·x³`, deconvolves with the production inverse filter, and

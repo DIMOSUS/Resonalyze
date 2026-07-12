@@ -50,7 +50,8 @@ public sealed record DistortionSpectrum(
     IReadOnlyDictionary<int, double[]> HarmonicAmplitude,
     IReadOnlyDictionary<int, double[]> HarmonicDistortionRatio,
     double[] ThdRatio,
-    bool[] Reliable);
+    bool[] Reliable,
+    IReadOnlyList<string> Warnings);
 
 /// <summary>
 /// Computes relative harmonic distortion (HDn) and total harmonic distortion (THD)
@@ -108,6 +109,14 @@ public static class EssDistortion
         double denominatorFloor = linearPeak * Math.Pow(10.0, -options.MaxDenominatorDropDb / 20.0);
         bool[] reliable = new bool[gridPoints];
 
+        // Orders whose packet overlaps a neighbour cannot be trusted: a leaking
+        // packet reports a confident-looking curve, so it is dropped entirely (and
+        // excluded from THD) rather than drawn, with the warning surfaced.
+        var overlappingOrders = new HashSet<int>(
+            decomposition.Validity.Packets
+                .Where(packet => !packet.IsReliable)
+                .Select(packet => packet.Order));
+
         int[] orders = harmonicAmplitude.Keys.OrderBy(order => order).ToArray();
         var harmonicDistortion = new Dictionary<int, double[]>();
         foreach (int order in orders)
@@ -139,7 +148,8 @@ public static class EssDistortion
             foreach (int order in orders)
             {
                 double amplitude = harmonicAmplitude[order][i];
-                if (double.IsFinite(amplitude) && amplitude > 0.0)
+                if (!overlappingOrders.Contains(order) &&
+                    double.IsFinite(amplitude) && amplitude > 0.0)
                 {
                     harmonicDistortion[order][i] = amplitude / denominator;
                     sumOfSquares += amplitude * amplitude;
@@ -162,7 +172,8 @@ public static class EssDistortion
             harmonicAmplitude,
             harmonicDistortion,
             thd,
-            reliable);
+            reliable,
+            decomposition.Validity.Warnings);
     }
 
     /// <summary>

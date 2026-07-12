@@ -120,6 +120,14 @@ public static class CrossoverAutoSetup
     // remaining room ripple of a 1/3-octave-smoothed in-room curve asks for.
     private const double BandEdgeDropDb = 8.0;
 
+    // The widest below-threshold gap EstimateBand bridges inside one band. A
+    // driver's own passband can have a narrow interference or room null that
+    // dips past the edge threshold for a fraction of an octave (a 1/3-octave-
+    // smoothed null lands around here); anything wider is a real dead zone that
+    // separates the usable band from an isolated resonance and must NOT be
+    // bridged, or a lone peak would stretch the band and mislabel the driver.
+    private const double MaxBandGapOctaves = 0.5;
+
     // The proposed crossover keeps at least this margin (octaves) above the
     // upper driver's low edge — the excursion protection — and below the lower
     // driver's high edge.
@@ -317,8 +325,31 @@ public static class CrossoverAutoSetup
         double reference = levels[(int)(levels.Count * 0.85)];
         double threshold = reference - BandEdgeDropDb;
 
-        double lowHz = double.NaN;
-        double highHz = double.NaN;
+        // Group the above-threshold points into contiguous segments, bridging a
+        // below-threshold gap only while it stays within MaxBandGapOctaves (a
+        // narrow interference/room null the driver's own band can have). The
+        // usable band is then the most PROMINENT segment — the one with the
+        // largest area above threshold, integrated over log-frequency — so an
+        // isolated resonance sitting past a deep dead gap cannot extend the band
+        // and mislabel the driver or skew the crossover bounds.
+        double bestLow = double.NaN;
+        double bestHigh = double.NaN;
+        double bestArea = double.NegativeInfinity;
+        double segLow = double.NaN;
+        double segHigh = double.NaN;
+        double segArea = 0.0;
+        double lastAboveHz = double.NaN;
+
+        void CloseSegment()
+        {
+            if (!double.IsNaN(segLow) && segHigh > segLow && segArea > bestArea)
+            {
+                bestArea = segArea;
+                bestLow = segLow;
+                bestHigh = segHigh;
+            }
+        }
+
         foreach (SignalPoint point in magnitudeDb)
         {
             if (!double.IsFinite(point.Y) || point.Y < threshold)
@@ -326,13 +357,28 @@ public static class CrossoverAutoSetup
                 continue;
             }
 
-            if (double.IsNaN(lowHz))
+            if (!double.IsNaN(lastAboveHz)
+                && Math.Log2(point.X / lastAboveHz) > MaxBandGapOctaves)
             {
-                lowHz = point.X;
+                // The dead gap since the last in-band point is too wide to
+                // bridge: close the open segment and start a fresh one here.
+                CloseSegment();
+                segLow = double.NaN;
+                segArea = 0.0;
             }
-            highHz = point.X;
-        }
 
+            if (double.IsNaN(segLow))
+            {
+                segLow = point.X;
+            }
+            segHigh = point.X;
+            segArea += point.Y - threshold;
+            lastAboveHz = point.X;
+        }
+        CloseSegment();
+
+        double lowHz = bestLow;
+        double highHz = bestHigh;
         if (double.IsNaN(lowHz) || highHz <= lowHz)
         {
             throw new ArgumentException(

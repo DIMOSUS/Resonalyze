@@ -191,6 +191,79 @@ public sealed class CrossoverAutoSetupTests
     }
 
     [Fact]
+    public void EstimateBand_IgnoresAnIsolatedResonancePastADeadGap()
+    {
+        // A woofer flat 40-400 Hz, then a deep dead gap, then a lone breakup
+        // resonance up near 3 kHz. The usable band must stay on the woofer: the
+        // isolated peak past the gap must not stretch HighHz and relabel the
+        // driver a midbass.
+        var points = new List<SignalPoint>();
+        foreach (double f in EqualizationCurve.LogFrequencyGrid(20, 20_000, 512))
+        {
+            double y;
+            if (f < 40)
+            {
+                y = -24.0 * Math.Log2(40 / f);
+            }
+            else if (f <= 400)
+            {
+                y = 0.0;
+            }
+            else
+            {
+                y = -24.0 * Math.Log2(f / 400); // deep roll-off above the band
+            }
+
+            if (f >= 2_700 && f <= 3_300)
+            {
+                y = 0.0; // an isolated resonance island past a dead gap
+            }
+
+            points.Add(new SignalPoint(f, y));
+        }
+
+        DriverBandEstimate band = CrossoverAutoSetup.EstimateBand(points);
+        Assert.InRange(band.HighHz, 400, 1_000); // the woofer edge, not the island
+        Assert.Equal(DriverType.Woofer, band.SuggestedType);
+    }
+
+    [Fact]
+    public void EstimateBand_BridgesANarrowInBandNull()
+    {
+        // A wide band (100 Hz - 2 kHz) with a single narrow deep null inside it
+        // (an interference or room dip). The narrow gap is bridged, so the band
+        // stays whole rather than splitting at the notch.
+        var points = new List<SignalPoint>();
+        foreach (double f in EqualizationCurve.LogFrequencyGrid(20, 20_000, 512))
+        {
+            double y;
+            if (f < 100)
+            {
+                y = -24.0 * Math.Log2(100 / f);
+            }
+            else if (f <= 2_000)
+            {
+                y = 0.0;
+            }
+            else
+            {
+                y = -24.0 * Math.Log2(f / 2_000);
+            }
+
+            if (f >= 560 && f <= 640)
+            {
+                y = -20.0; // a narrow deep null well within the passband
+            }
+
+            points.Add(new SignalPoint(f, y));
+        }
+
+        DriverBandEstimate band = CrossoverAutoSetup.EstimateBand(points);
+        Assert.InRange(band.LowHz, 70, 110);
+        Assert.InRange(band.HighHz, 2_000, 2_600);
+    }
+
+    [Fact]
     public void Propose_WooferToMidrange_KeepsTheCrossoverInTheWooferRange()
     {
         // Regression: a woofer whose measured response extends into the midband

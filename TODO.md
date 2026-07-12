@@ -605,10 +605,21 @@ re-verified.
   early; still gated by the measured midrange band. Real 4-way then moved the
   woofer/mid junction 250 → 220 (all-families 75/220/1750, BW-only 65/220/1700),
   with 200 right behind in the pool — matching the user's manual find.
-- [ ] **`EstimateBand` merges disjoint islands into one band** (first/last bin
-  above a global threshold): an isolated resonance above a dead gap extends
-  HighHz and misclassifies the driver. Fix: the most significant contiguous
-  segment above threshold with bounded gap tolerance.
+- [x] **`EstimateBand` merges disjoint islands into one band (fixed 2026-07-12):**
+  it took the first and last bin above the −8 dB threshold, so an isolated
+  resonance past a deep dead gap stretched HighHz and could mislabel the driver
+  or skew the crossover bounds. Now the above-threshold points are grouped into
+  contiguous segments, bridging a below-threshold gap only while it stays within
+  `MaxBandGapOctaves = 0.5` (a narrow interference/room null a driver's own band
+  can have — a 1/3-octave-smoothed null lands there); the usable band is the most
+  PROMINENT segment (largest area above threshold integrated over log-frequency).
+  On the real left 4-way this trimmed two genuine over-extensions: midrange high
+  edge 4387 → 2768 Hz and tweeter 20000 → 11954 Hz (both were isolated HF
+  resonances past dead gaps). Two new synthetic tests pin it (isolated resonance
+  ignored; narrow in-band null bridged). Side effect on the auto winner: the
+  corrected band levels re-rank the flatness score slightly — woofer/mid 220 →
+  250, tweeter 1750 → 1700 — while the 200 Hz search floor and the 200–230
+  candidates stay in the top of the pool.
 
 ### EQ Wizard
 

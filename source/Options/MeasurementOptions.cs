@@ -144,6 +144,7 @@ namespace Resonalyze.Options
                 {
                     AudioBackend.Wave => "MME Compatibility",
                     AudioBackend.WasapiShared => "WASAPI Shared",
+                    AudioBackend.WasapiExclusive => "WASAPI Exclusive",
                     _ => backend.ToString()
                 });
             }
@@ -295,7 +296,7 @@ namespace Resonalyze.Options
                 comboBoxPlaybackDevice.SelectedItem is AudioEndpointInfo renderSelection
                     ? renderSelection.Id
                     : preferredWasapiRenderEndpointId;
-            if (audioBackend == AudioBackend.WasapiShared)
+            if (IsWasapiBackend(audioBackend))
             {
                 using var endpointService = new WindowsAudioEndpointService();
                 AudioEndpointInfo captureEndpoint = SelectWasapiEndpoint(
@@ -311,7 +312,8 @@ namespace Resonalyze.Options
                     throw new InvalidOperationException(
                         "A selected WASAPI endpoint is unavailable. Reconnect it or select a replacement.");
                 }
-                if (captureEndpoint.MixFormat.SampleRate != renderEndpoint.MixFormat.SampleRate)
+                if (audioBackend == AudioBackend.WasapiShared &&
+                    captureEndpoint.MixFormat.SampleRate != renderEndpoint.MixFormat.SampleRate)
                 {
                     throw new InvalidOperationException(
                         "The default WASAPI capture and render endpoints use different mix rates. " +
@@ -319,9 +321,12 @@ namespace Resonalyze.Options
                 }
                 wasapiCaptureEndpointId = captureEndpoint.Id;
                 wasapiRenderEndpointId = renderEndpoint.Id;
-                sampleRate = captureEndpoint.MixFormat.SampleRate;
+                if (audioBackend == AudioBackend.WasapiShared)
+                {
+                    sampleRate = captureEndpoint.MixFormat.SampleRate;
+                }
             }
-            if (audioBackend is AudioBackend.Wave or AudioBackend.WasapiShared &&
+            if (IsWasapiBackend(audioBackend) &&
                 waveLoopbackInputChannelOffset.HasValue &&
                 waveLoopbackInputChannelOffset.Value == waveInputChannelOffset)
             {
@@ -612,8 +617,7 @@ namespace Resonalyze.Options
         {
             bool useAsio =
                 comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio;
-            bool useWasapi =
-                comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.WasapiShared;
+            bool useWasapi = IsSelectedWasapiBackend();
             waveAudioBackendPanel.Visible = !useAsio;
             asioAudioBackendPanel.Visible = useAsio;
             comboBoxPlaybackDevice.Enabled = !useAsio;
@@ -848,7 +852,7 @@ namespace Resonalyze.Options
             initializing = true;
             try
             {
-                if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.WasapiShared)
+                if (IsSelectedWasapiBackend())
                 {
                     PopulateWasapiEndpointCombo(
                         comboBoxPlaybackDevice,
@@ -1010,7 +1014,7 @@ namespace Resonalyze.Options
                 return;
             }
 
-            if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.WasapiShared)
+            if (IsSelectedWasapiBackend())
             {
                 comboBoxWaveLoopbackChannel.Enabled = true;
                 labelWaveLoopbackStatus.Font = NormalStatusFont;
@@ -1021,6 +1025,27 @@ namespace Resonalyze.Options
                     labelWaveLoopbackStatus.Text =
                         "⚠ A saved endpoint is unavailable. Reconnect it or select a replacement.";
                     labelWaveLoopbackStatus.ForeColor = Color.Gold;
+                    return;
+                }
+                if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.WasapiExclusive)
+                {
+                    int selectedRate = GetSelectedSampleRate();
+                    int bits = (int)numericUpDownBits.Value;
+                    bool supported = IsExclusiveFormatSupported(
+                        capture.Id,
+                        render.Id,
+                        selectedRate,
+                        bits,
+                        Math.Max(
+                            GetSelectedWaveInputChannelOffset(),
+                            GetSelectedWaveLoopbackChannelOffset() ?? 0) + 1,
+                        GetSelectedPlaybackChannelCount());
+                    labelWaveLoopbackStatus.Text = supported
+                        ? $"Exclusive format: {selectedRate:N0} Hz / {bits}-bit, supported by both endpoints."
+                        : $"⚠ Exclusive format {selectedRate:N0} Hz / {bits}-bit is not supported by both endpoints.";
+                    labelWaveLoopbackStatus.ForeColor = supported
+                        ? Color.LightGray
+                        : Color.LightSalmon;
                     return;
                 }
                 string compatibility = capture.MixFormat.SampleRate == render.MixFormat.SampleRate
@@ -1347,14 +1372,35 @@ namespace Resonalyze.Options
                         : null);
             }
 
-            if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.WasapiShared)
+            if (IsSelectedWasapiBackend())
             {
                 AudioEndpointInfo? capture = comboBoxRecordingDevice.SelectedItem as AudioEndpointInfo;
                 AudioEndpointInfo? render = comboBoxPlaybackDevice.SelectedItem as AudioEndpointInfo;
-                return capture is { IsAvailable: true } && render is { IsAvailable: true } &&
-                    capture.MixFormat.SampleRate == render.MixFormat.SampleRate
+                if (capture is not { IsAvailable: true } || render is not { IsAvailable: true })
+                {
+                    return [];
+                }
+                if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.WasapiShared)
+                {
+                    return capture.MixFormat.SampleRate == render.MixFormat.SampleRate
                         ? [capture.MixFormat.SampleRate]
                         : [];
+                }
+
+                int captureChannels = Math.Max(
+                    GetSelectedWaveInputChannelOffset(),
+                    GetSelectedWaveLoopbackChannelOffset() ?? 0) + 1;
+                int renderChannels = GetSelectedPlaybackChannelCount();
+                int bits = (int)numericUpDownBits.Value;
+                return SampleRateCatalog.GetCandidateRates()
+                    .Where(rate => IsExclusiveFormatSupported(
+                        capture.Id,
+                        render.Id,
+                        rate,
+                        bits,
+                        captureChannels,
+                        renderChannels))
+                    .ToArray();
             }
 
             return AudioDeviceCatalog.GetSupportedWaveSampleRates(
@@ -1374,6 +1420,37 @@ namespace Resonalyze.Options
             comboBoxWaveLoopbackChannel.SelectedItem is InputChannelOption option
                 ? option.Offset
                 : null;
+
+        private static bool IsExclusiveFormatSupported(
+            string captureEndpointId,
+            string renderEndpointId,
+            int sampleRate,
+            int bits,
+            int captureChannels,
+            int renderChannels)
+        {
+            try
+            {
+                return WasapiFormatSupport.CheckExclusive(
+                    captureEndpointId,
+                    renderEndpointId,
+                    sampleRate,
+                    bits,
+                    captureChannels,
+                    renderChannels).Supported;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool IsSelectedWasapiBackend() =>
+            comboBoxAudioBackend.SelectedIndex is
+                (int)AudioBackend.WasapiShared or (int)AudioBackend.WasapiExclusive;
+
+        private static bool IsWasapiBackend(AudioBackend backend) =>
+            backend is AudioBackend.WasapiShared or AudioBackend.WasapiExclusive;
 
         private int GetSelectedSampleRate()
         {

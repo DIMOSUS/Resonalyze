@@ -12,9 +12,14 @@ public sealed class WasapiPlaybackDevice : IAudioPlaybackDevice
     private readonly string friendlyName;
     private TaskCompletionSource<bool>? playbackEnded;
     private IWaveProvider? initializedSource;
+    private IWaveProvider? initializedProvider;
     private bool disposed;
 
-    public WasapiPlaybackDevice(string endpointId, int bufferMilliseconds = 100)
+    public WasapiPlaybackDevice(
+        string endpointId,
+        int bufferMilliseconds = 100,
+        AudioClientShareMode shareMode = AudioClientShareMode.Shared,
+        WaveFormat? requestedFormat = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpointId);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bufferMilliseconds);
@@ -28,16 +33,22 @@ public sealed class WasapiPlaybackDevice : IAudioPlaybackDevice
         friendlyName = endpoint.FriendlyName;
         output = new WasapiOut(
             endpoint,
-            AudioClientShareMode.Shared,
+            shareMode,
             useEventSync: true,
             bufferMilliseconds);
         output.PlaybackStopped += HandlePlaybackStopped;
-        PlaybackFormat = endpoint.AudioClient.MixFormat;
+        PlaybackFormat = shareMode == AudioClientShareMode.Exclusive
+            ? requestedFormat ?? throw new ArgumentNullException(
+                nameof(requestedFormat),
+                "WASAPI Exclusive playback requires an explicit format.")
+            : endpoint.AudioClient.MixFormat;
+        ShareMode = shareMode;
     }
 
     public WaveFormat PlaybackFormat { get; private set; }
     public string EndpointId => endpointId;
     public string FriendlyName => friendlyName;
+    public AudioClientShareMode ShareMode { get; }
 
     public Task StartAsync(IWaveProvider source, CancellationToken cancellationToken)
     {
@@ -51,8 +62,16 @@ public sealed class WasapiPlaybackDevice : IAudioPlaybackDevice
         if (source.WaveFormat.SampleRate != PlaybackFormat.SampleRate)
         {
             throw new InvalidOperationException(
-                $"WASAPI Shared requires the endpoint mix rate ({PlaybackFormat.SampleRate} Hz), " +
+                $"WASAPI {ShareMode} requires {PlaybackFormat.SampleRate} Hz, " +
                 $"but the source is {source.WaveFormat.SampleRate} Hz.");
+        }
+        if (ShareMode == AudioClientShareMode.Exclusive &&
+            (source.WaveFormat.BitsPerSample != PlaybackFormat.BitsPerSample ||
+                source.WaveFormat.Channels != PlaybackFormat.Channels))
+        {
+            throw new InvalidOperationException(
+                $"WASAPI Exclusive source format ({source.WaveFormat}) does not match " +
+                $"the requested endpoint format ({PlaybackFormat}).");
         }
         if (initializedSource != null && !ReferenceEquals(initializedSource, source))
         {
@@ -63,7 +82,10 @@ public sealed class WasapiPlaybackDevice : IAudioPlaybackDevice
         playbackEnded = SampleWaiterRegistry.NewSignal();
         if (initializedSource == null)
         {
-            output.Init(source);
+            initializedProvider = ShareMode == AudioClientShareMode.Exclusive
+                ? new WaveFormatOverrideProvider(source, PlaybackFormat)
+                : source;
+            output.Init(initializedProvider);
             initializedSource = source;
         }
         output.Play();
@@ -111,5 +133,21 @@ public sealed class WasapiPlaybackDevice : IAudioPlaybackDevice
         // See WasapiCaptureDevice: explicitly releasing this MMDevice can poison
         // a later RCW for the same endpoint identity.
         enumerator.Dispose();
+    }
+
+    private sealed class WaveFormatOverrideProvider : IWaveProvider
+    {
+        private readonly IWaveProvider source;
+
+        public WaveFormatOverrideProvider(IWaveProvider source, WaveFormat waveFormat)
+        {
+            this.source = source;
+            WaveFormat = waveFormat;
+        }
+
+        public WaveFormat WaveFormat { get; }
+
+        public int Read(byte[] buffer, int offset, int count) =>
+            source.Read(buffer, offset, count);
     }
 }

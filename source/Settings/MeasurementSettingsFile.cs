@@ -256,10 +256,10 @@ internal sealed class MeasurementSettingsFile
                     sampleRate,
                     AsioOutputChannelOffset,
                     input: false),
-                backend == AudioBackend.WasapiShared
+                IsWasapiBackend(backend)
                     ? Math.Max(0, WaveInputChannelOffset)
                     : NormalizeWaveChannelOffset(WaveInputChannelOffset),
-                backend == AudioBackend.WasapiShared
+                IsWasapiBackend(backend)
                     ? NormalizeOptionalWasapiChannelOffset(WaveLoopbackInputChannelOffset)
                     : NormalizeOptionalWaveChannelOffset(WaveLoopbackInputChannelOffset),
                 NormalizeOptionalAsioChannelOffset(
@@ -741,6 +741,9 @@ internal sealed class MeasurementSettingsFile
 
     private static int? NormalizeOptionalWasapiChannelOffset(int? offset) =>
         offset.HasValue ? Math.Max(0, offset.Value) : null;
+
+    private static bool IsWasapiBackend(AudioBackend backend) =>
+        backend is AudioBackend.WasapiShared or AudioBackend.WasapiExclusive;
 
     private static int? NormalizeOptionalAsioChannelOffset(
         string? asioDriverName,

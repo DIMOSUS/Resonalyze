@@ -117,4 +117,48 @@ public sealed class WasapiHardwareSmokeTests
 
         Assert.True(succeeded, measurement.LastError?.ToString());
     }
+
+    [Fact]
+    [Trait("Category", "Hardware")]
+    public async Task ExclusiveSweepRunsOnAReportedDuplexFormat()
+    {
+        string? captureId = Environment.GetEnvironmentVariable(
+            "RESONALYZE_WASAPI_CAPTURE_ENDPOINT_ID");
+        string? renderId = Environment.GetEnvironmentVariable(
+            "RESONALYZE_WASAPI_RENDER_ENDPOINT_ID");
+        if (string.IsNullOrWhiteSpace(captureId) || string.IsNullOrWhiteSpace(renderId))
+        {
+            return;
+        }
+
+        DuplexFormatSupport? supported = SampleRateCatalog.GetCandidateRates()
+            .Select(rate => WasapiFormatSupport.CheckExclusive(
+                captureId,
+                renderId,
+                rate,
+                24,
+                2,
+                2))
+            .FirstOrDefault(format => format.Supported);
+        Assert.NotNull(supported);
+
+        using var measurement = new ExpSweepMeasurement();
+        measurement.Init(
+            8,
+            supported.SampleRate,
+            supported.BitsPerSample,
+            0.25,
+            PlaybackChannel.Right,
+            audioBackend: AudioBackend.WasapiExclusive,
+            waveInputChannelOffset: 0,
+            waveLoopbackInputChannelOffset: 1,
+            averageRunCount: 1,
+            wasapiCaptureEndpointId: captureId,
+            wasapiRenderEndpointId: renderId,
+            wasapiBufferMilliseconds: 100);
+
+        bool succeeded = await measurement.RunAsync();
+
+        Assert.True(succeeded, measurement.LastError?.ToString());
+    }
 }

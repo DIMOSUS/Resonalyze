@@ -13,7 +13,11 @@ public sealed class WasapiCaptureDevice : IAudioCaptureDevice
     private TaskCompletionSource<bool>? stopped;
     private bool disposed;
 
-    public WasapiCaptureDevice(string endpointId, int bufferMilliseconds = 100)
+    public WasapiCaptureDevice(
+        string endpointId,
+        int bufferMilliseconds = 100,
+        AudioClientShareMode shareMode = AudioClientShareMode.Shared,
+        WaveFormat? requestedFormat = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpointId);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bufferMilliseconds);
@@ -26,7 +30,16 @@ public sealed class WasapiCaptureDevice : IAudioCaptureDevice
         this.endpointId = endpoint.ID;
         friendlyName = endpoint.FriendlyName;
 
-        capture = new WasapiCapture(endpoint, useEventSync: true, bufferMilliseconds);
+        capture = new WasapiCapture(endpoint, useEventSync: true, bufferMilliseconds)
+        {
+            ShareMode = shareMode
+        };
+        if (shareMode == AudioClientShareMode.Exclusive)
+        {
+            capture.WaveFormat = requestedFormat ?? throw new ArgumentNullException(
+                nameof(requestedFormat),
+                "WASAPI Exclusive capture requires an explicit format.");
+        }
         capture.DataAvailable += HandleDataAvailable;
         capture.RecordingStopped += HandleRecordingStopped;
         CaptureFormat = capture.WaveFormat;
@@ -39,6 +52,7 @@ public sealed class WasapiCaptureDevice : IAudioCaptureDevice
     public int ChannelCount => CaptureFormat.Channels;
     public string EndpointId => endpointId;
     public string FriendlyName => friendlyName;
+    public AudioClientShareMode ShareMode => capture.ShareMode;
     public long CapturePackets { get; private set; }
 
     public Task StartAsync(CancellationToken cancellationToken)

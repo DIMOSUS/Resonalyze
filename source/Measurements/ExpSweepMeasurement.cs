@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
+using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using Resonalyze.Dsp;
 using static System.Math;
@@ -126,10 +127,10 @@ namespace Resonalyze
             LastAudioSessionDiagnostics = null;
             AudioBackend = audioBackend;
             AsioDriverName = asioDriverName;
-            WaveInputChannelOffset = audioBackend == AudioBackend.WasapiShared
+            WaveInputChannelOffset = IsWasapiBackend(audioBackend)
                 ? Math.Max(0, waveInputChannelOffset)
                 : Math.Clamp(waveInputChannelOffset, 0, 1);
-            WaveLoopbackInputChannelOffset = audioBackend == AudioBackend.WasapiShared
+            WaveLoopbackInputChannelOffset = IsWasapiBackend(audioBackend)
                 ? NormalizeOptionalWasapiChannel(waveLoopbackInputChannelOffset)
                 : NormalizeOptionalWaveChannel(waveLoopbackInputChannelOffset);
             AsioInputChannelOffset = asioInputChannelOffset;
@@ -367,7 +368,7 @@ namespace Resonalyze
                         .ConfigureAwait(false);
                 }
 
-                if (AudioBackend == AudioBackend.WasapiShared)
+                if (IsWasapiBackend(AudioBackend))
                 {
                     wasapiCapture ??= new WasapiSweepCapture(this, sweep);
                     return await wasapiCapture.CaptureRunAsync(cancellationToken)
@@ -576,27 +577,64 @@ namespace Resonalyze
                     throw new InvalidOperationException("Select a WASAPI capture endpoint.");
                 string renderEndpointId = owner.WasapiRenderEndpointId ??
                     throw new InvalidOperationException("Select a WASAPI render endpoint.");
+                AudioClientShareMode shareMode = owner.AudioBackend == AudioBackend.WasapiExclusive
+                    ? AudioClientShareMode.Exclusive
+                    : AudioClientShareMode.Shared;
+                int requiredChannels = owner.GetRequiredWaveInputChannelCount();
+                int renderChannels = owner.PlaybackChannel == PlaybackChannel.Mono ? 1 : 2;
+                WaveFormat? captureFormat = null;
+                WaveFormat? renderFormat = null;
+                if (shareMode == AudioClientShareMode.Exclusive)
+                {
+                    DuplexFormatSupport support = WasapiFormatSupport.CheckExclusive(
+                        captureEndpointId,
+                        renderEndpointId,
+                        owner.SampleRate,
+                        owner.Bits,
+                        requiredChannels,
+                        renderChannels);
+                    if (!support.Supported)
+                    {
+                        throw new InvalidOperationException(
+                            $"WASAPI Exclusive format {owner.SampleRate} Hz / {owner.Bits}-bit " +
+                            $"is not supported by both endpoints (capture: " +
+                            $"{support.CaptureSupported}, render: {support.RenderSupported}).");
+                    }
+                    captureFormat = WasapiFormatSupport.CreateDeviceFormat(
+                        owner.SampleRate,
+                        owner.Bits,
+                        requiredChannels);
+                    renderFormat = WasapiFormatSupport.CreateDeviceFormat(
+                        owner.SampleRate,
+                        owner.Bits,
+                        renderChannels);
+                }
                 captureDevice = new WasapiCaptureDevice(
                     captureEndpointId,
-                    owner.WasapiBufferMilliseconds);
+                    owner.WasapiBufferMilliseconds,
+                    shareMode,
+                    captureFormat);
                 playbackDevice = new WasapiPlaybackDevice(
                     renderEndpointId,
-                    owner.WasapiBufferMilliseconds);
-                if (captureDevice.CaptureFormat.SampleRate != playbackDevice.PlaybackFormat.SampleRate)
+                    owner.WasapiBufferMilliseconds,
+                    shareMode,
+                    renderFormat);
+                if (shareMode == AudioClientShareMode.Shared &&
+                    captureDevice.CaptureFormat.SampleRate != playbackDevice.PlaybackFormat.SampleRate)
                 {
                     throw new InvalidOperationException(
                         "WASAPI Shared capture and render endpoints must use the same mix sample rate. " +
                         $"Capture is {captureDevice.CaptureFormat.SampleRate} Hz and render is " +
                         $"{playbackDevice.PlaybackFormat.SampleRate} Hz.");
                 }
-                if (owner.SampleRate != captureDevice.CaptureFormat.SampleRate)
+                if (shareMode == AudioClientShareMode.Shared &&
+                    owner.SampleRate != captureDevice.CaptureFormat.SampleRate)
                 {
                     throw new InvalidOperationException(
                         $"WASAPI Shared uses the endpoint mix rate " +
                         $"({captureDevice.CaptureFormat.SampleRate} Hz). Update the measurement " +
                         $"sample rate from {owner.SampleRate} Hz.");
                 }
-                int requiredChannels = owner.GetRequiredWaveInputChannelCount();
                 if (captureDevice.ChannelCount < requiredChannels)
                 {
                     throw new InvalidOperationException(
@@ -644,7 +682,7 @@ namespace Resonalyze
                         .ConfigureAwait(false);
                     float[][] samples = captureSession.GetSamplesSnapshot();
                     owner.LastAudioSessionDiagnostics = new AudioSessionDiagnostics(
-                        nameof(AudioBackend.WasapiShared),
+                        owner.AudioBackend.ToString(),
                         captureDevice.EndpointId,
                         playbackDevice.EndpointId,
                         captureDevice.CaptureFormat,
@@ -1193,6 +1231,9 @@ namespace Resonalyze
 
         private static int? NormalizeOptionalWasapiChannel(int? offset) =>
             offset.HasValue ? Math.Max(0, offset.Value) : null;
+
+        private static bool IsWasapiBackend(AudioBackend backend) =>
+            backend is AudioBackend.WasapiShared or AudioBackend.WasapiExclusive;
 
         private void ThrowIfDisposed()
         {

@@ -489,6 +489,17 @@ re-verified.
   that capped steep low slopes. The dialog also now catches ALL ranking
   exceptions (async void + WinForms context would otherwise kill the
   process), reporting them in a message box.
+  **Second review round (fixed):** (1) per-junction pool options are each
+  bounded against the descent optimum's neighbours, so combining them
+  independently could jointly break the half-octave minimum separation —
+  reproduced with a peaked middle driver (fc pair at ratio 1.375 < √2 in
+  the ranked list); combinations now pass a joint separation check before
+  the gain pass. (2) `IsConventional24` was derived from slopes alone, so
+  any all-24 pool candidate (16 flagged in one config, pure Butterworth in
+  another) could soak up the 0.25 dB tie preference; the flag now matches
+  the dedicated conventional run's signature — exactly one candidate, LR24
+  when LR is allowed. (3) The dialog freezes every ranking-input control
+  while the async ranking runs, so stale settings can't be applied.
 - [ ] **`EstimateBand` merges disjoint islands into one band** (first/last bin
   above a global threshold): an isolated resonance above a dead gap extends
   HighHz and misclassifies the driver. Fix: the most significant contiguous

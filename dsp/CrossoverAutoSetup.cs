@@ -47,9 +47,11 @@ public sealed record CrossoverProposal(
 /// scores that ranked it. <see cref="AchievabilityPenaltyDb"/> is the summed
 /// dip-penalized junction loss remaining after the best per-junction delay
 /// (measured on the impulse responses; null when no IRs were provided), and
-/// <see cref="IsConventional24"/> marks the all-24 dB/oct candidate that wins
-/// ties. Lower <see cref="TotalScore"/> is better; the list is returned best
-/// first.
+/// <see cref="IsConventional24"/> marks the one candidate built by the dedicated
+/// conventional run (every slope forced to 24 dB/oct, Linkwitz-Riley when the
+/// user allows it) — the engineering baseline that wins ties. A pool candidate
+/// that merely happens to use 24 dB/oct slopes is not conventional. Lower
+/// <see cref="TotalScore"/> is better; the list is returned best first.
 /// </summary>
 public sealed record RankedCrossoverProposal(
     IReadOnlyList<CrossoverProposal> Proposals,
@@ -468,6 +470,11 @@ public static class CrossoverAutoSetup
                 .ToArray();
         }
 
+        // Only the dedicated conventional run's candidate carries the flag —
+        // matched by signature, because a pool candidate that merely landed on
+        // all-24 dB/oct slopes (or a Butterworth/Bessel 24 mix) is not the
+        // LR24 baseline the tie preference is meant to protect.
+        string? conventionalSignature = conventional?.Signature;
         var ranked = pool
             .Select((candidate, index) =>
             {
@@ -477,7 +484,7 @@ public static class CrossoverAutoSetup
                     candidate.MagnitudeScore,
                     penalty,
                     candidate.MagnitudeScore + AchievabilityWeight * (penalty ?? 0),
-                    candidate.IsConventional24);
+                    candidate.Signature == conventionalSignature);
             })
             .OrderBy(candidate => candidate.TotalScore)
             .ToList();
@@ -628,7 +635,6 @@ public static class CrossoverAutoSetup
     internal sealed record PoolCandidate(
         IReadOnlyList<CrossoverProposal> Proposals,
         double MagnitudeScore,
-        bool IsConventional24,
         string Signature);
 
     /// <summary>
@@ -1017,9 +1023,11 @@ public static class CrossoverAutoSetup
         /// Runs the descent, then expands a pool of near-optimal states: per
         /// junction the best few (frequency, family, slope) options with the
         /// rest of the optimum fixed, crossed over the junctions (bounded),
-        /// each combination given one gain re-tune pass. Sorted by magnitude
-        /// score, deduplicated, at most <paramref name="poolSize"/> entries;
-        /// the descent winner is always included.
+        /// each combination given one gain re-tune pass. Combinations whose
+        /// junctions jointly land closer than the minimum separation are
+        /// rejected. Sorted by magnitude score, deduplicated, at most
+        /// <paramref name="poolSize"/> entries; the descent winner is always
+        /// included.
         /// </summary>
         public List<PoolCandidate> SolvePool(int poolSize)
         {
@@ -1034,8 +1042,7 @@ public static class CrossoverAutoSetup
                 string signature = SignatureOf(proposals);
                 if (seen.Add(signature))
                 {
-                    pool.Add(new PoolCandidate(
-                        proposals, Score(), IsConventional24(), signature));
+                    pool.Add(new PoolCandidate(proposals, Score(), signature));
                 }
             }
 
@@ -1091,6 +1098,14 @@ public static class CrossoverAutoSetup
             // full product exceeds the cap, the earliest (best-ranked) choices
             // are covered first.
             long combinations = Math.Min(totalCombinations, PoolMaxCombinations);
+            // Each junction's options were bounded against the descent optimum's
+            // NEIGHBOURS, so two junctions moved toward each other can jointly
+            // land closer than the minimum separation (or even swap order) —
+            // e.g. a peaked middle driver pulls both of its junctions inward.
+            // The small relative slack keeps float noise from rejecting a combo
+            // that sits exactly on a bound.
+            double minimumRatio =
+                Math.Pow(2.0, MinJunctionSeparationOctaves) * (1 - 1e-9);
             var indices = new int[junctions];
             for (long combo = 0; combo < combinations; combo++)
             {
@@ -1108,6 +1123,21 @@ public static class CrossoverAutoSetup
                     Set(j, choice.Family, choice.FrequencyHz, choice.LowerSlope, choice.UpperSlope);
                 }
 
+                bool separated = true;
+                for (int j = 1; j < junctions; j++)
+                {
+                    if (crossoverHz[j] < crossoverHz[j - 1] * minimumRatio)
+                    {
+                        separated = false;
+                        break;
+                    }
+                }
+
+                if (!separated)
+                {
+                    continue;
+                }
+
                 OptimizeGains();
                 Capture();
             }
@@ -1117,20 +1147,6 @@ public static class CrossoverAutoSetup
                 .OrderBy(candidate => candidate.MagnitudeScore)
                 .Take(poolSize)
                 .ToList();
-        }
-
-        private bool IsConventional24()
-        {
-            for (int j = 0; j < channelCount - 1; j++)
-            {
-                if (lowerSlope[j] != CrossoverSlopeDbPerOctave ||
-                    upperSlope[j] != CrossoverSlopeDbPerOctave)
-                {
-                    return false;
-                }
-            }
-
-            return true;
         }
 
         private static string SignatureOf(IReadOnlyList<CrossoverProposal> proposals) =>

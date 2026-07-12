@@ -201,6 +201,103 @@ public sealed class CrossoverRankedProposalTests
         Assert.All(ranked, candidate => Assert.Null(candidate.Proposals[2].LowPassEdge));
     }
 
+    private static List<SignalPoint> PeakedCurve(
+        double lowHz,
+        double highHz,
+        double peakHz,
+        double peakDb,
+        double widthOctaves)
+    {
+        var points = new List<SignalPoint>();
+        foreach (double frequency in EqualizationCurve.LogFrequencyGrid(20, 20_000, 512))
+        {
+            double y = peakDb * Math.Exp(
+                -Math.Pow(Math.Log2(frequency / peakHz) / widthOctaves, 2));
+            if (frequency < lowHz)
+            {
+                y -= 24.0 * Math.Log2(lowHz / frequency);
+            }
+            else if (frequency > highHz)
+            {
+                y -= 24.0 * Math.Log2(frequency / highHz);
+            }
+
+            points.Add(new SignalPoint(frequency, y));
+        }
+
+        return points;
+    }
+
+    // Per-junction pool options are each bounded against the descent optimum's
+    // neighbours; combined independently, two junctions moved toward each
+    // other can jointly break the half-octave minimum separation. A peaked
+    // middle driver pulls both of its junctions inward — without the joint
+    // check this configuration put an fc pair at ratio 1.375 (< sqrt 2) into
+    // the ranked list.
+    [Fact]
+    public void ProposeRanked_KeepsTheMinimumJunctionSeparationInEveryCandidate()
+    {
+        var sources = new List<AutoSetupSource>
+        {
+            new(BandCurve(20, 250), DriverType.Woofer),
+            new(PeakedCurve(60, 1_500, 220, 10, 0.5), DriverType.Midbass),
+            new(BandCurve(220, 20_000), DriverType.Midrange)
+        };
+
+        IReadOnlyList<RankedCrossoverProposal> ranked =
+            CrossoverAutoSetup.ProposeRanked(sources, Options(), candidateCount: 50);
+
+        double separation = Math.Pow(2.0, 0.5);
+        Assert.NotEmpty(ranked);
+        foreach (RankedCrossoverProposal candidate in ranked)
+        {
+            var crossovers = candidate.Proposals
+                .Take(candidate.Proposals.Count - 1)
+                .Select(proposal => proposal.LowPassEdge!.Value.FrequencyHz)
+                .ToList();
+            for (int j = 1; j < crossovers.Count; j++)
+            {
+                Assert.True(
+                    crossovers[j] >= crossovers[j - 1] * separation * (1 - 1e-9),
+                    $"fc {string.Join('/', crossovers)} breaks the separation.");
+            }
+        }
+    }
+
+    // The tie preference protects the ONE candidate the dedicated conventional
+    // run built (all slopes 24 dB/oct, Linkwitz-Riley when allowed) — a pool
+    // candidate that merely landed on all-24 slopes, or a Butterworth/Bessel
+    // 24 mix, must not carry the flag. Before the signature match this
+    // configuration flagged five candidates, one of them pure Butterworth.
+    [Fact]
+    public void ProposeRanked_FlagsOnlyTheDedicatedConventionalCandidate()
+    {
+        var sources = new List<AutoSetupSource>
+        {
+            new(BandCurve(20, 250), DriverType.Woofer),
+            new(PeakedCurve(60, 1_500, 260, 10, 0.3), DriverType.Midbass),
+            new(BandCurve(220, 20_000), DriverType.Midrange)
+        };
+
+        IReadOnlyList<RankedCrossoverProposal> ranked =
+            CrossoverAutoSetup.ProposeRanked(sources, Options(), candidateCount: 50);
+
+        RankedCrossoverProposal conventional =
+            Assert.Single(ranked, candidate => candidate.IsConventional24);
+        foreach (CrossoverProposal proposal in conventional.Proposals)
+        {
+            foreach (CrossoverEdge? edge in new[]
+                { proposal.LowPassEdge, proposal.HighPassEdge })
+            {
+                if (edge is { } value)
+                {
+                    Assert.Equal(CrossoverFilterFamily.LinkwitzRiley, value.Family);
+                    Assert.Equal(24, value.SlopeDbPerOctave);
+                }
+            }
+        }
+    }
+
     // With ideal impulse drivers a matched LR24 handover is losslessly
     // alignable, so the post-check must hand the win to the conventional
     // candidate with a near-zero penalty.

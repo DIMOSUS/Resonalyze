@@ -714,16 +714,14 @@ public static class AutoAlignmentEngine
         alignment[plan.BridgeRight] = new AlignmentOverride(
             Math.Clamp(Math.Round(bridgeDelay, 2), 0, MaxDelayMs), false);
 
-        // The arrival is polarity-blind, so the right top's polarity is chosen
-        // HERE, after the delay is fixed: the left walk may well have inverted
-        // the left top (its own junction decides that), and every other right
-        // driver aligns to the right top afterwards — a mismatched top sign
-        // would flip the whole right side against the left and cancel
-        // center-panned content. With the delay pinned there is no lobe
-        // ambiguity left: the effective acoustic signs of the two settled tops
-        // are simply compared (sum-loss comparison of the two signs as the
-        // fallback when a sign is unreadable).
-        ChooseBridgePolarity(plan, reprocess, alignment, log);
+        // Polarity is a property of the DRIVER, not the side, and automatic delay
+        // never inverts one side of a pair alone: the right top INHERITS the left
+        // top's sign (which the left walk may have flipped for its own cascade),
+        // just as every lower right driver inherits its left counterpart's. Set it
+        // before the right walk so the right lowers align against a correctly-signed
+        // top. A genuinely reverse-wired driver is left for a MANUAL flip in the UI,
+        // not an asymmetric automatic one.
+        InheritBridgePolarity(plan, alignment, log);
 
         // Stage R: descent from the bridged top toward the low end (and up
         // from it, if the caller had to bridge a non-top pair) — the same walk
@@ -879,6 +877,10 @@ public static class AutoAlignmentEngine
                 $"Normalized: -{minimum:0.000} ms off every channel " +
                 "(minimum delay back to zero)");
         }
+
+        // The invariant the user requires of automatic delay: no driver is ever
+        // inverted on one side of a pair alone.
+        EnforcePolaritySymmetry(plan, alignment, log);
     }
 
     /// <summary>
@@ -924,94 +926,63 @@ public static class AutoAlignmentEngine
     private const double PairComoveSearchRangeMs = 1.2;
     private const double PairComoveMinimumGainDb = 0.05;
 
-    // How much better (dB) inverting the right bridge top must sum against the left
-    // top before the bridge flips it. Below this the two hypotheses are a tie and
-    // the identical L/R tops are kept matched (or the first-lobe signs break it) —
-    // so a marginal, noise-driven difference never inverts one side alone.
-    private const double BridgePolarityMarginDb = 0.5;
-
-    // Decides the right bridge channel's polarity once its delay is already in
-    // the alignment map. Primary evidence: the measured acoustic signs of the
-    // two settled top responses (EstimatePolarity on the processed IRs — the
-    // left one includes whatever inversion its own junction chose). Fallback
-    // when a sign is unreadable: the bridge-band sum loss of the two possible
-    // signs — with the delay fixed only two hypotheses exist, so the lobe
-    // ambiguity that bans loss-driven polarity searches does not apply.
-    private static void ChooseBridgePolarity(
+    // The right bridge top inherits the left top's sign (set before the right walk,
+    // so the right lowers align against a correctly-signed top). Automatic delay
+    // never inverts one side of a pair alone — a driver's polarity is a property of
+    // the driver, decided once on the left and mirrored to the right; the sum-loss /
+    // first-lobe "which polarity fits better" guess is gone, because at high
+    // frequencies two spatially-separated tops comb-filter and the guess is
+    // noise-driven (it used to invert an identical off-axis right tweeter alone).
+    private static void InheritBridgePolarity(
         StereoAlignmentPlan plan,
-        AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log)
     {
-        IReadOnlyList<AlignmentSnapshot> bridged = reprocess(alignment);
-        Complex[] leftTop = bridged
-            .First(item => item.Channel == plan.BridgeLeft).ImpulseResponse;
-        Complex[] rightTop = bridged
-            .First(item => item.Channel == plan.BridgeRight).ImpulseResponse;
-
-        // Bridge-band sum loss of the two possible right-top signs against the
-        // settled left top. With the delay pinned only two hypotheses exist, so the
-        // lobe ambiguity that bans loss-driven polarity searches does not apply, and
-        // the sum loss is the physically direct measure of whether centre content
-        // adds or cancels — robust where the first-lobe SIGN read is not (a
-        // Butterworth top meets its neighbour near 90°, so its leading-lobe sign
-        // flips on noise, which used to invert one side's top but not the other).
-        var invertedRightTop = new Complex[rightTop.Length];
-        for (int i = 0; i < rightTop.Length; i++)
-        {
-            invertedRightTop[i] = -rightTop[i];
-        }
-
-        var leftOnly = new List<Complex[]> { leftTop };
-        (double LossDb, double DipDb)? normalLoss =
-            VirtualCrossoverAnalysis.MeasureSumLoss(
-                rightTop, leftOnly, plan.BridgeRight.SampleRate,
-                plan.BridgeBandLowHz, plan.BridgeBandHighHz);
-        (double LossDb, double DipDb)? invertedLoss =
-            VirtualCrossoverAnalysis.MeasureSumLoss(
-                invertedRightTop, leftOnly, plan.BridgeRight.SampleRate,
-                plan.BridgeBandLowHz, plan.BridgeBandHighHz);
-
-        PolarityEstimate leftSign = VirtualCrossoverAnalysis.EstimatePolarity(leftTop);
-        PolarityEstimate rightSign = VirtualCrossoverAnalysis.EstimatePolarity(rightTop);
-        bool invert;
-        string reason;
-        if (normalLoss.HasValue && invertedLoss.HasValue &&
-            Math.Abs(invertedLoss.Value.LossDb - normalLoss.Value.LossDb) >=
-                BridgePolarityMarginDb)
-        {
-            // Inverting clearly sums better (or worse): a confident, non-noisy call.
-            invert = invertedLoss.Value.LossDb > normalLoss.Value.LossDb;
-            reason = "bridge-band sum loss " +
-                $"normal {normalLoss.Value.LossDb:0.00} / " +
-                $"inverted {invertedLoss.Value.LossDb:0.00} dB";
-        }
-        else if (leftSign != PolarityEstimate.Unknown &&
-            rightSign != PolarityEstimate.Unknown)
-        {
-            // The sum is a near-tie (Butterworth adds similarly either way): fall to
-            // the first-lobe signs only to break it.
-            invert = leftSign != rightSign;
-            reason = "sum near-tie, measured signs " +
-                $"L {leftSign} / R {rightSign} (loss " +
-                $"normal {normalLoss?.LossDb:0.00} / inverted {invertedLoss?.LossDb:0.00} dB)";
-        }
-        else
-        {
-            // No confident evidence to flip identical L/R tops: keep them matched,
-            // which is the symmetric, physically minimal choice.
-            invert = false;
-            reason = "no confident polarity evidence; kept matched";
-        }
-
-        if (invert)
-        {
-            alignment[plan.BridgeRight] =
-                alignment[plan.BridgeRight] with { InvertPolarity = true };
-        }
-
+        bool leftInvert = alignment.GetValueOrDefault(plan.BridgeLeft).InvertPolarity;
+        AlignmentOverride top = alignment.GetValueOrDefault(plan.BridgeRight);
+        alignment[plan.BridgeRight] = top with { InvertPolarity = leftInvert };
         log.AppendLine(
-            $"  bridge polarity: {(invert ? "inverted" : "normal")} ({reason})");
+            $"  bridge polarity: {(leftInvert ? "inverted" : "normal")} " +
+            $"(inherited from {plan.BridgeLeft.Name}; auto delay keeps L/R polarity symmetric)");
+    }
+
+    // Final guarantee for automatic delay: every right driver's polarity flag equals
+    // its left counterpart's, so the auto never inverts one side of a pair alone.
+    // This is redundant with the per-driver inheritance (the bridge top above, each
+    // lower right driver via its forced polarity) but states the invariant in one
+    // explicit, testable place. A MANUAL polarity flip in the UI is untouched — this
+    // only governs what the auto-delay proposal writes.
+    private static void EnforcePolaritySymmetry(
+        StereoAlignmentPlan plan,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        StringBuilder log)
+    {
+        void Mirror(IAlignmentChannel left, IAlignmentChannel right)
+        {
+            if (ReferenceEquals(left, right))
+            {
+                return; // a shared mono channel carries one polarity by construction
+            }
+
+            bool leftInvert = alignment.GetValueOrDefault(left).InvertPolarity;
+            AlignmentOverride current = alignment.GetValueOrDefault(right);
+            if (current.InvertPolarity != leftInvert)
+            {
+                alignment[right] = current with { InvertPolarity = leftInvert };
+                log.AppendLine(
+                    $"  polarity symmetry: {right.Name} -> " +
+                    $"{(leftInvert ? "inverted" : "normal")} to match {left.Name}");
+            }
+        }
+
+        Mirror(plan.BridgeLeft, plan.BridgeRight);
+        if (plan.PairLinks != null)
+        {
+            foreach (StereoPairLink link in plan.PairLinks)
+            {
+                Mirror(link.Left, link.Right);
+            }
+        }
     }
 
     // Moves both sides of one linked pair by the same delta — the pair's L-R

@@ -286,20 +286,26 @@ public sealed class StereoAlignmentTests
     }
 
     [Fact]
-    public void ComputeStereo_BridgeMatchesTheRightTopPolarityToTheLeft()
+    public void ComputeStereo_RightTopInheritsTheLeftTopsPolarityNeverAsymmetric()
     {
-        // The right tweeter is wired backwards (negative impulse). The
-        // arrival-based bridge is polarity-blind, so without the explicit sign
-        // match the whole right side would align to a flipped reference and
-        // end up in opposite global polarity — the bridge must invert it.
+        // The right tweeter is wired backwards (negative impulse). Automatic delay
+        // must NEVER invert one side of a pair alone: polarity is a property of the
+        // driver, decided on the left and mirrored to the right. So the right top
+        // inherits the left top's sign (both normal here) and is NOT flipped — a
+        // genuinely reverse-wired driver is left for a MANUAL flip, not an asymmetric
+        // automatic correction.
         (TestChannel _, TestChannel[] left, TestChannel[] right,
             Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
-            RunStereo(sceneOffsetMs: 0.25, rightTopAmplitude: -1.0);
+            RunStereo(
+                sceneOffsetMs: 0.25,
+                rightTopAmplitude: -1.0,
+                linkBands: UserLinkBands);
 
         Assert.False(alignment.GetValueOrDefault(left[2]).InvertPolarity);
-        Assert.True(alignment.GetValueOrDefault(right[2]).InvertPolarity);
-        // The descent then aligns the (positive) right mid against the
-        // corrected top: no compensating flip below.
+        Assert.False(alignment.GetValueOrDefault(right[2]).InvertPolarity);
+        Assert.Equal(
+            alignment.GetValueOrDefault(left[2]).InvertPolarity,
+            alignment.GetValueOrDefault(right[2]).InvertPolarity);
         Assert.False(alignment.GetValueOrDefault(right[1]).InvertPolarity);
     }
 
@@ -347,6 +353,29 @@ public sealed class StereoAlignmentTests
         Assert.Equal(
             alignment.GetValueOrDefault(left[1]).InvertPolarity,
             alignment.GetValueOrDefault(right[1]).InvertPolarity);
+    }
+
+    [Fact]
+    public void ComputeStereo_AutoDelayNeverInvertsAPairAsymmetrically()
+    {
+        // The user's absolute rule for automatic delay: whatever the measurements,
+        // a driver's polarity flag is identical on both sides. Even with the right
+        // mid AND the right top wired backwards — each of which, aligned on its own,
+        // would flip — every pair stays symmetric.
+        (TestChannel _, TestChannel[] left, TestChannel[] right,
+            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+            RunStereo(
+                sceneOffsetMs: 0.25,
+                rightTopAmplitude: -1.0,
+                linkBands: UserLinkBands,
+                rightMidAmplitude: -1.0);
+
+        for (int i = 0; i < 3; i++)
+        {
+            Assert.Equal(
+                alignment.GetValueOrDefault(left[i]).InvertPolarity,
+                alignment.GetValueOrDefault(right[i]).InvertPolarity);
+        }
     }
 
     [Fact]

@@ -135,6 +135,18 @@ public sealed class StereoAlignmentRealDataTests
             all.Min(channel => alignment.GetValueOrDefault(channel).DelayMs),
             0, 0.011);
 
+        // The polarity regression the user hit: two IDENTICAL tweeters measured at
+        // 90° off-axis. Up in the bridge band (1.8-12 kHz) the two spatially-separated
+        // tops comb-filter, so normal and inverted sum within a fraction of a dB (the
+        // captured run was a 0.15 dB near-tie), and the fragile first-lobe sign read
+        // disagreed (L Negative / R Positive) — which used to invert the RIGHT tweeter
+        // alone. A near-tie must keep the tops matched, so no channel is inverted on
+        // this symmetric install.
+        Assert.False(alignment.GetValueOrDefault(leftTwr).InvertPolarity);
+        Assert.False(alignment.GetValueOrDefault(rightTwr).InvertPolarity);
+        Assert.All(all, channel =>
+            Assert.False(alignment.GetValueOrDefault(channel).InvertPolarity));
+
         // The bridge contract on real acoustics: with the final delays applied,
         // the right tweeter's band-limited arrival trails the left one by the
         // scene offset (right LEADS by 0.25 ms). Tolerance covers the 0.01 ms

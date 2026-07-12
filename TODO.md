@@ -174,14 +174,22 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   opposite polarity's winner via `with { InvertPolarity }`, keeping a delay ~half a period
   off and a borrowed score that could even win the wide-window promotion — corrected, with
   a regression test asserting the forced winner is the genuine same-sign optimum.)*
-  (2) the bridge now decides the single global
-  L/R top flip by bridge-band SUM LOSS (robust, and safe because the delay is pinned)
-  with a `BridgePolarityMarginDb = 0.5` margin, falling to the first-lobe signs only on
-  a near-tie and to "kept matched" when neither is confident — the noisy sign-read is no
-  longer primary. Asymmetric per-driver inversion is now structurally impossible. New
-  synthetic test pins that a right driver's sign equals its left counterpart's; the
-  existing bridge-polarity tests still pass. 507 dsp tests pass. *Windows follow-up:*
-  re-run the user's Butterworth tune and confirm the polarity pattern is symmetric.
+  (2) the bridge NO LONGER decides the top's sign at all — the right top INHERITS the
+  left top's flag, exactly like the lower drivers. **User's absolute rule (2026-07-13):
+  automatic delay must NEVER invert a driver on one side of a pair alone.** The first
+  cut kept a sum-loss "which sign fits better" guess with a margin, but the user's real
+  `head_90_grad` capture proved that unsafe: at the bridge band (1.8-12 kHz) two
+  spatially-separated identical tweeters comb-filter, so normal vs inverted summed within
+  0.15 dB (a near-tie), the fragile first-lobe read disagreed (L Negative / R Positive),
+  and the RIGHT tweeter alone got inverted. So the guess is gone: `InheritBridgePolarity`
+  mirrors the left top's sign onto the right top before the right walk, and a final
+  `EnforcePolaritySymmetry` pass makes every right driver's flag equal its left
+  counterpart's (bridge + every `PairLink`). A genuinely reverse-wired driver is left for
+  a MANUAL flip in the UI — the auto never does it asymmetrically. Reproduced and pinned
+  on the REAL `l twr.json`/`r twr.json` (right tweeter now `invert no`); synthetic tests
+  pin the invariant even with the right mid AND top wired backwards. `MeasureSumLoss`/
+  `EstimatePolarity` are no longer used by the bridge. 509 dsp tests pass. *Windows
+  follow-up:* re-run the user's Butterworth tune and confirm no channel is inverted.
 - [ ] **Stereo scene diagnostics (Δ per band)**: the stereo Auto delay cascade
   (left walk → arrival bridge with the scene offset → right descent) is in;
   the complementary *verification* layer is not — per-band L−R arrival

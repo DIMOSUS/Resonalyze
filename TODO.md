@@ -556,6 +556,16 @@ re-verified.
   tweeter; both push interior drivers to steeper (24) slopes. Real 4-way now:
   75 (BS24/BS24) / 250 (LR24/LR24) / 1750 (LR24/LR24) — all steep, sub ~80,
   mid/tweeter low, matching the user's manual tune.
+  **Min slope 18 → 24 (user feedback 2026-07-12):** 18 was still too shallow —
+  on the real woofer/midrange handover the per-channel compromise landed on
+  18 dB/oct, a wide overlap with strong interference Auto delay could not align
+  (the user saw ~−3.4/−9.9 dB). `MinPracticalSlopeDbPerOctave` is now 24, so
+  every crossover is >= 24 (the <300 Hz cap pins low junctions to exactly 24).
+  The flatness/achievability metric rates the shallow 18 slightly higher —
+  which is exactly why the auto kept picking it and the user heard interference
+  the metric misses — so the floor overrides it, matching the all-24 manual
+  tune. BW-only real 4-way then: 65 (BW24/BW24) / 250 (BW24/BW24) / 1700
+  (BW24/BW48); all-families unchanged (75/250/1750).
 - [x] **Virtual DSP redraw multithreaded (2026-07-12):** the interactive redraw
   ran its heavy math on one core — `ProcessChannelsAsync` applied each channel's
   full-length ApplyChain cascade in a sequential `Select` inside one `Task.Run`,

@@ -259,7 +259,7 @@ public static class CrossoverAutoSetup
     // narrower overlap), and the search never goes below a practical slope: a
     // first-order (6 dB/oct) filter protects nothing.
     private const double OverlapPenaltyDbPerOctave = 0.6;
-    private const int MinPracticalSlopeDbPerOctave = 18;
+    private const int MinPracticalSlopeDbPerOctave = 24;
 
     // A driver whose roll-off reaches past its neighbour into a non-adjacent
     // driver's band overlaps where it never should; that overlap is weighted this
@@ -430,9 +430,13 @@ public static class CrossoverAutoSetup
             channels, proposals, options.SampleRateHz, options.SubElevationDb);
     }
 
-    // The slopes a family offers above the practical floor: an engineer does
-    // not reach for a 6 dB/oct crossover — it protects nothing and leaves the
-    // drivers overlapping over a huge span.
+    // The slopes a family offers above the practical floor. A shallow crossover
+    // (12/18 dB/oct) leaves adjacent drivers overlapping over a wide span where
+    // they interfere; on a real system the summed dip that leaves is worse than
+    // any group-delay a steeper filter costs, and Auto delay cannot align it
+    // away — so the floor is 24 dB/oct, matching how these systems are tuned by
+    // hand. (Below SteepSlopeMinimumJunctionHz the slope is also capped at 24 for
+    // group delay, pinning low junctions to exactly 24.)
     private static IReadOnlyList<int> PracticalSlopes(CrossoverFilterFamily family) =>
         CrossoverFilter.SupportedSlopes(family)
             .Where(slope => slope >= MinPracticalSlopeDbPerOctave)

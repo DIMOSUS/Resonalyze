@@ -30,6 +30,8 @@ namespace Resonalyze.Options
         // device again restores it instead of losing it on the next apply.
         private int? preferredWaveLoopbackChannelOffset;
         private bool updatingWaveLoopbackSelection;
+        private string? preferredWasapiCaptureEndpointId;
+        private string? preferredWasapiRenderEndpointId;
 
         private DarkComboBox comboBoxPlaybackDevice => waveAudioBackendPanel.ComboBoxPlaybackDevice;
 
@@ -114,6 +116,8 @@ namespace Resonalyze.Options
                 throw new InvalidOperationException("Sweep measurement is not initialized.");
             }
             numericUpDownBits.Value = settings.Bits is 16 or 24 ? settings.Bits : 24;
+            preferredWasapiCaptureEndpointId = settings.WasapiCaptureEndpointId;
+            preferredWasapiRenderEndpointId = settings.WasapiRenderEndpointId;
 
             comboBoxChannel.Items.Clear();
             foreach (PlaybackChannel channel in Enum.GetValues<PlaybackChannel>())
@@ -126,7 +130,12 @@ namespace Resonalyze.Options
             comboBoxAudioBackend.Items.Clear();
             foreach (AudioBackend backend in Enum.GetValues<AudioBackend>())
             {
-                comboBoxAudioBackend.Items.Add(backend.ToString());
+                comboBoxAudioBackend.Items.Add(backend switch
+                {
+                    AudioBackend.Wave => "MME Compatibility",
+                    AudioBackend.WasapiShared => "WASAPI Shared",
+                    _ => backend.ToString()
+                });
             }
             comboBoxAudioBackend.SelectedIndex = Enum.IsDefined(settings.AudioBackend)
                 ? (int)settings.AudioBackend
@@ -272,7 +281,30 @@ namespace Resonalyze.Options
                     : null;
             int averageRunCount = (int)numericUpDownAverageRunCount.Value;
             bool confirmEachAverageRun = checkBoxConfirmEachAverageRun.Checked;
-            if (audioBackend == AudioBackend.Wave &&
+            string? wasapiCaptureEndpointId = preferredWasapiCaptureEndpointId;
+            string? wasapiRenderEndpointId = preferredWasapiRenderEndpointId;
+            if (audioBackend == AudioBackend.WasapiShared)
+            {
+                using var endpointService = new WindowsAudioEndpointService();
+                AudioEndpointInfo captureEndpoint = SelectWasapiEndpoint(
+                    endpointService.GetCaptureEndpoints(),
+                    wasapiCaptureEndpointId,
+                    "capture");
+                AudioEndpointInfo renderEndpoint = SelectWasapiEndpoint(
+                    endpointService.GetRenderEndpoints(),
+                    wasapiRenderEndpointId,
+                    "render");
+                if (captureEndpoint.MixFormat.SampleRate != renderEndpoint.MixFormat.SampleRate)
+                {
+                    throw new InvalidOperationException(
+                        "The default WASAPI capture and render endpoints use different mix rates. " +
+                        "Choose endpoints with the same Windows audio format.");
+                }
+                wasapiCaptureEndpointId = captureEndpoint.Id;
+                wasapiRenderEndpointId = renderEndpoint.Id;
+                sampleRate = captureEndpoint.MixFormat.SampleRate;
+            }
+            if (audioBackend is AudioBackend.Wave or AudioBackend.WasapiShared &&
                 waveLoopbackInputChannelOffset.HasValue &&
                 waveLoopbackInputChannelOffset.Value == waveInputChannelOffset)
             {
@@ -296,7 +328,15 @@ namespace Resonalyze.Options
                 waveLoopbackInputChannelOffset,
                 asioLoopbackInputChannelOffset,
                 averageRunCount,
-                confirmEachAverageRun);
+                confirmEachAverageRun,
+                wasapiCaptureEndpointId,
+                wasapiRenderEndpointId,
+                settings.WasapiBufferMilliseconds);
+
+            settings.WasapiCaptureEndpointId = wasapiCaptureEndpointId;
+            settings.WasapiRenderEndpointId = wasapiRenderEndpointId;
+            preferredWasapiCaptureEndpointId = wasapiCaptureEndpointId;
+            preferredWasapiRenderEndpointId = wasapiRenderEndpointId;
         }
 
         private void buttonCalibration0_Click(object? sender, EventArgs e)
@@ -520,10 +560,12 @@ namespace Resonalyze.Options
         {
             bool useAsio =
                 comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio;
+            bool useWasapi =
+                comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.WasapiShared;
             waveAudioBackendPanel.Visible = !useAsio;
             asioAudioBackendPanel.Visible = useAsio;
-            comboBoxPlaybackDevice.Enabled = !useAsio;
-            comboBoxRecordingDevice.Enabled = !useAsio;
+            comboBoxPlaybackDevice.Enabled = !useAsio && !useWasapi;
+            comboBoxRecordingDevice.Enabled = !useAsio && !useWasapi;
             comboBoxWaveInputChannel.Enabled = !useAsio;
             comboBoxWaveLoopbackChannel.Enabled = !useAsio &&
                 SelectedRecordingDeviceSupportsWaveLoopback();
@@ -554,7 +596,32 @@ namespace Resonalyze.Options
             labelWaveLoopbackChannel.Enabled = !useAsio;
             labelWaveLoopbackStatus.Enabled = !useAsio;
             labelAsioLoopbackChannel.Enabled = useAsio;
+            if (useWasapi)
+            {
+                labelWaveLoopbackStatus.Text =
+                    "WASAPI Shared uses the default Windows capture and render endpoints. " +
+                    "Their mix sample rates must match.";
+                labelWaveLoopbackStatus.ForeColor = Color.LightGray;
+            }
             UpdateWaveLoopbackControls();
+        }
+
+        private static AudioEndpointInfo SelectWasapiEndpoint(
+            IReadOnlyList<AudioEndpointInfo> endpoints,
+            string? preferredId,
+            string direction)
+        {
+            AudioEndpointInfo? endpoint = endpoints.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, preferredId, StringComparison.Ordinal));
+            if (!string.IsNullOrWhiteSpace(preferredId) && endpoint == null)
+            {
+                throw new InvalidOperationException(
+                    $"The saved WASAPI {direction} endpoint is unavailable. " +
+                    "Reconnect it or choose a replacement before applying settings.");
+            }
+            endpoint ??= endpoints.FirstOrDefault(candidate => candidate.IsDefault);
+            return endpoint ?? throw new InvalidOperationException(
+                $"No active WASAPI {direction} endpoint is available.");
         }
 
         private void ConfigureDropDownWidth(DarkComboBox comboBox)
@@ -728,6 +795,16 @@ namespace Resonalyze.Options
         {
             if (comboBoxWaveLoopbackChannel == null)
             {
+                return;
+            }
+
+            if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.WasapiShared)
+            {
+                comboBoxWaveLoopbackChannel.Enabled = true;
+                labelWaveLoopbackStatus.Font = NormalStatusFont;
+                labelWaveLoopbackStatus.Text =
+                    "WASAPI Shared uses the selected endpoint IDs and their mix sample rate.";
+                labelWaveLoopbackStatus.ForeColor = Color.LightGray;
                 return;
             }
 
@@ -1035,6 +1112,29 @@ namespace Resonalyze.Options
                     comboBoxAsioDriver.SelectedItem is AsioDeviceInfo asioDriver
                         ? asioDriver.DriverName
                         : null);
+            }
+
+            if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.WasapiShared)
+            {
+                try
+                {
+                    using var endpointService = new WindowsAudioEndpointService();
+                    AudioEndpointInfo capture = SelectWasapiEndpoint(
+                        endpointService.GetCaptureEndpoints(),
+                        preferredWasapiCaptureEndpointId,
+                        "capture");
+                    AudioEndpointInfo render = SelectWasapiEndpoint(
+                        endpointService.GetRenderEndpoints(),
+                        preferredWasapiRenderEndpointId,
+                        "render");
+                    return capture.MixFormat.SampleRate == render.MixFormat.SampleRate
+                        ? [capture.MixFormat.SampleRate]
+                        : [];
+                }
+                catch
+                {
+                    return [];
+                }
             }
 
             return AudioDeviceCatalog.GetSupportedWaveSampleRates(

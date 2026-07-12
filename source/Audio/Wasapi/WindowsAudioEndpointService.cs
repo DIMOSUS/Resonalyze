@@ -13,24 +13,34 @@ public sealed class WindowsAudioEndpointService : IDisposable
     private IReadOnlyList<AudioEndpointInfo> GetEndpoints(DataFlow direction)
     {
         string? defaultId = TryGetDefaultEndpointId(direction);
-        return enumerator
-            .EnumerateAudioEndPoints(direction, DeviceState.Active | DeviceState.Unplugged)
-            .Select(endpoint => new AudioEndpointInfo(
+        var endpoints = new List<AudioEndpointInfo>();
+        foreach (MMDevice endpoint in enumerator.EnumerateAudioEndPoints(
+            direction,
+            DeviceState.Active | DeviceState.Unplugged))
+        {
+            using (endpoint)
+            {
+                endpoints.Add(new AudioEndpointInfo(
                 endpoint.ID,
                 endpoint.FriendlyName,
                 direction,
                 endpoint.State,
                 endpoint.AudioClient.MixFormat,
                 endpoint.AudioClient.MixFormat.Channels,
-                endpoint.ID == defaultId))
-            .ToArray();
+                    endpoint.ID == defaultId));
+            }
+        }
+        return endpoints;
     }
 
     private string? TryGetDefaultEndpointId(DataFlow direction)
     {
         try
         {
-            return enumerator.GetDefaultAudioEndpoint(direction, Role.Multimedia).ID;
+            using MMDevice endpoint = enumerator.GetDefaultAudioEndpoint(
+                direction,
+                Role.Multimedia);
+            return endpoint.ID;
         }
         catch
         {

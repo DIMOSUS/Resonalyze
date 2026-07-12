@@ -54,6 +54,10 @@ namespace Resonalyze
         public AudioBackend AudioBackend { get; private set; } = AudioBackend.Wave;
         public int OutputDeviceNumber { get; private set; } = -1;
         public int InputDeviceNumber { get; private set; } = -1;
+        public string? WasapiCaptureEndpointId { get; private set; }
+        public string? WasapiRenderEndpointId { get; private set; }
+        public int WasapiBufferMilliseconds { get; private set; } = 100;
+        public AudioSessionDiagnostics? LastAudioSessionDiagnostics { get; private set; }
         public string? AsioDriverName { get; private set; }
         public int WaveInputChannelOffset { get; private set; }
         public int? WaveLoopbackInputChannelOffset { get; private set; }
@@ -91,7 +95,10 @@ namespace Resonalyze
             int? waveLoopbackInputChannelOffset = null,
             int? asioLoopbackInputChannelOffset = null,
             int averageRunCount = 1,
-            bool confirmEachAverageRun = false)
+            bool confirmEachAverageRun = false,
+            string? wasapiCaptureEndpointId = null,
+            string? wasapiRenderEndpointId = null,
+            int wasapiBufferMilliseconds = 100)
         {
             ThrowIfDisposed();
             if (InProgress)
@@ -107,6 +114,10 @@ namespace Resonalyze
             Octaves = octaves;
             OutputDeviceNumber = outputDeviceNumber;
             InputDeviceNumber = inputDeviceNumber;
+            WasapiCaptureEndpointId = wasapiCaptureEndpointId;
+            WasapiRenderEndpointId = wasapiRenderEndpointId;
+            WasapiBufferMilliseconds = Math.Clamp(wasapiBufferMilliseconds, 10, 100);
+            LastAudioSessionDiagnostics = null;
             AudioBackend = audioBackend;
             AsioDriverName = asioDriverName;
             WaveInputChannelOffset = Math.Clamp(waveInputChannelOffset, 0, 1);
@@ -336,6 +347,7 @@ namespace Resonalyze
             SoundRecorder recorder = soundRecorder!;
             bool success = false;
             AsioSweepCapture? asioCapture = null;
+            WasapiSweepCapture? wasapiCapture = null;
 
             async Task<CapturedSweepSamples> CaptureOneAsync()
             {
@@ -343,6 +355,13 @@ namespace Resonalyze
                 {
                     asioCapture ??= new AsioSweepCapture(this, sweep);
                     return await asioCapture.CaptureRunAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                if (AudioBackend == AudioBackend.WasapiShared)
+                {
+                    wasapiCapture ??= new WasapiSweepCapture(this, sweep);
+                    return await wasapiCapture.CaptureRunAsync(cancellationToken)
                         .ConfigureAwait(false);
                 }
 
@@ -429,6 +448,10 @@ namespace Resonalyze
                     if (asioCapture != null)
                     {
                         await asioCapture.DisposeAsync().ConfigureAwait(false);
+                    }
+                    if (wasapiCapture != null)
+                    {
+                        await wasapiCapture.DisposeAsync().ConfigureAwait(false);
                     }
                     await recorder.StopRecordingAsync().ConfigureAwait(false);
                 }
@@ -524,6 +547,99 @@ namespace Resonalyze
                 microphoneIndex,
                 loopbackIndex,
                 ValidateSharedDeviceStereo: true);
+        }
+
+        private sealed class WasapiSweepCapture : IAsyncDisposable
+        {
+            private readonly ExpSweepMeasurement owner;
+            private readonly ExponentialSineSweep sweep;
+            private readonly WasapiCaptureDevice captureDevice;
+            private readonly WasapiPlaybackDevice playbackDevice;
+            private readonly PcmCaptureSession captureSession;
+
+            public WasapiSweepCapture(ExpSweepMeasurement owner, ExponentialSineSweep sweep)
+            {
+                this.owner = owner;
+                this.sweep = sweep;
+                string captureEndpointId = owner.WasapiCaptureEndpointId ??
+                    throw new InvalidOperationException("Select a WASAPI capture endpoint.");
+                string renderEndpointId = owner.WasapiRenderEndpointId ??
+                    throw new InvalidOperationException("Select a WASAPI render endpoint.");
+                captureDevice = new WasapiCaptureDevice(
+                    captureEndpointId,
+                    owner.WasapiBufferMilliseconds);
+                playbackDevice = new WasapiPlaybackDevice(
+                    renderEndpointId,
+                    owner.WasapiBufferMilliseconds);
+                if (captureDevice.CaptureFormat.SampleRate != playbackDevice.PlaybackFormat.SampleRate)
+                {
+                    throw new InvalidOperationException(
+                        "WASAPI Shared capture and render endpoints must use the same mix sample rate. " +
+                        $"Capture is {captureDevice.CaptureFormat.SampleRate} Hz and render is " +
+                        $"{playbackDevice.PlaybackFormat.SampleRate} Hz.");
+                }
+                if (owner.SampleRate != captureDevice.CaptureFormat.SampleRate)
+                {
+                    throw new InvalidOperationException(
+                        $"WASAPI Shared uses the endpoint mix rate " +
+                        $"({captureDevice.CaptureFormat.SampleRate} Hz). Update the measurement " +
+                        $"sample rate from {owner.SampleRate} Hz.");
+                }
+                int requiredChannels = owner.GetRequiredWaveInputChannelCount();
+                if (captureDevice.ChannelCount < requiredChannels)
+                {
+                    throw new InvalidOperationException(
+                        $"The WASAPI capture endpoint exposes {captureDevice.ChannelCount} channel(s), " +
+                        $"but the selected microphone and loopback routing requires {requiredChannels}.");
+                }
+
+                captureSession = new PcmCaptureSession(
+                    captureDevice,
+                    expectedSamples: sweep.SweepSamples + owner.SampleRate * 2);
+                captureSession.LevelsAvailable += channels => owner.RaiseLevels(
+                    owner.MapWaveLevels(channels));
+            }
+
+            public async Task<CapturedSweepSamples> CaptureRunAsync(
+                CancellationToken cancellationToken)
+            {
+                await captureSession.StartAsync(cancellationToken).ConfigureAwait(false);
+                int recordingStart = captureSession.ReadSamples;
+                RawSourceWaveStream stream = sweep.GetStream(owner.PlaybackChannel);
+                stream.Position = 0;
+                await playbackDevice.StartAsync(stream, cancellationToken).ConfigureAwait(false);
+                await playbackDevice.WaitForPlaybackEndAsync(cancellationToken).ConfigureAwait(false);
+
+                int requiredSamples = recordingStart + sweep.SweepSamples + owner.SampleRate;
+                await captureSession.WaitForSamplesAsync(requiredSamples, cancellationToken)
+                    .ConfigureAwait(false);
+                await captureSession.StopAsync().ConfigureAwait(false);
+                float[][] samples = captureSession.GetSamplesSnapshot();
+                owner.LastAudioSessionDiagnostics = new AudioSessionDiagnostics(
+                    nameof(AudioBackend.WasapiShared),
+                    captureDevice.EndpointId,
+                    playbackDevice.EndpointId,
+                    captureDevice.CaptureFormat,
+                    playbackDevice.PlaybackFormat,
+                    owner.WasapiBufferMilliseconds,
+                    captureDevice.CapturePackets,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0);
+                return new CapturedSweepSamples(
+                    samples,
+                    owner.WaveInputChannelOffset,
+                    owner.WaveLoopbackInputChannelOffset,
+                    ValidateSharedDeviceStereo: true);
+            }
+
+            public async ValueTask DisposeAsync()
+            {
+                await playbackDevice.DisposeAsync().ConfigureAwait(false);
+                await captureSession.DisposeAsync().ConfigureAwait(false);
+            }
         }
 
         // Owns the ASIO session for a whole measurement. The driver is opened

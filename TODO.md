@@ -719,6 +719,23 @@ re-verified.
   slopes, so the auto-crossover can give the woofer a steep low-pass and a gentle
   high-pass out of the box (the group-delay win above). Turning it off restores
   the matched-shoulders behaviour.
+- [~] **Distortion-aware crossover bounds (DSP done, app wiring pending):** the
+  band estimate now reads each driver's distortion-clean sub-band from an optional
+  THD curve on `AutoSetupSource.DistortionDb` (`DriverBandEstimate.DistortionLowHz/
+  HighHz`). A tweeter's low handover follows its MEASURED distortion knee
+  (backstopped at `HardTweeterFloorHz = 1000`) instead of the fixed 1.7 kHz class
+  floor, and no driver is crossed up past its breakup onset. Validated on the real
+  4-way: tweeter knee 1075 Hz → the mid/tweeter crossover drops 1700 → 1100 Hz with
+  distortion supplied (matching the user's low-tweeter tune), while woof/mid stays
+  250 (woofer breakup 665 Hz, far above). Four synthetic tests pin the knee, the
+  breakup edge, the null-distortion fallback, and the below-floor crossing.
+  **App wiring pending (Windows):** the crossover channel source currently carries
+  only the transfer IR + coherence, not the sweep-deconvolution IR. To feed
+  `DistortionDb`, thread the sweep-deconv data (IR + octaves + peak) from the source
+  measurement into `ChannelSideState`, compute the THD curve per channel via
+  `EssDistortion`, and pass it into `AutoSetupSource` in
+  `VirtualCrossoverAutoSetupDialog`. Also a candidate: a soft breakup PENALTY in
+  placement (currently a hard bound) — optional per the user.
 
 ### EQ Wizard
 

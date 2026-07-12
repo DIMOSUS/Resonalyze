@@ -25,7 +25,14 @@ public sealed record DriverBandEstimate(
     double LowHz,
     double HighHz,
     double LevelDb,
-    DriverType SuggestedType);
+    DriverType SuggestedType,
+    // The distortion-clean sub-band (harmonic distortion below the ceiling) within
+    // [LowHz, HighHz]. NaN when no distortion curve was supplied, in which case the
+    // crossover bounds fall back to the class-based sensible range. DistortionLowHz
+    // is the "knee" a driver climbs into clean output; DistortionHighHz its breakup
+    // onset.
+    double DistortionLowHz = double.NaN,
+    double DistortionHighHz = double.NaN);
 
 /// <summary>
 /// One wizard input: a channel's raw magnitude curve and its (confirmed) driver
@@ -36,7 +43,13 @@ public sealed record DriverBandEstimate(
 public sealed record AutoSetupSource(
     IReadOnlyList<SignalPoint> MagnitudeDb,
     DriverType Type,
-    IReadOnlyList<double>? Coherence = null);
+    IReadOnlyList<double>? Coherence = null,
+    // Optional harmonic distortion (THD, dB relative to the fundamental) vs
+    // frequency, from the channel's sweep deconvolution. When supplied, the band
+    // estimate marks each driver's distortion-clean sub-band, which then bounds the
+    // crossover: a tweeter's low handover follows its measured distortion knee
+    // (not a fixed floor), and no driver is crossed up into its breakup region.
+    IReadOnlyList<SignalPoint>? DistortionDb = null);
 
 /// <summary>
 /// The proposed DSP starting point for one channel: the crossover filters and a
@@ -174,6 +187,18 @@ public static class CrossoverAutoSetup
     /// so the steep-slope floor keeps that safe.
     /// </summary>
     public const double TweeterProtectionHz = 2_500;
+
+    // A driver is "clean" where its harmonic distortion stays below this ceiling.
+    // 3 % (−30 dB) is the usual audibility-adjacent line for loudspeaker THD; the
+    // distortion-clean band it defines refines the crossover bounds (below), so a
+    // driver is not handed a region where it audibly distorts.
+    private const double DistortionCeilingDb = -30.0;
+
+    // Absolute lower backstop for a tweeter's distortion-derived low edge: even a
+    // tweeter measured clean lower than this is never crossed below it, because the
+    // measurement level under-represents the sustained-SPL excursion that sets the
+    // real limit. Between here and the measured knee the search is free.
+    private const double HardTweeterFloorHz = 1_000.0;
 
     // The log-frequency grid the optimizer scores flatness on.
     private const int GridPointsPerOctave = 24;
@@ -333,7 +358,8 @@ public static class CrossoverAutoSetup
     /// </summary>
     public static DriverBandEstimate EstimateBand(
         IReadOnlyList<SignalPoint> magnitudeDb,
-        IReadOnlyList<double>? coherence = null)
+        IReadOnlyList<double>? coherence = null,
+        IReadOnlyList<SignalPoint>? distortionDb = null)
     {
         ArgumentNullException.ThrowIfNull(magnitudeDb);
 
@@ -427,7 +453,86 @@ public static class CrossoverAutoSetup
         }
 
         double level = AverageLevelDb(magnitudeDb, lowHz, highHz);
-        return new DriverBandEstimate(lowHz, highHz, level, Classify(lowHz, highHz));
+        (double distortionLow, double distortionHigh) =
+            DistortionCleanBand(distortionDb, lowHz, highHz);
+        return new DriverBandEstimate(
+            lowHz, highHz, level, Classify(lowHz, highHz), distortionLow, distortionHigh);
+    }
+
+    // The distortion-clean sub-band within [bandLow, bandHigh]: the most prominent
+    // contiguous run whose THD stays below the ceiling (bridging a narrow spike the
+    // same way the magnitude band bridges a null). Its low edge is the driver's
+    // distortion "knee", its high edge the breakup onset. Returns NaN edges when no
+    // distortion curve is available or none of the band is clean, so callers fall
+    // back to the class-based sensible range.
+    private static (double Low, double High) DistortionCleanBand(
+        IReadOnlyList<SignalPoint>? distortionDb,
+        double bandLow,
+        double bandHigh)
+    {
+        if (distortionDb == null)
+        {
+            return (double.NaN, double.NaN);
+        }
+
+        double bestLow = double.NaN;
+        double bestHigh = double.NaN;
+        double bestSpan = 0.0;
+        double segLow = double.NaN;
+        double segHigh = double.NaN;
+        double lastCleanHz = double.NaN;
+
+        void CloseSegment()
+        {
+            if (!double.IsNaN(segLow) && segHigh > segLow)
+            {
+                double span = Math.Log2(segHigh / segLow);
+                if (span > bestSpan)
+                {
+                    bestSpan = span;
+                    bestLow = segLow;
+                    bestHigh = segHigh;
+                }
+            }
+        }
+
+        foreach (SignalPoint point in distortionDb)
+        {
+            if (point.X < bandLow || point.X > bandHigh)
+            {
+                continue;
+            }
+
+            // A masked (NaN) or above-ceiling point is dirty: it breaks the clean run
+            // unless the gap since the last clean point is narrow enough to bridge.
+            bool clean = double.IsFinite(point.Y) && point.Y <= DistortionCeilingDb;
+            if (!clean)
+            {
+                continue;
+            }
+
+            if (!double.IsNaN(lastCleanHz)
+                && Math.Log2(point.X / lastCleanHz) > MaxBandGapOctaves)
+            {
+                CloseSegment();
+                segLow = double.NaN;
+            }
+
+            if (double.IsNaN(segLow))
+            {
+                segLow = point.X;
+            }
+            segHigh = point.X;
+            lastCleanHz = point.X;
+        }
+        CloseSegment();
+
+        if (double.IsNaN(bestLow))
+        {
+            return (double.NaN, double.NaN);
+        }
+
+        return (Math.Max(bestLow, bandLow), Math.Min(bestHigh, bandHigh));
     }
 
     // Classifies by the band's log-center, using the geometric midpoints between
@@ -559,7 +664,7 @@ public static class CrossoverAutoSetup
         for (int i = 0; i < n; i++)
         {
             DriverBandEstimate band = EstimateBand(
-                channels[i].MagnitudeDb, channels[i].Coherence);
+                channels[i].MagnitudeDb, channels[i].Coherence, channels[i].DistortionDb);
             double low = proposals[i].HighPassEdge?.FrequencyHz ?? band.LowHz;
             double high = proposals[i].LowPassEdge?.FrequencyHz ?? Math.Min(band.HighHz, ceiling);
             if (high <= low)
@@ -1275,7 +1380,8 @@ public static class CrossoverAutoSetup
             inputIndex = ordered.Select(item => item.index).ToArray();
             curves = ordered.Select(item => item.channel.MagnitudeDb).ToArray();
             bands = ordered
-                .Select(item => EstimateBand(item.channel.MagnitudeDb, item.channel.Coherence))
+                .Select(item => EstimateBand(
+                    item.channel.MagnitudeDb, item.channel.Coherence, item.channel.DistortionDb))
                 .ToArray();
             types = ordered.Select(item => item.channel.Type).ToArray();
 
@@ -1699,6 +1805,24 @@ public static class CrossoverAutoSetup
             double high = Math.Min(options.MaxCrossoverHz, bands[j].HighHz);
 
             (double typeLow, double typeHigh) = JunctionTypeBounds(types[j], types[j + 1]);
+
+            // The tweeter's low handover follows its MEASURED distortion knee
+            // (backstopped) instead of the fixed class floor: a clean tweeter may
+            // cross lower for a better stage, a distortion-limited one is held higher.
+            if (types[j + 1] == DriverType.Tweeter &&
+                !double.IsNaN(bands[j + 1].DistortionLowHz))
+            {
+                typeLow = Math.Max(HardTweeterFloorHz, bands[j + 1].DistortionLowHz);
+            }
+
+            // Never hand the lower driver a region above its breakup onset.
+            if (!double.IsNaN(bands[j].DistortionHighHz))
+            {
+                typeHigh = double.IsNaN(typeHigh)
+                    ? bands[j].DistortionHighHz
+                    : Math.Min(typeHigh, bands[j].DistortionHighHz);
+            }
+
             if (typeLow <= typeHigh)
             {
                 low = Math.Max(low, typeLow);

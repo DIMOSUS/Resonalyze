@@ -197,8 +197,10 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             independentSlopes,
             "Let the low-pass and high-pass of a junction take different slopes\r\n" +
             "(they still share one crossover frequency), to compensate a driver's\r\n" +
-            "own roll-off. Off makes the whole system use ONE slope — every\r\n" +
-            "junction, both sides — the textbook crossover.");
+            "own roll-off. Off ties each DRIVER's two shoulders (its high-pass and\r\n" +
+            "low-pass) to one slope, so no driver ends up steep on one side and\r\n" +
+            "shallow on the other; different drivers may still take different\r\n" +
+            "slopes — the textbook crossover.");
         toolTip.SetToolTip(
             subElevation,
             "How far the lowest driver sits above the levelled midrange/tweeter.\r\n" +

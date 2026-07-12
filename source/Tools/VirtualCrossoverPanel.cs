@@ -89,6 +89,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private bool redrawPending;
     private bool savePending;
     private bool autoDelayBusy;
+    private bool loadingProject;
 
     // Bumped whenever the displayed side (or the whole project) changes: a
     // redraw pass that started before the bump computed the OLD side's IRs,
@@ -252,6 +253,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
+        loadingProject = loading;
         UseWaitCursor = loading;
         Enabled = !loading;
         if (loading)
@@ -273,7 +275,13 @@ public partial class VirtualCrossoverPanel : UserControl
         }
         finally
         {
+            // Clear the loading state BEFORE the redraw so the final frame shows
+            // the real plot/metric, not the loading note — the bind's own
+            // interim redraws (e.g. the calibration combo refresh, which runs
+            // before the sources resolve) are what kept resetting the note back
+            // to the "no sources" hint.
             SetProjectLoading(false);
+            RedrawAll();
         }
     }
 
@@ -345,7 +353,8 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         UpdateSideRadioTexts();
-        RedrawAll();
+        // The final redraw is issued by ApplyProjectAsync after the loading
+        // state clears, so it draws the real plot instead of the loading note.
     }
 
     private void ScheduleSave()
@@ -1970,7 +1979,12 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         RemoveCurveSeries(model);
-        hintAnnotation.Text = processed.Count == 0 ? NoSourcesHint : string.Empty;
+        // While a session loads, interim redraws (the calibration combo refresh,
+        // etc.) run before the sources resolve, so processed is empty then; keep
+        // the loading note instead of flashing the "no sources" hint.
+        hintAnnotation.Text = loadingProject
+            ? LoadingHint
+            : processed.Count == 0 ? NoSourcesHint : string.Empty;
 
         // The processed magnitudes and the complex sum feed both the drawn
         // curves and the sum-loss metric, so they are built once here.

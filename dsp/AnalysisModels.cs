@@ -17,7 +17,10 @@ public enum AnalysisCurveKind
     FourthHarmonic,
     ThdPlusNoise,
     MinimumPhase,
-    ExcessPhase
+    ExcessPhase,
+    // The measurement noise floor, shown as its own trace next to the distortion
+    // curves (REW-style) rather than fused into a single THD+N number.
+    NoiseFloor
 }
 
 /// <summary>

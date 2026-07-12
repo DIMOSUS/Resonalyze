@@ -10,9 +10,12 @@ public readonly record struct NoiseInterval(int Start, int End);
 /// <summary>
 /// The broadband noise floor of a deconvolved ESS measurement, estimated from
 /// time regions that hold neither the linear response nor a harmonic packet.
-/// <see cref="Magnitude"/> is expressed in the same units as the linear packet
-/// |H1| (ENBW-compensated to the linear window), so it can be added in energy to
-/// the harmonics to form THD+N.
+/// <see cref="Magnitude"/> is a per-bin noise level at the fixed analysis
+/// resolution (<see cref="EquivalentNoiseBandwidthHz"/> = sampleRate / window),
+/// in the same raw-magnitude convention as the harmonic packets, so it can be
+/// shown against |H1| as a noise-floor trace. Like any swept-measurement noise
+/// floor (REW included), the level scales with the analysis resolution and the
+/// drive level — it is a diagnostic trace, not a bandwidth-invariant number.
 /// </summary>
 public sealed record NoiseEstimate(
     double[] BinFrequenciesHz,
@@ -27,8 +30,11 @@ public sealed record NoiseEstimate(
 /// after it, so the clean noise-only region is the tail AFTER the linear packet
 /// (and its reverb) has died away — never the pre-harmonic region, which still
 /// carries the higher-order harmonics. Several equal windows are taken there and
-/// their per-bin magnitudes are combined by median (robust to a stray transient),
-/// then ENBW-compensated to the linear window so the level is comparable to |H1|.
+/// their per-bin POWERS are combined by a bias-corrected median (the median of an
+/// exponential is ln2 × its mean, so median/ln2 recovers the true power without the
+/// magnitude-median underestimate). The result is left at the noise window's own
+/// resolution — a fixed sampleRate/window bandwidth, independent of the linear
+/// packet window and therefore of the sweep geometry.
 /// </summary>
 public static class EssNoise
 {
@@ -76,12 +82,11 @@ public static class EssNoise
                 0.0);
         }
 
-        // Rectangular windows: per-bin white-noise variance is sigma^2 * windowLength,
-        // so scaling by sqrt(linearLength / windowLength) expresses the noise at the
-        // linear window's bandwidth — the compensation that makes the result
-        // independent of the noise window length.
-        double compensation = Math.Sqrt(linearLength / (double)windowLength);
-
+        // Per-bin POWER across the noise windows (rectangular, so |X|^2 for white
+        // noise is exponential with mean sigma^2 * windowLength). The level is left
+        // at this window's own resolution — no compensation to the linear packet, so
+        // it does not depend on the sweep geometry.
+        _ = linearLength;
         var perBin = new double[usableBins][];
         for (int bin = 0; bin < usableBins; bin++)
         {
@@ -102,14 +107,19 @@ public static class EssNoise
             Fourier.Forward(buffer, FourierOptions.Matlab);
             for (int bin = 0; bin < usableBins; bin++)
             {
-                perBin[bin][w] = buffer[bin].Magnitude;
+                double real = buffer[bin].Real;
+                double imaginary = buffer[bin].Imaginary;
+                perBin[bin][w] = real * real + imaginary * imaginary;
             }
         }
 
+        // Bias-corrected median of the periodogram: median(exponential) = ln2 * mean,
+        // so median/ln2 recovers the mean power (a plain magnitude median would read
+        // ~1.6 dB low). Amplitude is its square root.
         double[] magnitude = new double[usableBins];
         for (int bin = 0; bin < usableBins; bin++)
         {
-            magnitude[bin] = Median(perBin[bin]) * compensation;
+            magnitude[bin] = Math.Sqrt(Median(perBin[bin]) / Math.Log(2.0));
         }
 
         double confidence = Math.Clamp(

@@ -54,7 +54,7 @@ public sealed record DistortionSpectrum(
     IReadOnlyDictionary<int, double[]> HarmonicAmplitude,
     IReadOnlyDictionary<int, double[]> HarmonicDistortionRatio,
     double[] ThdRatio,
-    double[]? ThdPlusNoiseRatio,
+    double[]? NoiseFloorRatio,
     NoiseEstimate? Noise,
     bool[] Reliable,
     IReadOnlyList<string> Warnings);
@@ -131,15 +131,16 @@ public static class EssDistortion
             harmonicDistortion[order] = new double[gridPoints];
         }
 
-        // Only trust the noise floor when the estimate is confident enough; below
-        // that THD+N is not produced and the caller falls back to THD.
+        // The noise floor is a SEPARATE trace (|N|/|H1|), not fused into THD — so
+        // THD stays a clean harmonics-only figure and the noise floor needs no
+        // bandwidth convention beyond its stated analysis resolution.
         bool useNoise = noise != null && noise.Confidence >= options.MinNoiseConfidence;
         double[]? noiseOnGrid = useNoise
             ? NoiseAmplitudeOnGrid(noise!, calibration, frequencies)
             : null;
 
         double[] thd = new double[gridPoints];
-        double[]? thdPlusNoise = noiseOnGrid != null ? new double[gridPoints] : null;
+        double[]? noiseFloor = noiseOnGrid != null ? new double[gridPoints] : null;
 
         for (int i = 0; i < gridPoints; i++)
         {
@@ -155,9 +156,9 @@ public static class EssDistortion
                     harmonicDistortion[order][i] = double.NaN;
                 }
                 thd[i] = double.NaN;
-                if (thdPlusNoise != null)
+                if (noiseFloor != null)
                 {
-                    thdPlusNoise[i] = double.NaN;
+                    noiseFloor[i] = double.NaN;
                 }
                 continue;
             }
@@ -184,11 +185,11 @@ public static class EssDistortion
                 ? Math.Sqrt(sumOfSquares) / denominator
                 : double.NaN;
 
-            if (thdPlusNoise != null)
+            if (noiseFloor != null)
             {
                 double noiseAmplitude = noiseOnGrid![i];
-                thdPlusNoise[i] = double.IsFinite(noiseAmplitude)
-                    ? Math.Sqrt(sumOfSquares + noiseAmplitude * noiseAmplitude) / denominator
+                noiseFloor[i] = double.IsFinite(noiseAmplitude) && noiseAmplitude > 0.0
+                    ? noiseAmplitude / denominator
                     : double.NaN;
             }
         }
@@ -199,7 +200,7 @@ public static class EssDistortion
             harmonicAmplitude,
             harmonicDistortion,
             thd,
-            thdPlusNoise,
+            noiseFloor,
             useNoise ? noise : null,
             reliable,
             decomposition.Validity.Warnings);
@@ -333,16 +334,23 @@ public static class EssDistortion
         AddHarmonic(3, SpectrumCurves.ThirdHarmonic, AnalysisCurveKind.ThirdHarmonic, "HD3");
         AddHarmonic(4, SpectrumCurves.FourthHarmonic, AnalysisCurveKind.FourthHarmonic, "HD4");
 
-        bool includesNoise = spectrum.ThdPlusNoiseRatio != null;
+        bool includesNoise = spectrum.NoiseFloorRatio != null;
         if ((curves & SpectrumCurves.ThdPlusNoise) != 0)
         {
-            // The curve is THD+N only when a confident noise estimate was folded in;
-            // otherwise it is honestly labelled THD.
-            double[] ratio = includesNoise ? spectrum.ThdPlusNoiseRatio! : spectrum.ThdRatio;
+            // THD is harmonics only. The noise floor rides alongside as its own
+            // trace (REW-style), so THD is never inflated by noise.
             result.Add(new AnalysisCurve(
-                includesNoise ? "THD+N" : "THD",
-                BuildDbCurve(spectrum.Frequencies, ratio, options.SmoothingOctaves),
+                "THD",
+                BuildDbCurve(spectrum.Frequencies, spectrum.ThdRatio, options.SmoothingOctaves),
                 AnalysisCurveKind.ThdPlusNoise));
+
+            if (includesNoise)
+            {
+                result.Add(new AnalysisCurve(
+                    "Noise floor",
+                    BuildDbCurve(spectrum.Frequencies, spectrum.NoiseFloorRatio!, options.SmoothingOctaves),
+                    AnalysisCurveKind.NoiseFloor));
+            }
         }
 
         return new DistortionCurveResult(

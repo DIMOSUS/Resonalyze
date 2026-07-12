@@ -119,15 +119,14 @@ internal sealed class MeasurementPlotContext
             real[i] = impulse[i].Real;
         }
 
-        // Noise / THD+N is intentionally OFF: the current noise term's absolute
-        // level is tied to the linear-packet window bandwidth (set by the sweep
-        // geometry), so the curve stays the well-defined THD until the noise
-        // estimate is reworked as a bandwidth-normalized PSD.
+        // The noise floor is shown as its own trace (REW-style), so THD stays a
+        // clean harmonics-only figure and the noise level is honest at its stated
+        // analysis resolution — no fused THD+N, no arbitrary bandwidth convention.
         var distortionOptions = new DistortionOptions(
             SmoothingOctaves: options.SmoothingInverseOctaves > 0
                 ? HarmonicSmoothingWidthFactor / options.SmoothingInverseOctaves
                 : 0.0,
-            IncludeNoise: false);
+            IncludeNoise: true);
 
         EssDistortion.DistortionCurveResult distortion =
             EssDistortion.ComputeDistortionCurvesResult(

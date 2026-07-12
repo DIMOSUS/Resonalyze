@@ -424,21 +424,23 @@ re-verified.
   excitation axis, and sums the harmonics' ENERGY (√Σ|Hn|²) on a common
   log-frequency grid — never a complex sum of one shared window. The curve ships as
   well-defined **THD** (energy of the harmonics over |H1|).
-  **Noise / real THD+N is DEFERRED (PR #28 review):** an `EssNoise` estimate exists
-  (`IncludeNoise`, OFF by default) but is not shown yet, because its noise term is
-  not yet a proper PSD: (1) it is ENBW-compensated to the LINEAR-packet window,
-  whose length is set by the sweep geometry (duration / octaves / fade / H1↔H2
-  spacing), so the same system + same real noise would read a different THD+N at a
-  different sweep — the bandwidth is implicit and uncontrolled; and (2) it takes the
-  median of the FFT MAGNITUDE, which for Rayleigh bins underestimates the power by
-  ~ln2 (−1.6 dB) with no bias correction. The follow-up: estimate noise as an
-  amplitude/power spectral density with explicit `sampleRate·ENBW·N` normalization,
-  integrate it into a DECLARED bandwidth per point (fixed Hz or the curve's
-  fractional-octave width), store/show that bandwidth, and bias-correct the median
-  (median of power / ln2). Only then is the curve labelled THD+N. Existing
-  `EssNoiseTests` pin the current experimental mechanics (doubling, FFT-window
-  invariance) but not absolute power — the follow-up adds an H1-window-length
-  invariance test and an absolute-power test.
+  **Noise shown as a separate floor trace, REW-style (not fused THD+N) — done
+  (PR #28 review follow-up).** Rather than fold noise into a single THD+N number
+  (which needs an arbitrary declared bandwidth and drove the P1/P2 review findings),
+  the measurement noise floor is drawn as its OWN trace (`AnalysisCurveKind.NoiseFloor`,
+  |N|/|H1|), exactly as REW does. THD therefore stays a clean harmonics-only figure,
+  and where THD dips to the noise floor the user can SEE the harmonics are buried
+  (validated on the real drivers: l woof is noise-limited at 100–200 Hz, the tweeter
+  at 200 Hz is real distortion well above the floor). The two review defects are
+  fixed at the source: `EssNoise` no longer references the linear-packet window at
+  all (so the level is independent of sweep geometry — pinned by a fade-fraction
+  invariance test), and it takes the bias-corrected median of the periodogram
+  (median of power / ln2, not magnitude) so the absolute level is right (pinned by a
+  white-noise known-answer test). The floor is reported at a fixed analysis
+  resolution (sampleRate / noise window, exposed as `EquivalentNoiseBandwidthHz`),
+  with the honest caveat — as in REW — that a noise floor scales with resolution and
+  drive level. *Windows follow-up:* live check of the grey Noise-floor trace + its
+  legend next to the plot.
 - [x] ★ **Harmonic curves and the primary curve had different reference levels** —
   fixed (2026-07-12). HDn is now `|Hn|/|H1|` against the linear packet of the SAME
   ESS decomposition (a contained IR read under a unity plateau, so the ratio is

@@ -96,9 +96,45 @@ public sealed class CrossoverAutoSetupTests
         Assert.True(wooferToMid < midToTweeter);
         Assert.InRange(subToWoofer, 40, 80);
         Assert.InRange(wooferToMid, 250, 500);
-        Assert.InRange(midToTweeter, 2_000, 4_000);
+        // The placement heuristics cross the mid/tweeter as low as the tweeter's
+        // sensible floor (1.5 kHz) and its measured band allow, out of the 2–4 kHz
+        // ear-sensitivity band; a low tweeter handover must stay steep (>= 24).
+        Assert.InRange(midToTweeter, 1_500, 4_000);
+        if (midToTweeter < CrossoverAutoSetup.TweeterProtectionHz)
+        {
+            Assert.True(proposals[3].HighPassEdge!.Value.SlopeDbPerOctave >= 24);
+        }
         Assert.Null(proposals[3].LowPassEdge);
         Assert.True(SumRippleDb(sources, proposals) < 6.0);
+    }
+
+    [Fact]
+    public void Propose_CrossesACapableTweeterLowAndKeepsItSteep()
+    {
+        // A tweeter that measures clean down to ~1.2 kHz: the placement
+        // heuristics (avoid the 2–4 kHz ear band, cross a wide overlap low) pull
+        // its handover below the ear band, and the tweeter protection keeps that
+        // low handover steep (>= 24 dB/oct) so the tweeter is not overdriven.
+        var sources = new List<AutoSetupSource>
+        {
+            new(BandCurve(60, 900, 0), DriverType.Midbass),
+            new(BandCurve(250, 5_000, 0), DriverType.Midrange),
+            new(BandCurve(1_200, 20_000, 0), DriverType.Tweeter)
+        };
+
+        IReadOnlyList<CrossoverProposal> proposals =
+            CrossoverAutoSetup.Propose(sources, Options());
+
+        CrossoverEdge tweeterHighPass = proposals[2].HighPassEdge!.Value;
+        Assert.True(
+            tweeterHighPass.FrequencyHz < 2_000,
+            $"mid/tweeter handover {tweeterHighPass.FrequencyHz:0} Hz was not pulled below the ear band");
+        Assert.True(
+            tweeterHighPass.FrequencyHz >= 1_500,
+            $"handover {tweeterHighPass.FrequencyHz:0} Hz dropped below the tweeter floor");
+        Assert.True(
+            tweeterHighPass.SlopeDbPerOctave >= 24,
+            $"low tweeter handover slope {tweeterHighPass.SlopeDbPerOctave} is not steep");
     }
 
     [Fact]

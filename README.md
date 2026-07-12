@@ -1426,8 +1426,16 @@ it defaults to Off because the measurements are loopback-referenced.
   roll-off), land on human-friendly frequencies (5 Hz steps below 100 Hz,
   10 Hz below 1 kHz, 50 Hz above), and junctions below 300 Hz never get slopes
   steeper than 24 dB/oct — the group delay of a steep low-frequency crossover
-  costs more than the protection it buys. Narrowing the window past an outer
-  driver adds a subsonic / brickwall band-limit on that channel.
+  costs more than the protection it buys. Two placement heuristics steer the
+  handovers further: a junction landing in the ear's most sensitive band
+  (2–4 kHz) is penalized, and two drivers that share a wide band are crossed
+  low — letting the upper (smaller) driver take over as early as it cleanly
+  can, for better dispersion and less excursion on the lower driver. So a
+  capable tweeter is crossed down toward its 1.5 kHz sensible floor (out of the
+  ear band) when its measured band supports it; a low tweeter handover is held
+  to at least 24 dB/oct so the tweeter is not driven too far down. Narrowing
+  the window past an outer driver adds a subsonic / brickwall band-limit on
+  that channel.
   Apply does more than take the flattest magnitude candidate: the wizard
   expands ~50 near-optimal variants (always including the conventional
   all-LR24 setup) and re-ranks them by the junction loss actually achievable

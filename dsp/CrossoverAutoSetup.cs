@@ -138,6 +138,15 @@ public static class CrossoverAutoSetup
     /// <summary>The steepest slope allowed for junctions below <see cref="SteepSlopeMinimumJunctionHz"/>.</summary>
     public const int LowJunctionMaxSlopeDbPerOctave = 24;
 
+    /// <summary>
+    /// The mirror of the low-bass cap, for tweeters: a tweeter crossed below this
+    /// frequency must use at least <see cref="CrossoverSlopeDbPerOctave"/> dB/oct,
+    /// or a shallow filter lets it play too far down and overexcurt. The placement
+    /// heuristics push a capable tweeter's handover low for a better soundstage,
+    /// so the steep-slope floor keeps that safe.
+    /// </summary>
+    public const double TweeterProtectionHz = 2_500;
+
     // The log-frequency grid the optimizer scores flatness on.
     private const int GridPointsPerOctave = 24;
 
@@ -251,6 +260,25 @@ public static class CrossoverAutoSetup
     private const double OverlapPenaltyDbPerOctave = 0.6;
     private const int MinPracticalSlopeDbPerOctave = 12;
 
+    // A handover in the ear's most sensitive band (2–4 kHz) puts the crossover's
+    // phase wobble, lobing and any residual dip right where they are most
+    // audible, so a junction landing there is penalized: a soft bump centred on
+    // the band's log-centre (~2.83 kHz), full inside and tapering ~an octave to
+    // each side. Gentle — a tie-breaker that steers a free handover out of the
+    // band, not an override of a genuinely flatter split.
+    private const double EarSensitivityLowHz = 2_000;
+    private const double EarSensitivityHighHz = 4_000;
+    private const double EarSensitivitySigmaOctaves = 0.5;
+    private const double EarSensitivityWeightDb = 0.5;
+
+    // When two adjacent drivers share a wide band, the handover can sit anywhere
+    // across it; an engineer crosses low, letting the upper (smaller) driver take
+    // over as early as it cleanly can (better dispersion up top, less excursion
+    // and breakup demand on the lower driver). So a junction is nudged toward the
+    // bottom of the drivers' shared band, the pull scaled by how wide that band
+    // is — negligible for a narrow overlap, firm for a broad one.
+    private const double WideOverlapLowBiasWeightDb = 0.4;
+
     /// <summary>
     /// Reads the usable band from a (smoothed) magnitude curve and suggests the
     /// driver class. The reference is an upper percentile of the curve, robust
@@ -334,7 +362,11 @@ public static class CrossoverAutoSetup
         DriverType.Woofer => (40, 250),
         DriverType.Midbass => (80, 500),
         DriverType.Midrange => (250, 4_000),
-        DriverType.Tweeter => (2_000, 20_000),
+        // A quality tweeter crossed low (with a steep filter) covers more of the
+        // critical midrange for a better soundstage; the 1.5 kHz floor lets the
+        // search go there, but only when the measured tweeter band supports it —
+        // a tweeter that has rolled off by 2.5 kHz still crosses no lower.
+        DriverType.Tweeter => (1_500, 20_000),
         _ => (20, 20_000)
     };
 
@@ -1455,6 +1487,15 @@ public static class CrossoverAutoSetup
                 : slopes;
         }
 
+        // The lowest slope a driver of this class may take at a handover of this
+        // frequency: a tweeter crossed below TweeterProtectionHz is held to at
+        // least 24 dB/oct so it does not play too far down; every other driver
+        // keeps the practical floor.
+        private static int SlopeFloor(DriverType sideType, double fcHz) =>
+            sideType == DriverType.Tweeter && fcHz < TweeterProtectionHz
+                ? CrossoverSlopeDbPerOctave
+                : MinPracticalSlopeDbPerOctave;
+
         // Cut-only seed: bring every band down to the quietest, measured over the
         // band it will actually cover with the seeded crossovers.
         private void InitializeGains()
@@ -1568,10 +1609,15 @@ public static class CrossoverAutoSetup
             List<int>? allowed = null;
             void Intersect(int junction)
             {
-                IReadOnlyList<int> slopes =
-                    AllowedSlopes(junctionFamily[junction], crossoverHz[junction]);
+                // Channel i sits on this junction; its own class sets the steep
+                // floor (a tweeter crossed low), while the junction frequency and
+                // family set the rest.
+                int floor = SlopeFloor(types[i], crossoverHz[junction]);
+                List<int> slopes = AllowedSlopes(junctionFamily[junction], crossoverHz[junction])
+                    .Where(slope => slope >= floor)
+                    .ToList();
                 allowed = allowed == null
-                    ? slopes.ToList()
+                    ? slopes
                     : allowed.Where(slopes.Contains).ToList();
             }
 
@@ -1636,6 +1682,11 @@ public static class CrossoverAutoSetup
             {
                 foreach (double fc in LatticePoints(low, high))
                 {
+                    // Steep-slope floors for this handover's two sides: a tweeter
+                    // crossed low must stay steep (its own class), the lower
+                    // driver keeps the practical floor.
+                    int lowerFloor = SlopeFloor(types[j], fc);
+                    int upperFloor = SlopeFloor(types[j + 1], fc);
                     foreach (CrossoverFilterFamily family in options.Families)
                     {
                         IReadOnlyList<int> slopes = AllowedSlopes(family, fc);
@@ -1643,15 +1694,26 @@ public static class CrossoverAutoSetup
                         {
                             foreach (int lower in slopes)
                             {
+                                if (lower < lowerFloor)
+                                {
+                                    continue;
+                                }
+
                                 foreach (int upper in slopes)
                                 {
+                                    if (upper < upperFloor)
+                                    {
+                                        continue;
+                                    }
+
                                     Set(j, family, fc, lower, upper);
                                     yield return new JunctionOption(
                                         family, fc, lower, upper, Score());
                                 }
                             }
                         }
-                        else if (slopes.Contains(savedLower) && slopes.Contains(savedUpper))
+                        else if (slopes.Contains(savedLower) && slopes.Contains(savedUpper) &&
+                            savedLower >= lowerFloor && savedUpper >= upperFloor)
                         {
                             Set(j, family, fc, savedLower, savedUpper);
                             yield return new JunctionOption(
@@ -1736,7 +1798,47 @@ public static class CrossoverAutoSetup
                 }
             }
 
-            return Flatness(scratchCombined) + OverlapPenalty(scratchUnits);
+            return Flatness(scratchCombined)
+                + OverlapPenalty(scratchUnits)
+                + FrequencyPlacementPenalty();
+        }
+
+        // Frequency-placement heuristics that depend only on where the junctions
+        // sit (not on the summed magnitude): keep handovers out of the ear's
+        // 2–4 kHz sensitivity band, and cross low when two drivers share a wide
+        // band. Both are gentle nudges added to the flatness score.
+        private double FrequencyPlacementPenalty()
+        {
+            double total = 0;
+            for (int j = 0; j < channelCount - 1; j++)
+            {
+                double fc = crossoverHz[j];
+                total += EarSensitivityWeightDb * EarSensitivityBump(fc);
+
+                // The band the two drivers share, and how far above its bottom
+                // this junction sits — both in octaves. A narrow overlap barely
+                // pulls; a wide one pulls firmly toward the low edge.
+                double overlapLow = bands[j + 1].LowHz;
+                double overlapHigh = bands[j].HighHz;
+                if (overlapHigh > overlapLow && fc > overlapLow)
+                {
+                    double overlapOctaves = Math.Log2(overlapHigh / overlapLow);
+                    double octavesAbove = Math.Log2(fc / overlapLow);
+                    total += WideOverlapLowBiasWeightDb * overlapOctaves * octavesAbove;
+                }
+            }
+
+            return total;
+        }
+
+        // A soft bump, full over 2–4 kHz and tapering ~an octave to each side,
+        // centred on the band's log-centre.
+        private static double EarSensitivityBump(double frequencyHz)
+        {
+            double center = Math.Sqrt(EarSensitivityLowHz * EarSensitivityHighHz);
+            double octavesFromCenter = Math.Log2(frequencyHz / center);
+            double z = octavesFromCenter / EarSensitivitySigmaOctaves;
+            return Math.Exp(-0.5 * z * z);
         }
 
         // RMS deviation of the summed magnitude from its own mean over the interior

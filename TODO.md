@@ -528,6 +528,22 @@ re-verified.
   Windows: the lock appears immediately, the plot note is legible (PlotView is
   custom-painted so it should not grey out), and controls re-enable exactly
   when the curves land.
+- [x] **Auto crossover placement heuristics (user request 2026-07-12):** two
+  frequency-placement penalties added to the flatness score, plus a tweeter
+  floor + protection rule. (1) **Ear band** — a junction in 2–4 kHz gets a soft
+  Gaussian penalty (`EarSensitivityWeightDb = 0.5`, centred ~2.83 kHz). (2)
+  **Wide overlap → low** — a junction is pulled toward the bottom of the two
+  drivers' shared band, scaled by its width in octaves
+  (`WideOverlapLowBiasWeightDb = 0.4`, "firm" per the user). (3) The tweeter's
+  `SensibleRange` floor dropped 2000 → **1500 Hz** so the search can cross a
+  capable tweeter low (the user's own tune crosses mid/tweeter at 1300/1800 for
+  the soundstage). (4) `TweeterProtectionHz = 2500`: a tweeter crossed below
+  that must stay ≥ 24 dB/oct (mirror of the <300 Hz bass cap), enforced in the
+  slope enumeration and `AllowedChannelSlopes`, so the low handover does not
+  overdrive the tweeter. On the real left 4-way the mid/tweeter moved 3900 →
+  1500 (LR24/LR24, tweeter steep) — matching the user's low-and-steep manual
+  choice. Weights are tunable; still gated by the measured tweeter band (a
+  tweeter rolled off by 2.5 kHz still crosses no lower).
 - [x] **Virtual DSP redraw multithreaded (2026-07-12):** the interactive redraw
   ran its heavy math on one core — `ProcessChannelsAsync` applied each channel's
   full-length ApplyChain cascade in a sequential `Select` inside one `Task.Run`,

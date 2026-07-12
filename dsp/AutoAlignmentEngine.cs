@@ -335,8 +335,10 @@ public static class AutoAlignmentEngine
         IAlignmentChannel? secondaryNeighbor = null,
         AlignmentJunction? secondaryPair = null,
         double? priorOverrideMs = null,
-        double? sceneLockToleranceMs = null)
+        double? sceneLockToleranceMs = null,
+        bool? forcedPolarity = null)
     {
+
         double primaryBase = alignment.GetValueOrDefault(neighborChannel).DelayMs
             + timeline[neighborChannel] - timeline[channel];
         double secondaryBase = secondaryNeighbor != null
@@ -354,6 +356,24 @@ public static class AutoAlignmentEngine
         // of the quadratic lobe deterrent: between the two coarse bases when
         // both junctions constrain the channel.
         double anchorMs = priorOverrideMs ?? (primaryBase + secondaryBase) / 2.0;
+
+        // Selects the delay from a candidate list. When the polarity is inherited
+        // from the stereo counterpart, the search only chooses the DELAY: candidates
+        // of the inherited sign are selected among, and the sign is stamped on the
+        // winner even in the rare window that held only the other sign — so the two
+        // sides can never disagree on a driver's polarity.
+        AlignmentCandidate Pick(IReadOnlyList<AlignmentCandidate> items)
+        {
+            if (forcedPolarity is not bool want)
+            {
+                return AlignmentSelection.Select(items, anchorMs);
+            }
+
+            var kept = items.Where(item => item.InvertPolarity == want).ToList();
+            AlignmentCandidate selected = AlignmentSelection.Select(
+                kept.Count > 0 ? kept : items, anchorMs);
+            return selected with { InvertPolarity = want };
+        }
 
         // One junction search: candidates of the prior-penalized loss score in
         // a window spanning the coarse base(s) (the PHAT-seeded timeline,
@@ -437,8 +457,8 @@ public static class AutoAlignmentEngine
                     $"dip {item.DipDb:0.0} dB)")));
 
             AlignmentCandidate chosen = candidates.Count > 0
-                ? AlignmentSelection.Select(candidates, anchorMs)
-                : new AlignmentCandidate(anchorMs, false, 0);
+                ? Pick(candidates)
+                : new AlignmentCandidate(anchorMs, forcedPolarity ?? false, 0);
             if (candidates.Count > 0 && chosen != candidates[0])
             {
                 log.AppendLine(
@@ -483,7 +503,7 @@ public static class AutoAlignmentEngine
                     // taking retried[0] raw would let the widened window hand
                     // the result to a (flip + half-period) impostor that the
                     // invert margin and the arrival tie-break exist to reject.
-                    chosen = AlignmentSelection.Select(retried, anchorMs);
+                    chosen = Pick(retried);
                 }
 
                 log.AppendLine(
@@ -502,7 +522,8 @@ public static class AutoAlignmentEngine
             // away from the other side's timing pays for that distance too.
             if (wide.Count > 0 && sceneLockToleranceMs == null)
             {
-                AlignmentCandidate wideChosen = AlignmentSelection.Select(wide, anchorMs);
+                AlignmentCandidate wideChosen =
+                    Pick(wide);
                 if (wideChosen.ScoreDb > chosen.ScoreDb + WideWindowPromotionMarginDb)
                 {
                     log.AppendLine(
@@ -822,10 +843,22 @@ public static class AutoAlignmentEngine
                 ? SceneLockToleranceMs
                 : null;
 
+            // Polarity is a property of the DRIVER, not the side: a right channel
+            // inherits the sign its left counterpart settled on (the two are the
+            // same driver, wired the same), and only searches the delay. This makes
+            // an asymmetric per-driver inversion — left mid flipped while right mid
+            // is not — structurally impossible. The right top's sign is the one
+            // exception: it is set by the bridge, the single global L/R link.
+            bool? inheritedPolarity = channelLink == null
+                ? null
+                : alignment.TryGetValue(channelLink.Left, out AlignmentOverride leftSide)
+                    ? leftSide.InvertPolarity
+                    : false;
+
             AlignChannelAtJunction(
                 channel, neighbor, pair,
                 rightTimeline, allChannels, reprocess, alignment, log,
-                secondary, secondaryPair, crossTarget, sceneLock);
+                secondary, secondaryPair, crossTarget, sceneLock, inheritedPolarity);
         }
         for (int i = bridgeIndex - 1; i >= 0; i--)
         {
@@ -907,6 +940,12 @@ public static class AutoAlignmentEngine
     private const double PairComoveSearchRangeMs = 1.2;
     private const double PairComoveMinimumGainDb = 0.05;
 
+    // How much better (dB) inverting the right bridge top must sum against the left
+    // top before the bridge flips it. Below this the two hypotheses are a tie and
+    // the identical L/R tops are kept matched (or the first-lobe signs break it) —
+    // so a marginal, noise-driven difference never inverts one side alone.
+    private const double BridgePolarityMarginDb = 0.5;
+
     // Decides the right bridge channel's polarity once its delay is already in
     // the alignment map. Primary evidence: the measured acoustic signs of the
     // two settled top responses (EstimatePolarity on the processed IRs — the
@@ -926,38 +965,59 @@ public static class AutoAlignmentEngine
         Complex[] rightTop = bridged
             .First(item => item.Channel == plan.BridgeRight).ImpulseResponse;
 
+        // Bridge-band sum loss of the two possible right-top signs against the
+        // settled left top. With the delay pinned only two hypotheses exist, so the
+        // lobe ambiguity that bans loss-driven polarity searches does not apply, and
+        // the sum loss is the physically direct measure of whether centre content
+        // adds or cancels — robust where the first-lobe SIGN read is not (a
+        // Butterworth top meets its neighbour near 90°, so its leading-lobe sign
+        // flips on noise, which used to invert one side's top but not the other).
+        var invertedRightTop = new Complex[rightTop.Length];
+        for (int i = 0; i < rightTop.Length; i++)
+        {
+            invertedRightTop[i] = -rightTop[i];
+        }
+
+        var leftOnly = new List<Complex[]> { leftTop };
+        (double LossDb, double DipDb)? normalLoss =
+            VirtualCrossoverAnalysis.MeasureSumLoss(
+                rightTop, leftOnly, plan.BridgeRight.SampleRate,
+                plan.BridgeBandLowHz, plan.BridgeBandHighHz);
+        (double LossDb, double DipDb)? invertedLoss =
+            VirtualCrossoverAnalysis.MeasureSumLoss(
+                invertedRightTop, leftOnly, plan.BridgeRight.SampleRate,
+                plan.BridgeBandLowHz, plan.BridgeBandHighHz);
+
         PolarityEstimate leftSign = VirtualCrossoverAnalysis.EstimatePolarity(leftTop);
         PolarityEstimate rightSign = VirtualCrossoverAnalysis.EstimatePolarity(rightTop);
         bool invert;
         string reason;
-        if (leftSign != PolarityEstimate.Unknown &&
+        if (normalLoss.HasValue && invertedLoss.HasValue &&
+            Math.Abs(invertedLoss.Value.LossDb - normalLoss.Value.LossDb) >=
+                BridgePolarityMarginDb)
+        {
+            // Inverting clearly sums better (or worse): a confident, non-noisy call.
+            invert = invertedLoss.Value.LossDb > normalLoss.Value.LossDb;
+            reason = "bridge-band sum loss " +
+                $"normal {normalLoss.Value.LossDb:0.00} / " +
+                $"inverted {invertedLoss.Value.LossDb:0.00} dB";
+        }
+        else if (leftSign != PolarityEstimate.Unknown &&
             rightSign != PolarityEstimate.Unknown)
         {
+            // The sum is a near-tie (Butterworth adds similarly either way): fall to
+            // the first-lobe signs only to break it.
             invert = leftSign != rightSign;
-            reason = $"measured signs L {leftSign} / R {rightSign}";
+            reason = "sum near-tie, measured signs " +
+                $"L {leftSign} / R {rightSign} (loss " +
+                $"normal {normalLoss?.LossDb:0.00} / inverted {invertedLoss?.LossDb:0.00} dB)";
         }
         else
         {
-            var invertedRightTop = new Complex[rightTop.Length];
-            for (int i = 0; i < rightTop.Length; i++)
-            {
-                invertedRightTop[i] = -rightTop[i];
-            }
-
-            var leftOnly = new List<Complex[]> { leftTop };
-            (double LossDb, double DipDb)? normalLoss =
-                VirtualCrossoverAnalysis.MeasureSumLoss(
-                    rightTop, leftOnly, plan.BridgeRight.SampleRate,
-                    plan.BridgeBandLowHz, plan.BridgeBandHighHz);
-            (double LossDb, double DipDb)? invertedLoss =
-                VirtualCrossoverAnalysis.MeasureSumLoss(
-                    invertedRightTop, leftOnly, plan.BridgeRight.SampleRate,
-                    plan.BridgeBandLowHz, plan.BridgeBandHighHz);
-            invert = invertedLoss.HasValue && normalLoss.HasValue &&
-                invertedLoss.Value.LossDb > normalLoss.Value.LossDb;
-            reason = "sign unreadable, bridge-band loss " +
-                $"normal {normalLoss?.LossDb:0.00} / " +
-                $"inverted {invertedLoss?.LossDb:0.00} dB";
+            // No confident evidence to flip identical L/R tops: keep them matched,
+            // which is the symmetric, physically minimal choice.
+            invert = false;
+            reason = "no confident polarity evidence; kept matched";
         }
 
         if (invert)

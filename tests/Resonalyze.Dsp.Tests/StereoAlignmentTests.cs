@@ -71,6 +71,7 @@ public sealed class StereoAlignmentTests
             (double LowHz, double HighHz)?[]? linkBands = null,
             double rightMidEchoMs = 0,
             double leftLateMs = 0,
+            double rightMidAmplitude = 1.0,
             int[]? reprocessCount = null)
     {
         var sub = new TestChannel("sub", ImpulseAtMs(2.0 + leftLateMs));
@@ -80,7 +81,7 @@ public sealed class StereoAlignmentTests
             "L twr", ImpulseAtMs(0.0 + leftLateMs, leftTopAmplitude));
         var rightWoof = new TestChannel("R woof", ImpulseAtMs(1.0 + rightLateMs));
         Complex[] rightMidIr = ImpulseAtMs(
-            0.4 + rightLateMs, rightMidEchoMs > 0 ? 0.6 : 1.0);
+            0.4 + rightLateMs, rightMidEchoMs > 0 ? 0.6 : rightMidAmplitude);
         if (rightMidEchoMs > 0)
         {
             int echoPosition = BasePosition + (int)Math.Round(
@@ -323,6 +324,29 @@ public sealed class StereoAlignmentTests
         // invert flags — and the left walk is expected to have flipped its top.
         Assert.True(leftInvert);
         Assert.Equal(leftInvert, rightInvert);
+    }
+
+    [Fact]
+    public void ComputeStereo_RightDriverInheritsItsLeftCounterpartsPolarity()
+    {
+        // Polarity is a property of the DRIVER, not the side. The RIGHT mid is wired
+        // backwards: aligned on its own against the top it would flip (its mid/tweeter
+        // junction is high enough that a flip is unambiguous). The LEFT mid is wired
+        // normally and does not flip. The symmetry rule makes the right mid inherit
+        // its left counterpart's sign and search only the delay, so the two sides end
+        // with the SAME polarity — the asymmetric inversion (one side's mid flipped,
+        // the other not) Butterworth used to trigger is now structurally impossible.
+        (TestChannel _, TestChannel[] left, TestChannel[] right,
+            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+            RunStereo(
+                sceneOffsetMs: 0.25,
+                linkBands: UserLinkBands,
+                rightMidAmplitude: -1.0);
+
+        Assert.False(alignment.GetValueOrDefault(left[1]).InvertPolarity);
+        Assert.Equal(
+            alignment.GetValueOrDefault(left[1]).InvertPolarity,
+            alignment.GetValueOrDefault(right[1]).InvertPolarity);
     }
 
     [Fact]

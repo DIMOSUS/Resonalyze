@@ -160,6 +160,23 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   from the flat-slope point's wish while landing on the user's hand tune. The
   per-side filter+driver group-delay asymmetry is real and side-asymmetric;
   the refutation stands.
+- [x] **Asymmetric L/R polarity after auto delay (user report 2026-07-12,
+  Butterworth-triggered):** the stereo cascade decided polarity independently per
+  side (left walk, right walk) plus a bridge sign-match, so a Butterworth crossover —
+  whose drivers meet near 90°, making the first-lobe sign and the sum both ambiguous —
+  let the two sides diverge (e.g. left mid flipped, right tweeter flipped). LR sums
+  in-phase, so it never diverged. Fixed by making polarity a property of the DRIVER,
+  not the side: (1) each right channel below the bridge INHERITS its left counterpart's
+  sign (via `PairLinks`) and searches only the delay (`AlignChannelAtJunction` gained a
+  `forcedPolarity` that filters candidates to the inherited sign and stamps it even in a
+  window that held only the other sign); (2) the bridge now decides the single global
+  L/R top flip by bridge-band SUM LOSS (robust, and safe because the delay is pinned)
+  with a `BridgePolarityMarginDb = 0.5` margin, falling to the first-lobe signs only on
+  a near-tie and to "kept matched" when neither is confident — the noisy sign-read is no
+  longer primary. Asymmetric per-driver inversion is now structurally impossible. New
+  synthetic test pins that a right driver's sign equals its left counterpart's; the
+  existing bridge-polarity tests still pass. 507 dsp tests pass. *Windows follow-up:*
+  re-run the user's Butterworth tune and confirm the polarity pattern is symmetric.
 - [ ] **Stereo scene diagnostics (Δ per band)**: the stereo Auto delay cascade
   (left walk → arrival bridge with the scene offset → right descent) is in;
   the complementary *verification* layer is not — per-band L−R arrival

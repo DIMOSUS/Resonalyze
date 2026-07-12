@@ -528,6 +528,17 @@ re-verified.
   Windows: the lock appears immediately, the plot note is legible (PlotView is
   custom-painted so it should not grey out), and controls re-enable exactly
   when the curves land.
+- [x] **Virtual DSP redraw multithreaded (2026-07-12):** the interactive redraw
+  ran its heavy math on one core — `ProcessChannelsAsync` applied each channel's
+  full-length ApplyChain cascade in a sequential `Select` inside one `Task.Run`,
+  and `BuildMetricCurves` built each channel's magnitude spectrum sequentially.
+  Both are pure and independent, so both now fan out: ApplyChain via
+  `Parallel.For` (bit-identical output verified on the real 7-channel system,
+  2043 ms → 1074 ms on 4 cores, ~min(channels, cores)× ceiling) and the spectra
+  via `AsParallel().AsOrdered()`. Only full redraws (mode switch, session load,
+  bypass-all) recompute every channel and get the full win; a single-control
+  edit still recomputes one channel (nothing to parallelize). Cache write-back
+  stays on the UI thread after the await, so no races.
   **Target-curve gains (user request 2026-07-12):** gains no longer flatten
   the sum — they follow a car target curve. (1) midrange & tweeter levelled to
   each other (louder attenuated); (2) the subwoofer anchors the bass at a

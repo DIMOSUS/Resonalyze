@@ -1905,19 +1905,23 @@ public partial class VirtualCrossoverPanel : UserControl
 
         if (jobs.Count > 0)
         {
-            List<(PendingChannel Job, Complex[] Result, int Peak)> computed =
-                await Task.Run(() => jobs
-                    .Select(job =>
-                    {
-                        Complex[] result = VirtualCrossoverAnalysis.ApplyChain(
-                            job.TransferIr, job.Chain, job.SampleRate);
-                        int peak = VirtualCrossoverAnalysis.FindPeakIndex(result);
-                        return (job, result, peak);
-                    })
-                    .ToList());
-
-            foreach ((PendingChannel job, Complex[] result, int peak) in computed)
+            // One ApplyChain per channel — the full-length IR through the biquad
+            // cascade and its FFT — is the tool's heaviest math. They are pure
+            // and independent, so they run across cores; the cache write-back
+            // below stays on the UI thread after the await, so nothing races.
+            var computed = new (Complex[] Result, int Peak)[jobs.Count];
+            await Task.Run(() => Parallel.For(0, jobs.Count, j =>
             {
+                PendingChannel job = jobs[j];
+                Complex[] result = VirtualCrossoverAnalysis.ApplyChain(
+                    job.TransferIr, job.Chain, job.SampleRate);
+                computed[j] = (result, VirtualCrossoverAnalysis.FindPeakIndex(result));
+            }));
+
+            for (int j = 0; j < jobs.Count; j++)
+            {
+                PendingChannel job = jobs[j];
+                (Complex[] result, int peak) = computed[j];
                 job.State.ProcessedCache = new ProcessedChannelCache(job.Key, result, peak);
                 results[job.Index] = new ProcessedChannel(job.Channel, result, peak, job.Color);
             }
@@ -2401,7 +2405,13 @@ public partial class VirtualCrossoverPanel : UserControl
         // The summed envelope peak can sit between the arrivals or vanish under
         // cancellation, so the anchor is the earliest arrival, not the sum peak.
         int anchor = processed.Min(item => item.PeakIndex);
+        // One windowed FFT + resample per channel; GetPrimarySpectrum allocates
+        // its own buffers and reads only the (redraw-stable) options and
+        // calibration, so the channels' spectra compute across cores. AsOrdered
+        // keeps the result aligned with the channel list.
         List<AnalysisCurve> magnitudes = processed
+            .AsParallel()
+            .AsOrdered()
             .Select(item => BuildMagnitudeCurve(
                 item.ImpulseResponse, anchor, item.Channel.SampleRate))
             .ToList();

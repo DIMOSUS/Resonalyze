@@ -194,12 +194,6 @@ public static class CrossoverAutoSetup
     // driver is not handed a region where it audibly distorts.
     private const double DistortionCeilingDb = -30.0;
 
-    // Absolute lower backstop for a tweeter's distortion-derived low edge: even a
-    // tweeter measured clean lower than this is never crossed below it, because the
-    // measurement level under-represents the sustained-SPL excursion that sets the
-    // real limit. Between here and the measured knee the search is free.
-    private const double HardTweeterFloorHz = 1_000.0;
-
     // The log-frequency grid the optimizer scores flatness on.
     private const int GridPointsPerOctave = 24;
 
@@ -1806,13 +1800,18 @@ public static class CrossoverAutoSetup
 
             (double typeLow, double typeHigh) = JunctionTypeBounds(types[j], types[j + 1]);
 
-            // The tweeter's low handover follows its MEASURED distortion knee
-            // (backstopped) instead of the fixed class floor: a clean tweeter may
-            // cross lower for a better stage, a distortion-limited one is held higher.
+            // Distortion PROTECTS the tweeter's low handover — it can only RAISE the
+            // floor, never lower it. The measured knee is taken at a moderate level;
+            // a tweeter's real low limit is set by its resonance/excursion (crossing
+            // at or below Fs destroys it at volume), which a moderate-SPL THD read
+            // understates. So a tweeter that already measures dirty low is held
+            // higher than the class floor, but a clean-measuring one is NOT allowed
+            // below it — the low-for-soundstage handover stays a deliberate manual
+            // choice, not something the auto infers from a quiet distortion curve.
             if (types[j + 1] == DriverType.Tweeter &&
                 !double.IsNaN(bands[j + 1].DistortionLowHz))
             {
-                typeLow = Math.Max(HardTweeterFloorHz, bands[j + 1].DistortionLowHz);
+                typeLow = Math.Max(typeLow, bands[j + 1].DistortionLowHz);
             }
 
             // Never hand the lower driver a region above its breakup onset.

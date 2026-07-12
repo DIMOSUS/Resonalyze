@@ -66,14 +66,13 @@ public sealed class CrossoverDistortionTests
         Assert.True(double.IsNaN(band.DistortionHighHz));
     }
 
-    private static double MidTweeterCrossover(bool withDistortion)
+    private static double MidTweeterCrossover(IReadOnlyList<SignalPoint>? tweeterDistortion)
     {
-        var thd = DistortionDirtyBelow(1_100);
         var channels = new List<AutoSetupSource>
         {
             new(BandCurve(40, 800), DriverType.Woofer),
             new(BandCurve(200, 4_000), DriverType.Midrange),
-            new(BandCurve(1_000, 20_000), DriverType.Tweeter, null, withDistortion ? thd : null)
+            new(BandCurve(1_000, 20_000), DriverType.Tweeter, null, tweeterDistortion)
         };
         IReadOnlyList<CrossoverProposal> proposals = CrossoverAutoSetup.Propose(
             channels, CrossoverAutoSetupOptions.Default(SampleRate));
@@ -81,15 +80,28 @@ public sealed class CrossoverDistortionTests
     }
 
     [Fact]
-    public void Propose_TweeterCrossesBelowTheFixedFloorWhenDistortionAllows()
+    public void Propose_CleanTweeterIsNotCrossedBelowTheConservativeFloor()
     {
-        double without = MidTweeterCrossover(withDistortion: false);
-        double with = MidTweeterCrossover(withDistortion: true);
+        // A tweeter measuring clean down to 1.1 kHz must NOT be crossed below the
+        // conservative class floor: the moderate-level distortion read understates
+        // the excursion limit near resonance, so the low handover stays a manual
+        // choice. Supplying the clean curve does not lower the crossover.
+        double without = MidTweeterCrossover(tweeterDistortion: null);
+        double with = MidTweeterCrossover(DistortionDirtyBelow(1_100));
 
-        // Without distortion the tweeter is pinned at the fixed 1.7 kHz class floor;
-        // with a clean measured knee at 1.1 kHz it may cross lower.
         Assert.True(without >= 1_700 - 1, $"expected the fixed floor, was {without:0} Hz.");
-        Assert.True(with < 1_700, $"distortion should let the tweeter cross lower, was {with:0} Hz.");
-        Assert.True(with < without, "the distortion-aware crossover should sit below the fixed one.");
+        Assert.True(with >= 1_700 - 1, $"a clean tweeter must not cross lower, was {with:0} Hz.");
+    }
+
+    [Fact]
+    public void Propose_DistortionRaisesTheFloorForATweeterDirtyLow()
+    {
+        // A tweeter that measures dirty up to 2.5 kHz IS protected: its handover is
+        // raised above the class floor to keep it out of its distorting region.
+        double without = MidTweeterCrossover(tweeterDistortion: null);
+        double with = MidTweeterCrossover(DistortionDirtyBelow(2_500));
+
+        Assert.True(with >= 2_400, $"a dirty-low tweeter should be held higher, was {with:0} Hz.");
+        Assert.True(with > without, "distortion should raise the floor for a dirty tweeter.");
     }
 }

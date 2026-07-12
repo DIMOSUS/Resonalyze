@@ -719,23 +719,37 @@ re-verified.
   slopes, so the auto-crossover can give the woofer a steep low-pass and a gentle
   high-pass out of the box (the group-delay win above). Turning it off restores
   the matched-shoulders behaviour.
-- [~] **Distortion-aware crossover bounds (DSP done, app wiring pending):** the
-  band estimate now reads each driver's distortion-clean sub-band from an optional
-  THD curve on `AutoSetupSource.DistortionDb` (`DriverBandEstimate.DistortionLowHz/
-  HighHz`). A tweeter's low handover follows its MEASURED distortion knee
-  (backstopped at `HardTweeterFloorHz = 1000`) instead of the fixed 1.7 kHz class
-  floor, and no driver is crossed up past its breakup onset. Validated on the real
-  4-way: tweeter knee 1075 Hz → the mid/tweeter crossover drops 1700 → 1100 Hz with
-  distortion supplied (matching the user's low-tweeter tune), while woof/mid stays
-  250 (woofer breakup 665 Hz, far above). Four synthetic tests pin the knee, the
-  breakup edge, the null-distortion fallback, and the below-floor crossing.
+- [~] **Distortion-aware crossover bounds — PROTECTIVE ONLY (DSP done, app wiring
+  pending):** the band estimate reads each driver's distortion-clean sub-band from
+  an optional THD curve on `AutoSetupSource.DistortionDb`
+  (`DriverBandEstimate.DistortionLowHz/HighHz`). The tweeter rule is deliberately
+  one-directional: a measured distortion knee can only **RAISE** the tweeter's low
+  handover above the fixed class floor, never lower it
+  (`typeLow = Math.Max(typeLow, DistortionLowHz)`), and no driver is crossed up
+  past its breakup onset. **Design correction (user safety catch, 2026-07-12):** an
+  earlier draft let a clean-measuring tweeter cross as low as a
+  `HardTweeterFloorHz = 1000` backstop; on the real 4-way that pulled the
+  mid/tweeter junction to ~1100 Hz. The user flagged it would destroy the tweeter
+  at volume ("помрэ на высокой громкости"). The driver is a **Focal TNF, Fs ≈
+  1370 Hz** (datasheets: woofersetc, focal.com — recommended minimum crossover
+  ~3.2 kHz @ 18 dB/oct); crossing at or below Fs blows a tweeter under sustained
+  SPL. A moderate-level ESS THD read understates the excursion limit near
+  resonance, so it must never be used to justify a lower crossover — only a higher
+  one when the tweeter already measures dirty. The `HardTweeterFloorHz` const is
+  removed; the low-for-soundstage handover stays a deliberate manual choice (the
+  user's own tune is a mid low-pass shelf at 1300 + tweeter high-pass at 1800, not
+  an inferred low crossover). Five synthetic tests pin the knee read, the breakup
+  edge, the null-distortion fallback, that a clean tweeter is NOT crossed below the
+  1.7 kHz class floor (with == without distortion), and that a dirty-low tweeter IS
+  held higher (with > without). All 501 dsp tests pass.
   **App wiring done (compile-only, needs a Windows live check):** the source
   snapshot carries the sweep deconvolution (IR + octaves + duration + peak), so on
   source resolve the panel computes the channel's THD curve
   (`ComputeDistortionCurve` → `EssDistortion`) into `ChannelSideState.DistortionCurve`,
   and the wizard threads it through the dialog into `AutoSetupSource.DistortionDb`
   (same path as the coherence plumbing). Verify live: pick a swept measurement, open
-  the crossover wizard, and confirm a capable tweeter now crosses below 1.7 kHz.
+  the crossover wizard, and confirm a dirty-low tweeter is held above the floor
+  while a clean one still stays at the conservative 1.7 kHz class floor.
   Optional future: a soft breakup PENALTY in placement (currently a hard bound).
 
 ### EQ Wizard

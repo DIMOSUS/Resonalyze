@@ -1,3 +1,6 @@
+using System.Collections.Concurrent;
+using System.Numerics;
+
 namespace Resonalyze.Dsp;
 
 /// <summary>
@@ -24,10 +27,16 @@ public sealed record DriverBandEstimate(
     double LevelDb,
     DriverType SuggestedType);
 
-/// <summary>One wizard input: a channel's raw magnitude curve and its (confirmed) driver type.</summary>
+/// <summary>
+/// One wizard input: a channel's raw magnitude curve and its (confirmed) driver
+/// type. <see cref="Coherence"/> is the optional per-point γ² (0..1), aligned
+/// 1:1 with <see cref="MagnitudeDb"/>; when supplied it lets the band estimate
+/// discount frequencies the measurement does not trust. Null when unavailable.
+/// </summary>
 public sealed record AutoSetupSource(
     IReadOnlyList<SignalPoint> MagnitudeDb,
-    DriverType Type);
+    DriverType Type,
+    IReadOnlyList<double>? Coherence = null);
 
 /// <summary>
 /// The proposed DSP starting point for one channel: the crossover filters and a
@@ -40,20 +49,46 @@ public sealed record CrossoverProposal(
     double GainDb);
 
 /// <summary>
+/// One entry of the ranked wizard search: the per-channel proposals plus the
+/// scores that ranked it. <see cref="AchievabilityPenaltyDb"/> is the summed
+/// dip-penalized junction loss remaining after the best per-junction delay
+/// (measured on the impulse responses; null when no IRs were provided), and
+/// <see cref="IsConventional24"/> marks the one candidate built by the dedicated
+/// conventional run (every slope forced to 24 dB/oct, Linkwitz-Riley when the
+/// user allows it) — the engineering baseline that wins ties. A pool candidate
+/// that merely happens to use 24 dB/oct slopes is not conventional. Lower
+/// <see cref="TotalScore"/> is better; the list is returned best first.
+/// </summary>
+public sealed record RankedCrossoverProposal(
+    IReadOnlyList<CrossoverProposal> Proposals,
+    double MagnitudeScore,
+    double? AchievabilityPenaltyDb,
+    double TotalScore,
+    bool IsConventional24);
+
+/// <summary>
 /// The choices the crossover wizard asks for before optimizing: which filter
 /// families the optimizer may pick from, the frequency window crossovers must
 /// fall inside, and whether the two sides of a junction may take different
-/// slopes. The sample rate is needed because the optimizer evaluates the exact
-/// digital biquad cascades the DSP runs.
+/// slopes. With <see cref="IndependentSlopes"/> off, each DRIVER's two shoulders
+/// (its high-pass and low-pass) share one slope, so no channel ends up 12 dB/oct
+/// on one side and 18 on the other; different drivers stay free to take different
+/// slopes. <see cref="SubElevationDb"/> is how far the lowest
+/// driver sits above the levelled midrange/tweeter reference in the target-curve
+/// gain fit (null uses the measured elevation, i.e. the lowest driver at its raw
+/// level); see <see cref="CrossoverAutoSetup.ApplyTargetCurveGains"/>. The sample
+/// rate is needed because the optimizer evaluates the exact digital biquad
+/// cascades the DSP runs.
 /// </summary>
 public sealed record CrossoverAutoSetupOptions(
     IReadOnlyList<CrossoverFilterFamily> Families,
     double MinCrossoverHz,
     double MaxCrossoverHz,
     bool IndependentSlopes,
-    double SampleRateHz)
+    double SampleRateHz,
+    double? SubElevationDb = null)
 {
-    /// <summary>All families, the full 20 Hz – 20 kHz window, matched slopes.</summary>
+    /// <summary>All families, the full 20 Hz – 20 kHz window, independent slopes.</summary>
     public static CrossoverAutoSetupOptions Default(double sampleRateHz) =>
         new(
             [
@@ -63,7 +98,7 @@ public sealed record CrossoverAutoSetupOptions(
             ],
             20,
             20_000,
-            IndependentSlopes: false,
+            IndependentSlopes: true,
             sampleRateHz);
 }
 
@@ -75,11 +110,13 @@ public sealed record CrossoverAutoSetupOptions(
 /// <para>
 /// <see cref="Propose"/> searches per-junction crossover frequency, filter
 /// family and slope, plus per-channel cut-only gain, to make the summed magnitude
-/// response as flat as the drivers allow. The junctions are summed the way each
-/// family behaves acoustically once the alignment step has done its job: a
-/// Linkwitz-Riley or Bessel handover (both drivers roughly in phase at the corner)
-/// is an amplitude sum, a Butterworth handover (the drivers in quadrature) a power
-/// sum. That is what lets the optimizer compare families honestly.
+/// response as flat as the drivers allow. Channels are combined as a plain
+/// amplitude sum everywhere — the consistent expression of the design assumption
+/// that the later alignment step brings the junction to zero sum loss. How
+/// realistic that assumption is for a particular candidate is judged separately:
+/// <see cref="ProposeRanked"/> re-ranks the top candidates by the loss actually
+/// achievable after the best per-junction delay, measured on the channels'
+/// impulse responses with the production alignment search.
 /// </para>
 /// </summary>
 public static class CrossoverAutoSetup
@@ -89,6 +126,21 @@ public static class CrossoverAutoSetup
     // remaining room ripple of a 1/3-octave-smoothed in-room curve asks for.
     private const double BandEdgeDropDb = 8.0;
 
+    // When per-point coherence is supplied to EstimateBand, a frequency whose
+    // γ² is below this cannot anchor a band edge — it is treated as out of band
+    // even if its magnitude clears the threshold. 0.5 matches the phase-unwrap
+    // coherence floor: below it the transfer estimate is dominated by noise or
+    // non-linearity (a breakup resonance, or plain out-of-band SNR).
+    private const double CoherenceFloor = 0.5;
+
+    // The widest below-threshold gap EstimateBand bridges inside one band. A
+    // driver's own passband can have a narrow interference or room null that
+    // dips past the edge threshold for a fraction of an octave (a 1/3-octave-
+    // smoothed null lands around here); anything wider is a real dead zone that
+    // separates the usable band from an isolated resonance and must NOT be
+    // bridged, or a lone peak would stretch the band and mislabel the driver.
+    private const double MaxBandGapOctaves = 0.5;
+
     // The proposed crossover keeps at least this margin (octaves) above the
     // upper driver's low edge — the excursion protection — and below the lower
     // driver's high edge.
@@ -96,10 +148,35 @@ public static class CrossoverAutoSetup
 
     private const int CrossoverSlopeDbPerOctave = 24;
 
-    // The log-frequency grid the optimizer scores flatness on, and the search
-    // resolution for each junction's crossover frequency.
+    /// <summary>
+    /// A crossover slope is excluded from the search when the filter's peak group
+    /// delay exceeds this budget: a steep low-frequency crossover smears the
+    /// arrival by many periods, more than the protection it buys. The bound is on
+    /// the delay itself, not the frequency, so the same slope is allowed higher up
+    /// (a 48 dB/oct low-pass is fine at a 250 Hz woofer/mid handover, ~5 ms, but
+    /// not at a 75 Hz sub/woofer handover, ~17 ms). Group delay is the same for a
+    /// low-pass and a high-pass, so this bounds both shoulders identically; with
+    /// matched slopes a channel is still held to the gentler of its two junctions,
+    /// so a steep woofer low-pass with a gentle high-pass needs independent slopes.
+    /// The bound caps how much STEEPER than the practical floor (24 dB/oct) the
+    /// search may go; the floor itself is always admitted, so at a junction low
+    /// enough that even 24 dB/oct exceeds this budget the floor still stands — a
+    /// gentler crossover would break the overlap policy, so that delay is inherent
+    /// to crossing so low, not a policy bypass.
+    /// </summary>
+    public const double MaxCrossoverGroupDelaySeconds = 0.010;
+
+    /// <summary>
+    /// The mirror of the low-bass cap, for tweeters: a tweeter crossed below this
+    /// frequency must use at least <see cref="CrossoverSlopeDbPerOctave"/> dB/oct,
+    /// or a shallow filter lets it play too far down and overexcurt. The placement
+    /// heuristics push a capable tweeter's handover low for a better soundstage,
+    /// so the steep-slope floor keeps that safe.
+    /// </summary>
+    public const double TweeterProtectionHz = 2_500;
+
+    // The log-frequency grid the optimizer scores flatness on.
     private const int GridPointsPerOctave = 24;
-    private const int CrossoverGridSteps = 21;
 
     // Adjacent crossovers keep at least this separation so a three-way search
     // cannot collapse two junctions onto the same frequency.
@@ -119,6 +196,88 @@ public static class CrossoverAutoSetup
     // so the deepest dip below the mean is added to the RMS flatness score.
     private const double DipPenaltyWeight = 0.5;
 
+    // Ranked search (ProposeRanked): per junction this many of the best
+    // (frequency, family, slope) options seed the candidate pool; their cross
+    // combinations are scored (bounded) and the top of the pool goes to the
+    // impulse-response post-check.
+    private const int PoolOptionsPerJunction = 4;
+    private const int PoolMaxCombinations = 512;
+
+    // The achievability post-check works on the gated direct sound, so the
+    // chains run on a shared crop of the measured IRs instead of the full
+    // capture (verified against full-length IRs on real measurements: the
+    // 4096-sample evaluation gate sits at the shared peak anchor, so the crop
+    // does not change the junction losses).
+    private const int PostCheckCropLength = 32_768;
+    private const int PostCheckCropPrePeakSamples = 8_192;
+
+    // Per junction the alignment search runs in a window around the RAW
+    // channels' band-limited arrival difference (computed once — it is
+    // candidate-independent). The half-window absorbs the filter group delay
+    // any candidate can add, which scales as 1/fc (an LR24 at 40 Hz rings for
+    // ~10 ms, at 4 kHz for ~0.1 ms), so the window shrinks with the junction
+    // frequency — a wide window at a high junction would cost thousands of
+    // probe deltas across its short periods for nothing. A junction where the
+    // search finds no candidate at all is scored with a flat penalty instead
+    // of silently winning by absence.
+    private const double PostCheckWindowGroupDelayScaleHz = 1_200;
+    private const double PostCheckMinHalfWindowMs = 2.0;
+    private const double PostCheckMaxHalfWindowMs = 12.0;
+    private const double PostCheckMissingJunctionPenaltyDb = 6.0;
+
+    private static double PostCheckHalfWindowMs(double junctionHz) =>
+        Math.Clamp(
+            PostCheckWindowGroupDelayScaleHz / junctionHz,
+            PostCheckMinHalfWindowMs,
+            PostCheckMaxHalfWindowMs);
+
+    // How strongly the achievable post-alignment loss weighs against the
+    // magnitude flatness score in the final ranking, and how much worse (dB)
+    // a challenger must be before it loses to the conventional all-24 dB/oct
+    // candidate.
+    private const double AchievabilityWeight = 0.5;
+    private const double Conventional24PreferenceDb = 0.25;
+
+    /// <summary>
+    /// Snaps a crossover frequency to the lattice the wizard proposes on:
+    /// 5 Hz steps below 100 Hz, 10 Hz steps below 1 kHz, 50 Hz steps above.
+    /// The optimizer searches directly on this lattice, so the scored
+    /// frequency IS the proposed frequency.
+    /// </summary>
+    public static double RoundToLattice(double frequencyHz)
+    {
+        double step = LatticeStep(frequencyHz);
+        return Math.Max(20, Math.Round(frequencyHz / step) * step);
+    }
+
+    private static double LatticeStep(double frequencyHz) =>
+        frequencyHz < 100 ? 5 : frequencyHz < 1_000 ? 10 : 50;
+
+    // Every lattice frequency inside [low, high]; a window narrower than one
+    // lattice step collapses to its clamped, snapped midpoint so degenerate
+    // junction bounds still yield exactly one probe.
+    private static double[] LatticePoints(double low, double high)
+    {
+        var points = new List<double>();
+        double f = RoundToLattice(low);
+        if (f < low)
+        {
+            f += LatticeStep(f);
+        }
+        while (f <= high + 1e-9)
+        {
+            points.Add(f);
+            f += LatticeStep(f);
+        }
+
+        if (points.Count == 0)
+        {
+            points.Add(Math.Clamp(RoundToLattice(Math.Sqrt(low * high)), low, high));
+        }
+
+        return points.ToArray();
+    }
+
     // Pure magnitude flatness is blind to band overlap: shallow filters let
     // adjacent drivers overlap widely, which averages out each other's ripple and
     // reads flat, but an engineer would never do it — wide overlap means lobing,
@@ -127,17 +286,67 @@ public static class CrossoverAutoSetup
     // narrower overlap), and the search never goes below a practical slope: a
     // first-order (6 dB/oct) filter protects nothing.
     private const double OverlapPenaltyDbPerOctave = 0.6;
-    private const int MinPracticalSlopeDbPerOctave = 12;
+    private const int MinPracticalSlopeDbPerOctave = 24;
+
+    // A driver whose roll-off reaches past its neighbour into a non-adjacent
+    // driver's band overlaps where it never should; that overlap is weighted this
+    // much heavier per band of distance than an unavoidable adjacent handover, so
+    // a too-shallow filter (a 12 dB/oct woofer bleeding up to the tweeter) is
+    // pushed to a steeper slope.
+    private const double NonAdjacentOverlapWeight = 4.0;
+
+    // A handover in the ear's most sensitive band (2–4 kHz) puts the crossover's
+    // phase wobble, lobing and any residual dip right where they are most
+    // audible, so a junction landing there is penalized: a soft bump centred on
+    // the band's log-centre (~2.83 kHz), full inside and tapering ~an octave to
+    // each side. Gentle — a tie-breaker that steers a free handover out of the
+    // band, not an override of a genuinely flatter split.
+    private const double EarSensitivityLowHz = 2_000;
+    private const double EarSensitivityHighHz = 4_000;
+    private const double EarSensitivitySigmaOctaves = 0.5;
+    private const double EarSensitivityWeightDb = 0.5;
+
+    // A subwoofer wants to hand over where it stops being localizable (~80 Hz),
+    // not as low as the flatness search would drag it — a sub crossed at 45 Hz
+    // leaves the woofer carrying real bass. So the sub handover is nudged up
+    // toward the top of its sensible range.
+    private const double SubHandoverUpBiasWeightDb = 0.6;
+
+    // When two adjacent drivers share a wide band, the handover can sit anywhere
+    // across it; an engineer crosses low, letting the upper (smaller) driver take
+    // over as early as it cleanly can (better dispersion up top, less excursion
+    // and breakup demand on the lower driver). So a junction is nudged toward the
+    // bottom of the drivers' shared band, the pull scaled by how wide that band
+    // is — negligible for a narrow overlap, firm for a broad one.
+    private const double WideOverlapLowBiasWeightDb = 0.4;
 
     /// <summary>
     /// Reads the usable band from a (smoothed) magnitude curve and suggests the
     /// driver class. The reference is an upper percentile of the curve, robust
-    /// against both narrow room dips and single peaks.
+    /// against both narrow room dips and single peaks. When per-point coherence
+    /// is supplied (γ², aligned 1:1 with the magnitude points, 0..1), it is used
+    /// to discount frequencies the measurement does not trust: an incoherent
+    /// point cannot anchor a band edge, and each segment's prominence is weighted
+    /// by γ² — so a noisy or non-linear resonance (low γ²) cannot stretch the
+    /// band the way a genuine, coherent passband does. A null or mismatched-length
+    /// coherence is ignored.
     /// </summary>
-    public static DriverBandEstimate EstimateBand(IReadOnlyList<SignalPoint> magnitudeDb)
+    public static DriverBandEstimate EstimateBand(
+        IReadOnlyList<SignalPoint> magnitudeDb,
+        IReadOnlyList<double>? coherence = null)
     {
         ArgumentNullException.ThrowIfNull(magnitudeDb);
 
+        // Coherence is honoured only when it lines up 1:1 with the magnitude
+        // points; a mismatched length is treated as absent rather than trusted.
+        bool useCoherence = coherence != null && coherence.Count == magnitudeDb.Count;
+        double Gamma(int i) => useCoherence ? coherence![i] : 1.0;
+
+        // The reference is read from the whole curve (not just coherent points):
+        // for a narrow-band driver like a sub, the passband is a small slice of
+        // the log grid, and filtering the percentile down to it would track the
+        // peak and shrink the usable band — over-constraining the crossover. The
+        // 85th percentile is already robust to the out-of-band floor.
         var levels = magnitudeDb
             .Where(point => double.IsFinite(point.Y))
             .Select(point => point.Y)
@@ -153,22 +362,63 @@ public static class CrossoverAutoSetup
         double reference = levels[(int)(levels.Count * 0.85)];
         double threshold = reference - BandEdgeDropDb;
 
-        double lowHz = double.NaN;
-        double highHz = double.NaN;
-        foreach (SignalPoint point in magnitudeDb)
+        // Group the trusted, above-threshold points into contiguous segments,
+        // bridging a below-threshold gap only while it stays within
+        // MaxBandGapOctaves (a narrow interference/room null the driver's own
+        // band can have). The usable band is then the most PROMINENT segment —
+        // the one with the largest γ²-weighted area above threshold, integrated
+        // over log-frequency — so an isolated resonance past a deep dead gap, or
+        // an incoherent noisy region, cannot extend the band and mislabel the
+        // driver or skew the crossover bounds.
+        double bestLow = double.NaN;
+        double bestHigh = double.NaN;
+        double bestArea = double.NegativeInfinity;
+        double segLow = double.NaN;
+        double segHigh = double.NaN;
+        double segArea = 0.0;
+        double lastAboveHz = double.NaN;
+
+        void CloseSegment()
         {
-            if (!double.IsFinite(point.Y) || point.Y < threshold)
+            if (!double.IsNaN(segLow) && segHigh > segLow && segArea > bestArea)
+            {
+                bestArea = segArea;
+                bestLow = segLow;
+                bestHigh = segHigh;
+            }
+        }
+
+        for (int i = 0; i < magnitudeDb.Count; i++)
+        {
+            SignalPoint point = magnitudeDb[i];
+            double g2 = Gamma(i);
+            if (!double.IsFinite(point.Y) || point.Y < threshold || g2 < CoherenceFloor)
             {
                 continue;
             }
 
-            if (double.IsNaN(lowHz))
+            if (!double.IsNaN(lastAboveHz)
+                && Math.Log2(point.X / lastAboveHz) > MaxBandGapOctaves)
             {
-                lowHz = point.X;
+                // The dead gap since the last in-band point is too wide to
+                // bridge: close the open segment and start a fresh one here.
+                CloseSegment();
+                segLow = double.NaN;
+                segArea = 0.0;
             }
-            highHz = point.X;
-        }
 
+            if (double.IsNaN(segLow))
+            {
+                segLow = point.X;
+            }
+            segHigh = point.X;
+            segArea += (point.Y - threshold) * g2;
+            lastAboveHz = point.X;
+        }
+        CloseSegment();
+
+        double lowHz = bestLow;
+        double highHz = bestHigh;
         if (double.IsNaN(lowHz) || highHz <= lowHz)
         {
             throw new ArgumentException(
@@ -211,8 +461,18 @@ public static class CrossoverAutoSetup
         DriverType.Subwoofer => (20, 80),
         DriverType.Woofer => (40, 250),
         DriverType.Midbass => (80, 500),
-        DriverType.Midrange => (250, 4_000),
-        DriverType.Tweeter => (2_000, 20_000),
+        // The 200 Hz floor (down from 250) lets the woofer/midbass hand over
+        // lower — before its cone-breakup region — when the midrange measures
+        // headroom down there; a wide overlap higher up interferes badly, and a
+        // midrange crossed low with a steep filter cleans the handover. Still
+        // gated by the measured midrange band (one rolled off by 300 Hz crosses
+        // no lower).
+        DriverType.Midrange => (200, 4_000),
+        // A quality tweeter crossed low (with a steep filter) covers more of the
+        // critical midrange for a better soundstage; the 1.7 kHz floor lets the
+        // search go there, but only when the measured tweeter band supports it —
+        // a tweeter that has rolled off by 2.5 kHz still crosses no lower.
+        DriverType.Tweeter => (1_700, 20_000),
         _ => (20, 20_000)
     };
 
@@ -252,15 +512,494 @@ public static class CrossoverAutoSetup
         }
 
         options = Normalize(options);
-        return new Optimizer(channels, options).Solve();
+        IReadOnlyList<CrossoverProposal> proposals =
+            new Optimizer(channels, options).Solve();
+
+        // The optimizer level-matched the drivers to flatten the sum, which is
+        // right for choosing the crossovers but not the gains the user wants.
+        // Replace them with the car target-curve fit.
+        return ApplyTargetCurveGains(
+            channels, proposals, options.SampleRateHz, options.SubElevationDb);
+    }
+
+    // The slopes a family offers above the practical floor. A shallow crossover
+    // (12/18 dB/oct) leaves adjacent drivers overlapping over a wide span where
+    // they interfere; on a real system the summed dip that leaves is worse than
+    // any group-delay a steeper filter costs, and Auto delay cannot align it
+    // away — so the floor is 24 dB/oct, matching how these systems are tuned by
+    // hand. (A steeper slope is capped from above by the group-delay budget in
+    // AllowedSlopes, which bites only at low junction frequencies.)
+    private static IReadOnlyList<int> PracticalSlopes(CrossoverFilterFamily family) =>
+        CrossoverFilter.SupportedSlopes(family)
+            .Where(slope => slope >= MinPracticalSlopeDbPerOctave)
+            .ToList();
+
+    // The per-driver context the target-curve gain fit needs: each channel's
+    // level over its assigned passband (between its crossovers), the reference
+    // (levelled midrange/tweeter) level, the bass-anchor channel, and the
+    // measured elevation of the bass over the reference.
+    private readonly record struct TargetCurveContext(
+        double[] PassbandLevelDb,
+        double[] PassbandCenterHz,
+        int BassIndex,
+        IReadOnlyList<int> ReferenceIndices,
+        int SlopeTopIndex,
+        double ReferenceLevelDb,
+        double MeasuredElevationDb);
+
+    private static TargetCurveContext BuildTargetCurveContext(
+        IReadOnlyList<AutoSetupSource> channels,
+        IReadOnlyList<CrossoverProposal> proposals,
+        double sampleRateHz)
+    {
+        int n = channels.Count;
+        var levels = new double[n];
+        var centers = new double[n];
+        double ceiling = Math.Min(20_000, sampleRateHz * 0.49);
+        for (int i = 0; i < n; i++)
+        {
+            DriverBandEstimate band = EstimateBand(
+                channels[i].MagnitudeDb, channels[i].Coherence);
+            double low = proposals[i].HighPassEdge?.FrequencyHz ?? band.LowHz;
+            double high = proposals[i].LowPassEdge?.FrequencyHz ?? Math.Min(band.HighHz, ceiling);
+            if (high <= low)
+            {
+                (low, high) = (band.LowHz, band.HighHz);
+            }
+
+            levels[i] = AverageLevelDb(channels[i].MagnitudeDb, low, high);
+            centers[i] = Math.Sqrt(low * high);
+        }
+
+        int Find(DriverType type)
+        {
+            for (int i = 0; i < n; i++)
+            {
+                if (channels[i].Type == type)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        int mid = Find(DriverType.Midrange);
+        int tweeter = Find(DriverType.Tweeter);
+        var reference = new List<int>();
+        if (mid >= 0)
+        {
+            reference.Add(mid);
+        }
+        if (tweeter >= 0)
+        {
+            reference.Add(tweeter);
+        }
+
+        // Only a subwoofer is the elevated bass anchor. A woofer/midbass that
+        // happens to be the lowest driver (a 2-way without a sub) is a normal
+        // driver levelled into the system, not a hot sub to lift.
+        int bass = Find(DriverType.Subwoofer);
+
+        // The reference (flat-top) level is the quietest driver apart from the
+        // sub, so the whole system is cut to it and the sub is lifted on top.
+        // With the sub excluded, a hot woofer never drags the reference up.
+        double referenceLevel = double.PositiveInfinity;
+        for (int i = 0; i < n; i++)
+        {
+            if (i != bass && levels[i] < referenceLevel)
+            {
+                referenceLevel = levels[i];
+            }
+        }
+
+        // The slope runs up to where the flat top begins — the lowest reference
+        // member (the midrange when present, else the tweeter); with neither, the
+        // highest non-sub driver.
+        int slopeTop = reference.Count > 0
+            ? reference.MinBy(index => centers[index])
+            : Enumerable.Range(0, n)
+                .Where(i => i != bass)
+                .MaxBy(i => channels[i].Type);
+
+        double measuredElevation = bass < 0
+            ? 0
+            : Math.Max(0, levels[bass] - referenceLevel);
+        return new TargetCurveContext(
+            levels, centers, bass, reference, slopeTop, referenceLevel, measuredElevation);
     }
 
     /// <summary>
+    /// The elevation (dB) of the lowest driver over the levelled midrange/tweeter
+    /// reference, measured on the given proposal's passbands. This is the default
+    /// and the upper limit of the sub-elevation control: the user may only trim it
+    /// down (flattening the bottom), never boost past what was measured.
+    /// </summary>
+    public static double MeasuredSubElevationDb(
+        IReadOnlyList<AutoSetupSource> channels,
+        IReadOnlyList<CrossoverProposal> proposals,
+        double sampleRateHz)
+    {
+        ArgumentNullException.ThrowIfNull(channels);
+        ArgumentNullException.ThrowIfNull(proposals);
+        if (proposals.Count != channels.Count)
+        {
+            throw new ArgumentException(
+                "One proposal per channel is required.", nameof(proposals));
+        }
+
+        return BuildTargetCurveContext(channels, proposals, sampleRateHz).MeasuredElevationDb;
+    }
+
+    /// <summary>
+    /// Replaces the gains of an existing proposal with the car target-curve fit,
+    /// keeping the crossovers untouched. The midrange and tweeter are levelled to
+    /// each other (the louder attenuated); the lowest driver anchors the bass at
+    /// <paramref name="subElevationDb"/> above that reference (null = the measured
+    /// elevation, i.e. the lowest driver kept at its raw level); the remaining
+    /// drivers are fit onto the log-frequency line between those anchors, cut-only
+    /// — a driver already below the target keeps its level, so no measured dip is
+    /// filled with gain. Every gain is a cut (0 dB on the reference), so the result
+    /// is headroom-safe. Proposals are returned in the input order.
+    /// </summary>
+    public static IReadOnlyList<CrossoverProposal> ApplyTargetCurveGains(
+        IReadOnlyList<AutoSetupSource> channels,
+        IReadOnlyList<CrossoverProposal> proposals,
+        double sampleRateHz,
+        double? subElevationDb = null)
+    {
+        ArgumentNullException.ThrowIfNull(channels);
+        ArgumentNullException.ThrowIfNull(proposals);
+        if (proposals.Count != channels.Count)
+        {
+            throw new ArgumentException(
+                "One proposal per channel is required.", nameof(proposals));
+        }
+
+        TargetCurveContext context = BuildTargetCurveContext(channels, proposals, sampleRateHz);
+        double[] level = context.PassbandLevelDb;
+        double[] center = context.PassbandCenterHz;
+        double reference = context.ReferenceLevelDb;
+        double elevation = Math.Clamp(
+            subElevationDb ?? context.MeasuredElevationDb, 0, context.MeasuredElevationDb);
+
+        double subTarget = reference + elevation;
+        bool hasBass = context.BassIndex >= 0;
+        double subCenter = hasBass ? center[context.BassIndex] : 0;
+        double logSpan = hasBass ? Math.Log(center[context.SlopeTopIndex] / subCenter) : 0;
+
+        // With no sub the target is flat at the reference; otherwise it descends
+        // from the sub anchor to the reference across log-frequency.
+        double TargetAt(double frequencyHz) => hasBass && logSpan > 1e-9
+            ? subTarget - elevation * (Math.Log(frequencyHz / subCenter) / logSpan)
+            : reference;
+
+        var gains = new double[channels.Count];
+        for (int i = 0; i < channels.Count; i++)
+        {
+            if (context.ReferenceIndices.Contains(i))
+            {
+                // Level the midrange/tweeter to their quieter member.
+                gains[i] = reference - level[i];
+            }
+            else if (i == context.BassIndex)
+            {
+                // The bass anchor sits at reference + elevation; cut-only so a
+                // sub measured quieter than the reference is never boosted.
+                gains[i] = Math.Min(0, subTarget - level[i]);
+            }
+            else
+            {
+                // An intermediate driver: onto the target line, cut-only.
+                gains[i] = Math.Min(0, TargetAt(center[i]) - level[i]);
+            }
+        }
+
+        var results = new CrossoverProposal[channels.Count];
+        for (int i = 0; i < channels.Count; i++)
+        {
+            results[i] = proposals[i] with { GainDb = Math.Round(gains[i], 1) };
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// The ranked wizard search: expands a pool of up to
+    /// <paramref name="candidateCount"/> near-optimal candidates (always
+    /// including a conventional all-24 dB/oct one), and — when the channels'
+    /// measured impulse responses are provided in the same order — re-ranks
+    /// them by the junction loss actually achievable after the best
+    /// per-junction delay, using the production alignment search on a shared
+    /// crop of the IRs. The conventional candidate wins unless a challenger
+    /// beats it by more than a small margin. Returns the candidates best
+    /// first; <c>[0].Proposals</c> is the recommended setup.
+    /// </summary>
+    public static IReadOnlyList<RankedCrossoverProposal> ProposeRanked(
+        IReadOnlyList<AutoSetupSource> channels,
+        CrossoverAutoSetupOptions options,
+        IReadOnlyList<Complex[]>? impulseResponses = null,
+        int candidateCount = 50)
+    {
+        ArgumentNullException.ThrowIfNull(channels);
+        ArgumentNullException.ThrowIfNull(options);
+        if (channels.Count < 2)
+        {
+            throw new ArgumentException(
+                "At least two channels are required.",
+                nameof(channels));
+        }
+        if (channels.Select(channel => channel.Type).Distinct().Count() != channels.Count)
+        {
+            throw new ArgumentException(
+                "Every channel needs a distinct driver type.",
+                nameof(channels));
+        }
+        if (impulseResponses != null &&
+            (impulseResponses.Count != channels.Count ||
+                impulseResponses.Any(ir => ir == null || ir.Length == 0)))
+        {
+            throw new ArgumentException(
+                "One non-empty impulse response is required per channel.",
+                nameof(impulseResponses));
+        }
+        if (candidateCount < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(candidateCount));
+        }
+
+        options = Normalize(options);
+        List<PoolCandidate> pool = new Optimizer(channels, options).SolvePool(candidateCount);
+
+        // The conventional candidate: every slope locked to 24 dB/oct,
+        // Linkwitz-Riley when the user allows it — what an engineer reaches
+        // for first, and the reference the challengers must beat.
+        CrossoverAutoSetupOptions conventionalOptions =
+            options.Families.Contains(CrossoverFilterFamily.LinkwitzRiley)
+                ? options with { Families = [CrossoverFilterFamily.LinkwitzRiley] }
+                : options;
+        PoolCandidate? conventional = new Optimizer(
+            channels, conventionalOptions, forcedSlope: CrossoverSlopeDbPerOctave)
+            .SolvePool(1)
+            .FirstOrDefault();
+        if (conventional != null &&
+            !pool.Any(entry => entry.Signature == conventional.Signature))
+        {
+            pool.Add(conventional);
+        }
+        pool = pool.OrderBy(candidate => candidate.MagnitudeScore).ToList();
+        if (pool.Count > candidateCount)
+        {
+            bool conventionalKept = conventional == null ||
+                pool.Take(candidateCount)
+                    .Any(entry => entry.Signature == conventional.Signature);
+            pool = pool.Take(candidateCount).ToList();
+            if (!conventionalKept)
+            {
+                // The conventional reference must always reach the post-check;
+                // it replaces the worst pool entry when truncation dropped it.
+                pool[^1] = conventional!;
+            }
+        }
+
+        double[]? penalties = null;
+        if (impulseResponses != null)
+        {
+            int sampleRate = (int)Math.Round(options.SampleRateHz);
+            int[] orderedIndex = Enumerable.Range(0, channels.Count)
+                .OrderBy(index => channels[index].Type)
+                .ToArray();
+            Complex[][] cropped = CropSharedDirectSoundWindow(
+                orderedIndex.Select(index => impulseResponses[index]).ToArray());
+            var arrivalCache =
+                new ConcurrentDictionary<(int Channel, long BandKey), (double Ms, bool Valid)>();
+            penalties = pool
+                .AsParallel().AsOrdered()
+                .Select(candidate => AchievabilityPenaltyDb(
+                    cropped,
+                    orderedIndex.Select(index => candidate.Proposals[index]).ToArray(),
+                    arrivalCache,
+                    sampleRate))
+                .ToArray();
+        }
+
+        // Only the dedicated conventional run's candidate carries the flag —
+        // matched by signature, because a pool candidate that merely landed on
+        // all-24 dB/oct slopes (or a Butterworth/Bessel 24 mix) is not the
+        // LR24 baseline the tie preference is meant to protect.
+        string? conventionalSignature = conventional?.Signature;
+        var ranked = pool
+            .Select((candidate, index) =>
+            {
+                double? penalty = penalties?[index];
+                return new RankedCrossoverProposal(
+                    // The pool ranked with the optimizer's level-matched gains
+                    // (right for comparing crossovers); the emitted proposal
+                    // carries the car target-curve gains the user applies.
+                    ApplyTargetCurveGains(
+                        channels, candidate.Proposals, options.SampleRateHz,
+                        options.SubElevationDb),
+                    candidate.MagnitudeScore,
+                    penalty,
+                    candidate.MagnitudeScore + AchievabilityWeight * (penalty ?? 0),
+                    candidate.Signature == conventionalSignature);
+            })
+            .OrderBy(candidate => candidate.TotalScore)
+            .ToList();
+
+        // Ties (within the preference margin) go to the conventional candidate.
+        RankedCrossoverProposal? preferred = ranked
+            .FirstOrDefault(candidate => candidate.IsConventional24);
+        if (preferred != null &&
+            !ReferenceEquals(ranked[0], preferred) &&
+            preferred.TotalScore <= ranked[0].TotalScore + Conventional24PreferenceDb)
+        {
+            ranked.Remove(preferred);
+            ranked.Insert(0, preferred);
+        }
+
+        return ranked;
+    }
+
+    // The channels' measured IRs cut to one shared direct-sound window: the
+    // post-check only ever evaluates the gated direct sound, so the candidate
+    // chains do not need the full capture.
+    private static Complex[][] CropSharedDirectSoundWindow(Complex[][] impulseResponses) =>
+        VirtualCrossoverAnalysis.CropSharedDirectSoundWindow(
+            impulseResponses, PostCheckCropLength, PostCheckCropPrePeakSamples);
+
+    // The raw channel's band-limited arrival in the given SHARED junction
+    // band, cached across candidates. Arrivals from different measuring bands
+    // are NOT comparable (each band carries its own driver group delay and
+    // envelope rise — the same lesson the Auto delay engine and the stereo Δ
+    // metric already encode), so both sides of a junction must be measured in
+    // one band; the cache keeps the Hilbert-envelope cost bounded because the
+    // pool only ever probes a handful of lattice frequencies per junction.
+    private static (double Ms, bool Valid) CachedRawArrival(
+        ConcurrentDictionary<(int Channel, long BandKey), (double Ms, bool Valid)> cache,
+        Complex[][] croppedOrdered,
+        int channel,
+        double bandLowHz,
+        double bandHighHz,
+        int sampleRate)
+    {
+        long bandKey = ((long)Math.Round(bandLowHz) << 20) | (long)Math.Round(bandHighHz);
+        return cache.GetOrAdd((channel, bandKey), _ =>
+        {
+            TimeAlignmentAnalysisResult arrival =
+                VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                    croppedOrdered[channel], sampleRate, bandLowHz, bandHighHz);
+            return (arrival.FirstArrivalDelayMilliseconds, arrival.IsValid);
+        });
+    }
+
+    // The summed dip-penalized loss (positive dB, 0 = perfect handovers) that
+    // remains after the delay the production selection policy would pick for
+    // this candidate: each channel is processed with the candidate's filters
+    // and gain, then every adjacent junction runs the production alignment
+    // search — arrival-anchored prior, AlignmentSelection tie-breaks (an
+    // inverted half-period impostor must not fake achievability the real
+    // Auto delay would refuse) and a widened retry when the pick lands on the
+    // window edge. Deliberate simplifications versus the full engine, judged
+    // acceptable for RANKING: no PHAT-seeded timeline and no cascade
+    // reprocessing of already-settled neighbors (junction deltas of a mono
+    // N-way compose independently).
+    private static double AchievabilityPenaltyDb(
+        Complex[][] croppedOrdered,
+        CrossoverProposal[] orderedProposals,
+        ConcurrentDictionary<(int Channel, long BandKey), (double Ms, bool Valid)> arrivalCache,
+        int sampleRate)
+    {
+        var processed = new Complex[croppedOrdered.Length][];
+        for (int channel = 0; channel < croppedOrdered.Length; channel++)
+        {
+            CrossoverProposal proposal = orderedProposals[channel];
+            processed[channel] = VirtualCrossoverAnalysis.ApplyChain(
+                croppedOrdered[channel],
+                new DspChannelChain(
+                    GainDb: proposal.GainDb,
+                    Crossover: new CrossoverSpec(
+                        proposal.Kind,
+                        proposal.LowPassEdge,
+                        proposal.HighPassEdge)),
+                sampleRate);
+        }
+
+        double penalty = 0;
+        for (int j = 0; j < processed.Length - 1; j++)
+        {
+            double? lowPassHz = orderedProposals[j].LowPassEdge?.FrequencyHz;
+            double? highPassHz = orderedProposals[j + 1].HighPassEdge?.FrequencyHz;
+            if (lowPassHz is not { } lp || highPassHz is not { } hp)
+            {
+                continue;
+            }
+
+            double bandLow = Math.Max(20, Math.Min(lp, hp) / 2);
+            double bandHigh = Math.Min(20_000, Math.Max(lp, hp) * 2);
+
+            // Both sides measured in the SAME shared band; unreadable arrivals
+            // fall back to an unanchored search over the widest window.
+            (double lowerMs, bool lowerValid) = CachedRawArrival(
+                arrivalCache, croppedOrdered, j, bandLow, bandHigh, sampleRate);
+            (double upperMs, bool upperValid) = CachedRawArrival(
+                arrivalCache, croppedOrdered, j + 1, bandLow, bandHigh, sampleRate);
+            bool anchored = lowerValid && upperValid;
+            double center = anchored ? lowerMs - upperMs : 0;
+            double halfWindow = anchored
+                ? PostCheckHalfWindowMs(Math.Min(lp, hp))
+                : PostCheckMaxHalfWindowMs;
+
+            IReadOnlyList<AlignmentCandidate> Search(double half) =>
+                VirtualCrossoverAnalysis.FindAlignmentCandidates(
+                    processed[j + 1],
+                    [processed[j]],
+                    sampleRate,
+                    bandLow,
+                    bandHigh,
+                    center - half,
+                    center + half,
+                    priorDelayMs: anchored ? center : null,
+                    priorSigmaMs: half / 2.0);
+
+            IReadOnlyList<AlignmentCandidate> found = Search(halfWindow);
+            if (found.Count == 0)
+            {
+                penalty += PostCheckMissingJunctionPenaltyDb;
+                continue;
+            }
+
+            AlignmentCandidate chosen = AlignmentSelection.Select(found, center);
+            // A pick at the window edge means the true lobe may be cut off;
+            // one widened retry, re-selected through the same rules — taking
+            // the retried best raw would hand the widened window to exactly
+            // the impostor the selection exists to reject.
+            if (Math.Abs(chosen.DelayMs - center) >= halfWindow * 0.9)
+            {
+                IReadOnlyList<AlignmentCandidate> retried = Search(halfWindow * 2);
+                if (retried.Count > 0)
+                {
+                    chosen = AlignmentSelection.Select(retried, center);
+                }
+            }
+
+            penalty += -(chosen.LossDb + DipPenaltyWeight * (chosen.DipDb - chosen.LossDb));
+        }
+
+        return penalty;
+    }
+
+    /// <summary>One entry of the optimizer's candidate pool.</summary>
+    internal sealed record PoolCandidate(
+        IReadOnlyList<CrossoverProposal> Proposals,
+        double MagnitudeScore,
+        string Signature);
+
+    /// <summary>
     /// The magnitude-domain summed response the wizard predicts for a proposal,
-    /// on the optimizer's own log grid. Each junction is combined the way its
-    /// family sums (amplitude for Linkwitz-Riley/Bessel, power for Butterworth),
-    /// so this is exactly the curve the optimizer scored. Used for the live
-    /// preview and by the tests.
+    /// on the optimizer's own log grid: a plain amplitude sum of the filtered
+    /// channels — exactly the curve the optimizer scored, under the same
+    /// ideal-alignment assumption. Used for the live preview and by the tests.
     /// </summary>
     public static IReadOnlyList<SignalPoint> SummedResponseDb(
         IReadOnlyList<AutoSetupSource> channels,
@@ -280,45 +1019,26 @@ public static class CrossoverAutoSetup
             throw new ArgumentOutOfRangeException(nameof(sampleRateHz));
         }
 
-        var ordered = channels
-            .Select((channel, index) => (Channel: channel, Proposal: proposals[index]))
-            .OrderBy(item => item.Channel.Type)
-            .ToList();
         double[] grid = BuildGrid(sampleRateHz);
-
         double[] combined = new double[grid.Length];
-        bool first = true;
-        foreach ((AutoSetupSource channel, CrossoverProposal proposal) in ordered)
+        for (int channel = 0; channel < channels.Count; channel++)
         {
+            CrossoverProposal proposal = proposals[channel];
             double gainLinear = DataHelper.DecibelsToAmplitude(proposal.GainDb);
             var spec = new CrossoverSpec(
                 proposal.Kind,
                 proposal.LowPassEdge,
                 proposal.HighPassEdge);
-            bool power = proposal.HighPassEdge?.Family == CrossoverFilterFamily.Butterworth;
             for (int k = 0; k < grid.Length; k++)
             {
-                double driverDb = InterpolateDb(channel.MagnitudeDb, grid[k]);
-                double amplitude = double.IsFinite(driverDb)
-                    ? gainLinear
+                double driverDb = InterpolateDb(channels[channel].MagnitudeDb, grid[k]);
+                if (double.IsFinite(driverDb))
+                {
+                    combined[k] += gainLinear
                         * DataHelper.DecibelsToAmplitude(driverDb)
-                        * CrossoverFilter.Response(spec, grid[k], sampleRateHz).Magnitude
-                    : 0;
-                if (first)
-                {
-                    combined[k] = amplitude;
-                }
-                else if (power)
-                {
-                    combined[k] = Math.Sqrt(combined[k] * combined[k] + amplitude * amplitude);
-                }
-                else
-                {
-                    combined[k] += amplitude;
+                        * CrossoverFilter.Response(spec, grid[k], sampleRateHz).Magnitude;
                 }
             }
-
-            first = false;
         }
 
         var result = new SignalPoint[grid.Length];
@@ -517,12 +1237,35 @@ public static class CrossoverAutoSetup
         private readonly int[] lowerSlope;
         private readonly int[] upperSlope;
 
+        // When set, every junction is locked to this slope (the conventional
+        // all-24 dB/oct candidate of the ranked search).
+        private readonly int? forcedSlope;
+
         private readonly Dictionary<(CrossoverFilterFamily, int, long, bool), double[]> magnitudeCache =
             new();
 
-        public Optimizer(IReadOnlyList<AutoSetupSource> channels, CrossoverAutoSetupOptions options)
+        // Peak group delay (seconds) per (family, slope, rounded fc): computed
+        // from the exact biquad cascade, memoized because AllowedSlopes probes it
+        // on the same lattice frequencies across the whole search.
+        private readonly Dictionary<(CrossoverFilterFamily, int, long), double> groupDelayCache =
+            new();
+
+        // Unit-gain channel amplitudes (driver × its current edges, gain
+        // excluded) keyed by the edge choice, plus scratch buffers: scoring a
+        // trial allocates nothing, and the lattice-stable frequencies make the
+        // cache hit on almost every probe after the first pass.
+        private readonly Dictionary<(int Channel, long HighPassKey, long LowPassKey), double[]> unitCache =
+            new();
+        private readonly double[][] scratchUnits;
+        private readonly double[] scratchCombined;
+
+        public Optimizer(
+            IReadOnlyList<AutoSetupSource> channels,
+            CrossoverAutoSetupOptions options,
+            int? forcedSlope = null)
         {
             this.options = options;
+            this.forcedSlope = forcedSlope;
             channelCount = channels.Count;
 
             var ordered = channels
@@ -531,7 +1274,9 @@ public static class CrossoverAutoSetup
                 .ToArray();
             inputIndex = ordered.Select(item => item.index).ToArray();
             curves = ordered.Select(item => item.channel.MagnitudeDb).ToArray();
-            bands = ordered.Select(item => EstimateBand(item.channel.MagnitudeDb)).ToArray();
+            bands = ordered
+                .Select(item => EstimateBand(item.channel.MagnitudeDb, item.channel.Coherence))
+                .ToArray();
             types = ordered.Select(item => item.channel.Type).ToArray();
 
             grid = BuildGrid(options.SampleRateHz);
@@ -558,12 +1303,17 @@ public static class CrossoverAutoSetup
             // not sprout a filter.
             double margin = Math.Pow(2.0, 1.0 / 12.0);
             CrossoverFilterFamily limitFamily = PreferredFamily();
-            int limitSlope = PreferredSlope(limitFamily);
             lowLimitEdge = options.MinCrossoverHz > bands[0].LowHz * margin
-                ? new CrossoverEdge(limitFamily, Math.Round(options.MinCrossoverHz), limitSlope)
+                ? new CrossoverEdge(
+                    limitFamily,
+                    Math.Round(options.MinCrossoverHz),
+                    forcedSlope ?? GentlestAdmissibleSlope(limitFamily, options.MinCrossoverHz))
                 : null;
             highLimitEdge = options.MaxCrossoverHz < bands[channelCount - 1].HighHz / margin
-                ? new CrossoverEdge(limitFamily, Math.Round(options.MaxCrossoverHz), limitSlope)
+                ? new CrossoverEdge(
+                    limitFamily,
+                    Math.Round(options.MaxCrossoverHz),
+                    forcedSlope ?? GentlestAdmissibleSlope(limitFamily, options.MaxCrossoverHz))
                 : null;
 
             // Flatness is only judged over the interior passband. The outermost
@@ -605,9 +1355,18 @@ public static class CrossoverAutoSetup
             junctionFamily = new CrossoverFilterFamily[channelCount - 1];
             lowerSlope = new int[channelCount - 1];
             upperSlope = new int[channelCount - 1];
+            scratchUnits = new double[channelCount][];
+            scratchCombined = new double[grid.Length];
         }
 
         public IReadOnlyList<CrossoverProposal> Solve()
+        {
+            Descend();
+            NormalizeGainsCutOnly();
+            return BuildProposals();
+        }
+
+        private void Descend()
         {
             Initialize();
 
@@ -617,6 +1376,17 @@ public static class CrossoverAutoSetup
                 for (int j = 0; j < channelCount - 1; j++)
                 {
                     OptimizeJunction(j);
+                }
+
+                if (!options.IndependentSlopes)
+                {
+                    // Junction passes hold each channel's slope; this pass tunes
+                    // it (both shoulders together), so one driver never ends up
+                    // with a 12/18 split while the drivers still differ freely.
+                    for (int i = 0; i < channelCount; i++)
+                    {
+                        OptimizeChannelSlope(i);
+                    }
                 }
 
                 OptimizeGains();
@@ -629,21 +1399,163 @@ public static class CrossoverAutoSetup
 
                 previous = current;
             }
-
-            NormalizeGainsCutOnly();
-            return BuildProposals();
         }
+
+        /// <summary>
+        /// Runs the descent, then expands a pool of near-optimal states: per
+        /// junction the best few (frequency, family, slope) options with the
+        /// rest of the optimum fixed, crossed over the junctions (bounded),
+        /// each combination given one gain re-tune pass. Combinations whose
+        /// junctions jointly land closer than the minimum separation are
+        /// rejected. Sorted by magnitude score, deduplicated, at most
+        /// <paramref name="poolSize"/> entries; the descent winner is always
+        /// included.
+        /// </summary>
+        public List<PoolCandidate> SolvePool(int poolSize)
+        {
+            Descend();
+
+            var pool = new List<PoolCandidate>();
+            var seen = new HashSet<string>();
+            void Capture()
+            {
+                NormalizeGainsCutOnly();
+                IReadOnlyList<CrossoverProposal> proposals = BuildProposals();
+                string signature = SignatureOf(proposals);
+                if (seen.Add(signature))
+                {
+                    pool.Add(new PoolCandidate(proposals, Score(), signature));
+                }
+            }
+
+            Capture();
+            if (poolSize <= 1)
+            {
+                return pool;
+            }
+
+            int junctions = channelCount - 1;
+            var junctionChoices = new List<JunctionOption>[junctions];
+            for (int j = 0; j < junctions; j++)
+            {
+                (double low, double high) = JunctionSearchBounds(j);
+                junctionChoices[j] = EnumerateJunctionOptions(j, low, high)
+                    .GroupBy(option =>
+                        (option.Family, option.FrequencyHz, option.LowerSlope, option.UpperSlope))
+                    .Select(group => group.First())
+                    .OrderBy(option => option.Score)
+                    .Take(PoolOptionsPerJunction)
+                    .ToList();
+                if (junctionChoices[j].Count == 0)
+                {
+                    junctionChoices[j] =
+                    [
+                        new JunctionOption(
+                            junctionFamily[j], crossoverHz[j], lowerSlope[j], upperSlope[j], 0)
+                    ];
+                }
+            }
+
+            var savedGains = (double[])gainDb.Clone();
+            var savedFc = (double[])crossoverHz.Clone();
+            var savedFamilies = (CrossoverFilterFamily[])junctionFamily.Clone();
+            var savedLower = (int[])lowerSlope.Clone();
+            var savedUpper = (int[])upperSlope.Clone();
+            void Restore()
+            {
+                savedGains.CopyTo(gainDb, 0);
+                savedFc.CopyTo(crossoverHz, 0);
+                savedFamilies.CopyTo(junctionFamily, 0);
+                savedLower.CopyTo(lowerSlope, 0);
+                savedUpper.CopyTo(upperSlope, 0);
+            }
+
+            long totalCombinations = 1;
+            foreach (List<JunctionOption> choices in junctionChoices)
+            {
+                totalCombinations *= choices.Count;
+            }
+
+            // Mixed-radix enumeration over the per-junction choices; when the
+            // full product exceeds the cap, the earliest (best-ranked) choices
+            // are covered first.
+            long combinations = Math.Min(totalCombinations, PoolMaxCombinations);
+            // Each junction's options were bounded against the descent optimum's
+            // NEIGHBOURS, so two junctions moved toward each other can jointly
+            // land closer than the minimum separation (or even swap order) —
+            // e.g. a peaked middle driver pulls both of its junctions inward.
+            // The small relative slack keeps float noise from rejecting a combo
+            // that sits exactly on a bound.
+            double minimumRatio =
+                Math.Pow(2.0, MinJunctionSeparationOctaves) * (1 - 1e-9);
+            var indices = new int[junctions];
+            for (long combo = 0; combo < combinations; combo++)
+            {
+                long remainder = combo;
+                for (int j = 0; j < junctions; j++)
+                {
+                    indices[j] = (int)(remainder % junctionChoices[j].Count);
+                    remainder /= junctionChoices[j].Count;
+                }
+
+                Restore();
+                for (int j = 0; j < junctions; j++)
+                {
+                    JunctionOption choice = junctionChoices[j][indices[j]];
+                    Set(j, choice.Family, choice.FrequencyHz, choice.LowerSlope, choice.UpperSlope);
+                }
+
+                bool separated = true;
+                for (int j = 1; j < junctions; j++)
+                {
+                    if (crossoverHz[j] < crossoverHz[j - 1] * minimumRatio)
+                    {
+                        separated = false;
+                        break;
+                    }
+                }
+
+                if (!separated)
+                {
+                    continue;
+                }
+
+                OptimizeGains();
+                Capture();
+            }
+
+            Restore();
+            return pool
+                .OrderBy(candidate => candidate.MagnitudeScore)
+                .Take(poolSize)
+                .ToList();
+        }
+
+        private static string SignatureOf(IReadOnlyList<CrossoverProposal> proposals) =>
+            string.Join(
+                "|",
+                proposals.Select(proposal =>
+                    $"{proposal.Kind}:{Describe(proposal.HighPassEdge)}:" +
+                    $"{Describe(proposal.LowPassEdge)}:{proposal.GainDb:0.0}"));
+
+        private static string Describe(CrossoverEdge? edge) =>
+            edge is { } value
+                ? $"{value.Family}/{value.FrequencyHz:0}/{value.SlopeDbPerOctave}"
+                : "-";
 
         private void Initialize()
         {
             CrossoverFilterFamily family = PreferredFamily();
-            int slope = PreferredSlope(family);
             for (int j = 0; j < channelCount - 1; j++)
             {
                 double fc = ProposeCrossoverFrequency(
                     curves[j], bands[j], types[j], curves[j + 1], bands[j + 1], types[j + 1]);
-                crossoverHz[j] = Math.Clamp(fc, options.MinCrossoverHz, options.MaxCrossoverHz);
+                crossoverHz[j] = Math.Clamp(
+                    RoundToLattice(fc), options.MinCrossoverHz, options.MaxCrossoverHz);
                 junctionFamily[j] = family;
+                // Seed the gentlest budget-admissible slope, not a fixed 24 that a
+                // very low junction's group delay might already blow.
+                int slope = forcedSlope ?? GentlestAdmissibleSlope(family, crossoverHz[j]);
                 lowerSlope[j] = slope;
                 upperSlope[j] = slope;
             }
@@ -676,21 +1588,77 @@ public static class CrossoverAutoSetup
                 : options.Families[0];
         }
 
-        private static int PreferredSlope(CrossoverFilterFamily family)
+        // The slopes the search may actually try at this junction frequency: the
+        // family's practical slopes, minus any whose filter group delay exceeds
+        // MaxCrossoverGroupDelaySeconds (which bites only low down, where a steep
+        // slope smears the arrival), or pinned to the forced slope of the
+        // conventional-candidate run.
+        private IReadOnlyList<int> AllowedSlopes(CrossoverFilterFamily family, double fcHz)
         {
             IReadOnlyList<int> slopes = PracticalSlopes(family);
-            return slopes.Contains(CrossoverSlopeDbPerOctave)
-                ? CrossoverSlopeDbPerOctave
-                : slopes.MinBy(slope => Math.Abs(slope - CrossoverSlopeDbPerOctave));
+            if (slopes.Count == 0)
+            {
+                return slopes;
+            }
+
+            int floor = slopes.Min();
+            bool WithinBudget(int slope) =>
+                GroupDelaySeconds(family, slope, fcHz) <= MaxCrossoverGroupDelaySeconds;
+
+            if (forcedSlope is int locked)
+            {
+                // The conventional run's forced slope is admitted on the same
+                // terms as the search: within the group-delay budget, or the
+                // practical floor (always admitted — see below).
+                return slopes.Contains(locked) && (WithinBudget(locked) || locked == floor)
+                    ? [locked]
+                    : [];
+            }
+
+            List<int> withinBudget = slopes.Where(WithinBudget).ToList();
+            // The practical floor (the gentlest slope) is always admitted even
+            // when its group delay exceeds the budget: a gentler crossover would
+            // break the overlap policy, so at a very low junction the floor's
+            // delay is inherent to crossing that low, not a policy bypass. The
+            // budget only bounds how much STEEPER than the floor the search goes.
+            return withinBudget.Count > 0 ? withinBudget : [floor];
         }
 
-        // The slopes a family offers above the practical floor: an engineer does
-        // not reach for a 6 dB/oct crossover — it protects nothing and leaves the
-        // drivers overlapping over a huge span.
-        private static IReadOnlyList<int> PracticalSlopes(CrossoverFilterFamily family) =>
-            CrossoverFilter.SupportedSlopes(family)
-                .Where(slope => slope >= MinPracticalSlopeDbPerOctave)
-                .ToList();
+        // The gentlest slope the search seeds at this junction: the family's
+        // practical floor, which AllowedSlopes always admits (within the
+        // group-delay budget when it fits, and as the floor when it does not).
+        private int GentlestAdmissibleSlope(CrossoverFilterFamily family, double fcHz)
+        {
+            IReadOnlyList<int> allowed = AllowedSlopes(family, fcHz);
+            return allowed.Count > 0 ? allowed.Min() : PracticalSlopes(family).Min();
+        }
+
+        // Memoized peak group delay of one crossover filter. Group delay is the
+        // same for a low-pass and a high-pass, so the side is irrelevant here; the
+        // fc is rounded to the nearest Hz for the key (the lattice is coarser).
+        private double GroupDelaySeconds(CrossoverFilterFamily family, int slope, double fcHz)
+        {
+            var key = (family, slope, (long)Math.Round(fcHz));
+            if (!groupDelayCache.TryGetValue(key, out double delay))
+            {
+                delay = CrossoverFilter.MaxGroupDelaySeconds(
+                    new CrossoverEdge(family, fcHz, slope),
+                    highPass: false,
+                    options.SampleRateHz);
+                groupDelayCache[key] = delay;
+            }
+
+            return delay;
+        }
+
+        // The lowest slope a driver of this class may take at a handover of this
+        // frequency: a tweeter crossed below TweeterProtectionHz is held to at
+        // least 24 dB/oct so it does not play too far down; every other driver
+        // keeps the practical floor.
+        private static int SlopeFloor(DriverType sideType, double fcHz) =>
+            sideType == DriverType.Tweeter && fcHz < TweeterProtectionHz
+                ? CrossoverSlopeDbPerOctave
+                : MinPracticalSlopeDbPerOctave;
 
         // Cut-only seed: bring every band down to the quietest, measured over the
         // band it will actually cover with the seeded crossovers.
@@ -717,20 +1685,19 @@ public static class CrossoverAutoSetup
             }
         }
 
-        private void OptimizeJunction(int j)
+        // The frequency window junction j may search: where both of its drivers
+        // actually produce output (inside the requested window), constrained to
+        // a band sensible for BOTH driver classes when their ranges overlap (a
+        // woofer must not cross up in its roll-off skirt at 850 Hz), and
+        // separated from the neighbouring junctions. Crossed bounds (an
+        // over-tight user window, a measured/class conflict, or neighbour
+        // separation) collapse to one sensible pinned frequency.
+        private (double Low, double High) JunctionSearchBounds(int j)
         {
-            // Keep the handover where both of its drivers actually produce output
-            // (inside the requested window), and separated from the neighbouring
-            // junctions.
             double separation = Math.Pow(2.0, MinJunctionSeparationOctaves);
             double low = Math.Max(options.MinCrossoverHz, bands[j + 1].LowHz);
             double high = Math.Min(options.MaxCrossoverHz, bands[j].HighHz);
 
-            // Constrain the handover to a band sensible for BOTH driver classes
-            // when their ranges overlap — a woofer must not cross up in its
-            // roll-off skirt at 850 Hz. Adjacent classes that do not overlap (e.g.
-            // a 2-way woofer + tweeter with no midrange between them) have no such
-            // band, so the measured overlap stands.
             (double typeLow, double typeHigh) = JunctionTypeBounds(types[j], types[j + 1]);
             if (typeLow <= typeHigh)
             {
@@ -750,10 +1717,6 @@ public static class CrossoverAutoSetup
 
             if (high < low)
             {
-                // Bounds crossed (an over-tight user window, a measured/class
-                // conflict, or neighbour separation): collapse to one sensible
-                // frequency — the class band's center when the classes overlap,
-                // otherwise the current seed — clamped to the requested window.
                 double pinned = typeLow <= typeHigh
                     ? Math.Sqrt(typeLow * typeHigh)
                     : crossoverHz[j];
@@ -761,55 +1724,172 @@ public static class CrossoverAutoSetup
                     pinned, options.MinCrossoverHz, options.MaxCrossoverHz);
             }
 
-            double[] fcGrid = LogSpace(low, high, CrossoverGridSteps);
+            return (low, high);
+        }
 
-            CrossoverFilterFamily bestFamily = junctionFamily[j];
-            int bestLower = lowerSlope[j];
-            int bestUpper = upperSlope[j];
-            double bestFc = crossoverHz[j];
-            double bestScore = Score();
+        private void OptimizeJunction(int j)
+        {
+            (double low, double high) = JunctionSearchBounds(j);
 
-            foreach (double fc in fcGrid)
+            JunctionOption best = new(
+                junctionFamily[j], crossoverHz[j], lowerSlope[j], upperSlope[j], Score());
+            foreach (JunctionOption option in EnumerateJunctionOptions(j, low, high))
             {
-                foreach (CrossoverFilterFamily family in options.Families)
+                if (option.Score < best.Score)
                 {
-                    IReadOnlyList<int> slopes = PracticalSlopes(family);
-                    foreach (int lower in slopes)
+                    best = option;
+                }
+            }
+
+            Set(j, best.Family, best.FrequencyHz, best.LowerSlope, best.UpperSlope);
+        }
+
+        // Channel i's single slope (both shoulders): its low-pass is the lower
+        // side of junction i, its high-pass the upper side of junction i-1.
+        private int ChannelSlope(int i) =>
+            i < channelCount - 1 ? lowerSlope[i] : upperSlope[i - 1];
+
+        // Writes one slope to both of channel i's shoulders, keeping the
+        // per-channel invariant (upperSlope[i-1] == lowerSlope[i]).
+        private void SetChannelSlope(int i, int slope)
+        {
+            if (i < channelCount - 1)
+            {
+                lowerSlope[i] = slope;
+            }
+
+            if (i > 0)
+            {
+                upperSlope[i - 1] = slope;
+            }
+        }
+
+        // The slopes channel i may take: allowed at every junction it touches
+        // (each junction's family and the low-frequency cap). An outer channel
+        // has one junction; an interior channel must satisfy both, so a slope
+        // one family offers but the neighbour's does not is excluded.
+        private IReadOnlyList<int> AllowedChannelSlopes(int i)
+        {
+            List<int>? allowed = null;
+            void Intersect(int junction)
+            {
+                // Channel i sits on this junction; its own class sets the steep
+                // floor (a tweeter crossed low), while the junction frequency and
+                // family set the rest.
+                int floor = SlopeFloor(types[i], crossoverHz[junction]);
+                List<int> slopes = AllowedSlopes(junctionFamily[junction], crossoverHz[junction])
+                    .Where(slope => slope >= floor)
+                    .ToList();
+                allowed = allowed == null
+                    ? slopes
+                    : allowed.Where(slopes.Contains).ToList();
+            }
+
+            if (i > 0)
+            {
+                Intersect(i - 1);
+            }
+
+            if (i < channelCount - 1)
+            {
+                Intersect(i);
+            }
+
+            return allowed ?? [];
+        }
+
+        // Coordinate step for one channel's slope (independent slopes off): the
+        // low-pass and high-pass move together, so the two shoulders can never
+        // disagree. Different channels remain free to pick different slopes.
+        private void OptimizeChannelSlope(int i)
+        {
+            int best = ChannelSlope(i);
+            double bestScore = Score();
+            foreach (int slope in AllowedChannelSlopes(i))
+            {
+                SetChannelSlope(i, slope);
+                double score = Score();
+                if (score < bestScore - 1e-9)
+                {
+                    bestScore = score;
+                    best = slope;
+                }
+            }
+
+            SetChannelSlope(i, best);
+        }
+
+        internal readonly record struct JunctionOption(
+            CrossoverFilterFamily Family,
+            double FrequencyHz,
+            int LowerSlope,
+            int UpperSlope,
+            double Score);
+
+        // Scores the (lattice frequency × family × slope) choices for junction j
+        // with the rest of the state fixed. With independent slopes ON, both
+        // sides of the junction are free. With it OFF, the slope is a property of
+        // the CHANNEL (its two shoulders share one slope, tuned separately in
+        // OptimizeChannelSlope), so the junction only varies frequency and
+        // family here and holds its two channels' current slopes — a family that
+        // cannot supply either held slope is skipped. Restores state afterward.
+        private IEnumerable<JunctionOption> EnumerateJunctionOptions(
+            int j,
+            double low,
+            double high)
+        {
+            CrossoverFilterFamily savedFamily = junctionFamily[j];
+            double savedFc = crossoverHz[j];
+            int savedLower = lowerSlope[j];
+            int savedUpper = upperSlope[j];
+            try
+            {
+                foreach (double fc in LatticePoints(low, high))
+                {
+                    // Steep-slope floors for this handover's two sides: a tweeter
+                    // crossed low must stay steep (its own class), the lower
+                    // driver keeps the practical floor.
+                    int lowerFloor = SlopeFloor(types[j], fc);
+                    int upperFloor = SlopeFloor(types[j + 1], fc);
+                    foreach (CrossoverFilterFamily family in options.Families)
                     {
+                        IReadOnlyList<int> slopes = AllowedSlopes(family, fc);
                         if (options.IndependentSlopes)
                         {
-                            foreach (int upper in slopes)
+                            foreach (int lower in slopes)
                             {
-                                Set(j, family, fc, lower, upper);
-                                double score = Score();
-                                if (score < bestScore)
+                                if (lower < lowerFloor)
                                 {
-                                    bestScore = score;
-                                    bestFamily = family;
-                                    bestFc = fc;
-                                    bestLower = lower;
-                                    bestUpper = upper;
+                                    continue;
+                                }
+
+                                foreach (int upper in slopes)
+                                {
+                                    if (upper < upperFloor)
+                                    {
+                                        continue;
+                                    }
+
+                                    Set(j, family, fc, lower, upper);
+                                    yield return new JunctionOption(
+                                        family, fc, lower, upper, Score());
                                 }
                             }
                         }
-                        else
+                        else if (slopes.Contains(savedLower) && slopes.Contains(savedUpper) &&
+                            savedLower >= lowerFloor && savedUpper >= upperFloor)
                         {
-                            Set(j, family, fc, lower, lower);
-                            double score = Score();
-                            if (score < bestScore)
-                            {
-                                bestScore = score;
-                                bestFamily = family;
-                                bestFc = fc;
-                                bestLower = lower;
-                                bestUpper = lower;
-                            }
+                            Set(j, family, fc, savedLower, savedUpper);
+                            yield return new JunctionOption(
+                                family, fc, savedLower, savedUpper, Score());
                         }
                     }
                 }
             }
-
-            Set(j, bestFamily, bestFc, bestLower, bestUpper);
+            finally
+            {
+                Set(j, savedFamily, savedFc, savedLower, savedUpper);
+            }
         }
 
         private void Set(
@@ -860,33 +1940,84 @@ public static class CrossoverAutoSetup
             }
         }
 
+        // Plain amplitude sum of the (unit-gain cached) channel responses with
+        // the gains applied inline — the ideal-alignment assumption, allocation
+        // free. The overlap penalty normalizes per channel, so it reads the
+        // unit responses directly and the gains drop out.
         private double Score()
         {
-            var amplitudes = new double[channelCount][];
             for (int i = 0; i < channelCount; i++)
             {
-                amplitudes[i] = ChannelAmplitude(i);
+                scratchUnits[i] = ChannelUnitAmplitude(i);
             }
 
-            return Flatness(Combine(amplitudes)) + OverlapPenalty(amplitudes);
-        }
-
-        private double[] Combine(double[][] amplitudes)
-        {
-            double[] combined = (double[])amplitudes[0].Clone();
-            for (int i = 1; i < channelCount; i++)
+            Array.Clear(scratchCombined);
+            for (int i = 0; i < channelCount; i++)
             {
-                double[] amplitude = amplitudes[i];
-                bool power = junctionFamily[i - 1] == CrossoverFilterFamily.Butterworth;
-                for (int k = 0; k < combined.Length; k++)
+                double gainLinear = DataHelper.DecibelsToAmplitude(gainDb[i]);
+                double[] unit = scratchUnits[i];
+                for (int k = 0; k < scratchCombined.Length; k++)
                 {
-                    combined[k] = power
-                        ? Math.Sqrt(combined[k] * combined[k] + amplitude[k] * amplitude[k])
-                        : combined[k] + amplitude[k];
+                    scratchCombined[k] += gainLinear * unit[k];
                 }
             }
 
-            return combined;
+            return Flatness(scratchCombined)
+                + OverlapPenalty(scratchUnits)
+                + FrequencyPlacementPenalty();
+        }
+
+        // Frequency-placement heuristics that depend only on where the junctions
+        // sit (not on the summed magnitude): keep handovers out of the ear's
+        // 2–4 kHz sensitivity band, and cross low when two drivers share a wide
+        // band. Both are gentle nudges added to the flatness score.
+        private double FrequencyPlacementPenalty()
+        {
+            double total = 0;
+            for (int j = 0; j < channelCount - 1; j++)
+            {
+                double fc = crossoverHz[j];
+                total += EarSensitivityWeightDb * EarSensitivityBump(fc);
+
+                // The band the two drivers share, and how far above its bottom
+                // this junction sits — both in octaves. A narrow overlap barely
+                // pulls; a wide one pulls firmly toward the low edge. Skipped for
+                // the subwoofer handover: a sub wants to hand over where it stops
+                // being localizable (~80 Hz), not as low as it can play.
+                if (types[j] == DriverType.Subwoofer)
+                {
+                    // The sub hands over UP toward the top of its sensible range,
+                    // never pulled low.
+                    double subTop = SensibleRange(DriverType.Subwoofer).HighHz;
+                    if (fc < subTop)
+                    {
+                        total += SubHandoverUpBiasWeightDb * Math.Log2(subTop / fc);
+                    }
+
+                    continue;
+                }
+
+                double overlapLow = bands[j + 1].LowHz;
+                double overlapHigh = bands[j].HighHz;
+                if (overlapHigh > overlapLow && fc > overlapLow)
+                {
+                    double overlapOctaves = Math.Log2(overlapHigh / overlapLow);
+                    double octavesAbove = Math.Log2(fc / overlapLow);
+                    total += WideOverlapLowBiasWeightDb * overlapOctaves * octavesAbove;
+                }
+            }
+
+            return total;
+        }
+
+        // A soft bump, full over 2–4 kHz and tapering ~an octave to each side,
+        // centred on the band's log-centre.
+        private static double EarSensitivityBump(double frequencyHz)
+        {
+            double center = Math.Sqrt(EarSensitivityLowHz * EarSensitivityHighHz);
+            double octavesFromCenter = Math.Log2(frequencyHz / center);
+            double z = octavesFromCenter / EarSensitivitySigmaOctaves;
+            return Math.Exp(-0.5 * z * z);
         }
 
         // RMS deviation of the summed magnitude from its own mean over the interior
@@ -917,58 +2048,99 @@ public static class CrossoverAutoSetup
             return Math.Sqrt(sumSquares / count) + DipPenaltyWeight * worstDip;
         }
 
-        // How many octaves adjacent drivers meaningfully overlap, summed over the
-        // junctions. Each driver is normalized to its own passband peak (so gains
-        // and levels drop out) and the overlap is the log-frequency integral of the
-        // two normalized responses' product — near an octave for a clean LR24
-        // handover, several octaves for shallow filters. Steeper slopes shrink it.
+        // How many octaves drivers meaningfully overlap, summed over every pair.
+        // Each driver is normalized to its own passband peak (so gains and levels
+        // drop out) and the overlap is the log-frequency integral of the two
+        // normalized responses' product — near an octave for a clean LR24
+        // handover of adjacent drivers, several octaves for shallow filters.
+        // Adjacent overlap is unavoidable at a handover; a shallow roll-off that
+        // reaches PAST the neighbour into a non-adjacent driver's band (a 12 dB/oct
+        // woofer still audible up at the tweeter) is far worse, so that overlap is
+        // weighted much heavier — which pushes such a driver to a steeper slope.
         private double OverlapPenalty(double[][] amplitudes)
         {
             double octavesPerBin = 1.0 / GridPointsPerOctave;
-            double total = 0;
-            for (int j = 0; j < channelCount - 1; j++)
+            var peaks = new double[channelCount];
+            for (int i = 0; i < channelCount; i++)
             {
-                double[] lower = amplitudes[j];
-                double[] upper = amplitudes[j + 1];
-                double peakLower = 0;
-                double peakUpper = 0;
+                double peak = 0;
+                double[] amplitude = amplitudes[i];
                 for (int k = evalLow; k <= evalHigh; k++)
                 {
-                    peakLower = Math.Max(peakLower, lower[k]);
-                    peakUpper = Math.Max(peakUpper, upper[k]);
+                    peak = Math.Max(peak, amplitude[k]);
                 }
 
-                if (peakLower <= 0 || peakUpper <= 0)
+                peaks[i] = peak;
+            }
+
+            double total = 0;
+            for (int i = 0; i < channelCount; i++)
+            {
+                if (peaks[i] <= 0)
                 {
                     continue;
                 }
 
-                double overlap = 0;
-                for (int k = evalLow; k <= evalHigh; k++)
+                for (int m = i + 1; m < channelCount; m++)
                 {
-                    overlap += lower[k] / peakLower * (upper[k] / peakUpper);
-                }
+                    if (peaks[m] <= 0)
+                    {
+                        continue;
+                    }
 
-                total += overlap * octavesPerBin;
+                    double[] lower = amplitudes[i];
+                    double[] upper = amplitudes[m];
+                    double overlap = 0;
+                    for (int k = evalLow; k <= evalHigh; k++)
+                    {
+                        overlap += lower[k] / peaks[i] * (upper[k] / peaks[m]);
+                    }
+
+                    int distance = m - i;
+                    double weight = distance == 1
+                        ? 1.0
+                        : NonAdjacentOverlapWeight * (distance - 1);
+                    total += weight * overlap * octavesPerBin;
+                }
             }
 
             return OverlapPenaltyDbPerOctave * total;
         }
 
-        private double[] ChannelAmplitude(int i)
+        // The channel's driver response × its current edges, WITHOUT the gain:
+        // memoized by the edge choice, so re-probing a lattice frequency (and
+        // every step of the gain search) reuses the array instead of
+        // recomputing the product.
+        private double[] ChannelUnitAmplitude(int i)
         {
-            double gainLinear = DataHelper.DecibelsToAmplitude(gainDb[i]);
-            double[]? highPass = i > 0
-                ? EdgeMagnitude(junctionFamily[i - 1], crossoverHz[i - 1], upperSlope[i - 1], highPass: true)
-                : lowLimitEdge is { } lowLimit ? EdgeMagnitude(lowLimit, highPass: true) : null;
-            double[]? lowPass = i < channelCount - 1
-                ? EdgeMagnitude(junctionFamily[i], crossoverHz[i], lowerSlope[i], highPass: false)
-                : highLimitEdge is { } highLimit ? EdgeMagnitude(highLimit, highPass: false) : null;
+            (CrossoverFilterFamily Family, double Fc, int Slope)? highPassEdge = i > 0
+                ? (junctionFamily[i - 1], crossoverHz[i - 1], upperSlope[i - 1])
+                : lowLimitEdge is { } lowLimit
+                    ? (lowLimit.Family, lowLimit.FrequencyHz, lowLimit.SlopeDbPerOctave)
+                    : null;
+            (CrossoverFilterFamily Family, double Fc, int Slope)? lowPassEdge = i < channelCount - 1
+                ? (junctionFamily[i], crossoverHz[i], lowerSlope[i])
+                : highLimitEdge is { } highLimit
+                    ? (highLimit.Family, highLimit.FrequencyHz, highLimit.SlopeDbPerOctave)
+                    : null;
+
+            var key = (i, EdgeKey(highPassEdge), EdgeKey(lowPassEdge));
+            if (unitCache.TryGetValue(key, out double[]? cached))
+            {
+                return cached;
+            }
+
+            double[]? highPass = highPassEdge is { } hp
+                ? EdgeMagnitude(hp.Family, hp.Fc, hp.Slope, highPass: true)
+                : null;
+            double[]? lowPass = lowPassEdge is { } lp
+                ? EdgeMagnitude(lp.Family, lp.Fc, lp.Slope, highPass: false)
+                : null;
 
             var amplitude = new double[grid.Length];
             for (int k = 0; k < grid.Length; k++)
             {
-                double value = gainLinear * driverAmplitude[i][k];
+                double value = driverAmplitude[i][k];
                 if (highPass != null)
                 {
                     value *= highPass[k];
@@ -981,11 +2153,21 @@ public static class CrossoverAutoSetup
                 amplitude[k] = value;
             }
 
+            unitCache[key] = amplitude;
             return amplitude;
         }
 
-        private double[] EdgeMagnitude(CrossoverEdge edge, bool highPass) =>
-            EdgeMagnitude(edge.Family, edge.FrequencyHz, edge.SlopeDbPerOctave, highPass);
+        private static long EdgeKey(
+            (CrossoverFilterFamily Family, double Fc, int Slope)? edge)
+        {
+            if (edge is not { } value)
+            {
+                return -1;
+            }
+
+            long frequencyKey = (long)Math.Round(value.Fc * 1000);
+            return frequencyKey * 1000 + value.Slope * 10 + (int)value.Family;
+        }
 
         private double[] EdgeMagnitude(
             CrossoverFilterFamily family,
@@ -1048,14 +2230,5 @@ public static class CrossoverAutoSetup
             return results;
         }
 
-        private static double[] LogSpace(double low, double high, int count)
-        {
-            if (high <= low)
-            {
-                return [low];
-            }
-
-            return EqualizationCurve.LogFrequencyGrid(low, high, count).ToArray();
-        }
     }
 }

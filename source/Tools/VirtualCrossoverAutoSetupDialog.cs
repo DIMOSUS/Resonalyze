@@ -1,3 +1,4 @@
+using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -16,6 +17,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     private sealed record ChannelRow(
         string Name,
         IReadOnlyList<SignalPoint> MagnitudeDb,
+        IReadOnlyList<double>? Coherence,
         Label NameLabel,
         Label BandLabel,
         DarkComboBox TypeComboBox);
@@ -32,12 +34,23 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     private readonly List<(CheckBox Box, CrossoverFilterFamily Family)> familyBoxes = new();
     private double sampleRateHz = 48_000;
     private bool initialized;
+    // The sub-elevation field is pre-filled once, from the first valid proposal's
+    // measured elevation (its default and upper limit). Until then options carry a
+    // null elevation so the DSP uses that measured default itself.
+    private bool subElevationInitialized;
+    // The channels' measured transfer IRs (Init order). When present, Apply
+    // re-ranks the top candidates by the junction loss achievable after the
+    // best per-junction delay, instead of trusting the magnitude score alone.
+    private IReadOnlyList<Complex[]>? impulseResponses;
 
     public VirtualCrossoverAutoSetupDialog()
     {
         InitializeComponent();
         AcceptButton = buttonApply;
         CancelButton = buttonCancel;
+        // Apply ranks candidates asynchronously; the designer's automatic
+        // DialogResult would close the form at the first await instead.
+        buttonApply.DialogResult = DialogResult.None;
         buttonApply.Click += ApplyClick;
         WireOptionControls();
         // The designer file owns Dispose; the manually created tooltip is not in
@@ -69,9 +82,11 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     public void Init(
         double sampleRateHz,
         IReadOnlyList<(string Name, Color Accent, IReadOnlyList<SignalPoint> MagnitudeDb,
-            DriverBandEstimate Band)> channels)
+            IReadOnlyList<double>? Coherence, DriverBandEstimate Band)> channels,
+        IReadOnlyList<Complex[]>? impulseResponses = null)
     {
         this.sampleRateHz = sampleRateHz;
+        this.impulseResponses = impulseResponses;
         // Matches the optimizer's Nyquist ceiling; at 44.1 kHz this keeps the full
         // 20 kHz reachable instead of clamping to ~19.8 kHz.
         double ceiling = Math.Min(20_000, sampleRateHz * 0.49);
@@ -90,7 +105,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         for (int i = 0; i < channels.Count; i++)
         {
             (string name, Color accent, IReadOnlyList<SignalPoint> magnitude,
-                DriverBandEstimate band) = channels[i];
+                IReadOnlyList<double>? coherence, DriverBandEstimate band) = channels[i];
             int top = RowTop + i * RowStep;
 
             var nameLabel = new Label
@@ -132,7 +147,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             Controls.Add(nameLabel);
             Controls.Add(bandLabel);
             Controls.Add(typeComboBox);
-            rows.Add(new ChannelRow(name, magnitude, nameLabel, bandLabel, typeComboBox));
+            rows.Add(new ChannelRow(
+                name, magnitude, coherence, nameLabel, bandLabel, typeComboBox));
         }
 
         int extraRows = Math.Max(0, channels.Count - DesignRowCount);
@@ -146,7 +162,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
                      {
                          labelFilters, checkButterworth, checkLinkwitzRiley, checkBessel,
                          labelRange, minCrossover, labelDash, maxCrossover, labelHz,
-                         independentSlopes, labelPreview
+                         independentSlopes, labelSubElevation, subElevation,
+                         labelSubElevationUnit, labelPreview
                      })
             {
                 control.Top += rowShift;
@@ -177,12 +194,28 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         minCrossover.ValueChanged += (_, _) => UpdatePreview();
         maxCrossover.ValueChanged += (_, _) => UpdatePreview();
         independentSlopes.CheckedChanged += (_, _) => UpdatePreview();
+        subElevation.ValueChanged += (_, _) => UpdatePreview();
         toolTip.SetToolTip(
             independentSlopes,
             "Let the low-pass and high-pass of a junction take different slopes\r\n" +
             "(they still share one crossover frequency), to compensate a driver's\r\n" +
-            "own roll-off. Off keeps both sides matched, the textbook crossover.");
+            "own roll-off. Off ties each DRIVER's two shoulders (its high-pass and\r\n" +
+            "low-pass) to one slope, so no driver ends up steep on one side and\r\n" +
+            "shallow on the other; different drivers may still take different\r\n" +
+            "slopes — the textbook crossover.");
+        toolTip.SetToolTip(
+            subElevation,
+            "How far the lowest driver sits above the levelled midrange/tweeter.\r\n" +
+            "Starts at (and is capped by) the measured elevation — the sub at its\r\n" +
+            "own level; lower it to flatten the bottom. The midrange/tweeter are\r\n" +
+            "levelled to each other and the remaining drivers are only cut, never\r\n" +
+            "boosted, onto the resulting target.");
     }
+
+    // One wizard source per channel row, in the row (Init) order.
+    private List<AutoSetupSource> CurrentSources() =>
+        rows.Select(row => new AutoSetupSource(row.MagnitudeDb, TypeOf(row), row.Coherence))
+            .ToList();
 
     private DriverType TypeOf(ChannelRow row) =>
         row.TypeComboBox.SelectedItem is DriverType type ? type : DriverType.Woofer;
@@ -196,7 +229,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             (double)minCrossover.Value,
             (double)maxCrossover.Value,
             independentSlopes.Checked,
-            sampleRateHz);
+            sampleRateHz,
+            subElevationInitialized ? (double)subElevation.Value : null);
 
     private IReadOnlyList<CrossoverProposal>? TryPropose()
     {
@@ -205,16 +239,41 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             return null;
         }
 
-        var sources = rows
-            .Select(row => new AutoSetupSource(row.MagnitudeDb, TypeOf(row)))
-            .ToList();
         try
         {
-            return CrossoverAutoSetup.Propose(sources, CurrentOptions());
+            return CrossoverAutoSetup.Propose(CurrentSources(), CurrentOptions());
         }
         catch (ArgumentException)
         {
             return null;
+        }
+    }
+
+    // Pre-fills the sub-elevation field once, the first time the driver types
+    // form a valid proposal: its default and upper limit are the measured
+    // elevation of the lowest driver over the levelled mid/tweeter reference.
+    private void TryInitializeSubElevation()
+    {
+        if (subElevationInitialized || SelectedFamilies().Count == 0)
+        {
+            return;
+        }
+
+        List<AutoSetupSource> sources = CurrentSources();
+        try
+        {
+            IReadOnlyList<CrossoverProposal> proposals =
+                CrossoverAutoSetup.Propose(sources, CurrentOptions());
+            double measured = CrossoverAutoSetup.MeasuredSubElevationDb(
+                sources, proposals, sampleRateHz);
+            decimal max = (decimal)Math.Max(0, Math.Round(measured, 1));
+            subElevation.Maximum = Math.Max(max, subElevation.Minimum);
+            subElevationInitialized = true;
+            subElevation.Value = max;
+        }
+        catch (ArgumentException)
+        {
+            // Types are not yet distinct; retry on the next change.
         }
     }
 
@@ -232,6 +291,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             return;
         }
 
+        TryInitializeSubElevation();
         IReadOnlyList<CrossoverProposal>? proposals = TryPropose();
         buttonApply.Enabled = proposals != null;
         if (proposals == null)
@@ -243,22 +303,22 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         var lines = rows
             .Select((row, index) => FormatProposal(row, proposals[index]))
             .ToList();
-        lines.Add(FormatFlatness(proposals));
+        lines.Add(FormatSummary(proposals));
         labelPreview.Text = string.Join(Environment.NewLine, lines);
     }
 
-    // The predicted flatness of the summed magnitude response over the interior
-    // passband — the quantity the optimizer minimizes, shown so the user can weigh
-    // the option choices.
-    private string FormatFlatness(IReadOnlyList<CrossoverProposal> proposals)
+    // The span of the predicted summed response and the sub elevation applied —
+    // with the target-curve gains the sum is an intentional downslope (bass
+    // lifted), not a flat line, so this reports the span rather than a defect.
+    private string FormatSummary(IReadOnlyList<CrossoverProposal> proposals)
     {
-        var sources = rows
-            .Select(row => new AutoSetupSource(row.MagnitudeDb, TypeOf(row)))
-            .ToList();
+        List<AutoSetupSource> sources = CurrentSources();
+        AutoSetupSource lowSource = sources.OrderBy(source => source.Type).First();
+        AutoSetupSource highSource = sources.OrderBy(source => source.Type).Last();
         DriverBandEstimate low = CrossoverAutoSetup.EstimateBand(
-            sources.OrderBy(source => source.Type).First().MagnitudeDb);
+            lowSource.MagnitudeDb, lowSource.Coherence);
         DriverBandEstimate high = CrossoverAutoSetup.EstimateBand(
-            sources.OrderBy(source => source.Type).Last().MagnitudeDb);
+            highSource.MagnitudeDb, highSource.Coherence);
         double trim = Math.Pow(2.0, 0.5);
 
         var window = CrossoverAutoSetup
@@ -266,9 +326,12 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             .Where(point => point.X >= low.LowHz * trim && point.X <= high.HighHz / trim)
             .Select(point => point.Y)
             .ToList();
-        double ripple = window.Count > 0 ? window.Max() - window.Min() : 0;
-        return $"Predicted sum: ±{ripple / 2:0.0} dB over " +
-            $"{FormatHz(low.LowHz)}–{FormatHz(high.HighHz)}";
+        double span = window.Count > 0 ? window.Max() - window.Min() : 0;
+        string elevation = subElevationInitialized
+            ? $"  ·  sub +{(double)subElevation.Value:0.0} dB over mid/treble"
+            : string.Empty;
+        return $"Predicted sum spans {span:0.0} dB over " +
+            $"{FormatHz(low.LowHz)}–{FormatHz(high.HighHz)}{elevation}";
     }
 
     private static string FormatProposal(ChannelRow row, CrossoverProposal proposal)
@@ -298,13 +361,108 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         return $"{family}{edge.SlopeDbPerOctave}";
     }
 
-    private void ApplyClick(object? sender, EventArgs e)
+    // Every control whose value feeds TryPropose()/CurrentOptions(). Frozen
+    // while the ranking task runs, so the applied result always matches the
+    // settings the user sees; their change handlers would otherwise re-enable
+    // Apply and overwrite the progress text mid-ranking.
+    private IEnumerable<Control> RankingInputControls()
     {
-        Result = TryPropose();
-        if (Result == null)
+        foreach (ChannelRow row in rows)
         {
-            DialogResult = DialogResult.None;
+            yield return row.TypeComboBox;
+        }
+
+        foreach ((CheckBox box, CrossoverFilterFamily _) in familyBoxes)
+        {
+            yield return box;
+        }
+
+        yield return minCrossover;
+        yield return maxCrossover;
+        yield return independentSlopes;
+        yield return subElevation;
+    }
+
+    private void SetRankingInputsEnabled(bool enabled)
+    {
+        foreach (Control control in RankingInputControls())
+        {
+            control.Enabled = enabled;
+        }
+    }
+
+    private async void ApplyClick(object? sender, EventArgs e)
+    {
+        IReadOnlyList<CrossoverProposal>? quick = TryPropose();
+        if (quick == null)
+        {
             System.Media.SystemSounds.Beep.Play();
+            return;
+        }
+
+        if (impulseResponses == null)
+        {
+            Result = quick;
+            DialogResult = DialogResult.OK;
+            return;
+        }
+
+        // The ranked search (candidate pool + achievability post-check on the
+        // measured IRs) runs off the UI thread; a couple of seconds on a
+        // 4-way. The live preview keeps showing the fast magnitude-only
+        // proposal until the ranking lands.
+        List<AutoSetupSource> sources = CurrentSources();
+        CrossoverAutoSetupOptions options = CurrentOptions();
+        IReadOnlyList<Complex[]> responses = impulseResponses;
+        string previousPreview = labelPreview.Text;
+        buttonApply.Enabled = false;
+        SetRankingInputsEnabled(false);
+        labelPreview.Text = "Ranking candidates against the measured responses…";
+        try
+        {
+            IReadOnlyList<RankedCrossoverProposal> ranked = await Task.Run(
+                () => CrossoverAutoSetup.ProposeRanked(sources, options, responses));
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            Result = ranked[0].Proposals;
+            DialogResult = DialogResult.OK;
+        }
+        catch (ArgumentException)
+        {
+            // A user-input shape problem (duplicate types, unusable band):
+            // the same quiet signal the synchronous path gives.
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            labelPreview.Text = previousPreview;
+            buttonApply.Enabled = true;
+            SetRankingInputsEnabled(true);
+            System.Media.SystemSounds.Beep.Play();
+        }
+        catch (Exception exception)
+        {
+            // An unhandled exception after an await in an async void handler
+            // would land in the WinForms synchronization context and kill the
+            // process; the ranking spans PLINQ, FFTs and the alignment search,
+            // so restore the dialog and report instead.
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            labelPreview.Text = previousPreview;
+            buttonApply.Enabled = true;
+            MessageBox.Show(
+                this,
+                $"Candidate ranking failed.\r\n\r\n{exception.Message}",
+                "Auto crossover",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
         }
     }
 

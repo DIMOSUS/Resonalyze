@@ -1402,18 +1402,69 @@ the magnitude curves, drawing on the same profiles configured in Record Settings
 it defaults to Off because the measurements are loopback-referenced.
 
 - **Auto crossover...** estimates each channel's usable band and driver type
-  (subwoofer, woofer, midbass, midrange, or tweeter), then asks which filter
+  (subwoofer, woofer, midbass, midrange, or tweeter) — the band read is the most
+  prominent contiguous segment of the response, and when the measurement carries
+  coherence (γ²), a frequency the measurement did not trust cannot anchor a band
+  edge, so a noisy or non-linear resonance can't stretch the band. It then asks
+  which filter
   families to allow (Butterworth / Linkwitz-Riley / Bessel), the
   crossover-frequency window, and whether the two sides of a junction may take
-  independent slopes. It searches the crossover frequency, family, slope, and
-  cut-only gains to flatten the summed magnitude — modelling each junction the
-  way its family sums (amplitude for LR/Bessel, power for Butterworth),
-  penalizing wide band overlap, and keeping a practical minimum slope, so it
-  lands on a tight, engineer-sensible split rather than shallow filters that only
-  look flat by overlapping widely. Handovers stay within the sensible range for
-  the two driver types (so a woofer is not crossed up in its roll-off), and
-  narrowing the window past an outer driver adds a subsonic / brickwall
-  band-limit on that channel.
+  independent slopes (on by default: a driver's high-pass and low-pass may
+  differ, so a woofer can low-pass steeply to the midrange while high-passing
+  gently from the sub; turn it off to tie each driver's two shoulders to one
+  slope). Different drivers always stay free to take different slopes.
+  It searches the crossover frequency, family, and slope to flatten the summed
+  magnitude (a plain amplitude sum — the assumption that Auto delay will bring
+  each junction to its best alignment), penalizing wide band overlap and
+  keeping a practical minimum slope, so it lands on a tight, engineer-sensible
+  split rather than shallow filters that only look flat by overlapping widely.
+  The gains, though, follow a car target curve rather than a flat sum: the
+  midrange and tweeter are levelled to each other (the louder attenuated), and
+  the subwoofer anchors the bass at a chosen elevation over that reference —
+  the **Sub level over mid/treble** field defaults to (and is capped at) the
+  measured elevation, so out of the box the sub keeps its own level and you
+  only trim the field down if you want less bass. The remaining drivers are fit
+  onto the resulting slope cut-only (a driver already below the target keeps
+  its level — no measured dip is boosted), and every gain is a cut, so the
+  result is headroom-safe. Handovers stay within the sensible
+  range for the two driver types (so a woofer is not crossed up in its
+  roll-off), land on human-friendly frequencies (5 Hz steps below 100 Hz,
+  10 Hz below 1 kHz, 50 Hz above), and a slope is allowed only while the
+  filter's peak group delay stays within 10 ms — a bound on the delay itself,
+  not the frequency, so the same steep slope is fine at a 250 Hz woofer/mid
+  handover (~5 ms) but excluded at a 75 Hz sub/woofer one (~17 ms), and a
+  low-group-delay family (Bessel) can go steeper down low than a Linkwitz-Riley
+  can. The budget caps how much steeper than the 24 dB/oct floor the search may
+  go; the floor itself is always kept, since a gentler crossover would break the
+  overlap rule, so at a very low junction the floor's larger group delay is
+  inherent to crossing there. Group delay is identical for the low-pass and
+  high-pass sides, so with matched slopes a driver is held to the gentler of its
+  two junctions; a steep woofer low-pass paired with a gentle high-pass needs
+  independent slopes on.
+  A shallow filter that lets a driver bleed into a non-adjacent driver's band is
+  still heavily penalized (a woofer should not be audible up at the tweeter). Placement heuristics steer the
+  handovers further: a junction landing in the ear's most sensitive band
+  (2–4 kHz) is penalized, and two drivers that share a wide band are crossed
+  low — letting the upper (smaller) driver take over as early as it cleanly
+  can, for better dispersion and less excursion on the lower driver — except
+  the subwoofer, which is nudged UP toward the ~80 Hz localization limit rather
+  than pulled low. So a capable tweeter is crossed down toward its 1.7 kHz
+  sensible floor (out of the ear band) when its measured band supports it, and
+  a low tweeter handover is held to at least 24 dB/oct so the tweeter is not
+  driven too far down. The same low-handover logic applies below: a midrange
+  with headroom down to its 200 Hz sensible floor lets the woofer/midbass hand
+  over early, before its cone-breakup region, so the wide woofer/mid overlap
+  does not linger up where it interferes badly. In a stereo system both sides of a driver get the same
+  crossover — a crossover is one electrical filter, so only delay and level
+  differ per side. Narrowing the window past an outer driver adds a subsonic /
+  brickwall band-limit on that channel.
+  Apply does more than take the flattest magnitude candidate: the wizard
+  expands ~50 near-optimal variants (always including the conventional
+  all-LR24 setup) and re-ranks them by the junction loss actually achievable
+  after the best per-junction delay, measured on your impulse responses with
+  the same alignment search Auto delay runs — so a candidate whose slopes
+  cannot phase-align at the handover loses to one that can, before you ever
+  run Auto delay. Ties go to the conventional 24 dB/oct proposal.
 - **Auto delay** aligns in two stages: band-limited first arrivals — refined by a
   GCC-PHAT cross-correlation where it carries a reliable, unambiguous peak (a
   junction whose corners leave a spectral gap degenerates the correlation into

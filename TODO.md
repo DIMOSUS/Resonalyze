@@ -438,21 +438,243 @@ re-verified.
 
 ### Auto Crossover
 
-- [ ] ★ **The scalar summation model is physically wrong in three ways**:
-  family-based amplitude-vs-power summation (the real sum depends on the
-  complex phase at each frequency, not the family name), sequential mixed
-  summation that is non-associative for 3+ channels, and a magnitude-only
-  objective that ignores the measured phase entirely (Auto delay afterwards
-  cannot fix mismatched slopes/orders with one delay). The optimizer's live
-  preview shares the model, so it confirms its own objective; the flatness
-  tests call the same `SummedResponseDb` and are tautological. Fix: complex
-  per-channel responses (measured IR × exact digital filter response) with at
-  least a final complex-sum check per candidate, plus an independent
-  complex-sum oracle in the tests.
-- [ ] **`EstimateBand` merges disjoint islands into one band** (first/last bin
-  above a global threshold): an isolated resonance above a dead gap extends
-  HighHz and misclassifies the driver. Fix: the most significant contiguous
-  segment above threshold with bounded gap tolerance.
+- [x] ★ **The scalar summation model is physically wrong in three ways** —
+  resolved (2026-07-11) after a design discussion with the user. Verdict: the
+  magnitude/delay DECOMPOSITION is intentional and stays (a joint delay ×
+  crossover search was rejected as intractable; the wizard assumes ideal
+  alignment and Auto delay realizes it) — but the three inconsistencies were
+  real and are fixed:
+  (1) family-based amplitude-vs-power summation and the non-associative mixed
+  sum are gone — channels now combine as a plain amplitude sum everywhere,
+  the consistent expression of the ideal-alignment assumption;
+  (2) the "magnitude-only objective cannot see which candidates Auto delay
+  can actually fix" gap is closed by `ProposeRanked`: ~50 near-optimal
+  candidates (per-junction top options crossed, plus a mandatory conventional
+  all-LR24 run) are re-ranked by the junction loss ACHIEVABLE after the best
+  per-junction delay, measured on the channels' IRs with the production
+  alignment search (`FindAlignmentCandidates`) on a shared 32k direct-sound
+  crop, in parallel; the conventional-24 candidate wins ties
+  (`Conventional24PreferenceDb = 0.25`). Real-data cost: 50 candidates ≈ 3.8 s
+  on a 4-core container (pool alone 0.4 s); the two cost cliffs found and
+  fixed on the way: per-candidate arrival analyses (now computed once from
+  the raw channels) and a frequency-independent search window (now
+  ±clamp(1200/fc, 2, 12) ms — the filter group delay it must absorb scales
+  as 1/fc);
+  (3) the tests now include an independent amplitude-sum oracle (exact filter
+  magnitudes, not `SummedResponseDb`'s internals).
+  Also shipped in the same rework, per the user's spec: crossover frequencies
+  search directly on a rounded lattice (5 Hz < 100 Hz, 10 Hz < 1 kHz, 50 Hz
+  above — which also made the magnitude-cache hit, pool of 50 in ~0.4 s), and
+  junctions below 300 Hz never get slopes steeper than 24 dB/oct (group
+  delay). Deliberately NOT revisited: `AchievabilityWeight = 0.5` was chosen
+  on one dataset (the left 4-way) — re-eyeball if field results disagree with
+  the ranking. The dialog's async Apply path needs a live Windows check.
+  **PR #27 review follow-up (fixed):** the first post-check draft (1)
+  compared band-limited arrivals measured in DIFFERENT bands (each driver's
+  own band) — the exact mistake the stereo Δ metric and the engine already
+  warn about; the centers are now per-junction shared-band arrivals of the
+  raw channels, cached by (channel, band) so the Hilbert cost stays bounded;
+  (2) trusted the raw search winner — now the pick goes through
+  `AlignmentSelection.Select` with the arrival anchor, the engine's
+  arrival-anchored prior (sigma = window/4) and a widened edge retry, so an
+  inverted half-period impostor cannot fake achievability the real Auto
+  delay would refuse. Accepted simplifications vs the full engine (recorded,
+  not hidden): no PHAT-seeded timeline, no cascade reprocessing of settled
+  neighbors, no guarded wide-window promotion — junction deltas of a mono
+  N-way compose independently, and the post-check only RANKS. Notable
+  real-data effect of the honesty fix: on the left 4-way the conventional
+  LR24 candidate's sub/woof junction penalty rose ~1 dB (its previous low
+  loss came from an impostor lobe the selection now rejects) and LR12 at
+  40 Hz wins the junction — consistent with the very group-delay argument
+  that capped steep low slopes. The dialog also now catches ALL ranking
+  exceptions (async void + WinForms context would otherwise kill the
+  process), reporting them in a message box.
+  **Second review round (fixed):** (1) per-junction pool options are each
+  bounded against the descent optimum's neighbours, so combining them
+  independently could jointly break the half-octave minimum separation —
+  reproduced with a peaked middle driver (fc pair at ratio 1.375 < √2 in
+  the ranked list); combinations now pass a joint separation check before
+  the gain pass. (2) `IsConventional24` was derived from slopes alone, so
+  any all-24 pool candidate (16 flagged in one config, pure Butterworth in
+  another) could soak up the 0.25 dB tie preference; the flag now matches
+  the dedicated conventional run's signature — exactly one candidate, LR24
+  when LR is allowed. (3) The dialog freezes every ranking-input control
+  while the async ranking runs, so stale settings can't be applied.
+  **Matched slopes = per-DRIVER, not per-system (corrected 2026-07-12):** with
+  "Independent slopes per side" off, each driver's two shoulders (its high-pass
+  and its low-pass) share one slope; DIFFERENT drivers stay free to differ.
+  First attempt (9889124) over-corrected to one slope for the WHOLE system —
+  wrong, reverted. The real bug: the pool (and even the descent) chose slopes
+  per JUNCTION independently, so a middle driver's HP (upper side of the
+  junction below) and LP (lower side of the junction above) drifted apart
+  (the 12/18 the user saw after Apply). Fix: when off, the slope is a property
+  of the channel — `EnumerateJunctionOptions` only varies frequency/family and
+  holds the two channels' slopes; a dedicated `OptimizeChannelSlope` pass tunes
+  each channel's slope (both shoulders together) over the slopes allowed at
+  BOTH its junctions; the pool inherits the descent's per-channel slopes.
+  Families still per junction. Real-data winner now
+  LR12@45 / (mb LR12, mid LR24)@250 / LR24@3950 — sub+midbass 12, mid+tweeter
+  24, each driver internally matched. Full ranked ~3.2 s.
+- [ ] **Virtual DSP load lock (2026-07-12, needs live Windows check):** opening
+  the panel spent 5-10 s re-resolving each channel's stored transfer IR while
+  the panel sat enabled showing the "no sources" hint, so the restored session
+  looked lost until it snapped in. `ApplyProjectAsync` now wraps the bind in
+  `SetProjectLoading(true/false)`: the whole control tree is disabled (a load
+  rebuilds the channel blocks, so the parent must carry the disable), the main
+  plot shows "Loading the previous session…", the metric shows "Loading
+  session…", and the cursor is a wait cursor; the final RedrawAll restores the
+  real plot/metric before the panel re-enables. Covers both the startup load
+  and a session import (both route through ApplyProjectAsync). Verify on
+  Windows: the lock appears immediately, the plot note is legible (PlotView is
+  custom-painted so it should not grey out), and controls re-enable exactly
+  when the curves land.
+- [x] **Auto crossover placement heuristics (user request 2026-07-12):** two
+  frequency-placement penalties added to the flatness score, plus a tweeter
+  floor + protection rule. (1) **Ear band** — a junction in 2–4 kHz gets a soft
+  Gaussian penalty (`EarSensitivityWeightDb = 0.5`, centred ~2.83 kHz). (2)
+  **Wide overlap → low** — a junction is pulled toward the bottom of the two
+  drivers' shared band, scaled by its width in octaves
+  (`WideOverlapLowBiasWeightDb = 0.4`, "firm" per the user). (3) The tweeter's
+  `SensibleRange` floor dropped 2000 → **1500 Hz** so the search can cross a
+  capable tweeter low (the user's own tune crosses mid/tweeter at 1300/1800 for
+  the soundstage). (4) `TweeterProtectionHz = 2500`: a tweeter crossed below
+  that must stay ≥ 24 dB/oct (mirror of the <300 Hz bass cap), enforced in the
+  slope enumeration and `AllowedChannelSlopes`, so the low handover does not
+  overdrive the tweeter. On the real left 4-way the mid/tweeter moved 3900 →
+  1500 (LR24/LR24, tweeter steep) — matching the user's low-and-steep manual
+  choice. Weights are tunable; still gated by the measured tweeter band (a
+  tweeter rolled off by 2.5 kHz still crosses no lower).
+  **Follow-up tuning (user feedback 2026-07-12):** (a) L/R now get the SAME
+  crossover — the wizard writes freq/family/slope/gain to BOTH sides of a
+  stereo pair (`OpenAutoSetupWizard`), only delay/scene-level differ per
+  side. (b) Tweeter floor 1500 → **1700** (1500 was too low by ear). (c) The
+  wide-overlap "cross low" rule is skipped for the subwoofer and replaced by
+  an UP nudge toward its ~80 Hz sensible top (`SubHandoverUpBiasWeightDb`) —
+  the sub was landing at 45 Hz. (d) `MinPracticalSlopeDbPerOctave` 12 → **18**
+  and `OverlapPenalty` extended to non-adjacent pairs
+  (`NonAdjacentOverlapWeight`): a 12 dB/oct woofer was bleeding up to the
+  tweeter; both push interior drivers to steeper (24) slopes. Real 4-way now:
+  75 (BS24/BS24) / 250 (LR24/LR24) / 1750 (LR24/LR24) — all steep, sub ~80,
+  mid/tweeter low, matching the user's manual tune.
+  **Min slope 18 → 24 (user feedback 2026-07-12):** 18 was still too shallow —
+  on the real woofer/midrange handover the per-channel compromise landed on
+  18 dB/oct, a wide overlap with strong interference Auto delay could not align
+  (the user saw ~−3.4/−9.9 dB). `MinPracticalSlopeDbPerOctave` is now 24, so
+  every crossover is >= 24 (the <300 Hz cap pins low junctions to exactly 24).
+  The flatness/achievability metric rates the shallow 18 slightly higher —
+  which is exactly why the auto kept picking it and the user heard interference
+  the metric misses — so the floor overrides it, matching the all-24 manual
+  tune. BW-only real 4-way then: 65 (BW24/BW24) / 250 (BW24/BW24) / 1700
+  (BW24/BW48); all-families unchanged (75/250/1750).
+- [x] **Virtual DSP redraw multithreaded (2026-07-12):** the interactive redraw
+  ran its heavy math on one core — `ProcessChannelsAsync` applied each channel's
+  full-length ApplyChain cascade in a sequential `Select` inside one `Task.Run`,
+  and `BuildMetricCurves` built each channel's magnitude spectrum sequentially.
+  Both are pure and independent, so both now fan out: ApplyChain via
+  `Parallel.For` (bit-identical output verified on the real 7-channel system,
+  2043 ms → 1074 ms on 4 cores, ~min(channels, cores)× ceiling) and the spectra
+  via `AsParallel().AsOrdered()`. Only full redraws (mode switch, session load,
+  bypass-all) recompute every channel and get the full win; a single-control
+  edit still recomputes one channel (nothing to parallelize). Cache write-back
+  stays on the UI thread after the await, so no races.
+  **Target-curve gains (user request 2026-07-12):** gains no longer flatten
+  the sum — they follow a car target curve. (1) midrange & tweeter levelled to
+  each other (louder attenuated); (2) the subwoofer anchors the bass at a
+  chosen elevation over the reference — a new **Sub level over mid/treble**
+  dialog field, default & max = the measured elevation (sub at its raw level),
+  trimmable down to flatten; (3) the remaining drivers fit cut-only onto the
+  log-frequency slope between the sub anchor and the reference (a driver below
+  the target keeps its level — dips are never boosted). Reference level = the
+  quietest driver apart from the sub, so a hot sub can't drag it up and a
+  sub-less 2-way still levels its two drivers. `ApplyTargetCurveGains` /
+  `MeasuredSubElevationDb` replace the emitted gains after the crossover search
+  (which still uses the optimizer's flattening gains to CHOOSE crossovers).
+  Validated on the real left 4-way: default gives sub 0, midbass 0, mid 0,
+  tweeter −1.5 (= the user's in-car manual tune, whose −4 on mid/tweeter is the
+  separate L/R scene offset). Needs a live Windows check of the dialog field
+  (layout shift, lazy default fill, freeze-during-ranking). Not yet done: a
+  treble down-tilt knob (the preview "predicted sum span" is now honestly large
+  because the bass is intentionally lifted).
+  **Midrange sensible floor 250 → 200 (user feedback 2026-07-12):** on the real
+  left 4-way the woofer/midrange handover kept landing at 250 Hz with a wide
+  overlap; crossing nearer 200 Hz (which the user found by hand) weakens the
+  interference, but `SensibleRange(Midrange).LowHz = 250` clamped the search so
+  the achievability post-check never even evaluated ~200. Same conservative-floor
+  pattern as the tweeter. Lowered the midrange floor to 200 (a midrange has
+  headroom below its cone-breakup region), so the woofer/midbass can hand over
+  early; still gated by the measured midrange band. Real 4-way then moved the
+  woofer/mid junction 250 → 220 (all-families 75/220/1750, BW-only 65/220/1700),
+  with 200 right behind in the pool — matching the user's manual find.
+- [x] **`EstimateBand` merges disjoint islands into one band (fixed 2026-07-12):**
+  it took the first and last bin above the −8 dB threshold, so an isolated
+  resonance past a deep dead gap stretched HighHz and could mislabel the driver
+  or skew the crossover bounds. Now the above-threshold points are grouped into
+  contiguous segments, bridging a below-threshold gap only while it stays within
+  `MaxBandGapOctaves = 0.5` (a narrow interference/room null a driver's own band
+  can have — a 1/3-octave-smoothed null lands there); the usable band is the most
+  PROMINENT segment (largest area above threshold integrated over log-frequency).
+  On the real left 4-way this trimmed two genuine over-extensions: midrange high
+  edge 4387 → 2768 Hz and tweeter 20000 → 11954 Hz (both were isolated HF
+  resonances past dead gaps). Two new synthetic tests pin it (isolated resonance
+  ignored; narrow in-band null bridged). Side effect on the auto winner: the
+  corrected band levels re-rank the flatness score slightly — woofer/mid 220 →
+  250, tweeter 1750 → 1700 — while the 200 Hz search floor and the 200–230
+  candidates stay in the top of the pool.
+- [x] **`EstimateBand` honours coherence when available (2026-07-12):** the band
+  read now takes optional per-point γ² (`AutoSetupSource.Coherence`, aligned 1:1
+  with the magnitude points). A frequency below `CoherenceFloor = 0.5` cannot
+  anchor a band edge, and each segment's prominence is γ²-weighted, so a noisy or
+  non-linear region (a breakup resonance, a channel picking up another driver)
+  cannot stretch the band the way a coherent passband does. Deliberately
+  conservative: the reference percentile still reads the whole curve (filtering
+  it to coherent points tracked the peak and shrank narrow-band drivers — a sub's
+  usable band collapsed 133 → 54 Hz, over-constraining its crossover), so on a
+  clean measurement coherence is a no-op. Validated on the real left 4-way: every
+  driver is γ² ≥ 0.5 across its passband, so all four bands are identical with and
+  without coherence — the gate only bites a genuinely untrusted measurement. Two
+  synthetic tests pin it (a loud incoherent region rejected; a coherent band not
+  chopped; mismatched-length coherence ignored). App plumbing (Windows-only,
+  needs a live check): `ChannelSideState.TransferCoherence` stored on source
+  resolve, resampled onto the wizard's 1/3-octave grid by `CoherencePerPoint`,
+  and threaded through the dialog into `AutoSetupSource`. App + App.Tests compile
+  clean under EnableWindowsTargeting.
+- [x] **Slope cap is now a group-delay budget, not a frequency (2026-07-12):**
+  the flat "< 300 Hz → ≤ 24 dB/oct" cap is gone. A slope is allowed only while
+  the filter's peak group delay stays within `MaxCrossoverGroupDelaySeconds =
+  0.010` (10 ms), computed from the exact biquad cascade by the new
+  `CrossoverFilter.MaxGroupDelaySeconds` (τ = −dφ/dω, peak near the corner,
+  memoized per family/slope/fc). Group delay scales ≈ 1/f_c, so the same slope is
+  fine high up and excluded low down — and a low-GD family (Bessel) may go
+  steeper down low than an LR can. It is identical for LP and HP, so with matched
+  slopes a driver is still held to the gentler of its two junctions; a steep
+  woofer LP with a gentle HP needs independent slopes. Real left 4-way:
+  matched (default) winner sub steepened 75(BS24)→75(BS36) — Bessel 36 at 75 Hz
+  is only ~5.7 ms, which the old flat cap wrongly forbade; with independent
+  slopes on the woofer/mid junction jumps to LR48/LR48 (~5 ms) and the
+  achievability penalty drops 2.70 → 2.05 (the steep woofer LP cleans the
+  handover the user flagged). Two `CrossoverFilter` tests pin the GD values and
+  the LP=HP symmetry; the ranked-pool test now asserts the GD budget across every
+  candidate. Search timing unchanged (~2 s, GD memoized).
+- [x] **GD budget was bypassable via seed & conventional state — fixed
+  (review, 2026-07-12):** the budget was only applied while ENUMERATING options,
+  so two paths still produced budget-violating candidates: `Initialize` seeded a
+  fixed 24 dB/oct with no check, and the conventional run's `forcedSlope`
+  branch returned 24 unconditionally — at a junction low enough that even 24 dB/oct
+  exceeds 10 ms, `AllowedSlopes` returned EMPTY and those unchecked 24s survived.
+  Reframed the policy explicitly: the budget caps steepness ABOVE the practical
+  floor (24 dB/oct); the floor is ALWAYS admitted, since a gentler crossover
+  would break the overlap rule, so a very low junction's larger group delay is
+  inherent to crossing there, not a bypass. `AllowedSlopes` now floor-falls-back
+  (never empty) and gates the forced branch the same way; `Initialize` and the
+  band-limit brickwall seed via a new `GentlestAdmissibleSlope` (removed the
+  unchecked `PreferredSlope`). New regression test forces a sub-budget sub/woofer
+  junction and asserts every candidate — seed, descent, AND conventional — uses
+  exactly the floor there, never a steeper forbidden slope.
+- [x] **Independent slopes ON by default (user request 2026-07-12):** the wizard
+  checkbox and `CrossoverAutoSetupOptions.Default` now default to independent
+  slopes, so the auto-crossover can give the woofer a steep low-pass and a gentle
+  high-pass out of the box (the group-delay win above). Turning it off restores
+  the matched-shoulders behaviour.
 
 ### EQ Wizard
 

@@ -95,10 +95,50 @@ public sealed class CrossoverAutoSetupTests
         Assert.True(subToWoofer < wooferToMid);
         Assert.True(wooferToMid < midToTweeter);
         Assert.InRange(subToWoofer, 40, 80);
-        Assert.InRange(wooferToMid, 250, 500);
-        Assert.InRange(midToTweeter, 2_000, 4_000);
+        // The placement heuristics cross the woofer/midrange handover as low as
+        // the midrange's sensible floor (200 Hz) allows — below its cone-breakup
+        // region — so the wide woofer/mid overlap does not linger up where it
+        // interferes; still gated by the measured midrange band.
+        Assert.InRange(wooferToMid, 200, 500);
+        // The placement heuristics cross the mid/tweeter as low as the tweeter's
+        // sensible floor (1.5 kHz) and its measured band allow, out of the 2–4 kHz
+        // ear-sensitivity band; a low tweeter handover must stay steep (>= 24).
+        Assert.InRange(midToTweeter, 1_500, 4_000);
+        if (midToTweeter < CrossoverAutoSetup.TweeterProtectionHz)
+        {
+            Assert.True(proposals[3].HighPassEdge!.Value.SlopeDbPerOctave >= 24);
+        }
         Assert.Null(proposals[3].LowPassEdge);
         Assert.True(SumRippleDb(sources, proposals) < 6.0);
+    }
+
+    [Fact]
+    public void Propose_CrossesACapableTweeterLowAndKeepsItSteep()
+    {
+        // A tweeter that measures clean down to ~1.2 kHz: the placement
+        // heuristics (avoid the 2–4 kHz ear band, cross a wide overlap low) pull
+        // its handover below the ear band, and the tweeter protection keeps that
+        // low handover steep (>= 24 dB/oct) so the tweeter is not overdriven.
+        var sources = new List<AutoSetupSource>
+        {
+            new(BandCurve(60, 900, 0), DriverType.Midbass),
+            new(BandCurve(250, 5_000, 0), DriverType.Midrange),
+            new(BandCurve(1_200, 20_000, 0), DriverType.Tweeter)
+        };
+
+        IReadOnlyList<CrossoverProposal> proposals =
+            CrossoverAutoSetup.Propose(sources, Options());
+
+        CrossoverEdge tweeterHighPass = proposals[2].HighPassEdge!.Value;
+        Assert.True(
+            tweeterHighPass.FrequencyHz < 2_000,
+            $"mid/tweeter handover {tweeterHighPass.FrequencyHz:0} Hz was not pulled below the ear band");
+        Assert.True(
+            tweeterHighPass.FrequencyHz >= 1_500,
+            $"handover {tweeterHighPass.FrequencyHz:0} Hz dropped below the tweeter floor");
+        Assert.True(
+            tweeterHighPass.SlopeDbPerOctave >= 24,
+            $"low tweeter handover slope {tweeterHighPass.SlopeDbPerOctave} is not steep");
     }
 
     [Fact]
@@ -148,6 +188,136 @@ public sealed class CrossoverAutoSetupTests
             BandCurve(2_500, 18_000, -3));
         Assert.Equal(DriverType.Tweeter, tweeter.SuggestedType);
         Assert.InRange(tweeter.LowHz, 1_800, 2_600);
+    }
+
+    [Fact]
+    public void EstimateBand_IgnoresAnIsolatedResonancePastADeadGap()
+    {
+        // A woofer flat 40-400 Hz, then a deep dead gap, then a lone breakup
+        // resonance up near 3 kHz. The usable band must stay on the woofer: the
+        // isolated peak past the gap must not stretch HighHz and relabel the
+        // driver a midbass.
+        var points = new List<SignalPoint>();
+        foreach (double f in EqualizationCurve.LogFrequencyGrid(20, 20_000, 512))
+        {
+            double y;
+            if (f < 40)
+            {
+                y = -24.0 * Math.Log2(40 / f);
+            }
+            else if (f <= 400)
+            {
+                y = 0.0;
+            }
+            else
+            {
+                y = -24.0 * Math.Log2(f / 400); // deep roll-off above the band
+            }
+
+            if (f >= 2_700 && f <= 3_300)
+            {
+                y = 0.0; // an isolated resonance island past a dead gap
+            }
+
+            points.Add(new SignalPoint(f, y));
+        }
+
+        DriverBandEstimate band = CrossoverAutoSetup.EstimateBand(points);
+        Assert.InRange(band.HighHz, 400, 1_000); // the woofer edge, not the island
+        Assert.Equal(DriverType.Woofer, band.SuggestedType);
+    }
+
+    [Fact]
+    public void EstimateBand_BridgesANarrowInBandNull()
+    {
+        // A wide band (100 Hz - 2 kHz) with a single narrow deep null inside it
+        // (an interference or room dip). The narrow gap is bridged, so the band
+        // stays whole rather than splitting at the notch.
+        var points = new List<SignalPoint>();
+        foreach (double f in EqualizationCurve.LogFrequencyGrid(20, 20_000, 512))
+        {
+            double y;
+            if (f < 100)
+            {
+                y = -24.0 * Math.Log2(100 / f);
+            }
+            else if (f <= 2_000)
+            {
+                y = 0.0;
+            }
+            else
+            {
+                y = -24.0 * Math.Log2(f / 2_000);
+            }
+
+            if (f >= 560 && f <= 640)
+            {
+                y = -20.0; // a narrow deep null well within the passband
+            }
+
+            points.Add(new SignalPoint(f, y));
+        }
+
+        DriverBandEstimate band = CrossoverAutoSetup.EstimateBand(points);
+        Assert.InRange(band.LowHz, 70, 110);
+        Assert.InRange(band.HighHz, 2_000, 2_600);
+    }
+
+    [Fact]
+    public void EstimateBand_UsesCoherenceToRejectAnIncoherentRegion()
+    {
+        // A driver with a real, coherent passband (100-300 Hz) plus a broad,
+        // LOUD but incoherent region up high (2-8 kHz, γ² 0.2 — a rattle, buzz,
+        // or a channel picking up another driver). By magnitude area alone the
+        // loud broad region wins, so without coherence the band is read there.
+        // With coherence it is gated out and the real band is chosen.
+        var mag = new List<SignalPoint>();
+        var coh = new List<double>();
+        foreach (double f in EqualizationCurve.LogFrequencyGrid(20, 20_000, 512))
+        {
+            double y;
+            double g;
+            if (f is >= 100 and <= 300)
+            {
+                (y, g) = (0.0, 0.9);
+            }
+            else if (f is >= 2_000 and <= 8_000)
+            {
+                (y, g) = (3.0, 0.2);
+            }
+            else
+            {
+                (y, g) = (-40.0, 0.2);
+            }
+
+            mag.Add(new SignalPoint(f, y));
+            coh.Add(g);
+        }
+
+        DriverBandEstimate noCoh = CrossoverAutoSetup.EstimateBand(mag);
+        Assert.InRange(noCoh.LowHz, 1_900, 2_100); // the loud incoherent region wins
+
+        DriverBandEstimate withCoh = CrossoverAutoSetup.EstimateBand(mag, coh);
+        Assert.InRange(withCoh.LowHz, 90, 110);
+        Assert.InRange(withCoh.HighHz, 250, 350); // the real coherent band
+
+        // A mismatched-length coherence is ignored, not trusted.
+        DriverBandEstimate mismatched = CrossoverAutoSetup.EstimateBand(mag, new[] { 0.9 });
+        Assert.Equal(noCoh.HighHz, mismatched.HighHz);
+    }
+
+    [Fact]
+    public void EstimateBand_CoherenceDoesNotChopACoherentBand()
+    {
+        // Guard against over-tightening: a clean band whose γ² stays above the
+        // floor everywhere must read identically with and without coherence.
+        var mag = BandCurve(100, 2_000, 0);
+        var coh = Enumerable.Repeat(0.95, mag.Count).ToList();
+
+        DriverBandEstimate noCoh = CrossoverAutoSetup.EstimateBand(mag);
+        DriverBandEstimate withCoh = CrossoverAutoSetup.EstimateBand(mag, coh);
+        Assert.Equal(noCoh.LowHz, withCoh.LowHz);
+        Assert.Equal(noCoh.HighHz, withCoh.HighHz);
     }
 
     [Fact]

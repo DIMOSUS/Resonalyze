@@ -18,6 +18,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         string Name,
         IReadOnlyList<SignalPoint> MagnitudeDb,
         IReadOnlyList<double>? Coherence,
+        IReadOnlyList<SignalPoint>? Distortion,
         Label NameLabel,
         Label BandLabel,
         DarkComboBox TypeComboBox);
@@ -82,7 +83,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     public void Init(
         double sampleRateHz,
         IReadOnlyList<(string Name, Color Accent, IReadOnlyList<SignalPoint> MagnitudeDb,
-            IReadOnlyList<double>? Coherence, DriverBandEstimate Band)> channels,
+            IReadOnlyList<double>? Coherence, IReadOnlyList<SignalPoint>? Distortion,
+            DriverBandEstimate Band)> channels,
         IReadOnlyList<Complex[]>? impulseResponses = null)
     {
         this.sampleRateHz = sampleRateHz;
@@ -105,7 +107,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         for (int i = 0; i < channels.Count; i++)
         {
             (string name, Color accent, IReadOnlyList<SignalPoint> magnitude,
-                IReadOnlyList<double>? coherence, DriverBandEstimate band) = channels[i];
+                IReadOnlyList<double>? coherence, IReadOnlyList<SignalPoint>? distortion,
+                DriverBandEstimate band) = channels[i];
             int top = RowTop + i * RowStep;
 
             var nameLabel = new Label
@@ -148,7 +151,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             Controls.Add(bandLabel);
             Controls.Add(typeComboBox);
             rows.Add(new ChannelRow(
-                name, magnitude, coherence, nameLabel, bandLabel, typeComboBox));
+                name, magnitude, coherence, distortion, nameLabel, bandLabel, typeComboBox));
         }
 
         int extraRows = Math.Max(0, channels.Count - DesignRowCount);
@@ -214,7 +217,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
 
     // One wizard source per channel row, in the row (Init) order.
     private List<AutoSetupSource> CurrentSources() =>
-        rows.Select(row => new AutoSetupSource(row.MagnitudeDb, TypeOf(row), row.Coherence))
+        rows.Select(row => new AutoSetupSource(
+                row.MagnitudeDb, TypeOf(row), row.Coherence, row.Distortion))
             .ToList();
 
     private DriverType TypeOf(ChannelRow row) =>

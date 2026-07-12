@@ -729,13 +729,14 @@ re-verified.
   distortion supplied (matching the user's low-tweeter tune), while woof/mid stays
   250 (woofer breakup 665 Hz, far above). Four synthetic tests pin the knee, the
   breakup edge, the null-distortion fallback, and the below-floor crossing.
-  **App wiring pending (Windows):** the crossover channel source currently carries
-  only the transfer IR + coherence, not the sweep-deconvolution IR. To feed
-  `DistortionDb`, thread the sweep-deconv data (IR + octaves + peak) from the source
-  measurement into `ChannelSideState`, compute the THD curve per channel via
-  `EssDistortion`, and pass it into `AutoSetupSource` in
-  `VirtualCrossoverAutoSetupDialog`. Also a candidate: a soft breakup PENALTY in
-  placement (currently a hard bound) — optional per the user.
+  **App wiring done (compile-only, needs a Windows live check):** the source
+  snapshot carries the sweep deconvolution (IR + octaves + duration + peak), so on
+  source resolve the panel computes the channel's THD curve
+  (`ComputeDistortionCurve` → `EssDistortion`) into `ChannelSideState.DistortionCurve`,
+  and the wizard threads it through the dialog into `AutoSetupSource.DistortionDb`
+  (same path as the coherence plumbing). Verify live: pick a swept measurement, open
+  the crossover wizard, and confirm a capable tweeter now crosses below 1.7 kHz.
+  Optional future: a soft breakup PENALTY in placement (currently a hard bound).
 
 ### EQ Wizard
 

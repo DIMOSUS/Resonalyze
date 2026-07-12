@@ -1112,6 +1112,7 @@ public partial class VirtualCrossoverPanel : UserControl
             snapshot.TransferPeakIndex ?? 0, 0, transferIr.Length - 1);
         targetState.SampleRate = snapshot.SampleRate;
         targetState.TransferCoherence = snapshot.TransferCoherence;
+        targetState.DistortionCurve = ComputeDistortionCurve(snapshot);
         targetSettings.DisplayName = displayName;
         targetSettings.SourceFilePath = sourceFilePath;
         targetSettings.HistoryEntryId = historyEntryId;
@@ -1224,6 +1225,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     snapshot.TransferPeakIndex ?? 0, 0, transferIr.Length - 1);
                 state.SampleRate = snapshot.SampleRate;
                 state.TransferCoherence = snapshot.TransferCoherence;
+                state.DistortionCurve = ComputeDistortionCurve(snapshot);
             }
         }
         catch (Exception exception) when (!showErrors)
@@ -3624,7 +3626,7 @@ public partial class VirtualCrossoverPanel : UserControl
         var wizardOptions = new FrequencyResponseOptions { SmoothingInverseOctaves = 3 };
         var dialogChannels = new List<(string Name, Color Accent,
             IReadOnlyList<SignalPoint> MagnitudeDb, IReadOnlyList<double>? Coherence,
-            DriverBandEstimate Band)>();
+            IReadOnlyList<SignalPoint>? Distortion, DriverBandEstimate Band)>();
         try
         {
             foreach (ChannelRuntime channel in participating)
@@ -3643,13 +3645,18 @@ public partial class VirtualCrossoverPanel : UserControl
                     channel.TransferCoherence is { Length: > 1 } linear
                         ? CoherencePerPoint(linear, curve.Points, channel.SampleRate)
                         : null;
+                // The distortion curve (computed at source resolve) bounds each
+                // driver by its distortion-clean band; null when the source had no
+                // sweep deconvolution.
+                IReadOnlyList<SignalPoint>? distortion = channel.DistortionCurve;
                 OxyColor accent = ChannelColors[channels.IndexOf(channel)];
                 dialogChannels.Add((
                     $"{channel.Control.ChannelName} — {channel.Settings.DisplayName}",
                     Color.FromArgb(accent.R, accent.G, accent.B),
                     curve.Points,
                     coherence,
-                    CrossoverAutoSetup.EstimateBand(curve.Points, coherence)));
+                    distortion,
+                    CrossoverAutoSetup.EstimateBand(curve.Points, coherence, distortion)));
             }
         }
         catch (ArgumentException exception)
@@ -3736,6 +3743,57 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         return values;
+    }
+
+    // Computes the channel's harmonic distortion (THD, dB vs the fundamental) from
+    // a source's sweep deconvolution, for the crossover wizard's distortion-clean
+    // band read. Returns null when the source carried no sweep deconvolution (only a
+    // loopback transfer) or the sweep metadata is missing — the wizard then falls
+    // back to the class-based sensible range.
+    private static IReadOnlyList<SignalPoint>? ComputeDistortionCurve(
+        MeasurementHistorySnapshot snapshot)
+    {
+        if (snapshot.SweepDeconvolutionImpulseResponse is not { Length: > 0 } ir ||
+            snapshot.Octaves <= 0 ||
+            snapshot.SampleRate <= 0 ||
+            !double.IsFinite(snapshot.SweepDurationSeconds) ||
+            snapshot.SweepDurationSeconds <= 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            int sweepSamples = (int)Math.Round(snapshot.SweepDurationSeconds * snapshot.SampleRate);
+            var sweep = EssSweepMetadata.FromExponentialSweep(
+                snapshot.SampleRate, snapshot.Octaves, sweepSamples, snapshot.SweepDeconvolutionPeakIndex);
+
+            double[] real = new double[ir.Length];
+            for (int i = 0; i < ir.Length; i++)
+            {
+                real[i] = ir[i].Real;
+            }
+
+            EssHarmonicDecomposition decomposition = EssHarmonicAnalysis.AnalyzeEssHarmonics(
+                real, sweep, new HarmonicAnalysisOptions(MaxHarmonic: 5));
+            DistortionSpectrum spectrum = EssDistortion.ComputeDistortion(
+                decomposition, calibration: null, new DistortionOptions(MaxHarmonic: 5));
+
+            var points = new List<SignalPoint>(spectrum.Frequencies.Length);
+            for (int i = 0; i < spectrum.Frequencies.Length; i++)
+            {
+                double thd = spectrum.ThdRatio[i];
+                points.Add(new SignalPoint(
+                    spectrum.Frequencies[i],
+                    double.IsFinite(thd) && thd > 0.0 ? 20.0 * Math.Log10(thd) : double.NaN));
+            }
+
+            return points;
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
     }
 
     // ---------------------------------------------------------------- session
@@ -3884,6 +3942,13 @@ public partial class VirtualCrossoverPanel : UserControl
         // driver's usable band; null when the source had none.
         public double[]? TransferCoherence { get; set; }
 
+        // The channel's harmonic distortion (THD, dB vs the fundamental) computed
+        // from the source's sweep deconvolution, when it carried one. Only the
+        // auto-crossover wizard reads it, to bound each driver by its
+        // distortion-clean band (a tweeter's low handover follows its measured
+        // distortion knee); null when the source had no sweep deconvolution.
+        public IReadOnlyList<SignalPoint>? DistortionCurve { get; set; }
+
         public ProcessedChannelCache? ProcessedCache { get; set; }
 
         // The band-limited envelope arrival and gated band level of this
@@ -3913,6 +3978,7 @@ public partial class VirtualCrossoverPanel : UserControl
             TransferPeakIndex = 0;
             SampleRate = 0;
             TransferCoherence = null;
+            DistortionCurve = null;
             ProcessedCache = null;
             ArrivalCache = null;
             SourceRevision++;
@@ -3974,6 +4040,11 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             get => Active.TransferCoherence;
             set => Active.TransferCoherence = value;
+        }
+        public IReadOnlyList<SignalPoint>? DistortionCurve
+        {
+            get => Active.DistortionCurve;
+            set => Active.DistortionCurve = value;
         }
         public int SampleRate
         {

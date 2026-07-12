@@ -719,6 +719,30 @@ re-verified.
   slopes, so the auto-crossover can give the woofer a steep low-pass and a gentle
   high-pass out of the box (the group-delay win above). Turning it off restores
   the matched-shoulders behaviour.
+- [~] **Slope-coupled tweeter resonance floor (user request 2026-07-12, DSP done):**
+  the tweeter's low handover is now bounded by its *resonance* rather than a flat
+  1.7 kHz class floor. Fs is estimated from the tweeter's own measured low roll-off
+  (`EstimateBand.LowHz`) and floored at `TweeterFsFloorHz = 1200` so a spuriously low
+  or already-filtered edge cannot license a dangerous crossover. The high-pass must
+  give `TweeterFsAttenuationTargetDb = 22 dB` of attenuation at Fs — anchored on the
+  Focal TNF datasheet (min 3.2 kHz @ 18 dB/oct, Fs ≈ 1370 ⇒ ~22 dB at Fs) — so the
+  minimum crossover for a slope S is `fc = Fs·2^(22/S)` (`TweeterMinCrossoverHz`).
+  A steeper filter reaches the target closer to Fs and may cross lower; a shallow
+  one is held well above it. This directly answers the user's question ("при более
+  крутых срезах можно ниже?") — yes, and now the auto only crosses low if it also
+  picks a steep enough slope. `SlopeFloor` became the per-candidate inverse
+  (`slope ≥ 22/log2(fc/Fs)`), `JunctionSearchBounds` opens the window down to the
+  steepest slope's floor, and `EnforceTweeterResonanceFloor` is a post-descent
+  backstop that nudges the crossover up one lattice step when the decoupled
+  frequency/slope search (matched-slope mode) lands just under the floor. Real
+  behaviour on synthetic drivers: a tweeter measuring to 1 kHz (Fs floored to 1200)
+  crosses at **1650 Hz / 48 dB-oct** with independent slopes (low + steep, matching
+  the user's manual 1800/steep tune) and **2300 Hz / 24 dB-oct** in matched mode;
+  the Focal-like 2 kHz-band tweeter (Fs ≈ 1600) crosses at 2200/48 or ~3050/24.
+  Removed the flat `TweeterProtectionHz = 2500` const. 502 dsp tests pass; several
+  2-way fixtures that crossed tweeters at 1.2–1.5 kHz (below Fs — the exact danger)
+  were updated to the protected region. *Windows follow-up:* live check in the
+  wizard on a swept measurement.
 - [~] **Distortion-aware crossover bounds — PROTECTIVE ONLY (DSP done, app wiring
   pending):** the band estimate reads each driver's distortion-clean sub-band from
   an optional THD curve on `AutoSetupSource.DistortionDb`

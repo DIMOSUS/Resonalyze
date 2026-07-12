@@ -180,13 +180,26 @@ public static class CrossoverAutoSetup
     public const double MaxCrossoverGroupDelaySeconds = 0.010;
 
     /// <summary>
-    /// The mirror of the low-bass cap, for tweeters: a tweeter crossed below this
-    /// frequency must use at least <see cref="CrossoverSlopeDbPerOctave"/> dB/oct,
-    /// or a shallow filter lets it play too far down and overexcurt. The placement
-    /// heuristics push a capable tweeter's handover low for a better soundstage,
-    /// so the steep-slope floor keeps that safe.
+    /// A tweeter's low handover is bounded by its resonance Fs: the dome's
+    /// excursion for a given SPL rises 12 dB/oct as frequency falls and peaks at
+    /// Fs, so crossing at or below Fs overexcurts it at volume. The high-pass must
+    /// give at least <see cref="TweeterFsAttenuationTargetDb"/> of attenuation at
+    /// Fs, which for a slope S dB/oct means fc &gt;= Fs·2^(target/S) — a steeper
+    /// filter reaches the target closer to Fs and may cross lower, a shallow one
+    /// is held well above it. Fs is estimated from the tweeter's own measured low
+    /// roll-off, floored here so a spuriously low or already-filtered edge cannot
+    /// license a dangerous crossover.
     /// </summary>
-    public const double TweeterProtectionHz = 2_500;
+    public const double TweeterFsFloorHz = 1_200.0;
+
+    /// <summary>
+    /// The attenuation a tweeter's high-pass must deliver at the estimated Fs.
+    /// Anchored on the Focal TNF datasheet (recommended minimum 3.2 kHz @
+    /// 18 dB/oct, Fs ~= 1370 Hz ⇒ ~22 dB at Fs), and used by
+    /// <see cref="TweeterMinCrossoverHz"/> to turn a slope into a minimum
+    /// crossover.
+    /// </summary>
+    public const double TweeterFsAttenuationTargetDb = 22.0;
 
     // A driver is "clean" where its harmonic distortion stays below this ceiling.
     // 3 % (−30 dB) is the usual audibility-adjacent line for loudspeaker THD; the
@@ -271,6 +284,13 @@ public static class CrossoverAutoSetup
 
     private static double LatticeStep(double frequencyHz) =>
         frequencyHz < 100 ? 5 : frequencyHz < 1_000 ? 10 : 50;
+
+    // The lowest lattice frequency at or above the given frequency.
+    private static double RoundUpToLattice(double frequencyHz)
+    {
+        double step = LatticeStep(frequencyHz);
+        return Math.Max(20, Math.Ceiling(frequencyHz / step) * step);
+    }
 
     // Every lattice frequency inside [low, high]; a window narrower than one
     // lattice step collapses to its clamped, snapped midpoint so degenerate
@@ -584,6 +604,29 @@ public static class CrossoverAutoSetup
         DriverType lower,
         DriverType upper) =>
         (SensibleRange(upper).LowHz, SensibleRange(lower).HighHz);
+
+    /// <summary>
+    /// The tweeter resonance the crossover bounds use, estimated from its measured
+    /// usable-band low edge (where the dome rolls off) and floored at
+    /// <see cref="TweeterFsFloorHz"/>. An already-filtered or narrow measurement
+    /// only raises this edge, which is the safe direction; the floor backstops a
+    /// spuriously low one.
+    /// </summary>
+    public static double TweeterResonanceHz(double measuredBandLowHz) =>
+        Math.Max(
+            TweeterFsFloorHz,
+            double.IsFinite(measuredBandLowHz) ? measuredBandLowHz : TweeterFsFloorHz);
+
+    /// <summary>
+    /// The lowest frequency a tweeter high-pass of <paramref name="highPassSlopeDbPerOctave"/>
+    /// may cross at, given an estimated resonance <paramref name="resonanceHz"/>:
+    /// the filter must attenuate the dome's excursion by
+    /// <see cref="TweeterFsAttenuationTargetDb"/> at Fs, so fc = Fs·2^(target/slope).
+    /// A steeper slope reaches the target closer to Fs and may cross lower.
+    /// </summary>
+    public static double TweeterMinCrossoverHz(double resonanceHz, int highPassSlopeDbPerOctave) =>
+        resonanceHz * Math.Pow(
+            2.0, TweeterFsAttenuationTargetDb / highPassSlopeDbPerOctave);
 
     /// <summary>
     /// Builds the crossover proposal for the given channels, honouring the wizard
@@ -1499,6 +1542,36 @@ public static class CrossoverAutoSetup
 
                 previous = current;
             }
+
+            EnforceTweeterResonanceFloor();
+        }
+
+        // Safety backstop after the descent: the decoupled frequency/slope search
+        // (matched-slope mode in particular, where the frequency and slope passes
+        // alternate) can leave the tweeter's high-pass a single lattice step below
+        // its resonance floor for the slope it ended on. Nudge the crossover up to
+        // the lowest lattice point that protects Fs at that slope, so the guarantee
+        // holds exactly regardless of the descent path. Raising the top junction
+        // never collides with a lower one.
+        private void EnforceTweeterResonanceFloor()
+        {
+            int last = channelCount - 1;
+            if (types[last] != DriverType.Tweeter)
+            {
+                return;
+            }
+
+            int j = last - 1;
+            double resonanceHz = TweeterResonanceHz(bands[last].LowHz);
+            double minFc = TweeterMinCrossoverHz(resonanceHz, upperSlope[j]);
+            if (crossoverHz[j] >= minFc)
+            {
+                return;
+            }
+
+            crossoverHz[j] = Math.Max(
+                crossoverHz[j],
+                Math.Min(options.MaxCrossoverHz, RoundUpToLattice(minFc)));
         }
 
         /// <summary>
@@ -1733,6 +1806,16 @@ public static class CrossoverAutoSetup
             return allowed.Count > 0 ? allowed.Min() : PracticalSlopes(family).Min();
         }
 
+        // The steepest practical slope any admitted family offers, ignoring the
+        // per-frequency group-delay budget (which the per-candidate AllowedSlopes
+        // still enforces). Sets how far down the tweeter's low search window may
+        // open, since only the steepest slope can protect Fs at the lowest crossover.
+        private int SteepestPracticalSlope() =>
+            options.Families
+                .SelectMany(PracticalSlopes)
+                .DefaultIfEmpty(MinPracticalSlopeDbPerOctave)
+                .Max();
+
         // Memoized peak group delay of one crossover filter. Group delay is the
         // same for a low-pass and a high-pass, so the side is irrelevant here; the
         // fc is rounded to the nearest Hz for the key (the lattice is coarser).
@@ -1751,14 +1834,34 @@ public static class CrossoverAutoSetup
             return delay;
         }
 
-        // The lowest slope a driver of this class may take at a handover of this
-        // frequency: a tweeter crossed below TweeterProtectionHz is held to at
-        // least 24 dB/oct so it does not play too far down; every other driver
-        // keeps the practical floor.
-        private static int SlopeFloor(DriverType sideType, double fcHz) =>
-            sideType == DriverType.Tweeter && fcHz < TweeterProtectionHz
-                ? CrossoverSlopeDbPerOctave
-                : MinPracticalSlopeDbPerOctave;
+        // The gentlest slope the driver at this index may take at a handover of
+        // this frequency. Every driver keeps the practical floor; a tweeter is
+        // additionally held steep enough to protect its resonance — its high-pass
+        // must give the target attenuation at Fs, so fc >= Fs·2^(target/slope)
+        // rearranges to slope >= target / log2(fc / Fs). Fs is estimated from the
+        // tweeter's own low roll-off (floored). At or below Fs no real filter
+        // qualifies, so an impossibly steep floor pushes the search off that
+        // frequency; a shallow high-pass therefore forbids a low crossover and a
+        // steep one permits it. The steepest actually available slope is admitted
+        // by the search window (JunctionSearchBounds), so this never strands the
+        // seed above every option.
+        private int SlopeFloor(int driverIndex, double fcHz)
+        {
+            if (types[driverIndex] != DriverType.Tweeter)
+            {
+                return MinPracticalSlopeDbPerOctave;
+            }
+
+            double resonanceHz = TweeterResonanceHz(bands[driverIndex].LowHz);
+            if (fcHz <= resonanceHz)
+            {
+                return int.MaxValue;
+            }
+
+            int needed = (int)Math.Ceiling(
+                TweeterFsAttenuationTargetDb / Math.Log2(fcHz / resonanceHz));
+            return Math.Max(MinPracticalSlopeDbPerOctave, needed);
+        }
 
         // Cut-only seed: bring every band down to the quietest, measured over the
         // band it will actually cover with the seeded crossovers.
@@ -1800,14 +1903,25 @@ public static class CrossoverAutoSetup
 
             (double typeLow, double typeHigh) = JunctionTypeBounds(types[j], types[j + 1]);
 
-            // Distortion PROTECTS the tweeter's low handover — it can only RAISE the
-            // floor, never lower it. The measured knee is taken at a moderate level;
-            // a tweeter's real low limit is set by its resonance/excursion (crossing
-            // at or below Fs destroys it at volume), which a moderate-SPL THD read
-            // understates. So a tweeter that already measures dirty low is held
-            // higher than the class floor, but a clean-measuring one is NOT allowed
-            // below it — the low-for-soundstage handover stays a deliberate manual
-            // choice, not something the auto infers from a quiet distortion curve.
+            // The tweeter's low handover is bounded by its resonance rather than a
+            // flat class floor: the window opens down only to where the STEEPEST
+            // available slope still protects Fs (fc = Fs·2^(target/steepest)), and
+            // the per-candidate SlopeFloor then holds each gentler slope
+            // proportionally higher. Fs is estimated from the tweeter's own low
+            // roll-off (floored). A steep filter may therefore cross lower for a
+            // better stage while a shallow one is kept well above Fs.
+            if (types[j + 1] == DriverType.Tweeter)
+            {
+                double resonanceHz = TweeterResonanceHz(bands[j + 1].LowHz);
+                typeLow = TweeterMinCrossoverHz(resonanceHz, SteepestPracticalSlope());
+            }
+
+            // Distortion PROTECTS the tweeter's low handover further — it can only
+            // RAISE the floor, never lower it. The measured knee is taken at a
+            // moderate level, which understates the sustained-SPL excursion limit,
+            // so a tweeter that already measures dirty low is held higher still; a
+            // clean-measuring one is never crossed lower on the strength of a quiet
+            // distortion curve.
             if (types[j + 1] == DriverType.Tweeter &&
                 !double.IsNaN(bands[j + 1].DistortionLowHz))
             {
@@ -1899,7 +2013,7 @@ public static class CrossoverAutoSetup
                 // Channel i sits on this junction; its own class sets the steep
                 // floor (a tweeter crossed low), while the junction frequency and
                 // family set the rest.
-                int floor = SlopeFloor(types[i], crossoverHz[junction]);
+                int floor = SlopeFloor(i, crossoverHz[junction]);
                 List<int> slopes = AllowedSlopes(junctionFamily[junction], crossoverHz[junction])
                     .Where(slope => slope >= floor)
                     .ToList();
@@ -1972,8 +2086,8 @@ public static class CrossoverAutoSetup
                     // Steep-slope floors for this handover's two sides: a tweeter
                     // crossed low must stay steep (its own class), the lower
                     // driver keeps the practical floor.
-                    int lowerFloor = SlopeFloor(types[j], fc);
-                    int upperFloor = SlopeFloor(types[j + 1], fc);
+                    int lowerFloor = SlopeFloor(j, fc);
+                    int upperFloor = SlopeFloor(j + 1, fc);
                     foreach (CrossoverFilterFamily family in options.Families)
                     {
                         IReadOnlyList<int> slopes = AllowedSlopes(family, fc);

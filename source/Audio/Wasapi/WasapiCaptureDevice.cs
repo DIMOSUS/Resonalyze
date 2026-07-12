@@ -8,6 +8,8 @@ public sealed class WasapiCaptureDevice : IAudioCaptureDevice
     private readonly MMDeviceEnumerator enumerator;
     private readonly MMDevice endpoint;
     private readonly WasapiCapture capture;
+    private readonly string endpointId;
+    private readonly string friendlyName;
     private TaskCompletionSource<bool>? stopped;
     private bool disposed;
 
@@ -21,6 +23,8 @@ public sealed class WasapiCaptureDevice : IAudioCaptureDevice
         {
             throw new ArgumentException("The endpoint is not a capture device.", nameof(endpointId));
         }
+        this.endpointId = endpoint.ID;
+        friendlyName = endpoint.FriendlyName;
 
         capture = new WasapiCapture(endpoint, useEventSync: true, bufferMilliseconds);
         capture.DataAvailable += HandleDataAvailable;
@@ -33,8 +37,8 @@ public sealed class WasapiCaptureDevice : IAudioCaptureDevice
 
     public WaveFormat CaptureFormat { get; }
     public int ChannelCount => CaptureFormat.Channels;
-    public string EndpointId => endpoint.ID;
-    public string FriendlyName => endpoint.FriendlyName;
+    public string EndpointId => endpointId;
+    public string FriendlyName => friendlyName;
     public long CapturePackets { get; private set; }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -102,7 +106,9 @@ public sealed class WasapiCaptureDevice : IAudioCaptureDevice
             capture.DataAvailable -= HandleDataAvailable;
             capture.RecordingStopped -= HandleRecordingStopped;
             capture.Dispose();
-            endpoint.Dispose();
+            // MMDevice.Dispose forces ReleaseComObject. A later lookup of this
+            // endpoint can receive the disconnected cached RCW and fail with
+            // E_NOINTERFACE, so leave the lightweight endpoint wrapper to CLR.
             enumerator.Dispose();
         }
     }

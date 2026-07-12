@@ -18,26 +18,28 @@ public sealed class WindowsAudioEndpointService : IDisposable
             direction,
             DeviceState.Active | DeviceState.Unplugged))
         {
-            using (endpoint)
+            // Do not explicitly dispose MMDevice wrappers here. Core Audio can
+            // return the same COM identity from a later GetDevice call; forcing
+            // ReleaseComObject through MMDevice.Dispose can leave the cached RCW
+            // disconnected and WasapiOut then fails to query IMMDevice with
+            // E_NOINTERFACE. The short-lived wrappers are released by the CLR.
+            NAudio.Wave.WaveFormat mixFormat;
+            try
             {
-                NAudio.Wave.WaveFormat mixFormat;
-                try
-                {
-                    mixFormat = endpoint.AudioClient.MixFormat;
-                }
-                catch
-                {
-                    mixFormat = new NAudio.Wave.WaveFormat(44_100, 16, 1);
-                }
-                endpoints.Add(new AudioEndpointInfo(
-                    endpoint.ID,
-                    endpoint.FriendlyName,
-                    direction,
-                    endpoint.State,
-                    mixFormat,
-                    endpoint.State == DeviceState.Active ? mixFormat.Channels : 0,
-                    endpoint.ID == defaultId));
+                mixFormat = endpoint.AudioClient.MixFormat;
             }
+            catch
+            {
+                mixFormat = new NAudio.Wave.WaveFormat(44_100, 16, 1);
+            }
+            endpoints.Add(new AudioEndpointInfo(
+                endpoint.ID,
+                endpoint.FriendlyName,
+                direction,
+                endpoint.State,
+                mixFormat,
+                endpoint.State == DeviceState.Active ? mixFormat.Channels : 0,
+                endpoint.ID == defaultId));
         }
         return endpoints;
     }
@@ -46,7 +48,7 @@ public sealed class WindowsAudioEndpointService : IDisposable
     {
         try
         {
-            using MMDevice endpoint = enumerator.GetDefaultAudioEndpoint(
+            MMDevice endpoint = enumerator.GetDefaultAudioEndpoint(
                 direction,
                 Role.Multimedia);
             return endpoint.ID;

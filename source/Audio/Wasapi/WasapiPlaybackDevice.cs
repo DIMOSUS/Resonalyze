@@ -8,6 +8,8 @@ public sealed class WasapiPlaybackDevice : IAudioPlaybackDevice
     private readonly MMDeviceEnumerator enumerator;
     private readonly MMDevice endpoint;
     private readonly WasapiOut output;
+    private readonly string endpointId;
+    private readonly string friendlyName;
     private TaskCompletionSource<bool>? playbackEnded;
     private IWaveProvider? initializedSource;
     private bool disposed;
@@ -22,6 +24,8 @@ public sealed class WasapiPlaybackDevice : IAudioPlaybackDevice
         {
             throw new ArgumentException("The endpoint is not a render device.", nameof(endpointId));
         }
+        this.endpointId = endpoint.ID;
+        friendlyName = endpoint.FriendlyName;
         output = new WasapiOut(
             endpoint,
             AudioClientShareMode.Shared,
@@ -32,8 +36,8 @@ public sealed class WasapiPlaybackDevice : IAudioPlaybackDevice
     }
 
     public WaveFormat PlaybackFormat { get; private set; }
-    public string EndpointId => endpoint.ID;
-    public string FriendlyName => endpoint.FriendlyName;
+    public string EndpointId => endpointId;
+    public string FriendlyName => friendlyName;
 
     public Task StartAsync(IWaveProvider source, CancellationToken cancellationToken)
     {
@@ -104,7 +108,8 @@ public sealed class WasapiPlaybackDevice : IAudioPlaybackDevice
         disposed = true;
         output.PlaybackStopped -= HandlePlaybackStopped;
         output.Dispose();
-        endpoint.Dispose();
+        // See WasapiCaptureDevice: explicitly releasing this MMDevice can poison
+        // a later RCW for the same endpoint identity.
         enumerator.Dispose();
     }
 }

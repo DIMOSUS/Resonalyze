@@ -565,6 +565,8 @@ namespace Resonalyze
             private readonly WasapiCaptureDevice captureDevice;
             private readonly WasapiPlaybackDevice playbackDevice;
             private readonly PcmCaptureSession captureSession;
+            private bool started;
+            private int runNumber;
 
             public WasapiSweepCapture(ExpSweepMeasurement owner, ExponentialSineSweep sweep)
             {
@@ -612,42 +614,76 @@ namespace Resonalyze
             public async Task<CapturedSweepSamples> CaptureRunAsync(
                 CancellationToken cancellationToken)
             {
-                await captureSession.StartAsync(cancellationToken).ConfigureAwait(false);
-                int recordingStart = captureSession.ReadSamples;
-                RawSourceWaveStream stream = sweep.GetStream(owner.PlaybackChannel);
-                stream.Position = 0;
-                await playbackDevice.StartAsync(stream, cancellationToken).ConfigureAwait(false);
-                await playbackDevice.WaitForPlaybackEndAsync(cancellationToken).ConfigureAwait(false);
+                int currentRun = ++runNumber;
+                string stage = "starting capture";
+                try
+                {
+                    if (!started)
+                    {
+                        await captureSession.StartAsync(cancellationToken).ConfigureAwait(false);
+                        started = true;
+                    }
+                    else
+                    {
+                        // WasapiCapture is not reliably restartable after StopRecording;
+                        // some drivers invalidate its MMDevice RCW. Keep capture alive
+                        // for the complete average and reset only the sample storage.
+                        captureSession.Reset();
+                    }
+                    int recordingStart = captureSession.ReadSamples;
+                    RawSourceWaveStream stream = sweep.GetStream(owner.PlaybackChannel);
+                    stream.Position = 0;
+                    stage = "starting playback";
+                    await playbackDevice.StartAsync(stream, cancellationToken).ConfigureAwait(false);
+                    stage = "waiting for playback completion";
+                    await playbackDevice.WaitForPlaybackEndAsync(cancellationToken).ConfigureAwait(false);
 
-                int requiredSamples = recordingStart + sweep.SweepSamples + owner.SampleRate;
-                await captureSession.WaitForSamplesAsync(requiredSamples, cancellationToken)
-                    .ConfigureAwait(false);
-                await captureSession.StopAsync().ConfigureAwait(false);
-                float[][] samples = captureSession.GetSamplesSnapshot();
-                owner.LastAudioSessionDiagnostics = new AudioSessionDiagnostics(
-                    nameof(AudioBackend.WasapiShared),
-                    captureDevice.EndpointId,
-                    playbackDevice.EndpointId,
-                    captureDevice.CaptureFormat,
-                    playbackDevice.PlaybackFormat,
-                    owner.WasapiBufferMilliseconds,
-                    captureDevice.CapturePackets,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0);
-                return new CapturedSweepSamples(
-                    samples,
-                    owner.WaveInputChannelOffset,
-                    owner.WaveLoopbackInputChannelOffset,
-                    ValidateSharedDeviceStereo: true);
+                    stage = "waiting for the captured tail";
+                    int requiredSamples = recordingStart + sweep.SweepSamples + owner.SampleRate;
+                    await captureSession.WaitForSamplesAsync(requiredSamples, cancellationToken)
+                        .ConfigureAwait(false);
+                    float[][] samples = captureSession.GetSamplesSnapshot();
+                    owner.LastAudioSessionDiagnostics = new AudioSessionDiagnostics(
+                        nameof(AudioBackend.WasapiShared),
+                        captureDevice.EndpointId,
+                        playbackDevice.EndpointId,
+                        captureDevice.CaptureFormat,
+                        playbackDevice.PlaybackFormat,
+                        owner.WasapiBufferMilliseconds,
+                        captureDevice.CapturePackets,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0);
+                    return new CapturedSweepSamples(
+                        samples,
+                        owner.WaveInputChannelOffset,
+                        owner.WaveLoopbackInputChannelOffset,
+                        ValidateSharedDeviceStereo: true);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    throw new InvalidOperationException(
+                        $"WASAPI Shared sweep run {currentRun} failed while {stage}.",
+                        exception);
+                }
             }
 
             public async ValueTask DisposeAsync()
             {
-                await playbackDevice.DisposeAsync().ConfigureAwait(false);
-                await captureSession.DisposeAsync().ConfigureAwait(false);
+                try
+                {
+                    await playbackDevice.DisposeAsync().ConfigureAwait(false);
+                }
+                finally
+                {
+                    if (started)
+                    {
+                        await captureSession.StopAsync().ConfigureAwait(false);
+                    }
+                    await captureSession.DisposeAsync().ConfigureAwait(false);
+                }
             }
         }
 

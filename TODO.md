@@ -515,6 +515,19 @@ re-verified.
   Families still per junction. Real-data winner now
   LR12@45 / (mb LR12, mid LR24)@250 / LR24@3950 — sub+midbass 12, mid+tweeter
   24, each driver internally matched. Full ranked ~3.2 s.
+- [ ] **Virtual DSP load lock (2026-07-12, needs live Windows check):** opening
+  the panel spent 5-10 s re-resolving each channel's stored transfer IR while
+  the panel sat enabled showing the "no sources" hint, so the restored session
+  looked lost until it snapped in. `ApplyProjectAsync` now wraps the bind in
+  `SetProjectLoading(true/false)`: the whole control tree is disabled (a load
+  rebuilds the channel blocks, so the parent must carry the disable), the main
+  plot shows "Loading the previous session…", the metric shows "Loading
+  session…", and the cursor is a wait cursor; the final RedrawAll restores the
+  real plot/metric before the panel re-enables. Covers both the startup load
+  and a session import (both route through ApplyProjectAsync). Verify on
+  Windows: the lock appears immediately, the plot note is legible (PlotView is
+  custom-painted so it should not grey out), and controls re-enable exactly
+  when the curves land.
   **Target-curve gains (user request 2026-07-12):** gains no longer flatten
   the sum — they follow a car target curve. (1) midrange & tweeter levelled to
   each other (louder attenuated); (2) the subwoofer anchors the bass at a

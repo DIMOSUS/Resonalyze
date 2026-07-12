@@ -236,9 +236,48 @@ public partial class VirtualCrossoverPanel : UserControl
             MessageBoxIcon.Information);
     }
 
+    private const string LoadingHint = "Loading the previous session…";
+
+    // Locks the panel while a project applies. Re-resolving every channel's
+    // source reads and reprocesses the stored transfer IRs, which takes several
+    // seconds; until this the panel sat enabled showing the "no sources" hint,
+    // so the last session looked lost right up until it snapped into place. The
+    // whole control tree is disabled (a load rebuilds the channel blocks, so
+    // covering not-yet-created controls means disabling the parent), the plot
+    // shows a loading note, and the cursor turns to a wait cursor.
+    private void SetProjectLoading(bool loading)
+    {
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        UseWaitCursor = loading;
+        Enabled = !loading;
+        if (loading)
+        {
+            hintAnnotation.Text = LoadingHint;
+            mainPlotView.InvalidatePlot(true);
+            MetricChanged?.Invoke("Loading\r\nsession…", string.Empty);
+        }
+    }
+
     // Binds a project (the internal autosave or an imported session) to the UI:
     // controls, view flags, and freshly re-resolved sources.
     private async Task ApplyProjectAsync(VirtualCrossoverProjectFile newProject)
+    {
+        SetProjectLoading(true);
+        try
+        {
+            await BindProjectAsync(newProject);
+        }
+        finally
+        {
+            SetProjectLoading(false);
+        }
+    }
+
+    private async Task BindProjectAsync(VirtualCrossoverProjectFile newProject)
     {
         project = newProject;
         displayRevision++;

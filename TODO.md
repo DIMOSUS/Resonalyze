@@ -439,15 +439,21 @@ re-verified.
   applied at each product frequency n·f (so a C(n·f)−C(f) difference is honoured);
   a denominator floor masks a collapsing |H1| to NaN instead of a runaway percent.
   The loopback transfer stays the primary display curve. Validated by an
-  end-to-end polynomial ESS test (below); real captures can't validate this (the
-  test-data submodule stores only transfer IRs, which carry no harmonic packets).
+  end-to-end polynomial ESS test AND on the real drivers in the test-data submodule
+  (each measurement stores `sweepDeconvolutionRealSamples`, which carries the
+  harmonic packets — not just the transfer IR): l woof/mid/twr give sensible HD2/HD3
+  distortion figures (−28…−55 dB) and the sub shows HD2/HD3 in its passband with the
+  out-of-band region correctly masked by the denominator floor.
 - [x] **Overlap check between harmonic packets** — done (2026-07-12). Each
   harmonic packet's residual energy at its window edges is compared with its peak
-  (`HarmonicPacketValidity`): below −40 dB it is reliable, between −40 and −25 dB
-  it is marginal (warned), above −25 dB it overlaps a neighbour and the order is
-  dropped from the curves AND excluded from THD rather than drawn confidently.
-  Warnings ride on `DistortionSpectrum.Warnings`. Tests pin a contained system
-  (all reliable, no warnings) and a slow-decay packet (flagged, masked, THD
+  (`HarmonicPacketValidity`): below −40 dB it is reliable, between −40 and −12 dB it
+  is marginal (drawn with a warning), and only above −12 dB — where a neighbour
+  genuinely swamps the packet — is the order dropped from the curves AND excluded
+  from THD. The −12 dB drop margin was set on the real drivers: a strict −25 dB
+  threshold dropped HD3/HD4/HD5 on every driver (a 12-oct/3-s/44.1-kHz sweep does
+  not fully isolate the high harmonics), so it was relaxed per the user's choice to
+  keep the caveated curves. Warnings ride on `DistortionSpectrum.Warnings`. Tests
+  pin a contained system (all reliable) and a boundary-swamping packet (dropped, THD
   excludes it). *Windows follow-up:* the drop already flows through to the app (an
   overlapping order returns all-NaN, so it is not plotted), but surfacing the
   warning TEXT next to the plot is a UI hookup that needs a live check.

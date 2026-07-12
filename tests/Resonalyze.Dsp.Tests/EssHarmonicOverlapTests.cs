@@ -47,13 +47,13 @@ public sealed class EssHarmonicOverlapTests
         // A well-behaved HD3 delta stays reliable.
         impulse[PeakIndex - EssHarmonicAnalysis.HarmonicOffsetSamples(sweep, 3)] = 0.01;
 
-        // HD2: a slow decay that has NOT died out by the (later) window edge, so it
-        // leaks toward the linear packet — the overlap the check must catch.
+        // HD2: content that persists at full level all the way to the (later)
+        // window edge, so it clearly swamps the boundary toward the linear packet —
+        // well above the drop margin the check must catch.
         int peak2 = h2.PeakSample;
-        double tau = h2.EndSample - peak2;
         for (int i = peak2; i <= h2.EndSample && i < ImpulseLength; i++)
         {
-            impulse[i] = 0.3 * Math.Exp(-(i - peak2) / tau) * Math.Cos(0.3 * (i - peak2));
+            impulse[i] = 0.3 * Math.Cos(0.3 * (i - peak2));
         }
 
         EssHarmonicDecomposition decomposition = EssHarmonicAnalysis.AnalyzeEssHarmonics(

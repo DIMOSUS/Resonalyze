@@ -212,10 +212,14 @@ public static class EssHarmonicAnalysis
 {
     // Overlap classification, per Farina-style packet isolation. Edge energy is
     // read relative to the packet peak: below the reliable margin the packet is
-    // well isolated; above the invalid margin its neighbour is polluted and the
-    // order cannot be trusted; between them it is drawn with a warning.
+    // well isolated; between the two margins it is drawn with a marginal-isolation
+    // warning (the common case on real captures, where a practical sweep does not
+    // fully isolate the high harmonics); only above the invalid margin — where a
+    // neighbour genuinely swamps the packet — is the order dropped and left out of
+    // THD. The drop margin is deliberately lenient so real HD3/HD4 curves survive
+    // (caveated) rather than vanishing.
     private const double ReliableEdgeDb = -40.0;
-    private const double InvalidEdgeDb = -25.0;
+    private const double InvalidEdgeDb = -12.0;
 
     // Fraction of the window, at each boundary, treated as the "edge" region whose
     // residual energy signals overlap with the adjacent packet.

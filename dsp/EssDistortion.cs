@@ -248,12 +248,37 @@ public static class EssDistortion
     }
 
     /// <summary>
+    /// The distortion display curves together with the diagnostics a display layer
+    /// needs: the overlap/isolation warnings (a dropped or marginal order must be
+    /// explained, not silently missing) and the per-order packet validity. Without
+    /// this the warnings computed during decomposition never reach the UI.
+    /// </summary>
+    public sealed record DistortionCurveResult(
+        IReadOnlyList<AnalysisCurve> Curves,
+        IReadOnlyList<string> Warnings,
+        IReadOnlyList<HarmonicPacketValidity> PacketValidity,
+        bool IncludesNoise);
+
+    /// <summary>
     /// Builds the distortion display curves (HD2/HD3/HD4 and THD, in dB relative to
-    /// H1) for the requested set. Runs the full pipeline: decompose, compute the
-    /// relative ratios, convert to dB and smooth. The primary response is NOT
-    /// produced here — it stays the loopback transfer curve.
+    /// H1) for the requested set, keeping curves-only compatibility. Prefer
+    /// <see cref="ComputeDistortionCurvesResult"/> to also receive the isolation
+    /// warnings that explain a dropped order.
     /// </summary>
     public static IReadOnlyList<AnalysisCurve> ComputeDistortionCurves(
+        ReadOnlySpan<double> deconvolvedImpulse,
+        EssSweepMetadata sweep,
+        DistortionOptions options,
+        CalibrationFile? calibration,
+        SpectrumCurves curves) =>
+        ComputeDistortionCurvesResult(deconvolvedImpulse, sweep, options, calibration, curves).Curves;
+
+    /// <summary>
+    /// Runs the full distortion pipeline and returns the curves plus the isolation
+    /// warnings and packet validity. The primary response is NOT produced here — it
+    /// stays the loopback transfer curve.
+    /// </summary>
+    public static DistortionCurveResult ComputeDistortionCurvesResult(
         ReadOnlySpan<double> deconvolvedImpulse,
         EssSweepMetadata sweep,
         DistortionOptions options,
@@ -266,7 +291,8 @@ public static class EssDistortion
         var result = new List<AnalysisCurve>();
         if ((curves & SpectrumCurves.Harmonics) == 0 || deconvolvedImpulse.Length == 0)
         {
-            return result;
+            return new DistortionCurveResult(
+                result, Array.Empty<string>(), Array.Empty<HarmonicPacketValidity>(), false);
         }
 
         EssHarmonicDecomposition decomposition = EssHarmonicAnalysis.AnalyzeEssHarmonics(
@@ -280,9 +306,18 @@ public static class EssDistortion
             : null;
         DistortionSpectrum spectrum = ComputeDistortion(decomposition, calibration, options, noise);
 
+        // Orders whose packet overlaps a neighbour are dropped entirely — no curve,
+        // no THD contribution — and explained by a warning, rather than left as an
+        // all-NaN line in the legend.
+        var droppedOrders = new HashSet<int>(
+            decomposition.Validity.Packets
+                .Where(packet => !packet.IsReliable)
+                .Select(packet => packet.Order));
+
         void AddHarmonic(int order, SpectrumCurves flag, AnalysisCurveKind kind, string name)
         {
             if ((curves & flag) == 0 ||
+                droppedOrders.Contains(order) ||
                 !spectrum.HarmonicDistortionRatio.TryGetValue(order, out double[]? ratio))
             {
                 return;
@@ -298,19 +333,20 @@ public static class EssDistortion
         AddHarmonic(3, SpectrumCurves.ThirdHarmonic, AnalysisCurveKind.ThirdHarmonic, "HD3");
         AddHarmonic(4, SpectrumCurves.FourthHarmonic, AnalysisCurveKind.FourthHarmonic, "HD4");
 
+        bool includesNoise = spectrum.ThdPlusNoiseRatio != null;
         if ((curves & SpectrumCurves.ThdPlusNoise) != 0)
         {
             // The curve is THD+N only when a confident noise estimate was folded in;
             // otherwise it is honestly labelled THD.
-            bool withNoise = spectrum.ThdPlusNoiseRatio != null;
-            double[] ratio = withNoise ? spectrum.ThdPlusNoiseRatio! : spectrum.ThdRatio;
+            double[] ratio = includesNoise ? spectrum.ThdPlusNoiseRatio! : spectrum.ThdRatio;
             result.Add(new AnalysisCurve(
-                withNoise ? "THD+N" : "THD",
+                includesNoise ? "THD+N" : "THD",
                 BuildDbCurve(spectrum.Frequencies, ratio, options.SmoothingOctaves),
                 AnalysisCurveKind.ThdPlusNoise));
         }
 
-        return result;
+        return new DistortionCurveResult(
+            result, spectrum.Warnings, decomposition.Validity.Packets, includesNoise);
     }
 
     // Samples one packet's spectrum onto the excitation grid: each product-frequency
@@ -416,6 +452,16 @@ public static class EssDistortion
         int radius = (int)Math.Ceiling(3.0 * sigmaIndices);
         for (int i = 0; i < count; i++)
         {
+            // A masked point (harmonic above Nyquist/n, denominator rejected, or an
+            // overlapping order) stays a gap: smoothing must not fill it from
+            // neighbouring valid bins, or the plot would show finite distortion
+            // where the harmonic is unobservable.
+            if (!double.IsFinite(db[i]))
+            {
+                points.Add(new SignalPoint(frequencies[i], double.NaN));
+                continue;
+            }
+
             double weightSum = 0.0;
             double accumulator = 0.0;
             int from = Math.Max(0, i - radius);

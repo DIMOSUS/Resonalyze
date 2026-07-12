@@ -68,6 +68,14 @@ internal sealed class MeasurementPlotContext
     // Twice the primary's fractional-octave width: harmonic curves are noisier.
     private const double HarmonicSmoothingWidthFactor = 2.0;
 
+    /// <summary>
+    /// Isolation warnings from the last frequency-response build: an order dropped
+    /// or drawn caveated because its harmonic packet overlaps a neighbour. Exposed
+    /// so the plot layer can explain a missing/marginal HD curve to the user
+    /// (increase the sweep duration) rather than leaving it silently absent.
+    /// </summary>
+    public IReadOnlyList<string> DistortionWarnings { get; private set; } = Array.Empty<string>();
+
     public IReadOnlyList<AnalysisCurve> CreateFrequencyResponseCurves(
         FrequencyResponseOptions options,
         CalibrationFile? calibration,
@@ -89,6 +97,7 @@ internal sealed class MeasurementPlotContext
         CalibrationFile? calibration,
         SpectrumCurves curves)
     {
+        DistortionWarnings = Array.Empty<string>();
         if ((curves & SpectrumCurves.Harmonics) == 0 ||
             expSweepMeasurement.SweepDeconvolution is not { } deconvolution ||
             expSweepMeasurement.Sweep is not { SweepSamples: > 0 } sweep ||
@@ -110,17 +119,24 @@ internal sealed class MeasurementPlotContext
             real[i] = impulse[i].Real;
         }
 
+        // Noise / THD+N is intentionally OFF: the current noise term's absolute
+        // level is tied to the linear-packet window bandwidth (set by the sweep
+        // geometry), so the curve stays the well-defined THD until the noise
+        // estimate is reworked as a bandwidth-normalized PSD.
         var distortionOptions = new DistortionOptions(
             SmoothingOctaves: options.SmoothingInverseOctaves > 0
                 ? HarmonicSmoothingWidthFactor / options.SmoothingInverseOctaves
                 : 0.0,
-            IncludeNoise: true);
+            IncludeNoise: false);
 
-        return EssDistortion.ComputeDistortionCurves(
-            real,
-            sweepMetadata,
-            distortionOptions,
-            options.UseCalibration ? calibration : null,
-            curves & SpectrumCurves.Harmonics);
+        EssDistortion.DistortionCurveResult distortion =
+            EssDistortion.ComputeDistortionCurvesResult(
+                real,
+                sweepMetadata,
+                distortionOptions,
+                options.UseCalibration ? calibration : null,
+                curves & SpectrumCurves.Harmonics);
+        DistortionWarnings = distortion.Warnings;
+        return distortion.Curves;
     }
 }

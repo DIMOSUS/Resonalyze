@@ -131,6 +131,32 @@ public sealed class EssDistortionTests
         }
     }
 
+    [Fact]
+    public void ComputeDistortionCurves_SmoothingDoesNotFillMaskedRegions()
+    {
+        // HD2 is only observable up to Nyquist/2; above that the product passes
+        // Nyquist and the ratio is masked. Smoothing must keep those points NaN
+        // rather than averaging in nearby finite bins.
+        double[] impulse = new double[ImpulseLength];
+        impulse[PeakIndex] = 1.0;
+        impulse[PeakIndex - EssHarmonicAnalysis.HarmonicOffsetSamples(Sweep(), 2)] = 0.02;
+
+        IReadOnlyList<AnalysisCurve> curves = EssDistortion.ComputeDistortionCurves(
+            impulse,
+            Sweep(),
+            new DistortionOptions(MaxHarmonic: 4, SmoothingOctaves: 0.5),
+            calibration: null,
+            SpectrumCurves.SecondHarmonic);
+
+        AnalysisCurve hd2 = curves.Single(c => c.Kind == AnalysisCurveKind.SecondHarmonic);
+        double nyquistOverTwo = SampleRate / 2.0 / 2.0; // 12 kHz
+        Assert.All(
+            hd2.Points.Where(p => p.X > nyquistOverTwo + 500),
+            p => Assert.True(double.IsNaN(p.Y), $"HD2 must stay masked at {p.X:0} Hz, was {p.Y}."));
+        // And it does carry real values below the mask.
+        Assert.Contains(hd2.Points, p => p.X < 2_000 && double.IsFinite(p.Y));
+    }
+
     private static int NearestGridIndex(double[] frequencies, double target)
     {
         int best = 0;

@@ -422,23 +422,33 @@ re-verified.
   layer (`EssHarmonicAnalysis` + `EssDistortion`) isolates each harmonic order in
   its OWN plateau window, computes each packet's spectrum, maps each onto the
   excitation axis, and sums the harmonics' ENERGY (√Σ|Hn|²) on a common
-  log-frequency grid — never a complex sum of one shared window. A separate noise
-  estimate (`EssNoise`) now folds in: THD+N = √(Σ|Hn|² + |N(f)|²)/|H1|, with N(f)
-  read from noise-only regions after the linear decay and ENBW-compensated to be
-  comparable to |H1|. The curve is **THD** only when no confident noise estimate
-  exists, and **THD+N** once one does — the synthetic gate the user required
-  (zero-noise ⇒ THD+N==THD; predictable growth; FFT-length invariance;
-  low-confidence fallback) is met (`EssNoiseTests`). *Real-data caveat (Windows
-  live check):* the noise region sits past the linear packet + a reverb guard; a
-  room whose reverberation outlasts that guard could leak in and lift the floor —
-  eyeball the THD+N floor on a real capture.
+  log-frequency grid — never a complex sum of one shared window. The curve ships as
+  well-defined **THD** (energy of the harmonics over |H1|).
+  **Noise / real THD+N is DEFERRED (PR #28 review):** an `EssNoise` estimate exists
+  (`IncludeNoise`, OFF by default) but is not shown yet, because its noise term is
+  not yet a proper PSD: (1) it is ENBW-compensated to the LINEAR-packet window,
+  whose length is set by the sweep geometry (duration / octaves / fade / H1↔H2
+  spacing), so the same system + same real noise would read a different THD+N at a
+  different sweep — the bandwidth is implicit and uncontrolled; and (2) it takes the
+  median of the FFT MAGNITUDE, which for Rayleigh bins underestimates the power by
+  ~ln2 (−1.6 dB) with no bias correction. The follow-up: estimate noise as an
+  amplitude/power spectral density with explicit `sampleRate·ENBW·N` normalization,
+  integrate it into a DECLARED bandwidth per point (fixed Hz or the curve's
+  fractional-octave width), store/show that bandwidth, and bias-correct the median
+  (median of power / ln2). Only then is the curve labelled THD+N. Existing
+  `EssNoiseTests` pin the current experimental mechanics (doubling, FFT-window
+  invariance) but not absolute power — the follow-up adds an H1-window-length
+  invariance test and an absolute-power test.
 - [x] ★ **Harmonic curves and the primary curve had different reference levels** —
   fixed (2026-07-12). HDn is now `|Hn|/|H1|` against the linear packet of the SAME
   ESS decomposition (a contained IR read under a unity plateau, so the ratio is
   window-length independent), drawn against excitation frequency with calibration
   applied at each product frequency n·f (so a C(n·f)−C(f) difference is honoured);
-  a denominator floor masks a collapsing |H1| to NaN instead of a runaway percent.
-  The loopback transfer stays the primary display curve. Validated by an
+  a denominator floor masks a collapsing |H1| to NaN instead of a runaway percent,
+  and the display smoothing preserves those NaN gaps (a point above Nyquist/n or a
+  rejected-denominator point is NOT resurrected by averaging finite neighbours —
+  PR #28 review fix). The loopback transfer stays the primary display curve.
+  Validated by an
   end-to-end polynomial ESS test AND on the real drivers in the test-data submodule
   (each measurement stores `sweepDeconvolutionRealSamples`, which carries the
   harmonic packets — not just the transfer IR): l woof/mid/twr give sensible HD2/HD3
@@ -454,9 +464,12 @@ re-verified.
   not fully isolate the high harmonics), so it was relaxed per the user's choice to
   keep the caveated curves. Warnings ride on `DistortionSpectrum.Warnings`. Tests
   pin a contained system (all reliable) and a boundary-swamping packet (dropped, THD
-  excludes it). *Windows follow-up:* the drop already flows through to the app (an
-  overlapping order returns all-NaN, so it is not plotted), but surfacing the
-  warning TEXT next to the plot is a UI hookup that needs a live check.
+  excludes it). A dropped order is now removed from the curve list entirely (not
+  left as an all-NaN line), and the warnings reach the display boundary:
+  `EssDistortion.ComputeDistortionCurvesResult` returns a `DistortionCurveResult`
+  (curves + warnings + packet validity), and `MeasurementPlotContext` exposes them
+  as `DistortionWarnings` (PR #28 review fix). *Windows follow-up:* rendering that
+  warning text next to the plot is the remaining UI hookup that needs a live check.
 - [x] **No end-to-end ESS nonlinearity test** — added (2026-07-12).
   `EssPolynomialDistortionTests` drives a real generated ESS through
   `y = x + a2·x² + a3·x³`, deconvolves with the production inverse filter, and

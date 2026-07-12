@@ -83,4 +83,33 @@ public sealed class EssHarmonicOverlapTests
             }
         }
     }
+
+    [Fact]
+    public void CurveResult_DropsTheOverlappingOrderFromCurvesAndSurfacesTheWarning()
+    {
+        var sweep = Sweep();
+        HarmonicWindowDefinition h2 = EssHarmonicAnalysis.BuildWindow(sweep, 2, 0.5);
+
+        double[] impulse = new double[ImpulseLength];
+        impulse[PeakIndex] = 1.0;
+        impulse[PeakIndex - EssHarmonicAnalysis.HarmonicOffsetSamples(sweep, 3)] = 0.01;
+        for (int i = h2.PeakSample; i <= h2.EndSample && i < ImpulseLength; i++)
+        {
+            impulse[i] = 0.3 * Math.Cos(0.3 * (i - h2.PeakSample));
+        }
+
+        EssDistortion.DistortionCurveResult result = EssDistortion.ComputeDistortionCurvesResult(
+            impulse,
+            sweep,
+            new DistortionOptions(MaxHarmonic: 4),
+            calibration: null,
+            SpectrumCurves.Harmonics);
+
+        // The overlapping HD2 vanishes from the curve list; HD3 (clean) stays.
+        Assert.DoesNotContain(result.Curves, c => c.Kind == AnalysisCurveKind.SecondHarmonic);
+        Assert.Contains(result.Curves, c => c.Kind == AnalysisCurveKind.ThirdHarmonic);
+        // The warning explaining the drop reaches the display boundary.
+        Assert.Contains(result.Warnings, w => w.Contains("HD2"));
+        Assert.False(result.IncludesNoise);
+    }
 }

@@ -88,7 +88,7 @@ public sealed record CrossoverAutoSetupOptions(
     double SampleRateHz,
     double? SubElevationDb = null)
 {
-    /// <summary>All families, the full 20 Hz – 20 kHz window, matched slopes.</summary>
+    /// <summary>All families, the full 20 Hz – 20 kHz window, independent slopes.</summary>
     public static CrossoverAutoSetupOptions Default(double sampleRateHz) =>
         new(
             [
@@ -98,7 +98,7 @@ public sealed record CrossoverAutoSetupOptions(
             ],
             20,
             20_000,
-            IndependentSlopes: false,
+            IndependentSlopes: true,
             sampleRateHz);
 }
 
@@ -158,6 +158,11 @@ public static class CrossoverAutoSetup
     /// low-pass and a high-pass, so this bounds both shoulders identically; with
     /// matched slopes a channel is still held to the gentler of its two junctions,
     /// so a steep woofer low-pass with a gentle high-pass needs independent slopes.
+    /// The bound caps how much STEEPER than the practical floor (24 dB/oct) the
+    /// search may go; the floor itself is always admitted, so at a junction low
+    /// enough that even 24 dB/oct exceeds this budget the floor still stands — a
+    /// gentler crossover would break the overlap policy, so that delay is inherent
+    /// to crossing so low, not a policy bypass.
     /// </summary>
     public const double MaxCrossoverGroupDelaySeconds = 0.010;
 
@@ -1298,12 +1303,17 @@ public static class CrossoverAutoSetup
             // not sprout a filter.
             double margin = Math.Pow(2.0, 1.0 / 12.0);
             CrossoverFilterFamily limitFamily = PreferredFamily();
-            int limitSlope = PreferredSlope(limitFamily);
             lowLimitEdge = options.MinCrossoverHz > bands[0].LowHz * margin
-                ? new CrossoverEdge(limitFamily, Math.Round(options.MinCrossoverHz), limitSlope)
+                ? new CrossoverEdge(
+                    limitFamily,
+                    Math.Round(options.MinCrossoverHz),
+                    forcedSlope ?? GentlestAdmissibleSlope(limitFamily, options.MinCrossoverHz))
                 : null;
             highLimitEdge = options.MaxCrossoverHz < bands[channelCount - 1].HighHz / margin
-                ? new CrossoverEdge(limitFamily, Math.Round(options.MaxCrossoverHz), limitSlope)
+                ? new CrossoverEdge(
+                    limitFamily,
+                    Math.Round(options.MaxCrossoverHz),
+                    forcedSlope ?? GentlestAdmissibleSlope(limitFamily, options.MaxCrossoverHz))
                 : null;
 
             // Flatness is only judged over the interior passband. The outermost
@@ -1536,7 +1546,6 @@ public static class CrossoverAutoSetup
         private void Initialize()
         {
             CrossoverFilterFamily family = PreferredFamily();
-            int slope = forcedSlope ?? PreferredSlope(family);
             for (int j = 0; j < channelCount - 1; j++)
             {
                 double fc = ProposeCrossoverFrequency(
@@ -1544,6 +1553,9 @@ public static class CrossoverAutoSetup
                 crossoverHz[j] = Math.Clamp(
                     RoundToLattice(fc), options.MinCrossoverHz, options.MaxCrossoverHz);
                 junctionFamily[j] = family;
+                // Seed the gentlest budget-admissible slope, not a fixed 24 that a
+                // very low junction's group delay might already blow.
+                int slope = forcedSlope ?? GentlestAdmissibleSlope(family, crossoverHz[j]);
                 lowerSlope[j] = slope;
                 upperSlope[j] = slope;
             }
@@ -1576,14 +1588,6 @@ public static class CrossoverAutoSetup
                 : options.Families[0];
         }
 
-        private static int PreferredSlope(CrossoverFilterFamily family)
-        {
-            IReadOnlyList<int> slopes = PracticalSlopes(family);
-            return slopes.Contains(CrossoverSlopeDbPerOctave)
-                ? CrossoverSlopeDbPerOctave
-                : slopes.MinBy(slope => Math.Abs(slope - CrossoverSlopeDbPerOctave));
-        }
-
         // The slopes the search may actually try at this junction frequency: the
         // family's practical slopes, minus any whose filter group delay exceeds
         // MaxCrossoverGroupDelaySeconds (which bites only low down, where a steep
@@ -1592,15 +1596,41 @@ public static class CrossoverAutoSetup
         private IReadOnlyList<int> AllowedSlopes(CrossoverFilterFamily family, double fcHz)
         {
             IReadOnlyList<int> slopes = PracticalSlopes(family);
-            if (forcedSlope is int locked)
+            if (slopes.Count == 0)
             {
-                return slopes.Contains(locked) ? [locked] : [];
+                return slopes;
             }
 
-            return slopes
-                .Where(slope => GroupDelaySeconds(family, slope, fcHz)
-                    <= MaxCrossoverGroupDelaySeconds)
-                .ToList();
+            int floor = slopes.Min();
+            bool WithinBudget(int slope) =>
+                GroupDelaySeconds(family, slope, fcHz) <= MaxCrossoverGroupDelaySeconds;
+
+            if (forcedSlope is int locked)
+            {
+                // The conventional run's forced slope is admitted on the same
+                // terms as the search: within the group-delay budget, or the
+                // practical floor (always admitted — see below).
+                return slopes.Contains(locked) && (WithinBudget(locked) || locked == floor)
+                    ? [locked]
+                    : [];
+            }
+
+            List<int> withinBudget = slopes.Where(WithinBudget).ToList();
+            // The practical floor (the gentlest slope) is always admitted even
+            // when its group delay exceeds the budget: a gentler crossover would
+            // break the overlap policy, so at a very low junction the floor's
+            // delay is inherent to crossing that low, not a policy bypass. The
+            // budget only bounds how much STEEPER than the floor the search goes.
+            return withinBudget.Count > 0 ? withinBudget : [floor];
+        }
+
+        // The gentlest slope the search seeds at this junction: the family's
+        // practical floor, which AllowedSlopes always admits (within the
+        // group-delay budget when it fits, and as the floor when it does not).
+        private int GentlestAdmissibleSlope(CrossoverFilterFamily family, double fcHz)
+        {
+            IReadOnlyList<int> allowed = AllowedSlopes(family, fcHz);
+            return allowed.Count > 0 ? allowed.Min() : PracticalSlopes(family).Min();
         }
 
         // Memoized peak group delay of one crossover filter. Group delay is the

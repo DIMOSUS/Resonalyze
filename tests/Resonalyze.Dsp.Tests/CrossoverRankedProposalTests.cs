@@ -148,6 +148,66 @@ public sealed class CrossoverRankedProposalTests
             $"{groupDelay * 1000:0.0} ms group delay");
     }
 
+    // The budget caps steepness ABOVE the practical floor (24 dB/oct); the floor
+    // is always admitted. At a junction so low that even 24 dB/oct blows the
+    // budget, every candidate — the search seed, the descent result, AND the
+    // forced conventional baseline — uses exactly the floor there, never a
+    // steeper slope the budget forbids. This pins the two paths (Initialize and
+    // the conventional forced slope) that used to bypass the check entirely.
+    [Fact]
+    public void ProposeRanked_AtASubBudgetJunction_FallsBackToTheFloorConsistently()
+    {
+        var sources = new List<AutoSetupSource>
+        {
+            new(BandCurve(20, 35), DriverType.Subwoofer),
+            new(BandCurve(30, 500), DriverType.Woofer)
+        };
+        var options = new CrossoverAutoSetupOptions(
+            [CrossoverFilterFamily.LinkwitzRiley],
+            20,
+            20_000,
+            IndependentSlopes: true,
+            SampleRate);
+
+        IReadOnlyList<RankedCrossoverProposal> ranked =
+            CrossoverAutoSetup.ProposeRanked(sources, options, candidateCount: 50);
+
+        Assert.NotEmpty(ranked);
+        Assert.Contains(ranked, candidate => candidate.IsConventional24);
+
+        bool sawFloorAboveBudget = false;
+        foreach (RankedCrossoverProposal candidate in ranked)
+        {
+            foreach (CrossoverProposal proposal in candidate.Proposals)
+            {
+                foreach ((CrossoverEdge? edge, bool highPass) in new[]
+                    { (proposal.LowPassEdge, false), (proposal.HighPassEdge, true) })
+                {
+                    if (edge is not { } value)
+                    {
+                        continue;
+                    }
+
+                    double gd = CrossoverFilter.MaxGroupDelaySeconds(value, highPass, SampleRate);
+                    if (gd > CrossoverAutoSetup.MaxCrossoverGroupDelaySeconds)
+                    {
+                        // Tolerated only at the family's practical floor (the
+                        // gentlest slope it offers at or above 24 dB/oct).
+                        int floor = CrossoverFilter.SupportedSlopes(value.Family)
+                            .Where(slope => slope >= 24)
+                            .Min();
+                        Assert.Equal(floor, value.SlopeDbPerOctave);
+                        sawFloorAboveBudget = true;
+                    }
+                }
+            }
+        }
+
+        Assert.True(
+            sawFloorAboveBudget,
+            "Expected a junction low enough that even the floor slope exceeds the budget.");
+    }
+
     // Independent oracle for the summation rule: flat unit drivers make the
     // expected sum a pure amplitude sum of the exact digital filter
     // magnitudes, computed here WITHOUT SummedResponseDb's internals. A

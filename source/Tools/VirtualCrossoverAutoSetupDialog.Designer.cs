@@ -165,6 +165,8 @@ namespace Resonalyze
             // independentSlopes
             //
             independentSlopes.AutoSize = true;
+            independentSlopes.Checked = true;
+            independentSlopes.CheckState = CheckState.Checked;
             independentSlopes.ForeColor = Color.White;
             independentSlopes.Location = new Point(12, 184);
             independentSlopes.Name = "independentSlopes";

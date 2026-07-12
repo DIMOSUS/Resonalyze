@@ -1409,9 +1409,10 @@ it defaults to Off because the measurements are loopback-referenced.
   which filter
   families to allow (Butterworth / Linkwitz-Riley / Bessel), the
   crossover-frequency window, and whether the two sides of a junction may take
-  independent slopes (with that off each driver's own high-pass and low-pass
-  share one slope, so a channel never ends up 12 dB/oct on one shoulder and
-  18 on the other — but different drivers stay free to take different slopes).
+  independent slopes (on by default: a driver's high-pass and low-pass may
+  differ, so a woofer can low-pass steeply to the midrange while high-passing
+  gently from the sub; turn it off to tie each driver's two shoulders to one
+  slope). Different drivers always stay free to take different slopes.
   It searches the crossover frequency, family, and slope to flatten the summed
   magnitude (a plain amplitude sum — the assumption that Auto delay will bring
   each junction to its best alignment), penalizing wide band overlap and
@@ -1433,9 +1434,13 @@ it defaults to Off because the measurements are loopback-referenced.
   not the frequency, so the same steep slope is fine at a 250 Hz woofer/mid
   handover (~5 ms) but excluded at a 75 Hz sub/woofer one (~17 ms), and a
   low-group-delay family (Bessel) can go steeper down low than a Linkwitz-Riley
-  can. Group delay is identical for the low-pass and high-pass sides, so with
-  matched slopes a driver is held to the gentler of its two junctions; a steep
-  woofer low-pass paired with a gentle high-pass needs independent slopes on.
+  can. The budget caps how much steeper than the 24 dB/oct floor the search may
+  go; the floor itself is always kept, since a gentler crossover would break the
+  overlap rule, so at a very low junction the floor's larger group delay is
+  inherent to crossing there. Group delay is identical for the low-pass and
+  high-pass sides, so with matched slopes a driver is held to the gentler of its
+  two junctions; a steep woofer low-pass paired with a gentle high-pass needs
+  independent slopes on.
   A shallow filter that lets a driver bleed into a non-adjacent driver's band is
   still heavily penalized (a woofer should not be audible up at the tweeter). Placement heuristics steer the
   handovers further: a junction landing in the ear's most sensitive band

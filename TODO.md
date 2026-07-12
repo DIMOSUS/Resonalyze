@@ -655,6 +655,26 @@ re-verified.
   handover the user flagged). Two `CrossoverFilter` tests pin the GD values and
   the LP=HP symmetry; the ranked-pool test now asserts the GD budget across every
   candidate. Search timing unchanged (~2 s, GD memoized).
+- [x] **GD budget was bypassable via seed & conventional state — fixed
+  (review, 2026-07-12):** the budget was only applied while ENUMERATING options,
+  so two paths still produced budget-violating candidates: `Initialize` seeded a
+  fixed 24 dB/oct with no check, and the conventional run's `forcedSlope`
+  branch returned 24 unconditionally — at a junction low enough that even 24 dB/oct
+  exceeds 10 ms, `AllowedSlopes` returned EMPTY and those unchecked 24s survived.
+  Reframed the policy explicitly: the budget caps steepness ABOVE the practical
+  floor (24 dB/oct); the floor is ALWAYS admitted, since a gentler crossover
+  would break the overlap rule, so a very low junction's larger group delay is
+  inherent to crossing there, not a bypass. `AllowedSlopes` now floor-falls-back
+  (never empty) and gates the forced branch the same way; `Initialize` and the
+  band-limit brickwall seed via a new `GentlestAdmissibleSlope` (removed the
+  unchecked `PreferredSlope`). New regression test forces a sub-budget sub/woofer
+  junction and asserts every candidate — seed, descent, AND conventional — uses
+  exactly the floor there, never a steeper forbidden slope.
+- [x] **Independent slopes ON by default (user request 2026-07-12):** the wizard
+  checkbox and `CrossoverAutoSetupOptions.Default` now default to independent
+  slopes, so the auto-crossover can give the woofer a steep low-pass and a gentle
+  high-pass out of the box (the group-delay win above). Turning it off restores
+  the matched-shoulders behaviour.
 
 ### EQ Wizard
 

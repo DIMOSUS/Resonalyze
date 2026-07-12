@@ -95,7 +95,11 @@ public sealed class CrossoverAutoSetupTests
         Assert.True(subToWoofer < wooferToMid);
         Assert.True(wooferToMid < midToTweeter);
         Assert.InRange(subToWoofer, 40, 80);
-        Assert.InRange(wooferToMid, 250, 500);
+        // The placement heuristics cross the woofer/midrange handover as low as
+        // the midrange's sensible floor (200 Hz) allows — below its cone-breakup
+        // region — so the wide woofer/mid overlap does not linger up where it
+        // interferes; still gated by the measured midrange band.
+        Assert.InRange(wooferToMid, 200, 500);
         // The placement heuristics cross the mid/tweeter as low as the tweeter's
         // sensible floor (1.5 kHz) and its measured band allow, out of the 2–4 kHz
         // ear-sensitivity band; a low tweeter handover must stay steep (>= 24).

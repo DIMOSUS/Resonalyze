@@ -375,7 +375,13 @@ public static class CrossoverAutoSetup
         DriverType.Subwoofer => (20, 80),
         DriverType.Woofer => (40, 250),
         DriverType.Midbass => (80, 500),
-        DriverType.Midrange => (250, 4_000),
+        // The 200 Hz floor (down from 250) lets the woofer/midbass hand over
+        // lower — before its cone-breakup region — when the midrange measures
+        // headroom down there; a wide overlap higher up interferes badly, and a
+        // midrange crossed low with a steep filter cleans the handover. Still
+        // gated by the measured midrange band (one rolled off by 300 Hz crosses
+        // no lower).
+        DriverType.Midrange => (200, 4_000),
         // A quality tweeter crossed low (with a steep filter) covers more of the
         // critical midrange for a better soundstage; the 1.7 kHz floor lets the
         // search go there, but only when the measured tweeter band supports it —

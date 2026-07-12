@@ -595,6 +595,16 @@ re-verified.
   (layout shift, lazy default fill, freeze-during-ranking). Not yet done: a
   treble down-tilt knob (the preview "predicted sum span" is now honestly large
   because the bass is intentionally lifted).
+  **Midrange sensible floor 250 → 200 (user feedback 2026-07-12):** on the real
+  left 4-way the woofer/midrange handover kept landing at 250 Hz with a wide
+  overlap; crossing nearer 200 Hz (which the user found by hand) weakens the
+  interference, but `SensibleRange(Midrange).LowHz = 250` clamped the search so
+  the achievability post-check never even evaluated ~200. Same conservative-floor
+  pattern as the tweeter. Lowered the midrange floor to 200 (a midrange has
+  headroom below its cone-breakup region), so the woofer/midbass can hand over
+  early; still gated by the measured midrange band. Real 4-way then moved the
+  woofer/mid junction 250 → 220 (all-families 75/220/1750, BW-only 65/220/1700),
+  with 200 right behind in the pool — matching the user's manual find.
 - [ ] **`EstimateBand` merges disjoint islands into one band** (first/last bin
   above a global threshold): an isolated resonance above a dead gap extends
   HighHz and misclassifies the driver. Fix: the most significant contiguous

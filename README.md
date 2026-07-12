@@ -1437,7 +1437,10 @@ it defaults to Off because the measurements are loopback-referenced.
   than pulled low. So a capable tweeter is crossed down toward its 1.7 kHz
   sensible floor (out of the ear band) when its measured band supports it, and
   a low tweeter handover is held to at least 24 dB/oct so the tweeter is not
-  driven too far down. In a stereo system both sides of a driver get the same
+  driven too far down. The same low-handover logic applies below: a midrange
+  with headroom down to its 200 Hz sensible floor lets the woofer/midbass hand
+  over early, before its cone-breakup region, so the wide woofer/mid overlap
+  does not linger up where it interferes badly. In a stereo system both sides of a driver get the same
   crossover — a crossover is one electrical filter, so only delay and level
   differ per side. Narrowing the window past an outer driver adds a subsonic /
   brickwall band-limit on that channel.

@@ -33,6 +33,10 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     private readonly List<(CheckBox Box, CrossoverFilterFamily Family)> familyBoxes = new();
     private double sampleRateHz = 48_000;
     private bool initialized;
+    // The sub-elevation field is pre-filled once, from the first valid proposal's
+    // measured elevation (its default and upper limit). Until then options carry a
+    // null elevation so the DSP uses that measured default itself.
+    private bool subElevationInitialized;
     // The channels' measured transfer IRs (Init order). When present, Apply
     // re-ranks the top candidates by the junction loss achievable after the
     // best per-junction delay, instead of trusting the magnitude score alone.
@@ -156,7 +160,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
                      {
                          labelFilters, checkButterworth, checkLinkwitzRiley, checkBessel,
                          labelRange, minCrossover, labelDash, maxCrossover, labelHz,
-                         independentSlopes, labelPreview
+                         independentSlopes, labelSubElevation, subElevation,
+                         labelSubElevationUnit, labelPreview
                      })
             {
                 control.Top += rowShift;
@@ -187,13 +192,25 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         minCrossover.ValueChanged += (_, _) => UpdatePreview();
         maxCrossover.ValueChanged += (_, _) => UpdatePreview();
         independentSlopes.CheckedChanged += (_, _) => UpdatePreview();
+        subElevation.ValueChanged += (_, _) => UpdatePreview();
         toolTip.SetToolTip(
             independentSlopes,
             "Let the low-pass and high-pass of a junction take different slopes\r\n" +
             "(they still share one crossover frequency), to compensate a driver's\r\n" +
             "own roll-off. Off makes the whole system use ONE slope — every\r\n" +
             "junction, both sides — the textbook crossover.");
+        toolTip.SetToolTip(
+            subElevation,
+            "How far the lowest driver sits above the levelled midrange/tweeter.\r\n" +
+            "Starts at (and is capped by) the measured elevation — the sub at its\r\n" +
+            "own level; lower it to flatten the bottom. The midrange/tweeter are\r\n" +
+            "levelled to each other and the remaining drivers are only cut, never\r\n" +
+            "boosted, onto the resulting target.");
     }
+
+    // One wizard source per channel row, in the row (Init) order.
+    private List<AutoSetupSource> CurrentSources() =>
+        rows.Select(row => new AutoSetupSource(row.MagnitudeDb, TypeOf(row))).ToList();
 
     private DriverType TypeOf(ChannelRow row) =>
         row.TypeComboBox.SelectedItem is DriverType type ? type : DriverType.Woofer;
@@ -207,7 +224,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             (double)minCrossover.Value,
             (double)maxCrossover.Value,
             independentSlopes.Checked,
-            sampleRateHz);
+            sampleRateHz,
+            subElevationInitialized ? (double)subElevation.Value : null);
 
     private IReadOnlyList<CrossoverProposal>? TryPropose()
     {
@@ -216,16 +234,41 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             return null;
         }
 
-        var sources = rows
-            .Select(row => new AutoSetupSource(row.MagnitudeDb, TypeOf(row)))
-            .ToList();
         try
         {
-            return CrossoverAutoSetup.Propose(sources, CurrentOptions());
+            return CrossoverAutoSetup.Propose(CurrentSources(), CurrentOptions());
         }
         catch (ArgumentException)
         {
             return null;
+        }
+    }
+
+    // Pre-fills the sub-elevation field once, the first time the driver types
+    // form a valid proposal: its default and upper limit are the measured
+    // elevation of the lowest driver over the levelled mid/tweeter reference.
+    private void TryInitializeSubElevation()
+    {
+        if (subElevationInitialized || SelectedFamilies().Count == 0)
+        {
+            return;
+        }
+
+        List<AutoSetupSource> sources = CurrentSources();
+        try
+        {
+            IReadOnlyList<CrossoverProposal> proposals =
+                CrossoverAutoSetup.Propose(sources, CurrentOptions());
+            double measured = CrossoverAutoSetup.MeasuredSubElevationDb(
+                sources, proposals, sampleRateHz);
+            decimal max = (decimal)Math.Max(0, Math.Round(measured, 1));
+            subElevation.Maximum = Math.Max(max, subElevation.Minimum);
+            subElevationInitialized = true;
+            subElevation.Value = max;
+        }
+        catch (ArgumentException)
+        {
+            // Types are not yet distinct; retry on the next change.
         }
     }
 
@@ -243,6 +286,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             return;
         }
 
+        TryInitializeSubElevation();
         IReadOnlyList<CrossoverProposal>? proposals = TryPropose();
         buttonApply.Enabled = proposals != null;
         if (proposals == null)
@@ -254,18 +298,16 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         var lines = rows
             .Select((row, index) => FormatProposal(row, proposals[index]))
             .ToList();
-        lines.Add(FormatFlatness(proposals));
+        lines.Add(FormatSummary(proposals));
         labelPreview.Text = string.Join(Environment.NewLine, lines);
     }
 
-    // The predicted flatness of the summed magnitude response over the interior
-    // passband — the quantity the optimizer minimizes, shown so the user can weigh
-    // the option choices.
-    private string FormatFlatness(IReadOnlyList<CrossoverProposal> proposals)
+    // The span of the predicted summed response and the sub elevation applied —
+    // with the target-curve gains the sum is an intentional downslope (bass
+    // lifted), not a flat line, so this reports the span rather than a defect.
+    private string FormatSummary(IReadOnlyList<CrossoverProposal> proposals)
     {
-        var sources = rows
-            .Select(row => new AutoSetupSource(row.MagnitudeDb, TypeOf(row)))
-            .ToList();
+        List<AutoSetupSource> sources = CurrentSources();
         DriverBandEstimate low = CrossoverAutoSetup.EstimateBand(
             sources.OrderBy(source => source.Type).First().MagnitudeDb);
         DriverBandEstimate high = CrossoverAutoSetup.EstimateBand(
@@ -277,9 +319,12 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             .Where(point => point.X >= low.LowHz * trim && point.X <= high.HighHz / trim)
             .Select(point => point.Y)
             .ToList();
-        double ripple = window.Count > 0 ? window.Max() - window.Min() : 0;
-        return $"Predicted sum: ±{ripple / 2:0.0} dB over " +
-            $"{FormatHz(low.LowHz)}–{FormatHz(high.HighHz)}";
+        double span = window.Count > 0 ? window.Max() - window.Min() : 0;
+        string elevation = subElevationInitialized
+            ? $"  ·  sub +{(double)subElevation.Value:0.0} dB over mid/treble"
+            : string.Empty;
+        return $"Predicted sum spans {span:0.0} dB over " +
+            $"{FormatHz(low.LowHz)}–{FormatHz(high.HighHz)}{elevation}";
     }
 
     private static string FormatProposal(ChannelRow row, CrossoverProposal proposal)
@@ -328,6 +373,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         yield return minCrossover;
         yield return maxCrossover;
         yield return independentSlopes;
+        yield return subElevation;
     }
 
     private void SetRankingInputsEnabled(bool enabled)
@@ -358,9 +404,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         // measured IRs) runs off the UI thread; a couple of seconds on a
         // 4-way. The live preview keeps showing the fast magnitude-only
         // proposal until the ranking lands.
-        var sources = rows
-            .Select(row => new AutoSetupSource(row.MagnitudeDb, TypeOf(row)))
-            .ToList();
+        List<AutoSetupSource> sources = CurrentSources();
         CrossoverAutoSetupOptions options = CurrentOptions();
         IReadOnlyList<Complex[]> responses = impulseResponses;
         string previousPreview = labelPreview.Text;

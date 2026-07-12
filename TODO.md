@@ -513,6 +513,24 @@ re-verified.
   the ranking may still move a crossover frequency by a lattice step
   relative to the preview (two-phase Apply remains an option if that
   still bothers in the field).
+  **Target-curve gains (user request 2026-07-12):** gains no longer flatten
+  the sum — they follow a car target curve. (1) midrange & tweeter levelled to
+  each other (louder attenuated); (2) the subwoofer anchors the bass at a
+  chosen elevation over the reference — a new **Sub level over mid/treble**
+  dialog field, default & max = the measured elevation (sub at its raw level),
+  trimmable down to flatten; (3) the remaining drivers fit cut-only onto the
+  log-frequency slope between the sub anchor and the reference (a driver below
+  the target keeps its level — dips are never boosted). Reference level = the
+  quietest driver apart from the sub, so a hot sub can't drag it up and a
+  sub-less 2-way still levels its two drivers. `ApplyTargetCurveGains` /
+  `MeasuredSubElevationDb` replace the emitted gains after the crossover search
+  (which still uses the optimizer's flattening gains to CHOOSE crossovers).
+  Validated on the real left 4-way: default gives sub 0, midbass 0, mid 0,
+  tweeter −1.5 (= the user's in-car manual tune, whose −4 on mid/tweeter is the
+  separate L/R scene offset). Needs a live Windows check of the dialog field
+  (layout shift, lazy default fill, freeze-during-ranking). Not yet done: a
+  treble down-tilt knob (the preview "predicted sum span" is now honestly large
+  because the bass is intentionally lifted).
 - [ ] **`EstimateBand` merges disjoint islands into one band** (first/last bin
   above a global threshold): an isolated resonance above a dead gap extends
   HighHz and misclassifies the driver. Fix: the most significant contiguous

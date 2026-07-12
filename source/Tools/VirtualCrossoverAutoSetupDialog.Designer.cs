@@ -41,6 +41,9 @@ namespace Resonalyze
             maxCrossover = new DarkNumericUpDown();
             labelHz = new Label();
             independentSlopes = new CheckBox();
+            labelSubElevation = new Label();
+            subElevation = new DarkNumericUpDown();
+            labelSubElevationUnit = new Label();
             labelPreview = new Label();
             buttonApply = new Button();
             buttonCancel = new Button();
@@ -169,13 +172,46 @@ namespace Resonalyze
             independentSlopes.TabIndex = 19;
             independentSlopes.Text = "Independent slopes per side";
             //
+            // labelSubElevation
+            //
+            labelSubElevation.AutoSize = true;
+            labelSubElevation.ForeColor = Color.FromArgb(185, 190, 200);
+            labelSubElevation.Location = new Point(12, 214);
+            labelSubElevation.Name = "labelSubElevation";
+            labelSubElevation.Size = new Size(160, 15);
+            labelSubElevation.TabIndex = 20;
+            labelSubElevation.Text = "Sub level over mid/treble:";
+            //
+            // subElevation
+            //
+            subElevation.Location = new Point(196, 210);
+            subElevation.Minimum = 0m;
+            subElevation.Maximum = 60m;
+            subElevation.Increment = 1m;
+            subElevation.DecimalPlaces = 1;
+            subElevation.MinimumSize = new Size(36, 19);
+            subElevation.Name = "subElevation";
+            subElevation.Size = new Size(72, 21);
+            subElevation.TabIndex = 21;
+            subElevation.Value = 0m;
+            //
+            // labelSubElevationUnit
+            //
+            labelSubElevationUnit.AutoSize = true;
+            labelSubElevationUnit.ForeColor = Color.FromArgb(185, 190, 200);
+            labelSubElevationUnit.Location = new Point(276, 214);
+            labelSubElevationUnit.Name = "labelSubElevationUnit";
+            labelSubElevationUnit.Size = new Size(20, 15);
+            labelSubElevationUnit.TabIndex = 22;
+            labelSubElevationUnit.Text = "dB";
+            //
             // labelPreview
             //
             labelPreview.ForeColor = Color.FromArgb(230, 184, 0);
-            labelPreview.Location = new Point(12, 214);
+            labelPreview.Location = new Point(12, 240);
             labelPreview.Name = "labelPreview";
             labelPreview.Size = new Size(444, 62);
-            labelPreview.TabIndex = 20;
+            labelPreview.TabIndex = 23;
             labelPreview.Text = "—";
             //
             // buttonApply
@@ -185,10 +221,10 @@ namespace Resonalyze
             buttonApply.DialogResult = DialogResult.OK;
             buttonApply.FlatStyle = FlatStyle.Popup;
             buttonApply.ForeColor = Color.White;
-            buttonApply.Location = new Point(282, 284);
+            buttonApply.Location = new Point(282, 310);
             buttonApply.Name = "buttonApply";
             buttonApply.Size = new Size(84, 26);
-            buttonApply.TabIndex = 21;
+            buttonApply.TabIndex = 24;
             buttonApply.Text = "Apply";
             buttonApply.UseVisualStyleBackColor = false;
             //
@@ -198,10 +234,10 @@ namespace Resonalyze
             buttonCancel.DialogResult = DialogResult.Cancel;
             buttonCancel.FlatStyle = FlatStyle.Popup;
             buttonCancel.ForeColor = Color.White;
-            buttonCancel.Location = new Point(372, 284);
+            buttonCancel.Location = new Point(372, 310);
             buttonCancel.Name = "buttonCancel";
             buttonCancel.Size = new Size(84, 26);
-            buttonCancel.TabIndex = 22;
+            buttonCancel.TabIndex = 25;
             buttonCancel.Text = "Cancel";
             buttonCancel.UseVisualStyleBackColor = true;
             //
@@ -210,7 +246,7 @@ namespace Resonalyze
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(40, 44, 54);
-            ClientSize = new Size(468, 322);
+            ClientSize = new Size(468, 348);
             Controls.Add(labelHeader);
             Controls.Add(labelFilters);
             Controls.Add(checkButterworth);
@@ -222,6 +258,9 @@ namespace Resonalyze
             Controls.Add(maxCrossover);
             Controls.Add(labelHz);
             Controls.Add(independentSlopes);
+            Controls.Add(labelSubElevation);
+            Controls.Add(subElevation);
+            Controls.Add(labelSubElevationUnit);
             Controls.Add(labelPreview);
             Controls.Add(buttonApply);
             Controls.Add(buttonCancel);
@@ -251,6 +290,9 @@ namespace Resonalyze
         private DarkNumericUpDown maxCrossover;
         private Label labelHz;
         private CheckBox independentSlopes;
+        private Label labelSubElevation;
+        private DarkNumericUpDown subElevation;
+        private Label labelSubElevationUnit;
         private Label labelPreview;
         private Button buttonApply;
         private Button buttonCancel;

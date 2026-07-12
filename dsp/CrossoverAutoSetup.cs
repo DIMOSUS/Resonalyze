@@ -66,15 +66,20 @@ public sealed record RankedCrossoverProposal(
 /// fall inside, and whether the two sides of a junction may take different
 /// slopes. With <see cref="IndependentSlopes"/> off the whole system uses ONE
 /// slope — every junction, both sides — searched over the practical slopes the
-/// allowed families offer. The sample rate is needed because the optimizer
-/// evaluates the exact digital biquad cascades the DSP runs.
+/// allowed families offer. <see cref="SubElevationDb"/> is how far the lowest
+/// driver sits above the levelled midrange/tweeter reference in the target-curve
+/// gain fit (null uses the measured elevation, i.e. the lowest driver at its raw
+/// level); see <see cref="CrossoverAutoSetup.ApplyTargetCurveGains"/>. The sample
+/// rate is needed because the optimizer evaluates the exact digital biquad
+/// cascades the DSP runs.
 /// </summary>
 public sealed record CrossoverAutoSetupOptions(
     IReadOnlyList<CrossoverFilterFamily> Families,
     double MinCrossoverHz,
     double MaxCrossoverHz,
     bool IndependentSlopes,
-    double SampleRateHz)
+    double SampleRateHz,
+    double? SubElevationDb = null)
 {
     /// <summary>All families, the full 20 Hz – 20 kHz window, matched slopes.</summary>
     public static CrossoverAutoSetupOptions Default(double sampleRateHz) =>
@@ -369,12 +374,15 @@ public static class CrossoverAutoSetup
         }
 
         options = Normalize(options);
-        if (options.IndependentSlopes)
-        {
-            return new Optimizer(channels, options).Solve();
-        }
+        IReadOnlyList<CrossoverProposal> proposals = options.IndependentSlopes
+            ? new Optimizer(channels, options).Solve()
+            : BestUniformSlopeCandidate(channels, options).Proposals;
 
-        return BestUniformSlopeCandidate(channels, options).Proposals;
+        // The optimizer level-matched the drivers to flatten the sum, which is
+        // right for choosing the crossovers but not the gains the user wants.
+        // Replace them with the car target-curve fit.
+        return ApplyTargetCurveGains(
+            channels, proposals, options.SampleRateHz, options.SubElevationDb);
     }
 
     // With independent slopes off, "matched" means ONE slope for the whole
@@ -414,6 +422,195 @@ public static class CrossoverAutoSetup
         CrossoverFilter.SupportedSlopes(family)
             .Where(slope => slope >= MinPracticalSlopeDbPerOctave)
             .ToList();
+
+    // The per-driver context the target-curve gain fit needs: each channel's
+    // level over its assigned passband (between its crossovers), the reference
+    // (levelled midrange/tweeter) level, the bass-anchor channel, and the
+    // measured elevation of the bass over the reference.
+    private readonly record struct TargetCurveContext(
+        double[] PassbandLevelDb,
+        double[] PassbandCenterHz,
+        int BassIndex,
+        IReadOnlyList<int> ReferenceIndices,
+        int SlopeTopIndex,
+        double ReferenceLevelDb,
+        double MeasuredElevationDb);
+
+    private static TargetCurveContext BuildTargetCurveContext(
+        IReadOnlyList<AutoSetupSource> channels,
+        IReadOnlyList<CrossoverProposal> proposals,
+        double sampleRateHz)
+    {
+        int n = channels.Count;
+        var levels = new double[n];
+        var centers = new double[n];
+        double ceiling = Math.Min(20_000, sampleRateHz * 0.49);
+        for (int i = 0; i < n; i++)
+        {
+            DriverBandEstimate band = EstimateBand(channels[i].MagnitudeDb);
+            double low = proposals[i].HighPassEdge?.FrequencyHz ?? band.LowHz;
+            double high = proposals[i].LowPassEdge?.FrequencyHz ?? Math.Min(band.HighHz, ceiling);
+            if (high <= low)
+            {
+                (low, high) = (band.LowHz, band.HighHz);
+            }
+
+            levels[i] = AverageLevelDb(channels[i].MagnitudeDb, low, high);
+            centers[i] = Math.Sqrt(low * high);
+        }
+
+        int Find(DriverType type)
+        {
+            for (int i = 0; i < n; i++)
+            {
+                if (channels[i].Type == type)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        int mid = Find(DriverType.Midrange);
+        int tweeter = Find(DriverType.Tweeter);
+        var reference = new List<int>();
+        if (mid >= 0)
+        {
+            reference.Add(mid);
+        }
+        if (tweeter >= 0)
+        {
+            reference.Add(tweeter);
+        }
+
+        // Only a subwoofer is the elevated bass anchor. A woofer/midbass that
+        // happens to be the lowest driver (a 2-way without a sub) is a normal
+        // driver levelled into the system, not a hot sub to lift.
+        int bass = Find(DriverType.Subwoofer);
+
+        // The reference (flat-top) level is the quietest driver apart from the
+        // sub, so the whole system is cut to it and the sub is lifted on top.
+        // With the sub excluded, a hot woofer never drags the reference up.
+        double referenceLevel = double.PositiveInfinity;
+        for (int i = 0; i < n; i++)
+        {
+            if (i != bass && levels[i] < referenceLevel)
+            {
+                referenceLevel = levels[i];
+            }
+        }
+
+        // The slope runs up to where the flat top begins — the lowest reference
+        // member (the midrange when present, else the tweeter); with neither, the
+        // highest non-sub driver.
+        int slopeTop = reference.Count > 0
+            ? reference.MinBy(index => centers[index])
+            : Enumerable.Range(0, n)
+                .Where(i => i != bass)
+                .MaxBy(i => channels[i].Type);
+
+        double measuredElevation = bass < 0
+            ? 0
+            : Math.Max(0, levels[bass] - referenceLevel);
+        return new TargetCurveContext(
+            levels, centers, bass, reference, slopeTop, referenceLevel, measuredElevation);
+    }
+
+    /// <summary>
+    /// The elevation (dB) of the lowest driver over the levelled midrange/tweeter
+    /// reference, measured on the given proposal's passbands. This is the default
+    /// and the upper limit of the sub-elevation control: the user may only trim it
+    /// down (flattening the bottom), never boost past what was measured.
+    /// </summary>
+    public static double MeasuredSubElevationDb(
+        IReadOnlyList<AutoSetupSource> channels,
+        IReadOnlyList<CrossoverProposal> proposals,
+        double sampleRateHz)
+    {
+        ArgumentNullException.ThrowIfNull(channels);
+        ArgumentNullException.ThrowIfNull(proposals);
+        if (proposals.Count != channels.Count)
+        {
+            throw new ArgumentException(
+                "One proposal per channel is required.", nameof(proposals));
+        }
+
+        return BuildTargetCurveContext(channels, proposals, sampleRateHz).MeasuredElevationDb;
+    }
+
+    /// <summary>
+    /// Replaces the gains of an existing proposal with the car target-curve fit,
+    /// keeping the crossovers untouched. The midrange and tweeter are levelled to
+    /// each other (the louder attenuated); the lowest driver anchors the bass at
+    /// <paramref name="subElevationDb"/> above that reference (null = the measured
+    /// elevation, i.e. the lowest driver kept at its raw level); the remaining
+    /// drivers are fit onto the log-frequency line between those anchors, cut-only
+    /// — a driver already below the target keeps its level, so no measured dip is
+    /// filled with gain. Every gain is a cut (0 dB on the reference), so the result
+    /// is headroom-safe. Proposals are returned in the input order.
+    /// </summary>
+    public static IReadOnlyList<CrossoverProposal> ApplyTargetCurveGains(
+        IReadOnlyList<AutoSetupSource> channels,
+        IReadOnlyList<CrossoverProposal> proposals,
+        double sampleRateHz,
+        double? subElevationDb = null)
+    {
+        ArgumentNullException.ThrowIfNull(channels);
+        ArgumentNullException.ThrowIfNull(proposals);
+        if (proposals.Count != channels.Count)
+        {
+            throw new ArgumentException(
+                "One proposal per channel is required.", nameof(proposals));
+        }
+
+        TargetCurveContext context = BuildTargetCurveContext(channels, proposals, sampleRateHz);
+        double[] level = context.PassbandLevelDb;
+        double[] center = context.PassbandCenterHz;
+        double reference = context.ReferenceLevelDb;
+        double elevation = Math.Clamp(
+            subElevationDb ?? context.MeasuredElevationDb, 0, context.MeasuredElevationDb);
+
+        double subTarget = reference + elevation;
+        bool hasBass = context.BassIndex >= 0;
+        double subCenter = hasBass ? center[context.BassIndex] : 0;
+        double logSpan = hasBass ? Math.Log(center[context.SlopeTopIndex] / subCenter) : 0;
+
+        // With no sub the target is flat at the reference; otherwise it descends
+        // from the sub anchor to the reference across log-frequency.
+        double TargetAt(double frequencyHz) => hasBass && logSpan > 1e-9
+            ? subTarget - elevation * (Math.Log(frequencyHz / subCenter) / logSpan)
+            : reference;
+
+        var gains = new double[channels.Count];
+        for (int i = 0; i < channels.Count; i++)
+        {
+            if (context.ReferenceIndices.Contains(i))
+            {
+                // Level the midrange/tweeter to their quieter member.
+                gains[i] = reference - level[i];
+            }
+            else if (i == context.BassIndex)
+            {
+                // The bass anchor sits at reference + elevation; cut-only so a
+                // sub measured quieter than the reference is never boosted.
+                gains[i] = Math.Min(0, subTarget - level[i]);
+            }
+            else
+            {
+                // An intermediate driver: onto the target line, cut-only.
+                gains[i] = Math.Min(0, TargetAt(center[i]) - level[i]);
+            }
+        }
+
+        var results = new CrossoverProposal[channels.Count];
+        for (int i = 0; i < channels.Count; i++)
+        {
+            results[i] = proposals[i] with { GainDb = Math.Round(gains[i], 1) };
+        }
+
+        return results;
+    }
 
     /// <summary>
     /// The ranked wizard search: expands a pool of up to
@@ -554,7 +751,12 @@ public static class CrossoverAutoSetup
             {
                 double? penalty = penalties?[index];
                 return new RankedCrossoverProposal(
-                    candidate.Proposals,
+                    // The pool ranked with the optimizer's level-matched gains
+                    // (right for comparing crossovers); the emitted proposal
+                    // carries the car target-curve gains the user applies.
+                    ApplyTargetCurveGains(
+                        channels, candidate.Proposals, options.SampleRateHz,
+                        options.SubElevationDb),
                     candidate.MagnitudeScore,
                     penalty,
                     candidate.MagnitudeScore + AchievabilityWeight * (penalty ?? 0),

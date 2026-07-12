@@ -353,6 +353,74 @@ public sealed class CrossoverRankedProposalTests
         Assert.True(systemSlopes.Count > 1, "Expected more than one system slope in the pool.");
     }
 
+    // A synthetic 4-way with a hot bass, a rolled-off midbass, and a matched
+    // mid/tweeter: the target-curve fit should level the mid & tweeter to each
+    // other, keep the bass at its raw level by default, and leave the midbass
+    // alone when it already sits below the target line (cut-only).
+    private static List<AutoSetupSource> TargetCurveSources()
+    {
+        // Absolute levels: sub +6, midbass -6, mid/tweeter -18, tweeter a touch
+        // louder so it gets attenuated to the midrange.
+        List<SignalPoint> Shelf(double lowHz, double highHz, double levelDb) =>
+            BandCurve(lowHz, highHz).Select(p => new SignalPoint(p.X, p.Y + levelDb)).ToList();
+
+        return
+        [
+            new AutoSetupSource(Shelf(20, 90, 6), DriverType.Subwoofer),
+            new AutoSetupSource(Shelf(70, 400, -6), DriverType.Midbass),
+            new AutoSetupSource(Shelf(300, 5_000, -18), DriverType.Midrange),
+            new AutoSetupSource(Shelf(2_000, 20_000, -15), DriverType.Tweeter),
+        ];
+    }
+
+    [Fact]
+    public void ApplyTargetCurveGains_LevelsMidTweeterKeepsBassCutsOnlyDownward()
+    {
+        List<AutoSetupSource> sources = TargetCurveSources();
+        IReadOnlyList<CrossoverProposal> proposals =
+            CrossoverAutoSetup.Propose(sources, Options());
+
+        // Every gain is a cut (headroom-safe): the reference driver is at 0.
+        Assert.All(proposals, p => Assert.True(p.GainDb <= 0.0 + 1e-9, $"{p.GainDb} dB > 0"));
+        Assert.Contains(proposals, p => Math.Abs(p.GainDb) < 1e-9);
+
+        // The tweeter measured louder than the midrange, so it is attenuated to
+        // it; the midrange (the quieter reference member) stays at 0.
+        Assert.Equal(0.0, proposals[2].GainDb, precision: 6);
+        Assert.True(proposals[3].GainDb < -0.5, $"tweeter {proposals[3].GainDb} not attenuated");
+
+        // Default elevation keeps the bass at its raw level (gain ~0).
+        Assert.True(Math.Abs(proposals[0].GainDb) < 1.0, $"sub moved {proposals[0].GainDb} dB");
+    }
+
+    [Fact]
+    public void ApplyTargetCurveGains_TrimmingTheElevationCutsTheBass()
+    {
+        List<AutoSetupSource> sources = TargetCurveSources();
+        IReadOnlyList<CrossoverProposal> proposals =
+            CrossoverAutoSetup.Propose(sources, Options());
+        double measured = CrossoverAutoSetup.MeasuredSubElevationDb(
+            sources, proposals, SampleRate);
+        Assert.True(measured > 6, $"measured elevation {measured} unexpectedly small");
+
+        IReadOnlyList<CrossoverProposal> flat = CrossoverAutoSetup.ApplyTargetCurveGains(
+            sources, proposals, SampleRate, subElevationDb: 0);
+        IReadOnlyList<CrossoverProposal> half = CrossoverAutoSetup.ApplyTargetCurveGains(
+            sources, proposals, SampleRate, subElevationDb: measured / 2);
+
+        // Trimming the elevation only ever cuts the bass further; the reference
+        // members are unaffected.
+        Assert.True(flat[0].GainDb < half[0].GainDb, "flat sub not cut below half");
+        Assert.True(half[0].GainDb < proposals[0].GainDb + 1e-9, "half sub not cut below default");
+        Assert.Equal(proposals[2].GainDb, flat[2].GainDb, precision: 6);
+        // The elevation is clamped to the measured maximum: asking for more than
+        // measured cannot boost the bass above its raw level.
+        IReadOnlyList<CrossoverProposal> over = CrossoverAutoSetup.ApplyTargetCurveGains(
+            sources, proposals, SampleRate, subElevationDb: measured + 20);
+        Assert.Equal(proposals[0].GainDb, over[0].GainDb, precision: 6);
+        Assert.All(over, p => Assert.True(p.GainDb <= 0.0 + 1e-9));
+    }
+
     // With ideal impulse drivers a matched LR24 handover is losslessly
     // alignable, so the post-check must hand the win to the conventional
     // candidate with a near-zero penalty.

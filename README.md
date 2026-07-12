@@ -1407,12 +1407,20 @@ it defaults to Off because the measurements are loopback-referenced.
   crossover-frequency window, and whether the two sides of a junction may take
   independent slopes (with that off the whole system uses one slope — every
   junction, both sides — searched over the slopes the allowed families offer).
-  It searches the crossover frequency, family, slope, and
-  cut-only gains to flatten the summed magnitude (a plain amplitude sum — the
-  assumption that Auto delay will bring each junction to its best alignment),
-  penalizing wide band overlap and keeping a practical minimum slope, so it
-  lands on a tight, engineer-sensible split rather than shallow filters that
-  only look flat by overlapping widely. Handovers stay within the sensible
+  It searches the crossover frequency, family, and slope to flatten the summed
+  magnitude (a plain amplitude sum — the assumption that Auto delay will bring
+  each junction to its best alignment), penalizing wide band overlap and
+  keeping a practical minimum slope, so it lands on a tight, engineer-sensible
+  split rather than shallow filters that only look flat by overlapping widely.
+  The gains, though, follow a car target curve rather than a flat sum: the
+  midrange and tweeter are levelled to each other (the louder attenuated), and
+  the subwoofer anchors the bass at a chosen elevation over that reference —
+  the **Sub level over mid/treble** field defaults to (and is capped at) the
+  measured elevation, so out of the box the sub keeps its own level and you
+  only trim the field down if you want less bass. The remaining drivers are fit
+  onto the resulting slope cut-only (a driver already below the target keeps
+  its level — no measured dip is boosted), and every gain is a cut, so the
+  result is headroom-safe. Handovers stay within the sensible
   range for the two driver types (so a woofer is not crossed up in its
   roll-off), land on human-friendly frequencies (5 Hz steps below 100 Hz,
   10 Hz below 1 kHz, 50 Hz above), and junctions below 300 Hz never get slopes

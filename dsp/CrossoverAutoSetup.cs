@@ -64,9 +64,10 @@ public sealed record RankedCrossoverProposal(
 /// The choices the crossover wizard asks for before optimizing: which filter
 /// families the optimizer may pick from, the frequency window crossovers must
 /// fall inside, and whether the two sides of a junction may take different
-/// slopes. With <see cref="IndependentSlopes"/> off the whole system uses ONE
-/// slope — every junction, both sides — searched over the practical slopes the
-/// allowed families offer. <see cref="SubElevationDb"/> is how far the lowest
+/// slopes. With <see cref="IndependentSlopes"/> off, each DRIVER's two shoulders
+/// (its high-pass and low-pass) share one slope, so no channel ends up 12 dB/oct
+/// on one side and 18 on the other; different drivers stay free to take different
+/// slopes. <see cref="SubElevationDb"/> is how far the lowest
 /// driver sits above the levelled midrange/tweeter reference in the target-curve
 /// gain fit (null uses the measured elevation, i.e. the lowest driver at its raw
 /// level); see <see cref="CrossoverAutoSetup.ApplyTargetCurveGains"/>. The sample

@@ -50,6 +50,24 @@ public sealed class PcmCaptureSessionTests
         Assert.Empty(session.GetSamplesSnapshot()[0]);
     }
 
+    [Fact]
+    public async Task PacketFlagsAreCountedAndDiscontinuityIsPublished()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        await using var session = new PcmCaptureSession(device);
+        int notifications = 0;
+        session.CaptureDiscontinuity += () => notifications++;
+        Task start = session.StartAsync(CancellationToken.None);
+
+        device.Push([0, 0], discontinuity: true, silent: true, timestampError: true);
+        await start;
+
+        Assert.Equal(1, session.DiscontinuityCount);
+        Assert.Equal(1, session.SilentPacketCount);
+        Assert.Equal(1, session.TimestampErrorCount);
+        Assert.Equal(1, notifications);
+    }
+
     private sealed class FakeCaptureDevice : IAudioCaptureDevice
     {
         public FakeCaptureDevice(WaveFormat format)
@@ -71,7 +89,11 @@ public sealed class PcmCaptureSessionTests
 
         public Task StopAsync() => Task.CompletedTask;
 
-        public void Push(byte[] bytes)
+        public void Push(
+            byte[] bytes,
+            bool discontinuity = false,
+            bool silent = false,
+            bool timestampError = false)
         {
             DataAvailable?.Invoke(
                 this,
@@ -79,7 +101,10 @@ public sealed class PcmCaptureSessionTests
                 {
                     Buffer = bytes,
                     BytesRecorded = bytes.Length,
-                    Format = CaptureFormat
+                    Format = CaptureFormat,
+                    Discontinuity = discontinuity,
+                    Silent = silent,
+                    TimestampError = timestampError
                 });
         }
 

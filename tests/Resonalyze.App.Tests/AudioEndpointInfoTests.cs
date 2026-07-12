@@ -6,6 +6,17 @@ namespace Resonalyze.App.Tests;
 public sealed class AudioEndpointInfoTests
 {
     [Fact]
+    public void EndpointServiceRegistersAndUnregistersNotifications()
+    {
+        var service = new WindowsAudioEndpointService();
+
+        Assert.NotNull(service.GetCaptureEndpoints());
+        Assert.NotNull(service.GetRenderEndpoints());
+        service.Dispose();
+        service.Dispose();
+    }
+
+    [Fact]
     public void DisplayNameMarksDefaultActiveEndpoint()
     {
         var endpoint = new AudioEndpointInfo(

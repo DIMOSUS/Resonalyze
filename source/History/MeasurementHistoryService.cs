@@ -232,6 +232,10 @@ internal sealed class MeasurementHistoryService
             TransferPeakIndex = transferResult?.PeakIndex,
             AverageRunCount = measurement.AverageRunCount,
             AcceptedAverageRunCount = measurement.AcceptedAverageRunCount,
+            AudioSession = ImpulseResponseFile.CreateAudioSessionFileEntry(
+                measurement.LastAudioSessionDiagnostics,
+                measurement.SampleRate,
+                measurement.Bits),
             SweepDeconvolutionImpulseResponse = sweep.ToArray(),
             TransferImpulseResponse = transfer,
             TransferCoherence = measurement.TransferCoherence?.ToArray(),
@@ -268,6 +272,7 @@ internal sealed class MeasurementHistoryService
             TransferPeakIndex = file.TransferPeakIndex,
             AverageRunCount = file.AverageRunCount,
             AcceptedAverageRunCount = file.AcceptedAverageRunCount,
+            AudioSession = file.AudioSession,
             SweepDeconvolutionImpulseResponse = sweep,
             TransferImpulseResponse = transfer,
             TransferCoherence = file.TransferCoherence?.ToArray(),

@@ -11,4 +11,5 @@ public sealed class AudioCaptureDataEventArgs : EventArgs
     public long? QpcPosition { get; init; }
     public bool Discontinuity { get; init; }
     public bool Silent { get; init; }
+    public bool TimestampError { get; init; }
 }

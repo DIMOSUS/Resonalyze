@@ -21,6 +21,12 @@ internal static class AudioDeviceWarmup
             return;
         }
 
+        if (settings.AudioBackend is AudioBackend.WasapiShared or AudioBackend.WasapiExclusive)
+        {
+            await WarmUpWasapiAsync(settings, cancellationToken);
+            return;
+        }
+
         await WarmUpWaveAsync(settings, cancellationToken);
     }
 
@@ -88,6 +94,56 @@ internal static class AudioDeviceWarmup
             expectedTotalSamples: prerollSamples + settings.SampleRate);
         await session.WaitForSamplesAsync(prerollSamples, linkedCancellation.Token);
         await session.StopAsync();
+    }
+
+    private static async Task WarmUpWasapiAsync(
+        MeasurementSettingsFile.SweepMeasurementSettings settings,
+        CancellationToken cancellationToken)
+    {
+        string captureEndpointId = settings.WasapiCaptureEndpointId ??
+            throw new InvalidOperationException("WASAPI capture endpoint is not selected.");
+        string renderEndpointId = settings.WasapiRenderEndpointId ??
+            throw new InvalidOperationException("WASAPI render endpoint is not selected.");
+        NAudio.CoreAudioApi.AudioClientShareMode shareMode =
+            settings.AudioBackend == AudioBackend.WasapiExclusive
+                ? NAudio.CoreAudioApi.AudioClientShareMode.Exclusive
+                : NAudio.CoreAudioApi.AudioClientShareMode.Shared;
+        int captureChannels = GetRequiredWaveInputChannelCount(settings);
+        int renderChannels = settings.PlaybackChannel == PlaybackChannel.Mono ? 1 : 2;
+        WaveFormat? captureFormat = shareMode == NAudio.CoreAudioApi.AudioClientShareMode.Exclusive
+            ? WasapiFormatSupport.CreateDeviceFormat(
+                settings.SampleRate,
+                settings.Bits,
+                captureChannels)
+            : null;
+        WaveFormat? renderFormat = shareMode == NAudio.CoreAudioApi.AudioClientShareMode.Exclusive
+            ? WasapiFormatSupport.CreateDeviceFormat(
+                settings.SampleRate,
+                settings.Bits,
+                renderChannels)
+            : null;
+        using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken);
+        linkedCancellation.CancelAfter(TimeSpan.FromSeconds(5));
+        await using var captureDevice = new WasapiCaptureDevice(
+            captureEndpointId,
+            settings.WasapiBufferMilliseconds,
+            shareMode,
+            captureFormat);
+        await using var playbackDevice = new WasapiPlaybackDevice(
+            renderEndpointId,
+            settings.WasapiBufferMilliseconds,
+            shareMode,
+            renderFormat);
+        await using var captureSession = new PcmCaptureSession(captureDevice);
+        float[] silence = new float[Math.Max(1, settings.SampleRate / 5)];
+        using var streams = new PcmStreamSet(silence, settings.SampleRate, settings.Bits);
+        WaveStream stream = streams.GetStream(settings.PlaybackChannel);
+
+        await captureSession.StartAsync(linkedCancellation.Token);
+        await playbackDevice.StartAsync(stream, linkedCancellation.Token);
+        await playbackDevice.WaitForPlaybackEndAsync(linkedCancellation.Token);
+        await captureSession.StopAsync();
     }
 
     private static float[] CreateAsioWarmupSignal(int sampleRate)

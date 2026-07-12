@@ -9,9 +9,11 @@ public sealed record AudioSessionDiagnostics(
     WaveFormat CaptureFormat,
     WaveFormat RenderFormat,
     int RequestedBufferMilliseconds,
+    int ActualBufferFrames,
     long CapturePackets,
     long RenderCallbacks,
     long Discontinuities,
     long SilentPackets,
+    long TimestampErrors,
     long CaptureOverruns,
     long RenderUnderruns);

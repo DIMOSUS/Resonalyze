@@ -11,13 +11,18 @@ internal sealed record SignalGeneratorPlaybackSettings(
     PlaybackChannel PlaybackChannel,
     int WaveOutputDeviceNumber,
     string? AsioDriverName,
-    int AsioOutputChannelOffset);
+    int AsioOutputChannelOffset,
+    string? WasapiRenderEndpointId,
+    string? WasapiRenderEndpointName,
+    int WasapiBufferMilliseconds);
 
 public partial class SignalGeneratorPanel : UserControl
 {
     private IWavePlayer? player;
     private WaveStream? playbackStream;
     private PcmStreamSet? pcmStreams;
+    private IAudioPlaybackDevice? audioPlaybackDevice;
+    private bool wasapiPlaying;
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -107,7 +112,7 @@ public partial class SignalGeneratorPanel : UserControl
                     settings.SampleRate,
                     settings.PlaybackChannel);
             }
-            else
+            else if (settings.Backend == AudioBackend.Wave)
             {
                 player = new WaveOutEvent
                 {
@@ -118,6 +123,40 @@ public partial class SignalGeneratorPanel : UserControl
                     settings.SampleRate,
                     settings.BitsPerSample);
                 playbackStream = pcmStreams.GetStream(settings.PlaybackChannel);
+            }
+            else
+            {
+                string endpointId = settings.WasapiRenderEndpointId ??
+                    throw new InvalidOperationException("WASAPI output endpoint is not selected.");
+                pcmStreams = new PcmStreamSet(
+                    monoSamples,
+                    settings.SampleRate,
+                    settings.BitsPerSample);
+                playbackStream = pcmStreams.GetStream(settings.PlaybackChannel);
+                NAudio.CoreAudioApi.AudioClientShareMode shareMode =
+                    settings.Backend == AudioBackend.WasapiExclusive
+                        ? NAudio.CoreAudioApi.AudioClientShareMode.Exclusive
+                        : NAudio.CoreAudioApi.AudioClientShareMode.Shared;
+                WaveFormat? requestedFormat = shareMode ==
+                    NAudio.CoreAudioApi.AudioClientShareMode.Exclusive
+                        ? WasapiFormatSupport.CreateDeviceFormat(
+                            settings.SampleRate,
+                            settings.BitsPerSample,
+                            playbackStream.WaveFormat.Channels)
+                        : null;
+                audioPlaybackDevice = new WasapiPlaybackDevice(
+                    endpointId,
+                    settings.WasapiBufferMilliseconds,
+                    shareMode,
+                    requestedFormat);
+                audioPlaybackDevice.StartAsync(playbackStream, CancellationToken.None)
+                    .GetAwaiter().GetResult();
+                wasapiPlaying = true;
+                _ = MonitorWasapiPlaybackAsync(audioPlaybackDevice);
+                buttonPlay.Enabled = false;
+                buttonStop.Enabled = true;
+                labelStatus.Text = "Playing";
+                return;
             }
 
             player.Init(playbackStream);
@@ -134,6 +173,43 @@ public partial class SignalGeneratorPanel : UserControl
             buttonStop.Enabled = false;
             labelStatus.Text = exception.Message;
         }
+    }
+
+    private async Task MonitorWasapiPlaybackAsync(IAudioPlaybackDevice playback)
+    {
+        Exception? error = null;
+        try
+        {
+            await playback.WaitForPlaybackEndAsync(CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            error = exception;
+        }
+
+        if (IsDisposed || !ReferenceEquals(audioPlaybackDevice, playback))
+        {
+            return;
+        }
+        try
+        {
+            BeginInvoke((Action)(() => CompleteWasapiPlayback(playback, error)));
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    private void CompleteWasapiPlayback(IAudioPlaybackDevice playback, Exception? error)
+    {
+        if (!ReferenceEquals(audioPlaybackDevice, playback))
+        {
+            return;
+        }
+        DisposePlayback();
+        buttonPlay.Enabled = true;
+        buttonStop.Enabled = false;
+        labelStatus.Text = error?.Message ?? "Ready";
     }
 
     private AsioOut CreateAsioPlayer(SignalGeneratorPlaybackSettings settings)
@@ -246,6 +322,16 @@ public partial class SignalGeneratorPanel : UserControl
 
     private void StopPlayback()
     {
+        if (wasapiPlaying && audioPlaybackDevice != null)
+        {
+            wasapiPlaying = false;
+            audioPlaybackDevice.StopAsync().GetAwaiter().GetResult();
+            DisposePlayback();
+            buttonPlay.Enabled = true;
+            buttonStop.Enabled = false;
+            labelStatus.Text = "Ready";
+            return;
+        }
         if (player?.PlaybackState == PlaybackState.Playing)
         {
             player.Stop();
@@ -274,6 +360,12 @@ public partial class SignalGeneratorPanel : UserControl
         playbackStream = null;
         pcmStreams?.Dispose();
         pcmStreams = null;
+        if (audioPlaybackDevice != null)
+        {
+            audioPlaybackDevice.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            audioPlaybackDevice = null;
+        }
+        wasapiPlaying = false;
     }
 
     internal void RefreshAudioSettings()
@@ -290,10 +382,20 @@ public partial class SignalGeneratorPanel : UserControl
 
     private void RefreshAudioSettings(SignalGeneratorPlaybackSettings settings)
     {
-        string backend = settings.Backend == AudioBackend.Asio ? "ASIO" : "Wave";
-        string output = settings.Backend == AudioBackend.Asio
-            ? GetAsioOutputName(settings)
-            : GetWaveOutputName(settings.WaveOutputDeviceNumber);
+        string backend = settings.Backend switch
+        {
+            AudioBackend.Asio => "ASIO",
+            AudioBackend.WasapiShared => "WASAPI Shared",
+            AudioBackend.WasapiExclusive => "WASAPI Exclusive",
+            _ => "MME"
+        };
+        string output = settings.Backend switch
+        {
+            AudioBackend.Asio => GetAsioOutputName(settings),
+            AudioBackend.WasapiShared or AudioBackend.WasapiExclusive =>
+                settings.WasapiRenderEndpointName ?? "WASAPI endpoint",
+            _ => GetWaveOutputName(settings.WaveOutputDeviceNumber)
+        };
         labelAudioSettings.Text =
             $"{backend}: {settings.SampleRate} Hz, {settings.BitsPerSample}-bit, " +
             $"{settings.PlaybackChannel}, {output}";

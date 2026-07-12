@@ -250,7 +250,10 @@ namespace Resonalyze
                 expSweepMeasurement.PlaybackChannel,
                 expSweepMeasurement.OutputDeviceNumber,
                 expSweepMeasurement.AsioDriverName,
-                expSweepMeasurement.AsioOutputChannelOffset);
+                expSweepMeasurement.AsioOutputChannelOffset,
+                expSweepMeasurement.WasapiRenderEndpointId,
+                expSweepMeasurement.WasapiRenderEndpointName,
+                expSweepMeasurement.WasapiBufferMilliseconds);
 
     }
 }

@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
@@ -5,12 +6,20 @@ namespace Resonalyze;
 
 public sealed class WasapiCaptureDevice : IAudioCaptureDevice
 {
+    private const long ReferenceTimesPerMillisecond = 10_000;
+
     private readonly MMDeviceEnumerator enumerator;
     private readonly MMDevice endpoint;
-    private readonly WasapiCapture capture;
+    private readonly AudioClient audioClient;
+    private readonly EventWaitHandle packetReady = new(false, EventResetMode.AutoReset);
     private readonly string endpointId;
     private readonly string friendlyName;
+    private readonly int bufferMilliseconds;
+    private Thread? captureThread;
     private TaskCompletionSource<bool>? stopped;
+    private volatile bool stopRequested;
+    private bool initialized;
+    private bool startedOnce;
     private bool disposed;
 
     public WasapiCaptureDevice(
@@ -29,20 +38,14 @@ public sealed class WasapiCaptureDevice : IAudioCaptureDevice
         }
         this.endpointId = endpoint.ID;
         friendlyName = endpoint.FriendlyName;
-
-        capture = new WasapiCapture(endpoint, useEventSync: true, bufferMilliseconds)
-        {
-            ShareMode = shareMode
-        };
-        if (shareMode == AudioClientShareMode.Exclusive)
-        {
-            capture.WaveFormat = requestedFormat ?? throw new ArgumentNullException(
+        this.bufferMilliseconds = bufferMilliseconds;
+        audioClient = endpoint.AudioClient;
+        ShareMode = shareMode;
+        CaptureFormat = shareMode == AudioClientShareMode.Exclusive
+            ? requestedFormat ?? throw new ArgumentNullException(
                 nameof(requestedFormat),
-                "WASAPI Exclusive capture requires an explicit format.");
-        }
-        capture.DataAvailable += HandleDataAvailable;
-        capture.RecordingStopped += HandleRecordingStopped;
-        CaptureFormat = capture.WaveFormat;
+                "WASAPI Exclusive capture requires an explicit format.")
+            : audioClient.MixFormat;
     }
 
     public event EventHandler<AudioCaptureDataEventArgs>? DataAvailable;
@@ -52,56 +55,171 @@ public sealed class WasapiCaptureDevice : IAudioCaptureDevice
     public int ChannelCount => CaptureFormat.Channels;
     public string EndpointId => endpointId;
     public string FriendlyName => friendlyName;
-    public AudioClientShareMode ShareMode => capture.ShareMode;
+    public AudioClientShareMode ShareMode { get; }
     public long CapturePackets { get; private set; }
+    public long Discontinuities { get; private set; }
+    public long SilentPackets { get; private set; }
+    public long TimestampErrors { get; private set; }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
+        if (captureThread != null)
+        {
+            throw new InvalidOperationException("Capture is already running.");
+        }
+        if (startedOnce)
+        {
+            throw new InvalidOperationException(
+                "A WASAPI capture device cannot be restarted; keep it running and reset the session accumulator.");
+        }
+
+        Initialize();
+        startedOnce = true;
+        stopRequested = false;
         stopped = SampleWaiterRegistry.NewSignal();
         CapturePackets = 0;
-        capture.StartRecording();
+        Discontinuities = 0;
+        SilentPackets = 0;
+        TimestampErrors = 0;
+        captureThread = new Thread(CaptureLoop)
+        {
+            IsBackground = true,
+            Name = "Resonalyze WASAPI capture"
+        };
+        captureThread.Start();
         return Task.CompletedTask;
     }
 
     public async Task StopAsync()
     {
-        if (disposed || stopped == null || stopped.Task.IsCompleted)
+        if (disposed || captureThread == null || stopped == null)
         {
             return;
         }
-        await AudioCaptureStop.StopAndWaitAsync(
-            capture.StopRecording,
-            stopped,
-            stopped.Task,
-            $"WASAPI capture endpoint '{FriendlyName}'").ConfigureAwait(false);
+        stopRequested = true;
+        packetReady.Set();
+        await stopped.Task.WaitAsync(AudioCaptureStop.StopTimeout).ConfigureAwait(false);
     }
 
-    private void HandleDataAvailable(object? sender, WaveInEventArgs args)
+    private void Initialize()
     {
-        CapturePackets++;
-        DataAvailable?.Invoke(
-            this,
-            new AudioCaptureDataEventArgs
-            {
-                Buffer = args.Buffer.AsMemory(0, args.BytesRecorded),
-                BytesRecorded = args.BytesRecorded,
-                Format = CaptureFormat
-            });
-    }
-
-    private void HandleRecordingStopped(object? sender, StoppedEventArgs args)
-    {
-        if (args.Exception == null)
+        if (initialized)
         {
-            stopped?.TrySetResult(true);
+            return;
+        }
+        long duration = bufferMilliseconds * ReferenceTimesPerMillisecond;
+        AudioClientStreamFlags flags = AudioClientStreamFlags.EventCallback;
+        if (ShareMode == AudioClientShareMode.Shared)
+        {
+            flags |= AudioClientStreamFlags.AutoConvertPcm |
+                AudioClientStreamFlags.SrcDefaultQuality;
+            audioClient.Initialize(ShareMode, flags, 0, 0, CaptureFormat, Guid.Empty);
         }
         else
         {
-            stopped?.TrySetException(args.Exception);
+            audioClient.Initialize(ShareMode, flags, duration, duration, CaptureFormat, Guid.Empty);
         }
-        Stopped?.Invoke(this, new AudioDeviceStoppedEventArgs(args.Exception));
+        audioClient.SetEventHandle(packetReady.SafeWaitHandle.DangerousGetHandle());
+        initialized = true;
+    }
+
+    private void CaptureLoop()
+    {
+        Exception? failure = null;
+        try
+        {
+            AudioCaptureClient capture = audioClient.AudioCaptureClient;
+            audioClient.Start();
+            while (!stopRequested)
+            {
+                packetReady.WaitOne(bufferMilliseconds * 3);
+                if (!stopRequested)
+                {
+                    ReadAvailablePackets(capture);
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+        }
+        finally
+        {
+            try
+            {
+                audioClient.Stop();
+            }
+            catch (Exception exception)
+            {
+                failure ??= exception;
+            }
+            captureThread = null;
+            if (failure == null)
+            {
+                stopped?.TrySetResult(true);
+            }
+            else
+            {
+                stopped?.TrySetException(failure);
+            }
+            Stopped?.Invoke(this, new AudioDeviceStoppedEventArgs(failure));
+        }
+    }
+
+    private void ReadAvailablePackets(AudioCaptureClient capture)
+    {
+        while (capture.GetNextPacketSize() != 0)
+        {
+            IntPtr source = capture.GetBuffer(
+                out int frames,
+                out AudioClientBufferFlags flags,
+                out long devicePosition,
+                out long qpcPosition);
+            try
+            {
+                int byteCount = checked(frames * CaptureFormat.BlockAlign);
+                var buffer = new byte[byteCount];
+                bool silent = (flags & AudioClientBufferFlags.Silent) != 0;
+                bool discontinuity = (flags & AudioClientBufferFlags.DataDiscontinuity) != 0;
+                bool timestampError = (flags & AudioClientBufferFlags.TimestampError) != 0;
+                if (!silent)
+                {
+                    Marshal.Copy(source, buffer, 0, byteCount);
+                }
+                CapturePackets++;
+                if (silent)
+                {
+                    SilentPackets++;
+                }
+                if (discontinuity)
+                {
+                    Discontinuities++;
+                }
+                if (timestampError)
+                {
+                    TimestampErrors++;
+                }
+                DataAvailable?.Invoke(
+                    this,
+                    new AudioCaptureDataEventArgs
+                    {
+                        Buffer = buffer,
+                        BytesRecorded = byteCount,
+                        Format = CaptureFormat,
+                        DevicePositionFrames = devicePosition,
+                        QpcPosition = qpcPosition,
+                        Discontinuity = discontinuity,
+                        Silent = silent,
+                        TimestampError = timestampError
+                    });
+            }
+            finally
+            {
+                capture.ReleaseBuffer(frames);
+            }
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -117,12 +235,8 @@ public sealed class WasapiCaptureDevice : IAudioCaptureDevice
         finally
         {
             disposed = true;
-            capture.DataAvailable -= HandleDataAvailable;
-            capture.RecordingStopped -= HandleRecordingStopped;
-            capture.Dispose();
-            // MMDevice.Dispose forces ReleaseComObject. A later lookup of this
-            // endpoint can receive the disconnected cached RCW and fail with
-            // E_NOINTERFACE, so leave the lightweight endpoint wrapper to CLR.
+            packetReady.Dispose();
+            audioClient.Dispose();
             enumerator.Dispose();
         }
     }

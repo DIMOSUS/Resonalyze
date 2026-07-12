@@ -654,6 +654,9 @@ namespace Resonalyze
             {
                 int currentRun = ++runNumber;
                 string stage = "starting capture";
+                long discontinuitiesBefore = captureDevice.Discontinuities;
+                long timestampErrorsBefore = captureDevice.TimestampErrors;
+                long renderUnderrunsBefore = playbackDevice.RenderUnderruns;
                 try
                 {
                     if (!started)
@@ -688,17 +691,25 @@ namespace Resonalyze
                         captureDevice.CaptureFormat,
                         playbackDevice.PlaybackFormat,
                         owner.WasapiBufferMilliseconds,
+                        playbackDevice.ActualBufferFrames,
                         captureDevice.CapturePackets,
+                        playbackDevice.RenderCallbacks,
+                        captureDevice.Discontinuities,
+                        captureDevice.SilentPackets,
+                        captureDevice.TimestampErrors,
                         0,
-                        0,
-                        0,
-                        0,
-                        0);
+                        playbackDevice.RenderUnderruns);
                     return new CapturedSweepSamples(
                         samples,
                         owner.WaveInputChannelOffset,
                         owner.WaveLoopbackInputChannelOffset,
-                        ValidateSharedDeviceStereo: true);
+                        ValidateSharedDeviceStereo: true,
+                        CaptureDiscontinuity:
+                            captureDevice.Discontinuities > discontinuitiesBefore,
+                        CaptureTimestampError:
+                            captureDevice.TimestampErrors > timestampErrorsBefore,
+                        RenderUnderrun:
+                            playbackDevice.RenderUnderruns > renderUnderrunsBefore);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
@@ -870,10 +881,23 @@ namespace Resonalyze
                 (uint)loopbackIndex < (uint)channels.Length
                     ? channels[loopbackIndex]
                     : null;
-            return SweepRunQualityCheck.Assess(
+            var issues = SweepRunQualityCheck.Assess(
                 microphone,
                 loopback,
-                sweep.SweepSamples);
+                sweep.SweepSamples).ToList();
+            if (captured.CaptureDiscontinuity)
+            {
+                issues.Add("WASAPI reported a capture packet discontinuity.");
+            }
+            if (captured.CaptureTimestampError)
+            {
+                issues.Add("WASAPI reported an invalid capture timestamp.");
+            }
+            if (captured.RenderUnderrun)
+            {
+                issues.Add("WASAPI reported a render buffer underrun.");
+            }
+            return issues;
         }
 
         private SweepRunAnalysis AnalyzeCapturedRun(
@@ -1064,7 +1088,10 @@ namespace Resonalyze
             float[][] SampleChannels,
             int MicrophoneIndex,
             int? LoopbackIndex,
-            bool ValidateSharedDeviceStereo);
+            bool ValidateSharedDeviceStereo,
+            bool CaptureDiscontinuity = false,
+            bool CaptureTimestampError = false,
+            bool RenderUnderrun = false);
 
         private sealed record SweepRunAnalysis(
             Complex[] SweepImpulseResponse,

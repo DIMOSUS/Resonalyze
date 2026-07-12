@@ -27,10 +27,14 @@ public sealed class PcmCaptureSession : IAsyncDisposable
 
     public event Action<float[]>? SequenceReady;
     public event Action<float[][]>? SequenceChannelsReady;
+    public event Action? CaptureDiscontinuity;
     internal event Action<AudioChannelLevel[]>? LevelsAvailable;
 
     public int Sequence { get; set; }
     public int ReadSamples => accumulator.ReadSamples;
+    public long DiscontinuityCount { get; private set; }
+    public long SilentPacketCount { get; private set; }
+    public long TimestampErrorCount { get; private set; }
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -91,6 +95,19 @@ public sealed class PcmCaptureSession : IAsyncDisposable
 
     private void HandleDataAvailable(object? sender, AudioCaptureDataEventArgs args)
     {
+        if (args.Discontinuity)
+        {
+            DiscontinuityCount++;
+            CaptureDiscontinuity?.Invoke();
+        }
+        if (args.Silent)
+        {
+            SilentPacketCount++;
+        }
+        if (args.TimestampError)
+        {
+            TimestampErrorCount++;
+        }
         int frameCount = args.BytesRecorded / args.Format.BlockAlign;
         EnsureScratch(frameCount);
         int decodedFrames = decoder.Decode(args.Buffer.Span[..args.BytesRecorded], decodeScratch);

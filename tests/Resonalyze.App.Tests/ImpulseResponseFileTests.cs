@@ -1,4 +1,5 @@
 using System.Numerics;
+using NAudio.Wave;
 
 namespace Resonalyze.App.Tests;
 
@@ -22,6 +23,23 @@ public sealed class ImpulseResponseFileTests
             SweepDeconvolutionPeakIndex = 2,
             AverageRunCount = 4,
             AcceptedAverageRunCount = 3,
+            AudioSession = new ImpulseResponseFile.AudioSessionFileEntry
+            {
+                Backend = "WasapiShared",
+                CaptureEndpointId = "capture-id",
+                RenderEndpointId = "render-id",
+                ShareMode = "Shared",
+                CaptureFormat = "32 bit float: 48kHz 2 channels",
+                RenderFormat = "32 bit float: 48kHz 2 channels",
+                CaptureSampleRate = 48_000,
+                RenderSampleRate = 48_000,
+                AnalysisSampleRate = 48_000,
+                FormatConversionOccurred = false,
+                RequestedBufferMilliseconds = 100,
+                ActualBufferFrames = 4_800,
+                CapturePackets = 123,
+                Discontinuities = 1
+            },
             MicrophoneLevels = new ImpulseResponseFile.LevelSnapshotFileEntry
             {
                 PeakDbFs = -6.5,
@@ -53,6 +71,7 @@ public sealed class ImpulseResponseFileTests
             Assert.Contains("\"sweepDeconvolutionPeakIndex\": 2", json);
             Assert.Contains("\"averageRunCount\": 4", json);
             Assert.Contains("\"acceptedAverageRunCount\": 3", json);
+            Assert.Contains("\"audioSession\"", json);
             Assert.Contains("\"transferPeakIndex\": 1", json);
             Assert.Contains("\"transferCoherence\"", json);
             Assert.Contains("\"microphoneLevels\"", json);
@@ -81,6 +100,11 @@ public sealed class ImpulseResponseFileTests
             Assert.Equal(2, loaded.SweepDeconvolutionPeakIndex);
             Assert.Equal(4, loaded.AverageRunCount);
             Assert.Equal(3, loaded.AcceptedAverageRunCount);
+            Assert.NotNull(loaded.AudioSession);
+            Assert.Equal("WasapiShared", loaded.AudioSession.Backend);
+            Assert.Equal("capture-id", loaded.AudioSession.CaptureEndpointId);
+            Assert.Equal(123, loaded.AudioSession.CapturePackets);
+            Assert.Equal(1, loaded.AudioSession.Discontinuities);
             Assert.NotNull(loaded.MicrophoneLevels);
             Assert.Equal(-6.5, loaded.MicrophoneLevels.PeakDbFs);
             Assert.Equal(-18.25, loaded.MicrophoneLevels.RmsDbFs);
@@ -113,6 +137,40 @@ public sealed class ImpulseResponseFileTests
         {
             File.Delete(path);
         }
+    }
+
+    [Fact]
+    public void AudioSessionEntry_CapturesWasapiDiagnostics()
+    {
+        var diagnostics = new AudioSessionDiagnostics(
+            "WasapiExclusive",
+            "capture-id",
+            "render-id",
+            WaveFormat.CreateCustomFormat(
+                WaveFormatEncoding.Pcm, 96_000, 2, 576_000, 6, 24),
+            WaveFormat.CreateCustomFormat(
+                WaveFormatEncoding.Pcm, 96_000, 2, 576_000, 6, 24),
+            40,
+            3_840,
+            50,
+            12,
+            2,
+            3,
+            4,
+            5,
+            6);
+
+        ImpulseResponseFile.AudioSessionFileEntry? entry =
+            ImpulseResponseFile.CreateAudioSessionFileEntry(diagnostics, 96_000, 24);
+
+        Assert.NotNull(entry);
+        Assert.Equal("Exclusive", entry.ShareMode);
+        Assert.Equal(96_000, entry.AnalysisSampleRate);
+        Assert.False(entry.FormatConversionOccurred);
+        Assert.Equal(50, entry.CapturePackets);
+        Assert.Equal(3_840, entry.ActualBufferFrames);
+        Assert.Equal(12, entry.RenderCallbacks);
+        Assert.Equal(6, entry.RenderUnderruns);
     }
 
     [Fact]

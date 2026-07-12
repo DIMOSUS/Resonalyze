@@ -1,10 +1,23 @@
+using System.Runtime.InteropServices;
 using NAudio.CoreAudioApi;
+using NAudio.CoreAudioApi.Interfaces;
 
 namespace Resonalyze;
 
 public sealed class WindowsAudioEndpointService : IDisposable
 {
     private readonly MMDeviceEnumerator enumerator = new();
+    private readonly EndpointNotificationClient notificationClient;
+    private bool disposed;
+
+    public WindowsAudioEndpointService()
+    {
+        notificationClient = new EndpointNotificationClient(this);
+        enumerator.RegisterEndpointNotificationCallback(notificationClient);
+    }
+
+    public event Action? EndpointsChanged;
+    public event Action<DataFlow, Role, string?>? DefaultEndpointChanged;
 
     public IReadOnlyList<AudioEndpointInfo> GetCaptureEndpoints() => GetEndpoints(DataFlow.Capture);
 
@@ -59,5 +72,59 @@ public sealed class WindowsAudioEndpointService : IDisposable
         }
     }
 
-    public void Dispose() => enumerator.Dispose();
+    private void NotifyEndpointsChanged() => EndpointsChanged?.Invoke();
+
+    private void NotifyDefaultEndpointChanged(DataFlow flow, Role role, string? endpointId)
+    {
+        DefaultEndpointChanged?.Invoke(flow, role, endpointId);
+        EndpointsChanged?.Invoke();
+    }
+
+    public void Dispose()
+    {
+        if (disposed)
+        {
+            return;
+        }
+        disposed = true;
+        enumerator.UnregisterEndpointNotificationCallback(notificationClient);
+        enumerator.Dispose();
+    }
+
+    [ComVisible(true)]
+    private sealed class EndpointNotificationClient : IMMNotificationClient
+    {
+        private readonly WeakReference<WindowsAudioEndpointService> owner;
+
+        public EndpointNotificationClient(WindowsAudioEndpointService owner)
+        {
+            this.owner = new WeakReference<WindowsAudioEndpointService>(owner);
+        }
+
+        public void OnDeviceStateChanged(string deviceId, DeviceState newState) =>
+            NotifyChanged();
+
+        public void OnDeviceAdded(string pwstrDeviceId) => NotifyChanged();
+
+        public void OnDeviceRemoved(string deviceId) => NotifyChanged();
+
+        public void OnDefaultDeviceChanged(DataFlow flow, Role role, string defaultDeviceId)
+        {
+            if (owner.TryGetTarget(out WindowsAudioEndpointService? service))
+            {
+                service.NotifyDefaultEndpointChanged(flow, role, defaultDeviceId);
+            }
+        }
+
+        public void OnPropertyValueChanged(string pwstrDeviceId, PropertyKey key) =>
+            NotifyChanged();
+
+        private void NotifyChanged()
+        {
+            if (owner.TryGetTarget(out WindowsAudioEndpointService? service))
+            {
+                service.NotifyEndpointsChanged();
+            }
+        }
+    }
 }

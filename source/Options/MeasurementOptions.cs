@@ -15,6 +15,7 @@ namespace Resonalyze.Options
     public partial class MeasurementOptions : Form
     {
         private readonly ToolTip deviceToolTip = new();
+        private WindowsAudioEndpointService? endpointService;
         private Font? normalStatusFont;
         private Font? warningStatusFont;
         private ExpSweepMeasurement? expSweepMeasurement;
@@ -89,6 +90,62 @@ namespace Resonalyze.Options
         {
             InitializeComponent();
             WireAudioBackendPanelEvents();
+            TryStartEndpointMonitoring();
+            Disposed += (_, _) => DisposeEndpointMonitoring();
+        }
+
+        private void TryStartEndpointMonitoring()
+        {
+            try
+            {
+                endpointService = new WindowsAudioEndpointService();
+                endpointService.EndpointsChanged += HandleEndpointsChanged;
+            }
+            catch
+            {
+                endpointService = null;
+            }
+        }
+
+        private void DisposeEndpointMonitoring()
+        {
+            if (endpointService == null)
+            {
+                return;
+            }
+            endpointService.EndpointsChanged -= HandleEndpointsChanged;
+            endpointService.Dispose();
+            endpointService = null;
+        }
+
+        private void HandleEndpointsChanged()
+        {
+            if (IsDisposed || !IsHandleCreated)
+            {
+                return;
+            }
+            try
+            {
+                BeginInvoke((Action)(() =>
+                {
+                    if (IsDisposed)
+                    {
+                        return;
+                    }
+                    int inputOffset = GetSelectedWaveInputChannelOffset();
+                    int? loopbackOffset = GetSelectedWaveLoopbackChannelOffset();
+                    LoadWasapiEndpoints();
+                    if (IsSelectedWasapiBackend())
+                    {
+                        PopulateDeviceControlsForSelectedBackend(inputOffset, loopbackOffset);
+                        RefreshSampleRateOptions(GetSelectedSampleRate());
+                        UpdateAudioBackendControls();
+                    }
+                }));
+            }
+            catch (InvalidOperationException)
+            {
+            }
         }
 
         private void WireAudioBackendPanelEvents()
@@ -833,9 +890,17 @@ namespace Resonalyze.Options
         {
             try
             {
-                using var endpointService = new WindowsAudioEndpointService();
-                wasapiCaptureEndpoints = endpointService.GetCaptureEndpoints();
-                wasapiRenderEndpoints = endpointService.GetRenderEndpoints();
+                if (endpointService != null)
+                {
+                    wasapiCaptureEndpoints = endpointService.GetCaptureEndpoints();
+                    wasapiRenderEndpoints = endpointService.GetRenderEndpoints();
+                }
+                else
+                {
+                    using var temporaryService = new WindowsAudioEndpointService();
+                    wasapiCaptureEndpoints = temporaryService.GetCaptureEndpoints();
+                    wasapiRenderEndpoints = temporaryService.GetRenderEndpoints();
+                }
             }
             catch
             {
@@ -1041,7 +1106,8 @@ namespace Resonalyze.Options
                             GetSelectedWaveLoopbackChannelOffset() ?? 0) + 1,
                         GetSelectedPlaybackChannelCount());
                     labelWaveLoopbackStatus.Text = supported
-                        ? $"Exclusive format: {selectedRate:N0} Hz / {bits}-bit, supported by both endpoints."
+                        ? $"Exclusive: {selectedRate:N0} Hz / {bits}-bit opens directly " +
+                            "on both endpoints."
                         : $"⚠ Exclusive format {selectedRate:N0} Hz / {bits}-bit is not supported by both endpoints.";
                     labelWaveLoopbackStatus.ForeColor = supported
                         ? Color.LightGray
@@ -1054,7 +1120,8 @@ namespace Resonalyze.Options
                 labelWaveLoopbackStatus.Text =
                     $"Shared mix format: {capture.MixFormat.SampleRate:N0} Hz / " +
                     $"{capture.MixFormat.BitsPerSample}-bit capture, " +
-                    $"{render.MixFormat.BitsPerSample}-bit render{compatibility}.";
+                    $"{render.MixFormat.BitsPerSample}-bit render{compatibility}. " +
+                    "Windows may convert render audio; timing remains loopback-referenced.";
                 labelWaveLoopbackStatus.ForeColor = compatibility.Length == 0
                     ? Color.LightGray
                     : Color.LightSalmon;

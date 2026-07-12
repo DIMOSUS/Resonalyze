@@ -191,7 +191,9 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             independentSlopes,
             "Let the low-pass and high-pass of a junction take different slopes\r\n" +
             "(they still share one crossover frequency), to compensate a driver's\r\n" +
-            "own roll-off. Off keeps both sides matched, the textbook crossover.");
+            "own roll-off. Off keeps both sides of each junction matched, the\r\n" +
+            "textbook crossover — but different junctions may still pick\r\n" +
+            "different slopes, so a channel's two shoulders can differ.");
     }
 
     private DriverType TypeOf(ChannelRow row) =>

@@ -162,6 +162,8 @@ internal sealed class MeasurementSettingsFile
         public int InputDeviceNumber { get; set; } = -1;
         public string? WasapiCaptureEndpointId { get; set; }
         public string? WasapiRenderEndpointId { get; set; }
+        public string? WasapiCaptureEndpointName { get; set; }
+        public string? WasapiRenderEndpointName { get; set; }
         public int WasapiBufferMilliseconds { get; set; } = 100;
         public string? AsioDriverName { get; set; }
         public int WaveInputChannelOffset { get; set; }
@@ -201,6 +203,8 @@ internal sealed class MeasurementSettingsFile
                 InputDeviceNumber = measurement.InputDeviceNumber,
                 WasapiCaptureEndpointId = measurement.WasapiCaptureEndpointId,
                 WasapiRenderEndpointId = measurement.WasapiRenderEndpointId,
+                WasapiCaptureEndpointName = measurement.WasapiCaptureEndpointName,
+                WasapiRenderEndpointName = measurement.WasapiRenderEndpointName,
                 WasapiBufferMilliseconds = measurement.WasapiBufferMilliseconds,
                 AsioDriverName = measurement.AsioDriverName,
                 WaveInputChannelOffset = measurement.WaveInputChannelOffset,
@@ -252,8 +256,12 @@ internal sealed class MeasurementSettingsFile
                     sampleRate,
                     AsioOutputChannelOffset,
                     input: false),
-                NormalizeWaveChannelOffset(WaveInputChannelOffset),
-                NormalizeOptionalWaveChannelOffset(WaveLoopbackInputChannelOffset),
+                backend == AudioBackend.WasapiShared
+                    ? Math.Max(0, WaveInputChannelOffset)
+                    : NormalizeWaveChannelOffset(WaveInputChannelOffset),
+                backend == AudioBackend.WasapiShared
+                    ? NormalizeOptionalWasapiChannelOffset(WaveLoopbackInputChannelOffset)
+                    : NormalizeOptionalWaveChannelOffset(WaveLoopbackInputChannelOffset),
                 NormalizeOptionalAsioChannelOffset(
                     AsioDriverName,
                     sampleRate,
@@ -262,7 +270,9 @@ internal sealed class MeasurementSettingsFile
                 ConfirmEachAverageRun,
                 captureEndpointId,
                 renderEndpointId,
-                Clamp(WasapiBufferMilliseconds, 10, 100));
+                Clamp(WasapiBufferMilliseconds, 10, 100),
+                WasapiCaptureEndpointName,
+                WasapiRenderEndpointName);
         }
     }
 
@@ -728,6 +738,9 @@ internal sealed class MeasurementSettingsFile
 
     private static int? NormalizeOptionalWaveChannelOffset(int? offset) =>
         offset.HasValue ? NormalizeWaveChannelOffset(offset.Value) : null;
+
+    private static int? NormalizeOptionalWasapiChannelOffset(int? offset) =>
+        offset.HasValue ? Math.Max(0, offset.Value) : null;
 
     private static int? NormalizeOptionalAsioChannelOffset(
         string? asioDriverName,

@@ -20,6 +20,8 @@ namespace Resonalyze.Options
         private ExpSweepMeasurement? expSweepMeasurement;
         private IReadOnlyList<AudioDeviceInfo> playbackDevices = Array.Empty<AudioDeviceInfo>();
         private IReadOnlyList<AudioDeviceInfo> recordingDevices = Array.Empty<AudioDeviceInfo>();
+        private IReadOnlyList<AudioEndpointInfo> wasapiCaptureEndpoints = Array.Empty<AudioEndpointInfo>();
+        private IReadOnlyList<AudioEndpointInfo> wasapiRenderEndpoints = Array.Empty<AudioEndpointInfo>();
         private IReadOnlyList<AsioDeviceInfo> asioDrivers = Array.Empty<AsioDeviceInfo>();
         private AsioDriverInfo asioDriverInfo = AsioDeviceCatalog.EmptyDriverInfo;
         private bool initializing;
@@ -32,6 +34,10 @@ namespace Resonalyze.Options
         private bool updatingWaveLoopbackSelection;
         private string? preferredWasapiCaptureEndpointId;
         private string? preferredWasapiRenderEndpointId;
+        private string? preferredWasapiCaptureEndpointName;
+        private string? preferredWasapiRenderEndpointName;
+        private int preferredWavePlaybackDeviceNumber = -1;
+        private int preferredWaveRecordingDeviceNumber = -1;
 
         private DarkComboBox comboBoxPlaybackDevice => waveAudioBackendPanel.ComboBoxPlaybackDevice;
 
@@ -118,6 +124,10 @@ namespace Resonalyze.Options
             numericUpDownBits.Value = settings.Bits is 16 or 24 ? settings.Bits : 24;
             preferredWasapiCaptureEndpointId = settings.WasapiCaptureEndpointId;
             preferredWasapiRenderEndpointId = settings.WasapiRenderEndpointId;
+            preferredWasapiCaptureEndpointName = settings.WasapiCaptureEndpointName;
+            preferredWasapiRenderEndpointName = settings.WasapiRenderEndpointName;
+            preferredWavePlaybackDeviceNumber = settings.OutputDeviceNumber;
+            preferredWaveRecordingDeviceNumber = settings.InputDeviceNumber;
 
             comboBoxChannel.Items.Clear();
             foreach (PlaybackChannel channel in Enum.GetValues<PlaybackChannel>())
@@ -152,16 +162,8 @@ namespace Resonalyze.Options
             UpdateComboBoxToolTip(comboBoxPlaybackDevice);
 
             recordingDevices = AudioDeviceCatalog.GetRecordingDevices();
-            comboBoxRecordingDevice.Items.Clear();
-            comboBoxRecordingDevice.Items.AddRange(recordingDevices.Cast<object>().ToArray());
-            SelectDeviceOrShowMissing(
-                comboBoxRecordingDevice,
-                recordingDevices,
-                settings.InputDeviceNumber);
-            ConfigureDropDownWidth(comboBoxRecordingDevice);
-            UpdateComboBoxToolTip(comboBoxRecordingDevice);
-
-            FillWaveChannelControls(
+            LoadWasapiEndpoints();
+            PopulateDeviceControlsForSelectedBackend(
                 settings.WaveInputChannelOffset,
                 settings.WaveLoopbackInputChannelOffset);
 
@@ -233,9 +235,13 @@ namespace Resonalyze.Options
             PlaybackChannel playbackChannel = (PlaybackChannel)comboBoxChannel.SelectedIndex;
             double requestedDuration = (double)numericUpDownRequestedDuration.Value * 0.001;
             int octaves = (int)numericUpDownOctaves.Value;
-            int outputDeviceNumber = ((AudioDeviceInfo)comboBoxPlaybackDevice.SelectedItem!).DeviceNumber;
-            int inputDeviceNumber = ((AudioDeviceInfo)comboBoxRecordingDevice.SelectedItem!).DeviceNumber;
             AudioBackend audioBackend = (AudioBackend)comboBoxAudioBackend.SelectedIndex;
+            int outputDeviceNumber = comboBoxPlaybackDevice.SelectedItem is AudioDeviceInfo playbackDevice
+                ? playbackDevice.DeviceNumber
+                : preferredWavePlaybackDeviceNumber;
+            int inputDeviceNumber = comboBoxRecordingDevice.SelectedItem is AudioDeviceInfo recordingDevice
+                ? recordingDevice.DeviceNumber
+                : preferredWaveRecordingDeviceNumber;
             string? asioDriverName = comboBoxAsioDriver.SelectedItem is AsioDeviceInfo asioDriver
                 ? asioDriver.DriverName
                 : null;
@@ -281,8 +287,14 @@ namespace Resonalyze.Options
                     : null;
             int averageRunCount = (int)numericUpDownAverageRunCount.Value;
             bool confirmEachAverageRun = checkBoxConfirmEachAverageRun.Checked;
-            string? wasapiCaptureEndpointId = preferredWasapiCaptureEndpointId;
-            string? wasapiRenderEndpointId = preferredWasapiRenderEndpointId;
+            string? wasapiCaptureEndpointId =
+                comboBoxRecordingDevice.SelectedItem is AudioEndpointInfo captureSelection
+                    ? captureSelection.Id
+                    : preferredWasapiCaptureEndpointId;
+            string? wasapiRenderEndpointId =
+                comboBoxPlaybackDevice.SelectedItem is AudioEndpointInfo renderSelection
+                    ? renderSelection.Id
+                    : preferredWasapiRenderEndpointId;
             if (audioBackend == AudioBackend.WasapiShared)
             {
                 using var endpointService = new WindowsAudioEndpointService();
@@ -294,6 +306,11 @@ namespace Resonalyze.Options
                     endpointService.GetRenderEndpoints(),
                     wasapiRenderEndpointId,
                     "render");
+                if (!captureEndpoint.IsAvailable || !renderEndpoint.IsAvailable)
+                {
+                    throw new InvalidOperationException(
+                        "A selected WASAPI endpoint is unavailable. Reconnect it or select a replacement.");
+                }
                 if (captureEndpoint.MixFormat.SampleRate != renderEndpoint.MixFormat.SampleRate)
                 {
                     throw new InvalidOperationException(
@@ -331,12 +348,28 @@ namespace Resonalyze.Options
                 confirmEachAverageRun,
                 wasapiCaptureEndpointId,
                 wasapiRenderEndpointId,
-                settings.WasapiBufferMilliseconds);
+                settings.WasapiBufferMilliseconds,
+                comboBoxRecordingDevice.SelectedItem is AudioEndpointInfo captureInfo
+                    ? captureInfo.FriendlyName
+                    : preferredWasapiCaptureEndpointName,
+                comboBoxPlaybackDevice.SelectedItem is AudioEndpointInfo renderInfo
+                    ? renderInfo.FriendlyName
+                    : preferredWasapiRenderEndpointName);
 
             settings.WasapiCaptureEndpointId = wasapiCaptureEndpointId;
             settings.WasapiRenderEndpointId = wasapiRenderEndpointId;
+            settings.WasapiCaptureEndpointName =
+                comboBoxRecordingDevice.SelectedItem is AudioEndpointInfo selectedCapture
+                    ? selectedCapture.FriendlyName
+                    : preferredWasapiCaptureEndpointName;
+            settings.WasapiRenderEndpointName =
+                comboBoxPlaybackDevice.SelectedItem is AudioEndpointInfo selectedRender
+                    ? selectedRender.FriendlyName
+                    : preferredWasapiRenderEndpointName;
             preferredWasapiCaptureEndpointId = wasapiCaptureEndpointId;
             preferredWasapiRenderEndpointId = wasapiRenderEndpointId;
+            preferredWasapiCaptureEndpointName = settings.WasapiCaptureEndpointName;
+            preferredWasapiRenderEndpointName = settings.WasapiRenderEndpointName;
         }
 
         private void buttonCalibration0_Click(object? sender, EventArgs e)
@@ -486,6 +519,14 @@ namespace Resonalyze.Options
             }
 
             UpdateComboBoxToolTip(comboBoxPlaybackDevice);
+            if (comboBoxPlaybackDevice.SelectedItem is AudioEndpointInfo endpoint)
+            {
+                preferredWasapiRenderEndpointId = endpoint.Id;
+            }
+            else if (comboBoxPlaybackDevice.SelectedItem is AudioDeviceInfo device)
+            {
+                preferredWavePlaybackDeviceNumber = device.DeviceNumber;
+            }
             RefreshSampleRateOptions(GetSelectedSampleRate());
         }
 
@@ -497,6 +538,17 @@ namespace Resonalyze.Options
             }
 
             UpdateComboBoxToolTip(comboBoxRecordingDevice);
+            if (comboBoxRecordingDevice.SelectedItem is AudioEndpointInfo endpoint)
+            {
+                preferredWasapiCaptureEndpointId = endpoint.Id;
+                FillWasapiChannelControls(
+                    GetSelectedWaveInputChannelOffset(),
+                    GetSelectedWaveLoopbackChannelOffset());
+            }
+            else if (comboBoxRecordingDevice.SelectedItem is AudioDeviceInfo device)
+            {
+                preferredWaveRecordingDeviceNumber = device.DeviceNumber;
+            }
             UpdateWaveLoopbackControls();
             RefreshSampleRateOptions(GetSelectedSampleRate());
         }
@@ -564,8 +616,8 @@ namespace Resonalyze.Options
                 comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.WasapiShared;
             waveAudioBackendPanel.Visible = !useAsio;
             asioAudioBackendPanel.Visible = useAsio;
-            comboBoxPlaybackDevice.Enabled = !useAsio && !useWasapi;
-            comboBoxRecordingDevice.Enabled = !useAsio && !useWasapi;
+            comboBoxPlaybackDevice.Enabled = !useAsio;
+            comboBoxRecordingDevice.Enabled = !useAsio;
             comboBoxWaveInputChannel.Enabled = !useAsio;
             comboBoxWaveLoopbackChannel.Enabled = !useAsio &&
                 SelectedRecordingDeviceSupportsWaveLoopback();
@@ -598,10 +650,17 @@ namespace Resonalyze.Options
             labelAsioLoopbackChannel.Enabled = useAsio;
             if (useWasapi)
             {
-                labelWaveLoopbackStatus.Text =
-                    "WASAPI Shared uses the default Windows capture and render endpoints. " +
-                    "Their mix sample rates must match.";
-                labelWaveLoopbackStatus.ForeColor = Color.LightGray;
+                labelPlaybackDevice.Text = "Output endpoint";
+                labelRecordingDevice.Text = "Input endpoint";
+                labelWaveInputChannel.Text = "Microphone channel";
+                labelWaveLoopbackChannel.Text = "Loopback channel";
+            }
+            else
+            {
+                labelPlaybackDevice.Text = "Playback device";
+                labelRecordingDevice.Text = "Recording device";
+                labelWaveInputChannel.Text = "Wave input channel";
+                labelWaveLoopbackChannel.Text = "Wave loopback channel";
             }
             UpdateWaveLoopbackControls();
         }
@@ -766,6 +825,159 @@ namespace Resonalyze.Options
                 : (int)PlaybackChannel.Mono;
         }
 
+        private void LoadWasapiEndpoints()
+        {
+            try
+            {
+                using var endpointService = new WindowsAudioEndpointService();
+                wasapiCaptureEndpoints = endpointService.GetCaptureEndpoints();
+                wasapiRenderEndpoints = endpointService.GetRenderEndpoints();
+            }
+            catch
+            {
+                wasapiCaptureEndpoints = Array.Empty<AudioEndpointInfo>();
+                wasapiRenderEndpoints = Array.Empty<AudioEndpointInfo>();
+            }
+        }
+
+        private void PopulateDeviceControlsForSelectedBackend(
+            int preferredInputOffset,
+            int? preferredLoopbackOffset)
+        {
+            bool wasInitializing = initializing;
+            initializing = true;
+            try
+            {
+                if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.WasapiShared)
+                {
+                    PopulateWasapiEndpointCombo(
+                        comboBoxPlaybackDevice,
+                        wasapiRenderEndpoints,
+                        preferredWasapiRenderEndpointId,
+                        preferredWasapiRenderEndpointName,
+                        NAudio.CoreAudioApi.DataFlow.Render);
+                    PopulateWasapiEndpointCombo(
+                        comboBoxRecordingDevice,
+                        wasapiCaptureEndpoints,
+                        preferredWasapiCaptureEndpointId,
+                        preferredWasapiCaptureEndpointName,
+                        NAudio.CoreAudioApi.DataFlow.Capture);
+                    FillWasapiChannelControls(preferredInputOffset, preferredLoopbackOffset);
+                }
+                else
+                {
+                    comboBoxPlaybackDevice.Items.Clear();
+                    comboBoxPlaybackDevice.Items.AddRange(playbackDevices.Cast<object>().ToArray());
+                    SelectDeviceOrShowMissing(
+                        comboBoxPlaybackDevice,
+                        playbackDevices,
+                        preferredWavePlaybackDeviceNumber);
+                    comboBoxRecordingDevice.Items.Clear();
+                    comboBoxRecordingDevice.Items.AddRange(recordingDevices.Cast<object>().ToArray());
+                    SelectDeviceOrShowMissing(
+                        comboBoxRecordingDevice,
+                        recordingDevices,
+                        preferredWaveRecordingDeviceNumber);
+                    FillWaveChannelControls(preferredInputOffset, preferredLoopbackOffset);
+                }
+
+                ConfigureDropDownWidth(comboBoxPlaybackDevice);
+                ConfigureDropDownWidth(comboBoxRecordingDevice);
+                UpdateComboBoxToolTip(comboBoxPlaybackDevice);
+                UpdateComboBoxToolTip(comboBoxRecordingDevice);
+            }
+            finally
+            {
+                initializing = wasInitializing;
+            }
+        }
+
+        private static void PopulateWasapiEndpointCombo(
+            DarkComboBox comboBox,
+            IReadOnlyList<AudioEndpointInfo> endpoints,
+            string? preferredId,
+            string? preferredName,
+            NAudio.CoreAudioApi.DataFlow direction)
+        {
+            comboBox.Items.Clear();
+            comboBox.Items.AddRange(endpoints.Cast<object>().ToArray());
+            int index = FindWasapiEndpointIndex(endpoints, preferredId);
+            if (index < 0 && !string.IsNullOrWhiteSpace(preferredId))
+            {
+                comboBox.Items.Add(CreateUnavailableEndpoint(
+                    preferredId,
+                    preferredName,
+                    direction));
+                index = comboBox.Items.Count - 1;
+            }
+            if (index < 0)
+            {
+                index = endpoints.ToList().FindIndex(endpoint => endpoint.IsDefault);
+            }
+            if (index < 0 && comboBox.Items.Count > 0)
+            {
+                index = 0;
+            }
+            comboBox.SelectedIndex = index;
+        }
+
+        private static int FindWasapiEndpointIndex(
+            IReadOnlyList<AudioEndpointInfo> endpoints,
+            string? endpointId)
+        {
+            for (int i = 0; i < endpoints.Count; i++)
+            {
+                if (string.Equals(endpoints[i].Id, endpointId, StringComparison.Ordinal))
+                {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        private static AudioEndpointInfo CreateUnavailableEndpoint(
+            string endpointId,
+            string? friendlyName,
+            NAudio.CoreAudioApi.DataFlow direction) =>
+            new(
+                string.IsNullOrWhiteSpace(friendlyName) ? endpointId : friendlyName,
+                endpointId,
+                direction,
+                NAudio.CoreAudioApi.DeviceState.NotPresent,
+                new NAudio.Wave.WaveFormat(44_100, 16, 1),
+                0,
+                false);
+
+        private void FillWasapiChannelControls(
+            int preferredInputOffset,
+            int? preferredLoopbackOffset)
+        {
+            int channelCount = comboBoxRecordingDevice.SelectedItem is AudioEndpointInfo endpoint
+                ? endpoint.Channels
+                : 0;
+            int preservedChannelCount = Math.Max(
+                preferredInputOffset + 1,
+                preferredLoopbackOffset.GetValueOrDefault(-1) + 1);
+            channelCount = Math.Max(channelCount, preservedChannelCount);
+            InputChannelOption[] channels = Enumerable.Range(0, channelCount)
+                .Select(index => new InputChannelOption(index, $"Input {index + 1}"))
+                .ToArray();
+
+            comboBoxWaveInputChannel.Items.Clear();
+            comboBoxWaveInputChannel.Items.AddRange(channels);
+            comboBoxWaveInputChannel.SelectedIndex = channelCount > 0
+                ? Math.Clamp(preferredInputOffset, 0, channelCount - 1)
+                : -1;
+            comboBoxWaveLoopbackChannel.Items.Clear();
+            comboBoxWaveLoopbackChannel.Items.Add(new InputChannelOption(null, "None"));
+            comboBoxWaveLoopbackChannel.Items.AddRange(channels);
+            comboBoxWaveLoopbackChannel.SelectedIndex = preferredLoopbackOffset is int offset &&
+                offset >= 0 && offset < channelCount
+                    ? offset + 1
+                    : 0;
+            preferredWaveLoopbackChannelOffset = preferredLoopbackOffset;
+        }
+
         private void FillWaveChannelControls(
             int preferredInputOffset,
             int? preferredLoopbackOffset)
@@ -802,9 +1014,25 @@ namespace Resonalyze.Options
             {
                 comboBoxWaveLoopbackChannel.Enabled = true;
                 labelWaveLoopbackStatus.Font = NormalStatusFont;
+                AudioEndpointInfo? capture = comboBoxRecordingDevice.SelectedItem as AudioEndpointInfo;
+                AudioEndpointInfo? render = comboBoxPlaybackDevice.SelectedItem as AudioEndpointInfo;
+                if (capture is not { IsAvailable: true } || render is not { IsAvailable: true })
+                {
+                    labelWaveLoopbackStatus.Text =
+                        "⚠ A saved endpoint is unavailable. Reconnect it or select a replacement.";
+                    labelWaveLoopbackStatus.ForeColor = Color.Gold;
+                    return;
+                }
+                string compatibility = capture.MixFormat.SampleRate == render.MixFormat.SampleRate
+                    ? ""
+                    : " — sample rates do not match";
                 labelWaveLoopbackStatus.Text =
-                    "WASAPI Shared uses the selected endpoint IDs and their mix sample rate.";
-                labelWaveLoopbackStatus.ForeColor = Color.LightGray;
+                    $"Shared mix format: {capture.MixFormat.SampleRate:N0} Hz / " +
+                    $"{capture.MixFormat.BitsPerSample}-bit capture, " +
+                    $"{render.MixFormat.BitsPerSample}-bit render{compatibility}.";
+                labelWaveLoopbackStatus.ForeColor = compatibility.Length == 0
+                    ? Color.LightGray
+                    : Color.LightSalmon;
                 return;
             }
 
@@ -883,7 +1111,8 @@ namespace Resonalyze.Options
             warningStatusFont ??= new Font(NormalStatusFont, FontStyle.Bold);
 
         private bool SelectedRecordingDeviceSupportsWaveLoopback() =>
-            comboBoxRecordingDevice.SelectedItem is AudioDeviceInfo { Channels: >= 2 };
+            comboBoxRecordingDevice.SelectedItem is AudioDeviceInfo { Channels: >= 2 } or
+                AudioEndpointInfo { Channels: >= 2, IsAvailable: true };
 
         private void ValidateSelectedWaveLoopback()
         {
@@ -1066,7 +1295,11 @@ namespace Resonalyze.Options
                 return;
             }
 
-            RefreshSampleRateOptions(GetSelectedSampleRate());
+            int preferredSampleRate = GetSelectedSampleRate();
+            PopulateDeviceControlsForSelectedBackend(
+                GetSelectedWaveInputChannelOffset(),
+                GetSelectedWaveLoopbackChannelOffset());
+            RefreshSampleRateOptions(preferredSampleRate);
             if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio)
             {
                 // Opening the ASIO driver is a synchronous COM instantiation
@@ -1116,25 +1349,12 @@ namespace Resonalyze.Options
 
             if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.WasapiShared)
             {
-                try
-                {
-                    using var endpointService = new WindowsAudioEndpointService();
-                    AudioEndpointInfo capture = SelectWasapiEndpoint(
-                        endpointService.GetCaptureEndpoints(),
-                        preferredWasapiCaptureEndpointId,
-                        "capture");
-                    AudioEndpointInfo render = SelectWasapiEndpoint(
-                        endpointService.GetRenderEndpoints(),
-                        preferredWasapiRenderEndpointId,
-                        "render");
-                    return capture.MixFormat.SampleRate == render.MixFormat.SampleRate
+                AudioEndpointInfo? capture = comboBoxRecordingDevice.SelectedItem as AudioEndpointInfo;
+                AudioEndpointInfo? render = comboBoxPlaybackDevice.SelectedItem as AudioEndpointInfo;
+                return capture is { IsAvailable: true } && render is { IsAvailable: true } &&
+                    capture.MixFormat.SampleRate == render.MixFormat.SampleRate
                         ? [capture.MixFormat.SampleRate]
                         : [];
-                }
-                catch
-                {
-                    return [];
-                }
             }
 
             return AudioDeviceCatalog.GetSupportedWaveSampleRates(

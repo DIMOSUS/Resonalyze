@@ -56,6 +56,8 @@ namespace Resonalyze
         public int InputDeviceNumber { get; private set; } = -1;
         public string? WasapiCaptureEndpointId { get; private set; }
         public string? WasapiRenderEndpointId { get; private set; }
+        public string? WasapiCaptureEndpointName { get; private set; }
+        public string? WasapiRenderEndpointName { get; private set; }
         public int WasapiBufferMilliseconds { get; private set; } = 100;
         public AudioSessionDiagnostics? LastAudioSessionDiagnostics { get; private set; }
         public string? AsioDriverName { get; private set; }
@@ -98,7 +100,9 @@ namespace Resonalyze
             bool confirmEachAverageRun = false,
             string? wasapiCaptureEndpointId = null,
             string? wasapiRenderEndpointId = null,
-            int wasapiBufferMilliseconds = 100)
+            int wasapiBufferMilliseconds = 100,
+            string? wasapiCaptureEndpointName = null,
+            string? wasapiRenderEndpointName = null)
         {
             ThrowIfDisposed();
             if (InProgress)
@@ -116,13 +120,18 @@ namespace Resonalyze
             InputDeviceNumber = inputDeviceNumber;
             WasapiCaptureEndpointId = wasapiCaptureEndpointId;
             WasapiRenderEndpointId = wasapiRenderEndpointId;
+            WasapiCaptureEndpointName = wasapiCaptureEndpointName;
+            WasapiRenderEndpointName = wasapiRenderEndpointName;
             WasapiBufferMilliseconds = Math.Clamp(wasapiBufferMilliseconds, 10, 100);
             LastAudioSessionDiagnostics = null;
             AudioBackend = audioBackend;
             AsioDriverName = asioDriverName;
-            WaveInputChannelOffset = Math.Clamp(waveInputChannelOffset, 0, 1);
-            WaveLoopbackInputChannelOffset = NormalizeOptionalWaveChannel(
-                waveLoopbackInputChannelOffset);
+            WaveInputChannelOffset = audioBackend == AudioBackend.WasapiShared
+                ? Math.Max(0, waveInputChannelOffset)
+                : Math.Clamp(waveInputChannelOffset, 0, 1);
+            WaveLoopbackInputChannelOffset = audioBackend == AudioBackend.WasapiShared
+                ? NormalizeOptionalWasapiChannel(waveLoopbackInputChannelOffset)
+                : NormalizeOptionalWaveChannel(waveLoopbackInputChannelOffset);
             AsioInputChannelOffset = asioInputChannelOffset;
             AsioLoopbackInputChannelOffset = asioLoopbackInputChannelOffset;
             AsioOutputChannelOffset = asioOutputChannelOffset;
@@ -1145,6 +1154,9 @@ namespace Resonalyze
                 ? Math.Clamp(offset.Value, 0, 1)
                 : null;
         }
+
+        private static int? NormalizeOptionalWasapiChannel(int? offset) =>
+            offset.HasValue ? Math.Max(0, offset.Value) : null;
 
         private void ThrowIfDisposed()
         {

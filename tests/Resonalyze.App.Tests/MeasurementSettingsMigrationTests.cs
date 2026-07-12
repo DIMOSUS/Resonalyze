@@ -66,7 +66,9 @@ public sealed class MeasurementSettingsMigrationTests
             waveLoopbackInputChannelOffset: 1,
             wasapiCaptureEndpointId: "capture-id",
             wasapiRenderEndpointId: "render-id",
-            wasapiBufferMilliseconds: 40);
+            wasapiBufferMilliseconds: 40,
+            wasapiCaptureEndpointName: "USB Input",
+            wasapiRenderEndpointName: "USB Output");
 
         MeasurementSettingsFile.SweepMeasurementSettings captured =
             MeasurementSettingsFile.SweepMeasurementSettings.Capture(measurement);
@@ -75,6 +77,28 @@ public sealed class MeasurementSettingsMigrationTests
         Assert.Equal("capture-id", captured.WasapiCaptureEndpointId);
         Assert.Equal("render-id", captured.WasapiRenderEndpointId);
         Assert.Equal(40, captured.WasapiBufferMilliseconds);
+        Assert.Equal("USB Input", captured.WasapiCaptureEndpointName);
+        Assert.Equal("USB Output", captured.WasapiRenderEndpointName);
+    }
+
+    [Fact]
+    public void WasapiChannelOffsetsAreNotLimitedToStereo()
+    {
+        using var measurement = new ExpSweepMeasurement();
+        measurement.Init(
+            12,
+            48_000,
+            24,
+            1.0,
+            PlaybackChannel.Mono,
+            audioBackend: AudioBackend.WasapiShared,
+            waveInputChannelOffset: 5,
+            waveLoopbackInputChannelOffset: 7,
+            wasapiCaptureEndpointId: "capture-id",
+            wasapiRenderEndpointId: "render-id");
+
+        Assert.Equal(5, measurement.WaveInputChannelOffset);
+        Assert.Equal(7, measurement.WaveLoopbackInputChannelOffset);
     }
 
     // The migration runs inside LoadOrDefault (which reads the real settings

@@ -20,13 +20,22 @@ public sealed class WindowsAudioEndpointService : IDisposable
         {
             using (endpoint)
             {
+                NAudio.Wave.WaveFormat mixFormat;
+                try
+                {
+                    mixFormat = endpoint.AudioClient.MixFormat;
+                }
+                catch
+                {
+                    mixFormat = new NAudio.Wave.WaveFormat(44_100, 16, 1);
+                }
                 endpoints.Add(new AudioEndpointInfo(
-                endpoint.ID,
-                endpoint.FriendlyName,
-                direction,
-                endpoint.State,
-                endpoint.AudioClient.MixFormat,
-                endpoint.AudioClient.MixFormat.Channels,
+                    endpoint.ID,
+                    endpoint.FriendlyName,
+                    direction,
+                    endpoint.State,
+                    mixFormat,
+                    endpoint.State == DeviceState.Active ? mixFormat.Channels : 0,
                     endpoint.ID == defaultId));
             }
         }

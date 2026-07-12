@@ -10,4 +10,14 @@ public sealed record AudioEndpointInfo(
     DeviceState State,
     WaveFormat MixFormat,
     int Channels,
-    bool IsDefault);
+    bool IsDefault)
+{
+    public bool IsAvailable => State == DeviceState.Active;
+
+    public override string ToString()
+    {
+        string prefix = IsAvailable ? string.Empty : "[Unavailable] ";
+        string suffix = IsDefault ? " (Default)" : string.Empty;
+        return $"{prefix}{FriendlyName}{suffix}";
+    }
+}

@@ -1405,8 +1405,9 @@ it defaults to Off because the measurements are loopback-referenced.
   (subwoofer, woofer, midbass, midrange, or tweeter), then asks which filter
   families to allow (Butterworth / Linkwitz-Riley / Bessel), the
   crossover-frequency window, and whether the two sides of a junction may take
-  independent slopes (with that off the whole system uses one slope — every
-  junction, both sides — searched over the slopes the allowed families offer).
+  independent slopes (with that off each driver's own high-pass and low-pass
+  share one slope, so a channel never ends up 12 dB/oct on one shoulder and
+  18 on the other — but different drivers stay free to take different slopes).
   It searches the crossover frequency, family, and slope to flatten the summed
   magnitude (a plain amplitude sum — the assumption that Auto delay will bring
   each junction to its best alignment), penalizing wide band overlap and

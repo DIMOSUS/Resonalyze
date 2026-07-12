@@ -500,19 +500,21 @@ re-verified.
   the dedicated conventional run's signature — exactly one candidate, LR24
   when LR is allowed. (3) The dialog freezes every ranking-input control
   while the async ranking runs, so stale settings can't be applied.
-  **Matched slopes = one system slope (user decision 2026-07-12):** with
-  "Independent slopes per side" off the whole system uses ONE dB/oct —
-  every junction, both sides (families may still differ per junction). The
-  old semantics (sides matched per junction, junctions free) put a 12 dB
-  high-pass next to an 18 dB low-pass on one channel and read as broken.
-  Implemented as one pinned (forcedSlope) descent+pool per practical slope,
-  merged; the <300 Hz cap now also binds pinned runs, so a system-wide
-  36/48 is infeasible while a low junction exists. Real-data winner:
-  all-24 system (BW24@45 / LR24@250 / LR24@3850), pool 0.52 s, full ranked
-  3.6 s. Preview and applied result can no longer disagree on slopes;
-  the ranking may still move a crossover frequency by a lattice step
-  relative to the preview (two-phase Apply remains an option if that
-  still bothers in the field).
+  **Matched slopes = per-DRIVER, not per-system (corrected 2026-07-12):** with
+  "Independent slopes per side" off, each driver's two shoulders (its high-pass
+  and its low-pass) share one slope; DIFFERENT drivers stay free to differ.
+  First attempt (9889124) over-corrected to one slope for the WHOLE system —
+  wrong, reverted. The real bug: the pool (and even the descent) chose slopes
+  per JUNCTION independently, so a middle driver's HP (upper side of the
+  junction below) and LP (lower side of the junction above) drifted apart
+  (the 12/18 the user saw after Apply). Fix: when off, the slope is a property
+  of the channel — `EnumerateJunctionOptions` only varies frequency/family and
+  holds the two channels' slopes; a dedicated `OptimizeChannelSlope` pass tunes
+  each channel's slope (both shoulders together) over the slopes allowed at
+  BOTH its junctions; the pool inherits the descent's per-channel slopes.
+  Families still per junction. Real-data winner now
+  LR12@45 / (mb LR12, mid LR24)@250 / LR24@3950 — sub+midbass 12, mid+tweeter
+  24, each driver internally matched. Full ranked ~3.2 s.
   **Target-curve gains (user request 2026-07-12):** gains no longer flatten
   the sum — they follow a car target curve. (1) midrange & tweeter levelled to
   each other (louder attenuated); (2) the subwoofer anchors the bass at a

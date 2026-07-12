@@ -298,13 +298,13 @@ public sealed class CrossoverRankedProposalTests
         }
     }
 
-    // With independent slopes OFF, "matched" means one slope for the WHOLE
-    // system: every junction edge of every candidate uses the same dB/oct.
-    // Before this rule the search matched the two sides of each junction but
-    // let junctions differ, handing one channel a 12 dB/oct high-pass next to
-    // an 18 dB/oct low-pass.
+    // With independent slopes OFF, each DRIVER's two shoulders share one slope
+    // (no 12/18 split on a single channel) — but different drivers stay free to
+    // pick different slopes. The earlier bug let the per-junction pool combine
+    // slopes independently, so a middle driver's high-pass and low-pass drifted
+    // apart after Apply even though the panel preview looked matched.
     [Fact]
-    public void ProposeRanked_MatchedSlopesUseOneSlopeForTheWholeSystem()
+    public void ProposeRanked_MatchedSlopes_TieEachDriversTwoShoulders()
     {
         var sources = new List<AutoSetupSource>
         {
@@ -314,7 +314,7 @@ public sealed class CrossoverRankedProposalTests
             new(BandCurve(1_800, 20_000), DriverType.Tweeter)
         };
         var options = new CrossoverAutoSetupOptions(
-            [CrossoverFilterFamily.Butterworth],
+            [CrossoverFilterFamily.LinkwitzRiley, CrossoverFilterFamily.Butterworth],
             20,
             20_000,
             IndependentSlopes: false,
@@ -324,33 +324,57 @@ public sealed class CrossoverRankedProposalTests
             CrossoverAutoSetup.ProposeRanked(sources, options, candidateCount: 50);
 
         Assert.NotEmpty(ranked);
-        var systemSlopes = new HashSet<int>();
         foreach (RankedCrossoverProposal candidate in ranked)
         {
-            var slopes = new HashSet<int>();
-            for (int i = 0; i < candidate.Proposals.Count; i++)
+            foreach (CrossoverProposal proposal in candidate.Proposals)
             {
-                // The outer band-limit edges are protection filters, not
-                // junctions; only interior edges carry the system slope.
-                if (i > 0 && candidate.Proposals[i].HighPassEdge is { } highPass)
+                if (proposal.HighPassEdge is { } hp && proposal.LowPassEdge is { } lp)
                 {
-                    slopes.Add(highPass.SlopeDbPerOctave);
-                }
-                if (i < candidate.Proposals.Count - 1 &&
-                    candidate.Proposals[i].LowPassEdge is { } lowPass)
-                {
-                    slopes.Add(lowPass.SlopeDbPerOctave);
+                    Assert.Equal(hp.SlopeDbPerOctave, lp.SlopeDbPerOctave);
                 }
             }
+        }
+    }
 
-            int slope = Assert.Single(slopes);
-            systemSlopes.Add(slope);
+    // The per-channel tie must NOT collapse into one slope for the whole system:
+    // a sub junction below 300 Hz is capped at 24 dB/oct, but a tweeter far
+    // above it may still take a steeper slope, so the two drivers differ while
+    // each stays internally matched.
+    [Fact]
+    public void Propose_MatchedSlopes_LetDifferentDriversTakeDifferentSlopes()
+    {
+        // A tweeter whose passband has a rising skirt the optimizer tames with a
+        // steep high-pass, over a sub crossed low (its junction < 300 Hz, capped).
+        var sources = new List<AutoSetupSource>
+        {
+            new(BandCurve(20, 70), DriverType.Subwoofer),
+            new(PeakedCurve(120, 20_000, 1_600, 12, 0.6), DriverType.Midrange),
+            new(BandCurve(2_500, 20_000), DriverType.Tweeter)
+        };
+        var options = new CrossoverAutoSetupOptions(
+            [CrossoverFilterFamily.LinkwitzRiley],
+            20,
+            20_000,
+            IndependentSlopes: false,
+            SampleRate);
+
+        IReadOnlyList<CrossoverProposal> proposals =
+            CrossoverAutoSetup.Propose(sources, options);
+
+        // Each driver's shoulders still match…
+        foreach (CrossoverProposal proposal in proposals)
+        {
+            if (proposal.HighPassEdge is { } hp && proposal.LowPassEdge is { } lp)
+            {
+                Assert.Equal(hp.SlopeDbPerOctave, lp.SlopeDbPerOctave);
+            }
         }
 
-        // The merged pool still weighs different system slopes against each
-        // other — the uniformity must come from candidates, not from the
-        // search collapsing to a single slope.
-        Assert.True(systemSlopes.Count > 1, "Expected more than one system slope in the pool.");
+        // …and the sub junction (< 300 Hz) is capped at 24 while the tweeter,
+        // far above, is free to differ — the search is not one system slope.
+        Assert.True(
+            proposals[0].LowPassEdge!.Value.FrequencyHz < CrossoverAutoSetup.SteepSlopeMinimumJunctionHz);
+        Assert.True(proposals[0].LowPassEdge!.Value.SlopeDbPerOctave <= 24);
     }
 
     // A synthetic 4-way with a hot bass, a rolled-off midbass, and a matched

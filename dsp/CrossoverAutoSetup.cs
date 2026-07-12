@@ -374,9 +374,8 @@ public static class CrossoverAutoSetup
         }
 
         options = Normalize(options);
-        IReadOnlyList<CrossoverProposal> proposals = options.IndependentSlopes
-            ? new Optimizer(channels, options).Solve()
-            : BestUniformSlopeCandidate(channels, options).Proposals;
+        IReadOnlyList<CrossoverProposal> proposals =
+            new Optimizer(channels, options).Solve();
 
         // The optimizer level-matched the drivers to flatten the sum, which is
         // right for choosing the crossovers but not the gains the user wants.
@@ -384,36 +383,6 @@ public static class CrossoverAutoSetup
         return ApplyTargetCurveGains(
             channels, proposals, options.SampleRateHz, options.SubElevationDb);
     }
-
-    // With independent slopes off, "matched" means ONE slope for the whole
-    // system: every junction (and both of its sides) uses the same dB/oct.
-    // A mixed 12/18 pair on one channel's two shoulders reads as broken to
-    // the user even though each junction is internally matched. Each
-    // feasible slope gets its own pinned descent; the best state wins.
-    private static PoolCandidate BestUniformSlopeCandidate(
-        IReadOnlyList<AutoSetupSource> channels,
-        CrossoverAutoSetupOptions options)
-    {
-        // Every family offers 24 dB/oct and slopes at or below the low-junction
-        // cap always pass the Capture guard, so at least one run produces a
-        // candidate.
-        return UniformSlopeCandidates(options.Families)
-            .Select(slope => new Optimizer(channels, options, forcedSlope: slope)
-                .SolvePool(1)
-                .FirstOrDefault())
-            .Where(candidate => candidate != null)
-            .MinBy(candidate => candidate!.MagnitudeScore)!;
-    }
-
-    // The system-wide slopes the matched-slopes mode may try: every practical
-    // slope some allowed family offers.
-    private static IReadOnlyList<int> UniformSlopeCandidates(
-        IReadOnlyList<CrossoverFilterFamily> families) =>
-        families
-            .SelectMany(PracticalSlopes)
-            .Distinct()
-            .OrderBy(slope => slope)
-            .ToList();
 
     // The slopes a family offers above the practical floor: an engineer does
     // not reach for a 6 dB/oct crossover — it protects nothing and leaves the
@@ -657,37 +626,7 @@ public static class CrossoverAutoSetup
         }
 
         options = Normalize(options);
-        List<PoolCandidate> pool;
-        if (options.IndependentSlopes)
-        {
-            pool = new Optimizer(channels, options).SolvePool(candidateCount);
-        }
-        else
-        {
-            // Matched slopes = one slope for the whole system (see
-            // BestUniformSlopeCandidate): one pinned pool per feasible slope,
-            // merged, so every candidate is internally uniform while the
-            // ranking still weighs the slopes against each other.
-            pool = new List<PoolCandidate>();
-            var poolSeen = new HashSet<string>();
-            foreach (int slope in UniformSlopeCandidates(options.Families))
-            {
-                foreach (PoolCandidate candidate in
-                    new Optimizer(channels, options, forcedSlope: slope)
-                        .SolvePool(candidateCount))
-                {
-                    if (poolSeen.Add(candidate.Signature))
-                    {
-                        pool.Add(candidate);
-                    }
-                }
-            }
-
-            pool = pool
-                .OrderBy(candidate => candidate.MagnitudeScore)
-                .Take(candidateCount)
-                .ToList();
-        }
+        List<PoolCandidate> pool = new Optimizer(channels, options).SolvePool(candidateCount);
 
         // The conventional candidate: every slope locked to 24 dB/oct,
         // Linkwitz-Riley when the user allows it — what an engineer reaches
@@ -1283,6 +1222,17 @@ public static class CrossoverAutoSetup
                     OptimizeJunction(j);
                 }
 
+                if (!options.IndependentSlopes)
+                {
+                    // Junction passes hold each channel's slope; this pass tunes
+                    // it (both shoulders together), so one driver never ends up
+                    // with a 12/18 split while the drivers still differ freely.
+                    for (int i = 0; i < channelCount; i++)
+                    {
+                        OptimizeChannelSlope(i);
+                    }
+                }
+
                 OptimizeGains();
 
                 double current = Score();
@@ -1313,20 +1263,6 @@ public static class CrossoverAutoSetup
             var seen = new HashSet<string>();
             void Capture()
             {
-                // A pinned steep slope can leave a low junction stranded at its
-                // seed frequency when no lattice point in its window allows the
-                // slope (AllowedSlopes empty) — such a state violates the
-                // low-junction cap and must not become a candidate.
-                for (int j = 0; j < channelCount - 1; j++)
-                {
-                    if (crossoverHz[j] < SteepSlopeMinimumJunctionHz &&
-                        (lowerSlope[j] > LowJunctionMaxSlopeDbPerOctave ||
-                            upperSlope[j] > LowJunctionMaxSlopeDbPerOctave))
-                    {
-                        return;
-                    }
-                }
-
                 NormalizeGainsCutOnly();
                 IReadOnlyList<CrossoverProposal> proposals = BuildProposals();
                 string signature = SignatureOf(proposals);
@@ -1454,15 +1390,6 @@ public static class CrossoverAutoSetup
         private void Initialize()
         {
             CrossoverFilterFamily family = PreferredFamily();
-            if (forcedSlope is int pinned && !PracticalSlopes(family).Contains(pinned))
-            {
-                // The preferred family may not offer the pinned slope (LR has
-                // no 18/36); seeding it anyway would ask CrossoverFilter for
-                // an unsupported cascade.
-                family = options.Families
-                    .FirstOrDefault(f => PracticalSlopes(f).Contains(pinned), family);
-            }
-
             int slope = forcedSlope ?? PreferredSlope(family);
             for (int j = 0; j < channelCount - 1; j++)
             {
@@ -1518,22 +1445,14 @@ public static class CrossoverAutoSetup
         private IReadOnlyList<int> AllowedSlopes(CrossoverFilterFamily family, double fcHz)
         {
             IReadOnlyList<int> slopes = PracticalSlopes(family);
-            if (fcHz < SteepSlopeMinimumJunctionHz)
-            {
-                // The group-delay cap binds the pinned runs too: a system-wide
-                // 36/48 dB/oct candidate is simply infeasible while it owns a
-                // junction below 300 Hz.
-                slopes = slopes
-                    .Where(slope => slope <= LowJunctionMaxSlopeDbPerOctave)
-                    .ToList();
-            }
-
             if (forcedSlope is int locked)
             {
                 return slopes.Contains(locked) ? [locked] : [];
             }
 
-            return slopes;
+            return fcHz < SteepSlopeMinimumJunctionHz
+                ? slopes.Where(slope => slope <= LowJunctionMaxSlopeDbPerOctave).ToList()
+                : slopes;
         }
 
         // Cut-only seed: bring every band down to the quietest, measured over the
@@ -1620,6 +1539,76 @@ public static class CrossoverAutoSetup
             Set(j, best.Family, best.FrequencyHz, best.LowerSlope, best.UpperSlope);
         }
 
+        // Channel i's single slope (both shoulders): its low-pass is the lower
+        // side of junction i, its high-pass the upper side of junction i-1.
+        private int ChannelSlope(int i) =>
+            i < channelCount - 1 ? lowerSlope[i] : upperSlope[i - 1];
+
+        // Writes one slope to both of channel i's shoulders, keeping the
+        // per-channel invariant (upperSlope[i-1] == lowerSlope[i]).
+        private void SetChannelSlope(int i, int slope)
+        {
+            if (i < channelCount - 1)
+            {
+                lowerSlope[i] = slope;
+            }
+
+            if (i > 0)
+            {
+                upperSlope[i - 1] = slope;
+            }
+        }
+
+        // The slopes channel i may take: allowed at every junction it touches
+        // (each junction's family and the low-frequency cap). An outer channel
+        // has one junction; an interior channel must satisfy both, so a slope
+        // one family offers but the neighbour's does not is excluded.
+        private IReadOnlyList<int> AllowedChannelSlopes(int i)
+        {
+            List<int>? allowed = null;
+            void Intersect(int junction)
+            {
+                IReadOnlyList<int> slopes =
+                    AllowedSlopes(junctionFamily[junction], crossoverHz[junction]);
+                allowed = allowed == null
+                    ? slopes.ToList()
+                    : allowed.Where(slopes.Contains).ToList();
+            }
+
+            if (i > 0)
+            {
+                Intersect(i - 1);
+            }
+
+            if (i < channelCount - 1)
+            {
+                Intersect(i);
+            }
+
+            return allowed ?? [];
+        }
+
+        // Coordinate step for one channel's slope (independent slopes off): the
+        // low-pass and high-pass move together, so the two shoulders can never
+        // disagree. Different channels remain free to pick different slopes.
+        private void OptimizeChannelSlope(int i)
+        {
+            int best = ChannelSlope(i);
+            double bestScore = Score();
+            foreach (int slope in AllowedChannelSlopes(i))
+            {
+                SetChannelSlope(i, slope);
+                double score = Score();
+                if (score < bestScore - 1e-9)
+                {
+                    bestScore = score;
+                    best = slope;
+                }
+            }
+
+            SetChannelSlope(i, best);
+        }
+
         internal readonly record struct JunctionOption(
             CrossoverFilterFamily Family,
             double FrequencyHz,
@@ -1627,10 +1616,13 @@ public static class CrossoverAutoSetup
             int UpperSlope,
             double Score);
 
-        // Scores every (lattice frequency × family × allowed slopes) choice for
-        // junction j with the rest of the state fixed. Shared by the descent
-        // (which keeps the minimum) and the ranked search's candidate pool
-        // (which keeps the top few). Restores the junction state afterward.
+        // Scores the (lattice frequency × family × slope) choices for junction j
+        // with the rest of the state fixed. With independent slopes ON, both
+        // sides of the junction are free. With it OFF, the slope is a property of
+        // the CHANNEL (its two shoulders share one slope, tuned separately in
+        // OptimizeChannelSlope), so the junction only varies frequency and
+        // family here and holds its two channels' current slopes — a family that
+        // cannot supply either held slope is skipped. Restores state afterward.
         private IEnumerable<JunctionOption> EnumerateJunctionOptions(
             int j,
             double low,
@@ -1647,9 +1639,9 @@ public static class CrossoverAutoSetup
                     foreach (CrossoverFilterFamily family in options.Families)
                     {
                         IReadOnlyList<int> slopes = AllowedSlopes(family, fc);
-                        foreach (int lower in slopes)
+                        if (options.IndependentSlopes)
                         {
-                            if (options.IndependentSlopes)
+                            foreach (int lower in slopes)
                             {
                                 foreach (int upper in slopes)
                                 {
@@ -1658,12 +1650,12 @@ public static class CrossoverAutoSetup
                                         family, fc, lower, upper, Score());
                                 }
                             }
-                            else
-                            {
-                                Set(j, family, fc, lower, lower);
-                                yield return new JunctionOption(
-                                    family, fc, lower, lower, Score());
-                            }
+                        }
+                        else if (slopes.Contains(savedLower) && slopes.Contains(savedUpper))
+                        {
+                            Set(j, family, fc, savedLower, savedUpper);
+                            yield return new JunctionOption(
+                                family, fc, savedLower, savedUpper, Score());
                         }
                     }
                 }

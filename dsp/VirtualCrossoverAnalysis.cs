@@ -1049,6 +1049,42 @@ public static class VirtualCrossoverAnalysis
     }
 
     /// <summary>
+    /// Cuts a set of measured IRs to ONE shared direct-sound window: the same
+    /// offset (just before the earliest channel's peak) for every channel, so
+    /// the inter-channel timing survives intact. The alignment search, the
+    /// gated sum loss and the band-limited arrival detector all read the
+    /// direct sound near the peak, so running them on the crop instead of the
+    /// full capture produces the same results (verified bit-identical final
+    /// Auto delay cascades and junction losses on real measurements) at a
+    /// fraction of the FFT cost — the capture tail only matters for display.
+    /// </summary>
+    public static Complex[][] CropSharedDirectSoundWindow(
+        IReadOnlyList<Complex[]> impulseResponses,
+        int cropLength,
+        int prePeakSamples)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponses);
+        if (cropLength < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(cropLength));
+        }
+
+        int earliestPeak = impulseResponses.Min(FindPeakIndex);
+        int start = Math.Max(0, earliestPeak - Math.Max(0, prePeakSamples));
+        var cropped = new Complex[impulseResponses.Count][];
+        for (int channel = 0; channel < impulseResponses.Count; channel++)
+        {
+            Complex[] ir = impulseResponses[channel];
+            int length = Math.Clamp(ir.Length - start, 1, cropLength);
+            var slice = new Complex[length];
+            Array.Copy(ir, Math.Min(start, ir.Length - 1), slice, 0, length);
+            cropped[channel] = slice;
+        }
+
+        return cropped;
+    }
+
+    /// <summary>
     /// Measures the summation loss of already-settled responses without any
     /// search: the same gated, log-frequency-weighted average and 1/6-octave
     /// dip the alignment score reads, at the responses' current timing. Used

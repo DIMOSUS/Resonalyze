@@ -498,25 +498,10 @@ public static class CrossoverAutoSetup
 
     // The channels' measured IRs cut to one shared direct-sound window: the
     // post-check only ever evaluates the gated direct sound, so the candidate
-    // chains do not need the full capture. One shared offset keeps the
-    // inter-channel timing intact (verified bit-identical junction losses
-    // against full-length IRs on real measurements).
-    private static Complex[][] CropSharedDirectSoundWindow(Complex[][] impulseResponses)
-    {
-        int earliestPeak = impulseResponses.Min(VirtualCrossoverAnalysis.FindPeakIndex);
-        int start = Math.Max(0, earliestPeak - PostCheckCropPrePeakSamples);
-        var cropped = new Complex[impulseResponses.Length][];
-        for (int channel = 0; channel < impulseResponses.Length; channel++)
-        {
-            Complex[] ir = impulseResponses[channel];
-            int length = Math.Clamp(ir.Length - start, 1, PostCheckCropLength);
-            var slice = new Complex[length];
-            Array.Copy(ir, Math.Min(start, ir.Length - 1), slice, 0, length);
-            cropped[channel] = slice;
-        }
-
-        return cropped;
-    }
+    // chains do not need the full capture.
+    private static Complex[][] CropSharedDirectSoundWindow(Complex[][] impulseResponses) =>
+        VirtualCrossoverAnalysis.CropSharedDirectSoundWindow(
+            impulseResponses, PostCheckCropLength, PostCheckCropPrePeakSamples);
 
     // The raw channel's band-limited arrival in the given SHARED junction
     // band, cached across candidates. Arrivals from different measuring bands

@@ -1710,8 +1710,7 @@ public partial class VirtualCrossoverPanel : UserControl
     }
 
     private List<ProcessedChannel> ProcessChannels(
-        IReadOnlyDictionary<ChannelRuntime, AlignmentOverride>? alignmentOverrides = null,
-        Dictionary<ChannelRuntime, ProcessedChannelCache>? searchCache = null)
+        IReadOnlyDictionary<ChannelRuntime, AlignmentOverride>? alignmentOverrides = null)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.ProcessChannels");
         var processed = new List<ProcessedChannel>();
@@ -1756,14 +1755,14 @@ public partial class VirtualCrossoverPanel : UserControl
             }
 
             // The shared per-channel cache serves interactive redraws (UI thread
-            // only). The alignment search runs on a background thread, so it gets
-            // its own thread-confined cache instead — most channels keep a stable
-            // chain between junction searches, so they hit it, and the shared
-            // cache is never touched off the UI thread.
+            // only). The overrides path (Auto delay's pre-scan with zeroed
+            // delays) does not cache: the actual search runs its own cropped,
+            // thread-confined pipeline in ComputeAutoAlignment /
+            // ComputeStereoAlignment.
             var cacheKey = new ProcessedChannelCacheKey(ir, channel.SampleRate, chain);
             ProcessedChannelCache? cached = alignmentOverrides == null
                 ? channel.ProcessedCache
-                : searchCache?.GetValueOrDefault(channel);
+                : null;
             if (cached?.Key.Equals(cacheKey) == true)
             {
                 using (AppProfiler.Zone("VirtualDSP.ProcessChannels.CacheHit"))
@@ -1791,14 +1790,10 @@ public partial class VirtualCrossoverPanel : UserControl
                 peakIndex = VirtualCrossoverAnalysis.FindPeakIndex(result);
             }
 
-            var freshCache = new ProcessedChannelCache(cacheKey, result, peakIndex);
             if (alignmentOverrides == null)
             {
-                channel.ProcessedCache = freshCache;
-            }
-            else if (searchCache != null)
-            {
-                searchCache[channel] = freshCache;
+                channel.ProcessedCache = new ProcessedChannelCache(
+                    cacheKey, result, peakIndex);
             }
 
             using (AppProfiler.Zone("VirtualDSP.ProcessChannels.AddResult"))
@@ -2697,14 +2692,76 @@ public partial class VirtualCrossoverPanel : UserControl
         Dictionary<ChannelRuntime, AlignmentOverride> alignment,
         System.Text.StringBuilder log)
     {
-        var searchCache = new Dictionary<ChannelRuntime, ProcessedChannelCache>();
         List<ProcessedChannel> byBand = OrderByBand(processed);
         List<AdjacentPair> pairs = GetAdjacentPairs(byBand);
 
-        var snapshots = byBand.ToDictionary(
-            item => item.Channel,
-            item => new AlignmentSnapshot(
-                item.Channel, item.ImpulseResponse, item.PeakIndex));
+        // Same shared direct-sound crop + parallel cache-miss processing as
+        // the stereo run: identical final delays at a fraction of the FFT
+        // cost, because every search stage reads only the gated direct sound.
+        List<ChannelRuntime> ordered = byBand.Select(item => item.Channel).ToList();
+        Complex[][] croppedIrs = VirtualCrossoverAnalysis.CropSharedDirectSoundWindow(
+            ordered.Select(channel => channel.TransferImpulseResponse!).ToList(),
+            AutoDelaySearchCropLength,
+            AutoDelaySearchCropPrePeakSamples);
+        var searchIrs = new Dictionary<ChannelRuntime, Complex[]>();
+        for (int i = 0; i < ordered.Count; i++)
+        {
+            searchIrs[ordered[i]] = croppedIrs[i];
+        }
+
+        var searchCache = new Dictionary<ChannelRuntime, ProcessedChannelCache>();
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides)
+        {
+            var results = new ProcessedChannelCache[ordered.Count];
+            var keys = new ProcessedChannelCacheKey[ordered.Count];
+            var chains = new DspChannelChain[ordered.Count];
+            var missing = new List<int>();
+            for (int i = 0; i < ordered.Count; i++)
+            {
+                ChannelRuntime channel = ordered[i];
+                AlignmentOverride over = overrides.GetValueOrDefault(channel);
+                chains[i] = channel.Settings.ToChain() with
+                {
+                    DelayMs = over.DelayMs,
+                    InvertPolarity = over.InvertPolarity
+                };
+                keys[i] = new ProcessedChannelCacheKey(
+                    searchIrs[channel], channel.SampleRate, chains[i]);
+                ProcessedChannelCache? cached = searchCache.GetValueOrDefault(channel);
+                if (cached?.Key.Equals(keys[i]) == true)
+                {
+                    results[i] = cached;
+                }
+                else
+                {
+                    missing.Add(i);
+                }
+            }
+
+            Parallel.ForEach(missing, i =>
+            {
+                Complex[] result = VirtualCrossoverAnalysis.ApplyChain(
+                    searchIrs[ordered[i]], chains[i], ordered[i].SampleRate);
+                results[i] = new ProcessedChannelCache(
+                    keys[i], result, VirtualCrossoverAnalysis.FindPeakIndex(result));
+            });
+            foreach (int i in missing)
+            {
+                searchCache[ordered[i]] = results[i];
+            }
+
+            return ordered
+                .Select((channel, i) => new AlignmentSnapshot(
+                    channel, results[i].ImpulseResponse, results[i].PeakIndex))
+                .ToList();
+        }
+
+        IReadOnlyList<AlignmentSnapshot> initial = Reprocess(
+            new Dictionary<IAlignmentChannel, AlignmentOverride>());
+        var snapshots = ordered
+            .Select((channel, i) => (channel, snapshot: initial[i]))
+            .ToDictionary(item => item.channel, item => item.snapshot);
         List<AlignmentJunction> junctions = pairs
             .Select(pair => new AlignmentJunction(
                 snapshots[pair.Lower.Channel],
@@ -2714,21 +2771,9 @@ public partial class VirtualCrossoverPanel : UserControl
                 pair.BandHighHz))
             .ToList();
 
-        IReadOnlyList<AlignmentSnapshot> Reprocess(
-            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides)
-        {
-            var mapped = overrides.ToDictionary(
-                entry => (ChannelRuntime)entry.Key,
-                entry => entry.Value);
-            return ProcessChannels(mapped, searchCache)
-                .Select(item => new AlignmentSnapshot(
-                    item.Channel, item.ImpulseResponse, item.PeakIndex))
-                .ToList();
-        }
-
         var engineAlignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
         AutoAlignmentEngine.Compute(
-            byBand.Select(item => snapshots[item.Channel]).ToList(),
+            ordered.Select(channel => snapshots[channel]).ToList(),
             junctions,
             Reprocess,
             engineAlignment,
@@ -2739,6 +2784,14 @@ public partial class VirtualCrossoverPanel : UserControl
             alignment[(ChannelRuntime)channel] = result;
         }
     }
+
+    // The Auto delay search reads only the gated direct sound, so it runs on
+    // a shared crop of the measured IRs (one offset for every channel keeps
+    // the inter-channel timing intact). 64k samples keep well over a second
+    // of decay at 44.1 kHz — conservative headroom over the 4096-sample
+    // evaluation gate and the low-band arrival envelopes.
+    private const int AutoDelaySearchCropLength = 65_536;
+    private const int AutoDelaySearchCropPrePeakSamples = 8_192;
 
     // The per-side participants of a stereo Auto delay run: every enabled
     // channel side with a resolved measurement. A mono pair contributes ONE
@@ -2909,37 +2962,86 @@ public partial class VirtualCrossoverPanel : UserControl
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         System.Text.StringBuilder log)
     {
-        var searchCache = new Dictionary<SideAlignmentChannel, ProcessedChannelCache>();
-        AlignmentSnapshot Process(SideAlignmentChannel side, AlignmentOverride over)
+        // The whole search runs on a shared direct-sound crop of the measured
+        // IRs: the engine only reads the gated direct sound and band-limited
+        // arrivals, so the final delays are identical to a full-length run
+        // (validated on real measurements) while every FFT in the cascade
+        // shrinks from the capture length to the crop.
+        Complex[][] croppedIrs = VirtualCrossoverAnalysis.CropSharedDirectSoundWindow(
+            union.Select(side => side.State.TransferImpulseResponse!).ToList(),
+            AutoDelaySearchCropLength,
+            AutoDelaySearchCropPrePeakSamples);
+        var searchIrs = new Dictionary<SideAlignmentChannel, Complex[]>();
+        for (int i = 0; i < union.Count; i++)
         {
-            Complex[] ir = side.State.TransferImpulseResponse!;
-            DspChannelChain chain = side.Settings.ToChain() with
-            {
-                DelayMs = over.DelayMs,
-                InvertPolarity = over.InvertPolarity
-            };
-            var key = new ProcessedChannelCacheKey(ir, side.State.SampleRate, chain);
-            ProcessedChannelCache? cached = searchCache.GetValueOrDefault(side);
-            if (cached?.Key.Equals(key) != true)
-            {
-                Complex[] result = VirtualCrossoverAnalysis.ApplyChain(
-                    ir, chain, side.State.SampleRate);
-                cached = new ProcessedChannelCache(
-                    key, result, VirtualCrossoverAnalysis.FindPeakIndex(result));
-                searchCache[side] = cached;
-            }
-
-            return new AlignmentSnapshot(side, cached.ImpulseResponse, cached.PeakIndex);
+            searchIrs[union[i]] = croppedIrs[i];
         }
 
-        IReadOnlyList<AlignmentSnapshot> Reprocess(
-            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
-            union
-                .Select(side => Process(side, overrides.GetValueOrDefault(side)))
-                .ToList();
+        var searchCache = new Dictionary<SideAlignmentChannel, ProcessedChannelCache>();
+        ProcessedChannelCache ComputeFresh(
+            SideAlignmentChannel side,
+            ProcessedChannelCacheKey key,
+            DspChannelChain chain)
+        {
+            Complex[] result = VirtualCrossoverAnalysis.ApplyChain(
+                searchIrs[side], chain, side.State.SampleRate);
+            return new ProcessedChannelCache(
+                key, result, VirtualCrossoverAnalysis.FindPeakIndex(result));
+        }
 
+        // Cache misses (all channels on the first call, usually one channel
+        // per cascade step afterwards) run in parallel: ApplyChain is pure
+        // FFT work on independent inputs, and the cache is written back on
+        // this (engine) thread only.
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides)
+        {
+            var results = new ProcessedChannelCache[union.Count];
+            var keys = new ProcessedChannelCacheKey[union.Count];
+            var chains = new DspChannelChain[union.Count];
+            var missing = new List<int>();
+            for (int i = 0; i < union.Count; i++)
+            {
+                SideAlignmentChannel side = union[i];
+                AlignmentOverride over = overrides.GetValueOrDefault(side);
+                chains[i] = side.Settings.ToChain() with
+                {
+                    DelayMs = over.DelayMs,
+                    InvertPolarity = over.InvertPolarity
+                };
+                keys[i] = new ProcessedChannelCacheKey(
+                    searchIrs[side], side.State.SampleRate, chains[i]);
+                ProcessedChannelCache? cached = searchCache.GetValueOrDefault(side);
+                if (cached?.Key.Equals(keys[i]) == true)
+                {
+                    results[i] = cached;
+                }
+                else
+                {
+                    missing.Add(i);
+                }
+            }
+
+            Parallel.ForEach(missing, i =>
+            {
+                results[i] = ComputeFresh(union[i], keys[i], chains[i]);
+            });
+            foreach (int i in missing)
+            {
+                searchCache[union[i]] = results[i];
+            }
+
+            return union
+                .Select((side, i) => new AlignmentSnapshot(
+                    side, results[i].ImpulseResponse, results[i].PeakIndex))
+                .ToList();
+        }
+
+        IReadOnlyList<AlignmentSnapshot> initialSnapshots = Reprocess(
+            new Dictionary<IAlignmentChannel, AlignmentOverride>());
         Dictionary<SideAlignmentChannel, AlignmentSnapshot> initial = union
-            .ToDictionary(side => side, side => Process(side, default));
+            .Select((side, i) => (side, snapshot: initialSnapshots[i]))
+            .ToDictionary(item => item.side, item => item.snapshot);
         List<AlignmentSnapshot> ByBand(List<SideAlignmentChannel> sides) => sides
             .OrderBy(side => VirtualCrossoverJunctions.BandCenterHz(side.Settings))
             .Select(side => initial[side])

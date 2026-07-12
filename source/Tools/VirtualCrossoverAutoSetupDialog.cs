@@ -350,6 +350,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         }
         catch (ArgumentException)
         {
+            // A user-input shape problem (duplicate types, unusable band):
+            // the same quiet signal the synchronous path gives.
             if (IsDisposed)
             {
                 return;
@@ -358,6 +360,26 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             labelPreview.Text = previousPreview;
             buttonApply.Enabled = true;
             System.Media.SystemSounds.Beep.Play();
+        }
+        catch (Exception exception)
+        {
+            // An unhandled exception after an await in an async void handler
+            // would land in the WinForms synchronization context and kill the
+            // process; the ranking spans PLINQ, FFTs and the alignment search,
+            // so restore the dialog and report instead.
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            labelPreview.Text = previousPreview;
+            buttonApply.Enabled = true;
+            MessageBox.Show(
+                this,
+                $"Candidate ranking failed.\r\n\r\n{exception.Message}",
+                "Auto crossover",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
         }
     }
 

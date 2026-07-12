@@ -469,6 +469,26 @@ re-verified.
   delay). Deliberately NOT revisited: `AchievabilityWeight = 0.5` was chosen
   on one dataset (the left 4-way) — re-eyeball if field results disagree with
   the ranking. The dialog's async Apply path needs a live Windows check.
+  **PR #27 review follow-up (fixed):** the first post-check draft (1)
+  compared band-limited arrivals measured in DIFFERENT bands (each driver's
+  own band) — the exact mistake the stereo Δ metric and the engine already
+  warn about; the centers are now per-junction shared-band arrivals of the
+  raw channels, cached by (channel, band) so the Hilbert cost stays bounded;
+  (2) trusted the raw search winner — now the pick goes through
+  `AlignmentSelection.Select` with the arrival anchor, the engine's
+  arrival-anchored prior (sigma = window/4) and a widened edge retry, so an
+  inverted half-period impostor cannot fake achievability the real Auto
+  delay would refuse. Accepted simplifications vs the full engine (recorded,
+  not hidden): no PHAT-seeded timeline, no cascade reprocessing of settled
+  neighbors, no guarded wide-window promotion — junction deltas of a mono
+  N-way compose independently, and the post-check only RANKS. Notable
+  real-data effect of the honesty fix: on the left 4-way the conventional
+  LR24 candidate's sub/woof junction penalty rose ~1 dB (its previous low
+  loss came from an impostor lobe the selection now rejects) and LR12 at
+  40 Hz wins the junction — consistent with the very group-delay argument
+  that capped steep low slopes. The dialog also now catches ALL ranking
+  exceptions (async void + WinForms context would otherwise kill the
+  process), reporting them in a message box.
 - [ ] **`EstimateBand` merges disjoint islands into one band** (first/last bin
   above a global threshold): an isolated resonance above a dead gap extends
   HighHz and misclassifies the driver. Fix: the most significant contiguous

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Numerics;
 
 namespace Resonalyze.Dsp;
@@ -455,16 +456,14 @@ public static class CrossoverAutoSetup
                 .ToArray();
             Complex[][] cropped = CropSharedDirectSoundWindow(
                 orderedIndex.Select(index => impulseResponses[index]).ToArray());
-            double[] junctionCenters = RawJunctionArrivalCentersMs(
-                cropped,
-                orderedIndex.Select(index => channels[index].MagnitudeDb).ToArray(),
-                sampleRate);
+            var arrivalCache =
+                new ConcurrentDictionary<(int Channel, long BandKey), (double Ms, bool Valid)>();
             penalties = pool
                 .AsParallel().AsOrdered()
                 .Select(candidate => AchievabilityPenaltyDb(
                     cropped,
                     orderedIndex.Select(index => candidate.Proposals[index]).ToArray(),
-                    junctionCenters,
+                    arrivalCache,
                     sampleRate))
                 .ToArray();
         }
@@ -519,48 +518,46 @@ public static class CrossoverAutoSetup
         return cropped;
     }
 
-    // The search-window center per junction: the raw channels' band-limited
-    // arrival difference in each driver's OWN band, computed once for all
-    // candidates (a per-candidate arrival analysis was the dominant cost of
-    // the post-check — the Hilbert envelope per candidate per junction cost
-    // more than every alignment search combined).
-    private static double[] RawJunctionArrivalCentersMs(
+    // The raw channel's band-limited arrival in the given SHARED junction
+    // band, cached across candidates. Arrivals from different measuring bands
+    // are NOT comparable (each band carries its own driver group delay and
+    // envelope rise — the same lesson the Auto delay engine and the stereo Δ
+    // metric already encode), so both sides of a junction must be measured in
+    // one band; the cache keeps the Hilbert-envelope cost bounded because the
+    // pool only ever probes a handful of lattice frequencies per junction.
+    private static (double Ms, bool Valid) CachedRawArrival(
+        ConcurrentDictionary<(int Channel, long BandKey), (double Ms, bool Valid)> cache,
         Complex[][] croppedOrdered,
-        IReadOnlyList<SignalPoint>[] orderedCurves,
+        int channel,
+        double bandLowHz,
+        double bandHighHz,
         int sampleRate)
     {
-        var arrivals = new double[croppedOrdered.Length];
-        var valid = new bool[croppedOrdered.Length];
-        for (int channel = 0; channel < croppedOrdered.Length; channel++)
+        long bandKey = ((long)Math.Round(bandLowHz) << 20) | (long)Math.Round(bandHighHz);
+        return cache.GetOrAdd((channel, bandKey), _ =>
         {
-            DriverBandEstimate band = EstimateBand(orderedCurves[channel]);
             TimeAlignmentAnalysisResult arrival =
                 VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-                    croppedOrdered[channel], sampleRate, band.LowHz, band.HighHz);
-            arrivals[channel] = arrival.FirstArrivalDelayMilliseconds;
-            valid[channel] = arrival.IsValid;
-        }
-
-        var centers = new double[Math.Max(0, croppedOrdered.Length - 1)];
-        for (int j = 0; j < centers.Length; j++)
-        {
-            centers[j] = valid[j] && valid[j + 1]
-                ? arrivals[j] - arrivals[j + 1]
-                : 0;
-        }
-
-        return centers;
+                    croppedOrdered[channel], sampleRate, bandLowHz, bandHighHz);
+            return (arrival.FirstArrivalDelayMilliseconds, arrival.IsValid);
+        });
     }
 
     // The summed dip-penalized loss (positive dB, 0 = perfect handovers) that
-    // remains after the BEST per-junction delay for this candidate: each
-    // channel is processed with the candidate's filters and gain, then every
-    // adjacent junction runs the production alignment search in a window
-    // around the raw channels' arrival difference.
+    // remains after the delay the production selection policy would pick for
+    // this candidate: each channel is processed with the candidate's filters
+    // and gain, then every adjacent junction runs the production alignment
+    // search — arrival-anchored prior, AlignmentSelection tie-breaks (an
+    // inverted half-period impostor must not fake achievability the real
+    // Auto delay would refuse) and a widened retry when the pick lands on the
+    // window edge. Deliberate simplifications versus the full engine, judged
+    // acceptable for RANKING: no PHAT-seeded timeline and no cascade
+    // reprocessing of already-settled neighbors (junction deltas of a mono
+    // N-way compose independently).
     private static double AchievabilityPenaltyDb(
         Complex[][] croppedOrdered,
         CrossoverProposal[] orderedProposals,
-        double[] junctionCenters,
+        ConcurrentDictionary<(int Channel, long BandKey), (double Ms, bool Valid)> arrivalCache,
         int sampleRate)
     {
         var processed = new Complex[croppedOrdered.Length][];
@@ -590,26 +587,53 @@ public static class CrossoverAutoSetup
 
             double bandLow = Math.Max(20, Math.Min(lp, hp) / 2);
             double bandHigh = Math.Min(20_000, Math.Max(lp, hp) * 2);
-            double center = junctionCenters[j];
-            double halfWindow = PostCheckHalfWindowMs(Math.Min(lp, hp));
 
-            IReadOnlyList<AlignmentCandidate> found =
+            // Both sides measured in the SAME shared band; unreadable arrivals
+            // fall back to an unanchored search over the widest window.
+            (double lowerMs, bool lowerValid) = CachedRawArrival(
+                arrivalCache, croppedOrdered, j, bandLow, bandHigh, sampleRate);
+            (double upperMs, bool upperValid) = CachedRawArrival(
+                arrivalCache, croppedOrdered, j + 1, bandLow, bandHigh, sampleRate);
+            bool anchored = lowerValid && upperValid;
+            double center = anchored ? lowerMs - upperMs : 0;
+            double halfWindow = anchored
+                ? PostCheckHalfWindowMs(Math.Min(lp, hp))
+                : PostCheckMaxHalfWindowMs;
+
+            IReadOnlyList<AlignmentCandidate> Search(double half) =>
                 VirtualCrossoverAnalysis.FindAlignmentCandidates(
                     processed[j + 1],
                     [processed[j]],
                     sampleRate,
                     bandLow,
                     bandHigh,
-                    center - halfWindow,
-                    center + halfWindow);
+                    center - half,
+                    center + half,
+                    priorDelayMs: anchored ? center : null,
+                    priorSigmaMs: half / 2.0);
+
+            IReadOnlyList<AlignmentCandidate> found = Search(halfWindow);
             if (found.Count == 0)
             {
                 penalty += PostCheckMissingJunctionPenaltyDb;
                 continue;
             }
 
-            AlignmentCandidate best = found[0];
-            penalty += -(best.LossDb + DipPenaltyWeight * (best.DipDb - best.LossDb));
+            AlignmentCandidate chosen = AlignmentSelection.Select(found, center);
+            // A pick at the window edge means the true lobe may be cut off;
+            // one widened retry, re-selected through the same rules — taking
+            // the retried best raw would hand the widened window to exactly
+            // the impostor the selection exists to reject.
+            if (Math.Abs(chosen.DelayMs - center) >= halfWindow * 0.9)
+            {
+                IReadOnlyList<AlignmentCandidate> retried = Search(halfWindow * 2);
+                if (retried.Count > 0)
+                {
+                    chosen = AlignmentSelection.Select(retried, center);
+                }
+            }
+
+            penalty += -(chosen.LossDb + DipPenaltyWeight * (chosen.DipDb - chosen.LossDb));
         }
 
         return penalty;

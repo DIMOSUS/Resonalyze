@@ -298,6 +298,61 @@ public sealed class CrossoverRankedProposalTests
         }
     }
 
+    // With independent slopes OFF, "matched" means one slope for the WHOLE
+    // system: every junction edge of every candidate uses the same dB/oct.
+    // Before this rule the search matched the two sides of each junction but
+    // let junctions differ, handing one channel a 12 dB/oct high-pass next to
+    // an 18 dB/oct low-pass.
+    [Fact]
+    public void ProposeRanked_MatchedSlopesUseOneSlopeForTheWholeSystem()
+    {
+        var sources = new List<AutoSetupSource>
+        {
+            new(BandCurve(20, 150), DriverType.Subwoofer),
+            new(BandCurve(50, 700), DriverType.Woofer),
+            new(BandCurve(250, 5_000), DriverType.Midrange),
+            new(BandCurve(1_800, 20_000), DriverType.Tweeter)
+        };
+        var options = new CrossoverAutoSetupOptions(
+            [CrossoverFilterFamily.Butterworth],
+            20,
+            20_000,
+            IndependentSlopes: false,
+            SampleRate);
+
+        IReadOnlyList<RankedCrossoverProposal> ranked =
+            CrossoverAutoSetup.ProposeRanked(sources, options, candidateCount: 50);
+
+        Assert.NotEmpty(ranked);
+        var systemSlopes = new HashSet<int>();
+        foreach (RankedCrossoverProposal candidate in ranked)
+        {
+            var slopes = new HashSet<int>();
+            for (int i = 0; i < candidate.Proposals.Count; i++)
+            {
+                // The outer band-limit edges are protection filters, not
+                // junctions; only interior edges carry the system slope.
+                if (i > 0 && candidate.Proposals[i].HighPassEdge is { } highPass)
+                {
+                    slopes.Add(highPass.SlopeDbPerOctave);
+                }
+                if (i < candidate.Proposals.Count - 1 &&
+                    candidate.Proposals[i].LowPassEdge is { } lowPass)
+                {
+                    slopes.Add(lowPass.SlopeDbPerOctave);
+                }
+            }
+
+            int slope = Assert.Single(slopes);
+            systemSlopes.Add(slope);
+        }
+
+        // The merged pool still weighs different system slopes against each
+        // other — the uniformity must come from candidates, not from the
+        // search collapsing to a single slope.
+        Assert.True(systemSlopes.Count > 1, "Expected more than one system slope in the pool.");
+    }
+
     // With ideal impulse drivers a matched LR24 handover is losslessly
     // alignable, so the post-check must hand the win to the conventional
     // candidate with a near-zero penalty.

@@ -64,8 +64,10 @@ public sealed record RankedCrossoverProposal(
 /// The choices the crossover wizard asks for before optimizing: which filter
 /// families the optimizer may pick from, the frequency window crossovers must
 /// fall inside, and whether the two sides of a junction may take different
-/// slopes. The sample rate is needed because the optimizer evaluates the exact
-/// digital biquad cascades the DSP runs.
+/// slopes. With <see cref="IndependentSlopes"/> off the whole system uses ONE
+/// slope — every junction, both sides — searched over the practical slopes the
+/// allowed families offer. The sample rate is needed because the optimizer
+/// evaluates the exact digital biquad cascades the DSP runs.
 /// </summary>
 public sealed record CrossoverAutoSetupOptions(
     IReadOnlyList<CrossoverFilterFamily> Families,
@@ -367,8 +369,51 @@ public static class CrossoverAutoSetup
         }
 
         options = Normalize(options);
-        return new Optimizer(channels, options).Solve();
+        if (options.IndependentSlopes)
+        {
+            return new Optimizer(channels, options).Solve();
+        }
+
+        return BestUniformSlopeCandidate(channels, options).Proposals;
     }
+
+    // With independent slopes off, "matched" means ONE slope for the whole
+    // system: every junction (and both of its sides) uses the same dB/oct.
+    // A mixed 12/18 pair on one channel's two shoulders reads as broken to
+    // the user even though each junction is internally matched. Each
+    // feasible slope gets its own pinned descent; the best state wins.
+    private static PoolCandidate BestUniformSlopeCandidate(
+        IReadOnlyList<AutoSetupSource> channels,
+        CrossoverAutoSetupOptions options)
+    {
+        // Every family offers 24 dB/oct and slopes at or below the low-junction
+        // cap always pass the Capture guard, so at least one run produces a
+        // candidate.
+        return UniformSlopeCandidates(options.Families)
+            .Select(slope => new Optimizer(channels, options, forcedSlope: slope)
+                .SolvePool(1)
+                .FirstOrDefault())
+            .Where(candidate => candidate != null)
+            .MinBy(candidate => candidate!.MagnitudeScore)!;
+    }
+
+    // The system-wide slopes the matched-slopes mode may try: every practical
+    // slope some allowed family offers.
+    private static IReadOnlyList<int> UniformSlopeCandidates(
+        IReadOnlyList<CrossoverFilterFamily> families) =>
+        families
+            .SelectMany(PracticalSlopes)
+            .Distinct()
+            .OrderBy(slope => slope)
+            .ToList();
+
+    // The slopes a family offers above the practical floor: an engineer does
+    // not reach for a 6 dB/oct crossover — it protects nothing and leaves the
+    // drivers overlapping over a huge span.
+    private static IReadOnlyList<int> PracticalSlopes(CrossoverFilterFamily family) =>
+        CrossoverFilter.SupportedSlopes(family)
+            .Where(slope => slope >= MinPracticalSlopeDbPerOctave)
+            .ToList();
 
     /// <summary>
     /// The ranked wizard search: expands a pool of up to
@@ -415,8 +460,37 @@ public static class CrossoverAutoSetup
         }
 
         options = Normalize(options);
-        List<PoolCandidate> pool = new Optimizer(channels, options)
-            .SolvePool(candidateCount);
+        List<PoolCandidate> pool;
+        if (options.IndependentSlopes)
+        {
+            pool = new Optimizer(channels, options).SolvePool(candidateCount);
+        }
+        else
+        {
+            // Matched slopes = one slope for the whole system (see
+            // BestUniformSlopeCandidate): one pinned pool per feasible slope,
+            // merged, so every candidate is internally uniform while the
+            // ranking still weighs the slopes against each other.
+            pool = new List<PoolCandidate>();
+            var poolSeen = new HashSet<string>();
+            foreach (int slope in UniformSlopeCandidates(options.Families))
+            {
+                foreach (PoolCandidate candidate in
+                    new Optimizer(channels, options, forcedSlope: slope)
+                        .SolvePool(candidateCount))
+                {
+                    if (poolSeen.Add(candidate.Signature))
+                    {
+                        pool.Add(candidate);
+                    }
+                }
+            }
+
+            pool = pool
+                .OrderBy(candidate => candidate.MagnitudeScore)
+                .Take(candidateCount)
+                .ToList();
+        }
 
         // The conventional candidate: every slope locked to 24 dB/oct,
         // Linkwitz-Riley when the user allows it — what an engineer reaches
@@ -1037,6 +1111,20 @@ public static class CrossoverAutoSetup
             var seen = new HashSet<string>();
             void Capture()
             {
+                // A pinned steep slope can leave a low junction stranded at its
+                // seed frequency when no lattice point in its window allows the
+                // slope (AllowedSlopes empty) — such a state violates the
+                // low-junction cap and must not become a candidate.
+                for (int j = 0; j < channelCount - 1; j++)
+                {
+                    if (crossoverHz[j] < SteepSlopeMinimumJunctionHz &&
+                        (lowerSlope[j] > LowJunctionMaxSlopeDbPerOctave ||
+                            upperSlope[j] > LowJunctionMaxSlopeDbPerOctave))
+                    {
+                        return;
+                    }
+                }
+
                 NormalizeGainsCutOnly();
                 IReadOnlyList<CrossoverProposal> proposals = BuildProposals();
                 string signature = SignatureOf(proposals);
@@ -1164,6 +1252,15 @@ public static class CrossoverAutoSetup
         private void Initialize()
         {
             CrossoverFilterFamily family = PreferredFamily();
+            if (forcedSlope is int pinned && !PracticalSlopes(family).Contains(pinned))
+            {
+                // The preferred family may not offer the pinned slope (LR has
+                // no 18/36); seeding it anyway would ask CrossoverFilter for
+                // an unsupported cascade.
+                family = options.Families
+                    .FirstOrDefault(f => PracticalSlopes(f).Contains(pinned), family);
+            }
+
             int slope = forcedSlope ?? PreferredSlope(family);
             for (int j = 0; j < channelCount - 1; j++)
             {
@@ -1212,14 +1309,6 @@ public static class CrossoverAutoSetup
                 : slopes.MinBy(slope => Math.Abs(slope - CrossoverSlopeDbPerOctave));
         }
 
-        // The slopes a family offers above the practical floor: an engineer does
-        // not reach for a 6 dB/oct crossover — it protects nothing and leaves the
-        // drivers overlapping over a huge span.
-        private static IReadOnlyList<int> PracticalSlopes(CrossoverFilterFamily family) =>
-            CrossoverFilter.SupportedSlopes(family)
-                .Where(slope => slope >= MinPracticalSlopeDbPerOctave)
-                .ToList();
-
         // The slopes the search may actually try at this junction frequency:
         // the family's practical slopes, capped at 24 dB/oct below
         // SteepSlopeMinimumJunctionHz (group delay), or pinned to the forced
@@ -1227,14 +1316,22 @@ public static class CrossoverAutoSetup
         private IReadOnlyList<int> AllowedSlopes(CrossoverFilterFamily family, double fcHz)
         {
             IReadOnlyList<int> slopes = PracticalSlopes(family);
+            if (fcHz < SteepSlopeMinimumJunctionHz)
+            {
+                // The group-delay cap binds the pinned runs too: a system-wide
+                // 36/48 dB/oct candidate is simply infeasible while it owns a
+                // junction below 300 Hz.
+                slopes = slopes
+                    .Where(slope => slope <= LowJunctionMaxSlopeDbPerOctave)
+                    .ToList();
+            }
+
             if (forcedSlope is int locked)
             {
                 return slopes.Contains(locked) ? [locked] : [];
             }
 
-            return fcHz < SteepSlopeMinimumJunctionHz
-                ? slopes.Where(slope => slope <= LowJunctionMaxSlopeDbPerOctave).ToList()
-                : slopes;
+            return slopes;
         }
 
         // Cut-only seed: bring every band down to the quietest, measured over the

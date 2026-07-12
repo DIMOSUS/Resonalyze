@@ -500,6 +500,19 @@ re-verified.
   the dedicated conventional run's signature — exactly one candidate, LR24
   when LR is allowed. (3) The dialog freezes every ranking-input control
   while the async ranking runs, so stale settings can't be applied.
+  **Matched slopes = one system slope (user decision 2026-07-12):** with
+  "Independent slopes per side" off the whole system uses ONE dB/oct —
+  every junction, both sides (families may still differ per junction). The
+  old semantics (sides matched per junction, junctions free) put a 12 dB
+  high-pass next to an 18 dB low-pass on one channel and read as broken.
+  Implemented as one pinned (forcedSlope) descent+pool per practical slope,
+  merged; the <300 Hz cap now also binds pinned runs, so a system-wide
+  36/48 is infeasible while a low junction exists. Real-data winner:
+  all-24 system (BW24@45 / LR24@250 / LR24@3850), pool 0.52 s, full ranked
+  3.6 s. Preview and applied result can no longer disagree on slopes;
+  the ranking may still move a crossover frequency by a lattice step
+  relative to the preview (two-phase Apply remains an option if that
+  still bothers in the field).
 - [ ] **`EstimateBand` merges disjoint islands into one band** (first/last bin
   above a global threshold): an isolated resonance above a dead gap extends
   HighHz and misclassifies the driver. Fix: the most significant contiguous

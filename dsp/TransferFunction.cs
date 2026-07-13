@@ -12,8 +12,10 @@ public static class TransferFunction
     // epsilon changes meaning with the record level and with the accumulated
     // average count (the spectra below are unnormalized running sums), so its
     // strength silently drifted between measurements; -100 dB of the peak bin
-    // is scale-invariant and sits far below the excitation-gate floor, so it
-    // only guards the truly degenerate zero-power bins.
+    // is scale-invariant. Note it does no gating work of its own: any bin the
+    // gates let through already has at least gateLow (-74 dB re max) in the
+    // denominator, so λ biases it by under 0.25% — it only keeps the division
+    // Tikhonov-safe should the gate constants ever loosen.
     private const double RelativeRegularization = 1e-10;
 
     // The power gate: bins whose reference power sits more than 60 dB under

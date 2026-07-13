@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp
@@ -107,6 +108,239 @@ namespace Resonalyze.Dsp
                 out extractionStart);
             Fourier.Forward(spectrum, FourierOptions.Matlab);
             return spectrum;
+        }
+
+        private const double FdwMinimumDurationSeconds = 0.0008;
+        private const double FdwCentersPerOctave = 3.0;
+        private static readonly ConditionalWeakTable<Complex[], PhaseSpectrumCache>
+            PhaseSpectrumCaches = new();
+
+        private sealed class PhaseSpectrumCache
+        {
+            public Dictionary<PhaseSpectrumCacheKey, CachedPhaseSpectrum> Entries { get; } = new();
+        }
+
+        private readonly record struct PhaseSpectrumCacheKey(
+            int SampleRate,
+            double GateOffsetMs,
+            double LeftMs,
+            double PlateauMs,
+            double RightMs,
+            PhaseWindowMode WindowMode,
+            int FdwCycles,
+            int FftLength);
+
+        private sealed record CachedPhaseSpectrum(Complex[] Spectrum, int ExtractionStart);
+
+        private sealed record FdwSpectrumEntry(
+            double CenterFrequencyHz,
+            int EffectiveGateSamples,
+            Complex[] Spectrum,
+            int ExtractionStart);
+
+        private static Complex[] BuildAnalysisSpectrum(
+            IImpulseMeasurement measurement,
+            PhaseAnalysisSettings settings,
+            out int extractionStart)
+        {
+            Complex[] impulse = measurement.ImpulseResponse
+                ?? throw new InvalidOperationException("Impulse response is not available.");
+            var key = new PhaseSpectrumCacheKey(
+                measurement.SampleRate,
+                settings.GateOffsetMs,
+                settings.LeftMs,
+                settings.PlateauMs,
+                settings.RightMs,
+                settings.WindowMode,
+                settings.ValidatedFdwCycles,
+                GatedFftLength);
+            PhaseSpectrumCache cache = PhaseSpectrumCaches.GetOrCreateValue(impulse);
+            lock (cache.Entries)
+            {
+                if (cache.Entries.TryGetValue(key, out CachedPhaseSpectrum? cached))
+                {
+                    extractionStart = cached.ExtractionStart;
+                    return cached.Spectrum;
+                }
+            }
+
+            Complex[] spectrum;
+            if (settings.WindowMode == PhaseWindowMode.Fixed)
+            {
+                spectrum = BuildPhaseSpectrum(
+                    measurement,
+                    settings.GateOffsetMs,
+                    settings.LeftMs,
+                    settings.PlateauMs,
+                    settings.RightMs,
+                    out extractionStart);
+            }
+            else
+            {
+                spectrum = BuildFdwSpectrum(measurement, settings, out extractionStart);
+            }
+            lock (cache.Entries)
+            {
+                cache.Entries[key] = new CachedPhaseSpectrum(spectrum, extractionStart);
+            }
+            return spectrum;
+        }
+
+        private static Complex[] BuildFdwSpectrum(
+            IImpulseMeasurement measurement,
+            PhaseAnalysisSettings settings,
+            out int extractionStart)
+        {
+            int sampleRate = measurement.SampleRate;
+            int left = MillisecondsToSamples(settings.LeftMs, sampleRate);
+            int plateau = MillisecondsToSamples(settings.PlateauMs, sampleRate);
+            int right = MillisecondsToSamples(settings.RightMs, sampleRate);
+            int fixedGate = Math.Clamp(left + plateau + right, 1, GatedFftLength);
+            // The left shoulder is the immutable temporal anchor. The 0.8 ms
+            // floor therefore applies to analysis time after that shoulder;
+            // otherwise a long configured fade could consume the whole shortest
+            // window and zero the direct arrival at its endpoint.
+            int minimumGate = Math.Clamp(
+                left + (int)Math.Round(FdwMinimumDurationSeconds * sampleRate),
+                1,
+                fixedGate);
+            int cycles = settings.ValidatedFdwCycles;
+            double binWidth = sampleRate / (double)GatedFftLength;
+            double nyquist = sampleRate / 2.0;
+            var entries = new List<FdwSpectrumEntry>();
+            int previousGate = -1;
+
+            for (double center = binWidth; center <= nyquist;
+                 center *= Math.Pow(2.0, 1.0 / FdwCentersPerOctave))
+            {
+                int effectiveGate = Math.Clamp(
+                    (int)Math.Round(cycles * sampleRate / center),
+                    minimumGate,
+                    fixedGate);
+                if (effectiveGate == previousGate)
+                {
+                    continue;
+                }
+
+                Complex[] spectrum = ExtractFdwWindowedImpulse(
+                    measurement,
+                    settings.GateOffsetMs,
+                    left,
+                    right,
+                    effectiveGate,
+                    out int start);
+                Fourier.Forward(spectrum, FourierOptions.Matlab);
+                entries.Add(new FdwSpectrumEntry(center, effectiveGate, spectrum, start));
+                previousGate = effectiveGate;
+            }
+
+            if (entries.Count == 0 || entries[^1].CenterFrequencyHz < nyquist)
+            {
+                int effectiveGate = minimumGate;
+                Complex[] spectrum = ExtractFdwWindowedImpulse(
+                    measurement,
+                    settings.GateOffsetMs,
+                    left,
+                    right,
+                    effectiveGate,
+                    out int start);
+                Fourier.Forward(spectrum, FourierOptions.Matlab);
+                if (entries.Count == 0 || entries[^1].EffectiveGateSamples != effectiveGate)
+                {
+                    entries.Add(new FdwSpectrumEntry(nyquist, effectiveGate, spectrum, start));
+                }
+            }
+
+            extractionStart = entries[0].ExtractionStart;
+            foreach (FdwSpectrumEntry entry in entries)
+            {
+                ApplyTimeReference(entry.Spectrum, entry.ExtractionStart, extractionStart);
+            }
+
+            var combined = new Complex[GatedFftLength];
+            int upperIndex = 0;
+            for (int bin = 0; bin <= combined.Length / 2; bin++)
+            {
+                double frequency = bin * binWidth;
+                while (upperIndex < entries.Count - 1 &&
+                       entries[upperIndex].CenterFrequencyHz < frequency)
+                {
+                    upperIndex++;
+                }
+
+                if (upperIndex == 0)
+                {
+                    combined[bin] = entries[0].Spectrum[bin];
+                    continue;
+                }
+
+                FdwSpectrumEntry lower = entries[upperIndex - 1];
+                FdwSpectrumEntry upper = entries[upperIndex];
+                double logFrequency = Math.Log(Math.Max(frequency, lower.CenterFrequencyHz));
+                double t = (logFrequency - Math.Log(lower.CenterFrequencyHz)) /
+                    (Math.Log(upper.CenterFrequencyHz) - Math.Log(lower.CenterFrequencyHz));
+                combined[bin] = InterpolateSpectrum(
+                    lower.Spectrum[bin], upper.Spectrum[bin], Math.Clamp(t, 0.0, 1.0));
+            }
+            for (int bin = 1; bin < combined.Length / 2; bin++)
+            {
+                combined[combined.Length - bin] = Complex.Conjugate(combined[bin]);
+            }
+
+            return combined;
+        }
+
+        private static Complex[] ExtractFdwWindowedImpulse(
+            IImpulseMeasurement measurement,
+            double gateOffsetMs,
+            int requestedLeft,
+            int requestedRight,
+            int gate,
+            out int extractionStart)
+        {
+            int left = Math.Min(requestedLeft, gate);
+            int right = Math.Min(requestedRight, gate - left);
+            double[] tukey = Windowing.TukeyWindow(
+                gate,
+                (double)left / gate * 2.0,
+                (double)right / gate * 2.0);
+            double[] window = new double[GatedFftLength];
+            Array.Copy(tukey, window, gate);
+            extractionStart = MillisecondsToSamples(gateOffsetMs, measurement.SampleRate) - left;
+            return ExtractWindow(measurement, extractionStart, GatedFftLength, window, wrap: true);
+        }
+
+        private static void ApplyTimeReference(
+            Complex[] spectrum,
+            int extractionStart,
+            double referenceSamples)
+        {
+            double shift = referenceSamples - extractionStart;
+            if (shift == 0.0)
+            {
+                return;
+            }
+
+            for (int bin = 0; bin < spectrum.Length; bin++)
+            {
+                spectrum[bin] *= Complex.FromPolarCoordinates(
+                    1.0,
+                    Math.Tau * bin * shift / spectrum.Length);
+            }
+        }
+
+        private static Complex InterpolateSpectrum(Complex lower, Complex upper, double t)
+        {
+            const double epsilon = 1e-300;
+            double lowerMagnitude = Math.Max(lower.Magnitude, epsilon);
+            double upperMagnitude = Math.Max(upper.Magnitude, epsilon);
+            double logMagnitude = Math.Log(lowerMagnitude) +
+                (Math.Log(upperMagnitude) - Math.Log(lowerMagnitude)) * t;
+            Complex rotation = upper / upperMagnitude * Complex.Conjugate(lower / lowerMagnitude);
+            double deltaPhase = Math.Atan2(rotation.Imaginary, rotation.Real);
+            return Complex.FromPolarCoordinates(
+                Math.Exp(logMagnitude),
+                lower.Phase + deltaPhase * t);
         }
 
         // Reliability gates for the unwrapped phase: bins this far below the LOCAL
@@ -371,6 +605,62 @@ namespace Resonalyze.Dsp
                 coherence);
         }
 
+        public static List<SignalPoint> GetGatedPhaseData(
+            IImpulseMeasurement measurement,
+            PhaseAnalysisSettings settings,
+            IReadOnlyList<double>? coherence = null)
+        {
+            Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out int extractionStart);
+            double detrendMilliseconds = ResolveDetrendMilliseconds(
+                spectrum,
+                extractionStart,
+                measurement.SampleRate,
+                settings);
+            return BuildMeasuredPhase(
+                spectrum,
+                extractionStart,
+                detrendMilliseconds * measurement.SampleRate / 1000.0,
+                measurement.SampleRate,
+                settings.Unwrap,
+                coherence);
+        }
+
+        public static double ResolvePhaseDetrendMilliseconds(
+            IImpulseMeasurement measurement,
+            PhaseAnalysisSettings settings)
+        {
+            Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out int extractionStart);
+            return ResolveDetrendMilliseconds(
+                spectrum,
+                extractionStart,
+                measurement.SampleRate,
+                settings);
+        }
+
+        /// <summary>
+        /// Resolves the one Auto reference that a multi-curve view must reuse for
+        /// every channel and sum. The reference measurement is intentionally the
+        /// only signal accepted, making per-channel auto-flattening a caller-visible
+        /// policy error rather than an accidental loop implementation.
+        /// </summary>
+        public static double ResolveCommonPhaseDetrendMilliseconds(
+            IImpulseMeasurement referenceMeasurement,
+            PhaseAnalysisSettings settings) =>
+            ResolvePhaseDetrendMilliseconds(referenceMeasurement, settings);
+
+        private static double ResolveDetrendMilliseconds(
+            Complex[] spectrum,
+            int extractionStart,
+            int sampleRate,
+            PhaseAnalysisSettings settings) => settings.DetrendMode switch
+            {
+                PhaseDetrendMode.Off => 0.0,
+                PhaseDetrendMode.Manual => settings.ManualDetrendMilliseconds,
+                PhaseDetrendMode.Auto => EstimatePhaseDetrend(
+                    spectrum, extractionStart, sampleRate).SlopeMilliseconds,
+                _ => 0.0
+            };
+
         public static AnalysisCurve GetPhase(
             IImpulseMeasurement measurement,
             double gateOffsetMs,
@@ -402,6 +692,22 @@ namespace Resonalyze.Dsp
                 "Phase",
                 smoothingInverseOctaves > 0
                     ? SmoothLinear(data, 1.0 / smoothingInverseOctaves)
+                    : data);
+        }
+
+        public static AnalysisCurve GetPhase(
+            IImpulseMeasurement measurement,
+            PhaseAnalysisSettings settings,
+            IReadOnlyList<double>? coherence = null)
+        {
+            List<SignalPoint> phase = GetGatedPhaseData(measurement, settings, coherence);
+            List<SignalPoint> data = phase
+                .Select(point => new SignalPoint(point.X, point.Y / Math.PI * 180.0))
+                .ToList();
+            return new AnalysisCurve(
+                "Phase",
+                settings.SmoothingInverseOctaves > 0
+                    ? SmoothLinear(data, 1.0 / settings.SmoothingInverseOctaves)
                     : data);
         }
 
@@ -446,6 +752,37 @@ namespace Resonalyze.Dsp
                 data.Add(new SignalPoint(f, minimumPhase[i] / Math.PI * 180.0));
             }
 
+            return new AnalysisCurve(
+                "Minimum Phase",
+                smoothingInverseOctaves > 0
+                    ? SmoothLinear(data, 1.0 / smoothingInverseOctaves)
+                    : data,
+                AnalysisCurveKind.MinimumPhase);
+        }
+
+        public static AnalysisCurve GetMinimumPhase(
+            IImpulseMeasurement measurement,
+            PhaseAnalysisSettings settings)
+        {
+            Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out _);
+            return BuildMinimumPhaseCurve(
+                spectrum, measurement.SampleRate, settings.SmoothingInverseOctaves);
+        }
+
+        private static AnalysisCurve BuildMinimumPhaseCurve(
+            Complex[] spectrum,
+            int sampleRate,
+            double smoothingInverseOctaves)
+        {
+            double[] magnitude = spectrum.Select(value => value.Magnitude).ToArray();
+            double[] minimumPhase = MinimumPhase.FromMagnitude(magnitude);
+            var data = new List<SignalPoint>(spectrum.Length / 2);
+            for (int i = 1; i < spectrum.Length / 2; i++)
+            {
+                data.Add(new SignalPoint(
+                    i * sampleRate / (double)spectrum.Length,
+                    minimumPhase[i] / Math.PI * 180.0));
+            }
             return new AnalysisCurve(
                 "Minimum Phase",
                 smoothingInverseOctaves > 0
@@ -517,6 +854,39 @@ namespace Resonalyze.Dsp
                 AnalysisCurveKind.ExcessPhase);
         }
 
+        public static AnalysisCurve GetExcessPhase(
+            IImpulseMeasurement measurement,
+            PhaseAnalysisSettings settings,
+            IReadOnlyList<double>? coherence = null)
+        {
+            Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out int extractionStart);
+            double detrendMilliseconds = ResolveDetrendMilliseconds(
+                spectrum, extractionStart, measurement.SampleRate, settings);
+            List<SignalPoint> measured = BuildMeasuredPhase(
+                spectrum,
+                extractionStart,
+                detrendMilliseconds * measurement.SampleRate / 1000.0,
+                measurement.SampleRate,
+                unwrap: true,
+                coherence);
+            double[] minimumPhase = MinimumPhase.FromMagnitude(
+                spectrum.Select(value => value.Magnitude).ToArray());
+            var data = new List<SignalPoint>(measured.Count);
+            for (int j = 0; j < measured.Count; j++)
+            {
+                double excess = double.IsNaN(measured[j].Y)
+                    ? double.NaN
+                    : measured[j].Y - minimumPhase[j + 1];
+                data.Add(new SignalPoint(measured[j].X, excess / Math.PI * 180.0));
+            }
+            return new AnalysisCurve(
+                "Excess Phase",
+                settings.SmoothingInverseOctaves > 0
+                    ? SmoothLinear(data, 1.0 / settings.SmoothingInverseOctaves)
+                    : data,
+                AnalysisCurveKind.ExcessPhase);
+        }
+
         /// <summary>
         /// Estimates the τ (in milliseconds) that flattens the excess phase, using the
         /// same window as the displayed curves. Returns both the energy-weighted
@@ -539,16 +909,27 @@ namespace Resonalyze.Dsp
                 rightMs,
                 out int extractionStart);
 
-            ExcessDelayResult result = ExcessDelay.Estimate(
-                spectrum,
-                measurement.SampleRate);
+            return EstimatePhaseDetrend(spectrum, extractionStart, measurement.SampleRate);
+        }
 
-            // ExcessDelay reports the delay relative to the window start; add the
-            // extraction start to get an absolute sample, then convert to ms.
-            double toMilliseconds = 1000.0 / measurement.SampleRate;
-            double slopeMs = (extractionStart + result.SlopeDelaySamples) * toMilliseconds;
-            double peakMs = (extractionStart + result.PeakDelaySamples) * toMilliseconds;
-            return (slopeMs, peakMs);
+        public static (double SlopeMilliseconds, double PeakMilliseconds) EstimatePhaseDetrend(
+            IImpulseMeasurement measurement,
+            PhaseAnalysisSettings settings)
+        {
+            Complex[] spectrum = BuildAnalysisSpectrum(measurement, settings, out int extractionStart);
+            return EstimatePhaseDetrend(spectrum, extractionStart, measurement.SampleRate);
+        }
+
+        private static (double SlopeMilliseconds, double PeakMilliseconds) EstimatePhaseDetrend(
+            Complex[] spectrum,
+            int extractionStart,
+            int sampleRate)
+        {
+            ExcessDelayResult result = ExcessDelay.Estimate(spectrum, sampleRate);
+            double toMilliseconds = 1000.0 / sampleRate;
+            return (
+                (extractionStart + result.SlopeDelaySamples) * toMilliseconds,
+                (extractionStart + result.PeakDelaySamples) * toMilliseconds);
         }
 
         // Minimal energy-weighted smoothing applied even when display smoothing is

@@ -7,7 +7,7 @@ namespace Resonalyze;
 
 internal sealed class MeasurementSettingsFile
 {
-    private const int CurrentSchemaVersion = 7;
+    private const int CurrentSchemaVersion = 8;
     private const string FileName = "measurement-settings.json";
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
@@ -51,9 +51,20 @@ internal sealed class MeasurementSettingsFile
                 JsonSerializer.Deserialize<MeasurementSettingsFile>(
                     stream,
                     SerializerOptions);
-            if (settings?.SchemaVersion != CurrentSchemaVersion)
+            if (settings == null || settings.SchemaVersion is not (7 or CurrentSchemaVersion))
             {
                 return new MeasurementSettingsFile();
+            }
+
+            if (settings.SchemaVersion == 7)
+            {
+                settings.PhaseResponse.PhaseWindowMode =
+                    Resonalyze.Dsp.PhaseWindowMode.Fixed;
+                settings.PhaseResponse.PhaseDetrendMode =
+                    Resonalyze.Dsp.PhaseDetrendMode.Manual;
+                settings.PhaseResponse.PhaseFdwCycles =
+                    PhaseAnalysisSettings.DefaultFdwCycles;
+                settings.SchemaVersion = CurrentSchemaVersion;
             }
 
             settings.MigrateLegacyDualDeviceLoopback();
@@ -302,6 +313,11 @@ internal sealed class MeasurementSettingsFile
         public double PhasePlateauMs { get; set; } = FrequencyResponseOptions.DefaultPhasePlateauMs;
         public double PhaseRightMs { get; set; } = FrequencyResponseOptions.DefaultPhaseRightMs;
         public double PhaseDetrendMs { get; set; } = FrequencyResponseOptions.DefaultPhaseDetrendMs;
+        public PhaseWindowMode? PhaseWindowMode { get; set; } =
+            Resonalyze.Dsp.PhaseWindowMode.FrequencyDependent;
+        public int PhaseFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
+        public PhaseDetrendMode? PhaseDetrendMode { get; set; } =
+            Resonalyze.Dsp.PhaseDetrendMode.Auto;
         public double GroupDelayGateOffsetMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayGateOffsetMs;
         public double GroupDelayLeftMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayLeftMs;
         public double GroupDelayPlateauMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayPlateauMs;
@@ -336,6 +352,9 @@ internal sealed class MeasurementSettingsFile
                 PhasePlateauMs = options.PhasePlateauMs,
                 PhaseRightMs = options.PhaseRightMs,
                 PhaseDetrendMs = options.PhaseDetrendMs,
+                PhaseWindowMode = options.PhaseWindowMode,
+                PhaseFdwCycles = options.PhaseFdwCycles,
+                PhaseDetrendMode = options.PhaseDetrendMode,
                 GroupDelayGateOffsetMs = options.GroupDelayGateOffsetMs,
                 GroupDelayLeftMs = options.GroupDelayLeftMs,
                 GroupDelayPlateauMs = options.GroupDelayPlateauMs,
@@ -371,6 +390,19 @@ internal sealed class MeasurementSettingsFile
             options.PhasePlateauMs = ClampMilliseconds(PhasePlateauMs, 0.0, 1000.0);
             options.PhaseRightMs = ClampMilliseconds(PhaseRightMs, 0.0, 1000.0);
             options.PhaseDetrendMs = ClampMilliseconds(PhaseDetrendMs, -2000.0, 2000.0);
+            // Missing fields identify the pre-FDW format: retain its Fixed/manual
+            // representation rather than silently changing existing projects.
+            options.PhaseWindowMode = PhaseWindowMode is { } windowMode &&
+                Enum.IsDefined(windowMode)
+                    ? windowMode
+                    : Resonalyze.Dsp.PhaseWindowMode.Fixed;
+            options.PhaseFdwCycles = PhaseFdwCycles is 4 or 6 or 8
+                ? PhaseFdwCycles
+                : PhaseAnalysisSettings.DefaultFdwCycles;
+            options.PhaseDetrendMode = PhaseDetrendMode is { } detrendMode &&
+                Enum.IsDefined(detrendMode)
+                    ? detrendMode
+                    : Resonalyze.Dsp.PhaseDetrendMode.Manual;
             options.GroupDelayGateOffsetMs = ClampMilliseconds(GroupDelayGateOffsetMs, 0.0, 2000.0);
             options.GroupDelayLeftMs = ClampMilliseconds(GroupDelayLeftMs, 0.0, 1000.0);
             options.GroupDelayPlateauMs = ClampMilliseconds(GroupDelayPlateauMs, 0.0, 1000.0);

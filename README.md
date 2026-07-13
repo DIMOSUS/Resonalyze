@@ -111,6 +111,10 @@ file is provided with every release.
   low-coherence bands are bridged by a slope prediction instead of anchoring
   the unwrap, so one noisy bin can no longer throw the whole phase tail off by
   a multiple of 360°
+- Selectable phase windowing: the original fixed Tukey gate or a
+  frequency-dependent window (**FDW**, 4 / 6 / 8 cycles) that progressively
+  removes late reflections at mid and high frequencies while retaining the
+  fixed gate and useful resolution at low frequencies
 - Selectable microphone calibration profiles (**0°** / **90°**) applied per view,
   with lenient parsing of common `.txt` / `.cal` / `.frd` / `.csv` correction files
 - Time Alignment with sub-sample delay estimation from the transfer IR, refined
@@ -133,8 +137,9 @@ file is provided with every release.
 - Compare a second measurement (from a file or History) against the current one
   across Time Alignment, Phase, Group Delay, Frequency Response, and Impulse
   Response, with matching analysis settings and per-metric deltas
-- Minimum-phase / excess-phase decomposition with a millisecond gate, gate
-  offset, and a τ (delay) detrend for cross-measurement phase comparison
+- Minimum-phase / excess-phase decomposition from the same selected Fixed/FDW
+  spectrum, with **Off / Auto / Manual** τ detrending and one shared Auto
+  reference when Main and Compare are shown together
 - Per-curve visibility toggles in every analysis view; curves redraw on the fly
   with no separate draw/clear step
 - Harmonic distortion, THD, and THD+N analysis
@@ -474,13 +479,24 @@ both views need the common timing reference it provides, so they are only drawn
 when the active record contains a transfer IR. Without one, the plot says that
 loopback is required instead of showing a misleading curve.
 
-Both modes share a millisecond-based gate built from a left Tukey fade, a flat
-plateau, and a right Tukey fade. A **Gate offset** positions the end of the left
-fade inside the fixed analysis frame, and **Fit** snaps it to the transfer-IR
-peak. The docked preview draws the impulse response, the gate window, and a
-marker at the gate offset. A read-only readout shows the lowest reliable
+Both modes use a millisecond-based fixed gate built from a left Tukey fade, a
+flat plateau, and a right Tukey fade. A **Gate offset** positions the end of the
+left fade inside the analysis frame, and **Fit** snaps it to the transfer-IR
+peak. The docked preview draws the impulse response, the fixed gate, and a
+marker at the gate offset. A read-only readout shows its lowest reliable
 frequency (≈ 1 / gate length), so it is clear where the gated curve stops being
 trustworthy.
+
+Phase additionally offers **Window: Fixed / FDW**. Fixed reproduces the original
+single Tukey gate across the whole spectrum. **FDW** builds a small bank of
+time-aligned spectra whose effective right-side duration follows
+`cycles / frequency`: the fixed gate is the maximum, so low frequencies retain
+the long window, while mid and high frequencies progressively reject the late
+reflection tail. **FDW cycles** selects 4, 6, or 8 periods: 4 gives the strongest
+reflection suppression, 6 is the recommended balance, and 8 retains more late
+detail. Every bank spectrum is referenced to the same absolute sample origin
+before interpolation, so changing cycle count does not create an artificial
+time shift.
 
 The Phase view can show three independently toggled curves:
 
@@ -490,13 +506,20 @@ The Phase view can show three independently toggled curves:
 - **Excess phase** — measured minus minimum: the all-pass part (pure delay and
   reflections) that an equalizer cannot fix.
 
-A **τ** (delay) value detrends the linear-phase slope so the excess phase becomes
-readable. **Find τ** estimates it either from the first prominent arrival of the
-excess energy (peak — found with the same first-arrival detector Time Alignment
-uses, so a room mode ringing louder than the direct sound does not capture the
-reference) or from the energy-weighted average group delay (slope). Entering the
-same τ on two measurements lines up their phase for a direct comparison — for
-example, a midrange and a tweeter on the same axis.
+**Detrend** removes one constant delay before phase unwrapping:
+
+- **Auto** estimates the slope-based excess delay from the same Fixed/FDW
+  spectrum being displayed. The resolved read-only value appears directly in
+  **τ (ms)**.
+- **Manual** uses the editable τ value. Switching through Auto does not overwrite
+  the stored Manual value.
+- **Off** applies no additional detrend and keeps the absolute phase slope.
+
+When Main and Compare are displayed together, Auto is resolved once from Main
+and that common reference is applied to both measurements. Their real relative
+delay therefore remains visible as a linear phase difference instead of each
+curve being flattened independently. The same common reference is used for
+measured and excess phase.
 
 Unwrapped phase uses a **reliability-anchored** algorithm instead of naive
 bin-to-bin accumulation: each bin takes the 360° branch closest to a phase
@@ -511,6 +534,11 @@ turn count inside it is genuinely unknowable) is blanked instead of guessed,
 and the curve restarts as a fresh segment after it. On clean data the result
 is identical to the classic unwrap.
 
+Measured, minimum, and excess phase are internally consistent: minimum phase is
+derived from the magnitude of the selected Fixed/FDW analysis spectrum, and
+excess phase subtracts that curve from measured phase without smoothing across
+NaN segment breaks.
+
 Group Delay reads absolute delay referenced to the start of the transfer IR, so a
 peak well into the impulse response reports its true arrival time. The curve is
 computed energy-weighted: the numerator and the energy of the per-bin group-delay
@@ -520,6 +548,11 @@ no energy — follow the delay of the dominant energy instead of the singularity
 The smoothing window never narrows below the gate's own spectral resolution
 (features finer than 1/T cannot be resolved by a gate of duration T anyway), so
 interference-null spikes stay suppressed even with display smoothing off.
+FDW is deliberately not applied to Group Delay in this version: Group Delay
+continues to use the fixed Tukey gate. Consequently an FDW phase curve is a
+direct-sound-oriented representation and is not the exact integral of the
+currently displayed fixed-gate Group Delay. Selecting Fixed phase restores the
+mathematically compatible phase/group-delay pair.
 
 ## Audio Backends
 
@@ -807,8 +840,9 @@ current mode's settings so the two curves stay directly comparable:
   gains a second block whose every value shows the delta against the source in
   parentheses (for example `1.006 (+0.010)`).
 - **Phase** and **Group Delay** — the reference curves are computed with the
-  identical gate, τ detrend, and smoothing and drawn dashed and dimmed; the
-  gated IR preview in the settings panels shows the reference impulse as well.
+  identical gate/window and smoothing and drawn dashed and dimmed. Phase Auto
+  detrend is resolved once from Main and reused for Compare, preserving their
+  relative delay; the gated IR preview shows the reference impulse as well.
 - **Frequency Response** — the reference magnitude is overlaid (harmonics stay
   source-only to keep the plot readable).
 - **Impulse Response** — the reference impulse is drawn alongside the source
@@ -1372,10 +1406,14 @@ forth), and the **Sum loss** curve (blanked where every channel is filtered
 more than 40 dB below the loudest point — out there the "loss" would be the
 phase arithmetic of noise floors, not audible summation), with a **Phase view**
 toggle to check that
-the channels track each other through the crossover region. The Phase view has a
-manual **Gate...** dialog with an IR preview, Tukey left / plateau / right
-window controls, gate offset, and a shared τ detrend so reflections can be cut
-out without breaking relative phase. A second plot shows each DSP chain's own
+the channels track each other through the crossover region. Its **Gate...**
+dialog exposes **Fixed / FDW**, 4 / 6 / 8 cycles, and **Off / Auto / Manual**
+detrend alongside the IR preview, Tukey left / plateau / right controls, and
+gate offset. Virtual DSP deliberately keeps phase wrapped to -180..+180 degrees.
+Auto chooses one common reference channel, displays the resolved τ, and applies
+that exact value to every driver and the complex sum; it never independently
+flattens the channels, so their relative phase and timing remain intact. A
+second plot shows each DSP chain's own
 magnitude and phase (without the driver). A **Sum loss** read-out (avg / dip
 per junction plus a total) turns tuning into numbers you can minimize, and a
 **Δ L−R** block below it reports each stereo pair's final inter-side state:

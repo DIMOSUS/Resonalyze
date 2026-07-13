@@ -35,11 +35,18 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    public Action<double, double, double, double, double>? PreviewChanged { get; set; }
+    public Action<double, double, double, double, PhaseWindowMode, int,
+        PhaseDetrendMode, double>? PreviewChanged { get; set; }
+
+    private readonly DarkComboBox comboWindowMode = new();
+    private readonly DarkComboBox comboFdwCycles = new();
+    private readonly DarkComboBox comboDetrendMode = new();
+    private readonly Label labelAutoDetrend = new();
 
     public VirtualCrossoverGateDialog()
     {
         InitializeComponent();
+        InitializePhaseControls();
         numericGateOffset.ValueChanged += (_, _) => OnGateChanged();
         numericLeft.ValueChanged += (_, _) => OnGateChanged();
         numericPlateau.ValueChanged += (_, _) => OnGateChanged();
@@ -62,7 +69,16 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
     public double PlateauMs => (double)numericPlateau.Value;
     public double RightMs => (double)numericRight.Value;
     public double DetrendMs => (double)numericTau.Value;
-
+    public PhaseWindowMode WindowMode => comboWindowMode.SelectedIndex == 0
+        ? PhaseWindowMode.Fixed
+        : PhaseWindowMode.FrequencyDependent;
+    public int FdwCycles => comboFdwCycles.SelectedItem is int cycles
+        ? cycles
+        : PhaseAnalysisSettings.DefaultFdwCycles;
+    public PhaseDetrendMode DetrendMode =>
+        Enum.IsDefined((PhaseDetrendMode)comboDetrendMode.SelectedIndex)
+            ? (PhaseDetrendMode)comboDetrendMode.SelectedIndex
+            : PhaseDetrendMode.Auto;
     /// <summary>
     /// Seeds the dialog: the processed channel IRs to preview (absolute
     /// timeline), the current gate values, and the offset the Fit button snaps
@@ -76,6 +92,9 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         double plateauMs,
         double rightMs,
         double detrendMs,
+        PhaseWindowMode windowMode,
+        int fdwCycles,
+        PhaseDetrendMode detrendMode,
         double fitToMs)
     {
         traces = previewTraces;
@@ -87,7 +106,11 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         numericPlateau.Value = Clamp(numericPlateau, plateauMs);
         numericRight.Value = Clamp(numericRight, rightMs);
         numericTau.Value = Clamp(numericTau, detrendMs);
-
+        comboWindowMode.SelectedIndex = windowMode == PhaseWindowMode.Fixed ? 0 : 1;
+        comboFdwCycles.SelectedItem = fdwCycles is 4 or 6 or 8
+            ? fdwCycles
+            : PhaseAnalysisSettings.DefaultFdwCycles;
+        comboDetrendMode.SelectedIndex = (int)detrendMode;
         initialized = true;
         OnGateChanged();
     }
@@ -110,8 +133,10 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
             earliest.Samples,
             VirtualCrossoverAnalysis.FindPeakIndex(earliest.Samples),
             sampleRate);
-        (double slopeMs, double peakMs) = DataHelper.EstimatePhaseDetrend(
-            view, GateOffsetMs, LeftMs, PlateauMs, RightMs);
+        var settings = new PhaseAnalysisSettings(
+            WindowMode, FdwCycles, PhaseDetrendMode.Auto, DetrendMs,
+            GateOffsetMs, LeftMs, PlateauMs, RightMs, Unwrap: false, 0.0);
+        (double slopeMs, double peakMs) = DataHelper.EstimatePhaseDetrend(view, settings);
         numericTau.Value = Clamp(numericTau, useSlope ? slopeMs : peakMs);
     }
 
@@ -124,7 +149,93 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
 
         UpdateMinFrequencyLabel();
         UpdatePreview();
-        PreviewChanged?.Invoke(GateOffsetMs, LeftMs, PlateauMs, RightMs, DetrendMs);
+        UpdatePhaseControlState();
+        PreviewChanged?.Invoke(
+            GateOffsetMs, LeftMs, PlateauMs, RightMs, WindowMode, FdwCycles,
+            DetrendMode, DetrendMs);
+    }
+
+    private void InitializePhaseControls()
+    {
+        const int addedHeight = 62;
+        ClientSize = new Size(ClientSize.Width, ClientSize.Height + addedHeight);
+        // Resizing already moves bottom-anchored buttons and stretches the
+        // top+bottom-anchored plot. Move only the plot's top edge into the new
+        // controls area and give back the automatically added height.
+        irPlotView.Top += addedHeight;
+        irPlotView.Height -= addedHeight;
+
+        AddCombo("Window", comboWindowMode, 102, 12, 112, 126);
+        comboWindowMode.Items.AddRange(["Fixed", "FDW"]);
+        AddCombo("FDW cycles", comboFdwCycles, 102, 262, 342, 74);
+        comboFdwCycles.Items.AddRange([4, 6, 8]);
+        AddCombo("Detrend", comboDetrendMode, 132, 12, 112, 126);
+        comboDetrendMode.Items.AddRange(["Off", "Auto", "Manual"]);
+
+        labelAutoDetrend.AutoSize = true;
+        labelAutoDetrend.ForeColor = Color.FromArgb(210, 214, 222);
+        labelAutoDetrend.Location = new Point(262, 134);
+        Controls.Add(labelAutoDetrend);
+
+        comboWindowMode.SelectedIndexChanged += (_, _) => OnGateChanged();
+        comboFdwCycles.SelectedIndexChanged += (_, _) => OnGateChanged();
+        comboDetrendMode.SelectedIndexChanged += (_, _) => OnGateChanged();
+    }
+
+    private void AddCombo(
+        string text,
+        DarkComboBox combo,
+        int top,
+        int labelLeft,
+        int controlLeft,
+        int width)
+    {
+        var label = new Label
+        {
+            AutoSize = true,
+            Font = new Font("Segoe UI Semibold", 9F),
+            ForeColor = Color.FromArgb(210, 214, 222),
+            Location = new Point(labelLeft, top + 2),
+            Text = text
+        };
+        combo.DropDownStyle = ComboBoxStyle.DropDownList;
+        combo.Location = new Point(controlLeft, top);
+        combo.Size = new Size(width, 19);
+        Controls.Add(label);
+        Controls.Add(combo);
+    }
+
+    private void UpdatePhaseControlState()
+    {
+        comboFdwCycles.Enabled = WindowMode == PhaseWindowMode.FrequencyDependent;
+        bool manual = DetrendMode == PhaseDetrendMode.Manual;
+        numericTau.Enabled = manual;
+        buttonTauSlope.Enabled = manual;
+        buttonTauPeak.Enabled = manual;
+        labelAutoDetrend.Text = DetrendMode == PhaseDetrendMode.Auto
+            ? ResolveAutoDetrendLabel()
+            : string.Empty;
+    }
+
+    private string ResolveAutoDetrendLabel()
+    {
+        IrPreviewTrace? reference = traces
+            .OrderBy(trace => VirtualCrossoverAnalysis.FindPeakIndex(trace.Samples))
+            .FirstOrDefault();
+        if (reference == null || sampleRate <= 0)
+        {
+            return "Auto detrend: —";
+        }
+
+        var view = new ImpulseMeasurementView(
+            reference.Samples,
+            VirtualCrossoverAnalysis.FindPeakIndex(reference.Samples),
+            sampleRate);
+        var settings = new PhaseAnalysisSettings(
+            WindowMode, FdwCycles, PhaseDetrendMode.Auto, DetrendMs,
+            GateOffsetMs, LeftMs, PlateauMs, RightMs, Unwrap: false, 0.0);
+        double resolved = DataHelper.ResolveCommonPhaseDetrendMilliseconds(view, settings);
+        return $"Auto detrend: {resolved:0.00} ms, reference: {reference.Title}";
     }
 
     private void UpdateMinFrequencyLabel()
@@ -231,5 +342,11 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
             irPlotView,
             "Preview of every channel's processed impulse response\r\n" +
             "and the gate window used for the phase view.");
+        toolTip.SetToolTip(comboWindowMode,
+            "Fixed uses one gate. FDW shortens the window as frequency rises.");
+        toolTip.SetToolTip(comboFdwCycles,
+            "4 cycles suppresses reflections most; 6 is recommended; 8 retains more detail.");
+        toolTip.SetToolTip(comboDetrendMode,
+            "Auto uses one common reference for every curve, preserving relative timing.");
     }
 }

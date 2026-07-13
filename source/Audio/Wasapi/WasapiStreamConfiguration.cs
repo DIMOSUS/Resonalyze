@@ -26,8 +26,17 @@ internal static class WasapiStreamConfiguration
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bufferFrames);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(sampleRate);
-        return (long)Math.Ceiling(
-            (double)ReferenceTimesPerSecond * bufferFrames / sampleRate);
+        return checked(
+            (ReferenceTimesPerSecond * bufferFrames + sampleRate / 2) /
+            sampleRate);
+    }
+
+    public static int GetEventTimeoutMilliseconds(int bufferFrames, int sampleRate)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bufferFrames);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(sampleRate);
+        double bufferMilliseconds = 1000.0 * bufferFrames / sampleRate;
+        return Math.Max(1, checked((int)Math.Ceiling(bufferMilliseconds * 3.0)));
     }
 
     public static int GetRenderFrames(

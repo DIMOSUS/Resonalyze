@@ -47,14 +47,30 @@ public sealed class WasapiStreamConfigurationTests
         Assert.Equal(360, frames);
     }
 
-    [Fact]
-    public void AlignedExclusiveDurationRoundsUpToReferenceTimeUnit()
+    [Theory]
+    [InlineData(512, 48_000, 106_667)]
+    [InlineData(256, 48_000, 53_333)]
+    [InlineData(64, 44_100, 14_512)]
+    public void AlignedExclusiveDurationRoundsToNearestReferenceTimeUnit(
+        int bufferFrames,
+        int sampleRate,
+        long expectedDuration)
     {
         long duration = WasapiStreamConfiguration.GetAlignedExclusiveDuration(
-            bufferFrames: 512,
+            bufferFrames,
+            sampleRate);
+
+        Assert.Equal(expectedDuration, duration);
+    }
+
+    [Fact]
+    public void EventTimeoutUsesActualAlignedBufferSize()
+    {
+        int timeout = WasapiStreamConfiguration.GetEventTimeoutMilliseconds(
+            bufferFrames: 1_920,
             sampleRate: 48_000);
 
-        Assert.Equal(106_667, duration);
+        Assert.Equal(120, timeout);
     }
 
     [Fact]

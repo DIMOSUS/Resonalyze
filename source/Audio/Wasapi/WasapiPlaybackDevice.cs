@@ -263,9 +263,10 @@ public sealed class WasapiPlaybackDevice : IAudioPlaybackDevice
     private void RunExclusiveRenderLoop(AudioRenderClient render, bool finalBufferQueued)
     {
         TimeSpan bufferDuration = GetBufferDuration();
+        int eventTimeoutMilliseconds = GetEventTimeoutMilliseconds();
         while (!stopRequested)
         {
-            bool signaled = bufferReady.WaitOne(bufferMilliseconds * 3);
+            bool signaled = bufferReady.WaitOne(eventTimeoutMilliseconds);
             if (stopRequested)
             {
                 break;
@@ -290,9 +291,10 @@ public sealed class WasapiPlaybackDevice : IAudioPlaybackDevice
     private void RunSharedRenderLoop(AudioRenderClient render, bool sourceEnded)
     {
         TimeSpan bufferDuration = GetBufferDuration();
+        int eventTimeoutMilliseconds = GetEventTimeoutMilliseconds();
         while (!stopRequested)
         {
-            bool signaled = bufferReady.WaitOne(bufferMilliseconds * 3);
+            bool signaled = bufferReady.WaitOne(eventTimeoutMilliseconds);
             if (stopRequested)
             {
                 break;
@@ -333,6 +335,11 @@ public sealed class WasapiPlaybackDevice : IAudioPlaybackDevice
 
     private TimeSpan GetBufferDuration() => TimeSpan.FromSeconds(
         (double)ActualBufferFrames / (streamFormat?.SampleRate ?? 1));
+
+    private int GetEventTimeoutMilliseconds() =>
+        WasapiStreamConfiguration.GetEventTimeoutMilliseconds(
+            ActualBufferFrames,
+            streamFormat?.SampleRate ?? 1);
 
     private bool FillBuffer(AudioRenderClient render, int frames)
     {

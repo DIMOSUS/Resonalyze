@@ -179,23 +179,8 @@ namespace Resonalyze.Options
                 }
                 IImpulseMeasurement impulse =
                     new MeasurementPlotContext(measurement).CreatePrimaryMeasurement();
-                var settings = new PhaseAnalysisSettings(
-                    comboWindowMode.SelectedIndex == 0
-                        ? PhaseWindowMode.Fixed
-                        : PhaseWindowMode.FrequencyDependent,
-                    comboFdwCycles.SelectedItem is int cycles
-                        ? cycles
-                        : PhaseAnalysisSettings.DefaultFdwCycles,
-                    PhaseDetrendMode.Auto,
-                    (double)numericOffset.Value,
-                    (double)numericGateOffset.Value,
-                    (double)numericLeftWindow.Value,
-                    (double)numericWindow.Value,
-                    (double)numericRightWindow.Value,
-                    checkBoxUnwrap.Checked,
-                    comboSmoothingInverseOctaves.SelectedItem is int smoothing
-                        ? smoothing
-                        : FrequencyResponseOptions.DefaultPhaseSmoothingInverseOctaves);
+                PhaseAnalysisSettings settings = CreateCurrentPhaseAnalysisSettings(
+                    PhaseDetrendMode.Auto);
                 resolved = DataHelper.ResolvePhaseDetrendMilliseconds(impulse, settings);
                 return double.IsFinite(resolved);
             }
@@ -204,6 +189,31 @@ namespace Resonalyze.Options
                 return false;
             }
         }
+
+        private PhaseAnalysisSettings CreateCurrentPhaseAnalysisSettings(
+            PhaseDetrendMode detrendMode) => new(
+                comboWindowMode.SelectedIndex == 0
+                    ? PhaseWindowMode.Fixed
+                    : PhaseWindowMode.FrequencyDependent,
+                comboFdwCycles.SelectedItem is int cycles
+                    ? cycles
+                    : PhaseAnalysisSettings.DefaultFdwCycles,
+                detrendMode,
+                manualDetrendMilliseconds,
+                (double)numericGateOffset.Value,
+                (double)numericLeftWindow.Value,
+                (double)numericWindow.Value,
+                (double)numericRightWindow.Value,
+                checkBoxUnwrap.Checked,
+                comboSmoothingInverseOctaves.SelectedItem is int smoothing
+                    ? smoothing
+                    : FrequencyResponseOptions.DefaultPhaseSmoothingInverseOctaves);
+
+        internal (double SlopeMilliseconds, double PeakMilliseconds)
+            EstimateCurrentPhaseDetrend(IImpulseMeasurement impulse) =>
+                DataHelper.EstimatePhaseDetrend(
+                    impulse,
+                    CreateCurrentPhaseAnalysisSettings(PhaseDetrendMode.Auto));
 
         // Points each field's "R" reset button at the built-in default values.
         private void ConfigureResetDefaults()
@@ -236,15 +246,11 @@ namespace Resonalyze.Options
             {
                 IImpulseMeasurement impulse =
                     new MeasurementPlotContext(measurement).CreatePrimaryMeasurement();
-                (double slopeMs, double peakMs) = DataHelper.EstimatePhaseDetrend(
-                    impulse,
-                    (double)numericGateOffset.Value,
-                    (double)numericLeftWindow.Value,
-                    (double)numericWindow.Value,
-                    (double)numericRightWindow.Value);
+                (double slopeMs, double peakMs) = EstimateCurrentPhaseDetrend(impulse);
                 numericOffset.Value = ClampToControl(
                     numericOffset,
                     useSlope ? slopeMs : peakMs);
+                manualDetrendMilliseconds = (double)numericOffset.Value;
             }
             catch (InvalidOperationException)
             {

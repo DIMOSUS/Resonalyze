@@ -31,6 +31,21 @@ public sealed class StereoAlignmentTests
         return ir;
     }
 
+    // A first arrival plus a competing lobe, to smear a junction's whitened
+    // correlation into a low-dominance comb — the seed then falls back to the
+    // arrival envelope (the "untrusted" case the wide window exists for).
+    private static Complex[] ImpulseWithEcho(
+        double offsetMs, double amplitude, double echoMs, double echoAmplitude)
+    {
+        Complex[] ir = ImpulseAtMs(offsetMs, amplitude);
+        int echo = BasePosition + (int)Math.Round((offsetMs + echoMs) / 1000.0 * SampleRate);
+        ir[echo] += echoAmplitude;
+        return ir;
+    }
+
+    private static string LogLine(string log, string contains) =>
+        log.Split('\n').First(line => line.Contains(contains));
+
     private static AlignmentSnapshot Snapshot(
         TestChannel channel, AlignmentOverride over)
     {
@@ -601,5 +616,47 @@ public sealed class StereoAlignmentTests
             reprocessCount: count);
 
         Assert.InRange(count[0], 1, 40);
+    }
+
+    [Fact]
+    public void Compute_UntrustedSeedWindow_IsKeyedToTheJunctionNotTheChannel()
+    {
+        // sub/woof (80 Hz) is made untrusted by a sub echo that smears its whitened
+        // correlation into a low-dominance comb; woof/mid (120 Hz) stays trusted. The
+        // mid arrives latest, so the walk DESCENDS: woof is searched against mid (its
+        // TRUSTED junction) and sub against woof (its UNTRUSTED junction, as the LOWER
+        // channel). The wide-seed window must key on the JUNCTION, so:
+        //  - sub's untrusted junction widens even though sub is its LOWER channel — the
+        //    channel-keyed version recorded only the UPPER (woof) and missed this on the
+        //    downward walk;
+        //  - woof's trusted junction stays narrow even though woof is the untrusted
+        //    UPPER of sub/woof — the channel-keyed version would have leaked the wide
+        //    window onto this unrelated, trusted junction.
+        var sub = new TestChannel("sub", ImpulseWithEcho(1.0, 0.9, 5.0, 0.85));
+        var woof = new TestChannel("woof", ImpulseAtMs(3.0));
+        var mid = new TestChannel("mid", ImpulseAtMs(6.0));
+        TestChannel[] all = [sub, woof, mid];
+        List<AlignmentSnapshot> snapshots = all.Select(c => Snapshot(c, default)).ToList();
+        var pairs = new List<AlignmentJunction>
+        {
+            Junction(snapshots[0], snapshots[1], 80),
+            Junction(snapshots[1], snapshots[2], 120)
+        };
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+        var log = new StringBuilder();
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            all.Select(c => Snapshot(c, overrides.GetValueOrDefault(c))).ToList();
+        AutoAlignmentEngine.Compute(snapshots, pairs, Reprocess, alignment, log);
+
+        string text = log.ToString();
+        // The premise: exactly the low junction fell back to the arrival seed.
+        Assert.Contains("seed arrival", LogLine(text, "Pair sub/woof"));
+        Assert.Contains("seed phat", LogLine(text, "Pair woof/mid"));
+
+        // Issue 1: the untrusted junction widens on the descending search of its lower
+        // channel. Issue 2: the trusted junction is not polluted by its shared channel.
+        Assert.Contains("WIDE SEED", LogLine(text, "Channel sub:"));
+        Assert.DoesNotContain("WIDE SEED", LogLine(text, "Channel woof:"));
     }
 }

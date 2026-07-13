@@ -211,7 +211,7 @@ public static class AutoAlignmentEngine
         AppendCorrelationAlignmentDiagnostics(log, pairs);
 
         Dictionary<IAlignmentChannel, double> timeline =
-            BuildArrivalTimeline(byBand, pairs, log, out HashSet<IAlignmentChannel> untrustedSeeds);
+            BuildArrivalTimeline(byBand, pairs, log, out HashSet<AlignmentJunction> untrustedSeeds);
 
         // The relatively latest channel is the fixed reference; everyone else is
         // delayed toward it, so the coarse deltas are non-negative.
@@ -234,14 +234,14 @@ public static class AutoAlignmentEngine
             AlignChannelAtJunction(
                 byBand[i].Channel, byBand[i + 1].Channel, pairs[i],
                 timeline, byBand, reprocess, alignment, log,
-                untrustedSeedChannels: untrustedSeeds);
+                untrustedSeedJunctions: untrustedSeeds);
         }
         for (int i = referenceIndex + 1; i < byBand.Count; i++)
         {
             AlignChannelAtJunction(
                 byBand[i].Channel, byBand[i - 1].Channel, pairs[i - 1],
                 timeline, byBand, reprocess, alignment, log,
-                untrustedSeedChannels: untrustedSeeds);
+                untrustedSeedJunctions: untrustedSeeds);
         }
     }
 
@@ -257,14 +257,18 @@ public static class AutoAlignmentEngine
         IReadOnlyList<AlignmentSnapshot> byBand,
         IReadOnlyList<AlignmentJunction> pairs,
         StringBuilder log,
-        out HashSet<IAlignmentChannel> untrustedSeedChannels)
+        out HashSet<AlignmentJunction> untrustedSeedJunctions)
     {
-        // Channels whose coarse seed fell back to the arrival envelope because
+        // Junctions whose coarse seed fell back to the arrival envelope because
         // the PHAT peak was untrusted (a low junction with too few in-band
-        // periods): at those the arrival can land a half period off, so their
-        // stage-2 window is allowed to reach a half period (LowJunctionReach)
-        // to admit the true lobe. A phat-trusted seed keeps the tight window.
-        untrustedSeedChannels = [];
+        // periods): the coarse offset ACROSS such a junction can be a half period
+        // off, so aligning its two channels is allowed a half-period window (see
+        // LowJunctionReach) to admit the true lobe. Keyed by junction, not channel:
+        // the uncertainty is a property of the lower<->upper RELATION, so the wider
+        // window fires the same whether the walk reaches the junction from below or
+        // above, and never leaks onto a channel's OTHER, phat-trusted junction.
+        untrustedSeedJunctions =
+            new HashSet<AlignmentJunction>(ReferenceEqualityComparer.Instance);
         var timeline = new Dictionary<IAlignmentChannel, double>
         {
             [byBand[0].Channel] = 0
@@ -310,7 +314,7 @@ public static class AutoAlignmentEngine
             timeline[pair.Upper.Channel] = timeline[pair.Lower.Channel] + increment;
             if (!trustPhat)
             {
-                untrustedSeedChannels.Add(pair.Upper.Channel);
+                untrustedSeedJunctions.Add(pair);
             }
 
             // Full-band processed-IR peak times, a detector-independent arrival
@@ -367,12 +371,16 @@ public static class AutoAlignmentEngine
         double? priorOverrideMs = null,
         double? sceneLockToleranceMs = null,
         bool? forcedPolarity = null,
-        IReadOnlySet<IAlignmentChannel>? untrustedSeedChannels = null)
+        IReadOnlySet<AlignmentJunction>? untrustedSeedJunctions = null)
     {
-        // A channel that seeded from the arrival envelope (PHAT untrusted) may
-        // sit a half period off, so its window is allowed to reach a half
-        // period; a phat-seeded channel keeps the tight fixed window.
-        bool wideSeed = untrustedSeedChannels?.Contains(channel) == true;
+        // Widen the window when the coarse seed ACROSS this junction (or its
+        // secondary, for a joint two-neighbour search) was the untrusted arrival
+        // fallback — the base can sit a half period off. Junction-keyed, so it
+        // fires the same whether the walk reached this junction from below or
+        // above, and only for the untrusted junction itself.
+        bool wideSeed = untrustedSeedJunctions != null &&
+            (untrustedSeedJunctions.Contains(pair) ||
+                (secondaryPair != null && untrustedSeedJunctions.Contains(secondaryPair)));
 
         double primaryBase = alignment.GetValueOrDefault(neighborChannel).DelayMs
             + timeline[neighborChannel] - timeline[channel];
@@ -473,6 +481,7 @@ public static class AutoAlignmentEngine
                 (secondaryNeighbor != null ? $" / {secondaryBase:0.000}" : "") +
                 $" ms, prior {anchorMs:0.000} ms" +
                 (priorOverrideMs != null ? " (cross-side)" : "") +
+                (wideSeed ? ", WIDE SEED" : "") +
                 (sceneLockToleranceMs is { } tol
                     ? $", SCENE-LOCKED \u00b1{tol:0.00} ms"
                     : "") +
@@ -774,7 +783,7 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, double> rightTimeline =
             BuildArrivalTimeline(
                 rightByBand, plan.RightPairs, log,
-                out HashSet<IAlignmentChannel> rightUntrustedSeeds);
+                out HashSet<AlignmentJunction> rightUntrustedSeeds);
 
         // The delay that would land this right channel's arrival exactly the
         // scene offset ahead of its settled left counterpart's, measured by

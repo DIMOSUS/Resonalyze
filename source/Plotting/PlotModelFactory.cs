@@ -137,6 +137,8 @@ internal sealed class PlotModelFactory
                 model,
                 frequencyResponseOptions,
                 frequencyResponseVisibility.ShowCoherence);
+
+            AddHiddenHarmonicAnnotation(model, curves);
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
                  !measurementContext.HasTransferImpulseResponse)
@@ -1233,6 +1235,54 @@ internal sealed class PlotModelFactory
         }
 
         return new AnalysisCurve("Complex Sum Loss", points);
+    }
+
+    // A harmonic order the user asked for can be missing from the plot: its packet
+    // overlapped a neighbour and was dropped (so it is also left out of THD), or the
+    // measurement carries no sweep to derive harmonics from. Silently dropping the
+    // curve leaves the ticked checkbox unexplained, so a short note at the top names
+    // the missing curves and — where the DSP said why — the reason.
+    private void AddHiddenHarmonicAnnotation(
+        PlotModel model, IReadOnlyList<AnalysisCurve> curves)
+    {
+        var present = new HashSet<AnalysisCurveKind>();
+        foreach (AnalysisCurve curve in curves)
+        {
+            present.Add(curve.Kind);
+        }
+
+        var missing = new List<string>();
+        void Check(bool requested, AnalysisCurveKind kind, string label)
+        {
+            if (requested && !present.Contains(kind))
+            {
+                missing.Add(label);
+            }
+        }
+
+        Check(frequencyResponseVisibility.ShowHd2, AnalysisCurveKind.SecondHarmonic, "HD2");
+        Check(frequencyResponseVisibility.ShowHd3, AnalysisCurveKind.ThirdHarmonic, "HD3");
+        Check(frequencyResponseVisibility.ShowHd4, AnalysisCurveKind.FourthHarmonic, "HD4");
+        if (missing.Count == 0)
+        {
+            return;
+        }
+
+        IReadOnlyList<string> warnings = measurementContext.DistortionWarnings;
+        string reason = warnings.Count > 0
+            ? string.Join("\n", warnings)
+            : "no sweep distortion data — record a sweep, or use a longer one so the "
+                + "harmonic packet clears its neighbour";
+        string plural = missing.Count > 1 ? "curves" : "curve";
+        model.Annotations.Add(new OverlayTextAnnotation
+        {
+            Text = $"{string.Join(", ", missing)} {plural} not shown\n{reason}",
+            TextPosition = new DataPoint(0.5, 0),
+            TextFlowDirection = TextFlowDirection.TopDown,
+            FontSize = 12,
+            TextColor = OxyColors.Goldenrod,
+            TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
+        });
     }
 
     // Phase and group delay need loopback timing; without a transfer IR the plot would

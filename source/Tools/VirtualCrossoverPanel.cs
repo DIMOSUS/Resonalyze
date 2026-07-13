@@ -78,6 +78,12 @@ public partial class VirtualCrossoverPanel : UserControl
         double DetrendMs)? gatePreview;
     private PlotWatermarkAnnotation hintAnnotation = null!;
     private LinearAxis mainValueAxis = null!;
+    // The main plot's two bottom axes: the shared log-frequency axis for the
+    // magnitude/phase views and a linear ms axis for the impulse view. Only
+    // one is in the model at a time (ConfigureMainBottomAxis swaps them), so
+    // the untagged curve series always bind to the active one.
+    private LogarithmicAxis mainFrequencyAxis = null!;
+    private LinearAxis mainTimeAxis = null!;
     private PlotLabelsPanelController plotLabels = null!;
     private bool initialized;
     private bool suppressProjectEvents;
@@ -300,8 +306,11 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             checkBoxShowSum.Checked = project.ShowSumCurve;
             checkBoxShowLoss.Checked = project.ShowLossCurve;
-            radioViewPhase.Checked = project.ShowPhaseView;
-            radioViewMagnitude.Checked = !project.ShowPhaseView;
+            radioViewImpulse.Checked = project.ShowImpulseView;
+            radioViewPhase.Checked =
+                !project.ShowImpulseView && project.ShowPhaseView;
+            radioViewMagnitude.Checked =
+                !project.ShowImpulseView && !project.ShowPhaseView;
             radioSideRight.Checked = project.ActiveSideRight;
             radioSideLeft.Checked = !project.ActiveSideRight;
             numericSceneOffset.Value = Clamp(
@@ -461,9 +470,21 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         checkBoxShowSum.CheckedChanged += (_, _) => OnViewChanged();
         checkBoxShowLoss.CheckedChanged += (_, _) => OnViewChanged();
-        // In a two-radio group every toggle flips radioViewPhase, so listening
-        // to it alone reacts exactly once per mode switch.
-        radioViewPhase.CheckedChanged += (_, _) => OnViewModeChanged();
+        // Three-radio group: each fires on both the check and the uncheck, so
+        // act only on the one that became checked to run the switch exactly
+        // once per mode change.
+        radioViewMagnitude.CheckedChanged += (_, _) =>
+        {
+            if (radioViewMagnitude.Checked) OnViewModeChanged();
+        };
+        radioViewPhase.CheckedChanged += (_, _) =>
+        {
+            if (radioViewPhase.Checked) OnViewModeChanged();
+        };
+        radioViewImpulse.CheckedChanged += (_, _) =>
+        {
+            if (radioViewImpulse.Checked) OnViewModeChanged();
+        };
         comboBoxSmoothing.SelectedIndexChanged += (_, _) => OnViewChanged();
         comboBoxCalibration.SelectedIndexChanged += (_, _) => OnCalibrationChanged();
         // Three-radio group: each fires on both the check and the uncheck, so act
@@ -806,10 +827,10 @@ public partial class VirtualCrossoverPanel : UserControl
         OnViewChanged();
     }
 
-    // The gate only shapes the phase view; grey the button out elsewhere so it
-    // does not suggest an effect on the magnitude curves.
+    // The gate shapes the phase and impulse views; grey the button out on the
+    // magnitude view so it does not suggest an effect on those curves.
     private void UpdateGateButtonAvailability() =>
-        buttonPhaseGate.Enabled = radioViewPhase.Checked;
+        buttonPhaseGate.Enabled = !radioViewMagnitude.Checked;
 
     private void OnViewChanged()
     {
@@ -821,6 +842,7 @@ public partial class VirtualCrossoverPanel : UserControl
         project.ShowSumCurve = checkBoxShowSum.Checked;
         project.ShowLossCurve = checkBoxShowLoss.Checked;
         project.ShowPhaseView = radioViewPhase.Checked;
+        project.ShowImpulseView = radioViewImpulse.Checked;
         project.SmoothingInverseOctaves = comboBoxSmoothing.SelectedItem is int value
             ? value
             : 12;
@@ -1327,8 +1349,22 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         var model = new PlotModel();
         PlotModelStyle.AddFrequencyAxis(model);
+        mainFrequencyAxis = (LogarithmicAxis)model.Axes[^1];
+        // The impulse view runs on an absolute-time axis; its range follows
+        // the gate window on every impulse redraw, so it is static like the
+        // gate dialog's preview instead of pannable.
+        mainTimeAxis = new LinearAxis
+        {
+            Position = AxisPosition.Bottom,
+            Title = "ms",
+            MajorGridlineStyle = LineStyle.Solid,
+            MinorGridlineStyle = LineStyle.Dot,
+            IsPanEnabled = false,
+            IsZoomEnabled = false
+        };
         // The absolute pan/zoom limits live in ConfigureMainValueAxis: they
-        // differ between the magnitude (dB) and phase (deg) views.
+        // differ between the magnitude (dB), phase (deg) and impulse
+        // (normalized) views.
         mainValueAxis = new LinearAxis
         {
             Position = AxisPosition.Left,
@@ -1361,10 +1397,22 @@ public partial class VirtualCrossoverPanel : UserControl
     }
 
     // Magnitude and phase reuse one axis object so pan/zoom of the frequency
-    // axis survives the toggle; only the value scale is re-armed.
+    // axis survives the toggle; only the value scale is re-armed. The impulse
+    // view additionally swaps the bottom axis to the linear ms one.
     private void ConfigureMainValueAxis()
     {
-        if (radioViewPhase.Checked)
+        if (radioViewImpulse.Checked)
+        {
+            // Every trace is normalized to its own peak, exactly like the IR
+            // Gate preview, so the scale is unitless.
+            mainValueAxis.Title = string.Empty;
+            mainValueAxis.AbsoluteMinimum = -1.05;
+            mainValueAxis.AbsoluteMaximum = 1.05;
+            mainValueAxis.Minimum = -1.05;
+            mainValueAxis.Maximum = 1.05;
+            mainValueAxis.MajorStep = 0.5;
+        }
+        else if (radioViewPhase.Checked)
         {
             mainValueAxis.Title = "deg";
             mainValueAxis.AbsoluteMinimum = -180;
@@ -1383,8 +1431,29 @@ public partial class VirtualCrossoverPanel : UserControl
             mainValueAxis.MajorStep = double.NaN;
         }
 
+        ConfigureMainBottomAxis();
         mainValueAxis.Reset();
         mainPlotView.InvalidatePlot(false);
+    }
+
+    // Keeps exactly one bottom axis in the model: the log-frequency axis for
+    // the magnitude/phase views, the linear ms axis for the impulse view.
+    // Swapping whole axis objects (instead of reconfiguring one) preserves
+    // each view's own range across toggles.
+    private void ConfigureMainBottomAxis()
+    {
+        if (mainPlotView.Model is not { } model)
+        {
+            return;
+        }
+
+        Axis wanted = radioViewImpulse.Checked ? mainTimeAxis : mainFrequencyAxis;
+        Axis retired = radioViewImpulse.Checked ? mainFrequencyAxis : mainTimeAxis;
+        if (!model.Axes.Contains(wanted))
+        {
+            model.Axes.Remove(retired);
+            model.Axes.Add(wanted);
+        }
     }
 
     private void InitializeDspPlot()
@@ -1519,6 +1588,11 @@ public partial class VirtualCrossoverPanel : UserControl
             "Show the phase of the processed channels and the sum.\r\n" +
             "Well-aligned channels track each other through\r\n" +
             "the crossover region.");
+        toolTip.SetToolTip(
+            radioViewImpulse,
+            "Show each channel's processed impulse response around\r\n" +
+            "the phase gate, every trace normalized to its own peak.\r\n" +
+            "Well-aligned drivers start together.");
         toolTip.SetToolTip(
             comboBoxSmoothing,
             "Fractional-octave smoothing of the magnitude curves.");
@@ -1975,7 +2049,7 @@ public partial class VirtualCrossoverPanel : UserControl
         List<VirtualCrossoverMetric.StereoDelta> stereoDeltas =
             await ComputeStereoDeltasAsync();
         AnalysisCurve? oppositeSum =
-            checkBoxShowSum.Checked && !radioViewPhase.Checked
+            checkBoxShowSum.Checked && radioViewMagnitude.Checked
                 ? await ComputeOppositeSumCurveAsync()
                 : null;
         if (mainPlotView.IsDisposed || revision != displayRevision)
@@ -2004,6 +2078,10 @@ public partial class VirtualCrossoverPanel : UserControl
             if (radioViewPhase.Checked)
             {
                 DrawPhaseCurves(model, processed);
+            }
+            else if (radioViewImpulse.Checked)
+            {
+                DrawImpulseCurves(model, processed);
             }
             else
             {
@@ -3369,6 +3447,50 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
+    // The impulse view is the gate dialog's IR preview promoted to the main
+    // plot: every processed channel IR (crossover/PEQ/gain/delay/polarity
+    // applied) on the shared absolute timeline, each normalized to its own
+    // in-window peak, with the phase-gate Tukey window drawn where it sits.
+    // Well-aligned drivers visibly start together.
+    private void DrawImpulseCurves(PlotModel model, List<ProcessedChannel> processed)
+    {
+        int reference = processed.Min(item => item.PeakIndex);
+        int sampleRate = processed[0].Channel.SampleRate;
+        double gateOffsetMs = gatePreview?.OffsetMs
+            ?? ResolveGateOffsetMs(reference, sampleRate);
+
+        var traces = processed
+            .Where(item => item.Channel.Settings.ShowProcessedCurve)
+            .Select(item => new IrPreviewTrace(
+                item.ImpulseResponse,
+                item.Channel.Control.ChannelName,
+                item.Color))
+            .ToList();
+
+        (double StartMs, double EndMs)? window =
+            ImpulseWindowPreview.AddGatedTraceSeries(
+                model,
+                traces,
+                sampleRate,
+                gateOffsetMs,
+                gatePreview?.LeftMs ?? project.PhaseGateLeftMs,
+                gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs,
+                gatePreview?.RightMs ?? project.PhaseGateRightMs,
+                CurveSeriesTag);
+        if (window is not { } bounds)
+        {
+            return;
+        }
+
+        // The axis is static (no pan/zoom), so simply re-arm it to the display
+        // window the series were built for.
+        mainTimeAxis.AbsoluteMinimum = bounds.StartMs;
+        mainTimeAxis.AbsoluteMaximum = bounds.EndMs;
+        mainTimeAxis.Minimum = bounds.StartMs;
+        mainTimeAxis.Maximum = bounds.EndMs;
+        mainTimeAxis.Reset();
+    }
+
     // A stored gate offset is used as-is; an unconfigured project follows the
     // earliest processed arrival, so the gate tracks source and delay changes
     // until the user pins it in the gate dialog.
@@ -3954,6 +4076,16 @@ public partial class VirtualCrossoverPanel : UserControl
             if (Equals(model.Series[index].Tag, CurveSeriesTag))
             {
                 model.Series.RemoveAt(index);
+            }
+        }
+
+        // The impulse view marks its gate-offset annotation with the same tag,
+        // so a redraw sweeps it together with the curves.
+        for (int index = model.Annotations.Count - 1; index >= 0; index--)
+        {
+            if (Equals(model.Annotations[index].Tag, CurveSeriesTag))
+            {
+                model.Annotations.RemoveAt(index);
             }
         }
     }

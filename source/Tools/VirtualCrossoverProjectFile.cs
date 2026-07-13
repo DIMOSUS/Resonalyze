@@ -217,6 +217,11 @@ public sealed class VirtualCrossoverProjectFile
     public bool ShowSumCurve { get; set; } = true;
     public bool ShowLossCurve { get; set; }
     public bool ShowPhaseView { get; set; }
+    // The main plot's impulse view (the gated IR preview promoted to the main
+    // plot). Additive: older files lack it, and when set it wins over
+    // ShowPhaseView. Kept as a second flag so files written by this version
+    // still open in older builds (which fall back to magnitude/phase).
+    public bool ShowImpulseView { get; set; }
     public int SmoothingInverseOctaves { get; set; } = 12;
 
     // Which curve the per-channel DSP chain plot shows. Additive: older files lack

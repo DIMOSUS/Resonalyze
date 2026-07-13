@@ -39,13 +39,38 @@ internal static class ImpulseWindowPreview
     {
         var model = CreatePreviewPlotModel("IR Gate");
 
+        (double StartMs, double EndMs)? window = AddGatedTraceSeries(
+            model, traces, sampleRate, gateOffsetMs, leftMs, plateauMs, rightMs);
+
+        model.Axes.Add(window is { } bounds
+            ? CreateTimeAxis(bounds.StartMs, bounds.EndMs)
+            : CreateTimeAxis(-10, 10));
+        model.Axes.Add(CreateAmplitudeAxis());
+
+        plotView.Model = model;
+        plotView.InvalidatePlot(true);
+    }
+
+    // The shared body of the gated multi-trace view: each trace normalized to
+    // its own in-window peak, the Tukey gate outline, and a vertical mark at
+    // the gate offset. Used by the gate dialog's preview and the Virtual DSP
+    // impulse view alike, so the two renderings cannot drift apart. Everything
+    // added carries seriesTag so a host redrawing an existing model can find
+    // and remove it. Returns the display window bounds (ms), or null when
+    // there is nothing to draw.
+    public static (double StartMs, double EndMs)? AddGatedTraceSeries(
+        PlotModel model,
+        IReadOnlyList<IrPreviewTrace> traces,
+        int sampleRate,
+        double gateOffsetMs,
+        double leftMs,
+        double plateauMs,
+        double rightMs,
+        object? seriesTag = null)
+    {
         if (traces.Count == 0 || sampleRate <= 0)
         {
-            model.Axes.Add(CreateTimeAxis(-10, 10));
-            model.Axes.Add(CreateAmplitudeAxis());
-            plotView.Model = model;
-            plotView.InvalidatePlot(true);
-            return;
+            return null;
         }
 
         int gateOffset = MillisecondsToSamples(gateOffsetMs, sampleRate);
@@ -83,6 +108,7 @@ internal static class ImpulseWindowPreview
                 Color = trace.Color,
                 StrokeThickness = 1.2,
                 Title = trace.Title,
+                Tag = seriesTag,
                 TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}"
             };
             for (int s = displayStart; s <= displayEnd; s++)
@@ -100,6 +126,7 @@ internal static class ImpulseWindowPreview
         {
             Color = OxyColor.FromRgb(50, 210, 120),
             StrokeThickness = 1.5,
+            Tag = seriesTag,
             TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}"
         };
         for (int s = displayStart; s <= displayEnd; s++)
@@ -109,22 +136,19 @@ internal static class ImpulseWindowPreview
         }
         model.Series.Add(windowSeries);
 
-        model.Axes.Add(CreateTimeAxis(
-            displayStart * 1000.0 / sampleRate,
-            displayEnd * 1000.0 / sampleRate));
-        model.Axes.Add(CreateAmplitudeAxis());
-
         model.Annotations.Add(new LineAnnotation
         {
             Type = LineAnnotationType.Vertical,
             X = gateOffsetMs,
             Color = OxyColor.FromArgb(127, 80, 150, 255),
             LineStyle = LineStyle.Dot,
-            StrokeThickness = 1.0
+            StrokeThickness = 1.0,
+            Tag = seriesTag
         });
 
-        plotView.Model = model;
-        plotView.InvalidatePlot(true);
+        return (
+            displayStart * 1000.0 / sampleRate,
+            displayEnd * 1000.0 / sampleRate);
     }
 
     public static void Update(

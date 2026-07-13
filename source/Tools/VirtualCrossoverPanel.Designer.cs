@@ -46,6 +46,7 @@ namespace Resonalyze
             checkBoxShowLoss = new CheckBox();
             radioViewMagnitude = new RadioButton();
             radioViewPhase = new RadioButton();
+            radioViewImpulse = new RadioButton();
             labelSmoothing = new Label();
             comboBoxSmoothing = new DarkComboBox();
             buttonAutoDelay = new Button();
@@ -288,12 +289,24 @@ namespace Resonalyze
             radioViewPhase.Text = "Phase";
             radioViewPhase.UseVisualStyleBackColor = true;
             // 
+            // radioViewImpulse
+            // 
+            radioViewImpulse.AutoSize = true;
+            radioViewImpulse.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            radioViewImpulse.ForeColor = Color.FromArgb(210, 214, 222);
+            radioViewImpulse.Location = new Point(702, 411);
+            radioViewImpulse.Name = "radioViewImpulse";
+            radioViewImpulse.Size = new Size(68, 19);
+            radioViewImpulse.TabIndex = 11;
+            radioViewImpulse.Text = "Impulse";
+            radioViewImpulse.UseVisualStyleBackColor = true;
+            // 
             // labelSmoothing
             // 
             labelSmoothing.AutoSize = true;
             labelSmoothing.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelSmoothing.ForeColor = Color.FromArgb(210, 214, 222);
-            labelSmoothing.Location = new Point(707, 414);
+            labelSmoothing.Location = new Point(779, 414);
             labelSmoothing.Name = "labelSmoothing";
             labelSmoothing.Size = new Size(67, 15);
             labelSmoothing.TabIndex = 10;
@@ -303,7 +316,7 @@ namespace Resonalyze
             // 
             comboBoxSmoothing.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxSmoothing.ForeColor = Color.White;
-            comboBoxSmoothing.Location = new Point(781, 412);
+            comboBoxSmoothing.Location = new Point(853, 412);
             comboBoxSmoothing.MinimumSize = new Size(36, 19);
             comboBoxSmoothing.Name = "comboBoxSmoothing";
             comboBoxSmoothing.Size = new Size(90, 19);
@@ -359,7 +372,7 @@ namespace Resonalyze
             // 
             buttonPhaseGate.FlatStyle = FlatStyle.Popup;
             buttonPhaseGate.ForeColor = Color.White;
-            buttonPhaseGate.Location = new Point(877, 410);
+            buttonPhaseGate.Location = new Point(949, 410);
             buttonPhaseGate.Name = "buttonPhaseGate";
             buttonPhaseGate.Size = new Size(80, 24);
             buttonPhaseGate.TabIndex = 16;
@@ -370,7 +383,7 @@ namespace Resonalyze
             // 
             comboBoxCalibration.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxCalibration.ForeColor = Color.White;
-            comboBoxCalibration.Location = new Point(965, 413);
+            comboBoxCalibration.Location = new Point(1037, 413);
             comboBoxCalibration.MinimumSize = new Size(36, 19);
             comboBoxCalibration.Name = "comboBoxCalibration";
             comboBoxCalibration.Size = new Size(110, 19);
@@ -481,6 +494,7 @@ namespace Resonalyze
             Controls.Add(checkBoxShowLoss);
             Controls.Add(radioViewMagnitude);
             Controls.Add(radioViewPhase);
+            Controls.Add(radioViewImpulse);
             Controls.Add(labelSmoothing);
             Controls.Add(comboBoxSmoothing);
             Controls.Add(buttonAutoDelay);
@@ -533,6 +547,7 @@ namespace Resonalyze
         private CheckBox checkBoxShowLoss;
         private RadioButton radioViewMagnitude;
         private RadioButton radioViewPhase;
+        private RadioButton radioViewImpulse;
         private Label labelSmoothing;
         private DarkComboBox comboBoxSmoothing;
         private Button buttonAutoDelay;

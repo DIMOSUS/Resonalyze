@@ -8,18 +8,51 @@ namespace Resonalyze.Dsp;
 /// </summary>
 public static class TransferFunction
 {
+    // H1 regularization relative to the strongest excitation bin. An absolute
+    // epsilon changes meaning with the record level and with the accumulated
+    // average count (the spectra below are unnormalized running sums), so its
+    // strength silently drifted between measurements; -100 dB of the peak bin
+    // is scale-invariant and sits far below the excitation-gate floor, so it
+    // only guards the truly degenerate zero-power bins.
+    private const double RelativeRegularization = 1e-10;
+
+    // The power gate: bins whose reference power sits more than 60 dB under
+    // the strongest excitation bin fade out over a raised cosine that reaches
+    // zero another 14 dB down. This is only a safety net for bins at the true
+    // capture noise floor (below -90 dB even for 16-bit loopbacks) — it
+    // deliberately canNOT mark the region below the sweep start, because at
+    // measurement FFT lengths the sweep's own spectral leakage skirts hold
+    // the reference power at just -40..-20 dB re max all the way down to DC
+    // (verified on reconstructed field captures), while genuinely excited
+    // bins reach -45 dB (~36 dB of 1/f tilt across 12 octaves plus the
+    // first-octave fade-in). Cutting below the sweep start is the caller's
+    // job via the explicit excitation edge — the sweep parameters are known,
+    // the spectrum alone cannot reveal them.
+    private const double ExcitationGatePowerRatio = 1e-6;
+    private const double ExcitationGateFloorShare = 0.04;
+
+    /// <param name="excitationLowNyquistFraction">
+    /// The excitation's low edge as a fraction of Nyquist (an exponential
+    /// sweep spanning N octaves starts at Nyquist / 2^N). Bins fade out over
+    /// a raised cosine between this frequency and half of it, and stay zero
+    /// below: the sweep never went there, so Gxy/Gxx is microphone rumble
+    /// divided by the reference's leakage skirt — garbage that used to ring
+    /// back through the IFFT across the whole IR. Zero (the default) disables
+    /// the edge for callers whose excitation genuinely covers DC.
+    /// </param>
     public static TransferEstimateResult ComputeAveragedRelativeIr(
         IReadOnlyList<TransferFunctionFrame> frames,
-        double epsilon = 1e-12)
+        double excitationLowNyquistFraction = 0.0)
     {
         ArgumentNullException.ThrowIfNull(frames);
         if (frames.Count == 0)
         {
             throw new ArgumentException("At least one transfer frame is required.", nameof(frames));
         }
-        if (!double.IsFinite(epsilon) || epsilon < 0)
+        if (!double.IsFinite(excitationLowNyquistFraction) ||
+            excitationLowNyquistFraction is < 0.0 or > 1.0)
         {
-            throw new ArgumentOutOfRangeException(nameof(epsilon));
+            throw new ArgumentOutOfRangeException(nameof(excitationLowNyquistFraction));
         }
 
         int sampleCount = frames.Min(frame => Math.Min(frame.Reference.Count, frame.Target.Count));
@@ -60,11 +93,10 @@ public static class TransferFunction
                     epsilon: 0.0)[..(fftLength / 2 + 1)],
             frames.Count);
 
-        Complex[] relative = InverseH1Response(
+        Complex[] relative = InverseExcitationGatedH1(
             crossSpectrum,
             referencePowerSpectrum,
-            epsilon,
-            filter: null);
+            excitationLowNyquistFraction);
 
         var impulseResponse = new double[fftLength];
         double peakMagnitude = 0;
@@ -118,6 +150,55 @@ public static class TransferFunction
                 targetPowerSpectrum[bin] += MagnitudeSquared(targetSpectrum[bin]);
             }
         }
+    }
+
+    // The H1 estimate cross / (auto + λ), gated by the known excitation low
+    // edge and by a power-floor safety net read from the reference's own
+    // accumulated spectrum, transformed back to the time domain. All gate
+    // weights are real and Hermitian-symmetric (frequencies fold through
+    // min(bin, N - bin); a real capture's power spectrum already is), so this
+    // is zero-phase filtering: the inverse transform stays real and nothing
+    // moves in time. DC is excluded from the peak scan — at measurement FFT
+    // lengths a converter's static offset can rival the sweep bins and would
+    // drag both thresholds with it (bin 0 itself still passes through the
+    // same gates as any bin).
+    private static Complex[] InverseExcitationGatedH1(
+        Complex[] crossSpectrum,
+        double[] referencePowerSpectrum,
+        double excitationLowNyquistFraction)
+    {
+        int fftLength = crossSpectrum.Length;
+        double maxReferencePower = 0;
+        for (int bin = 1; bin < fftLength; bin++)
+        {
+            maxReferencePower = Math.Max(maxReferencePower, referencePowerSpectrum[bin]);
+        }
+
+        double regularization = maxReferencePower * RelativeRegularization;
+        double gateHigh = maxReferencePower * ExcitationGatePowerRatio;
+        double gateLow = gateHigh * ExcitationGateFloorShare;
+        int half = fftLength / 2;
+        var relative = new Complex[fftLength];
+        for (int bin = 0; bin < fftLength; bin++)
+        {
+            double weight = SoftGate(referencePowerSpectrum[bin], gateLow, gateHigh);
+            if (excitationLowNyquistFraction > 0.0 && weight > 0)
+            {
+                double nyquistFraction = Math.Min(bin, fftLength - bin) / (double)half;
+                weight *= SoftGate(
+                    nyquistFraction,
+                    excitationLowNyquistFraction * 0.5,
+                    excitationLowNyquistFraction);
+            }
+            if (weight > 0)
+            {
+                relative[bin] = weight * crossSpectrum[bin]
+                    / (referencePowerSpectrum[bin] + regularization);
+            }
+        }
+
+        Fourier.Inverse(relative, FourierOptions.Matlab);
+        return relative;
     }
 
     // The H1 estimate cross / (auto + eps), optionally shaped by a spectral

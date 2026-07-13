@@ -242,6 +242,169 @@ public sealed class TransferFunctionTests
     }
 
     [Fact]
+    public void ComputeAveragedRelativeIr_GatesOutBinsAtTheReferenceNoiseFloor()
+    {
+        // The power-floor safety net: where the reference truly carries
+        // nothing but its (tiny, electrical) noise, Gxy/Gxx is a noise ratio
+        // of order target/reference — orders of magnitude above the in-band
+        // response — and with the absolute epsilon it rang back through the
+        // IFFT as broadband time-domain garbage. Those bins must read zero:
+        // the recovered IR is then a clean band-limited pulse at the true
+        // delay instead of noise swamping it.
+        const int delay = 25;
+        double[] sweep = MiniSweep(4096, octaves: 5);
+        double[] reference = AddNoise(sweep, 1e-6, seed: 1);
+        double[] target = AddNoise(Delay(sweep, delay), 1e-3, seed: 2);
+
+        TransferEstimateResult result = TransferFunction.ComputeAveragedRelativeIr(
+            [new TransferFunctionFrame(reference, target)]);
+
+        Assert.Equal(delay, result.PeakIndex);
+        Assert.InRange(result.ImpulseResponse[delay], 0.8, 1.05);
+        Assert.True(
+            WorstOutsideWindow(result.ImpulseResponse, delay, 64) < 0.02,
+            "Reference-noise-floor bins leaked into the IR.");
+    }
+
+    [Fact]
+    public void ComputeAveragedRelativeIr_ExcitationEdgeCutsRumbleTheFloorGateCannot()
+    {
+        // The field failure mode on real capture lengths: the sweep's own
+        // leakage skirts hold the reference power at only -40..-20 dB re max
+        // all the way below the sweep start, so no data-driven floor gate can
+        // mark that region — while the microphone picks up strong infrasonic
+        // rumble there (vibration, wind) that the loopback never sees.
+        // Gxy/Gxx then reads rumble-over-skirt, far above the honest in-band
+        // response. Model the skirt as a reference tone below the sweep start
+        // — well above the floor gate yet far below the passband — and the
+        // rumble as a 40 dB louder target tone at the same frequency: only
+        // the explicit excitation edge can cut it. Both tones are Hann-shaped
+        // so their own leakage stays as compact relative to the edge as real
+        // capture-length rumble is.
+        const int delay = 25;
+        const int octaves = 3; // sweep spans Nyquist/8..Nyquist
+        double[] sweep = MiniSweep(4096, octaves);
+        double[] reference = AddNoise(sweep, 1e-6, seed: 5);
+        double[] target = AddNoise(Delay(sweep, delay), 1e-5, seed: 6);
+        for (int i = 0; i < reference.Length; i++)
+        {
+            // Nyquist/64 — below the sweep start and below the edge's ramp.
+            double phase = 2.0 * Math.PI * i / 128.0;
+            double window = 0.5 - 0.5 * Math.Cos(2.0 * Math.PI * i / reference.Length);
+            reference[i] += 0.0005 * window * Math.Sin(phase);
+            target[i] += 0.05 * window * Math.Sin(phase + 1.0);
+        }
+        var frames = new[] { new TransferFunctionFrame(reference, target) };
+
+        TransferEstimateResult unmasked = TransferFunction.ComputeAveragedRelativeIr(frames);
+        TransferEstimateResult masked = TransferFunction.ComputeAveragedRelativeIr(
+            frames, excitationLowNyquistFraction: Math.Pow(2.0, -octaves));
+
+        // The rumble tone spreads as a sinusoid across the whole IR while the
+        // pulse's own band-edge ringing decays away from it, so far-field RMS
+        // separates the two. Without the edge the rumble-over-skirt garbage
+        // dominates it (~0.09 here)...
+        Assert.True(
+            RmsOutsideWindow(unmasked.ImpulseResponse, delay, 256) > 0.03,
+            "Test setup lost its teeth: the floor gate alone already cut the rumble.");
+        // ...with it the pulse comes back clean, in place and full-size.
+        Assert.Equal(delay, masked.PeakIndex);
+        Assert.InRange(masked.ImpulseResponse[delay], 0.8, 1.05);
+        Assert.True(
+            RmsOutsideWindow(masked.ImpulseResponse, delay, 256) < 0.005,
+            "Sub-excitation rumble leaked past the excitation edge.");
+    }
+
+    [Fact]
+    public void ComputeAveragedRelativeIr_EstimateDoesNotDependOnTheAverageCount()
+    {
+        // The cross- and auto-spectra are accumulated without normalization, so
+        // an absolute epsilon regularized four accumulated runs four times more
+        // weakly than one. The relative regularization scales with the sums:
+        // repeating the identical frame must reproduce the identical estimate.
+        double[] sweep = MiniSweep(2048, octaves: 4);
+        double[] reference = AddNoise(sweep, 1e-6, seed: 3);
+        double[] target = AddNoise(Delay(sweep, 40), 1e-4, seed: 4);
+        var frame = new TransferFunctionFrame(reference, target);
+
+        TransferEstimateResult once = TransferFunction.ComputeAveragedRelativeIr([frame]);
+        TransferEstimateResult four = TransferFunction.ComputeAveragedRelativeIr(
+            [frame, frame, frame, frame]);
+
+        Assert.Equal(once.PeakIndex, four.PeakIndex);
+        for (int i = 0; i < once.ImpulseResponse.Length; i++)
+        {
+            Assert.Equal(once.ImpulseResponse[i], four.ImpulseResponse[i], precision: 12);
+        }
+    }
+
+    // The app's exponential sweep in miniature: <paramref name="octaves"/>
+    // octaves ending exactly at Nyquist, amplitude faded in linearly over the
+    // first octave — so the spectrum has the same shape the excitation gates
+    // see in a real loopback capture, leakage skirts below the start
+    // frequency included.
+    private static double[] MiniSweep(int length, int octaves)
+    {
+        double frequencyRatio = Math.Pow(2.0, octaves);
+        double logarithmicRatio = Math.Log(frequencyRatio);
+        double phaseFactor = (Math.PI / frequencyRatio) / logarithmicRatio;
+        double octaveLength = length / (double)octaves;
+        var sweep = new double[length];
+        for (int i = 0; i < length; i++)
+        {
+            double exponentialPosition = Math.Exp(i / (double)length * logarithmicRatio);
+            sweep[i] = Math.Sin(phaseFactor * length * exponentialPosition)
+                * Math.Min(i / octaveLength, 1.0);
+        }
+
+        return sweep;
+    }
+
+    private static double WorstOutsideWindow(double[] ir, int center, int halfWidth)
+    {
+        double worst = 0;
+        for (int i = 0; i < ir.Length; i++)
+        {
+            if (Math.Abs(i - center) > halfWidth)
+            {
+                worst = Math.Max(worst, Math.Abs(ir[i]));
+            }
+        }
+
+        return worst;
+    }
+
+    private static double RmsOutsideWindow(double[] ir, int center, int halfWidth)
+    {
+        double sum = 0;
+        int count = 0;
+        for (int i = 0; i < ir.Length; i++)
+        {
+            if (Math.Abs(i - center) > halfWidth)
+            {
+                sum += ir[i] * ir[i];
+                count++;
+            }
+        }
+
+        return Math.Sqrt(sum / Math.Max(1, count));
+    }
+
+    private static double[] AddNoise(double[] signal, double amplitude, int seed)
+    {
+        var noisy = new double[signal.Length];
+        for (int i = 0; i < signal.Length; i++)
+        {
+            // Deterministic pseudo-noise, decorrelated across seeds.
+            noisy[i] = signal[i] + amplitude
+                * Math.Sin(i * (12.9898 + seed * 3.7) + seed * 78.233)
+                * Math.Sin(i * 0.7301 + seed);
+        }
+
+        return noisy;
+    }
+
+    [Fact]
     public void RefineAround_DegenerateCorrelationReportsNoRefinementWithoutNaN()
     {
         // An all-zero IR whitens to an empty band (weightSum 0, normalizer 0), so the

@@ -47,4 +47,17 @@ public sealed class AudioEndpointInfoTests
         Assert.Equal("[Unavailable] USB Audio", endpoint.ToString());
         Assert.False(endpoint.IsAvailable);
     }
+
+    [Fact]
+    public void MissingEndpointPlaceholderPreservesIdAndFriendlyName()
+    {
+        AudioEndpointInfo endpoint = Options.MeasurementOptions.CreateUnavailableEndpoint(
+            "endpoint-id",
+            "Focusrite USB",
+            DataFlow.Capture);
+
+        Assert.Equal("endpoint-id", endpoint.Id);
+        Assert.Equal("Focusrite USB", endpoint.FriendlyName);
+        Assert.Equal("[Unavailable] Focusrite USB", endpoint.ToString());
+    }
 }

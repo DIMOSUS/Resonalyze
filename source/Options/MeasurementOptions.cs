@@ -174,8 +174,7 @@ namespace Resonalyze.Options
                 "analysis is derived from the transfer IR it produces.");
             deviceToolTip.SetToolTip(
                 buttonDeviceSettings,
-                "Opens the selected driver's control panel to change the hardware sample " +
-                "rate. Falls back to Windows Sound settings when no ASIO driver is selected.");
+                "Opens Windows Sound settings for the selected WASAPI endpoints.");
         }
 
         internal void Init(
@@ -321,9 +320,12 @@ namespace Resonalyze.Options
             {
                 ValidateSelectedAsioDriver(sampleRate);
             }
-            if (audioBackend == AudioBackend.Wave)
+            if (audioBackend != AudioBackend.Asio)
             {
                 ValidateSelectedWaveLoopback();
+            }
+            if (audioBackend == AudioBackend.Wave)
+            {
                 ValidateSelectedWaveSampleRate(sampleRate);
             }
             int asioInputChannelOffset =
@@ -816,21 +818,6 @@ namespace Resonalyze.Options
         {
             try
             {
-                int preferredSampleRate = GetSelectedSampleRate();
-                int preferredInputOffset = GetSelectedWaveInputChannelOffset();
-                int? preferredLoopbackOffset = GetSelectedWaveLoopbackChannelOffset();
-                if (comboBoxAsioDriver.SelectedItem is AsioDeviceInfo asioDriver)
-                {
-                    AsioDeviceCatalog.ShowControlPanel(asioDriver.DriverName);
-                    LoadWasapiEndpoints();
-                    PopulateDeviceControlsForSelectedBackend(
-                        preferredInputOffset,
-                        preferredLoopbackOffset);
-                    RefreshSampleRateOptions(preferredSampleRate);
-                    UpdateAudioBackendControls();
-                    return;
-                }
-
                 Process.Start(new ProcessStartInfo("control.exe", "mmsys.cpl")
                 {
                     UseShellExecute = true
@@ -1052,13 +1039,13 @@ namespace Resonalyze.Options
             return -1;
         }
 
-        private static AudioEndpointInfo CreateUnavailableEndpoint(
+        internal static AudioEndpointInfo CreateUnavailableEndpoint(
             string endpointId,
             string? friendlyName,
             NAudio.CoreAudioApi.DataFlow direction) =>
             new(
-                string.IsNullOrWhiteSpace(friendlyName) ? endpointId : friendlyName,
                 endpointId,
+                string.IsNullOrWhiteSpace(friendlyName) ? endpointId : friendlyName,
                 direction,
                 NAudio.CoreAudioApi.DeviceState.NotPresent,
                 new NAudio.Wave.WaveFormat(44_100, 16, 1),
@@ -1137,6 +1124,15 @@ namespace Resonalyze.Options
                 {
                     labelWaveLoopbackStatus.Text =
                         "⚠ A saved endpoint is unavailable. Reconnect it or select a replacement.";
+                    labelWaveLoopbackStatus.ForeColor = Color.Gold;
+                    return;
+                }
+                if (GetSelectedWaveLoopbackChannelOffset() == null)
+                {
+                    labelWaveLoopbackStatus.Font = WarningStatusFont;
+                    labelWaveLoopbackStatus.Text =
+                        "⚠ Loopback channel is REQUIRED. Select the physical input carrying " +
+                        "the playback reference.";
                     labelWaveLoopbackStatus.ForeColor = Color.Gold;
                     return;
                 }
@@ -1258,7 +1254,21 @@ namespace Resonalyze.Options
         {
             bool loopbackSelected =
                 comboBoxWaveLoopbackChannel.SelectedItem is InputChannelOption { Offset: not null };
-            if (loopbackSelected && !SelectedRecordingDeviceSupportsWaveLoopback())
+            ValidateRequiredWaveLoopback(
+                loopbackSelected,
+                SelectedRecordingDeviceSupportsWaveLoopback());
+        }
+
+        internal static void ValidateRequiredWaveLoopback(
+            bool loopbackSelected,
+            bool recordingDeviceSupportsLoopback)
+        {
+            if (!loopbackSelected)
+            {
+                throw new InvalidOperationException(
+                    "A loopback reference channel is required before measuring.");
+            }
+            if (!recordingDeviceSupportsLoopback)
             {
                 throw new InvalidOperationException(
                     "Wave loopback requires a selected stereo recording device.");

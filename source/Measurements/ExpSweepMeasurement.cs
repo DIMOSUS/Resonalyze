@@ -617,45 +617,90 @@ namespace Resonalyze
                         owner.Bits,
                         renderChannels);
                 }
-                captureDevice = new WasapiCaptureDevice(
-                    captureEndpointId,
-                    owner.WasapiBufferMilliseconds,
-                    shareMode,
-                    captureFormat);
-                playbackDevice = new WasapiPlaybackDevice(
-                    renderEndpointId,
-                    owner.WasapiBufferMilliseconds,
-                    shareMode,
-                    renderFormat);
+                WasapiCaptureDevice? createdCapture = null;
+                WasapiPlaybackDevice? createdPlayback = null;
+                PcmCaptureSession? createdSession = null;
+                try
+                {
+                    createdCapture = new WasapiCaptureDevice(
+                        captureEndpointId,
+                        owner.WasapiBufferMilliseconds,
+                        shareMode,
+                        captureFormat);
+                    createdPlayback = new WasapiPlaybackDevice(
+                        renderEndpointId,
+                        owner.WasapiBufferMilliseconds,
+                        shareMode,
+                        renderFormat);
+                    ValidateDevices(createdCapture, createdPlayback, shareMode, requiredChannels);
+                    createdSession = new PcmCaptureSession(
+                        createdCapture,
+                        expectedSamples: sweep.SweepSamples + owner.SampleRate * 2);
+                    createdSession.LevelsAvailable += channels => owner.RaiseLevels(
+                        owner.MapWaveLevels(channels));
+
+                    captureDevice = createdCapture;
+                    playbackDevice = createdPlayback;
+                    captureSession = createdSession;
+                    orchestrator = new SweepRunAudioOrchestrator(
+                        captureSession,
+                        playbackDevice);
+                }
+                catch
+                {
+                    DisposeFailedConstruction(createdPlayback);
+                    if (createdSession != null)
+                    {
+                        DisposeFailedConstruction(createdSession);
+                    }
+                    else
+                    {
+                        DisposeFailedConstruction(createdCapture);
+                    }
+                    throw;
+                }
+            }
+
+            private static void DisposeFailedConstruction(IAsyncDisposable? resource)
+            {
+                try
+                {
+                    resource?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                }
+                catch
+                {
+                }
+            }
+
+            private void ValidateDevices(
+                WasapiCaptureDevice createdCapture,
+                WasapiPlaybackDevice createdPlayback,
+                AudioClientShareMode shareMode,
+                int requiredChannels)
+            {
                 if (shareMode == AudioClientShareMode.Shared &&
-                    captureDevice.CaptureFormat.SampleRate != playbackDevice.PlaybackFormat.SampleRate)
+                    createdCapture.CaptureFormat.SampleRate !=
+                    createdPlayback.PlaybackFormat.SampleRate)
                 {
                     throw new InvalidOperationException(
                         "WASAPI Shared capture and render endpoints must use the same mix sample rate. " +
-                        $"Capture is {captureDevice.CaptureFormat.SampleRate} Hz and render is " +
-                        $"{playbackDevice.PlaybackFormat.SampleRate} Hz.");
+                        $"Capture is {createdCapture.CaptureFormat.SampleRate} Hz and render is " +
+                        $"{createdPlayback.PlaybackFormat.SampleRate} Hz.");
                 }
                 if (shareMode == AudioClientShareMode.Shared &&
-                    owner.SampleRate != captureDevice.CaptureFormat.SampleRate)
+                    owner.SampleRate != createdCapture.CaptureFormat.SampleRate)
                 {
                     throw new InvalidOperationException(
                         $"WASAPI Shared uses the endpoint mix rate " +
-                        $"({captureDevice.CaptureFormat.SampleRate} Hz). Update the measurement " +
+                        $"({createdCapture.CaptureFormat.SampleRate} Hz). Update the measurement " +
                         $"sample rate from {owner.SampleRate} Hz.");
                 }
-                if (captureDevice.ChannelCount < requiredChannels)
+                if (createdCapture.ChannelCount < requiredChannels)
                 {
                     throw new InvalidOperationException(
-                        $"The WASAPI capture endpoint exposes {captureDevice.ChannelCount} channel(s), " +
+                        $"The WASAPI capture endpoint exposes {createdCapture.ChannelCount} channel(s), " +
                         $"but the selected microphone and loopback routing requires {requiredChannels}.");
                 }
-
-                captureSession = new PcmCaptureSession(
-                    captureDevice,
-                    expectedSamples: sweep.SweepSamples + owner.SampleRate * 2);
-                captureSession.LevelsAvailable += channels => owner.RaiseLevels(
-                    owner.MapWaveLevels(channels));
-                orchestrator = new SweepRunAudioOrchestrator(captureSession, playbackDevice);
             }
 
             public async Task<CapturedSweepSamples> CaptureRunAsync(
@@ -706,7 +751,7 @@ namespace Resonalyze
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
                     throw new InvalidOperationException(
-                        $"WASAPI Shared sweep run {currentRun} failed while {stage}.",
+                        $"{owner.AudioBackend} sweep run {currentRun} failed while {stage}.",
                         exception);
                 }
             }
@@ -895,15 +940,15 @@ namespace Resonalyze
         {
             float[][] sampleChannels = captured.SampleChannels;
             if (captured.ValidateSharedDeviceStereo &&
-                sampleChannels.Length > 1 &&
-                (WaveInputChannelOffset > 0 ||
-                    WaveLoopbackInputChannelOffset.HasValue))
+                captured.LoopbackIndex is int validationLoopbackIndex)
             {
                 RecordedChannelValidator.EnsureDifferentSignals(
                     sampleChannels,
-                    0,
-                    1,
-                    "Wave measurement");
+                    captured.MicrophoneIndex,
+                    validationLoopbackIndex,
+                    IsWasapiBackend(AudioBackend)
+                        ? "WASAPI measurement"
+                        : "Wave measurement");
             }
 
             float[] recorded = (uint)captured.MicrophoneIndex < (uint)sampleChannels.Length

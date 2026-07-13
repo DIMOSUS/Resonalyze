@@ -7,11 +7,9 @@ namespace Resonalyze;
 
 public sealed class WasapiPlaybackDevice : IAudioPlaybackDevice
 {
-    private const long ReferenceTimesPerMillisecond = 10_000;
-
     private readonly MMDeviceEnumerator enumerator;
     private readonly MMDevice endpoint;
-    private readonly AudioClient audioClient;
+    private AudioClient audioClient;
     private readonly EventWaitHandle bufferReady = new(false, EventResetMode.AutoReset);
     private readonly string endpointId;
     private readonly string friendlyName;
@@ -33,22 +31,44 @@ public sealed class WasapiPlaybackDevice : IAudioPlaybackDevice
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpointId);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bufferMilliseconds);
-        enumerator = new MMDeviceEnumerator();
-        endpoint = enumerator.GetDevice(endpointId);
-        if (endpoint.DataFlow != DataFlow.Render)
+        if (shareMode == AudioClientShareMode.Exclusive && requestedFormat == null)
         {
-            throw new ArgumentException("The endpoint is not a render device.", nameof(endpointId));
-        }
-        this.endpointId = endpoint.ID;
-        friendlyName = endpoint.FriendlyName;
-        this.bufferMilliseconds = bufferMilliseconds;
-        audioClient = endpoint.AudioClient;
-        PlaybackFormat = shareMode == AudioClientShareMode.Exclusive
-            ? requestedFormat ?? throw new ArgumentNullException(
+            throw new ArgumentNullException(
                 nameof(requestedFormat),
-                "WASAPI Exclusive playback requires an explicit format.")
-            : audioClient.MixFormat;
-        ShareMode = shareMode;
+                "WASAPI Exclusive playback requires an explicit format.");
+        }
+
+        var createdEnumerator = new MMDeviceEnumerator();
+        AudioClient? createdAudioClient = null;
+        try
+        {
+            MMDevice createdEndpoint = createdEnumerator.GetDevice(endpointId);
+            if (createdEndpoint.DataFlow != DataFlow.Render)
+            {
+                throw new ArgumentException(
+                    "The endpoint is not a render device.",
+                    nameof(endpointId));
+            }
+            createdAudioClient = createdEndpoint.AudioClient;
+            WaveFormat playbackFormat = shareMode == AudioClientShareMode.Exclusive
+                ? requestedFormat!
+                : createdAudioClient.MixFormat;
+
+            enumerator = createdEnumerator;
+            endpoint = createdEndpoint;
+            audioClient = createdAudioClient;
+            this.endpointId = createdEndpoint.ID;
+            friendlyName = createdEndpoint.FriendlyName;
+            this.bufferMilliseconds = bufferMilliseconds;
+            PlaybackFormat = playbackFormat;
+            ShareMode = shareMode;
+        }
+        catch
+        {
+            createdAudioClient?.Dispose();
+            createdEnumerator.Dispose();
+            throw;
+        }
     }
 
     public WaveFormat PlaybackFormat { get; }
@@ -133,21 +153,62 @@ public sealed class WasapiPlaybackDevice : IAudioPlaybackDevice
         streamFormat = ShareMode == AudioClientShareMode.Exclusive
             ? PlaybackFormat
             : source.WaveFormat;
-        long duration = bufferMilliseconds * ReferenceTimesPerMillisecond;
+        (long bufferDuration, long periodicity) =
+            WasapiStreamConfiguration.GetDurations(ShareMode, bufferMilliseconds);
         AudioClientStreamFlags flags = AudioClientStreamFlags.EventCallback;
         if (ShareMode == AudioClientShareMode.Shared)
         {
             flags |= AudioClientStreamFlags.AutoConvertPcm |
                 AudioClientStreamFlags.SrcDefaultQuality;
-            audioClient.Initialize(ShareMode, flags, duration, 0, streamFormat, Guid.Empty);
+            audioClient.Initialize(
+                ShareMode,
+                flags,
+                bufferDuration,
+                periodicity,
+                streamFormat,
+                Guid.Empty);
         }
         else
         {
-            audioClient.Initialize(ShareMode, flags, duration, duration, streamFormat, Guid.Empty);
+            InitializeExclusive(flags, bufferDuration, periodicity);
         }
         audioClient.SetEventHandle(bufferReady.SafeWaitHandle.DangerousGetHandle());
         ActualBufferFrames = audioClient.BufferSize;
         initialized = true;
+    }
+
+    private void InitializeExclusive(
+        AudioClientStreamFlags flags,
+        long bufferDuration,
+        long periodicity)
+    {
+        try
+        {
+            audioClient.Initialize(
+                ShareMode,
+                flags,
+                bufferDuration,
+                periodicity,
+                streamFormat!,
+                Guid.Empty);
+        }
+        catch (COMException exception) when (
+            WasapiStreamConfiguration.IsBufferSizeNotAligned(exception))
+        {
+            int alignedFrames = audioClient.BufferSize;
+            long alignedDuration = WasapiStreamConfiguration.GetAlignedExclusiveDuration(
+                alignedFrames,
+                streamFormat!.SampleRate);
+            audioClient.Dispose();
+            audioClient = endpoint.AudioClient;
+            audioClient.Initialize(
+                ShareMode,
+                flags,
+                alignedDuration,
+                alignedDuration,
+                streamFormat,
+                Guid.Empty);
+        }
     }
 
     private void RenderLoop()
@@ -160,39 +221,13 @@ public sealed class WasapiPlaybackDevice : IAudioPlaybackDevice
             bool sourceEnded = !FillBuffer(render, ActualBufferFrames);
             audioClient.Start();
             clientStarted = true;
-            while (!stopRequested)
+            if (ShareMode == AudioClientShareMode.Exclusive)
             {
-                bufferReady.WaitOne(bufferMilliseconds * 3);
-                if (stopRequested)
-                {
-                    break;
-                }
-
-                int padding = audioClient.CurrentPadding;
-                if (sourceEnded)
-                {
-                    if (padding == 0)
-                    {
-                        break;
-                    }
-                    continue;
-                }
-                TimeSpan sinceLastFill = Stopwatch.GetElapsedTime(lastBufferFillTimestamp);
-                TimeSpan bufferDuration = TimeSpan.FromSeconds(
-                    (double)ActualBufferFrames / (streamFormat?.SampleRate ?? 1));
-                if (WasapiRenderTiming.IsUnderrun(
-                    padding,
-                    sourceEnded,
-                    sinceLastFill,
-                    bufferDuration))
-                {
-                    RenderUnderruns++;
-                }
-                int availableFrames = ActualBufferFrames - padding;
-                if (availableFrames > 0)
-                {
-                    sourceEnded = !FillBuffer(render, availableFrames);
-                }
+                RunExclusiveRenderLoop(render, sourceEnded);
+            }
+            else
+            {
+                RunSharedRenderLoop(render, sourceEnded);
             }
         }
         catch (Exception exception)
@@ -224,6 +259,80 @@ public sealed class WasapiPlaybackDevice : IAudioPlaybackDevice
             }
         }
     }
+
+    private void RunExclusiveRenderLoop(AudioRenderClient render, bool finalBufferQueued)
+    {
+        TimeSpan bufferDuration = GetBufferDuration();
+        while (!stopRequested)
+        {
+            bool signaled = bufferReady.WaitOne(bufferMilliseconds * 3);
+            if (stopRequested)
+            {
+                break;
+            }
+            if (!signaled)
+            {
+                RenderUnderruns++;
+                continue;
+            }
+            if (finalBufferQueued)
+            {
+                break;
+            }
+            if (Stopwatch.GetElapsedTime(lastBufferFillTimestamp) > bufferDuration * 1.5)
+            {
+                RenderUnderruns++;
+            }
+            finalBufferQueued = !FillBuffer(render, ActualBufferFrames);
+        }
+    }
+
+    private void RunSharedRenderLoop(AudioRenderClient render, bool sourceEnded)
+    {
+        TimeSpan bufferDuration = GetBufferDuration();
+        while (!stopRequested)
+        {
+            bool signaled = bufferReady.WaitOne(bufferMilliseconds * 3);
+            if (stopRequested)
+            {
+                break;
+            }
+            if (!signaled)
+            {
+                RenderUnderruns++;
+                continue;
+            }
+
+            int padding = audioClient.CurrentPadding;
+            if (sourceEnded)
+            {
+                if (padding == 0)
+                {
+                    break;
+                }
+                continue;
+            }
+            if (WasapiRenderTiming.IsUnderrun(
+                padding,
+                sourceEnded,
+                Stopwatch.GetElapsedTime(lastBufferFillTimestamp),
+                bufferDuration))
+            {
+                RenderUnderruns++;
+            }
+            int availableFrames = WasapiStreamConfiguration.GetRenderFrames(
+                ShareMode,
+                ActualBufferFrames,
+                padding);
+            if (availableFrames > 0)
+            {
+                sourceEnded = !FillBuffer(render, availableFrames);
+            }
+        }
+    }
+
+    private TimeSpan GetBufferDuration() => TimeSpan.FromSeconds(
+        (double)ActualBufferFrames / (streamFormat?.SampleRate ?? 1));
 
     private bool FillBuffer(AudioRenderClient render, int frames)
     {

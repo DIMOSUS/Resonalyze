@@ -6,11 +6,9 @@ namespace Resonalyze;
 
 public sealed class WasapiCaptureDevice : IAudioCaptureDevice
 {
-    private const long ReferenceTimesPerMillisecond = 10_000;
-
     private readonly MMDeviceEnumerator enumerator;
     private readonly MMDevice endpoint;
-    private readonly AudioClient audioClient;
+    private AudioClient audioClient;
     private readonly EventWaitHandle packetReady = new(false, EventResetMode.AutoReset);
     private readonly string endpointId;
     private readonly string friendlyName;
@@ -30,22 +28,44 @@ public sealed class WasapiCaptureDevice : IAudioCaptureDevice
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpointId);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bufferMilliseconds);
-        enumerator = new MMDeviceEnumerator();
-        endpoint = enumerator.GetDevice(endpointId);
-        if (endpoint.DataFlow != DataFlow.Capture)
+        if (shareMode == AudioClientShareMode.Exclusive && requestedFormat == null)
         {
-            throw new ArgumentException("The endpoint is not a capture device.", nameof(endpointId));
-        }
-        this.endpointId = endpoint.ID;
-        friendlyName = endpoint.FriendlyName;
-        this.bufferMilliseconds = bufferMilliseconds;
-        audioClient = endpoint.AudioClient;
-        ShareMode = shareMode;
-        CaptureFormat = shareMode == AudioClientShareMode.Exclusive
-            ? requestedFormat ?? throw new ArgumentNullException(
+            throw new ArgumentNullException(
                 nameof(requestedFormat),
-                "WASAPI Exclusive capture requires an explicit format.")
-            : audioClient.MixFormat;
+                "WASAPI Exclusive capture requires an explicit format.");
+        }
+
+        var createdEnumerator = new MMDeviceEnumerator();
+        AudioClient? createdAudioClient = null;
+        try
+        {
+            MMDevice createdEndpoint = createdEnumerator.GetDevice(endpointId);
+            if (createdEndpoint.DataFlow != DataFlow.Capture)
+            {
+                throw new ArgumentException(
+                    "The endpoint is not a capture device.",
+                    nameof(endpointId));
+            }
+            createdAudioClient = createdEndpoint.AudioClient;
+            WaveFormat captureFormat = shareMode == AudioClientShareMode.Exclusive
+                ? requestedFormat!
+                : createdAudioClient.MixFormat;
+
+            enumerator = createdEnumerator;
+            endpoint = createdEndpoint;
+            audioClient = createdAudioClient;
+            this.endpointId = createdEndpoint.ID;
+            friendlyName = createdEndpoint.FriendlyName;
+            this.bufferMilliseconds = bufferMilliseconds;
+            ShareMode = shareMode;
+            CaptureFormat = captureFormat;
+        }
+        catch
+        {
+            createdAudioClient?.Dispose();
+            createdEnumerator.Dispose();
+            throw;
+        }
     }
 
     public event EventHandler<AudioCaptureDataEventArgs>? DataAvailable;
@@ -109,7 +129,8 @@ public sealed class WasapiCaptureDevice : IAudioCaptureDevice
         {
             return;
         }
-        long duration = bufferMilliseconds * ReferenceTimesPerMillisecond;
+        (long bufferDuration, long periodicity) =
+            WasapiStreamConfiguration.GetDurations(ShareMode, bufferMilliseconds);
         AudioClientStreamFlags flags = AudioClientStreamFlags.EventCallback;
         if (ShareMode == AudioClientShareMode.Shared)
         {
@@ -119,7 +140,33 @@ public sealed class WasapiCaptureDevice : IAudioCaptureDevice
         }
         else
         {
-            audioClient.Initialize(ShareMode, flags, duration, duration, CaptureFormat, Guid.Empty);
+            try
+            {
+                audioClient.Initialize(
+                    ShareMode,
+                    flags,
+                    bufferDuration,
+                    periodicity,
+                    CaptureFormat,
+                    Guid.Empty);
+            }
+            catch (COMException exception) when (
+                WasapiStreamConfiguration.IsBufferSizeNotAligned(exception))
+            {
+                int alignedFrames = audioClient.BufferSize;
+                long alignedDuration = WasapiStreamConfiguration.GetAlignedExclusiveDuration(
+                    alignedFrames,
+                    CaptureFormat.SampleRate);
+                audioClient.Dispose();
+                audioClient = endpoint.AudioClient;
+                audioClient.Initialize(
+                    ShareMode,
+                    flags,
+                    alignedDuration,
+                    alignedDuration,
+                    CaptureFormat,
+                    Guid.Empty);
+            }
         }
         audioClient.SetEventHandle(packetReady.SafeWaitHandle.DangerousGetHandle());
         initialized = true;

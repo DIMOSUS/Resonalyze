@@ -1,16 +1,16 @@
 using System.Numerics;
 using MathNet.Numerics.IntegralTransforms;
-using NAudio.Wave;
 using Resonalyze.Options;
 
 namespace Resonalyze;
 
 /// <summary>
-/// Generates deterministic broadband noise for repeatable live-spectrum measurements.
+/// Generates deterministic broadband noise for repeatable live-spectrum
+/// measurements. Pure signal generation: it exposes float sample data only;
+/// the audio layer builds any playback stream from it.
 /// </summary>
 public sealed class NoiseSignal : IDisposable
 {
-    private PcmStreamSet? streamSet;
     private bool disposed;
 
     public float[] FloatData { get; private set; } = Array.Empty<float>();
@@ -74,9 +74,6 @@ public sealed class NoiseSignal : IDisposable
                 FillWhite(random);
                 break;
         }
-
-        streamSet?.Dispose();
-        streamSet = new PcmStreamSet(FloatData, sampleRate, bitsPerSample);
     }
 
     // Uniform white noise in [-0.5, 0.5): equal energy per hertz.
@@ -214,17 +211,6 @@ public sealed class NoiseSignal : IDisposable
         }
     }
 
-    public RawSourceWaveStream GetStream(PlaybackChannel channel)
-    {
-        ThrowIfDisposed();
-        if (streamSet == null)
-        {
-            throw new InvalidOperationException("The noise signal is not generated.");
-        }
-
-        return streamSet.GetStream(channel);
-    }
-
     private void ThrowIfDisposed()
     {
         ObjectDisposedException.ThrowIf(disposed, this);
@@ -238,8 +224,6 @@ public sealed class NoiseSignal : IDisposable
         }
 
         disposed = true;
-        streamSet?.Dispose();
-        streamSet = null;
         GC.SuppressFinalize(this);
     }
 }

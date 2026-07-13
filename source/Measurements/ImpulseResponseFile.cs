@@ -1,7 +1,6 @@
 using System.Numerics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using NAudio.Wave;
 using Resonalyze.History;
 
 namespace Resonalyze;
@@ -515,7 +514,7 @@ public sealed class ImpulseResponseFile
             FormatConversionOccurred =
                 diagnostics.Backend.Contains("Shared", StringComparison.Ordinal) &&
                 (diagnostics.RenderFormat.SampleRate != analysisSampleRate ||
-                    diagnostics.RenderFormat.Encoding != WaveFormatEncoding.Pcm ||
+                    diagnostics.RenderFormat.Encoding != AudioSampleEncoding.Pcm ||
                     diagnostics.RenderFormat.BitsPerSample != analysisBits),
             RequestedBufferMilliseconds = diagnostics.RequestedBufferMilliseconds,
             ActualBufferFrames = diagnostics.ActualBufferFrames,

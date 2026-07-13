@@ -1,0 +1,213 @@
+using NAudio.Wave;
+
+namespace Resonalyze.Audio.Tests;
+
+public sealed class PcmCaptureSessionTests
+{
+    [Fact]
+    public async Task StartWaitsForFirstPacketAndSampleWaitCompletes()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        await using var session = new PcmCaptureSession(device);
+
+        Task start = session.StartAsync(CancellationToken.None);
+        Assert.False(start.IsCompleted);
+        device.Push([0, 0, 0xff, 0x7f]);
+        await start;
+
+        await session.WaitForSamplesAsync(2, CancellationToken.None);
+        Assert.Equal(2, session.ReadSamples);
+    }
+
+    [Fact]
+    public async Task UnexpectedStopFaultsPendingWaits()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        await using var session = new PcmCaptureSession(device);
+        Task start = session.StartAsync(CancellationToken.None);
+        device.Push([0, 0]);
+        await start;
+        Task wait = session.WaitForSamplesAsync(100, CancellationToken.None);
+
+        device.StopWithError(new IOException("Device unplugged."));
+
+        IOException exception = await Assert.ThrowsAsync<IOException>(() => wait);
+        Assert.Equal("Device unplugged.", exception.Message);
+    }
+
+    [Fact]
+    public async Task UnexpectedStopIsObservableWithoutSampleWaiter()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        await using var session = new PcmCaptureSession(device);
+        Task start = session.StartAsync(CancellationToken.None);
+        device.Push([0, 0]);
+        await start;
+        Task stopped = session.WaitForStopAsync(CancellationToken.None);
+
+        device.StopWithError(new IOException("Device unplugged."));
+
+        IOException exception = await Assert.ThrowsAsync<IOException>(() => stopped);
+        Assert.Equal("Device unplugged.", exception.Message);
+    }
+
+    [Fact]
+    public async Task ResetRemovesSamplesFromPreviousRun()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        await using var session = new PcmCaptureSession(device);
+        Task start = session.StartAsync(CancellationToken.None);
+        device.Push([0xff, 0x7f]);
+        await start;
+        Assert.Single(session.GetSamplesSnapshot()[0]);
+
+        session.Reset();
+
+        Assert.Empty(session.GetSamplesSnapshot()[0]);
+    }
+
+    [Fact]
+    public async Task PausedCaptureDropsAppendsButKeepsMeteringAndResumesOnReset()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        await using var session = new PcmCaptureSession(device);
+        int levelEvents = 0;
+        session.LevelsAvailable += _ => levelEvents++;
+        Task start = session.StartAsync(CancellationToken.None);
+        device.Push([0x01, 0x00, 0x02, 0x00]); // 2 frames (mono 16-bit)
+        await start;
+        Assert.Equal(2, session.ReadSamples);
+        int levelsAfterStart = levelEvents;
+
+        // A long confirmation pause: audio keeps arriving but must not accumulate.
+        session.Pause();
+        device.Push([0x03, 0x00, 0x04, 0x00, 0x05, 0x00]); // 3 frames, dropped
+        Assert.Equal(2, session.ReadSamples);
+        Assert.True(levelEvents > levelsAfterStart); // meter stayed live
+
+        // The next run resumes and starts from a clean buffer.
+        session.Reset();
+        Assert.Equal(0, session.ReadSamples);
+        device.Push([0x06, 0x00]);
+        Assert.Equal(1, session.ReadSamples);
+    }
+
+    [Fact]
+    public async Task StopBeforeSampleWaiterFaultsTheLaterWaitImmediately()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        await using var session = new PcmCaptureSession(device);
+        Task start = session.StartAsync(CancellationToken.None);
+        device.Push([0, 0]);
+        await start;
+
+        // The device dies while playback is still running — before the sweep's
+        // sample waiter is ever created.
+        device.StopWithError(new IOException("Device unplugged."));
+
+        // Registering the waiter now must fault at once, not hang until Abort.
+        IOException exception = await Assert.ThrowsAsync<IOException>(() =>
+            session.WaitForSamplesAsync(1000, CancellationToken.None));
+        Assert.Equal("Device unplugged.", exception.Message);
+    }
+
+    [Fact]
+    public async Task TerminalFailureSurvivesResetBetweenRuns()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        await using var session = new PcmCaptureSession(device);
+        Task start = session.StartAsync(CancellationToken.None);
+        device.Push([0, 0]);
+        await start;
+        device.StopWithError(new IOException("Device unplugged."));
+
+        // A Reset for the next averaged run must not forget the failure.
+        session.Reset();
+
+        await Assert.ThrowsAsync<IOException>(() =>
+            session.WaitForSamplesAsync(1000, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RealRestartClearsTerminalFailure()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        await using var session = new PcmCaptureSession(device);
+        Task start = session.StartAsync(CancellationToken.None);
+        device.Push([0, 0]);
+        await start;
+        device.StopWithError(new IOException("Device unplugged."));
+
+        // A genuine restart (not a between-runs Reset) resumes normally.
+        Task restart = session.StartAsync(CancellationToken.None);
+        device.Push([0x01, 0x00, 0x02, 0x00]);
+        await restart;
+
+        await session.WaitForSamplesAsync(2, CancellationToken.None);
+        Assert.Equal(2, session.ReadSamples);
+    }
+
+    [Fact]
+    public async Task PacketFlagsAreCountedAndDiscontinuityIsPublished()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        await using var session = new PcmCaptureSession(device);
+        int notifications = 0;
+        session.CaptureDiscontinuity += () => notifications++;
+        Task start = session.StartAsync(CancellationToken.None);
+
+        device.Push([0, 0], discontinuity: true, silent: true, timestampError: true);
+        await start;
+
+        Assert.Equal(1, session.DiscontinuityCount);
+        Assert.Equal(1, session.SilentPacketCount);
+        Assert.Equal(1, session.TimestampErrorCount);
+        Assert.Equal(1, notifications);
+    }
+
+    private sealed class FakeCaptureDevice : IAudioCaptureDevice
+    {
+        public FakeCaptureDevice(WaveFormat format)
+        {
+            CaptureFormat = format;
+        }
+
+        public event EventHandler<AudioCaptureDataEventArgs>? DataAvailable;
+        public event EventHandler<AudioDeviceStoppedEventArgs>? Stopped;
+
+        public WaveFormat CaptureFormat { get; }
+        public int ChannelCount => CaptureFormat.Channels;
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync() => Task.CompletedTask;
+
+        public void Push(
+            byte[] bytes,
+            bool discontinuity = false,
+            bool silent = false,
+            bool timestampError = false)
+        {
+            DataAvailable?.Invoke(
+                this,
+                new AudioCaptureDataEventArgs
+                {
+                    Buffer = bytes,
+                    BytesRecorded = bytes.Length,
+                    Format = CaptureFormat,
+                    Discontinuity = discontinuity,
+                    Silent = silent,
+                    TimestampError = timestampError
+                });
+        }
+
+        public void StopWithError(Exception exception) =>
+            Stopped?.Invoke(this, new AudioDeviceStoppedEventArgs(exception));
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+}

@@ -45,7 +45,7 @@ internal static class SweepRunQualityCheck
         }
 
         double microphonePeak = Peak(microphone);
-        if (microphonePeak >= AudioLevelMetering.FullScaleThreshold)
+        if (microphonePeak >= RecordedLevelMetering.FullScaleThreshold)
         {
             issues.Add("the microphone signal clipped");
         }

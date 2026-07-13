@@ -26,18 +26,19 @@ dotnet test tests/Resonalyze.Dsp.Tests/Resonalyze.Dsp.Tests.csproj --filter "Ful
 dotnet run --project source/Resonalyze.csproj -c Tracy
 ```
 
-Platform constraint: `source/` (the app) and `tests/Resonalyze.App.Tests/` target `net10.0-windows` and only build/run on Windows. `dsp/` and `tests/Resonalyze.Dsp.Tests/` target plain `net10.0` and are cross-platform — on a Linux environment, only the DSP library and its tests can be built and run.
+Platform constraint: `source/` (the app), `audio/Resonalyze.Audio`, `tests/Resonalyze.Audio.Tests/` and `tests/Resonalyze.App.Tests/` target `net10.0-windows` and only build/run on Windows (WASAPI/ASIO/MME are Windows-only). `dsp/` and `tests/Resonalyze.Dsp.Tests/` target plain `net10.0` and are cross-platform — on a Linux environment, only the DSP library and its tests can be built and run.
 
 Test data: `assets/test_data` is a git submodule ([Resonalyze-test-data](https://github.com/DIMOSUS/Resonalyze-test-data), ~230 MB of real transfer IRs). Some dsp tests read it; run `git submodule update --init assets/test_data` once per clone, or those tests fail with a message pointing here.
 
 ## Architecture
 
-Two projects, with a deliberate boundary:
+Three projects, with deliberate boundaries (`Dsp` ⟂ `Audio`; the app depends on both):
 
 - **`dsp/Resonalyze.Dsp`** — pure, UI-free signal-processing library. Depends only on MathNet.Numerics and YamlDotNet. Contains FFT/spectrum analysis, windowing, transfer functions, minimum phase, excess delay, time-alignment analysis, biquad/crossover filters, the EQ auto-tuner, and PEQ profile import/export formats (Equalizer APO, REW, MiniDSP, CamillaDSP, EasyEffects, generic CSV — all implementing `IEqProfileFormat`). The app hands measurement data to this layer through `IImpulseMeasurement` (impulse response + peak index + sample rate).
-- **`source/Resonalyze`** — the WinForms app: audio device I/O, measurement lifecycle, and plotting.
+- **`audio/Resonalyze.Audio`** — owns all audio drivers/devices (WASAPI Shared/Exclusive, ASIO, MME), format negotiation, capture/playback lifecycle, PCM decoding, diagnostics and warm-up. NAudio is confined here (declared `PrivateAssets="compile"` so `using NAudio` does not compile in the app). Low-level device types are `internal`; the measurement layer talks only to the neutral abstraction: `IAudioSessionFactory` + `IAudioDuplexSession`/`IAudioStreamingSession`/`IAudioPlaybackSession` and backend-neutral DTOs (`AudioSessionRequest`, `AudioPlaybackSignal`, `AudioCaptureResult`, `AudioSessionDiagnostics`, `AudioEndpointDescriptor`, `AudioFormat`, `PlaybackChannel`). Backends are chosen by the persisted `AudioBackend` enum inside `AudioBackendRegistry` (the only backend dispatch — no `switch (AudioBackend)` in `source/`).
+- **`source/Resonalyze`** — the WinForms app: composition root, measurement lifecycle, and plotting.
 
-Inside `source/`, the flow is: signal generation and capture (`Measurements/` — `ExponentialSineSweep`, `NoiseSignal`, `SoundRecorder`; `Audio/` — NAudio Wave and ASIO backends; microphone and loopback are always channels of ONE input device, so timing stays sample-synchronous) → analysis via the Dsp library → plot presentation (`Plotting/` — `PlotModelFactory` builds OxyPlot models, `OxyPlotAdapter` hosts them).
+Inside `source/`, the flow is: signal generation (`Measurements/` — `ExponentialSineSweep`, `NoiseSignal` produce float data only) → an audio session opened via `IAudioSessionFactory` (composition root in `Shell/Form1` builds `AudioBackendRegistry.CreateDefault()` and injects the factory into `ExpSweepMeasurement`, `NoiseMeasurement`, the signal generator and warm-up) → analysis via the Dsp library → plot presentation (`Plotting/` — `PlotModelFactory` builds OxyPlot models, `OxyPlotAdapter` hosts them). Microphone and loopback are always channels of ONE input device, so timing stays sample-synchronous.
 
 Key structural points:
 
@@ -49,7 +50,7 @@ Key structural points:
 
 ## Testing Conventions
 
-Tests use xUnit. DSP tests are deterministic and synthetic: `tests/Resonalyze.Dsp.Tests/SyntheticMeasurement.cs` implements `IImpulseMeasurement` so analysis code is exercised against generated impulses/filters/delays rather than recordings. The exception is `RealMeasurementArrivalTests`, which pins field regressions against the real measurements in the `assets/test_data` submodule. App tests focus on file formats and non-UI logic (overlay files, impulse-response files, plot model construction, PDF sheets).
+Tests use xUnit. DSP tests are deterministic and synthetic: `tests/Resonalyze.Dsp.Tests/SyntheticMeasurement.cs` implements `IImpulseMeasurement` so analysis code is exercised against generated impulses/filters/delays rather than recordings. The exception is `RealMeasurementArrivalTests`, which pins field regressions against the real measurements in the `assets/test_data` submodule. App tests focus on file formats and non-UI logic (overlay files, impulse-response files, plot model construction, PDF sheets) plus the measurement layer against a fake `IAudioSessionFactory` (`tests/Resonalyze.App.Tests/Fakes/`) — sweep/averaging/retry/cancellation/device-failure/live paths with no NAudio or hardware. `tests/Resonalyze.Audio.Tests/` exercises the audio internals directly (via `InternalsVisibleTo`): PCM decoding, accumulation, session reuse, WASAPI configuration. Hardware smoke tests are marked `[Trait("Category","Hardware")]` and excluded with `--filter "Category!=Hardware"`.
 
 ## Code Style
 

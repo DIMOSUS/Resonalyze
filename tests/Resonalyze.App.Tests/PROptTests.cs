@@ -15,7 +15,7 @@ public sealed class PROptTests
         impulse[directSample] = Complex.One;
         impulse[directSample + 480] = new Complex(0.8, 0.0);
 
-        using var measurement = new ExpSweepMeasurement();
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.RestoreImpulseResponse(
             octaves: 12,
             sampleRate,

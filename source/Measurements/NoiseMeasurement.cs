@@ -1,20 +1,21 @@
 using System.Numerics;
 using System.Threading.Channels;
-using NAudio.CoreAudioApi;
-using NAudio.Wave;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
 
 namespace Resonalyze
 {
     /// <summary>
-    /// Streams captured noise blocks to a background FFT accumulator.
+    /// Streams captured noise blocks to a background FFT accumulator. The
+    /// continuous playback-and-capture lifecycle lives behind
+    /// <see cref="IAudioStreamingSession"/>; this class owns only the live
+    /// transfer-function / spectrum analysis.
     /// </summary>
     public sealed class NoiseMeasurement : IDisposable
     {
+        private readonly IAudioSessionFactory audioSessionFactory;
         private readonly object stateSync = new();
         private readonly object dataSync = new();
-        private SoundRecorder? soundRecorder;
         private CancellationTokenSource? cancellationTokenSource;
         private Task<bool>? measurementTask;
         private ChannelWriter<float[][]>? sequenceWriter;
@@ -27,6 +28,10 @@ namespace Resonalyze
         private int sequencesCounter;
         private long lastDropTickMs;
         private int droppedFrameTotal;
+        // The microphone/loopback positions within a captured frame, reported by
+        // the session and constant for a run. Read by the analysis loop.
+        private volatile int captureMicrophoneIndex;
+        private volatile int captureLoopbackIndex = -1;
         // Bumped on every dropped capture block; the processing loop compares it
         // against the generation it has consumed and resets the reframer, so no
         // FFT frame is ever built across the discontinuity a drop leaves behind.
@@ -43,6 +48,13 @@ namespace Resonalyze
         internal event Action<InputLevelMeterSnapshot>? LevelsAvailable;
 
         private NoiseSignal? signal;
+
+        public NoiseMeasurement(IAudioSessionFactory audioSessionFactory)
+        {
+            this.audioSessionFactory = audioSessionFactory ??
+                throw new ArgumentNullException(nameof(audioSessionFactory));
+        }
+
         public bool InProgress => inProgress;
         public int SampleRate { get; private set; }
         public int Bits { get; private set; }
@@ -149,29 +161,6 @@ namespace Resonalyze
                 sampleRate,
                 LiveSpectrumOptions.NoiseColor,
                 SequenceLength);
-
-            DisposeRecorders();
-
-            soundRecorder = new SoundRecorder();
-            soundRecorder.Init(
-                sampleRate,
-                bits,
-                GetRequiredWaveInputChannelCount(),
-                inputDeviceNumber);
-            soundRecorder.Sequence = sequenceLength;
-            soundRecorder.SequenceChannelsReady += ProcessSequenceChannels;
-            soundRecorder.LevelsAvailable += HandleWaveLevelsAvailable;
-        }
-
-        private void DisposeRecorders()
-        {
-            if (soundRecorder != null)
-            {
-                soundRecorder.SequenceChannelsReady -= ProcessSequenceChannels;
-                soundRecorder.LevelsAvailable -= HandleWaveLevelsAvailable;
-                soundRecorder.Dispose();
-                soundRecorder = null;
-            }
         }
 
         public Task<bool> RunAsync()
@@ -183,7 +172,7 @@ namespace Resonalyze
                 {
                     return measurementTask;
                 }
-                if (signal == null || soundRecorder == null)
+                if (signal == null)
                 {
                     throw new InvalidOperationException("Measurement is not initialized.");
                 }
@@ -365,8 +354,6 @@ namespace Resonalyze
         private async Task<bool> RunCoreAsync(CancellationToken cancellationToken)
         {
             NoiseSignal noiseSignal = signal!;
-            SoundRecorder recorder = soundRecorder!;
-            RawSourceWaveStream stream = noiseSignal.GetStream(PlaybackChannel);
             bool success = false;
             var sequenceChannel = Channel.CreateBounded<float[][]>(
                 new BoundedChannelOptions(4)
@@ -396,20 +383,23 @@ namespace Resonalyze
                 reframer,
                 cancellationToken);
 
+            IAudioStreamingSession? session = null;
             try
             {
-                if (AudioBackend == AudioBackend.Asio)
-                {
-                    await RunAsioAsync(noiseSignal, cancellationToken).ConfigureAwait(false);
-                }
-                else if (IsWasapiBackend(AudioBackend))
-                {
-                    await RunWasapiAsync(stream, cancellationToken).ConfigureAwait(false);
-                }
-                else
-                {
-                    await RunWaveAsync(stream, recorder, cancellationToken).ConfigureAwait(false);
-                }
+                AudioSessionRequest request = BuildSessionRequest();
+                AudioPlaybackSignal loopingSignal = new(
+                    noiseSignal.FloatData,
+                    SampleRate,
+                    Bits,
+                    PlaybackChannel,
+                    Loop: true);
+                session = await audioSessionFactory
+                    .OpenStreamingAsync(request, cancellationToken).ConfigureAwait(false);
+                session.FrameAvailable += HandleFrame;
+                session.InputLevelsAvailable += HandleLevels;
+                session.CaptureDiscontinuity += HandleCaptureDiscontinuity;
+                await session.RunAsync(loopingSignal, SequenceLength, cancellationToken)
+                    .ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -423,6 +413,21 @@ namespace Resonalyze
             }
             finally
             {
+                if (session != null)
+                {
+                    session.FrameAvailable -= HandleFrame;
+                    session.InputLevelsAvailable -= HandleLevels;
+                    session.CaptureDiscontinuity -= HandleCaptureDiscontinuity;
+                    try
+                    {
+                        await session.DisposeAsync().ConfigureAwait(false);
+                    }
+                    catch (Exception exception)
+                    {
+                        LastError ??= exception;
+                    }
+                }
+
                 Interlocked.Exchange(ref sequenceWriter, null)?.TryComplete();
                 try
                 {
@@ -430,15 +435,6 @@ namespace Resonalyze
                 }
                 catch (OperationCanceledException)
                 {
-                }
-                catch (Exception exception)
-                {
-                    LastError ??= exception;
-                }
-
-                try
-                {
-                    await recorder.StopRecordingAsync().ConfigureAwait(false);
                 }
                 catch (Exception exception)
                 {
@@ -462,104 +458,24 @@ namespace Resonalyze
             return success;
         }
 
-        private async Task RunWaveAsync(
-            RawSourceWaveStream stream,
-            SoundRecorder recorder,
-            CancellationToken cancellationToken)
-        {
-            using var player = new WaveOutEvent
-            {
-                DeviceNumber = OutputDeviceNumber
-            };
-            await recorder.StartRecordingAsync(cancellationToken).ConfigureAwait(false);
-
-            // A looping provider keeps the excitation seamless: restarting playback
-            // per pass (the old play-to-end loop) left an audible gap at every loop
-            // boundary and a hole in the captured noise.
-            stream.Position = 0;
-            player.Init(new LoopingWaveProvider(stream));
-            await PlayUntilCancelledAsync(player, cancellationToken).ConfigureAwait(false);
-        }
-
-        private async Task RunWasapiAsync(
-            RawSourceWaveStream stream,
-            CancellationToken cancellationToken)
-        {
-            string captureEndpointId = WasapiCaptureEndpointId ??
-                throw new InvalidOperationException("Select a WASAPI capture endpoint.");
-            string renderEndpointId = WasapiRenderEndpointId ??
-                throw new InvalidOperationException("Select a WASAPI render endpoint.");
-            AudioClientShareMode shareMode = AudioBackend == AudioBackend.WasapiExclusive
-                ? AudioClientShareMode.Exclusive
-                : AudioClientShareMode.Shared;
-            int captureChannels = GetRequiredWaveInputChannelCount();
-            int renderChannels = PlaybackChannel == PlaybackChannel.Mono ? 1 : 2;
-            WaveFormat? captureFormat = null;
-            WaveFormat? renderFormat = null;
-            if (shareMode == AudioClientShareMode.Exclusive)
-            {
-                DuplexFormatSupport support = WasapiFormatSupport.CheckExclusive(
-                    captureEndpointId,
-                    renderEndpointId,
-                    SampleRate,
-                    Bits,
-                    captureChannels,
-                    renderChannels);
-                if (!support.Supported)
-                {
-                    throw new InvalidOperationException(
-                        $"WASAPI Exclusive format {SampleRate} Hz / {Bits}-bit is not " +
-                        "supported by both live-spectrum endpoints.");
-                }
-                captureFormat = WasapiFormatSupport.CreateDeviceFormat(
-                    SampleRate,
-                    Bits,
-                    captureChannels);
-                renderFormat = WasapiFormatSupport.CreateDeviceFormat(
-                    SampleRate,
-                    Bits,
-                    renderChannels);
-            }
-
-            await using var captureDevice = new WasapiCaptureDevice(
-                captureEndpointId,
+        private AudioSessionRequest BuildSessionRequest() =>
+            AudioSessionRequestBuilder.Build(
+                AudioBackend,
+                SampleRate,
+                Bits,
+                PlaybackChannel,
+                WaveInputChannelOffset,
+                WaveLoopbackInputChannelOffset,
+                AsioInputChannelOffset,
+                AsioLoopbackInputChannelOffset,
+                AsioOutputChannelOffset,
+                OutputDeviceNumber,
+                InputDeviceNumber,
+                WasapiCaptureEndpointId,
+                WasapiRenderEndpointId,
+                AsioDriverName,
                 WasapiBufferMilliseconds,
-                shareMode,
-                captureFormat);
-            await using var playbackDevice = new WasapiPlaybackDevice(
-                renderEndpointId,
-                WasapiBufferMilliseconds,
-                shareMode,
-                renderFormat);
-            await using var captureSession = new PcmCaptureSession(
-                captureDevice,
-                SequenceLength);
-            captureSession.SequenceChannelsReady += ProcessSequenceChannels;
-            captureSession.LevelsAvailable += HandleWaveLevelsAvailable;
-            captureSession.CaptureDiscontinuity += HandleCaptureDiscontinuity;
-            try
-            {
-                stream.Position = 0;
-                var loopingProvider = new LoopingWaveProvider(stream);
-                await captureSession.StartAsync(cancellationToken).ConfigureAwait(false);
-                await playbackDevice.StartAsync(loopingProvider, cancellationToken)
-                    .ConfigureAwait(false);
-                Task playbackEnded = playbackDevice.WaitForPlaybackEndAsync(cancellationToken);
-                Task captureStopped = captureSession.WaitForStopAsync(cancellationToken);
-                Task completed = await Task.WhenAny(playbackEnded, captureStopped)
-                    .ConfigureAwait(false);
-                await completed.ConfigureAwait(false);
-                throw new InvalidOperationException("WASAPI live playback stopped unexpectedly.");
-            }
-            finally
-            {
-                captureSession.SequenceChannelsReady -= ProcessSequenceChannels;
-                captureSession.LevelsAvailable -= HandleWaveLevelsAvailable;
-                captureSession.CaptureDiscontinuity -= HandleCaptureDiscontinuity;
-                await playbackDevice.StopAsync().ConfigureAwait(false);
-                await captureSession.StopAsync().ConfigureAwait(false);
-            }
-        }
+                expectedCaptureSamples: 0);
 
         private void HandleCaptureDiscontinuity()
         {
@@ -568,118 +484,16 @@ namespace Resonalyze
             Interlocked.Increment(ref dropGeneration);
         }
 
-        private static async Task PlayUntilCancelledAsync(
-            WaveOutEvent player,
-            CancellationToken cancellationToken)
+        private void HandleFrame(AudioCaptureFrame frame)
         {
-            var stopped = new TaskCompletionSource<bool>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
-
-            void PlaybackStopped(object? sender, StoppedEventArgs args)
-            {
-                if (args.Exception != null)
-                {
-                    stopped.TrySetException(args.Exception);
-                }
-                else
-                {
-                    stopped.TrySetResult(true);
-                }
-            }
-
-            player.PlaybackStopped += PlaybackStopped;
-            using CancellationTokenRegistration registration =
-                cancellationToken.Register(() =>
-                {
-                    player.Stop();
-                    stopped.TrySetCanceled(cancellationToken);
-                });
-
-            try
-            {
-                player.Play();
-                // The looping provider never runs dry; only cancellation or a
-                // device error ends playback.
-                await stopped.Task.ConfigureAwait(false);
-            }
-            finally
-            {
-                player.PlaybackStopped -= PlaybackStopped;
-            }
+            captureMicrophoneIndex = frame.MicrophoneChannel;
+            captureLoopbackIndex = frame.LoopbackChannel ?? -1;
+            Volatile.Read(ref sequenceWriter)?.TryWrite(frame.Channels);
         }
 
-        private async Task RunAsioAsync(
-            NoiseSignal noiseSignal,
-            CancellationToken cancellationToken)
+        private void HandleLevels(AudioInputLevels levels)
         {
-            using var session = new AsioFullDuplexSession(
-                AsioDriverName ?? string.Empty,
-                GetAsioCaptureFirstInputOffset(),
-                AsioOutputChannelOffset,
-                GetAsioCaptureInputChannelCount())
-            {
-                Sequence = SequenceLength
-            };
-            session.SequenceChannelsReady += ProcessSequenceChannels;
-            session.LevelsAvailable += HandleAsioLevelsAvailable;
-            try
-            {
-                using FloatArrayWaveStream stream = FloatArrayWaveStream.FromMonoSamples(
-                    noiseSignal.FloatData,
-                    SampleRate,
-                    PlaybackChannel);
-                var loopingProvider = new LoopingWaveProvider(stream);
-                await session.StartAsync(
-                    loopingProvider,
-                    SampleRate,
-                    autoStop: false,
-                    cancellationToken).ConfigureAwait(false);
-                // Wait on the user's stop AND on the driver's own stop: an
-                // unplugged ASIO device stops delivering callbacks, and a
-                // cancellation-only wait left the measurement frozen — plot
-                // stuck, InProgress true, no Completed, no error.
-                Task stopped = session.StoppedAsync();
-                Task cancelled = Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-                Task finished = await Task.WhenAny(stopped, cancelled).ConfigureAwait(false);
-                await finished.ConfigureAwait(false);
-                if (finished == stopped)
-                {
-                    throw new InvalidOperationException(
-                        "The ASIO driver stopped unexpectedly (device removed or driver error).");
-                }
-            }
-            finally
-            {
-                session.SequenceChannelsReady -= ProcessSequenceChannels;
-                session.LevelsAvailable -= HandleAsioLevelsAvailable;
-                await session.StopAsync().ConfigureAwait(false);
-            }
-        }
-
-
-        private void ProcessSequenceChannels(float[][] sequence)
-        {
-            Volatile.Read(ref sequenceWriter)?.TryWrite(sequence);
-        }
-
-        private void HandleWaveLevelsAvailable(AudioChannelLevel[] channels)
-        {
-            RaiseLevels(channels);
-        }
-
-        private void HandleAsioLevelsAvailable(AudioChannelLevel[] channels)
-        {
-            RaiseLevels(channels);
-        }
-
-        private void RaiseLevels(AudioChannelLevel[] channels)
-        {
-            // The shared mapping flags a full-scale loopback as the reference
-            // (not clipped); this path used to set both flags at once.
-            LevelsAvailable?.Invoke(InputLevelMapping.Map(
-                channels,
-                GetMicrophoneSequenceIndex(),
-                GetLoopbackSequenceIndex()));
+            LevelsAvailable?.Invoke(InputLevelMapping.Map(levels));
         }
 
         private async Task ProcessSequencesAsync(
@@ -798,18 +612,18 @@ namespace Resonalyze
 
         private TransferSpectrumFrame ComputeTransferSpectrumFrame(float[][] sequence)
         {
-            int microphoneIndex = GetMicrophoneSequenceIndex();
-            int? loopbackIndex = GetLoopbackSequenceIndex();
-            if (!loopbackIndex.HasValue ||
+            int microphoneIndex = captureMicrophoneIndex;
+            int loopbackIndex = captureLoopbackIndex;
+            if (loopbackIndex < 0 ||
                 (uint)microphoneIndex >= (uint)sequence.Length ||
-                (uint)loopbackIndex.Value >= (uint)sequence.Length)
+                (uint)loopbackIndex >= (uint)sequence.Length)
             {
                 throw new InvalidOperationException(
                     "Live transfer function requires a configured loopback input.");
             }
 
             return SpectrumAnalysis.ComputeTransferSpectrumFrame(
-                sequence[loopbackIndex.Value],
+                sequence[loopbackIndex],
                 sequence[microphoneIndex],
                 EffectiveWindowType);
         }
@@ -850,33 +664,6 @@ namespace Resonalyze
                 ? WindowType.Rectangular
                 : LiveSpectrumOptions.WindowType;
 
-        private int GetRequiredWaveInputChannelCount() =>
-            CaptureChannelLayout.RequiredWaveInputChannelCount(
-                WaveInputChannelOffset,
-                WaveLoopbackInputChannelOffset);
-
-        private int GetAsioCaptureFirstInputOffset() =>
-            CaptureChannelLayout.AsioFirstInputOffset(
-                AsioInputChannelOffset,
-                AsioLoopbackInputChannelOffset);
-
-        private int GetAsioCaptureInputChannelCount() =>
-            CaptureChannelLayout.AsioInputChannelCount(
-                AsioInputChannelOffset,
-                AsioLoopbackInputChannelOffset);
-
-        private int GetMicrophoneSequenceIndex() =>
-            AudioBackend != AudioBackend.Asio
-                ? WaveInputChannelOffset
-                : AsioInputChannelOffset - GetAsioCaptureFirstInputOffset();
-
-        private int? GetLoopbackSequenceIndex() =>
-            AudioBackend != AudioBackend.Asio
-                ? WaveLoopbackInputChannelOffset
-                : AsioLoopbackInputChannelOffset.HasValue
-                    ? AsioLoopbackInputChannelOffset.Value - GetAsioCaptureFirstInputOffset()
-                    : null;
-
         private static int? NormalizeOptionalWaveChannel(int? channel) =>
             channel.HasValue
                 ? Math.Clamp(channel.Value, 0, 1)
@@ -913,7 +700,6 @@ namespace Resonalyze
             {
             }
             cancellationTokenSource?.Dispose();
-            DisposeRecorders();
             signal?.Dispose();
             GC.SuppressFinalize(this);
         }

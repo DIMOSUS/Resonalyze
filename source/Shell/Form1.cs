@@ -31,8 +31,12 @@ namespace Resonalyze
         public Mode CurrentMode { get; private set; }
 
         private readonly OverlayCollection overlayCollection;
-        private readonly ExpSweepMeasurement expSweepMeasurement = new();
-        private readonly NoiseMeasurement noiseMeasurement = new();
+        // Composition root: the one place the audio backends are wired together.
+        // Everything downstream depends only on the IAudioSessionFactory abstraction.
+        private readonly IAudioSessionFactory audioSessionFactory =
+            new AudioSessionFactory(AudioBackendRegistry.CreateDefault());
+        private readonly ExpSweepMeasurement expSweepMeasurement;
+        private readonly NoiseMeasurement noiseMeasurement;
         private readonly MicrophoneCalibrationService microphoneCalibration;
         private readonly WaterfallGenerateOptions waterfallGenOptions = new()
         {
@@ -100,6 +104,8 @@ namespace Resonalyze
         public Form1()
         {
             InitializeComponent();
+            expSweepMeasurement = new ExpSweepMeasurement(audioSessionFactory);
+            noiseMeasurement = new NoiseMeasurement(audioSessionFactory);
             ConfigureToolTips();
             PlotInteraction.EnableDoubleClickAxisReset(plotView1);
             plotView1.Paint += (_, _) => AppProfiler.FrameMark("main-plot");
@@ -140,6 +146,7 @@ namespace Resonalyze
             eqWizardPanel.ResultsChanged = eqResultsPanel.SetResults;
             eqWizardPanel.OverlaySettingsRequested = OpenEqWizardOverlaySettings;
             signalGeneratorPanel.PlaybackSettingsProvider = CreateSignalGeneratorPlaybackSettings;
+            signalGeneratorPanel.AudioSessionFactory = audioSessionFactory;
             virtualCrossoverPanel.HistoryService = measurementHistoryService;
             RefreshCalibrationConsumers();
             virtualCrossoverPanel.OverlayCaptureRequested = SaveVirtualCrossoverOverlay;

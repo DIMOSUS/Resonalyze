@@ -682,10 +682,10 @@ internal sealed class MeasurementSettingsFile
         try
         {
             using var service = new WindowsAudioEndpointService();
-            IReadOnlyList<AudioEndpointInfo> endpoints = capture
+            IReadOnlyList<AudioEndpointDescriptor> endpoints = capture
                 ? service.GetCaptureEndpoints()
                 : service.GetRenderEndpoints();
-            AudioEndpointInfo? exact = endpoints.FirstOrDefault(endpoint =>
+            AudioEndpointDescriptor? exact = endpoints.FirstOrDefault(endpoint =>
                 string.Equals(endpoint.Id, endpointId, StringComparison.Ordinal));
             if (!string.IsNullOrWhiteSpace(endpointId))
             {
@@ -714,13 +714,13 @@ internal sealed class MeasurementSettingsFile
         try
         {
             using var service = new WindowsAudioEndpointService();
-            AudioEndpointInfo? capture = service.GetCaptureEndpoints()
+            AudioEndpointDescriptor? capture = service.GetCaptureEndpoints()
                 .FirstOrDefault(endpoint => endpoint.Id == captureEndpointId);
-            AudioEndpointInfo? render = service.GetRenderEndpoints()
+            AudioEndpointDescriptor? render = service.GetRenderEndpoints()
                 .FirstOrDefault(endpoint => endpoint.Id == renderEndpointId);
             return capture != null && render != null &&
-                capture.MixFormat.SampleRate == render.MixFormat.SampleRate
-                    ? capture.MixFormat.SampleRate
+                capture.PreferredFormat.SampleRate == render.PreferredFormat.SampleRate
+                    ? capture.PreferredFormat.SampleRate
                     : fallback;
         }
         catch

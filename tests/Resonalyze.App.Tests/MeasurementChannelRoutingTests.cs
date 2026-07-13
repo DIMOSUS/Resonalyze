@@ -5,7 +5,7 @@ public sealed class MeasurementChannelRoutingTests
     [Fact]
     public void SweepRejectsSameMmeMicrophoneAndLoopbackChannel()
     {
-        using var measurement = new ExpSweepMeasurement();
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
 
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
             measurement.Init(
@@ -24,7 +24,7 @@ public sealed class MeasurementChannelRoutingTests
     [Fact]
     public void LiveNoiseRejectsSameMmeMicrophoneAndLoopbackChannel()
     {
-        using var measurement = new NoiseMeasurement();
+        using var measurement = new NoiseMeasurement(new FakeAudioSessionFactory());
 
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
             measurement.Init(

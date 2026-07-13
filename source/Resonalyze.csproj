@@ -44,8 +44,9 @@
 
   <ItemGroup>
     <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
-    <PackageReference Include="NAudio" Version="2.3.0" />
-    <PackageReference Include="NAudio.Asio" Version="2.3.0" />
+    <!-- NAudio is a transitive dependency via Resonalyze.Audio; the application
+         no longer references it directly, so a stray `using NAudio` here fails
+         to compile — the audio boundary is enforced by the build. -->
     <PackageReference Include="NetSparkleUpdater.UI.WinForms" Version="3.0.1" />
     <PackageReference Include="OxyPlot.WindowsForms" Version="2.2.0" />
     <PackageReference Include="PDFsharp-MigraDoc-GDI" Version="6.2.4" />
@@ -57,6 +58,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\dsp\Resonalyze.Dsp.csproj" />
+    <ProjectReference Include="..\audio\Resonalyze.Audio.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The audio-driver library lives in its own namespace; a global using keeps
+         the many existing call sites compiling without a per-file using. -->
+    <Using Include="Resonalyze.Audio" />
   </ItemGroup>
 
   <ItemGroup>

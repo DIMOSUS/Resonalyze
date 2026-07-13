@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using NAudio.Wave;
 using Resonalyze.Options;
 
 namespace Resonalyze;
@@ -18,15 +17,16 @@ internal sealed record SignalGeneratorPlaybackSettings(
 
 public partial class SignalGeneratorPanel : UserControl
 {
-    private IWavePlayer? player;
-    private WaveStream? playbackStream;
-    private PcmStreamSet? pcmStreams;
-    private IAudioPlaybackDevice? audioPlaybackDevice;
-    private bool wasapiPlaying;
+    private IAudioPlaybackSession? playbackSession;
+    private CancellationTokenSource? playbackCancellation;
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal Func<SignalGeneratorPlaybackSettings>? PlaybackSettingsProvider { get; set; }
+
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal IAudioSessionFactory? AudioSessionFactory { get; set; }
 
     public SignalGeneratorPanel()
     {
@@ -34,7 +34,7 @@ public partial class SignalGeneratorPanel : UserControl
         InitializeOptions();
         UpdateSignalControls();
         VisibleChanged += (_, _) => RefreshAudioSettings();
-        Disposed += (_, _) => DisposePlayback();
+        Disposed += (_, _) => TearDownPlayback();
     }
 
     private void InitializeOptions()
@@ -51,8 +51,8 @@ public partial class SignalGeneratorPanel : UserControl
         comboBoxSignalType.SelectedIndex = 0;
 
         comboBoxSignalType.SelectedIndexChanged += (_, _) => UpdateSignalControls();
-        buttonPlay.Click += (_, _) => PlaySelectedSignal();
-        buttonStop.Click += (_, _) => StopPlayback();
+        buttonPlay.Click += async (_, _) => await PlaySelectedSignalAsync();
+        buttonStop.Click += async (_, _) => await StopPlaybackFromButtonAsync();
     }
 
     private void UpdateSignalControls()
@@ -60,9 +60,7 @@ public partial class SignalGeneratorPanel : UserControl
         bool isSine = SelectedSignalType == SignalGeneratorType.Sine;
         numericFrequency.Enabled = isSine;
         Ui.UiStyle.SetTextEnabledLook(labelFrequency, isSine);
-        labelStatus.Text = player?.PlaybackState == PlaybackState.Playing
-            ? "Playing"
-            : "Ready";
+        labelStatus.Text = playbackSession != null ? "Playing" : "Ready";
     }
 
     private SignalGeneratorType SelectedSignalType =>
@@ -70,13 +68,15 @@ public partial class SignalGeneratorPanel : UserControl
             ? option.Type
             : SignalGeneratorType.PinkPeriodicNoise;
 
-    private void PlaySelectedSignal()
+    private async Task PlaySelectedSignalAsync()
     {
         try
         {
-            StopPlayback();
+            await StopPlaybackAsync();
             SignalGeneratorPlaybackSettings settings = GetPlaybackSettings();
             RefreshAudioSettings(settings);
+            IAudioSessionFactory factory = AudioSessionFactory ??
+                throw new InvalidOperationException("Audio session factory is not connected.");
 
             // A sine above Nyquist does not become ultrasound — it aliases to
             // an arbitrary audible tone (96 kHz at a 44.1 kHz device plays as
@@ -104,140 +104,156 @@ public partial class SignalGeneratorPanel : UserControl
             // to tweeters at the levels this tool is used at.
             SignalFade.ApplyFadeInOut(monoSamples, settings.SampleRate / 100);
 
-            if (settings.Backend == AudioBackend.Asio)
-            {
-                player = CreateAsioPlayer(settings);
-                playbackStream = FloatArrayWaveStream.FromMonoSamples(
-                    monoSamples,
-                    settings.SampleRate,
-                    settings.PlaybackChannel);
-            }
-            else if (settings.Backend == AudioBackend.Wave)
-            {
-                player = new WaveOutEvent
-                {
-                    DeviceNumber = settings.WaveOutputDeviceNumber
-                };
-                pcmStreams = new PcmStreamSet(
-                    monoSamples,
-                    settings.SampleRate,
-                    settings.BitsPerSample);
-                playbackStream = pcmStreams.GetStream(settings.PlaybackChannel);
-            }
-            else
-            {
-                string endpointId = settings.WasapiRenderEndpointId ??
-                    throw new InvalidOperationException("WASAPI output endpoint is not selected.");
-                pcmStreams = new PcmStreamSet(
-                    monoSamples,
-                    settings.SampleRate,
-                    settings.BitsPerSample);
-                playbackStream = pcmStreams.GetStream(settings.PlaybackChannel);
-                NAudio.CoreAudioApi.AudioClientShareMode shareMode =
-                    settings.Backend == AudioBackend.WasapiExclusive
-                        ? NAudio.CoreAudioApi.AudioClientShareMode.Exclusive
-                        : NAudio.CoreAudioApi.AudioClientShareMode.Shared;
-                WaveFormat? requestedFormat = shareMode ==
-                    NAudio.CoreAudioApi.AudioClientShareMode.Exclusive
-                        ? WasapiFormatSupport.CreateDeviceFormat(
-                            settings.SampleRate,
-                            settings.BitsPerSample,
-                            playbackStream.WaveFormat.Channels)
-                        : null;
-                audioPlaybackDevice = new WasapiPlaybackDevice(
-                    endpointId,
-                    settings.WasapiBufferMilliseconds,
-                    shareMode,
-                    requestedFormat);
-                audioPlaybackDevice.StartAsync(playbackStream, CancellationToken.None)
-                    .GetAwaiter().GetResult();
-                wasapiPlaying = true;
-                _ = MonitorWasapiPlaybackAsync(audioPlaybackDevice);
-                buttonPlay.Enabled = false;
-                buttonStop.Enabled = true;
-                labelStatus.Text = "Playing";
-                return;
-            }
-
-            player.Init(playbackStream);
-            player.PlaybackStopped += PlayerPlaybackStopped;
-            player.Play();
+            var signal = new AudioPlaybackSignal(
+                monoSamples,
+                settings.SampleRate,
+                settings.BitsPerSample,
+                settings.PlaybackChannel,
+                Loop: false);
+            AudioSessionRequest request = BuildRequest(settings);
+            playbackCancellation = new CancellationTokenSource();
+            playbackSession = await factory.OpenPlaybackAsync(
+                request, signal, playbackCancellation.Token);
+            await playbackSession.StartAsync(playbackCancellation.Token);
             buttonPlay.Enabled = false;
             buttonStop.Enabled = true;
             labelStatus.Text = "Playing";
+            _ = MonitorPlaybackAsync(playbackSession);
         }
         catch (Exception exception)
         {
-            DisposePlayback();
+            await DisposePlaybackAsync();
             buttonPlay.Enabled = true;
             buttonStop.Enabled = false;
             labelStatus.Text = exception.Message;
         }
     }
 
-    private async Task MonitorWasapiPlaybackAsync(IAudioPlaybackDevice playback)
+    private async Task MonitorPlaybackAsync(IAudioPlaybackSession session)
     {
         Exception? error = null;
         try
         {
-            await playback.WaitForPlaybackEndAsync(CancellationToken.None);
+            await session.WaitForCompletionAsync(CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+            // A user stop cancels the wait; the stop path resets the UI.
+            return;
         }
         catch (Exception exception)
         {
             error = exception;
         }
 
-        if (IsDisposed || !ReferenceEquals(audioPlaybackDevice, playback))
+        if (IsDisposed || !ReferenceEquals(playbackSession, session))
         {
             return;
         }
         try
         {
-            BeginInvoke((Action)(() => CompleteWasapiPlayback(playback, error)));
+            BeginInvoke((Action)(() => CompletePlayback(session, error)));
         }
         catch (InvalidOperationException)
         {
         }
     }
 
-    private void CompleteWasapiPlayback(IAudioPlaybackDevice playback, Exception? error)
+    private async void CompletePlayback(IAudioPlaybackSession session, Exception? error)
     {
-        if (!ReferenceEquals(audioPlaybackDevice, playback))
+        if (!ReferenceEquals(playbackSession, session))
         {
             return;
         }
-        DisposePlayback();
+        await DisposePlaybackAsync();
+        if (IsDisposed)
+        {
+            return;
+        }
         buttonPlay.Enabled = true;
         buttonStop.Enabled = false;
         labelStatus.Text = error?.Message ?? "Ready";
     }
 
-    private AsioOut CreateAsioPlayer(SignalGeneratorPlaybackSettings settings)
+    private async Task StopPlaybackFromButtonAsync()
     {
-        if (string.IsNullOrWhiteSpace(settings.AsioDriverName))
+        await StopPlaybackAsync();
+        if (!IsDisposed)
         {
-            throw new InvalidOperationException("ASIO driver is not selected.");
+            buttonPlay.Enabled = true;
+            buttonStop.Enabled = false;
+            labelStatus.Text = "Ready";
         }
-
-        var asio = new AsioOut(settings.AsioDriverName)
-        {
-            AutoStop = true,
-            ChannelOffset = settings.AsioOutputChannelOffset
-        };
-        if (!asio.IsSampleRateSupported(settings.SampleRate))
-        {
-            throw new InvalidOperationException(
-                $"ASIO driver '{settings.AsioDriverName}' does not support {settings.SampleRate} Hz.");
-        }
-        if (settings.AsioOutputChannelOffset < 0 ||
-            settings.AsioOutputChannelOffset + 2 > asio.DriverOutputChannelCount)
-        {
-            throw new InvalidOperationException(
-                $"ASIO output channel pair starting at {settings.AsioOutputChannelOffset + 1} is not available.");
-        }
-
-        return asio;
     }
+
+    private async Task StopPlaybackAsync()
+    {
+        IAudioPlaybackSession? session = playbackSession;
+        if (session != null)
+        {
+            try
+            {
+                await session.StopAsync();
+            }
+            catch
+            {
+                // Best-effort stop; teardown follows regardless.
+            }
+        }
+        await DisposePlaybackAsync();
+    }
+
+    private async Task DisposePlaybackAsync()
+    {
+        playbackCancellation?.Cancel();
+        IAudioPlaybackSession? session = playbackSession;
+        playbackSession = null;
+        if (session != null)
+        {
+            try
+            {
+                await session.DisposeAsync();
+            }
+            catch
+            {
+                // A device teardown failure must not surface as a UI error here.
+            }
+        }
+        playbackCancellation?.Dispose();
+        playbackCancellation = null;
+    }
+
+    private void TearDownPlayback()
+    {
+        // The control is being disposed; cancel and release the session without
+        // blocking the UI thread on the async teardown.
+        playbackCancellation?.Cancel();
+        IAudioPlaybackSession? session = playbackSession;
+        playbackSession = null;
+        if (session != null)
+        {
+            _ = session.DisposeAsync();
+        }
+    }
+
+    private static AudioSessionRequest BuildRequest(SignalGeneratorPlaybackSettings settings) =>
+        AudioSessionRequestBuilder.Build(
+            settings.Backend,
+            settings.SampleRate,
+            settings.BitsPerSample,
+            settings.PlaybackChannel,
+            waveInputChannelOffset: 0,
+            waveLoopbackInputChannelOffset: null,
+            asioInputChannelOffset: 0,
+            asioLoopbackInputChannelOffset: null,
+            settings.AsioOutputChannelOffset,
+            settings.WaveOutputDeviceNumber,
+            inputDeviceNumber: -1,
+            wasapiCaptureEndpointId: null,
+            settings.WasapiRenderEndpointId,
+            settings.AsioDriverName,
+            settings.WasapiBufferMilliseconds,
+            expectedCaptureSamples: 0);
 
     private SignalGeneratorPlaybackSettings GetPlaybackSettings()
     {
@@ -283,89 +299,6 @@ public partial class SignalGeneratorPanel : UserControl
         }
 
         return result;
-    }
-
-    private void PlayerPlaybackStopped(object? sender, StoppedEventArgs e)
-    {
-        void UpdateUi()
-        {
-            DisposePlayback();
-            buttonPlay.Enabled = true;
-            buttonStop.Enabled = false;
-            labelStatus.Text = e.Exception == null
-                ? "Ready"
-                : e.Exception.Message;
-        }
-
-        if (IsDisposed)
-        {
-            DisposePlayback();
-            return;
-        }
-
-        if (InvokeRequired)
-        {
-            try
-            {
-                BeginInvoke((Action)UpdateUi);
-            }
-            catch (InvalidOperationException)
-            {
-                // The handle was destroyed between the guard and the call.
-                DisposePlayback();
-            }
-            return;
-        }
-
-        UpdateUi();
-    }
-
-    private void StopPlayback()
-    {
-        if (wasapiPlaying && audioPlaybackDevice != null)
-        {
-            wasapiPlaying = false;
-            audioPlaybackDevice.StopAsync().GetAwaiter().GetResult();
-            DisposePlayback();
-            buttonPlay.Enabled = true;
-            buttonStop.Enabled = false;
-            labelStatus.Text = "Ready";
-            return;
-        }
-        if (player?.PlaybackState == PlaybackState.Playing)
-        {
-            player.Stop();
-            return;
-        }
-
-        DisposePlayback();
-        if (!IsDisposed)
-        {
-            buttonPlay.Enabled = true;
-            buttonStop.Enabled = false;
-            labelStatus.Text = "Ready";
-        }
-    }
-
-    private void DisposePlayback()
-    {
-        if (player != null)
-        {
-            player.PlaybackStopped -= PlayerPlaybackStopped;
-            player.Dispose();
-            player = null;
-        }
-
-        playbackStream?.Dispose();
-        playbackStream = null;
-        pcmStreams?.Dispose();
-        pcmStreams = null;
-        if (audioPlaybackDevice != null)
-        {
-            audioPlaybackDevice.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            audioPlaybackDevice = null;
-        }
-        wasapiPlaying = false;
     }
 
     internal void RefreshAudioSettings()

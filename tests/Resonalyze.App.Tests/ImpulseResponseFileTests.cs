@@ -1,5 +1,5 @@
 using System.Numerics;
-using NAudio.Wave;
+using Resonalyze.Audio;
 
 namespace Resonalyze.App.Tests;
 
@@ -146,10 +146,8 @@ public sealed class ImpulseResponseFileTests
             "WasapiExclusive",
             "capture-id",
             "render-id",
-            WaveFormat.CreateCustomFormat(
-                WaveFormatEncoding.Pcm, 96_000, 2, 576_000, 6, 24),
-            WaveFormat.CreateCustomFormat(
-                WaveFormatEncoding.Pcm, 96_000, 2, 576_000, 6, 24),
+            new AudioFormat(96_000, 24, 2, AudioSampleEncoding.Pcm),
+            new AudioFormat(96_000, 24, 2, AudioSampleEncoding.Pcm),
             40,
             3_840,
             50,
@@ -176,7 +174,7 @@ public sealed class ImpulseResponseFileTests
     [Fact]
     public void Capture_StoresComputedSweepDuration()
     {
-        using var measurement = new ExpSweepMeasurement();
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.RestoreImpulseResponse(
             octaves: 12,
             sampleRate: 44_100,
@@ -200,7 +198,7 @@ public sealed class ImpulseResponseFileTests
     [Fact]
     public void Capture_StoresCurrentLevelSnapshot()
     {
-        using var measurement = new ExpSweepMeasurement();
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.RestoreImpulseResponse(
             octaves: 12,
             sampleRate: 44_100,

@@ -189,7 +189,9 @@ public partial class Form1
                     if (!liveSpectrumController.InProgress &&
                         !expSweepMeasurement.InProgress)
                     {
-                        await AudioDeviceWarmup.WarmUpAsync(measurementSettings.Measurement);
+                        await audioSessionFactory.WarmUpAsync(
+                            CreateAudioWarmupRequest(measurementSettings.Measurement),
+                            CancellationToken.None);
                     }
                 }
                 catch (InvalidOperationException exception)
@@ -233,8 +235,8 @@ public partial class Form1
                 return;
             }
 
-            await AudioDeviceWarmup.WarmUpAsync(
-                measurementSettings.Measurement,
+            await audioSessionFactory.WarmUpAsync(
+                CreateAudioWarmupRequest(measurementSettings.Measurement),
                 cancellationToken);
         }
         catch (OperationCanceledException)
@@ -245,6 +247,37 @@ public partial class Form1
             // Startup warm-up is best-effort. The normal measurement path will
             // still report driver errors if the selected ASIO setup is invalid.
         }
+    }
+
+    // Maps the persisted audio settings onto a neutral warm-up request. Loopback
+    // that coincides with the microphone channel is treated as "no loopback" so
+    // the warm-up opens only the channels the routing actually needs.
+    private static AudioSessionRequest CreateAudioWarmupRequest(
+        MeasurementSettingsFile.SweepMeasurementSettings settings)
+    {
+        int? waveLoopback = settings.WaveLoopbackInputChannelOffset == settings.WaveInputChannelOffset
+            ? null
+            : settings.WaveLoopbackInputChannelOffset;
+        int? asioLoopback = settings.AsioLoopbackInputChannelOffset == settings.AsioInputChannelOffset
+            ? null
+            : settings.AsioLoopbackInputChannelOffset;
+        return AudioSessionRequestBuilder.Build(
+            settings.AudioBackend,
+            settings.SampleRate,
+            settings.Bits,
+            settings.PlaybackChannel,
+            settings.WaveInputChannelOffset,
+            waveLoopback,
+            settings.AsioInputChannelOffset,
+            asioLoopback,
+            settings.AsioOutputChannelOffset,
+            settings.OutputDeviceNumber,
+            settings.InputDeviceNumber,
+            settings.WasapiCaptureEndpointId,
+            settings.WasapiRenderEndpointId,
+            settings.AsioDriverName,
+            settings.WasapiBufferMilliseconds,
+            expectedCaptureSamples: 0);
     }
 
 }

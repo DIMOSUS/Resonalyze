@@ -63,5 +63,8 @@ jobs:
       - name: Test App
         run: dotnet test tests/Resonalyze.App.Tests/Resonalyze.App.Tests.csproj --configuration Release --no-build --no-restore
 
+      - name: Test Audio
+        run: dotnet test tests/Resonalyze.Audio.Tests/Resonalyze.Audio.Tests.csproj --configuration Release --no-build --no-restore --filter "Category!=Hardware"
+
       - name: Test DSP
         run: dotnet test tests/Resonalyze.Dsp.Tests/Resonalyze.Dsp.Tests.csproj --configuration Release --no-build --no-restore

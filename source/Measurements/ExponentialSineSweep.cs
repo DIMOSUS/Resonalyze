@@ -1,21 +1,12 @@
-using NAudio.Wave;
-
 namespace Resonalyze;
 
-public enum PlaybackChannel : byte
-{
-    Mono = 0,
-    Left = 1,
-    Right = 2,
-    Stereo = 3
-}
-
 /// <summary>
-/// Generates an exponential sine sweep and its amplitude-compensated inverse filter.
+/// Generates an exponential sine sweep and its amplitude-compensated inverse
+/// filter. Pure signal generation: it exposes float sample data only, and the
+/// audio layer builds any playback stream from it.
 /// </summary>
 public sealed class ExponentialSineSweep : IDisposable
 {
-    private PcmStreamSet? streamSet;
     private bool disposed;
     private bool generated;
     private float[] sweepData = Array.Empty<float>();
@@ -120,8 +111,6 @@ public sealed class ExponentialSineSweep : IDisposable
         generated = false;
         sweepData = Array.Empty<float>();
         inverseFilter = Array.Empty<float>();
-        streamSet?.Dispose();
-        streamSet = null;
     }
 
     private void EnsureGenerated()
@@ -167,14 +156,7 @@ public sealed class ExponentialSineSweep : IDisposable
                 (float)(sweepData[sampleCount - i - 1] * Math.Pow(perSampleDecay, -i) * inverseScale);
         }
 
-        streamSet = new PcmStreamSet(sweepData, SampleRate, BitsPerSample);
         generated = true;
-    }
-
-    public RawSourceWaveStream GetStream(PlaybackChannel channel)
-    {
-        EnsureGenerated();
-        return streamSet!.GetStream(channel);
     }
 
     private static void ValidateGenerationParameters(
@@ -214,8 +196,6 @@ public sealed class ExponentialSineSweep : IDisposable
         }
 
         disposed = true;
-        streamSet?.Dispose();
-        streamSet = null;
         GC.SuppressFinalize(this);
     }
 }

@@ -173,6 +173,23 @@ public static class AutoAlignmentEngine
     // unless a distinctly better summation exists elsewhere.
     private const double WideWindowPromotionMarginDb = 0.2;
 
+    // How far (in crossover periods) the promotion may move the pick away from
+    // the arrival-anchored fine result. The promotion exists to recover a coarse
+    // arrival that landed a lobe or two off at a degenerate junction (a spectral
+    // gap between the corners degrades the whitened correlation into near-equal
+    // lobes) — real data needs up to ~2 periods of reach for that (the r mid/
+    // tweeter cabin junction recovers the user's manual optimum ~1.8 periods off
+    // the fine pick). Beyond that the summation surface is a comb of near-equal
+    // minima spaced one period apart: which lobe is physically correct is set by
+    // the arrival, NOT by the sum (they differ by fractions of a dB). Without a
+    // cap the ±3 ms diagnostic window lets a marginally-better comb ALIAS three
+    // to four periods away unseat the envelope at a high crossover — the field
+    // failure where the tweeter walked ~1.7 ms (~3.9 periods) off its mid for a
+    // 0.25 dB "gain". 2.5 periods clears the legitimate ~1.8-period recovery and
+    // rejects the ~3.9-period alias. The wide window also scores under a weaker
+    // arrival prior, which inflates far aliases; the reach cap bounds that too.
+    private const double PromotionReachPeriods = 2.5;
+
     /// <summary>
     /// Runs the two-stage alignment. <paramref name="channelsByBand"/> holds
     /// the initial snapshots ordered along the spectrum;
@@ -560,7 +577,13 @@ public static class AutoAlignmentEngine
             {
                 AlignmentCandidate wideChosen =
                     AlignmentSelection.Select(wide, anchorMs);
-                if (wideChosen.ScoreDb > chosen.ScoreDb + WideWindowPromotionMarginDb)
+                // Only a lobe's reach from the arrival pick: past that the "better"
+                // score is a comb alias the summation cannot distinguish, so the
+                // envelope stays authoritative (see PromotionReachPeriods).
+                double promotionReachMs = PromotionReachPeriods * 2.0 * halfPeriodMs;
+                double promotionStepMs = Math.Abs(wideChosen.DelayMs - chosen.DelayMs);
+                if (wideChosen.ScoreDb > chosen.ScoreDb + WideWindowPromotionMarginDb &&
+                    promotionStepMs <= promotionReachMs)
                 {
                     log.AppendLine(
                         $"  promoted {wideChosen.DelayMs:0.000} ms" +
@@ -569,6 +592,15 @@ public static class AutoAlignmentEngine
                         $"{(chosen.InvertPolarity ? " inv" : "")} " +
                         $"(gain {wideChosen.ScoreDb - chosen.ScoreDb:0.00} dB)");
                     chosen = wideChosen;
+                }
+                else if (wideChosen.ScoreDb > chosen.ScoreDb + WideWindowPromotionMarginDb &&
+                    promotionStepMs > promotionReachMs)
+                {
+                    log.AppendLine(
+                        $"  promotion declined: {wideChosen.DelayMs:0.000} ms is " +
+                        $"{promotionStepMs:0.000} ms ({promotionStepMs / (2.0 * halfPeriodMs):0.0} " +
+                        $"periods) from the arrival pick {chosen.DelayMs:0.000} ms — " +
+                        "a comb alias beyond the envelope's reach.");
                 }
             }
 

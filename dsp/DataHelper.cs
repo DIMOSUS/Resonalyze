@@ -51,6 +51,22 @@ namespace Resonalyze.Dsp
         public double PhasePlateauMs { get; set; } = DefaultPhasePlateauMs;
         public double PhaseRightMs { get; set; } = DefaultPhaseRightMs;
         public double PhaseDetrendMs { get; set; } = DefaultPhaseDetrendMs;
+        public PhaseWindowMode PhaseWindowMode { get; set; } =
+            PhaseWindowMode.FrequencyDependent;
+        public int PhaseFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
+        public PhaseDetrendMode PhaseDetrendMode { get; set; } = PhaseDetrendMode.Auto;
+
+        public PhaseAnalysisSettings CreatePhaseAnalysisSettings() => new(
+            PhaseWindowMode,
+            PhaseFdwCycles,
+            PhaseDetrendMode,
+            PhaseDetrendMs,
+            PhaseGateOffsetMs,
+            PhaseLeftMs,
+            PhasePlateauMs,
+            PhaseRightMs,
+            Unwrap,
+            SmoothingInverseOctaves);
 
         // Single source of truth for the group-delay gate defaults (ms). Group delay is
         // usually viewed a bit lower than the phase crossover region, so the gate is

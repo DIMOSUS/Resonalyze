@@ -72,6 +72,25 @@ public sealed class DataHelperResampleTests
         Assert.All(output, point => Assert.Equal(-3.0, point.Y, precision: 6));
     }
 
+    [Fact]
+    public void SmoothLinear_PreservesNaNSegmentBreakWithoutBlendingAcrossIt()
+    {
+        var input = new List<SignalPoint>();
+        for (int i = 1; i <= 80; i++)
+        {
+            double value = i is >= 35 and <= 45
+                ? double.NaN
+                : i < 35 ? 10.0 : 100.0;
+            input.Add(new SignalPoint(i * 10.0, value));
+        }
+
+        List<SignalPoint> output = DataHelper.SmoothLinear(input, 1.0 / 3.0);
+
+        Assert.All(output.Skip(34).Take(11), point => Assert.True(double.IsNaN(point.Y)));
+        Assert.Equal(10.0, output[33].Y, tolerance: 1e-9);
+        Assert.Equal(100.0, output[45].Y, tolerance: 1e-9);
+    }
+
     private static List<SignalPoint> BuildLinearGrid(
         double startHz,
         double stepHz,

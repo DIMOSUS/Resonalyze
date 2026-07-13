@@ -166,7 +166,7 @@ public sealed class VirtualCrossoverProjectFile
     // step in Migrate below. Files from a NEWER version (a downgraded app)
     // are never migrated: LoadOrDefault backs them up and starts fresh,
     // LoadFrom rejects them with an explicit error.
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
     public const int MaximumChannelCount = 8;
     private const string FileName = "virtual-crossover.json";
 
@@ -246,6 +246,10 @@ public sealed class VirtualCrossoverProjectFile
     // readable while their relative phase is preserved. Null follows the
     // earliest processed arrival automatically.
     public double? PhaseDetrendMs { get; set; }
+    public PhaseWindowMode PhaseWindowMode { get; set; } =
+        PhaseWindowMode.FrequencyDependent;
+    public int PhaseFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
+    public PhaseDetrendMode PhaseDetrendMode { get; set; } = PhaseDetrendMode.Auto;
 
     public static string GetPath(string? rootDirectory = null) =>
         Path.Combine(
@@ -340,6 +344,14 @@ public sealed class VirtualCrossoverProjectFile
                 .ToList();
             file.Channels = new List<VirtualCrossoverChannelSettings>();
             file.Version = 2;
+        }
+        if (file.Version == 2)
+        {
+            // v2 only had a fixed gate and a numeric common detrend.
+            file.PhaseWindowMode = PhaseWindowMode.Fixed;
+            file.PhaseFdwCycles = PhaseAnalysisSettings.DefaultFdwCycles;
+            file.PhaseDetrendMode = PhaseDetrendMode.Manual;
+            file.Version = 3;
         }
     }
 
@@ -448,6 +460,14 @@ public sealed class VirtualCrossoverProjectFile
         {
             throw new InvalidDataException(
                 "The virtual crossover DSP plot mode is invalid.");
+        }
+        if (!Enum.IsDefined(PhaseWindowMode) || !Enum.IsDefined(PhaseDetrendMode))
+        {
+            throw new InvalidDataException("The phase analysis mode is invalid.");
+        }
+        if (PhaseFdwCycles is not (4 or 6 or 8))
+        {
+            PhaseFdwCycles = PhaseAnalysisSettings.DefaultFdwCycles;
         }
         if (PhaseGateOffsetMs is { } gateOffset &&
             (!double.IsFinite(gateOffset) || gateOffset is < 0 or > 10_000))

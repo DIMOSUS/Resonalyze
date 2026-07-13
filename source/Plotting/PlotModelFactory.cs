@@ -173,18 +173,14 @@ internal sealed class PlotModelFactory
             measurementContext.HasTransferImpulseResponse)
         {
             const string phaseTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.0}\u00B0";
+            PhaseAnalysisSettings phaseSettings =
+                phaseResponseOptions.CreatePhaseAnalysisSettings();
 
             if (phaseResponseVisibility.ShowMeasuredPhase)
             {
                 AnalysisCurve curve = DataHelper.GetPhase(
                     measurementContext.CreatePrimaryMeasurement(),
-                    phaseResponseOptions.PhaseGateOffsetMs,
-                    phaseResponseOptions.PhaseLeftMs,
-                    phaseResponseOptions.PhasePlateauMs,
-                    phaseResponseOptions.PhaseRightMs,
-                    phaseResponseOptions.PhaseDetrendMs,
-                    phaseResponseOptions.SmoothingInverseOctaves,
-                    phaseResponseOptions.Unwrap,
+                    phaseSettings,
                     expSweepMeasurement.TransferCoherence);
 
                 // Measured phase can be either representation; tag it so overlay
@@ -202,11 +198,7 @@ internal sealed class PlotModelFactory
             {
                 AnalysisCurve minimumPhaseCurve = DataHelper.GetMinimumPhase(
                     measurementContext.CreatePrimaryMeasurement(),
-                    phaseResponseOptions.PhaseGateOffsetMs,
-                    phaseResponseOptions.PhaseLeftMs,
-                    phaseResponseOptions.PhasePlateauMs,
-                    phaseResponseOptions.PhaseRightMs,
-                    phaseResponseOptions.SmoothingInverseOctaves);
+                    phaseSettings);
 
                 // Minimum phase is continuous (unwrapped) by construction.
                 AddLineSeries(
@@ -222,12 +214,7 @@ internal sealed class PlotModelFactory
             {
                 AnalysisCurve excessPhaseCurve = DataHelper.GetExcessPhase(
                     measurementContext.CreatePrimaryMeasurement(),
-                    phaseResponseOptions.PhaseGateOffsetMs,
-                    phaseResponseOptions.PhaseLeftMs,
-                    phaseResponseOptions.PhasePlateauMs,
-                    phaseResponseOptions.PhaseRightMs,
-                    phaseResponseOptions.PhaseDetrendMs,
-                    phaseResponseOptions.SmoothingInverseOctaves,
+                    phaseSettings,
                     expSweepMeasurement.TransferCoherence);
 
                 // Excess phase stays continuous (unwrapped) regardless of the detrend
@@ -249,13 +236,7 @@ internal sealed class PlotModelFactory
                 {
                     AnalysisCurve compareCurve = DataHelper.GetPhase(
                         compare.Measurement,
-                        phaseResponseOptions.PhaseGateOffsetMs,
-                        phaseResponseOptions.PhaseLeftMs,
-                        phaseResponseOptions.PhasePlateauMs,
-                        phaseResponseOptions.PhaseRightMs,
-                        phaseResponseOptions.PhaseDetrendMs,
-                        phaseResponseOptions.SmoothingInverseOctaves,
-                        phaseResponseOptions.Unwrap,
+                        phaseSettings,
                         compare.Coherence);
                     AddCompareLineSeries(
                         model,
@@ -270,11 +251,7 @@ internal sealed class PlotModelFactory
                 {
                     AnalysisCurve compareCurve = DataHelper.GetMinimumPhase(
                         compare.Measurement,
-                        phaseResponseOptions.PhaseGateOffsetMs,
-                        phaseResponseOptions.PhaseLeftMs,
-                        phaseResponseOptions.PhasePlateauMs,
-                        phaseResponseOptions.PhaseRightMs,
-                        phaseResponseOptions.SmoothingInverseOctaves);
+                        phaseSettings);
                     AddCompareLineSeries(
                         model,
                         compareCurve,
@@ -288,12 +265,7 @@ internal sealed class PlotModelFactory
                 {
                     AnalysisCurve compareCurve = DataHelper.GetExcessPhase(
                         compare.Measurement,
-                        phaseResponseOptions.PhaseGateOffsetMs,
-                        phaseResponseOptions.PhaseLeftMs,
-                        phaseResponseOptions.PhasePlateauMs,
-                        phaseResponseOptions.PhaseRightMs,
-                        phaseResponseOptions.PhaseDetrendMs,
-                        phaseResponseOptions.SmoothingInverseOctaves,
+                        phaseSettings,
                         compare.Coherence);
                     AddCompareLineSeries(
                         model,

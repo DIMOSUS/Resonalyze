@@ -38,9 +38,9 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
     public Action<double, double, double, double, PhaseWindowMode, int,
         PhaseDetrendMode, double, bool>? PreviewChanged { get; set; }
 
-    private readonly ComboBox comboWindowMode = new();
-    private readonly ComboBox comboFdwCycles = new();
-    private readonly ComboBox comboDetrendMode = new();
+    private readonly DarkComboBox comboWindowMode = new();
+    private readonly DarkComboBox comboFdwCycles = new();
+    private readonly DarkComboBox comboDetrendMode = new();
     private readonly CheckBox checkBoxUnwrap = new();
     private readonly Label labelAutoDetrend = new();
 
@@ -169,21 +169,21 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         buttonCancel.Top += addedHeight;
         ClientSize = new Size(ClientSize.Width, ClientSize.Height + addedHeight);
 
-        AddCombo("Window", comboWindowMode, 102, 112);
+        AddCombo("Window", comboWindowMode, 102, 12, 112, 126);
         comboWindowMode.Items.AddRange(["Fixed", "FDW"]);
-        AddCombo("FDW cycles", comboFdwCycles, 102, 322);
+        AddCombo("FDW cycles", comboFdwCycles, 102, 262, 342, 74);
         comboFdwCycles.Items.AddRange([4, 6, 8]);
-        AddCombo("Detrend", comboDetrendMode, 132, 112);
+        AddCombo("Detrend", comboDetrendMode, 132, 12, 112, 126);
         comboDetrendMode.Items.AddRange(["Off", "Auto", "Manual"]);
 
         checkBoxUnwrap.AutoSize = true;
         checkBoxUnwrap.ForeColor = Color.White;
-        checkBoxUnwrap.Location = new Point(414, 106);
+        checkBoxUnwrap.Location = new Point(452, 104);
         checkBoxUnwrap.Text = "Unwrap";
         Controls.Add(checkBoxUnwrap);
         labelAutoDetrend.AutoSize = true;
         labelAutoDetrend.ForeColor = Color.FromArgb(210, 214, 222);
-        labelAutoDetrend.Location = new Point(262, 136);
+        labelAutoDetrend.Location = new Point(262, 134);
         Controls.Add(labelAutoDetrend);
 
         comboWindowMode.SelectedIndexChanged += (_, _) => OnGateChanged();
@@ -192,19 +192,25 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         checkBoxUnwrap.CheckedChanged += (_, _) => OnGateChanged();
     }
 
-    private void AddCombo(string text, ComboBox combo, int top, int left)
+    private void AddCombo(
+        string text,
+        DarkComboBox combo,
+        int top,
+        int labelLeft,
+        int controlLeft,
+        int width)
     {
         var label = new Label
         {
             AutoSize = true,
             Font = new Font("Segoe UI Semibold", 9F),
             ForeColor = Color.FromArgb(210, 214, 222),
-            Location = new Point(left - 100, top + 4),
+            Location = new Point(labelLeft, top + 2),
             Text = text
         };
         combo.DropDownStyle = ComboBoxStyle.DropDownList;
-        combo.Location = new Point(left, top);
-        combo.Size = new Size(126, 23);
+        combo.Location = new Point(controlLeft, top);
+        combo.Size = new Size(width, 19);
         Controls.Add(label);
         Controls.Add(combo);
     }

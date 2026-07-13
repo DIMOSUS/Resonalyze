@@ -7,10 +7,11 @@ namespace Resonalyze.Options
     public partial class PROpt : ImpulsePreviewOptionsForm
     {
         private Func<CompareAnalysisSource?>? getCompare;
-        private readonly ComboBox comboWindowMode = new();
-        private readonly ComboBox comboFdwCycles = new();
-        private readonly ComboBox comboDetrendMode = new();
-        private readonly Label labelAutoDetrend = new();
+        private readonly DarkComboBox comboWindowMode = new();
+        private readonly DarkComboBox comboFdwCycles = new();
+        private readonly DarkComboBox comboDetrendMode = new();
+        private double manualDetrendMilliseconds;
+        private bool updatingDetrendDisplay;
 
         public PROpt()
         {
@@ -22,6 +23,14 @@ namespace Resonalyze.Options
             buttonFit.Click += buttonFit_Click;
             buttonTauSlope.Click += (_, _) => ApplyEstimatedTau(useSlope: true);
             buttonTauPeak.Click += (_, _) => ApplyEstimatedTau(useSlope: false);
+            numericOffset.ValueChanged += (_, _) =>
+            {
+                if (!updatingDetrendDisplay &&
+                    comboDetrendMode.SelectedIndex == (int)PhaseDetrendMode.Manual)
+                {
+                    manualDetrendMilliseconds = (double)numericOffset.Value;
+                }
+            };
             ConfigureResetDefaults();
             SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
             InitializeToolTips();
@@ -35,6 +44,7 @@ namespace Resonalyze.Options
         {
             AttachMeasurement(expSweepMeasurement);
             this.getCompare = getCompare;
+            manualDetrendMilliseconds = opt.PhaseDetrendMs;
             InitializeControls(() =>
             {
                 numericGateOffset.Value = ClampToControl(numericGateOffset, opt.PhaseGateOffsetMs);
@@ -70,7 +80,7 @@ namespace Resonalyze.Options
                 comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
                     ? inverseOctaves
                     : SmoothingPresetOptions.SupportedInverseOctaves[0];
-            opt.PhaseDetrendMs = (double)numericOffset.Value;
+            opt.PhaseDetrendMs = manualDetrendMilliseconds;
             opt.PhaseWindowMode = comboWindowMode.SelectedIndex == 0
                 ? PhaseWindowMode.Fixed
                 : PhaseWindowMode.FrequencyDependent;
@@ -104,17 +114,12 @@ namespace Resonalyze.Options
             comboFdwCycles.Items.AddRange([4, 6, 8]);
             AddModeControl("Detrend", comboDetrendMode, 62);
             comboDetrendMode.Items.AddRange(["Off", "Auto", "Manual"]);
-            labelAutoDetrend.AutoSize = true;
-            labelAutoDetrend.ForeColor = Color.Gainsboro;
-            labelAutoDetrend.Location = new Point(12, 84);
-            Controls.Add(labelAutoDetrend);
-
             comboWindowMode.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
             comboFdwCycles.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
             comboDetrendMode.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
         }
 
-        private void AddModeControl(string text, ComboBox combo, int top)
+        private void AddModeControl(string text, DarkComboBox combo, int top)
         {
             var label = new Label
             {
@@ -125,7 +130,7 @@ namespace Resonalyze.Options
             };
             combo.DropDownStyle = ComboBoxStyle.DropDownList;
             combo.Location = new Point(153, top);
-            combo.Size = new Size(100, 23);
+            combo.Size = new Size(100, 19);
             Controls.Add(label);
             Controls.Add(combo);
         }
@@ -137,19 +142,40 @@ namespace Resonalyze.Options
             numericOffset.Enabled = manual;
             buttonTauSlope.Enabled = manual;
             buttonTauPeak.Enabled = manual;
-            labelAutoDetrend.Text = comboDetrendMode.SelectedIndex == (int)PhaseDetrendMode.Auto
-                ? ResolveAutoDetrendLabel()
-                : string.Empty;
+            UpdateDetrendDisplay();
         }
 
-        private string ResolveAutoDetrendLabel()
+        private void UpdateDetrendDisplay()
         {
+            double displayed = comboDetrendMode.SelectedIndex switch
+            {
+                (int)PhaseDetrendMode.Off => 0.0,
+                (int)PhaseDetrendMode.Auto when TryResolveAutoDetrend(out double resolved) =>
+                    resolved,
+                (int)PhaseDetrendMode.Manual => manualDetrendMilliseconds,
+                _ => 0.0
+            };
+
+            updatingDetrendDisplay = true;
             try
             {
-                if (Measurement is not { InProgress: false } measurement ||
+                numericOffset.Value = ClampToControl(numericOffset, displayed);
+            }
+            finally
+            {
+                updatingDetrendDisplay = false;
+            }
+        }
+
+        private bool TryResolveAutoDetrend(out double resolved)
+        {
+            resolved = 0.0;
+            try
+            {
+                if (Measurement is not { } measurement ||
                     measurement.TransferImpulseResponse is not { Length: > 0 })
                 {
-                    return "Auto detrend: —";
+                    return false;
                 }
                 IImpulseMeasurement impulse =
                     new MeasurementPlotContext(measurement).CreatePrimaryMeasurement();
@@ -170,12 +196,12 @@ namespace Resonalyze.Options
                     comboSmoothingInverseOctaves.SelectedItem is int smoothing
                         ? smoothing
                         : FrequencyResponseOptions.DefaultPhaseSmoothingInverseOctaves);
-                double resolved = DataHelper.ResolvePhaseDetrendMilliseconds(impulse, settings);
-                return $"Auto detrend: {resolved:0.00} ms";
+                resolved = DataHelper.ResolvePhaseDetrendMilliseconds(impulse, settings);
+                return double.IsFinite(resolved);
             }
             catch (InvalidOperationException)
             {
-                return "Auto detrend: —";
+                return false;
             }
         }
 
@@ -269,6 +295,11 @@ namespace Resonalyze.Options
 
         protected override void RenderIrPreview()
         {
+            if (comboDetrendMode.SelectedIndex == (int)PhaseDetrendMode.Auto)
+            {
+                UpdateDetrendDisplay();
+            }
+
             if (Measurement == null || Measurement.SampleRate <= 0)
             {
                 return;
@@ -307,7 +338,7 @@ namespace Resonalyze.Options
                 "Applies octave smoothing to the phase traces.");
             numericOffset.ApplyToolTip(
                 toolTip,
-                "τ: linear-phase reference (delay) in milliseconds, removed to make the excess phase readable. Enter the same τ on two measurements to compare their relative phase.");
+                "τ: linear-phase reference in milliseconds. Auto shows the resolved read-only value here; Manual restores and edits the saved user value; Off shows zero.");
             toolTip.SetToolTip(
                 buttonTauSlope,
                 "Auto-find τ from the energy-weighted average group delay (flattens the excess-phase trend).");

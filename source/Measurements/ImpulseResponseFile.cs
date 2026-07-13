@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using NAudio.Wave;
 using Resonalyze.History;
 
 namespace Resonalyze;
@@ -11,7 +12,7 @@ namespace Resonalyze;
 public sealed class ImpulseResponseFile
 {
     public const string CurrentFormat = "resonalyze-impulse-response";
-    public const int CurrentVersion = 5;
+    public const int CurrentVersion = 6;
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -35,6 +36,9 @@ public sealed class ImpulseResponseFile
     public int SweepDeconvolutionPeakIndex { get; set; }
     public int AverageRunCount { get; set; } = 1;
     public int AcceptedAverageRunCount { get; set; } = 1;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AudioSessionFileEntry? AudioSession { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? TransferPeakIndex { get; set; }
@@ -101,6 +105,10 @@ public sealed class ImpulseResponseFile
             SweepDeconvolutionPeakIndex = sweepDeconvolution.PeakIndex,
             AverageRunCount = measurement.AverageRunCount,
             AcceptedAverageRunCount = measurement.AcceptedAverageRunCount,
+            AudioSession = CreateAudioSessionFileEntry(
+                measurement.LastAudioSessionDiagnostics,
+                measurement.SampleRate,
+                measurement.Bits),
             TransferPeakIndex = transferPeakIndex,
             MicrophoneLevels = microphoneLevels,
             LoopbackLevels = loopbackLevels,
@@ -366,6 +374,7 @@ public sealed class ImpulseResponseFile
         ValidateLevelEntry(MicrophoneLevels, nameof(MicrophoneLevels));
         ValidateLevelEntry(LoopbackLevels, nameof(LoopbackLevels));
         ValidatePreview(PreviewFrequencyResponse);
+        ValidateAudioSession(AudioSession);
     }
 
     private static (double[] Real, double[]? Imaginary) ConvertSamples(
@@ -480,6 +489,74 @@ public sealed class ImpulseResponseFile
         };
     }
 
+    internal static AudioSessionFileEntry? CreateAudioSessionFileEntry(
+        AudioSessionDiagnostics? diagnostics,
+        int analysisSampleRate,
+        int analysisBits)
+    {
+        if (diagnostics == null)
+        {
+            return null;
+        }
+
+        return new AudioSessionFileEntry
+        {
+            Backend = diagnostics.Backend,
+            CaptureEndpointId = diagnostics.CaptureEndpointId,
+            RenderEndpointId = diagnostics.RenderEndpointId,
+            ShareMode = diagnostics.Backend.Contains("Exclusive", StringComparison.Ordinal)
+                ? "Exclusive"
+                : "Shared",
+            CaptureFormat = diagnostics.CaptureFormat.ToString(),
+            RenderFormat = diagnostics.RenderFormat.ToString(),
+            CaptureSampleRate = diagnostics.CaptureFormat.SampleRate,
+            RenderSampleRate = diagnostics.RenderFormat.SampleRate,
+            AnalysisSampleRate = analysisSampleRate,
+            FormatConversionOccurred =
+                diagnostics.Backend.Contains("Shared", StringComparison.Ordinal) &&
+                (diagnostics.RenderFormat.SampleRate != analysisSampleRate ||
+                    diagnostics.RenderFormat.Encoding != WaveFormatEncoding.Pcm ||
+                    diagnostics.RenderFormat.BitsPerSample != analysisBits),
+            RequestedBufferMilliseconds = diagnostics.RequestedBufferMilliseconds,
+            ActualBufferFrames = diagnostics.ActualBufferFrames,
+            CapturePackets = diagnostics.CapturePackets,
+            RenderCallbacks = diagnostics.RenderCallbacks,
+            Discontinuities = diagnostics.Discontinuities,
+            SilentPackets = diagnostics.SilentPackets,
+            TimestampErrors = diagnostics.TimestampErrors,
+            CaptureOverruns = diagnostics.CaptureOverruns,
+            RenderUnderruns = diagnostics.RenderUnderruns
+        };
+    }
+
+    private static void ValidateAudioSession(AudioSessionFileEntry? session)
+    {
+        if (session == null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(session.Backend) ||
+            string.IsNullOrWhiteSpace(session.CaptureEndpointId) ||
+            string.IsNullOrWhiteSpace(session.RenderEndpointId))
+        {
+            throw new InvalidDataException("Audio session endpoint metadata is incomplete.");
+        }
+        if (session.CaptureSampleRate <= 0 || session.RenderSampleRate <= 0 ||
+            session.AnalysisSampleRate <= 0 || session.RequestedBufferMilliseconds <= 0 ||
+            session.ActualBufferFrames <= 0)
+        {
+            throw new InvalidDataException("Audio session format metadata is invalid.");
+        }
+        if (session.CapturePackets < 0 || session.RenderCallbacks < 0 ||
+            session.Discontinuities < 0 || session.SilentPackets < 0 ||
+            session.TimestampErrors < 0 || session.CaptureOverruns < 0 ||
+            session.RenderUnderruns < 0)
+        {
+            throw new InvalidDataException("Audio session diagnostics cannot be negative.");
+        }
+    }
+
     private static InputLevelMeterEntry ToMeterEntry(LevelSnapshotFileEntry? entry)
     {
         if (entry == null)
@@ -556,5 +633,28 @@ public sealed class ImpulseResponseFile
         public int SmoothingInverseOctaves { get; set; }
         public double[] Frequencies { get; set; } = Array.Empty<double>();
         public double[] MagnitudesDb { get; set; } = Array.Empty<double>();
+    }
+
+    public sealed class AudioSessionFileEntry
+    {
+        public string Backend { get; set; } = string.Empty;
+        public string CaptureEndpointId { get; set; } = string.Empty;
+        public string RenderEndpointId { get; set; } = string.Empty;
+        public string ShareMode { get; set; } = string.Empty;
+        public string CaptureFormat { get; set; } = string.Empty;
+        public string RenderFormat { get; set; } = string.Empty;
+        public int CaptureSampleRate { get; set; }
+        public int RenderSampleRate { get; set; }
+        public int AnalysisSampleRate { get; set; }
+        public bool FormatConversionOccurred { get; set; }
+        public int RequestedBufferMilliseconds { get; set; }
+        public int ActualBufferFrames { get; set; }
+        public long CapturePackets { get; set; }
+        public long RenderCallbacks { get; set; }
+        public long Discontinuities { get; set; }
+        public long SilentPackets { get; set; }
+        public long TimestampErrors { get; set; }
+        public long CaptureOverruns { get; set; }
+        public long RenderUnderruns { get; set; }
     }
 }

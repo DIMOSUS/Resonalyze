@@ -160,6 +160,11 @@ internal sealed class MeasurementSettingsFile
         public AudioBackend AudioBackend { get; set; } = AudioBackend.Wave;
         public int OutputDeviceNumber { get; set; } = -1;
         public int InputDeviceNumber { get; set; } = -1;
+        public string? WasapiCaptureEndpointId { get; set; }
+        public string? WasapiRenderEndpointId { get; set; }
+        public string? WasapiCaptureEndpointName { get; set; }
+        public string? WasapiRenderEndpointName { get; set; }
+        public int WasapiBufferMilliseconds { get; set; } = 100;
         public string? AsioDriverName { get; set; }
         public int WaveInputChannelOffset { get; set; }
         public int? WaveLoopbackInputChannelOffset { get; set; }
@@ -196,6 +201,11 @@ internal sealed class MeasurementSettingsFile
                 AudioBackend = measurement.AudioBackend,
                 OutputDeviceNumber = measurement.OutputDeviceNumber,
                 InputDeviceNumber = measurement.InputDeviceNumber,
+                WasapiCaptureEndpointId = measurement.WasapiCaptureEndpointId,
+                WasapiRenderEndpointId = measurement.WasapiRenderEndpointId,
+                WasapiCaptureEndpointName = measurement.WasapiCaptureEndpointName,
+                WasapiRenderEndpointName = measurement.WasapiRenderEndpointName,
+                WasapiBufferMilliseconds = measurement.WasapiBufferMilliseconds,
                 AsioDriverName = measurement.AsioDriverName,
                 WaveInputChannelOffset = measurement.WaveInputChannelOffset,
                 WaveLoopbackInputChannelOffset = measurement.WaveLoopbackInputChannelOffset,
@@ -208,9 +218,21 @@ internal sealed class MeasurementSettingsFile
 
         public void ApplyTo(ExpSweepMeasurement measurement)
         {
+            AudioBackend backend = NormalizeAudioBackend(AudioBackend, AsioDriverName);
+            string? captureEndpointId = NormalizeWasapiEndpointId(
+                WasapiCaptureEndpointId,
+                capture: true);
+            string? renderEndpointId = NormalizeWasapiEndpointId(
+                WasapiRenderEndpointId,
+                capture: false);
+            int sampleRate = NormalizeWasapiSampleRate(
+                backend,
+                captureEndpointId,
+                renderEndpointId,
+                Clamp(SampleRate, 44_100, 384_000));
             measurement.Init(
                 Clamp(Octaves, 1, 32),
-                Clamp(SampleRate, 44_100, 384_000),
+                sampleRate,
                 Bits is 16 or 24 ? Bits : 24,
                 Math.Clamp(RequestedDurationSeconds, 0.001, 100.0),
                 Enum.IsDefined(PlaybackChannel)
@@ -222,26 +244,35 @@ internal sealed class MeasurementSettingsFile
                 NormalizeDeviceNumber(
                     AudioDeviceCatalog.GetRecordingDevices(),
                     InputDeviceNumber),
-                NormalizeAudioBackend(AudioBackend, AsioDriverName),
+                backend,
                 NormalizeAsioDriverName(AsioDriverName),
                 NormalizeAsioChannelOffset(
                     AsioDriverName,
-                    Clamp(SampleRate, 44_100, 384_000),
+                    sampleRate,
                     AsioInputChannelOffset,
                     input: true),
                 NormalizeAsioChannelOffset(
                     AsioDriverName,
-                    Clamp(SampleRate, 44_100, 384_000),
+                    sampleRate,
                     AsioOutputChannelOffset,
                     input: false),
-                NormalizeWaveChannelOffset(WaveInputChannelOffset),
-                NormalizeOptionalWaveChannelOffset(WaveLoopbackInputChannelOffset),
+                IsWasapiBackend(backend)
+                    ? Math.Max(0, WaveInputChannelOffset)
+                    : NormalizeWaveChannelOffset(WaveInputChannelOffset),
+                IsWasapiBackend(backend)
+                    ? NormalizeOptionalWasapiChannelOffset(WaveLoopbackInputChannelOffset)
+                    : NormalizeOptionalWaveChannelOffset(WaveLoopbackInputChannelOffset),
                 NormalizeOptionalAsioChannelOffset(
                     AsioDriverName,
-                    Clamp(SampleRate, 44_100, 384_000),
+                    sampleRate,
                     AsioLoopbackInputChannelOffset),
                 Clamp(AverageRunCount, 1, 64),
-                ConfirmEachAverageRun);
+                ConfirmEachAverageRun,
+                captureEndpointId,
+                renderEndpointId,
+                Clamp(WasapiBufferMilliseconds, 10, 100),
+                WasapiCaptureEndpointName,
+                WasapiRenderEndpointName);
         }
     }
 
@@ -611,6 +642,58 @@ internal sealed class MeasurementSettingsFile
         return backend;
     }
 
+    private static string? NormalizeWasapiEndpointId(string? endpointId, bool capture)
+    {
+        try
+        {
+            using var service = new WindowsAudioEndpointService();
+            IReadOnlyList<AudioEndpointInfo> endpoints = capture
+                ? service.GetCaptureEndpoints()
+                : service.GetRenderEndpoints();
+            AudioEndpointInfo? exact = endpoints.FirstOrDefault(endpoint =>
+                string.Equals(endpoint.Id, endpointId, StringComparison.Ordinal));
+            if (!string.IsNullOrWhiteSpace(endpointId))
+            {
+                return exact?.Id ?? endpointId;
+            }
+            return endpoints.FirstOrDefault(endpoint => endpoint.IsDefault)?.Id;
+        }
+        catch
+        {
+            return endpointId;
+        }
+    }
+
+    private static int NormalizeWasapiSampleRate(
+        AudioBackend backend,
+        string? captureEndpointId,
+        string? renderEndpointId,
+        int fallback)
+    {
+        if (backend != AudioBackend.WasapiShared ||
+            captureEndpointId == null ||
+            renderEndpointId == null)
+        {
+            return fallback;
+        }
+        try
+        {
+            using var service = new WindowsAudioEndpointService();
+            AudioEndpointInfo? capture = service.GetCaptureEndpoints()
+                .FirstOrDefault(endpoint => endpoint.Id == captureEndpointId);
+            AudioEndpointInfo? render = service.GetRenderEndpoints()
+                .FirstOrDefault(endpoint => endpoint.Id == renderEndpointId);
+            return capture != null && render != null &&
+                capture.MixFormat.SampleRate == render.MixFormat.SampleRate
+                    ? capture.MixFormat.SampleRate
+                    : fallback;
+        }
+        catch
+        {
+            return fallback;
+        }
+    }
+
     private static string? NormalizeAsioDriverName(string? asioDriverName)
     {
         IReadOnlyList<AsioDeviceInfo> drivers = AsioDeviceCatalog.GetDrivers();
@@ -655,6 +738,12 @@ internal sealed class MeasurementSettingsFile
 
     private static int? NormalizeOptionalWaveChannelOffset(int? offset) =>
         offset.HasValue ? NormalizeWaveChannelOffset(offset.Value) : null;
+
+    private static int? NormalizeOptionalWasapiChannelOffset(int? offset) =>
+        offset.HasValue ? Math.Max(0, offset.Value) : null;
+
+    private static bool IsWasapiBackend(AudioBackend backend) =>
+        backend is AudioBackend.WasapiShared or AudioBackend.WasapiExclusive;
 
     private static int? NormalizeOptionalAsioChannelOffset(
         string? asioDriverName,

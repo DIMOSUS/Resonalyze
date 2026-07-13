@@ -185,12 +185,32 @@ namespace Resonalyze
                 return;
             }
 
+            string? logPath = TryWriteMeasurementErrorLog(error);
+            string logNotice = logPath == null
+                ? string.Empty
+                : $"\r\n\r\nFull details: {logPath}";
             MessageBox.Show(
                 this,
-                $"{summary}\r\n\r\n{error.Message}",
+                $"{summary}\r\n\r\n{error.Message}{logNotice}",
                 "Measurement",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
+        }
+
+        private static string? TryWriteMeasurementErrorLog(Exception error)
+        {
+            try
+            {
+                string path = Path.Combine(AppContext.BaseDirectory, "measurement-error.log");
+                File.AppendAllText(
+                    path,
+                    $"[{DateTimeOffset.Now:O}]\r\n{error}\r\n\r\n");
+                return path;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         // A configured calibration that fails to load must not silently produce
@@ -230,7 +250,10 @@ namespace Resonalyze
                 expSweepMeasurement.PlaybackChannel,
                 expSweepMeasurement.OutputDeviceNumber,
                 expSweepMeasurement.AsioDriverName,
-                expSweepMeasurement.AsioOutputChannelOffset);
+                expSweepMeasurement.AsioOutputChannelOffset,
+                expSweepMeasurement.WasapiRenderEndpointId,
+                expSweepMeasurement.WasapiRenderEndpointName,
+                expSweepMeasurement.WasapiBufferMilliseconds);
 
     }
 }

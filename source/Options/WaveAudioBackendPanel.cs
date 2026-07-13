@@ -26,5 +26,9 @@ namespace Resonalyze.Options
         internal DarkComboBox ComboBoxWaveLoopbackChannel => comboBoxWaveLoopbackChannel;
 
         internal Label LabelWaveLoopbackStatus => labelWaveLoopbackStatus;
+
+        internal Label LabelDeviceSettings => labelDeviceSettings;
+
+        internal Button ButtonDeviceSettings => buttonDeviceSettings;
     }
 }

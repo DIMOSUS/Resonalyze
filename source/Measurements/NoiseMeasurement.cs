@@ -1,5 +1,6 @@
-using System.Threading.Channels;
 using System.Numerics;
+using System.Threading.Channels;
+using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
@@ -49,6 +50,9 @@ namespace Resonalyze
         public AudioBackend AudioBackend { get; private set; } = AudioBackend.Wave;
         public int OutputDeviceNumber { get; private set; } = -1;
         public int InputDeviceNumber { get; private set; } = -1;
+        public string? WasapiCaptureEndpointId { get; private set; }
+        public string? WasapiRenderEndpointId { get; private set; }
+        public int WasapiBufferMilliseconds { get; private set; } = 100;
         public string? AsioDriverName { get; private set; }
         public int AsioInputChannelOffset { get; private set; }
         public int? AsioLoopbackInputChannelOffset { get; private set; }
@@ -59,11 +63,11 @@ namespace Resonalyze
         public LiveSpectrumOptions LiveSpectrumOptions { get; private set; } = new();
         public Exception? LastError { get; private set; }
         public bool HasConfiguredLoopback =>
-            AudioBackend == AudioBackend.Wave
-                ? WaveLoopbackInputChannelOffset.HasValue &&
-                    WaveLoopbackInputChannelOffset.Value != WaveInputChannelOffset
-                : AsioLoopbackInputChannelOffset.HasValue &&
-                    AsioLoopbackInputChannelOffset.Value != AsioInputChannelOffset;
+            AudioBackend == AudioBackend.Asio
+                ? AsioLoopbackInputChannelOffset.HasValue &&
+                    AsioLoopbackInputChannelOffset.Value != AsioInputChannelOffset
+                : WaveLoopbackInputChannelOffset.HasValue &&
+                    WaveLoopbackInputChannelOffset.Value != WaveInputChannelOffset;
 
         public void Init(
             int sampleRate,
@@ -80,7 +84,10 @@ namespace Resonalyze
             int waveInputChannelOffset = 0,
             int? waveLoopbackInputChannelOffset = null,
             int? asioLoopbackInputChannelOffset = null,
-            LiveSpectrumOptions? liveSpectrumOptions = null)
+            LiveSpectrumOptions? liveSpectrumOptions = null,
+            string? wasapiCaptureEndpointId = null,
+            string? wasapiRenderEndpointId = null,
+            int wasapiBufferMilliseconds = 100)
         {
             ThrowIfDisposed();
             if (InProgress)
@@ -99,13 +106,27 @@ namespace Resonalyze
             OutputDeviceNumber = outputDeviceNumber;
             InputDeviceNumber = inputDeviceNumber;
             AudioBackend = audioBackend;
+            WasapiCaptureEndpointId = wasapiCaptureEndpointId;
+            WasapiRenderEndpointId = wasapiRenderEndpointId;
+            WasapiBufferMilliseconds = Math.Clamp(wasapiBufferMilliseconds, 10, 100);
             AsioDriverName = asioDriverName;
             AsioInputChannelOffset = asioInputChannelOffset;
             AsioLoopbackInputChannelOffset = asioLoopbackInputChannelOffset;
             AsioOutputChannelOffset = asioOutputChannelOffset;
-            WaveInputChannelOffset = Math.Clamp(waveInputChannelOffset, 0, 1);
-            WaveLoopbackInputChannelOffset = NormalizeOptionalWaveChannel(
-                waveLoopbackInputChannelOffset);
+            int normalizedWaveInputChannelOffset = IsWasapiBackend(audioBackend)
+                ? Math.Max(0, waveInputChannelOffset)
+                : Math.Clamp(waveInputChannelOffset, 0, 1);
+            int? normalizedWaveLoopbackInputChannelOffset = IsWasapiBackend(audioBackend)
+                ? NormalizeOptionalWasapiChannel(waveLoopbackInputChannelOffset)
+                : NormalizeOptionalWaveChannel(waveLoopbackInputChannelOffset);
+            if (audioBackend != AudioBackend.Asio &&
+                normalizedWaveLoopbackInputChannelOffset == normalizedWaveInputChannelOffset)
+            {
+                throw new InvalidOperationException(
+                    "Microphone and loopback inputs must use different channels.");
+            }
+            WaveInputChannelOffset = normalizedWaveInputChannelOffset;
+            WaveLoopbackInputChannelOffset = normalizedWaveLoopbackInputChannelOffset;
             LiveSpectrumOptions = liveSpectrumOptions ?? new LiveSpectrumOptions();
 
             signal?.Dispose();
@@ -381,6 +402,10 @@ namespace Resonalyze
                 {
                     await RunAsioAsync(noiseSignal, cancellationToken).ConfigureAwait(false);
                 }
+                else if (IsWasapiBackend(AudioBackend))
+                {
+                    await RunWasapiAsync(stream, cancellationToken).ConfigureAwait(false);
+                }
                 else
                 {
                     await RunWaveAsync(stream, recorder, cancellationToken).ConfigureAwait(false);
@@ -454,6 +479,93 @@ namespace Resonalyze
             stream.Position = 0;
             player.Init(new LoopingWaveProvider(stream));
             await PlayUntilCancelledAsync(player, cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task RunWasapiAsync(
+            RawSourceWaveStream stream,
+            CancellationToken cancellationToken)
+        {
+            string captureEndpointId = WasapiCaptureEndpointId ??
+                throw new InvalidOperationException("Select a WASAPI capture endpoint.");
+            string renderEndpointId = WasapiRenderEndpointId ??
+                throw new InvalidOperationException("Select a WASAPI render endpoint.");
+            AudioClientShareMode shareMode = AudioBackend == AudioBackend.WasapiExclusive
+                ? AudioClientShareMode.Exclusive
+                : AudioClientShareMode.Shared;
+            int captureChannels = GetRequiredWaveInputChannelCount();
+            int renderChannels = PlaybackChannel == PlaybackChannel.Mono ? 1 : 2;
+            WaveFormat? captureFormat = null;
+            WaveFormat? renderFormat = null;
+            if (shareMode == AudioClientShareMode.Exclusive)
+            {
+                DuplexFormatSupport support = WasapiFormatSupport.CheckExclusive(
+                    captureEndpointId,
+                    renderEndpointId,
+                    SampleRate,
+                    Bits,
+                    captureChannels,
+                    renderChannels);
+                if (!support.Supported)
+                {
+                    throw new InvalidOperationException(
+                        $"WASAPI Exclusive format {SampleRate} Hz / {Bits}-bit is not " +
+                        "supported by both live-spectrum endpoints.");
+                }
+                captureFormat = WasapiFormatSupport.CreateDeviceFormat(
+                    SampleRate,
+                    Bits,
+                    captureChannels);
+                renderFormat = WasapiFormatSupport.CreateDeviceFormat(
+                    SampleRate,
+                    Bits,
+                    renderChannels);
+            }
+
+            await using var captureDevice = new WasapiCaptureDevice(
+                captureEndpointId,
+                WasapiBufferMilliseconds,
+                shareMode,
+                captureFormat);
+            await using var playbackDevice = new WasapiPlaybackDevice(
+                renderEndpointId,
+                WasapiBufferMilliseconds,
+                shareMode,
+                renderFormat);
+            await using var captureSession = new PcmCaptureSession(
+                captureDevice,
+                SequenceLength);
+            captureSession.SequenceChannelsReady += ProcessSequenceChannels;
+            captureSession.LevelsAvailable += HandleWaveLevelsAvailable;
+            captureSession.CaptureDiscontinuity += HandleCaptureDiscontinuity;
+            try
+            {
+                stream.Position = 0;
+                var loopingProvider = new LoopingWaveProvider(stream);
+                await captureSession.StartAsync(cancellationToken).ConfigureAwait(false);
+                await playbackDevice.StartAsync(loopingProvider, cancellationToken)
+                    .ConfigureAwait(false);
+                Task playbackEnded = playbackDevice.WaitForPlaybackEndAsync(cancellationToken);
+                Task captureStopped = captureSession.WaitForStopAsync(cancellationToken);
+                Task completed = await Task.WhenAny(playbackEnded, captureStopped)
+                    .ConfigureAwait(false);
+                await completed.ConfigureAwait(false);
+                throw new InvalidOperationException("WASAPI live playback stopped unexpectedly.");
+            }
+            finally
+            {
+                captureSession.SequenceChannelsReady -= ProcessSequenceChannels;
+                captureSession.LevelsAvailable -= HandleWaveLevelsAvailable;
+                captureSession.CaptureDiscontinuity -= HandleCaptureDiscontinuity;
+                await playbackDevice.StopAsync().ConfigureAwait(false);
+                await captureSession.StopAsync().ConfigureAwait(false);
+            }
+        }
+
+        private void HandleCaptureDiscontinuity()
+        {
+            Interlocked.Increment(ref droppedFrameTotal);
+            Interlocked.Exchange(ref lastDropTickMs, Environment.TickCount64);
+            Interlocked.Increment(ref dropGeneration);
         }
 
         private static async Task PlayUntilCancelledAsync(
@@ -754,12 +866,12 @@ namespace Resonalyze
                 AsioLoopbackInputChannelOffset);
 
         private int GetMicrophoneSequenceIndex() =>
-            AudioBackend == AudioBackend.Wave
+            AudioBackend != AudioBackend.Asio
                 ? WaveInputChannelOffset
                 : AsioInputChannelOffset - GetAsioCaptureFirstInputOffset();
 
         private int? GetLoopbackSequenceIndex() =>
-            AudioBackend == AudioBackend.Wave
+            AudioBackend != AudioBackend.Asio
                 ? WaveLoopbackInputChannelOffset
                 : AsioLoopbackInputChannelOffset.HasValue
                     ? AsioLoopbackInputChannelOffset.Value - GetAsioCaptureFirstInputOffset()
@@ -769,6 +881,12 @@ namespace Resonalyze
             channel.HasValue
                 ? Math.Clamp(channel.Value, 0, 1)
                 : null;
+
+        private static int? NormalizeOptionalWasapiChannel(int? channel) =>
+            channel.HasValue ? Math.Max(0, channel.Value) : null;
+
+        private static bool IsWasapiBackend(AudioBackend backend) =>
+            backend is AudioBackend.WasapiShared or AudioBackend.WasapiExclusive;
 
         private void ThrowIfDisposed()
         {

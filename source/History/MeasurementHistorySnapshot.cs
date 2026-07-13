@@ -14,6 +14,7 @@ internal sealed class MeasurementHistorySnapshot
     public int? TransferPeakIndex { get; init; }
     public int AverageRunCount { get; init; } = 1;
     public int AcceptedAverageRunCount { get; init; } = 1;
+    public ImpulseResponseFile.AudioSessionFileEntry? AudioSession { get; init; }
     public required Complex[] SweepDeconvolutionImpulseResponse { get; init; }
     public Complex[]? TransferImpulseResponse { get; init; }
     public double[]? TransferCoherence { get; init; }
@@ -38,6 +39,7 @@ internal sealed class MeasurementHistorySnapshot
             TransferPeakIndex = TransferPeakIndex,
             AverageRunCount = AverageRunCount,
             AcceptedAverageRunCount = AcceptedAverageRunCount,
+            AudioSession = AudioSession,
             SweepDeconvolutionRealSamples = SweepDeconvolutionImpulseResponse.Select(
                 sample => sample.Real).ToArray(),
             SweepDeconvolutionImaginarySamples = HasImaginarySamples(SweepDeconvolutionImpulseResponse)

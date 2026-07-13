@@ -37,6 +37,8 @@ namespace Resonalyze.Options
             labelWaveLoopbackChannel = new Label();
             comboBoxWaveLoopbackChannel = new DarkComboBox();
             labelWaveLoopbackStatus = new Label();
+            labelDeviceSettings = new Label();
+            buttonDeviceSettings = new Button();
             SuspendLayout();
             //
             // labelPlaybackDevice
@@ -132,11 +134,32 @@ namespace Resonalyze.Options
             labelWaveLoopbackStatus.TabIndex = 42;
             labelWaveLoopbackStatus.Text = "-";
             //
+            // labelDeviceSettings
+            //
+            labelDeviceSettings.AutoSize = true;
+            labelDeviceSettings.ForeColor = SystemColors.ControlLight;
+            labelDeviceSettings.Location = new Point(0, 184);
+            labelDeviceSettings.Name = "labelDeviceSettings";
+            labelDeviceSettings.Size = new Size(91, 15);
+            labelDeviceSettings.TabIndex = 43;
+            labelDeviceSettings.Text = "Hardware clock";
+            //
+            // buttonDeviceSettings
+            //
+            buttonDeviceSettings.Location = new Point(141, 177);
+            buttonDeviceSettings.Name = "buttonDeviceSettings";
+            buttonDeviceSettings.Size = new Size(170, 29);
+            buttonDeviceSettings.TabIndex = 44;
+            buttonDeviceSettings.Text = "Open Device Settings";
+            buttonDeviceSettings.UseVisualStyleBackColor = true;
+            //
             // WaveAudioBackendPanel
             //
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
+            Controls.Add(buttonDeviceSettings);
+            Controls.Add(labelDeviceSettings);
             Controls.Add(labelWaveLoopbackStatus);
             Controls.Add(comboBoxWaveLoopbackChannel);
             Controls.Add(labelWaveLoopbackChannel);
@@ -147,7 +170,7 @@ namespace Resonalyze.Options
             Controls.Add(comboBoxPlaybackDevice);
             Controls.Add(labelPlaybackDevice);
             Name = "WaveAudioBackendPanel";
-            Size = new Size(311, 177);
+            Size = new Size(311, 213);
             ResumeLayout(false);
             PerformLayout();
         }
@@ -162,5 +185,7 @@ namespace Resonalyze.Options
         private Label labelWaveLoopbackChannel;
         private DarkComboBox comboBoxWaveLoopbackChannel;
         private Label labelWaveLoopbackStatus;
+        private Label labelDeviceSettings;
+        private Button buttonDeviceSettings;
     }
 }

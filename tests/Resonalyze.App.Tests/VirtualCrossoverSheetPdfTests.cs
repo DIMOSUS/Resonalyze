@@ -22,6 +22,10 @@ public sealed class VirtualCrossoverSheetPdfTests
         project.Pairs[1].Right.SourceFilePath = "top r.json";
         project.Pairs[1].Right.DisplayName = "Top R";
         project.Pairs[1].Right.CrossoverKind = CrossoverKind.HighPass;
+        // A stereo pair with ONE loaded side falls back to the single-channel
+        // layout instead of an L/R table with an empty column.
+        project.Pairs[2].Right.SourceFilePath = "half.json";
+        project.Pairs[2].Right.DisplayName = "Half";
 
         string path = Path.Combine(Path.GetTempPath(), $"vdsp_{Guid.NewGuid():N}.pdf");
         try

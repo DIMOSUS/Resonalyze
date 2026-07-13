@@ -12,7 +12,9 @@ namespace Resonalyze;
 // Renders the Virtual DSP settings as a phone-friendly "tuning sheet" PDF
 // (MigraDoc / PDFsharp, same style as TuningSheetPdf): the product banner, the
 // title, a combined graph of every channel's DSP chain, and one section per
-// channel with the values to dial into the DSP plus its PEQ band cards.
+// channel PAIR with the values to dial into the DSP plus the PEQ band cards —
+// a stereo pair prints its L and R values side by side in one table, a mono
+// pair (or a pair with one loaded side) prints the single-channel layout.
 // The shared layout (scaffold, images, filter cards) lives in PdfSheet.
 internal static class VirtualCrossoverSheetPdf
 {
@@ -72,13 +74,127 @@ internal static class VirtualCrossoverSheetPdf
                 Unit.FromCentimeter(17));
         }
 
-        foreach ((int index, string sideSuffix, _, VirtualCrossoverChannelSettings channel)
-            in participating)
+        // A stereo pair with both sides loaded prints as ONE section with an
+        // L/R value table — the two sides of a pair are dialed in together,
+        // so their numbers belong side by side. A mono pair (or a pair with
+        // one loaded side) keeps the single-channel layout.
+        for (int i = 0; i < project.Pairs.Count; i++)
         {
-            AddChannelSection(sheet, index, sideSuffix, channel);
+            VirtualCrossoverChannelPairSettings pair = project.Pairs[i];
+            if (!pair.Mono && pair.Left.HasSource && pair.Right.HasSource)
+            {
+                AddPairSection(sheet, i, pair.Left, pair.Right);
+                continue;
+            }
+
+            foreach ((VirtualCrossoverChannelSettings channel, string sideSuffix)
+                in VirtualCrossoverSheet.SideSections(pair))
+            {
+                if (channel.HasSource)
+                {
+                    AddChannelSection(sheet, i, sideSuffix, channel);
+                }
+            }
         }
 
         sheet.Save(filePath);
+    }
+
+    private static void AddPairSection(
+        PdfSheet sheet,
+        int index,
+        VirtualCrossoverChannelSettings left,
+        VirtualCrossoverChannelSettings right)
+    {
+        Section section = sheet.Section;
+        Paragraph heading = section.AddParagraph(
+            $"Channel {VirtualCrossoverSheet.ChannelName(index)}");
+        heading.Format.Font.Bold = true;
+        heading.Format.Font.Size = 15;
+        heading.Format.SpaceBefore = Unit.FromMillimeter(5);
+        heading.Format.SpaceAfter = Unit.FromMillimeter(1);
+
+        var table = section.AddTable();
+        table.Borders.Width = 0.5;
+        table.Borders.Color = PdfSheet.CardBorderColor;
+        Column labelColumn = table.AddColumn(Unit.FromCentimeter(3.0));
+        labelColumn.LeftPadding = Unit.FromMillimeter(2);
+        for (int side = 0; side < 2; side++)
+        {
+            Column sideColumn = table.AddColumn(Unit.FromCentimeter(5.5));
+            sideColumn.LeftPadding = Unit.FromMillimeter(2);
+        }
+
+        Row header = table.AddRow();
+        header.Cells[1].AddParagraph("L").Format.Font.Bold = true;
+        header.Cells[2].AddParagraph("R").Format.Font.Bold = true;
+
+        AddPairRow(table, "Source", left.DisplayName, right.DisplayName);
+        AddPairRow(table, "Gain",
+            $"{Signed(left.GainDb)} dB",
+            $"{Signed(right.GainDb)} dB");
+        AddPairRow(table, "Delay", PairDelayText(left), PairDelayText(right));
+        AddPairRow(table, "Polarity", PolarityText(left), PolarityText(right));
+        AddPairRow(table, "Crossover",
+            VirtualCrossoverSheet.DescribeCrossover(left),
+            VirtualCrossoverSheet.DescribeCrossover(right));
+        if (HasPeq(left) || HasPeq(right))
+        {
+            AddPairRow(table, "PEQ", PeqSummary(left), PeqSummary(right));
+        }
+
+        AddPeqCards(
+            sheet, $"PEQ {VirtualCrossoverSheet.ChannelName(index)} L", left);
+        AddPeqCards(
+            sheet, $"PEQ {VirtualCrossoverSheet.ChannelName(index)} R", right);
+    }
+
+    private static string PairDelayText(VirtualCrossoverChannelSettings channel) =>
+        $"{Number(channel.DelayMs, "0.00")} ms " +
+        $"(= {Number(channel.DelayMs * Acoustics.SpeedOfSoundAt20CMetersPerSecond, "0.#")} mm)";
+
+    private static string PolarityText(VirtualCrossoverChannelSettings channel) =>
+        channel.InvertPolarity ? "Inverted" : "Normal";
+
+    private static bool HasPeq(VirtualCrossoverChannelSettings channel) =>
+        channel.PeqBands.Count > 0 || channel.PeqPreampDb != 0;
+
+    private static string PeqSummary(VirtualCrossoverChannelSettings channel) =>
+        HasPeq(channel)
+            ? $"{channel.PeqSourceName ?? "custom"}, " +
+              $"preamp {Signed(channel.PeqPreampDb)} dB"
+            : "—";
+
+    // The pair table names each side's PEQ in one summary row; the band cards
+    // print below it per side, captioned, so the two sides cannot be mixed up.
+    private static void AddPeqCards(
+        PdfSheet sheet,
+        string caption,
+        VirtualCrossoverChannelSettings channel)
+    {
+        if (channel.PeqBands.Count == 0)
+        {
+            return;
+        }
+
+        Paragraph paragraph = sheet.Section.AddParagraph(caption);
+        paragraph.Format.Font.Bold = true;
+        paragraph.Format.Font.Size = 12;
+        paragraph.Format.SpaceBefore = Unit.FromMillimeter(2);
+        sheet.AddFilterCards(channel.PeqBands);
+    }
+
+    private static void AddPairRow(
+        Table table,
+        string label,
+        string leftValue,
+        string rightValue)
+    {
+        Row row = table.AddRow();
+        Paragraph caption = row.Cells[0].AddParagraph(label);
+        caption.Format.Font.Color = PdfSheet.CaptionColor;
+        row.Cells[1].AddParagraph(leftValue).Format.Font.Bold = true;
+        row.Cells[2].AddParagraph(rightValue).Format.Font.Bold = true;
     }
 
     private static void AddChannelSection(

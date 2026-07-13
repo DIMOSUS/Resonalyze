@@ -2149,46 +2149,69 @@ public partial class VirtualCrossoverPanel : UserControl
         double LowHz,
         double HighHz,
         SideProcessJob Left,
-        SideProcessJob Right);
+        SideProcessJob Right,
+        bool Mono = false)
+    {
+        // A mono job's Left and Right are the same instance; iterate the left
+        // slot alone so the shared response is processed once.
+        public IEnumerable<SideProcessJob> Sides =>
+            Mono ? new[] { Left } : new[] { Left, Right };
+    }
 
     /// <summary>
     /// The final per-pair L−R timing: both sides' fully processed responses
     /// (current delays included) get their band-limited envelope arrival read
     /// in the pair's shared band, and the difference (positive: right leads —
-    /// the scene-offset convention) feeds the metric read-out. Only complete
-    /// stereo pairs measure: mono pairs have one response, bypassed or muted
-    /// sides are not a final tune. Heavy work runs off the UI thread and both
-    /// the processed IRs and the arrivals are cached per side, so an unchanged
-    /// configuration costs nothing on redraw.
+    /// the scene-offset convention) feeds the metric read-out. A mono channel
+    /// (the shared sub) has one response, so it reports that single arrival in
+    /// its own band with "—" for the right side and the delta; a stereo pair
+    /// needs both sides present and unbypassed. Heavy work runs off the UI
+    /// thread and both the processed IRs and the arrivals are cached per side,
+    /// so an unchanged configuration costs nothing on redraw.
     /// </summary>
     private async Task<List<VirtualCrossoverMetric.StereoDelta>> ComputeStereoDeltasAsync()
     {
         var jobs = new List<StereoDeltaJob>();
         foreach (ChannelRuntime channel in channels)
         {
-            if (channel.Pair.Mono)
+            // A mono channel (the shared sub) has one physical response and no
+            // L/R timing to compare, but its own arrival is still worth showing:
+            // it reads in its own band on the left slot and prints "—" for R and
+            // the delta. A stereo pair needs both sides present and unbypassed.
+            bool mono = channel.Pair.Mono;
+
+            VirtualCrossoverChannelSettings leftSettings = channel.SideSettings(false);
+            ChannelSideState leftState = channel.PhysicalSideState(false);
+            if (!leftSettings.Enabled || leftSettings.Bypass ||
+                leftState.TransferImpulseResponse is not { } leftIr)
             {
                 continue;
             }
 
-            VirtualCrossoverChannelSettings leftSettings = channel.SideSettings(false);
             VirtualCrossoverChannelSettings rightSettings = channel.SideSettings(true);
-            ChannelSideState leftState = channel.PhysicalSideState(false);
             ChannelSideState rightState = channel.PhysicalSideState(true);
-            if (!leftSettings.Enabled || !rightSettings.Enabled ||
-                leftSettings.Bypass || rightSettings.Bypass ||
-                leftState.TransferImpulseResponse is not { } leftIr ||
-                rightState.TransferImpulseResponse is not { } rightIr)
+            if (!mono &&
+                (!rightSettings.Enabled || rightSettings.Bypass ||
+                    rightState.TransferImpulseResponse is not { }))
             {
                 continue;
             }
 
             (double leftLow, double leftHigh) =
                 VirtualCrossoverJunctions.GetChannelBand(leftSettings);
-            (double rightLow, double rightHigh) =
-                VirtualCrossoverJunctions.GetChannelBand(rightSettings);
-            double lowHz = Math.Max(leftLow, rightLow);
-            double highHz = Math.Min(leftHigh, rightHigh);
+            double lowHz, highHz;
+            if (mono)
+            {
+                lowHz = leftLow;
+                highHz = leftHigh;
+            }
+            else
+            {
+                (double rightLow, double rightHigh) =
+                    VirtualCrossoverJunctions.GetChannelBand(rightSettings);
+                lowHz = Math.Max(leftLow, rightLow);
+                highHz = Math.Min(leftHigh, rightHigh);
+            }
             if (highHz < lowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
             {
                 // The arrival analysis refuses a band this narrow (it is not
@@ -2231,23 +2254,30 @@ public partial class VirtualCrossoverPanel : UserControl
                 return side;
             }
 
+            SideProcessJob leftJob = Snapshot(leftState, leftSettings, leftIr);
+            SideProcessJob rightJob = mono
+                ? leftJob
+                : Snapshot(
+                    rightState,
+                    rightSettings,
+                    rightState.TransferImpulseResponse!);
             jobs.Add(new StereoDeltaJob(
                 channel.Control.ChannelName,
                 lowHz,
                 highHz,
-                Snapshot(leftState, leftSettings, leftIr),
-                Snapshot(rightState, rightSettings, rightIr)));
+                leftJob,
+                rightJob,
+                mono));
         }
 
-        bool anyWork = jobs.Any(job =>
-            job.Left.Arrival == null || job.Right.Arrival == null);
+        bool anyWork = jobs.Any(job => job.Sides.Any(side => side.Arrival == null));
         if (anyWork)
         {
             await Task.Run(() =>
             {
                 foreach (StereoDeltaJob job in jobs)
                 {
-                    foreach (SideProcessJob side in new[] { job.Left, job.Right })
+                    foreach (SideProcessJob side in job.Sides)
                     {
                         if (side.ProcessedIr == null)
                         {
@@ -2274,7 +2304,7 @@ public partial class VirtualCrossoverPanel : UserControl
             // in this panel.
             foreach (StereoDeltaJob job in jobs)
             {
-                foreach (SideProcessJob side in new[] { job.Left, job.Right })
+                foreach (SideProcessJob side in job.Sides)
                 {
                     if (!side.ProcessedFromCache)
                     {
@@ -2306,12 +2336,23 @@ public partial class VirtualCrossoverPanel : UserControl
             .Select(job =>
             {
                 TimeAlignmentAnalysisResult left = job.Left.Arrival!.Value;
-                TimeAlignmentAnalysisResult right = job.Right.Arrival!.Value;
                 bool leftReliable = Reliable(left);
+                double? leftMs = leftReliable
+                    ? left.FirstArrivalDelayMilliseconds
+                    : null;
+                if (job.Mono)
+                {
+                    // One physical response: show its arrival on the left slot;
+                    // the right and the L−R delta have no meaning here ("—").
+                    return new VirtualCrossoverMetric.StereoDelta(
+                        job.Channel, leftMs, null, job.LowHz, job.HighHz, null);
+                }
+
+                TimeAlignmentAnalysisResult right = job.Right.Arrival!.Value;
                 bool rightReliable = Reliable(right);
                 return new VirtualCrossoverMetric.StereoDelta(
                     job.Channel,
-                    leftReliable ? left.FirstArrivalDelayMilliseconds : null,
+                    leftMs,
                     rightReliable ? right.FirstArrivalDelayMilliseconds : null,
                     job.LowHz,
                     job.HighHz,

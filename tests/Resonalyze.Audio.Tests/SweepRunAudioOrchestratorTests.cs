@@ -67,9 +67,34 @@ public sealed class SweepRunAudioOrchestratorTests
         Assert.Contains("playback-stop", calls);
     }
 
+    [Fact]
+    public async Task CaptureStopDuringPlaybackFailsTheRunBeforeWaitingForSamples()
+    {
+        List<string> calls = [];
+        var capture = new FakeCaptureSession(calls);
+        // Playback that never ends on its own, so the run is still "in playback"
+        // when the capture device fails.
+        var playback = new BlockingPlaybackDevice(calls);
+        var orchestrator = new SweepRunAudioOrchestrator(capture, playback);
+        Task<float[][]> run = orchestrator.CaptureAsync(
+            new SilenceProvider(new WaveFormat(48_000, 16, 1)),
+            100,
+            25,
+            CancellationToken.None);
+
+        capture.FailCapture(new IOException("Capture device removed."));
+
+        IOException exception = await Assert.ThrowsAsync<IOException>(() => run);
+        Assert.Equal("Capture device removed.", exception.Message);
+        // The dead device never reached the sample wait — it did not hang.
+        Assert.DoesNotContain("capture-wait", calls);
+    }
+
     private sealed class FakeCaptureSession : ISweepCaptureSession
     {
         private readonly List<string> calls;
+        private readonly TaskCompletionSource stopSignal =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public FakeCaptureSession(List<string> calls)
         {
@@ -102,6 +127,11 @@ public sealed class SweepRunAudioOrchestratorTests
             RequiredSamples = sampleCount;
             return Task.CompletedTask;
         }
+
+        public Task WaitForStopAsync(CancellationToken cancellationToken) =>
+            stopSignal.Task.WaitAsync(cancellationToken);
+
+        public void FailCapture(Exception exception) => stopSignal.TrySetException(exception);
 
         public float[][] GetSamplesSnapshot()
         {

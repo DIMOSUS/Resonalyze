@@ -13,6 +13,11 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
     private double[] meterSumSquares = Array.Empty<double>();
     private TaskCompletionSource<bool>? firstBufferReady;
     private TaskCompletionSource<Exception?>? deviceStopped;
+    // A terminal device failure is remembered so a sample waiter registered
+    // AFTER the stop (e.g. the sweep waiter, created only once playback ends)
+    // faults immediately instead of hanging forever. Cleared only by a real
+    // StartAsync, never by Reset between averaged runs.
+    private Exception? terminalException;
     private bool paused;
     private bool disposed;
 
@@ -42,6 +47,11 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         Reset();
+        lock (sync)
+        {
+            // A real (re)start clears any remembered terminal failure.
+            terminalException = null;
+        }
         firstBufferReady = SampleWaiterRegistry.NewSignal();
         deviceStopped = new TaskCompletionSource<Exception?>(
             TaskCreationOptions.RunContinuationsAsynchronously);
@@ -61,7 +71,7 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
 
     public Task StopAsync() => device.StopAsync();
 
-    internal async Task WaitForStopAsync(CancellationToken cancellationToken)
+    public async Task WaitForStopAsync(CancellationToken cancellationToken)
     {
         Task<Exception?> task = deviceStopped?.Task ??
             throw new InvalidOperationException("Capture has not been started.");
@@ -77,9 +87,18 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         }
         lock (sync)
         {
-            return accumulator.ReadSamples >= sampleCount
-                ? Task.CompletedTask
-                : sampleWaiters.Add(sampleCount, cancellationToken);
+            if (accumulator.ReadSamples >= sampleCount)
+            {
+                return Task.CompletedTask;
+            }
+            // The samples are not all here and a stopped device will deliver
+            // neither more of them nor a fresh stop event: fault immediately
+            // rather than register a waiter that only an Abort could complete.
+            if (terminalException != null)
+            {
+                return Task.FromException(terminalException);
+            }
+            return sampleWaiters.Add(sampleCount, cancellationToken);
         }
     }
 
@@ -203,6 +222,9 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         firstBufferReady?.TrySetException(exception);
         lock (sync)
         {
+            // Remember the failure so a waiter registered after this point (the
+            // sweep waiter is created only once playback ends) faults at once.
+            terminalException ??= exception;
             sampleWaiters.FaultAll(exception);
         }
     }

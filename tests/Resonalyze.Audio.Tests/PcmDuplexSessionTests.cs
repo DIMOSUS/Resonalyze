@@ -74,6 +74,25 @@ public sealed class PcmDuplexSessionTests
         Assert.True(result.Anomalies.HasFlag(AudioCaptureAnomalies.CaptureDiscontinuity));
     }
 
+    [Fact]
+    public async Task DeviceStopDuringRunSurfacesAsExceptionInsteadOfHanging()
+    {
+        var capture = new PushCaptureDevice(new WaveFormat(48_000, 16, 2));
+        // Push fewer frames than the run needs, then stop the capture device — the
+        // sweep sample wait must fault, not block until an Abort.
+        var playback = new PushPlaybackDevice(capture, pushFrames: 10)
+        {
+            StopCaptureOnStart = new IOException("Capture device removed mid-sweep.")
+        };
+        await using var session = new PcmDuplexSession(
+            capture, playback, Signal(), new AudioCaptureRouting(0, 1),
+            expectedCaptureSamples: 4096, backendName: "TestBackend", requestedBufferMilliseconds: 100);
+
+        IOException exception = await Assert.ThrowsAsync<IOException>(() =>
+            session.PlayAndCaptureAsync(captureTailSamples: 0, CancellationToken.None));
+        Assert.Equal("Capture device removed mid-sweep.", exception.Message);
+    }
+
     // A capture device that emits one startup frame (to release the first-buffer
     // wait) and then, when the playback device "plays", the frames that satisfy
     // the sample wait.
@@ -82,7 +101,10 @@ public sealed class PcmDuplexSessionTests
         public PushCaptureDevice(WaveFormat format) => CaptureFormat = format;
 
         public event EventHandler<AudioCaptureDataEventArgs>? DataAvailable;
-        public event EventHandler<AudioDeviceStoppedEventArgs>? Stopped { add { } remove { } }
+        public event EventHandler<AudioDeviceStoppedEventArgs>? Stopped;
+
+        public void StopWithError(Exception exception) =>
+            Stopped?.Invoke(this, new AudioDeviceStoppedEventArgs(exception));
 
         public WaveFormat CaptureFormat { get; }
         public int ChannelCount => CaptureFormat.Channels;
@@ -135,6 +157,7 @@ public sealed class PcmDuplexSessionTests
         public int StartCount { get; private set; }
         public bool SawDifferentSource { get; private set; }
         public bool BumpDiscontinuityOnStart { get; init; }
+        public Exception? StopCaptureOnStart { get; init; }
 
         public string EndpointId => "render-endpoint";
         public long RenderCallbacks => 1;
@@ -156,6 +179,11 @@ public sealed class PcmDuplexSessionTests
                 capture.Discontinuities++;
             }
             capture.Push(pushFrames);
+            // Simulate the capture device dying while playback is running.
+            if (StopCaptureOnStart != null)
+            {
+                capture.StopWithError(StopCaptureOnStart);
+            }
             return Task.CompletedTask;
         }
 

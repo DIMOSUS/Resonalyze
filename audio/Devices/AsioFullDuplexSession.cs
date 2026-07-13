@@ -19,6 +19,10 @@ internal sealed class AsioFullDuplexSession : IDisposable
     private int expectedTotalSamples;
     private TaskCompletionSource<bool>? firstBufferReady;
     private TaskCompletionSource<bool>? playbackStopped;
+    // Remembered so a sample waiter registered after the driver stopped (e.g. a
+    // later averaged run) faults immediately instead of hanging. Cleared only by
+    // a real StartAsync, never by ResetCapture/PauseCapture between runs.
+    private Exception? terminalException;
     private bool disposed;
 
     public event Action<float[]>? SequenceReady;
@@ -71,6 +75,12 @@ internal sealed class AsioFullDuplexSession : IDisposable
         this.expectedTotalSamples = expectedTotalSamples;
         StopAndDisposeDriver();
         ResetBuffers();
+        lock (sync)
+        {
+            // A real (re)start clears any remembered terminal failure; ResetCapture
+            // between averaged runs deliberately does not.
+            terminalException = null;
+        }
 
         firstBufferReady = NewSignal();
         playbackStopped = NewSignal();
@@ -165,6 +175,13 @@ internal sealed class AsioFullDuplexSession : IDisposable
             if (ReadSamples >= sampleCount)
             {
                 return Task.CompletedTask;
+            }
+            // The samples are not all here and a stopped driver will deliver
+            // neither more of them nor a fresh stop event: fault immediately
+            // rather than register a waiter that only an Abort could complete.
+            if (terminalException != null)
+            {
+                return Task.FromException(terminalException);
             }
 
             return sampleWaiters.Add(sampleCount, cancellationToken);
@@ -331,12 +348,15 @@ internal sealed class AsioFullDuplexSession : IDisposable
 
         // No more samples are coming: a waiter blocked on a sample count the
         // stopped driver will never deliver used to hang until a manual Abort.
+        Exception failure = args.Exception ??
+            new InvalidOperationException(
+                "ASIO playback stopped before the requested samples arrived.");
         lock (sync)
         {
-            sampleWaiters.FaultAll(
-                args.Exception ??
-                new InvalidOperationException(
-                    "ASIO playback stopped before the requested samples arrived."));
+            // Remember the failure so a waiter registered by a later run faults
+            // at once instead of hanging.
+            terminalException ??= failure;
+            sampleWaiters.FaultAll(failure);
         }
     }
 

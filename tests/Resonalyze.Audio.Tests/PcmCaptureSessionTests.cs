@@ -93,6 +93,61 @@ public sealed class PcmCaptureSessionTests
     }
 
     [Fact]
+    public async Task StopBeforeSampleWaiterFaultsTheLaterWaitImmediately()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        await using var session = new PcmCaptureSession(device);
+        Task start = session.StartAsync(CancellationToken.None);
+        device.Push([0, 0]);
+        await start;
+
+        // The device dies while playback is still running — before the sweep's
+        // sample waiter is ever created.
+        device.StopWithError(new IOException("Device unplugged."));
+
+        // Registering the waiter now must fault at once, not hang until Abort.
+        IOException exception = await Assert.ThrowsAsync<IOException>(() =>
+            session.WaitForSamplesAsync(1000, CancellationToken.None));
+        Assert.Equal("Device unplugged.", exception.Message);
+    }
+
+    [Fact]
+    public async Task TerminalFailureSurvivesResetBetweenRuns()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        await using var session = new PcmCaptureSession(device);
+        Task start = session.StartAsync(CancellationToken.None);
+        device.Push([0, 0]);
+        await start;
+        device.StopWithError(new IOException("Device unplugged."));
+
+        // A Reset for the next averaged run must not forget the failure.
+        session.Reset();
+
+        await Assert.ThrowsAsync<IOException>(() =>
+            session.WaitForSamplesAsync(1000, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RealRestartClearsTerminalFailure()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        await using var session = new PcmCaptureSession(device);
+        Task start = session.StartAsync(CancellationToken.None);
+        device.Push([0, 0]);
+        await start;
+        device.StopWithError(new IOException("Device unplugged."));
+
+        // A genuine restart (not a between-runs Reset) resumes normally.
+        Task restart = session.StartAsync(CancellationToken.None);
+        device.Push([0x01, 0x00, 0x02, 0x00]);
+        await restart;
+
+        await session.WaitForSamplesAsync(2, CancellationToken.None);
+        Assert.Equal(2, session.ReadSamples);
+    }
+
+    [Fact]
     public async Task PacketFlagsAreCountedAndDiscontinuityIsPublished()
     {
         var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));

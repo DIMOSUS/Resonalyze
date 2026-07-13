@@ -859,7 +859,11 @@ public static class AutoAlignmentEngine
         // follows) rather than the full intersection. Unmeasurable (silent
         // band, low SNR) falls back to null and the search keeps its own-side
         // anchor.
-        double? CrossSideTargetMs(
+        // Returns the delay that Δ-aligns the right channel to its left
+        // counterpart, and whether the target is COARSE (the energy-peak rung
+        // of the ladder, good to a fraction of a millisecond) — a coarse
+        // target may pin a lobe but never the tight scene tolerance.
+        (double TargetMs, bool Coarse)? CrossSideTargetMs(
             IAlignmentChannel rightChannel,
             StereoPairLink link,
             double bandLowHz,
@@ -871,10 +875,12 @@ public static class AutoAlignmentEngine
                 new Dictionary<IAlignmentChannel, AlignmentOverride>(alignment);
             searchAlignment.Remove(rightChannel);
             IReadOnlyList<AlignmentSnapshot> current = reprocess(searchAlignment);
-            Complex[] leftIr =
-                current.First(item => item.Channel == link.Left).ImpulseResponse;
-            Complex[] rightIr =
-                current.First(item => item.Channel == rightChannel).ImpulseResponse;
+            AlignmentSnapshot leftSnapshot =
+                current.First(item => item.Channel == link.Left);
+            AlignmentSnapshot rightSnapshot =
+                current.First(item => item.Channel == rightChannel);
+            Complex[] leftIr = leftSnapshot.ImpulseResponse;
+            Complex[] rightIr = rightSnapshot.ImpulseResponse;
 
             // Both sides measured in one band, with a modal-latch guard: the
             // Latched flag separates "one side timed the wrong feature" (worth
@@ -959,28 +965,53 @@ public static class AutoAlignmentEngine
             // keeps its own-side junction anchor.
             double usedLowHz = bandLowHz;
             double usedHighHz = bandHighHz;
+            bool anyLatch;
             ((TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
                 Reads, bool Latched) measured =
                 MeasureConsistent(bandLowHz, bandHighHz);
+            anyLatch = measured.Latched;
             if (measured.Reads == null && measured.Latched &&
                 (fallbackLowHz != bandLowHz || fallbackHighHz != bandHighHz))
             {
                 measured = MeasureConsistent(fallbackLowHz, fallbackHighHz);
+                anyLatch |= measured.Latched;
                 if (measured.Reads != null)
                 {
                     usedLowHz = fallbackLowHz;
                     usedHighHz = fallbackHighHz;
                 }
-                else if (measured.Latched)
-                {
-                    log.AppendLine(
-                        $"  cross-side prior {rightChannel.Name}: withdrawn — " +
-                        "no band reads both sides' direct arrivals consistently");
-                }
             }
             if (measured.Reads is not { } arrivals)
             {
-                return null;
+                if (!anyLatch)
+                {
+                    // The link band itself was inadmissible (silent or too
+                    // narrow): no target, exactly as before the ladder.
+                    return null;
+                }
+
+                // The ladder's last rung: when no band reads both DIRECT rises
+                // consistently, the pair is timed by its processed IRs' energy
+                // peaks. For a band-passed channel that peak IS its in-band
+                // dominant packet (typically the modal build-up) — the same
+                // physical feature on both sides of one cabin, defined without
+                // any detector threshold. Its L/R difference tracks the true
+                // path split to a fraction of a millisecond — coarse against
+                // the tight scene pin, but the lobe lock only needs the target
+                // within half a junction period.
+                double leftPeakMs = leftSnapshot.PeakIndex
+                    * 1_000.0 / link.Left.SampleRate;
+                double rightPeakMs = rightSnapshot.PeakIndex
+                    * 1_000.0 / rightChannel.SampleRate;
+                double peakTarget = leftPeakMs
+                    - plan.SceneOffsetMs
+                    - rightPeakMs;
+                log.AppendLine(
+                    $"  cross-side prior {rightChannel.Name}: target " +
+                    $"{peakTarget:0.000} ms from the processed IR energy peaks " +
+                    $"(L {leftPeakMs:0.000}, raw R {rightPeakMs:0.000} ms — " +
+                    "both sides' direct reads modal-latched)");
+                return (peakTarget, true);
             }
 
             double target = arrivals.Left.FirstArrivalDelayMilliseconds
@@ -991,7 +1022,7 @@ public static class AutoAlignmentEngine
                 $"(L arrival {arrivals.Left.FirstArrivalDelayMilliseconds:0.000}, " +
                 $"raw R {arrivals.Right.FirstArrivalDelayMilliseconds:0.000} ms " +
                 $"in {usedLowHz:0}-{usedHighHz:0} Hz)");
-            return target;
+            return (target, false);
         }
 
         void AlignRight(int index, int neighborIndex, AlignmentJunction pair)
@@ -1035,7 +1066,7 @@ public static class AutoAlignmentEngine
             StereoPairLink? channelLink = plan.PairLinks?.FirstOrDefault(
                 item => item.Right == channel);
             bool lockable = channelLink != null && IsSceneLockable(channelLink);
-            double? crossTarget = channelLink == null
+            (double TargetMs, bool Coarse)? cross = channelLink == null
                 ? null
                 : CrossSideTargetMs(
                     channel,
@@ -1046,9 +1077,10 @@ public static class AutoAlignmentEngine
                     channelLink.BandHighHz,
                     pair.BandLowHz,
                     pair.BandHighHz);
-            double? sceneLock = crossTarget == null
+            double? crossTarget = cross?.TargetMs;
+            double? sceneLock = cross is not { } resolved
                 ? null
-                : lockable
+                : lockable && !resolved.Coarse
                     ? SceneLockToleranceMs
                     : 500.0 / Math.Max(
                         pair.CrossoverHz,

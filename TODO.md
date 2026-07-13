@@ -1,17 +1,41 @@
-# TODO — tech debt from the full code review
+# TODO — tech debt from the code reviews
 
-Items found during the two review passes (PR #1, PR #2) that were deliberately
-reported instead of fixed. Grouped by area, highest-value items marked ★.
+Open items found during the review passes that were deliberately reported
+instead of fixed. Completed items were removed (they live in git history);
+the residual Windows live-checks they left behind are consolidated below.
+Grouped by area, highest-value items marked ★.
+
+## Windows live-checks pending (verification of already-merged DSP work)
+
+The DSP side of these is done and unit-tested on CI; each needs a hands-on
+check in the running app (`source/` is `net10.0-windows`, not buildable on the
+Linux dev env where the work was done).
+
+- [ ] **GCC-PHAT alignment confidence line** renders in the Time Alignment
+  panel ("Alignment: NN% (GCC-PHAT / envelope fallback)"); re-eyeball the fixed
+  0.2 PHAT trust gate on real captures (coherence weighting shifts the peak).
+- [ ] **Butterworth auto-delay polarity**: re-run the user's tune and confirm no
+  channel is inverted on one side of a pair alone.
+- [ ] **Honest dBr/dBc axis + tracker labels** (FR plot title, distortion tracker
+  text) render correctly.
+- [ ] **HD curves at 1/12 smoothing** look right (were over-smoothed); the grey
+  **Noise-floor trace** + legend renders; **harmonic-overlap warning text**
+  renders next to the plot.
+- [ ] **Auto crossover wizard** on a real swept measurement: slope-deviation
+  penalty, tweeter resonance floor, distortion-aware bounds (dirty-low tweeter
+  held above the floor, clean one still at the class floor), coherence-gated
+  band read, and the async Apply path (freeze-during-ranking). Re-eyeball
+  `AchievabilityWeight = 0.5` if field ranking disagrees.
+- [ ] **Virtual DSP load lock**: the disable/"Loading previous session…" note
+  appears immediately on open/import and controls re-enable exactly when curves
+  land.
+- [ ] **Target-curve gains dialog** ("Sub level over mid/treble" field): layout,
+  lazy default fill, freeze-during-ranking.
+- [ ] **Sweep run-quality retry flow** ("Retrying x/y", per-run reject modal,
+  all-runs-failed path) on real hardware.
 
 ## DSP library (`dsp/`)
 
-- [x] **`CalibrationFile` does filesystem I/O in the dsp layer** — done.
-  Added `CalibrationFile.Parse(text, sourceName?)`, a pure parser matching the
-  EQ formats' "parser accepts text" shape; the shared `ParseText` does all line
-  parsing/sorting and the `CalibrationFile(string file)` constructor stays a
-  thin I/O wrapper (`LoadFromFile` owns the two filesystem `LoadError`
-  messages), so every caller is untouched and the content-error message is
-  unchanged. Tests can now parse from text without temp files.
 - [ ] **`EqAutoTuner` greedy fit has no polish pass.** Band gain is fixed from
   the residual at the peak before Q is chosen (no joint gain/Q optimization),
   there is no final coordinate-descent pass (`CrossoverAutoSetup` already has
@@ -19,226 +43,52 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
 - [ ] **`CrossoverAutoSetup.Optimizer.Score()` recomputes every channel** on
   each junction/gain trial (~300–1500 calls per junction). Filter magnitudes
   are cached, but the amplitudes of untouched channels are not.
-- [ ] **Duplication (partly resolved, partly deliberate):** the coherence
-  formula no longer lives twice — `TransferFunction.ComputeAveragedRelativeIr`
-  now calls `SpectrumAnalysis.ComputeCoherence`. The unused
-  `SweepAnalysis.DeconvolveWithInverseFilter(float, double)` overload was
-  removed; the remaining two share the single `ToDoubles` converter.
-  **Kept by design:** `DspChannelChain.Response` looks like a re-implementation
-  of `PreparedDspResponse` but is the independent per-frequency reference the
-  DSP tests use as an oracle (`PreparedDspResponse_MatchesDspChannelChainResponse`,
-  `ApplyChain_MatchesReference`) — merging it would make those checks tautological.
-  The single-frame `TransferFunction.ComputeRelativeIr` is unused in production
-  but shares all its internals with the averaged path (no code is duplicated) and
-  is the directly-tested single-frame H1 primitive with a `filter` parameter, so
-  it stays as a tested entry point.
-- [x] **`FrequencyResponseOptions` is a grab-bag** — done. The ten `Show*`
-  visibility flags were moved off the DSP `FrequencyResponseOptions` into a new
-  source-side `CurveVisibilityOptions` (one per mode). `DataHelper.GetSpectrum`
-  now takes an explicit `SpectrumCurves` flags enum instead of reading `Show*`;
-  `PlotModelFactory` reads the phase/GD/coherence flags from the visibility
-  object. The persisted settings DTO keeps its own `Show*` block, so the on-disk
-  YAML is unchanged (no migration). Coverage was extended so the move is
-  CI-verifiable: a dsp `SpectrumCurves`→curves test, a `ToSpectrumCurves()`
-  translation test, and PlotModelFactory flag-gating tests.
-- [x] **`DataHelper` is a ~1160-line god-object** — done (move-only). Split
-  into a `partial` static class across `DataHelper.cs` (core: dB conversion,
-  `ExtractWindow`, the option types), `DataHelper.Spectrum.cs`,
-  `DataHelper.Phase.cs` (phase + group delay), `DataHelper.Impulse.cs`
-  (impulse + autocorrelation) and `DataHelper.Resampling.cs`. Verified
-  byte-identical: the sorted non-blank member lines of the union equal the
-  original exactly, and the 287 dsp tests pass untouched.
-- [x] **Undocumented magic numbers in harmonic analysis** (`DataHelper`) —
-  done. Named and documented: `HarmonicWindowUpperGuard`/`HarmonicWindowLowerReach`
-  (the `h+0.03`/`h−0.5` isolation window), `ThdWindowUpperHarmonic`/
-  `ThdWindowLowerHarmonic` (`5.5…1.5`) and `HarmonicSmoothingWidthFactor` (the
-  `2×` smoothing width harmonic/THD curves use over the primary). No behavior
-  change.
-
-- [x] **DSP test-coverage quality pass** — done. An audit of the dsp suite (real
-  cobertura line/branch numbers plus a per-module adversarial review of test
-  *meaningfulness*, not just presence) found one entirely-untested module and a
-  systemic "constant-input" smell (resampler, calibration, HD/THD isolation
-  exercised only on flat data, so the interesting math ran but was never pinned).
-  Closed with ~60 new tests, all cross-platform and CI-verifiable:
-  `WaterfallAnalysis` (was 0%: Morlet localisation/decay, frequency-grid geometry,
-  resample dB/floor); the degrees-domain phase API (`GetPhase`/`GetMinimumPhase`/
-  `GetExcessPhase`/`EstimatePhaseDetrend`); `LogarithmicResample`/`CalibrationFile`
-  known-answer tests on *non-constant* data; `DspMath.LanczosKernel`; window
-  coefficients; the `SignalEnvelope` SNR gate; `TransferFunction` coherence<1 and
-  the PHAT degenerate guard; the `AutoAlignmentEngine` downward walk;
-  `PeakingBiquad` digital-vs-analog off-centre; `CrossoverAutoSetup` Midbass;
-  `VirtualCrossover` degenerate window + loss diagnostics; `EqAutoTuner` NaN mask /
-  clamp / Q fallback; and MiniDSP/GraphicEQ/EasyEffects/Calibration numeric
-  payloads. Overall dsp line coverage 89% → 95%, branch 83% → 89%.
-  **Deliberate residuals (not shipped as tests, would have asserted unreachable or
-  tautological behaviour):**
-  - `TimeAlignmentAnalysis.ToSignedDelaySamples` subtraction branch: the peak
-    search is capped at `length/2`, so a detected arrival never lands above the
-    wrap pivot through the public `Analyze`. Only the pivot and comparison
-    direction are pinned (a no-op test); the negative-arrival arithmetic is not
-    reachable at the API boundary.
-  - `FindBandLimitedCorrelationDelay` collapse fallback (`highHz <= lowHz`): only
-    reachable when `centerFrequencyHz > Nyquist`, which the app never passes, and
-    the fallback does not actually reorder the band when `lowHz > 0.95·Nyquist`.
-    Latent robustness gap, not a live bug; the reachable Nyquist clamp is tested.
-  - `SearchAlignmentCandidatesByLoss` exact 1/f-weighted `LossDb`/`DipDb` values:
-    a byte-exact known-answer would have to re-derive the 1/6-octave-smoothed
-    log-weighted kernel (brittle). Covered instead by a relative test (aligned ~0
-    vs offset cancellation) that pins the diagnostics as non-vacuous.
-
-- [x] **GCC-PHAT coherence weighting + alignment confidence** — done. The
-  time-alignment refinement whitened every in-band bin to unit magnitude, giving a
-  noisy/low-SNR bin exactly as much say in the sub-sample delay as a clean one (the
-  classic PHAT weakness). It now folds the measured γ² (already computed by
-  `ComputeAveragedRelativeIr`, previously unused here) into the whitening: each bin
-  is scaled by a floored-linear weight `1 − (1−0.25)·(1−γ²)`, so bins whose phase
-  does not repeat across averages carry ≤ their share while every in-band bin keeps
-  ≥ 25% of its weight (bandwidth preserved — no spectral hole to ring back as side
-  lobes). Design + invariants were run through a multi-agent design panel and
-  adversarial verification; the two load-bearing invariants were also re-proved by
-  hand: (1) the complement form makes flat/unit γ² a **bit-exact** no-op for any
-  floor, and null/wrong-length γ² is ignored, so every existing caller and all 356
-  prior dsp tests stay green; (2) γ² is folded to both Hermitian halves identically,
-  keeping the whitened spectrum conjugate-symmetric (real IFFT). Also surfaced the
-  refinement's own trust: `TimeAlignmentAnalysisResult` now carries per-arrival
-  `…Confidence` ([0,1] PHAT peak height) + `…RefinedByPhat`, shown in the panel as an
-  "Alignment: NN% (GCC-PHAT / envelope fallback)" line. 9 new cross-platform dsp
-  tests (no-op bit-identical, flat-non-unity invariance, length-mismatch degrade,
-  Hermitian/real guard, corrupted-band improvement, distortion caveat, confidence);
-  365 dsp tests green.
-  **Honest limitations (documented, not hidden):**
-  - Coherence weighting suppresses only non-repeatable content. Repeatable harmonic
-    distortion reports γ²≈1 and is **not** suppressed — pinned by a caveat test.
-  - The weight shifts the absolute PHAT peak correlation slightly (usually up, as
-    noise bins are demoted), so the fixed 0.2 trust gate should be re-eyeballed on
-    real captures; a fully low-coherence capture legitimately drops below it and
-    falls back to the envelope parabola (acceptable).
-  - The strict `Count == fftLength/2+1` gate rejects wrong-length arrays but cannot
-    detect a same-length *stale* γ²; the contract (γ² must come from the same
-    transfer FFT as the IR) is documented on the API.
-  - **App wiring is unbuilt on this Linux env** (`source/` is `net10.0-windows`):
-    the `TimeAlignmentPanelController` plumbing (source record + two `Analyze`
-    calls + the confidence line) is mechanical and verified against real signatures,
-    but needs a Windows build + a live sanity check of the new "Alignment:" line.
 
 ## Virtual DSP / Time Alignment
 
 - [✗] **Phase-slope (residual group delay) as an Auto delay score prior —
-  REFUTED on the user's real measurements** (probed 2026-07-10, five junctions
-  of the left 4-way + right mid/twr from `assets/test_data`). The idea:
-  penalize candidates whose inter-channel phase slope across the pair band is
-  non-flat, since a lobe impostor differs by exactly one period of residual
-  delay. The probe measured the flat-slope delay per junction (wrap-safe
-  adjacent-bin phase increments of the gated cross-spectrum, two weightings —
-  both agree) and compared it with the summation winner and the user's manual
-  tune. Result: at the true alignment the inter-channel phase slope is NOT
-  flat — it carries the honest group-delay difference of drivers plus
-  non-matched crossover filters, and that reaches a FULL period at real
-  junctions: left woof/mid true lobe sits 1.02 T from the flat-slope point;
-  right mid/twr (the gapped BW24 LP 1300 / HP 1800 junction) true lobe sits
-  1.82 T away while the flat-slope point lands on the old field-failure
-  answer (~mid +2.0 ms) — flat phase slope is mathematically the GCC-PHAT
-  peak, so this prior would re-trust exactly the PHAT lobe position the
-  `PhatSeedMinDominance` gate was added to distrust. Any weight strong enough
-  to separate lobes (≥0.5 dB/T) flips the right mid/twr winner to a wrong
-  inverted candidate. Do not implement as a score term; at most surface the
-  per-candidate residual GD as a log diagnostic. Side finding, positive: on
-  every junction with a known manual reference the current score+selection
-  already reproduces the user's tune (mid/twr left −0.154 vs manual −0.16 ms;
-  woof/mid left 3.878 vs manual 3.84 — via the normal-polarity margin, which
-  won by only 0.02 dB there, see next item; right mid/twr −0.635 vs manual
-  ~0.68 on the mid side).
-  **Follow-up (same day, after the scene-preserving co-move shifted the D
-  pair −0.52 ms):** re-probed at the final cascade state, asking whether the
-  flat-slope point now agrees with the validated tune. It does not — the
-  verdict got stronger: the C/D flat-slope residual reads −1.36 T on the left
-  and +1.71 T on the right (B/C: −1.06 / −0.87 T), i.e. the two sides want
-  OPPOSITE corrections (left +0.53 ms, right −1.84 ms), so no scene-preserving
-  pair move can satisfy the slope criterion on both sides even in principle.
-  On the left the loss-optimal co-move went in exactly the opposite direction
-  from the flat-slope point's wish while landing on the user's hand tune. The
-  per-side filter+driver group-delay asymmetry is real and side-asymmetric;
-  the refutation stands.
-- [x] **Asymmetric L/R polarity after auto delay (user report 2026-07-12,
-  Butterworth-triggered):** the stereo cascade decided polarity independently per
-  side (left walk, right walk) plus a bridge sign-match, so a Butterworth crossover —
-  whose drivers meet near 90°, making the first-lobe sign and the sum both ambiguous —
-  let the two sides diverge (e.g. left mid flipped, right tweeter flipped). LR sums
-  in-phase, so it never diverged. Fixed by making polarity a property of the DRIVER,
-  not the side: (1) each right channel below the bridge INHERITS its left counterpart's
-  sign (via `PairLinks`) and searches only the delay — `forcedPolarity` is threaded all
-  the way into `FindAlignmentCandidates`/`SearchAlignmentCandidatesByLoss`, which then
-  seed ONLY that polarity's grid, so every candidate is honestly evaluated for the final
-  sign (delay AND score belong to it). *(Review fix: the first cut instead re-stamped the
-  opposite polarity's winner via `with { InvertPolarity }`, keeping a delay ~half a period
-  off and a borrowed score that could even win the wide-window promotion — corrected, with
-  a regression test asserting the forced winner is the genuine same-sign optimum.)*
-  (2) the bridge NO LONGER decides the top's sign at all — the right top INHERITS the
-  left top's flag, exactly like the lower drivers. **User's absolute rule (2026-07-13):
-  automatic delay must NEVER invert a driver on one side of a pair alone.** The first
-  cut kept a sum-loss "which sign fits better" guess with a margin, but the user's real
-  `head_90_grad` capture proved that unsafe: at the bridge band (1.8-12 kHz) two
-  spatially-separated identical tweeters comb-filter, so normal vs inverted summed within
-  0.15 dB (a near-tie), the fragile first-lobe read disagreed (L Negative / R Positive),
-  and the RIGHT tweeter alone got inverted. So the guess is gone: `InheritBridgePolarity`
-  mirrors the left top's sign onto the right top before the right walk, and a final
-  `EnforcePolaritySymmetry` pass makes every right driver's flag equal its left
-  counterpart's (bridge + every `PairLink`). A genuinely reverse-wired driver is left for
-  a MANUAL flip in the UI — the auto never does it asymmetrically. Reproduced and pinned
-  on the REAL `l twr.json`/`r twr.json` (right tweeter now `invert no`); synthetic tests
-  pin the invariant even with the right mid AND top wired backwards. `MeasureSumLoss`/
-  `EstimatePolarity` are no longer used by the bridge. 509 dsp tests pass. *Windows
-  follow-up:* re-run the user's Butterworth tune and confirm no channel is inverted.
+  REFUTED on real measurements** (2026-07-10, do not re-propose). At the true
+  alignment the inter-channel phase slope is NOT flat — it carries the honest
+  driver + non-matched-filter group-delay difference, which reaches a FULL
+  period at real junctions (left woof/mid true lobe 1.02 T from the flat-slope
+  point; right mid/twr 1.82 T). Flat phase slope is mathematically the GCC-PHAT
+  peak, so this prior would re-trust exactly the lobe `PhatSeedMinDominance`
+  exists to distrust; any weight strong enough to separate lobes (≥0.5 dB/T)
+  flips the right mid/twr winner to a wrong inverted candidate. Re-probed at the
+  final cascade state: the two sides want OPPOSITE corrections (left +0.53,
+  right −1.84 ms), so no scene-preserving pair move satisfies it on both sides.
+  At most surface the per-candidate residual GD as a log diagnostic.
 - [ ] **Stereo scene diagnostics (Δ per band)**: the stereo Auto delay cascade
-  (left walk → arrival bridge with the scene offset → right descent) is in;
-  the complementary *verification* layer is not — per-band L−R arrival
-  differences of the FINAL tune, compared across bands (probe showed 0.06 ms
-  repeatability on real measurements), with a warning when a band's Δ walks
-  off the top pair's by a sizable fraction of its junction period (a period
-  slip that survived the per-side sum optimization), and optionally a
-  candidate-list re-pick to fix it for free. Also: L/R polarity consistency
-  per band.
-- [ ] **`SceneLockToleranceMs = 0.05` is aggressive for pairs whose
-  localizable band is narrow and low** (e.g. reaching only ~300–400 Hz):
-  the band passes the minimum-width admission, but the temporal certainty of
-  such a narrow-band envelope arrival is typically worse than 0.05 ms, so the
-  lock can pin the channel inside the measurement noise. Acceptable today
-  thanks to the guards around it — the minimum lock-band width, the SNR gate,
-  the lock refusing an invalid arrival, and the scene-preserving co-move that
-  recovers junction quality afterwards — but non-blocking risk, recorded
-  2026-07-10. Follow-up: make the tolerance a function of the lock band's
-  width/center (roughly: a fraction of the band-center period, floored at
-  0.05 ms), or of an explicit arrival-uncertainty estimate (envelope rise
-  time / FirstArrivalProminence), so a wide tweeter band keeps the tight pin
-  while a barely-localizable pair gets an honest slack.
-- [x] **Stereo level (ILD) read-out next to Δ** — done: the metric block
-  gained a "Level Δ L−R (dB)" row per pair (`MeasureBandLevelDb`: gated,
-  log-frequency-weighted band level of each processed side; gated by the
-  same per-side arrival reliability; tooltip explains the sign and the
-  single-mic-vs-binaural gap). Deliberately a diagnostic, no auto gain trim.
-  Original note — field-confirmed follow-up
-  (2026-07-10): with the cascade's delays in the car the user reported the
-  scene "dead center" and same-channel drivers indistinguishable by ear, but
-  full centering ALSO needed a manual −3…−4 dB trim of the LEFT mid+tweeter:
-  level steers the image alongside timing. The same asymmetry shows in the
-  measurements — gated band level L−R of the final processed sides on
-  `assets/test_data`: mid +1.6 dB (175–1300; +1.2 in 300–1300), twr +0.6 dB,
-  woof +4.3 dB — same sign, smaller magnitude than perceived, as expected:
-  one omni mic at the head position sees no head shadow, so the effective
-  binaural ILD is larger than the measured single-point figure. Feature: a
-  per-pair L−R level column in the metric block (measured in the pair's
-  shared band, same gate as the sum loss) as a *diagnostic* — do NOT auto-trim
-  gains from it (it under-corrects vs binaural perception and taste); at most
-  a gentle hint when the localization-band level asymmetry exceeds ~2 dB.
-- [ ] **`AlignmentSelection` normal-polarity margin near-miss on real data**:
-  at the user's left woof/mid junction the inverted impostor out-scores the
-  true normal candidate by 0.23 dB — the 0.25 dB
-  `DefaultInvertPreferenceMarginDb` saves the pick by just 0.02 dB. One noisier
-  measurement could flip it. Worth revisiting with more field measurements
-  (margin as a function of junction frequency / band coherence, or an
-  independent polarity witness such as `EstimatePolarity` on the band-passed
-  arrivals) before touching the constant.
+  is in; the complementary *verification* layer is not — per-band L−R arrival
+  differences of the FINAL tune, compared across bands (0.06 ms repeatability on
+  real measurements), with a warning when a band's Δ walks off the top pair's by
+  a sizable fraction of its junction period (a period slip that survived the
+  per-side sum optimization), and optionally a candidate-list re-pick to fix it
+  for free. Also: L/R polarity consistency per band.
+- [ ] **`SceneLockToleranceMs = 0.05` is aggressive for pairs whose localizable
+  band is narrow and low** (e.g. reaching only ~300–400 Hz): the band passes the
+  minimum-width admission, but the temporal certainty of such a narrow-band
+  envelope arrival is typically worse than 0.05 ms, so the lock can pin the
+  channel inside the measurement noise. Acceptable today thanks to the guards
+  around it (minimum lock-band width, SNR gate, invalid-arrival refusal, the
+  scene-preserving co-move). Follow-up: make the tolerance a function of the lock
+  band's width/center (a fraction of the band-center period, floored at
+  0.05 ms), or of an arrival-uncertainty estimate (envelope rise time /
+  FirstArrivalProminence), so a wide tweeter band keeps the tight pin while a
+  barely-localizable pair gets honest slack.
+- [ ] **`AlignmentSelection` polarity margin as a model, not a constant.** The
+  invert-preference margin was raised 0.25 → 0.5 dB in the #32 work (a real
+  left woof/mid junction had the inverted impostor out-scoring the true normal
+  candidate by 0.23 dB — the old 0.25 saved it by 0.02). The broader fix stands:
+  make the margin a function of junction frequency / band coherence, or add an
+  independent polarity witness (`EstimatePolarity` on the band-passed arrivals).
+- [ ] **Promotion / latch constants are field-anchored, not modelled.**
+  `WideWindowPromotionMarginDb` (1.6), `PromotionReachPeriods` (2.5) and
+  `MaxInterSideDirectPathMs` (8) in `AutoAlignmentEngine.cs` are set between a
+  handful of field observations with thin headroom (the false-hop 1.46 dB vs
+  genuine-recovery 1.87 dB split has only ~0.2 dB either side). Minimum: log a
+  diagnostic when a junction lands in the gray zone (currently it silently
+  picks). Better: derive the threshold from comb statistics of the junction.
 - [ ] **Time Alignment analysis is not cached** — `RefreshAnalysis`
   (`TimeAlignmentPanelController`) recomputes Hilbert + GCC-PHAT on every tab
   show even when inputs are unchanged. Needs a live-app check to avoid stale
@@ -247,41 +97,41 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   (`VirtualCrossoverAutoSetupDialog`): extra channel rows use hardcoded pixel
   offsets (`RowTop = 42`, `RowStep = 28`), so rows 4–8 can overlap scaled
   designer controls. Verify on Windows and switch to layout-panel positioning.
-- [x] **The project-file `.backup` rename is silent** — done.
-  `LoadOrDefault` now surfaces the created backup path through
-  `BackupNoticePath`, and the Virtual DSP panel shows a one-time notice telling
-  the user their unreadable session was moved aside and a `.backup` exists to
-  recover from.
+- [ ] **Uniform-sample-rate assumption in the Virtual DSP plots.**
+  `DrawImpulseCurves`/`DrawPhaseCurves`/`DrawMagnitudeCurves` take
+  `processed[0].SampleRate` for every trace, while `CrossSideTargetMs` already
+  uses per-channel `SampleRate` — so mixed rates in one project are possible.
+  Either enforce a single rate or map each trace by its own.
 - [~] **`VirtualCrossoverPanel` (~2.6k lines) — correctness kernels extracted;
-  a cosmetic partial-split was deliberately rejected.** A move-only partial
-  split would not reduce coupling — it just spreads the God-object across files.
-  Instead the genuinely non-UI, correctness-critical logic was pulled out into
-  tested units: `VirtualCrossoverSourceRules` (the source-compatibility decision,
-  previously hand-rolled as two inverse predicates that could drift),
-  `VirtualCrossoverAnalysis.SumLossCurve` (the one per-point sum-loss definition
-  now shared by the drawn curve, `AverageSumLossDb` and `MinimumSumLossDb` — the
-  drawn "Sum loss" curve had reimplemented the tested formula on an untested
-  path), `PreparedDspResponse.GroupDelayMs` (a pure τ_g routine that lived in the
-  panel), and the band arithmetic (`GetCrossoverWindow`/`BandCenterHz`/
-  `OverlapBand`) into `VirtualCrossoverJunctions`. All are unit-tested (dsp on
-  Linux, junction/source rules on Windows CI). The panel remains a large
-  view-controller by nature (~60-70% is irreducible WinForms/OxyPlot wiring);
-  deeper extractions (decouple `ChannelRuntime` from its control, then the
-  process/alignment cores) are deferred to a Windows session where the
-  interactive paths can be exercised.
-- [ ] **`DelayTableText` parses rendered fixed-width columns** (18/37 chars)
-  for copy-values instead of holding a value model (format+parse are at least
-  co-located and tested now). *Deferred:* the current form is clean and tested;
-  a value model would push the change into the panel's click-position→cell
-  mapping, which is UI interaction best verified on Windows, for low payoff.
+  deeper decoupling deferred.** The non-UI, correctness-critical logic is pulled
+  into tested units (`VirtualCrossoverSourceRules`,
+  `VirtualCrossoverAnalysis.SumLossCurve`, `PreparedDspResponse.GroupDelayMs`,
+  `VirtualCrossoverJunctions`). The panel stays a large view-controller by nature
+  (~60-70% irreducible WinForms/OxyPlot wiring); deeper extractions (decouple
+  `ChannelRuntime` from its control, then the process/alignment cores) are
+  deferred to a Windows session where the interactive paths can be exercised.
+- [ ] **`DelayTableText` parses rendered fixed-width columns** (18/37 chars) for
+  copy-values instead of holding a value model (format+parse are co-located and
+  tested). Deferred: a value model pushes the change into the panel's
+  click-position→cell mapping, best verified on Windows, for low payoff.
+- [ ] **PDF images still go through temp files.** The shared `PdfSheet` helper
+  centralised the temp-file dance, but MigraDoc 6 supports
+  `AddImage("base64:...")`, which would remove it (needs a Windows render check
+  that the sheets stay pixel-identical).
 
 ## Measurement orchestrators
 
 - [ ] **Verify the reused ASIO session on hardware.** Averaged sweeps now keep
   one open ASIO session across runs (the driver plays silence between runs and
   only the capture accumulator restarts). Verified by construction only — run
-  an averaged ASIO measurement on real hardware (ideally with a slow driver)
-  before relying on it.
+  an averaged ASIO measurement on real hardware (ideally a slow driver) first.
+- [ ] **Sweep-run quality: unambiguous checks only, by decision.** The
+  statistical outlier layer (peak-delay vs median, IR correlation vs a reference
+  run) and the run pre-alignment rework were **rejected by the user
+  (2026-07-11), do not resurrect** — the unambiguous checks (clipping / silent /
+  undersized) plus one retry cover the real field failure mode. Cosmetic tails
+  left as-is: the stored raw samples are only the last run's; the Wave RMS meter
+  integrates the lead-in/tail silence.
 
 ## Options panels
 
@@ -290,738 +140,194 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   device is selected again), but applying while a mono/missing device is
   selected persists "None"; after a restart there is nothing to restore. Would
   need the preferred offset persisted separately from the effective one.
-- [ ] **ASIO driver opened twice when the measurement panel opens.**
-  `Init` runs `RefreshSampleRateOptions` and `RefreshAsioDriverInfo`, each of
-  which instantiates `AsioOut` (a synchronous COM driver open that can take
-  seconds). Fetch the driver info and supported rates in one open, ideally off
-  the UI thread.
-- [x] **`SetOptions` reads bits from the measurement, not the control** — done.
-  `MeasurementOptions` now reads the bit depth from `numericUpDownBits` (the
-  single UI source of truth, matching `GetSupportedSampleRates`). Behavior is
-  unchanged while the control is read-only; it stops silently ignoring the
-  control the day it becomes editable.
+- [ ] **ASIO driver opened twice when the measurement panel opens.** `Init` runs
+  `RefreshSampleRateOptions` and `RefreshAsioDriverInfo`, each instantiating
+  `AsioOut` (a synchronous COM open that can take seconds). Fetch driver info and
+  supported rates in one open, ideally off the UI thread.
 - [ ] **`TukeyWindowControlHelper` clamps are irreversible.** Shrinking the
-  window length clamps the fade values (semantically required, and visible in
-  the controls), but growing it back does not restore them; a shadow-value
-  restore like the loopback-channel one would make the clamp reversible.
-  *Deferred to a Windows session:* it is a deliberate behavior change with
-  control-value re-entrancy across three panels (FR/Waterfall/BurstDecay) that
-  needs a live render check, not a Linux compile.
+  window length clamps the fade values (semantically required, visible in the
+  controls), but growing it back does not restore them; a shadow-value restore
+  like the loopback-channel one would make the clamp reversible. Deferred to a
+  Windows session: control-value re-entrancy across three panels
+  (FR/Waterfall/BurstDecay) needs a live render check.
 - [ ] **`LiveSpectrumOpt` shadow fields update only on
-  `SelectionChangeCommitted`.** Re-verified: the R reset button raises
-  `SelectionChangeCommitted` too, so no current path loses a change — this is
-  fragility for future programmatic writes, not an active bug. (The three
-  identical floor-index loops are now one shared `FloorIndex` helper; the
-  shadow-on-committed behavior is left as-is by design.)
+  `SelectionChangeCommitted`.** No current path loses a change (the R reset
+  button raises it too) — fragility for future programmatic writes, not an active
+  bug.
 
 ## UI chrome
 
 - [ ] **`ChromeTitleBar` caches the DPI scale once at `Initialize`.** No
   `DpiChanged` handling: moving the window to a monitor with different DPI
-  (PerMonitorV2) leaves the bar height, button widths and tab layout at the
-  old scale. Refresh the cached metrics and re-run layout on DPI change.
-- [ ] **Top-edge resize grip still dead over child controls.** The
-  HTTRANSPARENT fix covers the title-bar panel itself; points over the tab
-  buttons and window buttons (which reach y=0) still hit-test as client.
-  Standard chrome resolves this per child; low value, document or fix later.
-- [x] **`ColorPickerDialog` hue slider repaints its full rainbow per
-  mouse-move** — done. The rainbow (which depends only on size) is cached in a
-  bitmap, rebuilt only on resize and disposed with the slider; the preview panel
-  already sets `DoubleBuffered`.
-
-## PDF export
-
-- [ ] **The PDF images still go through temp files.** The shared `PdfSheet`
-  helper centralised the temp-file dance, but MigraDoc 6 supports
-  `AddImage("base64:...")`, which would remove it entirely (needs a Windows
-  render check that the sheets stay pixel-identical).
-- [x] **No deconvolution flatness test** — done.
-  `SweepDeconvolutionFlatnessTests` regenerates an exponential sine sweep and
-  its inverse filter, deconvolves the unity round-trip, and asserts the in-band
-  magnitude is flat (measured ripple 0.04 dB around a 0.01 dB mean), pinning the
-  `2/N` scaling and the inverse-filter envelope compensation.
+  (PerMonitorV2) leaves the bar height, button widths and tab layout at the old
+  scale. Refresh the cached metrics and re-run layout on DPI change.
+- [ ] **Top-edge resize grip still dead over child controls.** The HTTRANSPARENT
+  fix covers the title-bar panel itself; points over the tab buttons and window
+  buttons (which reach y=0) still hit-test as client. Low value; document or fix
+  later.
 
 ## Audio capture layer
 
-- [ ] **`SoundRecorder` / `AsioFullDuplexSession` remain separate classes.**
-  The waiter registry, stop-timeout machinery, accumulator core and metering
-  math are shared now; what is left duplicated is the thin device glue (the
-  start/first-buffer/stopped signal choreography and the event triple). A full
-  merge would need a common device abstraction — low value until the WASAPI
-  migration below forces one.
+- [ ] **`SoundRecorder` / `AsioFullDuplexSession` remain separate classes.** The
+  waiter registry, stop-timeout, accumulator core and metering math are shared;
+  what is left duplicated is the thin device glue (start/first-buffer/stopped
+  choreography, the event triple). A full merge needs a common device
+  abstraction — low value until the WASAPI migration forces one.
 - [ ] **ASIO converts channels `0..offset+count` instead of a window from
-  `InputChannelOffset`** (`AsioFullDuplexSession`): a mic on input 7 converts
-  all 8 channels per callback. Possibly a NAudio `SetChannelOffset` workaround
-  — needs hardware to verify before changing.
-- [ ] **Wave backend still uses legacy MME** (`WaveInEvent`/`WaveOutEvent`)
-  with hidden mixer resampling and extra latency; migrate to WASAPI
+  `InputChannelOffset`** (`AsioFullDuplexSession`): a mic on input 7 converts all
+  8 channels per callback. Possibly a NAudio `SetChannelOffset` workaround —
+  needs hardware to verify.
+- [ ] **Wave backend still uses legacy MME** (`WaveInEvent`/`WaveOutEvent`) with
+  hidden mixer resampling and extra latency; migrate to WASAPI
   (exclusive/shared) with a device-compatibility pass.
 - [ ] **Synchronous `LevelsAvailable` subscribers can still stall the ASIO
   callback** if a subscriber does a blocking `Invoke` to the UI thread; verify
-  live (the meter itself now coalesces, but the contract isn't enforced).
-- [ ] **`GetSamplesSnapshot` copies the whole buffer under the callback
-  lock**; safe only because it's called after `StopAsync`, which the contract
-  doesn't enforce.
+  live (the meter coalesces, but the contract isn't enforced).
+- [ ] **`GetSamplesSnapshot` copies the whole buffer under the callback lock**;
+  safe only because it's called after `StopAsync`, which the contract doesn't
+  enforce.
+- [ ] **Subscriber exceptions escape into the real-time audio callbacks**
+  (`LevelsAvailable`/`SequenceReady`/… invoked directly from ASIO/Wave
+  callbacks): one throwing UI subscriber can kill the driver. Route through a
+  bounded dispatcher or isolate each subscriber.
 
 ## Overlays
 
 - [ ] **Introduce an `OverlaySlotState` record** to replace the triple
-  field-mapping between overlay, slot file and UI state (the render-path
-  caching and the pure-math extraction from `Overlay.cs` are done; this
-  structural half remains).
+  field-mapping between overlay, slot file and UI state (the render-path caching
+  and the pure-math extraction from `Overlay.cs` are done; this structural half
+  remains).
+- [ ] **Overlay curves are assumed sorted/unique/finite in X**
+  (`CalculateOperation`'s forward-only cursor): normalize imported overlays once
+  (drop non-finite, sort, merge duplicate frequencies).
 
 ## Plotting
 
 - [ ] **`LogarithmicClipAxis` label trim.** Edge tick labels can be trimmed at
-  the plot boundary. Purely visual; needs a Windows render to reproduce before
-  a fix can be verified — deferred with the other live-app checks.
-
-## Custom controls (dark theme)
-
-- [ ] **Per-paint Pen/Brush churn** — verified low value, left as is. Most of
-  the dark-control paint brushes are genuinely state-dependent (Enabled / hover
-  / pressed / focus), so only ~2 constant-palette pens per control could be
-  cached; trading two allocations per (non-hot) repaint for app-lifetime static
-  GDI handles isn't worth it. Revisit only if the palette becomes dynamic.
-- [x] **Tools menu rebuilt on every open** — done. `ChromeTitleBar` builds the
-  Tools drop-down once (the tab actions are fixed at wire-up) and re-shows it;
-  the single menu is disposed with the control.
+  the plot boundary. Purely visual; needs a Windows render to reproduce.
+- [ ] **Waterfall renders nothing silently below 8 slices** (`RawSlices.Count <
+  8` guard in `WaterfallSeries.Render`): corrupted settings or narrow ranges show
+  an empty plot with no explanation. Show a message (or clamp the controls).
+- [ ] **Wavelet time-support validity is not tracked**: at low frequencies the
+  Morlet kernel outlasts the analysis window and the envelope is window-shaped.
+  `Slice.SliceMinValidFrequency` exists but always receives 0 — compute the
+  frequency below which the kernel's support exceeds the window and mark/limit
+  slices there.
 
 ## Shell
 
-- [ ] ★ **`Form1` is still the concurrency hub.** Mutable state on one object
-  is touched by the UI thread, `Task.Run` plot builds and audio-callback
-  events, guarded case by case with ad-hoc flags (`closingInProgress`,
-  `closingPrepared`, `shutdownFastClose`). The first carve-outs are done: the
-  calibration cache + warn-once bookkeeping (`MicrophoneCalibrationService`),
-  the startup warm-up task/cancellation pair (`StartupAudioWarmup`), the
-  settings-save debounce (`DebouncedSaver`), the Compare selection read by
-  plot-build workers (`CompareSelection`), the record-button long-press
-  state machine (`ButtonLongPressBehavior`), the current-measurement/history
-  identity (`MeasurementSessionTracker`) and the per-mode overlay-slot memory
-  (`ActiveOverlaySlotTracker`) own their state now. What remains on Form1 is
-  the lifecycle/close flags (`closingPrepared`, `closingInProgress`,
-  `resourcesDisposed`, `shutdownFastClose`, `updateCheckStarted`) and the
-  transient UI bits (compare menu strip) — inherently form-bound; further
-  slicing is optional polish rather than a concurrency risk.
+- [ ] ★ **`Form1` is still the concurrency hub** (largely mitigated). Mutable
+  state on one object is touched by the UI thread, `Task.Run` plot builds and
+  audio-callback events. The load-bearing carve-outs are done
+  (`MicrophoneCalibrationService`, `StartupAudioWarmup`, `DebouncedSaver`,
+  `CompareSelection`, `ButtonLongPressBehavior`, `MeasurementSessionTracker`,
+  `ActiveOverlaySlotTracker`). What remains on Form1 is the lifecycle/close flags
+  and transient UI bits — inherently form-bound; further slicing is optional
+  polish, not a concurrency risk.
 - [ ] **`WireLiveApply` covers only dialog-open controls.** Controls created
-  after wiring never get live-apply behavior. *Deferred to a Windows session:*
-  the fix hooks `ControlAdded` recursively and re-enters the same apply
-  debounce, so it needs a live check that dynamically-added rows (e.g. the
-  crossover auto-setup channels) apply exactly once.
+  after wiring never get live-apply behavior. Deferred to a Windows session: the
+  fix hooks `ControlAdded` recursively and re-enters the apply debounce, so it
+  needs a live check that dynamically-added rows apply exactly once.
 
-## Update path / installer
+## Measurement / transfer layer
 
-- [ ] **Uninstaller leaves settings behind.** Offer (or document) removal of
-  the settings/history files on uninstall.
+- [ ] **H1 has no excitation mask and an absolute epsilon.** Below the sweep band
+  `Gxy/Gxx` divides noise by noise and the garbage bins ring back through the
+  IFFT; the absolute epsilon's strength also varies with the average count. Fix:
+  relative regularization + a soft excitation taper at the sweep edges. Changes
+  every measured transfer IR — needs validation against fresh raw captures.
 
-## External review tails (verified, deliberately deferred — designed changes, not patches)
+## EQ Wizard
 
-Items from the four external review batches (July 2026, PR #24) whose claims
-were verified against the code but whose fixes need their own design and
-validation. Each entry records the verdict so the claim does not have to be
-re-verified.
-
-### Measurement / transfer layer
-
-- [x] ★ **Dual-device Wave loopback is an untrusted timing reference but
-  produces an indistinguishable `LoopbackTransfer` measurement** — closed
-  radically (2026-07-11): the separate-loopback-device capability was REMOVED
-  outright instead of being annotated. The microphone and loopback are now
-  always channels of ONE input device (Wave stereo or ASIO), so every capture
-  is sample-synchronous by construction and no timing-quality field is needed
-  for this distinction. Deleted: `DualDeviceCapture`,
-  `LoopbackSequencePairer`, `DualDeviceLevelCombiner`, the second recorder in
-  both measurements, `WaveLoopbackDeviceNumber` end-to-end (Init params,
-  settings DTO — old JSON files load fine, the unknown field is ignored and
-  the loopback falls back to the shared device), and the "Wave loopback
-  device" combo in the settings panel. Historical measurements captured with
-  two devices by older versions remain indistinguishable in old files — noted
-  under the provenance item below.
-- [ ] **H1 has no excitation mask and an absolute epsilon.** Below the sweep
-  band `Gxy/Gxx` divides noise by noise and the garbage bins ring back through
-  the IFFT; the absolute epsilon's strength also varies with the average count.
-  Fix: relative regularization + a soft excitation taper at the known sweep
-  edges. Changes every measured transfer IR — needs validation against fresh
-  raw captures (the test-data submodule stores only final IRs).
-
-### Harmonics / THD
-
-- [~] **Honest dBr/dBc axis + tracker labels (user request 2026-07-12, app-side,
-  needs Windows build):** the frequency-response magnitude is the loopback-referenced
-  transfer function (dimensionless gain, relative to the reference) — NOT dBFS, since
-  the deconvolution divides out the absolute level. The harmonic/THD/noise curves are
-  ratios to the fundamental (|Hn|/|H1|). So the two families are relative to DIFFERENT
-  references. The FR plot's dB axis is now titled `dBr/dBc`, and the curve trackers
-  spell the reference out: the primary reads `… dBr (vs reference)`, every distortion
-  curve (HDn / THD / noise floor) reads `… dBc (vs fundamental)`
-  (`PlotModelFactory.DistortionTrackerFormat`). `AddDecibelAxis` took an optional title
-  so the Live Spectrum plot (which mixes the transfer trace with a raw-input RTA, not a
-  dBc quantity) keeps its plain `dB`. *Compile-only under Windows targeting — verify the
-  axis title and tracker text render in the app.*
-- [x] **Harmonic curves were over-smoothed vs HD1 (user report 2026-07-12):** at
-  1/12 the HD2..HDn/THD/noise curves looked blurred across a whole octave beside the
-  fundamental. Two stacked causes: (1) `EssDistortion.BuildDbCurve` used the octave
-  value as the Gaussian **sigma**, so its ±3σ support was ~6× the nominal width —
-  the primary response instead treats 1/N as a fractional-octave **window width**;
-  (2) an extra `HarmonicSmoothingWidthFactor = 2.0`. Fixed: the smoothing now
-  interprets the value as an FWHM (sigma = width / 2·√(2·ln2)) via the extracted,
-  unit-tested `EssDistortion.SmoothOctaves`, and the app factor is 1.0 so harmonics
-  read at the SAME resolution the user picked for HD1. New dsp tests pin the FWHM
-  equals the requested width, that a 1/12 smooth is essentially gone half an octave
-  from a spike, and NaN-gap/zero-width behaviour. 505 dsp tests pass. *Windows
-  follow-up:* eyeball the HD curves at 1/12.
-- [x] ★ **THD+N was not THD+N: one FFT over the HD2..HD5 region summed the
-  packets complex-wise** (phase-dependent) — reworked (2026-07-12). A new pure DSP
-  layer (`EssHarmonicAnalysis` + `EssDistortion`) isolates each harmonic order in
-  its OWN plateau window, computes each packet's spectrum, maps each onto the
-  excitation axis, and sums the harmonics' ENERGY (√Σ|Hn|²) on a common
-  log-frequency grid — never a complex sum of one shared window. The curve ships as
-  well-defined **THD** (energy of the harmonics over |H1|).
-  **Noise shown as a separate floor trace, REW-style (not fused THD+N) — done
-  (PR #28 review follow-up).** Rather than fold noise into a single THD+N number
-  (which needs an arbitrary declared bandwidth and drove the P1/P2 review findings),
-  the measurement noise floor is drawn as its OWN trace (`AnalysisCurveKind.NoiseFloor`,
-  |N|/|H1|), exactly as REW does. THD therefore stays a clean harmonics-only figure,
-  and where THD dips to the noise floor the user can SEE the harmonics are buried
-  (validated on the real drivers: l woof is noise-limited at 100–200 Hz, the tweeter
-  at 200 Hz is real distortion well above the floor). The two review defects are
-  fixed at the source: `EssNoise` no longer references the linear-packet window at
-  all (so the level is independent of sweep geometry — pinned by a fade-fraction
-  invariance test), and it takes the bias-corrected median of the periodogram
-  (median of power / ln2, not magnitude) so the absolute level is right (pinned by a
-  white-noise known-answer test). The floor is reported at a fixed analysis
-  resolution (sampleRate / noise window, exposed as `EquivalentNoiseBandwidthHz`),
-  with the honest caveat — as in REW — that a noise floor scales with resolution and
-  drive level. *Windows follow-up:* live check of the grey Noise-floor trace + its
-  legend next to the plot.
-- [x] ★ **Harmonic curves and the primary curve had different reference levels** —
-  fixed (2026-07-12). HDn is now `|Hn|/|H1|` against the linear packet of the SAME
-  ESS decomposition (a contained IR read under a unity plateau, so the ratio is
-  window-length independent), drawn against excitation frequency with calibration
-  applied at each product frequency n·f (so a C(n·f)−C(f) difference is honoured);
-  a denominator floor masks a collapsing |H1| to NaN instead of a runaway percent,
-  and the display smoothing preserves those NaN gaps (a point above Nyquist/n or a
-  rejected-denominator point is NOT resurrected by averaging finite neighbours —
-  PR #28 review fix). The loopback transfer stays the primary display curve.
-  Validated by an
-  end-to-end polynomial ESS test AND on the real drivers in the test-data submodule
-  (each measurement stores `sweepDeconvolutionRealSamples`, which carries the
-  harmonic packets — not just the transfer IR): l woof/mid/twr give sensible HD2/HD3
-  distortion figures (−28…−55 dB) and the sub shows HD2/HD3 in its passband with the
-  out-of-band region correctly masked by the denominator floor.
-- [x] **Overlap check between harmonic packets** — done (2026-07-12). Each
-  harmonic packet's residual energy at its window edges is compared with its peak
-  (`HarmonicPacketValidity`): below −40 dB it is reliable, between −40 and −12 dB it
-  is marginal (drawn with a warning), and only above −12 dB — where a neighbour
-  genuinely swamps the packet — is the order dropped from the curves AND excluded
-  from THD. The −12 dB drop margin was set on the real drivers: a strict −25 dB
-  threshold dropped HD3/HD4/HD5 on every driver (a 12-oct/3-s/44.1-kHz sweep does
-  not fully isolate the high harmonics), so it was relaxed per the user's choice to
-  keep the caveated curves. Warnings ride on `DistortionSpectrum.Warnings`. Tests
-  pin a contained system (all reliable) and a boundary-swamping packet (dropped, THD
-  excludes it). A dropped order is now removed from the curve list entirely (not
-  left as an all-NaN line), and the warnings reach the display boundary:
-  `EssDistortion.ComputeDistortionCurvesResult` returns a `DistortionCurveResult`
-  (curves + warnings + packet validity), and `MeasurementPlotContext` exposes them
-  as `DistortionWarnings` (PR #28 review fix). *Windows follow-up:* rendering that
-  warning text next to the plot is the remaining UI hookup that needs a live check.
-- [x] **No end-to-end ESS nonlinearity test** — added (2026-07-12).
-  `EssPolynomialDistortionTests` drives a real generated ESS through
-  `y = x + a2·x² + a3·x³`, deconvolves with the production inverse filter, and
-  asserts HD2/HD3 land in the right packets, are drawn against excitation
-  frequency, stop at Nyquist/order, match the levels the trig expansion predicts
-  (g1 = 1+3a3/4, H2 = a2/2, H3 = a3/4), and are invariant to a recording time
-  shift. This is what caught (and pins the fix for) the tone-vs-IR normalization.
-
-### Auto Crossover
-
-- [~] **Slope-deviation penalty anchors the auto to 24 dB/oct (user request
-  2026-07-12, DSP done):** the practical slope floor dropped 24 → 12, so the search
-  now spans 12/18/24/36/48, but every shoulder pays `SlopeDeviationPenaltyDb = 0.7`
-  per unit of `|log2(slope/24)|` (12 and 48 = 1.0 unit, 18/36 = 0.42/0.59), summed
-  over both shoulders of each junction and added to the flatness score. 24 dB/oct —
-  the car-audio standard — is thus the default; a gentler or steeper filter is taken
-  only when it earns more than it costs. The descent seeds at 24 (`SeedSlope`, nearest
-  admissible) instead of the gentlest. **User goal met:** the auto no longer drags the
-  tweeter maximally low on a 48 dB/oct slope to escape the ear band — it keeps 24 and
-  lets the handover sit higher (validated on synthetics: 3-way tweeter 1650/48 →
-  **2300/24**, 4-way 2200/48 → **3050/24**; all junctions land on 24). Deviations stay
-  reachable when justified — the resonance floor still OVERRIDES the penalty and forces
-  a steep tweeter when a low max-crossover boxes it in. Fixed two latent bugs the
-  penalty exposed: `OptimizeChannelSlope` could retain a current slope no longer in the
-  allowed set (now starts from an allowed one), and `EnforceTweeterResonanceFloor` now
-  steepens the slope when a max-crossover limit blocks raising the frequency, so a
-  boxed-in tweeter is never left at 24 below its Fs floor. 506 dsp tests pass.
-  *Windows follow-up:* eyeball the wizard on a real measurement.
-
-
-- [x] ★ **The scalar summation model is physically wrong in three ways** —
-  resolved (2026-07-11) after a design discussion with the user. Verdict: the
-  magnitude/delay DECOMPOSITION is intentional and stays (a joint delay ×
-  crossover search was rejected as intractable; the wizard assumes ideal
-  alignment and Auto delay realizes it) — but the three inconsistencies were
-  real and are fixed:
-  (1) family-based amplitude-vs-power summation and the non-associative mixed
-  sum are gone — channels now combine as a plain amplitude sum everywhere,
-  the consistent expression of the ideal-alignment assumption;
-  (2) the "magnitude-only objective cannot see which candidates Auto delay
-  can actually fix" gap is closed by `ProposeRanked`: ~50 near-optimal
-  candidates (per-junction top options crossed, plus a mandatory conventional
-  all-LR24 run) are re-ranked by the junction loss ACHIEVABLE after the best
-  per-junction delay, measured on the channels' IRs with the production
-  alignment search (`FindAlignmentCandidates`) on a shared 32k direct-sound
-  crop, in parallel; the conventional-24 candidate wins ties
-  (`Conventional24PreferenceDb = 0.25`). Real-data cost: 50 candidates ≈ 3.8 s
-  on a 4-core container (pool alone 0.4 s); the two cost cliffs found and
-  fixed on the way: per-candidate arrival analyses (now computed once from
-  the raw channels) and a frequency-independent search window (now
-  ±clamp(1200/fc, 2, 12) ms — the filter group delay it must absorb scales
-  as 1/fc);
-  (3) the tests now include an independent amplitude-sum oracle (exact filter
-  magnitudes, not `SummedResponseDb`'s internals).
-  Also shipped in the same rework, per the user's spec: crossover frequencies
-  search directly on a rounded lattice (5 Hz < 100 Hz, 10 Hz < 1 kHz, 50 Hz
-  above — which also made the magnitude-cache hit, pool of 50 in ~0.4 s), and
-  junctions below 300 Hz never get slopes steeper than 24 dB/oct (group
-  delay). Deliberately NOT revisited: `AchievabilityWeight = 0.5` was chosen
-  on one dataset (the left 4-way) — re-eyeball if field results disagree with
-  the ranking. The dialog's async Apply path needs a live Windows check.
-  **PR #27 review follow-up (fixed):** the first post-check draft (1)
-  compared band-limited arrivals measured in DIFFERENT bands (each driver's
-  own band) — the exact mistake the stereo Δ metric and the engine already
-  warn about; the centers are now per-junction shared-band arrivals of the
-  raw channels, cached by (channel, band) so the Hilbert cost stays bounded;
-  (2) trusted the raw search winner — now the pick goes through
-  `AlignmentSelection.Select` with the arrival anchor, the engine's
-  arrival-anchored prior (sigma = window/4) and a widened edge retry, so an
-  inverted half-period impostor cannot fake achievability the real Auto
-  delay would refuse. Accepted simplifications vs the full engine (recorded,
-  not hidden): no PHAT-seeded timeline, no cascade reprocessing of settled
-  neighbors, no guarded wide-window promotion — junction deltas of a mono
-  N-way compose independently, and the post-check only RANKS. Notable
-  real-data effect of the honesty fix: on the left 4-way the conventional
-  LR24 candidate's sub/woof junction penalty rose ~1 dB (its previous low
-  loss came from an impostor lobe the selection now rejects) and LR12 at
-  40 Hz wins the junction — consistent with the very group-delay argument
-  that capped steep low slopes. The dialog also now catches ALL ranking
-  exceptions (async void + WinForms context would otherwise kill the
-  process), reporting them in a message box.
-  **Second review round (fixed):** (1) per-junction pool options are each
-  bounded against the descent optimum's neighbours, so combining them
-  independently could jointly break the half-octave minimum separation —
-  reproduced with a peaked middle driver (fc pair at ratio 1.375 < √2 in
-  the ranked list); combinations now pass a joint separation check before
-  the gain pass. (2) `IsConventional24` was derived from slopes alone, so
-  any all-24 pool candidate (16 flagged in one config, pure Butterworth in
-  another) could soak up the 0.25 dB tie preference; the flag now matches
-  the dedicated conventional run's signature — exactly one candidate, LR24
-  when LR is allowed. (3) The dialog freezes every ranking-input control
-  while the async ranking runs, so stale settings can't be applied.
-  **Matched slopes = per-DRIVER, not per-system (corrected 2026-07-12):** with
-  "Independent slopes per side" off, each driver's two shoulders (its high-pass
-  and its low-pass) share one slope; DIFFERENT drivers stay free to differ.
-  First attempt (9889124) over-corrected to one slope for the WHOLE system —
-  wrong, reverted. The real bug: the pool (and even the descent) chose slopes
-  per JUNCTION independently, so a middle driver's HP (upper side of the
-  junction below) and LP (lower side of the junction above) drifted apart
-  (the 12/18 the user saw after Apply). Fix: when off, the slope is a property
-  of the channel — `EnumerateJunctionOptions` only varies frequency/family and
-  holds the two channels' slopes; a dedicated `OptimizeChannelSlope` pass tunes
-  each channel's slope (both shoulders together) over the slopes allowed at
-  BOTH its junctions; the pool inherits the descent's per-channel slopes.
-  Families still per junction. Real-data winner now
-  LR12@45 / (mb LR12, mid LR24)@250 / LR24@3950 — sub+midbass 12, mid+tweeter
-  24, each driver internally matched. Full ranked ~3.2 s.
-- [ ] **Virtual DSP load lock (2026-07-12, needs live Windows check):** opening
-  the panel spent 5-10 s re-resolving each channel's stored transfer IR while
-  the panel sat enabled showing the "no sources" hint, so the restored session
-  looked lost until it snapped in. `ApplyProjectAsync` now wraps the bind in
-  `SetProjectLoading(true/false)`: the whole control tree is disabled (a load
-  rebuilds the channel blocks, so the parent must carry the disable), the main
-  plot shows "Loading the previous session…", the metric shows "Loading
-  session…", and the cursor is a wait cursor; the final RedrawAll restores the
-  real plot/metric before the panel re-enables. Covers both the startup load
-  and a session import (both route through ApplyProjectAsync). Verify on
-  Windows: the lock appears immediately, the plot note is legible (PlotView is
-  custom-painted so it should not grey out), and controls re-enable exactly
-  when the curves land.
-- [x] **Auto crossover placement heuristics (user request 2026-07-12):** two
-  frequency-placement penalties added to the flatness score, plus a tweeter
-  floor + protection rule. (1) **Ear band** — a junction in 2–4 kHz gets a soft
-  Gaussian penalty (`EarSensitivityWeightDb = 0.5`, centred ~2.83 kHz). (2)
-  **Wide overlap → low** — a junction is pulled toward the bottom of the two
-  drivers' shared band, scaled by its width in octaves
-  (`WideOverlapLowBiasWeightDb = 0.4`, "firm" per the user). (3) The tweeter's
-  `SensibleRange` floor dropped 2000 → **1500 Hz** so the search can cross a
-  capable tweeter low (the user's own tune crosses mid/tweeter at 1300/1800 for
-  the soundstage). (4) `TweeterProtectionHz = 2500`: a tweeter crossed below
-  that must stay ≥ 24 dB/oct (mirror of the <300 Hz bass cap), enforced in the
-  slope enumeration and `AllowedChannelSlopes`, so the low handover does not
-  overdrive the tweeter. On the real left 4-way the mid/tweeter moved 3900 →
-  1500 (LR24/LR24, tweeter steep) — matching the user's low-and-steep manual
-  choice. Weights are tunable; still gated by the measured tweeter band (a
-  tweeter rolled off by 2.5 kHz still crosses no lower).
-  **Follow-up tuning (user feedback 2026-07-12):** (a) L/R now get the SAME
-  crossover — the wizard writes freq/family/slope/gain to BOTH sides of a
-  stereo pair (`OpenAutoSetupWizard`), only delay/scene-level differ per
-  side. (b) Tweeter floor 1500 → **1700** (1500 was too low by ear). (c) The
-  wide-overlap "cross low" rule is skipped for the subwoofer and replaced by
-  an UP nudge toward its ~80 Hz sensible top (`SubHandoverUpBiasWeightDb`) —
-  the sub was landing at 45 Hz. (d) `MinPracticalSlopeDbPerOctave` 12 → **18**
-  and `OverlapPenalty` extended to non-adjacent pairs
-  (`NonAdjacentOverlapWeight`): a 12 dB/oct woofer was bleeding up to the
-  tweeter; both push interior drivers to steeper (24) slopes. Real 4-way now:
-  75 (BS24/BS24) / 250 (LR24/LR24) / 1750 (LR24/LR24) — all steep, sub ~80,
-  mid/tweeter low, matching the user's manual tune.
-  **Min slope 18 → 24 (user feedback 2026-07-12):** 18 was still too shallow —
-  on the real woofer/midrange handover the per-channel compromise landed on
-  18 dB/oct, a wide overlap with strong interference Auto delay could not align
-  (the user saw ~−3.4/−9.9 dB). `MinPracticalSlopeDbPerOctave` is now 24, so
-  every crossover is >= 24 (the <300 Hz cap pins low junctions to exactly 24).
-  The flatness/achievability metric rates the shallow 18 slightly higher —
-  which is exactly why the auto kept picking it and the user heard interference
-  the metric misses — so the floor overrides it, matching the all-24 manual
-  tune. BW-only real 4-way then: 65 (BW24/BW24) / 250 (BW24/BW24) / 1700
-  (BW24/BW48); all-families unchanged (75/250/1750).
-- [x] **Virtual DSP redraw multithreaded (2026-07-12):** the interactive redraw
-  ran its heavy math on one core — `ProcessChannelsAsync` applied each channel's
-  full-length ApplyChain cascade in a sequential `Select` inside one `Task.Run`,
-  and `BuildMetricCurves` built each channel's magnitude spectrum sequentially.
-  Both are pure and independent, so both now fan out: ApplyChain via
-  `Parallel.For` (bit-identical output verified on the real 7-channel system,
-  2043 ms → 1074 ms on 4 cores, ~min(channels, cores)× ceiling) and the spectra
-  via `AsParallel().AsOrdered()`. Only full redraws (mode switch, session load,
-  bypass-all) recompute every channel and get the full win; a single-control
-  edit still recomputes one channel (nothing to parallelize). Cache write-back
-  stays on the UI thread after the await, so no races.
-  **Target-curve gains (user request 2026-07-12):** gains no longer flatten
-  the sum — they follow a car target curve. (1) midrange & tweeter levelled to
-  each other (louder attenuated); (2) the subwoofer anchors the bass at a
-  chosen elevation over the reference — a new **Sub level over mid/treble**
-  dialog field, default & max = the measured elevation (sub at its raw level),
-  trimmable down to flatten; (3) the remaining drivers fit cut-only onto the
-  log-frequency slope between the sub anchor and the reference (a driver below
-  the target keeps its level — dips are never boosted). Reference level = the
-  quietest driver apart from the sub, so a hot sub can't drag it up and a
-  sub-less 2-way still levels its two drivers. `ApplyTargetCurveGains` /
-  `MeasuredSubElevationDb` replace the emitted gains after the crossover search
-  (which still uses the optimizer's flattening gains to CHOOSE crossovers).
-  Validated on the real left 4-way: default gives sub 0, midbass 0, mid 0,
-  tweeter −1.5 (= the user's in-car manual tune, whose −4 on mid/tweeter is the
-  separate L/R scene offset). Needs a live Windows check of the dialog field
-  (layout shift, lazy default fill, freeze-during-ranking). Not yet done: a
-  treble down-tilt knob (the preview "predicted sum span" is now honestly large
-  because the bass is intentionally lifted).
-  **Midrange sensible floor 250 → 200 (user feedback 2026-07-12):** on the real
-  left 4-way the woofer/midrange handover kept landing at 250 Hz with a wide
-  overlap; crossing nearer 200 Hz (which the user found by hand) weakens the
-  interference, but `SensibleRange(Midrange).LowHz = 250` clamped the search so
-  the achievability post-check never even evaluated ~200. Same conservative-floor
-  pattern as the tweeter. Lowered the midrange floor to 200 (a midrange has
-  headroom below its cone-breakup region), so the woofer/midbass can hand over
-  early; still gated by the measured midrange band. Real 4-way then moved the
-  woofer/mid junction 250 → 220 (all-families 75/220/1750, BW-only 65/220/1700),
-  with 200 right behind in the pool — matching the user's manual find.
-- [x] **`EstimateBand` merges disjoint islands into one band (fixed 2026-07-12):**
-  it took the first and last bin above the −8 dB threshold, so an isolated
-  resonance past a deep dead gap stretched HighHz and could mislabel the driver
-  or skew the crossover bounds. Now the above-threshold points are grouped into
-  contiguous segments, bridging a below-threshold gap only while it stays within
-  `MaxBandGapOctaves = 0.5` (a narrow interference/room null a driver's own band
-  can have — a 1/3-octave-smoothed null lands there); the usable band is the most
-  PROMINENT segment (largest area above threshold integrated over log-frequency).
-  On the real left 4-way this trimmed two genuine over-extensions: midrange high
-  edge 4387 → 2768 Hz and tweeter 20000 → 11954 Hz (both were isolated HF
-  resonances past dead gaps). Two new synthetic tests pin it (isolated resonance
-  ignored; narrow in-band null bridged). Side effect on the auto winner: the
-  corrected band levels re-rank the flatness score slightly — woofer/mid 220 →
-  250, tweeter 1750 → 1700 — while the 200 Hz search floor and the 200–230
-  candidates stay in the top of the pool.
-- [x] **`EstimateBand` honours coherence when available (2026-07-12):** the band
-  read now takes optional per-point γ² (`AutoSetupSource.Coherence`, aligned 1:1
-  with the magnitude points). A frequency below `CoherenceFloor = 0.5` cannot
-  anchor a band edge, and each segment's prominence is γ²-weighted, so a noisy or
-  non-linear region (a breakup resonance, a channel picking up another driver)
-  cannot stretch the band the way a coherent passband does. Deliberately
-  conservative: the reference percentile still reads the whole curve (filtering
-  it to coherent points tracked the peak and shrank narrow-band drivers — a sub's
-  usable band collapsed 133 → 54 Hz, over-constraining its crossover), so on a
-  clean measurement coherence is a no-op. Validated on the real left 4-way: every
-  driver is γ² ≥ 0.5 across its passband, so all four bands are identical with and
-  without coherence — the gate only bites a genuinely untrusted measurement. Two
-  synthetic tests pin it (a loud incoherent region rejected; a coherent band not
-  chopped; mismatched-length coherence ignored). App plumbing (Windows-only,
-  needs a live check): `ChannelSideState.TransferCoherence` stored on source
-  resolve, resampled onto the wizard's 1/3-octave grid by `CoherencePerPoint`,
-  and threaded through the dialog into `AutoSetupSource`. App + App.Tests compile
-  clean under EnableWindowsTargeting.
-- [x] **Slope cap is now a group-delay budget, not a frequency (2026-07-12):**
-  the flat "< 300 Hz → ≤ 24 dB/oct" cap is gone. A slope is allowed only while
-  the filter's peak group delay stays within `MaxCrossoverGroupDelaySeconds =
-  0.010` (10 ms), computed from the exact biquad cascade by the new
-  `CrossoverFilter.MaxGroupDelaySeconds` (τ = −dφ/dω, peak near the corner,
-  memoized per family/slope/fc). Group delay scales ≈ 1/f_c, so the same slope is
-  fine high up and excluded low down — and a low-GD family (Bessel) may go
-  steeper down low than an LR can. It is identical for LP and HP, so with matched
-  slopes a driver is still held to the gentler of its two junctions; a steep
-  woofer LP with a gentle HP needs independent slopes. Real left 4-way:
-  matched (default) winner sub steepened 75(BS24)→75(BS36) — Bessel 36 at 75 Hz
-  is only ~5.7 ms, which the old flat cap wrongly forbade; with independent
-  slopes on the woofer/mid junction jumps to LR48/LR48 (~5 ms) and the
-  achievability penalty drops 2.70 → 2.05 (the steep woofer LP cleans the
-  handover the user flagged). Two `CrossoverFilter` tests pin the GD values and
-  the LP=HP symmetry; the ranked-pool test now asserts the GD budget across every
-  candidate. Search timing unchanged (~2 s, GD memoized).
-- [x] **GD budget was bypassable via seed & conventional state — fixed
-  (review, 2026-07-12):** the budget was only applied while ENUMERATING options,
-  so two paths still produced budget-violating candidates: `Initialize` seeded a
-  fixed 24 dB/oct with no check, and the conventional run's `forcedSlope`
-  branch returned 24 unconditionally — at a junction low enough that even 24 dB/oct
-  exceeds 10 ms, `AllowedSlopes` returned EMPTY and those unchecked 24s survived.
-  Reframed the policy explicitly: the budget caps steepness ABOVE the practical
-  floor (24 dB/oct); the floor is ALWAYS admitted, since a gentler crossover
-  would break the overlap rule, so a very low junction's larger group delay is
-  inherent to crossing there, not a bypass. `AllowedSlopes` now floor-falls-back
-  (never empty) and gates the forced branch the same way; `Initialize` and the
-  band-limit brickwall seed via a new `GentlestAdmissibleSlope` (removed the
-  unchecked `PreferredSlope`). New regression test forces a sub-budget sub/woofer
-  junction and asserts every candidate — seed, descent, AND conventional — uses
-  exactly the floor there, never a steeper forbidden slope.
-- [x] **Independent slopes ON by default (user request 2026-07-12):** the wizard
-  checkbox and `CrossoverAutoSetupOptions.Default` now default to independent
-  slopes, so the auto-crossover can give the woofer a steep low-pass and a gentle
-  high-pass out of the box (the group-delay win above). Turning it off restores
-  the matched-shoulders behaviour.
-- [~] **Slope-coupled tweeter resonance floor (user request 2026-07-12, DSP done):**
-  the tweeter's low handover is now bounded by its *resonance* rather than a flat
-  1.7 kHz class floor. Fs is estimated from the tweeter's own measured low roll-off
-  (`EstimateBand.LowHz`) and floored at `TweeterFsFloorHz = 1200` so a spuriously low
-  or already-filtered edge cannot license a dangerous crossover. The high-pass must
-  give `TweeterFsAttenuationTargetDb = 22 dB` of attenuation at Fs — anchored on the
-  Focal TNF datasheet (min 3.2 kHz @ 18 dB/oct, Fs ≈ 1370 ⇒ ~22 dB at Fs) — so the
-  minimum crossover for a slope S is `fc = Fs·2^(22/S)` (`TweeterMinCrossoverHz`).
-  A steeper filter reaches the target closer to Fs and may cross lower; a shallow
-  one is held well above it. This directly answers the user's question ("при более
-  крутых срезах можно ниже?") — yes, and now the auto only crosses low if it also
-  picks a steep enough slope. `SlopeFloor` became the per-candidate inverse
-  (`slope ≥ 22/log2(fc/Fs)`), `JunctionSearchBounds` opens the window down to the
-  steepest slope's floor, and `EnforceTweeterResonanceFloor` is a post-descent
-  backstop that nudges the crossover up one lattice step when the decoupled
-  frequency/slope search (matched-slope mode) lands just under the floor. Real
-  behaviour on synthetic drivers: a tweeter measuring to 1 kHz (Fs floored to 1200)
-  crosses at **1650 Hz / 48 dB-oct** with independent slopes (low + steep, matching
-  the user's manual 1800/steep tune) and **2300 Hz / 24 dB-oct** in matched mode;
-  the Focal-like 2 kHz-band tweeter (Fs ≈ 1600) crosses at 2200/48 or ~3050/24.
-  Removed the flat `TweeterProtectionHz = 2500` const. 502 dsp tests pass; several
-  2-way fixtures that crossed tweeters at 1.2–1.5 kHz (below Fs — the exact danger)
-  were updated to the protected region. *Windows follow-up:* live check in the
-  wizard on a swept measurement.
-- [~] **Distortion-aware crossover bounds — PROTECTIVE ONLY (DSP done, app wiring
-  pending):** the band estimate reads each driver's distortion-clean sub-band from
-  an optional THD curve on `AutoSetupSource.DistortionDb`
-  (`DriverBandEstimate.DistortionLowHz/HighHz`). The tweeter rule is deliberately
-  one-directional: a measured distortion knee can only **RAISE** the tweeter's low
-  handover above the fixed class floor, never lower it
-  (`typeLow = Math.Max(typeLow, DistortionLowHz)`), and no driver is crossed up
-  past its breakup onset. **Design correction (user safety catch, 2026-07-12):** an
-  earlier draft let a clean-measuring tweeter cross as low as a
-  `HardTweeterFloorHz = 1000` backstop; on the real 4-way that pulled the
-  mid/tweeter junction to ~1100 Hz. The user flagged it would destroy the tweeter
-  at volume ("помрэ на высокой громкости"). The driver is a **Focal TNF, Fs ≈
-  1370 Hz** (datasheets: woofersetc, focal.com — recommended minimum crossover
-  ~3.2 kHz @ 18 dB/oct); crossing at or below Fs blows a tweeter under sustained
-  SPL. A moderate-level ESS THD read understates the excursion limit near
-  resonance, so it must never be used to justify a lower crossover — only a higher
-  one when the tweeter already measures dirty. The `HardTweeterFloorHz` const is
-  removed; the low-for-soundstage handover stays a deliberate manual choice (the
-  user's own tune is a mid low-pass shelf at 1300 + tweeter high-pass at 1800, not
-  an inferred low crossover). Five synthetic tests pin the knee read, the breakup
-  edge, the null-distortion fallback, that a clean tweeter is NOT crossed below the
-  1.7 kHz class floor (with == without distortion), and that a dirty-low tweeter IS
-  held higher (with > without). All 501 dsp tests pass.
-  **App wiring done (compile-only, needs a Windows live check):** the source
-  snapshot carries the sweep deconvolution (IR + octaves + duration + peak), so on
-  source resolve the panel computes the channel's THD curve
-  (`ComputeDistortionCurve` → `EssDistortion`) into `ChannelSideState.DistortionCurve`,
-  and the wizard threads it through the dialog into `AutoSetupSource.DistortionDb`
-  (same path as the coherence plumbing). Verify live: pick a swept measurement, open
-  the crossover wizard, and confirm a dirty-low tweeter is held above the floor
-  while a clean one still stays at the conservative 1.7 kHz class floor.
-  Optional future: a soft breakup PENALTY in placement (currently a hard bound).
-
-### EQ Wizard
-
-- [ ] ★ **No boostability/reliability mask**: the fitter sees only dB curves
-  and will boost a deep interference null (wasting headroom and blocking an
-  octave). Fix: mask from coherence + null depth/width + driver band; a
-  cuts-only mode (sensible default for car tuning). (The clipping-profile
-  half of this batch is fixed: `TotalGainMaxDb` caps preamp + band peak, the
-  wizard passes 0.)
-- [ ] **Band spacing ignores the chosen Q** (fixed ±0.33/±1 oct blocks);
-  **gain is fixed before Q is searched** (over-corrects broad areas; already
-  noted above with the missing polish pass); **the objective treats boosts and
-  cuts symmetrically** (no boost/high-Q/band-count regularization). All three
-  fold into the same redesign of the greedy loop: frequency × Q × gain search
-  with width-based spacing and a boost-penalized score, then a
-  coordinate-descent polish over all bands + preamp.
-
-### Waterfall / Burst Decay
-
-- [ ] **Wavelet time-support validity is not tracked**: at low frequencies the
-  Morlet kernel outlasts the analysis window and the envelope is window-shaped,
-  not system-shaped. The `Slice.SliceMinValidFrequency` metadata path already
-  exists but always receives 0 — compute the frequency below which the kernel's
-  effective support exceeds the window and mark/limit slices there. (The
-  fabricated post-window decay, the pre-peak axis zero and the above-Nyquist
-  grid are fixed.)
-- [ ] **Waterfall renders nothing silently below 8 slices** (`RawSlices.Count
-  < 8` guard in `WaterfallSeries.Render`): corrupted settings or narrow ranges
-  show an empty plot with no explanation. Show a message (or clamp the
-  controls so the state is unreachable).
-
-### Time Alignment / unwrap (deferred from earlier batches)
-
-- [ ] **GCC-PHAT confidence is peak height, not uniqueness**: a single
-  spectral line or a narrowband subwoofer reads ~100% while the delay is
-  poorly conditioned (bounded in practice by the ±0.1 ms anchored refinement
-  window). Fix: fold RMS bandwidth / peak curvature / peak-to-second-peak into
-  the confidence, or rename the figure. Needs its own validation pass on real
-  measurements.
-- [ ] **`WrapPeakPositions` cannot actually produce negative delays** — the
-  peak search is capped at length/2, so the upper-half branch of
-  `ToSignedDelaySamples` is unreachable (harmless for the loopback workflow,
-  where delays are non-negative; the API promises more than it does).
-- [ ] **Display smoothing includes low-reliability bins** (unwrap blanks long
-  garbage stretches now, but short noisy nulls still enter `SmoothLinear` at
-  full weight; magnitude curves behave the same). Optional: reliability-
-  weighted smoothing.
-
-### Batch 5 tails (Live Spectrum / sweep / EQ export / overlays / history / provenance)
-
-- [ ] ★ **Measurement provenance model.** Files store no backend, timing
-  quality, dropped-frame/clipping history, excitation range, effective average
-  count or calibration id, and Time Alignment/Virtual DSP cannot see when a
-  loaded measurement's absolute phase and delay are suspect. The sharpest
-  offender (dual-device Wave capture) is gone — every NEW capture is
-  sample-synchronous by construction — but files written by older versions
-  with two devices still load indistinguishably, and the other provenance
-  gaps stand. Consumers should declare their requirements (Time Alignment →
-  synchronous timing required, HD → valid packet separation, ...).
-- [x] ★ **Sweep runs are accepted unconditionally** — done (2026-07-11):
-  every captured run now passes `SweepRunQualityCheck` BEFORE
-  `accumulator.Add()`, judging only the unambiguous failures — microphone
-  clipping (shared `FullScaleThreshold`), a silent microphone or loopback
-  (peak < ~-80 dBFS; full-scale loopback stays the reference by the metering
-  convention), and an undersized capture. The check judges the ENTIRE
-  capture: both recorders reset per run (`StartRecordingAsync` →
-  `ResetBuffers`), and the whole snapshot — including the pre-playback
-  roll — feeds the deconvolution, so the checked range and the analyzed
-  range match (PR #26 review catch: an earlier draft skipped the pre-roll
-  and would have accepted a knock that still contaminated the IR). Policy: one
-  automatic retry per bad run (record button shows "Retrying x/y"); a second
-  failure skips the run. At the end, if the average holds fewer runs than
-  requested, an informational modal lists per-run reasons
-  (`SweepRunQualityReport.Describe`); if EVERY run failed, the measurement
-  fails with the aggregated reasons instead of publishing garbage. Unit
-  tests in `SweepRunQualityCheckTests` (Windows CI); the live retry flow
-  needs a hands-on Windows check.
-  **Rejected by the user (2026-07-11), do not resurrect:** the once-planned
-  statistical outlier layer (peak-delay vs median, IR correlation vs a
-  reference run) and the run pre-alignment rework (bounded shift +
-  cross-correlation instead of the global sweep-IR peak) — verdict: the
-  problem is contrived; the unambiguous checks plus the single retry cover
-  the real field failure mode. Minor cosmetic tails left as-is, low value:
-  the stored raw samples are only the LAST run's, and the Wave RMS meter
-  integrates the lead-in/tail silence.
-- [x] **Wave dual-device pairing is callback-ordered** — obsolete (2026-07-11):
-  `LoopbackSequencePairer` and the whole dual-device live path were removed
-  with the separate-loopback-device feature; the live transfer function now
-  only ever sees channels of one device. (Live-spectrum drop-glue, cold-start
-  γ²=1 and the mode-switch statistics mix were fixed earlier and stand.)
-- [ ] **EMA coherence has no effective average count** (overlap-correlated
-  frames, alpha-dependent memory): expose K_eff ≈ (2−α)/α (reduced for
-  overlap) alongside the curve and feed it to the same debias the sweep path
-  uses.
+- [ ] ★ **No boostability/reliability mask**: the fitter sees only dB curves and
+  will boost a deep interference null (wasting headroom and blocking an octave).
+  Fix: mask from coherence + null depth/width + driver band; a cuts-only mode
+  (sensible default for car tuning). (The clipping-profile half is fixed:
+  `TotalGainMaxDb` caps preamp + band peak.)
+- [ ] **Band spacing ignores the chosen Q** (fixed ±0.33/±1 oct blocks); **gain
+  is fixed before Q is searched**; **the objective treats boosts and cuts
+  symmetrically**. All three fold into one redesign of the greedy loop:
+  frequency × Q × gain search with width-based spacing and a boost-penalized
+  score, then a coordinate-descent polish over all bands + preamp.
 - [ ] **EQ Wizard fits the ANALOG peaking prototype while Virtual DSP and the
-  exports run RBJ digital biquads** — ~3–4 dB apart at 18–20 kHz (48 kHz
-  rate). Fit and preview should evaluate `PeakingBiquad.Compute` +
-  `BiquadResponse` at the measurement rate; the analog model stays as an
-  explicit choice. Needs its own validation (fits change near Nyquist).
-- [ ] **miniDSP export needs a target-device profile**: the sample rate is now
-  a constructor parameter surfaced in the format name (48 kHz default), but
-  device biquad limits are not checked and the preamp burns a biquad slot
-  instead of mapping to the device's gain control.
-- [ ] **Overlay curves are assumed sorted/unique/finite in X**
-  (`CalculateOperation`'s forward-only cursor): normalize imported overlays
-  once (drop non-finite, sort, merge duplicate frequencies). (The branch-cut
-  phase interpolation and the linear-Hz→log-f interpolation are fixed.)
+  exports run RBJ digital biquads** — ~3–4 dB apart at 18–20 kHz (48 kHz). Fit
+  and preview should evaluate `PeakingBiquad.Compute` + `BiquadResponse` at the
+  measurement rate; the analog model stays as an explicit choice. Needs its own
+  validation (fits change near Nyquist).
+- [ ] **miniDSP export needs a target-device profile**: the sample rate is a
+  constructor parameter now, but device biquad limits are not checked and the
+  preamp burns a biquad slot instead of mapping to the device's gain control.
+
+## Time Alignment / unwrap
+
+- [ ] **GCC-PHAT confidence is peak height, not uniqueness**: a single spectral
+  line or a narrowband subwoofer reads ~100% while the delay is poorly
+  conditioned. Fix: fold RMS bandwidth / peak curvature / peak-to-second-peak
+  into the confidence, or rename the figure. Needs a validation pass on real
+  measurements. (Related to the flagship sub group-delay-by-frequency work in the
+  memory follow-ups.)
+- [ ] **`WrapPeakPositions` cannot actually produce negative delays** — the peak
+  search is capped at length/2, so the upper-half branch of `ToSignedDelaySamples`
+  is unreachable (harmless for the loopback workflow; the API promises more than
+  it does).
+- [ ] **Display smoothing includes low-reliability bins** (unwrap blanks long
+  garbage stretches, but short noisy nulls still enter `SmoothLinear` at full
+  weight; magnitude curves behave the same). Optional: reliability-weighted
+  smoothing.
+
+## Live Spectrum / coherence
+
+- [ ] **EMA coherence has no effective average count** (overlap-correlated
+  frames, alpha-dependent memory): expose K_eff ≈ (2−α)/α (reduced for overlap)
+  alongside the curve and feed it to the same debias the sweep path uses.
+- [ ] ★ **The ASIO/Wave capture callback still allocates on the audio thread**:
+  sequence extraction builds jagged float arrays + a List and invokes subscribers
+  inline; the first pass (JIT + allocation) can overrun a 64–128-sample ASIO
+  budget. Target: callback → convert into a preallocated SPSC ring slot → return;
+  a background thread reframes/FFTs from the ring.
+- [ ] **Level meter allocates a fresh `AudioChannelLevel[]` per callback** (up to
+  ~750/s at 64-sample buffers): accumulate peak/sumSquares in the callback and
+  snapshot at 20–30 Hz.
+- [ ] **First live plot frame is heavy on the UI thread** (snapshot clones + RTA
+  computed even when hidden + first resample + OxyPlot series/capacity growth):
+  compute the RTA magnitude only when `ShowInputMagnitude`, and consider
+  pre-building the series before playback starts.
+
+## History
+
 - [ ] **History entries reference LIVE overlay slots** (`ActiveOverlaySlots`
-  numbers into mutable global storage): restoring an old session shows
-  whatever the slots hold TODAY. Store immutable overlay snapshots
-  (content-addressed revisions) in the history entry.
+  numbers into mutable global storage): restoring an old session shows whatever
+  the slots hold TODAY. Store immutable overlay snapshots (content-addressed
+  revisions) in the history entry.
 - [ ] **History index lives beside the executable and dies silently**: no
   write-permission handling (`Save()` throws unguarded in Program Files-style
   installs), and any schema-version mismatch or parse error loads as an EMPTY
-  list with no backup/notification — mirror the project-file
-  backup-on-invalid policy, distinguish empty/unsupported/corrupted, and
-  consider %LocalAppData%.
-- [ ] **Virtual DSP history-source loading has the same stale-async race the
-  EQ Auto Tune and history restore just got guards for**
+  list with no backup/notification — mirror the project-file backup-on-invalid
+  policy, distinguish empty/unsupported/corrupted, and consider %LocalAppData%.
+- [ ] **Virtual DSP history-source loading has a stale-async race**
   (`SelectHistoryEntryAsync` applies a slow snapshot over a newer selection):
   per-channel source revision or CancellationTokenSource.
 
-### Batch 6 tails (calibration / generator / device lifecycle / autocorrelation / files / release)
+## Signal Generator / files / calibration / release
 
-- [ ] **Estimated 90° calibration looks real**: `Has(Degrees90)` is true when
-  the 90° curve is approximated from the 0° file, and the UI labels it plainly
-  "90 degrees". Label it "estimated from 0°" and record the fact in the
-  measurement provenance (ties into the provenance model above).
+- [ ] **Estimated 90° calibration looks real**: `Has(Degrees90)` is true when the
+  90° curve is approximated from the 0° file, and the UI labels it plainly "90
+  degrees". Label it "estimated from 0°" so the user knows the 90° curve is
+  inferred, not measured.
 - [ ] **Signal Generator materializes whole signals in memory** (mono array +
   full playback copy; ASIO always a stereo float copy): 600 s at 192 kHz is
-  ~1.3 GiB, 384+ kHz worse. Needs a streaming IWaveProvider generating blocks.
-  (The above-Nyquist sine refusal and the sample-rate-independent brown-noise
-  corner are fixed.)
-- [ ] **Subscriber exceptions escape into the real-time audio callbacks**
-  (`LevelsAvailable`/`SequenceReady`/... invoked directly from ASIO/Wave
-  callbacks): one throwing UI subscriber can kill the driver. Route through a
-  bounded dispatcher or isolate each subscriber.
-- [ ] **Autocorrelation windows are sample-count-fixed** (offset 64, length
-  2048, 3 ms display): the physical analysis window shrinks 4× at 192 kHz and
-  the promised 3 ms does not even exist at 768 kHz. Parametrize in
-  milliseconds. The /correlation[0] normalization is the standard BIASED
-  estimator — fine for display, but note it under-reads long-lag periodicity;
-  an N−k (or overlap-energy) normalization is the alternative if the mode is
-  ever used for periodicity detection.
-- [ ] **Measurement files validate only after full deserialization**: a
-  crafted file can declare hundreds of millions of samples and hit OOM before
-  `Validate()` runs. Add a file-size cap before parsing, a max-samples cap,
-  and `OutOfMemoryException` handling. (The coherence-length ↔ transfer-IR
-  consistency check is in.)
+  ~1.3 GiB. Needs a streaming IWaveProvider generating blocks.
+- [ ] **Autocorrelation windows are sample-count-fixed** (offset 64, length 2048,
+  3 ms display): the physical window shrinks 4× at 192 kHz and the promised 3 ms
+  does not exist at 768 kHz. Parametrize in milliseconds. (The /correlation[0]
+  normalization is the standard biased estimator — fine for display.)
+- [ ] **Measurement files validate only after full deserialization**: a crafted
+  file can declare hundreds of millions of samples and hit OOM before
+  `Validate()` runs. Add a file-size cap before parsing, a max-samples cap, and
+  `OutOfMemoryException` handling.
+- [ ] **Uninstaller leaves settings behind.** Offer (or document) removal of the
+  settings/history files on uninstall.
 - [ ] **Release toolchain is unpinned** (`choco install innosetup`, latest
-  NetSparkle appcast tool, actions by major tag): pin exact versions (and
-  SHAs for actions) once the current-good versions are confirmed — an
-  unverified pin would break the release instead. (The shell-injection
-  surface, the branch-vs-tag build mismatch and auto-published AI notes are
-  fixed: inputs go through env + strict regex, every job checks out the tag,
-  the release is created as a draft.)
-
-### Live Spectrum cold-start (batch 7 tails)
-
-- [ ] ★ **The ASIO/Wave capture callback still allocates on the audio thread**:
-  sequence extraction builds jagged float arrays + a List and invokes
-  subscribers inline; the first pass through that branch (JIT + allocation)
-  can overrun a 64–128-sample ASIO budget. Target shape: callback → convert
-  into a preallocated SPSC ring slot → return; a background thread reframes/
-  FFTs from the ring. (`ArrayPool` is the halfway option but the sequence
-  arrays flow into the Channel with unclear return discipline.)
-- [ ] **Level meter allocates a fresh `AudioChannelLevel[]` per callback**
-  (up to ~750/s at 64-sample buffers): accumulate peak/sumSquares in the
-  callback and snapshot at 20–30 Hz.
-- [ ] **First live plot frame is heavy on the UI thread** (snapshot clones +
-  RTA computed even when hidden + first resample + OxyPlot series/capacity
-  growth): compute the RTA magnitude only when `ShowInputMagnitude`, and
-  consider pre-building the series before playback starts. A lock-free
-  callback probe ring (duration vs ASIO budget + allocated bytes) is the
-  measurement tool if hitches persist after the one-period buffer and the
-  DSP warm-up.
+  NetSparkle appcast tool, actions by major tag): pin exact versions (and SHAs
+  for actions) once the current-good versions are confirmed. (The shell-injection
+  surface, branch-vs-tag build mismatch and auto-published AI notes are fixed.)

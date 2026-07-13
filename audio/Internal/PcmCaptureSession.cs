@@ -13,6 +13,7 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
     private double[] meterSumSquares = Array.Empty<double>();
     private TaskCompletionSource<bool>? firstBufferReady;
     private TaskCompletionSource<Exception?>? deviceStopped;
+    private bool paused;
     private bool disposed;
 
     public PcmCaptureSession(IAudioCaptureDevice device, int sequence = 0, int expectedSamples = 0)
@@ -96,6 +97,24 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         {
             accumulator = CreateAccumulator();
             sampleWaiters.CancelAll();
+            // Resetting for the next run resumes accumulation after a pause.
+            paused = false;
+        }
+    }
+
+    /// <summary>
+    /// Stops appending captured samples while the device keeps running (and keeps
+    /// raising level meters) — used between averaged sweep runs, where a long
+    /// confirmation pause would otherwise grow the capture buffer without bound.
+    /// The old Wave path stopped the device between runs; WASAPI cannot be
+    /// restarted, so it drops packets instead. <see cref="Reset"/> resumes.
+    /// </summary>
+    public void Pause()
+    {
+        lock (sync)
+        {
+            paused = true;
+            sampleWaiters.CancelAll();
         }
     }
 
@@ -134,12 +153,18 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
             }
         }
 
-        List<float[][]>? readySequences;
+        List<float[][]>? readySequences = null;
         lock (sync)
         {
-            accumulator.Append(decodeScratch, decodedFrames);
-            readySequences = accumulator.ExtractReadySequences();
-            sampleWaiters.CompleteUpTo(accumulator.ReadSamples);
+            // While paused (between averaged runs) the device keeps running so the
+            // level meter stays live, but samples are dropped instead of appended —
+            // otherwise a long confirmation pause grows the buffer without bound.
+            if (!paused)
+            {
+                accumulator.Append(decodeScratch, decodedFrames);
+                readySequences = accumulator.ExtractReadySequences();
+                sampleWaiters.CompleteUpTo(accumulator.ReadSamples);
+            }
         }
 
         firstBufferReady?.TrySetResult(true);

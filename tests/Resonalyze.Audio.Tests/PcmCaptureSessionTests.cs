@@ -67,6 +67,32 @@ public sealed class PcmCaptureSessionTests
     }
 
     [Fact]
+    public async Task PausedCaptureDropsAppendsButKeepsMeteringAndResumesOnReset()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        await using var session = new PcmCaptureSession(device);
+        int levelEvents = 0;
+        session.LevelsAvailable += _ => levelEvents++;
+        Task start = session.StartAsync(CancellationToken.None);
+        device.Push([0x01, 0x00, 0x02, 0x00]); // 2 frames (mono 16-bit)
+        await start;
+        Assert.Equal(2, session.ReadSamples);
+        int levelsAfterStart = levelEvents;
+
+        // A long confirmation pause: audio keeps arriving but must not accumulate.
+        session.Pause();
+        device.Push([0x03, 0x00, 0x04, 0x00, 0x05, 0x00]); // 3 frames, dropped
+        Assert.Equal(2, session.ReadSamples);
+        Assert.True(levelEvents > levelsAfterStart); // meter stayed live
+
+        // The next run resumes and starts from a clean buffer.
+        session.Reset();
+        Assert.Equal(0, session.ReadSamples);
+        device.Push([0x06, 0x00]);
+        Assert.Equal(1, session.ReadSamples);
+    }
+
+    [Fact]
     public async Task PacketFlagsAreCountedAndDiscontinuityIsPublished()
     {
         var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));

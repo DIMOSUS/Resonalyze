@@ -824,6 +824,9 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         ConfigureMainValueAxis();
         UpdateGateButtonAvailability();
+        // Fractional-octave smoothing shapes only the frequency-domain curves;
+        // grey it out in the impulse view where it has no effect.
+        comboBoxSmoothing.Enabled = !radioViewImpulse.Checked;
         OnViewChanged();
     }
 

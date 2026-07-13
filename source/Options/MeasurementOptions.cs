@@ -393,7 +393,7 @@ namespace Resonalyze.Options
                     sampleRate = captureEndpoint.MixFormat.SampleRate;
                 }
             }
-            if (IsWasapiBackend(audioBackend) &&
+            if (audioBackend != AudioBackend.Asio &&
                 waveLoopbackInputChannelOffset.HasValue &&
                 waveLoopbackInputChannelOffset.Value == waveInputChannelOffset)
             {

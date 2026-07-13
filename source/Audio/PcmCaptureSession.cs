@@ -12,6 +12,7 @@ public sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
     private double[] meterPeaks = Array.Empty<double>();
     private double[] meterSumSquares = Array.Empty<double>();
     private TaskCompletionSource<bool>? firstBufferReady;
+    private TaskCompletionSource<Exception?>? deviceStopped;
     private bool disposed;
 
     public PcmCaptureSession(IAudioCaptureDevice device, int sequence = 0, int expectedSamples = 0)
@@ -41,6 +42,8 @@ public sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         ObjectDisposedException.ThrowIf(disposed, this);
         Reset();
         firstBufferReady = SampleWaiterRegistry.NewSignal();
+        deviceStopped = new TaskCompletionSource<Exception?>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         try
         {
             await device.StartAsync(cancellationToken).ConfigureAwait(false);
@@ -56,6 +59,14 @@ public sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
     }
 
     public Task StopAsync() => device.StopAsync();
+
+    internal async Task WaitForStopAsync(CancellationToken cancellationToken)
+    {
+        Task<Exception?> task = deviceStopped?.Task ??
+            throw new InvalidOperationException("Capture has not been started.");
+        Exception? exception = await task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        throw exception ?? new InvalidOperationException("The capture device stopped unexpectedly.");
+    }
 
     public Task WaitForSamplesAsync(int sampleCount, CancellationToken cancellationToken)
     {
@@ -163,6 +174,7 @@ public sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
     {
         Exception exception = args.Exception ?? new InvalidOperationException(
             "Recording stopped before the requested samples arrived.");
+        deviceStopped?.TrySetResult(args.Exception);
         firstBufferReady?.TrySetException(exception);
         lock (sync)
         {

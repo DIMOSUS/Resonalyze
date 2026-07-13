@@ -36,6 +36,22 @@ public sealed class PcmCaptureSessionTests
     }
 
     [Fact]
+    public async Task UnexpectedStopIsObservableWithoutSampleWaiter()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        await using var session = new PcmCaptureSession(device);
+        Task start = session.StartAsync(CancellationToken.None);
+        device.Push([0, 0]);
+        await start;
+        Task stopped = session.WaitForStopAsync(CancellationToken.None);
+
+        device.StopWithError(new IOException("Device unplugged."));
+
+        IOException exception = await Assert.ThrowsAsync<IOException>(() => stopped);
+        Assert.Equal("Device unplugged.", exception.Message);
+    }
+
+    [Fact]
     public async Task ResetRemovesSamplesFromPreviousRun()
     {
         var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));

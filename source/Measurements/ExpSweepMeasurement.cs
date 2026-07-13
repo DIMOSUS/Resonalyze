@@ -127,12 +127,20 @@ namespace Resonalyze
             LastAudioSessionDiagnostics = null;
             AudioBackend = audioBackend;
             AsioDriverName = asioDriverName;
-            WaveInputChannelOffset = IsWasapiBackend(audioBackend)
+            int normalizedWaveInputChannelOffset = IsWasapiBackend(audioBackend)
                 ? Math.Max(0, waveInputChannelOffset)
                 : Math.Clamp(waveInputChannelOffset, 0, 1);
-            WaveLoopbackInputChannelOffset = IsWasapiBackend(audioBackend)
+            int? normalizedWaveLoopbackInputChannelOffset = IsWasapiBackend(audioBackend)
                 ? NormalizeOptionalWasapiChannel(waveLoopbackInputChannelOffset)
                 : NormalizeOptionalWaveChannel(waveLoopbackInputChannelOffset);
+            if (audioBackend != AudioBackend.Asio &&
+                normalizedWaveLoopbackInputChannelOffset == normalizedWaveInputChannelOffset)
+            {
+                throw new InvalidOperationException(
+                    "Microphone and loopback inputs must use different channels.");
+            }
+            WaveInputChannelOffset = normalizedWaveInputChannelOffset;
+            WaveLoopbackInputChannelOffset = normalizedWaveLoopbackInputChannelOffset;
             AsioInputChannelOffset = asioInputChannelOffset;
             AsioLoopbackInputChannelOffset = asioLoopbackInputChannelOffset;
             AsioOutputChannelOffset = asioOutputChannelOffset;

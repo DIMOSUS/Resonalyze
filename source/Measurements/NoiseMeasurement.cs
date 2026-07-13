@@ -113,12 +113,20 @@ namespace Resonalyze
             AsioInputChannelOffset = asioInputChannelOffset;
             AsioLoopbackInputChannelOffset = asioLoopbackInputChannelOffset;
             AsioOutputChannelOffset = asioOutputChannelOffset;
-            WaveInputChannelOffset = IsWasapiBackend(audioBackend)
+            int normalizedWaveInputChannelOffset = IsWasapiBackend(audioBackend)
                 ? Math.Max(0, waveInputChannelOffset)
                 : Math.Clamp(waveInputChannelOffset, 0, 1);
-            WaveLoopbackInputChannelOffset = IsWasapiBackend(audioBackend)
+            int? normalizedWaveLoopbackInputChannelOffset = IsWasapiBackend(audioBackend)
                 ? NormalizeOptionalWasapiChannel(waveLoopbackInputChannelOffset)
                 : NormalizeOptionalWaveChannel(waveLoopbackInputChannelOffset);
+            if (audioBackend != AudioBackend.Asio &&
+                normalizedWaveLoopbackInputChannelOffset == normalizedWaveInputChannelOffset)
+            {
+                throw new InvalidOperationException(
+                    "Microphone and loopback inputs must use different channels.");
+            }
+            WaveInputChannelOffset = normalizedWaveInputChannelOffset;
+            WaveLoopbackInputChannelOffset = normalizedWaveLoopbackInputChannelOffset;
             LiveSpectrumOptions = liveSpectrumOptions ?? new LiveSpectrumOptions();
 
             signal?.Dispose();
@@ -536,8 +544,12 @@ namespace Resonalyze
                 await captureSession.StartAsync(cancellationToken).ConfigureAwait(false);
                 await playbackDevice.StartAsync(loopingProvider, cancellationToken)
                     .ConfigureAwait(false);
-                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken)
+                Task playbackEnded = playbackDevice.WaitForPlaybackEndAsync(cancellationToken);
+                Task captureStopped = captureSession.WaitForStopAsync(cancellationToken);
+                Task completed = await Task.WhenAny(playbackEnded, captureStopped)
                     .ConfigureAwait(false);
+                await completed.ConfigureAwait(false);
+                throw new InvalidOperationException("WASAPI live playback stopped unexpectedly.");
             }
             finally
             {

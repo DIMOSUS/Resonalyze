@@ -1010,6 +1010,10 @@ public static class AutoAlignmentEngine
     // the SAME delta (which leaves the pair's L-R timing untouched) to trade
     // junction loss between the sides. Bounded search, and a move must buy at
     // least the minimum gain in the mean adjacent-junction loss to apply.
+    // This range is additionally capped per pair to half the period of its
+    // tightest adjacent junction (see RebalancePairsKeepingScene): the flat
+    // window alone let fraction-of-a-dB "gains" walk a tweeter pair a whole
+    // comb lobe off its mid at a high junction.
     private const double PairComoveSearchRangeMs = 1.2;
     private const double PairComoveMinimumGainDb = 0.05;
 
@@ -1169,6 +1173,19 @@ public static class AutoAlignmentEngine
                 return total / evaluators.Count;
             }
 
+            // The tightest (highest-frequency) adjacent junction bounds the
+            // pair's reach: within half its period the junction sums are
+            // single-lobed, so the search can only polish the alignment the
+            // arrival-anchored walk chose. Past that lies the next comb lobe —
+            // and fractions of a dB of mean junction loss cannot choose a lobe
+            // (the same physics as the wide-window promotion reach cap). The
+            // flat window alone let a 0.1-0.2 dB "gain" walk the tweeter pair
+            // a whole period off its mid at a 2.3 kHz junction.
+            double tightestPeriodMs =
+                1_000.0 / adjacent.Max(junction => junction.CrossoverHz);
+            double reachMs = Math.Min(
+                PairComoveSearchRangeMs, 0.5 * tightestPeriodMs);
+
             // Both bounds are fixed BEFORE the search so the winning delta
             // applies verbatim to both sides: negative deltas may not push
             // either channel below zero, positive ones may not push either
@@ -1177,14 +1194,17 @@ public static class AutoAlignmentEngine
             // exists to preserve.
             double minDelta = -Math.Min(
                 Math.Min(leftOverride.DelayMs, rightOverride.DelayMs),
-                PairComoveSearchRangeMs);
+                reachMs);
             double maxDelta = Math.Min(
-                PairComoveSearchRangeMs,
+                reachMs,
                 MaxDelayMs - Math.Max(leftOverride.DelayMs, rightOverride.DelayMs));
             double baseline = Score(0);
             double bestDelta = 0;
             double bestScore = baseline;
-            for (double delta = minDelta; delta <= maxDelta + 1e-9; delta += 0.1)
+            // The coarse step scales down with the window so a tightly-capped
+            // high-junction pair still gets a real grid before refinement.
+            double coarseStep = Math.Min(0.1, Math.Max(0.02, reachMs / 4.0));
+            for (double delta = minDelta; delta <= maxDelta + 1e-9; delta += coarseStep)
             {
                 double score = Score(delta);
                 if (score > bestScore)
@@ -1193,8 +1213,8 @@ public static class AutoAlignmentEngine
                     bestDelta = delta;
                 }
             }
-            for (double delta = Math.Max(minDelta, bestDelta - 0.1);
-                delta <= Math.Min(maxDelta, bestDelta + 0.1) + 1e-9;
+            for (double delta = Math.Max(minDelta, bestDelta - coarseStep);
+                delta <= Math.Min(maxDelta, bestDelta + coarseStep) + 1e-9;
                 delta += 0.02)
             {
                 double score = Score(delta);

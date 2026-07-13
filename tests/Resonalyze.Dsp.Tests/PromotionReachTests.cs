@@ -6,14 +6,17 @@ using Xunit.Abstractions;
 namespace Resonalyze.Dsp.Tests;
 
 /// <summary>
-/// The field regression the user hit on the real cabin measurements with an
-/// auto-crossover that split mid/tweeter at 2300 Hz: the wide-window promotion
-/// unseated the tweeter's arrival-anchored pick with a comb ALIAS ~1.7 ms
-/// (nearly four crossover periods) away for a 0.25 dB summation "gain", so the
-/// left tweeter arrived a couple of periods off its own mid and the mid IR read
-/// as lagging on the plot. The promotion reach cap keeps the pick within a lobe
-/// of the arrival, so mid and tweeter stay on the SAME summation lobe (their
-/// band-limited arrivals within one crossover period of each other — the
+/// The field regressions the user hit on the real cabin measurements with an
+/// auto-crossover that split mid/tweeter at 2300 Hz — two doors into the same
+/// failure: (a) the wide-window promotion unseated the tweeter's
+/// arrival-anchored pick with a comb ALIAS ~1.7 ms (nearly four crossover
+/// periods) away for a 0.25 dB summation "gain"; (b) with the promotion capped,
+/// the scene-preserving co-move walked the tweeter pair up to a period off its
+/// mid through its flat ±1.2 ms window for 0.1-1 dB of mean junction loss. Both
+/// are the same physics: on a high junction the summation surface is a comb of
+/// near-equal minima and fractions of a dB cannot choose a lobe — the arrival
+/// can. With both reach caps, mid and tweeter stay on the SAME summation lobe
+/// (band-limited arrivals within one crossover period of each other — the
 /// residual is the crossover's own per-driver group delay, not a misalignment).
 /// </summary>
 public sealed class PromotionReachTests
@@ -31,8 +34,13 @@ public sealed class PromotionReachTests
     private static CrossoverEdge Bw(double frequencyHz) =>
         new(CrossoverFilterFamily.Butterworth, frequencyHz, 24);
 
-    [Fact]
-    public void ComputeStereo_RealCabin_PromotionKeepsMidAndTweeterOnOneLobe()
+    // Both tweeter gains are real field configs: -5 dB exposed the promotion
+    // alias, 0 dB exposed the co-move door once the promotion was capped.
+    [Theory]
+    [InlineData(-5.0)]
+    [InlineData(0.0)]
+    public void ComputeStereo_RealCabin_PromotionKeepsMidAndTweeterOnOneLobe(
+        double tweeterGainDb)
     {
         Channel Load(string file, string name, DspChannelChain chain)
         {
@@ -49,14 +57,14 @@ public sealed class PromotionReachTests
         Channel leftMid = Load("l mid.json", "L mid", new DspChannelChain(
             Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(MidTwrHz), Bw(WoofMidHz))));
         Channel leftTwr = Load("l twr.json", "L twr", new DspChannelChain(
-            GainDb: -5,
+            GainDb: tweeterGainDb,
             Crossover: new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: Bw(MidTwrHz))));
         Channel rightWoof = Load("r woof.json", "R woof", new DspChannelChain(
             Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(WoofMidHz), Bw(80))));
         Channel rightMid = Load("r mid.json", "R mid", new DspChannelChain(
             Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(MidTwrHz), Bw(WoofMidHz))));
         Channel rightTwr = Load("r twr.json", "R twr", new DspChannelChain(
-            GainDb: -5,
+            GainDb: tweeterGainDb,
             Crossover: new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: Bw(MidTwrHz))));
 
         Channel[] all = [sub, leftWoof, leftMid, leftTwr, rightWoof, rightMid, rightTwr];

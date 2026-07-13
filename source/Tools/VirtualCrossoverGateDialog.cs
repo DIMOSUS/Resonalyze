@@ -38,20 +38,17 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
     public Action<double, double, double, double, PhaseWindowMode, int,
         PhaseDetrendMode, double>? PreviewChanged { get; set; }
 
-    private readonly DarkComboBox comboWindowMode = new();
-    private readonly DarkComboBox comboFdwCycles = new();
-    private readonly DarkComboBox comboDetrendMode = new();
-    private readonly Label labelAutoDetrend = new();
-
     public VirtualCrossoverGateDialog()
     {
         InitializeComponent();
-        InitializePhaseControls();
         numericGateOffset.ValueChanged += (_, _) => OnGateChanged();
         numericLeft.ValueChanged += (_, _) => OnGateChanged();
         numericPlateau.ValueChanged += (_, _) => OnGateChanged();
         numericRight.ValueChanged += (_, _) => OnGateChanged();
         numericTau.ValueChanged += (_, _) => OnGateChanged();
+        comboWindowMode.SelectedIndexChanged += (_, _) => OnGateChanged();
+        comboFdwCycles.SelectedIndexChanged += (_, _) => OnGateChanged();
+        comboDetrendMode.SelectedIndexChanged += (_, _) => OnGateChanged();
         buttonFit.Click += (_, _) =>
             numericGateOffset.Value = Clamp(numericGateOffset, fitOffsetMs);
         buttonTauSlope.Click += (_, _) => ApplyEstimatedTau(useSlope: true);
@@ -153,56 +150,6 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         PreviewChanged?.Invoke(
             GateOffsetMs, LeftMs, PlateauMs, RightMs, WindowMode, FdwCycles,
             DetrendMode, DetrendMs);
-    }
-
-    private void InitializePhaseControls()
-    {
-        const int addedHeight = 62;
-        ClientSize = new Size(ClientSize.Width, ClientSize.Height + addedHeight);
-        // Resizing already moves bottom-anchored buttons and stretches the
-        // top+bottom-anchored plot. Move only the plot's top edge into the new
-        // controls area and give back the automatically added height.
-        irPlotView.Top += addedHeight;
-        irPlotView.Height -= addedHeight;
-
-        AddCombo("Window", comboWindowMode, 102, 12, 112, 126);
-        comboWindowMode.Items.AddRange(["Fixed", "FDW"]);
-        AddCombo("FDW cycles", comboFdwCycles, 102, 262, 342, 74);
-        comboFdwCycles.Items.AddRange([4, 6, 8]);
-        AddCombo("Detrend", comboDetrendMode, 132, 12, 112, 126);
-        comboDetrendMode.Items.AddRange(["Off", "Auto", "Manual"]);
-
-        labelAutoDetrend.AutoSize = true;
-        labelAutoDetrend.ForeColor = Color.FromArgb(210, 214, 222);
-        labelAutoDetrend.Location = new Point(262, 134);
-        Controls.Add(labelAutoDetrend);
-
-        comboWindowMode.SelectedIndexChanged += (_, _) => OnGateChanged();
-        comboFdwCycles.SelectedIndexChanged += (_, _) => OnGateChanged();
-        comboDetrendMode.SelectedIndexChanged += (_, _) => OnGateChanged();
-    }
-
-    private void AddCombo(
-        string text,
-        DarkComboBox combo,
-        int top,
-        int labelLeft,
-        int controlLeft,
-        int width)
-    {
-        var label = new Label
-        {
-            AutoSize = true,
-            Font = new Font("Segoe UI Semibold", 9F),
-            ForeColor = Color.FromArgb(210, 214, 222),
-            Location = new Point(labelLeft, top + 2),
-            Text = text
-        };
-        combo.DropDownStyle = ComboBoxStyle.DropDownList;
-        combo.Location = new Point(controlLeft, top);
-        combo.Size = new Size(width, 19);
-        Controls.Add(label);
-        Controls.Add(combo);
     }
 
     private void UpdatePhaseControlState()

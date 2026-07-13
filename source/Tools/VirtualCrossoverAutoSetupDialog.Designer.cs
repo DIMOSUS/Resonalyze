@@ -31,6 +31,7 @@ namespace Resonalyze
         private void InitializeComponent()
         {
             labelHeader = new Label();
+            tableChannels = new TableLayoutPanel();
             labelFilters = new Label();
             checkButterworth = new CheckBox();
             checkLinkwitzRiley = new CheckBox();
@@ -59,6 +60,21 @@ namespace Resonalyze
             labelHeader.Size = new Size(320, 15);
             labelHeader.TabIndex = 0;
             labelHeader.Text = "Confirm the detected driver types (usable band shown):";
+            //
+            // tableChannels
+            //
+            tableChannels.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            tableChannels.AutoSize = true;
+            tableChannels.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            tableChannels.ColumnCount = 3;
+            tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tableChannels.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tableChannels.GrowStyle = TableLayoutPanelGrowStyle.AddRows;
+            tableChannels.Location = new Point(12, 36);
+            tableChannels.Name = "tableChannels";
+            tableChannels.Size = new Size(0, 0);
+            tableChannels.TabIndex = 1;
             //
             // labelFilters
             //
@@ -250,6 +266,7 @@ namespace Resonalyze
             BackColor = Color.FromArgb(40, 44, 54);
             ClientSize = new Size(468, 348);
             Controls.Add(labelHeader);
+            Controls.Add(tableChannels);
             Controls.Add(labelFilters);
             Controls.Add(checkButterworth);
             Controls.Add(checkLinkwitzRiley);
@@ -282,6 +299,7 @@ namespace Resonalyze
         #endregion
 
         private Label labelHeader;
+        private TableLayoutPanel tableChannels;
         private Label labelFilters;
         private CheckBox checkButterworth;
         private CheckBox checkLinkwitzRiley;

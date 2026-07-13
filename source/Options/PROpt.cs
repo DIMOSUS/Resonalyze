@@ -7,16 +7,15 @@ namespace Resonalyze.Options
     public partial class PROpt : ImpulsePreviewOptionsForm
     {
         private Func<CompareAnalysisSource?>? getCompare;
-        private readonly DarkComboBox comboWindowMode = new();
-        private readonly DarkComboBox comboFdwCycles = new();
-        private readonly DarkComboBox comboDetrendMode = new();
         private double manualDetrendMilliseconds;
         private bool updatingDetrendDisplay;
 
         public PROpt()
         {
             InitializeComponent();
-            InitializePhaseAnalysisControls();
+            comboWindowMode.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
+            comboFdwCycles.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
+            comboDetrendMode.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
             numericLeftWindow.ValueChanged += Gate_ValueChanged;
             numericRightWindow.ValueChanged += Gate_ValueChanged;
             numericGateOffset.ValueChanged += (_, _) => UpdateIrPreview();
@@ -97,42 +96,6 @@ namespace Resonalyze.Options
             visibility.ShowExcessPhase = checkBoxShowExcess.Checked;
             visibility.ShowCoherence = checkBoxShowCoherence.Checked;
             UpdateIrPreview();
-        }
-
-        private void InitializePhaseAnalysisControls()
-        {
-            const int addedHeight = 92;
-            foreach (Control control in Controls.Cast<Control>().ToArray())
-            {
-                control.Top += addedHeight;
-            }
-            ClientSize = new Size(ClientSize.Width, ClientSize.Height + addedHeight);
-
-            AddModeControl("Window", comboWindowMode, 10);
-            comboWindowMode.Items.AddRange(["Fixed", "FDW"]);
-            AddModeControl("FDW cycles", comboFdwCycles, 36);
-            comboFdwCycles.Items.AddRange([4, 6, 8]);
-            AddModeControl("Detrend", comboDetrendMode, 62);
-            comboDetrendMode.Items.AddRange(["Off", "Auto", "Manual"]);
-            comboWindowMode.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
-            comboFdwCycles.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
-            comboDetrendMode.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
-        }
-
-        private void AddModeControl(string text, DarkComboBox combo, int top)
-        {
-            var label = new Label
-            {
-                AutoSize = true,
-                ForeColor = Color.Gainsboro,
-                Location = new Point(12, top + 4),
-                Text = text
-            };
-            combo.DropDownStyle = ComboBoxStyle.DropDownList;
-            combo.Location = new Point(153, top);
-            combo.Size = new Size(100, 19);
-            Controls.Add(label);
-            Controls.Add(combo);
         }
 
         private void UpdatePhaseControlState()

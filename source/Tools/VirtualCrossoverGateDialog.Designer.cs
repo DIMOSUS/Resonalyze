@@ -44,6 +44,13 @@ namespace Resonalyze
             numericTau = new DarkNumericUpDown();
             buttonTauSlope = new Button();
             buttonTauPeak = new Button();
+            labelWindowMode = new Label();
+            comboWindowMode = new DarkComboBox();
+            labelFdwCycles = new Label();
+            comboFdwCycles = new DarkComboBox();
+            labelDetrendMode = new Label();
+            comboDetrendMode = new DarkComboBox();
+            labelAutoDetrend = new Label();
             irPlotView = new OxyPlot.WindowsForms.PlotView();
             buttonSave = new Button();
             buttonCancel = new Button();
@@ -237,11 +244,86 @@ namespace Resonalyze
             buttonTauPeak.Text = "Peak";
             buttonTauPeak.UseVisualStyleBackColor = true;
             //
+            // labelWindowMode
+            //
+            labelWindowMode.AutoSize = true;
+            labelWindowMode.ForeColor = Color.FromArgb(210, 214, 222);
+            labelWindowMode.Location = new Point(12, 104);
+            labelWindowMode.Name = "labelWindowMode";
+            labelWindowMode.Size = new Size(52, 15);
+            labelWindowMode.TabIndex = 17;
+            labelWindowMode.Text = "Window";
+            //
+            // comboWindowMode
+            //
+            comboWindowMode.BackColor = Color.FromArgb(55, 60, 72);
+            comboWindowMode.DropDownStyle = ComboBoxStyle.DropDownList;
+            comboWindowMode.ForeColor = Color.White;
+            comboWindowMode.Items.AddRange(new object[] { "Fixed", "FDW" });
+            comboWindowMode.Location = new Point(112, 102);
+            comboWindowMode.MinimumSize = new Size(36, 19);
+            comboWindowMode.Name = "comboWindowMode";
+            comboWindowMode.Size = new Size(126, 19);
+            comboWindowMode.TabIndex = 18;
+            //
+            // labelFdwCycles
+            //
+            labelFdwCycles.AutoSize = true;
+            labelFdwCycles.ForeColor = Color.FromArgb(210, 214, 222);
+            labelFdwCycles.Location = new Point(262, 104);
+            labelFdwCycles.Name = "labelFdwCycles";
+            labelFdwCycles.Size = new Size(67, 15);
+            labelFdwCycles.TabIndex = 19;
+            labelFdwCycles.Text = "FDW cycles";
+            //
+            // comboFdwCycles
+            //
+            comboFdwCycles.BackColor = Color.FromArgb(55, 60, 72);
+            comboFdwCycles.DropDownStyle = ComboBoxStyle.DropDownList;
+            comboFdwCycles.ForeColor = Color.White;
+            comboFdwCycles.Items.AddRange(new object[] { 4, 6, 8 });
+            comboFdwCycles.Location = new Point(342, 102);
+            comboFdwCycles.MinimumSize = new Size(36, 19);
+            comboFdwCycles.Name = "comboFdwCycles";
+            comboFdwCycles.Size = new Size(74, 19);
+            comboFdwCycles.TabIndex = 20;
+            //
+            // labelDetrendMode
+            //
+            labelDetrendMode.AutoSize = true;
+            labelDetrendMode.ForeColor = Color.FromArgb(210, 214, 222);
+            labelDetrendMode.Location = new Point(12, 134);
+            labelDetrendMode.Name = "labelDetrendMode";
+            labelDetrendMode.Size = new Size(49, 15);
+            labelDetrendMode.TabIndex = 21;
+            labelDetrendMode.Text = "Detrend";
+            //
+            // comboDetrendMode
+            //
+            comboDetrendMode.BackColor = Color.FromArgb(55, 60, 72);
+            comboDetrendMode.DropDownStyle = ComboBoxStyle.DropDownList;
+            comboDetrendMode.ForeColor = Color.White;
+            comboDetrendMode.Items.AddRange(new object[] { "Off", "Auto", "Manual" });
+            comboDetrendMode.Location = new Point(112, 132);
+            comboDetrendMode.MinimumSize = new Size(36, 19);
+            comboDetrendMode.Name = "comboDetrendMode";
+            comboDetrendMode.Size = new Size(126, 19);
+            comboDetrendMode.TabIndex = 22;
+            //
+            // labelAutoDetrend
+            //
+            labelAutoDetrend.AutoSize = true;
+            labelAutoDetrend.ForeColor = Color.FromArgb(210, 214, 222);
+            labelAutoDetrend.Location = new Point(262, 134);
+            labelAutoDetrend.Name = "labelAutoDetrend";
+            labelAutoDetrend.Size = new Size(0, 15);
+            labelAutoDetrend.TabIndex = 23;
+            //
             // irPlotView
             //
             irPlotView.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             irPlotView.BackColor = Color.FromArgb(32, 36, 46);
-            irPlotView.Location = new Point(12, 102);
+            irPlotView.Location = new Point(12, 164);
             irPlotView.Name = "irPlotView";
             irPlotView.PanCursor = Cursors.Hand;
             irPlotView.Size = new Size(596, 300);
@@ -257,7 +339,7 @@ namespace Resonalyze
             buttonSave.DialogResult = DialogResult.OK;
             buttonSave.FlatStyle = FlatStyle.Popup;
             buttonSave.ForeColor = Color.White;
-            buttonSave.Location = new Point(434, 412);
+            buttonSave.Location = new Point(434, 474);
             buttonSave.Name = "buttonSave";
             buttonSave.Size = new Size(84, 26);
             buttonSave.TabIndex = 11;
@@ -270,7 +352,7 @@ namespace Resonalyze
             buttonCancel.DialogResult = DialogResult.Cancel;
             buttonCancel.FlatStyle = FlatStyle.Popup;
             buttonCancel.ForeColor = Color.White;
-            buttonCancel.Location = new Point(524, 412);
+            buttonCancel.Location = new Point(524, 474);
             buttonCancel.Name = "buttonCancel";
             buttonCancel.Size = new Size(84, 26);
             buttonCancel.TabIndex = 12;
@@ -282,7 +364,7 @@ namespace Resonalyze
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(40, 44, 54);
-            ClientSize = new Size(620, 450);
+            ClientSize = new Size(620, 512);
             Controls.Add(labelGateOffset);
             Controls.Add(numericGateOffset);
             Controls.Add(buttonFit);
@@ -297,6 +379,13 @@ namespace Resonalyze
             Controls.Add(numericTau);
             Controls.Add(buttonTauSlope);
             Controls.Add(buttonTauPeak);
+            Controls.Add(labelWindowMode);
+            Controls.Add(comboWindowMode);
+            Controls.Add(labelFdwCycles);
+            Controls.Add(comboFdwCycles);
+            Controls.Add(labelDetrendMode);
+            Controls.Add(comboDetrendMode);
+            Controls.Add(labelAutoDetrend);
             Controls.Add(irPlotView);
             Controls.Add(buttonSave);
             Controls.Add(buttonCancel);
@@ -334,6 +423,13 @@ namespace Resonalyze
         private DarkNumericUpDown numericTau;
         private Button buttonTauSlope;
         private Button buttonTauPeak;
+        private Label labelWindowMode;
+        private DarkComboBox comboWindowMode;
+        private Label labelFdwCycles;
+        private DarkComboBox comboFdwCycles;
+        private Label labelDetrendMode;
+        private DarkComboBox comboDetrendMode;
+        private Label labelAutoDetrend;
         private OxyPlot.WindowsForms.PlotView irPlotView;
         private Button buttonSave;
         private Button buttonCancel;

@@ -73,12 +73,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     /// The sample rate is needed because the optimizer evaluates the exact digital
     /// biquad cascades the DSP runs.
     /// </summary>
-    // The designer lays the options section out below three channel rows; extra
-    // rows shift it down by this step and grow the dialog to match.
-    private const int DesignRowCount = 3;
-    private const int RowTop = 42;
-    private const int RowStep = 28;
-    private const int PreviewLineHeight = 15;
+    private bool optionsPositioned;
 
     public void Init(
         double sampleRateHz,
@@ -99,41 +94,44 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             maxCrossover.Value = maxCrossover.Maximum;
         }
 
-        // One row per participating channel, created on the fly so the dialog
-        // carries as many channels as the panel does. Below three rows (the
-        // designer's layout) the options section slides down and the dialog and
-        // its preview grow to fit.
-        SuspendLayout();
+        // One row per participating channel, laid out by the designer's
+        // TableLayoutPanel so the cells scale with the font/DPI instead of the
+        // old hand-computed pixel coordinates. OnLoad then slides the options
+        // section below the finished table and grows the dialog to fit.
+        rows.Clear();
+        tableChannels.SuspendLayout();
+        tableChannels.Controls.Clear();
+        tableChannels.RowStyles.Clear();
+        tableChannels.RowCount = channels.Count;
         for (int i = 0; i < channels.Count; i++)
         {
             (string name, Color accent, IReadOnlyList<SignalPoint> magnitude,
                 IReadOnlyList<double>? coherence, IReadOnlyList<SignalPoint>? distortion,
                 DriverBandEstimate band) = channels[i];
-            int top = RowTop + i * RowStep;
 
             var nameLabel = new Label
             {
-                AutoEllipsis = true,
+                Anchor = AnchorStyles.Left,
+                AutoSize = true,
                 Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204),
                 ForeColor = accent,
-                Location = new Point(12, top),
-                Size = new Size(190, 15),
+                Margin = new Padding(0, 4, 24, 4),
                 Text = name
             };
             var bandLabel = new Label
             {
+                Anchor = AnchorStyles.Left,
                 AutoSize = true,
                 ForeColor = Color.FromArgb(170, 176, 190),
-                Location = new Point(210, top),
+                Margin = new Padding(0, 4, 24, 4),
                 Text = $"{FormatHz(band.LowHz)} – {FormatHz(band.HighHz)}"
             };
             var typeComboBox = new DarkComboBox
             {
+                Anchor = AnchorStyles.Left,
                 BackColor = Color.FromArgb(55, 60, 72),
                 ForeColor = Color.White,
-                Location = new Point(346, top - 2),
-                MinimumSize = new Size(36, 19),
-                Size = new Size(110, 19),
+                Margin = new Padding(0, 1, 0, 1),
                 TabIndex = i
             };
             typeComboBox.Items.AddRange(
@@ -147,39 +145,75 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             typeComboBox.SelectedItem = band.SuggestedType;
             typeComboBox.SelectedIndexChanged += (_, _) => UpdatePreview();
 
-            Controls.Add(nameLabel);
-            Controls.Add(bandLabel);
-            Controls.Add(typeComboBox);
+            tableChannels.Controls.Add(nameLabel, 0, i);
+            tableChannels.Controls.Add(bandLabel, 1, i);
+            tableChannels.Controls.Add(typeComboBox, 2, i);
             rows.Add(new ChannelRow(
                 name, magnitude, coherence, distortion, nameLabel, bandLabel, typeComboBox));
         }
 
-        int extraRows = Math.Max(0, channels.Count - DesignRowCount);
-        if (extraRows > 0)
-        {
-            // Extra channel rows push the options down; the preview also gains one
-            // line per extra channel. The Apply/Cancel buttons are bottom-anchored
-            // and follow the client-size growth on their own.
-            int rowShift = extraRows * RowStep;
-            foreach (Control control in new Control[]
-                     {
-                         labelFilters, checkButterworth, checkLinkwitzRiley, checkBessel,
-                         labelRange, minCrossover, labelDash, maxCrossover, labelHz,
-                         independentSlopes, labelSubElevation, subElevation,
-                         labelSubElevationUnit, labelPreview
-                     })
-            {
-                control.Top += rowShift;
-            }
-
-            int previewGrowth = extraRows * PreviewLineHeight;
-            labelPreview.Height += previewGrowth;
-            ClientSize = new Size(ClientSize.Width, ClientSize.Height + rowShift + previewGrowth);
-        }
-
-        ResumeLayout();
+        tableChannels.ResumeLayout(true);
         initialized = true;
         UpdatePreview();
+        if (IsHandleCreated)
+        {
+            LayoutBelowChannelTable();
+        }
+    }
+
+    protected override void OnLoad(EventArgs e)
+    {
+        base.OnLoad(e);
+        LayoutBelowChannelTable();
+    }
+
+    // Slides the whole options block just below the auto-sized channel table and
+    // grows the client area so the bottom-anchored buttons clear the preview.
+    // Runs once, after the form has been scaled, so every measurement here is
+    // already in device pixels — no hand-computed 96-DPI coordinates survive.
+    private void LayoutBelowChannelTable()
+    {
+        if (optionsPositioned)
+        {
+            return;
+        }
+
+        optionsPositioned = true;
+
+        // The channel combos are DarkComboBox UserControls added to the table at
+        // runtime, so the form's one-time font autoscale never reaches them and
+        // their fixed 19-px height would clip the scaled text at high DPI. The
+        // labels are AutoSize and size themselves; the combos must be sized in
+        // device units here, after scaling, so the table row height accounts for
+        // them before we measure it.
+        Size comboSize = LogicalToDeviceUnits(new Size(110, 19));
+        foreach (ChannelRow row in rows)
+        {
+            row.TypeComboBox.Size = comboSize;
+        }
+
+        tableChannels.PerformLayout();
+        int shift = tableChannels.Bottom + LogicalToDeviceUnits(12) - labelFilters.Top;
+        foreach (Control control in new Control[]
+                 {
+                     labelFilters, checkButterworth, checkLinkwitzRiley, checkBessel,
+                     labelRange, minCrossover, labelDash, maxCrossover, labelHz,
+                     independentSlopes, labelSubElevation, subElevation,
+                     labelSubElevationUnit, labelPreview
+                 })
+        {
+            control.Top += shift;
+        }
+
+        // The preview shows one line per channel plus a summary; size it to the
+        // real font line height so it fits at any DPI, then grow the client area
+        // to clear the bottom-anchored buttons.
+        labelPreview.Height =
+            (rows.Count + 1) * labelPreview.Font.Height + LogicalToDeviceUnits(6);
+        ClientSize = new Size(
+            ClientSize.Width,
+            labelPreview.Bottom + LogicalToDeviceUnits(12) + buttonApply.Height
+                + LogicalToDeviceUnits(12));
     }
 
     // Maps the designer's filter-family checkboxes to their families and wires the

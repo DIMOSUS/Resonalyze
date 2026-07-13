@@ -60,3 +60,4 @@ Enforced by `.editorconfig`; notable deviations from common C# defaults:
 - `var` only when the type is apparent; explicit types otherwise, including built-ins.
 - CRLF line endings, 4-space indent, Allman braces, braces always.
 - New non-UI code uses file-scoped namespaces (see `Program.cs`, `ModeController.cs`).
+- WinForms controls belong in the `.Designer.cs`, not created/positioned in code after `InitializeComponent`. `AutoScaleMode.Font` only scales controls present during `InitializeComponent`; anything added afterwards keeps its literal 96-DPI `Location`/`Size` and overlaps on high-DPI displays. For genuinely dynamic controls (variable count) add them to a designer-defined `TableLayoutPanel`/`FlowLayoutPanel` — never absolute `Point`s; any unavoidable code-side positioning must use measured device values (`.Bottom`, `Font.Height`, `LogicalToDeviceUnits`) in `OnLoad`, after scaling.

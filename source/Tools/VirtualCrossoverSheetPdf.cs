@@ -107,18 +107,10 @@ internal static class VirtualCrossoverSheetPdf
         VirtualCrossoverChannelSettings right)
     {
         Section section = sheet.Section;
-        Paragraph heading = section.AddParagraph(
-            $"Channel {VirtualCrossoverSheet.ChannelName(index)}");
-        heading.Format.Font.Bold = true;
-        heading.Format.Font.Size = 15;
-        heading.Format.SpaceBefore = Unit.FromMillimeter(5);
-        heading.Format.SpaceAfter = Unit.FromMillimeter(1);
+        AddSectionHeading(
+            section, $"Channel {VirtualCrossoverSheet.ChannelName(index)}");
 
-        var table = section.AddTable();
-        table.Borders.Width = 0.5;
-        table.Borders.Color = PdfSheet.CardBorderColor;
-        Column labelColumn = table.AddColumn(Unit.FromCentimeter(3.0));
-        labelColumn.LeftPadding = Unit.FromMillimeter(2);
+        Table table = AddValueTable(section);
         for (int side = 0; side < 2; side++)
         {
             Column sideColumn = table.AddColumn(Unit.FromCentimeter(5.5));
@@ -133,7 +125,7 @@ internal static class VirtualCrossoverSheetPdf
         AddPairRow(table, "Gain",
             $"{Signed(left.GainDb)} dB",
             $"{Signed(right.GainDb)} dB");
-        AddPairRow(table, "Delay", PairDelayText(left), PairDelayText(right));
+        AddPairRow(table, "Delay", DelayText(left), DelayText(right));
         AddPairRow(table, "Polarity", PolarityText(left), PolarityText(right));
         AddPairRow(table, "Crossover",
             VirtualCrossoverSheet.DescribeCrossover(left),
@@ -149,9 +141,11 @@ internal static class VirtualCrossoverSheetPdf
             sheet, $"PEQ {VirtualCrossoverSheet.ChannelName(index)} R", right);
     }
 
-    private static string PairDelayText(VirtualCrossoverChannelSettings channel) =>
+    // The value strings shared by the pair table and the single-channel
+    // section, so the two layouts cannot print the same field differently.
+    private static string DelayText(VirtualCrossoverChannelSettings channel) =>
         $"{Number(channel.DelayMs, "0.00")} ms " +
-        $"(= {Number(channel.DelayMs * Acoustics.SpeedOfSoundAt20CMetersPerSecond, "0.#")} mm)";
+        $"(= {Number(channel.DelayMs * Acoustics.SpeedOfSoundAt20CMetersPerSecond, "0.#")} mm in air)";
 
     private static string PolarityText(VirtualCrossoverChannelSettings channel) =>
         channel.InvertPolarity ? "Inverted" : "Normal";
@@ -204,39 +198,46 @@ internal static class VirtualCrossoverSheetPdf
         VirtualCrossoverChannelSettings channel)
     {
         Section section = sheet.Section;
-        Paragraph heading = section.AddParagraph(
+        AddSectionHeading(
+            section,
             $"Channel {VirtualCrossoverSheet.ChannelName(index)}{sideSuffix} — " +
             channel.DisplayName);
-        heading.Format.Font.Bold = true;
-        heading.Format.Font.Size = 15;
-        heading.Format.SpaceBefore = Unit.FromMillimeter(5);
-        heading.Format.SpaceAfter = Unit.FromMillimeter(1);
 
-        var table = section.AddTable();
-        table.Borders.Width = 0.5;
-        table.Borders.Color = PdfSheet.CardBorderColor;
-        Column labelColumn = table.AddColumn(Unit.FromCentimeter(3.0));
-        labelColumn.LeftPadding = Unit.FromMillimeter(2);
+        Table table = AddValueTable(section);
         Column valueColumn = table.AddColumn(Unit.FromCentimeter(11.0));
         valueColumn.LeftPadding = Unit.FromMillimeter(2);
 
         AddRow(table, "Gain", $"{Signed(channel.GainDb)} dB");
-        AddRow(
-            table,
-            "Delay",
-            $"{Number(channel.DelayMs, "0.00")} ms   " +
-            $"(= {Number(channel.DelayMs * Acoustics.SpeedOfSoundAt20CMetersPerSecond, "0.#")} mm in air)");
-        AddRow(table, "Polarity", channel.InvertPolarity ? "Inverted" : "Normal");
+        AddRow(table, "Delay", DelayText(channel));
+        AddRow(table, "Polarity", PolarityText(channel));
         AddRow(table, "Crossover", VirtualCrossoverSheet.DescribeCrossover(channel));
-        if (channel.PeqBands.Count > 0 || channel.PeqPreampDb != 0)
+        if (HasPeq(channel))
         {
-            AddRow(
-                table,
-                "PEQ",
-                $"{channel.PeqSourceName ?? "custom"}, preamp {Signed(channel.PeqPreampDb)} dB");
+            AddRow(table, "PEQ", PeqSummary(channel));
         }
 
         sheet.AddFilterCards(channel.PeqBands);
+    }
+
+    // The section heading and the label-column value table shared by the pair
+    // and single-channel layouts; the caller adds the value column(s) it needs.
+    private static void AddSectionHeading(Section section, string title)
+    {
+        Paragraph heading = section.AddParagraph(title);
+        heading.Format.Font.Bold = true;
+        heading.Format.Font.Size = 15;
+        heading.Format.SpaceBefore = Unit.FromMillimeter(5);
+        heading.Format.SpaceAfter = Unit.FromMillimeter(1);
+    }
+
+    private static Table AddValueTable(Section section)
+    {
+        Table table = section.AddTable();
+        table.Borders.Width = 0.5;
+        table.Borders.Color = PdfSheet.CardBorderColor;
+        Column labelColumn = table.AddColumn(Unit.FromCentimeter(3.0));
+        labelColumn.LeftPadding = Unit.FromMillimeter(2);
+        return table;
     }
 
     private static void AddRow(Table table, string label, string value)

@@ -3457,13 +3457,22 @@ public partial class VirtualCrossoverPanel : UserControl
     // Well-aligned drivers visibly start together.
     private void DrawImpulseCurves(PlotModel model, List<ProcessedChannel> processed)
     {
-        int reference = processed.Min(item => item.PeakIndex);
-        int sampleRate = processed[0].Channel.SampleRate;
+        // Only the shown traces set the gate offset and the ms-axis window, so
+        // an auto gate never centers on a channel whose curve is hidden.
+        List<ProcessedChannel> shown = processed
+            .Where(item => item.Channel.Settings.ShowProcessedCurve)
+            .ToList();
+        if (shown.Count == 0)
+        {
+            return;
+        }
+
+        int reference = shown.Min(item => item.PeakIndex);
+        int sampleRate = shown[0].Channel.SampleRate;
         double gateOffsetMs = gatePreview?.OffsetMs
             ?? ResolveGateOffsetMs(reference, sampleRate);
 
-        var traces = processed
-            .Where(item => item.Channel.Settings.ShowProcessedCurve)
+        var traces = shown
             .Select(item => new IrPreviewTrace(
                 item.ImpulseResponse,
                 item.Channel.Control.ChannelName,

@@ -996,6 +996,21 @@ public static class AutoAlignmentEngine
                     * 1_000.0 / link.Left.SampleRate;
                 double rightPeakMs = rightSnapshot.PeakIndex
                     * 1_000.0 / rightChannel.SampleRate;
+                // Guard the asymmetric-cabin case: if the two peaks sit farther
+                // apart than any real inter-side path, they are different room
+                // modes, not one shared feature, so their difference is not a
+                // usable L/R split. Withdraw the prior (free own-side search)
+                // rather than pin the pair to a fabricated target.
+                if (Math.Abs(leftPeakMs - rightPeakMs) > MaxInterSideDirectPathMs)
+                {
+                    log.AppendLine(
+                        $"  cross-side prior {rightChannel.Name}: withdrawn — " +
+                        $"energy peaks {leftPeakMs:0.000} / {rightPeakMs:0.000} ms " +
+                        "are too far apart to be one shared feature " +
+                        "(asymmetric modal dominance)");
+                    return null;
+                }
+
                 double peakTarget = leftPeakMs
                     - plan.SceneOffsetMs
                     - rightPeakMs;
@@ -1168,6 +1183,17 @@ public static class AutoAlignmentEngine
     // content to pin: the lock requires at least a third of an octave above
     // the edge, the same admission rule the arrival analysis itself applies.
     private const double SceneLockLocalizationLowHz = 300;
+
+    // The widest the two sides of one stereo pair can plausibly differ in
+    // direct-path time, measured from one listening position: a car cabin is
+    // at most a couple of metres across, so ~8 ms bounds any real path split
+    // with generous margin. The energy-peak fallback (below) trusts that both
+    // sides' dominant IR packets are the SAME physical feature; peaks farther
+    // apart than this are almost certainly DIFFERENT room modes dominating L
+    // vs R (an acoustically asymmetric install), so the peak difference is not
+    // a real L/R split and the pair falls back to its own-side junction search
+    // rather than pinning to a fabricated target.
+    private const double MaxInterSideDirectPathMs = 8.0;
 
     // Whether a linked pair reaches far enough into the localization region
     // for the scene to outrank its junction sums: locked in the descent,

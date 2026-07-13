@@ -863,7 +863,9 @@ public static class AutoAlignmentEngine
             IAlignmentChannel rightChannel,
             StereoPairLink link,
             double bandLowHz,
-            double bandHighHz)
+            double bandHighHz,
+            double fallbackLowHz,
+            double fallbackHighHz)
         {
             var searchAlignment =
                 new Dictionary<IAlignmentChannel, AlignmentOverride>(alignment);
@@ -873,75 +875,122 @@ public static class AutoAlignmentEngine
                 current.First(item => item.Channel == link.Left).ImpulseResponse;
             Complex[] rightIr =
                 current.First(item => item.Channel == rightChannel).ImpulseResponse;
-            TimeAlignmentAnalysisResult leftArrival =
-                VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-                    leftIr, link.Left.SampleRate, bandLowHz, bandHighHz);
-            TimeAlignmentAnalysisResult rightRaw =
-                VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-                    rightIr, rightChannel.SampleRate, bandLowHz, bandHighHz);
-            if (!leftArrival.IsValid || !rightRaw.IsValid ||
-                leftArrival.SignalToNoiseDecibels < MinimumArrivalSnrDb ||
-                rightRaw.SignalToNoiseDecibels < MinimumArrivalSnrDb)
+
+            // Both sides measured in one band, with a modal-latch guard: the
+            // Latched flag separates "one side timed the wrong feature" (worth
+            // retrying one band up) from "the band cannot be measured at all"
+            // (silence or a too-narrow intersection — the link stays without a
+            // target, exactly as before the ladder existed).
+            // SAME driver measured in the band's upper half must agree with
+            // the full-band read to within the dispersion one direct wave
+            // packet can show (half a period at the probe's low edge). A
+            // full-band read landing far BEHIND its own upper-half read means
+            // the detector latched that side onto the in-room modal build-up
+            // instead of the direct rise (the under-seat midbass case:
+            // 21.2 ms in 80-200 Hz vs 13.9 ms one band up) — the two sides
+            // are then timing DIFFERENT features and their difference is
+            // garbage. The narrow upper half itself is NOT a substitute (at a
+            // low band it is an octave of mush that once dragged a woofer
+            // 6 ms off) — it only votes on the full band's honesty.
+            ((TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
+                Reads, bool Latched) MeasureConsistent(double lowHz, double highHz)
+            {
+                TimeAlignmentAnalysisResult left =
+                    VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                        leftIr, link.Left.SampleRate, lowHz, highHz);
+                TimeAlignmentAnalysisResult right =
+                    VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                        rightIr, rightChannel.SampleRate, lowHz, highHz);
+                if (!left.IsValid || !right.IsValid ||
+                    left.SignalToNoiseDecibels < MinimumArrivalSnrDb ||
+                    right.SignalToNoiseDecibels < MinimumArrivalSnrDb)
+                {
+                    return (null, false);
+                }
+
+                double probeLowHz = Math.Sqrt(lowHz * highHz);
+                if (highHz <
+                    probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
+                {
+                    return ((left, right), false);
+                }
+
+                TimeAlignmentAnalysisResult leftProbe =
+                    VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                        leftIr, link.Left.SampleRate, probeLowHz, highHz);
+                TimeAlignmentAnalysisResult rightProbe =
+                    VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                        rightIr, rightChannel.SampleRate, probeLowHz, highHz);
+                if (!leftProbe.IsValid || !rightProbe.IsValid ||
+                    leftProbe.SignalToNoiseDecibels < MinimumArrivalSnrDb ||
+                    rightProbe.SignalToNoiseDecibels < MinimumArrivalSnrDb)
+                {
+                    return ((left, right), false);
+                }
+
+                double toleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
+                bool leftLatched = left.FirstArrivalDelayMilliseconds
+                    - leftProbe.FirstArrivalDelayMilliseconds > toleranceMs;
+                bool rightLatched = right.FirstArrivalDelayMilliseconds
+                    - rightProbe.FirstArrivalDelayMilliseconds > toleranceMs;
+                if (leftLatched || rightLatched)
+                {
+                    log.AppendLine(
+                        $"  cross-side link {rightChannel.Name}: " +
+                        $"{(leftLatched ? link.Left.Name : rightChannel.Name)}" +
+                        $" reads {(leftLatched ? left : right).FirstArrivalDelayMilliseconds:0.000} ms" +
+                        $" in {lowHz:0}-{highHz:0} Hz but " +
+                        $"{(leftLatched ? leftProbe : rightProbe).FirstArrivalDelayMilliseconds:0.000} ms" +
+                        $" in its {probeLowHz:0}-{highHz:0} Hz half " +
+                        "(modal latch: the sides time different features)");
+                    return (null, true);
+                }
+
+                return ((left, right), false);
+            }
+
+            // The consistency ladder: the pair's own shared band first; when a
+            // side LATCHED there, the channel's junction band — the engine
+            // already trusts it for junction work, and the direct rise that
+            // hid under a mode in the low link band is usually plain one
+            // octave up. An unmeasurable link band (silence, too narrow) does
+            // NOT ladder: the link was inadmissible, not mis-read. Only when
+            // both bands are poisoned is the prior withdrawn and the search
+            // keeps its own-side junction anchor.
+            double usedLowHz = bandLowHz;
+            double usedHighHz = bandHighHz;
+            ((TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
+                Reads, bool Latched) measured =
+                MeasureConsistent(bandLowHz, bandHighHz);
+            if (measured.Reads == null && measured.Latched &&
+                (fallbackLowHz != bandLowHz || fallbackHighHz != bandHighHz))
+            {
+                measured = MeasureConsistent(fallbackLowHz, fallbackHighHz);
+                if (measured.Reads != null)
+                {
+                    usedLowHz = fallbackLowHz;
+                    usedHighHz = fallbackHighHz;
+                }
+                else if (measured.Latched)
+                {
+                    log.AppendLine(
+                        $"  cross-side prior {rightChannel.Name}: withdrawn — " +
+                        "no band reads both sides' direct arrivals consistently");
+                }
+            }
+            if (measured.Reads is not { } arrivals)
             {
                 return null;
             }
 
-            // Modal-latch guard: the SAME driver measured in the band's upper
-            // half must agree with the full-band read to within the dispersion
-            // one direct wave packet can show (half a period at the probe's
-            // low edge). A full-band read landing far BEHIND its own upper-half
-            // read means the detector latched that side onto the in-room modal
-            // build-up instead of the direct rise (the under-seat midbass case:
-            // 21.2 ms in 80-200 Hz vs 15.2 ms one band up) — the two sides are
-            // then timing DIFFERENT features and their difference is garbage.
-            // The honest response is to withdraw the prior (the search keeps
-            // its own-side junction anchor), NOT to re-measure in the narrow
-            // upper half: at a low link band that probe is an octave of mush
-            // (~1/BW blur of many ms) that once dragged a woofer 6 ms off.
-            double probeLowHz = Math.Sqrt(bandLowHz * bandHighHz);
-            if (bandHighHz >=
-                probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
-            {
-                TimeAlignmentAnalysisResult leftProbe =
-                    VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-                        leftIr, link.Left.SampleRate, probeLowHz, bandHighHz);
-                TimeAlignmentAnalysisResult rightProbe =
-                    VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-                        rightIr, rightChannel.SampleRate, probeLowHz, bandHighHz);
-                double toleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
-                if (leftProbe.IsValid && rightProbe.IsValid &&
-                    leftProbe.SignalToNoiseDecibels >= MinimumArrivalSnrDb &&
-                    rightProbe.SignalToNoiseDecibels >= MinimumArrivalSnrDb)
-                {
-                    bool leftLatched =
-                        leftArrival.FirstArrivalDelayMilliseconds
-                        - leftProbe.FirstArrivalDelayMilliseconds > toleranceMs;
-                    bool rightLatched =
-                        rightRaw.FirstArrivalDelayMilliseconds
-                        - rightProbe.FirstArrivalDelayMilliseconds > toleranceMs;
-                    if (leftLatched || rightLatched)
-                    {
-                        log.AppendLine(
-                            $"  cross-side prior {rightChannel.Name}: withdrawn — " +
-                            $"{(leftLatched ? link.Left.Name : rightChannel.Name)}" +
-                            $" reads {(leftLatched ? leftArrival : rightRaw).FirstArrivalDelayMilliseconds:0.000} ms" +
-                            $" in {bandLowHz:0}-{bandHighHz:0} Hz but " +
-                            $"{(leftLatched ? leftProbe : rightProbe).FirstArrivalDelayMilliseconds:0.000} ms" +
-                            $" in its {probeLowHz:0}-{bandHighHz:0} Hz half " +
-                            "(modal latch: the sides time different features)");
-                        return null;
-                    }
-                }
-            }
-
-            double target = leftArrival.FirstArrivalDelayMilliseconds
+            double target = arrivals.Left.FirstArrivalDelayMilliseconds
                 - plan.SceneOffsetMs
-                - rightRaw.FirstArrivalDelayMilliseconds;
+                - arrivals.Right.FirstArrivalDelayMilliseconds;
             log.AppendLine(
                 $"  cross-side prior {rightChannel.Name}: target {target:0.000} ms " +
-                $"(L arrival {leftArrival.FirstArrivalDelayMilliseconds:0.000}, " +
-                $"raw R {rightRaw.FirstArrivalDelayMilliseconds:0.000} ms " +
-                $"in {bandLowHz:0}-{bandHighHz:0} Hz)");
+                $"(L arrival {arrivals.Left.FirstArrivalDelayMilliseconds:0.000}, " +
+                $"raw R {arrivals.Right.FirstArrivalDelayMilliseconds:0.000} ms " +
+                $"in {usedLowHz:0}-{usedHighHz:0} Hz)");
             return target;
         }
 
@@ -974,9 +1023,15 @@ public static class AutoAlignmentEngine
             // The scene mandate: pairs reaching the localization region are
             // pinned to the cross-side target, which is then measured in the
             // localization sub-band alone — the low end of a wide shared band
-            // (soft envelopes, no localization) must not smear the pin. Pure
-            // low-frequency pairs keep the free joint-junction search with
-            // the full-band target as a gentle prior only.
+            // (soft envelopes, no localization) must not smear the pin. A
+            // pure low-frequency pair is pinned too, but only to the LOBE: an
+            // identical L/R driver pair's delay split is physical (path
+            // difference), and a junction comb whose lobes differ by a dB
+            // must not choose it — the field failure put one under-seat
+            // midbass at 0 and the other at 10.85 ms for exactly that. The
+            // lock tolerance is half the period of the tightest junction the
+            // channel searches against, so the sum keeps full authority
+            // inside the arrival's lobe and none across lobes.
             StereoPairLink? channelLink = plan.PairLinks?.FirstOrDefault(
                 item => item.Right == channel);
             bool lockable = channelLink != null && IsSceneLockable(channelLink);
@@ -988,10 +1043,16 @@ public static class AutoAlignmentEngine
                     lockable
                         ? Math.Max(channelLink.BandLowHz, SceneLockLocalizationLowHz)
                         : channelLink.BandLowHz,
-                    channelLink.BandHighHz);
-            double? sceneLock = lockable && crossTarget != null
-                ? SceneLockToleranceMs
-                : null;
+                    channelLink.BandHighHz,
+                    pair.BandLowHz,
+                    pair.BandHighHz);
+            double? sceneLock = crossTarget == null
+                ? null
+                : lockable
+                    ? SceneLockToleranceMs
+                    : 500.0 / Math.Max(
+                        pair.CrossoverHz,
+                        secondaryPair?.CrossoverHz ?? pair.CrossoverHz);
 
             // Polarity is a property of the DRIVER, not the side: a right channel
             // inherits the sign its left counterpart settled on (the two are the
@@ -1067,9 +1128,12 @@ public static class AutoAlignmentEngine
     // (the left counterpart's settled arrival minus the scene offset) and may
     // fine-tune its junction sum only within this tolerance — the stereo
     // image outranks the junction handover. Pairs living entirely below the
-    // localization region (the woofers) keep the free joint-junction search:
-    // the ear does not localize there, low-band envelope arrivals are soft,
-    // and the summation is what remains audible.
+    // localization region (the woofers) are pinned more loosely, to the
+    // arrival's LOBE (half the tightest adjacent junction period): the ear
+    // does not localize there, but an identical driver pair's delay split is
+    // still physical, and the junction comb must polish within that lobe,
+    // not choose one. With no reliable cross-side arrival at all the free
+    // joint-junction search remains.
     private const double SceneLockToleranceMs = 0.05;
 
     // The lower edge of the localization region. Only the part of a pair's
@@ -1180,8 +1244,11 @@ public static class AutoAlignmentEngine
             return;
         }
 
+        // Every linked pair participates: the scene-locked ones paid their
+        // junction sums to the stereo image, the low-frequency ones to the
+        // arrival-lobe pin — co-moving both sides by one delta repairs those
+        // junctions without touching what the pin bought.
         foreach (StereoPairLink link in plan.PairLinks
-            .Where(IsSceneLockable)
             .OrderByDescending(item => item.BandHighHz))
         {
             AlignmentOverride leftOverride = alignment.GetValueOrDefault(link.Left);
@@ -1196,6 +1263,18 @@ public static class AutoAlignmentEngine
                     pair.Upper.Channel == link.Right))
                 .ToList();
             if (adjacent.Count == 0)
+            {
+                continue;
+            }
+
+            // A pair bordering the shared mono channel is not co-moved: the
+            // mono is timed by the LEFT pass alone (a pinned invariant — the
+            // sub/left-woofer relation must match a left-only run exactly),
+            // and a shared shift of the pair would silently re-time the left
+            // side against it.
+            if (adjacent.Any(junction =>
+                plan.MonoChannels.Contains(junction.Lower.Channel) ||
+                plan.MonoChannels.Contains(junction.Upper.Channel)))
             {
                 continue;
             }

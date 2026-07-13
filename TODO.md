@@ -14,6 +14,11 @@ Linux dev env where the work was done).
 - [ ] **GCC-PHAT alignment confidence line** renders in the Time Alignment
   panel ("Alignment: NN% (GCC-PHAT / envelope fallback)"); re-eyeball the fixed
   0.2 PHAT trust gate on real captures (coherence weighting shifts the peak).
+- [ ] **Excitation-masked H1** (relative regularization + explicit sweep-start
+  edge in `TransferFunction.ComputeAveragedRelativeIr`): re-measure and confirm
+  the transfer FR/IR look right; on reconstructed field captures the infrasonic
+  rumble that used to bias the loopback-referenced sub timing by up to ~0.34 ms
+  is gone, so a fresh sub measurement is the interesting one.
 - [ ] **Butterworth auto-delay polarity**: re-run the user's tune and confirm no
   channel is inverted on one side of a pair alone.
 - [ ] **Honest dBr/dBc axis + tracker labels** (FR plot title, distortion tracker
@@ -228,14 +233,6 @@ Linux dev env where the work was done).
   after wiring never get live-apply behavior. Deferred to a Windows session: the
   fix hooks `ControlAdded` recursively and re-enters the apply debounce, so it
   needs a live check that dynamically-added rows apply exactly once.
-
-## Measurement / transfer layer
-
-- [ ] **H1 has no excitation mask and an absolute epsilon.** Below the sweep band
-  `Gxy/Gxx` divides noise by noise and the garbage bins ring back through the
-  IFFT; the absolute epsilon's strength also varies with the average count. Fix:
-  relative regularization + a soft excitation taper at the sweep edges. Changes
-  every measured transfer IR — needs validation against fresh raw captures.
 
 ## EQ Wizard
 

@@ -363,7 +363,11 @@ namespace Resonalyze
                     return result;
                 }
 
-                var accumulator = new SweepAverageAccumulator();
+                // The sweep spans Octaves octaves up to Nyquist, so its low
+                // edge is Nyquist / 2^Octaves — the transfer estimator masks
+                // the never-excited bins below it.
+                var accumulator = new SweepAverageAccumulator(
+                    Math.Pow(2.0, -sweep.Octaves));
                 var rejections = new List<SweepRunRejection>();
                 int requestedRuns = AverageRunCount;
                 for (int run = 1; run <= requestedRuns; run++)
@@ -734,6 +738,7 @@ namespace Resonalyze
 
         private sealed class SweepAverageAccumulator
         {
+            private readonly double excitationLowNyquistFraction;
             private readonly List<TransferFunctionFrame> transferFrames = new();
             private readonly ChannelLevelAccumulator microphoneLevels = new(fullScaleReference: false);
             private readonly ChannelLevelAccumulator loopbackLevels = new(fullScaleReference: true);
@@ -741,6 +746,11 @@ namespace Resonalyze
             private int referencePeakIndex;
             private float[]? lastMicrophoneSamples;
             private float[]? lastLoopbackSamples;
+
+            public SweepAverageAccumulator(double excitationLowNyquistFraction)
+            {
+                this.excitationLowNyquistFraction = excitationLowNyquistFraction;
+            }
 
             public int AcceptedRuns { get; private set; }
 
@@ -805,7 +815,8 @@ namespace Resonalyze
                 if (transferFrames.Count == AcceptedRuns)
                 {
                     TransferEstimateResult transfer = TransferFunction.ComputeAveragedRelativeIr(
-                        transferFrames);
+                        transferFrames,
+                        excitationLowNyquistFraction);
                     transferImpulseResponse = Array.ConvertAll(
                         transfer.ImpulseResponse,
                         sample => new Complex(sample, 0.0));

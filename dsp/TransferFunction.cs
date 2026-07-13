@@ -8,18 +8,56 @@ namespace Resonalyze.Dsp;
 /// </summary>
 public static class TransferFunction
 {
+    // H1 regularization relative to the strongest excitation bin. An absolute
+    // epsilon changes meaning with the record level and with the accumulated
+    // average count (the spectra below are unnormalized running sums), so its
+    // strength silently drifted between measurements; -100 dB of the peak bin
+    // is scale-invariant. Note it does no gating work of its own: any bin the
+    // gates let through already has at least gateLow (-74 dB re max) in the
+    // denominator, so λ biases it by under 0.25% — it only keeps the division
+    // Tikhonov-safe should the gate constants ever loosen.
+    private const double RelativeRegularization = 1e-10;
+
+    // The power gate: bins whose reference power sits more than 60 dB under
+    // the strongest excitation bin fade out over a raised cosine that reaches
+    // zero another 14 dB down. This is only a safety net for bins at the true
+    // capture noise floor (below -90 dB even for 16-bit loopbacks) — it
+    // deliberately canNOT mark the region below the sweep start, because at
+    // measurement FFT lengths the sweep's own spectral leakage skirts hold
+    // the reference power at just -40..-20 dB re max all the way down to DC
+    // (verified on reconstructed field captures), while genuinely excited
+    // bins reach -45 dB (~36 dB of 1/f tilt across 12 octaves plus the
+    // first-octave fade-in). Cutting below the sweep start is the caller's
+    // job via the explicit excitation edge — the sweep parameters are known,
+    // the spectrum alone cannot reveal them.
+    private const double ExcitationGatePowerRatio = 1e-6;
+    private const double ExcitationGateFloorShare = 0.04;
+
+    /// <param name="excitationLowNyquistFraction">
+    /// The excitation's low edge as a fraction of Nyquist (an exponential
+    /// sweep spanning N octaves starts at Nyquist / 2^N). Bins fade out over
+    /// a raised cosine between this frequency and half of it, and stay zero
+    /// below: the sweep never went there, so Gxy/Gxx is microphone rumble
+    /// divided by the reference's leakage skirt — garbage that used to ring
+    /// back through the IFFT across the whole IR. The returned coherence
+    /// carries the same validity: the leakage is deterministic across runs,
+    /// so raw γ² reads ~1 exactly where the estimate is zeroed as unexcited.
+    /// Zero (the default) disables the edge for callers whose excitation
+    /// genuinely covers DC.
+    /// </param>
     public static TransferEstimateResult ComputeAveragedRelativeIr(
         IReadOnlyList<TransferFunctionFrame> frames,
-        double epsilon = 1e-12)
+        double excitationLowNyquistFraction = 0.0)
     {
         ArgumentNullException.ThrowIfNull(frames);
         if (frames.Count == 0)
         {
             throw new ArgumentException("At least one transfer frame is required.", nameof(frames));
         }
-        if (!double.IsFinite(epsilon) || epsilon < 0)
+        if (!double.IsFinite(excitationLowNyquistFraction) ||
+            excitationLowNyquistFraction is < 0.0 or > 1.0)
         {
-            throw new ArgumentOutOfRangeException(nameof(epsilon));
+            throw new ArgumentOutOfRangeException(nameof(excitationLowNyquistFraction));
         }
 
         int sampleCount = frames.Min(frame => Math.Min(frame.Reference.Count, frame.Target.Count));
@@ -51,6 +89,10 @@ public static class TransferFunction
         // at 2-4 averages the raw MSC of pure noise reads 1/K (0.5 at K=2 —
         // straddling the very thresholds the unwrap and the PHAT weighting
         // trust), which is estimator bias, not information.
+        (double[] gateWeights, double regularization) = BuildExcitationGate(
+            referencePowerSpectrum,
+            excitationLowNyquistFraction);
+
         double[] coherence = SpectrumAnalysis.DebiasCoherence(
             SpectrumAnalysis
                 .ComputeCoherence(
@@ -60,11 +102,22 @@ public static class TransferFunction
                     epsilon: 0.0)[..(fftLength / 2 + 1)],
             frames.Count);
 
-        Complex[] relative = InverseH1Response(
+        // The gate is the estimate's validity, and the coherence must carry
+        // it too: below the sweep start the sweep's own deterministic leakage
+        // repeats across runs, so raw γ² reads ~1 exactly where H1 is zeroed
+        // as unexcited — and downstream consumers (the phase unwrap's trust
+        // gate, the PHAT weighting, the plotted coherence curve) would keep
+        // presenting those bins as reliable.
+        for (int bin = 0; bin < coherence.Length; bin++)
+        {
+            coherence[bin] *= gateWeights[bin];
+        }
+
+        Complex[] relative = InverseGatedH1(
             crossSpectrum,
             referencePowerSpectrum,
-            epsilon,
-            filter: null);
+            gateWeights,
+            regularization);
 
         var impulseResponse = new double[fftLength];
         double peakMagnitude = 0;
@@ -118,6 +171,79 @@ public static class TransferFunction
                 targetPowerSpectrum[bin] += MagnitudeSquared(targetSpectrum[bin]);
             }
         }
+    }
+
+    // The validity of every bin of the H1 estimate: the excitation edge from
+    // the caller's known sweep start times the power-floor safety net read
+    // from the reference's own accumulated spectrum. The weights are real and
+    // Hermitian-symmetric (frequencies fold through min(bin, N - bin); a real
+    // capture's power spectrum already is), so applying them is zero-phase
+    // filtering: nothing moves in time. The peak scan that anchors the power
+    // thresholds and the regularization only looks at bins at FULL edge
+    // weight: a bin the estimate discards or attenuates must not scale the
+    // gate it is excluded from — a loud mains-adjacent hum below (or inside
+    // the ramp of) a narrow sweep's start, or DC, whose converter-offset
+    // splatter can rival the sweep bins at measurement FFT lengths, would
+    // otherwise fade genuinely excited bins.
+    private static (double[] Weights, double Regularization) BuildExcitationGate(
+        double[] referencePowerSpectrum,
+        double excitationLowNyquistFraction)
+    {
+        int fftLength = referencePowerSpectrum.Length;
+        int half = fftLength / 2;
+        double NyquistFraction(int bin) =>
+            Math.Min(bin, fftLength - bin) / (double)half;
+
+        double maxReferencePower = 0;
+        for (int bin = 1; bin < fftLength; bin++)
+        {
+            if (excitationLowNyquistFraction <= 0.0 ||
+                NyquistFraction(bin) >= excitationLowNyquistFraction)
+            {
+                maxReferencePower = Math.Max(maxReferencePower, referencePowerSpectrum[bin]);
+            }
+        }
+
+        double gateHigh = maxReferencePower * ExcitationGatePowerRatio;
+        double gateLow = gateHigh * ExcitationGateFloorShare;
+        var weights = new double[fftLength];
+        for (int bin = 0; bin < fftLength; bin++)
+        {
+            double weight = SoftGate(referencePowerSpectrum[bin], gateLow, gateHigh);
+            if (excitationLowNyquistFraction > 0.0 && weight > 0)
+            {
+                weight *= SoftGate(
+                    NyquistFraction(bin),
+                    excitationLowNyquistFraction * 0.5,
+                    excitationLowNyquistFraction);
+            }
+            weights[bin] = weight;
+        }
+
+        return (weights, maxReferencePower * RelativeRegularization);
+    }
+
+    // The H1 estimate cross / (auto + λ), shaped by the validity weights and
+    // transformed back to the time domain.
+    private static Complex[] InverseGatedH1(
+        Complex[] crossSpectrum,
+        double[] referencePowerSpectrum,
+        double[] weights,
+        double regularization)
+    {
+        int fftLength = crossSpectrum.Length;
+        var relative = new Complex[fftLength];
+        for (int bin = 0; bin < fftLength; bin++)
+        {
+            if (weights[bin] > 0)
+            {
+                relative[bin] = weights[bin] * crossSpectrum[bin]
+                    / (referencePowerSpectrum[bin] + regularization);
+            }
+        }
+
+        Fourier.Inverse(relative, FourierOptions.Matlab);
+        return relative;
     }
 
     // The H1 estimate cross / (auto + eps), optionally shaped by a spectral

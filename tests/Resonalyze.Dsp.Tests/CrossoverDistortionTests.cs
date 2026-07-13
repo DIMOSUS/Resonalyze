@@ -42,6 +42,19 @@ public sealed class CrossoverDistortionTests
             .Select(f => new SignalPoint(f, f > breakupHz ? -8.0 : -45.0))
             .ToList();
 
+    // THD dirty at EVERY frequency — a driver that distorts across its whole band.
+    private static List<SignalPoint> DistortionAllDirty() =>
+        EqualizationCurve.LogFrequencyGrid(20, 20_000, 512)
+            .Select(f => new SignalPoint(f, -8.0))
+            .ToList();
+
+    // Every point masked (NaN) — the |H1| denominator collapsed, so the curve
+    // carries no information at all.
+    private static List<SignalPoint> DistortionAllMasked() =>
+        EqualizationCurve.LogFrequencyGrid(20, 20_000, 512)
+            .Select(f => new SignalPoint(f, double.NaN))
+            .ToList();
+
     [Fact]
     public void EstimateBand_ReadsTheTweeterDistortionKnee()
     {
@@ -59,11 +72,73 @@ public sealed class CrossoverDistortionTests
     }
 
     [Fact]
-    public void EstimateBand_WithoutDistortion_LeavesTheCleanEdgesNaN()
+    public void EstimateBand_WithoutDistortion_IsUnavailableWithNaNEdges()
     {
         DriverBandEstimate band = CrossoverAutoSetup.EstimateBand(BandCurve(1_000, 20_000));
+        Assert.Equal(DistortionBandStatus.Unavailable, band.DistortionStatus);
         Assert.True(double.IsNaN(band.DistortionLowHz));
         Assert.True(double.IsNaN(band.DistortionHighHz));
+    }
+
+    [Fact]
+    public void EstimateBand_CleanSubBand_IsCleanBandFound()
+    {
+        DriverBandEstimate band = CrossoverAutoSetup.EstimateBand(
+            BandCurve(1_000, 20_000), coherence: null, DistortionDirtyBelow(1_500));
+        Assert.Equal(DistortionBandStatus.CleanBandFound, band.DistortionStatus);
+    }
+
+    // The P1 the reviewer flagged: "dirty everywhere" must NOT collapse to the same
+    // NaN result as "no data". It reports NoCleanBand with finite (protective) edges
+    // — the dirty span, held clear of — so the crossover tightens, not relaxes.
+    [Fact]
+    public void EstimateBand_DirtyEverywhere_IsNoCleanBandNotUnavailable()
+    {
+        DriverBandEstimate dirty = CrossoverAutoSetup.EstimateBand(
+            BandCurve(1_000, 20_000), coherence: null, DistortionAllDirty());
+        DriverBandEstimate none = CrossoverAutoSetup.EstimateBand(BandCurve(1_000, 20_000));
+
+        Assert.Equal(DistortionBandStatus.NoCleanBand, dirty.DistortionStatus);
+        // Finite, unlike the no-data case — the states are not silently equal.
+        Assert.False(double.IsNaN(dirty.DistortionLowHz));
+        Assert.False(double.IsNaN(dirty.DistortionHighHz));
+        Assert.True(double.IsNaN(none.DistortionLowHz));
+
+        // The floor a tweeter must clear sits at the TOP of the dirt — far higher
+        // than a merely dirty-low tweeter's knee, so the worst case is held higher.
+        DriverBandEstimate dirtyLow = CrossoverAutoSetup.EstimateBand(
+            BandCurve(1_000, 20_000), coherence: null, DistortionDirtyBelow(2_500));
+        Assert.True(dirty.DistortionLowHz > dirtyLow.DistortionLowHz);
+    }
+
+    // Case 4: every point masked (NaN) is UNRELIABLE — no information — and must
+    // fall back like "no data", NOT be mistaken for "dirty everywhere".
+    [Fact]
+    public void EstimateBand_AllMasked_IsUnreliableWithNaNEdges()
+    {
+        DriverBandEstimate band = CrossoverAutoSetup.EstimateBand(
+            BandCurve(1_000, 20_000), coherence: null, DistortionAllMasked());
+        Assert.Equal(DistortionBandStatus.Unreliable, band.DistortionStatus);
+        Assert.True(double.IsNaN(band.DistortionLowHz));
+        Assert.True(double.IsNaN(band.DistortionHighHz));
+    }
+
+    // The behaviour the silent NaN hid: a tweeter dirty across its whole band is held
+    // HIGHER than a merely dirty-low one — the worst case is more protected, not less.
+    [Fact]
+    public void Propose_DirtyEverywhereTweeter_IsHeldHigherThanDirtyLow()
+    {
+        CrossoverEdge without = MidTweeterHighPass(tweeterDistortion: null);
+        CrossoverEdge dirtyLow = MidTweeterHighPass(DistortionDirtyBelow(2_500));
+        CrossoverEdge dirtyAll = MidTweeterHighPass(DistortionAllDirty());
+
+        Assert.True(
+            dirtyAll.FrequencyHz >= dirtyLow.FrequencyHz,
+            $"dirty-everywhere tweeter at {dirtyAll.FrequencyHz:0} Hz must be held no " +
+            $"lower than dirty-low at {dirtyLow.FrequencyHz:0} Hz.");
+        Assert.True(
+            dirtyAll.FrequencyHz > without.FrequencyHz,
+            "dirty-everywhere must not silently match the no-distortion fallback.");
     }
 
     private static readonly List<SignalPoint> TweeterCurve = BandCurve(1_000, 20_000);

@@ -17,6 +17,26 @@ public enum DriverType
 }
 
 /// <summary>
+/// What the harmonic-distortion curve could say about a driver's usable band —
+/// kept distinct so the crossover bounds treat "no data" and "dirty everywhere"
+/// differently. <see cref="Unavailable"/>: no distortion curve was supplied.
+/// <see cref="Unreliable"/>: a curve was supplied but every in-band point is
+/// masked (NaN — the denominator |H1| collapsed), so it carries no information.
+/// <see cref="CleanBandFound"/>: a contiguous sub-band stays below the ceiling.
+/// <see cref="NoCleanBand"/>: reliable points exist but NONE clear the ceiling —
+/// the driver audibly distorts across everything it was measured playing, the
+/// most dangerous case and the one that must NOT silently relax to the softer
+/// class heuristic.
+/// </summary>
+public enum DistortionBandStatus
+{
+    Unavailable,
+    Unreliable,
+    CleanBandFound,
+    NoCleanBand
+}
+
+/// <summary>
 /// The usable band read from a driver's magnitude response: the outermost
 /// frequencies still within the drop threshold of the reference level, the
 /// average level inside that band, and the driver class it suggests.
@@ -26,13 +46,19 @@ public sealed record DriverBandEstimate(
     double HighHz,
     double LevelDb,
     DriverType SuggestedType,
-    // The distortion-clean sub-band (harmonic distortion below the ceiling) within
-    // [LowHz, HighHz]. NaN when no distortion curve was supplied, in which case the
-    // crossover bounds fall back to the class-based sensible range. DistortionLowHz
-    // is the "knee" a driver climbs into clean output; DistortionHighHz its breakup
-    // onset.
+    // The distortion bound the crossover must respect, within [LowHz, HighHz].
+    // DistortionLowHz is the lowest frequency a driver's high-pass may cross at
+    // (a tweeter's "knee" into clean output); DistortionHighHz the highest its
+    // low-pass may cross at (its breakup onset). With CleanBandFound these are the
+    // clean sub-band's edges. With NoCleanBand (dirty everywhere it plays) they
+    // become the DIRTY span's edges instead — DistortionLowHz the top of the dirt
+    // (keep a tweeter above ALL of it) and DistortionHighHz the bottom of the dirt
+    // (keep a lower driver below ALL of it) — so the bound tightens, never relaxes.
+    // NaN only when the curve is Unavailable or Unreliable, where the class-based
+    // sensible range stands.
     double DistortionLowHz = double.NaN,
-    double DistortionHighHz = double.NaN);
+    double DistortionHighHz = double.NaN,
+    DistortionBandStatus DistortionStatus = DistortionBandStatus.Unavailable);
 
 /// <summary>
 /// One wizard input: a channel's raw magnitude curve and its (confirmed) driver
@@ -500,26 +526,31 @@ public static class CrossoverAutoSetup
         }
 
         double level = AverageLevelDb(magnitudeDb, lowHz, highHz);
-        (double distortionLow, double distortionHigh) =
+        (DistortionBandStatus distortionStatus, double distortionLow, double distortionHigh) =
             DistortionCleanBand(distortionDb, lowHz, highHz);
         return new DriverBandEstimate(
-            lowHz, highHz, level, Classify(lowHz, highHz), distortionLow, distortionHigh);
+            lowHz, highHz, level, Classify(lowHz, highHz),
+            distortionLow, distortionHigh, distortionStatus);
     }
 
-    // The distortion-clean sub-band within [bandLow, bandHigh]: the most prominent
-    // contiguous run whose THD stays below the ceiling (bridging a narrow spike the
-    // same way the magnitude band bridges a null). Its low edge is the driver's
-    // distortion "knee", its high edge the breakup onset. Returns NaN edges when no
-    // distortion curve is available or none of the band is clean, so callers fall
-    // back to the class-based sensible range.
-    private static (double Low, double High) DistortionCleanBand(
+    // The distortion bound within [bandLow, bandHigh], with the status that tells
+    // "no data" apart from "dirty everywhere" so callers protect, not relax, in the
+    // worst case. CleanBandFound returns the most prominent contiguous run below the
+    // ceiling (bridging a narrow spike the way the magnitude band bridges a null) —
+    // its low edge the driver's distortion "knee", its high edge the breakup onset.
+    // NoCleanBand (reliable points exist, none clear the ceiling) returns the DIRTY
+    // span's edges instead, swapped: Low = top of the dirt (hold a tweeter above all
+    // of it), High = bottom of the dirt (hold a lower driver below all of it), so the
+    // crossover bound tightens. Unavailable (no curve) and Unreliable (every in-band
+    // point masked) return NaN edges, and the class-based sensible range stands.
+    private static (DistortionBandStatus Status, double Low, double High) DistortionCleanBand(
         IReadOnlyList<SignalPoint>? distortionDb,
         double bandLow,
         double bandHigh)
     {
         if (distortionDb == null)
         {
-            return (double.NaN, double.NaN);
+            return (DistortionBandStatus.Unavailable, double.NaN, double.NaN);
         }
 
         double bestLow = double.NaN;
@@ -528,6 +559,12 @@ public static class CrossoverAutoSetup
         double segLow = double.NaN;
         double segHigh = double.NaN;
         double lastCleanHz = double.NaN;
+
+        // The span of RELIABLE (finite) in-band points, regardless of the ceiling:
+        // it separates "no information" (nothing finite) from "dirty everywhere"
+        // (finite but never clean), and bounds the protective NoCleanBand edges.
+        double reliableLow = double.NaN;
+        double reliableHigh = double.NaN;
 
         void CloseSegment()
         {
@@ -548,6 +585,14 @@ public static class CrossoverAutoSetup
             if (point.X < bandLow || point.X > bandHigh)
             {
                 continue;
+            }
+
+            if (double.IsFinite(point.Y))
+            {
+                reliableLow = double.IsNaN(reliableLow)
+                    ? point.X : Math.Min(reliableLow, point.X);
+                reliableHigh = double.IsNaN(reliableHigh)
+                    ? point.X : Math.Max(reliableHigh, point.X);
             }
 
             // A masked (NaN) or above-ceiling point is dirty: it breaks the clean run
@@ -574,12 +619,21 @@ public static class CrossoverAutoSetup
         }
         CloseSegment();
 
-        if (double.IsNaN(bestLow))
+        if (!double.IsNaN(bestLow))
         {
-            return (double.NaN, double.NaN);
+            return (
+                DistortionBandStatus.CleanBandFound,
+                Math.Max(bestLow, bandLow),
+                Math.Min(bestHigh, bandHigh));
         }
 
-        return (Math.Max(bestLow, bandLow), Math.Min(bestHigh, bandHigh));
+        // No clean run. If nothing finite was in the band the curve is unreliable
+        // (masked out) — no information, so the class heuristic stands. Otherwise the
+        // reliable points are all dirty: return the dirty span's edges (swapped) so
+        // the crossover is held clear of it rather than relaxing to the heuristic.
+        return double.IsNaN(reliableLow)
+            ? (DistortionBandStatus.Unreliable, double.NaN, double.NaN)
+            : (DistortionBandStatus.NoCleanBand, reliableHigh, reliableLow);
     }
 
     // Classifies by the band's log-center, using the geometric midpoints between
@@ -1983,30 +2037,46 @@ public static class CrossoverAutoSetup
                 typeLow = TweeterMinCrossoverHz(resonanceHz, SteepestPracticalSlope());
             }
 
-            // Distortion PROTECTS the tweeter's low handover further — it can only
-            // RAISE the floor, never lower it. The measured knee is taken at a
-            // moderate level, which understates the sustained-SPL excursion limit,
-            // so a tweeter that already measures dirty low is held higher still; a
-            // clean-measuring one is never crossed lower on the strength of a quiet
-            // distortion curve.
-            if (types[j + 1] == DriverType.Tweeter &&
-                !double.IsNaN(bands[j + 1].DistortionLowHz))
-            {
-                typeLow = Math.Max(typeLow, bands[j + 1].DistortionLowHz);
-            }
+            // Distortion PROTECTS the handover: it can only RAISE a tweeter's low
+            // floor (above its excursion knee / dirty region) and LOWER a lower
+            // driver's cap (below its breakup). A driver dirty across its WHOLE
+            // measured band (NoCleanBand) reports the DIRTY span's edges, so the same
+            // clamps hold the junction clear of ALL of it — the worst case tightens,
+            // never relaxes to the softer class range. The moderate case (a clean sub-
+            // band) narrows to that clean band as before.
+            double distLow = types[j + 1] == DriverType.Tweeter
+                ? bands[j + 1].DistortionLowHz
+                : double.NaN;
+            double distHigh = bands[j].DistortionHighHz;
+            double adjLow = double.IsNaN(distLow) ? typeLow : Math.Max(typeLow, distLow);
+            double adjHigh = double.IsNaN(distHigh)
+                ? typeHigh
+                : double.IsNaN(typeHigh) ? distHigh : Math.Min(typeHigh, distHigh);
 
-            // Never hand the lower driver a region above its breakup onset.
-            if (!double.IsNaN(bands[j].DistortionHighHz))
+            if (adjLow <= adjHigh)
             {
-                typeHigh = double.IsNaN(typeHigh)
-                    ? bands[j].DistortionHighHz
-                    : Math.Min(typeHigh, bands[j].DistortionHighHz);
+                low = Math.Max(low, adjLow);
+                high = Math.Min(high, adjHigh);
             }
-
-            if (typeLow <= typeHigh)
+            else if (typeLow <= typeHigh)
             {
-                low = Math.Max(low, typeLow);
-                high = Math.Min(high, typeHigh);
+                // Distortion squeezed a class-compatible window shut — a driver dirty
+                // across the region it would otherwise hand over in. Pin to the
+                // protective edge (above a dirty upper driver's floor, below a dirty
+                // lower driver's cap) rather than DROPPING the bound and relaxing to
+                // the raw class window. A genuinely non-overlapping class pairing
+                // (typeLow > typeHigh on its own) is left alone below — its measured
+                // overlap must stand.
+                bool floorRaised = adjLow > typeLow + 1e-9;
+                bool capLowered = adjHigh < typeHigh - 1e-9;
+                double pinned = floorRaised && !capLowered
+                    ? adjLow
+                    : capLowered && !floorRaised
+                        ? adjHigh
+                        : Math.Sqrt(adjLow * adjHigh);
+                double clamped = Math.Clamp(
+                    pinned, options.MinCrossoverHz, options.MaxCrossoverHz);
+                return (clamped, clamped);
             }
 
             if (j > 0)

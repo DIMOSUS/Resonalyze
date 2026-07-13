@@ -149,10 +149,10 @@ public sealed class PromotionReachTests
         double MidTwrArrival(Channel mid, Channel twr, out double midMs, out double twrMs)
         {
             midMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-                final.First(item => item.Channel == mid).ImpulseResponse,
+                final.First(item => ReferenceEquals(item.Channel, mid)).ImpulseResponse,
                 mid.SampleRate, 1_150, 4_600);
             twrMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-                final.First(item => item.Channel == twr).ImpulseResponse,
+                final.First(item => ReferenceEquals(item.Channel, twr)).ImpulseResponse,
                 twr.SampleRate, 1_150, 4_600);
             return midMs - twrMs;
         }

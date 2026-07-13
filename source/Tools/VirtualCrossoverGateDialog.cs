@@ -36,12 +36,11 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public Action<double, double, double, double, PhaseWindowMode, int,
-        PhaseDetrendMode, double, bool>? PreviewChanged { get; set; }
+        PhaseDetrendMode, double>? PreviewChanged { get; set; }
 
     private readonly DarkComboBox comboWindowMode = new();
     private readonly DarkComboBox comboFdwCycles = new();
     private readonly DarkComboBox comboDetrendMode = new();
-    private readonly CheckBox checkBoxUnwrap = new();
     private readonly Label labelAutoDetrend = new();
 
     public VirtualCrossoverGateDialog()
@@ -80,8 +79,6 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         Enum.IsDefined((PhaseDetrendMode)comboDetrendMode.SelectedIndex)
             ? (PhaseDetrendMode)comboDetrendMode.SelectedIndex
             : PhaseDetrendMode.Auto;
-    public bool Unwrap => checkBoxUnwrap.Checked;
-
     /// <summary>
     /// Seeds the dialog: the processed channel IRs to preview (absolute
     /// timeline), the current gate values, and the offset the Fit button snaps
@@ -98,7 +95,6 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         PhaseWindowMode windowMode,
         int fdwCycles,
         PhaseDetrendMode detrendMode,
-        bool unwrap,
         double fitToMs)
     {
         traces = previewTraces;
@@ -115,8 +111,6 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
             ? fdwCycles
             : PhaseAnalysisSettings.DefaultFdwCycles;
         comboDetrendMode.SelectedIndex = (int)detrendMode;
-        checkBoxUnwrap.Checked = unwrap;
-
         initialized = true;
         OnGateChanged();
     }
@@ -141,7 +135,7 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
             sampleRate);
         var settings = new PhaseAnalysisSettings(
             WindowMode, FdwCycles, PhaseDetrendMode.Auto, DetrendMs,
-            GateOffsetMs, LeftMs, PlateauMs, RightMs, Unwrap, 0.0);
+            GateOffsetMs, LeftMs, PlateauMs, RightMs, Unwrap: false, 0.0);
         (double slopeMs, double peakMs) = DataHelper.EstimatePhaseDetrend(view, settings);
         numericTau.Value = Clamp(numericTau, useSlope ? slopeMs : peakMs);
     }
@@ -158,16 +152,18 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         UpdatePhaseControlState();
         PreviewChanged?.Invoke(
             GateOffsetMs, LeftMs, PlateauMs, RightMs, WindowMode, FdwCycles,
-            DetrendMode, DetrendMs, Unwrap);
+            DetrendMode, DetrendMs);
     }
 
     private void InitializePhaseControls()
     {
         const int addedHeight = 62;
-        irPlotView.Top += addedHeight;
-        buttonSave.Top += addedHeight;
-        buttonCancel.Top += addedHeight;
         ClientSize = new Size(ClientSize.Width, ClientSize.Height + addedHeight);
+        // Resizing already moves bottom-anchored buttons and stretches the
+        // top+bottom-anchored plot. Move only the plot's top edge into the new
+        // controls area and give back the automatically added height.
+        irPlotView.Top += addedHeight;
+        irPlotView.Height -= addedHeight;
 
         AddCombo("Window", comboWindowMode, 102, 12, 112, 126);
         comboWindowMode.Items.AddRange(["Fixed", "FDW"]);
@@ -176,11 +172,6 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         AddCombo("Detrend", comboDetrendMode, 132, 12, 112, 126);
         comboDetrendMode.Items.AddRange(["Off", "Auto", "Manual"]);
 
-        checkBoxUnwrap.AutoSize = true;
-        checkBoxUnwrap.ForeColor = Color.White;
-        checkBoxUnwrap.Location = new Point(452, 104);
-        checkBoxUnwrap.Text = "Unwrap";
-        Controls.Add(checkBoxUnwrap);
         labelAutoDetrend.AutoSize = true;
         labelAutoDetrend.ForeColor = Color.FromArgb(210, 214, 222);
         labelAutoDetrend.Location = new Point(262, 134);
@@ -189,7 +180,6 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         comboWindowMode.SelectedIndexChanged += (_, _) => OnGateChanged();
         comboFdwCycles.SelectedIndexChanged += (_, _) => OnGateChanged();
         comboDetrendMode.SelectedIndexChanged += (_, _) => OnGateChanged();
-        checkBoxUnwrap.CheckedChanged += (_, _) => OnGateChanged();
     }
 
     private void AddCombo(
@@ -243,7 +233,7 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
             sampleRate);
         var settings = new PhaseAnalysisSettings(
             WindowMode, FdwCycles, PhaseDetrendMode.Auto, DetrendMs,
-            GateOffsetMs, LeftMs, PlateauMs, RightMs, Unwrap, 0.0);
+            GateOffsetMs, LeftMs, PlateauMs, RightMs, Unwrap: false, 0.0);
         double resolved = DataHelper.ResolveCommonPhaseDetrendMilliseconds(view, settings);
         return $"Auto detrend: {resolved:0.00} ms, reference: {reference.Title}";
     }
@@ -358,7 +348,5 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
             "4 cycles suppresses reflections most; 6 is recommended; 8 retains more detail.");
         toolTip.SetToolTip(comboDetrendMode,
             "Auto uses one common reference for every curve, preserving relative timing.");
-        toolTip.SetToolTip(checkBoxUnwrap,
-            "Uses the reliability-aware segmented unwrap and preserves unreliable gaps.");
     }
 }

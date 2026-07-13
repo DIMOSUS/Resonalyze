@@ -22,8 +22,7 @@ public sealed class VirtualCrossoverProjectFileTests
                 PhaseDetrendMs = 13.07,
                 PhaseWindowMode = PhaseWindowMode.FrequencyDependent,
                 PhaseFdwCycles = 8,
-                PhaseDetrendMode = PhaseDetrendMode.Manual,
-                PhaseUnwrap = false
+                PhaseDetrendMode = PhaseDetrendMode.Manual
             };
             original.StereoSceneOffsetMs = -0.4;
             original.ActiveSideRight = true;
@@ -63,7 +62,6 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.Equal(original.PhaseWindowMode, loaded.PhaseWindowMode);
             Assert.Equal(original.PhaseFdwCycles, loaded.PhaseFdwCycles);
             Assert.Equal(original.PhaseDetrendMode, loaded.PhaseDetrendMode);
-            Assert.Equal(original.PhaseUnwrap, loaded.PhaseUnwrap);
             Assert.Equal(original.StereoSceneOffsetMs, loaded.StereoSceneOffsetMs);
             Assert.Equal(original.ActiveSideRight, loaded.ActiveSideRight);
             Assert.Equal(original.Pairs.Count, loaded.Pairs.Count);
@@ -413,33 +411,6 @@ public sealed class VirtualCrossoverProjectFileTests
                 VirtualCrossoverProjectFile.LoadOrDefault(root);
             Assert.Equal(2, reloaded.Pairs.Count);
             Assert.Equal("woofer.json", reloaded.Pairs[0].Left.DisplayName);
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
-    }
-
-    [Fact]
-    public void LoadOrDefault_MigratesVersion3ToWrappedPhase()
-    {
-        string root = CreateTemporaryDirectory();
-        try
-        {
-            var project = new VirtualCrossoverProjectFile { PhaseUnwrap = true };
-            project.Save(root);
-            string path = VirtualCrossoverProjectFile.GetPath(root);
-            string json = File.ReadAllText(path)
-                .Replace($"\"version\": {VirtualCrossoverProjectFile.CurrentVersion}",
-                    "\"version\": 3")
-                .Replace("\"phaseUnwrap\": true", "\"phaseUnwrap\": false");
-            File.WriteAllText(path, json);
-
-            VirtualCrossoverProjectFile loaded =
-                VirtualCrossoverProjectFile.LoadOrDefault(root);
-
-            Assert.Equal(VirtualCrossoverProjectFile.CurrentVersion, loaded.Version);
-            Assert.False(loaded.PhaseUnwrap);
         }
         finally
         {

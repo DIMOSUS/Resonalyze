@@ -250,7 +250,6 @@ public sealed class VirtualCrossoverProjectFile
         PhaseWindowMode.FrequencyDependent;
     public int PhaseFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
     public PhaseDetrendMode PhaseDetrendMode { get; set; } = PhaseDetrendMode.Auto;
-    public bool PhaseUnwrap { get; set; } = true;
 
     public static string GetPath(string? rootDirectory = null) =>
         Path.Combine(
@@ -356,8 +355,6 @@ public sealed class VirtualCrossoverProjectFile
         }
         if (file.Version == 3)
         {
-            // v3 always rendered Virtual DSP phase wrapped in code.
-            file.PhaseUnwrap = false;
             file.Version = 4;
         }
     }

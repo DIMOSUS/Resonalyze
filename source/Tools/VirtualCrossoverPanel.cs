@@ -75,7 +75,7 @@ public partial class VirtualCrossoverPanel : UserControl
     // project, Cancel reverts by simply dropping them).
     private (double OffsetMs, double LeftMs, double PlateauMs, double RightMs,
         PhaseWindowMode WindowMode, int FdwCycles, PhaseDetrendMode DetrendMode,
-        double DetrendMs, bool Unwrap)? gatePreview;
+        double DetrendMs)? gatePreview;
     private PlotWatermarkAnnotation hintAnnotation = null!;
     private LinearAxis mainValueAxis = null!;
     private PlotLabelsPanelController plotLabels = null!;
@@ -3379,7 +3379,7 @@ public partial class VirtualCrossoverPanel : UserControl
             gatePreview?.LeftMs ?? project.PhaseGateLeftMs,
             gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs,
             gatePreview?.RightMs ?? project.PhaseGateRightMs,
-            Unwrap: gatePreview?.Unwrap ?? project.PhaseUnwrap,
+            Unwrap: false,
             SmoothingInverseOctaves: 0.0);
 
     private List<SignalPoint> BuildPhasePoints(
@@ -3450,16 +3450,15 @@ public partial class VirtualCrossoverPanel : UserControl
             project.PhaseWindowMode,
             project.PhaseFdwCycles,
             project.PhaseDetrendMode,
-            project.PhaseUnwrap,
             fitOffsetMs);
         // The callback is wired after Init so seeding the controls does not
         // trigger a redundant redraw; from here every dialog change repaints the
         // phase plot immediately.
         dialog.PreviewChanged = (offsetMs, leftMs, plateauMs, rightMs, windowMode,
-            fdwCycles, detrendMode, detrendMs, unwrap) =>
+            fdwCycles, detrendMode, detrendMs) =>
         {
             gatePreview = (offsetMs, leftMs, plateauMs, rightMs, windowMode,
-                fdwCycles, detrendMode, detrendMs, unwrap);
+                fdwCycles, detrendMode, detrendMs);
             RequestRedraw();
         };
 
@@ -3475,7 +3474,6 @@ public partial class VirtualCrossoverPanel : UserControl
                 project.PhaseWindowMode = dialog.WindowMode;
                 project.PhaseFdwCycles = dialog.FdwCycles;
                 project.PhaseDetrendMode = dialog.DetrendMode;
-                project.PhaseUnwrap = dialog.Unwrap;
                 ScheduleSave();
             }
         }

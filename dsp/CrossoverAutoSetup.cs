@@ -17,6 +17,26 @@ public enum DriverType
 }
 
 /// <summary>
+/// What the harmonic-distortion curve could say about a driver's usable band —
+/// kept distinct so the crossover bounds treat "no data" and "dirty everywhere"
+/// differently. <see cref="Unavailable"/>: no distortion curve was supplied.
+/// <see cref="Unreliable"/>: a curve was supplied but every in-band point is
+/// masked (NaN — the denominator |H1| collapsed), so it carries no information.
+/// <see cref="CleanBandFound"/>: a contiguous sub-band stays below the ceiling.
+/// <see cref="NoCleanBand"/>: reliable points exist but NONE clear the ceiling —
+/// the driver audibly distorts across everything it was measured playing, the
+/// most dangerous case and the one that must NOT silently relax to the softer
+/// class heuristic.
+/// </summary>
+public enum DistortionBandStatus
+{
+    Unavailable,
+    Unreliable,
+    CleanBandFound,
+    NoCleanBand
+}
+
+/// <summary>
 /// The usable band read from a driver's magnitude response: the outermost
 /// frequencies still within the drop threshold of the reference level, the
 /// average level inside that band, and the driver class it suggests.
@@ -25,7 +45,20 @@ public sealed record DriverBandEstimate(
     double LowHz,
     double HighHz,
     double LevelDb,
-    DriverType SuggestedType);
+    DriverType SuggestedType,
+    // The distortion bound the crossover must respect, within [LowHz, HighHz].
+    // DistortionLowHz is the lowest frequency a driver's high-pass may cross at
+    // (a tweeter's "knee" into clean output); DistortionHighHz the highest its
+    // low-pass may cross at (its breakup onset). With CleanBandFound these are the
+    // clean sub-band's edges. With NoCleanBand (dirty everywhere it plays) they
+    // become the DIRTY span's edges instead — DistortionLowHz the top of the dirt
+    // (keep a tweeter above ALL of it) and DistortionHighHz the bottom of the dirt
+    // (keep a lower driver below ALL of it) — so the bound tightens, never relaxes.
+    // NaN only when the curve is Unavailable or Unreliable, where the class-based
+    // sensible range stands.
+    double DistortionLowHz = double.NaN,
+    double DistortionHighHz = double.NaN,
+    DistortionBandStatus DistortionStatus = DistortionBandStatus.Unavailable);
 
 /// <summary>
 /// One wizard input: a channel's raw magnitude curve and its (confirmed) driver
@@ -36,7 +69,13 @@ public sealed record DriverBandEstimate(
 public sealed record AutoSetupSource(
     IReadOnlyList<SignalPoint> MagnitudeDb,
     DriverType Type,
-    IReadOnlyList<double>? Coherence = null);
+    IReadOnlyList<double>? Coherence = null,
+    // Optional harmonic distortion (THD, dB relative to the fundamental) vs
+    // frequency, from the channel's sweep deconvolution. When supplied, the band
+    // estimate marks each driver's distortion-clean sub-band, which then bounds the
+    // crossover: a tweeter's low handover follows its measured distortion knee
+    // (not a fixed floor), and no driver is crossed up into its breakup region.
+    IReadOnlyList<SignalPoint>? DistortionDb = null);
 
 /// <summary>
 /// The proposed DSP starting point for one channel: the crossover filters and a
@@ -167,13 +206,32 @@ public static class CrossoverAutoSetup
     public const double MaxCrossoverGroupDelaySeconds = 0.010;
 
     /// <summary>
-    /// The mirror of the low-bass cap, for tweeters: a tweeter crossed below this
-    /// frequency must use at least <see cref="CrossoverSlopeDbPerOctave"/> dB/oct,
-    /// or a shallow filter lets it play too far down and overexcurt. The placement
-    /// heuristics push a capable tweeter's handover low for a better soundstage,
-    /// so the steep-slope floor keeps that safe.
+    /// A tweeter's low handover is bounded by its resonance Fs: the dome's
+    /// excursion for a given SPL rises 12 dB/oct as frequency falls and peaks at
+    /// Fs, so crossing at or below Fs overexcurts it at volume. The high-pass must
+    /// give at least <see cref="TweeterFsAttenuationTargetDb"/> of attenuation at
+    /// Fs, which for a slope S dB/oct means fc &gt;= Fs·2^(target/S) — a steeper
+    /// filter reaches the target closer to Fs and may cross lower, a shallow one
+    /// is held well above it. Fs is estimated from the tweeter's own measured low
+    /// roll-off, floored here so a spuriously low or already-filtered edge cannot
+    /// license a dangerous crossover.
     /// </summary>
-    public const double TweeterProtectionHz = 2_500;
+    public const double TweeterFsFloorHz = 1_200.0;
+
+    /// <summary>
+    /// The attenuation a tweeter's high-pass must deliver at the estimated Fs.
+    /// Anchored on the Focal TNF datasheet (recommended minimum 3.2 kHz @
+    /// 18 dB/oct, Fs ~= 1370 Hz ⇒ ~22 dB at Fs), and used by
+    /// <see cref="TweeterMinCrossoverHz"/> to turn a slope into a minimum
+    /// crossover.
+    /// </summary>
+    public const double TweeterFsAttenuationTargetDb = 22.0;
+
+    // A driver is "clean" where its harmonic distortion stays below this ceiling.
+    // 3 % (−30 dB) is the usual audibility-adjacent line for loudspeaker THD; the
+    // distortion-clean band it defines refines the crossover bounds (below), so a
+    // driver is not handed a region where it audibly distorts.
+    private const double DistortionCeilingDb = -30.0;
 
     // The log-frequency grid the optimizer scores flatness on.
     private const int GridPointsPerOctave = 24;
@@ -253,6 +311,13 @@ public static class CrossoverAutoSetup
     private static double LatticeStep(double frequencyHz) =>
         frequencyHz < 100 ? 5 : frequencyHz < 1_000 ? 10 : 50;
 
+    // The lowest lattice frequency at or above the given frequency.
+    private static double RoundUpToLattice(double frequencyHz)
+    {
+        double step = LatticeStep(frequencyHz);
+        return Math.Max(20, Math.Ceiling(frequencyHz / step) * step);
+    }
+
     // Every lattice frequency inside [low, high]; a window narrower than one
     // lattice step collapses to its clamped, snapped midpoint so degenerate
     // junction bounds still yield exactly one probe.
@@ -286,7 +351,22 @@ public static class CrossoverAutoSetup
     // narrower overlap), and the search never goes below a practical slope: a
     // first-order (6 dB/oct) filter protects nothing.
     private const double OverlapPenaltyDbPerOctave = 0.6;
-    private const int MinPracticalSlopeDbPerOctave = 24;
+
+    // The gentlest slope the search will consider. 12 dB/oct is admitted (a gentle
+    // second-order handover is a valid, if specific, choice) but discouraged by the
+    // slope-deviation penalty below; 6 dB/oct protects nothing and stays excluded.
+    private const int MinPracticalSlopeDbPerOctave = 12;
+
+    // 24 dB/oct is the standard car-audio crossover slope, and the score is anchored
+    // to it: every step of the search that deviates — gentler (12/18) or steeper
+    // (36/48) — pays SlopeDeviationPenaltyDb per unit of |log2(slope/24)|, so 18/36
+    // cost ~0.42/0.59 units and 12/48 cost 1.0 unit each. A deviation is therefore
+    // taken only when it earns more than it costs in flatness/protection. This is
+    // what stops the auto dragging the tweeter maximally low on a 48 dB/oct slope
+    // when a standard 24 dB/oct handover a little higher (even into the ear's
+    // sensitive band) is the cleaner, more conventional choice.
+    private const int PreferredSlopeDbPerOctave = 24;
+    private const double SlopeDeviationPenaltyDb = 0.7;
 
     // A driver whose roll-off reaches past its neighbour into a non-adjacent
     // driver's band overlaps where it never should; that overlap is weighted this
@@ -320,6 +400,24 @@ public static class CrossoverAutoSetup
     // is — negligible for a narrow overlap, firm for a broad one.
     private const double WideOverlapLowBiasWeightDb = 0.4;
 
+    // A bass/midbass driver handing UP to the midrange should cross below where
+    // the ear begins to localize by frequency content (~300 Hz): above that a
+    // low-mounted, poorly-imaging midbass smears the stage, and its wide passband
+    // reaches far into the midrange. So a handover INTO the midrange is nudged
+    // down toward this threshold — set a margin UNDER the ~300 Hz onset so the
+    // midbass passband, not just its −3 dB point, stays in the localizable-safe
+    // region — log-proportional to how far above it the junction sits. A firm
+    // pull, because the flatness search otherwise drags the junction up to the top
+    // of the shared band (a broad-band midbass reads flatter carrying more of the
+    // low-mids). It self-limits: where the midrange genuinely cannot fill down to
+    // the threshold, the flatness cost of the gap holds the junction higher.
+    // Deliberately scoped to the midrange handover so it does NOT touch the tweeter
+    // junction, whose low placement is governed instead by the resonance floor;
+    // strengthening the generic wide-overlap bias would wrongly drag the tweeter
+    // down too. Below the threshold there is no pull.
+    private const double MidrangeLocalizationThresholdHz = 250.0;
+    private const double MidrangeHandoverLowBiasWeightDb = 2.0;
+
     /// <summary>
     /// Reads the usable band from a (smoothed) magnitude curve and suggests the
     /// driver class. The reference is an upper percentile of the curve, robust
@@ -333,7 +431,8 @@ public static class CrossoverAutoSetup
     /// </summary>
     public static DriverBandEstimate EstimateBand(
         IReadOnlyList<SignalPoint> magnitudeDb,
-        IReadOnlyList<double>? coherence = null)
+        IReadOnlyList<double>? coherence = null,
+        IReadOnlyList<SignalPoint>? distortionDb = null)
     {
         ArgumentNullException.ThrowIfNull(magnitudeDb);
 
@@ -427,7 +526,114 @@ public static class CrossoverAutoSetup
         }
 
         double level = AverageLevelDb(magnitudeDb, lowHz, highHz);
-        return new DriverBandEstimate(lowHz, highHz, level, Classify(lowHz, highHz));
+        (DistortionBandStatus distortionStatus, double distortionLow, double distortionHigh) =
+            DistortionCleanBand(distortionDb, lowHz, highHz);
+        return new DriverBandEstimate(
+            lowHz, highHz, level, Classify(lowHz, highHz),
+            distortionLow, distortionHigh, distortionStatus);
+    }
+
+    // The distortion bound within [bandLow, bandHigh], with the status that tells
+    // "no data" apart from "dirty everywhere" so callers protect, not relax, in the
+    // worst case. CleanBandFound returns the most prominent contiguous run below the
+    // ceiling (bridging a narrow spike the way the magnitude band bridges a null) —
+    // its low edge the driver's distortion "knee", its high edge the breakup onset.
+    // NoCleanBand (reliable points exist, none clear the ceiling) returns the DIRTY
+    // span's edges instead, swapped: Low = top of the dirt (hold a tweeter above all
+    // of it), High = bottom of the dirt (hold a lower driver below all of it), so the
+    // crossover bound tightens. Unavailable (no curve) and Unreliable (every in-band
+    // point masked) return NaN edges, and the class-based sensible range stands.
+    private static (DistortionBandStatus Status, double Low, double High) DistortionCleanBand(
+        IReadOnlyList<SignalPoint>? distortionDb,
+        double bandLow,
+        double bandHigh)
+    {
+        if (distortionDb == null)
+        {
+            return (DistortionBandStatus.Unavailable, double.NaN, double.NaN);
+        }
+
+        double bestLow = double.NaN;
+        double bestHigh = double.NaN;
+        double bestSpan = 0.0;
+        double segLow = double.NaN;
+        double segHigh = double.NaN;
+        double lastCleanHz = double.NaN;
+
+        // The span of RELIABLE (finite) in-band points, regardless of the ceiling:
+        // it separates "no information" (nothing finite) from "dirty everywhere"
+        // (finite but never clean), and bounds the protective NoCleanBand edges.
+        double reliableLow = double.NaN;
+        double reliableHigh = double.NaN;
+
+        void CloseSegment()
+        {
+            if (!double.IsNaN(segLow) && segHigh > segLow)
+            {
+                double span = Math.Log2(segHigh / segLow);
+                if (span > bestSpan)
+                {
+                    bestSpan = span;
+                    bestLow = segLow;
+                    bestHigh = segHigh;
+                }
+            }
+        }
+
+        foreach (SignalPoint point in distortionDb)
+        {
+            if (point.X < bandLow || point.X > bandHigh)
+            {
+                continue;
+            }
+
+            if (double.IsFinite(point.Y))
+            {
+                reliableLow = double.IsNaN(reliableLow)
+                    ? point.X : Math.Min(reliableLow, point.X);
+                reliableHigh = double.IsNaN(reliableHigh)
+                    ? point.X : Math.Max(reliableHigh, point.X);
+            }
+
+            // A masked (NaN) or above-ceiling point is dirty: it breaks the clean run
+            // unless the gap since the last clean point is narrow enough to bridge.
+            bool clean = double.IsFinite(point.Y) && point.Y <= DistortionCeilingDb;
+            if (!clean)
+            {
+                continue;
+            }
+
+            if (!double.IsNaN(lastCleanHz)
+                && Math.Log2(point.X / lastCleanHz) > MaxBandGapOctaves)
+            {
+                CloseSegment();
+                segLow = double.NaN;
+            }
+
+            if (double.IsNaN(segLow))
+            {
+                segLow = point.X;
+            }
+            segHigh = point.X;
+            lastCleanHz = point.X;
+        }
+        CloseSegment();
+
+        if (!double.IsNaN(bestLow))
+        {
+            return (
+                DistortionBandStatus.CleanBandFound,
+                Math.Max(bestLow, bandLow),
+                Math.Min(bestHigh, bandHigh));
+        }
+
+        // No clean run. If nothing finite was in the band the curve is unreliable
+        // (masked out) — no information, so the class heuristic stands. Otherwise the
+        // reliable points are all dirty: return the dirty span's edges (swapped) so
+        // the crossover is held clear of it rather than relaxing to the heuristic.
+        return double.IsNaN(reliableLow)
+            ? (DistortionBandStatus.Unreliable, double.NaN, double.NaN)
+            : (DistortionBandStatus.NoCleanBand, reliableHigh, reliableLow);
     }
 
     // Classifies by the band's log-center, using the geometric midpoints between
@@ -487,6 +693,29 @@ public static class CrossoverAutoSetup
         (SensibleRange(upper).LowHz, SensibleRange(lower).HighHz);
 
     /// <summary>
+    /// The tweeter resonance the crossover bounds use, estimated from its measured
+    /// usable-band low edge (where the dome rolls off) and floored at
+    /// <see cref="TweeterFsFloorHz"/>. An already-filtered or narrow measurement
+    /// only raises this edge, which is the safe direction; the floor backstops a
+    /// spuriously low one.
+    /// </summary>
+    public static double TweeterResonanceHz(double measuredBandLowHz) =>
+        Math.Max(
+            TweeterFsFloorHz,
+            double.IsFinite(measuredBandLowHz) ? measuredBandLowHz : TweeterFsFloorHz);
+
+    /// <summary>
+    /// The lowest frequency a tweeter high-pass of <paramref name="highPassSlopeDbPerOctave"/>
+    /// may cross at, given an estimated resonance <paramref name="resonanceHz"/>:
+    /// the filter must attenuate the dome's excursion by
+    /// <see cref="TweeterFsAttenuationTargetDb"/> at Fs, so fc = Fs·2^(target/slope).
+    /// A steeper slope reaches the target closer to Fs and may cross lower.
+    /// </summary>
+    public static double TweeterMinCrossoverHz(double resonanceHz, int highPassSlopeDbPerOctave) =>
+        resonanceHz * Math.Pow(
+            2.0, TweeterFsAttenuationTargetDb / highPassSlopeDbPerOctave);
+
+    /// <summary>
     /// Builds the crossover proposal for the given channels, honouring the wizard
     /// <paramref name="options"/>. Results are in the input order. Every channel
     /// must carry a distinct driver type — with two identical drivers there is no
@@ -522,13 +751,12 @@ public static class CrossoverAutoSetup
             channels, proposals, options.SampleRateHz, options.SubElevationDb);
     }
 
-    // The slopes a family offers above the practical floor. A shallow crossover
-    // (12/18 dB/oct) leaves adjacent drivers overlapping over a wide span where
-    // they interfere; on a real system the summed dip that leaves is worse than
-    // any group-delay a steeper filter costs, and Auto delay cannot align it
-    // away — so the floor is 24 dB/oct, matching how these systems are tuned by
-    // hand. (A steeper slope is capped from above by the group-delay budget in
-    // AllowedSlopes, which bites only at low junction frequencies.)
+    // The slopes a family offers above the practical floor (12 dB/oct). Shallow
+    // crossovers (12/18) leave adjacent drivers overlapping over a wide span where
+    // they interfere, so they are admitted but discouraged by the slope-deviation
+    // penalty (and the overlap penalty), not forbidden — a gentle handover is a
+    // valid, if specific, choice. (A steeper slope is capped from above by the
+    // group-delay budget in AllowedSlopes, which bites only at low junctions.)
     private static IReadOnlyList<int> PracticalSlopes(CrossoverFilterFamily family) =>
         CrossoverFilter.SupportedSlopes(family)
             .Where(slope => slope >= MinPracticalSlopeDbPerOctave)
@@ -559,7 +787,7 @@ public static class CrossoverAutoSetup
         for (int i = 0; i < n; i++)
         {
             DriverBandEstimate band = EstimateBand(
-                channels[i].MagnitudeDb, channels[i].Coherence);
+                channels[i].MagnitudeDb, channels[i].Coherence, channels[i].DistortionDb);
             double low = proposals[i].HighPassEdge?.FrequencyHz ?? band.LowHz;
             double high = proposals[i].LowPassEdge?.FrequencyHz ?? Math.Min(band.HighHz, ceiling);
             if (high <= low)
@@ -1275,7 +1503,8 @@ public static class CrossoverAutoSetup
             inputIndex = ordered.Select(item => item.index).ToArray();
             curves = ordered.Select(item => item.channel.MagnitudeDb).ToArray();
             bands = ordered
-                .Select(item => EstimateBand(item.channel.MagnitudeDb, item.channel.Coherence))
+                .Select(item => EstimateBand(
+                    item.channel.MagnitudeDb, item.channel.Coherence, item.channel.DistortionDb))
                 .ToArray();
             types = ordered.Select(item => item.channel.Type).ToArray();
 
@@ -1398,6 +1627,52 @@ public static class CrossoverAutoSetup
                 }
 
                 previous = current;
+            }
+
+            EnforceTweeterResonanceFloor();
+        }
+
+        // Safety backstop after the descent: the decoupled frequency/slope search
+        // can leave the tweeter's high-pass below its resonance floor for the slope
+        // it ended on (a single lattice step in matched-slope mode; or, now that the
+        // slope-deviation penalty favours a gentler slope, a whole floor's worth when
+        // a low max-crossover limit boxes the junction in). First raise the crossover
+        // to the lowest lattice point that protects Fs at the current slope; if the
+        // max-crossover limit blocks that, steepen the slope instead — either way the
+        // tweeter is never left playing below Fs unprotected.
+        private void EnforceTweeterResonanceFloor()
+        {
+            int last = channelCount - 1;
+            if (types[last] != DriverType.Tweeter)
+            {
+                return;
+            }
+
+            int j = last - 1;
+            double resonanceHz = TweeterResonanceHz(bands[last].LowHz);
+            double minFc = TweeterMinCrossoverHz(resonanceHz, upperSlope[j]);
+            if (crossoverHz[j] >= minFc)
+            {
+                return;
+            }
+
+            double raised = Math.Min(options.MaxCrossoverHz, RoundUpToLattice(minFc));
+            if (raised >= minFc)
+            {
+                crossoverHz[j] = Math.Max(crossoverHz[j], raised);
+                return;
+            }
+
+            // The max-crossover limit sits below the floor for this slope: steepen to
+            // the gentlest available slope that protects Fs at the current frequency.
+            int floor = SlopeFloor(last, crossoverHz[j]);
+            int? steeper = AllowedSlopes(junctionFamily[j], crossoverHz[j])
+                .Where(slope => slope >= floor)
+                .Cast<int?>()
+                .Min();
+            if (steeper is int slope)
+            {
+                upperSlope[j] = slope;
             }
         }
 
@@ -1553,9 +1828,10 @@ public static class CrossoverAutoSetup
                 crossoverHz[j] = Math.Clamp(
                     RoundToLattice(fc), options.MinCrossoverHz, options.MaxCrossoverHz);
                 junctionFamily[j] = family;
-                // Seed the gentlest budget-admissible slope, not a fixed 24 that a
-                // very low junction's group delay might already blow.
-                int slope = forcedSlope ?? GentlestAdmissibleSlope(family, crossoverHz[j]);
+                // Seed the standard 24 dB/oct (the slope-deviation penalty's anchor),
+                // snapped to the nearest admissible slope so a very low junction whose
+                // group-delay budget rules out 24 still starts somewhere valid.
+                int slope = forcedSlope ?? SeedSlope(family, crossoverHz[j]);
                 lowerSlope[j] = slope;
                 upperSlope[j] = slope;
             }
@@ -1633,6 +1909,34 @@ public static class CrossoverAutoSetup
             return allowed.Count > 0 ? allowed.Min() : PracticalSlopes(family).Min();
         }
 
+        // The admissible slope closest to the 24 dB/oct standard (the deviation
+        // penalty's anchor), so the descent starts on the conventional slope and only
+        // moves off it when the score rewards it. Falls back to the family floor when
+        // the group-delay budget admits nothing.
+        private int SeedSlope(CrossoverFilterFamily family, double fcHz)
+        {
+            IReadOnlyList<int> allowed = AllowedSlopes(family, fcHz);
+            if (allowed.Count == 0)
+            {
+                return PracticalSlopes(family).Min();
+            }
+
+            return allowed
+                .OrderBy(slope => Math.Abs(
+                    Math.Log2((double)slope / PreferredSlopeDbPerOctave)))
+                .First();
+        }
+
+        // The steepest practical slope any admitted family offers, ignoring the
+        // per-frequency group-delay budget (which the per-candidate AllowedSlopes
+        // still enforces). Sets how far down the tweeter's low search window may
+        // open, since only the steepest slope can protect Fs at the lowest crossover.
+        private int SteepestPracticalSlope() =>
+            options.Families
+                .SelectMany(PracticalSlopes)
+                .DefaultIfEmpty(MinPracticalSlopeDbPerOctave)
+                .Max();
+
         // Memoized peak group delay of one crossover filter. Group delay is the
         // same for a low-pass and a high-pass, so the side is irrelevant here; the
         // fc is rounded to the nearest Hz for the key (the lattice is coarser).
@@ -1651,14 +1955,34 @@ public static class CrossoverAutoSetup
             return delay;
         }
 
-        // The lowest slope a driver of this class may take at a handover of this
-        // frequency: a tweeter crossed below TweeterProtectionHz is held to at
-        // least 24 dB/oct so it does not play too far down; every other driver
-        // keeps the practical floor.
-        private static int SlopeFloor(DriverType sideType, double fcHz) =>
-            sideType == DriverType.Tweeter && fcHz < TweeterProtectionHz
-                ? CrossoverSlopeDbPerOctave
-                : MinPracticalSlopeDbPerOctave;
+        // The gentlest slope the driver at this index may take at a handover of
+        // this frequency. Every driver keeps the practical floor; a tweeter is
+        // additionally held steep enough to protect its resonance — its high-pass
+        // must give the target attenuation at Fs, so fc >= Fs·2^(target/slope)
+        // rearranges to slope >= target / log2(fc / Fs). Fs is estimated from the
+        // tweeter's own low roll-off (floored). At or below Fs no real filter
+        // qualifies, so an impossibly steep floor pushes the search off that
+        // frequency; a shallow high-pass therefore forbids a low crossover and a
+        // steep one permits it. The steepest actually available slope is admitted
+        // by the search window (JunctionSearchBounds), so this never strands the
+        // seed above every option.
+        private int SlopeFloor(int driverIndex, double fcHz)
+        {
+            if (types[driverIndex] != DriverType.Tweeter)
+            {
+                return MinPracticalSlopeDbPerOctave;
+            }
+
+            double resonanceHz = TweeterResonanceHz(bands[driverIndex].LowHz);
+            if (fcHz <= resonanceHz)
+            {
+                return int.MaxValue;
+            }
+
+            int needed = (int)Math.Ceiling(
+                TweeterFsAttenuationTargetDb / Math.Log2(fcHz / resonanceHz));
+            return Math.Max(MinPracticalSlopeDbPerOctave, needed);
+        }
 
         // Cut-only seed: bring every band down to the quietest, measured over the
         // band it will actually cover with the seeded crossovers.
@@ -1699,10 +2023,60 @@ public static class CrossoverAutoSetup
             double high = Math.Min(options.MaxCrossoverHz, bands[j].HighHz);
 
             (double typeLow, double typeHigh) = JunctionTypeBounds(types[j], types[j + 1]);
-            if (typeLow <= typeHigh)
+
+            // The tweeter's low handover is bounded by its resonance rather than a
+            // flat class floor: the window opens down only to where the STEEPEST
+            // available slope still protects Fs (fc = Fs·2^(target/steepest)), and
+            // the per-candidate SlopeFloor then holds each gentler slope
+            // proportionally higher. Fs is estimated from the tweeter's own low
+            // roll-off (floored). A steep filter may therefore cross lower for a
+            // better stage while a shallow one is kept well above Fs.
+            if (types[j + 1] == DriverType.Tweeter)
             {
-                low = Math.Max(low, typeLow);
-                high = Math.Min(high, typeHigh);
+                double resonanceHz = TweeterResonanceHz(bands[j + 1].LowHz);
+                typeLow = TweeterMinCrossoverHz(resonanceHz, SteepestPracticalSlope());
+            }
+
+            // Distortion PROTECTS the handover: it can only RAISE a tweeter's low
+            // floor (above its excursion knee / dirty region) and LOWER a lower
+            // driver's cap (below its breakup). A driver dirty across its WHOLE
+            // measured band (NoCleanBand) reports the DIRTY span's edges, so the same
+            // clamps hold the junction clear of ALL of it — the worst case tightens,
+            // never relaxes to the softer class range. The moderate case (a clean sub-
+            // band) narrows to that clean band as before.
+            double distLow = types[j + 1] == DriverType.Tweeter
+                ? bands[j + 1].DistortionLowHz
+                : double.NaN;
+            double distHigh = bands[j].DistortionHighHz;
+            double adjLow = double.IsNaN(distLow) ? typeLow : Math.Max(typeLow, distLow);
+            double adjHigh = double.IsNaN(distHigh)
+                ? typeHigh
+                : double.IsNaN(typeHigh) ? distHigh : Math.Min(typeHigh, distHigh);
+
+            if (adjLow <= adjHigh)
+            {
+                low = Math.Max(low, adjLow);
+                high = Math.Min(high, adjHigh);
+            }
+            else if (typeLow <= typeHigh)
+            {
+                // Distortion squeezed a class-compatible window shut — a driver dirty
+                // across the region it would otherwise hand over in. Pin to the
+                // protective edge (above a dirty upper driver's floor, below a dirty
+                // lower driver's cap) rather than DROPPING the bound and relaxing to
+                // the raw class window. A genuinely non-overlapping class pairing
+                // (typeLow > typeHigh on its own) is left alone below — its measured
+                // overlap must stand.
+                bool floorRaised = adjLow > typeLow + 1e-9;
+                bool capLowered = adjHigh < typeHigh - 1e-9;
+                double pinned = floorRaised && !capLowered
+                    ? adjLow
+                    : capLowered && !floorRaised
+                        ? adjHigh
+                        : Math.Sqrt(adjLow * adjHigh);
+                double clamped = Math.Clamp(
+                    pinned, options.MinCrossoverHz, options.MaxCrossoverHz);
+                return (clamped, clamped);
             }
 
             if (j > 0)
@@ -1776,7 +2150,7 @@ public static class CrossoverAutoSetup
                 // Channel i sits on this junction; its own class sets the steep
                 // floor (a tweeter crossed low), while the junction frequency and
                 // family set the rest.
-                int floor = SlopeFloor(types[i], crossoverHz[junction]);
+                int floor = SlopeFloor(i, crossoverHz[junction]);
                 List<int> slopes = AllowedSlopes(junctionFamily[junction], crossoverHz[junction])
                     .Where(slope => slope >= floor)
                     .ToList();
@@ -1803,9 +2177,20 @@ public static class CrossoverAutoSetup
         // disagree. Different channels remain free to pick different slopes.
         private void OptimizeChannelSlope(int i)
         {
-            int best = ChannelSlope(i);
+            IReadOnlyList<int> allowed = AllowedChannelSlopes(i);
+            if (allowed.Count == 0)
+            {
+                return;
+            }
+
+            // Start from an ALLOWED slope, not the current one: the seed (or a slope
+            // left by a since-moved frequency) may sit below the resonance floor now,
+            // and it must not be retained just because the flatness/deviation score
+            // prefers it — the enumerated set is already filtered to safe slopes.
+            int best = allowed.Contains(ChannelSlope(i)) ? ChannelSlope(i) : allowed[0];
+            SetChannelSlope(i, best);
             double bestScore = Score();
-            foreach (int slope in AllowedChannelSlopes(i))
+            foreach (int slope in allowed)
             {
                 SetChannelSlope(i, slope);
                 double score = Score();
@@ -1849,8 +2234,8 @@ public static class CrossoverAutoSetup
                     // Steep-slope floors for this handover's two sides: a tweeter
                     // crossed low must stay steep (its own class), the lower
                     // driver keeps the practical floor.
-                    int lowerFloor = SlopeFloor(types[j], fc);
-                    int upperFloor = SlopeFloor(types[j + 1], fc);
+                    int lowerFloor = SlopeFloor(j, fc);
+                    int upperFloor = SlopeFloor(j + 1, fc);
                     foreach (CrossoverFilterFamily family in options.Families)
                     {
                         IReadOnlyList<int> slopes = AllowedSlopes(family, fc);
@@ -1964,8 +2349,31 @@ public static class CrossoverAutoSetup
 
             return Flatness(scratchCombined)
                 + OverlapPenalty(scratchUnits)
-                + FrequencyPlacementPenalty();
+                + FrequencyPlacementPenalty()
+                + SlopeDeviationPenalty();
         }
+
+        // Anchors the search to the 24 dB/oct standard: each crossover shoulder pays
+        // for how far its slope sits from 24, measured symmetrically in log-slope
+        // (|log2(slope/24)|, so 12 and 48 are equidistant). Summed over both shoulders
+        // of every junction, added to the flatness score. A gentler or steeper filter
+        // is chosen only when the flatness/protection it buys outweighs this cost —
+        // in particular a tweeter is not pinned low on 48 dB/oct when a 24 dB/oct
+        // handover a little higher scores nearly as flat.
+        private double SlopeDeviationPenalty()
+        {
+            double total = 0;
+            for (int j = 0; j < channelCount - 1; j++)
+            {
+                total += SlopeDeviationWeight(lowerSlope[j])
+                    + SlopeDeviationWeight(upperSlope[j]);
+            }
+
+            return SlopeDeviationPenaltyDb * total;
+        }
+
+        private static double SlopeDeviationWeight(int slopeDbPerOctave) =>
+            Math.Abs(Math.Log2((double)slopeDbPerOctave / PreferredSlopeDbPerOctave));
 
         // Frequency-placement heuristics that depend only on where the junctions
         // sit (not on the summed magnitude): keep handovers out of the ear's
@@ -2004,6 +2412,16 @@ public static class CrossoverAutoSetup
                     double overlapOctaves = Math.Log2(overlapHigh / overlapLow);
                     double octavesAbove = Math.Log2(fc / overlapLow);
                     total += WideOverlapLowBiasWeightDb * overlapOctaves * octavesAbove;
+                }
+
+                // The handover into the midrange is additionally kept below the
+                // localization threshold, so the better-imaging midrange owns the
+                // localizable low-mids rather than the midbass carrying them up.
+                if (types[j + 1] == DriverType.Midrange &&
+                    fc > MidrangeLocalizationThresholdHz)
+                {
+                    total += MidrangeHandoverLowBiasWeightDb
+                        * Math.Log2(fc / MidrangeLocalizationThresholdHz);
                 }
             }
 

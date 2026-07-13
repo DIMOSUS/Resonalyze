@@ -261,7 +261,8 @@ public static class VirtualCrossoverAnalysis
         double minDelayMs,
         double maxDelayMs,
         double? priorDelayMs = null,
-        double priorSigmaMs = 0)
+        double priorSigmaMs = 0,
+        bool? forcedPolarity = null)
     {
         List<AlignmentBin> bins = BuildAlignmentBins(
             variableImpulseResponse,
@@ -282,7 +283,8 @@ public static class VirtualCrossoverAnalysis
             maxDelayMs,
             maxFrequencyHz,
             priorDelayMs,
-            priorSigmaMs);
+            priorSigmaMs,
+            forcedPolarity);
     }
 
     /// <summary>
@@ -832,7 +834,8 @@ public static class VirtualCrossoverAnalysis
         double maxDelayMs,
         double maxFrequencyHz,
         double? priorDelayMs,
-        double priorSigmaMs)
+        double priorSigmaMs,
+        bool? forcedPolarity = null)
     {
         double weightSum = 0;
         foreach (AlignmentBin bin in bins)
@@ -903,9 +906,17 @@ public static class VirtualCrossoverAnalysis
 
         // Local optima of each polarity's own coarse grid (window edges
         // included): each is the seed of one correlation lobe of that polarity.
+        // When the polarity is forced (inherited from a stereo counterpart), only
+        // that polarity's grid is seeded, so every candidate is honestly evaluated
+        // for the final sign — the reported delay and score always belong to it.
         var seeds = new List<AlignmentCandidate>();
-        foreach ((double[] accumulated, bool invert) in
-            new[] { (normalDb, false), (invertedDb, true) })
+        (double[] Accumulated, bool Invert)[] grids = forcedPolarity switch
+        {
+            false => [(normalDb, false)],
+            true => [(invertedDb, true)],
+            _ => [(normalDb, false), (invertedDb, true)],
+        };
+        foreach ((double[] accumulated, bool invert) in grids)
         {
             var scores = new double[gridCount];
             for (int i = 0; i < gridCount; i++)

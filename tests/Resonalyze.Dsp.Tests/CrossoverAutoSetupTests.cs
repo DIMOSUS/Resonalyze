@@ -101,24 +101,81 @@ public sealed class CrossoverAutoSetupTests
         // interferes; still gated by the measured midrange band.
         Assert.InRange(wooferToMid, 200, 500);
         // The placement heuristics cross the mid/tweeter as low as the tweeter's
-        // sensible floor (1.5 kHz) and its measured band allow, out of the 2–4 kHz
-        // ear-sensitivity band; a low tweeter handover must stay steep (>= 24).
+        // resonance bound and its measured band allow, out of the 2–4 kHz
+        // ear-sensitivity band; a low tweeter handover must protect Fs.
         Assert.InRange(midToTweeter, 1_500, 4_000);
-        if (midToTweeter < CrossoverAutoSetup.TweeterProtectionHz)
-        {
-            Assert.True(proposals[3].HighPassEdge!.Value.SlopeDbPerOctave >= 24);
-        }
+        CrossoverEdge tweeterHp = proposals[3].HighPassEdge!.Value;
+        double resonance = CrossoverAutoSetup.TweeterResonanceHz(
+            CrossoverAutoSetup.EstimateBand(BandCurve(2_000, 20_000, 0)).LowHz);
+        Assert.True(
+            tweeterHp.FrequencyHz >= CrossoverAutoSetup.TweeterMinCrossoverHz(
+                resonance, tweeterHp.SlopeDbPerOctave) - 1,
+            $"tweeter at {tweeterHp.FrequencyHz:0} Hz / {tweeterHp.SlopeDbPerOctave} dB-oct is below its resonance floor.");
         Assert.Null(proposals[3].LowPassEdge);
         Assert.True(SumRippleDb(sources, proposals) < 6.0);
     }
 
     [Fact]
-    public void Propose_CrossesACapableTweeterLowAndKeepsItSteep()
+    public void Propose_LocalizationBias_LowersTheMidrangeHandoverButNotTheTweeters()
     {
-        // A tweeter that measures clean down to ~1.2 kHz: the placement
-        // heuristics (avoid the 2–4 kHz ear band, cross a wide overlap low) pull
-        // its handover below the ear band, and the tweeter protection keeps that
-        // low handover steep (>= 24 dB/oct) so the tweeter is not overdriven.
+        // A broad-band midbass whose flatness-optimal handover to the midrange would
+        // otherwise sit near the top of the Midbass->Midrange class band (~500 Hz).
+        // The localization bias pulls THAT handover down below the ~300 Hz threshold,
+        // but is scoped to a handover INTO the midrange — the midrange->tweeter
+        // handover (upper driver a Tweeter) is left to the resonance floor, unmoved.
+        var sources = new List<AutoSetupSource>
+        {
+            new(BandCurve(20, 100, 0), DriverType.Subwoofer),
+            new(BandCurve(40, 1_200, 0), DriverType.Midbass),
+            new(BandCurve(120, 5_000, 0), DriverType.Midrange),
+            new(BandCurve(2_000, 20_000, 0), DriverType.Tweeter)
+        };
+
+        IReadOnlyList<CrossoverProposal> proposals =
+            CrossoverAutoSetup.Propose(sources, Options());
+
+        double midbassToMid = proposals[1].LowPassEdge!.Value.FrequencyHz;
+        double midToTweeter = proposals[2].LowPassEdge!.Value.FrequencyHz;
+        Assert.InRange(midbassToMid, 150, 320);
+        Assert.True(
+            midToTweeter > 1_000,
+            $"the midrange->tweeter handover must not be pulled low, was {midToTweeter:0} Hz.");
+    }
+
+    [Fact]
+    public void Propose_LocalizationBias_SelfLimitsWhenTheMidrangeCannotPlayLow()
+    {
+        // The bias is a nudge, not a clamp: a midrange that only plays down to ~450 Hz
+        // cannot take the handover at 250 without a gaping hole, and the flatness cost
+        // of that hole holds the junction up — the midbass keeps carrying the low-mids
+        // it must. So the handover stays well above the 250 Hz threshold here.
+        var sources = new List<AutoSetupSource>
+        {
+            new(BandCurve(20, 100, 0), DriverType.Subwoofer),
+            new(BandCurve(40, 1_200, 0), DriverType.Midbass),
+            new(BandCurve(450, 5_000, 0), DriverType.Midrange),
+            new(BandCurve(2_000, 20_000, 0), DriverType.Tweeter)
+        };
+
+        IReadOnlyList<CrossoverProposal> proposals =
+            CrossoverAutoSetup.Propose(sources, Options());
+
+        double midbassToMid = proposals[1].LowPassEdge!.Value.FrequencyHz;
+        Assert.True(
+            midbassToMid > 350,
+            $"a midrange that cannot play low must keep the handover up, was {midbassToMid:0} Hz.");
+    }
+
+    [Fact]
+    public void Propose_PrefersTheStandardSlopeOverDraggingTheTweeterLow()
+    {
+        // A tweeter that measures clean down to ~1.2 kHz: rather than pin it
+        // maximally low on a steep 48 dB/oct slope (the specialist choice), the auto
+        // keeps the 24 dB/oct standard and lets the handover sit a little higher —
+        // even into the 2–4 kHz ear-sensitive band. Deviations from 24 must be
+        // justified by the flatness/protection they buy, and a clean tweeter does not
+        // justify one, so the slope stays 24 and the crossover respects the resonance
+        // floor at that slope.
         var sources = new List<AutoSetupSource>
         {
             new(BandCurve(60, 900, 0), DriverType.Midbass),
@@ -126,19 +183,45 @@ public sealed class CrossoverAutoSetupTests
             new(BandCurve(1_200, 20_000, 0), DriverType.Tweeter)
         };
 
-        IReadOnlyList<CrossoverProposal> proposals =
-            CrossoverAutoSetup.Propose(sources, Options());
+        IReadOnlyList<CrossoverProposal> proposals = CrossoverAutoSetup.Propose(
+            sources, Options(independentSlopes: true));
 
         CrossoverEdge tweeterHighPass = proposals[2].HighPassEdge!.Value;
+        Assert.Equal(24, tweeterHighPass.SlopeDbPerOctave);
+        double resonance = CrossoverAutoSetup.TweeterResonanceHz(
+            CrossoverAutoSetup.EstimateBand(BandCurve(1_200, 20_000, 0)).LowHz);
         Assert.True(
-            tweeterHighPass.FrequencyHz < 2_000,
-            $"mid/tweeter handover {tweeterHighPass.FrequencyHz:0} Hz was not pulled below the ear band");
+            tweeterHighPass.FrequencyHz >= CrossoverAutoSetup.TweeterMinCrossoverHz(
+                resonance, 24) - 1,
+            $"tweeter at {tweeterHighPass.FrequencyHz:0} Hz / 24 dB-oct is below its resonance floor");
+    }
+
+    [Fact]
+    public void Propose_StillSteepensWhenTheTweeterIsForcedLow()
+    {
+        // The 24 dB/oct preference is a penalty, not a lock. When the crossover is
+        // constrained below the tweeter's 24 dB/oct resonance floor (here by a low
+        // max-crossover limit), the resonance protection overrides the penalty and
+        // still forces the steep slope that keeps the tweeter safe.
+        var sources = new List<AutoSetupSource>
+        {
+            new(BandCurve(40, 3_000, 0), DriverType.Woofer),
+            new(BandCurve(1_000, 20_000, 0), DriverType.Tweeter)
+        };
+
+        IReadOnlyList<CrossoverProposal> proposals = CrossoverAutoSetup.Propose(
+            sources, Options(maxHz: 1_800, families: CrossoverFilterFamily.LinkwitzRiley));
+
+        CrossoverEdge tweeterHighPass = proposals[1].HighPassEdge!.Value;
         Assert.True(
-            tweeterHighPass.FrequencyHz >= 1_500,
-            $"handover {tweeterHighPass.FrequencyHz:0} Hz dropped below the tweeter floor");
+            tweeterHighPass.SlopeDbPerOctave >= 36,
+            $"a tweeter forced below its 24 dB/oct floor must steepen, was {tweeterHighPass.SlopeDbPerOctave}");
+        double resonance = CrossoverAutoSetup.TweeterResonanceHz(
+            CrossoverAutoSetup.EstimateBand(BandCurve(1_000, 20_000, 0)).LowHz);
         Assert.True(
-            tweeterHighPass.SlopeDbPerOctave >= 24,
-            $"low tweeter handover slope {tweeterHighPass.SlopeDbPerOctave} is not steep");
+            tweeterHighPass.FrequencyHz >= CrossoverAutoSetup.TweeterMinCrossoverHz(
+                resonance, tweeterHighPass.SlopeDbPerOctave) - 1,
+            "a forced-low tweeter must still respect its resonance floor");
     }
 
     [Fact]
@@ -147,7 +230,9 @@ public sealed class CrossoverAutoSetupTests
         // A three-way with an explicit Midbass driver exercises the Midbass row of
         // SensibleRange (80-500 Hz), which the other systems never hit. Its lower
         // handover to the sub lands inside that range; the upper handover to the
-        // tweeter is pulled higher by the tweeter's own range but must stay ordered.
+        // tweeter is pulled up by the tweeter's own resonance protection (crossing
+        // this 2 kHz-band tweeter no lower than ~3 kHz at 24 dB/oct) and must stay
+        // ordered and respect that floor.
         var sub = new AutoSetupSource(BandCurve(20, 120, 0), DriverType.Subwoofer);
         var midbass = new AutoSetupSource(BandCurve(100, 800, 0), DriverType.Midbass);
         var tweeter = new AutoSetupSource(BandCurve(2_000, 20_000, 0), DriverType.Tweeter);
@@ -160,7 +245,13 @@ public sealed class CrossoverAutoSetupTests
         double midbassToTweeter = proposals[1].LowPassEdge!.Value.FrequencyHz;
         Assert.InRange(subToMidbass, 80, 500); // midbass sensible-range low side
         Assert.True(subToMidbass < midbassToTweeter, "Handovers must stay ordered.");
-        Assert.InRange(midbassToTweeter, 500, 2_000);
+        CrossoverEdge tweeterHp = proposals[2].HighPassEdge!.Value;
+        double resonance = CrossoverAutoSetup.TweeterResonanceHz(
+            CrossoverAutoSetup.EstimateBand(BandCurve(2_000, 20_000, 0)).LowHz);
+        Assert.True(
+            midbassToTweeter >= CrossoverAutoSetup.TweeterMinCrossoverHz(
+                resonance, tweeterHp.SlopeDbPerOctave) - 1,
+            "the midbass/tweeter handover must respect the tweeter's resonance floor");
     }
 
     [Fact]
@@ -356,7 +447,10 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_TwoWay_SplitsInsideTheOverlapWithAllowedFilters()
     {
-        var woofer = new AutoSetupSource(BandCurve(40, 2_000, 0), DriverType.Woofer);
+        // A wide woofer so the driver overlap comfortably contains the tweeter's
+        // resonance-protected low handover (a tweeter measuring down to 1 kHz is
+        // held above ~2.3 kHz at 24 dB/oct, not crossed at its resonance).
+        var woofer = new AutoSetupSource(BandCurve(40, 4_000, 0), DriverType.Woofer);
         var tweeter = new AutoSetupSource(BandCurve(1_000, 20_000, 0), DriverType.Tweeter);
 
         IReadOnlyList<CrossoverProposal> proposals = CrossoverAutoSetup.Propose(
@@ -369,9 +463,15 @@ public sealed class CrossoverAutoSetupTests
         Assert.Null(proposals[1].LowPassEdge);
 
         double lowPassHz = proposals[0].LowPassEdge!.Value.FrequencyHz;
-        double highPassHz = proposals[1].HighPassEdge!.Value.FrequencyHz;
-        Assert.Equal(lowPassHz, highPassHz);
-        Assert.InRange(lowPassHz, 1_000, 2_000);
+        CrossoverEdge tweeterHp = proposals[1].HighPassEdge!.Value;
+        Assert.Equal(lowPassHz, tweeterHp.FrequencyHz);
+        Assert.InRange(lowPassHz, 1_500, 4_000);
+        double resonance = CrossoverAutoSetup.TweeterResonanceHz(
+            CrossoverAutoSetup.EstimateBand(BandCurve(1_000, 20_000, 0)).LowHz);
+        Assert.True(
+            tweeterHp.FrequencyHz >= CrossoverAutoSetup.TweeterMinCrossoverHz(
+                resonance, tweeterHp.SlopeDbPerOctave) - 1,
+            "the split must respect the tweeter's resonance floor");
         Assert.Equal(
             CrossoverFilterFamily.LinkwitzRiley,
             proposals[0].LowPassEdge!.Value.Family);
@@ -440,11 +540,13 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_IsAtLeastAsFlatAsAFixedLr24Split()
     {
-        // A woofer that already rolls off gently well below where a flat tweeter
-        // takes over: a fixed LR24 electrical split overshoots the acoustic slope
-        // and dips. The optimizer is free to pick gentler/other filters and must
-        // not do worse than the naive LR24-at-the-intersection baseline.
-        var woofer = new AutoSetupSource(BandCurve(40, 1_200, 0), DriverType.Woofer);
+        // A woofer that rolls off gently below where a flat tweeter takes over: a
+        // fixed LR24 electrical split overshoots the acoustic slope and dips. The
+        // optimizer is free to pick gentler/other filters and must not do worse
+        // than the naive LR24-at-the-crossover baseline. The crossover sits at
+        // ~2.3 kHz — above the tweeter's resonance-protection floor — so the
+        // comparison is a fair one the protected search can actually reach.
+        var woofer = new AutoSetupSource(BandCurve(40, 2_000, 0), DriverType.Woofer);
         var tweeter = new AutoSetupSource(BandCurve(1_500, 20_000, 0), DriverType.Tweeter);
         var channels = new[] { woofer, tweeter };
 
@@ -457,11 +559,11 @@ public sealed class CrossoverAutoSetupTests
             new CrossoverProposal(
                 CrossoverKind.LowPass,
                 null,
-                new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_350, 24),
+                new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_300, 24),
                 0),
             new CrossoverProposal(
                 CrossoverKind.HighPass,
-                new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_350, 24),
+                new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_300, 24),
                 null,
                 0)
         };

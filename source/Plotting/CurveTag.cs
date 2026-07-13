@@ -39,7 +39,8 @@ public sealed record CurveTag(
         AnalysisCurveKind.SecondHarmonic => "2nd harmonic",
         AnalysisCurveKind.ThirdHarmonic => "3rd harmonic",
         AnalysisCurveKind.FourthHarmonic => "4th harmonic",
-        AnalysisCurveKind.ThdPlusNoise => "THD+N",
+        AnalysisCurveKind.ThdPlusNoise => "THD",
+        AnalysisCurveKind.NoiseFloor => "Noise floor",
         AnalysisCurveKind.MinimumPhase => "Minimum phase",
         AnalysisCurveKind.ExcessPhase => "Excess phase",
         _ => mode switch

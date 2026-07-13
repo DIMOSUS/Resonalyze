@@ -3,12 +3,12 @@ using System.Numerics;
 namespace Resonalyze.Dsp.Tests;
 
 /// <summary>
-/// Locks the mapping from <see cref="SpectrumCurves"/> to the set of analysis
-/// curves <see cref="DataHelper.GetSpectrum"/> produces. This gating used to be
-/// driven by presentation-layer Show* flags read off the options object and was
-/// exercised by no test; now the caller passes an explicit set, so the contract
-/// is "the returned curve kinds equal exactly the requested set". The synthetic
-/// measurement's IR content is irrelevant here — only which curves appear.
+/// Locks the mapping from <see cref="SpectrumCurves"/> to the curves
+/// <see cref="DataHelper.GetSpectrum"/> produces. GetSpectrum now owns only the
+/// primary (linear) response; harmonic and THD curves moved to
+/// <see cref="EssDistortion"/> (which needs the sweep metadata to normalize every
+/// order against the same linear packet). So GetSpectrum honours the Primary flag
+/// and ignores the harmonic flags.
 /// </summary>
 public sealed class SpectrumCurveSelectionTests
 {
@@ -29,47 +29,23 @@ public sealed class SpectrumCurveSelectionTests
     }
 
     [Fact]
-    public void Harmonics_ProducesTheFourHarmonicCurvesWithoutPrimary()
+    public void HarmonicFlagsAreNotHandledByGetSpectrum()
     {
-        Assert.Equal(
-            new[]
-            {
-                AnalysisCurveKind.SecondHarmonic,
-                AnalysisCurveKind.ThirdHarmonic,
-                AnalysisCurveKind.FourthHarmonic,
-                AnalysisCurveKind.ThdPlusNoise
-            },
-            Kinds(SpectrumCurves.Harmonics));
+        Assert.Empty(Kinds(SpectrumCurves.Harmonics));
+        Assert.Empty(Kinds(SpectrumCurves.ThirdHarmonic));
     }
 
     [Fact]
-    public void All_ProducesPrimaryAndEveryHarmonicCurve()
+    public void All_ProducesOnlyThePrimaryCurveFromGetSpectrum()
     {
-        Assert.Equal(
-            new[]
-            {
-                AnalysisCurveKind.Primary,
-                AnalysisCurveKind.SecondHarmonic,
-                AnalysisCurveKind.ThirdHarmonic,
-                AnalysisCurveKind.FourthHarmonic,
-                AnalysisCurveKind.ThdPlusNoise
-            },
-            Kinds(SpectrumCurves.All));
+        Assert.Equal(new[] { AnalysisCurveKind.Primary }, Kinds(SpectrumCurves.All));
     }
 
     [Fact]
-    public void SingleHarmonic_ProducesOnlyThatCurve()
+    public void PrimaryPlusThd_ProducesOnlyThePrimaryFromGetSpectrum()
     {
         Assert.Equal(
-            new[] { AnalysisCurveKind.ThirdHarmonic },
-            Kinds(SpectrumCurves.ThirdHarmonic));
-    }
-
-    [Fact]
-    public void PrimaryPlusThd_ProducesExactlyThoseTwo()
-    {
-        Assert.Equal(
-            new[] { AnalysisCurveKind.Primary, AnalysisCurveKind.ThdPlusNoise },
+            new[] { AnalysisCurveKind.Primary },
             Kinds(SpectrumCurves.Primary | SpectrumCurves.ThdPlusNoise));
     }
 
@@ -88,9 +64,6 @@ public sealed class SpectrumCurveSelectionTests
             .Select(curve => curve.Kind)
             .ToArray();
 
-    // A peak well inside the buffer plus a linear harmonic-offset map (harmonic h
-    // sits h*300 samples before the peak), so every HDn/THD isolation window lands
-    // in range with a positive length. The IR is otherwise arbitrary.
     private static SyntheticMeasurement CreateMeasurement()
     {
         var ir = new Complex[Length];
@@ -100,10 +73,6 @@ public sealed class SpectrumCurveSelectionTests
             ir[i] += new Complex(0.001 * Math.Sin(i * 0.1), 0.0);
         }
 
-        return new SyntheticMeasurement(
-            ir,
-            SampleRate,
-            maxMagnitudeIndex: PeakIndex,
-            harmonicOffset: harmonic => harmonic * 300.0);
+        return new SyntheticMeasurement(ir, SampleRate, maxMagnitudeIndex: PeakIndex);
     }
 }

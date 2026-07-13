@@ -114,7 +114,24 @@ public static class AutoAlignmentEngine
     // extra lobes a wide window admits are handled by the candidate list, the
     // arrival prior, and the physical tie-break in AlignmentSelection.
     private const double MinFineAlignmentRangeMs = 0.5;
+    // The fixed span suffices at short-period (mid/high) junctions. At a LOW
+    // junction the period is long, and a whitened correlation with too few
+    // in-band periods can seed the window a half period off — parking it on a
+    // (flip + half-period) impostor whose true, opposite-polarity partner then
+    // sits a half period away, beyond this fixed reach. So the effective cap is
+    // lifted toward a half period at low junctions (see LowJunctionReachFraction)
+    // to admit that partner for AlignmentSelection's invert preference to pick;
+    // staying just under a half period keeps the window short of the next
+    // SAME-polarity lobe a full period out.
     private const double MaxFineAlignmentRangeMs = 2.5;
+
+    // The fraction of a half period the fine window may reach at a low junction
+    // (where a half period exceeds the fixed cap). Just under 1 so the window
+    // captures the half-period-away flip partner of an impostor seed without
+    // spanning the full-period same-polarity lobe on the far side; the residual
+    // ambiguity between those two is resolved by the arrival prior and the
+    // AlignmentSelection tie-breaks, exactly as for any other admitted lobe.
+    private const double LowJunctionReachFraction = 0.97;
 
     // The delay ceiling a proposal may reach, mirroring the UI's per-channel
     // delay limit. Kept here so the uniform negative-delay shift can detect —
@@ -194,7 +211,7 @@ public static class AutoAlignmentEngine
         AppendCorrelationAlignmentDiagnostics(log, pairs);
 
         Dictionary<IAlignmentChannel, double> timeline =
-            BuildArrivalTimeline(byBand, pairs, log);
+            BuildArrivalTimeline(byBand, pairs, log, out HashSet<AlignmentJunction> untrustedSeeds);
 
         // The relatively latest channel is the fixed reference; everyone else is
         // delayed toward it, so the coarse deltas are non-negative.
@@ -216,13 +233,15 @@ public static class AutoAlignmentEngine
         {
             AlignChannelAtJunction(
                 byBand[i].Channel, byBand[i + 1].Channel, pairs[i],
-                timeline, byBand, reprocess, alignment, log);
+                timeline, byBand, reprocess, alignment, log,
+                untrustedSeedJunctions: untrustedSeeds);
         }
         for (int i = referenceIndex + 1; i < byBand.Count; i++)
         {
             AlignChannelAtJunction(
                 byBand[i].Channel, byBand[i - 1].Channel, pairs[i - 1],
-                timeline, byBand, reprocess, alignment, log);
+                timeline, byBand, reprocess, alignment, log,
+                untrustedSeedJunctions: untrustedSeeds);
         }
     }
 
@@ -237,8 +256,19 @@ public static class AutoAlignmentEngine
     private static Dictionary<IAlignmentChannel, double> BuildArrivalTimeline(
         IReadOnlyList<AlignmentSnapshot> byBand,
         IReadOnlyList<AlignmentJunction> pairs,
-        StringBuilder log)
+        StringBuilder log,
+        out HashSet<AlignmentJunction> untrustedSeedJunctions)
     {
+        // Junctions whose coarse seed fell back to the arrival envelope because
+        // the PHAT peak was untrusted (a low junction with too few in-band
+        // periods): the coarse offset ACROSS such a junction can be a half period
+        // off, so aligning its two channels is allowed a half-period window (see
+        // LowJunctionReach) to admit the true lobe. Keyed by junction, not channel:
+        // the uncertainty is a property of the lower<->upper RELATION, so the wider
+        // window fires the same whether the walk reaches the junction from below or
+        // above, and never leaks onto a channel's OTHER, phat-trusted junction.
+        untrustedSeedJunctions =
+            new HashSet<AlignmentJunction>(ReferenceEqualityComparer.Instance);
         var timeline = new Dictionary<IAlignmentChannel, double>
         {
             [byBand[0].Channel] = 0
@@ -282,6 +312,10 @@ public static class AutoAlignmentEngine
             double increment =
                 trustPhat ? -phat.PositivePeak.DelayMs : upperArrival - lowerArrival;
             timeline[pair.Upper.Channel] = timeline[pair.Lower.Channel] + increment;
+            if (!trustPhat)
+            {
+                untrustedSeedJunctions.Add(pair);
+            }
 
             // Full-band processed-IR peak times, a detector-independent arrival
             // proxy: a band-limited arrival that sits many ms LATER than its own
@@ -335,8 +369,19 @@ public static class AutoAlignmentEngine
         IAlignmentChannel? secondaryNeighbor = null,
         AlignmentJunction? secondaryPair = null,
         double? priorOverrideMs = null,
-        double? sceneLockToleranceMs = null)
+        double? sceneLockToleranceMs = null,
+        bool? forcedPolarity = null,
+        IReadOnlySet<AlignmentJunction>? untrustedSeedJunctions = null)
     {
+        // Widen the window when the coarse seed ACROSS this junction (or its
+        // secondary, for a joint two-neighbour search) was the untrusted arrival
+        // fallback — the base can sit a half period off. Junction-keyed, so it
+        // fires the same whether the walk reached this junction from below or
+        // above, and only for the untrusted junction itself.
+        bool wideSeed = untrustedSeedJunctions != null &&
+            (untrustedSeedJunctions.Contains(pair) ||
+                (secondaryPair != null && untrustedSeedJunctions.Contains(secondaryPair)));
+
         double primaryBase = alignment.GetValueOrDefault(neighborChannel).DelayMs
             + timeline[neighborChannel] - timeline[channel];
         double secondaryBase = secondaryNeighbor != null
@@ -354,6 +399,7 @@ public static class AutoAlignmentEngine
         // of the quadratic lobe deterrent: between the two coarse bases when
         // both junctions constrain the channel.
         double anchorMs = priorOverrideMs ?? (primaryBase + secondaryBase) / 2.0;
+
 
         // One junction search: candidates of the prior-penalized loss score in
         // a window spanning the coarse base(s) (the PHAT-seeded timeline,
@@ -388,8 +434,16 @@ public static class AutoAlignmentEngine
                     .First(item => item.Channel == secondaryNeighbor).ImpulseResponse);
             }
 
+            // Only where the coarse seed was untrusted (arrival fallback at a
+            // low junction) let the cap grow toward a half period so the window
+            // can reach a half-period-away flip partner the fixed cap would
+            // hide. A trusted seed already sits on the right lobe, and widening
+            // there would only invite the impostor the tight window excludes.
+            double maxRangeMs = wideSeed
+                ? Math.Max(MaxFineAlignmentRangeMs, LowJunctionReachFraction * halfPeriodMs)
+                : MaxFineAlignmentRangeMs;
             double rangeMs = windowOverrideMs ?? Math.Clamp(
-                halfPeriodMs, MinFineAlignmentRangeMs, MaxFineAlignmentRangeMs);
+                halfPeriodMs, MinFineAlignmentRangeMs, maxRangeMs);
             double windowLowMs = Math.Min(primaryBase, secondaryBase) - rangeMs;
             double windowHighMs = Math.Max(primaryBase, secondaryBase) + rangeMs;
             if (sceneLockToleranceMs is { } lockTolerance && windowOverrideMs == null)
@@ -410,7 +464,8 @@ public static class AutoAlignmentEngine
                     windowLowMs,
                     windowHighMs,
                     priorDelayMs: anchorMs,
-                    priorSigmaMs: (windowHighMs - windowLowMs) / 4.0);
+                    priorSigmaMs: (windowHighMs - windowLowMs) / 4.0,
+                    forcedPolarity: forcedPolarity);
             return (candidates, windowLowMs, windowHighMs);
         }
 
@@ -426,6 +481,7 @@ public static class AutoAlignmentEngine
                 (secondaryNeighbor != null ? $" / {secondaryBase:0.000}" : "") +
                 $" ms, prior {anchorMs:0.000} ms" +
                 (priorOverrideMs != null ? " (cross-side)" : "") +
+                (wideSeed ? ", WIDE SEED" : "") +
                 (sceneLockToleranceMs is { } tol
                     ? $", SCENE-LOCKED \u00b1{tol:0.00} ms"
                     : "") +
@@ -438,7 +494,7 @@ public static class AutoAlignmentEngine
 
             AlignmentCandidate chosen = candidates.Count > 0
                 ? AlignmentSelection.Select(candidates, anchorMs)
-                : new AlignmentCandidate(anchorMs, false, 0);
+                : new AlignmentCandidate(anchorMs, forcedPolarity ?? false, 0);
             if (candidates.Count > 0 && chosen != candidates[0])
             {
                 log.AppendLine(
@@ -502,7 +558,8 @@ public static class AutoAlignmentEngine
             // away from the other side's timing pays for that distance too.
             if (wide.Count > 0 && sceneLockToleranceMs == null)
             {
-                AlignmentCandidate wideChosen = AlignmentSelection.Select(wide, anchorMs);
+                AlignmentCandidate wideChosen =
+                    AlignmentSelection.Select(wide, anchorMs);
                 if (wideChosen.ScoreDb > chosen.ScoreDb + WideWindowPromotionMarginDb)
                 {
                     log.AppendLine(
@@ -709,16 +766,14 @@ public static class AutoAlignmentEngine
         alignment[plan.BridgeRight] = new AlignmentOverride(
             Math.Clamp(Math.Round(bridgeDelay, 2), 0, MaxDelayMs), false);
 
-        // The arrival is polarity-blind, so the right top's polarity is chosen
-        // HERE, after the delay is fixed: the left walk may well have inverted
-        // the left top (its own junction decides that), and every other right
-        // driver aligns to the right top afterwards — a mismatched top sign
-        // would flip the whole right side against the left and cancel
-        // center-panned content. With the delay pinned there is no lobe
-        // ambiguity left: the effective acoustic signs of the two settled tops
-        // are simply compared (sum-loss comparison of the two signs as the
-        // fallback when a sign is unreadable).
-        ChooseBridgePolarity(plan, reprocess, alignment, log);
+        // Polarity is a property of the DRIVER, not the side, and automatic delay
+        // never inverts one side of a pair alone: the right top INHERITS the left
+        // top's sign (which the left walk may have flipped for its own cascade),
+        // just as every lower right driver inherits its left counterpart's. Set it
+        // before the right walk so the right lowers align against a correctly-signed
+        // top. A genuinely reverse-wired driver is left for a MANUAL flip in the UI,
+        // not an asymmetric automatic one.
+        InheritBridgePolarity(plan, alignment, log);
 
         // Stage R: descent from the bridged top toward the low end (and up
         // from it, if the caller had to bridge a non-top pair) — the same walk
@@ -726,7 +781,9 @@ public static class AutoAlignmentEngine
         // the left pass: never searched again, their right-side junction is
         // only measured.
         Dictionary<IAlignmentChannel, double> rightTimeline =
-            BuildArrivalTimeline(rightByBand, plan.RightPairs, log);
+            BuildArrivalTimeline(
+                rightByBand, plan.RightPairs, log,
+                out HashSet<AlignmentJunction> rightUntrustedSeeds);
 
         // The delay that would land this right channel's arrival exactly the
         // scene offset ahead of its settled left counterpart's, measured by
@@ -822,10 +879,23 @@ public static class AutoAlignmentEngine
                 ? SceneLockToleranceMs
                 : null;
 
+            // Polarity is a property of the DRIVER, not the side: a right channel
+            // inherits the sign its left counterpart settled on (the two are the
+            // same driver, wired the same), and only searches the delay. This makes
+            // an asymmetric per-driver inversion — left mid flipped while right mid
+            // is not — structurally impossible. The right top's sign is the one
+            // exception: it is set by the bridge, the single global L/R link.
+            bool? inheritedPolarity = channelLink == null
+                ? null
+                : alignment.TryGetValue(channelLink.Left, out AlignmentOverride leftSide)
+                    ? leftSide.InvertPolarity
+                    : false;
+
             AlignChannelAtJunction(
                 channel, neighbor, pair,
                 rightTimeline, allChannels, reprocess, alignment, log,
-                secondary, secondaryPair, crossTarget, sceneLock);
+                secondary, secondaryPair, crossTarget, sceneLock, inheritedPolarity,
+                rightUntrustedSeeds);
         }
         for (int i = bridgeIndex - 1; i >= 0; i--)
         {
@@ -862,6 +932,10 @@ public static class AutoAlignmentEngine
                 $"Normalized: -{minimum:0.000} ms off every channel " +
                 "(minimum delay back to zero)");
         }
+
+        // The invariant the user requires of automatic delay: no driver is ever
+        // inverted on one side of a pair alone.
+        EnforcePolaritySymmetry(plan, alignment, log);
     }
 
     /// <summary>
@@ -907,67 +981,63 @@ public static class AutoAlignmentEngine
     private const double PairComoveSearchRangeMs = 1.2;
     private const double PairComoveMinimumGainDb = 0.05;
 
-    // Decides the right bridge channel's polarity once its delay is already in
-    // the alignment map. Primary evidence: the measured acoustic signs of the
-    // two settled top responses (EstimatePolarity on the processed IRs — the
-    // left one includes whatever inversion its own junction chose). Fallback
-    // when a sign is unreadable: the bridge-band sum loss of the two possible
-    // signs — with the delay fixed only two hypotheses exist, so the lobe
-    // ambiguity that bans loss-driven polarity searches does not apply.
-    private static void ChooseBridgePolarity(
+    // The right bridge top inherits the left top's sign (set before the right walk,
+    // so the right lowers align against a correctly-signed top). Automatic delay
+    // never inverts one side of a pair alone — a driver's polarity is a property of
+    // the driver, decided once on the left and mirrored to the right; the sum-loss /
+    // first-lobe "which polarity fits better" guess is gone, because at high
+    // frequencies two spatially-separated tops comb-filter and the guess is
+    // noise-driven (it used to invert an identical off-axis right tweeter alone).
+    private static void InheritBridgePolarity(
         StereoAlignmentPlan plan,
-        AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log)
     {
-        IReadOnlyList<AlignmentSnapshot> bridged = reprocess(alignment);
-        Complex[] leftTop = bridged
-            .First(item => item.Channel == plan.BridgeLeft).ImpulseResponse;
-        Complex[] rightTop = bridged
-            .First(item => item.Channel == plan.BridgeRight).ImpulseResponse;
+        bool leftInvert = alignment.GetValueOrDefault(plan.BridgeLeft).InvertPolarity;
+        AlignmentOverride top = alignment.GetValueOrDefault(plan.BridgeRight);
+        alignment[plan.BridgeRight] = top with { InvertPolarity = leftInvert };
+        log.AppendLine(
+            $"  bridge polarity: {(leftInvert ? "inverted" : "normal")} " +
+            $"(inherited from {plan.BridgeLeft.Name}; auto delay keeps L/R polarity symmetric)");
+    }
 
-        PolarityEstimate leftSign = VirtualCrossoverAnalysis.EstimatePolarity(leftTop);
-        PolarityEstimate rightSign = VirtualCrossoverAnalysis.EstimatePolarity(rightTop);
-        bool invert;
-        string reason;
-        if (leftSign != PolarityEstimate.Unknown &&
-            rightSign != PolarityEstimate.Unknown)
+    // Final guarantee for automatic delay: every right driver's polarity flag equals
+    // its left counterpart's, so the auto never inverts one side of a pair alone.
+    // This is redundant with the per-driver inheritance (the bridge top above, each
+    // lower right driver via its forced polarity) but states the invariant in one
+    // explicit, testable place. A MANUAL polarity flip in the UI is untouched — this
+    // only governs what the auto-delay proposal writes.
+    private static void EnforcePolaritySymmetry(
+        StereoAlignmentPlan plan,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        StringBuilder log)
+    {
+        void Mirror(IAlignmentChannel left, IAlignmentChannel right)
         {
-            invert = leftSign != rightSign;
-            reason = $"measured signs L {leftSign} / R {rightSign}";
-        }
-        else
-        {
-            var invertedRightTop = new Complex[rightTop.Length];
-            for (int i = 0; i < rightTop.Length; i++)
+            if (ReferenceEquals(left, right))
             {
-                invertedRightTop[i] = -rightTop[i];
+                return; // a shared mono channel carries one polarity by construction
             }
 
-            var leftOnly = new List<Complex[]> { leftTop };
-            (double LossDb, double DipDb)? normalLoss =
-                VirtualCrossoverAnalysis.MeasureSumLoss(
-                    rightTop, leftOnly, plan.BridgeRight.SampleRate,
-                    plan.BridgeBandLowHz, plan.BridgeBandHighHz);
-            (double LossDb, double DipDb)? invertedLoss =
-                VirtualCrossoverAnalysis.MeasureSumLoss(
-                    invertedRightTop, leftOnly, plan.BridgeRight.SampleRate,
-                    plan.BridgeBandLowHz, plan.BridgeBandHighHz);
-            invert = invertedLoss.HasValue && normalLoss.HasValue &&
-                invertedLoss.Value.LossDb > normalLoss.Value.LossDb;
-            reason = "sign unreadable, bridge-band loss " +
-                $"normal {normalLoss?.LossDb:0.00} / " +
-                $"inverted {invertedLoss?.LossDb:0.00} dB";
+            bool leftInvert = alignment.GetValueOrDefault(left).InvertPolarity;
+            AlignmentOverride current = alignment.GetValueOrDefault(right);
+            if (current.InvertPolarity != leftInvert)
+            {
+                alignment[right] = current with { InvertPolarity = leftInvert };
+                log.AppendLine(
+                    $"  polarity symmetry: {right.Name} -> " +
+                    $"{(leftInvert ? "inverted" : "normal")} to match {left.Name}");
+            }
         }
 
-        if (invert)
+        Mirror(plan.BridgeLeft, plan.BridgeRight);
+        if (plan.PairLinks != null)
         {
-            alignment[plan.BridgeRight] =
-                alignment[plan.BridgeRight] with { InvertPolarity = true };
+            foreach (StereoPairLink link in plan.PairLinks)
+            {
+                Mirror(link.Left, link.Right);
+            }
         }
-
-        log.AppendLine(
-            $"  bridge polarity: {(invert ? "inverted" : "normal")} ({reason})");
     }
 
     // Moves both sides of one linked pair by the same delta — the pair's L-R

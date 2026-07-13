@@ -160,6 +160,36 @@ reported instead of fixed. Grouped by area, highest-value items marked ★.
   from the flat-slope point's wish while landing on the user's hand tune. The
   per-side filter+driver group-delay asymmetry is real and side-asymmetric;
   the refutation stands.
+- [x] **Asymmetric L/R polarity after auto delay (user report 2026-07-12,
+  Butterworth-triggered):** the stereo cascade decided polarity independently per
+  side (left walk, right walk) plus a bridge sign-match, so a Butterworth crossover —
+  whose drivers meet near 90°, making the first-lobe sign and the sum both ambiguous —
+  let the two sides diverge (e.g. left mid flipped, right tweeter flipped). LR sums
+  in-phase, so it never diverged. Fixed by making polarity a property of the DRIVER,
+  not the side: (1) each right channel below the bridge INHERITS its left counterpart's
+  sign (via `PairLinks`) and searches only the delay — `forcedPolarity` is threaded all
+  the way into `FindAlignmentCandidates`/`SearchAlignmentCandidatesByLoss`, which then
+  seed ONLY that polarity's grid, so every candidate is honestly evaluated for the final
+  sign (delay AND score belong to it). *(Review fix: the first cut instead re-stamped the
+  opposite polarity's winner via `with { InvertPolarity }`, keeping a delay ~half a period
+  off and a borrowed score that could even win the wide-window promotion — corrected, with
+  a regression test asserting the forced winner is the genuine same-sign optimum.)*
+  (2) the bridge NO LONGER decides the top's sign at all — the right top INHERITS the
+  left top's flag, exactly like the lower drivers. **User's absolute rule (2026-07-13):
+  automatic delay must NEVER invert a driver on one side of a pair alone.** The first
+  cut kept a sum-loss "which sign fits better" guess with a margin, but the user's real
+  `head_90_grad` capture proved that unsafe: at the bridge band (1.8-12 kHz) two
+  spatially-separated identical tweeters comb-filter, so normal vs inverted summed within
+  0.15 dB (a near-tie), the fragile first-lobe read disagreed (L Negative / R Positive),
+  and the RIGHT tweeter alone got inverted. So the guess is gone: `InheritBridgePolarity`
+  mirrors the left top's sign onto the right top before the right walk, and a final
+  `EnforcePolaritySymmetry` pass makes every right driver's flag equal its left
+  counterpart's (bridge + every `PairLink`). A genuinely reverse-wired driver is left for
+  a MANUAL flip in the UI — the auto never does it asymmetrically. Reproduced and pinned
+  on the REAL `l twr.json`/`r twr.json` (right tweeter now `invert no`); synthetic tests
+  pin the invariant even with the right mid AND top wired backwards. `MeasureSumLoss`/
+  `EstimatePolarity` are no longer used by the bridge. 509 dsp tests pass. *Windows
+  follow-up:* re-run the user's Butterworth tune and confirm no channel is inverted.
 - [ ] **Stereo scene diagnostics (Δ per band)**: the stereo Auto delay cascade
   (left walk → arrival bridge with the scene offset → right descent) is in;
   the complementary *verification* layer is not — per-band L−R arrival
@@ -417,26 +447,114 @@ re-verified.
 
 ### Harmonics / THD
 
-- [ ] ★ **THD+N is not THD+N: one FFT over the HD2..HD5 region sums the
-  packets complex-wise** (phase-dependent, shifts change the result without
-  changing energy). Fix: per-harmonic windows → per-harmonic spectra → move
-  each onto the fundamental axis → sum energies; estimate noise separately and
-  add it in energy. (The HDn display axis itself is fixed: curves now draw at
-  the excitation frequency with calibration applied at the product frequency.)
-- [ ] ★ **Harmonic curves and the primary curve have different reference
-  levels** (sweep-deconvolution amplitude vs mic/loopback transfer), so their
-  vertical distance is not a distortion percentage. Fix: HDn relative to the
-  H1 linear packet of the *same* ESS decomposition; the transfer H1 stays as
-  the primary display curve.
-- [ ] **No overlap check between harmonic packets.** Long decay (bass, short
-  sweeps, car cabins) leaks one packet's tail into the next window; the curves
-  stay confident-looking. Fix: compute the available separation and warn when
-  energy near the window edge has not fallen by a set margin.
-- [ ] **No end-to-end ESS nonlinearity test.** The isolation test pins window
-  geometry only. Fix: y = x + a2·x² + a3·x³ through a real ESS +
-  deconvolution, assert HD2/HD3 frequency and level against the known a2/a3.
+- [~] **Honest dBr/dBc axis + tracker labels (user request 2026-07-12, app-side,
+  needs Windows build):** the frequency-response magnitude is the loopback-referenced
+  transfer function (dimensionless gain, relative to the reference) — NOT dBFS, since
+  the deconvolution divides out the absolute level. The harmonic/THD/noise curves are
+  ratios to the fundamental (|Hn|/|H1|). So the two families are relative to DIFFERENT
+  references. The FR plot's dB axis is now titled `dBr/dBc`, and the curve trackers
+  spell the reference out: the primary reads `… dBr (vs reference)`, every distortion
+  curve (HDn / THD / noise floor) reads `… dBc (vs fundamental)`
+  (`PlotModelFactory.DistortionTrackerFormat`). `AddDecibelAxis` took an optional title
+  so the Live Spectrum plot (which mixes the transfer trace with a raw-input RTA, not a
+  dBc quantity) keeps its plain `dB`. *Compile-only under Windows targeting — verify the
+  axis title and tracker text render in the app.*
+- [x] **Harmonic curves were over-smoothed vs HD1 (user report 2026-07-12):** at
+  1/12 the HD2..HDn/THD/noise curves looked blurred across a whole octave beside the
+  fundamental. Two stacked causes: (1) `EssDistortion.BuildDbCurve` used the octave
+  value as the Gaussian **sigma**, so its ±3σ support was ~6× the nominal width —
+  the primary response instead treats 1/N as a fractional-octave **window width**;
+  (2) an extra `HarmonicSmoothingWidthFactor = 2.0`. Fixed: the smoothing now
+  interprets the value as an FWHM (sigma = width / 2·√(2·ln2)) via the extracted,
+  unit-tested `EssDistortion.SmoothOctaves`, and the app factor is 1.0 so harmonics
+  read at the SAME resolution the user picked for HD1. New dsp tests pin the FWHM
+  equals the requested width, that a 1/12 smooth is essentially gone half an octave
+  from a spike, and NaN-gap/zero-width behaviour. 505 dsp tests pass. *Windows
+  follow-up:* eyeball the HD curves at 1/12.
+- [x] ★ **THD+N was not THD+N: one FFT over the HD2..HD5 region summed the
+  packets complex-wise** (phase-dependent) — reworked (2026-07-12). A new pure DSP
+  layer (`EssHarmonicAnalysis` + `EssDistortion`) isolates each harmonic order in
+  its OWN plateau window, computes each packet's spectrum, maps each onto the
+  excitation axis, and sums the harmonics' ENERGY (√Σ|Hn|²) on a common
+  log-frequency grid — never a complex sum of one shared window. The curve ships as
+  well-defined **THD** (energy of the harmonics over |H1|).
+  **Noise shown as a separate floor trace, REW-style (not fused THD+N) — done
+  (PR #28 review follow-up).** Rather than fold noise into a single THD+N number
+  (which needs an arbitrary declared bandwidth and drove the P1/P2 review findings),
+  the measurement noise floor is drawn as its OWN trace (`AnalysisCurveKind.NoiseFloor`,
+  |N|/|H1|), exactly as REW does. THD therefore stays a clean harmonics-only figure,
+  and where THD dips to the noise floor the user can SEE the harmonics are buried
+  (validated on the real drivers: l woof is noise-limited at 100–200 Hz, the tweeter
+  at 200 Hz is real distortion well above the floor). The two review defects are
+  fixed at the source: `EssNoise` no longer references the linear-packet window at
+  all (so the level is independent of sweep geometry — pinned by a fade-fraction
+  invariance test), and it takes the bias-corrected median of the periodogram
+  (median of power / ln2, not magnitude) so the absolute level is right (pinned by a
+  white-noise known-answer test). The floor is reported at a fixed analysis
+  resolution (sampleRate / noise window, exposed as `EquivalentNoiseBandwidthHz`),
+  with the honest caveat — as in REW — that a noise floor scales with resolution and
+  drive level. *Windows follow-up:* live check of the grey Noise-floor trace + its
+  legend next to the plot.
+- [x] ★ **Harmonic curves and the primary curve had different reference levels** —
+  fixed (2026-07-12). HDn is now `|Hn|/|H1|` against the linear packet of the SAME
+  ESS decomposition (a contained IR read under a unity plateau, so the ratio is
+  window-length independent), drawn against excitation frequency with calibration
+  applied at each product frequency n·f (so a C(n·f)−C(f) difference is honoured);
+  a denominator floor masks a collapsing |H1| to NaN instead of a runaway percent,
+  and the display smoothing preserves those NaN gaps (a point above Nyquist/n or a
+  rejected-denominator point is NOT resurrected by averaging finite neighbours —
+  PR #28 review fix). The loopback transfer stays the primary display curve.
+  Validated by an
+  end-to-end polynomial ESS test AND on the real drivers in the test-data submodule
+  (each measurement stores `sweepDeconvolutionRealSamples`, which carries the
+  harmonic packets — not just the transfer IR): l woof/mid/twr give sensible HD2/HD3
+  distortion figures (−28…−55 dB) and the sub shows HD2/HD3 in its passband with the
+  out-of-band region correctly masked by the denominator floor.
+- [x] **Overlap check between harmonic packets** — done (2026-07-12). Each
+  harmonic packet's residual energy at its window edges is compared with its peak
+  (`HarmonicPacketValidity`): below −40 dB it is reliable, between −40 and −12 dB it
+  is marginal (drawn with a warning), and only above −12 dB — where a neighbour
+  genuinely swamps the packet — is the order dropped from the curves AND excluded
+  from THD. The −12 dB drop margin was set on the real drivers: a strict −25 dB
+  threshold dropped HD3/HD4/HD5 on every driver (a 12-oct/3-s/44.1-kHz sweep does
+  not fully isolate the high harmonics), so it was relaxed per the user's choice to
+  keep the caveated curves. Warnings ride on `DistortionSpectrum.Warnings`. Tests
+  pin a contained system (all reliable) and a boundary-swamping packet (dropped, THD
+  excludes it). A dropped order is now removed from the curve list entirely (not
+  left as an all-NaN line), and the warnings reach the display boundary:
+  `EssDistortion.ComputeDistortionCurvesResult` returns a `DistortionCurveResult`
+  (curves + warnings + packet validity), and `MeasurementPlotContext` exposes them
+  as `DistortionWarnings` (PR #28 review fix). *Windows follow-up:* rendering that
+  warning text next to the plot is the remaining UI hookup that needs a live check.
+- [x] **No end-to-end ESS nonlinearity test** — added (2026-07-12).
+  `EssPolynomialDistortionTests` drives a real generated ESS through
+  `y = x + a2·x² + a3·x³`, deconvolves with the production inverse filter, and
+  asserts HD2/HD3 land in the right packets, are drawn against excitation
+  frequency, stop at Nyquist/order, match the levels the trig expansion predicts
+  (g1 = 1+3a3/4, H2 = a2/2, H3 = a3/4), and are invariant to a recording time
+  shift. This is what caught (and pins the fix for) the tone-vs-IR normalization.
 
 ### Auto Crossover
+
+- [~] **Slope-deviation penalty anchors the auto to 24 dB/oct (user request
+  2026-07-12, DSP done):** the practical slope floor dropped 24 → 12, so the search
+  now spans 12/18/24/36/48, but every shoulder pays `SlopeDeviationPenaltyDb = 0.7`
+  per unit of `|log2(slope/24)|` (12 and 48 = 1.0 unit, 18/36 = 0.42/0.59), summed
+  over both shoulders of each junction and added to the flatness score. 24 dB/oct —
+  the car-audio standard — is thus the default; a gentler or steeper filter is taken
+  only when it earns more than it costs. The descent seeds at 24 (`SeedSlope`, nearest
+  admissible) instead of the gentlest. **User goal met:** the auto no longer drags the
+  tweeter maximally low on a 48 dB/oct slope to escape the ear band — it keeps 24 and
+  lets the handover sit higher (validated on synthetics: 3-way tweeter 1650/48 →
+  **2300/24**, 4-way 2200/48 → **3050/24**; all junctions land on 24). Deviations stay
+  reachable when justified — the resonance floor still OVERRIDES the penalty and forces
+  a steep tweeter when a low max-crossover boxes it in. Fixed two latent bugs the
+  penalty exposed: `OptimizeChannelSlope` could retain a current slope no longer in the
+  allowed set (now starts from an allowed one), and `EnforceTweeterResonanceFloor` now
+  steepens the slope when a max-crossover limit blocks raising the frequency, so a
+  boxed-in tweeter is never left at 24 below its Fs floor. 506 dsp tests pass.
+  *Windows follow-up:* eyeball the wizard on a real measurement.
+
 
 - [x] ★ **The scalar summation model is physically wrong in three ways** —
   resolved (2026-07-11) after a design discussion with the user. Verdict: the
@@ -675,6 +793,62 @@ re-verified.
   slopes, so the auto-crossover can give the woofer a steep low-pass and a gentle
   high-pass out of the box (the group-delay win above). Turning it off restores
   the matched-shoulders behaviour.
+- [~] **Slope-coupled tweeter resonance floor (user request 2026-07-12, DSP done):**
+  the tweeter's low handover is now bounded by its *resonance* rather than a flat
+  1.7 kHz class floor. Fs is estimated from the tweeter's own measured low roll-off
+  (`EstimateBand.LowHz`) and floored at `TweeterFsFloorHz = 1200` so a spuriously low
+  or already-filtered edge cannot license a dangerous crossover. The high-pass must
+  give `TweeterFsAttenuationTargetDb = 22 dB` of attenuation at Fs — anchored on the
+  Focal TNF datasheet (min 3.2 kHz @ 18 dB/oct, Fs ≈ 1370 ⇒ ~22 dB at Fs) — so the
+  minimum crossover for a slope S is `fc = Fs·2^(22/S)` (`TweeterMinCrossoverHz`).
+  A steeper filter reaches the target closer to Fs and may cross lower; a shallow
+  one is held well above it. This directly answers the user's question ("при более
+  крутых срезах можно ниже?") — yes, and now the auto only crosses low if it also
+  picks a steep enough slope. `SlopeFloor` became the per-candidate inverse
+  (`slope ≥ 22/log2(fc/Fs)`), `JunctionSearchBounds` opens the window down to the
+  steepest slope's floor, and `EnforceTweeterResonanceFloor` is a post-descent
+  backstop that nudges the crossover up one lattice step when the decoupled
+  frequency/slope search (matched-slope mode) lands just under the floor. Real
+  behaviour on synthetic drivers: a tweeter measuring to 1 kHz (Fs floored to 1200)
+  crosses at **1650 Hz / 48 dB-oct** with independent slopes (low + steep, matching
+  the user's manual 1800/steep tune) and **2300 Hz / 24 dB-oct** in matched mode;
+  the Focal-like 2 kHz-band tweeter (Fs ≈ 1600) crosses at 2200/48 or ~3050/24.
+  Removed the flat `TweeterProtectionHz = 2500` const. 502 dsp tests pass; several
+  2-way fixtures that crossed tweeters at 1.2–1.5 kHz (below Fs — the exact danger)
+  were updated to the protected region. *Windows follow-up:* live check in the
+  wizard on a swept measurement.
+- [~] **Distortion-aware crossover bounds — PROTECTIVE ONLY (DSP done, app wiring
+  pending):** the band estimate reads each driver's distortion-clean sub-band from
+  an optional THD curve on `AutoSetupSource.DistortionDb`
+  (`DriverBandEstimate.DistortionLowHz/HighHz`). The tweeter rule is deliberately
+  one-directional: a measured distortion knee can only **RAISE** the tweeter's low
+  handover above the fixed class floor, never lower it
+  (`typeLow = Math.Max(typeLow, DistortionLowHz)`), and no driver is crossed up
+  past its breakup onset. **Design correction (user safety catch, 2026-07-12):** an
+  earlier draft let a clean-measuring tweeter cross as low as a
+  `HardTweeterFloorHz = 1000` backstop; on the real 4-way that pulled the
+  mid/tweeter junction to ~1100 Hz. The user flagged it would destroy the tweeter
+  at volume ("помрэ на высокой громкости"). The driver is a **Focal TNF, Fs ≈
+  1370 Hz** (datasheets: woofersetc, focal.com — recommended minimum crossover
+  ~3.2 kHz @ 18 dB/oct); crossing at or below Fs blows a tweeter under sustained
+  SPL. A moderate-level ESS THD read understates the excursion limit near
+  resonance, so it must never be used to justify a lower crossover — only a higher
+  one when the tweeter already measures dirty. The `HardTweeterFloorHz` const is
+  removed; the low-for-soundstage handover stays a deliberate manual choice (the
+  user's own tune is a mid low-pass shelf at 1300 + tweeter high-pass at 1800, not
+  an inferred low crossover). Five synthetic tests pin the knee read, the breakup
+  edge, the null-distortion fallback, that a clean tweeter is NOT crossed below the
+  1.7 kHz class floor (with == without distortion), and that a dirty-low tweeter IS
+  held higher (with > without). All 501 dsp tests pass.
+  **App wiring done (compile-only, needs a Windows live check):** the source
+  snapshot carries the sweep deconvolution (IR + octaves + duration + peak), so on
+  source resolve the panel computes the channel's THD curve
+  (`ComputeDistortionCurve` → `EssDistortion`) into `ChannelSideState.DistortionCurve`,
+  and the wizard threads it through the dialog into `AutoSetupSource.DistortionDb`
+  (same path as the coherence plumbing). Verify live: pick a swept measurement, open
+  the crossover wizard, and confirm a dirty-low tweeter is held above the floor
+  while a clean one still stays at the conservative 1.7 kHz class floor.
+  Optional future: a soft breakup PENALTY in placement (currently a hard bound).
 
 ### EQ Wizard
 

@@ -27,7 +27,7 @@ internal static class PlotModelStyle
         });
     }
 
-    public static void AddDecibelAxis(PlotModel model)
+    public static void AddDecibelAxis(PlotModel model, string title = "dB")
     {
         model.Axes.Insert(0, new LinearAxis
         {
@@ -40,7 +40,7 @@ internal static class PlotModelStyle
             Maximum = 0,
             MajorGridlineStyle = LineStyle.Solid,
             MinorGridlineStyle = LineStyle.Dot,
-            Title = "dB",
+            Title = title,
         });
     }
 

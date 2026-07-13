@@ -48,6 +48,7 @@ namespace Resonalyze.Options
                 checkBoxShowHd3.Checked = visibility.ShowHd3;
                 checkBoxShowHd4.Checked = visibility.ShowHd4;
                 checkBoxShowThdPlusNoise.Checked = visibility.ShowThdPlusNoise;
+                checkBoxShowNoiseFloor.Checked = visibility.ShowNoiseFloor;
                 UpdateTukeyWindowLimits();
             });
             UpdateIrPreview();
@@ -72,6 +73,7 @@ namespace Resonalyze.Options
             visibility.ShowHd3 = checkBoxShowHd3.Checked;
             visibility.ShowHd4 = checkBoxShowHd4.Checked;
             visibility.ShowThdPlusNoise = checkBoxShowThdPlusNoise.Checked;
+            visibility.ShowNoiseFloor = checkBoxShowNoiseFloor.Checked;
             UpdateIrPreview();
         }
 
@@ -147,7 +149,11 @@ namespace Resonalyze.Options
                 "Shows the 4th harmonic distortion curve.");
             toolTip.SetToolTip(
                 checkBoxShowThdPlusNoise,
-                "Shows the total harmonic distortion + noise curve.");
+                "Shows the total harmonic distortion (THD) curve — harmonics only.");
+            toolTip.SetToolTip(
+                checkBoxShowNoiseFloor,
+                "Shows the measurement noise floor as its own trace; its label states the "
+                + "analysis bandwidth the level is measured at.");
             toolTip.SetToolTip(
                 irPlotView,
                 "Preview of the transfer impulse response and the analysis window used " +

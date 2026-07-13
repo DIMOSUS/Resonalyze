@@ -295,6 +295,7 @@ internal sealed class MeasurementSettingsFile
         public bool ShowHd3 { get; set; } = true;
         public bool ShowHd4 { get; set; } = true;
         public bool ShowThdPlusNoise { get; set; } = true;
+        public bool ShowNoiseFloor { get; set; } = true;
         public bool ShowGroupDelay { get; set; } = true;
         public double PhaseGateOffsetMs { get; set; } = FrequencyResponseOptions.DefaultPhaseGateOffsetMs;
         public double PhaseLeftMs { get; set; } = FrequencyResponseOptions.DefaultPhaseLeftMs;
@@ -328,6 +329,7 @@ internal sealed class MeasurementSettingsFile
                 ShowHd3 = visibility.ShowHd3,
                 ShowHd4 = visibility.ShowHd4,
                 ShowThdPlusNoise = visibility.ShowThdPlusNoise,
+                ShowNoiseFloor = visibility.ShowNoiseFloor,
                 ShowGroupDelay = visibility.ShowGroupDelay,
                 PhaseGateOffsetMs = options.PhaseGateOffsetMs,
                 PhaseLeftMs = options.PhaseLeftMs,
@@ -362,6 +364,7 @@ internal sealed class MeasurementSettingsFile
             visibility.ShowHd3 = ShowHd3;
             visibility.ShowHd4 = ShowHd4;
             visibility.ShowThdPlusNoise = ShowThdPlusNoise;
+            visibility.ShowNoiseFloor = ShowNoiseFloor;
             visibility.ShowGroupDelay = ShowGroupDelay;
             options.PhaseGateOffsetMs = ClampMilliseconds(PhaseGateOffsetMs, 0.0, 2000.0);
             options.PhaseLeftMs = ClampMilliseconds(PhaseLeftMs, 0.0, 1000.0);

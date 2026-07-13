@@ -18,6 +18,7 @@ public sealed class CurveVisibilityOptions
     public bool ShowHd3 { get; set; } = true;
     public bool ShowHd4 { get; set; } = true;
     public bool ShowThdPlusNoise { get; set; } = true;
+    public bool ShowNoiseFloor { get; set; } = true;
 
     // Phase mode.
     public bool ShowMeasuredPhase { get; set; } = true;
@@ -55,6 +56,10 @@ public sealed class CurveVisibilityOptions
         if (ShowThdPlusNoise)
         {
             curves |= SpectrumCurves.ThdPlusNoise;
+        }
+        if (ShowNoiseFloor)
+        {
+            curves |= SpectrumCurves.NoiseFloor;
         }
 
         return curves;

@@ -30,6 +30,7 @@ public sealed class CurveVisibilityOptionsTests
     [InlineData(nameof(CurveVisibilityOptions.ShowHd3), SpectrumCurves.ThirdHarmonic)]
     [InlineData(nameof(CurveVisibilityOptions.ShowHd4), SpectrumCurves.FourthHarmonic)]
     [InlineData(nameof(CurveVisibilityOptions.ShowThdPlusNoise), SpectrumCurves.ThdPlusNoise)]
+    [InlineData(nameof(CurveVisibilityOptions.ShowNoiseFloor), SpectrumCurves.NoiseFloor)]
     public void ToSpectrumCurves_EachSpectrumFlagMapsToItsBit(string flag, SpectrumCurves expected)
     {
         CurveVisibilityOptions visibility = AllOff();
@@ -58,6 +59,7 @@ public sealed class CurveVisibilityOptionsTests
         ShowHd3 = false,
         ShowHd4 = false,
         ShowThdPlusNoise = false,
+        ShowNoiseFloor = false,
         ShowMeasuredPhase = false,
         ShowMinimumPhase = false,
         ShowExcessPhase = false,

@@ -45,6 +45,7 @@ namespace Resonalyze.Options
             checkBoxShowHd3 = new CheckBox();
             checkBoxShowHd4 = new CheckBox();
             checkBoxShowThdPlusNoise = new CheckBox();
+            checkBoxShowNoiseFloor = new CheckBox();
             irPlotView = new OxyPlot.WindowsForms.PlotView();
             (numericWindow).BeginInit();
             (numericRightWindow).BeginInit();
@@ -200,7 +201,7 @@ namespace Resonalyze.Options
             // 
             checkBoxShowCoherence.AutoSize = true;
             checkBoxShowCoherence.ForeColor = SystemColors.ControlLight;
-            checkBoxShowCoherence.Location = new Point(12, 268);
+            checkBoxShowCoherence.Location = new Point(12, 290);
             checkBoxShowCoherence.Name = "checkBoxShowCoherence";
             checkBoxShowCoherence.Size = new Size(134, 19);
             checkBoxShowCoherence.TabIndex = 54;
@@ -248,13 +249,24 @@ namespace Resonalyze.Options
             checkBoxShowThdPlusNoise.Name = "checkBoxShowThdPlusNoise";
             checkBoxShowThdPlusNoise.Size = new Size(99, 19);
             checkBoxShowThdPlusNoise.TabIndex = 52;
-            checkBoxShowThdPlusNoise.Text = "Show THD+N";
+            checkBoxShowThdPlusNoise.Text = "Show THD";
             checkBoxShowThdPlusNoise.UseVisualStyleBackColor = true;
-            // 
+            //
+            // checkBoxShowNoiseFloor
+            //
+            checkBoxShowNoiseFloor.AutoSize = true;
+            checkBoxShowNoiseFloor.ForeColor = SystemColors.ControlLight;
+            checkBoxShowNoiseFloor.Location = new Point(12, 268);
+            checkBoxShowNoiseFloor.Name = "checkBoxShowNoiseFloor";
+            checkBoxShowNoiseFloor.Size = new Size(114, 19);
+            checkBoxShowNoiseFloor.TabIndex = 53;
+            checkBoxShowNoiseFloor.Text = "Show noise floor";
+            checkBoxShowNoiseFloor.UseVisualStyleBackColor = true;
+            //
             // irPlotView
-            // 
+            //
             irPlotView.BackColor = Color.FromArgb(32, 36, 46);
-            irPlotView.Location = new Point(12, 294);
+            irPlotView.Location = new Point(12, 316);
             irPlotView.Name = "irPlotView";
             irPlotView.PanCursor = Cursors.Hand;
             irPlotView.Size = new Size(241, 300);
@@ -269,8 +281,9 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 601);
+            ClientSize = new Size(265, 623);
             Controls.Add(irPlotView);
+            Controls.Add(checkBoxShowNoiseFloor);
             Controls.Add(checkBoxShowThdPlusNoise);
             Controls.Add(checkBoxShowHd4);
             Controls.Add(checkBoxShowHd3);
@@ -320,6 +333,7 @@ namespace Resonalyze.Options
         private CheckBox checkBoxShowHd3;
         private CheckBox checkBoxShowHd4;
         private CheckBox checkBoxShowThdPlusNoise;
+        private CheckBox checkBoxShowNoiseFloor;
         private OxyPlot.WindowsForms.PlotView irPlotView;
     }
 }

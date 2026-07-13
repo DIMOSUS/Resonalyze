@@ -31,6 +31,21 @@ public sealed class StereoAlignmentTests
         return ir;
     }
 
+    // A first arrival plus a competing lobe, to smear a junction's whitened
+    // correlation into a low-dominance comb — the seed then falls back to the
+    // arrival envelope (the "untrusted" case the wide window exists for).
+    private static Complex[] ImpulseWithEcho(
+        double offsetMs, double amplitude, double echoMs, double echoAmplitude)
+    {
+        Complex[] ir = ImpulseAtMs(offsetMs, amplitude);
+        int echo = BasePosition + (int)Math.Round((offsetMs + echoMs) / 1000.0 * SampleRate);
+        ir[echo] += echoAmplitude;
+        return ir;
+    }
+
+    private static string LogLine(string log, string contains) =>
+        log.Split('\n').First(line => line.Contains(contains));
+
     private static AlignmentSnapshot Snapshot(
         TestChannel channel, AlignmentOverride over)
     {
@@ -71,6 +86,7 @@ public sealed class StereoAlignmentTests
             (double LowHz, double HighHz)?[]? linkBands = null,
             double rightMidEchoMs = 0,
             double leftLateMs = 0,
+            double rightMidAmplitude = 1.0,
             int[]? reprocessCount = null)
     {
         var sub = new TestChannel("sub", ImpulseAtMs(2.0 + leftLateMs));
@@ -80,7 +96,7 @@ public sealed class StereoAlignmentTests
             "L twr", ImpulseAtMs(0.0 + leftLateMs, leftTopAmplitude));
         var rightWoof = new TestChannel("R woof", ImpulseAtMs(1.0 + rightLateMs));
         Complex[] rightMidIr = ImpulseAtMs(
-            0.4 + rightLateMs, rightMidEchoMs > 0 ? 0.6 : 1.0);
+            0.4 + rightLateMs, rightMidEchoMs > 0 ? 0.6 : rightMidAmplitude);
         if (rightMidEchoMs > 0)
         {
             int echoPosition = BasePosition + (int)Math.Round(
@@ -285,20 +301,26 @@ public sealed class StereoAlignmentTests
     }
 
     [Fact]
-    public void ComputeStereo_BridgeMatchesTheRightTopPolarityToTheLeft()
+    public void ComputeStereo_RightTopInheritsTheLeftTopsPolarityNeverAsymmetric()
     {
-        // The right tweeter is wired backwards (negative impulse). The
-        // arrival-based bridge is polarity-blind, so without the explicit sign
-        // match the whole right side would align to a flipped reference and
-        // end up in opposite global polarity — the bridge must invert it.
+        // The right tweeter is wired backwards (negative impulse). Automatic delay
+        // must NEVER invert one side of a pair alone: polarity is a property of the
+        // driver, decided on the left and mirrored to the right. So the right top
+        // inherits the left top's sign (both normal here) and is NOT flipped — a
+        // genuinely reverse-wired driver is left for a MANUAL flip, not an asymmetric
+        // automatic correction.
         (TestChannel _, TestChannel[] left, TestChannel[] right,
             Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
-            RunStereo(sceneOffsetMs: 0.25, rightTopAmplitude: -1.0);
+            RunStereo(
+                sceneOffsetMs: 0.25,
+                rightTopAmplitude: -1.0,
+                linkBands: UserLinkBands);
 
         Assert.False(alignment.GetValueOrDefault(left[2]).InvertPolarity);
-        Assert.True(alignment.GetValueOrDefault(right[2]).InvertPolarity);
-        // The descent then aligns the (positive) right mid against the
-        // corrected top: no compensating flip below.
+        Assert.False(alignment.GetValueOrDefault(right[2]).InvertPolarity);
+        Assert.Equal(
+            alignment.GetValueOrDefault(left[2]).InvertPolarity,
+            alignment.GetValueOrDefault(right[2]).InvertPolarity);
         Assert.False(alignment.GetValueOrDefault(right[1]).InvertPolarity);
     }
 
@@ -323,6 +345,52 @@ public sealed class StereoAlignmentTests
         // invert flags — and the left walk is expected to have flipped its top.
         Assert.True(leftInvert);
         Assert.Equal(leftInvert, rightInvert);
+    }
+
+    [Fact]
+    public void ComputeStereo_RightDriverInheritsItsLeftCounterpartsPolarity()
+    {
+        // Polarity is a property of the DRIVER, not the side. The RIGHT mid is wired
+        // backwards: aligned on its own against the top it would flip (its mid/tweeter
+        // junction is high enough that a flip is unambiguous). The LEFT mid is wired
+        // normally and does not flip. The symmetry rule makes the right mid inherit
+        // its left counterpart's sign and search only the delay, so the two sides end
+        // with the SAME polarity — the asymmetric inversion (one side's mid flipped,
+        // the other not) Butterworth used to trigger is now structurally impossible.
+        (TestChannel _, TestChannel[] left, TestChannel[] right,
+            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+            RunStereo(
+                sceneOffsetMs: 0.25,
+                linkBands: UserLinkBands,
+                rightMidAmplitude: -1.0);
+
+        Assert.False(alignment.GetValueOrDefault(left[1]).InvertPolarity);
+        Assert.Equal(
+            alignment.GetValueOrDefault(left[1]).InvertPolarity,
+            alignment.GetValueOrDefault(right[1]).InvertPolarity);
+    }
+
+    [Fact]
+    public void ComputeStereo_AutoDelayNeverInvertsAPairAsymmetrically()
+    {
+        // The user's absolute rule for automatic delay: whatever the measurements,
+        // a driver's polarity flag is identical on both sides. Even with the right
+        // mid AND the right top wired backwards — each of which, aligned on its own,
+        // would flip — every pair stays symmetric.
+        (TestChannel _, TestChannel[] left, TestChannel[] right,
+            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+            RunStereo(
+                sceneOffsetMs: 0.25,
+                rightTopAmplitude: -1.0,
+                linkBands: UserLinkBands,
+                rightMidAmplitude: -1.0);
+
+        for (int i = 0; i < 3; i++)
+        {
+            Assert.Equal(
+                alignment.GetValueOrDefault(left[i]).InvertPolarity,
+                alignment.GetValueOrDefault(right[i]).InvertPolarity);
+        }
     }
 
     [Fact]
@@ -548,5 +616,47 @@ public sealed class StereoAlignmentTests
             reprocessCount: count);
 
         Assert.InRange(count[0], 1, 40);
+    }
+
+    [Fact]
+    public void Compute_UntrustedSeedWindow_IsKeyedToTheJunctionNotTheChannel()
+    {
+        // sub/woof (80 Hz) is made untrusted by a sub echo that smears its whitened
+        // correlation into a low-dominance comb; woof/mid (120 Hz) stays trusted. The
+        // mid arrives latest, so the walk DESCENDS: woof is searched against mid (its
+        // TRUSTED junction) and sub against woof (its UNTRUSTED junction, as the LOWER
+        // channel). The wide-seed window must key on the JUNCTION, so:
+        //  - sub's untrusted junction widens even though sub is its LOWER channel — the
+        //    channel-keyed version recorded only the UPPER (woof) and missed this on the
+        //    downward walk;
+        //  - woof's trusted junction stays narrow even though woof is the untrusted
+        //    UPPER of sub/woof — the channel-keyed version would have leaked the wide
+        //    window onto this unrelated, trusted junction.
+        var sub = new TestChannel("sub", ImpulseWithEcho(1.0, 0.9, 5.0, 0.85));
+        var woof = new TestChannel("woof", ImpulseAtMs(3.0));
+        var mid = new TestChannel("mid", ImpulseAtMs(6.0));
+        TestChannel[] all = [sub, woof, mid];
+        List<AlignmentSnapshot> snapshots = all.Select(c => Snapshot(c, default)).ToList();
+        var pairs = new List<AlignmentJunction>
+        {
+            Junction(snapshots[0], snapshots[1], 80),
+            Junction(snapshots[1], snapshots[2], 120)
+        };
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+        var log = new StringBuilder();
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            all.Select(c => Snapshot(c, overrides.GetValueOrDefault(c))).ToList();
+        AutoAlignmentEngine.Compute(snapshots, pairs, Reprocess, alignment, log);
+
+        string text = log.ToString();
+        // The premise: exactly the low junction fell back to the arrival seed.
+        Assert.Contains("seed arrival", LogLine(text, "Pair sub/woof"));
+        Assert.Contains("seed phat", LogLine(text, "Pair woof/mid"));
+
+        // Issue 1: the untrusted junction widens on the descending search of its lower
+        // channel. Issue 2: the trusted junction is not polluted by its shared channel.
+        Assert.Contains("WIDE SEED", LogLine(text, "Channel sub:"));
+        Assert.DoesNotContain("WIDE SEED", LogLine(text, "Channel woof:"));
     }
 }

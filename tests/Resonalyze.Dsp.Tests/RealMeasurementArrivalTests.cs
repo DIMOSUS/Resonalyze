@@ -90,10 +90,14 @@ public sealed class RealMeasurementArrivalTests
         // -5 dB) leaves a spectral gap between the corners, so the whitened
         // pair correlation degenerates into near-equal lobes. The field failure:
         // its peak (r 0.47, but peak-vs-trough dominance only 0.02) was trusted
-        // as the stage-2 seed and sat two 1300 Hz periods off the arrival — Auto
-        // delay proposed 2.22 ms for the mid where the summation optimum (the
-        // user's manual pick) sits near 0.68 ms. The seed dominance gate plus
-        // the direct-sound-gated loss must keep the result on the arrival lobe.
+        // as the stage-2 seed and sat two 1300 Hz periods off the arrival. The
+        // seed dominance gate must keep the search on the arrival lobe, and the
+        // envelope-first margins (the promotion distance ramp, the invert
+        // preference) must keep the result there: this junction's comb offers a
+        // (flip + half-period) impostor +0.32 dB over the honest arrival pick
+        // and a 1.8-period-away lobe another 0.27 dB up — noise-level "gains"
+        // that used to walk the tweeter visibly off its mid (the 2026-07-13
+        // field verdict on the successor measurement set).
         (int midRate, Complex[] midIr) = LoadTransferIr("r mid.json");
         (int twrRate, Complex[] twrIr) = LoadTransferIr("r twr.json");
         var midChain = new DspChannelChain(Crossover: new CrossoverSpec(
@@ -145,10 +149,12 @@ public sealed class RealMeasurementArrivalTests
             new StringBuilder());
 
         // A uniform shift of both channels is the same alignment, so the pin is
-        // the net mid-vs-tweeter delay: the arrival lobe, not 2 periods later.
+        // the net mid-vs-tweeter delay: the arrival-matched offset (the raw
+        // band arrivals differ by -0.54 ms) within a fraction of the 1300 Hz
+        // period, on the honest non-inverted lobe.
         double netDelayMs = alignment.GetValueOrDefault(mid).DelayMs
             - alignment.GetValueOrDefault(twr).DelayMs;
-        Assert.InRange(netDelayMs, 0.3, 1.0);
+        Assert.InRange(netDelayMs, -0.8, -0.3);
         Assert.False(alignment.GetValueOrDefault(mid).InvertPolarity);
         Assert.False(alignment.GetValueOrDefault(twr).InvertPolarity);
     }

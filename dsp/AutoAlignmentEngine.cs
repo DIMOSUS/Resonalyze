@@ -170,8 +170,22 @@ public static class AutoAlignmentEngine
     // the coarse arrival, which at a high crossover can be a whole lobe off (its
     // period is a fraction of the arrival uncertainty); the promotion recovers
     // that lobe, while the margin keeps the physically-minimal arrival pick
-    // unless a distinctly better summation exists elsewhere.
+    // unless a distinctly better summation exists elsewhere. This flat floor
+    // governs sub-lobe moves; per-period hops pay the distance ramp below.
     private const double WideWindowPromotionMarginDb = 0.2;
+
+    // The distance ramp of the promotion margin: how much MORE the wide pick
+    // must win per crossover period it moves away from the arrival-anchored
+    // result. The envelope is the fundamental observation — on a healthy
+    // junction the summation surface is a comb whose lobes differ by mere
+    // fractions of a dB to ~1.4 dB (the head_90_grad cabin: a 1.40 dB "gain"
+    // 0.92 periods out walked the tweeter pair visibly ahead of its mid while
+    // the other side's junction got WORSE), so a hop must be justified by a
+    // gain that grows with the hop: one period costs 2 dB, two cost 4 dB. A
+    // genuine lobe recovery — the coarse arrival itself off by periods —
+    // shows up as a multi-dB gain (a misaligned junction combs across the
+    // whole overlap) and still clears the ramp.
+    private const double PromotionMarginPerPeriodDb = 2.0;
 
     // How far (in crossover periods) the promotion may move the pick away from
     // the arrival-anchored fine result. The promotion exists to recover a coarse
@@ -579,28 +593,46 @@ public static class AutoAlignmentEngine
                     AlignmentSelection.Select(wide, anchorMs);
                 // Only a lobe's reach from the arrival pick: past that the "better"
                 // score is a comb alias the summation cannot distinguish, so the
-                // envelope stays authoritative (see PromotionReachPeriods).
-                double promotionReachMs = PromotionReachPeriods * 2.0 * halfPeriodMs;
+                // envelope stays authoritative (see PromotionReachPeriods). Inside
+                // the reach, the required margin RAMPS with the distance in
+                // periods: the arrival is the fundamental observation, and a hop
+                // onto another comb lobe must be plainly, not marginally, better.
+                double periodMs = 2.0 * halfPeriodMs;
+                double promotionReachMs = PromotionReachPeriods * periodMs;
                 double promotionStepMs = Math.Abs(wideChosen.DelayMs - chosen.DelayMs);
-                if (wideChosen.ScoreDb > chosen.ScoreDb + WideWindowPromotionMarginDb &&
-                    promotionStepMs <= promotionReachMs)
+                double periodsMoved = promotionStepMs / periodMs;
+                double requiredMarginDb = Math.Max(
+                    WideWindowPromotionMarginDb,
+                    PromotionMarginPerPeriodDb * periodsMoved);
+                double gainDb = wideChosen.ScoreDb - chosen.ScoreDb;
+                if (gainDb > requiredMarginDb && promotionStepMs <= promotionReachMs)
                 {
                     log.AppendLine(
                         $"  promoted {wideChosen.DelayMs:0.000} ms" +
                         $"{(wideChosen.InvertPolarity ? " inv" : "")} " +
                         $"over {chosen.DelayMs:0.000} ms" +
                         $"{(chosen.InvertPolarity ? " inv" : "")} " +
-                        $"(gain {wideChosen.ScoreDb - chosen.ScoreDb:0.00} dB)");
+                        $"(gain {gainDb:0.00} dB, needed {requiredMarginDb:0.00} dB " +
+                        $"at {periodsMoved:0.0} periods)");
                     chosen = wideChosen;
                 }
-                else if (wideChosen.ScoreDb > chosen.ScoreDb + WideWindowPromotionMarginDb &&
+                else if (gainDb > WideWindowPromotionMarginDb &&
                     promotionStepMs > promotionReachMs)
                 {
                     log.AppendLine(
                         $"  promotion declined: {wideChosen.DelayMs:0.000} ms is " +
-                        $"{promotionStepMs:0.000} ms ({promotionStepMs / (2.0 * halfPeriodMs):0.0} " +
+                        $"{promotionStepMs:0.000} ms ({periodsMoved:0.0} " +
                         $"periods) from the arrival pick {chosen.DelayMs:0.000} ms — " +
                         "a comb alias beyond the envelope's reach.");
+                }
+                else if (gainDb > WideWindowPromotionMarginDb)
+                {
+                    log.AppendLine(
+                        $"  promotion declined: {wideChosen.DelayMs:0.000} ms" +
+                        $"{(wideChosen.InvertPolarity ? " inv" : "")} gains only " +
+                        $"{gainDb:0.00} dB over {chosen.DelayMs:0.000} ms — " +
+                        $"a {periodsMoved:0.0}-period hop off the arrival needs " +
+                        $"{requiredMarginDb:0.00} dB.");
                 }
             }
 

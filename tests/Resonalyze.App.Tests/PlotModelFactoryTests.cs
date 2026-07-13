@@ -237,6 +237,104 @@ public sealed class PlotModelFactoryTests
                 .CreatePhaseResponse(includeCurves: true)));
     }
 
+    [Fact]
+    public void PhaseResponse_AutoDetrendPreservesMainCompareRelativeDelay()
+    {
+        const int sampleRate = 44_100;
+        const int mainSample = 64;
+        const int compareSample = 86;
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement();
+        var phaseOptions = new FrequencyResponseOptions
+        {
+            PhaseGateOffsetMs = mainSample * 1_000.0 / sampleRate,
+            PhaseWindowMode = PhaseWindowMode.Fixed,
+            PhaseFdwCycles = 6,
+            PhaseDetrendMode = PhaseDetrendMode.Auto,
+            Unwrap = true,
+            SmoothingInverseOctaves = 0.0
+        };
+        var visibility = PhaseAllOff();
+        visibility.ShowMeasuredPhase = true;
+        visibility.ShowExcessPhase = true;
+        PlotModelFactory factory = CreateFactory(
+            measurement,
+            noiseMeasurement,
+            phaseResponseOptions: phaseOptions,
+            phaseResponseVisibility: visibility);
+        var compareImpulse = new Complex[2048];
+        compareImpulse[compareSample] = Complex.One;
+        factory.SetCompareSourceProvider(() => new CompareAnalysisSource(
+            "Delayed reference", sampleRate, compareImpulse, compareSample));
+
+        List<LineSeries> series = factory.CreatePhaseResponse(includeCurves: true)
+            .Series.OfType<LineSeries>().ToList();
+        double expectedChange = -360.0 * (compareSample - mainSample) /
+            sampleRate * 1_000.0;
+        AssertRelativePhaseSlope(series, AnalysisCurveKind.Primary, expectedChange);
+
+        IImpulseMeasurement mainView =
+            new MeasurementPlotContext(measurement).CreatePrimaryMeasurement();
+        var compareView = new ImpulseMeasurementView(
+            compareImpulse, compareSample, sampleRate);
+        PhaseAnalysisSettings autoSettings = phaseOptions.CreatePhaseAnalysisSettings();
+        double commonDetrend = DataHelper.ResolvePhaseDetrendMilliseconds(
+            mainView, autoSettings);
+        PhaseAnalysisSettings commonSettings = autoSettings with
+        {
+            DetrendMode = PhaseDetrendMode.Manual,
+            ManualDetrendMilliseconds = commonDetrend
+        };
+        AnalysisCurve expectedExcess = DataHelper.GetExcessPhase(
+            compareView, commonSettings);
+        LineSeries compareExcess = series.Single(item => item.Tag is CurveTag
+        {
+            Kind: AnalysisCurveKind.ExcessPhase,
+            Source: CurveSource.Compare
+        });
+        AssertCurveValueAt(compareExcess, expectedExcess, 500.0);
+        AssertCurveValueAt(compareExcess, expectedExcess, 1_500.0);
+    }
+
+    private static void AssertCurveValueAt(
+        LineSeries actual,
+        AnalysisCurve expected,
+        double frequency)
+    {
+        OxyPlot.DataPoint actualPoint = actual.Points.MinBy(point =>
+            Math.Abs(point.X - frequency));
+        SignalPoint expectedPoint = expected.Points.MinBy(point =>
+            Math.Abs(point.X - frequency));
+        Assert.Equal(expectedPoint.Y, actualPoint.Y, tolerance: 1e-9);
+    }
+
+    private static void AssertRelativePhaseSlope(
+        IEnumerable<LineSeries> series,
+        AnalysisCurveKind kind,
+        double expectedChange)
+    {
+        List<LineSeries> matching = series.Where(item => item.Tag is CurveTag tag &&
+            tag.Mode == Mode.PhaseResponse && tag.Kind == kind).ToList();
+        LineSeries main = matching.Single(item =>
+            ((CurveTag)item.Tag!).Source == CurveSource.Main);
+        LineSeries compare = matching.Single(item =>
+            ((CurveTag)item.Tag!).Source == CurveSource.Compare);
+        double differenceAt500 = PhaseDifferenceAt(main, compare, 500.0);
+        double differenceAt1500 = PhaseDifferenceAt(main, compare, 1_500.0);
+        Assert.Equal(expectedChange, differenceAt1500 - differenceAt500, tolerance: 2.0);
+    }
+
+    private static double PhaseDifferenceAt(
+        LineSeries main,
+        LineSeries compare,
+        double frequency)
+    {
+        int index = main.Points
+            .Select((point, i) => (Distance: Math.Abs(point.X - frequency), Index: i))
+            .MinBy(candidate => candidate.Distance).Index;
+        return compare.Points[index].Y - main.Points[index].Y;
+    }
+
     private static CurveVisibilityOptions PhaseAllOff() => new()
     {
         ShowMeasuredPhase = false,
@@ -561,6 +659,7 @@ public sealed class PlotModelFactoryTests
         NoiseMeasurement noiseMeasurement,
         ImpulseResponseOptions? impulseOptions = null,
         FrequencyResponseOptions? groupDelayOptions = null,
+        FrequencyResponseOptions? phaseResponseOptions = null,
         CurveVisibilityOptions? frequencyResponseVisibility = null,
         CurveVisibilityOptions? phaseResponseVisibility = null,
         CurveVisibilityOptions? groupDelayVisibility = null)
@@ -574,7 +673,7 @@ public sealed class PlotModelFactoryTests
             noiseMeasurement,
             mode => new CalibrationFile(calibrationPath),
             new FrequencyResponseOptions(),
-            new FrequencyResponseOptions(),
+            phaseResponseOptions ?? new FrequencyResponseOptions(),
             groupDelayOptions ?? new FrequencyResponseOptions(),
             frequencyResponseVisibility ?? new CurveVisibilityOptions(),
             phaseResponseVisibility ?? new CurveVisibilityOptions(),

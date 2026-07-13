@@ -173,13 +173,30 @@ internal sealed class PlotModelFactory
             measurementContext.HasTransferImpulseResponse)
         {
             const string phaseTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.0}\u00B0";
+            IImpulseMeasurement primaryMeasurement =
+                measurementContext.CreatePrimaryMeasurement();
+            var compare = TryCreateCompareMeasurement();
             PhaseAnalysisSettings phaseSettings =
                 phaseResponseOptions.CreatePhaseAnalysisSettings();
+            if (phaseSettings.DetrendMode == PhaseDetrendMode.Auto && compare != null)
+            {
+                // A comparison is meaningful only with one common time reference.
+                // Resolve Auto from Main once, then reuse it as Manual for Main,
+                // Compare and both excess curves so their relative delay survives.
+                double commonDetrend = DataHelper.ResolvePhaseDetrendMilliseconds(
+                    primaryMeasurement,
+                    phaseSettings);
+                phaseSettings = phaseSettings with
+                {
+                    DetrendMode = PhaseDetrendMode.Manual,
+                    ManualDetrendMilliseconds = commonDetrend
+                };
+            }
 
             if (phaseResponseVisibility.ShowMeasuredPhase)
             {
                 AnalysisCurve curve = DataHelper.GetPhase(
-                    measurementContext.CreatePrimaryMeasurement(),
+                    primaryMeasurement,
                     phaseSettings,
                     expSweepMeasurement.TransferCoherence);
 
@@ -197,7 +214,7 @@ internal sealed class PlotModelFactory
             if (phaseResponseVisibility.ShowMinimumPhase)
             {
                 AnalysisCurve minimumPhaseCurve = DataHelper.GetMinimumPhase(
-                    measurementContext.CreatePrimaryMeasurement(),
+                    primaryMeasurement,
                     phaseSettings);
 
                 // Minimum phase is continuous (unwrapped) by construction.
@@ -213,7 +230,7 @@ internal sealed class PlotModelFactory
             if (phaseResponseVisibility.ShowExcessPhase)
             {
                 AnalysisCurve excessPhaseCurve = DataHelper.GetExcessPhase(
-                    measurementContext.CreatePrimaryMeasurement(),
+                    primaryMeasurement,
                     phaseSettings,
                     expSweepMeasurement.TransferCoherence);
 
@@ -230,19 +247,19 @@ internal sealed class PlotModelFactory
 
             // Overlay the Compare measurement with the identical gate / detrend /
             // smoothing so the two responses can be read on the same terms.
-            if (TryCreateCompareMeasurement() is { } compare)
+            if (compare is { } compareData)
             {
                 if (phaseResponseVisibility.ShowMeasuredPhase)
                 {
                     AnalysisCurve compareCurve = DataHelper.GetPhase(
-                        compare.Measurement,
+                        compareData.Measurement,
                         phaseSettings,
-                        compare.Coherence);
+                        compareData.Coherence);
                     AddCompareLineSeries(
                         model,
                         compareCurve,
                         phaseTrackerFormat,
-                        compare.DisplayName,
+                        compareData.DisplayName,
                         Mode.PhaseResponse,
                         phaseResponseOptions.Unwrap);
                 }
@@ -250,13 +267,13 @@ internal sealed class PlotModelFactory
                 if (phaseResponseVisibility.ShowMinimumPhase)
                 {
                     AnalysisCurve compareCurve = DataHelper.GetMinimumPhase(
-                        compare.Measurement,
+                        compareData.Measurement,
                         phaseSettings);
                     AddCompareLineSeries(
                         model,
                         compareCurve,
                         phaseTrackerFormat,
-                        compare.DisplayName,
+                        compareData.DisplayName,
                         Mode.PhaseResponse,
                         phaseUnwrapped: true);
                 }
@@ -264,14 +281,14 @@ internal sealed class PlotModelFactory
                 if (phaseResponseVisibility.ShowExcessPhase)
                 {
                     AnalysisCurve compareCurve = DataHelper.GetExcessPhase(
-                        compare.Measurement,
+                        compareData.Measurement,
                         phaseSettings,
-                        compare.Coherence);
+                        compareData.Coherence);
                     AddCompareLineSeries(
                         model,
                         compareCurve,
                         phaseTrackerFormat,
-                        compare.DisplayName,
+                        compareData.DisplayName,
                         Mode.PhaseResponse,
                         phaseUnwrapped: true);
                 }

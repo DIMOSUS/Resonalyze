@@ -21,8 +21,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="NAudio" Version="2.3.0" />
-    <PackageReference Include="NAudio.Asio" Version="2.3.0" />
+    <!-- PrivateAssets="compile" keeps NAudio's compile-time reference from flowing
+         to consumers (the app), so `using NAudio` does not compile outside this
+         project, while runtime assets still flow so NAudio.dll ships with the app. -->
+    <PackageReference Include="NAudio" Version="2.3.0" PrivateAssets="compile" />
+    <PackageReference Include="NAudio.Asio" Version="2.3.0" PrivateAssets="compile" />
   </ItemGroup>
 
 </Project>

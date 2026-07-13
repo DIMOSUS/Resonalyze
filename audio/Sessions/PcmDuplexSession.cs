@@ -1,5 +1,3 @@
-using NAudio.Wave;
-
 namespace Resonalyze.Audio;
 
 /// <summary>
@@ -19,23 +17,29 @@ internal sealed class PcmDuplexSession : IAudioDuplexSession
     private readonly AudioCaptureRouting routing;
     private readonly string backendName;
     private readonly int requestedBufferMilliseconds;
-    private PcmPlaybackStream? playbackStream;
-    private AudioPlaybackSignal? cachedSignal;
+    private readonly int signalSampleCount;
+    // Built once from the bound signal: the render device rejects a different
+    // source after the first run, so the session replays this one stream.
+    private readonly PcmPlaybackStream playbackStream;
     private bool disposed;
 
     public PcmDuplexSession(
         IAudioCaptureDevice capture,
         IAudioPlaybackDevice playback,
+        AudioPlaybackSignal signal,
         AudioCaptureRouting routing,
         int expectedCaptureSamples,
         string backendName,
         int requestedBufferMilliseconds)
     {
+        ArgumentNullException.ThrowIfNull(signal);
         this.capture = capture;
         this.playback = playback;
         this.routing = routing;
         this.backendName = backendName;
         this.requestedBufferMilliseconds = requestedBufferMilliseconds;
+        signalSampleCount = signal.SampleCount;
+        playbackStream = AudioPlaybackStreamFactory.CreatePcm(signal);
         captureSession = new PcmCaptureSession(capture, expectedSamples: expectedCaptureSamples);
         captureSession.LevelsAvailable += HandleLevels;
         orchestrator = new SweepRunAudioOrchestrator(captureSession, playback);
@@ -44,12 +48,10 @@ internal sealed class PcmDuplexSession : IAudioDuplexSession
     public event Action<AudioInputLevels>? InputLevelsAvailable;
 
     public async Task<AudioCaptureResult> PlayAndCaptureAsync(
-        AudioPlaybackSignal signal,
         int captureTailSamples,
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
-        ArgumentNullException.ThrowIfNull(signal);
 
         var captureSource = capture as ICaptureDiagnosticsSource;
         var renderSource = playback as IRenderDiagnosticsSource;
@@ -57,11 +59,10 @@ internal sealed class PcmDuplexSession : IAudioDuplexSession
         long timestampErrorsBefore = captureSource?.TimestampErrors ?? 0;
         long renderUnderrunsBefore = renderSource?.RenderUnderruns ?? 0;
 
-        WaveStream stream = EnsurePlaybackStream(signal);
-        stream.Position = 0;
+        playbackStream.Rewind();
         float[][] channels = await orchestrator.CaptureAsync(
-            stream,
-            signal.SampleCount,
+            playbackStream.Stream,
+            signalSampleCount,
             captureTailSamples,
             cancellationToken).ConfigureAwait(false);
         // Stop accumulating between runs: the device keeps running (meter stays
@@ -111,22 +112,6 @@ internal sealed class PcmDuplexSession : IAudioDuplexSession
             diagnostics);
     }
 
-    private WaveStream EnsurePlaybackStream(AudioPlaybackSignal signal)
-    {
-        if (playbackStream != null && ReferenceEquals(cachedSignal, signal))
-        {
-            return playbackStream.Stream;
-        }
-
-        // A different signal (or the first run): build the reusable PCM stream.
-        // The same stream instance is replayed across runs so the playback
-        // device's single-source guard is satisfied.
-        playbackStream?.Dispose();
-        playbackStream = AudioPlaybackStreamFactory.CreatePcm(signal);
-        cachedSignal = signal;
-        return playbackStream.Stream;
-    }
-
     private void HandleLevels(AudioChannelLevel[] channels)
     {
         Action<AudioInputLevels>? handler = InputLevelsAvailable;
@@ -151,7 +136,7 @@ internal sealed class PcmDuplexSession : IAudioDuplexSession
         }
         finally
         {
-            playbackStream?.Dispose();
+            playbackStream.Dispose();
             await captureSession.DisposeAsync().ConfigureAwait(false);
         }
     }

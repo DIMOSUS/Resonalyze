@@ -21,8 +21,9 @@ public sealed class AsioBackend : IAudioBackend
 
     public ValueTask<IAudioDuplexSession> OpenDuplexAsync(
         AudioSessionRequest request,
+        AudioPlaybackSignal signal,
         CancellationToken cancellationToken) =>
-        ValueTask.FromResult<IAudioDuplexSession>(new AsioDuplexSession(request));
+        ValueTask.FromResult<IAudioDuplexSession>(new AsioDuplexSession(request, signal));
 
     public ValueTask<IAudioStreamingSession> OpenStreamingAsync(
         AudioSessionRequest request,

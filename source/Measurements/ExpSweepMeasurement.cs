@@ -348,13 +348,13 @@ namespace Resonalyze
                 AudioSessionRequest request = BuildSessionRequest(sweep);
                 AudioPlaybackSignal signal = BuildPlaybackSignal(sweep);
                 session = await audioSessionFactory
-                    .OpenDuplexAsync(request, cancellationToken).ConfigureAwait(false);
+                    .OpenDuplexAsync(request, signal, cancellationToken).ConfigureAwait(false);
                 session.InputLevelsAvailable += HandleSessionLevels;
 
                 async Task<AudioCaptureResult> CaptureOneAsync()
                 {
                     AudioCaptureResult result = await session
-                        .PlayAndCaptureAsync(signal, SampleRate, cancellationToken)
+                        .PlayAndCaptureAsync(SampleRate, cancellationToken)
                         .ConfigureAwait(false);
                     if (result.Diagnostics != null)
                     {

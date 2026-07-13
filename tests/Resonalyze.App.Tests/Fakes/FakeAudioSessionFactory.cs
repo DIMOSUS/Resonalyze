@@ -9,12 +9,12 @@ namespace Resonalyze.App.Tests;
 /// </summary>
 internal sealed class FakeAudioSessionFactory : IAudioSessionFactory
 {
-    private readonly Func<AudioSessionRequest, IAudioDuplexSession>? duplexFactory;
+    private readonly Func<AudioSessionRequest, AudioPlaybackSignal, IAudioDuplexSession>? duplexFactory;
     private readonly Func<AudioSessionRequest, IAudioStreamingSession>? streamingFactory;
     private readonly Func<AudioSessionRequest, AudioPlaybackSignal, IAudioPlaybackSession>? playbackFactory;
 
     public FakeAudioSessionFactory(
-        Func<AudioSessionRequest, IAudioDuplexSession>? duplexFactory = null,
+        Func<AudioSessionRequest, AudioPlaybackSignal, IAudioDuplexSession>? duplexFactory = null,
         Func<AudioSessionRequest, IAudioStreamingSession>? streamingFactory = null,
         Func<AudioSessionRequest, AudioPlaybackSignal, IAudioPlaybackSession>? playbackFactory = null)
     {
@@ -36,11 +36,12 @@ internal sealed class FakeAudioSessionFactory : IAudioSessionFactory
 
     public ValueTask<IAudioDuplexSession> OpenDuplexAsync(
         AudioSessionRequest request,
+        AudioPlaybackSignal signal,
         CancellationToken cancellationToken)
     {
         DuplexOpenCount++;
         LastRequest = request;
-        IAudioDuplexSession session = duplexFactory?.Invoke(request) ?? new NoopDuplexSession();
+        IAudioDuplexSession session = duplexFactory?.Invoke(request, signal) ?? new NoopDuplexSession();
         return ValueTask.FromResult(session);
     }
 
@@ -77,7 +78,7 @@ internal sealed class FakeAudioSessionFactory : IAudioSessionFactory
         public event Action<AudioInputLevels>? InputLevelsAvailable { add { } remove { } }
 
         public Task<AudioCaptureResult> PlayAndCaptureAsync(
-            AudioPlaybackSignal signal, int captureTailSamples, CancellationToken cancellationToken) =>
+            int captureTailSamples, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("This fake session does not capture.");
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

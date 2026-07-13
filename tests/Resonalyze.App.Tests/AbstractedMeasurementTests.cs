@@ -28,8 +28,8 @@ public sealed class AbstractedMeasurementTests
     public async Task SweepMeasurementRunsAgainstFakeSession()
     {
         var factory = new FakeAudioSessionFactory(
-            duplexFactory: _ => new RecordingDuplexSession(
-                (_, signal, tail, _) => Task.FromResult(SyntheticCapture.Good(signal, tail))));
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal, (_, s, tail, _) => Task.FromResult(SyntheticCapture.Good(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory);
 
         bool success = await measurement.RunAsync();
@@ -44,8 +44,8 @@ public sealed class AbstractedMeasurementTests
     {
         RecordingDuplexSession? opened = null;
         var factory = new FakeAudioSessionFactory(
-            duplexFactory: _ => opened = new RecordingDuplexSession(
-                (_, signal, tail, _) => Task.FromResult(SyntheticCapture.Good(signal, tail))));
+            duplexFactory: (_, signal) => opened = new RecordingDuplexSession(
+                signal, (_, s, tail, _) => Task.FromResult(SyntheticCapture.Good(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory, runs: 3);
 
         bool success = await measurement.RunAsync();
@@ -61,10 +61,10 @@ public sealed class AbstractedMeasurementTests
     public async Task RejectedRunIsRetried()
     {
         var factory = new FakeAudioSessionFactory(
-            duplexFactory: _ => new RecordingDuplexSession(
-                (attempt, signal, tail, _) => Task.FromResult(attempt == 1
-                    ? SyntheticCapture.SilentMicrophone(signal, tail)
-                    : SyntheticCapture.Good(signal, tail))));
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal, (attempt, s, tail, _) => Task.FromResult(attempt == 1
+                    ? SyntheticCapture.SilentMicrophone(s, tail)
+                    : SyntheticCapture.Good(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory);
 
         bool success = await measurement.RunAsync();
@@ -80,7 +80,8 @@ public sealed class AbstractedMeasurementTests
         var captureStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         RecordingDuplexSession? opened = null;
         var factory = new FakeAudioSessionFactory(
-            duplexFactory: _ => opened = new RecordingDuplexSession(
+            duplexFactory: (_, signal) => opened = new RecordingDuplexSession(
+                signal,
                 async (_, _, _, ct) =>
                 {
                     captureStarted.TrySetResult();
@@ -104,8 +105,8 @@ public sealed class AbstractedMeasurementTests
     public async Task DeviceErrorSurfacesInResult()
     {
         var factory = new FakeAudioSessionFactory(
-            duplexFactory: _ => new RecordingDuplexSession(
-                (_, _, _, _) => throw new InvalidOperationException("device unplugged")));
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal, (_, _, _, _) => throw new InvalidOperationException("device unplugged")));
         using ExpSweepMeasurement measurement = CreateSweep(factory);
 
         bool success = await measurement.RunAsync();
@@ -183,7 +184,7 @@ public sealed class AbstractedMeasurementTests
             new(backend, backend.ToString(), AudioBackendCapabilities.None);
 
         public ValueTask<IAudioDuplexSession> OpenDuplexAsync(
-            AudioSessionRequest request, CancellationToken cancellationToken) =>
+            AudioSessionRequest request, AudioPlaybackSignal signal, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("cannot open device");
 
         public ValueTask<IAudioStreamingSession> OpenStreamingAsync(

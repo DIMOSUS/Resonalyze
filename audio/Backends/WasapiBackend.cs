@@ -38,6 +38,7 @@ public sealed class WasapiBackend : IAudioBackend
 
     public async ValueTask<IAudioDuplexSession> OpenDuplexAsync(
         AudioSessionRequest request,
+        AudioPlaybackSignal signal,
         CancellationToken cancellationToken)
     {
         (WasapiCaptureDevice capture, WasapiPlaybackDevice playback) =
@@ -47,6 +48,7 @@ public sealed class WasapiBackend : IAudioBackend
             return new PcmDuplexSession(
                 capture,
                 playback,
+                signal,
                 request.Routing,
                 request.ExpectedCaptureSamples,
                 Descriptor.Id.ToString(),
@@ -185,17 +187,12 @@ public sealed class WasapiBackend : IAudioBackend
         }
     }
 
-    private static async ValueTask DisposeQuietlyAsync(
+    // Best-effort rollback of a partially-opened session: every resource is
+    // released even if an earlier release throws, and cleanup failures are
+    // swallowed so they never mask the primary open/validation exception (e.g.
+    // a ValidateDevices mismatch) the caller is about to rethrow.
+    private static ValueTask DisposeQuietlyAsync(
         WasapiPlaybackDevice? playback,
-        WasapiCaptureDevice? capture)
-    {
-        if (playback != null)
-        {
-            await playback.DisposeAsync().ConfigureAwait(false);
-        }
-        if (capture != null)
-        {
-            await capture.DisposeAsync().ConfigureAwait(false);
-        }
-    }
+        WasapiCaptureDevice? capture) =>
+        AudioBackendCleanup.DisposeQuietlyAsync(playback, capture);
 }

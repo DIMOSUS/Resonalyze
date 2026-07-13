@@ -12,18 +12,21 @@ internal sealed class AsioDuplexSession : IAudioDuplexSession
     private readonly AsioFullDuplexSession session;
     private readonly int sampleRate;
     private readonly int firstInputOffset;
+    private readonly int signalSampleCount;
     private readonly AudioCaptureRouting relativeRouting;
-    private FloatArrayWaveStream? stream;
+    private readonly FloatArrayWaveStream stream;
     private bool started;
     private bool disposed;
 
-    public AsioDuplexSession(AudioSessionRequest request)
+    public AsioDuplexSession(AudioSessionRequest request, AudioPlaybackSignal signal)
     {
+        ArgumentNullException.ThrowIfNull(signal);
         int mic = request.Routing.MicrophoneChannel;
         int? loopback = request.Routing.LoopbackChannel;
         firstInputOffset = CaptureChannelLayout.AsioFirstInputOffset(mic, loopback);
         int inputChannelCount = CaptureChannelLayout.AsioInputChannelCount(mic, loopback);
         sampleRate = request.SampleRate;
+        signalSampleCount = signal.SampleCount;
         relativeRouting = new AudioCaptureRouting(
             mic - firstInputOffset,
             loopback.HasValue ? loopback.Value - firstInputOffset : null);
@@ -33,20 +36,18 @@ internal sealed class AsioDuplexSession : IAudioDuplexSession
             request.AsioOutputChannelOffset,
             inputChannelCount);
         session.LevelsAvailable += HandleLevels;
+        stream = AudioPlaybackStreamFactory.CreateFloat(signal);
     }
 
     public event Action<AudioInputLevels>? InputLevelsAvailable;
 
     public async Task<AudioCaptureResult> PlayAndCaptureAsync(
-        AudioPlaybackSignal signal,
         int captureTailSamples,
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
-        ArgumentNullException.ThrowIfNull(signal);
 
-        stream ??= AudioPlaybackStreamFactory.CreateFloat(signal);
-        int expectedTotalSamples = signal.SampleCount + sampleRate * 2;
+        int expectedTotalSamples = signalSampleCount + sampleRate * 2;
         if (!started)
         {
             stream.Position = 0;
@@ -67,7 +68,7 @@ internal sealed class AsioDuplexSession : IAudioDuplexSession
             stream.Position = 0;
         }
 
-        int requiredSamples = session.ReadSamples + signal.SampleCount + captureTailSamples;
+        int requiredSamples = session.ReadSamples + signalSampleCount + captureTailSamples;
         await session.WaitForSamplesAsync(requiredSamples, cancellationToken)
             .ConfigureAwait(false);
         float[][] channels = session.GetSamplesSnapshot();
@@ -102,7 +103,7 @@ internal sealed class AsioDuplexSession : IAudioDuplexSession
         finally
         {
             session.Dispose();
-            stream?.Dispose();
+            stream.Dispose();
         }
     }
 }

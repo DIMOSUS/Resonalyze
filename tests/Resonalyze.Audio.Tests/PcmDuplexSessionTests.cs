@@ -20,11 +20,11 @@ public sealed class PcmDuplexSessionTests
         var capture = new PushCaptureDevice(new WaveFormat(48_000, 16, 2));
         var playback = new PushPlaybackDevice(capture, pushFrames: SweepSamples);
         await using var session = new PcmDuplexSession(
-            capture, playback, new AudioCaptureRouting(0, 1),
+            capture, playback, Signal(), new AudioCaptureRouting(0, 1),
             expectedCaptureSamples: 4096, backendName: "TestBackend", requestedBufferMilliseconds: 100);
 
         AudioCaptureResult result = await session.PlayAndCaptureAsync(
-            Signal(), captureTailSamples: 0, CancellationToken.None);
+            captureTailSamples: 0, CancellationToken.None);
 
         Assert.Equal(2, result.Channels.Length);
         Assert.Equal(0, result.MicrophoneChannel);
@@ -43,14 +43,17 @@ public sealed class PcmDuplexSessionTests
         var capture = new PushCaptureDevice(new WaveFormat(48_000, 16, 2));
         var playback = new PushPlaybackDevice(capture, pushFrames: SweepSamples);
         await using var session = new PcmDuplexSession(
-            capture, playback, new AudioCaptureRouting(0, 1),
+            capture, playback, Signal(), new AudioCaptureRouting(0, 1),
             expectedCaptureSamples: 4096, backendName: "TestBackend", requestedBufferMilliseconds: 100);
 
-        await session.PlayAndCaptureAsync(Signal(), 0, CancellationToken.None);
-        await session.PlayAndCaptureAsync(Signal(), 0, CancellationToken.None);
+        await session.PlayAndCaptureAsync(0, CancellationToken.None);
+        await session.PlayAndCaptureAsync(0, CancellationToken.None);
 
         Assert.Equal(1, capture.StartCount);
         Assert.Equal(2, playback.StartCount);
+        // The same bound signal is replayed each run — the render device's
+        // single-source guard must never trip.
+        Assert.False(playback.SawDifferentSource);
     }
 
     [Fact]
@@ -62,11 +65,11 @@ public sealed class PcmDuplexSessionTests
             BumpDiscontinuityOnStart = true
         };
         await using var session = new PcmDuplexSession(
-            capture, playback, new AudioCaptureRouting(0, 1),
+            capture, playback, Signal(), new AudioCaptureRouting(0, 1),
             expectedCaptureSamples: 4096, backendName: "TestBackend", requestedBufferMilliseconds: 100);
 
         AudioCaptureResult result = await session.PlayAndCaptureAsync(
-            Signal(), 0, CancellationToken.None);
+            0, CancellationToken.None);
 
         Assert.True(result.Anomalies.HasFlag(AudioCaptureAnomalies.CaptureDiscontinuity));
     }
@@ -120,6 +123,7 @@ public sealed class PcmDuplexSessionTests
     {
         private readonly PushCaptureDevice capture;
         private readonly int pushFrames;
+        private IWaveProvider? initializedSource;
 
         public PushPlaybackDevice(PushCaptureDevice capture, int pushFrames)
         {
@@ -129,6 +133,7 @@ public sealed class PcmDuplexSessionTests
 
         public WaveFormat PlaybackFormat { get; } = new(48_000, 16, 1);
         public int StartCount { get; private set; }
+        public bool SawDifferentSource { get; private set; }
         public bool BumpDiscontinuityOnStart { get; init; }
 
         public string EndpointId => "render-endpoint";
@@ -138,6 +143,13 @@ public sealed class PcmDuplexSessionTests
 
         public Task StartAsync(IWaveProvider source, CancellationToken cancellationToken)
         {
+            // Mirror the real render devices: a session must replay the one
+            // source it was opened with, never a different instance.
+            if (initializedSource != null && !ReferenceEquals(initializedSource, source))
+            {
+                SawDifferentSource = true;
+            }
+            initializedSource = source;
             StartCount++;
             if (BumpDiscontinuityOnStart)
             {

@@ -1,10 +1,13 @@
 namespace Resonalyze.Audio;
 
 /// <summary>
-/// A finite play-and-capture session, opened once and reused across the runs of
-/// an averaged measurement. The backend owns the device lifecycle, buffer
+/// A finite play-and-capture session bound to one excitation signal at open
+/// time and replayed across the runs of an averaged measurement — one open
+/// session is exactly one sweep. The backend owns the device lifecycle, buffer
 /// alignment retries, event/thread handling and stop handling; the caller only
-/// supplies an excitation signal and reads the captured channels.
+/// triggers each run and reads the captured channels. The signal is fixed for
+/// the session's lifetime because the underlying render devices reject a
+/// different source once initialized.
 /// </summary>
 public interface IAudioDuplexSession : IAsyncDisposable
 {
@@ -12,12 +15,11 @@ public interface IAudioDuplexSession : IAsyncDisposable
     event Action<AudioInputLevels>? InputLevelsAvailable;
 
     /// <summary>
-    /// Plays <paramref name="signal"/> to its end while capturing, then waits for
-    /// <paramref name="captureTailSamples"/> further samples (the decay tail).
-    /// Reusing the same session for the next run keeps the device open.
+    /// Replays the session's excitation signal to its end while capturing, then
+    /// waits for <paramref name="captureTailSamples"/> further samples (the decay
+    /// tail). Calling again keeps the device open for the next averaging run.
     /// </summary>
     Task<AudioCaptureResult> PlayAndCaptureAsync(
-        AudioPlaybackSignal signal,
         int captureTailSamples,
         CancellationToken cancellationToken);
 }

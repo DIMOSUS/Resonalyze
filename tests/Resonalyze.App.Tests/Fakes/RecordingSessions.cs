@@ -42,14 +42,20 @@ internal static class SyntheticCapture
     }
 }
 
-/// <summary>A duplex session whose per-run behaviour is supplied by a callback.</summary>
+/// <summary>
+/// A duplex session bound to one signal (like the real sessions) whose per-run
+/// behaviour is supplied by a callback.
+/// </summary>
 internal sealed class RecordingDuplexSession : IAudioDuplexSession
 {
+    private readonly AudioPlaybackSignal signal;
     private readonly Func<int, AudioPlaybackSignal, int, CancellationToken, Task<AudioCaptureResult>> onCapture;
 
     public RecordingDuplexSession(
+        AudioPlaybackSignal signal,
         Func<int, AudioPlaybackSignal, int, CancellationToken, Task<AudioCaptureResult>> onCapture)
     {
+        this.signal = signal;
         this.onCapture = onCapture;
     }
 
@@ -59,7 +65,7 @@ internal sealed class RecordingDuplexSession : IAudioDuplexSession
     public bool Disposed { get; private set; }
 
     public async Task<AudioCaptureResult> PlayAndCaptureAsync(
-        AudioPlaybackSignal signal, int captureTailSamples, CancellationToken cancellationToken)
+        int captureTailSamples, CancellationToken cancellationToken)
     {
         _ = InputLevelsAvailable;
         int run = ++CaptureCount;

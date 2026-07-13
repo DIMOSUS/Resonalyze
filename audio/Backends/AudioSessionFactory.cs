@@ -21,8 +21,9 @@ public sealed class AudioSessionFactory : IAudioSessionFactory
 
     public ValueTask<IAudioDuplexSession> OpenDuplexAsync(
         AudioSessionRequest request,
+        AudioPlaybackSignal signal,
         CancellationToken cancellationToken) =>
-        registry.GetBackend(request.Backend).OpenDuplexAsync(request, cancellationToken);
+        registry.GetBackend(request.Backend).OpenDuplexAsync(request, signal, cancellationToken);
 
     public ValueTask<IAudioStreamingSession> OpenStreamingAsync(
         AudioSessionRequest request,

@@ -12,12 +12,14 @@ public interface IAudioBackend
     AudioBackendDescriptor Descriptor { get; }
 
     /// <summary>
-    /// Opens a finite play-and-capture session. Construction that can fail (opening
-    /// devices, negotiating an exclusive format) happens here so resource rollback
-    /// is fully asynchronous.
+    /// Opens a finite play-and-capture session bound to <paramref name="signal"/>.
+    /// Construction that can fail (opening devices, negotiating an exclusive
+    /// format, building the playback stream) happens here so resource rollback is
+    /// fully asynchronous and the signal is fixed for the session's lifetime.
     /// </summary>
     ValueTask<IAudioDuplexSession> OpenDuplexAsync(
         AudioSessionRequest request,
+        AudioPlaybackSignal signal,
         CancellationToken cancellationToken);
 
     /// <summary>Opens a continuous play-and-capture session for live analysis.</summary>
@@ -59,6 +61,7 @@ public interface IAudioSessionFactory
 
     ValueTask<IAudioDuplexSession> OpenDuplexAsync(
         AudioSessionRequest request,
+        AudioPlaybackSignal signal,
         CancellationToken cancellationToken);
 
     ValueTask<IAudioStreamingSession> OpenStreamingAsync(

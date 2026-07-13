@@ -46,8 +46,10 @@ public sealed class WasapiHardwareSmokeTests
     // Proves the endpoints were released: opening a fresh duplex session succeeds.
     private static async Task AssertEndpointsReusableAsync(string captureId, string renderId, int sampleRate)
     {
-        await using IAudioDuplexSession session =
-            await Factory.OpenDuplexAsync(DuplexProbe(captureId, renderId, sampleRate), CancellationToken.None);
+        var signal = new AudioPlaybackSignal(
+            new float[sampleRate / 5], sampleRate, 24, PlaybackChannel.Right, Loop: false);
+        await using IAudioDuplexSession session = await Factory.OpenDuplexAsync(
+            DuplexProbe(captureId, renderId, sampleRate), signal, CancellationToken.None);
         Assert.NotNull(session);
     }
 

@@ -16,6 +16,7 @@ public sealed class MmeBackend : IAudioBackend
 
     public async ValueTask<IAudioDuplexSession> OpenDuplexAsync(
         AudioSessionRequest request,
+        AudioPlaybackSignal signal,
         CancellationToken cancellationToken)
     {
         IAudioCaptureDevice? capture = null;
@@ -27,6 +28,7 @@ public sealed class MmeBackend : IAudioBackend
             return new PcmDuplexSession(
                 capture,
                 playback,
+                signal,
                 request.Routing,
                 request.ExpectedCaptureSamples,
                 Descriptor.Id.ToString(),
@@ -81,17 +83,12 @@ public sealed class MmeBackend : IAudioBackend
             new WaveFormat(request.SampleRate, request.BitsPerSample, channelCount));
     }
 
-    private static async ValueTask DisposeQuietlyAsync(
+    // Best-effort rollback of a partially-opened session: every resource is
+    // released even if an earlier release throws, and cleanup failures are
+    // swallowed so they never mask the primary open/validation exception that
+    // the caller is about to rethrow.
+    private static ValueTask DisposeQuietlyAsync(
         IAudioPlaybackDevice? playback,
-        IAudioCaptureDevice? capture)
-    {
-        if (playback != null)
-        {
-            await playback.DisposeAsync().ConfigureAwait(false);
-        }
-        if (capture != null)
-        {
-            await capture.DisposeAsync().ConfigureAwait(false);
-        }
-    }
+        IAudioCaptureDevice? capture) =>
+        AudioBackendCleanup.DisposeQuietlyAsync(playback, capture);
 }

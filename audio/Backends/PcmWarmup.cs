@@ -14,14 +14,14 @@ internal static class PcmWarmup
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         linked.CancelAfter(TimeSpan.FromSeconds(5));
-        await using IAudioDuplexSession session =
-            await backend.OpenDuplexAsync(request, linked.Token).ConfigureAwait(false);
         int samples = Math.Max(1, request.SampleRate / 5);
         var silence = new AudioPlaybackSignal(
             new float[samples],
             request.SampleRate,
             request.BitsPerSample,
             request.PlaybackChannel);
-        await session.PlayAndCaptureAsync(silence, 0, linked.Token).ConfigureAwait(false);
+        await using IAudioDuplexSession session =
+            await backend.OpenDuplexAsync(request, silence, linked.Token).ConfigureAwait(false);
+        await session.PlayAndCaptureAsync(0, linked.Token).ConfigureAwait(false);
     }
 }

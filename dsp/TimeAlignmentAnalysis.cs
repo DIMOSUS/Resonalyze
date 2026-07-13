@@ -147,13 +147,32 @@ public static class TimeAlignmentAnalysis
         // not, and a genuine second arrival must be separated by a real valley:
         // a band-limited low-frequency driver's direct sound keeps rising for
         // milliseconds, and an early shoulder of that one wave packet peaking
-        // later must not be called a reflection.
+        // later must not be called a reflection. In a band-limited analysis the
+        // envelope's time resolution is ~1/bandwidth, so within that blur a
+        // separation is the same wave packet's interference structure, not two
+        // events — unless the valley between them is deep enough to prove the
+        // events resolved anyway (destructive interference can resolve faster
+        // than the nominal 1/BW).
         double separationMilliseconds =
             (strongestPeakIndex - envelopePeakIndex) * 1000.0 / sampleRate;
+        double valleyDepthDb = ValleyDepthDb(
+            envelope, envelopePeakIndex, strongestPeakIndex);
+        double blurMilliseconds = SeparateArrivalThresholdMilliseconds;
+        if (options.UseBandpassWindow)
+        {
+            double bandwidthHz = options.BandpassCenterHz * (
+                Math.Pow(2.0, options.BandpassPassOctaves / 2.0)
+                - Math.Pow(2.0, -options.BandpassPassOctaves / 2.0));
+            blurMilliseconds = Math.Max(
+                SeparateArrivalThresholdMilliseconds,
+                1_000.0 / Math.Max(1e-9, bandwidthHz));
+        }
         bool strongestIsSeparateArrival =
             strongestPeakIndex != envelopePeakIndex &&
             separationMilliseconds >= SeparateArrivalThresholdMilliseconds &&
-            HasValleyBetween(envelope, envelopePeakIndex, strongestPeakIndex);
+            valleyDepthDb >= SeparateArrivalValleyDb &&
+            (separationMilliseconds >= blurMilliseconds ||
+                valleyDepthDb >= SeparateArrivalResolvedValleyDb);
 
         if (options.WrapPeakPositions)
         {
@@ -204,7 +223,14 @@ public static class TimeAlignmentAnalysis
     // rise does not.
     private const double SeparateArrivalValleyDb = 6.0;
 
-    private static bool HasValleyBetween(
+    // A valley this deep proves the two events resolved even when their
+    // separation sits inside the analysis band's nominal ~1/BW blur —
+    // destructive interference nulls faster than the envelope's rise time.
+    private const double SeparateArrivalResolvedValleyDb = 20.0;
+
+    // The envelope dip between the two peaks, in dB below the LOWER of them
+    // (>= 0; 0 when the envelope never dips).
+    private static double ValleyDepthDb(
         IReadOnlyList<double> envelope,
         int firstIndex,
         int secondIndex)
@@ -218,8 +244,12 @@ public static class TimeAlignmentAnalysis
         }
 
         double reference = Math.Min(envelope[firstIndex], envelope[secondIndex]);
-        return valley <= reference *
-            Math.Pow(10.0, -SeparateArrivalValleyDb / 20.0);
+        if (reference <= 0.0 || valley <= 0.0)
+        {
+            return valley <= 0.0 && reference > 0.0 ? double.PositiveInfinity : 0.0;
+        }
+
+        return Math.Max(0.0, DataHelper.AmplitudeToDecibels(reference / valley));
     }
 
     // A short refinement window (~0.1 ms) around the envelope peak: wide enough to

@@ -869,19 +869,69 @@ public static class AutoAlignmentEngine
                 new Dictionary<IAlignmentChannel, AlignmentOverride>(alignment);
             searchAlignment.Remove(rightChannel);
             IReadOnlyList<AlignmentSnapshot> current = reprocess(searchAlignment);
+            Complex[] leftIr =
+                current.First(item => item.Channel == link.Left).ImpulseResponse;
+            Complex[] rightIr =
+                current.First(item => item.Channel == rightChannel).ImpulseResponse;
             TimeAlignmentAnalysisResult leftArrival =
                 VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-                    current.First(item => item.Channel == link.Left).ImpulseResponse,
-                    link.Left.SampleRate, bandLowHz, bandHighHz);
+                    leftIr, link.Left.SampleRate, bandLowHz, bandHighHz);
             TimeAlignmentAnalysisResult rightRaw =
                 VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-                    current.First(item => item.Channel == rightChannel).ImpulseResponse,
-                    rightChannel.SampleRate, bandLowHz, bandHighHz);
+                    rightIr, rightChannel.SampleRate, bandLowHz, bandHighHz);
             if (!leftArrival.IsValid || !rightRaw.IsValid ||
                 leftArrival.SignalToNoiseDecibels < MinimumArrivalSnrDb ||
                 rightRaw.SignalToNoiseDecibels < MinimumArrivalSnrDb)
             {
                 return null;
+            }
+
+            // Modal-latch guard: the SAME driver measured in the band's upper
+            // half must agree with the full-band read to within the dispersion
+            // one direct wave packet can show (half a period at the probe's
+            // low edge). A full-band read landing far BEHIND its own upper-half
+            // read means the detector latched that side onto the in-room modal
+            // build-up instead of the direct rise (the under-seat midbass case:
+            // 21.2 ms in 80-200 Hz vs 15.2 ms one band up) — the two sides are
+            // then timing DIFFERENT features and their difference is garbage.
+            // The honest response is to withdraw the prior (the search keeps
+            // its own-side junction anchor), NOT to re-measure in the narrow
+            // upper half: at a low link band that probe is an octave of mush
+            // (~1/BW blur of many ms) that once dragged a woofer 6 ms off.
+            double probeLowHz = Math.Sqrt(bandLowHz * bandHighHz);
+            if (bandHighHz >=
+                probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
+            {
+                TimeAlignmentAnalysisResult leftProbe =
+                    VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                        leftIr, link.Left.SampleRate, probeLowHz, bandHighHz);
+                TimeAlignmentAnalysisResult rightProbe =
+                    VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                        rightIr, rightChannel.SampleRate, probeLowHz, bandHighHz);
+                double toleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
+                if (leftProbe.IsValid && rightProbe.IsValid &&
+                    leftProbe.SignalToNoiseDecibels >= MinimumArrivalSnrDb &&
+                    rightProbe.SignalToNoiseDecibels >= MinimumArrivalSnrDb)
+                {
+                    bool leftLatched =
+                        leftArrival.FirstArrivalDelayMilliseconds
+                        - leftProbe.FirstArrivalDelayMilliseconds > toleranceMs;
+                    bool rightLatched =
+                        rightRaw.FirstArrivalDelayMilliseconds
+                        - rightProbe.FirstArrivalDelayMilliseconds > toleranceMs;
+                    if (leftLatched || rightLatched)
+                    {
+                        log.AppendLine(
+                            $"  cross-side prior {rightChannel.Name}: withdrawn — " +
+                            $"{(leftLatched ? link.Left.Name : rightChannel.Name)}" +
+                            $" reads {(leftLatched ? leftArrival : rightRaw).FirstArrivalDelayMilliseconds:0.000} ms" +
+                            $" in {bandLowHz:0}-{bandHighHz:0} Hz but " +
+                            $"{(leftLatched ? leftProbe : rightProbe).FirstArrivalDelayMilliseconds:0.000} ms" +
+                            $" in its {probeLowHz:0}-{bandHighHz:0} Hz half " +
+                            "(modal latch: the sides time different features)");
+                        return null;
+                    }
+                }
             }
 
             double target = leftArrival.FirstArrivalDelayMilliseconds

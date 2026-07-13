@@ -316,6 +316,37 @@ public sealed class TransferFunctionTests
     }
 
     [Fact]
+    public void ComputeAveragedRelativeIr_MaskedBinsDoNotScaleTheGateThresholds()
+    {
+        // PR-review finding: the peak scan anchoring gateHigh and λ used to
+        // include bins the excitation edge later zeroes. A loud sub-edge
+        // reference component (hum below a narrow sweep's start) then scaled
+        // the power gate from an artifact excluded from the estimate, fading
+        // the genuinely excited bins. The hum here is deliberately absurd —
+        // 60+ dB over the sweep bins, enough to zero the whole passband
+        // through the old scan — so the pin is decisive: with the scan
+        // restricted to edge-eligible bins the pulse must come back intact.
+        const int delay = 25;
+        const int octaves = 3; // sweep spans Nyquist/8..Nyquist
+        double[] sweep = MiniSweep(4096, octaves);
+        double[] reference = AddNoise(sweep, 1e-6, seed: 7);
+        double[] target = AddNoise(Delay(sweep, delay), 1e-5, seed: 8);
+        for (int i = 0; i < reference.Length; i++)
+        {
+            // Nyquist/64 — below the excitation edge's ramp.
+            double window = 0.5 - 0.5 * Math.Cos(2.0 * Math.PI * i / reference.Length);
+            reference[i] += 1000.0 * window * Math.Sin(2.0 * Math.PI * i / 128.0);
+        }
+
+        TransferEstimateResult result = TransferFunction.ComputeAveragedRelativeIr(
+            [new TransferFunctionFrame(reference, target)],
+            excitationLowNyquistFraction: Math.Pow(2.0, -octaves));
+
+        Assert.Equal(delay, result.PeakIndex);
+        Assert.InRange(result.ImpulseResponse[delay], 0.8, 1.05);
+    }
+
+    [Fact]
     public void ComputeAveragedRelativeIr_EstimateDoesNotDependOnTheAverageCount()
     {
         // The cross- and auto-spectra are accumulated without normalization, so

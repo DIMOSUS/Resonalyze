@@ -160,38 +160,50 @@ public static class TransferFunction
     // weights are real and Hermitian-symmetric (frequencies fold through
     // min(bin, N - bin); a real capture's power spectrum already is), so this
     // is zero-phase filtering: the inverse transform stays real and nothing
-    // moves in time. DC is excluded from the peak scan — at measurement FFT
-    // lengths a converter's static offset can rival the sweep bins and would
-    // drag both thresholds with it (bin 0 itself still passes through the
-    // same gates as any bin).
+    // moves in time. The peak scan that anchors the thresholds only looks at
+    // bins the excitation edge keeps: a bin the estimate discards must not
+    // scale the gate it is excluded from (a loud mains-adjacent hum below a
+    // narrow sweep's start, or DC — a converter's static offset can rival the
+    // sweep bins at measurement FFT lengths — would otherwise fade genuinely
+    // excited bins).
     private static Complex[] InverseExcitationGatedH1(
         Complex[] crossSpectrum,
         double[] referencePowerSpectrum,
         double excitationLowNyquistFraction)
     {
         int fftLength = crossSpectrum.Length;
+        int half = fftLength / 2;
+        double EdgeWeight(int bin)
+        {
+            if (excitationLowNyquistFraction <= 0.0)
+            {
+                return 1.0;
+            }
+
+            double nyquistFraction = Math.Min(bin, fftLength - bin) / (double)half;
+            return SoftGate(
+                nyquistFraction,
+                excitationLowNyquistFraction * 0.5,
+                excitationLowNyquistFraction);
+        }
+
         double maxReferencePower = 0;
         for (int bin = 1; bin < fftLength; bin++)
         {
-            maxReferencePower = Math.Max(maxReferencePower, referencePowerSpectrum[bin]);
+            if (EdgeWeight(bin) > 0)
+            {
+                maxReferencePower = Math.Max(maxReferencePower, referencePowerSpectrum[bin]);
+            }
         }
 
         double regularization = maxReferencePower * RelativeRegularization;
         double gateHigh = maxReferencePower * ExcitationGatePowerRatio;
         double gateLow = gateHigh * ExcitationGateFloorShare;
-        int half = fftLength / 2;
         var relative = new Complex[fftLength];
         for (int bin = 0; bin < fftLength; bin++)
         {
-            double weight = SoftGate(referencePowerSpectrum[bin], gateLow, gateHigh);
-            if (excitationLowNyquistFraction > 0.0 && weight > 0)
-            {
-                double nyquistFraction = Math.Min(bin, fftLength - bin) / (double)half;
-                weight *= SoftGate(
-                    nyquistFraction,
-                    excitationLowNyquistFraction * 0.5,
-                    excitationLowNyquistFraction);
-            }
+            double weight = SoftGate(referencePowerSpectrum[bin], gateLow, gateHigh)
+                * EdgeWeight(bin);
             if (weight > 0)
             {
                 relative[bin] = weight * crossSpectrum[bin]

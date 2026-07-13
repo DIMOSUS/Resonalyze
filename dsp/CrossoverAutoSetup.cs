@@ -374,6 +374,24 @@ public static class CrossoverAutoSetup
     // is — negligible for a narrow overlap, firm for a broad one.
     private const double WideOverlapLowBiasWeightDb = 0.4;
 
+    // A bass/midbass driver handing UP to the midrange should cross below where
+    // the ear begins to localize by frequency content (~300 Hz): above that a
+    // low-mounted, poorly-imaging midbass smears the stage, and its wide passband
+    // reaches far into the midrange. So a handover INTO the midrange is nudged
+    // down toward this threshold — set a margin UNDER the ~300 Hz onset so the
+    // midbass passband, not just its −3 dB point, stays in the localizable-safe
+    // region — log-proportional to how far above it the junction sits. A firm
+    // pull, because the flatness search otherwise drags the junction up to the top
+    // of the shared band (a broad-band midbass reads flatter carrying more of the
+    // low-mids). It self-limits: where the midrange genuinely cannot fill down to
+    // the threshold, the flatness cost of the gap holds the junction higher.
+    // Deliberately scoped to the midrange handover so it does NOT touch the tweeter
+    // junction, whose low placement is governed instead by the resonance floor;
+    // strengthening the generic wide-overlap bias would wrongly drag the tweeter
+    // down too. Below the threshold there is no pull.
+    private const double MidrangeLocalizationThresholdHz = 250.0;
+    private const double MidrangeHandoverLowBiasWeightDb = 2.0;
+
     /// <summary>
     /// Reads the usable band from a (smoothed) magnitude curve and suggests the
     /// driver class. The reference is an upper percentile of the curve, robust
@@ -2324,6 +2342,16 @@ public static class CrossoverAutoSetup
                     double overlapOctaves = Math.Log2(overlapHigh / overlapLow);
                     double octavesAbove = Math.Log2(fc / overlapLow);
                     total += WideOverlapLowBiasWeightDb * overlapOctaves * octavesAbove;
+                }
+
+                // The handover into the midrange is additionally kept below the
+                // localization threshold, so the better-imaging midrange owns the
+                // localizable low-mids rather than the midbass carrying them up.
+                if (types[j + 1] == DriverType.Midrange &&
+                    fc > MidrangeLocalizationThresholdHz)
+                {
+                    total += MidrangeHandoverLowBiasWeightDb
+                        * Math.Log2(fc / MidrangeLocalizationThresholdHz);
                 }
             }
 

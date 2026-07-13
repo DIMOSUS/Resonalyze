@@ -549,6 +549,13 @@ public static class AutoAlignmentEngine
                         $"dip {item.DipDb:0.0} dB)"))
                     : "none"));
 
+            // The arrival-anchored pick, captured BEFORE the edge-retry can move
+            // it: the promotion reach is measured from here, so a retry that
+            // legitimately widened the window (up to ~0.9 period) cannot stack
+            // with the promotion cap to let a comb alias land >2.5 periods off
+            // the envelope.
+            AlignmentCandidate arrivalPick = chosen;
+
             // A result pinned to the window edge means the optimum lies beyond
             // the coarse estimate's reach — retry once, widened but still short
             // of a full period so the search cannot land on the next lobe. The
@@ -593,12 +600,19 @@ public static class AutoAlignmentEngine
                 // score is a comb alias the summation cannot distinguish, so the
                 // envelope stays authoritative (see PromotionReachPeriods). Inside
                 // the reach, a hop onto another comb lobe must be plainly, not
-                // marginally, better (see WideWindowPromotionMarginDb).
+                // marginally, better (see WideWindowPromotionMarginDb). Both the
+                // reach (from the pre-retry arrival pick) and the gain (a
+                // prior-free acoustic score) are measured on quantities that do
+                // NOT depend on the search-window width — the wide diagnostic
+                // window carries a weaker arrival prior than the fine window, so
+                // comparing raw ScoreDb would credit a promotion for the prior
+                // relaxation alone.
                 double periodMs = 2.0 * halfPeriodMs;
                 double promotionReachMs = PromotionReachPeriods * periodMs;
-                double promotionStepMs = Math.Abs(wideChosen.DelayMs - chosen.DelayMs);
+                double promotionStepMs =
+                    Math.Abs(wideChosen.DelayMs - arrivalPick.DelayMs);
                 double periodsMoved = promotionStepMs / periodMs;
-                double gainDb = wideChosen.ScoreDb - chosen.ScoreDb;
+                double gainDb = AcousticScore(wideChosen) - AcousticScore(chosen);
                 if (gainDb > WideWindowPromotionMarginDb &&
                     promotionStepMs <= promotionReachMs)
                 {
@@ -616,7 +630,7 @@ public static class AutoAlignmentEngine
                     log.AppendLine(
                         $"  promotion declined: {wideChosen.DelayMs:0.000} ms is " +
                         $"{promotionStepMs:0.000} ms ({periodsMoved:0.0} " +
-                        $"periods) from the arrival pick {chosen.DelayMs:0.000} ms — " +
+                        $"periods) from the arrival pick {arrivalPick.DelayMs:0.000} ms — " +
                         "a comb alias beyond the envelope's reach.");
                 }
                 else if (gainDb > PromotionNoteworthyGainDb)
@@ -643,6 +657,17 @@ public static class AutoAlignmentEngine
                 chosen.InvertPolarity);
         }
     }
+
+    // A candidate's summation quality WITHOUT the arrival-prior penalty: the
+    // raw in-band average plus the same dip-excess term the candidate scores
+    // carry. The stored ScoreDb is this minus a prior penalty whose strength
+    // scales with the search window (priorSigma = window / 4), so ScoreDb is
+    // only comparable WITHIN one window; cross-window comparisons (the wide
+    // promotion vs the fine pick) must use this prior-free figure.
+    private static double AcousticScore(AlignmentCandidate candidate) =>
+        candidate.LossDb +
+        VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
+        (candidate.DipDb - candidate.LossDb);
 
     // A uniform delay shift of every channel in the scope but one: the standard
     // way to "advance" a channel that would otherwise need a negative delay.
@@ -1295,6 +1320,17 @@ public static class AutoAlignmentEngine
             return;
         }
 
+        // The co-move delta already applied to each channel, so a lower pair's
+        // reach is bounded relative to its already-settled neighbor — NOT
+        // relative to zero. Each per-pair move is capped at half a junction
+        // period, but two adjacent pairs moving that far in opposite directions
+        // would open a FULL period across their shared junction (a comb alias:
+        // the sum is back in phase, so the search sees no loss, yet the absolute
+        // alignment jumped a lobe). Constraining each pair's window around the
+        // neighbor's applied delta keeps the RELATIVE shift across every shared
+        // junction within half a period, which is what the reach cap must mean.
+        var comoveDeltas = new Dictionary<IAlignmentChannel, double>();
+
         // Every linked pair participates: the scene-locked ones paid their
         // junction sums to the stereo image, the low-frequency ones to the
         // arrival-lobe pin — co-moving both sides by one delta repairs those
@@ -1385,18 +1421,33 @@ public static class AutoAlignmentEngine
                 return total / evaluators.Count;
             }
 
-            // The tightest (highest-frequency) adjacent junction bounds the
-            // pair's reach: within half its period the junction sums are
-            // single-lobed, so the search can only polish the alignment the
-            // arrival-anchored walk chose. Past that lies the next comb lobe —
-            // and fractions of a dB of mean junction loss cannot choose a lobe
-            // (the same physics as the wide-window promotion reach cap). The
-            // flat window alone let a 0.1-0.2 dB "gain" walk the tweeter pair
-            // a whole period off its mid at a 2.3 kHz junction.
-            double tightestPeriodMs =
-                1_000.0 / adjacent.Max(junction => junction.CrossoverHz);
-            double reachMs = Math.Min(
-                PairComoveSearchRangeMs, 0.5 * tightestPeriodMs);
+            // Each adjacent junction bounds the pair's reach to within half its
+            // period OF THE NEIGHBOR'S ALREADY-APPLIED co-move delta: within
+            // half a period the junction sums are single-lobed, so the search
+            // can only polish the alignment the arrival-anchored walk chose.
+            // Past that lies the next comb lobe — and fractions of a dB of mean
+            // junction loss cannot choose a lobe (the same physics as the
+            // wide-window promotion reach cap). Centering on the neighbor's
+            // delta (0 for a channel that never co-moves — a mono/fixed
+            // neighbor) is what keeps the RELATIVE shift across the junction
+            // bounded even when the neighbor pair already moved; a flat ±half
+            // period around zero let two adjacent pairs drift a full period
+            // apart, and the flat window alone let a 0.1-0.2 dB "gain" walk the
+            // tweeter pair a whole period off its mid at a 2.3 kHz junction.
+            double lobeLowMs = -PairComoveSearchRangeMs;
+            double lobeHighMs = PairComoveSearchRangeMs;
+            foreach (AlignmentJunction junction in adjacent)
+            {
+                IAlignmentChannel neighbor =
+                    junction.Lower.Channel == link.Left ||
+                    junction.Lower.Channel == link.Right
+                        ? junction.Upper.Channel
+                        : junction.Lower.Channel;
+                double neighborDelta = comoveDeltas.GetValueOrDefault(neighbor);
+                double halfPeriodMs = 500.0 / junction.CrossoverHz;
+                lobeLowMs = Math.Max(lobeLowMs, neighborDelta - halfPeriodMs);
+                lobeHighMs = Math.Min(lobeHighMs, neighborDelta + halfPeriodMs);
+            }
 
             // Both bounds are fixed BEFORE the search so the winning delta
             // applies verbatim to both sides: negative deltas may not push
@@ -1404,18 +1455,24 @@ public static class AutoAlignmentEngine
             // past the delay ceiling. Clamping after the fact would move the
             // two sides unequally and silently bend the very scene this pass
             // exists to preserve.
-            double minDelta = -Math.Min(
-                Math.Min(leftOverride.DelayMs, rightOverride.DelayMs),
-                reachMs);
+            double minDelta = Math.Max(
+                lobeLowMs,
+                -Math.Min(leftOverride.DelayMs, rightOverride.DelayMs));
             double maxDelta = Math.Min(
-                reachMs,
+                lobeHighMs,
                 MaxDelayMs - Math.Max(leftOverride.DelayMs, rightOverride.DelayMs));
+            // The neighbor lobes can, in principle, exclude zero (a settled
+            // neighbor a hair over half a period away); never let the window
+            // invert or force a non-zero move — keeping the pair is always legal.
+            minDelta = Math.Min(minDelta, 0.0);
+            maxDelta = Math.Max(maxDelta, 0.0);
             double baseline = Score(0);
             double bestDelta = 0;
             double bestScore = baseline;
             // The coarse step scales down with the window so a tightly-capped
             // high-junction pair still gets a real grid before refinement.
-            double coarseStep = Math.Min(0.1, Math.Max(0.02, reachMs / 4.0));
+            double coarseStep = Math.Min(
+                0.1, Math.Max(0.02, (maxDelta - minDelta) / 8.0));
             for (double delta = minDelta; delta <= maxDelta + 1e-9; delta += coarseStep)
             {
                 double score = Score(delta);
@@ -1452,6 +1509,11 @@ public static class AutoAlignmentEngine
                 {
                     DelayMs = Math.Round(rightOverride.DelayMs + bestDelta, 2)
                 };
+                // Record the applied shift so a lower pair's reach is measured
+                // from here, keeping the relative shift across the shared
+                // junction within half a period.
+                comoveDeltas[link.Left] = bestDelta;
+                comoveDeltas[link.Right] = bestDelta;
                 log.AppendLine(
                     $"Co-move {link.Left.Name}+{link.Right.Name}: " +
                     $"{bestDelta:+0.00;-0.00} ms to both sides " +

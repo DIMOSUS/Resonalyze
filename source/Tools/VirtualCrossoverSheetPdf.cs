@@ -38,6 +38,19 @@ internal static class VirtualCrossoverSheetPdf
         string? metricLine,
         int sampleRate)
     {
+        using PdfSheet sheet = Build(project, metricLine, sampleRate);
+        sheet.Save(filePath);
+    }
+
+    // Builds the sheet without rendering it, so a test can walk the MigraDoc
+    // document model (section tables, rows, cells) and assert the layout — a
+    // stereo pair as one L/R table, a mono/one-sided pair as a single column —
+    // without parsing a rendered PDF. The caller owns disposal.
+    internal static PdfSheet Build(
+        VirtualCrossoverProjectFile project,
+        string? metricLine,
+        int sampleRate)
+    {
         ArgumentNullException.ThrowIfNull(project);
 
         string subtitleText =
@@ -47,7 +60,7 @@ internal static class VirtualCrossoverSheetPdf
             subtitleText += $"   ·   {metricLine}";
         }
 
-        using var sheet = new PdfSheet("Virtual DSP", subtitleText);
+        var sheet = new PdfSheet("Virtual DSP", subtitleText);
 
         // Both sides of every pair print in one sheet; a mono pair prints
         // once. On the graph the right side reuses the pair's hue dashed.
@@ -97,7 +110,7 @@ internal static class VirtualCrossoverSheetPdf
             }
         }
 
-        sheet.Save(filePath);
+        return sheet;
     }
 
     private static void AddPairSection(

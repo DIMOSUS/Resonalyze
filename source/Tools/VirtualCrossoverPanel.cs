@@ -1657,9 +1657,9 @@ public partial class VirtualCrossoverPanel : UserControl
             "Run Auto delay afterward to phase-align the result.");
         toolTip.SetToolTip(
             buttonPhaseGate,
-            "Configure the phase-view gate: offset and Tukey fades,\r\n" +
-            "with an IR preview — cut the window before the first\r\n" +
-            "reflection for clean phase traces.");
+            "Configure the gate for the phase and impulse views:\r\n" +
+            "offset and Tukey fades, with an IR preview — cut the\r\n" +
+            "window before the first reflection for clean traces.");
         toolTip.SetToolTip(
             buttonSessionExport,
             "Save the whole session (sources, DSP chains, gate, view)\r\n" +

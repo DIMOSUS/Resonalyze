@@ -74,6 +74,7 @@ public partial class VirtualCrossoverPanel : UserControl
     // tracks the dialog live; null once it closes (Save committed them to the
     // project, Cancel reverts by simply dropping them).
     private (double OffsetMs, double LeftMs, double PlateauMs, double RightMs,
+        PhaseWindowMode WindowMode, int FdwCycles, PhaseDetrendMode DetrendMode,
         double DetrendMs)? gatePreview;
     private PlotWatermarkAnnotation hintAnnotation = null!;
     private LinearAxis mainValueAxis = null!;
@@ -3295,8 +3296,7 @@ public partial class VirtualCrossoverPanel : UserControl
         int sampleRate = processed[0].Channel.SampleRate;
         double gateOffsetMs = gatePreview?.OffsetMs
             ?? ResolveGateOffsetMs(reference, sampleRate);
-        double detrendMs = gatePreview?.DetrendMs
-            ?? ResolveDetrendMs(reference, sampleRate);
+        double detrendMs = ResolveCommonDetrendMs(processed, gateOffsetMs, sampleRate);
 
         foreach (ProcessedChannel item in processed)
         {
@@ -3340,6 +3340,48 @@ public partial class VirtualCrossoverPanel : UserControl
     private double ResolveDetrendMs(int referenceSample, int sampleRate) =>
         project.PhaseDetrendMs ?? referenceSample * 1_000.0 / sampleRate;
 
+    private double ResolveCommonDetrendMs(
+        List<ProcessedChannel> processed,
+        double gateOffsetMs,
+        int sampleRate)
+    {
+        PhaseDetrendMode detrendMode = gatePreview?.DetrendMode ?? project.PhaseDetrendMode;
+        if (detrendMode == PhaseDetrendMode.Off)
+        {
+            return 0.0;
+        }
+        if (detrendMode == PhaseDetrendMode.Manual)
+        {
+            return gatePreview?.DetrendMs ?? ResolveDetrendMs(
+                processed.Min(item => item.PeakIndex), sampleRate);
+        }
+
+        // Estimate once from the existing common anchor (earliest processed
+        // arrival), then apply that exact value to every driver and the sum.
+        ProcessedChannel anchor = processed.MinBy(item => item.PeakIndex)!;
+        var view = new ImpulseMeasurementView(anchor.ImpulseResponse, 0, sampleRate);
+        PhaseAnalysisSettings settings = CreateVirtualPhaseSettings(
+            gateOffsetMs,
+            PhaseDetrendMode.Auto,
+            manualDetrendMilliseconds: 0.0);
+        return DataHelper.ResolveCommonPhaseDetrendMilliseconds(view, settings);
+    }
+
+    private PhaseAnalysisSettings CreateVirtualPhaseSettings(
+        double gateOffsetMs,
+        PhaseDetrendMode detrendMode,
+        double manualDetrendMilliseconds) => new(
+            gatePreview?.WindowMode ?? project.PhaseWindowMode,
+            gatePreview?.FdwCycles ?? project.PhaseFdwCycles,
+            detrendMode,
+            manualDetrendMilliseconds,
+            gateOffsetMs,
+            gatePreview?.LeftMs ?? project.PhaseGateLeftMs,
+            gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs,
+            gatePreview?.RightMs ?? project.PhaseGateRightMs,
+            Unwrap: false,
+            SmoothingInverseOctaves: 0.0);
+
     private List<SignalPoint> BuildPhasePoints(
         Complex[] impulseResponse,
         int sampleRate,
@@ -3353,14 +3395,11 @@ public partial class VirtualCrossoverPanel : UserControl
         // fractional-sample phase reference; every curve built with the same τ
         // is directly comparable regardless of where its gate sits.
         var view = new ImpulseMeasurementView(impulseResponse, 0, sampleRate);
-        List<SignalPoint> phase = DataHelper.GetGatedPhaseData(
-            view,
+        PhaseAnalysisSettings settings = CreateVirtualPhaseSettings(
             gateOffsetMs,
-            gatePreview?.LeftMs ?? project.PhaseGateLeftMs,
-            gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs,
-            gatePreview?.RightMs ?? project.PhaseGateRightMs,
-            referenceSamples: detrendMs / 1_000.0 * sampleRate,
-            unwrap: false);
+            PhaseDetrendMode.Manual,
+            detrendMs);
+        List<SignalPoint> phase = DataHelper.GetGatedPhaseData(view, settings);
 
         var points = new List<SignalPoint>(phase.Count);
         foreach (SignalPoint point in phase)
@@ -3408,13 +3447,18 @@ public partial class VirtualCrossoverPanel : UserControl
             project.PhaseGatePlateauMs,
             project.PhaseGateRightMs,
             ResolveDetrendMs(reference, sampleRate),
+            project.PhaseWindowMode,
+            project.PhaseFdwCycles,
+            project.PhaseDetrendMode,
             fitOffsetMs);
         // The callback is wired after Init so seeding the controls does not
         // trigger a redundant redraw; from here every dialog change repaints the
         // phase plot immediately.
-        dialog.PreviewChanged = (offsetMs, leftMs, plateauMs, rightMs, detrendMs) =>
+        dialog.PreviewChanged = (offsetMs, leftMs, plateauMs, rightMs, windowMode,
+            fdwCycles, detrendMode, detrendMs) =>
         {
-            gatePreview = (offsetMs, leftMs, plateauMs, rightMs, detrendMs);
+            gatePreview = (offsetMs, leftMs, plateauMs, rightMs, windowMode,
+                fdwCycles, detrendMode, detrendMs);
             RequestRedraw();
         };
 
@@ -3427,6 +3471,9 @@ public partial class VirtualCrossoverPanel : UserControl
                 project.PhaseGatePlateauMs = dialog.PlateauMs;
                 project.PhaseGateRightMs = dialog.RightMs;
                 project.PhaseDetrendMs = dialog.DetrendMs;
+                project.PhaseWindowMode = dialog.WindowMode;
+                project.PhaseFdwCycles = dialog.FdwCycles;
+                project.PhaseDetrendMode = dialog.DetrendMode;
                 ScheduleSave();
             }
         }
@@ -3498,11 +3545,11 @@ public partial class VirtualCrossoverPanel : UserControl
         PreparedDspResponse response,
         double frequency,
         DspPlotMode mode) => mode switch
-    {
-        DspPlotMode.Phase => response.Response(frequency).Phase / Math.PI * 180.0,
-        DspPlotMode.GroupDelay => response.GroupDelayMs(frequency),
-        _ => DataHelper.AmplitudeToDecibels(response.Response(frequency).Magnitude)
-    };
+        {
+            DspPlotMode.Phase => response.Response(frequency).Phase / Math.PI * 180.0,
+            DspPlotMode.GroupDelay => response.GroupDelayMs(frequency),
+            _ => DataHelper.AmplitudeToDecibels(response.Response(frequency).Magnitude)
+        };
 
     // ------------------------------------------------------- capture / export
 
@@ -3959,7 +4006,8 @@ public partial class VirtualCrossoverPanel : UserControl
         // entry: it is measured over the same band from the same response.
         public (Complex[] ProcessedIr, double LowHz, double HighHz,
             TimeAlignmentAnalysisResult Result, double? LevelDb)?
-            ArrivalCache { get; set; }
+            ArrivalCache
+        { get; set; }
 
         // Invalidation counter for in-flight asynchronous source loads: a
         // load captures the revision when it starts (BeginSourceLoad, which

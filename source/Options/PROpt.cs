@@ -7,16 +7,30 @@ namespace Resonalyze.Options
     public partial class PROpt : ImpulsePreviewOptionsForm
     {
         private Func<CompareAnalysisSource?>? getCompare;
+        private readonly DarkComboBox comboWindowMode = new();
+        private readonly DarkComboBox comboFdwCycles = new();
+        private readonly DarkComboBox comboDetrendMode = new();
+        private double manualDetrendMilliseconds;
+        private bool updatingDetrendDisplay;
 
         public PROpt()
         {
             InitializeComponent();
+            InitializePhaseAnalysisControls();
             numericLeftWindow.ValueChanged += Gate_ValueChanged;
             numericRightWindow.ValueChanged += Gate_ValueChanged;
             numericGateOffset.ValueChanged += (_, _) => UpdateIrPreview();
             buttonFit.Click += buttonFit_Click;
             buttonTauSlope.Click += (_, _) => ApplyEstimatedTau(useSlope: true);
             buttonTauPeak.Click += (_, _) => ApplyEstimatedTau(useSlope: false);
+            numericOffset.ValueChanged += (_, _) =>
+            {
+                if (!updatingDetrendDisplay &&
+                    comboDetrendMode.SelectedIndex == (int)PhaseDetrendMode.Manual)
+                {
+                    manualDetrendMilliseconds = (double)numericOffset.Value;
+                }
+            };
             ConfigureResetDefaults();
             SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
             InitializeToolTips();
@@ -30,6 +44,7 @@ namespace Resonalyze.Options
         {
             AttachMeasurement(expSweepMeasurement);
             this.getCompare = getCompare;
+            manualDetrendMilliseconds = opt.PhaseDetrendMs;
             InitializeControls(() =>
             {
                 numericGateOffset.Value = ClampToControl(numericGateOffset, opt.PhaseGateOffsetMs);
@@ -39,6 +54,11 @@ namespace Resonalyze.Options
                 comboSmoothingInverseOctaves.SelectedItem =
                     SmoothingPresetOptions.Normalize(opt.SmoothingInverseOctaves);
                 numericOffset.Value = ClampToControl(numericOffset, opt.PhaseDetrendMs);
+                comboWindowMode.SelectedIndex = opt.PhaseWindowMode == PhaseWindowMode.Fixed ? 0 : 1;
+                comboFdwCycles.SelectedItem = opt.PhaseFdwCycles is 4 or 6 or 8
+                    ? opt.PhaseFdwCycles
+                    : PhaseAnalysisSettings.DefaultFdwCycles;
+                comboDetrendMode.SelectedIndex = (int)opt.PhaseDetrendMode;
                 checkBoxUnwrap.Checked = opt.Unwrap;
                 checkBoxShowMeasured.Checked = visibility.ShowMeasuredPhase;
                 checkBoxShowMinimum.Checked = visibility.ShowMinimumPhase;
@@ -46,6 +66,7 @@ namespace Resonalyze.Options
                 checkBoxShowCoherence.Checked = visibility.ShowCoherence;
             });
             UpdateMinFrequencyLabel();
+            UpdatePhaseControlState();
             UpdateIrPreview();
         }
 
@@ -59,7 +80,17 @@ namespace Resonalyze.Options
                 comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
                     ? inverseOctaves
                     : SmoothingPresetOptions.SupportedInverseOctaves[0];
-            opt.PhaseDetrendMs = (double)numericOffset.Value;
+            opt.PhaseDetrendMs = manualDetrendMilliseconds;
+            opt.PhaseWindowMode = comboWindowMode.SelectedIndex == 0
+                ? PhaseWindowMode.Fixed
+                : PhaseWindowMode.FrequencyDependent;
+            opt.PhaseFdwCycles = comboFdwCycles.SelectedItem is int cycles
+                ? cycles
+                : PhaseAnalysisSettings.DefaultFdwCycles;
+            opt.PhaseDetrendMode = Enum.IsDefined(
+                (PhaseDetrendMode)comboDetrendMode.SelectedIndex)
+                    ? (PhaseDetrendMode)comboDetrendMode.SelectedIndex
+                    : PhaseDetrendMode.Auto;
             opt.Unwrap = checkBoxUnwrap.Checked;
             visibility.ShowMeasuredPhase = checkBoxShowMeasured.Checked;
             visibility.ShowMinimumPhase = checkBoxShowMinimum.Checked;
@@ -67,6 +98,122 @@ namespace Resonalyze.Options
             visibility.ShowCoherence = checkBoxShowCoherence.Checked;
             UpdateIrPreview();
         }
+
+        private void InitializePhaseAnalysisControls()
+        {
+            const int addedHeight = 92;
+            foreach (Control control in Controls.Cast<Control>().ToArray())
+            {
+                control.Top += addedHeight;
+            }
+            ClientSize = new Size(ClientSize.Width, ClientSize.Height + addedHeight);
+
+            AddModeControl("Window", comboWindowMode, 10);
+            comboWindowMode.Items.AddRange(["Fixed", "FDW"]);
+            AddModeControl("FDW cycles", comboFdwCycles, 36);
+            comboFdwCycles.Items.AddRange([4, 6, 8]);
+            AddModeControl("Detrend", comboDetrendMode, 62);
+            comboDetrendMode.Items.AddRange(["Off", "Auto", "Manual"]);
+            comboWindowMode.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
+            comboFdwCycles.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
+            comboDetrendMode.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
+        }
+
+        private void AddModeControl(string text, DarkComboBox combo, int top)
+        {
+            var label = new Label
+            {
+                AutoSize = true,
+                ForeColor = Color.Gainsboro,
+                Location = new Point(12, top + 4),
+                Text = text
+            };
+            combo.DropDownStyle = ComboBoxStyle.DropDownList;
+            combo.Location = new Point(153, top);
+            combo.Size = new Size(100, 19);
+            Controls.Add(label);
+            Controls.Add(combo);
+        }
+
+        private void UpdatePhaseControlState()
+        {
+            comboFdwCycles.Enabled = comboWindowMode.SelectedIndex == 1;
+            bool manual = comboDetrendMode.SelectedIndex == (int)PhaseDetrendMode.Manual;
+            numericOffset.Enabled = manual;
+            buttonTauSlope.Enabled = manual;
+            buttonTauPeak.Enabled = manual;
+            UpdateDetrendDisplay();
+        }
+
+        private void UpdateDetrendDisplay()
+        {
+            double displayed = comboDetrendMode.SelectedIndex switch
+            {
+                (int)PhaseDetrendMode.Off => 0.0,
+                (int)PhaseDetrendMode.Auto when TryResolveAutoDetrend(out double resolved) =>
+                    resolved,
+                (int)PhaseDetrendMode.Manual => manualDetrendMilliseconds,
+                _ => 0.0
+            };
+
+            updatingDetrendDisplay = true;
+            try
+            {
+                numericOffset.Value = ClampToControl(numericOffset, displayed);
+            }
+            finally
+            {
+                updatingDetrendDisplay = false;
+            }
+        }
+
+        private bool TryResolveAutoDetrend(out double resolved)
+        {
+            resolved = 0.0;
+            try
+            {
+                if (Measurement is not { } measurement ||
+                    measurement.TransferImpulseResponse is not { Length: > 0 })
+                {
+                    return false;
+                }
+                IImpulseMeasurement impulse =
+                    new MeasurementPlotContext(measurement).CreatePrimaryMeasurement();
+                PhaseAnalysisSettings settings = CreateCurrentPhaseAnalysisSettings(
+                    PhaseDetrendMode.Auto);
+                resolved = DataHelper.ResolvePhaseDetrendMilliseconds(impulse, settings);
+                return double.IsFinite(resolved);
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+        }
+
+        private PhaseAnalysisSettings CreateCurrentPhaseAnalysisSettings(
+            PhaseDetrendMode detrendMode) => new(
+                comboWindowMode.SelectedIndex == 0
+                    ? PhaseWindowMode.Fixed
+                    : PhaseWindowMode.FrequencyDependent,
+                comboFdwCycles.SelectedItem is int cycles
+                    ? cycles
+                    : PhaseAnalysisSettings.DefaultFdwCycles,
+                detrendMode,
+                manualDetrendMilliseconds,
+                (double)numericGateOffset.Value,
+                (double)numericLeftWindow.Value,
+                (double)numericWindow.Value,
+                (double)numericRightWindow.Value,
+                checkBoxUnwrap.Checked,
+                comboSmoothingInverseOctaves.SelectedItem is int smoothing
+                    ? smoothing
+                    : FrequencyResponseOptions.DefaultPhaseSmoothingInverseOctaves);
+
+        internal (double SlopeMilliseconds, double PeakMilliseconds)
+            EstimateCurrentPhaseDetrend(IImpulseMeasurement impulse) =>
+                DataHelper.EstimatePhaseDetrend(
+                    impulse,
+                    CreateCurrentPhaseAnalysisSettings(PhaseDetrendMode.Auto));
 
         // Points each field's "R" reset button at the built-in default values.
         private void ConfigureResetDefaults()
@@ -99,15 +246,11 @@ namespace Resonalyze.Options
             {
                 IImpulseMeasurement impulse =
                     new MeasurementPlotContext(measurement).CreatePrimaryMeasurement();
-                (double slopeMs, double peakMs) = DataHelper.EstimatePhaseDetrend(
-                    impulse,
-                    (double)numericGateOffset.Value,
-                    (double)numericLeftWindow.Value,
-                    (double)numericWindow.Value,
-                    (double)numericRightWindow.Value);
+                (double slopeMs, double peakMs) = EstimateCurrentPhaseDetrend(impulse);
                 numericOffset.Value = ClampToControl(
                     numericOffset,
                     useSlope ? slopeMs : peakMs);
+                manualDetrendMilliseconds = (double)numericOffset.Value;
             }
             catch (InvalidOperationException)
             {
@@ -158,6 +301,11 @@ namespace Resonalyze.Options
 
         protected override void RenderIrPreview()
         {
+            if (comboDetrendMode.SelectedIndex == (int)PhaseDetrendMode.Auto)
+            {
+                UpdateDetrendDisplay();
+            }
+
             if (Measurement == null || Measurement.SampleRate <= 0)
             {
                 return;
@@ -196,7 +344,7 @@ namespace Resonalyze.Options
                 "Applies octave smoothing to the phase traces.");
             numericOffset.ApplyToolTip(
                 toolTip,
-                "τ: linear-phase reference (delay) in milliseconds, removed to make the excess phase readable. Enter the same τ on two measurements to compare their relative phase.");
+                "τ: linear-phase reference in milliseconds. Auto shows the resolved read-only value here; Manual restores and edits the saved user value; Off shows zero.");
             toolTip.SetToolTip(
                 buttonTauSlope,
                 "Auto-find τ from the energy-weighted average group delay (flattens the excess-phase trend).");
@@ -223,7 +371,16 @@ namespace Resonalyze.Options
                 "Lowest frequency the current gate can resolve (≈ 1 / gate length). Below it the curve is not reliable.");
             toolTip.SetToolTip(
                 irPlotView,
-                "Preview of the impulse response and the gate window used for phase calculation.");
+                "Preview of the impulse response and the gate window used for phase calculation. FDW phase uses shorter high-frequency windows; Group Delay remains fixed-gate and is not its exact integral.");
+            toolTip.SetToolTip(
+                comboWindowMode,
+                "Fixed uses one time gate for the entire spectrum. FDW shortens the analysis window as frequency rises to suppress late cabin reflections.");
+            toolTip.SetToolTip(
+                comboFdwCycles,
+                "Periods retained by FDW: 4 suppresses reflections most, 6 is recommended, and 8 retains more reflected detail.");
+            toolTip.SetToolTip(
+                comboDetrendMode,
+                "Removes a constant delay before unwrapping. Auto flattens excess phase, Manual uses the entered delay, and Off keeps the absolute phase slope.");
         }
     }
 }

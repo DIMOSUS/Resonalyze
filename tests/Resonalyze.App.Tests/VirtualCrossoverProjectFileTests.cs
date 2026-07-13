@@ -19,7 +19,10 @@ public sealed class VirtualCrossoverProjectFileTests
                 PhaseGateLeftMs = 0.25,
                 PhaseGatePlateauMs = 6.5,
                 PhaseGateRightMs = 2.0,
-                PhaseDetrendMs = 13.07
+                PhaseDetrendMs = 13.07,
+                PhaseWindowMode = PhaseWindowMode.FrequencyDependent,
+                PhaseFdwCycles = 8,
+                PhaseDetrendMode = PhaseDetrendMode.Manual
             };
             original.StereoSceneOffsetMs = -0.4;
             original.ActiveSideRight = true;
@@ -56,6 +59,9 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.Equal(original.PhaseGatePlateauMs, loaded.PhaseGatePlateauMs);
             Assert.Equal(original.PhaseGateRightMs, loaded.PhaseGateRightMs);
             Assert.Equal(original.PhaseDetrendMs, loaded.PhaseDetrendMs);
+            Assert.Equal(original.PhaseWindowMode, loaded.PhaseWindowMode);
+            Assert.Equal(original.PhaseFdwCycles, loaded.PhaseFdwCycles);
+            Assert.Equal(original.PhaseDetrendMode, loaded.PhaseDetrendMode);
             Assert.Equal(original.StereoSceneOffsetMs, loaded.StereoSceneOffsetMs);
             Assert.Equal(original.ActiveSideRight, loaded.ActiveSideRight);
             Assert.Equal(original.Pairs.Count, loaded.Pairs.Count);

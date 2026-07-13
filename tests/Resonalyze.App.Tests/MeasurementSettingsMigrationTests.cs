@@ -54,7 +54,7 @@ public sealed class MeasurementSettingsMigrationTests
     [Fact]
     public void WasapiEndpointIdsAndBufferAreCapturedWithoutOpeningHardware()
     {
-        using var measurement = new ExpSweepMeasurement();
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.Init(
             12,
             48_000,
@@ -84,7 +84,7 @@ public sealed class MeasurementSettingsMigrationTests
     [Fact]
     public void WasapiChannelOffsetsAreNotLimitedToStereo()
     {
-        using var measurement = new ExpSweepMeasurement();
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.Init(
             12,
             48_000,

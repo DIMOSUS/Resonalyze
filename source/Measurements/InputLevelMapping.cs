@@ -8,6 +8,15 @@ namespace Resonalyze;
 /// </summary>
 internal static class InputLevelMapping
 {
+    /// <summary>Maps the audio layer's role-resolved live levels onto the meter snapshot.</summary>
+    public static InputLevelMeterSnapshot Map(AudioInputLevels levels)
+    {
+        ArgumentNullException.ThrowIfNull(levels);
+        return new InputLevelMeterSnapshot(
+            CreateEntry(levels.Microphone, fullScaleReference: false),
+            CreateEntry(levels.Loopback, fullScaleReference: true));
+    }
+
     public static InputLevelMeterSnapshot Map(
         AudioChannelLevel[] channels,
         int microphoneIndex,

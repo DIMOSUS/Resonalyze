@@ -1,19 +1,21 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
-using NAudio.CoreAudioApi;
-using NAudio.Wave;
 using Resonalyze.Dsp;
 using static System.Math;
 
 namespace Resonalyze
 {
     /// <summary>
-    /// Coordinates sweep playback, recording, and FFT-based deconvolution.
+    /// Coordinates sweep playback, recording, and FFT-based deconvolution. The
+    /// backend lifecycle (device open/close, format negotiation, thread and
+    /// event handling, alignment retries) lives entirely behind
+    /// <see cref="IAudioSessionFactory"/>; this class owns only the measurement
+    /// policy — run acceptance, averaging, deconvolution and the transfer
+    /// function.
     /// </summary>
     public sealed class ExpSweepMeasurement : IDisposable
     {
+        private readonly IAudioSessionFactory audioSessionFactory;
         private readonly object stateSync = new();
-        private SoundRecorder? soundRecorder;
         private CancellationTokenSource? cancellationTokenSource;
         private Task<bool>? measurementTask;
         private TaskCompletionSource<bool>? averageConfirmation;
@@ -33,6 +35,12 @@ namespace Resonalyze
         public event Action? ImpulseResponseChanged;
         public event Action<SweepAverageProgress>? AverageProgressChanged;
         internal event Action<InputLevelMeterSnapshot>? LevelsAvailable;
+
+        public ExpSweepMeasurement(IAudioSessionFactory audioSessionFactory)
+        {
+            this.audioSessionFactory = audioSessionFactory ??
+                throw new ArgumentNullException(nameof(audioSessionFactory));
+        }
 
         public ExponentialSineSweep? Sweep { get; private set; }
         public MeasurementImpulseResponse? SweepDeconvolution => sweepDeconvolutionResult;
@@ -74,7 +82,6 @@ namespace Resonalyze
         // a measurement ran (or when the result was restored from a file).
         internal SweepRunQualityReport? QualityReport { get; private set; }
         public Exception? LastError { get; private set; }
-        public int RecordedSamples => soundRecorder?.ReadSamples ?? 0;
         public bool WaitingForAverageConfirmation => waitingForAverageConfirmation;
         internal InputLevelMeterSnapshot CurrentLevels
         {
@@ -160,30 +167,6 @@ namespace Resonalyze
             Sweep?.Dispose();
             Sweep = new ExponentialSineSweep();
             Sweep.FillData(octaves, requestedDuration, bits, sampleRate);
-
-            DisposeRecorders();
-
-            soundRecorder = new SoundRecorder();
-            int recorderChannelCount = audioBackend == AudioBackend.Wave
-                ? GetRequiredWaveInputChannelCount()
-                : 1;
-            soundRecorder.Init(
-                sampleRate,
-                bits,
-                recorderChannelCount,
-                inputDeviceNumber,
-                expectedSamples: Sweep.SweepSamples + sampleRate * 2);
-            soundRecorder.LevelsAvailable += HandleWaveLevelsAvailable;
-        }
-
-        private void DisposeRecorders()
-        {
-            if (soundRecorder != null)
-            {
-                soundRecorder.LevelsAvailable -= HandleWaveLevelsAvailable;
-                soundRecorder.Dispose();
-                soundRecorder = null;
-            }
         }
 
         public Task<bool> RunAsync()
@@ -195,7 +178,7 @@ namespace Resonalyze
                 {
                     return measurementTask;
                 }
-                if (Sweep == null || soundRecorder == null)
+                if (Sweep == null)
                 {
                     throw new InvalidOperationException("Measurement is not initialized.");
                 }
@@ -354,41 +337,32 @@ namespace Resonalyze
             RaiseLevels(snapshot);
         }
 
-        private void HandleWaveLevelsAvailable(AudioChannelLevel[] channels)
-        {
-            RaiseLevels(MapWaveLevels(channels));
-        }
-
         private async Task<bool> RunCoreAsync(CancellationToken cancellationToken)
         {
             ExponentialSineSweep sweep = Sweep!;
-            SoundRecorder recorder = soundRecorder!;
             bool success = false;
-            AsioSweepCapture? asioCapture = null;
-            WasapiSweepCapture? wasapiCapture = null;
-
-            async Task<CapturedSweepSamples> CaptureOneAsync()
-            {
-                if (AudioBackend == AudioBackend.Asio)
-                {
-                    asioCapture ??= new AsioSweepCapture(this, sweep);
-                    return await asioCapture.CaptureRunAsync(cancellationToken)
-                        .ConfigureAwait(false);
-                }
-
-                if (IsWasapiBackend(AudioBackend))
-                {
-                    wasapiCapture ??= new WasapiSweepCapture(this, sweep);
-                    return await wasapiCapture.CaptureRunAsync(cancellationToken)
-                        .ConfigureAwait(false);
-                }
-
-                return await CaptureWaveAsync(sweep, recorder, cancellationToken)
-                    .ConfigureAwait(false);
-            }
+            IAudioDuplexSession? session = null;
 
             try
             {
+                AudioSessionRequest request = BuildSessionRequest(sweep);
+                AudioPlaybackSignal signal = BuildPlaybackSignal(sweep);
+                session = await audioSessionFactory
+                    .OpenDuplexAsync(request, cancellationToken).ConfigureAwait(false);
+                session.InputLevelsAvailable += HandleSessionLevels;
+
+                async Task<AudioCaptureResult> CaptureOneAsync()
+                {
+                    AudioCaptureResult result = await session
+                        .PlayAndCaptureAsync(signal, SampleRate, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (result.Diagnostics != null)
+                    {
+                        LastAudioSessionDiagnostics = result.Diagnostics;
+                    }
+                    return result;
+                }
+
                 var accumulator = new SweepAverageAccumulator();
                 var rejections = new List<SweepRunRejection>();
                 int requestedRuns = AverageRunCount;
@@ -399,8 +373,7 @@ namespace Resonalyze
                         requestedRuns,
                         accumulator.AcceptedRuns,
                         SweepAverageProgressState.Running));
-                    CapturedSweepSamples? captured =
-                        await CaptureOneAsync().ConfigureAwait(false);
+                    AudioCaptureResult? captured = await CaptureOneAsync().ConfigureAwait(false);
                     IReadOnlyList<string> issues = AssessRunQuality(captured, sweep);
                     if (issues.Count > 0)
                     {
@@ -463,19 +436,15 @@ namespace Resonalyze
             {
                 try
                 {
-                    if (asioCapture != null)
+                    if (session != null)
                     {
-                        await asioCapture.DisposeAsync().ConfigureAwait(false);
+                        session.InputLevelsAvailable -= HandleSessionLevels;
+                        await session.DisposeAsync().ConfigureAwait(false);
                     }
-                    if (wasapiCapture != null)
-                    {
-                        await wasapiCapture.DisposeAsync().ConfigureAwait(false);
-                    }
-                    await recorder.StopRecordingAsync().ConfigureAwait(false);
                 }
                 catch (Exception exception)
                 {
-                    // A device stop failure must not demote results that were
+                    // A device teardown failure must not demote results that were
                     // already published: ApplyAverageResult has run and raised
                     // ImpulseResponseChanged, so the captured data is complete
                     // regardless of how the device teardown went.
@@ -536,381 +505,44 @@ namespace Resonalyze
             }
         }
 
-        private async Task<CapturedSweepSamples> CaptureWaveAsync(
-            ExponentialSineSweep sweep,
-            SoundRecorder recorder,
-            CancellationToken cancellationToken)
+        private AudioSessionRequest BuildSessionRequest(ExponentialSineSweep sweep) =>
+            AudioSessionRequestBuilder.Build(
+                AudioBackend,
+                SampleRate,
+                Bits,
+                PlaybackChannel,
+                WaveInputChannelOffset,
+                WaveLoopbackInputChannelOffset,
+                AsioInputChannelOffset,
+                AsioLoopbackInputChannelOffset,
+                AsioOutputChannelOffset,
+                OutputDeviceNumber,
+                InputDeviceNumber,
+                WasapiCaptureEndpointId,
+                WasapiRenderEndpointId,
+                AsioDriverName,
+                WasapiBufferMilliseconds,
+                expectedCaptureSamples: sweep.SweepSamples + SampleRate * 2);
+
+        private AudioPlaybackSignal BuildPlaybackSignal(ExponentialSineSweep sweep) =>
+            new(sweep.SweepData, SampleRate, Bits, PlaybackChannel, Loop: false);
+
+        private void HandleSessionLevels(AudioInputLevels levels)
         {
-            using var player = new WaveOutEvent
-            {
-                DeviceNumber = OutputDeviceNumber
-            };
-            await recorder.StartRecordingAsync(cancellationToken).ConfigureAwait(false);
-            int recordingStart = recorder.ReadSamples;
-
-            RawSourceWaveStream stream = sweep.GetStream(PlaybackChannel);
-            stream.Position = 0;
-            player.Init(stream);
-            await PlayToEndAsync(player, cancellationToken).ConfigureAwait(false);
-            stream.Position = 0;
-
-            int requiredSamples = recordingStart + sweep.SweepSamples + SampleRate;
-            await recorder.WaitForSamplesAsync(requiredSamples, cancellationToken).ConfigureAwait(false);
-            await recorder.StopRecordingAsync().ConfigureAwait(false);
-
-            int microphoneIndex = WaveInputChannelOffset;
-            int? loopbackIndex = WaveLoopbackInputChannelOffset;
-            return new CapturedSweepSamples(
-                recorder.GetSamplesSnapshot(),
-                microphoneIndex,
-                loopbackIndex,
-                ValidateSharedDeviceStereo: true);
+            InputLevelMeterSnapshot snapshot = InputLevelMapping.Map(levels);
+            CurrentLevels = snapshot;
+            RaiseLevels(snapshot);
         }
 
-        private sealed class WasapiSweepCapture : IAsyncDisposable
-        {
-            private readonly ExpSweepMeasurement owner;
-            private readonly ExponentialSineSweep sweep;
-            private readonly WasapiCaptureDevice captureDevice;
-            private readonly WasapiPlaybackDevice playbackDevice;
-            private readonly PcmCaptureSession captureSession;
-            private readonly SweepRunAudioOrchestrator orchestrator;
-            private int runNumber;
-
-            public WasapiSweepCapture(ExpSweepMeasurement owner, ExponentialSineSweep sweep)
-            {
-                this.owner = owner;
-                this.sweep = sweep;
-                string captureEndpointId = owner.WasapiCaptureEndpointId ??
-                    throw new InvalidOperationException("Select a WASAPI capture endpoint.");
-                string renderEndpointId = owner.WasapiRenderEndpointId ??
-                    throw new InvalidOperationException("Select a WASAPI render endpoint.");
-                AudioClientShareMode shareMode = owner.AudioBackend == AudioBackend.WasapiExclusive
-                    ? AudioClientShareMode.Exclusive
-                    : AudioClientShareMode.Shared;
-                int requiredChannels = owner.GetRequiredWaveInputChannelCount();
-                int renderChannels = owner.PlaybackChannel == PlaybackChannel.Mono ? 1 : 2;
-                WaveFormat? captureFormat = null;
-                WaveFormat? renderFormat = null;
-                if (shareMode == AudioClientShareMode.Exclusive)
-                {
-                    DuplexFormatSupport support = WasapiFormatSupport.CheckExclusive(
-                        captureEndpointId,
-                        renderEndpointId,
-                        owner.SampleRate,
-                        owner.Bits,
-                        requiredChannels,
-                        renderChannels);
-                    if (!support.Supported)
-                    {
-                        throw new InvalidOperationException(
-                            $"WASAPI Exclusive format {owner.SampleRate} Hz / {owner.Bits}-bit " +
-                            $"is not supported by both endpoints (capture: " +
-                            $"{support.CaptureSupported}, render: {support.RenderSupported}).");
-                    }
-                    captureFormat = WasapiFormatSupport.CreateDeviceFormat(
-                        owner.SampleRate,
-                        owner.Bits,
-                        requiredChannels);
-                    renderFormat = WasapiFormatSupport.CreateDeviceFormat(
-                        owner.SampleRate,
-                        owner.Bits,
-                        renderChannels);
-                }
-                WasapiCaptureDevice? createdCapture = null;
-                WasapiPlaybackDevice? createdPlayback = null;
-                PcmCaptureSession? createdSession = null;
-                try
-                {
-                    createdCapture = new WasapiCaptureDevice(
-                        captureEndpointId,
-                        owner.WasapiBufferMilliseconds,
-                        shareMode,
-                        captureFormat);
-                    createdPlayback = new WasapiPlaybackDevice(
-                        renderEndpointId,
-                        owner.WasapiBufferMilliseconds,
-                        shareMode,
-                        renderFormat);
-                    ValidateDevices(createdCapture, createdPlayback, shareMode, requiredChannels);
-                    createdSession = new PcmCaptureSession(
-                        createdCapture,
-                        expectedSamples: sweep.SweepSamples + owner.SampleRate * 2);
-                    createdSession.LevelsAvailable += channels => owner.RaiseLevels(
-                        owner.MapWaveLevels(channels));
-
-                    captureDevice = createdCapture;
-                    playbackDevice = createdPlayback;
-                    captureSession = createdSession;
-                    orchestrator = new SweepRunAudioOrchestrator(
-                        captureSession,
-                        playbackDevice);
-                }
-                catch
-                {
-                    DisposeFailedConstruction(createdPlayback);
-                    if (createdSession != null)
-                    {
-                        DisposeFailedConstruction(createdSession);
-                    }
-                    else
-                    {
-                        DisposeFailedConstruction(createdCapture);
-                    }
-                    throw;
-                }
-            }
-
-            private static void DisposeFailedConstruction(IAsyncDisposable? resource)
-            {
-                try
-                {
-                    resource?.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                }
-                catch
-                {
-                }
-            }
-
-            private void ValidateDevices(
-                WasapiCaptureDevice createdCapture,
-                WasapiPlaybackDevice createdPlayback,
-                AudioClientShareMode shareMode,
-                int requiredChannels)
-            {
-                if (shareMode == AudioClientShareMode.Shared &&
-                    createdCapture.CaptureFormat.SampleRate !=
-                    createdPlayback.PlaybackFormat.SampleRate)
-                {
-                    throw new InvalidOperationException(
-                        "WASAPI Shared capture and render endpoints must use the same mix sample rate. " +
-                        $"Capture is {createdCapture.CaptureFormat.SampleRate} Hz and render is " +
-                        $"{createdPlayback.PlaybackFormat.SampleRate} Hz.");
-                }
-                if (shareMode == AudioClientShareMode.Shared &&
-                    owner.SampleRate != createdCapture.CaptureFormat.SampleRate)
-                {
-                    throw new InvalidOperationException(
-                        $"WASAPI Shared uses the endpoint mix rate " +
-                        $"({createdCapture.CaptureFormat.SampleRate} Hz). Update the measurement " +
-                        $"sample rate from {owner.SampleRate} Hz.");
-                }
-                if (createdCapture.ChannelCount < requiredChannels)
-                {
-                    throw new InvalidOperationException(
-                        $"The WASAPI capture endpoint exposes {createdCapture.ChannelCount} channel(s), " +
-                        $"but the selected microphone and loopback routing requires {requiredChannels}.");
-                }
-            }
-
-            public async Task<CapturedSweepSamples> CaptureRunAsync(
-                CancellationToken cancellationToken)
-            {
-                int currentRun = ++runNumber;
-                string stage = "starting capture";
-                long discontinuitiesBefore = captureDevice.Discontinuities;
-                long timestampErrorsBefore = captureDevice.TimestampErrors;
-                long renderUnderrunsBefore = playbackDevice.RenderUnderruns;
-                try
-                {
-                    RawSourceWaveStream stream = sweep.GetStream(owner.PlaybackChannel);
-                    stream.Position = 0;
-                    stage = "running playback and capturing the tail";
-                    float[][] samples = await orchestrator.CaptureAsync(
-                        stream,
-                        sweep.SweepSamples,
-                        owner.SampleRate,
-                        cancellationToken).ConfigureAwait(false);
-                    owner.LastAudioSessionDiagnostics = new AudioSessionDiagnostics(
-                        owner.AudioBackend.ToString(),
-                        captureDevice.EndpointId,
-                        playbackDevice.EndpointId,
-                        captureDevice.CaptureFormat,
-                        playbackDevice.PlaybackFormat,
-                        owner.WasapiBufferMilliseconds,
-                        playbackDevice.ActualBufferFrames,
-                        captureDevice.CapturePackets,
-                        playbackDevice.RenderCallbacks,
-                        captureDevice.Discontinuities,
-                        captureDevice.SilentPackets,
-                        captureDevice.TimestampErrors,
-                        0,
-                        playbackDevice.RenderUnderruns);
-                    return new CapturedSweepSamples(
-                        samples,
-                        owner.WaveInputChannelOffset,
-                        owner.WaveLoopbackInputChannelOffset,
-                        ValidateSharedDeviceStereo: true,
-                        CaptureDiscontinuity:
-                            captureDevice.Discontinuities > discontinuitiesBefore,
-                        CaptureTimestampError:
-                            captureDevice.TimestampErrors > timestampErrorsBefore,
-                        RenderUnderrun:
-                            playbackDevice.RenderUnderruns > renderUnderrunsBefore);
-                }
-                catch (Exception exception) when (exception is not OperationCanceledException)
-                {
-                    throw new InvalidOperationException(
-                        $"{owner.AudioBackend} sweep run {currentRun} failed while {stage}.",
-                        exception);
-                }
-            }
-
-            public async ValueTask DisposeAsync()
-            {
-                try
-                {
-                    await playbackDevice.DisposeAsync().ConfigureAwait(false);
-                }
-                finally
-                {
-                    await captureSession.DisposeAsync().ConfigureAwait(false);
-                }
-            }
-        }
-
-        // Owns the ASIO session for a whole measurement. The driver is opened
-        // once and kept running across the averaging runs (re-initializing it
-        // per run costs seconds on slow drivers); each run restarts only the
-        // capture accumulator and rewinds the sweep stream.
-        private sealed class AsioSweepCapture : IAsyncDisposable
-        {
-            private readonly ExpSweepMeasurement owner;
-            private readonly ExponentialSineSweep sweep;
-            private readonly AsioFullDuplexSession session;
-            private readonly FloatArrayWaveStream stream;
-            private readonly int firstInputOffset;
-            private bool started;
-
-            public AsioSweepCapture(ExpSweepMeasurement owner, ExponentialSineSweep sweep)
-            {
-                this.owner = owner;
-                this.sweep = sweep;
-                firstInputOffset = owner.GetAsioCaptureFirstInputOffset();
-                session = new AsioFullDuplexSession(
-                    owner.AsioDriverName ?? string.Empty,
-                    firstInputOffset,
-                    owner.AsioOutputChannelOffset,
-                    owner.GetRequiredAsioInputChannelCount(firstInputOffset));
-                session.LevelsAvailable += channels => owner.RaiseLevels(
-                    InputLevelMapping.Map(
-                        channels,
-                        owner.AsioInputChannelOffset - firstInputOffset,
-                        owner.AsioLoopbackInputChannelOffset.HasValue
-                            ? owner.AsioLoopbackInputChannelOffset.Value - firstInputOffset
-                            : null));
-                stream = FloatArrayWaveStream.FromMonoSamples(
-                    sweep.SweepData,
-                    owner.SampleRate,
-                    owner.PlaybackChannel);
-            }
-
-            public async Task<CapturedSweepSamples> CaptureRunAsync(
-                CancellationToken cancellationToken)
-            {
-                int expectedTotalSamples = sweep.SweepSamples + owner.SampleRate * 2;
-                if (!started)
-                {
-                    stream.Position = 0;
-                    await session.StartAsync(
-                        stream,
-                        owner.SampleRate,
-                        autoStop: false,
-                        cancellationToken,
-                        expectedTotalSamples)
-                        .ConfigureAwait(false);
-                    started = true;
-                }
-                else
-                {
-                    // The stream has run out (the driver is playing silence);
-                    // a fresh accumulator starts this run's capture and the
-                    // rewind replays the sweep. Reset first so the capture is
-                    // guaranteed to contain the sweep from its first sample.
-                    session.ResetCapture(expectedTotalSamples);
-                    stream.Position = 0;
-                }
-
-                int requiredSamples =
-                    session.ReadSamples + sweep.SweepSamples + owner.SampleRate;
-                await session.WaitForSamplesAsync(requiredSamples, cancellationToken)
-                    .ConfigureAwait(false);
-
-                float[][] samples = session.GetSamplesSnapshot();
-                // Between runs the driver keeps playing silence; pausing the
-                // capture keeps a minutes-long confirmation wait from growing
-                // the buffer while the level meter stays live.
-                session.PauseCapture();
-
-                int microphoneIndex = owner.AsioInputChannelOffset - firstInputOffset;
-                int? loopbackIndex = owner.AsioLoopbackInputChannelOffset.HasValue
-                    ? owner.AsioLoopbackInputChannelOffset.Value - firstInputOffset
-                    : null;
-                return new CapturedSweepSamples(
-                    samples,
-                    microphoneIndex,
-                    loopbackIndex,
-                    ValidateSharedDeviceStereo: false);
-            }
-
-            public async ValueTask DisposeAsync()
-            {
-                try
-                {
-                    await session.StopAsync().ConfigureAwait(false);
-                }
-                finally
-                {
-                    session.Dispose();
-                    stream.Dispose();
-                }
-            }
-        }
-
-        private static async Task PlayToEndAsync(WaveOutEvent player, CancellationToken cancellationToken)
-        {
-            var stopped = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-            void PlaybackStopped(object? sender, StoppedEventArgs args)
-            {
-                if (args.Exception != null)
-                {
-                    stopped.TrySetException(args.Exception);
-                }
-                else
-                {
-                    stopped.TrySetResult(true);
-                }
-            }
-
-            player.PlaybackStopped += PlaybackStopped;
-            using CancellationTokenRegistration registration =
-                cancellationToken.Register(() =>
-                {
-                    player.Stop();
-                    stopped.TrySetCanceled(cancellationToken);
-                });
-
-            try
-            {
-                player.Play();
-                await stopped.Task.ConfigureAwait(false);
-            }
-            finally
-            {
-                player.PlaybackStopped -= PlaybackStopped;
-            }
-        }
-
-        private static IReadOnlyList<string> AssessRunQuality(
-            CapturedSweepSamples captured,
+        private IReadOnlyList<string> AssessRunQuality(
+            AudioCaptureResult captured,
             ExponentialSineSweep sweep)
         {
-            float[][] channels = captured.SampleChannels;
-            float[] microphone = (uint)captured.MicrophoneIndex < (uint)channels.Length
-                ? channels[captured.MicrophoneIndex]
+            float[][] channels = captured.Channels;
+            float[] microphone = (uint)captured.MicrophoneChannel < (uint)channels.Length
+                ? channels[captured.MicrophoneChannel]
                 : Array.Empty<float>();
-            float[]? loopback = captured.LoopbackIndex is int loopbackIndex &&
+            float[]? loopback = captured.LoopbackChannel is int loopbackIndex &&
                 (uint)loopbackIndex < (uint)channels.Length
                     ? channels[loopbackIndex]
                     : null;
@@ -918,15 +550,15 @@ namespace Resonalyze
                 microphone,
                 loopback,
                 sweep.SweepSamples).ToList();
-            if (captured.CaptureDiscontinuity)
+            if (captured.Anomalies.HasFlag(AudioCaptureAnomalies.CaptureDiscontinuity))
             {
                 issues.Add("WASAPI reported a capture packet discontinuity.");
             }
-            if (captured.CaptureTimestampError)
+            if (captured.Anomalies.HasFlag(AudioCaptureAnomalies.CaptureTimestampError))
             {
                 issues.Add("WASAPI reported an invalid capture timestamp.");
             }
-            if (captured.RenderUnderrun)
+            if (captured.Anomalies.HasFlag(AudioCaptureAnomalies.RenderUnderrun))
             {
                 issues.Add("WASAPI reported a render buffer underrun.");
             }
@@ -934,25 +566,25 @@ namespace Resonalyze
         }
 
         private SweepRunAnalysis AnalyzeCapturedRun(
-            CapturedSweepSamples captured,
+            AudioCaptureResult captured,
             ExponentialSineSweep sweep,
             bool raiseIntermediateLevels = true)
         {
-            float[][] sampleChannels = captured.SampleChannels;
-            if (captured.ValidateSharedDeviceStereo &&
-                captured.LoopbackIndex is int validationLoopbackIndex)
+            float[][] sampleChannels = captured.Channels;
+            if (captured.StereoSeparationExpected &&
+                captured.LoopbackChannel is int validationLoopbackIndex)
             {
                 RecordedChannelValidator.EnsureDifferentSignals(
                     sampleChannels,
-                    captured.MicrophoneIndex,
+                    captured.MicrophoneChannel,
                     validationLoopbackIndex,
                     IsWasapiBackend(AudioBackend)
                         ? "WASAPI measurement"
                         : "Wave measurement");
             }
 
-            float[] recorded = (uint)captured.MicrophoneIndex < (uint)sampleChannels.Length
-                ? sampleChannels[captured.MicrophoneIndex]
+            float[] recorded = (uint)captured.MicrophoneChannel < (uint)sampleChannels.Length
+                ? sampleChannels[captured.MicrophoneChannel]
                 : Array.Empty<float>();
             if (recorded.Length == 0)
             {
@@ -970,8 +602,8 @@ namespace Resonalyze
             TransferFunctionFrame? transferFrame = null;
             if (TryBuildTransferFrame(
                 sampleChannels,
-                captured.MicrophoneIndex,
-                captured.LoopbackIndex,
+                captured.MicrophoneChannel,
+                captured.LoopbackChannel,
                 out TransferFunctionFrame frame))
             {
                 transferFrame = frame;
@@ -979,8 +611,8 @@ namespace Resonalyze
 
             InputLevelMeterSnapshot finalLevels = CreateFinalLevelSnapshot(
                 sampleChannels,
-                captured.MicrophoneIndex,
-                captured.LoopbackIndex);
+                captured.MicrophoneChannel,
+                captured.LoopbackChannel);
             if (raiseIntermediateLevels)
             {
                 CurrentLevels = finalLevels;
@@ -992,8 +624,8 @@ namespace Resonalyze
                 sweepResult.PeakIndex,
                 transferFrame,
                 sampleChannels,
-                captured.MicrophoneIndex,
-                captured.LoopbackIndex,
+                captured.MicrophoneChannel,
+                captured.LoopbackChannel,
                 finalLevels);
         }
 
@@ -1054,51 +686,14 @@ namespace Resonalyze
             int microphoneIndex,
             int? loopbackIndex)
         {
-            AudioChannelLevel[] measuredLevels = MeasureRecordedChannels(sampleChannels);
+            AudioChannelLevel[] measuredLevels = RecordedLevelMetering.MeasureChannels(sampleChannels);
             return InputLevelMapping.Map(measuredLevels, microphoneIndex, loopbackIndex);
-        }
-
-        private InputLevelMeterSnapshot MapWaveLevels(AudioChannelLevel[] channels)
-        {
-            return InputLevelMapping.Map(
-                channels,
-                WaveInputChannelOffset,
-                WaveLoopbackInputChannelOffset);
         }
 
         private void RaiseLevels(InputLevelMeterSnapshot snapshot)
         {
             LevelsAvailable?.Invoke(snapshot);
         }
-
-        private static AudioChannelLevel[] MeasureRecordedChannels(float[][] sampleChannels)
-        {
-            var levels = new AudioChannelLevel[sampleChannels.Length];
-            for (int channel = 0; channel < sampleChannels.Length; channel++)
-            {
-                levels[channel] = MeasureRecordedChannel(sampleChannels[channel]);
-            }
-
-            return levels;
-        }
-
-        private static AudioChannelLevel MeasureRecordedChannel(float[] samples) =>
-            AudioLevelMetering.MeasureSamples(samples);
-
-        private int GetRequiredWaveInputChannelCount() =>
-            CaptureChannelLayout.RequiredWaveInputChannelCount(
-                WaveInputChannelOffset,
-                WaveLoopbackInputChannelOffset);
-
-        private int GetAsioCaptureFirstInputOffset() =>
-            CaptureChannelLayout.AsioFirstInputOffset(
-                AsioInputChannelOffset,
-                AsioLoopbackInputChannelOffset);
-
-        private int GetRequiredAsioInputChannelCount(int firstInputOffset) =>
-            CaptureChannelLayout.AsioInputChannelCount(
-                AsioInputChannelOffset,
-                AsioLoopbackInputChannelOffset);
 
         private static int FindPeakIndex(IReadOnlyList<Complex> samples)
         {
@@ -1116,15 +711,6 @@ namespace Resonalyze
 
             return peakIndex;
         }
-
-        private sealed record CapturedSweepSamples(
-            float[][] SampleChannels,
-            int MicrophoneIndex,
-            int? LoopbackIndex,
-            bool ValidateSharedDeviceStereo,
-            bool CaptureDiscontinuity = false,
-            bool CaptureTimestampError = false,
-            bool RenderUnderrun = false);
 
         private sealed record SweepRunAnalysis(
             Complex[] SweepImpulseResponse,
@@ -1272,7 +858,7 @@ namespace Resonalyze
                     return InputLevelMeterEntry.Unavailable;
                 }
 
-                AudioChannelLevel level = AudioLevelMetering.Measure(peak, sumSquares, sampleCount);
+                AudioChannelLevel level = RecordedLevelMetering.Measure(peak, sumSquares, sampleCount);
                 return new InputLevelMeterEntry(
                     true,
                     level.PeakDbFs,
@@ -1320,7 +906,6 @@ namespace Resonalyze
             {
             }
             cancellationTokenSource?.Dispose();
-            DisposeRecorders();
             Sweep?.Dispose();
             GC.SuppressFinalize(this);
         }

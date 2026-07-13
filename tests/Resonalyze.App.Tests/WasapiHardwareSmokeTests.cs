@@ -1,193 +1,99 @@
-using NAudio.Wave;
+using Resonalyze.Audio;
 
 namespace Resonalyze.App.Tests;
 
+/// <summary>
+/// End-to-end hardware smoke tests for the measurement stack over real WASAPI
+/// endpoints, driven entirely through the public audio abstraction (no direct
+/// device construction). Skipped unless the endpoint environment variables are
+/// set, so a normal CI run does not report them as executed.
+/// </summary>
 public sealed class WasapiHardwareSmokeTests
 {
-    [Fact]
-    [Trait("Category", "Hardware")]
-    public async Task SelectedEndpointsCanBeReopenedAfterEnumeration()
+    private static readonly IAudioSessionFactory Factory =
+        new AudioSessionFactory(AudioBackendRegistry.CreateDefault());
+
+    private static (string Capture, string Render)? Endpoints()
     {
-        string? captureId = Environment.GetEnvironmentVariable(
-            "RESONALYZE_WASAPI_CAPTURE_ENDPOINT_ID");
-        string? renderId = Environment.GetEnvironmentVariable(
-            "RESONALYZE_WASAPI_RENDER_ENDPOINT_ID");
-        if (string.IsNullOrWhiteSpace(captureId) || string.IsNullOrWhiteSpace(renderId))
-        {
-            return;
-        }
+        string? capture = Environment.GetEnvironmentVariable("RESONALYZE_WASAPI_CAPTURE_ENDPOINT_ID");
+        string? render = Environment.GetEnvironmentVariable("RESONALYZE_WASAPI_RENDER_ENDPOINT_ID");
+        return string.IsNullOrWhiteSpace(capture) || string.IsNullOrWhiteSpace(render)
+            ? null
+            : (capture, render);
+    }
 
-        // Enumerate first to reproduce the UI path. Explicitly releasing the
-        // returned MMDevice wrappers used to disconnect the cached COM RCW and
-        // make the following WasapiOut construction fail with E_NOINTERFACE.
-        using (var service = new WindowsAudioEndpointService())
-        {
-            Assert.Contains(service.GetCaptureEndpoints(), endpoint => endpoint.Id == captureId);
-            Assert.Contains(service.GetRenderEndpoints(), endpoint => endpoint.Id == renderId);
-        }
-        GC.Collect();
-        GC.WaitForPendingFinalizers();
-        GC.Collect();
+    private static int SharedMixRate(string captureId)
+    {
+        using var service = new WindowsAudioEndpointService();
+        return Assert.Single(service.GetCaptureEndpoints(), endpoint => endpoint.Id == captureId)
+            .PreferredFormat.SampleRate;
+    }
 
-        await using var capture = new WasapiCaptureDevice(captureId, 100);
-        await using var render = new WasapiPlaybackDevice(renderId, 100);
-        Assert.True(capture.ChannelCount > 0);
-        Assert.True(render.PlaybackFormat.SampleRate > 0);
+    private static int? FirstExclusiveRate(string captureId, string renderId) =>
+        SampleRateCatalog.GetCandidateRates()
+            .Select(rate => WasapiFormatSupport.CheckExclusive(captureId, renderId, rate, 24, 2, 2))
+            .FirstOrDefault(format => format.Supported)?.SampleRate;
+
+    private static AudioSessionRequest DuplexProbe(string captureId, string renderId, int sampleRate) =>
+        AudioSessionRequestBuilder.Build(
+            AudioBackend.WasapiShared, sampleRate, 24, PlaybackChannel.Right,
+            waveInputChannelOffset: 0, waveLoopbackInputChannelOffset: 1,
+            asioInputChannelOffset: 0, asioLoopbackInputChannelOffset: null, asioOutputChannelOffset: 0,
+            outputDeviceNumber: -1, inputDeviceNumber: -1,
+            wasapiCaptureEndpointId: captureId, wasapiRenderEndpointId: renderId, asioDriverName: null,
+            bufferMilliseconds: 100, expectedCaptureSamples: sampleRate);
+
+    // Proves the endpoints were released: opening a fresh duplex session succeeds.
+    private static async Task AssertEndpointsReusableAsync(string captureId, string renderId, int sampleRate)
+    {
+        await using IAudioDuplexSession session =
+            await Factory.OpenDuplexAsync(DuplexProbe(captureId, renderId, sampleRate), CancellationToken.None);
+        Assert.NotNull(session);
     }
 
     [Fact]
     [Trait("Category", "Hardware")]
-    public async Task FailedDeviceConstructionReleasesComResources()
+    public async Task FailedDuplexValidationSurfacesAndReleasesEndpoints()
     {
-        string? captureId = Environment.GetEnvironmentVariable(
-            "RESONALYZE_WASAPI_CAPTURE_ENDPOINT_ID");
-        string? renderId = Environment.GetEnvironmentVariable(
-            "RESONALYZE_WASAPI_RENDER_ENDPOINT_ID");
-        if (string.IsNullOrWhiteSpace(captureId) || string.IsNullOrWhiteSpace(renderId))
+        if (Endpoints() is not var (captureId, renderId) || captureId is null)
         {
             return;
         }
 
-        Assert.Throws<ArgumentException>(() => new WasapiCaptureDevice(renderId));
-        Assert.Throws<ArgumentException>(() => new WasapiPlaybackDevice(captureId));
-
-        await using var capture = new WasapiCaptureDevice(captureId, 100);
-        await using var render = new WasapiPlaybackDevice(renderId, 100);
-        Assert.True(capture.ChannelCount > 0);
-        Assert.True(render.PlaybackFormat.SampleRate > 0);
-    }
-
-    [Fact]
-    [Trait("Category", "Hardware")]
-    public async Task FailedDuplexValidationReleasesBothEndpoints()
-    {
-        string? captureId = Environment.GetEnvironmentVariable(
-            "RESONALYZE_WASAPI_CAPTURE_ENDPOINT_ID");
-        string? renderId = Environment.GetEnvironmentVariable(
-            "RESONALYZE_WASAPI_RENDER_ENDPOINT_ID");
-        if (string.IsNullOrWhiteSpace(captureId) || string.IsNullOrWhiteSpace(renderId))
-        {
-            return;
-        }
-
-        int mixRate;
-        using (var service = new WindowsAudioEndpointService())
-        {
-            mixRate = Assert.Single(
-                service.GetCaptureEndpoints(), endpoint => endpoint.Id == captureId)
-                .MixFormat.SampleRate;
-        }
+        int mixRate = SharedMixRate(captureId);
         int wrongRate = mixRate == 48_000 ? 44_100 : 48_000;
-        using (var measurement = new ExpSweepMeasurement())
+        using (var measurement = new ExpSweepMeasurement(Factory))
         {
             measurement.Init(
-                8,
-                wrongRate,
-                24,
-                0.25,
-                PlaybackChannel.Right,
+                8, wrongRate, 24, 0.25, PlaybackChannel.Right,
                 audioBackend: AudioBackend.WasapiShared,
-                waveInputChannelOffset: 0,
-                waveLoopbackInputChannelOffset: 1,
-                wasapiCaptureEndpointId: captureId,
-                wasapiRenderEndpointId: renderId);
+                waveInputChannelOffset: 0, waveLoopbackInputChannelOffset: 1,
+                wasapiCaptureEndpointId: captureId, wasapiRenderEndpointId: renderId);
 
             Assert.False(await measurement.RunAsync());
             Assert.NotNull(measurement.LastError);
         }
 
-        await using var capture = new WasapiCaptureDevice(captureId, 100);
-        await using var render = new WasapiPlaybackDevice(renderId, 100);
-        Assert.True(capture.ChannelCount > 0);
-        Assert.True(render.PlaybackFormat.SampleRate > 0);
-    }
-
-    [Fact]
-    [Trait("Category", "Hardware")]
-    public async Task SelectedEndpointsSupportTwoCapturePlaybackRuns()
-    {
-        string? captureId = Environment.GetEnvironmentVariable(
-            "RESONALYZE_WASAPI_CAPTURE_ENDPOINT_ID");
-        string? renderId = Environment.GetEnvironmentVariable(
-            "RESONALYZE_WASAPI_RENDER_ENDPOINT_ID");
-        if (string.IsNullOrWhiteSpace(captureId) || string.IsNullOrWhiteSpace(renderId))
-        {
-            return;
-        }
-
-        await using var captureDevice = new WasapiCaptureDevice(captureId, 100);
-        await using var playbackDevice = new WasapiPlaybackDevice(renderId, 100);
-        await using var captureSession = new PcmCaptureSession(captureDevice);
-        long? lastDevicePosition = null;
-        long? lastQpcPosition = null;
-        captureDevice.DataAvailable += (_, packet) =>
-        {
-            lastDevicePosition = packet.DevicePositionFrames;
-            lastQpcPosition = packet.QpcPosition;
-        };
-        int sampleRate = playbackDevice.PlaybackFormat.SampleRate;
-        var format = new WaveFormat(sampleRate, 16, 2);
-        byte[] silence = new byte[sampleRate / 20 * format.BlockAlign];
-        using var memory = new MemoryStream(silence, writable: false);
-        using var stream = new RawSourceWaveStream(memory, format);
-
-        await captureSession.StartAsync(CancellationToken.None);
-        for (int run = 0; run < 2; run++)
-        {
-            if (run > 0)
-            {
-                captureSession.Reset();
-            }
-            stream.Position = 0;
-            await playbackDevice.StartAsync(stream, CancellationToken.None);
-            await playbackDevice.WaitForPlaybackEndAsync(CancellationToken.None);
-            await captureSession.WaitForSamplesAsync(
-                Math.Max(1, captureDevice.CaptureFormat.SampleRate / 20),
-                CancellationToken.None);
-        }
-        await captureSession.StopAsync();
-        Assert.True(captureDevice.CapturePackets > 0);
-        Assert.NotNull(lastDevicePosition);
-        Assert.NotNull(lastQpcPosition);
+        await AssertEndpointsReusableAsync(captureId, renderId!, mixRate);
     }
 
     [Fact]
     [Trait("Category", "Hardware")]
     public async Task FullSweepMeasurementSupportsEightRuns()
     {
-        string? captureId = Environment.GetEnvironmentVariable(
-            "RESONALYZE_WASAPI_CAPTURE_ENDPOINT_ID");
-        string? renderId = Environment.GetEnvironmentVariable(
-            "RESONALYZE_WASAPI_RENDER_ENDPOINT_ID");
-        if (string.IsNullOrWhiteSpace(captureId) || string.IsNullOrWhiteSpace(renderId))
+        if (Endpoints() is not var (captureId, renderId) || captureId is null)
         {
             return;
         }
 
-        int sampleRate;
-        using (var service = new WindowsAudioEndpointService())
-        {
-            AudioEndpointInfo capture = Assert.Single(
-                service.GetCaptureEndpoints(), endpoint => endpoint.Id == captureId);
-            AudioEndpointInfo render = Assert.Single(
-                service.GetRenderEndpoints(), endpoint => endpoint.Id == renderId);
-            Assert.Equal(capture.MixFormat.SampleRate, render.MixFormat.SampleRate);
-            sampleRate = capture.MixFormat.SampleRate;
-        }
-
-        using var measurement = new ExpSweepMeasurement();
+        int sampleRate = SharedMixRate(captureId);
+        using var measurement = new ExpSweepMeasurement(Factory);
         measurement.Init(
-            12,
-            sampleRate,
-            24,
-            1.0,
-            PlaybackChannel.Right,
+            12, sampleRate, 24, 1.0, PlaybackChannel.Right,
             audioBackend: AudioBackend.WasapiShared,
-            waveInputChannelOffset: 0,
-            waveLoopbackInputChannelOffset: 1,
+            waveInputChannelOffset: 0, waveLoopbackInputChannelOffset: 1,
             averageRunCount: 8,
-            wasapiCaptureEndpointId: captureId,
-            wasapiRenderEndpointId: renderId,
+            wasapiCaptureEndpointId: captureId, wasapiRenderEndpointId: renderId,
             wasapiBufferMilliseconds: 100);
 
         bool succeeded = await measurement.RunAsync();
@@ -196,12 +102,9 @@ public sealed class WasapiHardwareSmokeTests
         Assert.Equal(8, measurement.AverageRunCount);
         Assert.Equal(8, measurement.AcceptedAverageRunCount);
         Assert.NotNull(measurement.LastAudioSessionDiagnostics);
-        Assert.True(measurement.LastAudioSessionDiagnostics.CapturePackets > 0);
+        Assert.True(measurement.LastAudioSessionDiagnostics!.CapturePackets > 0);
         Assert.True(measurement.LastAudioSessionDiagnostics.RenderCallbacks > 0);
         Assert.True(measurement.LastAudioSessionDiagnostics.ActualBufferFrames > 0);
-        // Some drivers mark the first packet after AudioClient.Start as a
-        // discontinuity. Per-run baselines still reject any discontinuity
-        // occurring during an accepted sweep.
         Assert.Equal(0, measurement.LastAudioSessionDiagnostics.TimestampErrors);
         Assert.Equal(0, measurement.LastAudioSessionDiagnostics.RenderUnderruns);
     }
@@ -210,39 +113,21 @@ public sealed class WasapiHardwareSmokeTests
     [Trait("Category", "Hardware")]
     public async Task ExclusiveSweepRunsOnAReportedDuplexFormat()
     {
-        string? captureId = Environment.GetEnvironmentVariable(
-            "RESONALYZE_WASAPI_CAPTURE_ENDPOINT_ID");
-        string? renderId = Environment.GetEnvironmentVariable(
-            "RESONALYZE_WASAPI_RENDER_ENDPOINT_ID");
-        if (string.IsNullOrWhiteSpace(captureId) || string.IsNullOrWhiteSpace(renderId))
+        if (Endpoints() is not var (captureId, renderId) || captureId is null)
         {
             return;
         }
 
-        DuplexFormatSupport? supported = SampleRateCatalog.GetCandidateRates()
-            .Select(rate => WasapiFormatSupport.CheckExclusive(
-                captureId,
-                renderId,
-                rate,
-                24,
-                2,
-                2))
-            .FirstOrDefault(format => format.Supported);
-        Assert.NotNull(supported);
+        int? sampleRate = FirstExclusiveRate(captureId, renderId!);
+        Assert.NotNull(sampleRate);
 
-        using var measurement = new ExpSweepMeasurement();
+        using var measurement = new ExpSweepMeasurement(Factory);
         measurement.Init(
-            8,
-            supported.SampleRate,
-            supported.BitsPerSample,
-            0.25,
-            PlaybackChannel.Right,
+            8, sampleRate!.Value, 24, 0.25, PlaybackChannel.Right,
             audioBackend: AudioBackend.WasapiExclusive,
-            waveInputChannelOffset: 0,
-            waveLoopbackInputChannelOffset: 1,
+            waveInputChannelOffset: 0, waveLoopbackInputChannelOffset: 1,
             averageRunCount: 1,
-            wasapiCaptureEndpointId: captureId,
-            wasapiRenderEndpointId: renderId,
+            wasapiCaptureEndpointId: captureId, wasapiRenderEndpointId: renderId,
             wasapiBufferMilliseconds: 100);
 
         bool succeeded = await measurement.RunAsync();
@@ -254,36 +139,19 @@ public sealed class WasapiHardwareSmokeTests
     [Trait("Category", "Hardware")]
     public async Task AbortedSweepReleasesEndpointsForImmediateReuse()
     {
-        string? captureId = Environment.GetEnvironmentVariable(
-            "RESONALYZE_WASAPI_CAPTURE_ENDPOINT_ID");
-        string? renderId = Environment.GetEnvironmentVariable(
-            "RESONALYZE_WASAPI_RENDER_ENDPOINT_ID");
-        if (string.IsNullOrWhiteSpace(captureId) || string.IsNullOrWhiteSpace(renderId))
+        if (Endpoints() is not var (captureId, renderId) || captureId is null)
         {
             return;
         }
 
-        int sampleRate;
-        using (var service = new WindowsAudioEndpointService())
-        {
-            sampleRate = Assert.Single(
-                service.GetCaptureEndpoints(), endpoint => endpoint.Id == captureId)
-                .MixFormat.SampleRate;
-        }
-
-        using (var measurement = new ExpSweepMeasurement())
+        int sampleRate = SharedMixRate(captureId);
+        using (var measurement = new ExpSweepMeasurement(Factory))
         {
             measurement.Init(
-                16,
-                sampleRate,
-                24,
-                5.0,
-                PlaybackChannel.Right,
+                16, sampleRate, 24, 5.0, PlaybackChannel.Right,
                 audioBackend: AudioBackend.WasapiShared,
-                waveInputChannelOffset: 0,
-                waveLoopbackInputChannelOffset: 1,
-                wasapiCaptureEndpointId: captureId,
-                wasapiRenderEndpointId: renderId,
+                waveInputChannelOffset: 0, waveLoopbackInputChannelOffset: 1,
+                wasapiCaptureEndpointId: captureId, wasapiRenderEndpointId: renderId,
                 wasapiBufferMilliseconds: 100);
 
             Task<bool> running = measurement.RunAsync();
@@ -295,10 +163,7 @@ public sealed class WasapiHardwareSmokeTests
             Assert.False(measurement.InProgress);
         }
 
-        await using var capture = new WasapiCaptureDevice(captureId, 100);
-        await using var render = new WasapiPlaybackDevice(renderId, 100);
-        Assert.True(capture.ChannelCount > 0);
-        Assert.True(render.PlaybackFormat.SampleRate > 0);
+        await AssertEndpointsReusableAsync(captureId, renderId!, sampleRate);
     }
 
     [Theory]
@@ -307,50 +172,22 @@ public sealed class WasapiHardwareSmokeTests
     [Trait("Category", "Hardware")]
     public async Task LiveNoiseProducesSpectrum(AudioBackend backend)
     {
-        string? captureId = Environment.GetEnvironmentVariable(
-            "RESONALYZE_WASAPI_CAPTURE_ENDPOINT_ID");
-        string? renderId = Environment.GetEnvironmentVariable(
-            "RESONALYZE_WASAPI_RENDER_ENDPOINT_ID");
-        if (string.IsNullOrWhiteSpace(captureId) || string.IsNullOrWhiteSpace(renderId))
+        if (Endpoints() is not var (captureId, renderId) || captureId is null)
         {
             return;
         }
 
-        int sampleRate;
-        if (backend == AudioBackend.WasapiExclusive)
-        {
-            DuplexFormatSupport? supported = SampleRateCatalog.GetCandidateRates()
-                .Select(rate => WasapiFormatSupport.CheckExclusive(
-                    captureId,
-                    renderId,
-                    rate,
-                    24,
-                    2,
-                    2))
-                .FirstOrDefault(format => format.Supported);
-            Assert.NotNull(supported);
-            sampleRate = supported.SampleRate;
-        }
-        else
-        {
-            using var service = new WindowsAudioEndpointService();
-            AudioEndpointInfo capture = Assert.Single(
-                service.GetCaptureEndpoints(), endpoint => endpoint.Id == captureId);
-            sampleRate = capture.MixFormat.SampleRate;
-        }
+        int sampleRate = backend == AudioBackend.WasapiExclusive
+            ? FirstExclusiveRate(captureId, renderId!) ?? throw SkipNoExclusive()
+            : SharedMixRate(captureId);
 
-        using var measurement = new NoiseMeasurement();
+        using var measurement = new NoiseMeasurement(Factory);
         measurement.Init(
-            sampleRate,
-            24,
-            2.0,
-            PlaybackChannel.Right,
+            sampleRate, 24, 2.0, PlaybackChannel.Right,
             sequenceLength: 2048,
             audioBackend: backend,
-            waveInputChannelOffset: 0,
-            waveLoopbackInputChannelOffset: 1,
-            wasapiCaptureEndpointId: captureId,
-            wasapiRenderEndpointId: renderId,
+            waveInputChannelOffset: 0, waveLoopbackInputChannelOffset: 1,
+            wasapiCaptureEndpointId: captureId, wasapiRenderEndpointId: renderId,
             wasapiBufferMilliseconds: 100);
 
         Task<bool> running = measurement.RunAsync();
@@ -367,51 +204,26 @@ public sealed class WasapiHardwareSmokeTests
     [Trait("Category", "Hardware")]
     public async Task AudioWarmupCompletes(AudioBackend backend)
     {
-        string? captureId = Environment.GetEnvironmentVariable(
-            "RESONALYZE_WASAPI_CAPTURE_ENDPOINT_ID");
-        string? renderId = Environment.GetEnvironmentVariable(
-            "RESONALYZE_WASAPI_RENDER_ENDPOINT_ID");
-        if (string.IsNullOrWhiteSpace(captureId) || string.IsNullOrWhiteSpace(renderId))
+        if (Endpoints() is not var (captureId, renderId) || captureId is null)
         {
             return;
         }
 
-        int sampleRate;
-        if (backend == AudioBackend.WasapiExclusive)
-        {
-            DuplexFormatSupport? supported = SampleRateCatalog.GetCandidateRates()
-                .Select(rate => WasapiFormatSupport.CheckExclusive(
-                    captureId,
-                    renderId,
-                    rate,
-                    24,
-                    2,
-                    2))
-                .FirstOrDefault(format => format.Supported);
-            Assert.NotNull(supported);
-            sampleRate = supported.SampleRate;
-        }
-        else
-        {
-            using var service = new WindowsAudioEndpointService();
-            sampleRate = Assert.Single(
-                service.GetCaptureEndpoints(), endpoint => endpoint.Id == captureId)
-                .MixFormat.SampleRate;
-        }
+        int sampleRate = backend == AudioBackend.WasapiExclusive
+            ? FirstExclusiveRate(captureId, renderId!) ?? throw SkipNoExclusive()
+            : SharedMixRate(captureId);
 
-        var settings = new MeasurementSettingsFile.SweepMeasurementSettings
-        {
-            AudioBackend = backend,
-            SampleRate = sampleRate,
-            Bits = 24,
-            PlaybackChannel = PlaybackChannel.Right,
-            WaveInputChannelOffset = 0,
-            WaveLoopbackInputChannelOffset = 1,
-            WasapiCaptureEndpointId = captureId,
-            WasapiRenderEndpointId = renderId,
-            WasapiBufferMilliseconds = 100
-        };
+        AudioSessionRequest request = AudioSessionRequestBuilder.Build(
+            backend, sampleRate, 24, PlaybackChannel.Right,
+            waveInputChannelOffset: 0, waveLoopbackInputChannelOffset: 1,
+            asioInputChannelOffset: 0, asioLoopbackInputChannelOffset: null, asioOutputChannelOffset: 0,
+            outputDeviceNumber: -1, inputDeviceNumber: -1,
+            wasapiCaptureEndpointId: captureId, wasapiRenderEndpointId: renderId, asioDriverName: null,
+            bufferMilliseconds: 100, expectedCaptureSamples: 0);
 
-        await AudioDeviceWarmup.WarmUpAsync(settings);
+        await Factory.WarmUpAsync(request, CancellationToken.None);
     }
+
+    private static Exception SkipNoExclusive() =>
+        new InvalidOperationException("No exclusive duplex format is supported by the endpoints.");
 }

@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="Resonalyze.Audio" />
   </ItemGroup>
 
 </Project>

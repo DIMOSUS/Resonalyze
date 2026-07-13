@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Configurations>Debug;Release;Tracy</Configurations>
+    <Platforms>AnyCPU</Platforms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>Resonalyze.Audio</AssemblyName>
+    <RootNamespace>Resonalyze.Audio</RootNamespace>
+    <!-- No WinForms; this is a pure audio-driver library. It targets
+         net10.0-windows only because the WASAPI/ASIO/MME backends are
+         Windows-only (NAudio + winmm P/Invoke). -->
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Tracy'">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>portable</DebugType>
+    <Optimize>true</Optimize>
+    <DefineConstants>$(DefineConstants);TRACE;TRACY_ENABLE</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.3.0" />
+    <PackageReference Include="NAudio.Asio" Version="2.3.0" />
+  </ItemGroup>
+
+</Project>

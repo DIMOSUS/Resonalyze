@@ -10,8 +10,8 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void MeasurementPlotTitles_IncludeImpulseResponseFileName()
     {
-        using var measurement = new ExpSweepMeasurement();
-        using var noiseMeasurement = new NoiseMeasurement();
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         measurement.RestoreImpulseResponse(
             octaves: 12,
             sampleRate: 44_100,
@@ -55,8 +55,8 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void MeasurementPlotTitles_FallBackToBaseTitlesWithoutFileName()
     {
-        using var measurement = new ExpSweepMeasurement();
-        using var noiseMeasurement = new NoiseMeasurement();
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         measurement.RestoreImpulseResponse(
             octaves: 12,
             sampleRate: 44_100,
@@ -83,7 +83,7 @@ public sealed class PlotModelFactoryTests
     public void ImpulseResponse_RespectsShowImpulseFlag()
     {
         using var measurement = CreateTransferMeasurement();
-        using var noiseMeasurement = new NoiseMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         var impulseOptions = new ImpulseResponseOptions { ShowImpulse = false };
         PlotModelFactory factory =
             CreateFactory(measurement, noiseMeasurement, impulseOptions: impulseOptions);
@@ -98,7 +98,7 @@ public sealed class PlotModelFactoryTests
     public void Autocorrelation_RespectsShowAutocorrelationFlag()
     {
         using var measurement = CreateTransferMeasurement();
-        using var noiseMeasurement = new NoiseMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         var impulseOptions = new ImpulseResponseOptions { ShowAutocorrelation = false };
         PlotModelFactory factory =
             CreateFactory(measurement, noiseMeasurement, impulseOptions: impulseOptions);
@@ -113,7 +113,7 @@ public sealed class PlotModelFactoryTests
     public void GroupDelay_RespectsShowGroupDelayFlag()
     {
         using var measurement = CreateTransferMeasurement();
-        using var noiseMeasurement = new NoiseMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         var groupDelayVisibility = new CurveVisibilityOptions { ShowGroupDelay = false };
         PlotModelFactory factory =
             CreateFactory(measurement, noiseMeasurement, groupDelayVisibility: groupDelayVisibility);
@@ -128,7 +128,7 @@ public sealed class PlotModelFactoryTests
     public void GroupDelay_TagsMainAndCompareCurvesForLinkedOverlays()
     {
         using var measurement = CreateTransferMeasurement();
-        using var noiseMeasurement = new NoiseMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         var groupDelayVisibility = new CurveVisibilityOptions { ShowGroupDelay = true };
         PlotModelFactory factory =
             CreateFactory(measurement, noiseMeasurement, groupDelayVisibility: groupDelayVisibility);
@@ -172,7 +172,7 @@ public sealed class PlotModelFactoryTests
     public void FrequencyResponse_ShowPrimaryFlag_GatesThePrimaryCurve()
     {
         using var measurement = CreateTransferMeasurement();
-        using var noiseMeasurement = new NoiseMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
 
         var hidden = new CurveVisibilityOptions { ShowPrimary = false };
         Assert.DoesNotContain(
@@ -196,7 +196,7 @@ public sealed class PlotModelFactoryTests
     public void PhaseResponse_VisibilityFlagGatesItsCurve(string flag, string title)
     {
         using var measurement = CreateTransferMeasurement();
-        using var noiseMeasurement = new NoiseMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
 
         var hidden = PhaseAllOff();
         Assert.DoesNotContain(
@@ -218,7 +218,7 @@ public sealed class PlotModelFactoryTests
     public void PhaseResponse_ShowCoherenceFlag_GatesTheCoherenceCurve()
     {
         using var measurement = CreateTransferMeasurementWithCoherence();
-        using var noiseMeasurement = new NoiseMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
 
         var hidden = PhaseAllOff();
         hidden.ShowCoherence = false;
@@ -252,7 +252,7 @@ public sealed class PlotModelFactoryTests
     public void ComplexSum_OfTwoIdenticalTransferResponses_AddsSixDecibels()
     {
         using var measurement = CreateTransferMeasurement();
-        using var noiseMeasurement = new NoiseMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
 
         // Without a Compare measurement the complex sum has nothing to add.
@@ -292,7 +292,7 @@ public sealed class PlotModelFactoryTests
     public void ComplexSum_CompareDelayRealignsAnEarlierArrival()
     {
         using var measurement = CreateTransferMeasurement();
-        using var noiseMeasurement = new NoiseMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
 
         // The Compare impulse arrives 10 samples early; delaying it by exactly
@@ -329,7 +329,7 @@ public sealed class PlotModelFactoryTests
     public void ComplexSum_InvertedComparePolarityCancelsAnIdenticalResponse()
     {
         using var measurement = CreateTransferMeasurement();
-        using var noiseMeasurement = new NoiseMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
 
         var compareIr = new Complex[2048];
@@ -350,7 +350,7 @@ public sealed class PlotModelFactoryTests
     public void ComplexSum_RequiresMatchingSampleRateAndTransferIr()
     {
         using var measurement = CreateTransferMeasurement();
-        using var noiseMeasurement = new NoiseMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
 
         var compareIr = new Complex[2048];
@@ -373,7 +373,7 @@ public sealed class PlotModelFactoryTests
     public void ComplexSumLoss_IsZero_WhenSourcesSumCoherently()
     {
         using var measurement = CreateTransferMeasurement();
-        using var noiseMeasurement = new NoiseMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
 
         // Without a Compare measurement there is nothing to compare against.
@@ -396,7 +396,7 @@ public sealed class PlotModelFactoryTests
     public void ComplexSumLoss_IsLarge_WhenSourcesCancel()
     {
         using var measurement = CreateTransferMeasurement();
-        using var noiseMeasurement = new NoiseMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
 
         var compareIr = new Complex[2048];
@@ -426,8 +426,8 @@ public sealed class PlotModelFactoryTests
             ir[peak + i] = new Complex(Math.Exp(-i / 200.0) * Math.Cos(i * 0.3), 0);
         }
 
-        using var measurement = new ExpSweepMeasurement();
-        using var noiseMeasurement = new NoiseMeasurement();
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         // The impulse view is now derived from the mandatory loopback transfer IR.
         measurement.RestoreImpulseResponse(
             octaves: 12, sampleRate: 44_100, bits: 24, sweepDurationSeconds: 1.0,
@@ -466,7 +466,7 @@ public sealed class PlotModelFactoryTests
     public void AnalysisModes_RequireTransferIr_ShowAnnotationWhenAbsent()
     {
         using var measurement = CreateSweepOnlyMeasurement();
-        using var noiseMeasurement = new NoiseMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
 
         // With no loopback transfer IR, every analysis mode draws nothing and shows an
@@ -490,7 +490,7 @@ public sealed class PlotModelFactoryTests
     public void FrequencyResponse_DrawsCurves_WhenTransferIrPresent()
     {
         using var measurement = CreateTransferMeasurement();
-        using var noiseMeasurement = new NoiseMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
 
         Assert.NotEmpty(factory.CreateFrequencyResponse(includeCurves: true).Series);
@@ -501,7 +501,7 @@ public sealed class PlotModelFactoryTests
         var sweep = new Complex[2048];
         sweep[64] = Complex.One;
 
-        var measurement = new ExpSweepMeasurement();
+        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.RestoreImpulseResponse(
             octaves: 12,
             sampleRate: 44_100,
@@ -518,7 +518,7 @@ public sealed class PlotModelFactoryTests
         var transferImpulse = new Complex[2048];
         transferImpulse[64] = Complex.One;
 
-        var measurement = new ExpSweepMeasurement();
+        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.RestoreImpulseResponse(
             octaves: 12,
             sampleRate: 44_100,
@@ -540,7 +540,7 @@ public sealed class PlotModelFactoryTests
         double[] coherence = new double[1025];
         Array.Fill(coherence, 0.9);
 
-        var measurement = new ExpSweepMeasurement();
+        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.RestoreImpulseResponse(
             octaves: 12,
             sampleRate: 44_100,

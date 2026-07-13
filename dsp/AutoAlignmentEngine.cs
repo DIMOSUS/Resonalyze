@@ -114,7 +114,24 @@ public static class AutoAlignmentEngine
     // extra lobes a wide window admits are handled by the candidate list, the
     // arrival prior, and the physical tie-break in AlignmentSelection.
     private const double MinFineAlignmentRangeMs = 0.5;
+    // The fixed span suffices at short-period (mid/high) junctions. At a LOW
+    // junction the period is long, and a whitened correlation with too few
+    // in-band periods can seed the window a half period off — parking it on a
+    // (flip + half-period) impostor whose true, opposite-polarity partner then
+    // sits a half period away, beyond this fixed reach. So the effective cap is
+    // lifted toward a half period at low junctions (see LowJunctionReachFraction)
+    // to admit that partner for AlignmentSelection's invert preference to pick;
+    // staying just under a half period keeps the window short of the next
+    // SAME-polarity lobe a full period out.
     private const double MaxFineAlignmentRangeMs = 2.5;
+
+    // The fraction of a half period the fine window may reach at a low junction
+    // (where a half period exceeds the fixed cap). Just under 1 so the window
+    // captures the half-period-away flip partner of an impostor seed without
+    // spanning the full-period same-polarity lobe on the far side; the residual
+    // ambiguity between those two is resolved by the arrival prior and the
+    // AlignmentSelection tie-breaks, exactly as for any other admitted lobe.
+    private const double LowJunctionReachFraction = 0.97;
 
     // The delay ceiling a proposal may reach, mirroring the UI's per-channel
     // delay limit. Kept here so the uniform negative-delay shift can detect —
@@ -194,7 +211,7 @@ public static class AutoAlignmentEngine
         AppendCorrelationAlignmentDiagnostics(log, pairs);
 
         Dictionary<IAlignmentChannel, double> timeline =
-            BuildArrivalTimeline(byBand, pairs, log);
+            BuildArrivalTimeline(byBand, pairs, log, out HashSet<IAlignmentChannel> untrustedSeeds);
 
         // The relatively latest channel is the fixed reference; everyone else is
         // delayed toward it, so the coarse deltas are non-negative.
@@ -216,13 +233,15 @@ public static class AutoAlignmentEngine
         {
             AlignChannelAtJunction(
                 byBand[i].Channel, byBand[i + 1].Channel, pairs[i],
-                timeline, byBand, reprocess, alignment, log);
+                timeline, byBand, reprocess, alignment, log,
+                untrustedSeedChannels: untrustedSeeds);
         }
         for (int i = referenceIndex + 1; i < byBand.Count; i++)
         {
             AlignChannelAtJunction(
                 byBand[i].Channel, byBand[i - 1].Channel, pairs[i - 1],
-                timeline, byBand, reprocess, alignment, log);
+                timeline, byBand, reprocess, alignment, log,
+                untrustedSeedChannels: untrustedSeeds);
         }
     }
 
@@ -237,8 +256,15 @@ public static class AutoAlignmentEngine
     private static Dictionary<IAlignmentChannel, double> BuildArrivalTimeline(
         IReadOnlyList<AlignmentSnapshot> byBand,
         IReadOnlyList<AlignmentJunction> pairs,
-        StringBuilder log)
+        StringBuilder log,
+        out HashSet<IAlignmentChannel> untrustedSeedChannels)
     {
+        // Channels whose coarse seed fell back to the arrival envelope because
+        // the PHAT peak was untrusted (a low junction with too few in-band
+        // periods): at those the arrival can land a half period off, so their
+        // stage-2 window is allowed to reach a half period (LowJunctionReach)
+        // to admit the true lobe. A phat-trusted seed keeps the tight window.
+        untrustedSeedChannels = [];
         var timeline = new Dictionary<IAlignmentChannel, double>
         {
             [byBand[0].Channel] = 0
@@ -282,6 +308,10 @@ public static class AutoAlignmentEngine
             double increment =
                 trustPhat ? -phat.PositivePeak.DelayMs : upperArrival - lowerArrival;
             timeline[pair.Upper.Channel] = timeline[pair.Lower.Channel] + increment;
+            if (!trustPhat)
+            {
+                untrustedSeedChannels.Add(pair.Upper.Channel);
+            }
 
             // Full-band processed-IR peak times, a detector-independent arrival
             // proxy: a band-limited arrival that sits many ms LATER than its own
@@ -336,8 +366,13 @@ public static class AutoAlignmentEngine
         AlignmentJunction? secondaryPair = null,
         double? priorOverrideMs = null,
         double? sceneLockToleranceMs = null,
-        bool? forcedPolarity = null)
+        bool? forcedPolarity = null,
+        IReadOnlySet<IAlignmentChannel>? untrustedSeedChannels = null)
     {
+        // A channel that seeded from the arrival envelope (PHAT untrusted) may
+        // sit a half period off, so its window is allowed to reach a half
+        // period; a phat-seeded channel keeps the tight fixed window.
+        bool wideSeed = untrustedSeedChannels?.Contains(channel) == true;
 
         double primaryBase = alignment.GetValueOrDefault(neighborChannel).DelayMs
             + timeline[neighborChannel] - timeline[channel];
@@ -391,8 +426,16 @@ public static class AutoAlignmentEngine
                     .First(item => item.Channel == secondaryNeighbor).ImpulseResponse);
             }
 
+            // Only where the coarse seed was untrusted (arrival fallback at a
+            // low junction) let the cap grow toward a half period so the window
+            // can reach a half-period-away flip partner the fixed cap would
+            // hide. A trusted seed already sits on the right lobe, and widening
+            // there would only invite the impostor the tight window excludes.
+            double maxRangeMs = wideSeed
+                ? Math.Max(MaxFineAlignmentRangeMs, LowJunctionReachFraction * halfPeriodMs)
+                : MaxFineAlignmentRangeMs;
             double rangeMs = windowOverrideMs ?? Math.Clamp(
-                halfPeriodMs, MinFineAlignmentRangeMs, MaxFineAlignmentRangeMs);
+                halfPeriodMs, MinFineAlignmentRangeMs, maxRangeMs);
             double windowLowMs = Math.Min(primaryBase, secondaryBase) - rangeMs;
             double windowHighMs = Math.Max(primaryBase, secondaryBase) + rangeMs;
             if (sceneLockToleranceMs is { } lockTolerance && windowOverrideMs == null)
@@ -729,7 +772,9 @@ public static class AutoAlignmentEngine
         // the left pass: never searched again, their right-side junction is
         // only measured.
         Dictionary<IAlignmentChannel, double> rightTimeline =
-            BuildArrivalTimeline(rightByBand, plan.RightPairs, log);
+            BuildArrivalTimeline(
+                rightByBand, plan.RightPairs, log,
+                out HashSet<IAlignmentChannel> rightUntrustedSeeds);
 
         // The delay that would land this right channel's arrival exactly the
         // scene offset ahead of its settled left counterpart's, measured by
@@ -840,7 +885,8 @@ public static class AutoAlignmentEngine
             AlignChannelAtJunction(
                 channel, neighbor, pair,
                 rightTimeline, allChannels, reprocess, alignment, log,
-                secondary, secondaryPair, crossTarget, sceneLock, inheritedPolarity);
+                secondary, secondaryPair, crossTarget, sceneLock, inheritedPolarity,
+                rightUntrustedSeeds);
         }
         for (int i = bridgeIndex - 1; i >= 0; i--)
         {

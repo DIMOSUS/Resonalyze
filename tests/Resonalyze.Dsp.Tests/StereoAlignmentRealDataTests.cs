@@ -221,6 +221,145 @@ public sealed class StereoAlignmentRealDataTests
         Assert.InRange(leftTwrArrival - rightTwrArrival, 0.15, 0.35);
     }
 
+    [Fact]
+    public void ComputeStereo_RealCabin_LowJunctionSeedDoesNotFlipTheWoofers()
+    {
+        // The field regression the user hit after an auto-crossover that placed
+        // the woofer/mid split at 220 Hz (rather than 175): at the 80 Hz sub/
+        // woofer junction the whitened correlation lost dominance (a mono sub
+        // spanning two stereo woofers, too few in-band periods), so the coarse
+        // seed fell back to an arrival that landed a HALF PERIOD off — on a
+        // (flip + half-period) impostor. Both woofers then inverted. With the
+        // untrusted-seed window allowed to reach a half period, the true
+        // non-inverted lobe re-enters the candidate list and AlignmentSelection
+        // rejects the impostor. The woofers must come out non-inverted, and —
+        // the absolute contract — every driver pair keeps a SYMMETRIC polarity.
+        Channel Load(string file, string name, DspChannelChain chain)
+        {
+            (int rate, Complex[] ir) = LoadTransferIr(file);
+            return new Channel(name, rate, ir, chain);
+        }
+
+        const double WoofMidHz = 220;
+        const double MidTwrHz = 1_850;
+        Channel sub = Load("sub woof closed window.json", "sub", new DspChannelChain(
+            Crossover: new CrossoverSpec(CrossoverKind.LowPass, Bw(80))));
+        Channel leftWoof = Load("l woof.json", "L woof", new DspChannelChain(
+            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(WoofMidHz), Bw(80))));
+        Channel leftMid = Load("l mid.json", "L mid", new DspChannelChain(
+            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(MidTwrHz), Bw(WoofMidHz))));
+        Channel leftTwr = Load("l twr.json", "L twr", new DspChannelChain(
+            GainDb: -5,
+            Crossover: new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: Bw(MidTwrHz))));
+        Channel rightWoof = Load("r woof.json", "R woof", new DspChannelChain(
+            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(WoofMidHz), Bw(80))));
+        Channel rightMid = Load("r mid.json", "R mid", new DspChannelChain(
+            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(MidTwrHz), Bw(WoofMidHz))));
+        Channel rightTwr = Load("r twr.json", "R twr", new DspChannelChain(
+            GainDb: -5,
+            Crossover: new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: Bw(MidTwrHz))));
+
+        Channel[] all = [sub, leftWoof, leftMid, leftTwr, rightWoof, rightMid, rightTwr];
+        Channel[] leftByBand = [sub, leftWoof, leftMid, leftTwr];
+        Channel[] rightByBand = [sub, rightWoof, rightMid, rightTwr];
+
+        var cache = new Dictionary<(Channel, double, bool), AlignmentSnapshot>();
+        AlignmentSnapshot Snapshot(Channel channel, AlignmentOverride over)
+        {
+            (Channel, double, bool) key = (channel, over.DelayMs, over.InvertPolarity);
+            if (!cache.TryGetValue(key, out AlignmentSnapshot? hit))
+            {
+                Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+                    channel.RawIr,
+                    channel.BaseChain with
+                    {
+                        DelayMs = over.DelayMs,
+                        InvertPolarity = over.InvertPolarity
+                    },
+                    channel.SampleRate);
+                hit = new AlignmentSnapshot(
+                    channel, processed, VirtualCrossoverAnalysis.FindPeakIndex(processed));
+                cache[key] = hit;
+            }
+
+            return hit;
+        }
+
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            all.Select(channel =>
+                Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+
+        List<AlignmentSnapshot> leftSnapshots = leftByBand
+            .Select(channel => Snapshot(channel, default))
+            .ToList();
+        List<AlignmentSnapshot> rightSnapshots = rightByBand
+            .Select(channel => Snapshot(channel, default))
+            .ToList();
+        AlignmentJunction Junction(
+            AlignmentSnapshot lower, AlignmentSnapshot upper, double fc) =>
+            new(lower, upper, fc, Math.Max(20, fc / 2), Math.Min(20_000, fc * 2));
+        double[] crossovers = [80, WoofMidHz, MidTwrHz];
+        List<AlignmentJunction> leftPairs = crossovers
+            .Select((fc, i) => Junction(leftSnapshots[i], leftSnapshots[i + 1], fc))
+            .ToList();
+        List<AlignmentJunction> rightPairs = crossovers
+            .Select((fc, i) => Junction(rightSnapshots[i], rightSnapshots[i + 1], fc))
+            .ToList();
+
+        const double SceneOffsetMs = 0.25;
+        const double BridgeBandLowHz = 1_850;
+        const double BridgeBandHighHz = 12_000;
+        List<StereoPairLink> pairLinks =
+        [
+            new(leftWoof, rightWoof, 80, WoofMidHz),
+            new(leftMid, rightMid, WoofMidHz, MidTwrHz),
+            new(leftTwr, rightTwr, BridgeBandLowHz, BridgeBandHighHz)
+        ];
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+        var log = new StringBuilder();
+        AutoAlignmentEngine.ComputeStereo(
+            new StereoAlignmentPlan(
+                leftSnapshots,
+                leftPairs,
+                rightSnapshots,
+                rightPairs,
+                new HashSet<IAlignmentChannel> { sub },
+                leftTwr,
+                rightTwr,
+                BridgeBandLowHz,
+                BridgeBandHighHz,
+                SceneOffsetMs,
+                pairLinks),
+            Reprocess,
+            alignment,
+            log);
+
+        // The direct fix: neither woofer lands on the half-period flip impostor.
+        Assert.False(
+            alignment.GetValueOrDefault(leftWoof).InvertPolarity,
+            "Left woofer inverted onto the sub/woofer flip impostor.");
+        Assert.False(
+            alignment.GetValueOrDefault(rightWoof).InvertPolarity,
+            "Right woofer inverted onto the sub/woofer flip impostor.");
+
+        // The absolute contract regardless of the crossover: automatic delay
+        // never inverts one side of a driver pair alone.
+        (Channel Left, Channel Right)[] driverPairs =
+        [
+            (leftWoof, rightWoof),
+            (leftMid, rightMid),
+            (leftTwr, rightTwr)
+        ];
+        Assert.All(driverPairs, pair => Assert.Equal(
+            alignment.GetValueOrDefault(pair.Left).InvertPolarity,
+            alignment.GetValueOrDefault(pair.Right).InvertPolarity));
+
+        // Still a physically realizable, normalized field.
+        Assert.All(all, channel =>
+            Assert.True(alignment.GetValueOrDefault(channel).DelayMs >= 0));
+    }
+
     private static (int SampleRate, Complex[] Ir) LoadTransferIr(string fileName)
     {
         string path = Path.Combine(FindTestDataDirectory(), fileName);

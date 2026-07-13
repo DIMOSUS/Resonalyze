@@ -319,13 +319,14 @@ public sealed class TransferFunctionTests
     public void ComputeAveragedRelativeIr_MaskedBinsDoNotScaleTheGateThresholds()
     {
         // PR-review finding: the peak scan anchoring gateHigh and λ used to
-        // include bins the excitation edge later zeroes. A loud sub-edge
-        // reference component (hum below a narrow sweep's start) then scaled
-        // the power gate from an artifact excluded from the estimate, fading
-        // the genuinely excited bins. The hum here is deliberately absurd —
-        // 60+ dB over the sweep bins, enough to zero the whole passband
-        // through the old scan — so the pin is decisive: with the scan
-        // restricted to edge-eligible bins the pulse must come back intact.
+        // include bins the excitation edge later zeroes or attenuates. A loud
+        // sub-edge reference component (hum below — or in the ramp of — a
+        // narrow sweep's start) then scaled the power gate from an artifact
+        // excluded from the estimate, fading the genuinely excited bins. The
+        // hums here are deliberately absurd — 60+ dB over the sweep bins,
+        // enough to zero the whole passband through the old scan — so the pin
+        // is decisive: with the scan restricted to bins at FULL edge weight
+        // the pulse must come back intact.
         const int delay = 25;
         const int octaves = 3; // sweep spans Nyquist/8..Nyquist
         double[] sweep = MiniSweep(4096, octaves);
@@ -333,9 +334,12 @@ public sealed class TransferFunctionTests
         double[] target = AddNoise(Delay(sweep, delay), 1e-5, seed: 8);
         for (int i = 0; i < reference.Length; i++)
         {
-            // Nyquist/64 — below the excitation edge's ramp.
             double window = 0.5 - 0.5 * Math.Cos(2.0 * Math.PI * i / reference.Length);
+            // Nyquist/64 — below the excitation edge's ramp.
             reference[i] += 1000.0 * window * Math.Sin(2.0 * Math.PI * i / 128.0);
+            // Nyquist * 3/32 — inside the edge's ramp (Nyquist/16..Nyquist/8),
+            // where the bin is attenuated but not zeroed.
+            reference[i] += 1000.0 * window * Math.Sin(2.0 * Math.PI * 3.0 * i / 64.0);
         }
 
         TransferEstimateResult result = TransferFunction.ComputeAveragedRelativeIr(
@@ -344,6 +348,46 @@ public sealed class TransferFunctionTests
 
         Assert.Equal(delay, result.PeakIndex);
         Assert.InRange(result.ImpulseResponse[delay], 0.8, 1.05);
+    }
+
+    [Fact]
+    public void ComputeAveragedRelativeIr_CoherenceIsUntrustedWhereTheEstimateIsMasked()
+    {
+        // PR-review finding: coherence used to be returned unmasked. Below
+        // the sweep start the sweep's own leakage — and any stationary rumble
+        // — is deterministic across runs, so raw γ² reads ~1 exactly where
+        // the estimate zeroes the bins as unexcited, and the consumers that
+        // treat coherence as a reliability gate (phase unwrap, PHAT
+        // weighting, the plotted curve) kept trusting them. Three identical
+        // frames make raw γ² exactly 1 everywhere; the returned coherence
+        // must still read the masked region as untrusted and keep full
+        // in-band trust.
+        const int octaves = 3; // sweep spans Nyquist/8..Nyquist
+        double[] sweep = MiniSweep(4096, octaves);
+        double[] reference = AddNoise(sweep, 1e-6, seed: 9);
+        double[] target = AddNoise(Delay(sweep, 25), 1e-6, seed: 10);
+        for (int i = 0; i < target.Length; i++)
+        {
+            // Deterministic rumble at Nyquist/64, below the edge's ramp.
+            target[i] += 0.05 * Math.Sin(2.0 * Math.PI * i / 128.0);
+        }
+        var frame = new TransferFunctionFrame(reference, target);
+
+        TransferEstimateResult result = TransferFunction.ComputeAveragedRelativeIr(
+            [frame, frame, frame],
+            excitationLowNyquistFraction: Math.Pow(2.0, -octaves));
+
+        // Coherence covers 0..Nyquist in fftLength / 2 + 1 = 4097 bins; the
+        // rumble sits at bin 64, the edge's ramp spans bins 256..512.
+        Assert.NotNull(result.Coherence);
+        Assert.Equal(4097, result.Coherence!.Length);
+        Assert.Equal(0.0, result.Coherence[64]);
+        for (int bin = 0; bin < 256; bin++)
+        {
+            Assert.Equal(0.0, result.Coherence[bin]);
+        }
+        Assert.InRange(result.Coherence[1024], 0.999, 1.0 + 1e-9);
+        Assert.InRange(result.Coherence[2048], 0.999, 1.0 + 1e-9);
     }
 
     [Fact]

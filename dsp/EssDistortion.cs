@@ -292,7 +292,7 @@ public static class EssDistortion
         ArgumentNullException.ThrowIfNull(options);
 
         var result = new List<AnalysisCurve>();
-        if ((curves & SpectrumCurves.Harmonics) == 0 || deconvolvedImpulse.Length == 0)
+        if ((curves & SpectrumCurves.Distortion) == 0 || deconvolvedImpulse.Length == 0)
         {
             return new DistortionCurveResult(
                 result, Array.Empty<string>(), Array.Empty<HarmonicPacketValidity>(), false);
@@ -339,20 +339,27 @@ public static class EssDistortion
         bool includesNoise = spectrum.NoiseFloorRatio != null;
         if ((curves & SpectrumCurves.ThdPlusNoise) != 0)
         {
-            // THD is harmonics only. The noise floor rides alongside as its own
-            // trace (REW-style), so THD is never inflated by noise.
+            // THD is harmonics only. The noise floor is a separate trace (REW-style)
+            // under its own flag, so THD is never inflated by noise.
             result.Add(new AnalysisCurve(
                 "THD",
                 BuildDbCurve(spectrum.Frequencies, spectrum.ThdRatio, options.SmoothingOctaves),
                 AnalysisCurveKind.ThdPlusNoise));
+        }
 
-            if (includesNoise)
-            {
-                result.Add(new AnalysisCurve(
-                    "Noise floor",
-                    BuildDbCurve(spectrum.Frequencies, spectrum.NoiseFloorRatio!, options.SmoothingOctaves),
-                    AnalysisCurveKind.NoiseFloor));
-            }
+        if ((curves & SpectrumCurves.NoiseFloor) != 0 && includesNoise)
+        {
+            // The noise floor is meaningful only at its analysis resolution — two
+            // captures with the same physical noise but different usable tail lengths
+            // read at different levels — so the equivalent noise bandwidth is named in
+            // the curve label rather than left implicit.
+            string label = spectrum.Noise is { } estimate
+                ? $"Noise floor ({estimate.EquivalentNoiseBandwidthHz:0.##} Hz BW)"
+                : "Noise floor";
+            result.Add(new AnalysisCurve(
+                label,
+                BuildDbCurve(spectrum.Frequencies, spectrum.NoiseFloorRatio!, options.SmoothingOctaves),
+                AnalysisCurveKind.NoiseFloor));
         }
 
         return new DistortionCurveResult(

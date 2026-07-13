@@ -100,7 +100,7 @@ internal sealed class MeasurementPlotContext
         SpectrumCurves curves)
     {
         DistortionWarnings = Array.Empty<string>();
-        if ((curves & SpectrumCurves.Harmonics) == 0 ||
+        if ((curves & SpectrumCurves.Distortion) == 0 ||
             expSweepMeasurement.SweepDeconvolution is not { } deconvolution ||
             expSweepMeasurement.Sweep is not { SweepSamples: > 0 } sweep ||
             expSweepMeasurement.Octaves <= 0)
@@ -128,7 +128,8 @@ internal sealed class MeasurementPlotContext
             SmoothingOctaves: options.SmoothingInverseOctaves > 0
                 ? HarmonicSmoothingWidthFactor / options.SmoothingInverseOctaves
                 : 0.0,
-            IncludeNoise: true);
+            // Estimate the noise floor only when its own curve is requested.
+            IncludeNoise: (curves & SpectrumCurves.NoiseFloor) != 0);
 
         EssDistortion.DistortionCurveResult distortion =
             EssDistortion.ComputeDistortionCurvesResult(
@@ -136,7 +137,7 @@ internal sealed class MeasurementPlotContext
                 sweepMetadata,
                 distortionOptions,
                 options.UseCalibration ? calibration : null,
-                curves & SpectrumCurves.Harmonics);
+                curves & SpectrumCurves.Distortion);
         DistortionWarnings = distortion.Warnings;
         return distortion.Curves;
     }

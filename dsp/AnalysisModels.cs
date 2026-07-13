@@ -38,8 +38,14 @@ public enum SpectrumCurves
     ThirdHarmonic = 1 << 2,
     FourthHarmonic = 1 << 3,
     ThdPlusNoise = 1 << 4,
+    // The measurement noise floor, selectable on its own (it is not a harmonic and
+    // no longer rides on the THD flag).
+    NoiseFloor = 1 << 5,
     Harmonics = SecondHarmonic | ThirdHarmonic | FourthHarmonic | ThdPlusNoise,
-    All = Primary | Harmonics
+    // Everything derived from the sweep deconvolution — harmonics AND the noise
+    // floor. The ESS decomposition is computed when any of these is requested.
+    Distortion = Harmonics | NoiseFloor,
+    All = Primary | Distortion
 }
 
 /// <summary>

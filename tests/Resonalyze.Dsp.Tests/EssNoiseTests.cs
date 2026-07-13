@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Resonalyze.Dsp;
 using Xunit;
@@ -114,6 +115,29 @@ public sealed class EssNoiseTests
         double quietDb = BandNoiseFloorDb(Run(quiet, NoiseOptions), 500, 5_000);
         double loudDb = BandNoiseFloorDb(Run(loud, NoiseOptions), 500, 5_000);
         Assert.Equal(6.0206, loudDb - quietDb, 1);
+    }
+
+    [Fact]
+    public void ComputeDistortionCurves_NoiseFloorFlagIsIndependentOfThdAndNamesTheBandwidth()
+    {
+        double[] impulse = BasePackets();
+        AddNoise(impulse, sigma: 0.002, seed: 4242);
+
+        // The THD flag alone no longer emits the noise floor — the two are separate
+        // traces under separate flags now.
+        IReadOnlyList<AnalysisCurve> thdOnly = EssDistortion.ComputeDistortionCurves(
+            impulse, Sweep(), NoiseOptions, calibration: null, SpectrumCurves.ThdPlusNoise);
+        Assert.Contains(thdOnly, c => c.Kind == AnalysisCurveKind.ThdPlusNoise);
+        Assert.DoesNotContain(thdOnly, c => c.Kind == AnalysisCurveKind.NoiseFloor);
+
+        // The noise flag alone emits the noise floor (no THD), and its label carries
+        // the equivalent noise bandwidth so the level is not read as resolution-free.
+        IReadOnlyList<AnalysisCurve> noiseOnly = EssDistortion.ComputeDistortionCurves(
+            impulse, Sweep(), NoiseOptions, calibration: null, SpectrumCurves.NoiseFloor);
+        Assert.DoesNotContain(noiseOnly, c => c.Kind == AnalysisCurveKind.ThdPlusNoise);
+        AnalysisCurve noise = noiseOnly.Single(c => c.Kind == AnalysisCurveKind.NoiseFloor);
+        Assert.StartsWith("Noise floor (", noise.Name);
+        Assert.Contains("Hz BW", noise.Name);
     }
 
     [Fact]

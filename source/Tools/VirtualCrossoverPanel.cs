@@ -74,7 +74,8 @@ public partial class VirtualCrossoverPanel : UserControl
     // tracks the dialog live; null once it closes (Save committed them to the
     // project, Cancel reverts by simply dropping them).
     private (double OffsetMs, double LeftMs, double PlateauMs, double RightMs,
-        double DetrendMs)? gatePreview;
+        PhaseWindowMode WindowMode, int FdwCycles, PhaseDetrendMode DetrendMode,
+        double DetrendMs, bool Unwrap)? gatePreview;
     private PlotWatermarkAnnotation hintAnnotation = null!;
     private LinearAxis mainValueAxis = null!;
     private PlotLabelsPanelController plotLabels = null!;
@@ -3344,17 +3345,15 @@ public partial class VirtualCrossoverPanel : UserControl
         double gateOffsetMs,
         int sampleRate)
     {
-        if (gatePreview is { } preview)
-        {
-            return preview.DetrendMs;
-        }
-        if (frequencyResponseOptions.PhaseDetrendMode == PhaseDetrendMode.Off)
+        PhaseDetrendMode detrendMode = gatePreview?.DetrendMode ?? project.PhaseDetrendMode;
+        if (detrendMode == PhaseDetrendMode.Off)
         {
             return 0.0;
         }
-        if (frequencyResponseOptions.PhaseDetrendMode == PhaseDetrendMode.Manual)
+        if (detrendMode == PhaseDetrendMode.Manual)
         {
-            return frequencyResponseOptions.PhaseDetrendMs;
+            return gatePreview?.DetrendMs ?? ResolveDetrendMs(
+                processed.Min(item => item.PeakIndex), sampleRate);
         }
 
         // Estimate once from the existing common anchor (earliest processed
@@ -3372,15 +3371,15 @@ public partial class VirtualCrossoverPanel : UserControl
         double gateOffsetMs,
         PhaseDetrendMode detrendMode,
         double manualDetrendMilliseconds) => new(
-            frequencyResponseOptions.PhaseWindowMode,
-            frequencyResponseOptions.PhaseFdwCycles,
+            gatePreview?.WindowMode ?? project.PhaseWindowMode,
+            gatePreview?.FdwCycles ?? project.PhaseFdwCycles,
             detrendMode,
             manualDetrendMilliseconds,
             gateOffsetMs,
             gatePreview?.LeftMs ?? project.PhaseGateLeftMs,
             gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs,
             gatePreview?.RightMs ?? project.PhaseGateRightMs,
-            Unwrap: false,
+            Unwrap: gatePreview?.Unwrap ?? project.PhaseUnwrap,
             SmoothingInverseOctaves: 0.0);
 
     private List<SignalPoint> BuildPhasePoints(
@@ -3448,13 +3447,19 @@ public partial class VirtualCrossoverPanel : UserControl
             project.PhaseGatePlateauMs,
             project.PhaseGateRightMs,
             ResolveDetrendMs(reference, sampleRate),
+            project.PhaseWindowMode,
+            project.PhaseFdwCycles,
+            project.PhaseDetrendMode,
+            project.PhaseUnwrap,
             fitOffsetMs);
         // The callback is wired after Init so seeding the controls does not
         // trigger a redundant redraw; from here every dialog change repaints the
         // phase plot immediately.
-        dialog.PreviewChanged = (offsetMs, leftMs, plateauMs, rightMs, detrendMs) =>
+        dialog.PreviewChanged = (offsetMs, leftMs, plateauMs, rightMs, windowMode,
+            fdwCycles, detrendMode, detrendMs, unwrap) =>
         {
-            gatePreview = (offsetMs, leftMs, plateauMs, rightMs, detrendMs);
+            gatePreview = (offsetMs, leftMs, plateauMs, rightMs, windowMode,
+                fdwCycles, detrendMode, detrendMs, unwrap);
             RequestRedraw();
         };
 
@@ -3467,6 +3472,10 @@ public partial class VirtualCrossoverPanel : UserControl
                 project.PhaseGatePlateauMs = dialog.PlateauMs;
                 project.PhaseGateRightMs = dialog.RightMs;
                 project.PhaseDetrendMs = dialog.DetrendMs;
+                project.PhaseWindowMode = dialog.WindowMode;
+                project.PhaseFdwCycles = dialog.FdwCycles;
+                project.PhaseDetrendMode = dialog.DetrendMode;
+                project.PhaseUnwrap = dialog.Unwrap;
                 ScheduleSave();
             }
         }

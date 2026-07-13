@@ -44,11 +44,11 @@ namespace Resonalyze.Options
                 comboSmoothingInverseOctaves.SelectedItem =
                     SmoothingPresetOptions.Normalize(opt.SmoothingInverseOctaves);
                 numericOffset.Value = ClampToControl(numericOffset, opt.PhaseDetrendMs);
-                comboWindowMode.SelectedItem = opt.PhaseWindowMode;
+                comboWindowMode.SelectedIndex = opt.PhaseWindowMode == PhaseWindowMode.Fixed ? 0 : 1;
                 comboFdwCycles.SelectedItem = opt.PhaseFdwCycles is 4 or 6 or 8
                     ? opt.PhaseFdwCycles
                     : PhaseAnalysisSettings.DefaultFdwCycles;
-                comboDetrendMode.SelectedItem = opt.PhaseDetrendMode;
+                comboDetrendMode.SelectedIndex = (int)opt.PhaseDetrendMode;
                 checkBoxUnwrap.Checked = opt.Unwrap;
                 checkBoxShowMeasured.Checked = visibility.ShowMeasuredPhase;
                 checkBoxShowMinimum.Checked = visibility.ShowMinimumPhase;
@@ -71,15 +71,16 @@ namespace Resonalyze.Options
                     ? inverseOctaves
                     : SmoothingPresetOptions.SupportedInverseOctaves[0];
             opt.PhaseDetrendMs = (double)numericOffset.Value;
-            opt.PhaseWindowMode = comboWindowMode.SelectedItem is PhaseWindowMode windowMode
-                ? windowMode
+            opt.PhaseWindowMode = comboWindowMode.SelectedIndex == 0
+                ? PhaseWindowMode.Fixed
                 : PhaseWindowMode.FrequencyDependent;
             opt.PhaseFdwCycles = comboFdwCycles.SelectedItem is int cycles
                 ? cycles
                 : PhaseAnalysisSettings.DefaultFdwCycles;
-            opt.PhaseDetrendMode = comboDetrendMode.SelectedItem is PhaseDetrendMode detrendMode
-                ? detrendMode
-                : PhaseDetrendMode.Auto;
+            opt.PhaseDetrendMode = Enum.IsDefined(
+                (PhaseDetrendMode)comboDetrendMode.SelectedIndex)
+                    ? (PhaseDetrendMode)comboDetrendMode.SelectedIndex
+                    : PhaseDetrendMode.Auto;
             opt.Unwrap = checkBoxUnwrap.Checked;
             visibility.ShowMeasuredPhase = checkBoxShowMeasured.Checked;
             visibility.ShowMinimumPhase = checkBoxShowMinimum.Checked;
@@ -98,11 +99,11 @@ namespace Resonalyze.Options
             ClientSize = new Size(ClientSize.Width, ClientSize.Height + addedHeight);
 
             AddModeControl("Window", comboWindowMode, 10);
-            comboWindowMode.DataSource = Enum.GetValues<PhaseWindowMode>();
+            comboWindowMode.Items.AddRange(["Fixed", "FDW"]);
             AddModeControl("FDW cycles", comboFdwCycles, 36);
             comboFdwCycles.Items.AddRange([4, 6, 8]);
             AddModeControl("Detrend", comboDetrendMode, 62);
-            comboDetrendMode.DataSource = Enum.GetValues<PhaseDetrendMode>();
+            comboDetrendMode.Items.AddRange(["Off", "Auto", "Manual"]);
             labelAutoDetrend.AutoSize = true;
             labelAutoDetrend.ForeColor = Color.Gainsboro;
             labelAutoDetrend.Location = new Point(12, 84);
@@ -131,13 +132,12 @@ namespace Resonalyze.Options
 
         private void UpdatePhaseControlState()
         {
-            comboFdwCycles.Enabled = comboWindowMode.SelectedItem is
-                PhaseWindowMode.FrequencyDependent;
-            bool manual = comboDetrendMode.SelectedItem is PhaseDetrendMode.Manual;
+            comboFdwCycles.Enabled = comboWindowMode.SelectedIndex == 1;
+            bool manual = comboDetrendMode.SelectedIndex == (int)PhaseDetrendMode.Manual;
             numericOffset.Enabled = manual;
             buttonTauSlope.Enabled = manual;
             buttonTauPeak.Enabled = manual;
-            labelAutoDetrend.Text = comboDetrendMode.SelectedItem is PhaseDetrendMode.Auto
+            labelAutoDetrend.Text = comboDetrendMode.SelectedIndex == (int)PhaseDetrendMode.Auto
                 ? ResolveAutoDetrendLabel()
                 : string.Empty;
         }
@@ -154,8 +154,8 @@ namespace Resonalyze.Options
                 IImpulseMeasurement impulse =
                     new MeasurementPlotContext(measurement).CreatePrimaryMeasurement();
                 var settings = new PhaseAnalysisSettings(
-                    comboWindowMode.SelectedItem is PhaseWindowMode windowMode
-                        ? windowMode
+                    comboWindowMode.SelectedIndex == 0
+                        ? PhaseWindowMode.Fixed
                         : PhaseWindowMode.FrequencyDependent,
                     comboFdwCycles.SelectedItem is int cycles
                         ? cycles

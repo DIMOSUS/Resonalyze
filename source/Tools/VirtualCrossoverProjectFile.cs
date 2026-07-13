@@ -166,7 +166,7 @@ public sealed class VirtualCrossoverProjectFile
     // step in Migrate below. Files from a NEWER version (a downgraded app)
     // are never migrated: LoadOrDefault backs them up and starts fresh,
     // LoadFrom rejects them with an explicit error.
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
     public const int MaximumChannelCount = 8;
     private const string FileName = "virtual-crossover.json";
 
@@ -250,6 +250,7 @@ public sealed class VirtualCrossoverProjectFile
         PhaseWindowMode.FrequencyDependent;
     public int PhaseFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
     public PhaseDetrendMode PhaseDetrendMode { get; set; } = PhaseDetrendMode.Auto;
+    public bool PhaseUnwrap { get; set; } = true;
 
     public static string GetPath(string? rootDirectory = null) =>
         Path.Combine(
@@ -352,6 +353,12 @@ public sealed class VirtualCrossoverProjectFile
             file.PhaseFdwCycles = PhaseAnalysisSettings.DefaultFdwCycles;
             file.PhaseDetrendMode = PhaseDetrendMode.Manual;
             file.Version = 3;
+        }
+        if (file.Version == 3)
+        {
+            // v3 always rendered Virtual DSP phase wrapped in code.
+            file.PhaseUnwrap = false;
+            file.Version = 4;
         }
     }
 

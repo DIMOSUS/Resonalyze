@@ -116,6 +116,57 @@ public sealed class CrossoverAutoSetupTests
     }
 
     [Fact]
+    public void Propose_LocalizationBias_LowersTheMidrangeHandoverButNotTheTweeters()
+    {
+        // A broad-band midbass whose flatness-optimal handover to the midrange would
+        // otherwise sit near the top of the Midbass->Midrange class band (~500 Hz).
+        // The localization bias pulls THAT handover down below the ~300 Hz threshold,
+        // but is scoped to a handover INTO the midrange — the midrange->tweeter
+        // handover (upper driver a Tweeter) is left to the resonance floor, unmoved.
+        var sources = new List<AutoSetupSource>
+        {
+            new(BandCurve(20, 100, 0), DriverType.Subwoofer),
+            new(BandCurve(40, 1_200, 0), DriverType.Midbass),
+            new(BandCurve(120, 5_000, 0), DriverType.Midrange),
+            new(BandCurve(2_000, 20_000, 0), DriverType.Tweeter)
+        };
+
+        IReadOnlyList<CrossoverProposal> proposals =
+            CrossoverAutoSetup.Propose(sources, Options());
+
+        double midbassToMid = proposals[1].LowPassEdge!.Value.FrequencyHz;
+        double midToTweeter = proposals[2].LowPassEdge!.Value.FrequencyHz;
+        Assert.InRange(midbassToMid, 150, 320);
+        Assert.True(
+            midToTweeter > 1_000,
+            $"the midrange->tweeter handover must not be pulled low, was {midToTweeter:0} Hz.");
+    }
+
+    [Fact]
+    public void Propose_LocalizationBias_SelfLimitsWhenTheMidrangeCannotPlayLow()
+    {
+        // The bias is a nudge, not a clamp: a midrange that only plays down to ~450 Hz
+        // cannot take the handover at 250 without a gaping hole, and the flatness cost
+        // of that hole holds the junction up — the midbass keeps carrying the low-mids
+        // it must. So the handover stays well above the 250 Hz threshold here.
+        var sources = new List<AutoSetupSource>
+        {
+            new(BandCurve(20, 100, 0), DriverType.Subwoofer),
+            new(BandCurve(40, 1_200, 0), DriverType.Midbass),
+            new(BandCurve(450, 5_000, 0), DriverType.Midrange),
+            new(BandCurve(2_000, 20_000, 0), DriverType.Tweeter)
+        };
+
+        IReadOnlyList<CrossoverProposal> proposals =
+            CrossoverAutoSetup.Propose(sources, Options());
+
+        double midbassToMid = proposals[1].LowPassEdge!.Value.FrequencyHz;
+        Assert.True(
+            midbassToMid > 350,
+            $"a midrange that cannot play low must keep the handover up, was {midbassToMid:0} Hz.");
+    }
+
+    [Fact]
     public void Propose_PrefersTheStandardSlopeOverDraggingTheTweeterLow()
     {
         // A tweeter that measures clean down to ~1.2 kHz: rather than pin it

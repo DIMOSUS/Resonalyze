@@ -72,6 +72,45 @@ public sealed class FrequencyDependentPhaseTests
     }
 
     [Fact]
+    public void Fdw_PartialClampKeepsFixedSpectrumBelowTransition()
+    {
+        var impulse = new Complex[4_096];
+        impulse[480] = Complex.One;
+        impulse[576] = new Complex(0.6, 0.0); // 2 ms late reflection
+        var measurement = new SyntheticMeasurement(impulse, SampleRate, 480);
+        PhaseAnalysisSettings fixedSettings = Settings(
+            PhaseWindowMode.Fixed, 6, PhaseDetrendMode.Manual) with
+        {
+            LeftMs = 1.0,
+            PlateauMs = 1.0,
+            RightMs = 4.0
+        };
+        PhaseAnalysisSettings fdwSettings = fixedSettings with
+        {
+            WindowMode = PhaseWindowMode.FrequencyDependent
+        };
+
+        List<SignalPoint> fixedPhase = DataHelper.GetGatedPhaseData(measurement, fixedSettings);
+        List<SignalPoint> fdwPhase = DataHelper.GetGatedPhaseData(measurement, fdwSettings);
+
+        foreach ((SignalPoint expected, SignalPoint actual) in fixedPhase.Zip(fdwPhase)
+                     .Where(pair => pair.First.X is >= 100 and <= 700))
+        {
+            double error = Math.IEEERemainder(actual.Y - expected.Y, Math.Tau);
+            Assert.True(Math.Abs(error) < 1e-10,
+                $"FDW changed the clamped spectrum by {error:e} rad at {expected.X:0.#} Hz.");
+        }
+
+        double highFrequencyDifference = fixedPhase.Zip(fdwPhase)
+            .Where(pair => pair.First.X is >= 4_000 and <= 10_000)
+            .Average(pair => Math.Abs(Math.IEEERemainder(
+                pair.Second.Y - pair.First.Y,
+                Math.Tau)));
+        Assert.True(highFrequencyDifference > 0.01,
+            $"FDW did not shorten above the transition ({highFrequencyDifference:e} rad).");
+    }
+
+    [Fact]
     public void CommonDetrendPreservesRelativePhase()
     {
         SyntheticMeasurement first = DelayedImpulse(480);

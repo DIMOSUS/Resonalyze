@@ -219,6 +219,14 @@ namespace Resonalyze.Dsp
                     fixedGate);
                 if (effectiveGate == previousGate)
                 {
+                    // The spectrum is unchanged, but this gate remains valid up
+                    // to the current center. Keep that upper boundary so the
+                    // following interpolation does not start at the first FFT
+                    // bin and prematurely shorten the low-frequency window.
+                    entries[^1] = entries[^1] with
+                    {
+                        CenterFrequencyHz = center
+                    };
                     continue;
                 }
 

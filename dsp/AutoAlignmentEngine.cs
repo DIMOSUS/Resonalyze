@@ -167,11 +167,40 @@ public static class AutoAlignmentEngine
 
     // How much better (in score dB) a wide-window optimum must be before it
     // unseats the arrival-anchored fine pick. The narrow window is centered on
-    // the coarse arrival, which at a high crossover can be a whole lobe off (its
-    // period is a fraction of the arrival uncertainty); the promotion recovers
-    // that lobe, while the margin keeps the physically-minimal arrival pick
-    // unless a distinctly better summation exists elsewhere.
-    private const double WideWindowPromotionMarginDb = 0.2;
+    // the coarse arrival, which at a high crossover can be a whole lobe off
+    // (spread corners bias the two envelopes by more than a period); the
+    // promotion recovers that lobe, while the margin keeps the physically-
+    // minimal arrival pick unless a distinctly better summation exists
+    // elsewhere. Calibrated on two field runs of the same cabin: a FALSE hop
+    // (the tweeter pair walking visibly ahead of its mid while the other
+    // side's junction worsened) offered 1.40 dB, a GENUINE lobe recovery
+    // (the arrival lobe combing at dip -5.6 everywhere, the user's manual
+    // optimum two periods earlier at dip -1.6) offered 1.91 dB — comb noise
+    // between real lobes runs up to ~1.4 dB, a real envelope error shows as
+    // ~2 dB across the whole basin. A distance-scaled ramp cannot separate
+    // those two points at any slope; this flat threshold does.
+    private const double WideWindowPromotionMarginDb = 1.6;
+
+    // The gain above which a declined promotion is worth a log line: below it
+    // the wide window merely confirmed the arrival pick.
+    private const double PromotionNoteworthyGainDb = 0.2;
+
+    // How far (in crossover periods) the promotion may move the pick away from
+    // the arrival-anchored fine result. The promotion exists to recover a coarse
+    // arrival that landed a lobe or two off at a degenerate junction (a spectral
+    // gap between the corners degrades the whitened correlation into near-equal
+    // lobes) — real data needs up to ~2 periods of reach for that (the r mid/
+    // tweeter cabin junction recovers the user's manual optimum ~1.8 periods off
+    // the fine pick). Beyond that the summation surface is a comb of near-equal
+    // minima spaced one period apart: which lobe is physically correct is set by
+    // the arrival, NOT by the sum (they differ by fractions of a dB). Without a
+    // cap the ±3 ms diagnostic window lets a marginally-better comb ALIAS three
+    // to four periods away unseat the envelope at a high crossover — the field
+    // failure where the tweeter walked ~1.7 ms (~3.9 periods) off its mid for a
+    // 0.25 dB "gain". 2.5 periods clears the legitimate ~1.8-period recovery and
+    // rejects the ~3.9-period alias. The wide window also scores under a weaker
+    // arrival prior, which inflates far aliases; the reach cap bounds that too.
+    private const double PromotionReachPeriods = 2.5;
 
     /// <summary>
     /// Runs the two-stage alignment. <paramref name="channelsByBand"/> holds
@@ -520,6 +549,13 @@ public static class AutoAlignmentEngine
                         $"dip {item.DipDb:0.0} dB)"))
                     : "none"));
 
+            // The arrival-anchored pick, captured BEFORE the edge-retry can move
+            // it: the promotion reach is measured from here, so a retry that
+            // legitimately widened the window (up to ~0.9 period) cannot stack
+            // with the promotion cap to let a comb alias land >2.5 periods off
+            // the envelope.
+            AlignmentCandidate arrivalPick = chosen;
+
             // A result pinned to the window edge means the optimum lies beyond
             // the coarse estimate's reach — retry once, widened but still short
             // of a full period so the search cannot land on the next lobe. The
@@ -560,15 +596,50 @@ public static class AutoAlignmentEngine
             {
                 AlignmentCandidate wideChosen =
                     AlignmentSelection.Select(wide, anchorMs);
-                if (wideChosen.ScoreDb > chosen.ScoreDb + WideWindowPromotionMarginDb)
+                // Only a lobe's reach from the arrival pick: past that the "better"
+                // score is a comb alias the summation cannot distinguish, so the
+                // envelope stays authoritative (see PromotionReachPeriods). Inside
+                // the reach, a hop onto another comb lobe must be plainly, not
+                // marginally, better (see WideWindowPromotionMarginDb). Both the
+                // reach (from the pre-retry arrival pick) and the gain (a
+                // prior-free acoustic score) are measured on quantities that do
+                // NOT depend on the search-window width — the wide diagnostic
+                // window carries a weaker arrival prior than the fine window, so
+                // comparing raw ScoreDb would credit a promotion for the prior
+                // relaxation alone.
+                double periodMs = 2.0 * halfPeriodMs;
+                double promotionReachMs = PromotionReachPeriods * periodMs;
+                double promotionStepMs =
+                    Math.Abs(wideChosen.DelayMs - arrivalPick.DelayMs);
+                double periodsMoved = promotionStepMs / periodMs;
+                double gainDb = AcousticScore(wideChosen) - AcousticScore(chosen);
+                if (gainDb > WideWindowPromotionMarginDb &&
+                    promotionStepMs <= promotionReachMs)
                 {
                     log.AppendLine(
                         $"  promoted {wideChosen.DelayMs:0.000} ms" +
                         $"{(wideChosen.InvertPolarity ? " inv" : "")} " +
                         $"over {chosen.DelayMs:0.000} ms" +
                         $"{(chosen.InvertPolarity ? " inv" : "")} " +
-                        $"(gain {wideChosen.ScoreDb - chosen.ScoreDb:0.00} dB)");
+                        $"(gain {gainDb:0.00} dB at {periodsMoved:0.0} periods)");
                     chosen = wideChosen;
+                }
+                else if (gainDb > PromotionNoteworthyGainDb &&
+                    promotionStepMs > promotionReachMs)
+                {
+                    log.AppendLine(
+                        $"  promotion declined: {wideChosen.DelayMs:0.000} ms is " +
+                        $"{promotionStepMs:0.000} ms ({periodsMoved:0.0} " +
+                        $"periods) from the arrival pick {arrivalPick.DelayMs:0.000} ms — " +
+                        "a comb alias beyond the envelope's reach.");
+                }
+                else if (gainDb > PromotionNoteworthyGainDb)
+                {
+                    log.AppendLine(
+                        $"  promotion declined: {wideChosen.DelayMs:0.000} ms" +
+                        $"{(wideChosen.InvertPolarity ? " inv" : "")} gains only " +
+                        $"{gainDb:0.00} dB over {chosen.DelayMs:0.000} ms — " +
+                        $"a lobe hop needs {WideWindowPromotionMarginDb:0.00} dB.");
                 }
             }
 
@@ -586,6 +657,17 @@ public static class AutoAlignmentEngine
                 chosen.InvertPolarity);
         }
     }
+
+    // A candidate's summation quality WITHOUT the arrival-prior penalty: the
+    // raw in-band average plus the same dip-excess term the candidate scores
+    // carry. The stored ScoreDb is this minus a prior penalty whose strength
+    // scales with the search window (priorSigma = window / 4), so ScoreDb is
+    // only comparable WITHIN one window; cross-window comparisons (the wide
+    // promotion vs the fine pick) must use this prior-free figure.
+    private static double AcousticScore(AlignmentCandidate candidate) =>
+        candidate.LossDb +
+        VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
+        (candidate.DipDb - candidate.LossDb);
 
     // A uniform delay shift of every channel in the scope but one: the standard
     // way to "advance" a channel that would otherwise need a negative delay.
@@ -795,40 +877,185 @@ public static class AutoAlignmentEngine
         // follows) rather than the full intersection. Unmeasurable (silent
         // band, low SNR) falls back to null and the search keeps its own-side
         // anchor.
-        double? CrossSideTargetMs(
+        // Returns the delay that Δ-aligns the right channel to its left
+        // counterpart, and whether the target is COARSE (the energy-peak rung
+        // of the ladder, good to a fraction of a millisecond) — a coarse
+        // target may pin a lobe but never the tight scene tolerance.
+        (double TargetMs, bool Coarse)? CrossSideTargetMs(
             IAlignmentChannel rightChannel,
             StereoPairLink link,
             double bandLowHz,
-            double bandHighHz)
+            double bandHighHz,
+            double fallbackLowHz,
+            double fallbackHighHz)
         {
             var searchAlignment =
                 new Dictionary<IAlignmentChannel, AlignmentOverride>(alignment);
             searchAlignment.Remove(rightChannel);
             IReadOnlyList<AlignmentSnapshot> current = reprocess(searchAlignment);
-            TimeAlignmentAnalysisResult leftArrival =
-                VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-                    current.First(item => item.Channel == link.Left).ImpulseResponse,
-                    link.Left.SampleRate, bandLowHz, bandHighHz);
-            TimeAlignmentAnalysisResult rightRaw =
-                VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-                    current.First(item => item.Channel == rightChannel).ImpulseResponse,
-                    rightChannel.SampleRate, bandLowHz, bandHighHz);
-            if (!leftArrival.IsValid || !rightRaw.IsValid ||
-                leftArrival.SignalToNoiseDecibels < MinimumArrivalSnrDb ||
-                rightRaw.SignalToNoiseDecibels < MinimumArrivalSnrDb)
+            AlignmentSnapshot leftSnapshot =
+                current.First(item => item.Channel == link.Left);
+            AlignmentSnapshot rightSnapshot =
+                current.First(item => item.Channel == rightChannel);
+            Complex[] leftIr = leftSnapshot.ImpulseResponse;
+            Complex[] rightIr = rightSnapshot.ImpulseResponse;
+
+            // Both sides measured in one band, with a modal-latch guard: the
+            // Latched flag separates "one side timed the wrong feature" (worth
+            // retrying one band up) from "the band cannot be measured at all"
+            // (silence or a too-narrow intersection — the link stays without a
+            // target, exactly as before the ladder existed).
+            // SAME driver measured in the band's upper half must agree with
+            // the full-band read to within the dispersion one direct wave
+            // packet can show (half a period at the probe's low edge). A
+            // full-band read landing far BEHIND its own upper-half read means
+            // the detector latched that side onto the in-room modal build-up
+            // instead of the direct rise (the under-seat midbass case:
+            // 21.2 ms in 80-200 Hz vs 13.9 ms one band up) — the two sides
+            // are then timing DIFFERENT features and their difference is
+            // garbage. The narrow upper half itself is NOT a substitute (at a
+            // low band it is an octave of mush that once dragged a woofer
+            // 6 ms off) — it only votes on the full band's honesty.
+            ((TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
+                Reads, bool Latched) MeasureConsistent(double lowHz, double highHz)
             {
-                return null;
+                TimeAlignmentAnalysisResult left =
+                    VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                        leftIr, link.Left.SampleRate, lowHz, highHz);
+                TimeAlignmentAnalysisResult right =
+                    VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                        rightIr, rightChannel.SampleRate, lowHz, highHz);
+                if (!left.IsValid || !right.IsValid ||
+                    left.SignalToNoiseDecibels < MinimumArrivalSnrDb ||
+                    right.SignalToNoiseDecibels < MinimumArrivalSnrDb)
+                {
+                    return (null, false);
+                }
+
+                double probeLowHz = Math.Sqrt(lowHz * highHz);
+                if (highHz <
+                    probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
+                {
+                    return ((left, right), false);
+                }
+
+                TimeAlignmentAnalysisResult leftProbe =
+                    VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                        leftIr, link.Left.SampleRate, probeLowHz, highHz);
+                TimeAlignmentAnalysisResult rightProbe =
+                    VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                        rightIr, rightChannel.SampleRate, probeLowHz, highHz);
+                if (!leftProbe.IsValid || !rightProbe.IsValid ||
+                    leftProbe.SignalToNoiseDecibels < MinimumArrivalSnrDb ||
+                    rightProbe.SignalToNoiseDecibels < MinimumArrivalSnrDb)
+                {
+                    return ((left, right), false);
+                }
+
+                double toleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
+                bool leftLatched = left.FirstArrivalDelayMilliseconds
+                    - leftProbe.FirstArrivalDelayMilliseconds > toleranceMs;
+                bool rightLatched = right.FirstArrivalDelayMilliseconds
+                    - rightProbe.FirstArrivalDelayMilliseconds > toleranceMs;
+                if (leftLatched || rightLatched)
+                {
+                    log.AppendLine(
+                        $"  cross-side link {rightChannel.Name}: " +
+                        $"{(leftLatched ? link.Left.Name : rightChannel.Name)}" +
+                        $" reads {(leftLatched ? left : right).FirstArrivalDelayMilliseconds:0.000} ms" +
+                        $" in {lowHz:0}-{highHz:0} Hz but " +
+                        $"{(leftLatched ? leftProbe : rightProbe).FirstArrivalDelayMilliseconds:0.000} ms" +
+                        $" in its {probeLowHz:0}-{highHz:0} Hz half " +
+                        "(modal latch: the sides time different features)");
+                    return (null, true);
+                }
+
+                return ((left, right), false);
             }
 
-            double target = leftArrival.FirstArrivalDelayMilliseconds
+            // The consistency ladder: the pair's own shared band first; when a
+            // side LATCHED there, the channel's junction band — the engine
+            // already trusts it for junction work, and the direct rise that
+            // hid under a mode in the low link band is usually plain one
+            // octave up. An unmeasurable link band (silence, too narrow) does
+            // NOT ladder: the link was inadmissible, not mis-read. Only when
+            // both bands are poisoned is the prior withdrawn and the search
+            // keeps its own-side junction anchor.
+            double usedLowHz = bandLowHz;
+            double usedHighHz = bandHighHz;
+            bool anyLatch;
+            ((TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
+                Reads, bool Latched) measured =
+                MeasureConsistent(bandLowHz, bandHighHz);
+            anyLatch = measured.Latched;
+            if (measured.Reads == null && measured.Latched &&
+                (fallbackLowHz != bandLowHz || fallbackHighHz != bandHighHz))
+            {
+                measured = MeasureConsistent(fallbackLowHz, fallbackHighHz);
+                anyLatch |= measured.Latched;
+                if (measured.Reads != null)
+                {
+                    usedLowHz = fallbackLowHz;
+                    usedHighHz = fallbackHighHz;
+                }
+            }
+            if (measured.Reads is not { } arrivals)
+            {
+                if (!anyLatch)
+                {
+                    // The link band itself was inadmissible (silent or too
+                    // narrow): no target, exactly as before the ladder.
+                    return null;
+                }
+
+                // The ladder's last rung: when no band reads both DIRECT rises
+                // consistently, the pair is timed by its processed IRs' energy
+                // peaks. For a band-passed channel that peak IS its in-band
+                // dominant packet (typically the modal build-up) — the same
+                // physical feature on both sides of one cabin, defined without
+                // any detector threshold. Its L/R difference tracks the true
+                // path split to a fraction of a millisecond — coarse against
+                // the tight scene pin, but the lobe lock only needs the target
+                // within half a junction period.
+                double leftPeakMs = leftSnapshot.PeakIndex
+                    * 1_000.0 / link.Left.SampleRate;
+                double rightPeakMs = rightSnapshot.PeakIndex
+                    * 1_000.0 / rightChannel.SampleRate;
+                // Guard the asymmetric-cabin case: if the two peaks sit farther
+                // apart than any real inter-side path, they are different room
+                // modes, not one shared feature, so their difference is not a
+                // usable L/R split. Withdraw the prior (free own-side search)
+                // rather than pin the pair to a fabricated target.
+                if (Math.Abs(leftPeakMs - rightPeakMs) > MaxInterSideDirectPathMs)
+                {
+                    log.AppendLine(
+                        $"  cross-side prior {rightChannel.Name}: withdrawn — " +
+                        $"energy peaks {leftPeakMs:0.000} / {rightPeakMs:0.000} ms " +
+                        "are too far apart to be one shared feature " +
+                        "(asymmetric modal dominance)");
+                    return null;
+                }
+
+                double peakTarget = leftPeakMs
+                    - plan.SceneOffsetMs
+                    - rightPeakMs;
+                log.AppendLine(
+                    $"  cross-side prior {rightChannel.Name}: target " +
+                    $"{peakTarget:0.000} ms from the processed IR energy peaks " +
+                    $"(L {leftPeakMs:0.000}, raw R {rightPeakMs:0.000} ms — " +
+                    "both sides' direct reads modal-latched)");
+                return (peakTarget, true);
+            }
+
+            double target = arrivals.Left.FirstArrivalDelayMilliseconds
                 - plan.SceneOffsetMs
-                - rightRaw.FirstArrivalDelayMilliseconds;
+                - arrivals.Right.FirstArrivalDelayMilliseconds;
             log.AppendLine(
                 $"  cross-side prior {rightChannel.Name}: target {target:0.000} ms " +
-                $"(L arrival {leftArrival.FirstArrivalDelayMilliseconds:0.000}, " +
-                $"raw R {rightRaw.FirstArrivalDelayMilliseconds:0.000} ms " +
-                $"in {bandLowHz:0}-{bandHighHz:0} Hz)");
-            return target;
+                $"(L arrival {arrivals.Left.FirstArrivalDelayMilliseconds:0.000}, " +
+                $"raw R {arrivals.Right.FirstArrivalDelayMilliseconds:0.000} ms " +
+                $"in {usedLowHz:0}-{usedHighHz:0} Hz)");
+            return (target, false);
         }
 
         void AlignRight(int index, int neighborIndex, AlignmentJunction pair)
@@ -860,13 +1087,19 @@ public static class AutoAlignmentEngine
             // The scene mandate: pairs reaching the localization region are
             // pinned to the cross-side target, which is then measured in the
             // localization sub-band alone — the low end of a wide shared band
-            // (soft envelopes, no localization) must not smear the pin. Pure
-            // low-frequency pairs keep the free joint-junction search with
-            // the full-band target as a gentle prior only.
+            // (soft envelopes, no localization) must not smear the pin. A
+            // pure low-frequency pair is pinned too, but only to the LOBE: an
+            // identical L/R driver pair's delay split is physical (path
+            // difference), and a junction comb whose lobes differ by a dB
+            // must not choose it — the field failure put one under-seat
+            // midbass at 0 and the other at 10.85 ms for exactly that. The
+            // lock tolerance is half the period of the tightest junction the
+            // channel searches against, so the sum keeps full authority
+            // inside the arrival's lobe and none across lobes.
             StereoPairLink? channelLink = plan.PairLinks?.FirstOrDefault(
                 item => item.Right == channel);
             bool lockable = channelLink != null && IsSceneLockable(channelLink);
-            double? crossTarget = channelLink == null
+            (double TargetMs, bool Coarse)? cross = channelLink == null
                 ? null
                 : CrossSideTargetMs(
                     channel,
@@ -874,10 +1107,17 @@ public static class AutoAlignmentEngine
                     lockable
                         ? Math.Max(channelLink.BandLowHz, SceneLockLocalizationLowHz)
                         : channelLink.BandLowHz,
-                    channelLink.BandHighHz);
-            double? sceneLock = lockable && crossTarget != null
-                ? SceneLockToleranceMs
-                : null;
+                    channelLink.BandHighHz,
+                    pair.BandLowHz,
+                    pair.BandHighHz);
+            double? crossTarget = cross?.TargetMs;
+            double? sceneLock = cross is not { } resolved
+                ? null
+                : lockable && !resolved.Coarse
+                    ? SceneLockToleranceMs
+                    : 500.0 / Math.Max(
+                        pair.CrossoverHz,
+                        secondaryPair?.CrossoverHz ?? pair.CrossoverHz);
 
             // Polarity is a property of the DRIVER, not the side: a right channel
             // inherits the sign its left counterpart settled on (the two are the
@@ -953,9 +1193,12 @@ public static class AutoAlignmentEngine
     // (the left counterpart's settled arrival minus the scene offset) and may
     // fine-tune its junction sum only within this tolerance — the stereo
     // image outranks the junction handover. Pairs living entirely below the
-    // localization region (the woofers) keep the free joint-junction search:
-    // the ear does not localize there, low-band envelope arrivals are soft,
-    // and the summation is what remains audible.
+    // localization region (the woofers) are pinned more loosely, to the
+    // arrival's LOBE (half the tightest adjacent junction period): the ear
+    // does not localize there, but an identical driver pair's delay split is
+    // still physical, and the junction comb must polish within that lobe,
+    // not choose one. With no reliable cross-side arrival at all the free
+    // joint-junction search remains.
     private const double SceneLockToleranceMs = 0.05;
 
     // The lower edge of the localization region. Only the part of a pair's
@@ -965,6 +1208,17 @@ public static class AutoAlignmentEngine
     // content to pin: the lock requires at least a third of an octave above
     // the edge, the same admission rule the arrival analysis itself applies.
     private const double SceneLockLocalizationLowHz = 300;
+
+    // The widest the two sides of one stereo pair can plausibly differ in
+    // direct-path time, measured from one listening position: a car cabin is
+    // at most a couple of metres across, so ~8 ms bounds any real path split
+    // with generous margin. The energy-peak fallback (below) trusts that both
+    // sides' dominant IR packets are the SAME physical feature; peaks farther
+    // apart than this are almost certainly DIFFERENT room modes dominating L
+    // vs R (an acoustically asymmetric install), so the peak difference is not
+    // a real L/R split and the pair falls back to its own-side junction search
+    // rather than pinning to a fabricated target.
+    private const double MaxInterSideDirectPathMs = 8.0;
 
     // Whether a linked pair reaches far enough into the localization region
     // for the scene to outrank its junction sums: locked in the descent,
@@ -978,6 +1232,10 @@ public static class AutoAlignmentEngine
     // the SAME delta (which leaves the pair's L-R timing untouched) to trade
     // junction loss between the sides. Bounded search, and a move must buy at
     // least the minimum gain in the mean adjacent-junction loss to apply.
+    // This range is additionally capped per pair to half the period of its
+    // tightest adjacent junction (see RebalancePairsKeepingScene): the flat
+    // window alone let fraction-of-a-dB "gains" walk a tweeter pair a whole
+    // comb lobe off its mid at a high junction.
     private const double PairComoveSearchRangeMs = 1.2;
     private const double PairComoveMinimumGainDb = 0.05;
 
@@ -1062,8 +1320,22 @@ public static class AutoAlignmentEngine
             return;
         }
 
+        // The co-move delta already applied to each channel, so a lower pair's
+        // reach is bounded relative to its already-settled neighbor — NOT
+        // relative to zero. Each per-pair move is capped at half a junction
+        // period, but two adjacent pairs moving that far in opposite directions
+        // would open a FULL period across their shared junction (a comb alias:
+        // the sum is back in phase, so the search sees no loss, yet the absolute
+        // alignment jumped a lobe). Constraining each pair's window around the
+        // neighbor's applied delta keeps the RELATIVE shift across every shared
+        // junction within half a period, which is what the reach cap must mean.
+        var comoveDeltas = new Dictionary<IAlignmentChannel, double>();
+
+        // Every linked pair participates: the scene-locked ones paid their
+        // junction sums to the stereo image, the low-frequency ones to the
+        // arrival-lobe pin — co-moving both sides by one delta repairs those
+        // junctions without touching what the pin bought.
         foreach (StereoPairLink link in plan.PairLinks
-            .Where(IsSceneLockable)
             .OrderByDescending(item => item.BandHighHz))
         {
             AlignmentOverride leftOverride = alignment.GetValueOrDefault(link.Left);
@@ -1078,6 +1350,18 @@ public static class AutoAlignmentEngine
                     pair.Upper.Channel == link.Right))
                 .ToList();
             if (adjacent.Count == 0)
+            {
+                continue;
+            }
+
+            // A pair bordering the shared mono channel is not co-moved: the
+            // mono is timed by the LEFT pass alone (a pinned invariant — the
+            // sub/left-woofer relation must match a left-only run exactly),
+            // and a shared shift of the pair would silently re-time the left
+            // side against it.
+            if (adjacent.Any(junction =>
+                plan.MonoChannels.Contains(junction.Lower.Channel) ||
+                plan.MonoChannels.Contains(junction.Upper.Channel)))
             {
                 continue;
             }
@@ -1137,22 +1421,59 @@ public static class AutoAlignmentEngine
                 return total / evaluators.Count;
             }
 
+            // Each adjacent junction bounds the pair's reach to within half its
+            // period OF THE NEIGHBOR'S ALREADY-APPLIED co-move delta: within
+            // half a period the junction sums are single-lobed, so the search
+            // can only polish the alignment the arrival-anchored walk chose.
+            // Past that lies the next comb lobe — and fractions of a dB of mean
+            // junction loss cannot choose a lobe (the same physics as the
+            // wide-window promotion reach cap). Centering on the neighbor's
+            // delta (0 for a channel that never co-moves — a mono/fixed
+            // neighbor) is what keeps the RELATIVE shift across the junction
+            // bounded even when the neighbor pair already moved; a flat ±half
+            // period around zero let two adjacent pairs drift a full period
+            // apart, and the flat window alone let a 0.1-0.2 dB "gain" walk the
+            // tweeter pair a whole period off its mid at a 2.3 kHz junction.
+            double lobeLowMs = -PairComoveSearchRangeMs;
+            double lobeHighMs = PairComoveSearchRangeMs;
+            foreach (AlignmentJunction junction in adjacent)
+            {
+                IAlignmentChannel neighbor =
+                    junction.Lower.Channel == link.Left ||
+                    junction.Lower.Channel == link.Right
+                        ? junction.Upper.Channel
+                        : junction.Lower.Channel;
+                double neighborDelta = comoveDeltas.GetValueOrDefault(neighbor);
+                double halfPeriodMs = 500.0 / junction.CrossoverHz;
+                lobeLowMs = Math.Max(lobeLowMs, neighborDelta - halfPeriodMs);
+                lobeHighMs = Math.Min(lobeHighMs, neighborDelta + halfPeriodMs);
+            }
+
             // Both bounds are fixed BEFORE the search so the winning delta
             // applies verbatim to both sides: negative deltas may not push
             // either channel below zero, positive ones may not push either
             // past the delay ceiling. Clamping after the fact would move the
             // two sides unequally and silently bend the very scene this pass
             // exists to preserve.
-            double minDelta = -Math.Min(
-                Math.Min(leftOverride.DelayMs, rightOverride.DelayMs),
-                PairComoveSearchRangeMs);
+            double minDelta = Math.Max(
+                lobeLowMs,
+                -Math.Min(leftOverride.DelayMs, rightOverride.DelayMs));
             double maxDelta = Math.Min(
-                PairComoveSearchRangeMs,
+                lobeHighMs,
                 MaxDelayMs - Math.Max(leftOverride.DelayMs, rightOverride.DelayMs));
+            // The neighbor lobes can, in principle, exclude zero (a settled
+            // neighbor a hair over half a period away); never let the window
+            // invert or force a non-zero move — keeping the pair is always legal.
+            minDelta = Math.Min(minDelta, 0.0);
+            maxDelta = Math.Max(maxDelta, 0.0);
             double baseline = Score(0);
             double bestDelta = 0;
             double bestScore = baseline;
-            for (double delta = minDelta; delta <= maxDelta + 1e-9; delta += 0.1)
+            // The coarse step scales down with the window so a tightly-capped
+            // high-junction pair still gets a real grid before refinement.
+            double coarseStep = Math.Min(
+                0.1, Math.Max(0.02, (maxDelta - minDelta) / 8.0));
+            for (double delta = minDelta; delta <= maxDelta + 1e-9; delta += coarseStep)
             {
                 double score = Score(delta);
                 if (score > bestScore)
@@ -1161,8 +1482,8 @@ public static class AutoAlignmentEngine
                     bestDelta = delta;
                 }
             }
-            for (double delta = Math.Max(minDelta, bestDelta - 0.1);
-                delta <= Math.Min(maxDelta, bestDelta + 0.1) + 1e-9;
+            for (double delta = Math.Max(minDelta, bestDelta - coarseStep);
+                delta <= Math.Min(maxDelta, bestDelta + coarseStep) + 1e-9;
                 delta += 0.02)
             {
                 double score = Score(delta);
@@ -1188,6 +1509,11 @@ public static class AutoAlignmentEngine
                 {
                     DelayMs = Math.Round(rightOverride.DelayMs + bestDelta, 2)
                 };
+                // Record the applied shift so a lower pair's reach is measured
+                // from here, keeping the relative shift across the shared
+                // junction within half a period.
+                comoveDeltas[link.Left] = bestDelta;
+                comoveDeltas[link.Right] = bestDelta;
                 log.AppendLine(
                     $"Co-move {link.Left.Name}+{link.Right.Name}: " +
                     $"{bestDelta:+0.00;-0.00} ms to both sides " +

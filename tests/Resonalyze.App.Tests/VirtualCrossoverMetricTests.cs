@@ -89,6 +89,33 @@ public sealed class VirtualCrossoverMetricTests
     }
 
     [Fact]
+    public void FormatStereoDeltasCompact_MonoSubShowsItsArrivalAndDashesRightAndDelta()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            // The shared mono sub carries a single arrival on the left slot; the
+            // right side and the L−R delta have no meaning and read "—".
+            string text = VirtualCrossoverMetric.FormatStereoDeltasCompact(
+            [
+                new VirtualCrossoverMetric.StereoDelta("A", 22.39, null, 20, 80),
+                new VirtualCrossoverMetric.StereoDelta(
+                    "B", 16.78, 17.18, 40, 160, LevelDeltaDb: 3.4)
+            ]);
+
+            Assert.Equal(
+                "Arrival (ms)\r\n" +
+                "         L      R  Δ L−R\r\n" +
+                "A    22.39      —      —\r\n" +
+                "B    16.78  17.18  -0.40\r\n" +
+                "\r\n" +
+                "Level Δ L−R (dB)\r\n" +
+                "A        —\r\n" +
+                "B     +3.4",
+                text);
+        });
+    }
+
+    [Fact]
     public void FormatStereoDeltasCompact_EmptyListRendersNothing()
     {
         Assert.Equal(

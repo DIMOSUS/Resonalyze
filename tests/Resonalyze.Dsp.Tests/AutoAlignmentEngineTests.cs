@@ -220,17 +220,21 @@ public sealed class AutoAlignmentEngineTests
     {
         // A 2 kHz junction: the fine window is ±0.5 ms and the retry reach is
         // ±0.45 ms (1.8 half-periods), while the search-time optimum sits at
-        // +2.5 ms — 1.5 ms past the stage-1 seed. Only the ±3 ms diagnostic
-        // sweep reaches it, and its clearly better summation must be promoted.
+        // +2.0 ms — 1.0 ms (two periods) past the stage-1 seed. Only the ±3 ms
+        // diagnostic sweep reaches it; its clearly better summation is within
+        // the promotion reach cap (2.5 periods), so it must be promoted. A more
+        // distant optimum would be a comb alias the arrival, not the sum, must
+        // resolve — the reach cap declines those (pinned on real data in
+        // PromotionReachTests / RealMeasurementArrivalTests).
         var woofer = new TestChannel("W", DelayedImpulse(1.0));
         var tweeter = new TestChannel(
-            "T", DelayedImpulse(0.0), reprocessIr: DelayedImpulse(-1.5));
+            "T", DelayedImpulse(0.0), reprocessIr: DelayedImpulse(-1.0));
         var log = new StringBuilder();
 
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
             Run([woofer, tweeter], [2_000], log);
 
-        Assert.InRange(alignment[tweeter].DelayMs, 2.4, 2.6);
+        Assert.InRange(alignment[tweeter].DelayMs, 1.9, 2.1);
         Assert.Contains("promoted", log.ToString());
     }
 

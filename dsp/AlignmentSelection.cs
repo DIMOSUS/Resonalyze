@@ -12,11 +12,14 @@ public static class AlignmentSelection
     /// <summary>
     /// An inverted winner must beat the best non-inverted candidate by this
     /// margin (dB): room reflections routinely hand a (flip + half-period
-    /// shift) impostor a few hundredths of a dB inside the pair band, while a
-    /// genuinely flipped driver wins by the full arrival-prior penalty of its
-    /// non-inverted impostors.
+    /// shift) impostor a few tenths of a dB inside the pair band (the r mid/
+    /// tweeter cabin junction hands one +0.32 dB), while a genuinely flipped
+    /// driver wins by the full arrival-prior penalty of its non-inverted
+    /// impostors — several dB, not fractions. Same envelope-first principle
+    /// as the wide-window promotion margin: a half-period flip hop must be
+    /// plainly better, not marginally.
     /// </summary>
-    public const double DefaultInvertPreferenceMarginDb = 0.25;
+    public const double DefaultInvertPreferenceMarginDb = 0.5;
 
     /// <summary>
     /// Among same-polarity candidates within this score margin (dB), the one

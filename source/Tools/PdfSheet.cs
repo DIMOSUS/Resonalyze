@@ -26,6 +26,10 @@ internal sealed class PdfSheet : IDisposable
 
     public Section Section { get; }
 
+    // The built MigraDoc model, for tests that assert the layout before it is
+    // rendered to a PDF.
+    internal Document Document => document;
+
     public PdfSheet(string title, string subtitleText)
     {
         document = new Document();

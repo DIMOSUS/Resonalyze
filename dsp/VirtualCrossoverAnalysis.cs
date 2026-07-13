@@ -358,9 +358,13 @@ public static class VirtualCrossoverAnalysis
             samples[i] = impulseResponse[i].Real;
         }
 
-        // Gentle spectral fades and a moderate threshold: the zero-phase bandpass
-        // rings symmetrically around the arrival, and steep edges plus a deep
-        // threshold would let the detector fire on a pre-ringing lobe.
+        // Gentle spectral fades keep the zero-phase bandpass ringing tame, and
+        // the kernel-envelope sidelobe rejection inside the peak search tells
+        // that ringing from a genuine early arrival by physics, so the search
+        // depth matches the analyzer's default 25 dB. The old, shallower 15 dB
+        // missed a soft direct rise sitting under a strong in-room modal
+        // build-up (the under-seat midbass in its 80-200 Hz pair band) and
+        // latched the arrival onto the mode, milliseconds late.
         return TimeAlignmentAnalysis.Analyze(
             samples,
             sampleRate,
@@ -369,8 +373,7 @@ public static class VirtualCrossoverAnalysis
                 UseBandpassWindow = true,
                 BandpassCenterHz = Math.Sqrt(low * high),
                 BandpassPassOctaves = Math.Log2(high / low),
-                BandpassFadeOctaves = 1.0,
-                FirstPeakThresholdBelowMaxDb = 15
+                BandpassFadeOctaves = 1.0
             });
     }
 

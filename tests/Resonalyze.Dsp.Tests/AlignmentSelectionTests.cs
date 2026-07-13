@@ -38,7 +38,7 @@ public sealed class AlignmentSelectionTests
     {
         // A genuinely flipped driver wins by more than the margin and stays.
         var inverted = new AlignmentCandidate(2.0, true, -0.50);
-        var normal = new AlignmentCandidate(1.4, false, -0.90);
+        var normal = new AlignmentCandidate(1.4, false, -1.10);
 
         AlignmentCandidate chosen = AlignmentSelection.Select(
             [inverted, normal], baseDeltaMs: 1.4);
@@ -81,7 +81,7 @@ public sealed class AlignmentSelectionTests
         // participate.
         var inverted = new AlignmentCandidate(2.0, true, -0.50);
         var invertedFar = new AlignmentCandidate(4.0, true, -0.58);
-        var normal = new AlignmentCandidate(1.0, false, -0.90);
+        var normal = new AlignmentCandidate(1.0, false, -1.10);
 
         AlignmentCandidate chosen = AlignmentSelection.Select(
             [inverted, invertedFar, normal], baseDeltaMs: 3.8);

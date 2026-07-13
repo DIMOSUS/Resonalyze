@@ -520,12 +520,17 @@ public sealed class StereoAlignmentTests
     }
 
     [Fact]
-    public void ComputeStereo_PureLowBandPairKeepsTheFreeSearch()
+    public void ComputeStereo_PureLowBandPairIsLockedToItsArrivalLobe()
     {
         // The woofer link's shared band (80-175 Hz) never reaches the
-        // localization region, so the scene mandate does not apply: the pair
-        // keeps the free joint-junction search and the cross-side target
-        // stays a gentle prior only. The mid link (400-2500 Hz) is locked.
+        // localization region, so the tight scene pin does not apply — but an
+        // identical L/R driver pair's delay split is still physical, and the
+        // junction comb (lobes a dB apart at a low junction) must not choose
+        // it: the field failure parked one under-seat midbass at 0 and the
+        // other at 10.85 ms. The pair is locked to the cross-side arrival's
+        // LOBE (half the tightest adjacent junction period), inside which the
+        // junction sum keeps full authority. The mid link (400-2500 Hz) keeps
+        // the tight scene lock.
         (TestChannel _, TestChannel[] _, TestChannel[] _,
             Dictionary<IAlignmentChannel, AlignmentOverride> _,
             StringBuilder log) = RunStereo(
@@ -536,8 +541,8 @@ public sealed class StereoAlignmentTests
         string woofLine = Array.Find(lines,
             line => line.StartsWith("Channel R woof:"))!;
         Assert.NotNull(woofLine);
-        Assert.DoesNotContain("SCENE-LOCKED", woofLine);
         Assert.Contains("(cross-side)", woofLine);
+        Assert.Contains("SCENE-LOCKED", woofLine);
         string midLine = Array.Find(lines,
             line => line.StartsWith("Channel R mid:"))!;
         Assert.NotNull(midLine);

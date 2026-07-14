@@ -17,6 +17,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
     private float[][] convertScratch = Array.Empty<float[]>();
     private double[] meterPeaks = Array.Empty<double>();
     private double[] meterSumSquares = Array.Empty<double>();
+    private AudioLevelAccumulator? levelAccumulator;
     private int expectedTotalSamples;
     private TaskCompletionSource<bool>? firstBufferReady;
     private TaskCompletionSource<bool>? playbackStopped;
@@ -77,6 +78,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
         this.expectedTotalSamples = expectedTotalSamples;
         StopAndDisposeDriver();
         ResetBuffers();
+        levelAccumulator = new AudioLevelAccumulator(ChannelCount, sampleRate);
         lock (sync)
         {
             // A real (re)start clears any remembered terminal failure; ResetCapture
@@ -317,9 +319,11 @@ internal sealed class AsioFullDuplexSession : IDisposable
         }
 
         firstBufferReady?.TrySetResult(true);
-        EventPublisher.Publish(
-            LevelsAvailable,
-            AudioLevelMetering.MeasureChannels(peaks, sumSquares, frames));
+        AudioChannelLevel[]? levels = levelAccumulator?.AddBlock(peaks, sumSquares, frames);
+        if (levels != null)
+        {
+            EventPublisher.Publish(LevelsAvailable, levels);
+        }
         if (readySequences == null)
         {
             return;

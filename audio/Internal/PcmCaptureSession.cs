@@ -8,6 +8,7 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
     private readonly SampleWaiterRegistry sampleWaiters = new();
     private readonly int expectedSamples;
     private readonly PcmCapturePump capturePump;
+    private readonly AudioLevelAccumulator levelAccumulator;
     private CaptureAccumulator accumulator;
     private float[][] decodeScratch = Array.Empty<float[]>();
     private double[] meterPeaks = Array.Empty<double>();
@@ -33,6 +34,7 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         Sequence = sequence;
         this.expectedSamples = expectedSamples;
         accumulator = CreateAccumulator();
+        levelAccumulator = new AudioLevelAccumulator(device.ChannelCount, device.CaptureFormat.SampleRate);
         capturePump = new PcmCapturePump(ProcessCaptureBlock, HandleCaptureFailure);
         device.DataAvailable += HandleDataAvailable;
         device.Stopped += HandleStopped;
@@ -212,9 +214,14 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         }
 
         firstBufferReady?.TrySetResult(true);
-        EventPublisher.Publish(
-            LevelsAvailable,
-            AudioLevelMetering.MeasureChannels(meterPeaks, meterSumSquares, decodedFrames));
+        AudioChannelLevel[]? levels = levelAccumulator.AddBlock(
+            meterPeaks,
+            meterSumSquares,
+            decodedFrames);
+        if (levels != null)
+        {
+            EventPublisher.Publish(LevelsAvailable, levels);
+        }
         if (readySequences == null)
         {
             return;

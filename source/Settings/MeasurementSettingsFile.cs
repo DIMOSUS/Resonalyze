@@ -26,6 +26,7 @@ internal sealed class MeasurementSettingsFile
     public WaterfallSettings BurstDecay { get; set; } = new();
     public LiveSpectrumSettings LiveSpectrum { get; set; } = new();
     public TimeAlignmentSettings TimeAlignment { get; set; } = new();
+    public EqWizardSettings EqWizard { get; set; } = new();
     public string? LastImpulseResponseDirectory { get; set; }
 
     // True when loading reset a loopback configuration that pointed at the
@@ -411,6 +412,38 @@ internal sealed class MeasurementSettingsFile
 
         private static double ClampMilliseconds(double value, double min, double max) =>
             double.IsFinite(value) ? Math.Clamp(value, min, max) : 0.0;
+    }
+
+    // Self-contained EQ Wizard state (the mode no longer derives anything from
+    // overlays or the current measurement): the isolated target curve, the gain
+    // range and band count of the fader bank, source smoothing and the microphone
+    // calibration applied to the loaded IR. The loaded IR itself is not persisted.
+    internal sealed class EqWizardSettings
+    {
+        public TargetPreset Preset { get; set; } = TargetPreset.Flat;
+        public double TiltDbPerOctave { get; set; }
+        public double BassShelfGainDb { get; set; }
+        public double BassShelfFrequencyHz { get; set; } = 100;
+        public double BassShelfWidthOctaves { get; set; } = 1.5;
+        public double TrebleShelfGainDb { get; set; }
+        public double TrebleShelfFrequencyHz { get; set; } = 5000;
+        public double TrebleShelfWidthOctaves { get; set; } = 1.5;
+        public double PresenceGainDb { get; set; }
+        public double PresenceFrequencyHz { get; set; } = 3000;
+        public double PresenceWidthOctaves { get; set; } = 1.0;
+        public double ToleranceDb { get; set; } = 3;
+        public TargetDeviationMode DeviationMode { get; set; } = TargetDeviationMode.Deviation;
+        public int TargetColorArgb { get; set; } = unchecked((int)0xFF37C8A0);
+        public double TargetStrokeThickness { get; set; } = 2;
+        public OverlayLineStyle TargetLineStyle { get; set; } = OverlayLineStyle.Dash;
+        public int TargetSmoothingInverseOctaves { get; set; }
+        public double TargetOffsetDb { get; set; }
+        public double GainMinDb { get; set; } = -15;
+        public double GainMaxDb { get; set; } = 6;
+        public int BandCount { get; set; } = 1;
+        public int SourceSmoothingInverseOctaves { get; set; }
+        public MicrophoneCalibrationMode CalibrationMode { get; set; } =
+            MicrophoneCalibrationMode.Off;
     }
 
     internal sealed class ImpulseResponseSettings

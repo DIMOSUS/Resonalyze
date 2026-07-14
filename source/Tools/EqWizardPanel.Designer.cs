@@ -32,8 +32,7 @@ namespace Resonalyze
             plotWizard = new OxyPlot.WindowsForms.PlotView();
             panelPEQ = new Panel();
             labelBands = new Label();
-            darkComboBoxSource = new DarkComboBox();
-            labelSource = new Label();
+            buttonLoadIr = new Button();
             darkComboBoxBands = new DarkComboBox();
             NumericTargetOffset = new DarkNumericUpDown();
             labelTargetOffset = new Label();
@@ -53,6 +52,8 @@ namespace Resonalyze
             checkBoxBypass = new CheckBox();
             panelAutoTune = new Panel();
             buttonOverlaySettings = new Button();
+            comboBoxCalibration = new DarkComboBox();
+            labelCalibration = new Label();
             comboBoxSmooth = new DarkComboBox();
             labelSmooth = new Label();
             buttonImport = new Button();
@@ -65,9 +66,9 @@ namespace Resonalyze
             (numericGainMax).BeginInit();
             panelAutoTune.SuspendLayout();
             SuspendLayout();
-            //
+            // 
             // plotWizard
-            //
+            // 
             plotWizard.BackColor = Color.FromArgb(50, 55, 100);
             plotWizard.Location = new Point(197, 14);
             plotWizard.Margin = new Padding(6);
@@ -79,67 +80,56 @@ namespace Resonalyze
             plotWizard.ZoomHorizontalCursor = Cursors.SizeWE;
             plotWizard.ZoomRectangleCursor = Cursors.SizeNWSE;
             plotWizard.ZoomVerticalCursor = Cursors.SizeNS;
-            //
+            // 
             // panelPEQ
-            //
+            // 
             panelPEQ.BackColor = Color.FromArgb(20, 22, 30);
             panelPEQ.BorderStyle = BorderStyle.FixedSingle;
             panelPEQ.Location = new Point(197, 371);
             panelPEQ.Name = "panelPEQ";
             panelPEQ.Size = new Size(1034, 390);
             panelPEQ.TabIndex = 2;
-            //
+            // 
             // labelBands
-            //
+            // 
             labelBands.AutoSize = true;
             labelBands.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelBands.ForeColor = Color.FromArgb(210, 214, 222);
-            labelBands.Location = new Point(8, 91);
+            labelBands.Location = new Point(9, 147);
             labelBands.Margin = new Padding(3);
             labelBands.Name = "labelBands";
             labelBands.Size = new Size(56, 15);
             labelBands.TabIndex = 4;
             labelBands.Text = "EQ Filters";
-            //
-            // darkComboBoxSource
-            //
-            darkComboBoxSource.BackColor = Color.FromArgb(55, 60, 72);
-            darkComboBoxSource.ForeColor = Color.White;
-            darkComboBoxSource.Location = new Point(108, 14);
-            darkComboBoxSource.MinimumSize = new Size(36, 19);
-            darkComboBoxSource.Name = "darkComboBoxSource";
-            darkComboBoxSource.Size = new Size(80, 19);
-            darkComboBoxSource.TabIndex = 5;
-            //
-            // labelSource
-            //
-            labelSource.AutoSize = true;
-            labelSource.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelSource.ForeColor = Color.FromArgb(210, 214, 222);
-            labelSource.Location = new Point(9, 16);
-            labelSource.Margin = new Padding(3);
-            labelSource.Name = "labelSource";
-            labelSource.Size = new Size(59, 15);
-            labelSource.TabIndex = 6;
-            labelSource.Text = "Reference";
-            //
+            // 
+            // buttonLoadIr
+            // 
+            buttonLoadIr.FlatStyle = FlatStyle.Popup;
+            buttonLoadIr.ForeColor = Color.White;
+            buttonLoadIr.Location = new Point(6, 12);
+            buttonLoadIr.Name = "buttonLoadIr";
+            buttonLoadIr.Size = new Size(182, 24);
+            buttonLoadIr.TabIndex = 5;
+            buttonLoadIr.Text = "Load IR…";
+            buttonLoadIr.UseVisualStyleBackColor = true;
+            // 
             // darkComboBoxBands
-            //
+            // 
             darkComboBoxBands.BackColor = Color.FromArgb(55, 60, 72);
             darkComboBoxBands.ForeColor = Color.White;
-            darkComboBoxBands.Location = new Point(108, 89);
+            darkComboBoxBands.Location = new Point(108, 145);
             darkComboBoxBands.MinimumSize = new Size(36, 19);
             darkComboBoxBands.Name = "darkComboBoxBands";
             darkComboBoxBands.Size = new Size(80, 19);
             darkComboBoxBands.TabIndex = 7;
-            //
+            // 
             // NumericTargetOffset
-            //
+            // 
             NumericTargetOffset.BackColor = Color.FromArgb(55, 60, 72);
             NumericTargetOffset.DecimalPlaces = 0;
             NumericTargetOffset.ForeColor = Color.White;
             NumericTargetOffset.Increment = new decimal(new int[] { 1, 0, 0, 0 });
-            NumericTargetOffset.Location = new Point(108, 39);
+            NumericTargetOffset.Location = new Point(108, 95);
             NumericTargetOffset.Maximum = new decimal(new int[] { 180, 0, 0, 0 });
             NumericTargetOffset.Minimum = new decimal(new int[] { 180, 0, 0, int.MinValue });
             NumericTargetOffset.MinimumSize = new Size(36, 19);
@@ -149,26 +139,27 @@ namespace Resonalyze
             NumericTargetOffset.TextAlign = HorizontalAlignment.Right;
             NumericTargetOffset.ThousandsSeparator = false;
             NumericTargetOffset.Value = new decimal(new int[] { 0, 0, 0, 0 });
-            //
+            NumericTargetOffset.ValueSuffix = "dB";
+            // 
             // labelTargetOffset
-            //
+            // 
             labelTargetOffset.AutoSize = true;
             labelTargetOffset.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelTargetOffset.ForeColor = Color.FromArgb(210, 214, 222);
-            labelTargetOffset.Location = new Point(9, 41);
+            labelTargetOffset.Location = new Point(9, 97);
             labelTargetOffset.Margin = new Padding(3);
             labelTargetOffset.Name = "labelTargetOffset";
             labelTargetOffset.Size = new Size(70, 15);
             labelTargetOffset.TabIndex = 9;
             labelTargetOffset.Text = "Target Level";
-            //
+            // 
             // NumericGain
-            //
+            // 
             NumericGain.BackColor = Color.FromArgb(55, 60, 72);
             NumericGain.DecimalPlaces = 1;
             NumericGain.ForeColor = Color.White;
             NumericGain.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
-            NumericGain.Location = new Point(108, 114);
+            NumericGain.Location = new Point(108, 170);
             NumericGain.Maximum = new decimal(new int[] { 80, 0, 0, 0 });
             NumericGain.Minimum = new decimal(new int[] { 80, 0, 0, int.MinValue });
             NumericGain.MinimumSize = new Size(36, 19);
@@ -179,21 +170,21 @@ namespace Resonalyze
             NumericGain.ThousandsSeparator = false;
             NumericGain.Value = new decimal(new int[] { 0, 0, 0, 0 });
             NumericGain.ValueSuffix = "dB";
-            //
+            // 
             // labelGain
-            //
+            // 
             labelGain.AutoSize = true;
             labelGain.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelGain.ForeColor = Color.FromArgb(210, 214, 222);
-            labelGain.Location = new Point(9, 116);
+            labelGain.Location = new Point(9, 172);
             labelGain.Margin = new Padding(3);
             labelGain.Name = "labelGain";
             labelGain.Size = new Size(48, 15);
             labelGain.TabIndex = 11;
             labelGain.Text = "Preamp";
-            //
+            // 
             // buttonAutoTune
-            //
+            // 
             buttonAutoTune.BackColor = Color.FromArgb(46, 51, 67);
             buttonAutoTune.FlatStyle = FlatStyle.Popup;
             buttonAutoTune.ForeColor = Color.White;
@@ -203,9 +194,9 @@ namespace Resonalyze
             buttonAutoTune.TabIndex = 46;
             buttonAutoTune.Text = "Auto Tune";
             buttonAutoTune.UseVisualStyleBackColor = false;
-            //
+            // 
             // comboBoxBandsLimit
-            //
+            // 
             comboBoxBandsLimit.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxBandsLimit.ForeColor = Color.White;
             comboBoxBandsLimit.Location = new Point(93, 106);
@@ -213,9 +204,9 @@ namespace Resonalyze
             comboBoxBandsLimit.Name = "comboBoxBandsLimit";
             comboBoxBandsLimit.Size = new Size(90, 19);
             comboBoxBandsLimit.TabIndex = 47;
-            //
+            // 
             // labelBandsLimit
-            //
+            // 
             labelBandsLimit.AutoSize = true;
             labelBandsLimit.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelBandsLimit.ForeColor = Color.FromArgb(210, 214, 222);
@@ -225,9 +216,9 @@ namespace Resonalyze
             labelBandsLimit.Size = new Size(82, 15);
             labelBandsLimit.TabIndex = 48;
             labelBandsLimit.Text = "Max EQ Filters";
-            //
+            // 
             // numericToHz
-            //
+            // 
             numericToHz.BackColor = Color.FromArgb(55, 60, 72);
             numericToHz.DecimalPlaces = 0;
             numericToHz.Font = new Font("Segoe UI", 9F);
@@ -244,9 +235,9 @@ namespace Resonalyze
             numericToHz.ThousandsSeparator = false;
             numericToHz.Value = new decimal(new int[] { 20000, 0, 0, 0 });
             numericToHz.ValueSuffix = "Hz";
-            //
+            // 
             // numericFromHz
-            //
+            // 
             numericFromHz.BackColor = Color.FromArgb(55, 60, 72);
             numericFromHz.DecimalPlaces = 0;
             numericFromHz.Font = new Font("Segoe UI", 9F);
@@ -263,9 +254,9 @@ namespace Resonalyze
             numericFromHz.ThousandsSeparator = false;
             numericFromHz.Value = new decimal(new int[] { 20, 0, 0, 0 });
             numericFromHz.ValueSuffix = "Hz";
-            //
+            // 
             // labelFromHz
-            //
+            // 
             labelFromHz.AutoSize = true;
             labelFromHz.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelFromHz.ForeColor = Color.FromArgb(210, 214, 222);
@@ -275,9 +266,9 @@ namespace Resonalyze
             labelFromHz.Size = new Size(35, 15);
             labelFromHz.TabIndex = 51;
             labelFromHz.Text = "From";
-            //
+            // 
             // labelToHz
-            //
+            // 
             labelToHz.AutoSize = true;
             labelToHz.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelToHz.ForeColor = Color.FromArgb(210, 214, 222);
@@ -287,9 +278,9 @@ namespace Resonalyze
             labelToHz.Size = new Size(20, 15);
             labelToHz.TabIndex = 52;
             labelToHz.Text = "To";
-            //
+            // 
             // numericGainMin
-            //
+            // 
             numericGainMin.BackColor = Color.FromArgb(55, 60, 72);
             numericGainMin.DecimalPlaces = 0;
             numericGainMin.Font = new Font("Segoe UI", 9F);
@@ -306,9 +297,9 @@ namespace Resonalyze
             numericGainMin.ThousandsSeparator = false;
             numericGainMin.Value = new decimal(new int[] { 15, 0, 0, int.MinValue });
             numericGainMin.ValueSuffix = "dB";
-            //
+            // 
             // labelGainMin
-            //
+            // 
             labelGainMin.AutoSize = true;
             labelGainMin.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelGainMin.ForeColor = Color.FromArgb(210, 214, 222);
@@ -318,9 +309,9 @@ namespace Resonalyze
             labelGainMin.Size = new Size(55, 15);
             labelGainMin.TabIndex = 58;
             labelGainMin.Text = "Min Gain";
-            //
+            // 
             // numericGainMax
-            //
+            // 
             numericGainMax.BackColor = Color.FromArgb(55, 60, 72);
             numericGainMax.DecimalPlaces = 0;
             numericGainMax.Font = new Font("Segoe UI", 9F);
@@ -337,9 +328,9 @@ namespace Resonalyze
             numericGainMax.ThousandsSeparator = false;
             numericGainMax.Value = new decimal(new int[] { 6, 0, 0, 0 });
             numericGainMax.ValueSuffix = "dB";
-            //
+            // 
             // labelGainMax
-            //
+            // 
             labelGainMax.AutoSize = true;
             labelGainMax.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelGainMax.ForeColor = Color.FromArgb(210, 214, 222);
@@ -349,21 +340,21 @@ namespace Resonalyze
             labelGainMax.Size = new Size(57, 15);
             labelGainMax.TabIndex = 59;
             labelGainMax.Text = "Max Gain";
-            //
+            // 
             // checkBoxBypass
-            //
+            // 
             checkBoxBypass.AutoSize = true;
             checkBoxBypass.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxBypass.ForeColor = Color.FromArgb(210, 214, 222);
-            checkBoxBypass.Location = new Point(13, 135);
+            checkBoxBypass.Location = new Point(13, 195);
             checkBoxBypass.Name = "checkBoxBypass";
             checkBoxBypass.Size = new Size(62, 19);
             checkBoxBypass.TabIndex = 53;
             checkBoxBypass.Text = "Bypass";
             checkBoxBypass.UseVisualStyleBackColor = true;
-            //
+            // 
             // panelAutoTune
-            //
+            // 
             panelAutoTune.BackColor = Color.FromArgb(46, 51, 62);
             panelAutoTune.BorderStyle = BorderStyle.FixedSingle;
             panelAutoTune.Controls.Add(labelGainMin);
@@ -381,65 +372,86 @@ namespace Resonalyze
             panelAutoTune.Name = "panelAutoTune";
             panelAutoTune.Size = new Size(186, 160);
             panelAutoTune.TabIndex = 54;
-            //
+            // 
             // buttonOverlaySettings
-            //
+            // 
             buttonOverlaySettings.FlatStyle = FlatStyle.Popup;
             buttonOverlaySettings.ForeColor = Color.White;
-            buttonOverlaySettings.Location = new Point(83, 14);
+            buttonOverlaySettings.Location = new Point(6, 40);
             buttonOverlaySettings.Name = "buttonOverlaySettings";
-            buttonOverlaySettings.Size = new Size(19, 19);
-            buttonOverlaySettings.TabIndex = 53;
-            buttonOverlaySettings.Text = "S";
-            buttonOverlaySettings.UseCompatibleTextRendering = true;
+            buttonOverlaySettings.Size = new Size(182, 24);
+            buttonOverlaySettings.TabIndex = 6;
+            buttonOverlaySettings.Text = "Target Curve…";
             buttonOverlaySettings.UseVisualStyleBackColor = true;
-            //
+            // 
+            // comboBoxCalibration
+            // 
+            comboBoxCalibration.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxCalibration.ForeColor = Color.White;
+            comboBoxCalibration.Location = new Point(108, 70);
+            comboBoxCalibration.MinimumSize = new Size(36, 19);
+            comboBoxCalibration.Name = "comboBoxCalibration";
+            comboBoxCalibration.Size = new Size(80, 19);
+            comboBoxCalibration.TabIndex = 12;
+            // 
+            // labelCalibration
+            // 
+            labelCalibration.AutoSize = true;
+            labelCalibration.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            labelCalibration.ForeColor = Color.FromArgb(210, 214, 222);
+            labelCalibration.Location = new Point(9, 72);
+            labelCalibration.Margin = new Padding(3);
+            labelCalibration.Name = "labelCalibration";
+            labelCalibration.Size = new Size(64, 15);
+            labelCalibration.TabIndex = 13;
+            labelCalibration.Text = "Calibration";
+            // 
             // comboBoxSmooth
-            //
+            // 
             comboBoxSmooth.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxSmooth.ForeColor = Color.White;
-            comboBoxSmooth.Location = new Point(108, 64);
+            comboBoxSmooth.Location = new Point(108, 120);
             comboBoxSmooth.MinimumSize = new Size(36, 19);
             comboBoxSmooth.Name = "comboBoxSmooth";
             comboBoxSmooth.Size = new Size(80, 19);
             comboBoxSmooth.TabIndex = 55;
-            //
+            // 
             // labelSmooth
-            //
+            // 
             labelSmooth.AutoSize = true;
             labelSmooth.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelSmooth.ForeColor = Color.FromArgb(210, 214, 222);
-            labelSmooth.Location = new Point(9, 66);
+            labelSmooth.Location = new Point(9, 122);
             labelSmooth.Margin = new Padding(3);
             labelSmooth.Name = "labelSmooth";
             labelSmooth.Size = new Size(50, 15);
             labelSmooth.TabIndex = 56;
             labelSmooth.Text = "Smooth";
-            //
+            // 
             // buttonImport
-            //
+            // 
             buttonImport.FlatStyle = FlatStyle.Popup;
             buttonImport.ForeColor = Color.White;
-            buttonImport.Location = new Point(2, 159);
+            buttonImport.Location = new Point(2, 221);
             buttonImport.Name = "buttonImport";
             buttonImport.Size = new Size(87, 24);
-            buttonImport.TabIndex = 53;
+            buttonImport.TabIndex = 57;
             buttonImport.Text = "Import";
             buttonImport.UseVisualStyleBackColor = true;
-            //
+            // 
             // buttonExport
-            //
+            // 
             buttonExport.FlatStyle = FlatStyle.Popup;
             buttonExport.ForeColor = Color.White;
-            buttonExport.Location = new Point(101, 159);
+            buttonExport.Location = new Point(101, 221);
             buttonExport.Name = "buttonExport";
             buttonExport.Size = new Size(87, 24);
-            buttonExport.TabIndex = 57;
+            buttonExport.TabIndex = 58;
             buttonExport.Text = "Export";
             buttonExport.UseVisualStyleBackColor = true;
-            //
+            // 
             // EqWizardPanel
-            //
+            // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             AutoScroll = true;
@@ -447,6 +459,8 @@ namespace Resonalyze
             BorderStyle = BorderStyle.FixedSingle;
             Controls.Add(buttonExport);
             Controls.Add(buttonImport);
+            Controls.Add(labelCalibration);
+            Controls.Add(comboBoxCalibration);
             Controls.Add(labelSmooth);
             Controls.Add(comboBoxSmooth);
             Controls.Add(buttonOverlaySettings);
@@ -457,8 +471,7 @@ namespace Resonalyze
             Controls.Add(labelTargetOffset);
             Controls.Add(NumericTargetOffset);
             Controls.Add(darkComboBoxBands);
-            Controls.Add(labelSource);
-            Controls.Add(darkComboBoxSource);
+            Controls.Add(buttonLoadIr);
             Controls.Add(labelBands);
             Controls.Add(panelPEQ);
             Controls.Add(plotWizard);
@@ -483,8 +496,7 @@ namespace Resonalyze
         private OxyPlot.WindowsForms.PlotView plotWizard;
         private Panel panelPEQ;
         private Label labelBands;
-        private DarkComboBox darkComboBoxSource;
-        private Label labelSource;
+        private Button buttonLoadIr;
         private DarkComboBox darkComboBoxBands;
         private DarkNumericUpDown NumericTargetOffset;
         private Label labelTargetOffset;
@@ -504,6 +516,8 @@ namespace Resonalyze
         private CheckBox checkBoxBypass;
         private Panel panelAutoTune;
         private Button buttonOverlaySettings;
+        private DarkComboBox comboBoxCalibration;
+        private Label labelCalibration;
         private DarkComboBox comboBoxSmooth;
         private Label labelSmooth;
         private Button buttonImport;

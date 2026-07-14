@@ -11,6 +11,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
     // curve can be tuned against the real measurement. Nothing is committed until
     // Save; the caller restores its stored state on Cancel.
     private readonly Action<OverlayTargetPreview>? previewChanged;
+    private readonly bool isolatedTarget;
     private readonly bool initialized;
     private Color selectedColor;
     private bool suppressEvents;
@@ -29,9 +30,11 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         int opacityPercent,
         int smoothingInverseOctaves,
         IReadOnlyList<OverlaySlotOption> availableSources,
-        Action<OverlayTargetPreview>? previewChanged = null)
+        Action<OverlayTargetPreview>? previewChanged = null,
+        bool isolatedTarget = false)
     {
         this.previewChanged = previewChanged;
+        this.isolatedTarget = isolatedTarget;
         selectedColor = color;
 
         InitializeComponent();
@@ -57,6 +60,24 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         UpdatePresetTooltip();
         UpdatePreview();
         initialized = true;
+
+        if (isolatedTarget)
+        {
+            ApplyIsolatedTargetMode();
+        }
+    }
+
+    // In the EQ Wizard's isolated reuse there is no overlay to name and no
+    // tolerance band / deviation curve / opacity to render (the wizard draws its
+    // own error fill), so those fields are shown read-only to avoid implying they
+    // do anything. The name, colour, thickness and line style still apply.
+    private void ApplyIsolatedTargetMode()
+    {
+        nameTextBox.Enabled = false;
+        toleranceInput.Enabled = false;
+        deviationModeComboBox.Enabled = false;
+        smoothingComboBox.Enabled = false;
+        opacityTrackBar.Enabled = false;
     }
 
     public string OverlayName => nameTextBox.Text.Trim();
@@ -71,7 +92,6 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
     public int OpacityPercent => opacityTrackBar.Value;
     public int SmoothingInverseOctaves =>
         smoothingComboBox.SelectedItem is int value ? value : 0;
-    public bool OpenEqWizardRequested { get; private set; }
 
     public TargetCurveSpec Spec => new(
         (double)tiltInput.Value,
@@ -87,12 +107,22 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
 
     private void PopulateControls(IReadOnlyList<OverlaySlotOption> availableSources)
     {
-        sourceComboBox.Items.Add(new TargetSourceOption(0, "Current measurement"));
-        foreach (OverlaySlotOption source in availableSources)
+        if (isolatedTarget)
         {
-            sourceComboBox.Items.Add(new TargetSourceOption(
-                source.Slot,
-                $"{source.Slot}: {source.Title}"));
+            // The EQ Wizard equalizes a separately loaded IR, so the source is
+            // fixed: show a single disabled placeholder instead of the slot list.
+            sourceComboBox.Items.Add(new TargetSourceOption(0, "Loaded IR"));
+            sourceComboBox.Enabled = false;
+        }
+        else
+        {
+            sourceComboBox.Items.Add(new TargetSourceOption(0, "Current measurement"));
+            foreach (OverlaySlotOption source in availableSources)
+            {
+                sourceComboBox.Items.Add(new TargetSourceOption(
+                    source.Slot,
+                    $"{source.Slot}: {source.Title}"));
+            }
         }
 
         foreach (TargetPreset value in Enum.GetValues<TargetPreset>())
@@ -165,21 +195,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
             NotifyPreview();
         };
         saveButton.Click += SaveButtonClick;
-        buttonEQWizard.Click += ButtonEQWizardClick;
-        sourceComboBox.SelectedIndexChanged += (_, _) =>
-        {
-            UpdateEqWizardButtonState();
-            NotifyPreview();
-        };
-        UpdateEqWizardButtonState();
-    }
-
-    // The EQ Wizard needs a captured source curve; the current measurement (slot 0)
-    // provides none, so the button is only enabled for a real source slot.
-    private void UpdateEqWizardButtonState()
-    {
-        buttonEQWizard.Enabled =
-            sourceComboBox.SelectedItem is TargetSourceOption option && option.Slot != 0;
+        sourceComboBox.SelectedIndexChanged += (_, _) => NotifyPreview();
     }
 
     private const string TiltTip =
@@ -372,32 +388,11 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         DialogResult = DialogResult.None;
     }
 
-    private void ButtonEQWizardClick(object? sender, EventArgs e)
-    {
-        CommitNumericEditors();
-
-        if (!ValidateSaveRequest(focusOnError: true))
-        {
-            DialogResult = DialogResult.None;
-            return;
-        }
-
-        if (SourceSlot == 0)
-        {
-            DialogResult = DialogResult.None;
-            System.Media.SystemSounds.Beep.Play();
-            sourceComboBox.Focus();
-            return;
-        }
-
-        OpenEqWizardRequested = true;
-        DialogResult = DialogResult.OK;
-        Close();
-    }
-
     private bool ValidateSaveRequest(bool focusOnError)
     {
-        if (OverlayName.Length > 0 && sourceComboBox.SelectedItem != null)
+        // The isolated target has no name or source to validate.
+        if (isolatedTarget ||
+            (OverlayName.Length > 0 && sourceComboBox.SelectedItem != null))
         {
             return true;
         }

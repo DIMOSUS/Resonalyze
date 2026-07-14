@@ -168,29 +168,6 @@ public partial class Form1
 
     private Task SelectModeAsync(ModeTab tab) => modeController.SelectAsync(tab);
 
-    internal async void OpenEqWizardForTargetOverlay(int targetOverlaySlot)
-    {
-        await SelectModeAsync(ModeTab.ToolsEqWizard);
-        eqWizardPanel.SetTargetOverlayOptions(
-            overlayCollection.GetTargetOverlayOptions(CurrentMode));
-        eqWizardPanel.SelectTargetOverlaySlot(targetOverlaySlot);
-    }
-
-    // Opens the settings of the target overlay the EQ Wizard is tuning, then
-    // refreshes the wizard so any edits (spec, tolerance, title) take effect.
-    private void OpenEqWizardOverlaySettings(int targetOverlaySlot)
-    {
-        if (!overlayCollection.OpenEqWizardTargetSettings(targetOverlaySlot))
-        {
-            return;
-        }
-
-        eqWizardPanel.SetTargetOverlayOptions(
-            overlayCollection.GetTargetOverlayOptions(CurrentMode));
-        eqWizardPanel.SelectTargetOverlaySlot(targetOverlaySlot);
-        eqWizardPanel.RefreshCurves();
-    }
-
     private Dictionary<ModeTab, Action> CreateModeTabActions() =>
         new()
         {
@@ -221,11 +198,6 @@ public partial class Form1
         buttonOverlayHideAll.Visible = descriptor.HasOverlayPanel;
         timeAlignmentController.SetVisible(descriptor.ShowsTimeAlignmentPanel);
         eqWizardPanel.Visible = descriptor.ShowsEqWizardPanel;
-        if (descriptor.ShowsEqWizardPanel)
-        {
-            eqWizardPanel.SetTargetOverlayOptions(
-                overlayCollection.GetTargetOverlayOptions(CurrentMode));
-        }
         signalGeneratorPanel.Visible = descriptor.ShowsSignalGeneratorPanel;
         if (descriptor.ShowsSignalGeneratorPanel)
         {

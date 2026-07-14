@@ -23,8 +23,7 @@ internal sealed record EqWizardCurve(
 internal sealed record EqWizardRenderSet(
     EqWizardCurve Target,
     EqWizardCurve? Source,
-    EqWizardCurve? SourcePlusEq,
-    double TargetOffset);
+    EqWizardCurve? SourcePlusEq);
 
 public partial class EqWizardPanel : UserControl
 {
@@ -34,11 +33,6 @@ public partial class EqWizardPanel : UserControl
     private const int PeqRowCount = 2;
     private const string WizardSeriesTag = "eq-wizard:curve";
     private const string WizardTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.00} dB";
-
-    private const string NoTargetHint =
-        "No target overlays found.\n" +
-        "Create a Target overlay in a Frequency Response measurement,\n" +
-        "then return here to fine-tune it.";
 
     private const string FrequencyTip = "Band center frequency (Hz).";
     private const string QTip = "Band quality factor (Q) — higher Q is a narrower band.";
@@ -63,7 +57,6 @@ public partial class EqWizardPanel : UserControl
     private int activeBandCount;
     private long autoTuneRevision;
     private EqTuneStats? lastStats;
-    private bool suppressTargetOffsetEvents;
     private bool suppressRedraw;
     private bool suppressWindowClamp;
     private bool suppressGainClamp;
@@ -86,12 +79,13 @@ public partial class EqWizardPanel : UserControl
         InitializeBandsComboBox();
         InitializeBandsLimitComboBox();
         InitializeSmoothComboBox();
-        darkComboBoxSource.SelectedIndexChanged += (_, _) => DrawSelectedCurves();
-        NumericTargetOffset.ValueChanged += NumericTargetOffsetValueChanged;
+        buttonLoadIr.Click += (_, _) => LoadIr();
+        comboBoxCalibration.SelectedIndexChanged += (_, _) => OnCalibrationChanged();
+        NumericTargetOffset.ValueChanged += (_, _) => OnTargetOffsetChanged();
         NumericGain.ValueChanged += (_, _) => DrawSelectedCurves();
         checkBoxBypass.CheckedChanged += (_, _) => DrawSelectedCurves();
         buttonAutoTune.Click += (_, _) => AutoTune();
-        buttonOverlaySettings.Click += (_, _) => OpenOverlaySettings();
+        buttonOverlaySettings.Click += (_, _) => OpenTargetSettings();
         buttonImport.Click += (_, _) => ImportPeq();
         buttonExport.Click += (_, _) => ExportPeq();
         numericFromHz.ValueChanged += (_, _) => FrequencyBoundChanged(fromChanged: true);
@@ -176,18 +170,23 @@ public partial class EqWizardPanel : UserControl
             slot.SetGainRange(minimum, maximum);
         }
 
+        RaiseSettingsChanged();
         DrawSelectedCurves();
     }
 
     private void InitializeToolTips()
     {
-        SetTip(labelSource, darkComboBoxSource,
-            "Target overlay to tune. Its captured source is the reference the EQ " +
-            "corrects toward the target.");
+        SetTip(buttonLoadIr,
+            "Load an impulse response (.json) whose frequency response is equalized " +
+            "toward the target curve.");
         SetTip(buttonOverlaySettings,
-            "Open the settings of the target overlay being tuned.");
+            "Edit the target curve this mode corrects toward (isolated to the EQ " +
+            "Wizard; not tied to any overlay).");
+        SetTip(labelCalibration, comboBoxCalibration,
+            "Microphone calibration applied when the loaded IR's frequency response " +
+            "is computed.");
         SetTip(labelTargetOffset, NumericTargetOffset,
-            "Vertical offset of the target curve (dB); shared with the overlay's offset.");
+            "Vertical offset of the target curve (dB).");
         SetTip(labelGain, NumericGain,
             "EQ preamp (dB) applied on top of all bands. Usually negative to leave " +
             "headroom for boosts.");
@@ -237,35 +236,14 @@ public partial class EqWizardPanel : UserControl
 
     internal IReadOnlyList<PeqSlotControl> PeqSlots => peqSlots;
 
-    // Supplies the curves to draw for a chosen target overlay slot, EQ and source
-    // smoothing (1/N octave, 0 = off). Wired by the host form; null until then.
-    [Browsable(false)]
-    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    internal Func<int, EqualizationCurve, int, EqWizardRenderSet?>? RenderProvider { get; set; }
-
     private int SourceSmoothingInverseOctaves =>
         comboBoxSmooth.SelectedItem is int value ? value : 0;
-
-    // Pushes a vertical offset for the selected target overlay back to the overlay
-    // collection (slot, offset). Wired by the host form; null until then.
-    [Browsable(false)]
-    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    internal Action<int, double>? TargetOffsetSetter { get; set; }
 
     // Reports the current tuning result (or null when nothing is being tuned) to the
     // results panel. Wired by the host form; null until then.
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal Action<EqTuneStats?>? ResultsChanged { get; set; }
-
-    // Opens the settings of the target overlay being tuned (by slot). Wired by the
-    // host form; null until then.
-    [Browsable(false)]
-    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    internal Action<int>? OverlaySettingsRequested { get; set; }
-
-    internal TargetOverlayOption? SelectedTargetOverlay =>
-        darkComboBoxSource.SelectedItem as TargetOverlayOption;
 
     // Builds all 32 band strips once. Hiding unused strips would waste the fader
     // bank, so the whole 16x2 grid is always shown; the Bands control only chooses
@@ -341,6 +319,7 @@ public partial class EqWizardPanel : UserControl
         }
 
         // Changing the active count changes the EQ curve, so redraw.
+        RaiseSettingsChanged();
         DrawSelectedCurves();
     }
 
@@ -383,72 +362,6 @@ public partial class EqWizardPanel : UserControl
         }
 
         DrawSelectedCurves();
-    }
-
-    // Redraws the wizard for the current selection; used after the target overlay's
-    // settings change externally.
-    internal void RefreshCurves() => DrawSelectedCurves();
-
-    private void OpenOverlaySettings()
-    {
-        TargetOverlayOption? selected = SelectedTargetOverlay;
-        if (selected == null)
-        {
-            System.Media.SystemSounds.Beep.Play();
-            return;
-        }
-
-        OverlaySettingsRequested?.Invoke(selected.Slot);
-    }
-
-    internal void SetTargetOverlayOptions(IReadOnlyList<TargetOverlayOption> options)
-    {
-        hintAnnotation.Text = options.Count == 0 ? NoTargetHint : string.Empty;
-        plotWizard.InvalidatePlot(false);
-
-        int? previousSlot = SelectedTargetOverlay?.Slot;
-        darkComboBoxSource.Items.Clear();
-        foreach (TargetOverlayOption option in options)
-        {
-            darkComboBoxSource.Items.Add(option);
-        }
-
-        darkComboBoxSource.Enabled = options.Count > 0;
-        if (options.Count == 0)
-        {
-            darkComboBoxSource.SelectedIndex = -1;
-            return;
-        }
-
-        int selectedIndex = 0;
-        if (previousSlot.HasValue)
-        {
-            for (int index = 0; index < options.Count; index++)
-            {
-                if (options[index].Slot == previousSlot.Value)
-                {
-                    selectedIndex = index;
-                    break;
-                }
-            }
-        }
-
-        darkComboBoxSource.SelectedIndex = selectedIndex;
-    }
-
-    internal bool SelectTargetOverlaySlot(int slot)
-    {
-        for (int index = 0; index < darkComboBoxSource.Items.Count; index++)
-        {
-            if (darkComboBoxSource.Items[index] is TargetOverlayOption option &&
-                option.Slot == slot)
-            {
-                darkComboBoxSource.SelectedIndex = index;
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private void InitializePlotWizard()
@@ -632,42 +545,37 @@ public partial class EqWizardPanel : UserControl
         EqualizationCurve eq = bypass
             ? new EqualizationCurve(Array.Empty<PeqBand>())
             : BuildEqualizationCurve();
-        TargetOverlayOption? selected = SelectedTargetOverlay;
-        EqWizardRenderSet? render = selected != null
-            ? RenderProvider?.Invoke(selected.Slot, eq, SourceSmoothingInverseOctaves)
-            : null;
-        NumericTargetOffset.Enabled = render != null;
-        buttonOverlaySettings.Enabled = render != null;
-        // The EQ only has an effect when there is a source curve to apply it to.
-        NumericGain.Enabled = !bypass && render?.SourcePlusEq != null;
-        bool showEqCurves = render?.SourcePlusEq != null;
+        EqWizardRenderSet render = BuildRenderSet(eq);
+        UpdateSourceHint();
+        // The target curve is always present, so its editor and offset are always
+        // usable; the preamp only matters once there is a source to apply it to.
+        buttonOverlaySettings.Enabled = true;
+        NumericTargetOffset.Enabled = true;
+        NumericGain.Enabled = !bypass && render.SourcePlusEq != null;
+        bool showEqCurves = render.SourcePlusEq != null;
         lastStats = BuildStats(render, eq);
         ResultsChanged?.Invoke(lastStats);
-        if (render != null)
+
+        // Fill the gap between Source + EQ and the target first, so the curves
+        // draw on top of the shaded band.
+        if (showEqCurves)
         {
-            SetTargetOffsetValue(render.TargetOffset);
-
-            // Fill the gap between Source + EQ and the target first, so the curves
-            // draw on top of the shaded band.
-            if (showEqCurves)
-            {
-                AddFillBetween(model, render.SourcePlusEq!, render.Target);
-            }
-
-            if (render.Source != null)
-            {
-                AddWizardSeries(model, render.Source);
-            }
-
-            AddWizardSeries(model, render.Target);
-            if (showEqCurves)
-            {
-                AddWizardSeries(model, render.SourcePlusEq!);
-            }
-
-            AddEqCurve(model, eq, render.Target);
-            AddSelectedBandCurve(model, render.Target);
+            AddFillBetween(model, render.SourcePlusEq!, render.Target);
         }
+
+        if (render.Source != null)
+        {
+            AddWizardSeries(model, render.Source);
+        }
+
+        AddWizardSeries(model, render.Target);
+        if (showEqCurves)
+        {
+            AddWizardSeries(model, render.SourcePlusEq!);
+        }
+
+        AddEqCurve(model, eq, render.Target);
+        AddSelectedBandCurve(model, render.Target);
 
         plotLabels.Refresh();
         model.InvalidatePlot(true);
@@ -746,16 +654,11 @@ public partial class EqWizardPanel : UserControl
     // tuning up to 32 bands takes long enough to visibly freeze the UI.
     private async void AutoTune()
     {
-        TargetOverlayOption? selected = SelectedTargetOverlay;
-        // Pass a neutral EQ so the render gives the raw source and a target aligned
-        // to the source's frequencies.
-        EqWizardRenderSet? render = selected != null
-            ? RenderProvider?.Invoke(
-                selected.Slot,
-                new EqualizationCurve(Array.Empty<PeqBand>()),
-                SourceSmoothingInverseOctaves)
-            : null;
-        if (render?.Source == null)
+        // Build against a neutral EQ so the fit sees the raw source and a target
+        // aligned to the source's frequencies.
+        EqWizardRenderSet render = BuildRenderSet(
+            new EqualizationCurve(Array.Empty<PeqBand>()));
+        if (render.Source == null)
         {
             System.Media.SystemSounds.Beep.Play();
             return;
@@ -821,19 +724,22 @@ public partial class EqWizardPanel : UserControl
             MaxFrequencyHz = maxHz,
             PreampMinDb = (double)NumericGain.Minimum,
             PreampMaxDb = (double)NumericGain.Maximum,
+            // Per-band gain is bounded by the Min/Max Gain fields, exactly like the
+            // manual faders, so Auto Tune never proposes a gain the strips reject.
+            BandGainMinDb = (double)numericGainMin.Value,
+            BandGainMaxDb = (double)numericGainMax.Value,
             // The wizard's output is a profile for a real DSP: the total gain
             // (preamp + bands) must not exceed 0 dB anywhere, or the profile
             // clips before the user ever sees the headroom read-out.
             TotalGainMaxDb = 0
         };
 
+        // Q has no panel-level range control, so take its bounds from a band field.
         if (peqSlots.Count > 0)
         {
             PeqSlotControl slot = peqSlots[0];
             options = options with
             {
-                BandGainMinDb = (double)slot.GainInput.Minimum,
-                BandGainMaxDb = (double)slot.GainInput.Maximum,
                 QMin = (double)slot.QInput.Minimum,
                 QMax = (double)slot.QInput.Maximum
             };
@@ -980,47 +886,6 @@ public partial class EqWizardPanel : UserControl
             "EQ Wizard",
             MessageBoxButtons.OK,
             MessageBoxIcon.Error);
-    }
-
-    private void NumericTargetOffsetValueChanged(object? sender, EventArgs e)
-    {
-        if (suppressTargetOffsetEvents)
-        {
-            return;
-        }
-
-        TargetOverlayOption? selected = SelectedTargetOverlay;
-        if (selected == null)
-        {
-            return;
-        }
-
-        TargetOffsetSetter?.Invoke(selected.Slot, (double)NumericTargetOffset.Value);
-        DrawSelectedCurves();
-    }
-
-    // Reflects the overlay's stored offset in the control without re-triggering the
-    // change handler (which would push the value straight back).
-    private void SetTargetOffsetValue(double offset)
-    {
-        decimal clamped = Math.Clamp(
-            (decimal)offset,
-            NumericTargetOffset.Minimum,
-            NumericTargetOffset.Maximum);
-        if (NumericTargetOffset.Value == clamped)
-        {
-            return;
-        }
-
-        suppressTargetOffsetEvents = true;
-        try
-        {
-            NumericTargetOffset.Value = clamped;
-        }
-        finally
-        {
-            suppressTargetOffsetEvents = false;
-        }
     }
 
     private static void RemoveWizardSeries(PlotModel model)
@@ -1184,7 +1049,12 @@ public partial class EqWizardPanel : UserControl
                 args.Value = OverlaySmoothing.GetLabel(value);
             }
         };
-        comboBoxSmooth.SelectedIndexChanged += (_, _) => DrawSelectedCurves();
+        comboBoxSmooth.SelectedIndexChanged += (_, _) =>
+        {
+            InvalidateSourceCurve();
+            RaiseSettingsChanged();
+            DrawSelectedCurves();
+        };
         comboBoxSmooth.SelectedIndex = 0;
     }
 

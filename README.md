@@ -62,9 +62,10 @@ result with fewer blind tuning passes.
   <tr>
     <td width="50%">
       <img src="assets/images/eq_wizard.png" alt="EQ Wizard parametric EQ tuning">
-      <p><strong>EQ Wizard</strong> designs an up-to-32-band PEQ against a
-      target, with Auto Tune, per-band editing, import/export, and printable
-      tuning sheets.</p>
+      <p><strong>EQ Wizard</strong> loads an impulse response and designs an
+      up-to-32-band PEQ toward its own target curve, with microphone calibration,
+      Auto Tune, a vertical fader bank, import/export, and printable tuning
+      sheets.</p>
     </td>
     <td width="50%">
       <img src="assets/images/time-alignment.png" alt="Time Alignment delay measurement">
@@ -147,9 +148,10 @@ file is provided with every release.
   or live plot curves, targets, import/export, and saved per-mode state
 - Live overlay preview: captured, calculated, and target overlay dialogs redraw
   the candidate curve on the plot as you edit, and revert on Cancel
-- EQ Wizard: design an up-to-32-band parametric EQ against a target, with Auto
-  Tune, a live results read-out, cross-tool PEQ import/export, and a printable
-  tuning-sheet PDF
+- EQ Wizard: load an impulse response and design an up-to-32-band parametric EQ
+  toward its own target curve (with selectable microphone calibration), using a
+  vertical fader bank, Auto Tune, a live results read-out, cross-tool PEQ
+  import/export, and a printable tuning-sheet PDF
 - Signal Generator: play pink (periodic and continuous), brown/red, white noise,
   or a sine tone through the configured playback device for level setting and
   channel checks
@@ -243,8 +245,10 @@ comparison, and transparent data matter more than a large legacy feature set.
     <td width="50%">
       <h3>EQ Wizard</h3>
       <img src="assets/images/eq_wizard.png" alt="EQ Wizard mode">
-      <p>Design a parametric EQ against a target with Auto Tune, per-band curves,
-      a live results read-out, cross-tool import/export, and a tuning-sheet PDF.</p>
+      <p>Load an impulse response and design a parametric EQ toward its own target
+      curve with microphone calibration, Auto Tune, a 32-band fader bank, per-band
+      curves, a live results read-out, cross-tool import/export, and a
+      tuning-sheet PDF.</p>
     </td>
   </tr>
   <tr>

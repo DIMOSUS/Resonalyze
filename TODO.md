@@ -111,10 +111,12 @@ Linux dev env where the work was done).
   deeper decoupling deferred.** The non-UI, correctness-critical logic is pulled
   into tested units (`VirtualCrossoverSourceRules`,
   `VirtualCrossoverAnalysis.SumLossCurve`, `PreparedDspResponse.GroupDelayMs`,
-  `VirtualCrossoverJunctions`). The panel stays a large view-controller by nature
-  (~60-70% irreducible WinForms/OxyPlot wiring); deeper extractions (decouple
-  `ChannelRuntime` from its control, then the process/alignment cores) are
-  deferred to a Windows session where the interactive paths can be exercised.
+  `VirtualCrossoverJunctions`). Interactive redraw processing now crosses a
+  tested immutable input/result boundary in `VirtualCrossoverProcessingPipeline`;
+  cache ownership and display application remain on the UI thread. The panel
+  stays a large view-controller by nature (~60-70% irreducible WinForms/OxyPlot
+  wiring); deeper extraction of alignment orchestration is deferred to a Windows
+  session where the interactive paths can be exercised.
 - [ ] **`DelayTableText` parses rendered fixed-width columns** (18/37 chars) for
   copy-values instead of holding a value model (format+parse are co-located and
   tested). Deferred: a value model pushes the change into the panel's

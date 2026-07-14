@@ -2000,21 +2000,27 @@ public partial class VirtualCrossoverPanel : UserControl
             // cascade and its FFT — is the tool's heaviest math. They are pure
             // and independent, so they run across cores; the cache write-back
             // below stays on the UI thread after the await, so nothing races.
-            var computed = new (Complex[] Result, int Peak)[jobs.Count];
-            await Task.Run(() => Parallel.For(0, jobs.Count, j =>
-            {
-                PendingChannel job = jobs[j];
-                Complex[] result = VirtualCrossoverAnalysis.ApplyChain(
-                    job.TransferIr, job.Chain, job.SampleRate);
-                computed[j] = (result, VirtualCrossoverAnalysis.FindPeakIndex(result));
-            }));
+            IReadOnlyList<VirtualCrossoverProcessingResult> computed =
+                await VirtualCrossoverProcessingPipeline.ProcessAsync(
+                    jobs.Select((job, index) => new VirtualCrossoverProcessingInput(
+                        index,
+                        job.TransferIr,
+                        job.SampleRate,
+                        job.Chain)).ToArray());
 
             for (int j = 0; j < jobs.Count; j++)
             {
                 PendingChannel job = jobs[j];
-                (Complex[] result, int peak) = computed[j];
-                job.State.ProcessedCache = new ProcessedChannelCache(job.Key, result, peak);
-                results[job.Index] = new ProcessedChannel(job.Channel, result, peak, job.Color);
+                VirtualCrossoverProcessingResult result = computed[j];
+                job.State.ProcessedCache = new ProcessedChannelCache(
+                    job.Key,
+                    result.ImpulseResponse,
+                    result.PeakIndex);
+                results[job.Index] = new ProcessedChannel(
+                    job.Channel,
+                    result.ImpulseResponse,
+                    result.PeakIndex,
+                    job.Color);
             }
         }
 

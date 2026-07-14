@@ -80,6 +80,65 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     }
 
     [Fact]
+    public async Task ChangedChainForSameChannel_InvalidatesProcessedCache()
+    {
+        int processCount = 0;
+        using var coordinator = new VirtualCrossoverProcessingCoordinator(
+            (source, chain, sampleRate, _) =>
+            {
+                Interlocked.Increment(ref processCount);
+                return source.Apply(chain, sampleRate);
+            });
+        var source = new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 5, 1.0));
+        long firstRevision = coordinator.Invalidate();
+        await coordinator.ProcessAsync(new VirtualCrossoverProcessingSnapshot(
+            firstRevision,
+            [new VirtualCrossoverChannelSnapshot(0, source, 48_000, DspChannelChain.Identity)]));
+        long changedRevision = coordinator.Invalidate();
+
+        VirtualCrossoverRenderResult? changed = await coordinator.ProcessAsync(
+            new VirtualCrossoverProcessingSnapshot(
+                changedRevision,
+                [new VirtualCrossoverChannelSnapshot(
+                    0,
+                    source,
+                    48_000,
+                    new DspChannelChain(GainDb: 6))]));
+
+        Assert.NotNull(changed);
+        Assert.Equal(2, processCount);
+        Assert.InRange(changed.Channels[0].ImpulseResponse[5].Real, 1.994, 1.997);
+    }
+
+    [Fact]
+    public async Task ChangedSourceForSameChannel_InvalidatesProcessedCache()
+    {
+        int processCount = 0;
+        using var coordinator = new VirtualCrossoverProcessingCoordinator(
+            (source, chain, sampleRate, _) =>
+            {
+                Interlocked.Increment(ref processCount);
+                return source.Apply(chain, sampleRate);
+            });
+        var left = new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 3, 1.0));
+        var right = new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 11, 1.0));
+        long leftRevision = coordinator.Invalidate();
+        await coordinator.ProcessAsync(new VirtualCrossoverProcessingSnapshot(
+            leftRevision,
+            [new VirtualCrossoverChannelSnapshot(0, left, 48_000, DspChannelChain.Identity)]));
+        long rightRevision = coordinator.Invalidate();
+
+        VirtualCrossoverRenderResult? changed = await coordinator.ProcessAsync(
+            new VirtualCrossoverProcessingSnapshot(
+                rightRevision,
+                [new VirtualCrossoverChannelSnapshot(0, right, 48_000, DspChannelChain.Identity)]));
+
+        Assert.NotNull(changed);
+        Assert.Equal(2, processCount);
+        Assert.Equal(11, changed.Channels[0].PeakIndex);
+    }
+
+    [Fact]
     public async Task SourceSnapshot_DoesNotObserveLaterMutationOfPanelArray()
     {
         Complex[] panelOwned = CreateImpulse(32, 2, 1.0);

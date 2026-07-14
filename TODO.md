@@ -264,10 +264,10 @@ Linux dev env where the work was done).
 - [ ] **EMA coherence has no effective average count** (overlap-correlated
   frames, alpha-dependent memory): expose K_eff ≈ (2−α)/α (reduced for overlap)
   alongside the curve and feed it to the same debias the sweep path uses.
-- [ ] **First live plot frame is heavy on the UI thread** (snapshot clones + RTA
-  computed even when hidden + first resample + OxyPlot series/capacity growth):
-  compute the RTA magnitude only when `ShowInputMagnitude`, and consider
-  pre-building the series before playback starts.
+- [ ] **First live plot frame is still heavy on the UI thread** (snapshot clones
+  + first resample + OxyPlot series/capacity growth). Hidden RTA computation is
+  now skipped; profile whether pre-building series before playback starts is
+  worthwhile.
 
 ## History
 

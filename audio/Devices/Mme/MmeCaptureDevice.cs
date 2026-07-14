@@ -25,6 +25,16 @@ internal sealed class MmeCaptureDevice : IAudioCaptureDevice
 
     public WaveFormat CaptureFormat { get; }
     public int ChannelCount => CaptureFormat.Channels;
+    public int MaximumPacketBytes
+    {
+        get
+        {
+            int unaligned = checked(CaptureFormat.AverageBytesPerSecond * source.BufferMilliseconds / 1000);
+            return Math.Max(
+                CaptureFormat.BlockAlign,
+                unaligned / CaptureFormat.BlockAlign * CaptureFormat.BlockAlign);
+        }
+    }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {

@@ -32,6 +32,8 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     private BorderStyle borderStyle = BorderStyle.None;
     private bool readOnly;
     private bool initializing;
+    private string inlineLabel = string.Empty;
+    private string valueSuffix = string.Empty;
 
     public DarkNumericUpDown()
     {
@@ -185,6 +187,59 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     {
         get => editor.TextAlign;
         set => editor.TextAlign = value;
+    }
+
+    /// <summary>
+    /// Optional caption painted inside the field, glued to the inner-left edge in
+    /// a muted half-tone. It reserves no space: the value is still right-aligned
+    /// across the full field and its digits draw over the caption. Empty by
+    /// default, which leaves the control's behaviour unchanged.
+    /// </summary>
+    [Browsable(true)]
+    [DefaultValue("")]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
+    public string InlineLabel
+    {
+        get => inlineLabel;
+        set
+        {
+            string newValue = value ?? string.Empty;
+            if (inlineLabel == newValue)
+            {
+                return;
+            }
+
+            inlineLabel = newValue;
+            // With a caption the value is self-painted at rest so the caption can
+            // show behind it; the editor only appears while editing.
+            UpdateEditorVisibility();
+            Invalidate();
+        }
+    }
+
+    /// <summary>
+    /// Optional unit painted just to the right of the value inside the field
+    /// (e.g. "dB" or "Hz"), in a muted tone so the number stays primary. It
+    /// reserves its own space, so the value never overlaps it. Empty by default.
+    /// </summary>
+    [Browsable(true)]
+    [DefaultValue("")]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
+    public string ValueSuffix
+    {
+        get => valueSuffix;
+        set
+        {
+            string newValue = value ?? string.Empty;
+            if (valueSuffix == newValue)
+            {
+                return;
+            }
+
+            valueSuffix = newValue;
+            LayoutEditor();
+            Invalidate();
+        }
     }
 
     [Browsable(true)]
@@ -351,6 +406,9 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     {
         base.OnEnter(e);
         Invalidate();
+        // A hidden editor (inline-label mode, at rest) cannot take focus; reveal
+        // it first so typing works and the caret shows.
+        editor.Visible = true;
         if (!editor.Focused)
         {
             editor.Focus();
@@ -361,6 +419,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     protected override void OnLeave(EventArgs e)
     {
         base.OnLeave(e);
+        UpdateEditorVisibility();
         Invalidate();
     }
 
@@ -452,6 +511,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
             return;
         }
 
+        editor.Visible = true;
         editor.Focus();
     }
 
@@ -543,6 +603,76 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
                 TextFormatFlags.HorizontalCenter |
                 TextFormatFlags.VerticalCenter |
                 TextFormatFlags.NoPadding);
+        }
+
+        // In inline-label mode the editor is hidden at rest, so paint the caption
+        // and value ourselves: the caption sits at the inner-left in a half-tone,
+        // the value is right-aligned across the whole field and drawn last so its
+        // digits cover the caption where they meet.
+        if (HasInlineLabel && !editor.Visible)
+        {
+            Rectangle textBounds = editor.Bounds;
+            TextRenderer.DrawText(
+                e.Graphics,
+                inlineLabel,
+                Font,
+                textBounds,
+                UiPalette.TextMuted,
+                TextFormatFlags.Left |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(
+                e.Graphics,
+                FormatValue(value),
+                Font,
+                textBounds,
+                Enabled ? ForeColor : UiPalette.TextMuted,
+                TextFormatFlags.Right |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding);
+        }
+
+        // The unit sits in the reserved slice just right of the number (whose
+        // right edge is the editor's right edge because the value is
+        // right-aligned), in a muted tone so the number stays primary.
+        if (HasSuffix)
+        {
+            var suffixBounds = new Rectangle(
+                editor.Right, editor.Top, MeasureSuffixWidth() + 1, editor.Height);
+            TextRenderer.DrawText(
+                e.Graphics,
+                SuffixDisplay,
+                Font,
+                suffixBounds,
+                Enabled ? UiPalette.TextSecondary : UiPalette.TextMuted,
+                TextFormatFlags.Left |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding);
+        }
+    }
+
+    private bool HasInlineLabel => inlineLabel.Length > 0;
+
+    private bool HasSuffix => valueSuffix.Length > 0;
+
+    // A leading space separates the unit from the number ("-15 dB", "20000 Hz").
+    private string SuffixDisplay => " " + valueSuffix;
+
+    private int MeasureSuffixWidth() => HasSuffix
+        ? TextRenderer.MeasureText(SuffixDisplay, Font, Size.Empty, TextFormatFlags.NoPadding).Width
+        : 0;
+
+    // The editor is opaque and would hide the inline caption, so in inline-label
+    // mode it is shown only while the control is focused (i.e. being edited);
+    // otherwise the value is self-painted with the caption behind it. Without an
+    // inline label the editor is always visible and behaviour is unchanged.
+    private void UpdateEditorVisibility()
+    {
+        bool shouldShow = !HasInlineLabel || ContainsFocus;
+        if (editor.Visible != shouldShow)
+        {
+            editor.Visible = shouldShow;
+            Invalidate();
         }
     }
 
@@ -646,6 +776,13 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         {
             suppressEditorSync = false;
         }
+
+        // When the value is self-painted (inline-label mode, editor hidden), the
+        // editor's own repaint does not cover it, so refresh the control.
+        if (HasInlineLabel && !editor.Visible)
+        {
+            Invalidate();
+        }
     }
 
     private string FormatValue(decimal currentValue)
@@ -680,9 +817,12 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         int verticalPadding = ScaleLogical(LogicalVerticalPadding);
         int buttonColumnWidth = GetButtonColumnWidth();
         int resetColumnWidth = GetResetColumnWidth();
+        // The unit suffix (if any) takes the rightmost slice of the text region;
+        // the editor keeps the rest so the number never overlaps the unit.
         int textAreaWidth = Math.Max(
             8,
-            Width - buttonColumnWidth - resetColumnWidth - horizontalPadding - textToButtonsGap - 2);
+            Width - buttonColumnWidth - resetColumnWidth - horizontalPadding
+                - textToButtonsGap - 2 - MeasureSuffixWidth());
         int textHeight = Math.Max(10, Height - verticalPadding * 2 - 2);
         int textY = Math.Max(1, verticalPadding);
         editor.Font = Font;

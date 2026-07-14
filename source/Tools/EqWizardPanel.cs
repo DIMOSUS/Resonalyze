@@ -30,8 +30,8 @@ public partial class EqWizardPanel : UserControl
 {
     private const int MaxPeqSlotCount = 32;
     private const int MinAutoTuneBandLimit = 4;
-    private const int PeqColumnCount = 4;
-    private const int PeqRowCount = 8;
+    private const int PeqColumnCount = 16;
+    private const int PeqRowCount = 2;
     private const string WizardSeriesTag = "eq-wizard:curve";
     private const string WizardTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.00} dB";
 
@@ -60,14 +60,20 @@ public partial class EqWizardPanel : UserControl
     private LineAnnotation toMarker = null!;
     private RectangleAnnotation rangeFill = null!;
     private int selectedBandIndex = -1;
+    private int activeBandCount;
     private long autoTuneRevision;
     private EqTuneStats? lastStats;
     private bool suppressTargetOffsetEvents;
     private bool suppressRedraw;
     private bool suppressWindowClamp;
+    private bool suppressGainClamp;
 
     // Smallest allowed gap between the From and To frequencies (Hz).
     private const decimal MinFrequencyGapHz = 1m;
+
+    // Smallest allowed gap between the Min and Max gain limits (dB), so the range
+    // never collapses or inverts.
+    private const decimal MinGainGapDb = 1m;
 
     // Colour of the highlighted single-band contribution curve (semi-transparent).
     private static readonly OxyColor BandCurveColor = OxyColor.FromArgb(150, 255, 170, 40);
@@ -90,11 +96,87 @@ public partial class EqWizardPanel : UserControl
         buttonExport.Click += (_, _) => ExportPeq();
         numericFromHz.ValueChanged += (_, _) => FrequencyBoundChanged(fromChanged: true);
         numericToHz.ValueChanged += (_, _) => FrequencyBoundChanged(fromChanged: false);
+        numericGainMin.ValueChanged += (_, _) => GainBoundChanged(minChanged: true);
+        numericGainMax.ValueChanged += (_, _) => GainBoundChanged(minChanged: false);
         // Clicking away from the bands clears the highlighted single-band curve.
         Click += (_, _) => DeselectBand();
         panelPEQ.Click += (_, _) => DeselectBand();
         plotWizard.Click += (_, _) => DeselectBand();
         InitializeToolTips();
+        ApplyGainRange();
+    }
+
+    // Keeps Min strictly below Max, then applies the range. Mirrors the From/To
+    // frequency guard so the gain limits can never collide or invert.
+    private void GainBoundChanged(bool minChanged)
+    {
+        if (suppressGainClamp)
+        {
+            return;
+        }
+
+        EnforceGainOrder(minChanged);
+        ApplyGainRange();
+    }
+
+    // Enforces Min <= Max - gap by pushing the opposite bound; if that bound is at
+    // its limit, the just-edited bound is pulled back instead. The suppression flag
+    // stops the programmatic adjustment from re-entering this logic.
+    private void EnforceGainOrder(bool minChanged)
+    {
+        if (numericGainMin.Value <= numericGainMax.Value - MinGainGapDb)
+        {
+            return;
+        }
+
+        suppressGainClamp = true;
+        try
+        {
+            if (minChanged)
+            {
+                decimal desiredMax = numericGainMin.Value + MinGainGapDb;
+                if (desiredMax <= numericGainMax.Maximum)
+                {
+                    numericGainMax.Value = desiredMax;
+                }
+                else
+                {
+                    numericGainMax.Value = numericGainMax.Maximum;
+                    numericGainMin.Value = numericGainMax.Maximum - MinGainGapDb;
+                }
+            }
+            else
+            {
+                decimal desiredMin = numericGainMax.Value - MinGainGapDb;
+                if (desiredMin >= numericGainMin.Minimum)
+                {
+                    numericGainMin.Value = desiredMin;
+                }
+                else
+                {
+                    numericGainMin.Value = numericGainMin.Minimum;
+                    numericGainMax.Value = numericGainMin.Minimum + MinGainGapDb;
+                }
+            }
+        }
+        finally
+        {
+            suppressGainClamp = false;
+        }
+    }
+
+    // Pushes the Min/Max Gain limits onto every band's numeric field and fader so
+    // the whole bank shares one scale, then redraws for the (possibly clamped) EQ.
+    private void ApplyGainRange()
+    {
+        decimal minimum = numericGainMin.Value;
+        decimal maximum = numericGainMax.Value;
+        foreach (PeqSlotControl slot in peqSlots)
+        {
+            slot.SetGainRange(minimum, maximum);
+        }
+
+        DrawSelectedCurves();
     }
 
     private void InitializeToolTips()
@@ -115,6 +197,12 @@ public partial class EqWizardPanel : UserControl
             "Auto Tune.");
         SetTip(checkBoxBypass,
             "Show the curves without the EQ applied (Source + EQ equals Source).");
+        SetTip(labelGainMin, numericGainMin,
+            "Lowest gain (dB) every band's field and fader allow — the maximum cut. " +
+            "Also bounds what Auto Tune may apply.");
+        SetTip(labelGainMax, numericGainMax,
+            "Highest gain (dB) every band's field and fader allow — the maximum boost. " +
+            "Also bounds what Auto Tune may apply.");
         SetTip(labelBandsLimit, comboBoxBandsLimit,
             "Maximum number of bands Auto Tune may create.");
         SetTip(labelFromHz, numericFromHz,
@@ -179,34 +267,29 @@ public partial class EqWizardPanel : UserControl
     internal TargetOverlayOption? SelectedTargetOverlay =>
         darkComboBoxSource.SelectedItem as TargetOverlayOption;
 
-    public void SetPeqSlotCount(int slotCount)
+    // Builds all 32 band strips once. Hiding unused strips would waste the fader
+    // bank, so the whole 16x2 grid is always shown; the Bands control only chooses
+    // how many are active (SetActiveBandCount), the rest stay visible but greyed.
+    private void CreatePeqSlots()
     {
-        int clampedSlotCount = Math.Clamp(slotCount, 0, MaxPeqSlotCount);
-        // Rebuilding the slots invalidates any single-band selection.
-        selectedBandIndex = -1;
         peqSlotTable.SuspendLayout();
+        suppressRedraw = true;
         try
         {
-            peqSlotTable.Controls.Clear();
-            // Dispose the old slots so their tooltip registrations are released;
-            // leaving orphaned controls alive breaks the shared ToolTip.
-            foreach (PeqSlotControl oldSlot in peqSlots)
-            {
-                oldSlot.Dispose();
-            }
-
-            peqSlots.Clear();
-
-            for (int index = 0; index < clampedSlotCount; index++)
+            for (int index = 0; index < MaxPeqSlotCount; index++)
             {
                 var slot = new PeqSlotControl
                 {
                     Dock = DockStyle.Fill,
-                    Margin = new Padding(2),
+                    Margin = new Padding(1),
                     SlotNumber = index + 1
                 };
-                int column = index / PeqRowCount;
-                int row = index % PeqRowCount;
+                // Row-major: bands 1..16 fill the top row left to right, 17..32
+                // the bottom row, matching how the fader bank reads.
+                int row = index / PeqColumnCount;
+                int column = index % PeqColumnCount;
+                slot.FrequencyInput.Value =
+                    slot.FrequencyInput.ClampValue(DefaultBandFrequencyHz(index));
                 slot.FrequencyInput.ValueChanged += PeqBandValueChanged;
                 slot.QInput.ValueChanged += PeqBandValueChanged;
                 slot.GainInput.ValueChanged += PeqBandValueChanged;
@@ -220,12 +303,49 @@ public partial class EqWizardPanel : UserControl
         }
         finally
         {
+            suppressRedraw = false;
             peqSlotTable.ResumeLayout();
         }
+    }
 
-        // The band count itself changes the EQ curve, so redraw.
+    // ISO 266 preferred 1/3-octave centre frequencies, the ones a 31/32-band
+    // graphic EQ is built on. 32 values (16 Hz .. 20 kHz) match the 32 strips
+    // exactly: the standard 31-band 20 Hz..20 kHz set plus 16 Hz below it.
+    private static readonly double[] IsoThirdOctaveCentersHz =
+    {
+        16, 20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500,
+        630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000,
+        10000, 12500, 16000, 20000
+    };
+
+    // Default band centre for a strip: its ISO 1/3-octave frequency (audiophile
+    // graphic-EQ default) instead of every band starting at 1 kHz.
+    private static double DefaultBandFrequencyHz(int index) =>
+        IsoThirdOctaveCentersHz[
+            Math.Clamp(index, 0, IsoThirdOctaveCentersHz.Length - 1)];
+
+    // The Bands control sets how many strips are active; the remaining strips stay
+    // visible but disabled and are excluded from the EQ curve and the stats.
+    private void SetActiveBandCount(int count)
+    {
+        activeBandCount = Math.Clamp(count, 1, MaxPeqSlotCount);
+        for (int index = 0; index < peqSlots.Count; index++)
+        {
+            peqSlots[index].Enabled = index < activeBandCount;
+        }
+
+        // A band that just became inactive must not stay selected/highlighted.
+        if (selectedBandIndex >= activeBandCount)
+        {
+            DeselectBand();
+        }
+
+        // Changing the active count changes the EQ curve, so redraw.
         DrawSelectedCurves();
     }
+
+    // The active band strips (the leading prefix of the always-present 32).
+    private IEnumerable<PeqSlotControl> ActiveSlots => peqSlots.Take(activeBandCount);
 
     private void PeqBandValueChanged(object? sender, EventArgs e) => DrawSelectedCurves();
 
@@ -553,10 +673,11 @@ public partial class EqWizardPanel : UserControl
         model.InvalidatePlot(true);
     }
 
-    // Reads the PEQ slots and the preamp control into a logical EQ curve.
+    // Reads the active PEQ slots and the preamp control into a logical EQ curve.
+    // Inactive strips (beyond the chosen band count) are excluded.
     private EqualizationCurve BuildEqualizationCurve()
     {
-        IEnumerable<PeqBand> bands = peqSlots.Select(slot => new PeqBand(
+        IEnumerable<PeqBand> bands = ActiveSlots.Select(slot => new PeqBand(
             (double)slot.FrequencyInput.Value,
             (double)slot.QInput.Value,
             (double)slot.GainInput.Value));
@@ -602,7 +723,7 @@ public partial class EqWizardPanel : UserControl
         }
 
         double rms = valid > 0 ? Math.Sqrt(sumSquares / valid) : 0;
-        int filtersUsed = peqSlots.Count(
+        int filtersUsed = ActiveSlots.Count(
             slot => Math.Abs((double)slot.GainInput.Value) >= 0.05);
 
         double peakBoost = double.NegativeInfinity;
@@ -1005,7 +1126,7 @@ public partial class EqWizardPanel : UserControl
             ColumnCount = PeqColumnCount,
             Dock = DockStyle.Fill,
             Margin = Padding.Empty,
-            Padding = new Padding(4),
+            Padding = new Padding(2),
             RowCount = PeqRowCount
         };
 
@@ -1020,6 +1141,7 @@ public partial class EqWizardPanel : UserControl
 
         peqSlotTable.Click += (_, _) => DeselectBand();
         panelPEQ.Controls.Add(peqSlotTable);
+        CreatePeqSlots();
     }
 
     private void InitializeBandsComboBox()
@@ -1071,6 +1193,6 @@ public partial class EqWizardPanel : UserControl
         int slotCount = darkComboBoxBands.SelectedItem is int selectedCount
             ? selectedCount
             : 1;
-        SetPeqSlotCount(slotCount);
+        SetActiveBandCount(slotCount);
     }
 }

@@ -272,7 +272,8 @@ internal sealed class LiveSpectrumController : IDisposable
 
     private async Task StopAsync()
     {
-        LiveSpectrumSnapshot? finalSnapshot = measurement.GetAccumulatedSpectrumSnapshot();
+        LiveSpectrumSnapshot? finalSnapshot = measurement.GetAccumulatedSpectrumSnapshot(
+            liveSpectrumOptions.ShowInputMagnitude);
         timer.Stop();
         await measurement.AbortAsync();
 
@@ -303,7 +304,8 @@ internal sealed class LiveSpectrumController : IDisposable
         redrawInProgress = true;
         try
         {
-            LiveSpectrumSnapshot? snapshot = measurement.GetAccumulatedSpectrumSnapshot();
+            LiveSpectrumSnapshot? snapshot = measurement.GetAccumulatedSpectrumSnapshot(
+                liveSpectrumOptions.ShowInputMagnitude);
             PlotModel? model = plotView.Model;
             if (snapshot == null || model == null || getCurrentMode() != Mode.LiveSpectrum)
             {

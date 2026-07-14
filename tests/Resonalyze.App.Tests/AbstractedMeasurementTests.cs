@@ -171,6 +171,13 @@ public sealed class AbstractedMeasurementTests
 
         Assert.True(await running, measurement.LastError?.ToString());
         Assert.NotNull(snapshot);
+        LiveSpectrumSnapshot? withoutInputMagnitude =
+            measurement.GetAccumulatedSpectrumSnapshot(includeInputMagnitude: false);
+        LiveSpectrumSnapshot? withInputMagnitude =
+            measurement.GetAccumulatedSpectrumSnapshot(includeInputMagnitude: true);
+        Assert.NotNull(withoutInputMagnitude);
+        Assert.Null(withoutInputMagnitude.InputMagnitude);
+        Assert.NotNull(withInputMagnitude?.InputMagnitude);
         Assert.NotNull(opened);
         Assert.True(opened!.Disposed);
     }

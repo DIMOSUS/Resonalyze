@@ -35,6 +35,7 @@ public partial class EqWizardPanel
     private IImpulseMeasurement? loadedIr;
     private EqWizardCurve? cachedSourceCurve;
     private bool sourceCurveDirty = true;
+    private int irLoadGeneration;
 
     private TargetPreset targetPreset = TargetPreset.Flat;
     private TargetCurveSpec targetSpec = TargetCurveSpec.FromPreset(TargetPreset.Flat);
@@ -70,22 +71,35 @@ public partial class EqWizardPanel
             return;
         }
 
+        // Guard against overlapping loads: a slow earlier LoadAsync must not
+        // overwrite a newer selection (or report its error) when it finally lands.
+        int generation = ++irLoadGeneration;
+        ImpulseResponseFile file;
         try
         {
-            ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(dialog.FileName);
-            loadedIr = CreateMeasurement(file);
-            InvalidateSourceCurve();
-            buttonLoadIr.Text = System.IO.Path.GetFileNameWithoutExtension(dialog.FileName);
-            toolTip.SetToolTip(
-                buttonLoadIr,
-                $"Loaded: {dialog.FileName}\r\nClick to load another impulse response.");
+            file = await ImpulseResponseFile.LoadAsync(dialog.FileName);
         }
         catch (Exception exception)
         {
-            ShowFileError("The impulse response could not be loaded.", exception);
+            if (generation == irLoadGeneration && !IsDisposed)
+            {
+                ShowFileError("The impulse response could not be loaded.", exception);
+            }
+
             return;
         }
 
+        if (generation != irLoadGeneration || IsDisposed)
+        {
+            return;
+        }
+
+        loadedIr = CreateMeasurement(file);
+        InvalidateSourceCurve();
+        buttonLoadIr.Text = System.IO.Path.GetFileNameWithoutExtension(dialog.FileName);
+        toolTip.SetToolTip(
+            buttonLoadIr,
+            $"Loaded: {dialog.FileName}\r\nClick to load another impulse response.");
         DrawSelectedCurves();
     }
 

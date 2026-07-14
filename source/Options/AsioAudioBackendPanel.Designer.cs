@@ -72,7 +72,7 @@ namespace Resonalyze.Options
             labelAsioInputChannel.Location = new Point(0, 66);
             labelAsioInputChannel.Name = "labelAsioInputChannel";
             labelAsioInputChannel.Size = new Size(109, 15);
-            labelAsioInputChannel.TabIndex = 27;
+            labelAsioInputChannel.TabIndex = 29;
             labelAsioInputChannel.Text = "ASIO input channel";
             //
             // comboBoxAsioInputChannel
@@ -84,7 +84,7 @@ namespace Resonalyze.Options
             comboBoxAsioInputChannel.MinimumSize = new Size(36, 19);
             comboBoxAsioInputChannel.Name = "comboBoxAsioInputChannel";
             comboBoxAsioInputChannel.Size = new Size(170, 23);
-            comboBoxAsioInputChannel.TabIndex = 28;
+            comboBoxAsioInputChannel.TabIndex = 30;
             //
             // labelAsioOutputChannel
             //
@@ -93,7 +93,7 @@ namespace Resonalyze.Options
             labelAsioOutputChannel.Location = new Point(-1, 37);
             labelAsioOutputChannel.Name = "labelAsioOutputChannel";
             labelAsioOutputChannel.Size = new Size(122, 15);
-            labelAsioOutputChannel.TabIndex = 29;
+            labelAsioOutputChannel.TabIndex = 27;
             labelAsioOutputChannel.Text = "ASIO output channels";
             //
             // comboBoxAsioOutputChannel
@@ -105,7 +105,7 @@ namespace Resonalyze.Options
             comboBoxAsioOutputChannel.MinimumSize = new Size(36, 19);
             comboBoxAsioOutputChannel.Name = "comboBoxAsioOutputChannel";
             comboBoxAsioOutputChannel.Size = new Size(170, 23);
-            comboBoxAsioOutputChannel.TabIndex = 30;
+            comboBoxAsioOutputChannel.TabIndex = 28;
             //
             // labelAsioLoopbackChannel
             //

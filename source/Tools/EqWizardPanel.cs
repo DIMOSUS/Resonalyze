@@ -165,9 +165,20 @@ public partial class EqWizardPanel : UserControl
     {
         decimal minimum = numericGainMin.Value;
         decimal maximum = numericGainMax.Value;
-        foreach (PeqSlotControl slot in peqSlots)
+        // SetGainRange can clamp a band's value, and that ValueChanged redraws, so
+        // narrowing the range would rebuild the plot up to 32 times. Batch the whole
+        // bank behind a single redraw.
+        suppressRedraw = true;
+        try
         {
-            slot.SetGainRange(minimum, maximum);
+            foreach (PeqSlotControl slot in peqSlots)
+            {
+                slot.SetGainRange(minimum, maximum);
+            }
+        }
+        finally
+        {
+            suppressRedraw = false;
         }
 
         RaiseSettingsChanged();

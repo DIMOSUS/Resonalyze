@@ -185,16 +185,6 @@ Linux dev env where the work was done).
 - [ ] **Wave backend still uses legacy MME** (`WaveInEvent`/`WaveOutEvent`) with
   hidden mixer resampling and extra latency; migrate to WASAPI
   (exclusive/shared) with a device-compatibility pass.
-- [ ] **Synchronous `LevelsAvailable` subscribers can still stall the ASIO
-  callback** if a subscriber does a blocking `Invoke` to the UI thread; verify
-  live (the meter coalesces, but the contract isn't enforced).
-- [ ] **`GetSamplesSnapshot` copies the whole buffer under the callback lock**;
-  safe only because it's called after `StopAsync`, which the contract doesn't
-  enforce.
-- [ ] **Subscriber exceptions escape into the real-time audio callbacks**
-  (`LevelsAvailable`/`SequenceReady`/… invoked directly from ASIO/Wave
-  callbacks): one throwing UI subscriber can kill the driver. Route through a
-  bounded dispatcher or isolate each subscriber.
 
 ## Overlays
 
@@ -277,11 +267,12 @@ Linux dev env where the work was done).
 - [ ] **EMA coherence has no effective average count** (overlap-correlated
   frames, alpha-dependent memory): expose K_eff ≈ (2−α)/α (reduced for overlap)
   alongside the curve and feed it to the same debias the sweep path uses.
-- [ ] ★ **The ASIO/Wave capture callback still allocates on the audio thread**:
-  sequence extraction builds jagged float arrays + a List and invokes subscribers
-  inline; the first pass (JIT + allocation) can overrun a 64–128-sample ASIO
-  budget. Target: callback → convert into a preallocated SPSC ring slot → return;
-  a background thread reframes/FFTs from the ring.
+- [ ] **WASAPI capture still allocates one managed packet buffer in the device
+  loop.** PCM decode, metering, sequence extraction and subscriber publication
+  now run on a bounded worker for both Wave and WASAPI, but
+  `WasapiCaptureDevice` still creates the byte array copied from each native
+  packet. Pool that device-owned copy without leaking ownership past the audio
+  project boundary.
 - [ ] **Level meter allocates a fresh `AudioChannelLevel[]` per callback** (up to
   ~750/s at 64-sample buffers): accumulate peak/sumSquares in the callback and
   snapshot at 20–30 Hz.

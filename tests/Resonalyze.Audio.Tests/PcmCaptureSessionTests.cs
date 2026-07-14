@@ -82,6 +82,7 @@ public sealed class PcmCaptureSessionTests
         // A long confirmation pause: audio keeps arriving but must not accumulate.
         session.Pause();
         device.Push([0x03, 0x00, 0x04, 0x00, 0x05, 0x00]); // 3 frames, dropped
+        await WaitUntilAsync(() => Volatile.Read(ref levelEvents) > levelsAfterStart);
         Assert.Equal(2, session.ReadSamples);
         Assert.True(levelEvents > levelsAfterStart); // meter stayed live
 
@@ -89,6 +90,7 @@ public sealed class PcmCaptureSessionTests
         session.Reset();
         Assert.Equal(0, session.ReadSamples);
         device.Push([0x06, 0x00]);
+        await session.WaitForSamplesAsync(1, CancellationToken.None);
         Assert.Equal(1, session.ReadSamples);
     }
 
@@ -163,6 +165,15 @@ public sealed class PcmCaptureSessionTests
         Assert.Equal(1, session.SilentPacketCount);
         Assert.Equal(1, session.TimestampErrorCount);
         Assert.Equal(1, notifications);
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        while (!condition())
+        {
+            await Task.Delay(10, timeout.Token);
+        }
     }
 
     private sealed class FakeCaptureDevice : IAudioCaptureDevice

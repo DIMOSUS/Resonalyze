@@ -141,10 +141,13 @@ namespace Resonalyze
             dockedModeSettingsHost = dependencies.DockedModeSettingsHost;
             dockedMeasurementSettingsHost = dependencies.DockedMeasurementSettingsHost;
             dockedHistoryHost = dependencies.DockedHistoryHost;
-            eqWizardPanel.RenderProvider = overlayCollection.BuildEqWizardRender;
-            eqWizardPanel.TargetOffsetSetter = overlayCollection.ApplyEqWizardTargetOffset;
             eqWizardPanel.ResultsChanged = eqResultsPanel.SetResults;
-            eqWizardPanel.OverlaySettingsRequested = OpenEqWizardOverlaySettings;
+            eqWizardPanel.ApplyPersistedSettings(measurementSettings.EqWizard);
+            eqWizardPanel.SettingsChanged += () =>
+            {
+                measurementSettings.EqWizard = eqWizardPanel.CaptureSettings();
+                ScheduleMeasurementSettingsSave();
+            };
             signalGeneratorPanel.PlaybackSettingsProvider = CreateSignalGeneratorPlaybackSettings;
             signalGeneratorPanel.AudioSessionFactory = audioSessionFactory;
             virtualCrossoverPanel.HistoryService = measurementHistoryService;

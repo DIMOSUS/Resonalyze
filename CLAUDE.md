@@ -45,6 +45,7 @@ Key structural points:
 - **`Shell/Form1` is the hub**, split into partial classes by concern (`Form1.Measurement.cs`, `Form1.Plotting.cs`, `Form1.History.cs`, `Form1.Compare.cs`, etc.). The `Mode` enum in `Form1.cs` defines all analysis modes (frequency/phase/group delay/waterfall/burst decay/live spectrum/time alignment/EQ wizard/signal generator/virtual crossover); `ModeSwitching/ModeController` orchestrates tab switches.
 - **`Options/`** holds one settings panel per mode (`FROptions`, `IROpt`, `GDOpt`, ...), docked into the shell via `Shell/DockedModeSettingsHost`.
 - **`Tools/`** contains the larger feature panels: EQ Wizard, Signal Generator, Virtual DSP (`VirtualCrossoverPanel` + project file persistence), and PDF tuning-sheet export (PDFsharp/MigraDoc).
+  - **`EqWizardPanel` is self-contained** — it does not read overlays or the current measurement. It loads its own impulse response, computes the source FR in-panel via `DataHelper.GetSpectrum` (with the selected microphone calibration), corrects toward a mode-local target curve edited by reusing `OverlayTargetSettingsDialog` in its isolated mode, and persists its state in `MeasurementSettingsFile.EqWizard`.
 - **`Overlays/`** manages persistent overlay slots and calculated (math) overlays; **`History/`** persists measurement snapshots with per-entry working state.
 - Update checking uses NetSparkle + `Settings/GitHubReleaseChecker`.
 

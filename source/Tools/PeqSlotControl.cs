@@ -8,10 +8,12 @@ public partial class PeqSlotControl : UserControl
     private static readonly Color SelectedBackColor = Color.FromArgb(58, 66, 86);
 
     private int slotNumber = 1;
+    private bool suppressGainSync;
 
     public PeqSlotControl()
     {
         InitializeComponent();
+        WireGainFader();
         HookActivation(this);
     }
 
@@ -21,7 +23,60 @@ public partial class PeqSlotControl : UserControl
 
     public void SetSelected(bool selected)
     {
-        BackColor = selected ? SelectedBackColor : NormalBackColor;
+        Color color = selected ? SelectedBackColor : NormalBackColor;
+        BackColor = color;
+        slotLayout.BackColor = color;
+        // The fader paints its background from the strip colour, so it must be
+        // told to repaint when the selection tint changes. It also gates its
+        // click-to-drag on whether this band is the selected one.
+        fader.StripActive = selected;
+        fader.BackColor = color;
+        fader.Invalidate();
+    }
+
+    // Keeps the vertical fader and the gain field in lock-step: the numeric field
+    // stays the source of truth (the host reads it), the fader is a view over it.
+    private void WireGainFader()
+    {
+        fader.Minimum = (double)gainInput.Minimum;
+        fader.Maximum = (double)gainInput.Maximum;
+        fader.Increment = (double)gainInput.Increment;
+        fader.Value = (double)gainInput.Value;
+
+        gainInput.ValueChanged += (_, _) =>
+        {
+            if (suppressGainSync)
+            {
+                return;
+            }
+
+            suppressGainSync = true;
+            try
+            {
+                fader.Value = (double)gainInput.Value;
+            }
+            finally
+            {
+                suppressGainSync = false;
+            }
+        };
+        fader.ValueChanged += (_, _) =>
+        {
+            if (suppressGainSync)
+            {
+                return;
+            }
+
+            suppressGainSync = true;
+            try
+            {
+                gainInput.Value = gainInput.ClampValue(fader.Value);
+            }
+            finally
+            {
+                suppressGainSync = false;
+            }
+        };
     }
 
     private void HookActivation(Control control)
@@ -46,6 +101,18 @@ public partial class PeqSlotControl : UserControl
             slotNumber = Math.Max(1, value);
             slotLabel.Text = slotNumber.ToString();
         }
+    }
+
+    // Applies a new gain range to both the numeric field and the fader so they
+    // keep sharing one scale. The min is <= 0 <= max, so ordering never inverts;
+    // the field clamps its value and the fader is re-mirrored to match.
+    internal void SetGainRange(decimal minimum, decimal maximum)
+    {
+        gainInput.Minimum = minimum;
+        gainInput.Maximum = maximum;
+        fader.Minimum = (double)minimum;
+        fader.Maximum = (double)maximum;
+        fader.Value = (double)gainInput.Value;
     }
 
     internal DarkNumericUpDown FrequencyInput => frequencyInput;

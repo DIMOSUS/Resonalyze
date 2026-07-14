@@ -69,43 +69,43 @@ namespace Resonalyze.Options
             //
             labelAsioInputChannel.AutoSize = true;
             labelAsioInputChannel.ForeColor = SystemColors.ControlLight;
-            labelAsioInputChannel.Location = new Point(0, 37);
+            labelAsioInputChannel.Location = new Point(0, 66);
             labelAsioInputChannel.Name = "labelAsioInputChannel";
             labelAsioInputChannel.Size = new Size(109, 15);
-            labelAsioInputChannel.TabIndex = 27;
+            labelAsioInputChannel.TabIndex = 29;
             labelAsioInputChannel.Text = "ASIO input channel";
             //
             // comboBoxAsioInputChannel
             //
             comboBoxAsioInputChannel.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxAsioInputChannel.ForeColor = Color.White;
-            comboBoxAsioInputChannel.Location = new Point(141, 29);
+            comboBoxAsioInputChannel.Location = new Point(141, 58);
             comboBoxAsioInputChannel.Margin = new Padding(0);
             comboBoxAsioInputChannel.MinimumSize = new Size(36, 19);
             comboBoxAsioInputChannel.Name = "comboBoxAsioInputChannel";
             comboBoxAsioInputChannel.Size = new Size(170, 23);
-            comboBoxAsioInputChannel.TabIndex = 28;
+            comboBoxAsioInputChannel.TabIndex = 30;
             //
             // labelAsioOutputChannel
             //
             labelAsioOutputChannel.AutoSize = true;
             labelAsioOutputChannel.ForeColor = SystemColors.ControlLight;
-            labelAsioOutputChannel.Location = new Point(0, 66);
+            labelAsioOutputChannel.Location = new Point(-1, 37);
             labelAsioOutputChannel.Name = "labelAsioOutputChannel";
             labelAsioOutputChannel.Size = new Size(122, 15);
-            labelAsioOutputChannel.TabIndex = 29;
+            labelAsioOutputChannel.TabIndex = 27;
             labelAsioOutputChannel.Text = "ASIO output channels";
             //
             // comboBoxAsioOutputChannel
             //
             comboBoxAsioOutputChannel.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxAsioOutputChannel.ForeColor = Color.White;
-            comboBoxAsioOutputChannel.Location = new Point(141, 58);
+            comboBoxAsioOutputChannel.Location = new Point(140, 29);
             comboBoxAsioOutputChannel.Margin = new Padding(0);
             comboBoxAsioOutputChannel.MinimumSize = new Size(36, 19);
             comboBoxAsioOutputChannel.Name = "comboBoxAsioOutputChannel";
             comboBoxAsioOutputChannel.Size = new Size(170, 23);
-            comboBoxAsioOutputChannel.TabIndex = 30;
+            comboBoxAsioOutputChannel.TabIndex = 28;
             //
             // labelAsioLoopbackChannel
             //

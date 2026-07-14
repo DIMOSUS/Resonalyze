@@ -182,6 +182,14 @@ public partial class Form1
                 microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees0),
                 microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees90));
         }
+
+        if (eqWizardPanel != null)
+        {
+            eqWizardPanel.ConfigureCalibration(
+                microphoneCalibration.Get,
+                microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees0),
+                microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees90));
+        }
     }
 
     private void WireFormEvents()

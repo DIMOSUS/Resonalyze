@@ -469,11 +469,6 @@ internal sealed record OverlayOperandOption(int Slot, string? CurveKey, string L
     public override string ToString() => Label;
 }
 
-internal sealed record TargetOverlayOption(int Slot, string Title, int SourceSlot)
-{
-    public override string ToString() => $"{Slot}: {Title}";
-}
-
 internal sealed record BlendWidthOption(double Octaves, string Label)
 {
     public override string ToString() => Label;

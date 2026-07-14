@@ -67,6 +67,25 @@ public sealed class PcmCaptureSessionTests
     }
 
     [Fact]
+    public async Task Reset_WhileOldPacketIsDecoding_DoesNotAppendItToNewRun()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        var decoder = new BlockingDecoder();
+        await using var session = new PcmCaptureSession(device, decoder: decoder);
+
+        Task start = session.StartAsync(CancellationToken.None);
+        device.Push([1, 0]);
+        Assert.True(decoder.FirstDecodeStarted.Wait(TimeSpan.FromSeconds(2)));
+
+        session.Reset();
+        decoder.ReleaseFirstDecode.Set();
+        device.Push([2, 0]);
+        await start.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal([2f], session.GetSamplesSnapshot()[0]);
+    }
+
+    [Fact]
     public async Task PausedCaptureDropsAppendsButKeepsMeteringAndResumesOnReset()
     {
         var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
@@ -188,6 +207,7 @@ public sealed class PcmCaptureSessionTests
 
         public WaveFormat CaptureFormat { get; }
         public int ChannelCount => CaptureFormat.Channels;
+        public int MaximumPacketBytes => CaptureFormat.AverageBytesPerSecond / 10;
 
         public Task StartAsync(CancellationToken cancellationToken)
         {
@@ -220,5 +240,26 @@ public sealed class PcmCaptureSessionTests
             Stopped?.Invoke(this, new AudioDeviceStoppedEventArgs(exception));
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class BlockingDecoder : IInterleavedSampleDecoder
+    {
+        private int decodeCount;
+
+        public ManualResetEventSlim FirstDecodeStarted { get; } = new();
+        public ManualResetEventSlim ReleaseFirstDecode { get; } = new();
+        public int ChannelCount => 1;
+
+        public int Decode(ReadOnlySpan<byte> source, float[][] destination)
+        {
+            if (Interlocked.Increment(ref decodeCount) == 1)
+            {
+                FirstDecodeStarted.Set();
+                ReleaseFirstDecode.Wait(TimeSpan.FromSeconds(2));
+            }
+
+            destination[0][0] = source[0];
+            return 1;
+        }
     }
 }

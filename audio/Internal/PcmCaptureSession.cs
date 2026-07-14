@@ -27,15 +27,26 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
     private int captureGeneration;
     private bool disposed;
 
-    public PcmCaptureSession(IAudioCaptureDevice device, int sequence = 0, int expectedSamples = 0)
+    public PcmCaptureSession(
+        IAudioCaptureDevice device,
+        int sequence = 0,
+        int expectedSamples = 0,
+        IInterleavedSampleDecoder? decoder = null)
     {
         this.device = device ?? throw new ArgumentNullException(nameof(device));
-        decoder = InterleavedSampleDecoder.Create(device.CaptureFormat);
+        this.decoder = decoder ?? InterleavedSampleDecoder.Create(device.CaptureFormat);
+        if (this.decoder.ChannelCount != device.ChannelCount)
+        {
+            throw new ArgumentException("Decoder channel count must match the capture device.", nameof(decoder));
+        }
         Sequence = sequence;
         this.expectedSamples = expectedSamples;
         accumulator = CreateAccumulator();
         levelAccumulator = new AudioLevelAccumulator(device.ChannelCount, device.CaptureFormat.SampleRate);
-        capturePump = new PcmCapturePump(ProcessCaptureBlock, HandleCaptureFailure);
+        capturePump = new PcmCapturePump(
+            device.MaximumPacketBytes,
+            ProcessCaptureBlock,
+            HandleCaptureFailure);
         device.DataAvailable += HandleDataAvailable;
         device.Stopped += HandleStopped;
     }
@@ -120,14 +131,17 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
 
     public void Reset()
     {
-        int newGeneration = Interlocked.Increment(ref captureGeneration);
-        capturePump.Reset(newGeneration);
         lock (sync)
         {
+            int newGeneration = ++captureGeneration;
             accumulator = CreateAccumulator();
             sampleWaiters.CancelAll();
             // Resetting for the next run resumes accumulation after a pause.
             paused = false;
+            // The epoch and target accumulator change under the same lock used by
+            // ProcessCaptureBlock's final check+append. Reset also drains queued
+            // old packets; an already in-flight packet keeps its old generation.
+            capturePump.Reset(newGeneration);
         }
     }
 
@@ -160,30 +174,12 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         }
         catch (Exception exception)
         {
-            HandleCaptureFailure(exception);
+            HandleCaptureFailure(Volatile.Read(ref captureGeneration), exception);
         }
     }
 
     private void ProcessCaptureBlock(PcmCaptureBlock block)
     {
-        if (block.Generation != Volatile.Read(ref captureGeneration))
-        {
-            return;
-        }
-
-        if (block.Discontinuity)
-        {
-            Interlocked.Increment(ref discontinuityCount);
-            EventPublisher.Publish(CaptureDiscontinuity);
-        }
-        if (block.Silent)
-        {
-            Interlocked.Increment(ref silentPacketCount);
-        }
-        if (block.TimestampError)
-        {
-            Interlocked.Increment(ref timestampErrorCount);
-        }
         int frameCount = block.BytesRecorded / device.CaptureFormat.BlockAlign;
         EnsureScratch(frameCount);
         int decodedFrames = decoder.Decode(block.Buffer.AsSpan(0, block.BytesRecorded), decodeScratch);
@@ -202,6 +198,11 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         List<float[][]>? readySequences = null;
         lock (sync)
         {
+            if (block.Generation != captureGeneration)
+            {
+                return;
+            }
+
             // While paused (between averaged runs) the device keeps running so the
             // level meter stays live, but samples are dropped instead of appended —
             // otherwise a long confirmation pause grows the buffer without bound.
@@ -213,6 +214,19 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
             }
         }
 
+        if (block.Discontinuity)
+        {
+            Interlocked.Increment(ref discontinuityCount);
+            EventPublisher.Publish(CaptureDiscontinuity);
+        }
+        if (block.Silent)
+        {
+            Interlocked.Increment(ref silentPacketCount);
+        }
+        if (block.TimestampError)
+        {
+            Interlocked.Increment(ref timestampErrorCount);
+        }
         firstBufferReady?.TrySetResult(true);
         AudioChannelLevel[]? levels = levelAccumulator.AddBlock(
             meterPeaks,
@@ -262,12 +276,17 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         }
     }
 
-    private void HandleCaptureFailure(Exception exception)
+    private void HandleCaptureFailure(int generation, Exception exception)
     {
-        deviceStopped?.TrySetResult(exception);
-        firstBufferReady?.TrySetException(exception);
         lock (sync)
         {
+            if (generation != captureGeneration)
+            {
+                return;
+            }
+
+            deviceStopped?.TrySetResult(exception);
+            firstBufferReady?.TrySetException(exception);
             terminalException ??= exception;
             sampleWaiters.FaultAll(exception);
         }

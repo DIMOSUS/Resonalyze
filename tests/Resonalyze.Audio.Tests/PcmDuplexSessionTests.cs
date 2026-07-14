@@ -108,6 +108,7 @@ public sealed class PcmDuplexSessionTests
 
         public WaveFormat CaptureFormat { get; }
         public int ChannelCount => CaptureFormat.Channels;
+        public int MaximumPacketBytes => CaptureFormat.AverageBytesPerSecond / 10;
         public int StartCount { get; private set; }
 
         public string EndpointId => "capture-endpoint";

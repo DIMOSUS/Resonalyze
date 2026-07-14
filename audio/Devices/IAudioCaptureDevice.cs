@@ -9,6 +9,7 @@ internal interface IAudioCaptureDevice : IAsyncDisposable
 
     WaveFormat CaptureFormat { get; }
     int ChannelCount { get; }
+    int MaximumPacketBytes { get; }
 
     Task StartAsync(CancellationToken cancellationToken);
     Task StopAsync();

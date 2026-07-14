@@ -12,6 +12,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
     private readonly int driverRecordChannelCount;
     private readonly AsioSampleConverter sampleConverter = new();
     private readonly AsioCapturePump capturePump;
+    private readonly Action? beforeCaptureCommit;
     private AsioOut? driver;
     private CaptureAccumulator? accumulator;
     private float[][] convertScratch = Array.Empty<float[]>();
@@ -19,6 +20,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
     private double[] meterSumSquares = Array.Empty<double>();
     private AudioLevelAccumulator? levelAccumulator;
     private int expectedTotalSamples;
+    private int captureGeneration;
     private TaskCompletionSource<bool>? firstBufferReady;
     private TaskCompletionSource<bool>? playbackStopped;
     // Remembered so a sample waiter registered after the driver stopped (e.g. a
@@ -35,7 +37,8 @@ internal sealed class AsioFullDuplexSession : IDisposable
         string driverName,
         int inputChannelOffset,
         int outputChannelOffset,
-        int inputChannelCount = 1)
+        int inputChannelCount = 1,
+        Action? beforeCaptureCommit = null)
     {
         if (string.IsNullOrWhiteSpace(driverName))
         {
@@ -53,6 +56,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
         this.driverName = driverName;
         this.inputChannelOffset = inputChannelOffset;
         this.outputChannelOffset = outputChannelOffset;
+        this.beforeCaptureCommit = beforeCaptureCommit;
         ChannelCount = inputChannelCount;
         driverRecordChannelCount = inputChannelOffset + inputChannelCount;
         capturePump = new AsioCapturePump(ChannelCount, ProcessCaptureBlock, HandleCaptureFailure);
@@ -120,6 +124,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
                 playbackProvider,
                 driverRecordChannelCount,
                 sampleRate);
+            capturePump.Prepare(checked(driver.FramesPerBuffer * sizeof(float)));
             driver.Play();
 
             using CancellationTokenRegistration registration =
@@ -162,8 +167,10 @@ internal sealed class AsioFullDuplexSession : IDisposable
         ThrowIfDisposed();
         lock (sync)
         {
+            int newGeneration = ++captureGeneration;
             accumulator = null;
             sampleWaiters.CancelAll();
+            capturePump.Reset(newGeneration);
         }
     }
 
@@ -273,11 +280,11 @@ internal sealed class AsioFullDuplexSession : IDisposable
         }
         catch (Exception exception)
         {
-            HandleCaptureFailure(exception);
+            HandleCaptureFailure(Volatile.Read(ref captureGeneration), exception);
         }
     }
 
-    private void ProcessCaptureBlock(AsioCaptureBlock block)
+    internal void ProcessCaptureBlock(AsioCaptureBlock block)
     {
         int frames = block.FrameCount;
         EnsureScratch(frames);
@@ -308,8 +315,14 @@ internal sealed class AsioFullDuplexSession : IDisposable
         // A paused capture (accumulator == null) skips accumulation but keeps
         // metering, so the input meter stays live between averaging runs.
         List<float[][]>? readySequences = null;
+        beforeCaptureCommit?.Invoke();
         lock (sync)
         {
+            if (block.Generation != captureGeneration)
+            {
+                return;
+            }
+
             if (accumulator != null)
             {
                 accumulator.Append(convertScratch, frames);
@@ -336,12 +349,17 @@ internal sealed class AsioFullDuplexSession : IDisposable
         }
     }
 
-    private void HandleCaptureFailure(Exception exception)
+    private void HandleCaptureFailure(int generation, Exception exception)
     {
-        firstBufferReady?.TrySetException(exception);
-        playbackStopped?.TrySetException(exception);
         lock (sync)
         {
+            if (generation != captureGeneration)
+            {
+                return;
+            }
+
+            firstBufferReady?.TrySetException(exception);
+            playbackStopped?.TrySetException(exception);
             terminalException ??= exception;
             sampleWaiters.FaultAll(exception);
         }
@@ -407,6 +425,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
     {
         lock (sync)
         {
+            int newGeneration = ++captureGeneration;
             // Pre-allocating the expected recording length keeps List-style
             // growth re-allocations out of the ASIO callback; live (sequence)
             // mode stays bounded via the accumulator's tail trimming instead.
@@ -416,6 +435,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
                 Math.Max(expectedTotalSamples, 8192));
 
             sampleWaiters.CancelAll();
+            capturePump.Reset(newGeneration);
         }
     }
 

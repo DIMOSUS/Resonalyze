@@ -78,6 +78,20 @@ public sealed class MeasurementHistoryPersistenceTests : IDisposable
         var persistence = new MeasurementHistoryPersistence(storePath);
 
         Assert.Empty(persistence.Load());
+        Assert.NotNull(persistence.LoadWarning);
+        Assert.False(File.Exists(storePath));
+        Assert.True(File.Exists(storePath + ".backup"));
+    }
+
+    [Fact]
+    public void Load_ReportsAndBacksUpUnsupportedStore()
+    {
+        File.WriteAllText(storePath, "{ \"schemaVersion\": 999, \"entries\": [] }");
+        var persistence = new MeasurementHistoryPersistence(storePath);
+
+        Assert.Empty(persistence.Load());
+        Assert.Contains("version 999 is not supported", persistence.LoadWarning);
+        Assert.True(File.Exists(storePath + ".backup"));
     }
 
     internal static MeasurementHistoryEntry CreateEntry(string? sourceFilePath) =>

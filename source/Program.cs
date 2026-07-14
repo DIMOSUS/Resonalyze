@@ -14,38 +14,54 @@ internal static class Program
             TryWriteCrashLog(args.ExceptionObject as Exception);
         Application.ThreadException += (_, args) =>
         {
-            TryWriteCrashLog(args.Exception);
+            string? crashLogPath = TryWriteCrashLog(args.Exception);
+            string logNotice = crashLogPath == null
+                ? "The crash log could not be written."
+                : $"Details were written to '{crashLogPath}'.";
             MessageBox.Show(
                 $"An unexpected error occurred.\r\n\r\n{args.Exception.Message}\r\n\r\n" +
-                $"Details were written to crash.log next to the application.",
+                logNotice,
                 "Resonalyze",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
         };
 
         ApplicationConfiguration.Initialize();
+        IReadOnlyList<string> dataWarnings = ApplicationDataPaths.Current.Prepare();
+        if (dataWarnings.Count > 0)
+        {
+            MessageBox.Show(
+                "Some existing user data could not be prepared or migrated:\r\n\r\n" +
+                string.Join("\r\n\r\n", dataWarnings),
+                "Resonalyze user data",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
         AppProfiler.SetThreadName("UI");
         Application.Run(new Form1());
     }
 
-    private static void TryWriteCrashLog(Exception? exception)
+    private static string? TryWriteCrashLog(Exception? exception)
     {
         if (exception == null)
         {
-            return;
+            return null;
         }
 
         try
         {
-            string path = Path.Combine(AppContext.BaseDirectory, "crash.log");
+            string path = ApplicationDataPaths.Current.CrashLogFile;
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             string entry = string.Create(
                 CultureInfo.InvariantCulture,
                 $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {exception}\r\n\r\n");
             File.AppendAllText(path, entry);
+            return path;
         }
         catch
         {
             // Logging must never make a crash worse.
+            return null;
         }
     }
 }

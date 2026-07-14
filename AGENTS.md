@@ -60,3 +60,11 @@ Enforced by `.editorconfig`; notable deviations from common C# defaults:
 - `var` only when the type is apparent; explicit types otherwise, including built-ins.
 - CRLF line endings, 4-space indent, Allman braces, braces always.
 - New non-UI code uses file-scoped namespaces (see `Program.cs`, `ModeController.cs`).
+
+## User data paths
+
+Implicit user data (settings, history, overlays, Virtual DSP state and crash
+logs) is rooted by `ApplicationDataPaths`. Installed mode uses
+`%LocalAppData%\Resonalyze`; a `portable.flag` file beside the executable opts
+into portable storage beside the app. Do not introduce new direct
+`AppContext.BaseDirectory` persistence paths.

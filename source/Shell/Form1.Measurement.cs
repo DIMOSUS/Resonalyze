@@ -8,6 +8,8 @@ public partial class Form1
     private async void Form1_Shown(object? sender, EventArgs e)
     {
         StartStartupAudioWarmup();
+        NotifySettingsLoadProblem();
+        NotifyHistoryLoadProblem();
         NotifyLegacyDualDeviceLoopbackReset();
 
         if (updateCheckStarted)
@@ -35,6 +37,36 @@ public partial class Form1
         {
             // Update checks are best-effort only and must never affect startup.
         }
+    }
+
+    private void NotifySettingsLoadProblem()
+    {
+        if (string.IsNullOrWhiteSpace(measurementSettings.LoadWarning))
+        {
+            return;
+        }
+
+        MessageBox.Show(
+            this,
+            measurementSettings.LoadWarning,
+            "Settings recovery",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning);
+    }
+
+    private void NotifyHistoryLoadProblem()
+    {
+        if (string.IsNullOrWhiteSpace(measurementHistoryService.LoadWarning))
+        {
+            return;
+        }
+
+        MessageBox.Show(
+            this,
+            measurementHistoryService.LoadWarning,
+            "History recovery",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning);
     }
 
     public async Task ChangeModeAsync(Mode mode)

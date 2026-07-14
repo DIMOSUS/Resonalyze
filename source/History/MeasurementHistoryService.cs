@@ -18,6 +18,7 @@ internal sealed class MeasurementHistoryService
     public event Action? Changed;
 
     public IReadOnlyList<MeasurementHistoryEntry> Entries => entries;
+    public string? LoadWarning => persistence.LoadWarning;
 
     public Guid AddMeasurement(
         ExpSweepMeasurement measurement,

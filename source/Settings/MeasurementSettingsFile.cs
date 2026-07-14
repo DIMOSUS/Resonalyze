@@ -8,8 +8,6 @@ namespace Resonalyze;
 internal sealed class MeasurementSettingsFile
 {
     private const int CurrentSchemaVersion = 8;
-    private const string FileName = "measurement-settings.json";
-
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
@@ -35,26 +33,33 @@ internal sealed class MeasurementSettingsFile
     [JsonIgnore]
     public bool LegacyDualDeviceLoopbackReset { get; private set; }
 
-    private static string PathOnDisk =>
-        Path.Combine(AppContext.BaseDirectory, FileName);
+    [JsonIgnore]
+    public string? LoadWarning { get; private set; }
 
-    public static MeasurementSettingsFile LoadOrDefault()
+    [JsonIgnore]
+    private string pathOnDisk = ApplicationDataPaths.Current.SettingsFile;
+
+    public static MeasurementSettingsFile LoadOrDefault(string? pathOnDisk = null)
     {
+        string path = pathOnDisk ?? ApplicationDataPaths.Current.SettingsFile;
         try
         {
-            if (!File.Exists(PathOnDisk))
+            if (!File.Exists(path))
             {
-                return new MeasurementSettingsFile();
+                return new MeasurementSettingsFile { pathOnDisk = path };
             }
 
-            using FileStream stream = File.OpenRead(PathOnDisk);
+            using FileStream stream = File.OpenRead(path);
             MeasurementSettingsFile? settings =
                 JsonSerializer.Deserialize<MeasurementSettingsFile>(
                     stream,
                     SerializerOptions);
             if (settings == null || settings.SchemaVersion is not (7 or CurrentSchemaVersion))
             {
-                return new MeasurementSettingsFile();
+                throw new InvalidDataException(
+                    settings == null
+                        ? "The settings file is empty."
+                        : $"Settings schema version {settings.SchemaVersion} is not supported.");
             }
 
             if (settings.SchemaVersion == 7)
@@ -69,11 +74,39 @@ internal sealed class MeasurementSettingsFile
             }
 
             settings.MigrateLegacyDualDeviceLoopback();
+            settings.pathOnDisk = path;
             return settings;
         }
-        catch
+        catch (Exception exception)
         {
-            return new MeasurementSettingsFile();
+            string? backupPath = BackupUnusableFile(path);
+            string preservation = backupPath == null
+                ? "The unusable file could not be backed up; check file permissions before saving new settings."
+                : $"The unusable file was preserved as '{backupPath}'.";
+            return new MeasurementSettingsFile
+            {
+                pathOnDisk = path,
+                LoadWarning = $"Settings could not be loaded: {exception.Message}\r\n\r\n{preservation}"
+            };
+        }
+    }
+
+    private static string? BackupUnusableFile(string path)
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            string backupPath = path + ".backup";
+            File.Move(path, backupPath, overwrite: true);
+            return backupPath;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return null;
         }
     }
 
@@ -100,15 +133,17 @@ internal sealed class MeasurementSettingsFile
     public void Save()
     {
         SchemaVersion = CurrentSchemaVersion;
-        // Temp file + move keeps the settings intact if the write is interrupted;
-        // a corrupted file silently loads as defaults.
-        string tempPath = PathOnDisk + ".tmp";
+        // Temp file + move keeps the settings intact if the write is interrupted.
+        string directory = Path.GetDirectoryName(pathOnDisk)
+            ?? throw new InvalidOperationException("Settings directory cannot be resolved.");
+        Directory.CreateDirectory(directory);
+        string tempPath = pathOnDisk + ".tmp";
         using (FileStream stream = File.Create(tempPath))
         {
             JsonSerializer.Serialize(stream, this, SerializerOptions);
         }
 
-        File.Move(tempPath, PathOnDisk, overwrite: true);
+        File.Move(tempPath, pathOnDisk, overwrite: true);
     }
 
     public void ApplyTo(

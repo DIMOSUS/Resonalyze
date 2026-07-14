@@ -106,7 +106,7 @@ public sealed class OverlayFile
     {
         ValidateLocation(mode, slot);
         string root = rootDirectory
-            ?? Path.Combine(AppContext.BaseDirectory, "overlays");
+            ?? ApplicationDataPaths.Current.OverlaysDirectory;
         return Path.Combine(root, mode.ToString(), $"overlay-{slot:00}.json");
     }
 

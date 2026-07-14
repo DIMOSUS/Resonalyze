@@ -287,11 +287,6 @@ Linux dev env where the work was done).
   numbers into mutable global storage): restoring an old session shows whatever
   the slots hold TODAY. Store immutable overlay snapshots (content-addressed
   revisions) in the history entry.
-- [ ] **History index lives beside the executable and dies silently**: no
-  write-permission handling (`Save()` throws unguarded in Program Files-style
-  installs), and any schema-version mismatch or parse error loads as an EMPTY
-  list with no backup/notification — mirror the project-file backup-on-invalid
-  policy, distinguish empty/unsupported/corrupted, and consider %LocalAppData%.
 - [ ] **Virtual DSP history-source loading has a stale-async race**
   (`SelectHistoryEntryAsync` applies a slow snapshot over a newer selection):
   per-channel source revision or CancellationTokenSource.

@@ -211,7 +211,8 @@ namespace Resonalyze
         {
             try
             {
-                string path = Path.Combine(AppContext.BaseDirectory, "measurement-error.log");
+                string path = ApplicationDataPaths.Current.MeasurementErrorLogFile;
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 File.AppendAllText(
                     path,
                     $"[{DateTimeOffset.Now:O}]\r\n{error}\r\n\r\n");

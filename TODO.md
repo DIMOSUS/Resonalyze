@@ -107,14 +107,13 @@ Linux dev env where the work was done).
   `processed[0].SampleRate` for every trace, while `CrossSideTargetMs` already
   uses per-channel `SampleRate` — so mixed rates in one project are possible.
   Either enforce a single rate or map each trace by its own.
-- [~] **`VirtualCrossoverPanel` (~2.6k lines) — correctness kernels extracted;
-  deeper decoupling deferred.** The non-UI, correctness-critical logic is pulled
-  into tested units (`VirtualCrossoverSourceRules`,
-  `VirtualCrossoverAnalysis.SumLossCurve`, `PreparedDspResponse.GroupDelayMs`,
-  `VirtualCrossoverJunctions`). The panel stays a large view-controller by nature
-  (~60-70% irreducible WinForms/OxyPlot wiring); deeper extractions (decouple
-  `ChannelRuntime` from its control, then the process/alignment cores) are
-  deferred to a Windows session where the interactive paths can be exercised.
+- [ ] **`VirtualCrossoverPanel` remains a large view-controller.** Existing pure
+  kernels (`VirtualCrossoverSourceRules`, `VirtualCrossoverAnalysis.SumLossCurve`,
+  `PreparedDspResponse.GroupDelayMs`, `VirtualCrossoverJunctions`) are useful but
+  do not remove its ownership of source loading, session/cache state, async redraw
+  coordination, auto-alignment, persistence and plot construction. Continue with
+  a complete tested vertical slice; do not classify the remainder as inherently
+  WinForms-bound without evidence.
 - [ ] **`DelayTableText` parses rendered fixed-width columns** (18/37 chars) for
   copy-values instead of holding a value model (format+parse are co-located and
   tested). Deferred: a value model pushes the change into the panel's
@@ -128,8 +127,12 @@ Linux dev env where the work was done).
 
 - [ ] **Verify the reused ASIO session on hardware.** Averaged sweeps now keep
   one open ASIO session across runs (the driver plays silence between runs and
-  only the capture accumulator restarts). Verified by construction only — run
-  an averaged ASIO measurement on real hardware (ideally a slow driver) first.
+  only the capture accumulator restarts). Software lifecycle guards are covered
+  deterministically: callback pools are allocated before playback, reset advances
+  a capture epoch and drains queued old blocks, an in-flight old block is rejected
+  at the final locked append, and overflow/worker failure can recover on reset.
+  The remaining item is device/driver integration: run an averaged ASIO
+  measurement on real hardware (ideally a slow driver).
 - [ ] **Sweep-run quality: unambiguous checks only, by decision.** The
   statistical outlier layer (peak-delay vs median, IR correlation vs a reference
   run) and the run pre-alignment rework were **rejected by the user

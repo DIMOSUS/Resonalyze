@@ -50,6 +50,41 @@ public sealed class PcmCapturePumpTests
         Assert.Contains("could not keep up", exception.Message);
     }
 
+    [Fact]
+    public async Task TryEnqueue_AllowsDifferentPacketSizesWhileEarlierPacketIsQueued()
+    {
+        using var releaseFirst = new ManualResetEventSlim();
+        var results = new List<byte[]>();
+        var completed = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var pump = new PcmCapturePump(
+            block =>
+            {
+                lock (results)
+                {
+                    results.Add(block.Buffer[..block.BytesRecorded]);
+                    if (results.Count == 1)
+                    {
+                        releaseFirst.Wait(TimeSpan.FromSeconds(2));
+                    }
+                    if (results.Count == 2)
+                    {
+                        completed.TrySetResult();
+                    }
+                }
+            },
+            exception => completed.TrySetException(exception));
+        pump.Reset(1);
+
+        Assert.True(pump.TryEnqueue(CreatePacket([1, 2])));
+        Assert.True(pump.TryEnqueue(CreatePacket([3, 4, 5, 6, 7, 8])));
+        releaseFirst.Set();
+        await completed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal([1, 2], results[0]);
+        Assert.Equal([3, 4, 5, 6, 7, 8], results[1]);
+    }
+
     private static AudioCaptureDataEventArgs CreatePacket(byte[] bytes) => new()
     {
         Buffer = bytes,

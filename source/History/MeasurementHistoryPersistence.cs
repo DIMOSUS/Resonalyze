@@ -6,8 +6,6 @@ namespace Resonalyze.History;
 internal sealed class MeasurementHistoryPersistence
 {
     private const int CurrentSchemaVersion = 1;
-    private const string FileName = "measurement-history.json";
-
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
@@ -18,14 +16,17 @@ internal sealed class MeasurementHistoryPersistence
 
     private readonly string pathOnDisk;
 
+    public string? LoadWarning { get; private set; }
+
     public MeasurementHistoryPersistence(string? pathOnDisk = null)
     {
         this.pathOnDisk = pathOnDisk
-            ?? Path.Combine(AppContext.BaseDirectory, FileName);
+            ?? ApplicationDataPaths.Current.HistoryFile;
     }
 
     public IReadOnlyList<MeasurementHistoryEntry> Load()
     {
+        LoadWarning = null;
         try
         {
             if (!File.Exists(pathOnDisk))
@@ -35,9 +36,14 @@ internal sealed class MeasurementHistoryPersistence
 
             using FileStream stream = File.OpenRead(pathOnDisk);
             StoreFile? file = JsonSerializer.Deserialize<StoreFile>(stream, SerializerOptions);
-            if (file?.SchemaVersion != CurrentSchemaVersion)
+            if (file == null)
             {
-                return Array.Empty<MeasurementHistoryEntry>();
+                throw new InvalidDataException("The history file is empty.");
+            }
+            if (file.SchemaVersion != CurrentSchemaVersion)
+            {
+                throw new InvalidDataException(
+                    $"History schema version {file.SchemaVersion} is not supported.");
             }
 
             return file.Entries
@@ -57,8 +63,13 @@ internal sealed class MeasurementHistoryPersistence
                 })
                 .ToArray();
         }
-        catch
+        catch (Exception exception)
         {
+            string? backupPath = BackupUnusableFile();
+            string preservation = backupPath == null
+                ? "The unusable file could not be backed up; check file permissions before saving history."
+                : $"The unusable file was preserved as '{backupPath}'.";
+            LoadWarning = $"Measurement history could not be loaded: {exception.Message}\r\n\r\n{preservation}";
             return Array.Empty<MeasurementHistoryEntry>();
         }
     }
@@ -83,8 +94,10 @@ internal sealed class MeasurementHistoryPersistence
                 .ToList()
         };
 
-        // Temp file + move keeps the store intact if the write is interrupted;
-        // a corrupted store silently wipes the whole history list on next load.
+        // Temp file + move keeps the store intact if the write is interrupted.
+        string directory = Path.GetDirectoryName(pathOnDisk)
+            ?? throw new InvalidOperationException("History directory cannot be resolved.");
+        Directory.CreateDirectory(directory);
         string tempPath = pathOnDisk + ".tmp";
         using (FileStream stream = File.Create(tempPath))
         {
@@ -92,6 +105,25 @@ internal sealed class MeasurementHistoryPersistence
         }
 
         File.Move(tempPath, pathOnDisk, overwrite: true);
+    }
+
+    private string? BackupUnusableFile()
+    {
+        try
+        {
+            if (!File.Exists(pathOnDisk))
+            {
+                return null;
+            }
+
+            string backupPath = pathOnDisk + ".backup";
+            File.Move(pathOnDisk, backupPath, overwrite: true);
+            return backupPath;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     private sealed class StoreFile

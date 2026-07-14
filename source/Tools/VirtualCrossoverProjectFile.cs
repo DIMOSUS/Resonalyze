@@ -258,7 +258,7 @@ public sealed class VirtualCrossoverProjectFile
 
     public static string GetPath(string? rootDirectory = null) =>
         Path.Combine(
-            rootDirectory ?? Path.Combine(AppContext.BaseDirectory, "tools"),
+            rootDirectory ?? ApplicationDataPaths.Current.ToolsDirectory,
             FileName);
 
     public void Save(string? rootDirectory = null)

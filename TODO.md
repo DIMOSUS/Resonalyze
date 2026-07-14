@@ -296,9 +296,6 @@ Linux dev env where the work was done).
   numbers into mutable global storage): restoring an old session shows whatever
   the slots hold TODAY. Store immutable overlay snapshots (content-addressed
   revisions) in the history entry.
-- [ ] **Virtual DSP history-source loading has a stale-async race**
-  (`SelectHistoryEntryAsync` applies a slow snapshot over a newer selection):
-  per-channel source revision or CancellationTokenSource.
 
 ## Signal Generator / files / calibration / release
 

@@ -227,14 +227,13 @@ internal sealed class WasapiCaptureDevice : IAudioCaptureDevice, ICaptureDiagnos
             try
             {
                 int byteCount = checked(frames * CaptureFormat.BlockAlign);
-                var buffer = new byte[byteCount];
                 bool silent = (flags & AudioClientBufferFlags.Silent) != 0;
                 bool discontinuity = (flags & AudioClientBufferFlags.DataDiscontinuity) != 0;
                 bool timestampError = (flags & AudioClientBufferFlags.TimestampError) != 0;
-                if (!silent)
-                {
-                    Marshal.Copy(source, buffer, 0, byteCount);
-                }
+                using PooledCapturePacket packet = PooledCapturePacket.CopyFromNative(
+                    source,
+                    byteCount,
+                    silent);
                 CapturePackets++;
                 if (silent)
                 {
@@ -252,7 +251,7 @@ internal sealed class WasapiCaptureDevice : IAudioCaptureDevice, ICaptureDiagnos
                     this,
                     new AudioCaptureDataEventArgs
                     {
-                        Buffer = buffer,
+                        Buffer = packet.Memory,
                         BytesRecorded = byteCount,
                         Format = CaptureFormat,
                         DevicePositionFrames = devicePosition,

@@ -264,12 +264,6 @@ Linux dev env where the work was done).
 - [ ] **EMA coherence has no effective average count** (overlap-correlated
   frames, alpha-dependent memory): expose K_eff ≈ (2−α)/α (reduced for overlap)
   alongside the curve and feed it to the same debias the sweep path uses.
-- [ ] **WASAPI capture still allocates one managed packet buffer in the device
-  loop.** PCM decode, metering, sequence extraction and subscriber publication
-  now run on a bounded worker for both Wave and WASAPI, but
-  `WasapiCaptureDevice` still creates the byte array copied from each native
-  packet. Pool that device-owned copy without leaking ownership past the audio
-  project boundary.
 - [ ] **Level meter allocates a fresh `AudioChannelLevel[]` per callback** (up to
   ~750/s at 64-sample buffers): accumulate peak/sumSquares in the callback and
   snapshot at 20–30 Hz.

@@ -248,11 +248,6 @@ Linux dev env where the work was done).
   symmetrically**. All three fold into one redesign of the greedy loop:
   frequency × Q × gain search with width-based spacing and a boost-penalized
   score, then a coordinate-descent polish over all bands + preamp.
-- [ ] **EQ Wizard fits the ANALOG peaking prototype while Virtual DSP and the
-  exports run RBJ digital biquads** — ~3–4 dB apart at 18–20 kHz (48 kHz). Fit
-  and preview should evaluate `PeakingBiquad.Compute` + `BiquadResponse` at the
-  measurement rate; the analog model stays as an explicit choice. Needs its own
-  validation (fits change near Nyquist).
 - [ ] **miniDSP export needs a target-device profile**: the sample rate is a
   constructor parameter now, but device biquad limits are not checked and the
   preamp burns a biquad slot instead of mapping to the device's gain control.

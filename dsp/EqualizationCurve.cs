@@ -47,10 +47,10 @@ public readonly record struct PeqBand(double FrequencyHz, double Q, double GainD
 }
 
 /// <summary>
-/// A logical equalization curve: the combined magnitude response of a set of PEQ
-/// bands (up to 32) plus an overall preamp offset. The curve is the sum of the
-/// individual band responses in the dB domain, which is the standard way PEQ
-/// stages combine.
+/// A logical equalization curve: PEQ parameters (up to 32 bands) plus preamp.
+/// <see cref="MagnitudeDbAt"/> retains the sample-rate-independent analog model
+/// for legacy comparisons; DSP fitting, preview and coefficient-oriented output
+/// use <see cref="DigitalEqualizationResponse"/> so they match RBJ biquads.
 /// </summary>
 public sealed class EqualizationCurve
 {

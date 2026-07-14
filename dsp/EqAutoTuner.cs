@@ -61,6 +61,9 @@ public static class EqAutoTuner
 
         /// <summary>Number of logarithmically spaced points the fit works on.</summary>
         public int GridSize { get; init; } = 256;
+
+        /// <summary>Sample rate of the DSP that will realize the fitted RBJ biquads.</summary>
+        public double SampleRateHz { get; init; } = 48_000;
     }
 
     // Quality factors tried for each band; the one that lowers the residual error
@@ -82,10 +85,21 @@ public static class EqAutoTuner
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(target);
         Options opt = options ?? new Options();
+        if (!double.IsFinite(opt.SampleRateHz) || opt.SampleRateHz <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options), "Sample rate must be positive.");
+        }
 
+        double maxFrequency = Math.Min(opt.MaxFrequencyHz, opt.SampleRateHz * 0.49);
+        if (maxFrequency <= opt.MinFrequencyHz)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                "The fitting range must lie below the DSP Nyquist frequency.");
+        }
         IReadOnlyList<double> grid = EqualizationCurve.LogFrequencyGrid(
             opt.MinFrequencyHz,
-            opt.MaxFrequencyHz,
+            maxFrequency,
             opt.GridSize);
         int n = grid.Count;
 
@@ -192,7 +206,8 @@ public static class EqAutoTuner
                         continue;
                     }
 
-                    double c = band.MagnitudeDbAt(grid[i]);
+                    double c = DigitalEqualizationResponse.MagnitudeDbAt(
+                        band, grid[i], opt.SampleRateHz);
                     contribution[i] = c;
                     double r = residual[i] - c;
                     sumSquares += r * r;

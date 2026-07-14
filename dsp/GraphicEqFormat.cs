@@ -10,6 +10,16 @@ namespace Resonalyze.Dsp;
 public sealed class GraphicEqFormat : IEqProfileFormat
 {
     private const int PointCount = 64;
+    private readonly double sampleRateHz;
+
+    public GraphicEqFormat(double sampleRateHz = 48_000)
+    {
+        if (!double.IsFinite(sampleRateHz) || sampleRateHz <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRateHz));
+        }
+        this.sampleRateHz = sampleRateHz;
+    }
 
     public string Name => "GraphicEQ (Wavelet / JamesDSP)";
     public string Extension => "txt";
@@ -33,7 +43,10 @@ public sealed class GraphicEqFormat : IEqProfileFormat
             builder
                 .Append(EqTextNumbers.Format(frequency, "0"))
                 .Append(' ')
-                .Append(EqTextNumbers.Format(curve.MagnitudeDbAt(frequency), "0.0"));
+                .Append(EqTextNumbers.Format(
+                    DigitalEqualizationResponse.MagnitudeDbAt(
+                        curve, frequency, sampleRateHz),
+                    "0.0"));
         }
 
         return builder.ToString();

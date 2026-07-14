@@ -47,6 +47,7 @@ public partial class EqWizardPanel : UserControl
     };
 
     private readonly List<PeqSlotControl> peqSlots = new();
+    private readonly EqWizardAutoTuneOrchestrator autoTuneOrchestrator = new();
     private TableLayoutPanel peqSlotTable = null!;
     private PlotLabelsPanelController plotLabels = null!;
     private PlotWatermarkAnnotation hintAnnotation = null!;
@@ -55,7 +56,6 @@ public partial class EqWizardPanel : UserControl
     private RectangleAnnotation rangeFill = null!;
     private int selectedBandIndex = -1;
     private int activeBandCount;
-    private long autoTuneRevision;
     private EqTuneStats? lastStats;
     private bool suppressRedraw;
     private bool suppressWindowClamp;
@@ -534,7 +534,7 @@ public partial class EqWizardPanel : UserControl
         // switches), so any redraw orphans an in-flight fit computed against
         // the previous state. Over-invalidation is safe: the stale result is
         // simply dropped and the user re-runs Auto Tune.
-        autoTuneRevision++;
+        autoTuneOrchestrator.Invalidate();
 
         // Auto Tune applies many control changes at once; it redraws once at the end
         // instead of on every intermediate change.
@@ -678,26 +678,21 @@ public partial class EqWizardPanel : UserControl
             return;
         }
 
-        var source = render.Source.Points
-            .Select(point => new SignalPoint(point.X, point.Y))
-            .ToList();
-        var target = render.Target.Points
-            .Select(point => new SignalPoint(point.X, point.Y))
-            .ToList();
-        EqAutoTuner.Options options = CreateAutoTuneOptions();
+        var request = new EqWizardAutoTuneRequest(
+            render.Source.Points.Select(point => new SignalPoint(point.X, point.Y)),
+            render.Target.Points.Select(point => new SignalPoint(point.X, point.Y)),
+            CreateAutoTuneOptions());
 
         // Only the Auto Tune button is disabled while the fit runs — the user
         // can still switch the target, offsets, smoothing, the band limit or
         // the whole history measurement. A result computed against the old
         // inputs must not be written over the new state, so anything that
         // changes the fit's inputs bumps this revision and orphans the result.
-        long revision = ++autoTuneRevision;
-
-        EqualizationCurve tuned;
+        EqualizationCurve? tuned;
         buttonAutoTune.Enabled = false;
         try
         {
-            tuned = await Task.Run(() => EqAutoTuner.Tune(source, target, options));
+            tuned = await autoTuneOrchestrator.TuneLatestAsync(request);
         }
         catch (Exception exception)
         {
@@ -712,7 +707,7 @@ public partial class EqWizardPanel : UserControl
             }
         }
 
-        if (IsDisposed || revision != autoTuneRevision)
+        if (IsDisposed || tuned == null)
         {
             return;
         }
@@ -856,10 +851,11 @@ public partial class EqWizardPanel : UserControl
             }
             else
             {
-                IEqProfileFormat exportFormat = format is GraphicEqFormat
-                    ? new GraphicEqFormat(EqSampleRate)
-                    : format;
-                System.IO.File.WriteAllText(dialog.FileName, exportFormat.Export(curve));
+                EqWizardProfileFileService.Export(
+                    dialog.FileName,
+                    format,
+                    curve,
+                    EqSampleRate);
             }
         }
         catch (Exception exception)
@@ -890,7 +886,7 @@ public partial class EqWizardPanel : UserControl
         EqualizationCurve curve;
         try
         {
-            curve = format.Import(System.IO.File.ReadAllText(dialog.FileName));
+            curve = EqWizardProfileFileService.Import(dialog.FileName, format);
         }
         catch (Exception exception)
         {

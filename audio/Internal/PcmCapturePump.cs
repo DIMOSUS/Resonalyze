@@ -60,7 +60,7 @@ internal sealed class PcmCapturePump : IDisposable
                 return false;
             }
 
-            EnsureSlots(args.BytesRecorded);
+            EnsureSlots();
             if (queuedCount == slots.Length)
             {
                 failed = true;
@@ -70,6 +70,7 @@ internal sealed class PcmCapturePump : IDisposable
             else
             {
                 Slot slot = slots[writeIndex];
+                slot.EnsureCapacity(args.BytesRecorded);
                 args.Buffer.Span[..args.BytesRecorded].CopyTo(slot.Buffer);
                 slot.BytesRecorded = args.BytesRecorded;
                 slot.Generation = generation;
@@ -151,35 +152,38 @@ internal sealed class PcmCapturePump : IDisposable
         }
     }
 
-    private void EnsureSlots(int byteCount)
+    private void EnsureSlots()
     {
-        if (slots.Length != 0 && slots[0].Buffer.Length >= byteCount)
+        if (slots.Length != 0)
         {
             return;
-        }
-        if (queuedCount != 0)
-        {
-            throw new InvalidOperationException(
-                "The capture device changed its packet size while packets were queued.");
         }
 
         slots = new Slot[SlotCount];
         for (int i = 0; i < slots.Length; i++)
         {
-            slots[i] = new Slot(new byte[byteCount]);
+            slots[i] = new Slot();
         }
         readIndex = 0;
         writeIndex = 0;
     }
 
-    private sealed class Slot(byte[] buffer)
+    private sealed class Slot
     {
-        public byte[] Buffer { get; } = buffer;
+        public byte[] Buffer { get; private set; } = Array.Empty<byte>();
         public int BytesRecorded { get; set; }
         public int Generation { get; set; }
         public bool Discontinuity { get; set; }
         public bool Silent { get; set; }
         public bool TimestampError { get; set; }
+
+        public void EnsureCapacity(int byteCount)
+        {
+            if (Buffer.Length < byteCount)
+            {
+                Buffer = new byte[byteCount];
+            }
+        }
     }
 }
 

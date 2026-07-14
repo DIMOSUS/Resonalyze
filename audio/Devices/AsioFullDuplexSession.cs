@@ -11,6 +11,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
     private readonly int outputChannelOffset;
     private readonly int driverRecordChannelCount;
     private readonly AsioSampleConverter sampleConverter = new();
+    private readonly AsioCapturePump capturePump;
     private AsioOut? driver;
     private CaptureAccumulator? accumulator;
     private float[][] convertScratch = Array.Empty<float[]>();
@@ -53,6 +54,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
         this.outputChannelOffset = outputChannelOffset;
         ChannelCount = inputChannelCount;
         driverRecordChannelCount = inputChannelOffset + inputChannelCount;
+        capturePump = new AsioCapturePump(ChannelCount, ProcessCaptureBlock, HandleCaptureFailure);
     }
 
     public int Sequence { get; set; }
@@ -237,6 +239,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
 
         disposed = true;
         StopAndDisposeDriver();
+        capturePump.Dispose();
         lock (sync)
         {
             sampleWaiters.CancelAll();
@@ -245,10 +248,9 @@ internal sealed class AsioFullDuplexSession : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    // Runs inside the ASIO buffer-switch callback: NAudio fills the playback
-    // buffers only after this handler returns, so every microsecond spent here
-    // delays the output. Conversion and level metering therefore run on reusable
-    // scratch buffers outside the lock; only bounded array copies happen inside.
+    // NAudio fills playback only after this callback returns. Keep it to bounded
+    // copies into the pump's reusable slots; all conversion and publication is
+    // performed by the dedicated capture worker.
     private void ReceiveAudio(object? sender, AsioAudioAvailableEventArgs args)
     {
         if (args.InputBuffers.Length < driverRecordChannelCount)
@@ -259,7 +261,23 @@ internal sealed class AsioFullDuplexSession : IDisposable
             return;
         }
 
-        int frames = args.SamplesPerBuffer;
+        try
+        {
+            capturePump.TryEnqueue(
+                args.InputBuffers,
+                inputChannelOffset,
+                args.AsioSampleType,
+                args.SamplesPerBuffer);
+        }
+        catch (Exception exception)
+        {
+            HandleCaptureFailure(exception);
+        }
+    }
+
+    private void ProcessCaptureBlock(AsioCaptureBlock block)
+    {
+        int frames = block.FrameCount;
         EnsureScratch(frames);
         double[] peaks = meterPeaks;
         double[] sumSquares = meterSumSquares;
@@ -267,8 +285,8 @@ internal sealed class AsioFullDuplexSession : IDisposable
         {
             float[] scratch = convertScratch[channel];
             sampleConverter.Convert(
-                args.InputBuffers[inputChannelOffset + channel],
-                args.AsioSampleType,
+                block.Channels[channel],
+                block.SampleType,
                 scratch,
                 frames);
             double peak = 0;
@@ -299,7 +317,8 @@ internal sealed class AsioFullDuplexSession : IDisposable
         }
 
         firstBufferReady?.TrySetResult(true);
-        LevelsAvailable?.Invoke(
+        EventPublisher.Publish(
+            LevelsAvailable,
             AudioLevelMetering.MeasureChannels(peaks, sumSquares, frames));
         if (readySequences == null)
         {
@@ -308,8 +327,19 @@ internal sealed class AsioFullDuplexSession : IDisposable
 
         foreach (float[][] sequence in readySequences)
         {
-            SequenceReady?.Invoke(sequence[0]);
-            SequenceChannelsReady?.Invoke(sequence);
+            EventPublisher.Publish(SequenceReady, sequence[0]);
+            EventPublisher.Publish(SequenceChannelsReady, sequence);
+        }
+    }
+
+    private void HandleCaptureFailure(Exception exception)
+    {
+        firstBufferReady?.TrySetException(exception);
+        playbackStopped?.TrySetException(exception);
+        lock (sync)
+        {
+            terminalException ??= exception;
+            sampleWaiters.FaultAll(exception);
         }
     }
 

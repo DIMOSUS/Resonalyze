@@ -6,6 +6,33 @@ namespace Resonalyze.Audio.Tests;
 public sealed class AsioSampleConverterTests
 {
     [Fact]
+    public void Convert_FromCopiedBytes_MatchesPointerConversion()
+    {
+        int[] source = [int.MinValue, -1073741824, 0, 1073741824, int.MaxValue];
+        byte[] bytes = new byte[source.Length * sizeof(int)];
+        Buffer.BlockCopy(source, 0, bytes, 0, bytes.Length);
+        var destination = new float[source.Length];
+
+        new AsioSampleConverter().Convert(
+            bytes,
+            AsioSampleType.Int32LSB,
+            destination,
+            source.Length);
+
+        Assert.Equal(Convert(source, AsioSampleType.Int32LSB, source.Length), destination);
+    }
+
+    [Theory]
+    [InlineData(AsioSampleType.Int16LSB, 2)]
+    [InlineData(AsioSampleType.Int24LSB, 3)]
+    [InlineData(AsioSampleType.Int32LSB, 4)]
+    [InlineData(AsioSampleType.Float32LSB, 4)]
+    public void BytesPerSample_ReturnsPhysicalSampleWidth(AsioSampleType type, int expected)
+    {
+        Assert.Equal(expected, AsioSampleConverter.BytesPerSample(type));
+    }
+
+    [Fact]
     public void ConvertsFloat32()
     {
         float[] source = [0.5f, -0.25f, 1.0f, 0.0f];

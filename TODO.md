@@ -267,9 +267,6 @@ Linux dev env where the work was done).
 - [ ] **EMA coherence has no effective average count** (overlap-correlated
   frames, alpha-dependent memory): expose K_eff ≈ (2−α)/α (reduced for overlap)
   alongside the curve and feed it to the same debias the sweep path uses.
-- [ ] **Level meter allocates a fresh `AudioChannelLevel[]` per callback** (up to
-  ~750/s at 64-sample buffers): accumulate peak/sumSquares in the callback and
-  snapshot at 20–30 Hz.
 - [ ] **First live plot frame is heavy on the UI thread** (snapshot clones + RTA
   computed even when hidden + first resample + OxyPlot series/capacity growth):
   compute the RTA magnitude only when `ShowInputMagnitude`, and consider

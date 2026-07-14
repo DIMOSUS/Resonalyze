@@ -74,16 +74,16 @@ public sealed class PcmCaptureSessionTests
         int levelEvents = 0;
         session.LevelsAvailable += _ => levelEvents++;
         Task start = session.StartAsync(CancellationToken.None);
-        device.Push([0x01, 0x00, 0x02, 0x00]); // 2 frames (mono 16-bit)
+        device.Push(new byte[1600 * 2]); // one 30 Hz meter interval at 48 kHz
         await start;
-        Assert.Equal(2, session.ReadSamples);
+        Assert.Equal(1600, session.ReadSamples);
         int levelsAfterStart = levelEvents;
 
         // A long confirmation pause: audio keeps arriving but must not accumulate.
         session.Pause();
-        device.Push([0x03, 0x00, 0x04, 0x00, 0x05, 0x00]); // 3 frames, dropped
+        device.Push(new byte[1600 * 2]);
         await WaitUntilAsync(() => Volatile.Read(ref levelEvents) > levelsAfterStart);
-        Assert.Equal(2, session.ReadSamples);
+        Assert.Equal(1600, session.ReadSamples);
         Assert.True(levelEvents > levelsAfterStart); // meter stayed live
 
         // The next run resumes and starts from a clean buffer.

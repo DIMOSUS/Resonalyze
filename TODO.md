@@ -107,16 +107,15 @@ Linux dev env where the work was done).
   `processed[0].SampleRate` for every trace, while `CrossSideTargetMs` already
   uses per-channel `SampleRate` — so mixed rates in one project are possible.
   Either enforce a single rate or map each trace by its own.
-- [~] **`VirtualCrossoverPanel` (~2.6k lines) — correctness kernels extracted;
-  deeper decoupling deferred.** The non-UI, correctness-critical logic is pulled
-  into tested units (`VirtualCrossoverSourceRules`,
-  `VirtualCrossoverAnalysis.SumLossCurve`, `PreparedDspResponse.GroupDelayMs`,
-  `VirtualCrossoverJunctions`). Interactive redraw processing now crosses a
-  tested immutable input/result boundary in `VirtualCrossoverProcessingPipeline`;
-  cache ownership and display application remain on the UI thread. The panel
-  stays a large view-controller by nature (~60-70% irreducible WinForms/OxyPlot
-  wiring); deeper extraction of alignment orchestration is deferred to a Windows
-  session where the interactive paths can be exercised.
+- [ ] **`VirtualCrossoverPanel` remains a large view-controller.** Interactive
+  redraw revision/cancellation, processed-response caching and background DSP
+  scheduling now live in `VirtualCrossoverProcessingCoordinator`; its source
+  snapshots own write-once IR copies and stale results cannot enter the cache or
+  reach the view. The panel still owns source selection/loading, left/right
+  session state, auto-alignment orchestration, project persistence, metric-data
+  preparation and OxyPlot construction. Continue with one tested vertical slice
+  at a time (the source-loading coordinator or session model are the next useful
+  boundaries); do not describe the remaining code as inherently UI-bound.
 - [ ] **`DelayTableText` parses rendered fixed-width columns** (18/37 chars) for
   copy-values instead of holding a value model (format+parse are co-located and
   tested). Deferred: a value model pushes the change into the panel's

@@ -48,6 +48,7 @@ public partial class EqWizardPanel : UserControl
 
     private readonly List<PeqSlotControl> peqSlots = new();
     private readonly EqWizardAutoTuneOrchestrator autoTuneOrchestrator = new();
+    private readonly EqWizardImportExportCoordinator importExportCoordinator = new();
     private TableLayoutPanel peqSlotTable = null!;
     private PlotLabelsPanelController plotLabels = null!;
     private PlotWatermarkAnnotation hintAnnotation = null!;
@@ -809,19 +810,17 @@ public partial class EqWizardPanel : UserControl
         return (minHz, maxHz);
     }
 
-    private const string TuningSheetFilter = "Tuning sheet (PDF) (*.pdf)|*.pdf";
-
-    // Writes the current PEQ in the format chosen in the dialog. The text profile
-    // formats are followed by a printable "tuning sheet" PDF entry.
+    // The panel owns only the native dialog and UI feedback. Target resolution,
+    // sample-rate-specific format setup, PDF/text dispatch and I/O errors belong
+    // to the coordinator and are covered without WinForms.
     private void ExportPeq()
     {
-        IReadOnlyList<IEqProfileFormat> formats = EqProfileFormats.Exportable;
         using var dialog = new SaveFileDialog
         {
             AddExtension = true,
-            DefaultExt = formats[0].Extension,
+            DefaultExt = importExportCoordinator.DefaultExportExtension,
             FileName = "eq",
-            Filter = EqFormatFileDialogs.BuildFilter(formats, TuningSheetFilter),
+            Filter = importExportCoordinator.ExportFilter,
             Title = "Export PEQ"
         };
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
@@ -829,38 +828,21 @@ public partial class EqWizardPanel : UserControl
             return;
         }
 
-        IEqProfileFormat? format = EqFormatFileDialogs.ResolveFormat(
-            formats, dialog.FilterIndex);
         EqualizationCurve curve = BuildEqualizationCurve();
-        try
+        (double minHz, double maxHz) = GetFrequencyWindow();
+        EqWizardFileResult result = importExportCoordinator.Export(
+            new EqWizardExportRequest(
+                dialog.FileName,
+                importExportCoordinator.ResolveExportTarget(dialog.FilterIndex),
+                curve,
+                EqSampleRate,
+                System.IO.Path.GetFileNameWithoutExtension(dialog.FileName),
+                minHz,
+                maxHz,
+                lastStats));
+        if (!result.Success)
         {
-            if (format == null)
-            {
-                // The tuning sheet is the trailing filter entry; its title is
-                // the file name.
-                string title = System.IO.Path.GetFileNameWithoutExtension(dialog.FileName);
-                (double minHz, double maxHz) = GetFrequencyWindow();
-                TuningSheetPdf.Export(
-                    dialog.FileName,
-                    title,
-                    curve,
-                    minHz,
-                    maxHz,
-                    EqSampleRate,
-                    lastStats);
-            }
-            else
-            {
-                EqWizardProfileFileService.Export(
-                    dialog.FileName,
-                    format,
-                    curve,
-                    EqSampleRate);
-            }
-        }
-        catch (Exception exception)
-        {
-            ShowFileError("PEQ could not be exported.", exception);
+            ShowFileError("PEQ could not be exported.", result.Exception!);
         }
     }
 
@@ -868,11 +850,10 @@ public partial class EqWizardPanel : UserControl
     // tolerates broken or hand-edited files, so only file access can fail here.
     private void ImportPeq()
     {
-        IReadOnlyList<IEqProfileFormat> formats = EqProfileFormats.Importable;
         using var dialog = new OpenFileDialog
         {
             CheckFileExists = true,
-            Filter = EqFormatFileDialogs.BuildFilter(formats),
+            Filter = importExportCoordinator.ImportFilter,
             Title = "Import PEQ"
         };
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
@@ -880,23 +861,19 @@ public partial class EqWizardPanel : UserControl
             return;
         }
 
-        // No trailing entry, so the index always resolves to a format.
-        IEqProfileFormat format =
-            EqFormatFileDialogs.ResolveFormat(formats, dialog.FilterIndex)!;
-        EqualizationCurve curve;
-        try
+        EqWizardFileResult<EqualizationCurve> result = importExportCoordinator.Import(
+            new EqWizardImportRequest(
+                dialog.FileName,
+                importExportCoordinator.ResolveImportTarget(dialog.FilterIndex)));
+        if (!result.Success)
         {
-            curve = EqWizardProfileFileService.Import(dialog.FileName, format);
-        }
-        catch (Exception exception)
-        {
-            ShowFileError("PEQ could not be imported.", exception);
+            ShowFileError("PEQ could not be imported.", result.Exception!);
             return;
         }
 
         // Show the imported EQ rather than leaving it hidden behind bypass.
         checkBoxBypass.Checked = false;
-        ApplyEqualizationCurve(curve);
+        ApplyEqualizationCurve(result.Value!);
     }
 
     private void ShowFileError(string message, Exception exception)

@@ -60,6 +60,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private readonly FrequencyResponseOptions frequencyResponseOptions = new();
 
     private readonly List<ChannelRuntime> channels = new();
+    private readonly VirtualCrossoverProcessingCoordinator processingCoordinator = new();
     private readonly ToolTip toolTip = new()
     {
         InitialDelay = 500,
@@ -97,13 +98,6 @@ public partial class VirtualCrossoverPanel : UserControl
     private bool savePending;
     private bool autoDelayBusy;
     private bool loadingProject;
-
-    // Bumped whenever the displayed side (or the whole project) changes: a
-    // redraw pass that started before the bump computed the OLD side's IRs,
-    // and drawing them against the new side's live settings would paint one
-    // mixed frame before the pending repaint corrects it. Stale passes check
-    // this after their await and skip the paint instead.
-    private long displayRevision;
 
     public VirtualCrossoverPanel()
     {
@@ -148,6 +142,7 @@ public partial class VirtualCrossoverPanel : UserControl
         Disposed += (_, _) =>
         {
             FlushProject();
+            processingCoordinator.Dispose();
             saveTimer.Dispose();
             toolTip.Dispose();
         };
@@ -295,7 +290,6 @@ public partial class VirtualCrossoverPanel : UserControl
     private async Task BindProjectAsync(VirtualCrossoverProjectFile newProject)
     {
         project = newProject;
-        displayRevision++;
         // Match the block list to the project's channel count (validated into the
         // supported range on load), so an imported 2- or 6-channel session shows
         // exactly its channels.
@@ -520,7 +514,6 @@ public partial class VirtualCrossoverPanel : UserControl
 
         bool rightSide = radioSideRight.Checked;
         project.ActiveSideRight = rightSide;
-        displayRevision++;
         suppressProjectEvents = true;
         try
         {
@@ -1735,6 +1728,10 @@ public partial class VirtualCrossoverPanel : UserControl
     // the UI thread, so the flag and the task handle need no synchronization.
     private void RequestRedraw()
     {
+        // Every settings/source/view change invalidates the captured render
+        // snapshot, not only side switches. A running FFT may finish, but the
+        // coordinator will neither cache nor publish its stale result.
+        processingCoordinator.Invalidate();
         if (redrawTask is { IsCompleted: false })
         {
             redrawPending = true;
@@ -1744,10 +1741,9 @@ public partial class VirtualCrossoverPanel : UserControl
         redrawTask = RunRedrawLoopAsync();
     }
 
-    // The redraw loop. Only the ApplyChain FFTs inside ProcessChannelsAsync leave
-    // the UI thread; the loop bookkeeping, the cache and the OxyPlot updates all
-    // run here on the UI thread. It repeats while changes kept arriving during the
-    // last pass, collapsing a burst of edits into a single trailing redraw.
+    // The redraw loop coalesces edits into one trailing pass. Snapshot revision,
+    // cancellation and processed-response cache ownership live in the coordinator;
+    // this method only applies a current result to OxyPlot.
     private async Task RunRedrawLoopAsync()
     {
         do
@@ -1779,6 +1775,10 @@ public partial class VirtualCrossoverPanel : UserControl
         Complex[] ImpulseResponse,
         int PeakIndex,
         OxyColor Color);
+
+    private sealed record ProcessedRender(
+        long Revision,
+        List<ProcessedChannel> Channels);
 
     private sealed class ProcessedChannelCacheKey : IEquatable<ProcessedChannelCacheKey>
     {
@@ -1939,38 +1939,22 @@ public partial class VirtualCrossoverPanel : UserControl
         return processed;
     }
 
-    // One channel whose processed IR the cache does not already hold, snapshotted
-    // so the background task reads nothing but the immutable transfer IR and the
-    // value-typed chain. The concrete side STATE is captured too: the cache
-    // write happens after an await, and by then the active side may have
-    // flipped — writing through the runtime's delegating property would then
-    // stamp one side's FFT into the other side's cache slot.
-    private sealed record PendingChannel(
-        int Index,
-        ChannelRuntime Channel,
-        ChannelSideState State,
-        Complex[] TransferIr,
-        int SampleRate,
-        DspChannelChain Chain,
-        ProcessedChannelCacheKey Key,
-        OxyColor Color);
-
-    // The interactive-redraw variant of ProcessChannels: the cache is read and
-    // written here on the UI thread, and only the FFT-heavy ApplyChain runs on a
-    // background task. Results come back in channel order. There is no
-    // alignment-override path — Auto delay keeps using the synchronous
-    // ProcessChannels.
-    private async Task<List<ProcessedChannel>> ProcessChannelsAsync()
+    // Captures the active channel set on the UI thread. SourceSnapshot owns a
+    // write-once copy made when the measurement was loaded, and ChannelSnapshot
+    // deep-copies the PEQ values, so the coordinator never reads controls or
+    // mutable project settings after this method awaits.
+    private async Task<ProcessedRender?> ProcessChannelsAsync()
     {
         using var _ = AppProfiler.Zone("VirtualDSP.ProcessChannelsAsync");
-        var results = new ProcessedChannel?[channels.Count];
-        var jobs = new List<PendingChannel>();
+        long revision = processingCoordinator.CurrentRevision;
+        var snapshots = new List<VirtualCrossoverChannelSnapshot>();
+        var bindings = new Dictionary<int, (ChannelRuntime Channel, OxyColor Color)>();
         for (int i = 0; i < channels.Count; i++)
         {
             ChannelRuntime channel = channels[i];
             ChannelSideState state = channel.SideState(channel.ActiveRight);
             if (!channel.Settings.Enabled ||
-                state.TransferImpulseResponse is not { } ir)
+                state.ProcessingSource is not { } source)
             {
                 continue;
             }
@@ -1978,53 +1962,33 @@ public partial class VirtualCrossoverPanel : UserControl
             DspChannelChain chain = channel.Settings.Bypass
                 ? DspChannelChain.Identity
                 : channel.Settings.ToChain();
-            var key = new ProcessedChannelCacheKey(ir, state.SampleRate, chain);
-            if (state.ProcessedCache?.Key.Equals(key) == true)
-            {
-                results[i] = new ProcessedChannel(
-                    channel,
-                    state.ProcessedCache.ImpulseResponse,
-                    state.ProcessedCache.PeakIndex,
-                    ChannelColors[i]);
-                continue;
-            }
-
-            jobs.Add(new PendingChannel(
-                i, channel, state, ir, state.SampleRate, chain, key,
-                ChannelColors[i]));
+            snapshots.Add(new VirtualCrossoverChannelSnapshot(
+                i,
+                source,
+                state.SampleRate,
+                chain));
+            bindings.Add(i, (channel, ChannelColors[i]));
         }
 
-        if (jobs.Count > 0)
+        VirtualCrossoverRenderResult? render =
+            await processingCoordinator.ProcessAsync(
+                new VirtualCrossoverProcessingSnapshot(revision, snapshots));
+        if (render == null)
         {
-            // One ApplyChain per channel — the full-length IR through the biquad
-            // cascade and its FFT — is the tool's heaviest math. They are pure
-            // and independent, so they run across cores; the cache write-back
-            // below stays on the UI thread after the await, so nothing races.
-            IReadOnlyList<VirtualCrossoverProcessingResult> computed =
-                await VirtualCrossoverProcessingPipeline.ProcessAsync(
-                    jobs.Select((job, index) => new VirtualCrossoverProcessingInput(
-                        index,
-                        job.TransferIr,
-                        job.SampleRate,
-                        job.Chain)).ToArray());
-
-            for (int j = 0; j < jobs.Count; j++)
-            {
-                PendingChannel job = jobs[j];
-                VirtualCrossoverProcessingResult result = computed[j];
-                job.State.ProcessedCache = new ProcessedChannelCache(
-                    job.Key,
-                    result.ImpulseResponse,
-                    result.PeakIndex);
-                results[job.Index] = new ProcessedChannel(
-                    job.Channel,
-                    result.ImpulseResponse,
-                    result.PeakIndex,
-                    job.Color);
-            }
+            return null;
         }
 
-        return results.Where(item => item != null).Select(item => item!).ToList();
+        var processed = new List<ProcessedChannel>(render.Channels.Count);
+        foreach (VirtualCrossoverProcessedChannel result in render.Channels)
+        {
+            (ChannelRuntime channel, OxyColor color) = bindings[result.Id];
+            processed.Add(new ProcessedChannel(
+                channel,
+                result.ImpulseResponse,
+                result.PeakIndex,
+                color));
+        }
+        return new ProcessedRender(render.Revision, processed);
     }
 
     private async Task RedrawMainPlotAsync()
@@ -2039,16 +2003,15 @@ public partial class VirtualCrossoverPanel : UserControl
         // The heavy ApplyChain FFTs run off the UI thread; the existing curves stay
         // on screen until the new data is ready, so there is no clear-then-fill
         // flicker during the compute.
-        long revision = displayRevision;
-        List<ProcessedChannel> processed = await ProcessChannelsAsync();
-        if (mainPlotView.IsDisposed)
+        ProcessedRender? render = await ProcessChannelsAsync();
+        if (render == null || mainPlotView.IsDisposed)
         {
             return;
         }
-        if (revision != displayRevision)
+        long revision = render.Revision;
+        List<ProcessedChannel> processed = render.Channels;
+        if (!processingCoordinator.IsCurrent(revision))
         {
-            // The displayed side flipped mid-compute: these IRs belong to the
-            // previous side, and the side switch has already queued a repaint.
             return;
         }
 
@@ -2061,7 +2024,7 @@ public partial class VirtualCrossoverPanel : UserControl
             checkBoxShowSum.Checked && radioViewMagnitude.Checked
                 ? await ComputeOppositeSumCurveAsync()
                 : null;
-        if (mainPlotView.IsDisposed || revision != displayRevision)
+        if (mainPlotView.IsDisposed || !processingCoordinator.IsCurrent(revision))
         {
             return;
         }
@@ -4170,7 +4133,20 @@ public partial class VirtualCrossoverPanel : UserControl
     // unresolved), plus that side's interactive processed-IR cache.
     private sealed class ChannelSideState
     {
-        public Complex[]? TransferImpulseResponse { get; set; }
+        private Complex[]? transferImpulseResponse;
+
+        public Complex[]? TransferImpulseResponse
+        {
+            get => transferImpulseResponse;
+            set
+            {
+                transferImpulseResponse = value;
+                ProcessingSource = value == null
+                    ? null
+                    : new VirtualCrossoverSourceSnapshot(value);
+            }
+        }
+        public VirtualCrossoverSourceSnapshot? ProcessingSource { get; private set; }
         public int TransferPeakIndex { get; set; }
         public int SampleRate { get; set; }
 

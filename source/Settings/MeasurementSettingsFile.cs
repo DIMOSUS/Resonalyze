@@ -277,49 +277,52 @@ internal sealed class MeasurementSettingsFile
                 captureEndpointId,
                 renderEndpointId,
                 Clamp(SampleRate, 44_100, 384_000));
-            measurement.Init(
-                Clamp(Octaves, 1, 32),
-                sampleRate,
-                Bits is 16 or 24 ? Bits : 24,
-                Math.Clamp(RequestedDurationSeconds, 0.001, 100.0),
-                Enum.IsDefined(PlaybackChannel)
-                    ? PlaybackChannel
-                    : PlaybackChannel.Mono,
-                NormalizeDeviceNumber(
-                    AudioDeviceCatalog.GetPlaybackDevices(),
-                    OutputDeviceNumber),
-                NormalizeDeviceNumber(
-                    AudioDeviceCatalog.GetRecordingDevices(),
-                    InputDeviceNumber),
-                backend,
-                NormalizeAsioDriverName(AsioDriverName),
-                NormalizeAsioChannelOffset(
-                    AsioDriverName,
+            measurement.Init(new SweepMeasurementConfiguration(
+                new SweepSignalConfiguration(
+                    Clamp(Octaves, 1, 32),
                     sampleRate,
-                    AsioInputChannelOffset,
-                    input: true),
-                NormalizeAsioChannelOffset(
-                    AsioDriverName,
-                    sampleRate,
-                    AsioOutputChannelOffset,
-                    input: false),
-                IsWasapiBackend(backend)
-                    ? Math.Max(0, WaveInputChannelOffset)
-                    : NormalizeWaveChannelOffset(WaveInputChannelOffset),
-                IsWasapiBackend(backend)
-                    ? NormalizeOptionalWasapiChannelOffset(WaveLoopbackInputChannelOffset)
-                    : NormalizeOptionalWaveChannelOffset(WaveLoopbackInputChannelOffset),
-                NormalizeOptionalAsioChannelOffset(
-                    AsioDriverName,
-                    sampleRate,
-                    AsioLoopbackInputChannelOffset),
-                Clamp(AverageRunCount, 1, 64),
-                ConfirmEachAverageRun,
-                captureEndpointId,
-                renderEndpointId,
-                Clamp(WasapiBufferMilliseconds, 10, 100),
-                WasapiCaptureEndpointName,
-                WasapiRenderEndpointName);
+                    Bits is 16 or 24 ? Bits : 24,
+                    Math.Clamp(RequestedDurationSeconds, 0.001, 100.0),
+                    Enum.IsDefined(PlaybackChannel)
+                        ? PlaybackChannel
+                        : PlaybackChannel.Mono),
+                new SweepAudioConfiguration(
+                    Backend: backend,
+                    OutputDeviceNumber: NormalizeDeviceNumber(
+                        AudioDeviceCatalog.GetPlaybackDevices(),
+                        OutputDeviceNumber),
+                    InputDeviceNumber: NormalizeDeviceNumber(
+                        AudioDeviceCatalog.GetRecordingDevices(),
+                        InputDeviceNumber),
+                    WaveInputChannelOffset: IsWasapiBackend(backend)
+                        ? Math.Max(0, WaveInputChannelOffset)
+                        : NormalizeWaveChannelOffset(WaveInputChannelOffset),
+                    WaveLoopbackInputChannelOffset: IsWasapiBackend(backend)
+                        ? NormalizeOptionalWasapiChannelOffset(WaveLoopbackInputChannelOffset)
+                        : NormalizeOptionalWaveChannelOffset(WaveLoopbackInputChannelOffset),
+                    AsioDriverName: NormalizeAsioDriverName(AsioDriverName),
+                    AsioInputChannelOffset: NormalizeAsioChannelOffset(
+                        AsioDriverName,
+                        sampleRate,
+                        AsioInputChannelOffset,
+                        input: true),
+                    AsioLoopbackInputChannelOffset: NormalizeOptionalAsioChannelOffset(
+                        AsioDriverName,
+                        sampleRate,
+                        AsioLoopbackInputChannelOffset),
+                    AsioOutputChannelOffset: NormalizeAsioChannelOffset(
+                        AsioDriverName,
+                        sampleRate,
+                        AsioOutputChannelOffset,
+                        input: false),
+                    WasapiCaptureEndpointId: captureEndpointId,
+                    WasapiRenderEndpointId: renderEndpointId,
+                    WasapiCaptureEndpointName: WasapiCaptureEndpointName,
+                    WasapiRenderEndpointName: WasapiRenderEndpointName,
+                    WasapiBufferMilliseconds: Clamp(WasapiBufferMilliseconds, 10, 100)),
+                new SweepAveragingConfiguration(
+                    Clamp(AverageRunCount, 1, 64),
+                    ConfirmEachAverageRun)));
         }
     }
 

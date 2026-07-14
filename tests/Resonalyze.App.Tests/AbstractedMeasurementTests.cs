@@ -40,6 +40,31 @@ public sealed class AbstractedMeasurementTests
     }
 
     [Fact]
+    public async Task SubscriberExceptions_DoNotChangeSuccessfulOutcomeOrSkipOthers()
+    {
+        var factory = new FakeAudioSessionFactory(
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal,
+                (_, s, tail, _) => Task.FromResult(SyntheticCapture.Good(s, tail))));
+        using ExpSweepMeasurement measurement = CreateSweep(factory);
+        bool impulseObserverCalled = false;
+        bool completionObserverCalled = false;
+        measurement.ImpulseResponseChanged += () =>
+            throw new InvalidOperationException("broken impulse observer");
+        measurement.ImpulseResponseChanged += () => impulseObserverCalled = true;
+        measurement.Completed += _ =>
+            throw new InvalidOperationException("broken completion observer");
+        measurement.Completed += success => completionObserverCalled = success;
+
+        bool result = await measurement.RunAsync();
+
+        Assert.True(result);
+        Assert.Null(measurement.LastError);
+        Assert.True(impulseObserverCalled);
+        Assert.True(completionObserverCalled);
+    }
+
+    [Fact]
     public async Task AveragingReusesTheOpenSession()
     {
         RecordingDuplexSession? opened = null;

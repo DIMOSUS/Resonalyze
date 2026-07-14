@@ -89,6 +89,11 @@ namespace Resonalyze
             private set => currentLevels = value;
         }
 
+        /// <summary>
+        /// Compatibility adapter for callers compiled against the original flat
+        /// parameter list. New code should use the grouped configuration overload.
+        /// </summary>
+        [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
         public void Init(
             int octaves,
             int sampleRate,
@@ -112,35 +117,68 @@ namespace Resonalyze
             string? wasapiCaptureEndpointName = null,
             string? wasapiRenderEndpointName = null)
         {
+            Init(new SweepMeasurementConfiguration(
+                new SweepSignalConfiguration(
+                    octaves,
+                    sampleRate,
+                    bits,
+                    requestedDuration,
+                    playbackChannel),
+                new SweepAudioConfiguration(
+                    audioBackend,
+                    outputDeviceNumber,
+                    inputDeviceNumber,
+                    waveInputChannelOffset,
+                    waveLoopbackInputChannelOffset,
+                    asioDriverName,
+                    asioInputChannelOffset,
+                    asioLoopbackInputChannelOffset,
+                    asioOutputChannelOffset,
+                    wasapiCaptureEndpointId,
+                    wasapiRenderEndpointId,
+                    wasapiCaptureEndpointName,
+                    wasapiRenderEndpointName,
+                    wasapiBufferMilliseconds),
+                new SweepAveragingConfiguration(
+                    averageRunCount,
+                    confirmEachAverageRun)));
+        }
+
+        public void Init(SweepMeasurementConfiguration configuration)
+        {
+            ArgumentNullException.ThrowIfNull(configuration);
             ThrowIfDisposed();
             if (InProgress)
             {
                 throw new InvalidOperationException("Cannot reinitialize an active measurement.");
             }
 
-            PlaybackChannel = Enum.IsDefined(playbackChannel)
-                ? playbackChannel
+            SweepSignalConfiguration signal = configuration.Signal;
+            SweepAudioConfiguration audio = configuration.Audio;
+            SweepAveragingConfiguration averaging = configuration.Averaging;
+            PlaybackChannel = Enum.IsDefined(signal.PlaybackChannel)
+                ? signal.PlaybackChannel
                 : PlaybackChannel.Mono;
-            SampleRate = sampleRate;
-            Bits = bits;
-            Octaves = octaves;
-            OutputDeviceNumber = outputDeviceNumber;
-            InputDeviceNumber = inputDeviceNumber;
-            WasapiCaptureEndpointId = wasapiCaptureEndpointId;
-            WasapiRenderEndpointId = wasapiRenderEndpointId;
-            WasapiCaptureEndpointName = wasapiCaptureEndpointName;
-            WasapiRenderEndpointName = wasapiRenderEndpointName;
-            WasapiBufferMilliseconds = Math.Clamp(wasapiBufferMilliseconds, 10, 100);
+            SampleRate = signal.SampleRate;
+            Bits = signal.Bits;
+            Octaves = signal.Octaves;
+            OutputDeviceNumber = audio.OutputDeviceNumber;
+            InputDeviceNumber = audio.InputDeviceNumber;
+            WasapiCaptureEndpointId = audio.WasapiCaptureEndpointId;
+            WasapiRenderEndpointId = audio.WasapiRenderEndpointId;
+            WasapiCaptureEndpointName = audio.WasapiCaptureEndpointName;
+            WasapiRenderEndpointName = audio.WasapiRenderEndpointName;
+            WasapiBufferMilliseconds = Math.Clamp(audio.WasapiBufferMilliseconds, 10, 100);
             LastAudioSessionDiagnostics = null;
-            AudioBackend = audioBackend;
-            AsioDriverName = asioDriverName;
-            int normalizedWaveInputChannelOffset = IsWasapiBackend(audioBackend)
-                ? Math.Max(0, waveInputChannelOffset)
-                : Math.Clamp(waveInputChannelOffset, 0, 1);
-            int? normalizedWaveLoopbackInputChannelOffset = IsWasapiBackend(audioBackend)
-                ? NormalizeOptionalWasapiChannel(waveLoopbackInputChannelOffset)
-                : NormalizeOptionalWaveChannel(waveLoopbackInputChannelOffset);
-            if (audioBackend != AudioBackend.Asio &&
+            AudioBackend = audio.Backend;
+            AsioDriverName = audio.AsioDriverName;
+            int normalizedWaveInputChannelOffset = IsWasapiBackend(audio.Backend)
+                ? Math.Max(0, audio.WaveInputChannelOffset)
+                : Math.Clamp(audio.WaveInputChannelOffset, 0, 1);
+            int? normalizedWaveLoopbackInputChannelOffset = IsWasapiBackend(audio.Backend)
+                ? NormalizeOptionalWasapiChannel(audio.WaveLoopbackInputChannelOffset)
+                : NormalizeOptionalWaveChannel(audio.WaveLoopbackInputChannelOffset);
+            if (audio.Backend != AudioBackend.Asio &&
                 normalizedWaveLoopbackInputChannelOffset == normalizedWaveInputChannelOffset)
             {
                 throw new InvalidOperationException(
@@ -148,25 +186,29 @@ namespace Resonalyze
             }
             WaveInputChannelOffset = normalizedWaveInputChannelOffset;
             WaveLoopbackInputChannelOffset = normalizedWaveLoopbackInputChannelOffset;
-            AsioInputChannelOffset = asioInputChannelOffset;
-            AsioLoopbackInputChannelOffset = asioLoopbackInputChannelOffset;
-            AsioOutputChannelOffset = asioOutputChannelOffset;
+            AsioInputChannelOffset = audio.AsioInputChannelOffset;
+            AsioLoopbackInputChannelOffset = audio.AsioLoopbackInputChannelOffset;
+            AsioOutputChannelOffset = audio.AsioOutputChannelOffset;
             sweepDeconvolutionResult = null;
             transferResult = null;
             TransferCoherence = null;
             MicrophoneRecordedSamples = null;
             LoopbackRecordedSamples = null;
             MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
-            AverageRunCount = Math.Clamp(averageRunCount, 1, 64);
+            AverageRunCount = Math.Clamp(averaging.RunCount, 1, 64);
             AcceptedAverageRunCount = 0;
-            ConfirmEachAverageRun = confirmEachAverageRun;
+            ConfirmEachAverageRun = averaging.ConfirmEachRun;
             QualityReport = null;
             LastError = null;
             CurrentLevels = InputLevelMeterSnapshot.Empty;
 
             Sweep?.Dispose();
             Sweep = new ExponentialSineSweep();
-            Sweep.FillData(octaves, requestedDuration, bits, sampleRate);
+            Sweep.FillData(
+                signal.Octaves,
+                signal.RequestedDurationSeconds,
+                signal.Bits,
+                signal.SampleRate);
         }
 
         public Task<bool> RunAsync()
@@ -292,23 +334,31 @@ namespace Resonalyze
                 throw new ArgumentOutOfRangeException(nameof(transferPeakIndex));
             }
 
-            Init(
-                octaves,
-                sampleRate,
-                bits,
-                sweepDurationSeconds,
-                playChannel,
-                OutputDeviceNumber,
-                InputDeviceNumber,
-                AudioBackend,
-                AsioDriverName,
-                AsioInputChannelOffset,
-                AsioOutputChannelOffset,
-                WaveInputChannelOffset,
-                WaveLoopbackInputChannelOffset,
-                AsioLoopbackInputChannelOffset,
-                AverageRunCount,
-                ConfirmEachAverageRun);
+            Init(new SweepMeasurementConfiguration(
+                new SweepSignalConfiguration(
+                    octaves,
+                    sampleRate,
+                    bits,
+                    sweepDurationSeconds,
+                    playChannel),
+                new SweepAudioConfiguration(
+                    Backend: AudioBackend,
+                    OutputDeviceNumber: OutputDeviceNumber,
+                    InputDeviceNumber: InputDeviceNumber,
+                    WaveInputChannelOffset: WaveInputChannelOffset,
+                    WaveLoopbackInputChannelOffset: WaveLoopbackInputChannelOffset,
+                    AsioDriverName: AsioDriverName,
+                    AsioInputChannelOffset: AsioInputChannelOffset,
+                    AsioLoopbackInputChannelOffset: AsioLoopbackInputChannelOffset,
+                    AsioOutputChannelOffset: AsioOutputChannelOffset,
+                    WasapiCaptureEndpointId: WasapiCaptureEndpointId,
+                    WasapiRenderEndpointId: WasapiRenderEndpointId,
+                    WasapiCaptureEndpointName: WasapiCaptureEndpointName,
+                    WasapiRenderEndpointName: WasapiRenderEndpointName,
+                    WasapiBufferMilliseconds: WasapiBufferMilliseconds),
+                new SweepAveragingConfiguration(
+                    AverageRunCount,
+                    ConfirmEachAverageRun)));
             sweepDeconvolutionResult = new MeasurementImpulseResponse(
                 sweepDeconvolutionImpulseResponse.ToArray(),
                 sweepDeconvolutionPeakIndex);
@@ -327,7 +377,7 @@ namespace Resonalyze
                 1,
                 AverageRunCount);
             LastError = null;
-            ImpulseResponseChanged?.Invoke();
+            Publish(ImpulseResponseChanged);
         }
 
         internal void RestoreLevelSnapshot(InputLevelMeterSnapshot snapshot)
@@ -372,7 +422,7 @@ namespace Resonalyze
                 int requestedRuns = AverageRunCount;
                 for (int run = 1; run <= requestedRuns; run++)
                 {
-                    AverageProgressChanged?.Invoke(new SweepAverageProgress(
+                    Publish(AverageProgressChanged, new SweepAverageProgress(
                         run,
                         requestedRuns,
                         accumulator.AcceptedRuns,
@@ -384,7 +434,7 @@ namespace Resonalyze
                         // One automatic retry per bad run; a second failure skips
                         // the run so it cannot contaminate the average.
                         rejections.Add(new SweepRunRejection(run, Retried: false, issues));
-                        AverageProgressChanged?.Invoke(new SweepAverageProgress(
+                        Publish(AverageProgressChanged, new SweepAverageProgress(
                             run,
                             requestedRuns,
                             accumulator.AcceptedRuns,
@@ -461,14 +511,7 @@ namespace Resonalyze
                     averageConfirmation = null;
                     inProgress = false;
                 }
-                try
-                {
-                    Completed?.Invoke(success);
-                }
-                catch
-                {
-                    // UI subscribers must not break measurement cleanup.
-                }
+                Publish(Completed, success);
             }
 
             return success;
@@ -489,7 +532,7 @@ namespace Resonalyze
                 waitTask = averageConfirmation.Task;
             }
 
-            AverageProgressChanged?.Invoke(new SweepAverageProgress(
+            Publish(AverageProgressChanged, new SweepAverageProgress(
                 completedRun,
                 requestedRuns,
                 acceptedRuns,
@@ -652,7 +695,7 @@ namespace Resonalyze
             AcceptedAverageRunCount = result.AcceptedRunCount;
             CurrentLevels = result.Levels;
             RaiseLevels(result.Levels);
-            ImpulseResponseChanged?.Invoke();
+            Publish(ImpulseResponseChanged);
         }
 
         private bool TryBuildTransferFrame(
@@ -696,7 +739,7 @@ namespace Resonalyze
 
         private void RaiseLevels(InputLevelMeterSnapshot snapshot)
         {
-            LevelsAvailable?.Invoke(snapshot);
+            Publish(LevelsAvailable, snapshot);
         }
 
         private static int FindPeakIndex(IReadOnlyList<Complex> samples)
@@ -891,6 +934,47 @@ namespace Resonalyze
 
         private static bool IsWasapiBackend(AudioBackend backend) =>
             backend is AudioBackend.WasapiShared or AudioBackend.WasapiExclusive;
+
+        private static void Publish(Action? handlers)
+        {
+            if (handlers == null)
+            {
+                return;
+            }
+
+            foreach (Action handler in handlers.GetInvocationList().Cast<Action>())
+            {
+                try
+                {
+                    handler();
+                }
+                catch
+                {
+                    // Measurement notifications are observational. A broken UI
+                    // subscriber must not change the measurement outcome.
+                }
+            }
+        }
+
+        private static void Publish<T>(Action<T>? handlers, T value)
+        {
+            if (handlers == null)
+            {
+                return;
+            }
+
+            foreach (Action<T> handler in handlers.GetInvocationList().Cast<Action<T>>())
+            {
+                try
+                {
+                    handler(value);
+                }
+                catch
+                {
+                    // Continue with the remaining subscribers and cleanup.
+                }
+            }
+        }
 
         private void ThrowIfDisposed()
         {

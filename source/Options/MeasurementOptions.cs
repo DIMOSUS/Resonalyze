@@ -403,32 +403,37 @@ namespace Resonalyze.Options
                     "Microphone and loopback inputs must use different Wave channels.");
             }
 
-            expSweepMeasurement.Init(
-                octaves,
-                sampleRate,
-                bits,
-                requestedDuration,
-                playbackChannel,
-                outputDeviceNumber,
-                inputDeviceNumber,
-                audioBackend,
-                asioDriverName,
-                asioInputChannelOffset,
-                asioOutputChannelOffset,
-                waveInputChannelOffset,
-                waveLoopbackInputChannelOffset,
-                asioLoopbackInputChannelOffset,
-                averageRunCount,
-                confirmEachAverageRun,
-                wasapiCaptureEndpointId,
-                wasapiRenderEndpointId,
-                settings.WasapiBufferMilliseconds,
-                comboBoxRecordingDevice.SelectedItem is AudioEndpointDescriptor captureInfo
-                    ? captureInfo.DisplayName
-                    : preferredWasapiCaptureEndpointName,
-                comboBoxPlaybackDevice.SelectedItem is AudioEndpointDescriptor renderInfo
-                    ? renderInfo.DisplayName
-                    : preferredWasapiRenderEndpointName);
+            expSweepMeasurement.Init(new SweepMeasurementConfiguration(
+                new SweepSignalConfiguration(
+                    octaves,
+                    sampleRate,
+                    bits,
+                    requestedDuration,
+                    playbackChannel),
+                new SweepAudioConfiguration(
+                    Backend: audioBackend,
+                    OutputDeviceNumber: outputDeviceNumber,
+                    InputDeviceNumber: inputDeviceNumber,
+                    WaveInputChannelOffset: waveInputChannelOffset,
+                    WaveLoopbackInputChannelOffset: waveLoopbackInputChannelOffset,
+                    AsioDriverName: asioDriverName,
+                    AsioInputChannelOffset: asioInputChannelOffset,
+                    AsioLoopbackInputChannelOffset: asioLoopbackInputChannelOffset,
+                    AsioOutputChannelOffset: asioOutputChannelOffset,
+                    WasapiCaptureEndpointId: wasapiCaptureEndpointId,
+                    WasapiRenderEndpointId: wasapiRenderEndpointId,
+                    WasapiCaptureEndpointName:
+                        comboBoxRecordingDevice.SelectedItem is AudioEndpointDescriptor captureInfo
+                            ? captureInfo.DisplayName
+                            : preferredWasapiCaptureEndpointName,
+                    WasapiRenderEndpointName:
+                        comboBoxPlaybackDevice.SelectedItem is AudioEndpointDescriptor renderInfo
+                            ? renderInfo.DisplayName
+                            : preferredWasapiRenderEndpointName,
+                    WasapiBufferMilliseconds: settings.WasapiBufferMilliseconds),
+                new SweepAveragingConfiguration(
+                    averageRunCount,
+                    confirmEachAverageRun)));
 
             settings.WasapiCaptureEndpointId = wasapiCaptureEndpointId;
             settings.WasapiRenderEndpointId = wasapiRenderEndpointId;

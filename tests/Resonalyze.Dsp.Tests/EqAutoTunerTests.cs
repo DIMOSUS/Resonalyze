@@ -244,4 +244,39 @@ public sealed class EqAutoTunerTests
         Assert.Empty(curve.Bands);
         Assert.Equal(0, curve.PreampDb, 6);
     }
+
+    [Fact]
+    public void Tune_HighFrequencyTarget_FitsDigitalResponseAtConfiguredRate()
+    {
+        const double sampleRate = 44_100;
+        var targetCurve = new EqualizationCurve([new PeqBand(18_000, 2.0, 6.0)]);
+        IReadOnlyList<double> frequencies =
+            EqualizationCurve.LogFrequencyGrid(8_000, 20_000, 300);
+        IReadOnlyList<SignalPoint> source = frequencies
+            .Select(frequency => new SignalPoint(frequency, 0))
+            .ToArray();
+        IReadOnlyList<SignalPoint> target = frequencies
+            .Select(frequency => new SignalPoint(
+                frequency,
+                DigitalEqualizationResponse.MagnitudeDbAt(
+                    targetCurve, frequency, sampleRate)))
+            .ToArray();
+
+        EqualizationCurve fitted = EqAutoTuner.Tune(
+            source,
+            target,
+            new EqAutoTuner.Options
+            {
+                SampleRateHz = sampleRate,
+                MinFrequencyHz = 8_000,
+                MaxFrequencyHz = 20_000,
+                MaxBands = 4
+            });
+
+        double expected = DigitalEqualizationResponse.MagnitudeDbAt(
+            targetCurve, 18_000, sampleRate);
+        double actual = DigitalEqualizationResponse.MagnitudeDbAt(
+            fitted, 18_000, sampleRate);
+        Assert.InRange(actual, expected - 1.0, expected + 1.0);
+    }
 }

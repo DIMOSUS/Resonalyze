@@ -28,6 +28,7 @@ internal static class TuningSheetPdf
         EqualizationCurve curve,
         double fitMinHz,
         double fitMaxHz,
+        double sampleRateHz,
         EqTuneStats? stats)
     {
         ArgumentNullException.ThrowIfNull(curve);
@@ -38,7 +39,9 @@ internal static class TuningSheetPdf
             $"   ·   Fit range {Number(fitMinHz, "0")}–{Number(fitMaxHz, "0")} Hz");
         Section section = sheet.Section;
 
-        sheet.AddImage(RenderEqGraph(curve, fitMinHz, fitMaxHz), Unit.FromCentimeter(17));
+        sheet.AddImage(
+            RenderEqGraph(curve, fitMinHz, fitMaxHz, sampleRateHz),
+            Unit.FromCentimeter(17));
 
         if (stats != null)
         {
@@ -93,7 +96,11 @@ internal static class TuningSheetPdf
     }
 
     // A compact white EQ graph (combined bands + preamp) with the fit range shaded.
-    private static byte[] RenderEqGraph(EqualizationCurve curve, double fitMinHz, double fitMaxHz)
+    private static byte[] RenderEqGraph(
+        EqualizationCurve curve,
+        double fitMinHz,
+        double fitMaxHz,
+        double sampleRateHz)
     {
         IReadOnlyList<double> grid = EqualizationCurve.LogFrequencyGrid(20, 20_000, 200);
 
@@ -102,7 +109,8 @@ internal static class TuningSheetPdf
         var series = new LineSeries { Color = OxyColor.FromRgb(0x1F, 0x77, 0xB4), StrokeThickness = 2 };
         foreach (double frequency in grid)
         {
-            double gain = curve.MagnitudeDbAt(frequency);
+            double gain = DigitalEqualizationResponse.MagnitudeDbAt(
+                curve, frequency, sampleRateHz);
             series.Points.Add(new DataPoint(frequency, gain));
             minDb = Math.Min(minDb, gain);
             maxDb = Math.Max(maxDb, gain);

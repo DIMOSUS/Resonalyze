@@ -250,6 +250,8 @@ public partial class EqWizardPanel : UserControl
     private int SourceSmoothingInverseOctaves =>
         comboBoxSmooth.SelectedItem is int value ? value : 0;
 
+    private int EqSampleRate => loadedIr?.SampleRate ?? 48_000;
+
     // Reports the current tuning result (or null when nothing is being tuned) to the
     // results panel. Wired by the host form; null until then.
     [Browsable(false)]
@@ -649,7 +651,8 @@ public partial class EqWizardPanel : UserControl
         double peakCut = double.PositiveInfinity;
         foreach (double frequency in EqualizationCurve.LogFrequencyGrid(20, 20_000, 256))
         {
-            double gain = eq.MagnitudeDbAt(frequency);
+            double gain = DigitalEqualizationResponse.MagnitudeDbAt(
+                eq, frequency, EqSampleRate);
             peakBoost = Math.Max(peakBoost, gain);
             peakCut = Math.Min(peakCut, gain);
         }
@@ -742,7 +745,8 @@ public partial class EqWizardPanel : UserControl
             // The wizard's output is a profile for a real DSP: the total gain
             // (preamp + bands) must not exceed 0 dB anywhere, or the profile
             // clips before the user ever sees the headroom read-out.
-            TotalGainMaxDb = 0
+            TotalGainMaxDb = 0,
+            SampleRateHz = EqSampleRate
         };
 
         // Q has no panel-level range control, so take its bounds from a band field.
@@ -841,11 +845,21 @@ public partial class EqWizardPanel : UserControl
                 // the file name.
                 string title = System.IO.Path.GetFileNameWithoutExtension(dialog.FileName);
                 (double minHz, double maxHz) = GetFrequencyWindow();
-                TuningSheetPdf.Export(dialog.FileName, title, curve, minHz, maxHz, lastStats);
+                TuningSheetPdf.Export(
+                    dialog.FileName,
+                    title,
+                    curve,
+                    minHz,
+                    maxHz,
+                    EqSampleRate,
+                    lastStats);
             }
             else
             {
-                System.IO.File.WriteAllText(dialog.FileName, format.Export(curve));
+                IEqProfileFormat exportFormat = format is GraphicEqFormat
+                    ? new GraphicEqFormat(EqSampleRate)
+                    : format;
+                System.IO.File.WriteAllText(dialog.FileName, exportFormat.Export(curve));
             }
         }
         catch (Exception exception)
@@ -936,7 +950,10 @@ public partial class EqWizardPanel : UserControl
 
         var eqWithoutGain = new EqualizationCurve(eq.Bands, 0);
         var points = baseline.Points
-            .Select(point => new DataPoint(point.X, eqWithoutGain.MagnitudeDbAt(point.X)))
+            .Select(point => new DataPoint(
+                point.X,
+                DigitalEqualizationResponse.MagnitudeDbAt(
+                    eqWithoutGain, point.X, EqSampleRate)))
             .ToArray();
         AddWizardSeries(
             model,
@@ -962,7 +979,10 @@ public partial class EqWizardPanel : UserControl
             (double)slot.GainInput.Value);
 
         var points = baseline.Points
-            .Select(point => new DataPoint(point.X, point.Y + band.MagnitudeDbAt(point.X)))
+            .Select(point => new DataPoint(
+                point.X,
+                point.Y + DigitalEqualizationResponse.MagnitudeDbAt(
+                    band, point.X, EqSampleRate)))
             .ToArray();
         AddWizardSeries(
             model,

@@ -214,7 +214,7 @@ public partial class EqWizardPanel
             points);
     }
 
-    private static EqWizardCurve BuildSourcePlusEqCurve(
+    private EqWizardCurve BuildSourcePlusEqCurve(
         IReadOnlyList<DataPoint> sourcePoints,
         EqualizationCurve eq)
     {
@@ -222,7 +222,10 @@ public partial class EqWizardPanel
         for (int i = 0; i < sourcePoints.Count; i++)
         {
             DataPoint point = sourcePoints[i];
-            points[i] = new DataPoint(point.X, point.Y + eq.MagnitudeDbAt(point.X));
+            points[i] = new DataPoint(
+                point.X,
+                point.Y + DigitalEqualizationResponse.MagnitudeDbAt(
+                    eq, point.X, EqSampleRate));
         }
 
         return new EqWizardCurve("Source + EQ", SourcePlusEqColor, 2, LineStyle.Solid, points);

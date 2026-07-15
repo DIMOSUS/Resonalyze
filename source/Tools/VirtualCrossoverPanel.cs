@@ -1,8 +1,5 @@
 using System.Numerics;
-using System.Runtime.CompilerServices;
 using OxyPlot;
-using OxyPlot.Axes;
-using OxyPlot.Series;
 using Resonalyze.Dsp;
 using Resonalyze.History;
 using Resonalyze.Options;
@@ -10,17 +7,16 @@ using Resonalyze.Options;
 namespace Resonalyze;
 
 /// <summary>
-/// The Virtual DSP tool: up to three measured transfer IRs are run through
-/// per-channel DSP chains (gain, delay, polarity, crossover, PEQ) and summed as
-/// complex responses, predicting the combined output before touching the
-/// hardware. The acoustic plot shows the raw/processed channels, their complex
-/// sum and the sum loss; the DSP plot shows each chain's own magnitude and
-/// phase. The whole state persists as a project file across restarts.
+/// The Virtual DSP tool: up to eight measured transfer IRs (as left/right pairs)
+/// are run through per-channel DSP chains (gain, delay, polarity, crossover, PEQ)
+/// and summed as complex responses, predicting the combined output before
+/// touching the hardware. The acoustic plot shows the raw/processed channels,
+/// their complex sum and the sum loss; the DSP plot shows each chain's own
+/// magnitude, phase or group delay. The whole state persists as a project file
+/// across restarts.
 /// </summary>
 public partial class VirtualCrossoverPanel : UserControl
 {
-    private const string CurveSeriesTag = "virtual-crossover:curve";
-    private const string CurveTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.00}";
     private const int SaveDebounceMilliseconds = 2_000;
 
     // The channel-list bounds. The minimum matches the summed-response metric's
@@ -59,8 +55,16 @@ public partial class VirtualCrossoverPanel : UserControl
     // settings stay untouched.
     private readonly FrequencyResponseOptions frequencyResponseOptions = new();
 
-    private readonly List<ChannelRuntime> channels = new();
+    private readonly List<VirtualCrossoverChannel> channels = new();
+
+    // The model-to-control binding. VirtualCrossoverChannel is UI-free, so the
+    // panel owns the mapping to each block's control; only the binding methods
+    // (ApplySettingsToControl, UpdateSourceButton, tooltips…) look it up, and
+    // the algorithmic paths read the model directly.
+    private readonly Dictionary<VirtualCrossoverChannel, VirtualCrossoverChannelControl>
+        channelControls = new();
     private readonly VirtualCrossoverProcessingCoordinator processingCoordinator = new();
+    private readonly VirtualCrossoverMetrics metrics;
     private readonly ToolTip toolTip = new()
     {
         InitialDelay = 500,
@@ -77,15 +81,8 @@ public partial class VirtualCrossoverPanel : UserControl
     private (double OffsetMs, double LeftMs, double PlateauMs, double RightMs,
         PhaseWindowMode WindowMode, int FdwCycles, PhaseDetrendMode DetrendMode,
         double DetrendMs)? gatePreview;
-    private PlotWatermarkAnnotation hintAnnotation = null!;
-    private LinearAxis mainValueAxis = null!;
-    // The main plot's two bottom axes: the shared log-frequency axis for the
-    // magnitude/phase views and a linear ms axis for the impulse view. Only
-    // one is in the model at a time (ConfigureMainBottomAxis swaps them), so
-    // the untagged curve series always bind to the active one.
-    private LogarithmicAxis mainFrequencyAxis = null!;
-    private LinearAxis mainTimeAxis = null!;
-    private PlotLabelsPanelController plotLabels = null!;
+    private VirtualCrossoverAcousticPlot acousticPlot = null!;
+    private VirtualCrossoverDspChainPlot dspChainPlot = null!;
     private bool initialized;
     private bool suppressProjectEvents;
 
@@ -116,8 +113,10 @@ public partial class VirtualCrossoverPanel : UserControl
         checkBoxShowSum.ForeColor = Color.FromArgb(SumColor.R, SumColor.G, SumColor.B);
         checkBoxShowLoss.ForeColor = Color.FromArgb(LossColor.R, LossColor.G, LossColor.B);
 
-        InitializeMainPlot();
-        InitializeDspPlot();
+        metrics = new VirtualCrossoverMetrics(processingCoordinator, BuildMagnitudeCurve);
+        acousticPlot = new VirtualCrossoverAcousticPlot(
+            mainPlotView, NoSourcesHint, CurrentAcousticView());
+        dspChainPlot = new VirtualCrossoverDspChainPlot(dspPlotView, CurrentDspPlotMode());
         mainPlotView.Paint += (_, _) => AppProfiler.FrameMark("vdsp-main");
         dspPlotView.Paint += (_, _) => AppProfiler.FrameMark("vdsp-dsp");
         InitializeSmoothingComboBox();
@@ -260,8 +259,7 @@ public partial class VirtualCrossoverPanel : UserControl
         Enabled = !loading;
         if (loading)
         {
-            hintAnnotation.Text = LoadingHint;
-            mainPlotView.InvalidatePlot(true);
+            acousticPlot.ShowHint(LoadingHint);
             MetricChanged?.Invoke("Loading\r\nsession…", string.Empty);
         }
     }
@@ -309,7 +307,7 @@ public partial class VirtualCrossoverPanel : UserControl
             radioSideLeft.Checked = !project.ActiveSideRight;
             numericSceneOffset.Value = Clamp(
                 numericSceneOffset, project.StereoSceneOffsetMs);
-            ConfigureMainValueAxis();
+            acousticPlot.ConfigureForView(CurrentAcousticView());
             UpdateGateButtonAvailability();
             comboBoxSmoothing.SelectedItem =
                 OverlaySmoothing.IsValid(project.SmoothingInverseOctaves)
@@ -333,7 +331,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         RefreshCalibrationCombo();
 
-        foreach (ChannelRuntime channel in channels)
+        foreach (VirtualCrossoverChannel channel in channels)
         {
             // BOTH physical slots are wiped first — through the effective
             // accessor a mono pair's real right slot is unreachable, and a
@@ -517,7 +515,7 @@ public partial class VirtualCrossoverPanel : UserControl
         suppressProjectEvents = true;
         try
         {
-            foreach (ChannelRuntime channel in channels)
+            foreach (VirtualCrossoverChannel channel in channels)
             {
                 channel.ActiveRight = rightSide;
                 ApplySettingsToControl(channel);
@@ -551,7 +549,7 @@ public partial class VirtualCrossoverPanel : UserControl
     // Mono pairs have one settings set and are not offered.
     private void CopySideSettings(bool fromRight)
     {
-        List<ChannelRuntime> candidates = channels
+        List<VirtualCrossoverChannel> candidates = channels
             .Where(channel => !channel.Pair.Mono)
             .ToList();
         if (candidates.Count == 0)
@@ -565,8 +563,8 @@ public partial class VirtualCrossoverPanel : UserControl
             {
                 string source = channel.SideSettings(fromRight).DisplayName;
                 return string.IsNullOrWhiteSpace(source)
-                    ? channel.Control.ChannelName
-                    : $"{channel.Control.ChannelName} — {source}";
+                    ? channel.Name
+                    : $"{channel.Name} — {source}";
             })
             .ToList();
         using var dialog = new VirtualCrossoverCopySideDialog(fromRight, labels);
@@ -579,7 +577,7 @@ public partial class VirtualCrossoverPanel : UserControl
         bool targetSideShown = project.ActiveSideRight == !fromRight;
         foreach (int index in dialog.SelectedIndices)
         {
-            ChannelRuntime channel = candidates[index];
+            VirtualCrossoverChannel channel = candidates[index];
             CopyChainSettings(
                 channel.SideSettings(fromRight),
                 channel.SideSettings(!fromRight));
@@ -626,7 +624,7 @@ public partial class VirtualCrossoverPanel : UserControl
     // A channel block is created per runtime and added to the scrolling list, so
     // the block count is a plain runtime decision (persisted in the project) with
     // no fixed designer controls. Colour and name follow the block's index.
-    private ChannelRuntime CreateChannelControl(int index)
+    private VirtualCrossoverChannel CreateChannel(int index)
     {
         // The block keeps its own designer-defined size, which the control scales
         // for the current DPI (AutoScaleMode.Font); overriding it here with raw
@@ -646,13 +644,19 @@ public partial class VirtualCrossoverPanel : UserControl
         OxyColor color = ChannelColors[index];
         control.SetAccentColor(Color.FromArgb(color.R, color.G, color.B));
 
-        var runtime = new ChannelRuntime(control);
-        control.SettingsChanged += (_, _) => OnChannelSettingsChanged(runtime);
-        control.SourceClicked += (_, _) => ShowSourceMenu(runtime);
-        control.PeqLoadClicked += (_, _) => LoadPeq(runtime);
-        control.PeqClearClicked += (_, _) => ClearPeq(runtime);
-        return runtime;
+        var channel = new VirtualCrossoverChannel(ChannelNameFor(index));
+        channelControls[channel] = control;
+        control.SettingsChanged += (_, _) => OnChannelSettingsChanged(channel);
+        control.SourceClicked += (_, _) => ShowSourceMenu(channel);
+        control.PeqLoadClicked += (_, _) => LoadPeq(channel);
+        control.PeqClearClicked += (_, _) => ClearPeq(channel);
+        return channel;
     }
+
+    // The control bound to a runtime channel. Only the WinForms binding methods
+    // look it up; the algorithmic paths read the model directly.
+    private VirtualCrossoverChannelControl ControlFor(VirtualCrossoverChannel channel) =>
+        channelControls[channel];
 
     // Channel names run A, B, C… by index; shared with the tuning sheets.
     private static string ChannelNameFor(int index) =>
@@ -666,17 +670,24 @@ public partial class VirtualCrossoverPanel : UserControl
 
         while (channels.Count > count)
         {
-            ChannelRuntime removed = channels[^1];
+            VirtualCrossoverChannel removed = channels[^1];
+            // Invalidate its slots BEFORE detaching the control: any source load
+            // still reading a file for this channel captured a revision that
+            // Clear() now supersedes, so it refuses to write back or touch the
+            // control we are about to dispose (a KeyNotFoundException otherwise).
+            removed.Invalidate();
             channels.RemoveAt(channels.Count - 1);
-            channelListPanel.Controls.Remove(removed.Control);
-            removed.Control.Dispose();
+            VirtualCrossoverChannelControl control = ControlFor(removed);
+            channelControls.Remove(removed);
+            channelListPanel.Controls.Remove(control);
+            control.Dispose();
         }
 
         while (channels.Count < count)
         {
-            ChannelRuntime added = CreateChannelControl(channels.Count);
+            VirtualCrossoverChannel added = CreateChannel(channels.Count);
             channels.Add(added);
-            channelListPanel.Controls.Add(added.Control);
+            channelListPanel.Controls.Add(ControlFor(added));
         }
 
         UpdateChannelButtons();
@@ -703,7 +714,7 @@ public partial class VirtualCrossoverPanel : UserControl
         project.Pairs.Add(pair);
         SetChannelCount(channels.Count + 1);
         // Bind the new block to its pair the same way ApplyProjectAsync does.
-        ChannelRuntime added = channels[^1];
+        VirtualCrossoverChannel added = channels[^1];
         added.Pair = pair;
         added.ActiveRight = project.ActiveSideRight;
         ApplySettingsToControl(added);
@@ -732,7 +743,7 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    private void OnChannelSettingsChanged(ChannelRuntime channel)
+    private void OnChannelSettingsChanged(VirtualCrossoverChannel channel)
     {
         if (suppressProjectEvents)
         {
@@ -745,7 +756,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // binding and must not be written through the new one — rebind the
         // control instead.
         bool wasMono = channel.Pair.Mono;
-        bool monoNow = channel.Control.MonoCheckBox.Checked;
+        bool monoNow = ControlFor(channel).MonoCheckBox.Checked;
         if (wasMono != monoNow && channel.ActiveRight)
         {
             channel.Pair.Mono = monoNow;
@@ -791,13 +802,15 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // Fire-and-forget with a guard, like LoadProjectSafely: called from a
     // synchronous settings-changed handler.
-    private async void ReresolveRightSide(ChannelRuntime channel)
+    private async void ReresolveRightSide(VirtualCrossoverChannel channel)
     {
         try
         {
             channel.PhysicalSideState(true).Clear();
             await ResolveSourceAsync(channel, rightSide: true, showErrors: false);
-            if (IsDisposed)
+            // The channel may have been removed (or the panel disposed) while the
+            // re-resolve read from disk; ControlFor would then miss the entry.
+            if (IsDisposed || !channelControls.ContainsKey(channel))
             {
                 return;
             }
@@ -815,7 +828,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private void OnViewModeChanged()
     {
-        ConfigureMainValueAxis();
+        acousticPlot.ConfigureForView(CurrentAcousticView());
         UpdateGateButtonAvailability();
         // Fractional-octave smoothing shapes only the frequency-domain curves;
         // grey it out in the impulse view where it has no effect.
@@ -848,10 +861,10 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // ------------------------------------------------------- settings mapping
 
-    private void ApplySettingsToControl(ChannelRuntime channel)
+    private void ApplySettingsToControl(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
-        VirtualCrossoverChannelControl control = channel.Control;
+        VirtualCrossoverChannelControl control = ControlFor(channel);
         control.RunBatchUpdate(() =>
         {
             control.GainInput.Value = Clamp(control.GainInput, settings.GainDb);
@@ -879,10 +892,10 @@ public partial class VirtualCrossoverPanel : UserControl
         UpdatePeqLabel(channel);
     }
 
-    private void ReadControlIntoSettings(ChannelRuntime channel)
+    private void ReadControlIntoSettings(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
-        VirtualCrossoverChannelControl control = channel.Control;
+        VirtualCrossoverChannelControl control = ControlFor(channel);
         settings.GainDb = (double)control.GainInput.Value;
         settings.DelayMs = (double)control.DelayInput.Value;
         settings.InvertPolarity = control.InvertCheckBox.Checked;
@@ -904,7 +917,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // ---------------------------------------------------------------- sources
 
-    private void ShowSourceMenu(ChannelRuntime channel)
+    private void ShowSourceMenu(VirtualCrossoverChannel channel)
     {
         var menu = new ContextMenuStrip();
 
@@ -923,10 +936,11 @@ public partial class VirtualCrossoverPanel : UserControl
         clearItem.Click += (_, _) => ClearSource(channel);
         menu.Items.Add(clearItem);
 
-        menu.Show(channel.Control.SourceButton, new Point(0, channel.Control.SourceButton.Height));
+        Button sourceButton = ControlFor(channel).SourceButton;
+        menu.Show(sourceButton, new Point(0, sourceButton.Height));
     }
 
-    private void PopulateHistoryMenu(ToolStripMenuItem historyItem, ChannelRuntime channel)
+    private void PopulateHistoryMenu(ToolStripMenuItem historyItem, VirtualCrossoverChannel channel)
     {
         IReadOnlyList<MeasurementHistoryEntry> entries =
             HistoryService?.Entries ?? Array.Empty<MeasurementHistoryEntry>();
@@ -953,7 +967,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    private async Task ChooseSourceFileAsync(ChannelRuntime channel)
+    private async Task ChooseSourceFileAsync(VirtualCrossoverChannel channel)
     {
         // The CONCRETE slot and settings are captured NOW: the user can flip
         // the L/R selector, toggle Mono (which reroutes SideState) — or
@@ -963,7 +977,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // starts) guards the landing: any Clear() of the slot or a newer
         // pick into it refuses this one.
         bool rightSide = channel.ActiveRight;
-        ChannelSideState targetState = channel.SideState(rightSide);
+        VirtualCrossoverChannelState targetState = channel.SideState(rightSide);
         VirtualCrossoverChannelSettings targetSettings = channel.SideSettings(rightSide);
         using var dialog = new OpenFileDialog
         {
@@ -988,18 +1002,15 @@ public partial class VirtualCrossoverPanel : UserControl
             }
 
             MeasurementHistorySnapshot snapshot = MeasurementHistoryService.CreateSnapshot(file);
-            if (!TryAcceptSource(
-                channel,
-                rightSide,
-                targetState,
-                targetSettings,
-                revision,
-                snapshot,
-                Path.GetFileName(dialog.FileName),
-                dialog.FileName,
-                historyEntryId: null))
+            if (TryAssignSource(targetState, revision, snapshot, SourceConflictPolicy.Prompt))
             {
-                return;
+                OnSourceAssigned(
+                    channel,
+                    targetSettings,
+                    new VirtualCrossoverSourceReference(
+                        Path.GetFileName(dialog.FileName),
+                        dialog.FileName,
+                        HistoryEntryId: null));
             }
         }
         catch (Exception exception)
@@ -1008,13 +1019,13 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    private async Task SelectHistoryEntryAsync(ChannelRuntime channel, Guid entryId)
+    private async Task SelectHistoryEntryAsync(VirtualCrossoverChannel channel, Guid entryId)
     {
         // Same slot/settings/revision capture as ChooseSourceFileAsync: the
         // snapshot load is asynchronous and the L/R selector, the Mono
         // checkbox and session import all stay live meanwhile.
         bool rightSide = channel.ActiveRight;
-        ChannelSideState targetState = channel.SideState(rightSide);
+        VirtualCrossoverChannelState targetState = channel.SideState(rightSide);
         VirtualCrossoverChannelSettings targetSettings = channel.SideSettings(rightSide);
         int revision = targetState.BeginSourceLoad();
         try
@@ -1028,16 +1039,16 @@ public partial class VirtualCrossoverPanel : UserControl
                 return;
             }
 
-            TryAcceptSource(
-                channel,
-                rightSide,
-                targetState,
-                targetSettings,
-                revision,
-                snapshot,
-                entry.FileNameOrDisplayName,
-                entry.SourceFilePath,
-                entryId);
+            if (TryAssignSource(targetState, revision, snapshot, SourceConflictPolicy.Prompt))
+            {
+                OnSourceAssigned(
+                    channel,
+                    targetSettings,
+                    new VirtualCrossoverSourceReference(
+                        entry.FileNameOrDisplayName,
+                        entry.SourceFilePath,
+                        entryId));
+            }
         }
         catch (Exception exception)
         {
@@ -1045,53 +1056,74 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // Validates and installs a resolved measurement as the channel's source. The
-    // virtual sum only has physical meaning for loopback-referenced transfer IRs
-    // sharing one sample rate, so both are enforced here with an explanation.
-    // The target slot and settings are the caller's PRE-AWAIT captures — never
-    // re-derived here, where a mid-load Mono toggle would reroute them — and
-    // the revision refuses a landing the slot has moved past (cleared by a
-    // project import or mono toggle, or superseded by a newer pick).
-    private bool TryAcceptSource(
-        ChannelRuntime channel,
-        bool rightSide,
-        ChannelSideState targetState,
-        VirtualCrossoverChannelSettings targetSettings,
+    // Whether a source assignment may prompt the user to resolve a sample-rate
+    // conflict (an interactive pick) or must decline silently (a background
+    // restore cannot ask).
+    private enum SourceConflictPolicy
+    {
+        Prompt,
+        RejectSilently
+    }
+
+    // The shared source-assignment core for the interactive pickers and the
+    // silent restore alike: the revision guard, the loopback-transfer-IR
+    // requirement, the sample-rate conflict handling and the runtime-state
+    // write. The policy is the only difference — an interactive pick may prompt
+    // to clear mismatched sides (and reports a missing transfer IR), while a
+    // silent reload cannot ask, so it just leaves the side unresolved. Returns
+    // true when the measurement landed; the caller owns the persisted source
+    // reference and the UI refresh, which differ between the two paths.
+    //
+    // targetState is the caller's PRE-AWAIT capture — never re-derived here,
+    // where a mid-load Mono toggle would reroute it — and the revision refuses a
+    // landing the slot has moved past (cleared by a project import or mono
+    // toggle, or superseded by a newer pick).
+    private bool TryAssignSource(
+        VirtualCrossoverChannelState targetState,
         int sourceRevision,
         MeasurementHistorySnapshot snapshot,
-        string displayName,
-        string? sourceFilePath,
-        Guid? historyEntryId)
+        SourceConflictPolicy policy)
     {
         if (targetState.SourceRevision != sourceRevision)
         {
             return false;
         }
 
-        if (snapshot.TransferImpulseResponse is not { Length: > 0 } transferIr)
+        if (ResolvedVirtualDspSource.FromSnapshot(snapshot) is not { } resolved)
         {
-            ShowError(
-                "This measurement has no loopback transfer IR.",
-                "The virtual crossover sums loopback-referenced responses; " +
-                "re-measure with a loopback channel configured.");
+            if (policy == SourceConflictPolicy.Prompt)
+            {
+                ShowError(
+                    "This measurement has no loopback transfer IR.",
+                    "The virtual crossover sums loopback-referenced responses; " +
+                    "re-measure with a loopback channel configured.");
+            }
+
             return false;
         }
 
-        // A mismatched sample rate is not a dead end: the user picks whether the
-        // new measurement wins (clearing the incompatible sides) or loses. The
-        // compatibility decision is shared with the silent reload path, and it
-        // scans EVERY resolved side of every pair — the virtual sums of both
-        // sides read one shared rate.
+        // A mismatched sample rate is not a dead end for an interactive pick: the
+        // user picks whether the new measurement wins (clearing the incompatible
+        // sides) or loses. The compatibility decision scans EVERY resolved side of
+        // every pair — the virtual sums of both sides read one shared rate.
+        List<(VirtualCrossoverChannel Channel, bool RightSide, VirtualCrossoverChannelState State)> others =
+            ResolvedSidesExcept(targetState).ToList();
         VirtualCrossoverSourceRules.Decision decision = VirtualCrossoverSourceRules.Evaluate(
             hasTransferIr: true,
-            candidateSampleRate: snapshot.SampleRate,
-            otherResolvedSampleRates: ResolvedSidesExcept(targetState)
-                .Select(item => item.State.SampleRate));
+            candidateSampleRate: resolved.SampleRate,
+            otherResolvedSampleRates: others.Select(item => item.State.SampleRate));
         if (decision == VirtualCrossoverSourceRules.Decision.NeedsConfirmClear)
         {
-            var mismatched = ResolvedSidesExcept(targetState)
-                .Where(item => item.State.SampleRate != snapshot.SampleRate)
-                .ToList();
+            // A silent reload cannot prompt, so an incompatible source stays
+            // unresolved (the button shows the warning glyph) instead of clearing
+            // the others behind the user's back.
+            if (policy == SourceConflictPolicy.RejectSilently)
+            {
+                return false;
+            }
+
+            List<(VirtualCrossoverChannel Channel, bool RightSide, VirtualCrossoverChannelState State)> mismatched =
+                others.Where(item => item.State.SampleRate != resolved.SampleRate).ToList();
             string mismatchedList = string.Join(
                 ", ",
                 mismatched.Select(item =>
@@ -1099,7 +1131,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     $"({item.State.SampleRate} Hz)"));
             DialogResult answer = MessageBox.Show(
                 FindForm(),
-                $"This measurement is {snapshot.SampleRate} Hz, but channel " +
+                $"This measurement is {resolved.SampleRate} Hz, but channel " +
                 $"{mismatchedList} uses a different sample rate. All channels " +
                 "must share one." +
                 Environment.NewLine + Environment.NewLine +
@@ -1119,35 +1151,37 @@ public partial class VirtualCrossoverPanel : UserControl
                 return false;
             }
 
-            foreach ((ChannelRuntime other, bool otherRight, _) in mismatched)
+            foreach ((VirtualCrossoverChannel other, bool otherRight, _) in mismatched)
             {
                 ClearSourceCore(other, otherRight);
             }
         }
 
-        targetState.TransferImpulseResponse = transferIr;
-        targetState.TransferPeakIndex = Math.Clamp(
-            snapshot.TransferPeakIndex ?? 0, 0, transferIr.Length - 1);
-        targetState.SampleRate = snapshot.SampleRate;
-        targetState.TransferCoherence = snapshot.TransferCoherence;
-        targetState.DistortionCurve = ComputeDistortionCurve(snapshot);
-        targetSettings.DisplayName = displayName;
-        targetSettings.SourceFilePath = sourceFilePath;
-        targetSettings.HistoryEntryId = historyEntryId;
+        resolved.ApplyTo(targetState);
+        return true;
+    }
 
+    // The persisted source reference and UI refresh that follow an interactive
+    // pick landing in a slot. A silent restore skips both: the reference is
+    // already stored and BindProjectAsync refreshes once at the end.
+    private void OnSourceAssigned(
+        VirtualCrossoverChannel channel,
+        VirtualCrossoverChannelSettings settings,
+        VirtualCrossoverSourceReference reference)
+    {
+        reference.ApplyTo(settings);
         UpdateSourceButton(channel);
         UpdateSideRadioTexts();
         ScheduleSave();
         RedrawAll();
-        return true;
     }
 
     // Every resolved (channel, side) except the given side state; mono pairs
     // expose only their single left-side slot.
-    private IEnumerable<(ChannelRuntime Channel, bool RightSide, ChannelSideState State)>
-        ResolvedSidesExcept(ChannelSideState? except)
+    private IEnumerable<(VirtualCrossoverChannel Channel, bool RightSide, VirtualCrossoverChannelState State)>
+        ResolvedSidesExcept(VirtualCrossoverChannelState? except)
     {
-        foreach (ChannelRuntime channel in channels)
+        foreach (VirtualCrossoverChannel channel in channels)
         {
             foreach (bool rightSide in new[] { false, true })
             {
@@ -1156,7 +1190,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     continue;
                 }
 
-                ChannelSideState state = channel.SideState(rightSide);
+                VirtualCrossoverChannelState state = channel.SideState(rightSide);
                 if (state != except && state.TransferImpulseResponse != null)
                 {
                     yield return (channel, rightSide, state);
@@ -1165,19 +1199,19 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    private static string SideLabel(ChannelRuntime channel, bool rightSide) =>
+    private static string SideLabel(VirtualCrossoverChannel channel, bool rightSide) =>
         channel.Pair.Mono
-            ? $"{channel.Control.ChannelName} (mono)"
-            : $"{channel.Control.ChannelName} {(rightSide ? "R" : "L")}";
+            ? $"{channel.Name} (mono)"
+            : $"{channel.Name} {(rightSide ? "R" : "L")}";
 
-    private void ClearSource(ChannelRuntime channel)
+    private void ClearSource(VirtualCrossoverChannel channel)
     {
         ClearSourceCore(channel, channel.ActiveRight);
         ScheduleSave();
         RedrawAll();
     }
 
-    private void ClearSourceCore(ChannelRuntime channel, bool rightSide)
+    private void ClearSourceCore(VirtualCrossoverChannel channel, bool rightSide)
     {
         channel.SideState(rightSide).Clear();
         VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
@@ -1193,10 +1227,10 @@ public partial class VirtualCrossoverPanel : UserControl
     // longer exists degrades to an unresolved side instead of failing the
     // project load.
     private async Task ResolveSourceAsync(
-        ChannelRuntime channel, bool rightSide, bool showErrors)
+        VirtualCrossoverChannel channel, bool rightSide, bool showErrors)
     {
         VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
-        ChannelSideState state = channel.SideState(rightSide);
+        VirtualCrossoverChannelState state = channel.SideState(rightSide);
         if (!settings.HasSource)
         {
             return;
@@ -1210,39 +1244,18 @@ public partial class VirtualCrossoverPanel : UserControl
         int revision = state.BeginSourceLoad();
         try
         {
-            MeasurementHistorySnapshot? snapshot = null;
-            if (settings.HistoryEntryId is { } entryId && HistoryService != null)
+            MeasurementHistorySnapshot? snapshot =
+                await LoadSnapshotFromReferenceAsync(settings);
+            // The same assignment core as the interactive pickers (the file
+            // behind a stored path may have been replaced since the project was
+            // saved), but under RejectSilently: an incompatible source — no
+            // transfer IR, or a rate that clashes with the other sides — stays
+            // unresolved (the button shows the warning glyph) instead of
+            // prompting, because a silent reload cannot ask.
+            if (snapshot != null)
             {
-                snapshot = await HistoryService.GetSnapshotAsync(entryId);
-            }
-            if (snapshot == null &&
-                !string.IsNullOrWhiteSpace(settings.SourceFilePath) &&
-                File.Exists(settings.SourceFilePath))
-            {
-                ImpulseResponseFile file =
-                    await ImpulseResponseFile.LoadAsync(settings.SourceFilePath);
-                snapshot = MeasurementHistoryService.CreateSnapshot(file);
-            }
-
-            // The same compatibility decision as TryAcceptSource (the file behind a
-            // stored path may have been replaced since the project was saved), but
-            // here an incompatible source stays unresolved — the button shows the
-            // warning glyph — instead of prompting: a silent reload cannot ask.
-            VirtualCrossoverSourceRules.Decision decision = VirtualCrossoverSourceRules.Evaluate(
-                hasTransferIr: snapshot?.TransferImpulseResponse is { Length: > 0 },
-                candidateSampleRate: snapshot?.SampleRate ?? 0,
-                otherResolvedSampleRates: ResolvedSidesExcept(state)
-                    .Select(item => item.State.SampleRate));
-            if (decision == VirtualCrossoverSourceRules.Decision.Accept &&
-                snapshot?.TransferImpulseResponse is { Length: > 0 } transferIr &&
-                state.SourceRevision == revision)
-            {
-                state.TransferImpulseResponse = transferIr;
-                state.TransferPeakIndex = Math.Clamp(
-                    snapshot.TransferPeakIndex ?? 0, 0, transferIr.Length - 1);
-                state.SampleRate = snapshot.SampleRate;
-                state.TransferCoherence = snapshot.TransferCoherence;
-                state.DistortionCurve = ComputeDistortionCurve(snapshot);
+                TryAssignSource(
+                    state, revision, snapshot, SourceConflictPolicy.RejectSilently);
             }
         }
         catch (Exception exception) when (!showErrors)
@@ -1251,21 +1264,49 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    private void UpdateSourceButton(ChannelRuntime channel)
+    // Loads the measurement behind a persisted source reference: the history
+    // entry first (it survives file moves), then the file path. Null when
+    // neither resolves — the side stays unresolved instead of failing the load.
+    private async Task<MeasurementHistorySnapshot?> LoadSnapshotFromReferenceAsync(
+        VirtualCrossoverChannelSettings settings)
     {
+        if (settings.HistoryEntryId is { } entryId && HistoryService != null)
+        {
+            MeasurementHistorySnapshot? snapshot =
+                await HistoryService.GetSnapshotAsync(entryId);
+            if (snapshot != null)
+            {
+                return snapshot;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(settings.SourceFilePath) &&
+            File.Exists(settings.SourceFilePath))
+        {
+            ImpulseResponseFile file =
+                await ImpulseResponseFile.LoadAsync(settings.SourceFilePath);
+            return MeasurementHistoryService.CreateSnapshot(file);
+        }
+
+        return null;
+    }
+
+    private void UpdateSourceButton(VirtualCrossoverChannel channel)
+    {
+        VirtualCrossoverChannelControl control = ControlFor(channel);
         string? name = channel.Settings.DisplayName;
         bool resolved = channel.TransferImpulseResponse != null;
-        channel.Control.SourceButton.Text = string.IsNullOrWhiteSpace(name)
+        control.SourceButton.Text = string.IsNullOrWhiteSpace(name)
             ? "Source..."
             : resolved ? name : $"⚠ {name}";
         // The as-measured driver polarity, read from the raw transfer IR (the
         // Invert switch is a separate, virtual stage on top of it).
-        channel.Control.SetMeasuredPolarity(
+        control.SetMeasuredPolarity(
             channel.TransferImpulseResponse is { } ir
                 ? VirtualCrossoverAnalysis.EstimatePolarity(ir)
                 : PolarityEstimate.Unknown);
         toolTip.SetToolTip(
-            channel.Control.SourceButton,
+            control.SourceButton,
             resolved
                 ? channel.Settings.SourceFilePath ?? name
                 : "Pick the channel's measurement: a saved impulse-response\r\n" +
@@ -1275,14 +1316,14 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // -------------------------------------------------------------------- PEQ
 
-    private void LoadPeq(ChannelRuntime channel)
+    private void LoadPeq(VirtualCrossoverChannel channel)
     {
         IReadOnlyList<IEqProfileFormat> formats = EqProfileFormats.Importable;
         using var dialog = new OpenFileDialog
         {
             CheckFileExists = true,
             Filter = EqFormatFileDialogs.BuildFilter(formats),
-            Title = $"Load channel {channel.Control.ChannelName} PEQ"
+            Title = $"Load channel {channel.Name} PEQ"
         };
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
         {
@@ -1313,7 +1354,7 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    private void ClearPeq(ChannelRuntime channel)
+    private void ClearPeq(VirtualCrossoverChannel channel)
     {
         channel.Settings.PeqBands = new List<PeqBand>();
         channel.Settings.PeqPreampDb = 0;
@@ -1323,7 +1364,7 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    private void UpdatePeqLabel(ChannelRuntime channel)
+    private void UpdatePeqLabel(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
         bool noPeq = settings.PeqBands.Count == 0 && settings.PeqPreampDb == 0;
@@ -1331,203 +1372,24 @@ public partial class VirtualCrossoverPanel : UserControl
             ? "No PEQ"
             : $"{settings.PeqSourceName ?? "PEQ"}: {settings.PeqBands.Count} bands, " +
               $"preamp {settings.PeqPreampDb:0.0} dB";
-        channel.Control.PeqInfoLabel.Text = text;
+        Label peqInfoLabel = ControlFor(channel).PeqInfoLabel;
+        peqInfoLabel.Text = text;
         // The label is narrow and clips the file name; the full text lives in the
         // tooltip. Nothing worth hovering when there is no PEQ.
-        toolTip.SetToolTip(channel.Control.PeqInfoLabel, noPeq ? string.Empty : text);
+        toolTip.SetToolTip(peqInfoLabel, noPeq ? string.Empty : text);
     }
 
     // ------------------------------------------------------------------ plots
 
-    private void InitializeMainPlot()
-    {
-        var model = new PlotModel();
-        PlotModelStyle.AddFrequencyAxis(model);
-        mainFrequencyAxis = (LogarithmicAxis)model.Axes[^1];
-        // The impulse view runs on an absolute-time axis; its range follows
-        // the gate window on every impulse redraw, so it is static like the
-        // gate dialog's preview instead of pannable.
-        mainTimeAxis = new LinearAxis
-        {
-            Position = AxisPosition.Bottom,
-            Title = "ms",
-            MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineStyle = LineStyle.Dot,
-            IsPanEnabled = false,
-            IsZoomEnabled = false
-        };
-        // The absolute pan/zoom limits live in ConfigureMainValueAxis: they
-        // differ between the magnitude (dB), phase (deg) and impulse
-        // (normalized) views.
-        mainValueAxis = new LinearAxis
-        {
-            Position = AxisPosition.Left,
-            MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineStyle = LineStyle.Dot
-        };
-        model.Axes.Add(mainValueAxis);
-        ConfigureMainValueAxis();
-
-        model.Annotations.Add(new PlotWatermarkAnnotation
-        {
-            Text = "Virtual DSP",
-            TextColor = OxyColor.FromAColor(10, OxyColors.White),
-            FontSize = 70,
-            FontWeight = FontWeights.Bold
-        });
-        hintAnnotation = new PlotWatermarkAnnotation
-        {
-            Text = NoSourcesHint,
-            VerticalPosition = 0.66,
-            TextColor = OxyColor.FromRgb(230, 184, 0),
-            FontSize = 15,
-            FontWeight = FontWeights.Bold
-        };
-        model.Annotations.Add(hintAnnotation);
-
-        mainPlotView.Model = model;
-        PlotInteraction.EnableDoubleClickAxisReset(mainPlotView);
-        plotLabels = new PlotLabelsPanelController(mainPlotView, () => Mode.VirtualCrossover);
-    }
-
-    // Magnitude and phase reuse one axis object so pan/zoom of the frequency
-    // axis survives the toggle; only the value scale is re-armed. The impulse
-    // view additionally swaps the bottom axis to the linear ms one.
-    private void ConfigureMainValueAxis()
-    {
-        if (radioViewImpulse.Checked)
-        {
-            // Every trace is normalized to its own peak, exactly like the IR
-            // Gate preview, so the scale is unitless.
-            mainValueAxis.Title = string.Empty;
-            mainValueAxis.AbsoluteMinimum = -1.05;
-            mainValueAxis.AbsoluteMaximum = 1.05;
-            mainValueAxis.Minimum = -1.05;
-            mainValueAxis.Maximum = 1.05;
-            mainValueAxis.MajorStep = 0.5;
-        }
-        else if (radioViewPhase.Checked)
-        {
-            mainValueAxis.Title = "deg";
-            mainValueAxis.AbsoluteMinimum = -180;
-            mainValueAxis.AbsoluteMaximum = 180;
-            mainValueAxis.Minimum = -180;
-            mainValueAxis.Maximum = 180;
-            mainValueAxis.MajorStep = 45;
-        }
-        else
-        {
-            mainValueAxis.Title = "dB";
-            mainValueAxis.AbsoluteMinimum = -90;
-            mainValueAxis.AbsoluteMaximum = 20;
-            mainValueAxis.Minimum = double.NaN;
-            mainValueAxis.Maximum = double.NaN;
-            mainValueAxis.MajorStep = double.NaN;
-        }
-
-        ConfigureMainBottomAxis();
-        mainValueAxis.Reset();
-        mainPlotView.InvalidatePlot(false);
-    }
-
-    // Keeps exactly one bottom axis in the model: the log-frequency axis for
-    // the magnitude/phase views, the linear ms axis for the impulse view.
-    // Swapping whole axis objects (instead of reconfiguring one) preserves
-    // each view's own range across toggles.
-    private void ConfigureMainBottomAxis()
-    {
-        if (mainPlotView.Model is not { } model)
-        {
-            return;
-        }
-
-        Axis wanted = radioViewImpulse.Checked ? mainTimeAxis : mainFrequencyAxis;
-        Axis retired = radioViewImpulse.Checked ? mainFrequencyAxis : mainTimeAxis;
-        if (!model.Axes.Contains(wanted))
-        {
-            model.Axes.Remove(retired);
-            model.Axes.Add(wanted);
-        }
-    }
-
-    private void InitializeDspPlot()
-    {
-        var model = new PlotModel();
-        PlotModelStyle.AddFrequencyAxis(model);
-        // One value axis, reconfigured per plot mode (magnitude / phase / group
-        // delay). A single axis keeps each mode readable on its own scale.
-        model.Axes.Add(new LinearAxis
-        {
-            Key = DspValueAxisKey,
-            Position = AxisPosition.Left,
-            MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineStyle = LineStyle.Dot
-        });
-        model.Annotations.Add(new PlotWatermarkAnnotation
-        {
-            Text = "DSP chains",
-            TextColor = OxyColor.FromAColor(10, OxyColors.White),
-            FontSize = 40,
-            FontWeight = FontWeights.Bold
-        });
-
-        ConfigureDspValueAxis((LinearAxis)model.Axes[^1], CurrentDspPlotMode());
-        dspPlotView.Model = model;
-        PlotInteraction.EnableDoubleClickAxisReset(dspPlotView);
-    }
-
-    private const string DspValueAxisKey = "dsp-value";
-
-    // Tracks the mode the value axis range was last set for, so switching modes
-    // resets the range to the new mode's default while an in-mode redraw (e.g.
-    // editing a filter) preserves the user's zoom/pan.
-    private DspPlotMode? dspValueAxisMode;
+    private AcousticView CurrentAcousticView() =>
+        radioViewImpulse.Checked ? AcousticView.Impulse
+        : radioViewPhase.Checked ? AcousticView.Phase
+        : AcousticView.Magnitude;
 
     private DspPlotMode CurrentDspPlotMode() =>
         radioDspPhase.Checked ? DspPlotMode.Phase
         : radioDspGroupDelay.Checked ? DspPlotMode.GroupDelay
         : DspPlotMode.Magnitude;
-
-    // Titles the value axis and, only when the mode actually changed, resets its
-    // range to that mode's sensible default.
-    private void ConfigureDspValueAxis(LinearAxis axis, DspPlotMode mode)
-    {
-        axis.Title = mode switch
-        {
-            DspPlotMode.Phase => "deg",
-            DspPlotMode.GroupDelay => "ms",
-            _ => "dB"
-        };
-
-        if (dspValueAxisMode == mode)
-        {
-            return;
-        }
-
-        dspValueAxisMode = mode;
-        switch (mode)
-        {
-            case DspPlotMode.Phase:
-                axis.Minimum = -190;
-                axis.Maximum = 190;
-                axis.MajorStep = 90;
-                break;
-            case DspPlotMode.GroupDelay:
-                // Group delay range varies widely with the filters, so let it
-                // auto-scale to the drawn curves.
-                axis.Minimum = double.NaN;
-                axis.Maximum = double.NaN;
-                axis.MajorStep = double.NaN;
-                break;
-            default:
-                axis.Minimum = -60;
-                axis.Maximum = 20;
-                axis.MajorStep = double.NaN;
-                break;
-        }
-
-        axis.Reset();
-    }
 
     private void OnDspPlotModeChanged()
     {
@@ -1659,49 +1521,9 @@ public partial class VirtualCrossoverPanel : UserControl
             buttonSessionImport,
             "Load a saved session file, replacing the current state.\r\n" +
             "Sources are re-resolved from history or their file paths.");
-        foreach (ChannelRuntime channel in channels)
+        foreach (VirtualCrossoverChannel channel in channels)
         {
-            toolTip.SetToolTip(
-                channel.Control.GainInput,
-                "Channel gain (dB).\r\n" +
-                "Relative levels are only honest when the measurements\r\n" +
-                "were captured through the same playback chain;\r\n" +
-                "compensate any difference here.");
-            toolTip.SetToolTip(
-                channel.Control.InvertCheckBox,
-                "Invert the channel polarity — the DSP polarity switch.\r\n" +
-                "Also the null test: with polarity flipped, the deepest\r\n" +
-                "notch at the crossover frequency marks perfect alignment.");
-            toolTip.SetToolTip(
-                channel.Control.DelayInput,
-                "Channel delay (ms) — the value you would dial into\r\n" +
-                "this DSP channel.\r\n" +
-                "The mm readout is the equivalent distance in air.");
-            toolTip.SetToolTip(
-                channel.Control.MuteButton,
-                "Mute the channel: exclude it from the sum, the loss,\r\n" +
-                "the metric, Auto delay and both plots — a quick\r\n" +
-                "\"what changes without this driver\" check.");
-            toolTip.SetToolTip(
-                channel.Control.BypassCheckBox,
-                "Bypass the DSP chain: feed the raw measured signal with\r\n" +
-                "no gain, delay, polarity, crossover or PEQ — the driver's\r\n" +
-                "natural band-pass, for an A/B against the processed result.");
-            toolTip.SetToolTip(
-                channel.Control.MonoCheckBox,
-                "One physical driver serving both sides (typically the\r\n" +
-                "subwoofer): a single set of settings participates in the\r\n" +
-                "L and R views and calculations alike. The stereo Auto\r\n" +
-                "delay tunes it with the left side and reports the right\r\n" +
-                "junction it pins.");
-            toolTip.SetToolTip(
-                channel.Control.MeasuredPolarityLabel,
-                "Acoustic polarity read from the measured IR\r\n" +
-                "(the sign of its first significant excursion).\r\n" +
-                "Normal — the driver pushes toward the mic first.\r\n" +
-                "Inverted — it pulls first (wired in reverse).\r\n" +
-                "Unknown — no source selected.\r\n" +
-                "Independent of the Invert switch.");
+            ControlFor(channel).ApplyTooltips(toolTip);
         }
     }
 
@@ -1768,83 +1590,9 @@ public partial class VirtualCrossoverPanel : UserControl
         redrawTask = null;
     }
 
-    private sealed record ProcessedChannel(
-        ChannelRuntime Channel,
-        Complex[] ImpulseResponse,
-        int PeakIndex,
-        OxyColor Color);
-
     private sealed record ProcessedRender(
         long Revision,
         List<ProcessedChannel> Channels);
-
-    private List<ProcessedChannel> ProcessChannelsForAlignment(
-        IReadOnlyDictionary<ChannelRuntime, AlignmentOverride> alignmentOverrides)
-    {
-        using var _ = AppProfiler.Zone("VirtualDSP.ProcessChannels");
-        var processed = new List<ProcessedChannel>();
-        for (int i = 0; i < channels.Count; i++)
-        {
-            ChannelRuntime channel = channels[i];
-            // A muted channel drops out of everything downstream: the plots, the
-            // sum, the loss, the metric, Auto delay, and Capture to overlay.
-            if (!channel.Settings.Enabled ||
-                channel.TransferImpulseResponse is not { } ir)
-            {
-                continue;
-            }
-
-            DspChannelChain chain;
-            using (AppProfiler.Zone("VirtualDSP.ProcessChannels.BuildChain"))
-            {
-                if (channel.Settings.Bypass)
-                {
-                    // Bypass feeds the raw measured signal: the identity chain (no
-                    // gain, delay, polarity, crossover or PEQ), so even Auto delay's
-                    // alignment overrides do not move it.
-                    chain = DspChannelChain.Identity;
-                }
-                else
-                {
-                    chain = channel.Settings.ToChain();
-                    AlignmentOverride alignment = alignmentOverrides.TryGetValue(
-                        channel,
-                        out AlignmentOverride value)
-                        ? value
-                        : new AlignmentOverride(0, false);
-                    chain = chain with
-                    {
-                        DelayMs = alignment.DelayMs,
-                        InvertPolarity = alignment.InvertPolarity
-                    };
-                }
-            }
-
-            Complex[] result;
-            using (AppProfiler.Zone("VirtualDSP.ProcessChannels.ApplyChain"))
-            {
-                result = VirtualCrossoverAnalysis.ApplyChain(
-                    ir, chain, channel.SampleRate);
-            }
-
-            int peakIndex;
-            using (AppProfiler.Zone("VirtualDSP.ProcessChannels.FindPeak"))
-            {
-                peakIndex = VirtualCrossoverAnalysis.FindPeakIndex(result);
-            }
-
-            using (AppProfiler.Zone("VirtualDSP.ProcessChannels.AddResult"))
-            {
-                processed.Add(new ProcessedChannel(
-                    channel,
-                    result,
-                    peakIndex,
-                    ChannelColors[i]));
-            }
-        }
-
-        return processed;
-    }
 
     // Captures the active channel set on the UI thread. SourceSnapshot owns a
     // write-once copy made when the measurement was loaded, and ChannelSnapshot
@@ -1855,11 +1603,11 @@ public partial class VirtualCrossoverPanel : UserControl
         using var _ = AppProfiler.Zone("VirtualDSP.ProcessChannelsAsync");
         long revision = processingCoordinator.CurrentRevision;
         var snapshots = new List<VirtualCrossoverChannelSnapshot>();
-        var bindings = new Dictionary<int, (ChannelRuntime Channel, OxyColor Color)>();
+        var bindings = new Dictionary<int, (VirtualCrossoverChannel Channel, OxyColor Color)>();
         for (int i = 0; i < channels.Count; i++)
         {
-            ChannelRuntime channel = channels[i];
-            ChannelSideState state = channel.SideState(channel.ActiveRight);
+            VirtualCrossoverChannel channel = channels[i];
+            VirtualCrossoverChannelState state = channel.SideState(channel.ActiveRight);
             if (!channel.Settings.Enabled ||
                 state.ProcessingSource is not { } source)
             {
@@ -1891,7 +1639,7 @@ public partial class VirtualCrossoverPanel : UserControl
         var processed = new List<ProcessedChannel>(render.Channels.Count);
         foreach (VirtualCrossoverProcessedChannel result in render.Channels)
         {
-            (ChannelRuntime channel, OxyColor color) = bindings[result.Id];
+            (VirtualCrossoverChannel channel, OxyColor color) = bindings[result.Id];
             processed.Add(new ProcessedChannel(
                 channel,
                 result.ImpulseResponse,
@@ -1904,11 +1652,6 @@ public partial class VirtualCrossoverPanel : UserControl
     private async Task RedrawMainPlotAsync()
     {
         using var _ = AppProfiler.Zone("VirtualDSP.RedrawMainPlot");
-        PlotModel? model = mainPlotView.Model;
-        if (model == null)
-        {
-            return;
-        }
 
         // The heavy ApplyChain FFTs run off the UI thread; the existing curves stay
         // on screen until the new data is ready, so there is no clear-then-fill
@@ -1929,59 +1672,65 @@ public partial class VirtualCrossoverPanel : UserControl
         // processed responses; their caches make an unchanged configuration
         // free. Same staleness rule as above.
         List<VirtualCrossoverMetric.StereoDelta> stereoDeltas =
-            await ComputeStereoDeltasAsync(revision);
+            await metrics.ComputeStereoDeltasAsync(channels, revision);
         AnalysisCurve? oppositeSum =
             checkBoxShowSum.Checked && radioViewMagnitude.Checked
-                ? await ComputeOppositeSumCurveAsync(revision)
+                ? await metrics.ComputeOppositeSumCurveAsync(
+                    channels, !project.ActiveSideRight, revision)
                 : null;
         if (mainPlotView.IsDisposed || !processingCoordinator.IsCurrent(revision))
         {
             return;
         }
 
-        RemoveCurveSeries(model);
-        // While a session loads, interim redraws (the calibration combo refresh,
-        // etc.) run before the sources resolve, so processed is empty then; keep
-        // the loading note instead of flashing the "no sources" hint.
-        hintAnnotation.Text = loadingProject
-            ? LoadingHint
-            : processed.Count == 0 ? NoSourcesHint : string.Empty;
-
         // The processed magnitudes and the complex sum feed both the drawn
         // curves and the sum-loss metric, so they are built once here.
         (List<AnalysisCurve>? magnitudes, AnalysisCurve? sumCurve) =
-            BuildMetricCurves(processed);
+            metrics.BuildCurves(processed);
 
         UpdateMetric(processed, magnitudes, sumCurve, stereoDeltas);
         UpdateCrossoverWarning(processed);
 
-        if (processed.Count > 0)
-        {
-            if (radioViewPhase.Checked)
-            {
-                DrawPhaseCurves(model, processed);
-            }
-            else if (radioViewImpulse.Checked)
-            {
-                DrawImpulseCurves(model, processed);
-            }
-            else
-            {
-                DrawMagnitudeCurves(model, processed, magnitudes, sumCurve, oppositeSum);
-            }
-        }
-
-        plotLabels.Refresh();
-        model.InvalidatePlot(true);
+        acousticPlot.Draw(BuildAcousticRender(processed, magnitudes, sumCurve, oppositeSum));
     }
 
-    private void DrawMagnitudeCurves(
-        PlotModel model,
+    // Assembles the ready-to-draw frame for the active view. While a session
+    // loads, interim redraws (the calibration combo refresh, etc.) run before the
+    // sources resolve, so processed is empty then; keep the loading note instead
+    // of flashing the "no sources" hint.
+    private AcousticRender BuildAcousticRender(
         List<ProcessedChannel> processed,
         List<AnalysisCurve>? magnitudes,
         AnalysisCurve? sumCurve,
-        AnalysisCurve? oppositeSumCurve = null)
+        AnalysisCurve? oppositeSum)
     {
+        string hint = loadingProject
+            ? LoadingHint
+            : processed.Count == 0 ? NoSourcesHint : string.Empty;
+        if (processed.Count == 0)
+        {
+            return new AcousticRender(hint, [], null);
+        }
+        if (radioViewPhase.Checked)
+        {
+            return new AcousticRender(hint, BuildPhaseCurves(processed), null);
+        }
+        if (radioViewImpulse.Checked)
+        {
+            return new AcousticRender(hint, [], BuildImpulseRender(processed));
+        }
+
+        return new AcousticRender(
+            hint, BuildMagnitudeCurves(processed, magnitudes, sumCurve, oppositeSum), null);
+    }
+
+    private List<AcousticCurve> BuildMagnitudeCurves(
+        List<ProcessedChannel> processed,
+        List<AnalysisCurve>? magnitudes,
+        AnalysisCurve? sumCurve,
+        AnalysisCurve? oppositeSumCurve)
+    {
+        var curves = new List<AcousticCurve>();
         for (int i = 0; i < processed.Count; i++)
         {
             ProcessedChannel item = processed[i];
@@ -1991,13 +1740,12 @@ public partial class VirtualCrossoverPanel : UserControl
                     item.Channel.TransferImpulseResponse!,
                     item.Channel.TransferPeakIndex,
                     item.Channel.SampleRate);
-                AddCurve(
-                    model,
-                    $"{item.Channel.Control.ChannelName} raw",
+                curves.Add(new AcousticCurve(
+                    $"{item.Channel.Name} raw",
                     raw.Points,
                     OxyColor.FromAColor(90, item.Color),
                     1.2,
-                    LineStyle.Solid);
+                    LineStyle.Solid));
             }
 
             if (item.Channel.Settings.ShowProcessedCurve)
@@ -2006,35 +1754,30 @@ public partial class VirtualCrossoverPanel : UserControl
                     ? magnitudes[i]
                     : BuildMagnitudeCurve(
                         item.ImpulseResponse, item.PeakIndex, item.Channel.SampleRate);
-                AddCurve(
-                    model,
-                    item.Channel.Control.ChannelName,
-                    curve.Points,
-                    item.Color,
-                    1.8,
-                    LineStyle.Solid);
+                curves.Add(new AcousticCurve(
+                    item.Channel.Name, curve.Points, item.Color, 1.8, LineStyle.Solid));
             }
         }
 
         if (magnitudes == null || sumCurve == null)
         {
-            return;
+            return curves;
         }
 
         if (checkBoxShowSum.Checked)
         {
-            AddCurve(model, "Sum", sumCurve.Points, SumColor, 2.4, LineStyle.Solid);
+            curves.Add(new AcousticCurve(
+                "Sum", sumCurve.Points, SumColor, 2.4, LineStyle.Solid));
             if (oppositeSumCurve != null)
             {
                 // The other side's sum, dashed and translucent: the two tunes
                 // compare at a glance without flipping the L/R selector.
-                AddCurve(
-                    model,
+                curves.Add(new AcousticCurve(
                     $"Sum {(project.ActiveSideRight ? "L" : "R")}",
                     oppositeSumCurve.Points,
                     OxyColor.FromAColor(110, SumColor),
                     1.8,
-                    LineStyle.Dash);
+                    LineStyle.Dash));
             }
         }
 
@@ -2047,19 +1790,14 @@ public partial class VirtualCrossoverPanel : UserControl
             List<SignalPoint> points = VirtualCrossoverAnalysis.SumLossCurve(
                 sumCurve.Points,
                 magnitudes.Select(curve => curve.Points).ToList());
-            AddCurve(model, "Sum loss", points, LossColor, 1.8, LineStyle.Dash);
+            curves.Add(new AcousticCurve(
+                "Sum loss", points, LossColor, 1.8, LineStyle.Dash));
         }
+
+        return curves;
     }
 
     // ------------------------------------------------- metric and auto delay
-
-    // The frequency window the metric and Auto delay operate in: around the
-    // corner frequencies the channels actually use (one octave to each side),
-    // or a broad midband default when no crossover is configured yet.
-    private static (double MinHz, double MaxHz) GetCrossoverWindow(
-        List<ProcessedChannel> processed) =>
-        VirtualCrossoverJunctions.GetCrossoverWindow(
-            processed.Select(item => item.Channel.Settings));
 
     private void UpdateMetric(
         List<ProcessedChannel> processed,
@@ -2071,9 +1809,9 @@ public partial class VirtualCrossoverPanel : UserControl
         // analysis modes), as a compact per-junction column with the full banded
         // breakdown on hover. The stereo Δ block (final L−R envelope arrival
         // difference per pair) appends below the sum-loss column.
-        List<VirtualCrossoverMetric.Entry> entries = BuildMetricEntries(processed, magnitudes, sumCurve);
-        string compact = FormatMetricCompact(entries);
-        string detail = entries.Count > 0 ? FormatMetricDetail(entries) : string.Empty;
+        List<VirtualCrossoverMetric.Entry> entries = metrics.BuildEntries(processed, magnitudes, sumCurve);
+        string compact = VirtualCrossoverMetric.FormatCompact(entries);
+        string detail = entries.Count > 0 ? VirtualCrossoverMetric.FormatDetail(entries) : string.Empty;
         if (stereoDeltas is { Count: > 0 })
         {
             compact += "\r\n\r\n" +
@@ -2084,427 +1822,6 @@ public partial class VirtualCrossoverPanel : UserControl
 
         MetricChanged?.Invoke(compact, detail);
     }
-
-    // One channel side snapshotted on the UI thread for background processing
-    // (the stereo Δ read-out and the opposite-side sum): the background pass
-    // reads nothing mutable. Processed responses come exclusively from the
-    // coordinator cache; only the cheaper arrival analysis is cached per side.
-    private sealed class SideProcessJob
-    {
-        public required int Id { get; init; }
-        public required ProcessingSlotId SlotId { get; init; }
-        public required ChannelSideState State { get; init; }
-        public required VirtualCrossoverSourceSnapshot Source { get; init; }
-        public required int SampleRate { get; init; }
-        public required DspChannelChain Chain { get; init; }
-        public Complex[]? ProcessedIr { get; set; }
-        public int ProcessedPeak { get; set; }
-        public TimeAlignmentAnalysisResult? Arrival { get; set; }
-        public double? LevelDb { get; set; }
-        public bool ArrivalFromCache { get; set; }
-    }
-
-    private sealed record StereoDeltaJob(
-        string Channel,
-        double LowHz,
-        double HighHz,
-        SideProcessJob Left,
-        SideProcessJob Right,
-        bool Mono = false)
-    {
-        // A mono job's Left and Right are the same instance; iterate the left
-        // slot alone so the shared response is processed once.
-        public IEnumerable<SideProcessJob> Sides =>
-            Mono ? new[] { Left } : new[] { Left, Right };
-    }
-
-    /// <summary>
-    /// The final per-pair L−R timing: both sides' fully processed responses
-    /// (current delays included) get their band-limited envelope arrival read
-    /// in the pair's shared band, and the difference (positive: right leads —
-    /// the scene-offset convention) feeds the metric read-out. A mono channel
-    /// (the shared sub) has one response, so it reports that single arrival in
-    /// its own band with "—" for the right side and the delta; a stereo pair
-    /// needs both sides present and unbypassed. Heavy processed-response work
-    /// runs through the coordinator, sharing its cache and stale-result guard
-    /// with the main redraw.
-    /// </summary>
-    private async Task<List<VirtualCrossoverMetric.StereoDelta>> ComputeStereoDeltasAsync(
-        long revision)
-    {
-        var jobs = new List<StereoDeltaJob>();
-        int nextId = 0;
-        for (int channelIndex = 0; channelIndex < channels.Count; channelIndex++)
-        {
-            ChannelRuntime channel = channels[channelIndex];
-            bool mono = channel.Pair.Mono;
-
-            VirtualCrossoverChannelSettings leftSettings = channel.SideSettings(false);
-            ChannelSideState leftState = channel.PhysicalSideState(false);
-            if (!leftSettings.Enabled || leftSettings.Bypass ||
-                leftState.ProcessingSource is not { } leftSource)
-            {
-                continue;
-            }
-
-            VirtualCrossoverChannelSettings rightSettings = channel.SideSettings(true);
-            ChannelSideState rightState = channel.PhysicalSideState(true);
-            if (!mono &&
-                (!rightSettings.Enabled || rightSettings.Bypass ||
-                    rightState.ProcessingSource is not { }))
-            {
-                continue;
-            }
-
-            (double leftLow, double leftHigh) =
-                VirtualCrossoverJunctions.GetChannelBand(leftSettings);
-            double lowHz, highHz;
-            if (mono)
-            {
-                lowHz = leftLow;
-                highHz = leftHigh;
-            }
-            else
-            {
-                (double rightLow, double rightHigh) =
-                    VirtualCrossoverJunctions.GetChannelBand(rightSettings);
-                lowHz = Math.Max(leftLow, rightLow);
-                highHz = Math.Min(leftHigh, rightHigh);
-            }
-            if (highHz < lowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
-            {
-                continue;
-            }
-
-            SideProcessJob Snapshot(
-                ChannelSideState state,
-                VirtualCrossoverChannelSettings settings,
-                VirtualCrossoverSourceSnapshot source) =>
-                new()
-                {
-                    Id = nextId++,
-                    SlotId = new ProcessingSlotId(
-                        channelIndex,
-                        !channel.Pair.Mono && ReferenceEquals(
-                            state,
-                            channel.PhysicalSideState(true))),
-                    State = state,
-                    Source = source,
-                    SampleRate = state.SampleRate,
-                    Chain = settings.ToChain()
-                };
-
-            SideProcessJob leftJob = Snapshot(leftState, leftSettings, leftSource);
-            SideProcessJob rightJob = mono
-                ? leftJob
-                : Snapshot(
-                    rightState,
-                    rightSettings,
-                    rightState.ProcessingSource!);
-            jobs.Add(new StereoDeltaJob(
-                channel.Control.ChannelName,
-                lowHz,
-                highHz,
-                leftJob,
-                rightJob,
-                mono));
-        }
-
-        List<SideProcessJob> sides = jobs.SelectMany(job => job.Sides).ToList();
-        if (sides.Count > 0)
-        {
-            VirtualCrossoverRenderResult? render = await processingCoordinator.ProcessAsync(
-                new VirtualCrossoverProcessingSnapshot(
-                    revision,
-                    sides.Select(side => new VirtualCrossoverChannelSnapshot(
-                        side.Id,
-                        side.SlotId,
-                        side.Source,
-                        side.SampleRate,
-                        side.Chain))));
-            if (render == null)
-            {
-                return [];
-            }
-
-            Dictionary<int, SideProcessJob> byId = sides.ToDictionary(side => side.Id);
-            foreach (VirtualCrossoverProcessedChannel processed in render.Channels)
-            {
-                SideProcessJob side = byId[processed.Id];
-                side.ProcessedIr = processed.ImpulseResponse;
-                side.ProcessedPeak = processed.PeakIndex;
-            }
-        }
-
-        foreach (StereoDeltaJob job in jobs)
-        {
-            foreach (SideProcessJob side in job.Sides)
-            {
-                if (side.State.ArrivalCache is { } arrival &&
-                    ReferenceEquals(arrival.ProcessedIr, side.ProcessedIr) &&
-                    arrival.LowHz == job.LowHz && arrival.HighHz == job.HighHz)
-                {
-                    side.Arrival = arrival.Result;
-                    side.LevelDb = arrival.LevelDb;
-                    side.ArrivalFromCache = true;
-                }
-            }
-        }
-
-        bool anyArrivalWork = jobs.Any(job => job.Sides.Any(side => side.Arrival == null));
-        if (anyArrivalWork)
-        {
-            object? arrivalCompleted = await processingCoordinator.RunAuxiliaryAsync(
-                revision,
-                cancellationToken =>
-            {
-                foreach (StereoDeltaJob job in jobs)
-                {
-                    foreach (SideProcessJob side in job.Sides)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        if (side.Arrival == null)
-                        {
-                            side.Arrival =
-                                VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-                                    side.ProcessedIr!, side.SampleRate,
-                                    job.LowHz, job.HighHz);
-                            side.LevelDb = VirtualCrossoverAnalysis.MeasureBandLevelDb(
-                                side.ProcessedIr!, side.SampleRate,
-                                job.LowHz, job.HighHz);
-                        }
-                    }
-                }
-                return new object();
-            });
-            if (arrivalCompleted == null)
-            {
-                return [];
-            }
-
-            foreach (StereoDeltaJob job in jobs)
-            {
-                foreach (SideProcessJob side in job.Sides)
-                {
-                    if (!side.ArrivalFromCache)
-                    {
-                        side.State.ArrivalCache =
-                            (side.ProcessedIr!, job.LowHz, job.HighHz,
-                                side.Arrival!.Value, side.LevelDb);
-                    }
-                }
-            }
-        }
-
-        static bool Reliable(TimeAlignmentAnalysisResult arrival) =>
-            arrival.IsValid &&
-            arrival.SignalToNoiseDecibels >= AutoAlignmentEngine.MinimumArrivalSnrDb;
-
-        return jobs
-            .Select(job =>
-            {
-                TimeAlignmentAnalysisResult left = job.Left.Arrival!.Value;
-                bool leftReliable = Reliable(left);
-                double? leftMs = leftReliable
-                    ? left.FirstArrivalDelayMilliseconds
-                    : null;
-                if (job.Mono)
-                {
-                    return new VirtualCrossoverMetric.StereoDelta(
-                        job.Channel, leftMs, null, job.LowHz, job.HighHz, null);
-                }
-
-                TimeAlignmentAnalysisResult right = job.Right.Arrival!.Value;
-                bool rightReliable = Reliable(right);
-                return new VirtualCrossoverMetric.StereoDelta(
-                    job.Channel,
-                    leftMs,
-                    rightReliable ? right.FirstArrivalDelayMilliseconds : null,
-                    job.LowHz,
-                    job.HighHz,
-                    leftReliable && rightReliable &&
-                    job.Left.LevelDb is { } leftLevel &&
-                    job.Right.LevelDb is { } rightLevel
-                        ? leftLevel - rightLevel
-                        : null);
-            })
-            .ToList();
-    }
-
-    /// <summary>
-    /// The complex-sum magnitude of the OPPOSITE side (dashed and translucent
-    /// on the plot), so the two sides' tunes compare at a glance without
-    /// flipping back and forth. Mono channels contribute their single response
-    /// to both sides' sums, exactly as they do physically. Null when the
-    /// opposite side has fewer than two participating channels — a "sum" of
-    /// one driver is just that driver. Uses the coordinator cache, so it shares
-    /// processed responses and staleness handling with the main redraw.
-    /// </summary>
-    private async Task<AnalysisCurve?> ComputeOppositeSumCurveAsync(long revision)
-    {
-        bool oppositeRight = !project.ActiveSideRight;
-        var jobs = new List<SideProcessJob>();
-        int nextId = 0;
-        for (int channelIndex = 0; channelIndex < channels.Count; channelIndex++)
-        {
-            ChannelRuntime channel = channels[channelIndex];
-            VirtualCrossoverChannelSettings settings =
-                channel.SideSettings(oppositeRight);
-            ChannelSideState state = channel.SideState(oppositeRight);
-            if (!settings.Enabled ||
-                state.ProcessingSource is not { } source)
-            {
-                continue;
-            }
-
-            DspChannelChain chain = settings.Bypass
-                ? DspChannelChain.Identity
-                : settings.ToChain();
-            jobs.Add(new SideProcessJob
-            {
-                Id = nextId++,
-                SlotId = new ProcessingSlotId(
-                    channelIndex,
-                    !channel.Pair.Mono && oppositeRight),
-                State = state,
-                Source = source,
-                SampleRate = state.SampleRate,
-                Chain = chain
-            });
-        }
-
-        if (jobs.Count < 2)
-        {
-            return null;
-        }
-
-        VirtualCrossoverRenderResult? render = await processingCoordinator.ProcessAsync(
-            new VirtualCrossoverProcessingSnapshot(
-                revision,
-                jobs.Select(side => new VirtualCrossoverChannelSnapshot(
-                    side.Id,
-                    side.SlotId,
-                    side.Source,
-                    side.SampleRate,
-                    side.Chain))));
-        if (render == null)
-        {
-            return null;
-        }
-
-        Dictionary<int, SideProcessJob> byId = jobs.ToDictionary(side => side.Id);
-        foreach (VirtualCrossoverProcessedChannel processed in render.Channels)
-        {
-            SideProcessJob side = byId[processed.Id];
-            side.ProcessedIr = processed.ImpulseResponse;
-            side.ProcessedPeak = processed.PeakIndex;
-        }
-
-        Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
-            jobs.Select(side => side.ProcessedIr!).ToList());
-        int anchor = jobs.Min(side => side.ProcessedPeak);
-        return BuildMagnitudeCurve(sum, anchor, jobs[0].SampleRate);
-    }
-
-    // The magnitude curves and complex sum the metric reads, built the same way
-    // for the on-screen redraw and for a synchronous read (e.g. the Auto delay
-    // log) so the two never disagree. Fewer than two channels yield no metric.
-    private (List<AnalysisCurve>? Magnitudes, AnalysisCurve? Sum) BuildMetricCurves(
-        List<ProcessedChannel> processed)
-    {
-        if (processed.Count < 2)
-        {
-            return (null, null);
-        }
-
-        // Every curve — the channels AND the sum — shares one window anchor (the
-        // earliest arrival): with per-channel anchors the gates capture slightly
-        // different room content and the loss can poke above its 0 dB ceiling.
-        // The summed envelope peak can sit between the arrivals or vanish under
-        // cancellation, so the anchor is the earliest arrival, not the sum peak.
-        int anchor = processed.Min(item => item.PeakIndex);
-        // One windowed FFT + resample per channel; GetPrimarySpectrum allocates
-        // its own buffers and reads only the (redraw-stable) options and
-        // calibration, so the channels' spectra compute across cores. AsOrdered
-        // keeps the result aligned with the channel list.
-        List<AnalysisCurve> magnitudes = processed
-            .AsParallel()
-            .AsOrdered()
-            .Select(item => BuildMagnitudeCurve(
-                item.ImpulseResponse, anchor, item.Channel.SampleRate))
-            .ToList();
-        Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
-            processed.Select(item => item.ImpulseResponse).ToList());
-        AnalysisCurve sumCurve = BuildMagnitudeCurve(
-            sum, anchor, processed[0].Channel.SampleRate);
-        return (magnitudes, sumCurve);
-    }
-
-    // Builds the sum-loss read-outs for a processed set without touching any
-    // control, so they can feed the label, its tooltip, and the Auto delay log
-    // from one computation. Empty when there is no metric (fewer than two channels).
-    private List<VirtualCrossoverMetric.Entry> BuildMetricEntries(
-        List<ProcessedChannel> processed,
-        List<AnalysisCurve>? magnitudes,
-        AnalysisCurve? sumCurve)
-    {
-        var entries = new List<VirtualCrossoverMetric.Entry>();
-        if (magnitudes == null || sumCurve == null)
-        {
-            return entries;
-        }
-
-        List<IReadOnlyList<SignalPoint>> channelPoints = magnitudes
-            .Select(curve => (IReadOnlyList<SignalPoint>)curve.Points)
-            .ToList();
-
-        // Per-junction read-outs first, so an improvement at one crossover is
-        // not averaged away by the other. Each junction reads the full sum
-        // inside its own pair band; the out-of-pair channels are filtered so
-        // far down there that their contribution is negligible.
-        foreach (AdjacentPair pair in GetAdjacentPairs(OrderByBand(processed)))
-        {
-            double? pairLoss = VirtualCrossoverAnalysis.AverageSumLossDb(
-                sumCurve.Points, channelPoints, pair.BandLowHz, pair.BandHighHz);
-            double? pairDip = VirtualCrossoverAnalysis.MinimumSumLossDb(
-                sumCurve.Points, channelPoints, pair.BandLowHz, pair.BandHighHz);
-            if (pairLoss.HasValue)
-            {
-                entries.Add(new VirtualCrossoverMetric.Entry(
-                    $"{pair.Lower.Channel.Control.ChannelName}/" +
-                    $"{pair.Upper.Channel.Control.ChannelName}",
-                    pairLoss.Value,
-                    pairDip,
-                    pair.BandLowHz,
-                    pair.BandHighHz,
-                    IsTotal: false));
-            }
-        }
-
-        (double minHz, double maxHz) = GetCrossoverWindow(processed);
-        double? loss = VirtualCrossoverAnalysis.AverageSumLossDb(
-            sumCurve.Points, channelPoints, minHz, maxHz);
-        double? dip = VirtualCrossoverAnalysis.MinimumSumLossDb(
-            sumCurve.Points, channelPoints, minHz, maxHz);
-        if (loss.HasValue)
-        {
-            entries.Add(new VirtualCrossoverMetric.Entry(
-                "total", loss.Value, dip, minHz, maxHz, IsTotal: true));
-        }
-
-        return entries;
-    }
-
-    // The metric text renderings live in VirtualCrossoverMetric, where they are
-    // unit-tested.
-    private static string FormatMetricLabel(IReadOnlyList<VirtualCrossoverMetric.Entry> entries) =>
-        VirtualCrossoverMetric.FormatLabel(entries);
-
-    private static string FormatMetricCompact(IReadOnlyList<VirtualCrossoverMetric.Entry> entries) =>
-        VirtualCrossoverMetric.FormatCompact(entries);
-
-    private static string FormatMetricDetail(IReadOnlyList<VirtualCrossoverMetric.Entry> entries) =>
-        VirtualCrossoverMetric.FormatDetail(entries);
 
     // The spread of alignment delays, above which the setup is flagged. A driver
     // whose crossover has pathological group delay (a narrow or steep low-
@@ -2542,7 +1859,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        string name = latest.Channel.Control.ChannelName;
+        string name = latest.Channel.Name;
         labelCrossoverWarning.Text =
             $"⚠ {name} lags the others by ~{spread:0} ms — check its crossover.";
         toolTip.SetToolTip(
@@ -2566,9 +1883,9 @@ public partial class VirtualCrossoverPanel : UserControl
         // sides resolved (the highest such pair becomes the L/R bridge) and
         // the left side can hold its own walk. Otherwise the classic
         // single-side run on whatever side is displayed.
-        (List<SideAlignmentChannel> leftSide, List<SideAlignmentChannel> rightSide) =
+        (List<VirtualCrossoverSideAlignmentChannel> leftSide, List<VirtualCrossoverSideAlignmentChannel> rightSide) =
             CollectStereoSides();
-        SideAlignmentChannel? bridgeRight = rightSide
+        VirtualCrossoverSideAlignmentChannel? bridgeRight = rightSide
             .Where(item => item.RightSide &&
                 leftSide.Any(left =>
                     left.Runtime == item.Runtime && !left.RightSide))
@@ -2580,9 +1897,16 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        var alignment = new Dictionary<ChannelRuntime, AlignmentOverride>();
-        List<ProcessedChannel> processed = ProcessChannelsForAlignment(alignment);
-        if (processed.Count < 2)
+        var alignment = new Dictionary<VirtualCrossoverChannel, AlignmentOverride>();
+        // Cheap participant snapshot: enabled channels with a resolved
+        // measurement. No DSP runs here — the shared crop and every ApplyChain
+        // happen later, off the UI thread, inside ComputeAutoAlignment's
+        // AlignmentReprocessor.
+        List<VirtualCrossoverChannel> participants = channels
+            .Where(channel =>
+                channel.Settings.Enabled && channel.TransferImpulseResponse != null)
+            .ToList();
+        if (participants.Count < 2)
         {
             System.Media.SystemSounds.Beep.Play();
             return;
@@ -2594,8 +1918,8 @@ public partial class VirtualCrossoverPanel : UserControl
         // or the reference) and receive a delay that bypass silently ignores
         // now and applies later, once bypass is switched off. Refuse the run
         // instead of computing an alignment that is wrong on both counts.
-        List<ProcessedChannel> bypassed = processed
-            .Where(item => item.Channel.Settings.Bypass)
+        List<VirtualCrossoverChannel> bypassed = participants
+            .Where(channel => channel.Settings.Bypass)
             .ToList();
         if (bypassed.Count > 0)
         {
@@ -2603,8 +1927,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 "Auto delay cannot run with bypassed channels.",
                 "Bypass feeds the raw measured signal, so the computed delays " +
                 "and polarities would not apply to: " +
-                string.Join(", ", bypassed.Select(
-                    item => item.Channel.Control.ChannelName)) +
+                string.Join(", ", bypassed.Select(channel => channel.Name)) +
                 ".\r\n\r\nDisable Bypass on every participating channel " +
                 "(or mute the channel to exclude it) and run Auto delay again.");
             return;
@@ -2613,8 +1936,8 @@ public partial class VirtualCrossoverPanel : UserControl
         // Without crossovers the search falls back to a broad midband window and
         // the result will shift once the filters are configured — the alignment
         // only matters (and is only well-defined) in the overlap region.
-        bool anyCrossover = processed.Any(
-            item => item.Channel.Settings.CrossoverKind != CrossoverKind.Off);
+        bool anyCrossover = participants.Any(
+            channel => channel.Settings.CrossoverKind != CrossoverKind.Off);
         if (!anyCrossover)
         {
             DialogResult answer = MessageBox.Show(
@@ -2636,7 +1959,8 @@ public partial class VirtualCrossoverPanel : UserControl
             }
         }
 
-        (double minHz, double maxHz) = GetCrossoverWindow(processed);
+        (double minHz, double maxHz) = VirtualCrossoverJunctions.GetCrossoverWindow(
+            participants.Select(channel => channel.Settings));
         var log = new System.Text.StringBuilder();
         log.AppendLine($"Auto delay {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         log.AppendLine($"Crossover window: {minHz:0} - {maxHz:0} Hz");
@@ -2651,7 +1975,7 @@ public partial class VirtualCrossoverPanel : UserControl
         SetAutoDelayBusy(true);
         try
         {
-            await Task.Run(() => ComputeAutoAlignment(processed, alignment, log));
+            await Task.Run(() => ComputeAutoAlignment(participants, alignment, log));
             // The panel (or its form) may have been closed during the compute;
             // applying results would then touch disposed controls.
             if (IsDisposed || !IsHandleCreated)
@@ -2659,7 +1983,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 return;
             }
 
-            await ApplyAlignmentResultAsync(processed, alignment, log);
+            await ApplyAlignmentResultAsync(participants, alignment, log);
         }
         catch (Exception exception)
         {
@@ -2702,9 +2026,9 @@ public partial class VirtualCrossoverPanel : UserControl
         buttonCopyLeftToRight.Enabled = !busy;
         buttonCopyRightToLeft.Enabled = !busy;
         UpdateChannelButtons();
-        foreach (ChannelRuntime channel in channels)
+        foreach (VirtualCrossoverChannel channel in channels)
         {
-            channel.Control.Enabled = !busy;
+            ControlFor(channel).Enabled = !busy;
         }
 
         Cursor = busy ? Cursors.WaitCursor : Cursors.Default;
@@ -2718,20 +2042,20 @@ public partial class VirtualCrossoverPanel : UserControl
     // redraws, and closes the log with this run's outcome. UI-thread work: it
     // touches controls and the plots, so it stays out of the background compute.
     private async Task ApplyAlignmentResultAsync(
-        List<ProcessedChannel> processed,
-        Dictionary<ChannelRuntime, AlignmentOverride> alignment,
+        List<VirtualCrossoverChannel> participants,
+        Dictionary<VirtualCrossoverChannel, AlignmentOverride> alignment,
         System.Text.StringBuilder log)
     {
-        foreach (ProcessedChannel item in processed)
+        foreach (VirtualCrossoverChannel channel in participants)
         {
-            AlignmentOverride result = alignment.GetValueOrDefault(item.Channel);
-            item.Channel.Settings.DelayMs = Math.Round(result.DelayMs, 2);
-            item.Channel.Settings.InvertPolarity = result.InvertPolarity;
-            ApplySettingsToControl(item.Channel);
+            AlignmentOverride result = alignment.GetValueOrDefault(channel);
+            channel.Settings.DelayMs = Math.Round(result.DelayMs, 2);
+            channel.Settings.InvertPolarity = result.InvertPolarity;
+            ApplySettingsToControl(channel);
             log.AppendLine(
-                $"Result {item.Channel.Control.ChannelName}: " +
-                $"delay {item.Channel.Settings.DelayMs:0.00} ms, " +
-                $"invert {(item.Channel.Settings.InvertPolarity ? "yes" : "no")}");
+                $"Result {channel.Name}: " +
+                $"delay {channel.Settings.DelayMs:0.00} ms, " +
+                $"invert {(channel.Settings.InvertPolarity ? "yes" : "no")}");
         }
 
         ScheduleSave();
@@ -2742,114 +2066,71 @@ public partial class VirtualCrossoverPanel : UserControl
         ProcessedRender? render = await ProcessChannelsAsync();
         List<ProcessedChannel> outcome = render?.Channels ?? [];
         (List<AnalysisCurve>? outcomeMagnitudes, AnalysisCurve? outcomeSum) =
-            BuildMetricCurves(outcome);
-        log.AppendLine(FormatMetricDetail(
-            BuildMetricEntries(outcome, outcomeMagnitudes, outcomeSum)));
+            metrics.BuildCurves(outcome);
+        log.AppendLine(VirtualCrossoverMetric.FormatDetail(
+            metrics.BuildEntries(outcome, outcomeMagnitudes, outcomeSum)));
         WriteAlignmentLog(log.ToString());
     }
 
     // Bridges the panel's channel model to the dsp AutoAlignmentEngine (where
     // the FFT-heavy alignment stages live, unit-tested): snapshots + junctions
-    // in, an override map out. Runs on a background thread; the reprocess
-    // delegate owns the thread-confined FFT cache — between consecutive
-    // junction searches only one or two channels change their overrides, so
-    // the other channels' processed IRs are reused instead of re-FFT'd, and
-    // the shared UI-thread cache is never touched.
+    // in, an override map out. Runs on a background thread; the AlignmentReprocessor
+    // owns the run-scoped FFT cache, so between consecutive junction searches only
+    // the one or two channels that changed their overrides are re-FFT'd, and the
+    // shared UI-thread coordinator cache is never touched.
     private void ComputeAutoAlignment(
-        List<ProcessedChannel> processed,
-        Dictionary<ChannelRuntime, AlignmentOverride> alignment,
+        List<VirtualCrossoverChannel> participants,
+        Dictionary<VirtualCrossoverChannel, AlignmentOverride> alignment,
         System.Text.StringBuilder log)
     {
-        List<ProcessedChannel> byBand = OrderByBand(processed);
-        List<AdjacentPair> pairs = GetAdjacentPairs(byBand);
+        // Order along the spectrum by band center; adjacent drivers form the
+        // junctions the search walks (the same ordering and pair bands the metric
+        // read-out reads, straight from VirtualCrossoverJunctions).
+        List<VirtualCrossoverChannel> ordered = participants
+            .OrderBy(channel => VirtualCrossoverJunctions.BandCenterHz(channel.Settings))
+            .ToList();
 
-        // Same shared direct-sound crop + parallel cache-miss processing as
-        // the stereo run: identical final delays at a fraction of the FFT
-        // cost, because every search stage reads only the gated direct sound.
-        List<ChannelRuntime> ordered = byBand.Select(item => item.Channel).ToList();
-        Complex[][] croppedIrs = VirtualCrossoverAnalysis.CropSharedDirectSoundWindow(
-            ordered.Select(channel => channel.TransferImpulseResponse!).ToList(),
+        // Same shared direct-sound crop + parallel cache-miss processing as the
+        // stereo run: identical final delays at a fraction of the FFT cost,
+        // because every search stage reads only the gated direct sound. The crop
+        // and every ApplyChain first run HERE, on the background thread.
+        var reprocessor = new AlignmentReprocessor(
+            ordered.Select(channel => new AlignmentReprocessInput(
+                channel,
+                channel.TransferImpulseResponse!,
+                channel.SampleRate,
+                channel.Settings.ToChain())).ToList(),
             AutoDelaySearchCropLength,
             AutoDelaySearchCropPrePeakSamples);
-        var searchIrs = new Dictionary<ChannelRuntime, Complex[]>();
-        for (int i = 0; i < ordered.Count; i++)
-        {
-            searchIrs[ordered[i]] = croppedIrs[i];
-        }
 
-        var searchCache = new Dictionary<ChannelRuntime, AlignmentProcessingCache>();
-        IReadOnlyList<AlignmentSnapshot> Reprocess(
-            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides)
-        {
-            var results = new AlignmentProcessingCache[ordered.Count];
-            var keys = new AlignmentProcessingCacheKey[ordered.Count];
-            var chains = new DspChannelChain[ordered.Count];
-            var missing = new List<int>();
-            for (int i = 0; i < ordered.Count; i++)
-            {
-                ChannelRuntime channel = ordered[i];
-                AlignmentOverride over = overrides.GetValueOrDefault(channel);
-                chains[i] = channel.Settings.ToChain() with
-                {
-                    DelayMs = over.DelayMs,
-                    InvertPolarity = over.InvertPolarity
-                };
-                keys[i] = new AlignmentProcessingCacheKey(
-                    searchIrs[channel], channel.SampleRate, chains[i]);
-                AlignmentProcessingCache? cached = searchCache.GetValueOrDefault(channel);
-                if (cached?.Key.Equals(keys[i]) == true)
-                {
-                    results[i] = cached;
-                }
-                else
-                {
-                    missing.Add(i);
-                }
-            }
-
-            Parallel.ForEach(missing, i =>
-            {
-                Complex[] result = VirtualCrossoverAnalysis.ApplyChain(
-                    searchIrs[ordered[i]], chains[i], ordered[i].SampleRate);
-                results[i] = new AlignmentProcessingCache(
-                    keys[i], result, VirtualCrossoverAnalysis.FindPeakIndex(result));
-            });
-            foreach (int i in missing)
-            {
-                searchCache[ordered[i]] = results[i];
-            }
-
-            return ordered
-                .Select((channel, i) => new AlignmentSnapshot(
-                    channel, results[i].ImpulseResponse, results[i].PeakIndex))
-                .ToList();
-        }
-
-        IReadOnlyList<AlignmentSnapshot> initial = Reprocess(
+        IReadOnlyList<AlignmentSnapshot> initial = reprocessor.Reprocess(
             new Dictionary<IAlignmentChannel, AlignmentOverride>());
         var snapshots = ordered
             .Select((channel, i) => (channel, snapshot: initial[i]))
             .ToDictionary(item => item.channel, item => item.snapshot);
-        List<AlignmentJunction> junctions = pairs
-            .Select(pair => new AlignmentJunction(
-                snapshots[pair.Lower.Channel],
-                snapshots[pair.Upper.Channel],
-                pair.CrossoverHz,
-                pair.BandLowHz,
-                pair.BandHighHz))
-            .ToList();
+        var junctions = new List<AlignmentJunction>();
+        for (int i = 0; i < ordered.Count - 1; i++)
+        {
+            double pairHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
+                ordered[i].Settings, ordered[i + 1].Settings);
+            (double bandLowHz, double bandHighHz) =
+                VirtualCrossoverJunctions.OverlapBand(pairHz);
+            junctions.Add(new AlignmentJunction(
+                snapshots[ordered[i]], snapshots[ordered[i + 1]],
+                pairHz, bandLowHz, bandHighHz));
+        }
 
         var engineAlignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
         AutoAlignmentEngine.Compute(
             ordered.Select(channel => snapshots[channel]).ToList(),
             junctions,
-            Reprocess,
+            reprocessor.Reprocess,
             engineAlignment,
             log);
 
         foreach ((IAlignmentChannel channel, AlignmentOverride result) in engineAlignment)
         {
-            alignment[(ChannelRuntime)channel] = result;
+            alignment[(VirtualCrossoverChannel)channel] = result;
         }
     }
 
@@ -2865,17 +2146,17 @@ public partial class VirtualCrossoverPanel : UserControl
     // channel side with a resolved measurement. A mono pair contributes ONE
     // instance (its left side), shared by both lists — the engine tunes it in
     // the left pass and treats it as fixed on the right.
-    private (List<SideAlignmentChannel> Left, List<SideAlignmentChannel> Right)
+    private (List<VirtualCrossoverSideAlignmentChannel> Left, List<VirtualCrossoverSideAlignmentChannel> Right)
         CollectStereoSides()
     {
-        var left = new List<SideAlignmentChannel>();
-        var right = new List<SideAlignmentChannel>();
-        foreach (ChannelRuntime channel in channels)
+        var left = new List<VirtualCrossoverSideAlignmentChannel>();
+        var right = new List<VirtualCrossoverSideAlignmentChannel>();
+        foreach (VirtualCrossoverChannel channel in channels)
         {
             if (channel.SideSettings(false).Enabled &&
                 channel.SideState(false).TransferImpulseResponse != null)
             {
-                var side = new SideAlignmentChannel(channel, false);
+                var side = new VirtualCrossoverSideAlignmentChannel(channel, false);
                 left.Add(side);
                 if (channel.Pair.Mono)
                 {
@@ -2887,7 +2168,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 channel.SideSettings(true).Enabled &&
                 channel.SideState(true).TransferImpulseResponse != null)
             {
-                right.Add(new SideAlignmentChannel(channel, true));
+                right.Add(new VirtualCrossoverSideAlignmentChannel(channel, true));
             }
         }
 
@@ -2899,18 +2180,18 @@ public partial class VirtualCrossoverPanel : UserControl
     // cascade itself lives in AutoAlignmentEngine.ComputeStereo (dsp,
     // unit-tested on synthetic systems and real car measurements).
     private async Task AutoAlignStereoAsync(
-        List<SideAlignmentChannel> leftSide,
-        List<SideAlignmentChannel> rightSide,
-        SideAlignmentChannel bridgeRight)
+        List<VirtualCrossoverSideAlignmentChannel> leftSide,
+        List<VirtualCrossoverSideAlignmentChannel> rightSide,
+        VirtualCrossoverSideAlignmentChannel bridgeRight)
     {
-        List<SideAlignmentChannel> union = leftSide.Concat(rightSide)
+        List<VirtualCrossoverSideAlignmentChannel> union = leftSide.Concat(rightSide)
             .Distinct()
             .ToList();
 
         // Same reasoning as the single-side run: a bypassed side processes
         // through the identity chain, so the computed delay would silently not
         // apply — refuse instead of proposing a wrong alignment.
-        List<SideAlignmentChannel> bypassed = union
+        List<VirtualCrossoverSideAlignmentChannel> bypassed = union
             .Where(item => item.Settings.Bypass)
             .ToList();
         if (bypassed.Count > 0)
@@ -2948,7 +2229,7 @@ public partial class VirtualCrossoverPanel : UserControl
             }
         }
 
-        SideAlignmentChannel bridgeLeft = leftSide.First(
+        VirtualCrossoverSideAlignmentChannel bridgeLeft = leftSide.First(
             item => item.Runtime == bridgeRight.Runtime && !item.RightSide);
         // The two sides carry independent crossover settings, so the bridge
         // band is the INTERSECTION of their playing bands: measured in one
@@ -3017,13 +2298,14 @@ public partial class VirtualCrossoverPanel : UserControl
     }
 
     // Bridges the pair/side model to the stereo engine on a background thread,
-    // with the same thread-confined FFT cache idea as the single-side run.
+    // sharing the same AlignmentReprocessor (run-scoped FFT cache) as the
+    // single-side run.
     private void ComputeStereoAlignment(
-        List<SideAlignmentChannel> leftSide,
-        List<SideAlignmentChannel> rightSide,
-        List<SideAlignmentChannel> union,
-        SideAlignmentChannel bridgeLeft,
-        SideAlignmentChannel bridgeRight,
+        List<VirtualCrossoverSideAlignmentChannel> leftSide,
+        List<VirtualCrossoverSideAlignmentChannel> rightSide,
+        List<VirtualCrossoverSideAlignmentChannel> union,
+        VirtualCrossoverSideAlignmentChannel bridgeLeft,
+        VirtualCrossoverSideAlignmentChannel bridgeRight,
         double bridgeBandLowHz,
         double bridgeBandHighHz,
         double sceneOffsetMs,
@@ -3035,82 +2317,21 @@ public partial class VirtualCrossoverPanel : UserControl
         // arrivals, so the final delays are identical to a full-length run
         // (validated on real measurements) while every FFT in the cascade
         // shrinks from the capture length to the crop.
-        Complex[][] croppedIrs = VirtualCrossoverAnalysis.CropSharedDirectSoundWindow(
-            union.Select(side => side.State.TransferImpulseResponse!).ToList(),
+        var reprocessor = new AlignmentReprocessor(
+            union.Select(side => new AlignmentReprocessInput(
+                side,
+                side.State.TransferImpulseResponse!,
+                side.State.SampleRate,
+                side.Settings.ToChain())).ToList(),
             AutoDelaySearchCropLength,
             AutoDelaySearchCropPrePeakSamples);
-        var searchIrs = new Dictionary<SideAlignmentChannel, Complex[]>();
-        for (int i = 0; i < union.Count; i++)
-        {
-            searchIrs[union[i]] = croppedIrs[i];
-        }
 
-        var searchCache = new Dictionary<SideAlignmentChannel, AlignmentProcessingCache>();
-        AlignmentProcessingCache ComputeFresh(
-            SideAlignmentChannel side,
-            AlignmentProcessingCacheKey key,
-            DspChannelChain chain)
-        {
-            Complex[] result = VirtualCrossoverAnalysis.ApplyChain(
-                searchIrs[side], chain, side.State.SampleRate);
-            return new AlignmentProcessingCache(
-                key, result, VirtualCrossoverAnalysis.FindPeakIndex(result));
-        }
-
-        // Cache misses (all channels on the first call, usually one channel
-        // per cascade step afterwards) run in parallel: ApplyChain is pure
-        // FFT work on independent inputs, and the cache is written back on
-        // this (engine) thread only.
-        IReadOnlyList<AlignmentSnapshot> Reprocess(
-            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides)
-        {
-            var results = new AlignmentProcessingCache[union.Count];
-            var keys = new AlignmentProcessingCacheKey[union.Count];
-            var chains = new DspChannelChain[union.Count];
-            var missing = new List<int>();
-            for (int i = 0; i < union.Count; i++)
-            {
-                SideAlignmentChannel side = union[i];
-                AlignmentOverride over = overrides.GetValueOrDefault(side);
-                chains[i] = side.Settings.ToChain() with
-                {
-                    DelayMs = over.DelayMs,
-                    InvertPolarity = over.InvertPolarity
-                };
-                keys[i] = new AlignmentProcessingCacheKey(
-                    searchIrs[side], side.State.SampleRate, chains[i]);
-                AlignmentProcessingCache? cached = searchCache.GetValueOrDefault(side);
-                if (cached?.Key.Equals(keys[i]) == true)
-                {
-                    results[i] = cached;
-                }
-                else
-                {
-                    missing.Add(i);
-                }
-            }
-
-            Parallel.ForEach(missing, i =>
-            {
-                results[i] = ComputeFresh(union[i], keys[i], chains[i]);
-            });
-            foreach (int i in missing)
-            {
-                searchCache[union[i]] = results[i];
-            }
-
-            return union
-                .Select((side, i) => new AlignmentSnapshot(
-                    side, results[i].ImpulseResponse, results[i].PeakIndex))
-                .ToList();
-        }
-
-        IReadOnlyList<AlignmentSnapshot> initialSnapshots = Reprocess(
+        IReadOnlyList<AlignmentSnapshot> initialSnapshots = reprocessor.Reprocess(
             new Dictionary<IAlignmentChannel, AlignmentOverride>());
-        Dictionary<SideAlignmentChannel, AlignmentSnapshot> initial = union
+        Dictionary<VirtualCrossoverSideAlignmentChannel, AlignmentSnapshot> initial = union
             .Select((side, i) => (side, snapshot: initialSnapshots[i]))
             .ToDictionary(item => item.side, item => item.snapshot);
-        List<AlignmentSnapshot> ByBand(List<SideAlignmentChannel> sides) => sides
+        List<AlignmentSnapshot> ByBand(List<VirtualCrossoverSideAlignmentChannel> sides) => sides
             .OrderBy(side => VirtualCrossoverJunctions.BandCenterHz(side.Settings))
             .Select(side => initial[side])
             .ToList();
@@ -3120,8 +2341,8 @@ public partial class VirtualCrossoverPanel : UserControl
             for (int i = 0; i < byBand.Count - 1; i++)
             {
                 double pairHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
-                    ((SideAlignmentChannel)byBand[i].Channel).Settings,
-                    ((SideAlignmentChannel)byBand[i + 1].Channel).Settings);
+                    ((VirtualCrossoverSideAlignmentChannel)byBand[i].Channel).Settings,
+                    ((VirtualCrossoverSideAlignmentChannel)byBand[i + 1].Channel).Settings);
                 (double bandLowHz, double bandHighHz) =
                     VirtualCrossoverJunctions.OverlapBand(pairHz);
                 pairs.Add(new AlignmentJunction(
@@ -3135,9 +2356,9 @@ public partial class VirtualCrossoverPanel : UserControl
         // aim the descent's gentle prior at the cross-side-consistent delay —
         // the same Δ the metric panel verifies afterwards.
         var pairLinks = new List<StereoPairLink>();
-        foreach (SideAlignmentChannel right in rightSide.Where(side => side.RightSide))
+        foreach (VirtualCrossoverSideAlignmentChannel right in rightSide.Where(side => side.RightSide))
         {
-            SideAlignmentChannel? left = leftSide.FirstOrDefault(
+            VirtualCrossoverSideAlignmentChannel? left = leftSide.FirstOrDefault(
                 side => side.Runtime == right.Runtime && !side.RightSide);
             if (left == null)
             {
@@ -3176,7 +2397,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 bridgeBandHighHz,
                 sceneOffsetMs,
                 pairLinks),
-            Reprocess,
+            reprocessor.Reprocess,
             alignment,
             log);
     }
@@ -3184,11 +2405,11 @@ public partial class VirtualCrossoverPanel : UserControl
     // Applies the stereo proposal to BOTH sides' settings, rebinds the visible
     // controls and closes the log with the active side's metric.
     private async Task ApplyStereoAlignmentResultAsync(
-        List<SideAlignmentChannel> union,
+        List<VirtualCrossoverSideAlignmentChannel> union,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         System.Text.StringBuilder log)
     {
-        foreach (SideAlignmentChannel side in union)
+        foreach (VirtualCrossoverSideAlignmentChannel side in union)
         {
             AlignmentOverride result = alignment.GetValueOrDefault(side);
             side.Settings.DelayMs = Math.Round(result.DelayMs, 2);
@@ -3198,7 +2419,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 $"invert {(side.Settings.InvertPolarity ? "yes" : "no")}");
         }
 
-        foreach (ChannelRuntime channel in union
+        foreach (VirtualCrossoverChannel channel in union
             .Select(side => side.Runtime)
             .Distinct())
         {
@@ -3211,10 +2432,10 @@ public partial class VirtualCrossoverPanel : UserControl
         ProcessedRender? render = await ProcessChannelsAsync();
         List<ProcessedChannel> outcome = render?.Channels ?? [];
         (List<AnalysisCurve>? outcomeMagnitudes, AnalysisCurve? outcomeSum) =
-            BuildMetricCurves(outcome);
+            metrics.BuildCurves(outcome);
         log.AppendLine($"Metric ({(project.ActiveSideRight ? "R" : "L")} side):");
-        log.AppendLine(FormatMetricDetail(
-            BuildMetricEntries(outcome, outcomeMagnitudes, outcomeSum)));
+        log.AppendLine(VirtualCrossoverMetric.FormatDetail(
+            metrics.BuildEntries(outcome, outcomeMagnitudes, outcomeSum)));
         WriteAlignmentLog(log.ToString());
     }
 
@@ -3235,47 +2456,6 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    private static double GetPairCrossoverHz(
-        VirtualCrossoverChannelSettings lower,
-        VirtualCrossoverChannelSettings upper) =>
-        VirtualCrossoverJunctions.GetPairCrossoverHz(lower, upper);
-
-    // Adjacent channels along the spectrum with their shared junction: the pair
-    // crossover frequency and the band (an octave to each side) where the two
-    // drivers genuinely overlap. This band is where coarse arrivals are
-    // compared, where the fine delay search correlates, and where the per-pair
-    // sum-loss metric is read.
-    private sealed record AdjacentPair(
-        ProcessedChannel Lower,
-        ProcessedChannel Upper,
-        double CrossoverHz,
-        double BandLowHz,
-        double BandHighHz);
-
-    private static List<ProcessedChannel> OrderByBand(List<ProcessedChannel> processed) =>
-        processed
-            .OrderBy(item => VirtualCrossoverJunctions.BandCenterHz(item.Channel.Settings))
-            .ToList();
-
-    private static List<AdjacentPair> GetAdjacentPairs(List<ProcessedChannel> byBand)
-    {
-        var pairs = new List<AdjacentPair>();
-        for (int i = 0; i < byBand.Count - 1; i++)
-        {
-            double pairHz = GetPairCrossoverHz(
-                byBand[i].Channel.Settings, byBand[i + 1].Channel.Settings);
-            (double bandLowHz, double bandHighHz) = VirtualCrossoverJunctions.OverlapBand(pairHz);
-            pairs.Add(new AdjacentPair(
-                byBand[i],
-                byBand[i + 1],
-                pairHz,
-                bandLowHz,
-                bandHighHz));
-        }
-
-        return pairs;
-    }
-
     private AnalysisCurve BuildMagnitudeCurve(
         Complex[] impulseResponse,
         int peakIndex,
@@ -3287,7 +2467,7 @@ public partial class VirtualCrossoverPanel : UserControl
             Calibration);
     }
 
-    private void DrawPhaseCurves(PlotModel model, List<ProcessedChannel> processed)
+    private List<AcousticCurve> BuildPhaseCurves(List<ProcessedChannel> processed)
     {
         // One shared absolute reference (the earliest arrival) keeps the curves'
         // relative phase intact — that relative alignment through the crossover
@@ -3298,6 +2478,7 @@ public partial class VirtualCrossoverPanel : UserControl
             ?? ResolveGateOffsetMs(reference, sampleRate);
         double detrendMs = ResolveCommonDetrendMs(processed, gateOffsetMs, sampleRate);
 
+        var curves = new List<AcousticCurve>();
         foreach (ProcessedChannel item in processed)
         {
             if (!item.Channel.Settings.ShowProcessedCurve)
@@ -3305,27 +2486,27 @@ public partial class VirtualCrossoverPanel : UserControl
                 continue;
             }
 
-            AddCurve(
-                model,
-                item.Channel.Control.ChannelName,
+            curves.Add(new AcousticCurve(
+                item.Channel.Name,
                 BuildPhasePoints(item.ImpulseResponse, sampleRate, gateOffsetMs, detrendMs),
                 item.Color,
                 1.8,
-                LineStyle.Solid);
+                LineStyle.Solid));
         }
 
         if (processed.Count >= 2 && checkBoxShowSum.Checked)
         {
             Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
                 processed.Select(item => item.ImpulseResponse).ToList());
-            AddCurve(
-                model,
+            curves.Add(new AcousticCurve(
                 "Sum",
                 BuildPhasePoints(sum, sampleRate, gateOffsetMs, detrendMs),
                 SumColor,
                 2.4,
-                LineStyle.Solid);
+                LineStyle.Solid));
         }
+
+        return curves;
     }
 
     // The impulse view is the gate dialog's IR preview promoted to the main
@@ -3333,7 +2514,7 @@ public partial class VirtualCrossoverPanel : UserControl
     // applied) on the shared absolute timeline, each normalized to its own
     // in-window peak, with the phase-gate Tukey window drawn where it sits.
     // Well-aligned drivers visibly start together.
-    private void DrawImpulseCurves(PlotModel model, List<ProcessedChannel> processed)
+    private AcousticImpulseRender? BuildImpulseRender(List<ProcessedChannel> processed)
     {
         // Only the shown traces set the gate offset and the ms-axis window, so
         // an auto gate never centers on a channel whose curve is hidden.
@@ -3342,7 +2523,7 @@ public partial class VirtualCrossoverPanel : UserControl
             .ToList();
         if (shown.Count == 0)
         {
-            return;
+            return null;
         }
 
         int reference = shown.Min(item => item.PeakIndex);
@@ -3353,32 +2534,17 @@ public partial class VirtualCrossoverPanel : UserControl
         var traces = shown
             .Select(item => new IrPreviewTrace(
                 item.ImpulseResponse,
-                item.Channel.Control.ChannelName,
+                item.Channel.Name,
                 item.Color))
             .ToList();
 
-        (double StartMs, double EndMs)? window =
-            ImpulseWindowPreview.AddGatedTraceSeries(
-                model,
-                traces,
-                sampleRate,
-                gateOffsetMs,
-                gatePreview?.LeftMs ?? project.PhaseGateLeftMs,
-                gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs,
-                gatePreview?.RightMs ?? project.PhaseGateRightMs,
-                CurveSeriesTag);
-        if (window is not { } bounds)
-        {
-            return;
-        }
-
-        // The axis is static (no pan/zoom), so simply re-arm it to the display
-        // window the series were built for.
-        mainTimeAxis.AbsoluteMinimum = bounds.StartMs;
-        mainTimeAxis.AbsoluteMaximum = bounds.EndMs;
-        mainTimeAxis.Minimum = bounds.StartMs;
-        mainTimeAxis.Maximum = bounds.EndMs;
-        mainTimeAxis.Reset();
+        return new AcousticImpulseRender(
+            traces,
+            sampleRate,
+            gateOffsetMs,
+            gatePreview?.LeftMs ?? project.PhaseGateLeftMs,
+            gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs,
+            gatePreview?.RightMs ?? project.PhaseGateRightMs);
     }
 
     // A stored gate offset is used as-is; an unconfigured project follows the
@@ -3492,7 +2658,7 @@ public partial class VirtualCrossoverPanel : UserControl
         var traces = processed
             .Select(item => new IrPreviewTrace(
                 item.ImpulseResponse,
-                item.Channel.Control.ChannelName,
+                item.Channel.Name,
                 item.Color))
             .ToList();
 
@@ -3547,25 +2713,10 @@ public partial class VirtualCrossoverPanel : UserControl
     private void RedrawDspPlot()
     {
         using var _ = AppProfiler.Zone("VirtualDSP.RedrawDspPlot");
-        PlotModel? model = dspPlotView.Model;
-        if (model == null)
-        {
-            return;
-        }
-
-        RemoveCurveSeries(model);
-
-        DspPlotMode mode = CurrentDspPlotMode();
-        if (model.Axes.FirstOrDefault(axis => axis.Key == DspValueAxisKey)
-            is LinearAxis valueAxis)
-        {
-            ConfigureDspValueAxis(valueAxis, mode);
-        }
-
-        IReadOnlyList<double> grid = EqualizationCurve.LogFrequencyGrid(20, 20_000, 512);
+        var curves = new List<DspChainCurve>();
         for (int i = 0; i < channels.Count; i++)
         {
-            ChannelRuntime channel = channels[i];
+            VirtualCrossoverChannel channel = channels[i];
             if (!channel.Settings.Enabled || channel.TransferImpulseResponse == null)
             {
                 continue;
@@ -3579,35 +2730,12 @@ public partial class VirtualCrossoverPanel : UserControl
             DspChannelChain chain = channel.Settings.Bypass
                 ? DspChannelChain.Identity
                 : channel.Settings.ToChain() with { DelayMs = 0 };
-            PreparedDspResponse preparedResponse = PreparedDspResponse.Create(
-                chain,
-                channel.SampleRate);
-
-            var points = new List<DataPoint>(grid.Count);
-            foreach (double frequency in grid)
-            {
-                points.Add(new DataPoint(
-                    frequency,
-                    DspPlotValue(preparedResponse, frequency, mode)));
-            }
-
-            AddDspSeries(
-                model, $"{channel.Control.ChannelName} filter", points,
-                ChannelColors[i], 1.8, LineStyle.Solid, DspValueAxisKey);
+            curves.Add(new DspChainCurve(
+                $"{channel.Name} filter", chain, channel.SampleRate, ChannelColors[i]));
         }
 
-        model.InvalidatePlot(true);
+        dspChainPlot.Draw(CurrentDspPlotMode(), curves);
     }
-
-    private static double DspPlotValue(
-        PreparedDspResponse response,
-        double frequency,
-        DspPlotMode mode) => mode switch
-        {
-            DspPlotMode.Phase => response.Response(frequency).Phase / Math.PI * 180.0,
-            DspPlotMode.GroupDelay => response.GroupDelayMs(frequency),
-            _ => DataHelper.AmplitudeToDecibels(response.Response(frequency).Magnitude)
-        };
 
     // ------------------------------------------------------- capture / export
 
@@ -3637,7 +2765,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         string title = "vDSP Sum " + string.Join(
             "+",
-            processed.Select(item => item.Channel.Control.ChannelName));
+            processed.Select(item => item.Channel.Name));
         OverlayPoint[] points = sumCurve.Points
             .Select(point => new OverlayPoint(point.X, point.Y))
             .ToArray();
@@ -3687,9 +2815,9 @@ public partial class VirtualCrossoverPanel : UserControl
         }
         List<ProcessedChannel> metricChannels = render.Channels;
         (List<AnalysisCurve>? metricMagnitudes, AnalysisCurve? metricSum) =
-            BuildMetricCurves(metricChannels);
-        string metricLine = FormatMetricLabel(
-            BuildMetricEntries(metricChannels, metricMagnitudes, metricSum));
+            metrics.BuildCurves(metricChannels);
+        string metricLine = VirtualCrossoverMetric.FormatLabel(
+            metrics.BuildEntries(metricChannels, metricMagnitudes, metricSum));
         // The sheet prints BOTH sides, so the rate comes from any physically
         // resolved side — reading only the active side through the delegating
         // properties would fall back to 48 kHz when, say, the shown left side
@@ -3744,7 +2872,7 @@ public partial class VirtualCrossoverPanel : UserControl
             IReadOnlyList<SignalPoint>? Distortion, DriverBandEstimate Band)>();
         try
         {
-            foreach (ChannelRuntime channel in participating)
+            foreach (VirtualCrossoverChannel channel in participating)
             {
                 AnalysisCurve curve = DataHelper.GetPrimarySpectrum(
                     new ImpulseMeasurementView(
@@ -3766,7 +2894,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 IReadOnlyList<SignalPoint>? distortion = channel.DistortionCurve;
                 OxyColor accent = ChannelColors[channels.IndexOf(channel)];
                 dialogChannels.Add((
-                    $"{channel.Control.ChannelName} — {channel.Settings.DisplayName}",
+                    $"{channel.Name} — {channel.Settings.DisplayName}",
                     Color.FromArgb(accent.R, accent.G, accent.B),
                     curve.Points,
                     coherence,
@@ -3793,7 +2921,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         for (int i = 0; i < participating.Count; i++)
         {
-            ChannelRuntime channel = participating[i];
+            VirtualCrossoverChannel channel = participating[i];
             CrossoverProposal proposal = proposals[i];
             // A crossover is one electrical filter, so both sides of a stereo
             // pair get the SAME frequencies, families and slopes (and the same
@@ -3860,57 +2988,6 @@ public partial class VirtualCrossoverPanel : UserControl
         return values;
     }
 
-    // Computes the channel's harmonic distortion (THD, dB vs the fundamental) from
-    // a source's sweep deconvolution, for the crossover wizard's distortion-clean
-    // band read. Returns null when the source carried no sweep deconvolution (only a
-    // loopback transfer) or the sweep metadata is missing — the wizard then falls
-    // back to the class-based sensible range.
-    private static IReadOnlyList<SignalPoint>? ComputeDistortionCurve(
-        MeasurementHistorySnapshot snapshot)
-    {
-        if (snapshot.SweepDeconvolutionImpulseResponse is not { Length: > 0 } ir ||
-            snapshot.Octaves <= 0 ||
-            snapshot.SampleRate <= 0 ||
-            !double.IsFinite(snapshot.SweepDurationSeconds) ||
-            snapshot.SweepDurationSeconds <= 0)
-        {
-            return null;
-        }
-
-        try
-        {
-            int sweepSamples = (int)Math.Round(snapshot.SweepDurationSeconds * snapshot.SampleRate);
-            var sweep = EssSweepMetadata.FromExponentialSweep(
-                snapshot.SampleRate, snapshot.Octaves, sweepSamples, snapshot.SweepDeconvolutionPeakIndex);
-
-            double[] real = new double[ir.Length];
-            for (int i = 0; i < ir.Length; i++)
-            {
-                real[i] = ir[i].Real;
-            }
-
-            EssHarmonicDecomposition decomposition = EssHarmonicAnalysis.AnalyzeEssHarmonics(
-                real, sweep, new HarmonicAnalysisOptions(MaxHarmonic: 5));
-            DistortionSpectrum spectrum = EssDistortion.ComputeDistortion(
-                decomposition, calibration: null, new DistortionOptions(MaxHarmonic: 5));
-
-            var points = new List<SignalPoint>(spectrum.Frequencies.Length);
-            for (int i = 0; i < spectrum.Frequencies.Length; i++)
-            {
-                double thd = spectrum.ThdRatio[i];
-                points.Add(new SignalPoint(
-                    spectrum.Frequencies[i],
-                    double.IsFinite(thd) && thd > 0.0 ? 20.0 * Math.Log10(thd) : double.NaN));
-            }
-
-            return points;
-        }
-        catch (ArgumentException)
-        {
-            return null;
-        }
-    }
-
     // ---------------------------------------------------------------- session
 
     // Exports the whole tool state (channels, chains, gate, view flags) to a
@@ -3972,77 +3049,6 @@ public partial class VirtualCrossoverPanel : UserControl
         ScheduleSave();
     }
 
-    // ------------------------------------------------------------ series glue
-
-    private static void RemoveCurveSeries(PlotModel model)
-    {
-        for (int index = model.Series.Count - 1; index >= 0; index--)
-        {
-            if (Equals(model.Series[index].Tag, CurveSeriesTag))
-            {
-                model.Series.RemoveAt(index);
-            }
-        }
-
-        // The impulse view marks its gate-offset annotation with the same tag,
-        // so a redraw sweeps it together with the curves.
-        for (int index = model.Annotations.Count - 1; index >= 0; index--)
-        {
-            if (Equals(model.Annotations[index].Tag, CurveSeriesTag))
-            {
-                model.Annotations.RemoveAt(index);
-            }
-        }
-    }
-
-    private static void AddCurve(
-        PlotModel model,
-        string title,
-        IReadOnlyList<SignalPoint> points,
-        OxyColor color,
-        double thickness,
-        LineStyle lineStyle)
-    {
-        var series = new LineSeries
-        {
-            Color = color,
-            StrokeThickness = thickness,
-            LineStyle = lineStyle,
-            Title = title,
-            Tag = CurveSeriesTag,
-            TrackerFormatString = CurveTrackerFormat
-        };
-        foreach (SignalPoint point in points)
-        {
-            series.Points.Add(new DataPoint(point.X, point.Y));
-        }
-
-        model.Series.Add(series);
-    }
-
-    private static void AddDspSeries(
-        PlotModel model,
-        string title,
-        List<DataPoint> points,
-        OxyColor color,
-        double thickness,
-        LineStyle lineStyle,
-        string yAxisKey)
-    {
-        var series = new LineSeries
-        {
-            Color = color,
-            StrokeThickness = thickness,
-            LineStyle = lineStyle,
-            Title = title,
-            Tag = CurveSeriesTag,
-            TrackerFormatString = CurveTrackerFormat,
-            YAxisKey = yAxisKey
-        };
-        series.Points.AddRange(points);
-        model.Series.Add(series);
-    }
-
     private void ShowError(string message, string details)
     {
         MessageBox.Show(
@@ -4052,198 +3058,4 @@ public partial class VirtualCrossoverPanel : UserControl
             MessageBoxButtons.OK,
             MessageBoxIcon.Error);
     }
-
-    // The resolved source measurement of one SIDE of a channel pair (null while
-    // unresolved), plus that side's interactive processed-IR cache.
-    private sealed class ChannelSideState
-    {
-        private Complex[]? transferImpulseResponse;
-
-        public Complex[]? TransferImpulseResponse
-        {
-            get => transferImpulseResponse;
-            set
-            {
-                transferImpulseResponse = value;
-                ProcessingSource = value == null
-                    ? null
-                    : new VirtualCrossoverSourceSnapshot(value);
-            }
-        }
-        public VirtualCrossoverSourceSnapshot? ProcessingSource { get; private set; }
-        public int TransferPeakIndex { get; set; }
-        public int SampleRate { get; set; }
-
-        // The measurement's per-bin coherence (γ²) on the linear FFT grid, when
-        // the source carried it. Only the auto-crossover wizard reads it, to
-        // discount frequencies the measurement did not trust when reading each
-        // driver's usable band; null when the source had none.
-        public double[]? TransferCoherence { get; set; }
-
-        // The channel's harmonic distortion (THD, dB vs the fundamental) computed
-        // from the source's sweep deconvolution, when it carried one. Only the
-        // auto-crossover wizard reads it, to bound each driver by its
-        // distortion-clean band (a tweeter's low handover follows its measured
-        // distortion knee); null when the source had no sweep deconvolution.
-        public IReadOnlyList<SignalPoint>? DistortionCurve { get; set; }
-
-        // The band-limited envelope arrival and gated band level of this
-        // side's PROCESSED response, keyed by the processed array's identity
-        // and the measured band — the L/R/Δ read-out re-runs on every redraw,
-        // and the Hilbert analysis of a full-length IR is far too heavy to
-        // repeat when nothing changed. The level rides in the same cache
-        // entry: it is measured over the same band from the same response.
-        public (Complex[] ProcessedIr, double LowHz, double HighHz,
-            TimeAlignmentAnalysisResult Result, double? LevelDb)?
-            ArrivalCache
-        { get; set; }
-
-        // Invalidation counter for in-flight asynchronous source loads: a
-        // load captures the revision when it starts (BeginSourceLoad, which
-        // also invalidates any OLDER in-flight load into this slot, so the
-        // user's latest pick wins regardless of completion order) and may
-        // write back only while the revision still matches. Clear() bumps it
-        // too: a project import or mono toggle mid-load kills the landing
-        // instead of hiding a stale measurement in a slot that was wiped.
-        public int SourceRevision { get; private set; }
-
-        public int BeginSourceLoad() => ++SourceRevision;
-
-        public void Clear()
-        {
-            TransferImpulseResponse = null;
-            TransferPeakIndex = 0;
-            SampleRate = 0;
-            TransferCoherence = null;
-            DistortionCurve = null;
-            ArrivalCache = null;
-            SourceRevision++;
-        }
-    }
-
-    // Runtime state of one channel block — since the stereo rework, one L/R
-    // PAIR. The block's controls and every interactive computation read the
-    // ACTIVE side through the delegating members below, so the rest of the
-    // panel works unchanged; the side toggle just flips ActiveRight and
-    // rebinds. A mono pair (shared subwoofer) routes both sides to the left
-    // settings and state.
-    private sealed class ChannelRuntime : IAlignmentChannel
-    {
-        private readonly ChannelSideState leftState = new();
-        private readonly ChannelSideState rightState = new();
-
-        public ChannelRuntime(VirtualCrossoverChannelControl control)
-        {
-            Control = control;
-        }
-
-        public VirtualCrossoverChannelControl Control { get; }
-        // The alignment engine's log identity; ChannelName is a plain string
-        // property, safe to read off the UI thread.
-        public string Name => Control.ChannelName;
-
-        public VirtualCrossoverChannelPairSettings Pair { get; set; } = new();
-        public bool ActiveRight { get; set; }
-
-        // The EFFECTIVE side slot: what the views and calculations read — a
-        // mono pair routes both sides to its single left slot.
-        public ChannelSideState SideState(bool rightSide) =>
-            Pair.Mono || !rightSide ? leftState : rightState;
-
-        // The PHYSICAL side slot, mono routing ignored. Lifetime management
-        // (project load, mono toggling) must use this one: through the
-        // effective accessor a mono pair's real right slot is unreachable, so
-        // a stale measurement could hide there and resurface the moment the
-        // pair stops being mono.
-        public ChannelSideState PhysicalSideState(bool rightSide) =>
-            rightSide ? rightState : leftState;
-        public VirtualCrossoverChannelSettings SideSettings(bool rightSide) =>
-            Pair.SideFor(rightSide);
-        private ChannelSideState Active => SideState(ActiveRight);
-
-        public VirtualCrossoverChannelSettings Settings => Pair.SideFor(ActiveRight);
-        public Complex[]? TransferImpulseResponse
-        {
-            get => Active.TransferImpulseResponse;
-            set => Active.TransferImpulseResponse = value;
-        }
-        public int TransferPeakIndex
-        {
-            get => Active.TransferPeakIndex;
-            set => Active.TransferPeakIndex = value;
-        }
-        public double[]? TransferCoherence
-        {
-            get => Active.TransferCoherence;
-            set => Active.TransferCoherence = value;
-        }
-        public IReadOnlyList<SignalPoint>? DistortionCurve
-        {
-            get => Active.DistortionCurve;
-            set => Active.DistortionCurve = value;
-        }
-        public int SampleRate
-        {
-            get => Active.SampleRate;
-            set => Active.SampleRate = value;
-        }
-    }
-
-    // One side of a channel pair as the STEREO alignment engine sees it: the
-    // engine needs distinct identities for the left and right drivers of one
-    // block, while the interactive paths keep using ChannelRuntime itself. A
-    // mono pair contributes a single instance (rightSide: false) to both
-    // sides' channel lists.
-    private sealed class SideAlignmentChannel : IAlignmentChannel
-    {
-        public SideAlignmentChannel(ChannelRuntime runtime, bool rightSide)
-        {
-            Runtime = runtime;
-            RightSide = rightSide;
-        }
-
-        public ChannelRuntime Runtime { get; }
-        public bool RightSide { get; }
-        public VirtualCrossoverChannelSettings Settings =>
-            Runtime.SideSettings(RightSide);
-        public ChannelSideState State => Runtime.SideState(RightSide);
-        public string Name => Runtime.Pair.Mono
-            ? $"{Runtime.Name} (mono)"
-            : $"{Runtime.Name} {(RightSide ? "R" : "L")}";
-        public int SampleRate => State.SampleRate;
-    }
-
-    private sealed class AlignmentProcessingCacheKey : IEquatable<AlignmentProcessingCacheKey>
-    {
-        private readonly Complex[] source;
-        private readonly int sampleRate;
-        private readonly DspChannelChainCacheKey chain;
-
-        public AlignmentProcessingCacheKey(
-            Complex[] source,
-            int sampleRate,
-            DspChannelChain chain)
-        {
-            this.source = source;
-            this.sampleRate = sampleRate;
-            this.chain = new DspChannelChainCacheKey(chain);
-        }
-
-        public bool Equals(AlignmentProcessingCacheKey? other) =>
-            other != null &&
-            ReferenceEquals(source, other.source) &&
-            sampleRate == other.sampleRate &&
-            chain.Equals(other.chain);
-
-        public override bool Equals(object? obj) =>
-            obj is AlignmentProcessingCacheKey other && Equals(other);
-
-        public override int GetHashCode() => HashCode.Combine(source, sampleRate, chain);
-    }
-
-    private sealed record AlignmentProcessingCache(
-        AlignmentProcessingCacheKey Key,
-        Complex[] ImpulseResponse,
-        int PeakIndex);
-
 }

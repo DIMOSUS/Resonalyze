@@ -1,0 +1,205 @@
+using System.Collections.Concurrent;
+using System.Numerics;
+using OxyPlot;
+using Resonalyze.Dsp;
+
+namespace Resonalyze.App.Tests;
+
+/// <summary>
+/// Characterization tests for <see cref="VirtualCrossoverMetrics"/>: the metric
+/// curve building (shared anchor, complex sum), the participating-channel gating
+/// of the opposite-side sum and the eligibility gating of the stereo Δ read-out —
+/// exercised through a real processing coordinator, with the magnitude-curve
+/// builder faked so no calibration/options are needed.
+/// </summary>
+public sealed class VirtualCrossoverMetricsTests
+{
+    private static readonly AnalysisCurve EmptyCurve = new("x", []);
+
+    private static Complex[] Impulse(int peak = 10)
+    {
+        var ir = new Complex[64];
+        ir[peak] = Complex.One;
+        return ir;
+    }
+
+    private static ProcessedChannel Processed(string name, Complex[] ir, int peak, int rate)
+    {
+        var channel = new VirtualCrossoverChannel(name) { SampleRate = rate };
+        return new ProcessedChannel(channel, ir, peak, OxyColors.White);
+    }
+
+    // A channel with a resolved source on its LEFT side (the default active side).
+    private static VirtualCrossoverChannel ResolvedChannel(string name, int rate)
+    {
+        var channel = new VirtualCrossoverChannel(name);
+        VirtualCrossoverChannelState left = channel.PhysicalSideState(false);
+        left.TransferImpulseResponse = Impulse();
+        left.SampleRate = rate;
+        return channel;
+    }
+
+    [Fact]
+    public void BuildCurves_ReturnsNoMetric_ForFewerThanTwoChannels()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyCurve);
+
+        (List<AnalysisCurve>? magnitudes, AnalysisCurve? sum) =
+            metrics.BuildCurves([Processed("A", Impulse(), 5, 48_000)]);
+
+        Assert.Null(magnitudes);
+        Assert.Null(sum);
+    }
+
+    [Fact]
+    public void BuildCurves_AnchorsEveryCurveToTheEarliestPeakAndSumsTheResponses()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var captured = new ConcurrentBag<(Complex[] Ir, int Peak, int Rate)>();
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator,
+            (ir, peak, rate) =>
+            {
+                captured.Add((ir, peak, rate));
+                return EmptyCurve;
+            });
+        Complex[] a = Impulse(12);
+        Complex[] b = Impulse(20);
+
+        (List<AnalysisCurve>? magnitudes, AnalysisCurve? sum) = metrics.BuildCurves(
+        [
+            Processed("A", a, peak: 5, rate: 48_000),
+            Processed("B", b, peak: 2, rate: 48_000)
+        ]);
+
+        Assert.NotNull(magnitudes);
+        Assert.Equal(2, magnitudes.Count);
+        Assert.NotNull(sum);
+        // Two channel spectra + one sum spectrum, all anchored to the earliest peak.
+        Assert.Equal(3, captured.Count);
+        Assert.All(captured, entry => Assert.Equal(2, entry.Peak));
+        // One of the calls built the complex sum of the two responses.
+        Complex[] expectedSum = VirtualCrossoverAnalysis.SumImpulseResponses([a, b]);
+        Assert.Contains(captured, entry => entry.Ir.SequenceEqual(expectedSum));
+    }
+
+    [Fact]
+    public void BuildEntries_IsEmptyWhenThereIsNoMetric()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyCurve);
+
+        Assert.Empty(metrics.BuildEntries(
+            [Processed("A", Impulse(), 5, 48_000)], magnitudes: null, sumCurve: null));
+    }
+
+    [Fact]
+    public async Task ComputeOppositeSumCurveAsync_ReturnsNull_WithFewerThanTwoParticipatingChannels()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyCurve);
+        long revision = coordinator.Invalidate();
+
+        AnalysisCurve? result = await metrics.ComputeOppositeSumCurveAsync(
+            [ResolvedChannel("A", 48_000)], oppositeRight: false, revision);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task ComputeOppositeSumCurveAsync_SumsTheParticipatingSides()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        Complex[]? summed = null;
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator,
+            (ir, _, _) =>
+            {
+                summed = ir;
+                return EmptyCurve;
+            });
+        long revision = coordinator.Invalidate();
+
+        AnalysisCurve? result = await metrics.ComputeOppositeSumCurveAsync(
+            [ResolvedChannel("A", 48_000), ResolvedChannel("B", 48_000)],
+            oppositeRight: false,
+            revision);
+
+        // Two participating sides → a sum curve is built from a non-empty response.
+        Assert.Same(EmptyCurve, result);
+        Assert.NotNull(summed);
+        Assert.NotEmpty(summed);
+    }
+
+    [Fact]
+    public async Task ComputeStereoDeltasAsync_SkipsAStereoPairWithOnlyOneSideResolved()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyCurve);
+        long revision = coordinator.Invalidate();
+
+        // A stereo pair (not mono) with only the left side resolved is not eligible
+        // for a stereo Δ — it needs both sides present and unbypassed.
+        List<VirtualCrossoverMetric.StereoDelta> deltas =
+            await metrics.ComputeStereoDeltasAsync([ResolvedChannel("A", 48_000)], revision);
+
+        Assert.Empty(deltas);
+    }
+
+    // A longer impulse so the band-limited arrival analysis has real bins to work
+    // with; both physical slots are resolved for a stereo pair.
+    private static Complex[] LongImpulse()
+    {
+        var ir = new Complex[4_096];
+        ir[512] = Complex.One;
+        return ir;
+    }
+
+    private static void Resolve(VirtualCrossoverChannel channel, bool rightSide)
+    {
+        VirtualCrossoverChannelState state = channel.PhysicalSideState(rightSide);
+        state.TransferImpulseResponse = LongImpulse();
+        state.SampleRate = 48_000;
+    }
+
+    [Fact]
+    public async Task ComputeStereoDeltasAsync_ReportsOneDeltaForAResolvedStereoPair()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyCurve);
+        long revision = coordinator.Invalidate();
+        var channel = new VirtualCrossoverChannel("A");
+        Resolve(channel, rightSide: false);
+        Resolve(channel, rightSide: true);
+
+        List<VirtualCrossoverMetric.StereoDelta> deltas =
+            await metrics.ComputeStereoDeltasAsync([channel], revision);
+
+        VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
+        Assert.Equal("A", delta.Channel);
+        // No crossover configured, so the shared band is the full audio range.
+        Assert.Equal(20, delta.LowHz);
+        Assert.Equal(20_000, delta.HighHz);
+        // The arrival result is cached on the side for reuse on the next redraw.
+        Assert.NotNull(channel.PhysicalSideState(false).ArrivalCache);
+    }
+
+    [Fact]
+    public async Task ComputeStereoDeltasAsync_MonoChannelReportsNoRightSide()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyCurve);
+        long revision = coordinator.Invalidate();
+        var channel = new VirtualCrossoverChannel("Sub") { Pair = { Mono = true } };
+        Resolve(channel, rightSide: false);
+
+        List<VirtualCrossoverMetric.StereoDelta> deltas =
+            await metrics.ComputeStereoDeltasAsync([channel], revision);
+
+        VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
+        Assert.Equal("Sub", delta.Channel);
+        // One physical driver serving both sides: no right-side arrival or delta.
+        Assert.Null(delta.RightMs);
+    }
+}

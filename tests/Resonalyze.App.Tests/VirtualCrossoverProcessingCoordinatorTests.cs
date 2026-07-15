@@ -23,20 +23,6 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     }
 
     [Fact]
-    public void AlignmentCacheKey_ComparesIndependentPeqChainsByValue()
-    {
-        Complex[] source = CreateImpulse(32, 3, 1.0);
-        DspChannelChain first = CreatePeqChain(-2.0, -4.0);
-        DspChannelChain sameValues = CreatePeqChain(-2.0, -4.0);
-
-        object firstKey = CreateAlignmentCacheKey(source, first);
-        object sameKey = CreateAlignmentCacheKey(source, sameValues);
-
-        Assert.Equal(firstKey, sameKey);
-        Assert.Equal(firstKey.GetHashCode(), sameKey.GetHashCode());
-    }
-
-    [Fact]
     public async Task ProcessAsync_ReturnsResultsInSnapshotOrderAndCachesByProcessedKey()
     {
         int processCount = 0;
@@ -449,14 +435,4 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
             Peq: new EqualizationCurve(
                 [new PeqBand(1_000, 1.4, bandGainDb)],
                 preampDb));
-
-    private static object CreateAlignmentCacheKey(
-        Complex[] source,
-        DspChannelChain chain)
-    {
-        Type keyType = typeof(VirtualCrossoverPanel).GetNestedType(
-            "AlignmentProcessingCacheKey",
-            System.Reflection.BindingFlags.NonPublic)!;
-        return Activator.CreateInstance(keyType, source, 48_000, chain)!;
-    }
 }

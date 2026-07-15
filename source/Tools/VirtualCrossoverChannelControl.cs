@@ -137,6 +137,57 @@ public partial class VirtualCrossoverChannelControl : UserControl
     }
 
     /// <summary>
+    /// Registers the per-field help text with the host's shared tooltip. The
+    /// block owns the descriptions of its own sub-controls, so the host no longer
+    /// reaches through into each input to set them.
+    /// </summary>
+    public void ApplyTooltips(ToolTip toolTip)
+    {
+        ArgumentNullException.ThrowIfNull(toolTip);
+        toolTip.SetToolTip(
+            numericGain,
+            "Channel gain (dB).\r\n" +
+            "Relative levels are only honest when the measurements\r\n" +
+            "were captured through the same playback chain;\r\n" +
+            "compensate any difference here.");
+        toolTip.SetToolTip(
+            checkBoxInvert,
+            "Invert the channel polarity — the DSP polarity switch.\r\n" +
+            "Also the null test: with polarity flipped, the deepest\r\n" +
+            "notch at the crossover frequency marks perfect alignment.");
+        toolTip.SetToolTip(
+            numericDelay,
+            "Channel delay (ms) — the value you would dial into\r\n" +
+            "this DSP channel.\r\n" +
+            "The mm readout is the equivalent distance in air.");
+        toolTip.SetToolTip(
+            buttonMute,
+            "Mute the channel: exclude it from the sum, the loss,\r\n" +
+            "the metric, Auto delay and both plots — a quick\r\n" +
+            "\"what changes without this driver\" check.");
+        toolTip.SetToolTip(
+            checkBoxBypass,
+            "Bypass the DSP chain: feed the raw measured signal with\r\n" +
+            "no gain, delay, polarity, crossover or PEQ — the driver's\r\n" +
+            "natural band-pass, for an A/B against the processed result.");
+        toolTip.SetToolTip(
+            checkBoxMono,
+            "One physical driver serving both sides (typically the\r\n" +
+            "subwoofer): a single set of settings participates in the\r\n" +
+            "L and R views and calculations alike. The stereo Auto\r\n" +
+            "delay tunes it with the left side and reports the right\r\n" +
+            "junction it pins.");
+        toolTip.SetToolTip(
+            labelMeasuredPolarity,
+            "Acoustic polarity read from the measured IR\r\n" +
+            "(the sign of its first significant excursion).\r\n" +
+            "Normal — the driver pushes toward the mic first.\r\n" +
+            "Inverted — it pulls first (wired in reverse).\r\n" +
+            "Unknown — no source selected.\r\n" +
+            "Independent of the Invert switch.");
+    }
+
+    /// <summary>
     /// Applies stored values to the controls without firing SettingsChanged for
     /// every field; the host redraws once afterward.
     /// </summary>

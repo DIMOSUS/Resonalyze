@@ -63,9 +63,9 @@ namespace Resonalyze
             radioDspMagnitude = new RadioButton();
             radioDspPhase = new RadioButton();
             radioDspGroupDelay = new RadioButton();
-            dspModePanel.SuspendLayout();
             sideSelectorPanel.SuspendLayout();
             (numericSceneOffset).BeginInit();
+            dspModePanel.SuspendLayout();
             SuspendLayout();
             // 
             // mainPlotView
@@ -131,12 +131,9 @@ namespace Resonalyze
             buttonRemoveChannel.TabIndex = 5;
             buttonRemoveChannel.Text = "Remove channel";
             buttonRemoveChannel.UseVisualStyleBackColor = false;
-            //
+            // 
             // sideSelectorPanel
-            //
-            // The side radios live in their own container so they form a radio
-            // group of their own — as direct panel children they would join the
-            // Magnitude/Phase view group.
+            // 
             sideSelectorPanel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             sideSelectorPanel.BackColor = Color.FromArgb(40, 44, 54);
             sideSelectorPanel.Controls.Add(radioSideLeft);
@@ -147,35 +144,35 @@ namespace Resonalyze
             sideSelectorPanel.Name = "sideSelectorPanel";
             sideSelectorPanel.Size = new Size(347, 24);
             sideSelectorPanel.TabIndex = 21;
-            //
+            // 
             // radioSideLeft
-            //
+            // 
             radioSideLeft.AutoSize = true;
             radioSideLeft.Checked = true;
             radioSideLeft.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             radioSideLeft.ForeColor = Color.FromArgb(210, 214, 222);
             radioSideLeft.Location = new Point(0, 2);
             radioSideLeft.Name = "radioSideLeft";
-            radioSideLeft.Size = new Size(50, 19);
+            radioSideLeft.Size = new Size(31, 19);
             radioSideLeft.TabIndex = 0;
             radioSideLeft.TabStop = true;
             radioSideLeft.Text = "L";
             radioSideLeft.UseVisualStyleBackColor = true;
-            //
+            // 
             // radioSideRight
-            //
+            // 
             radioSideRight.AutoSize = true;
             radioSideRight.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             radioSideRight.ForeColor = Color.FromArgb(210, 214, 222);
             radioSideRight.Location = new Point(52, 2);
             radioSideRight.Name = "radioSideRight";
-            radioSideRight.Size = new Size(50, 19);
+            radioSideRight.Size = new Size(32, 19);
             radioSideRight.TabIndex = 1;
             radioSideRight.Text = "R";
             radioSideRight.UseVisualStyleBackColor = true;
-            //
+            // 
             // buttonCopyLeftToRight
-            //
+            // 
             buttonCopyLeftToRight.BackColor = Color.FromArgb(46, 51, 67);
             buttonCopyLeftToRight.FlatStyle = FlatStyle.Popup;
             buttonCopyLeftToRight.ForeColor = Color.White;
@@ -185,9 +182,9 @@ namespace Resonalyze
             buttonCopyLeftToRight.TabIndex = 2;
             buttonCopyLeftToRight.Text = "L→R";
             buttonCopyLeftToRight.UseVisualStyleBackColor = false;
-            //
+            // 
             // buttonCopyRightToLeft
-            //
+            // 
             buttonCopyRightToLeft.BackColor = Color.FromArgb(46, 51, 67);
             buttonCopyRightToLeft.FlatStyle = FlatStyle.Popup;
             buttonCopyRightToLeft.ForeColor = Color.White;
@@ -197,20 +194,20 @@ namespace Resonalyze
             buttonCopyRightToLeft.TabIndex = 3;
             buttonCopyRightToLeft.Text = "R→L";
             buttonCopyRightToLeft.UseVisualStyleBackColor = false;
-            //
+            // 
             // labelSceneOffset
-            //
+            // 
             labelSceneOffset.AutoSize = true;
             labelSceneOffset.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelSceneOffset.ForeColor = Color.FromArgb(210, 214, 222);
             labelSceneOffset.Location = new Point(358, 532);
             labelSceneOffset.Name = "labelSceneOffset";
-            labelSceneOffset.Size = new Size(90, 15);
+            labelSceneOffset.Size = new Size(80, 15);
             labelSceneOffset.TabIndex = 22;
             labelSceneOffset.Text = "L/R offset, ms";
-            //
+            // 
             // numericSceneOffset
-            //
+            // 
             numericSceneOffset.BackColor = Color.FromArgb(55, 60, 72);
             numericSceneOffset.DecimalPlaces = 2;
             numericSceneOffset.ForeColor = Color.White;
@@ -225,7 +222,7 @@ namespace Resonalyze
             numericSceneOffset.TextAlign = HorizontalAlignment.Right;
             numericSceneOffset.ThousandsSeparator = false;
             numericSceneOffset.Value = new decimal(new int[] { 25, 0, 0, 131072 });
-            //
+            // 
             // labelView
             // 
             labelView.AutoSize = true;
@@ -520,11 +517,11 @@ namespace Resonalyze
             Name = "VirtualCrossoverPanel";
             Padding = new Padding(6);
             Size = new Size(1246, 770);
-            dspModePanel.ResumeLayout(false);
-            dspModePanel.PerformLayout();
             sideSelectorPanel.ResumeLayout(false);
             sideSelectorPanel.PerformLayout();
             (numericSceneOffset).EndInit();
+            dspModePanel.ResumeLayout(false);
+            dspModePanel.PerformLayout();
             ResumeLayout(false);
             PerformLayout();
         }

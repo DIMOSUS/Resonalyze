@@ -126,7 +126,7 @@ file is provided with every release.
   math cannot
 - **Virtual DSP** tool: run up to eight measured L/R driver pairs (with mono
   channels for a shared subwoofer) through virtual DSP chains — gain, delay,
-  polarity, Butterworth / Linkwitz-Riley / Bessel crossovers, and imported
+  polarity, Butterworth / Linkwitz-Riley / Bessel / Chebyshev crossovers, and imported
   PEQ — and see their complex sum, sum loss, the opposite side's sum, phase
   tracking, per-pair Δ L−R timing, auto crossover proposals, a stereo-aware
   auto delay with a scene offset, gated phase view, overlay capture, sessions,
@@ -1388,9 +1388,10 @@ Each channel runs through:
   physical driver offset (343 m/s)
 - **Invert** — the DSP polarity switch
 - **Crossover** — Off, low-pass, high-pass, or band-pass; each edge picks
-  **Butterworth** (6–48 dB/oct), **Linkwitz-Riley** (12/24/48 dB/oct), or
-  **Bessel** (6–48 dB/oct, near-constant group delay) with its own corner
-  frequency
+  **Butterworth** (6–48 dB/oct), **Linkwitz-Riley** (12/24/48 dB/oct),
+  **Bessel** (6–48 dB/oct, near-constant group delay), or **Chebyshev**
+  (6–48 dB/oct, with a selectable passband **ripple** for a steeper knee) with
+  its own corner frequency
 - **PEQ** — load a parametric EQ profile (any format the EQ Wizard imports) into
   the chain
 - **Mute** — temporarily remove a channel from the plots, sum, loss metric,

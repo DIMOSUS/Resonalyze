@@ -108,9 +108,14 @@ internal static class VirtualCrossoverSheet
         {
             CrossoverFilterFamily.LinkwitzRiley => "Linkwitz-Riley",
             CrossoverFilterFamily.Bessel => "Bessel",
+            CrossoverFilterFamily.Chebyshev => "Chebyshev",
             _ => "Butterworth"
         };
-        return $"{kind} {family} {edge.SlopeDbPerOctave} dB/oct @ {Number(edge.FrequencyHz, "0.###")} Hz";
+        string ripple = edge.Family == CrossoverFilterFamily.Chebyshev
+            ? $" ({Number(edge.RippleDb, "0.#")} dB ripple)"
+            : string.Empty;
+        return $"{kind} {family} {edge.SlopeDbPerOctave} dB/oct @ " +
+            $"{Number(edge.FrequencyHz, "0.###")} Hz{ripple}";
     }
 
     internal static string Signed(double value) =>

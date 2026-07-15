@@ -211,6 +211,79 @@ public sealed class CrossoverFilterTests
         return (maxDelay - minDelay) / maxDelay;
     }
 
+    [Theory]
+    [InlineData(6)]
+    [InlineData(12)]
+    [InlineData(18)]
+    [InlineData(24)]
+    [InlineData(30)]
+    [InlineData(36)]
+    [InlineData(42)]
+    [InlineData(48)]
+    public void Chebyshev_IsMinus3DbAtCorner(int slope)
+    {
+        // The prototype is scaled by its own -3 dB frequency, so the corner the caller
+        // enters lands at -3 dB for every order and ripple — like the other families.
+        // Tested at a low corner: Chebyshev's high-Q sections make the digital cascade
+        // more sensitive to bilinear warping than Butterworth/Bessel, so a high corner
+        // drifts a few tenths of a dB (a faithful DSP effect), swamping the design check.
+        const double corner = 200;
+        var edge = new CrossoverEdge(CrossoverFilterFamily.Chebyshev, corner, slope, 1.0);
+        double lowPassDb = MagnitudeDb(CrossoverFilter.Response(
+            new CrossoverSpec(CrossoverKind.LowPass, edge), corner, SampleRate));
+        double highPassDb = MagnitudeDb(CrossoverFilter.Response(
+            new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: edge), corner, SampleRate));
+
+        Assert.Equal(-3.0103, lowPassDb, 0.05);
+        Assert.Equal(-3.0103, highPassDb, 0.05);
+    }
+
+    [Fact]
+    public void Chebyshev_PassbandStaysWithinTheRippleBand()
+    {
+        // Below the passband edge the magnitude equiripples between 0 and -ripple dB;
+        // it never rises above 0 nor dips below the specified ripple.
+        const double rippleDb = 1.0;
+        CrossoverSpec spec = new(
+            CrossoverKind.LowPass,
+            new CrossoverEdge(CrossoverFilterFamily.Chebyshev, 1_000, 24, rippleDb));
+
+        foreach (double frequency in new[] { 50.0, 100.0, 300.0, 500.0, 700.0 })
+        {
+            double db = MagnitudeDb(CrossoverFilter.Response(spec, frequency, SampleRate));
+            Assert.InRange(db, -rippleDb - 0.05, 0.05);
+        }
+    }
+
+    [Fact]
+    public void Chebyshev_HasASteeperKneeThanButterworth()
+    {
+        // The defining trade: for the same order, the passband ripple buys a steeper
+        // transition. Just past the corner a 1 dB Chebyshev is well below Butterworth.
+        CrossoverSpec cheby = new(
+            CrossoverKind.LowPass,
+            new CrossoverEdge(CrossoverFilterFamily.Chebyshev, 1_000, 24, 1.0));
+        CrossoverSpec butter = LowPass(CrossoverFilterFamily.Butterworth, 1_000, 24);
+
+        double chebyDb = MagnitudeDb(CrossoverFilter.Response(cheby, 1_600, SampleRate));
+        double butterDb = MagnitudeDb(CrossoverFilter.Response(butter, 1_600, SampleRate));
+
+        Assert.True(
+            chebyDb < butterDb - 3.0,
+            $"Chebyshev {chebyDb:0.0} dB should sit well below Butterworth {butterDb:0.0} dB past the corner.");
+    }
+
+    [Fact]
+    public void SupportedSlopes_ChebyshevOffersOddOrders_BesselDoesNot()
+    {
+        // Chebyshev (and Butterworth) are computed for any order; Bessel is table-bound
+        // to even-ish orders with no 5th/7th-order (30/42 dB/oct) entry.
+        Assert.Contains(30, CrossoverFilter.SupportedSlopes(CrossoverFilterFamily.Chebyshev));
+        Assert.Contains(42, CrossoverFilter.SupportedSlopes(CrossoverFilterFamily.Chebyshev));
+        Assert.DoesNotContain(30, CrossoverFilter.SupportedSlopes(CrossoverFilterFamily.Bessel));
+        Assert.DoesNotContain(42, CrossoverFilter.SupportedSlopes(CrossoverFilterFamily.Bessel));
+    }
+
     [Fact]
     public void BandPass_IsTheProductOfItsEdges()
     {

@@ -6,7 +6,8 @@ public enum CrossoverFilterFamily
 {
     Butterworth,
     LinkwitzRiley,
-    Bessel
+    Bessel,
+    Chebyshev
 }
 
 public enum CrossoverKind
@@ -21,11 +22,14 @@ public enum CrossoverKind
 /// One crossover slope: the filter family, the corner frequency and the rolloff
 /// steepness. An edge is either the low-pass or the high-pass side of a crossover;
 /// a band-pass carries one of each with independent settings.
+/// <see cref="RippleDb"/> is the passband ripple used only by the
+/// <see cref="CrossoverFilterFamily.Chebyshev"/> family; every other family ignores it.
 /// </summary>
 public readonly record struct CrossoverEdge(
     CrossoverFilterFamily Family,
     double FrequencyHz,
-    int SlopeDbPerOctave);
+    int SlopeDbPerOctave,
+    double RippleDb = 1.0);
 
 /// <summary>
 /// A virtual crossover for one channel: off, a single low-pass or high-pass edge,
@@ -45,12 +49,16 @@ public static class CrossoverFilter
     /// <summary>
     /// The slopes each family offers, matching common DSP hardware. Linkwitz-Riley
     /// filters only exist in even orders built from a squared Butterworth, and DSPs
-    /// ship the 12/24/48 variants; Butterworth and Bessel come in orders 1–8.
+    /// ship the 12/24/48 variants. Bessel is realized from a fixed -3 dB prototype
+    /// table that has no 5th/7th-order entry, so it omits the odd 30/42 dB/oct orders.
+    /// Butterworth and Chebyshev are computed for any order and offer the full set.
     /// </summary>
-    public static IReadOnlyList<int> SupportedSlopes(CrossoverFilterFamily family) =>
-        family == CrossoverFilterFamily.LinkwitzRiley
-            ? [12, 24, 48]
-            : [6, 12, 18, 24, 36, 48];
+    public static IReadOnlyList<int> SupportedSlopes(CrossoverFilterFamily family) => family switch
+    {
+        CrossoverFilterFamily.LinkwitzRiley => [12, 24, 48],
+        CrossoverFilterFamily.Bessel => [6, 12, 18, 24, 36, 48],
+        _ => [6, 12, 18, 24, 30, 36, 42, 48]
+    };
 
     /// <summary>
     /// Complex response of the crossover at the given frequency — the product of
@@ -199,6 +207,10 @@ public static class CrossoverFilter
             case CrossoverFilterFamily.Bessel:
                 AppendBessel(sections, order, edge.FrequencyHz, highPass, sampleRateHz);
                 break;
+            case CrossoverFilterFamily.Chebyshev:
+                AppendChebyshev(
+                    sections, order, edge.FrequencyHz, edge.RippleDb, highPass, sampleRateHz);
+                break;
             default:
                 AppendButterworth(sections, order, edge.FrequencyHz, highPass, sampleRateHz);
                 break;
@@ -249,6 +261,67 @@ public static class CrossoverFilter
             sections.Add(FirstOrderSection(sectionHz, highPass, sampleRateHz));
         }
     }
+
+    private static void AppendChebyshev(
+        List<BiquadCoefficients> sections,
+        int order,
+        double frequencyHz,
+        double rippleDb,
+        bool highPass,
+        double sampleRateHz)
+    {
+        // Chebyshev Type I: the poles lie on an ellipse set by the passband ripple.
+        // ε from the ripple; a scales the ellipse. The natural prototype is normalized
+        // to the ripple (passband) edge, so every section is scaled by the prototype's
+        // own -3 dB frequency (ω3) — that makes the corner the user enters land at
+        // -3 dB, matching Butterworth/Bessel here. A section sits at radius/ω3 times the
+        // cutoff (divided, for the high-pass, by the s -> 1/s inversion), same as Bessel.
+        double ripple = Math.Max(rippleDb, 1e-3);
+        double epsilon = Math.Sqrt(Math.Pow(10.0, ripple / 10.0) - 1.0);
+        double a = Math.Asinh(1.0 / epsilon) / order;
+        double sinhA = Math.Sinh(a);
+        double coshA = Math.Cosh(a);
+        double omega3 = Math.Cosh(Math.Acosh(1.0 / epsilon) / order);
+
+        int firstIndex = sections.Count;
+        for (int k = 1; k <= order / 2; k++)
+        {
+            double theta = (2 * k - 1) * Math.PI / (2.0 * order);
+            double sigma = -sinhA * Math.Sin(theta); // pole real part (< 0)
+            double omega = coshA * Math.Cos(theta);  // pole imaginary part
+            double radius = Math.Sqrt(sigma * sigma + omega * omega);
+            double q = radius / (-2.0 * sigma);
+            double fsf = radius / omega3;
+            double sectionHz = highPass ? frequencyHz / fsf : frequencyHz * fsf;
+            sections.Add(SecondOrderSection(sectionHz, q, highPass, sampleRateHz));
+        }
+        if (order % 2 == 1)
+        {
+            // The odd-order real pole sits at s = -sinh(a); scale it the same way.
+            double fsf = sinhA / omega3;
+            double sectionHz = highPass ? frequencyHz / fsf : frequencyHz * fsf;
+            sections.Add(FirstOrderSection(sectionHz, highPass, sampleRateHz));
+        }
+        else
+        {
+            // The RBJ sections each normalize their passband edge (DC for a low-pass,
+            // Nyquist for a high-pass) to unity, but an even-order Chebyshev's gain
+            // there is -ripple dB — odd orders already pass through 0 dB. Pull the whole
+            // cascade down by that ripple so the passband equiripples in [-ripple, 0] dB
+            // instead of [0, +ripple].
+            double gain = Math.Pow(10.0, -ripple / 20.0);
+            sections[firstIndex] = ScaleGain(sections[firstIndex], gain);
+        }
+    }
+
+    // Scales a biquad's feed-forward path, changing its gain without moving its poles.
+    private static BiquadCoefficients ScaleGain(BiquadCoefficients section, double gain) =>
+        section with
+        {
+            B0 = section.B0 * gain,
+            B1 = section.B1 * gain,
+            B2 = section.B2 * gain
+        };
 
     // The Bessel analog prototype normalized to the -3 dB frequency (TI SLOA049):
     // per order the second-order sections as (frequency scale factor, Q) plus the

@@ -62,6 +62,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
     internal DarkNumericUpDown LowPassFrequencyInput => numericLowPassHz;
     internal DarkComboBox LowPassFamilyComboBox => comboBoxLowPassFamily;
     internal DarkComboBox LowPassSlopeComboBox => comboBoxLowPassSlope;
+    internal DarkNumericUpDown HighPassRippleInput => numericHighPassRipple;
+    internal DarkNumericUpDown LowPassRippleInput => numericLowPassRipple;
     internal Label MeasuredPolarityLabel => labelMeasuredPolarity;
     internal Button MuteButton => buttonMute;
     internal Button PeqLoadButton => buttonPeqLoad;
@@ -77,10 +79,10 @@ public partial class VirtualCrossoverChannelControl : UserControl
             : CrossoverKind.Off;
 
     public CrossoverEdge HighPassEdge => ReadEdge(
-        numericHighPassHz, comboBoxHighPassFamily, comboBoxHighPassSlope);
+        numericHighPassHz, comboBoxHighPassFamily, comboBoxHighPassSlope, numericHighPassRipple);
 
     public CrossoverEdge LowPassEdge => ReadEdge(
-        numericLowPassHz, comboBoxLowPassFamily, comboBoxLowPassSlope);
+        numericLowPassHz, comboBoxLowPassFamily, comboBoxLowPassSlope, numericLowPassRipple);
 
     /// <summary>
     /// Ties the channel block to its plot curves: the header and the Processed
@@ -241,7 +243,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
         [
             CrossoverFilterFamily.LinkwitzRiley,
             CrossoverFilterFamily.Butterworth,
-            CrossoverFilterFamily.Bessel
+            CrossoverFilterFamily.Bessel,
+            CrossoverFilterFamily.Chebyshev
         ]);
         familyComboBox.Format += (_, args) =>
         {
@@ -251,6 +254,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
                 {
                     CrossoverFilterFamily.LinkwitzRiley => "Linkwitz-Riley",
                     CrossoverFilterFamily.Bessel => "Bessel",
+                    CrossoverFilterFamily.Chebyshev => "Chebyshev",
                     _ => "Butterworth"
                 };
             }
@@ -314,8 +318,10 @@ public partial class VirtualCrossoverChannelControl : UserControl
             UpdateCrossoverAvailability();
             RaiseSettingsChanged();
         };
-        WireEdgeEvents(numericHighPassHz, comboBoxHighPassFamily, comboBoxHighPassSlope);
-        WireEdgeEvents(numericLowPassHz, comboBoxLowPassFamily, comboBoxLowPassSlope);
+        WireEdgeEvents(
+            numericHighPassHz, comboBoxHighPassFamily, comboBoxHighPassSlope, numericHighPassRipple);
+        WireEdgeEvents(
+            numericLowPassHz, comboBoxLowPassFamily, comboBoxLowPassSlope, numericLowPassRipple);
         checkBoxShowRaw.CheckedChanged += (_, _) => RaiseSettingsChanged();
         checkBoxShowProcessed.CheckedChanged += (_, _) => RaiseSettingsChanged();
         checkBoxBypass.CheckedChanged += (_, _) => RaiseSettingsChanged();
@@ -324,15 +330,19 @@ public partial class VirtualCrossoverChannelControl : UserControl
     private void WireEdgeEvents(
         DarkNumericUpDown frequencyInput,
         DarkComboBox familyComboBox,
-        DarkComboBox slopeComboBox)
+        DarkComboBox slopeComboBox,
+        DarkNumericUpDown rippleInput)
     {
         frequencyInput.ValueChanged += (_, _) => RaiseSettingsChanged();
         familyComboBox.SelectedIndexChanged += (_, _) =>
         {
             PopulateSlopes(familyComboBox, slopeComboBox);
+            // The ripple field is editable only for Chebyshev, so it follows the family.
+            UpdateCrossoverAvailability();
             RaiseSettingsChanged();
         };
         slopeComboBox.SelectedIndexChanged += (_, _) => RaiseSettingsChanged();
+        rippleInput.ValueChanged += (_, _) => RaiseSettingsChanged();
     }
 
     private void RaiseSettingsChanged()
@@ -360,6 +370,21 @@ public partial class VirtualCrossoverChannelControl : UserControl
         numericLowPassHz.Enabled = lowPass;
         comboBoxLowPassFamily.Enabled = lowPass;
         comboBoxLowPassSlope.Enabled = lowPass;
+
+        UpdateRippleAvailability(numericHighPassRipple, comboBoxHighPassFamily, highPass);
+        UpdateRippleAvailability(numericLowPassRipple, comboBoxLowPassFamily, lowPass);
+    }
+
+    // The passband ripple only means anything for a Chebyshev edge, so it is greyed
+    // out (disabled) for any other family or an inactive edge, and editable only for
+    // an active Chebyshev edge.
+    private static void UpdateRippleAvailability(
+        DarkNumericUpDown rippleInput,
+        DarkComboBox familyComboBox,
+        bool edgeActive)
+    {
+        bool chebyshev = familyComboBox.SelectedItem is CrossoverFilterFamily.Chebyshev;
+        rippleInput.Enabled = edgeActive && chebyshev;
     }
 
     // The ruler-check readout: the delay expressed as a distance in air.
@@ -372,13 +397,15 @@ public partial class VirtualCrossoverChannelControl : UserControl
     private static CrossoverEdge ReadEdge(
         DarkNumericUpDown frequencyInput,
         DarkComboBox familyComboBox,
-        DarkComboBox slopeComboBox)
+        DarkComboBox slopeComboBox,
+        DarkNumericUpDown rippleInput)
     {
         CrossoverFilterFamily family =
             familyComboBox.SelectedItem is CrossoverFilterFamily selected
                 ? selected
                 : CrossoverFilterFamily.LinkwitzRiley;
         int slope = slopeComboBox.SelectedItem is int value ? value : 24;
-        return new CrossoverEdge(family, (double)frequencyInput.Value, slope);
+        return new CrossoverEdge(
+            family, (double)frequencyInput.Value, slope, (double)rippleInput.Value);
     }
 }

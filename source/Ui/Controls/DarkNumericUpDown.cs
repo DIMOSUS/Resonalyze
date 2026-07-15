@@ -792,15 +792,27 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     }
 
     // Commit first: stepping must apply to what the user typed, not overwrite
-    // uncommitted editor text with lastCommitted ± increment.
+    // uncommitted editor text with lastCommitted ± increment. A read-only field
+    // ignores every step path alike (spin buttons, wheel, arrow keys) — the single
+    // choke point that makes ReadOnly a true lock, not just a typing block.
     private void StepUp()
     {
+        if (readOnly)
+        {
+            return;
+        }
+
         CommitEditorText();
         Value += increment;
     }
 
     private void StepDown()
     {
+        if (readOnly)
+        {
+            return;
+        }
+
         CommitEditorText();
         Value -= increment;
     }

@@ -877,10 +877,14 @@ public partial class VirtualCrossoverPanel : UserControl
             control.HighPassFrequencyInput.Value = Clamp(
                 control.HighPassFrequencyInput, settings.HighPassEdge.FrequencyHz);
             control.HighPassSlopeComboBox.SelectedItem = settings.HighPassEdge.SlopeDbPerOctave;
+            control.HighPassRippleInput.Value = Clamp(
+                control.HighPassRippleInput, settings.HighPassEdge.RippleDb);
             control.LowPassFamilyComboBox.SelectedItem = settings.LowPassEdge.Family;
             control.LowPassFrequencyInput.Value = Clamp(
                 control.LowPassFrequencyInput, settings.LowPassEdge.FrequencyHz);
             control.LowPassSlopeComboBox.SelectedItem = settings.LowPassEdge.SlopeDbPerOctave;
+            control.LowPassRippleInput.Value = Clamp(
+                control.LowPassRippleInput, settings.LowPassEdge.RippleDb);
             control.ShowRawCheckBox.Checked = settings.ShowRawCurve;
             control.ShowProcessedCheckBox.Checked = settings.ShowProcessedCurve;
             control.BypassCheckBox.Checked = settings.Bypass;

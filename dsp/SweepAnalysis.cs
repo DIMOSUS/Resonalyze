@@ -15,43 +15,7 @@ public static class SweepAnalysis
     {
         ArgumentNullException.ThrowIfNull(recorded);
         ArgumentNullException.ThrowIfNull(inverseFilter);
-
-        return DeconvolveWithInverseFilter(
-            ToDoubles(recorded),
-            ToDoubles(inverseFilter),
-            normalization);
-    }
-
-    private static double[] ToDoubles(IReadOnlyList<float> samples)
-    {
-        double[] result = new double[samples.Count];
-        for (int i = 0; i < samples.Count; i++)
-        {
-            result[i] = samples[i];
-        }
-
-        return result;
-    }
-
-    public static SweepDeconvolutionResult DeconvolveWithInverseFilter(
-        IReadOnlyList<double> recorded,
-        IReadOnlyList<double> inverseFilter,
-        double normalization = 2.0)
-    {
-        ArgumentNullException.ThrowIfNull(recorded);
-        ArgumentNullException.ThrowIfNull(inverseFilter);
-        if (recorded.Count == 0)
-        {
-            throw new ArgumentException("Recorded signal must not be empty.", nameof(recorded));
-        }
-        if (inverseFilter.Count == 0)
-        {
-            throw new ArgumentException("Inverse filter must not be empty.", nameof(inverseFilter));
-        }
-        if (!double.IsFinite(normalization) || normalization <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(normalization));
-        }
+        ValidateInputs(recorded.Count, inverseFilter.Count, normalization);
 
         int convolutionLength = checked(recorded.Count + inverseFilter.Count - 1);
         int fftLength = DspMath.NextPowerOfTwo(convolutionLength);
@@ -69,6 +33,66 @@ public static class SweepAnalysis
             filterSpectrum[i] = new Complex(inverseFilter[i], 0.0);
         }
 
+        return Deconvolve(signalSpectrum, filterSpectrum, convolutionLength, normalization);
+    }
+
+    public static SweepDeconvolutionResult DeconvolveWithInverseFilter(
+        IReadOnlyList<double> recorded,
+        IReadOnlyList<double> inverseFilter,
+        double normalization = 2.0)
+    {
+        ArgumentNullException.ThrowIfNull(recorded);
+        ArgumentNullException.ThrowIfNull(inverseFilter);
+        ValidateInputs(recorded.Count, inverseFilter.Count, normalization);
+
+        int convolutionLength = checked(recorded.Count + inverseFilter.Count - 1);
+        int fftLength = DspMath.NextPowerOfTwo(convolutionLength);
+
+        var signalSpectrum = new Complex[fftLength];
+        var filterSpectrum = new Complex[fftLength];
+
+        for (int i = 0; i < recorded.Count; i++)
+        {
+            signalSpectrum[i] = new Complex(recorded[i], 0.0);
+        }
+
+        for (int i = 0; i < inverseFilter.Count; i++)
+        {
+            filterSpectrum[i] = new Complex(inverseFilter[i], 0.0);
+        }
+
+        return Deconvolve(signalSpectrum, filterSpectrum, convolutionLength, normalization);
+    }
+
+    private static void ValidateInputs(int recordedCount, int inverseFilterCount, double normalization)
+    {
+        if (recordedCount == 0)
+        {
+            throw new ArgumentException("Recorded signal must not be empty.", "recorded");
+        }
+        if (inverseFilterCount == 0)
+        {
+            throw new ArgumentException("Inverse filter must not be empty.", "inverseFilter");
+        }
+        if (!double.IsFinite(normalization) || normalization <= 0)
+        {
+            throw new ArgumentOutOfRangeException("normalization");
+        }
+    }
+
+    /// <summary>
+    /// Shared FFT core: circular-convolves two full-length <see cref="Complex"/>
+    /// spectra already zero-padded to the FFT length, then extracts the first
+    /// <paramref name="convolutionLength"/> real samples and the peak index.
+    /// Callers fill the spectra directly from their native sample type, so no
+    /// intermediate real-valued copy is materialized.
+    /// </summary>
+    private static SweepDeconvolutionResult Deconvolve(
+        Complex[] signalSpectrum,
+        Complex[] filterSpectrum,
+        int convolutionLength,
+        double normalization)
+    {
         Fourier.Forward(signalSpectrum, FourierOptions.Matlab);
         Fourier.Forward(filterSpectrum, FourierOptions.Matlab);
 

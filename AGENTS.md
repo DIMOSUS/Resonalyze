@@ -48,6 +48,31 @@ Key structural points:
 - **`Overlays/`** manages persistent overlay slots and calculated (math) overlays; **`History/`** persists measurement snapshots with per-entry working state.
 - Update checking uses NetSparkle + `Settings/GitHubReleaseChecker`.
 
+### Numeric precision (float vs double)
+
+Raw and real-time audio samples stay `float`: capture/playback buffers, the
+`float[]` channels of `AudioCaptureResult`, recorded microphone/loopback data,
+and generated playback signals (sweep/noise). Doubling those buffers adds no
+information after the ADC and only costs memory traffic and GC/cache pressure.
+
+Everything past the analysis boundary is `double`/`Complex`: FFT/IFFT and
+spectra, H1/H2 transfer functions, coherence and accumulated power/cross
+spectra, phase/unwrap/group delay, fractional delay, biquad coefficients and
+responses, crossover/EQ optimizers, correlation/GCC-PHAT, channel summation,
+window coefficients, frequency/time axes, and every accumulator (RMS, energy,
+average, sum of squares). The reason is intermediate cancellation — dividing
+tiny spectral values, subtracting near-equal phases, accumulating millions of
+terms, sub-sample delay — where `float` error shows long before a single sample
+overflows its range.
+
+Convert exactly once, while filling the first analysis buffer — write
+`float`-sourced samples straight into the `Complex[]`/`double[]` FFT input in the
+same loop (see `SpectrumAnalysis.ComputePowerSpectrum` and
+`SweepAnalysis.DeconvolveWithInverseFilter`). Do not materialize an intermediate
+`float[] → double[] → Complex[]` copy. Keep public DSP APIs typed to their
+natural source (`float` when the input is captured audio) rather than forcing
+callers to pre-convert to `double[]`.
+
 ## Testing Conventions
 
 Tests use xUnit. DSP tests are deterministic and synthetic: `tests/Resonalyze.Dsp.Tests/SyntheticMeasurement.cs` implements `IImpulseMeasurement` so analysis code is exercised against generated impulses/filters/delays rather than recordings. The exception is `RealMeasurementArrivalTests`, which pins field regressions against the real measurements in the `assets/test_data` submodule. App tests focus on file formats and non-UI logic (overlay files, impulse-response files, plot model construction, PDF sheets) plus the measurement layer against a fake `IAudioSessionFactory` (`tests/Resonalyze.App.Tests/Fakes/`) — sweep/averaging/retry/cancellation/device-failure/live paths with no NAudio or hardware. `tests/Resonalyze.Audio.Tests/` exercises the audio internals directly (via `InternalsVisibleTo`): PCM decoding, accumulation, session reuse, WASAPI configuration. Hardware smoke tests are marked `[Trait("Category","Hardware")]` and excluded with `--filter "Category!=Hardware"`.

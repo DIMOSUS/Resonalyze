@@ -10,7 +10,7 @@ internal interface ISweepCaptureSession
     Task WaitForSamplesAsync(int sampleCount, CancellationToken cancellationToken);
     /// <summary>Faults when the capture device stops; otherwise never completes.</summary>
     Task WaitForStopAsync(CancellationToken cancellationToken);
-    float[][] GetSamplesSnapshot();
+    float[][] CompleteCaptureSnapshot();
 }
 
 internal sealed class SweepRunAudioOrchestrator
@@ -67,7 +67,7 @@ internal sealed class SweepRunAudioOrchestrator
             sampleWaitTask = capture.WaitForSamplesAsync(requiredSamples, cancellationToken);
             await AwaitUnlessStoppedAsync(sampleWaitTask, stopped).ConfigureAwait(false);
 
-            return capture.GetSamplesSnapshot();
+            return capture.CompleteCaptureSnapshot();
         }
         finally
         {

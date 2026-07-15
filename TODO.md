@@ -131,9 +131,11 @@ Linux dev env where the work was done).
   only the capture accumulator restarts). Software lifecycle guards are covered
   deterministically: callback pools are allocated before playback, reset advances
   a capture epoch and drains queued old blocks, an in-flight old block is rejected
-  at the final locked append, and overflow/worker failure can recover on reset.
-  The remaining item is device/driver integration: run an averaged ASIO
-  measurement on real hardware (ideally a slow driver).
+  at the final locked append, overflow/worker failure can recover on reset, and
+  final capture atomically detaches its accumulator before copying the completed
+  samples outside the session lock (so the worker can keep returning queue slots).
+  The remaining item is device/driver integration: run an averaged ASIO measurement
+  on real hardware (ideally a slow driver).
 - [ ] **Sweep-run quality: unambiguous checks only, by decision.** The
   statistical outlier layer (peak-delay vs median, IR correlation vs a reference
   run) and the run pre-alignment rework were **rejected by the user

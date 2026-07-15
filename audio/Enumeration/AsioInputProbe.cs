@@ -60,7 +60,7 @@ public static class AsioInputProbe
             await session.StopAsync().ConfigureAwait(false);
         }
 
-        float[][] samples = session.GetSamplesSnapshot();
+        float[][] samples = session.CompleteCaptureSnapshot();
         return driverInfo.InputChannels
             .Select((channel, index) =>
             {

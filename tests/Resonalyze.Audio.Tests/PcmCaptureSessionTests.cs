@@ -59,11 +59,11 @@ public sealed class PcmCaptureSessionTests
         Task start = session.StartAsync(CancellationToken.None);
         device.Push([0xff, 0x7f]);
         await start;
-        Assert.Single(session.GetSamplesSnapshot()[0]);
+        Assert.Single(session.CompleteCaptureSnapshot()[0]);
 
         session.Reset();
 
-        Assert.Empty(session.GetSamplesSnapshot()[0]);
+        Assert.Empty(session.CompleteCaptureSnapshot()[0]);
     }
 
     [Fact]
@@ -82,7 +82,35 @@ public sealed class PcmCaptureSessionTests
         device.Push([2, 0]);
         await start.WaitAsync(TimeSpan.FromSeconds(2));
 
-        Assert.Equal([2f], session.GetSamplesSnapshot()[0]);
+        Assert.Equal([2f], session.CompleteCaptureSnapshot()[0]);
+    }
+
+    [Fact]
+    public async Task CompleteCaptureSnapshot_CopiesAfterReleasingSessionLock()
+    {
+        using var copyStarted = new ManualResetEventSlim();
+        using var releaseCopy = new ManualResetEventSlim();
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        await using var session = new PcmCaptureSession(
+            device,
+            beforeSnapshotCopy: () =>
+            {
+                copyStarted.Set();
+                releaseCopy.Wait(TimeSpan.FromSeconds(2));
+            });
+        session.ProcessCaptureBlock(CreateBlock(value: 0x4000, generation: 0));
+
+        Task<float[][]> snapshotTask = Task.Run(session.CompleteCaptureSnapshot);
+        Assert.True(copyStarted.Wait(TimeSpan.FromSeconds(2)));
+
+        Task worker = Task.Run(() =>
+            session.ProcessCaptureBlock(CreateBlock(value: 0x2000, generation: 1)));
+        await worker.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(0, session.ReadSamples);
+
+        releaseCopy.Set();
+        float[][] snapshot = await snapshotTask.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(0.5f, snapshot[0][0]);
     }
 
     [Fact]
@@ -262,4 +290,13 @@ public sealed class PcmCaptureSessionTests
             return 1;
         }
     }
+
+    private static PcmCaptureBlock CreateBlock(short value, int generation) =>
+        new(
+            BitConverter.GetBytes(value),
+            BytesRecorded: sizeof(short),
+            Generation: generation,
+            Discontinuity: false,
+            Silent: false,
+            TimestampError: false);
 }

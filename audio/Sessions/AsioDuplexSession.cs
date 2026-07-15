@@ -71,8 +71,7 @@ internal sealed class AsioDuplexSession : IAudioDuplexSession
         int requiredSamples = session.ReadSamples + signalSampleCount + captureTailSamples;
         await session.WaitForSamplesAsync(requiredSamples, cancellationToken)
             .ConfigureAwait(false);
-        float[][] channels = session.GetSamplesSnapshot();
-        session.PauseCapture();
+        float[][] channels = session.CompleteCaptureSnapshot();
 
         return new AudioCaptureResult(
             channels,

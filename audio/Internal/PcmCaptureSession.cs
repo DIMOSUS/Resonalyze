@@ -9,7 +9,8 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
     private readonly int expectedSamples;
     private readonly PcmCapturePump capturePump;
     private readonly AudioLevelAccumulator levelAccumulator;
-    private CaptureAccumulator accumulator;
+    private readonly Action? beforeSnapshotCopy;
+    private CaptureAccumulator? accumulator;
     private float[][] decodeScratch = Array.Empty<float[]>();
     private double[] meterPeaks = Array.Empty<double>();
     private double[] meterSumSquares = Array.Empty<double>();
@@ -31,7 +32,8 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         IAudioCaptureDevice device,
         int sequence = 0,
         int expectedSamples = 0,
-        IInterleavedSampleDecoder? decoder = null)
+        IInterleavedSampleDecoder? decoder = null,
+        Action? beforeSnapshotCopy = null)
     {
         this.device = device ?? throw new ArgumentNullException(nameof(device));
         this.decoder = decoder ?? InterleavedSampleDecoder.Create(device.CaptureFormat);
@@ -41,6 +43,7 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         }
         Sequence = sequence;
         this.expectedSamples = expectedSamples;
+        this.beforeSnapshotCopy = beforeSnapshotCopy;
         accumulator = CreateAccumulator();
         levelAccumulator = new AudioLevelAccumulator(device.ChannelCount, device.CaptureFormat.SampleRate);
         capturePump = new PcmCapturePump(
@@ -57,7 +60,7 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
     internal event Action<AudioChannelLevel[]>? LevelsAvailable;
 
     public int Sequence { get; set; }
-    public int ReadSamples => accumulator.ReadSamples;
+    public int ReadSamples => accumulator?.ReadSamples ?? 0;
     public long DiscontinuityCount => Interlocked.Read(ref discontinuityCount);
     public long SilentPacketCount => Interlocked.Read(ref silentPacketCount);
     public long TimestampErrorCount => Interlocked.Read(ref timestampErrorCount);
@@ -106,7 +109,7 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         }
         lock (sync)
         {
-            if (accumulator.ReadSamples >= sampleCount)
+            if ((accumulator?.ReadSamples ?? 0) >= sampleCount)
             {
                 return Task.CompletedTask;
             }
@@ -121,20 +124,30 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         }
     }
 
-    public float[][] GetSamplesSnapshot()
+    public float[][] CompleteCaptureSnapshot()
     {
+        CaptureAccumulator? completed;
         lock (sync)
         {
-            return accumulator.Snapshot();
+            int newGeneration = ++captureGeneration;
+            completed = accumulator;
+            accumulator = null;
+            paused = true;
+            sampleWaiters.CancelAll();
+            capturePump.Reset(newGeneration);
         }
+
+        beforeSnapshotCopy?.Invoke();
+        return completed?.Snapshot() ?? Array.Empty<float[]>();
     }
 
     public void Reset()
     {
+        CaptureAccumulator freshAccumulator = CreateAccumulator();
         lock (sync)
         {
             int newGeneration = ++captureGeneration;
-            accumulator = CreateAccumulator();
+            accumulator = freshAccumulator;
             sampleWaiters.CancelAll();
             // Resetting for the next run resumes accumulation after a pause.
             paused = false;
@@ -178,7 +191,7 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         }
     }
 
-    private void ProcessCaptureBlock(PcmCaptureBlock block)
+    internal void ProcessCaptureBlock(PcmCaptureBlock block)
     {
         int frameCount = block.BytesRecorded / device.CaptureFormat.BlockAlign;
         EnsureScratch(frameCount);
@@ -206,11 +219,11 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
             // While paused (between averaged runs) the device keeps running so the
             // level meter stays live, but samples are dropped instead of appended —
             // otherwise a long confirmation pause grows the buffer without bound.
-            if (!paused)
+            if (!paused && accumulator is { } activeAccumulator)
             {
-                accumulator.Append(decodeScratch, decodedFrames);
-                readySequences = accumulator.ExtractReadySequences();
-                sampleWaiters.CompleteUpTo(accumulator.ReadSamples);
+                activeAccumulator.Append(decodeScratch, decodedFrames);
+                readySequences = activeAccumulator.ExtractReadySequences();
+                sampleWaiters.CompleteUpTo(activeAccumulator.ReadSamples);
             }
         }
 

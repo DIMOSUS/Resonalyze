@@ -133,7 +133,7 @@ public sealed class SweepRunAudioOrchestratorTests
 
         public void FailCapture(Exception exception) => stopSignal.TrySetException(exception);
 
-        public float[][] GetSamplesSnapshot()
+        public float[][] CompleteCaptureSnapshot()
         {
             calls.Add("snapshot");
             return Snapshot;

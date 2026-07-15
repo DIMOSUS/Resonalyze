@@ -214,6 +214,26 @@ public sealed class PcmCaptureSessionTests
         Assert.Equal(1, notifications);
     }
 
+    [Fact]
+    public async Task DevicePacketCallback_AfterWarmup_DoesNotAllocateOnCallingThread()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        await using var session = new PcmCaptureSession(device);
+        byte[] packet = [0, 0];
+        Task start = session.StartAsync(CancellationToken.None);
+        device.Push(packet);
+        await start;
+        await session.WaitForSamplesAsync(1, CancellationToken.None);
+        session.Reset();
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        device.Push(packet);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocated);
+        await session.WaitForSamplesAsync(1, CancellationToken.None);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
@@ -230,7 +250,7 @@ public sealed class PcmCaptureSessionTests
             CaptureFormat = format;
         }
 
-        public event EventHandler<AudioCaptureDataEventArgs>? DataAvailable;
+        public event Action<AudioCapturePacket>? DataAvailable;
         public event EventHandler<AudioDeviceStoppedEventArgs>? Stopped;
 
         public WaveFormat CaptureFormat { get; }
@@ -251,17 +271,13 @@ public sealed class PcmCaptureSessionTests
             bool silent = false,
             bool timestampError = false)
         {
-            DataAvailable?.Invoke(
-                this,
-                new AudioCaptureDataEventArgs
-                {
-                    Buffer = bytes,
-                    BytesRecorded = bytes.Length,
-                    Format = CaptureFormat,
-                    Discontinuity = discontinuity,
-                    Silent = silent,
-                    TimestampError = timestampError
-                });
+            DataAvailable?.Invoke(new AudioCapturePacket(
+                bytes,
+                bytes.Length,
+                CaptureFormat,
+                Discontinuity: discontinuity,
+                Silent: silent,
+                TimestampError: timestampError));
         }
 
         public void StopWithError(Exception exception) =>

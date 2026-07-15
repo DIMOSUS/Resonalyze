@@ -4,7 +4,7 @@ namespace Resonalyze.Audio;
 
 internal interface IAudioCaptureDevice : IAsyncDisposable
 {
-    event EventHandler<AudioCaptureDataEventArgs>? DataAvailable;
+    event Action<AudioCapturePacket>? DataAvailable;
     event EventHandler<AudioDeviceStoppedEventArgs>? Stopped;
 
     WaveFormat CaptureFormat { get; }

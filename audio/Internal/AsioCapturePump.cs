@@ -6,7 +6,8 @@ namespace Resonalyze.Audio;
 /// <summary>
 /// Moves ASIO input processing off the driver's buffer-switch callback. Slots and
 /// channel buffers are prepared before playback starts; the callback only copies
-/// into the fixed pool. Reset drains queued packets and advances the capture epoch.
+/// into the fixed pool. Reset and disposal drop queued packets; reset also advances
+/// the capture epoch.
 /// </summary>
 internal sealed class AsioCapturePump : IDisposable
 {
@@ -45,6 +46,17 @@ internal sealed class AsioCapturePump : IDisposable
             Name = "Resonalyze ASIO capture"
         };
         worker.Start();
+    }
+
+    internal bool IsStopping
+    {
+        get
+        {
+            lock (sync)
+            {
+                return stopping;
+            }
+        }
     }
 
     /// <summary>Allocates the complete callback buffer pool before the driver starts.</summary>
@@ -150,6 +162,11 @@ internal sealed class AsioCapturePump : IDisposable
         lock (sync)
         {
             stopping = true;
+            failurePending = false;
+            while (pendingSlots.Count > 0)
+            {
+                freeSlots.Push(pendingSlots.Dequeue());
+            }
             Monitor.PulseAll(sync);
         }
 

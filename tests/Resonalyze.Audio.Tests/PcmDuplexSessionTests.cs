@@ -100,7 +100,7 @@ public sealed class PcmDuplexSessionTests
     {
         public PushCaptureDevice(WaveFormat format) => CaptureFormat = format;
 
-        public event EventHandler<AudioCaptureDataEventArgs>? DataAvailable;
+        public event Action<AudioCapturePacket>? DataAvailable;
         public event EventHandler<AudioDeviceStoppedEventArgs>? Stopped;
 
         public void StopWithError(Exception exception) =>
@@ -131,12 +131,10 @@ public sealed class PcmDuplexSessionTests
             CapturePackets++;
             var bytes = new byte[frames * CaptureFormat.BlockAlign];
             Array.Fill(bytes, (byte)0x10);
-            DataAvailable?.Invoke(this, new AudioCaptureDataEventArgs
-            {
-                Buffer = bytes,
-                BytesRecorded = bytes.Length,
-                Format = CaptureFormat
-            });
+            DataAvailable?.Invoke(new AudioCapturePacket(
+                bytes,
+                bytes.Length,
+                CaptureFormat));
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

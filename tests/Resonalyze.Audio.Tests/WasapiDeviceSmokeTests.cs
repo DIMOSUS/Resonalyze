@@ -77,7 +77,7 @@ public sealed class WasapiDeviceSmokeTests
         await using var captureSession = new PcmCaptureSession(captureDevice);
         long? lastDevicePosition = null;
         long? lastQpcPosition = null;
-        captureDevice.DataAvailable += (_, packet) =>
+        captureDevice.DataAvailable += packet =>
         {
             lastDevicePosition = packet.DevicePositionFrames;
             lastQpcPosition = packet.QpcPosition;

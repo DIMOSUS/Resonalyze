@@ -2,8 +2,8 @@ namespace Resonalyze.Audio;
 
 /// <summary>
 /// Copies device-owned PCM packets into a bounded preallocated queue and processes
-/// them away from the capture callback. Reset drains queued packets and generation
-/// tags let the session reject an older packet that was already in flight.
+/// them away from the capture callback. Reset and disposal drop queued packets;
+/// generation tags let the session reject an older packet already in flight.
 /// </summary>
 internal sealed class PcmCapturePump : IDisposable
 {
@@ -48,6 +48,17 @@ internal sealed class PcmCapturePump : IDisposable
         worker.Start();
     }
 
+    internal bool IsStopping
+    {
+        get
+        {
+            lock (sync)
+            {
+                return stopping;
+            }
+        }
+    }
+
     public void Reset(int newGeneration)
     {
         lock (sync)
@@ -63,12 +74,11 @@ internal sealed class PcmCapturePump : IDisposable
         }
     }
 
-    public bool TryEnqueue(AudioCaptureDataEventArgs args)
+    public bool TryEnqueue(AudioCapturePacket packet)
     {
-        ArgumentNullException.ThrowIfNull(args);
-        if (args.BytesRecorded < 0 || args.BytesRecorded > args.Buffer.Length)
+        if (packet.BytesRecorded < 0 || packet.BytesRecorded > packet.Buffer.Length)
         {
-            throw new ArgumentOutOfRangeException(nameof(args.BytesRecorded));
+            throw new ArgumentOutOfRangeException(nameof(packet.BytesRecorded));
         }
 
         lock (sync)
@@ -88,19 +98,19 @@ internal sealed class PcmCapturePump : IDisposable
 
             int slotIndex = freeSlots.Pop();
             Slot slot = slots[slotIndex];
-            if (args.BytesRecorded > slot.Buffer.Length)
+            if (packet.BytesRecorded > slot.Buffer.Length)
             {
                 freeSlots.Push(slotIndex);
                 throw new InvalidOperationException(
-                    $"PCM packet size {args.BytesRecorded} exceeds the prepared capacity {slot.Buffer.Length}.");
+                    $"PCM packet size {packet.BytesRecorded} exceeds the prepared capacity {slot.Buffer.Length}.");
             }
 
-            args.Buffer.Span[..args.BytesRecorded].CopyTo(slot.Buffer);
-            slot.BytesRecorded = args.BytesRecorded;
+            packet.Buffer.Span[..packet.BytesRecorded].CopyTo(slot.Buffer);
+            slot.BytesRecorded = packet.BytesRecorded;
             slot.Generation = generation;
-            slot.Discontinuity = args.Discontinuity;
-            slot.Silent = args.Silent;
-            slot.TimestampError = args.TimestampError;
+            slot.Discontinuity = packet.Discontinuity;
+            slot.Silent = packet.Silent;
+            slot.TimestampError = packet.TimestampError;
             pendingSlots.Enqueue(slotIndex);
             Monitor.Pulse(sync);
             return true;
@@ -112,6 +122,11 @@ internal sealed class PcmCapturePump : IDisposable
         lock (sync)
         {
             stopping = true;
+            failurePending = false;
+            while (pendingSlots.Count > 0)
+            {
+                freeSlots.Push(pendingSlots.Dequeue());
+            }
             Monitor.PulseAll(sync);
         }
 

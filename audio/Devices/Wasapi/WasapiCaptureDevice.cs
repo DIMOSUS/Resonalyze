@@ -69,7 +69,7 @@ internal sealed class WasapiCaptureDevice : IAudioCaptureDevice, ICaptureDiagnos
         }
     }
 
-    public event EventHandler<AudioCaptureDataEventArgs>? DataAvailable;
+    public event Action<AudioCapturePacket>? DataAvailable;
     public event EventHandler<AudioDeviceStoppedEventArgs>? Stopped;
 
     public WaveFormat CaptureFormat { get; }
@@ -262,19 +262,15 @@ internal sealed class WasapiCaptureDevice : IAudioCaptureDevice, ICaptureDiagnos
                 {
                     TimestampErrors++;
                 }
-                DataAvailable?.Invoke(
-                    this,
-                    new AudioCaptureDataEventArgs
-                    {
-                        Buffer = capturePacketBuffer.AsMemory(0, byteCount),
-                        BytesRecorded = byteCount,
-                        Format = CaptureFormat,
-                        DevicePositionFrames = devicePosition,
-                        QpcPosition = qpcPosition,
-                        Discontinuity = discontinuity,
-                        Silent = silent,
-                        TimestampError = timestampError
-                    });
+                DataAvailable?.Invoke(new AudioCapturePacket(
+                    capturePacketBuffer.AsMemory(0, byteCount),
+                    byteCount,
+                    CaptureFormat,
+                    devicePosition,
+                    qpcPosition,
+                    discontinuity,
+                    silent,
+                    timestampError));
             }
             finally
             {

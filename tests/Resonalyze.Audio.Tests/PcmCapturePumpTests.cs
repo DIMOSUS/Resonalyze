@@ -28,22 +28,31 @@ public sealed class PcmCapturePumpTests
     }
 
     [Fact]
-    public async Task TryEnqueue_WhenQueueIsFull_ReportsTerminalFailure()
+    public async Task Overflow_Reset_AllowsNextGenerationToProcess()
     {
         using var workerStarted = new ManualResetEventSlim();
         using var releaseWorker = new ManualResetEventSlim();
         var failure = new TaskCompletionSource<Exception>(
             TaskCreationOptions.RunContinuationsAsynchronously);
+        var completed = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         using var pump = new PcmCapturePump(
             2,
-            _ =>
+            block =>
             {
-                workerStarted.Set();
-                releaseWorker.Wait();
+                if (block.Generation == 1)
+                {
+                    workerStarted.Set();
+                    releaseWorker.Wait();
+                }
+                else
+                {
+                    completed.TrySetResult();
+                }
             },
             (_, exception) => failure.TrySetResult(exception));
         pump.Reset(1);
-        AudioCaptureDataEventArgs packet = CreatePacket([0, 0]);
+        AudioCapturePacket packet = CreatePacket([0, 0]);
 
         try
         {
@@ -59,11 +68,45 @@ public sealed class PcmCapturePumpTests
             Exception exception = await failure.Task.WaitAsync(TimeSpan.FromSeconds(2));
             Assert.Equal(16, accepted);
             Assert.Contains("could not keep up", exception.Message);
+
+            pump.Reset(2);
+            Assert.True(pump.TryEnqueue(packet));
+            await completed.Task.WaitAsync(TimeSpan.FromSeconds(2));
         }
         finally
         {
             releaseWorker.Set();
         }
+    }
+
+    [Fact]
+    public async Task WorkerException_Reset_AllowsNextGenerationToProcess()
+    {
+        var failure = new TaskCompletionSource<Exception>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var completed = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var pump = new PcmCapturePump(
+            2,
+            block =>
+            {
+                if (block.Generation == 1)
+                {
+                    throw new IOException("worker failed");
+                }
+                completed.TrySetResult();
+            },
+            (_, exception) => failure.TrySetResult(exception));
+        AudioCapturePacket packet = CreatePacket([0, 0]);
+        pump.Reset(1);
+
+        Assert.True(pump.TryEnqueue(packet));
+        Exception error = await failure.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal("worker failed", error.Message);
+
+        pump.Reset(2);
+        Assert.True(pump.TryEnqueue(packet));
+        await completed.Task.WaitAsync(TimeSpan.FromSeconds(2));
     }
 
     [Fact]
@@ -151,7 +194,7 @@ public sealed class PcmCapturePumpTests
             2,
             _ => processed.TrySetResult(),
             (_, exception) => processed.TrySetException(exception));
-        AudioCaptureDataEventArgs packet = CreatePacket([1, 0]);
+        AudioCapturePacket packet = CreatePacket([1, 0]);
         pump.Reset(1);
         Assert.True(pump.TryEnqueue(packet));
         await processed.Task.WaitAsync(TimeSpan.FromSeconds(2));
@@ -165,10 +208,44 @@ public sealed class PcmCapturePumpTests
         Assert.Equal(0, allocated);
     }
 
-    private static AudioCaptureDataEventArgs CreatePacket(byte[] bytes) => new()
+    [Fact]
+    public async Task Dispose_WithQueuedPackets_DropsPendingWorkBeforeWorkerStops()
     {
-        Buffer = bytes,
-        BytesRecorded = bytes.Length,
-        Format = new WaveFormat(48000, 16, 1)
-    };
+        using var firstStarted = new ManualResetEventSlim();
+        using var releaseFirst = new ManualResetEventSlim();
+        int processed = 0;
+        var pump = new PcmCapturePump(
+            2,
+            _ =>
+            {
+                if (Interlocked.Increment(ref processed) == 1)
+                {
+                    firstStarted.Set();
+                    releaseFirst.Wait(TimeSpan.FromSeconds(2));
+                }
+            },
+            (_, exception) => throw exception);
+        pump.Reset(1);
+        AudioCapturePacket packet = CreatePacket([0, 0]);
+        Assert.True(pump.TryEnqueue(packet));
+        Assert.True(firstStarted.Wait(TimeSpan.FromSeconds(2)));
+        Assert.True(pump.TryEnqueue(packet));
+
+        Task release = Task.Run(() =>
+        {
+            Assert.True(SpinWait.SpinUntil(
+                () => pump.IsStopping,
+                TimeSpan.FromSeconds(2)));
+            releaseFirst.Set();
+        });
+        pump.Dispose();
+        await release.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(1, Volatile.Read(ref processed));
+    }
+
+    private static AudioCapturePacket CreatePacket(byte[] bytes) => new(
+        bytes,
+        bytes.Length,
+        new WaveFormat(48000, 16, 1));
 }

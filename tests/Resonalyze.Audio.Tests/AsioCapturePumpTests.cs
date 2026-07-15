@@ -199,7 +199,7 @@ public sealed class AsioCapturePumpTests
     }
 
     [Fact]
-    public async Task Dispose_WithQueuedBlocks_ProcessesQueueBeforeWorkerStops()
+    public async Task Dispose_WithQueuedBlocks_DropsPendingWorkBeforeWorkerStops()
     {
         using var firstStarted = new ManualResetEventSlim();
         using var releaseFirst = new ManualResetEventSlim();
@@ -222,11 +222,17 @@ public sealed class AsioCapturePumpTests
         Assert.True(firstStarted.Wait(TimeSpan.FromSeconds(2)));
         Assert.True(Enqueue(pump, sample));
 
-        Task disposing = Task.Run(pump.Dispose);
-        releaseFirst.Set();
-        await disposing.WaitAsync(TimeSpan.FromSeconds(2));
+        Task release = Task.Run(() =>
+        {
+            Assert.True(SpinWait.SpinUntil(
+                () => pump.IsStopping,
+                TimeSpan.FromSeconds(2)));
+            releaseFirst.Set();
+        });
+        pump.Dispose();
+        await release.WaitAsync(TimeSpan.FromSeconds(2));
 
-        Assert.Equal(2, Volatile.Read(ref processed));
+        Assert.Equal(1, Volatile.Read(ref processed));
     }
 
     private static bool Enqueue(AsioCapturePump pump, PinnedFloat sample) =>

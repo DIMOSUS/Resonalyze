@@ -179,11 +179,11 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         Sequence,
         Math.Max(expectedSamples, device.CaptureFormat.SampleRate));
 
-    private void HandleDataAvailable(object? sender, AudioCaptureDataEventArgs args)
+    private void HandleDataAvailable(AudioCapturePacket packet)
     {
         try
         {
-            capturePump.TryEnqueue(args);
+            capturePump.TryEnqueue(packet);
         }
         catch (Exception exception)
         {
@@ -314,6 +314,10 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         disposed = true;
         device.DataAvailable -= HandleDataAvailable;
         device.Stopped -= HandleStopped;
+        SequenceReady = null;
+        SequenceChannelsReady = null;
+        CaptureDiscontinuity = null;
+        LevelsAvailable = null;
         capturePump.Dispose();
         lock (sync)
         {

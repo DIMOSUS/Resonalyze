@@ -134,6 +134,9 @@ Linux dev env where the work was done).
   at the final locked append, overflow/worker failure can recover on reset, and
   final capture atomically detaches its accumulator before copying the completed
   samples outside the session lock (so the worker can keep returning queue slots).
+  The PCM device-to-pump handoff uses a value packet rather than allocating an
+  application-owned EventArgs per callback; disposal drops queued work and detaches
+  subscribers before waiting for an already in-flight worker block.
   The remaining item is device/driver integration: run an averaged ASIO measurement
   on real hardware (ideally a slow driver).
 - [ ] **Sweep-run quality: unambiguous checks only, by decision.** The

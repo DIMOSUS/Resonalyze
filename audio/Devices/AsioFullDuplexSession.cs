@@ -261,6 +261,9 @@ internal sealed class AsioFullDuplexSession : IDisposable
         }
 
         disposed = true;
+        SequenceReady = null;
+        SequenceChannelsReady = null;
+        LevelsAvailable = null;
         StopAndDisposeDriver();
         capturePump.Dispose();
         lock (sync)

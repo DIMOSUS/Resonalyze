@@ -20,7 +20,7 @@ internal sealed class MmeCaptureDevice : IAudioCaptureDevice
         source.RecordingStopped += HandleRecordingStopped;
     }
 
-    public event EventHandler<AudioCaptureDataEventArgs>? DataAvailable;
+    public event Action<AudioCapturePacket>? DataAvailable;
     public event EventHandler<AudioDeviceStoppedEventArgs>? Stopped;
 
     public WaveFormat CaptureFormat { get; }
@@ -61,14 +61,10 @@ internal sealed class MmeCaptureDevice : IAudioCaptureDevice
 
     private void HandleDataAvailable(object? sender, WaveInEventArgs args)
     {
-        DataAvailable?.Invoke(
-            this,
-            new AudioCaptureDataEventArgs
-            {
-                Buffer = args.Buffer.AsMemory(0, args.BytesRecorded),
-                BytesRecorded = args.BytesRecorded,
-                Format = CaptureFormat
-            });
+        DataAvailable?.Invoke(new AudioCapturePacket(
+            args.Buffer.AsMemory(0, args.BytesRecorded),
+            args.BytesRecorded,
+            CaptureFormat));
     }
 
     private void HandleRecordingStopped(object? sender, StoppedEventArgs args)

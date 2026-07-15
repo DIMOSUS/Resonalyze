@@ -110,6 +110,41 @@ public sealed class PcmCapturePumpTests
     }
 
     [Fact]
+    public async Task Reset_WhileOldWorkerLaterFails_DoesNotPoisonNewGeneration()
+    {
+        using var firstStarted = new ManualResetEventSlim();
+        using var releaseFirst = new ManualResetEventSlim();
+        var completed = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var unexpectedFailure = new TaskCompletionSource<Exception>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var pump = new PcmCapturePump(
+            2,
+            block =>
+            {
+                if (block.Generation == 1)
+                {
+                    firstStarted.Set();
+                    releaseFirst.Wait(TimeSpan.FromSeconds(2));
+                    throw new IOException("stale worker failed");
+                }
+                completed.TrySetResult();
+            },
+            (_, exception) => unexpectedFailure.TrySetResult(exception));
+        AudioCapturePacket packet = CreatePacket([0, 0]);
+        pump.Reset(1);
+        Assert.True(pump.TryEnqueue(packet));
+        Assert.True(firstStarted.Wait(TimeSpan.FromSeconds(2)));
+
+        pump.Reset(2);
+        releaseFirst.Set();
+        Assert.True(pump.TryEnqueue(packet));
+        await completed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.False(unexpectedFailure.Task.IsCompleted);
+    }
+
+    [Fact]
     public async Task TryEnqueue_AllowsDifferentPacketSizesWhileEarlierPacketIsQueued()
     {
         using var releaseFirst = new ManualResetEventSlim();

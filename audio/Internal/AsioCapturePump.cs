@@ -6,8 +6,8 @@ namespace Resonalyze.Audio;
 /// <summary>
 /// Moves ASIO input processing off the driver's buffer-switch callback. Slots and
 /// channel buffers are prepared before playback starts; the callback only copies
-/// into the fixed pool. Reset and disposal drop queued packets; reset also advances
-/// the capture epoch.
+/// into the fixed pool. Reset, completion and disposal drop queued packets;
+/// completion preserves a terminal generation failure for the caller.
 /// </summary>
 internal sealed class AsioCapturePump : IDisposable
 {
@@ -26,6 +26,7 @@ internal sealed class AsioCapturePump : IDisposable
     private int preparedByteCapacity;
     private int generation;
     private int failureGeneration;
+    private Exception? failureException;
     private int inFlightCount;
     private bool failurePending;
     private bool stopping;
@@ -93,14 +94,44 @@ internal sealed class AsioCapturePump : IDisposable
     {
         lock (sync)
         {
-            generation = newGeneration;
-            failed = false;
-            failurePending = false;
-            while (pendingSlots.Count > 0)
+            ResetCore(newGeneration);
+        }
+    }
+
+    public Exception? CompleteGeneration(int completedGeneration, int newGeneration)
+    {
+        lock (sync)
+        {
+            if (generation != completedGeneration)
             {
-                freeSlots.Push(pendingSlots.Dequeue());
+                throw new InvalidOperationException(
+                    $"Cannot complete ASIO capture generation {completedGeneration}; current generation is {generation}.");
             }
-            Monitor.PulseAll(sync);
+            Exception? failure = failed && failureGeneration == completedGeneration
+                ? failureException
+                : null;
+            ResetCore(newGeneration);
+            return failure;
+        }
+    }
+
+    /// <summary>
+    /// Waits until every block accepted before the callback source stopped has
+    /// finished processing. Callers must prevent new enqueues before entering.
+    /// </summary>
+    public void Drain()
+    {
+        if (Thread.CurrentThread == worker)
+        {
+            throw new InvalidOperationException("The ASIO capture worker cannot drain itself.");
+        }
+
+        lock (sync)
+        {
+            while (pendingSlots.Count > 0 || inFlightCount > 0)
+            {
+                Monitor.Wait(sync);
+            }
         }
     }
 
@@ -133,6 +164,7 @@ internal sealed class AsioCapturePump : IDisposable
                 failed = true;
                 failurePending = true;
                 failureGeneration = generation;
+                failureException = overflowException;
                 Monitor.Pulse(sync);
                 return false;
             }
@@ -225,11 +257,21 @@ internal sealed class AsioCapturePump : IDisposable
             }
             catch (Exception exception)
             {
+                bool report;
                 lock (sync)
                 {
-                    failed = true;
+                    report = blockGeneration == generation;
+                    if (report)
+                    {
+                        failed = true;
+                        failureGeneration = blockGeneration;
+                        failureException = exception;
+                    }
                 }
-                reportFailure(blockGeneration, exception);
+                if (report)
+                {
+                    reportFailure(blockGeneration, exception);
+                }
             }
             finally
             {
@@ -241,6 +283,19 @@ internal sealed class AsioCapturePump : IDisposable
                 }
             }
         }
+    }
+
+    private void ResetCore(int newGeneration)
+    {
+        generation = newGeneration;
+        failed = false;
+        failurePending = false;
+        failureException = null;
+        while (pendingSlots.Count > 0)
+        {
+            freeSlots.Push(pendingSlots.Dequeue());
+        }
+        Monitor.PulseAll(sync);
     }
 
     private sealed class Slot

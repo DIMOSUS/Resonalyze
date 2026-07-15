@@ -127,16 +127,24 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
     public float[][] CompleteCaptureSnapshot()
     {
         CaptureAccumulator? completed;
+        Exception? captureFailure;
         lock (sync)
         {
+            int completedGeneration = captureGeneration;
             int newGeneration = ++captureGeneration;
             completed = accumulator;
             accumulator = null;
             paused = true;
             sampleWaiters.CancelAll();
-            capturePump.Reset(newGeneration);
+            captureFailure = capturePump.CompleteGeneration(
+                completedGeneration,
+                newGeneration);
         }
 
+        if (captureFailure != null)
+        {
+            throw captureFailure;
+        }
         beforeSnapshotCopy?.Invoke();
         return completed?.Snapshot() ?? Array.Empty<float[]>();
     }

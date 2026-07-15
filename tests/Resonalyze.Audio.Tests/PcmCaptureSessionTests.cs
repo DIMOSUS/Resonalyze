@@ -114,6 +114,33 @@ public sealed class PcmCaptureSessionTests
     }
 
     [Fact]
+    public async Task CompleteCaptureSnapshot_WhenOverflowReportIsPending_Throws()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        var decoder = new BlockingDecoder();
+        await using var session = new PcmCaptureSession(device, decoder: decoder);
+
+        device.Push([1, 0]);
+        Assert.True(decoder.FirstDecodeStarted.Wait(TimeSpan.FromSeconds(2)));
+        for (int index = 0; index < 15; index++)
+        {
+            device.Push([2, 0]);
+        }
+        device.Push([3, 0]); // no free slot: failure is pending behind the blocked worker
+
+        try
+        {
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+                session.CompleteCaptureSnapshot);
+            Assert.Contains("could not keep up", exception.Message);
+        }
+        finally
+        {
+            decoder.ReleaseFirstDecode.Set();
+        }
+    }
+
+    [Fact]
     public async Task PausedCaptureDropsAppendsButKeepsMeteringAndResumesOnReset()
     {
         var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));

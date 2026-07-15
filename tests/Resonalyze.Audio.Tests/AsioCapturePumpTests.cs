@@ -173,6 +173,119 @@ public sealed class AsioCapturePumpTests
     }
 
     [Fact]
+    public async Task Reset_WhileOldWorkerLaterFails_DoesNotPoisonNewGeneration()
+    {
+        using var firstStarted = new ManualResetEventSlim();
+        using var releaseFirst = new ManualResetEventSlim();
+        var completed = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var unexpectedFailure = new TaskCompletionSource<Exception>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var pump = new AsioCapturePump(
+            1,
+            block =>
+            {
+                if (block.Generation == 1)
+                {
+                    firstStarted.Set();
+                    releaseFirst.Wait(TimeSpan.FromSeconds(2));
+                    throw new IOException("stale worker failed");
+                }
+                completed.TrySetResult();
+            },
+            (_, exception) => unexpectedFailure.TrySetResult(exception));
+        pump.Prepare(4);
+        pump.Reset(1);
+        using var sample = new PinnedFloat(0.5f);
+        Assert.True(Enqueue(pump, sample));
+        Assert.True(firstStarted.Wait(TimeSpan.FromSeconds(2)));
+
+        pump.Reset(2);
+        releaseFirst.Set();
+        Assert.True(Enqueue(pump, sample));
+        await completed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.False(unexpectedFailure.Task.IsCompleted);
+    }
+
+    [Fact]
+    public void CompleteGeneration_WhenOverflowReportIsPending_ReturnsFailure()
+    {
+        using var firstStarted = new ManualResetEventSlim();
+        using var releaseFirst = new ManualResetEventSlim();
+        using var pump = new AsioCapturePump(
+            1,
+            _ =>
+            {
+                firstStarted.Set();
+                releaseFirst.Wait(TimeSpan.FromSeconds(2));
+            },
+            (_, _) => { });
+        pump.Prepare(4);
+        pump.Reset(1);
+        using var sample = new PinnedFloat(0.5f);
+
+        try
+        {
+            Assert.True(Enqueue(pump, sample));
+            Assert.True(firstStarted.Wait(TimeSpan.FromSeconds(2)));
+            for (int index = 1; index < 8; index++)
+            {
+                Assert.True(Enqueue(pump, sample));
+            }
+            Assert.False(Enqueue(pump, sample));
+
+            Exception? failure = pump.CompleteGeneration(1, 2);
+
+            InvalidOperationException exception = Assert.IsType<InvalidOperationException>(failure);
+            Assert.Contains("could not keep up", exception.Message);
+        }
+        finally
+        {
+            releaseFirst.Set();
+        }
+    }
+
+    [Fact]
+    public async Task Drain_WaitsForQueuedAndInFlightBlocks()
+    {
+        using var firstStarted = new ManualResetEventSlim();
+        using var releaseFirst = new ManualResetEventSlim();
+        int processed = 0;
+        using var pump = new AsioCapturePump(
+            1,
+            _ =>
+            {
+                if (Interlocked.Increment(ref processed) == 1)
+                {
+                    firstStarted.Set();
+                    releaseFirst.Wait(TimeSpan.FromSeconds(2));
+                }
+            },
+            (_, exception) => throw exception);
+        pump.Prepare(4);
+        pump.Reset(1);
+        using var sample = new PinnedFloat(0.5f);
+        Assert.True(Enqueue(pump, sample));
+        Assert.True(firstStarted.Wait(TimeSpan.FromSeconds(2)));
+        Assert.True(Enqueue(pump, sample));
+        var drainStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        Task draining = Task.Run(() =>
+        {
+            drainStarted.TrySetResult();
+            pump.Drain();
+        });
+        await drainStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.False(draining.IsCompleted);
+
+        releaseFirst.Set();
+        await draining.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(2, Volatile.Read(ref processed));
+    }
+
+    [Fact]
     public void TryEnqueue_AfterWarmup_DoesNotAllocateOnCallingThread()
     {
         using var processed = new ManualResetEventSlim();

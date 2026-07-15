@@ -232,6 +232,13 @@ internal sealed class AsioFullDuplexSession : IDisposable
     }
 
     /// <summary>
+    /// Finishes blocks accepted before the callback source stopped. This is an
+    /// explicit operation because ordinary streaming teardown intentionally drops
+    /// pending work instead of publishing late frames.
+    /// </summary>
+    internal void DrainCapture() => capturePump.Drain();
+
+    /// <summary>
     /// Atomically ends the current accumulation epoch and returns its samples.
     /// The old accumulator is detached under the session lock; the potentially
     /// large allocation/copy then runs without blocking the capture worker from
@@ -240,15 +247,23 @@ internal sealed class AsioFullDuplexSession : IDisposable
     public float[][] CompleteCaptureSnapshot()
     {
         CaptureAccumulator? completed;
+        Exception? captureFailure;
         lock (sync)
         {
+            int completedGeneration = captureGeneration;
             int newGeneration = ++captureGeneration;
             completed = accumulator;
             accumulator = null;
             sampleWaiters.CancelAll();
-            capturePump.Reset(newGeneration);
+            captureFailure = capturePump.CompleteGeneration(
+                completedGeneration,
+                newGeneration);
         }
 
+        if (captureFailure != null)
+        {
+            throw captureFailure;
+        }
         beforeSnapshotCopy?.Invoke();
         return completed?.Snapshot() ?? Array.Empty<float[]>();
     }

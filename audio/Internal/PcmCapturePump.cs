@@ -2,8 +2,9 @@ namespace Resonalyze.Audio;
 
 /// <summary>
 /// Copies device-owned PCM packets into a bounded preallocated queue and processes
-/// them away from the capture callback. Reset and disposal drop queued packets;
-/// generation tags let the session reject an older packet already in flight.
+/// them away from the capture callback. Reset, completion and disposal drop queued
+/// packets; completion preserves a terminal generation failure for the caller.
+/// Generation tags let the session reject an older packet already in flight.
 /// </summary>
 internal sealed class PcmCapturePump : IDisposable
 {
@@ -20,6 +21,7 @@ internal sealed class PcmCapturePump : IDisposable
     private readonly Stack<int> freeSlots = new(SlotCount);
     private int generation;
     private int failureGeneration;
+    private Exception? failureException;
     private bool failurePending;
     private bool stopping;
     private bool failed;
@@ -63,14 +65,24 @@ internal sealed class PcmCapturePump : IDisposable
     {
         lock (sync)
         {
-            generation = newGeneration;
-            failed = false;
-            failurePending = false;
-            while (pendingSlots.Count > 0)
+            ResetCore(newGeneration);
+        }
+    }
+
+    public Exception? CompleteGeneration(int completedGeneration, int newGeneration)
+    {
+        lock (sync)
+        {
+            if (generation != completedGeneration)
             {
-                freeSlots.Push(pendingSlots.Dequeue());
+                throw new InvalidOperationException(
+                    $"Cannot complete PCM capture generation {completedGeneration}; current generation is {generation}.");
             }
-            Monitor.PulseAll(sync);
+            Exception? failure = failed && failureGeneration == completedGeneration
+                ? failureException
+                : null;
+            ResetCore(newGeneration);
+            return failure;
         }
     }
 
@@ -92,6 +104,7 @@ internal sealed class PcmCapturePump : IDisposable
                 failed = true;
                 failurePending = true;
                 failureGeneration = generation;
+                failureException = overflowException;
                 Monitor.Pulse(sync);
                 return false;
             }
@@ -186,11 +199,21 @@ internal sealed class PcmCapturePump : IDisposable
             }
             catch (Exception exception)
             {
+                bool report;
                 lock (sync)
                 {
-                    failed = true;
+                    report = blockGeneration == generation;
+                    if (report)
+                    {
+                        failed = true;
+                        failureGeneration = blockGeneration;
+                        failureException = exception;
+                    }
                 }
-                reportFailure(blockGeneration, exception);
+                if (report)
+                {
+                    reportFailure(blockGeneration, exception);
+                }
             }
             finally
             {
@@ -201,6 +224,19 @@ internal sealed class PcmCapturePump : IDisposable
                 }
             }
         }
+    }
+
+    private void ResetCore(int newGeneration)
+    {
+        generation = newGeneration;
+        failed = false;
+        failurePending = false;
+        failureException = null;
+        while (pendingSlots.Count > 0)
+        {
+            freeSlots.Push(pendingSlots.Dequeue());
+        }
+        Monitor.PulseAll(sync);
     }
 
     private sealed class Slot(int maximumPacketBytes)

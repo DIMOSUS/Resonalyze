@@ -132,6 +132,8 @@ Linux dev env where the work was done).
   deterministically: callback pools are allocated before playback, reset advances
   a capture epoch and drains queued old blocks, an in-flight old block is rejected
   at the final locked append, overflow/worker failure can recover on reset, and
+  successful capture completion atomically surfaces a terminal pump failure before
+  clearing that epoch, while ASIO stop drains already accepted work before snapshot;
   final capture atomically detaches its accumulator before copying the completed
   samples outside the session lock (so the worker can keep returning queue slots).
   The PCM device-to-pump handoff uses a value packet rather than allocating an

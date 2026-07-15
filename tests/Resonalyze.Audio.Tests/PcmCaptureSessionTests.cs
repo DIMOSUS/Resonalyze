@@ -59,11 +59,101 @@ public sealed class PcmCaptureSessionTests
         Task start = session.StartAsync(CancellationToken.None);
         device.Push([0xff, 0x7f]);
         await start;
-        Assert.Single(session.GetSamplesSnapshot()[0]);
+        Assert.Single(session.CompleteCaptureSnapshot()[0]);
 
         session.Reset();
 
-        Assert.Empty(session.GetSamplesSnapshot()[0]);
+        Assert.Empty(session.CompleteCaptureSnapshot()[0]);
+    }
+
+    [Fact]
+    public async Task Reset_WhileOldPacketIsDecoding_DoesNotAppendItToNewRun()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        var decoder = new BlockingDecoder();
+        await using var session = new PcmCaptureSession(device, decoder: decoder);
+
+        Task start = session.StartAsync(CancellationToken.None);
+        device.Push([1, 0]);
+        Assert.True(decoder.FirstDecodeStarted.Wait(TimeSpan.FromSeconds(2)));
+
+        session.Reset();
+        decoder.ReleaseFirstDecode.Set();
+        device.Push([2, 0]);
+        await start.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal([2f], session.CompleteCaptureSnapshot()[0]);
+    }
+
+    [Fact]
+    public async Task CompleteCaptureSnapshot_CopiesAfterReleasingSessionLock()
+    {
+        using var copyStarted = new ManualResetEventSlim();
+        using var releaseCopy = new ManualResetEventSlim();
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        await using var session = new PcmCaptureSession(
+            device,
+            beforeSnapshotCopy: () =>
+            {
+                copyStarted.Set();
+                releaseCopy.Wait(TimeSpan.FromSeconds(2));
+            });
+        session.ProcessCaptureBlock(CreateBlock(value: 0x4000, generation: 0));
+
+        Task<float[][]> snapshotTask = Task.Run(session.CompleteCaptureSnapshot);
+        Assert.True(copyStarted.Wait(TimeSpan.FromSeconds(2)));
+
+        Task worker = Task.Run(() =>
+            session.ProcessCaptureBlock(CreateBlock(value: 0x2000, generation: 1)));
+        await worker.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(0, session.ReadSamples);
+
+        releaseCopy.Set();
+        float[][] snapshot = await snapshotTask.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(0.5f, snapshot[0][0]);
+    }
+
+    [Fact]
+    public async Task CompleteCaptureSnapshot_WhenOverflowReportIsPending_Throws()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        var decoder = new BlockingDecoder();
+        await using var session = new PcmCaptureSession(device, decoder: decoder);
+
+        device.Push([1, 0]);
+        Assert.True(decoder.FirstDecodeStarted.Wait(TimeSpan.FromSeconds(2)));
+        for (int index = 0; index < 15; index++)
+        {
+            device.Push([2, 0]);
+        }
+        device.Push([3, 0]); // no free slot: failure is pending behind the blocked worker
+
+        try
+        {
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+                session.CompleteCaptureSnapshot);
+            Assert.Contains("could not keep up", exception.Message);
+        }
+        finally
+        {
+            decoder.ReleaseFirstDecode.Set();
+        }
+    }
+
+    [Fact]
+    public async Task AcceptedSamples_IncludesPacketStillProcessingOnWorker()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        var decoder = new BlockingDecoder();
+        await using var session = new PcmCaptureSession(device, decoder: decoder);
+
+        device.Push([1, 0, 2, 0]);
+        Assert.True(decoder.FirstDecodeStarted.Wait(TimeSpan.FromSeconds(2)));
+
+        Assert.Equal(2, session.AcceptedSamples);
+        Assert.Equal(0, session.ReadSamples);
+
+        decoder.ReleaseFirstDecode.Set();
     }
 
     [Fact]
@@ -74,21 +164,23 @@ public sealed class PcmCaptureSessionTests
         int levelEvents = 0;
         session.LevelsAvailable += _ => levelEvents++;
         Task start = session.StartAsync(CancellationToken.None);
-        device.Push([0x01, 0x00, 0x02, 0x00]); // 2 frames (mono 16-bit)
+        device.Push(new byte[1600 * 2]); // one 30 Hz meter interval at 48 kHz
         await start;
-        Assert.Equal(2, session.ReadSamples);
+        Assert.Equal(1600, session.ReadSamples);
         int levelsAfterStart = levelEvents;
 
         // A long confirmation pause: audio keeps arriving but must not accumulate.
         session.Pause();
-        device.Push([0x03, 0x00, 0x04, 0x00, 0x05, 0x00]); // 3 frames, dropped
-        Assert.Equal(2, session.ReadSamples);
+        device.Push(new byte[1600 * 2]);
+        await WaitUntilAsync(() => Volatile.Read(ref levelEvents) > levelsAfterStart);
+        Assert.Equal(1600, session.ReadSamples);
         Assert.True(levelEvents > levelsAfterStart); // meter stayed live
 
         // The next run resumes and starts from a clean buffer.
         session.Reset();
         Assert.Equal(0, session.ReadSamples);
         device.Push([0x06, 0x00]);
+        await session.WaitForSamplesAsync(1, CancellationToken.None);
         Assert.Equal(1, session.ReadSamples);
     }
 
@@ -165,6 +257,35 @@ public sealed class PcmCaptureSessionTests
         Assert.Equal(1, notifications);
     }
 
+    [Fact]
+    public async Task DevicePacketCallback_AfterWarmup_DoesNotAllocateOnCallingThread()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        await using var session = new PcmCaptureSession(device);
+        byte[] packet = [0, 0];
+        Task start = session.StartAsync(CancellationToken.None);
+        device.Push(packet);
+        await start;
+        await session.WaitForSamplesAsync(1, CancellationToken.None);
+        session.Reset();
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        device.Push(packet);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocated);
+        await session.WaitForSamplesAsync(1, CancellationToken.None);
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        while (!condition())
+        {
+            await Task.Delay(10, timeout.Token);
+        }
+    }
+
     private sealed class FakeCaptureDevice : IAudioCaptureDevice
     {
         public FakeCaptureDevice(WaveFormat format)
@@ -172,11 +293,12 @@ public sealed class PcmCaptureSessionTests
             CaptureFormat = format;
         }
 
-        public event EventHandler<AudioCaptureDataEventArgs>? DataAvailable;
+        public event Action<AudioCapturePacket>? DataAvailable;
         public event EventHandler<AudioDeviceStoppedEventArgs>? Stopped;
 
         public WaveFormat CaptureFormat { get; }
         public int ChannelCount => CaptureFormat.Channels;
+        public int MaximumPacketBytes => CaptureFormat.AverageBytesPerSecond / 10;
 
         public Task StartAsync(CancellationToken cancellationToken)
         {
@@ -192,17 +314,13 @@ public sealed class PcmCaptureSessionTests
             bool silent = false,
             bool timestampError = false)
         {
-            DataAvailable?.Invoke(
-                this,
-                new AudioCaptureDataEventArgs
-                {
-                    Buffer = bytes,
-                    BytesRecorded = bytes.Length,
-                    Format = CaptureFormat,
-                    Discontinuity = discontinuity,
-                    Silent = silent,
-                    TimestampError = timestampError
-                });
+            DataAvailable?.Invoke(new AudioCapturePacket(
+                bytes,
+                bytes.Length,
+                CaptureFormat,
+                Discontinuity: discontinuity,
+                Silent: silent,
+                TimestampError: timestampError));
         }
 
         public void StopWithError(Exception exception) =>
@@ -210,4 +328,34 @@ public sealed class PcmCaptureSessionTests
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
+
+    private sealed class BlockingDecoder : IInterleavedSampleDecoder
+    {
+        private int decodeCount;
+
+        public ManualResetEventSlim FirstDecodeStarted { get; } = new();
+        public ManualResetEventSlim ReleaseFirstDecode { get; } = new();
+        public int ChannelCount => 1;
+
+        public int Decode(ReadOnlySpan<byte> source, float[][] destination)
+        {
+            if (Interlocked.Increment(ref decodeCount) == 1)
+            {
+                FirstDecodeStarted.Set();
+                ReleaseFirstDecode.Wait(TimeSpan.FromSeconds(2));
+            }
+
+            destination[0][0] = source[0];
+            return 1;
+        }
+    }
+
+    private static PcmCaptureBlock CreateBlock(short value, int generation) =>
+        new(
+            BitConverter.GetBytes(value),
+            BytesRecorded: sizeof(short),
+            Generation: generation,
+            Discontinuity: false,
+            Silent: false,
+            TimestampError: false);
 }

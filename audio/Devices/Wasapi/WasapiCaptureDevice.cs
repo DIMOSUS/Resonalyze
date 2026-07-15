@@ -13,6 +13,7 @@ internal sealed class WasapiCaptureDevice : IAudioCaptureDevice, ICaptureDiagnos
     private readonly string endpointId;
     private readonly string friendlyName;
     private readonly int bufferMilliseconds;
+    private byte[] capturePacketBuffer = Array.Empty<byte>();
     private Thread? captureThread;
     private TaskCompletionSource<bool>? stopped;
     private volatile bool stopRequested;
@@ -68,11 +69,19 @@ internal sealed class WasapiCaptureDevice : IAudioCaptureDevice, ICaptureDiagnos
         }
     }
 
-    public event EventHandler<AudioCaptureDataEventArgs>? DataAvailable;
+    public event Action<AudioCapturePacket>? DataAvailable;
     public event EventHandler<AudioDeviceStoppedEventArgs>? Stopped;
 
     public WaveFormat CaptureFormat { get; }
     public int ChannelCount => CaptureFormat.Channels;
+    public int MaximumPacketBytes
+    {
+        get
+        {
+            Initialize();
+            return checked(audioClient.BufferSize * CaptureFormat.BlockAlign);
+        }
+    }
     public string EndpointId => endpointId;
     public string FriendlyName => friendlyName;
     public AudioClientShareMode ShareMode { get; }
@@ -169,6 +178,7 @@ internal sealed class WasapiCaptureDevice : IAudioCaptureDevice, ICaptureDiagnos
             }
         }
         audioClient.SetEventHandle(packetReady.SafeWaitHandle.DangerousGetHandle());
+        capturePacketBuffer = new byte[checked(audioClient.BufferSize * CaptureFormat.BlockAlign)];
         initialized = true;
     }
 
@@ -227,13 +237,17 @@ internal sealed class WasapiCaptureDevice : IAudioCaptureDevice, ICaptureDiagnos
             try
             {
                 int byteCount = checked(frames * CaptureFormat.BlockAlign);
-                var buffer = new byte[byteCount];
                 bool silent = (flags & AudioClientBufferFlags.Silent) != 0;
                 bool discontinuity = (flags & AudioClientBufferFlags.DataDiscontinuity) != 0;
                 bool timestampError = (flags & AudioClientBufferFlags.TimestampError) != 0;
-                if (!silent)
+                Span<byte> packet = capturePacketBuffer.AsSpan(0, byteCount);
+                if (silent)
                 {
-                    Marshal.Copy(source, buffer, 0, byteCount);
+                    packet.Clear();
+                }
+                else
+                {
+                    Marshal.Copy(source, capturePacketBuffer, 0, byteCount);
                 }
                 CapturePackets++;
                 if (silent)
@@ -248,19 +262,15 @@ internal sealed class WasapiCaptureDevice : IAudioCaptureDevice, ICaptureDiagnos
                 {
                     TimestampErrors++;
                 }
-                DataAvailable?.Invoke(
-                    this,
-                    new AudioCaptureDataEventArgs
-                    {
-                        Buffer = buffer,
-                        BytesRecorded = byteCount,
-                        Format = CaptureFormat,
-                        DevicePositionFrames = devicePosition,
-                        QpcPosition = qpcPosition,
-                        Discontinuity = discontinuity,
-                        Silent = silent,
-                        TimestampError = timestampError
-                    });
+                DataAvailable?.Invoke(new AudioCapturePacket(
+                    capturePacketBuffer.AsMemory(0, byteCount),
+                    byteCount,
+                    CaptureFormat,
+                    devicePosition,
+                    qpcPosition,
+                    discontinuity,
+                    silent,
+                    timestampError));
             }
             finally
             {

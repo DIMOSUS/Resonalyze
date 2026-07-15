@@ -128,8 +128,21 @@ Linux dev env where the work was done).
 
 - [ ] **Verify the reused ASIO session on hardware.** Averaged sweeps now keep
   one open ASIO session across runs (the driver plays silence between runs and
-  only the capture accumulator restarts). Verified by construction only — run
-  an averaged ASIO measurement on real hardware (ideally a slow driver) first.
+  only the capture accumulator restarts). Software lifecycle guards are covered
+  deterministically: callback pools are allocated before playback, reset advances
+  a capture epoch and drains queued old blocks, an in-flight old block is rejected
+  at the final locked append, overflow/worker failure can recover on reset, and
+  successful capture completion atomically surfaces a terminal pump failure before
+  clearing that epoch, while ASIO stop drains already accepted work before snapshot;
+  final capture atomically detaches its accumulator before copying the completed
+  samples outside the session lock (so the worker can keep returning queue slots).
+  The PCM device-to-pump handoff uses a value packet rather than allocating an
+  application-owned EventArgs per callback; disposal drops queued work and detaches
+  subscribers before waiting for an already in-flight worker block. Sweep baselines
+  use pump-accepted frames (including queued work), so worker latency cannot shorten
+  the requested capture tail.
+  The remaining item is device/driver integration: run an averaged ASIO measurement
+  on real hardware (ideally a slow driver).
 - [ ] **Sweep-run quality: unambiguous checks only, by decision.** The
   statistical outlier layer (peak-delay vs median, IR correlation vs a reference
   run) and the run pre-alignment rework were **rejected by the user
@@ -185,16 +198,6 @@ Linux dev env where the work was done).
 - [ ] **Wave backend still uses legacy MME** (`WaveInEvent`/`WaveOutEvent`) with
   hidden mixer resampling and extra latency; migrate to WASAPI
   (exclusive/shared) with a device-compatibility pass.
-- [ ] **Synchronous `LevelsAvailable` subscribers can still stall the ASIO
-  callback** if a subscriber does a blocking `Invoke` to the UI thread; verify
-  live (the meter coalesces, but the contract isn't enforced).
-- [ ] **`GetSamplesSnapshot` copies the whole buffer under the callback lock**;
-  safe only because it's called after `StopAsync`, which the contract doesn't
-  enforce.
-- [ ] **Subscriber exceptions escape into the real-time audio callbacks**
-  (`LevelsAvailable`/`SequenceReady`/… invoked directly from ASIO/Wave
-  callbacks): one throwing UI subscriber can kill the driver. Route through a
-  bounded dispatcher or isolate each subscriber.
 
 ## Overlays
 
@@ -277,18 +280,10 @@ Linux dev env where the work was done).
 - [ ] **EMA coherence has no effective average count** (overlap-correlated
   frames, alpha-dependent memory): expose K_eff ≈ (2−α)/α (reduced for overlap)
   alongside the curve and feed it to the same debias the sweep path uses.
-- [ ] ★ **The ASIO/Wave capture callback still allocates on the audio thread**:
-  sequence extraction builds jagged float arrays + a List and invokes subscribers
-  inline; the first pass (JIT + allocation) can overrun a 64–128-sample ASIO
-  budget. Target: callback → convert into a preallocated SPSC ring slot → return;
-  a background thread reframes/FFTs from the ring.
-- [ ] **Level meter allocates a fresh `AudioChannelLevel[]` per callback** (up to
-  ~750/s at 64-sample buffers): accumulate peak/sumSquares in the callback and
-  snapshot at 20–30 Hz.
-- [ ] **First live plot frame is heavy on the UI thread** (snapshot clones + RTA
-  computed even when hidden + first resample + OxyPlot series/capacity growth):
-  compute the RTA magnitude only when `ShowInputMagnitude`, and consider
-  pre-building the series before playback starts.
+- [ ] **First live plot frame is still heavy on the UI thread** (snapshot clones
+  + first resample + OxyPlot series/capacity growth). Hidden RTA computation is
+  now skipped; profile whether pre-building series before playback starts is
+  worthwhile.
 
 ## History
 

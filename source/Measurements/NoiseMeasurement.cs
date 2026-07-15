@@ -224,7 +224,11 @@ namespace Resonalyze
         /// outside the lock, so a slow or busy UI consumer cannot stall the
         /// background accumulation that drives the actual measurement.
         /// </summary>
-        public LiveSpectrumSnapshot? GetAccumulatedSpectrumSnapshot()
+        /// <param name="includeInputMagnitude">
+        /// Whether to calculate the optional reference-free microphone spectrum.
+        /// </param>
+        public LiveSpectrumSnapshot? GetAccumulatedSpectrumSnapshot(
+            bool includeInputMagnitude = true)
         {
             Complex[] crossSpectrum;
             double[] referencePowerSpectrum;
@@ -260,14 +264,15 @@ namespace Resonalyze
                     referencePowerSpectrum,
                     targetPowerSpectrum)
                 : null;
-            // The microphone auto-power is already accumulated for coherence, so the
-            // reference-free RTA magnitude comes for free: normalize it by the same
-            // window's coherent gain the frame was measured with so its level is
-            // window-independent, matching ComputePowerSpectrum's convention.
-            double[] inputMagnitude = SpectrumAnalysis.ComputeInputMagnitudeSpectrum(
-                targetPowerSpectrum,
-                EffectiveWindowType,
-                SequenceLength);
+            // The microphone auto-power is already accumulated for coherence. Only
+            // normalize it into a reference-free RTA curve when the caller will show
+            // that curve; the transform otherwise adds avoidable UI snapshot work.
+            double[]? inputMagnitude = includeInputMagnitude
+                ? SpectrumAnalysis.ComputeInputMagnitudeSpectrum(
+                    targetPowerSpectrum,
+                    EffectiveWindowType,
+                    SequenceLength)
+                : null;
             return new LiveSpectrumSnapshot(magnitude, coherence, inputMagnitude);
         }
 

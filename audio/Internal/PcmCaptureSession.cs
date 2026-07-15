@@ -7,27 +7,49 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
     private readonly IInterleavedSampleDecoder decoder;
     private readonly SampleWaiterRegistry sampleWaiters = new();
     private readonly int expectedSamples;
-    private CaptureAccumulator accumulator;
+    private readonly PcmCapturePump capturePump;
+    private readonly AudioLevelAccumulator levelAccumulator;
+    private readonly Action? beforeSnapshotCopy;
+    private CaptureAccumulator? accumulator;
     private float[][] decodeScratch = Array.Empty<float[]>();
     private double[] meterPeaks = Array.Empty<double>();
     private double[] meterSumSquares = Array.Empty<double>();
     private TaskCompletionSource<bool>? firstBufferReady;
     private TaskCompletionSource<Exception?>? deviceStopped;
+    private long discontinuityCount;
+    private long silentPacketCount;
+    private long timestampErrorCount;
     // A terminal device failure is remembered so a sample waiter registered
     // AFTER the stop (e.g. the sweep waiter, created only once playback ends)
     // faults immediately instead of hanging forever. Cleared only by a real
     // StartAsync, never by Reset between averaged runs.
     private Exception? terminalException;
     private bool paused;
+    private int captureGeneration;
     private bool disposed;
 
-    public PcmCaptureSession(IAudioCaptureDevice device, int sequence = 0, int expectedSamples = 0)
+    public PcmCaptureSession(
+        IAudioCaptureDevice device,
+        int sequence = 0,
+        int expectedSamples = 0,
+        IInterleavedSampleDecoder? decoder = null,
+        Action? beforeSnapshotCopy = null)
     {
         this.device = device ?? throw new ArgumentNullException(nameof(device));
-        decoder = InterleavedSampleDecoder.Create(device.CaptureFormat);
+        this.decoder = decoder ?? InterleavedSampleDecoder.Create(device.CaptureFormat);
+        if (this.decoder.ChannelCount != device.ChannelCount)
+        {
+            throw new ArgumentException("Decoder channel count must match the capture device.", nameof(decoder));
+        }
         Sequence = sequence;
         this.expectedSamples = expectedSamples;
+        this.beforeSnapshotCopy = beforeSnapshotCopy;
         accumulator = CreateAccumulator();
+        levelAccumulator = new AudioLevelAccumulator(device.ChannelCount, device.CaptureFormat.SampleRate);
+        capturePump = new PcmCapturePump(
+            device.MaximumPacketBytes,
+            ProcessCaptureBlock,
+            HandleCaptureFailure);
         device.DataAvailable += HandleDataAvailable;
         device.Stopped += HandleStopped;
     }
@@ -38,10 +60,11 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
     internal event Action<AudioChannelLevel[]>? LevelsAvailable;
 
     public int Sequence { get; set; }
-    public int ReadSamples => accumulator.ReadSamples;
-    public long DiscontinuityCount { get; private set; }
-    public long SilentPacketCount { get; private set; }
-    public long TimestampErrorCount { get; private set; }
+    public int ReadSamples => accumulator?.ReadSamples ?? 0;
+    public int AcceptedSamples => capturePump.AcceptedFrames;
+    public long DiscontinuityCount => Interlocked.Read(ref discontinuityCount);
+    public long SilentPacketCount => Interlocked.Read(ref silentPacketCount);
+    public long TimestampErrorCount => Interlocked.Read(ref timestampErrorCount);
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -87,7 +110,7 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         }
         lock (sync)
         {
-            if (accumulator.ReadSamples >= sampleCount)
+            if ((accumulator?.ReadSamples ?? 0) >= sampleCount)
             {
                 return Task.CompletedTask;
             }
@@ -102,22 +125,45 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         }
     }
 
-    public float[][] GetSamplesSnapshot()
+    public float[][] CompleteCaptureSnapshot()
     {
+        CaptureAccumulator? completed;
+        Exception? captureFailure;
         lock (sync)
         {
-            return accumulator.Snapshot();
+            int completedGeneration = captureGeneration;
+            int newGeneration = ++captureGeneration;
+            completed = accumulator;
+            accumulator = null;
+            paused = true;
+            sampleWaiters.CancelAll();
+            captureFailure = capturePump.CompleteGeneration(
+                completedGeneration,
+                newGeneration);
         }
+
+        if (captureFailure != null)
+        {
+            throw captureFailure;
+        }
+        beforeSnapshotCopy?.Invoke();
+        return completed?.Snapshot() ?? Array.Empty<float[]>();
     }
 
     public void Reset()
     {
+        CaptureAccumulator freshAccumulator = CreateAccumulator();
         lock (sync)
         {
-            accumulator = CreateAccumulator();
+            int newGeneration = ++captureGeneration;
+            accumulator = freshAccumulator;
             sampleWaiters.CancelAll();
             // Resetting for the next run resumes accumulation after a pause.
             paused = false;
+            // The epoch and target accumulator change under the same lock used by
+            // ProcessCaptureBlock's final check+append. Reset also drains queued
+            // old packets; an already in-flight packet keeps its old generation.
+            capturePump.Reset(newGeneration);
         }
     }
 
@@ -142,24 +188,23 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         Sequence,
         Math.Max(expectedSamples, device.CaptureFormat.SampleRate));
 
-    private void HandleDataAvailable(object? sender, AudioCaptureDataEventArgs args)
+    private void HandleDataAvailable(AudioCapturePacket packet)
     {
-        if (args.Discontinuity)
+        try
         {
-            DiscontinuityCount++;
-            CaptureDiscontinuity?.Invoke();
+            capturePump.TryEnqueue(packet);
         }
-        if (args.Silent)
+        catch (Exception exception)
         {
-            SilentPacketCount++;
+            HandleCaptureFailure(Volatile.Read(ref captureGeneration), exception);
         }
-        if (args.TimestampError)
-        {
-            TimestampErrorCount++;
-        }
-        int frameCount = args.BytesRecorded / args.Format.BlockAlign;
+    }
+
+    internal void ProcessCaptureBlock(PcmCaptureBlock block)
+    {
+        int frameCount = block.BytesRecorded / device.CaptureFormat.BlockAlign;
         EnsureScratch(frameCount);
-        int decodedFrames = decoder.Decode(args.Buffer.Span[..args.BytesRecorded], decodeScratch);
+        int decodedFrames = decoder.Decode(block.Buffer.AsSpan(0, block.BytesRecorded), decodeScratch);
         Array.Clear(meterPeaks);
         Array.Clear(meterSumSquares);
         for (int channel = 0; channel < device.ChannelCount; channel++)
@@ -175,28 +220,52 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         List<float[][]>? readySequences = null;
         lock (sync)
         {
+            if (block.Generation != captureGeneration)
+            {
+                return;
+            }
+
             // While paused (between averaged runs) the device keeps running so the
             // level meter stays live, but samples are dropped instead of appended —
             // otherwise a long confirmation pause grows the buffer without bound.
-            if (!paused)
+            if (!paused && accumulator is { } activeAccumulator)
             {
-                accumulator.Append(decodeScratch, decodedFrames);
-                readySequences = accumulator.ExtractReadySequences();
-                sampleWaiters.CompleteUpTo(accumulator.ReadSamples);
+                activeAccumulator.Append(decodeScratch, decodedFrames);
+                readySequences = activeAccumulator.ExtractReadySequences();
+                sampleWaiters.CompleteUpTo(activeAccumulator.ReadSamples);
             }
         }
 
+        if (block.Discontinuity)
+        {
+            Interlocked.Increment(ref discontinuityCount);
+            EventPublisher.Publish(CaptureDiscontinuity);
+        }
+        if (block.Silent)
+        {
+            Interlocked.Increment(ref silentPacketCount);
+        }
+        if (block.TimestampError)
+        {
+            Interlocked.Increment(ref timestampErrorCount);
+        }
         firstBufferReady?.TrySetResult(true);
-        LevelsAvailable?.Invoke(
-            AudioLevelMetering.MeasureChannels(meterPeaks, meterSumSquares, decodedFrames));
+        AudioChannelLevel[]? levels = levelAccumulator.AddBlock(
+            meterPeaks,
+            meterSumSquares,
+            decodedFrames);
+        if (levels != null)
+        {
+            EventPublisher.Publish(LevelsAvailable, levels);
+        }
         if (readySequences == null)
         {
             return;
         }
         foreach (float[][] sequence in readySequences)
         {
-            SequenceReady?.Invoke(sequence[0]);
-            SequenceChannelsReady?.Invoke(sequence);
+            EventPublisher.Publish(SequenceReady, sequence[0]);
+            EventPublisher.Publish(SequenceChannelsReady, sequence);
         }
     }
 
@@ -229,6 +298,22 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         }
     }
 
+    private void HandleCaptureFailure(int generation, Exception exception)
+    {
+        lock (sync)
+        {
+            if (generation != captureGeneration)
+            {
+                return;
+            }
+
+            deviceStopped?.TrySetResult(exception);
+            firstBufferReady?.TrySetException(exception);
+            terminalException ??= exception;
+            sampleWaiters.FaultAll(exception);
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (disposed)
@@ -238,6 +323,11 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         disposed = true;
         device.DataAvailable -= HandleDataAvailable;
         device.Stopped -= HandleStopped;
+        SequenceReady = null;
+        SequenceChannelsReady = null;
+        CaptureDiscontinuity = null;
+        LevelsAvailable = null;
+        capturePump.Dispose();
         lock (sync)
         {
             sampleWaiters.CancelAll();

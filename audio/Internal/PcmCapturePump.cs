@@ -22,6 +22,7 @@ internal sealed class PcmCapturePump : IDisposable
     private int generation;
     private int failureGeneration;
     private Exception? failureException;
+    private int acceptedFrames;
     private bool failurePending;
     private bool stopping;
     private bool failed;
@@ -57,6 +58,17 @@ internal sealed class PcmCapturePump : IDisposable
             lock (sync)
             {
                 return stopping;
+            }
+        }
+    }
+
+    public int AcceptedFrames
+    {
+        get
+        {
+            lock (sync)
+            {
+                return acceptedFrames;
             }
         }
     }
@@ -109,6 +121,9 @@ internal sealed class PcmCapturePump : IDisposable
                 return false;
             }
 
+            int frameCount = packet.BytesRecorded / packet.Format.BlockAlign;
+            int newAcceptedFrames = checked(acceptedFrames + frameCount);
+
             int slotIndex = freeSlots.Pop();
             Slot slot = slots[slotIndex];
             if (packet.BytesRecorded > slot.Buffer.Length)
@@ -124,6 +139,7 @@ internal sealed class PcmCapturePump : IDisposable
             slot.Discontinuity = packet.Discontinuity;
             slot.Silent = packet.Silent;
             slot.TimestampError = packet.TimestampError;
+            acceptedFrames = newAcceptedFrames;
             pendingSlots.Enqueue(slotIndex);
             Monitor.Pulse(sync);
             return true;
@@ -232,6 +248,7 @@ internal sealed class PcmCapturePump : IDisposable
         failed = false;
         failurePending = false;
         failureException = null;
+        acceptedFrames = 0;
         while (pendingSlots.Count > 0)
         {
             freeSlots.Push(pendingSlots.Dequeue());

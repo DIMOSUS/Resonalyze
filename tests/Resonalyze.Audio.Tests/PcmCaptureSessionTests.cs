@@ -141,6 +141,22 @@ public sealed class PcmCaptureSessionTests
     }
 
     [Fact]
+    public async Task AcceptedSamples_IncludesPacketStillProcessingOnWorker()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
+        var decoder = new BlockingDecoder();
+        await using var session = new PcmCaptureSession(device, decoder: decoder);
+
+        device.Push([1, 0, 2, 0]);
+        Assert.True(decoder.FirstDecodeStarted.Wait(TimeSpan.FromSeconds(2)));
+
+        Assert.Equal(2, session.AcceptedSamples);
+        Assert.Equal(0, session.ReadSamples);
+
+        decoder.ReleaseFirstDecode.Set();
+    }
+
+    [Fact]
     public async Task PausedCaptureDropsAppendsButKeepsMeteringAndResumesOnReset()
     {
         var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));

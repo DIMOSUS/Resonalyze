@@ -286,6 +286,40 @@ public sealed class AsioCapturePumpTests
     }
 
     [Fact]
+    public void AcceptedFrames_IncludesBlockStillProcessingOnWorker()
+    {
+        using var workerStarted = new ManualResetEventSlim();
+        using var releaseWorker = new ManualResetEventSlim();
+        using var pump = new AsioCapturePump(
+            1,
+            _ =>
+            {
+                workerStarted.Set();
+                releaseWorker.Wait(TimeSpan.FromSeconds(2));
+            },
+            (_, exception) => throw exception);
+        pump.Prepare(8);
+        pump.Reset(1);
+        using var sample = new PinnedFloat(0.5f);
+
+        try
+        {
+            Assert.True(pump.TryEnqueue(
+                [sample.Pointer],
+                0,
+                AsioSampleType.Float32LSB,
+                1));
+            Assert.True(workerStarted.Wait(TimeSpan.FromSeconds(2)));
+
+            Assert.Equal(1, pump.AcceptedFrames);
+        }
+        finally
+        {
+            releaseWorker.Set();
+        }
+    }
+
+    [Fact]
     public void TryEnqueue_AfterWarmup_DoesNotAllocateOnCallingThread()
     {
         using var processed = new ManualResetEventSlim();

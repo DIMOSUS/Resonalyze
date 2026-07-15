@@ -4,7 +4,8 @@ namespace Resonalyze.Audio;
 
 internal interface ISweepCaptureSession
 {
-    int ReadSamples { get; }
+    /// <summary>Frames accepted into the current epoch, including queued worker blocks.</summary>
+    int AcceptedSamples { get; }
     Task StartAsync(CancellationToken cancellationToken);
     void Reset();
     Task WaitForSamplesAsync(int sampleCount, CancellationToken cancellationToken);
@@ -47,7 +48,7 @@ internal sealed class SweepRunAudioOrchestrator
             capture.Reset();
         }
 
-        int recordingStart = capture.ReadSamples;
+        int recordingStart = capture.AcceptedSamples;
         // Observe a terminal capture failure that can happen while playback is
         // still running — before the sample waiter below even exists — so a dead
         // device fails the run instead of hanging it until an Abort. The
@@ -63,7 +64,14 @@ internal sealed class SweepRunAudioOrchestrator
                 playback, source, cancellationToken);
             await AwaitUnlessStoppedAsync(playbackTask, stopped).ConfigureAwait(false);
 
-            int requiredSamples = checked(recordingStart + sweepSamples + tailSamples);
+            // AcceptedSamples includes queued worker blocks. Reading it again at
+            // playback completion covers any packet accepted in the narrow window
+            // between the initial baseline and playback start. The tail therefore
+            // begins after both the nominal sweep end and every block accepted by
+            // the time playback actually ended.
+            int nominalSweepEnd = checked(recordingStart + sweepSamples);
+            int recordingEnd = Math.Max(nominalSweepEnd, capture.AcceptedSamples);
+            int requiredSamples = checked(recordingEnd + tailSamples);
             sampleWaitTask = capture.WaitForSamplesAsync(requiredSamples, cancellationToken);
             await AwaitUnlessStoppedAsync(sampleWaitTask, stopped).ConfigureAwait(false);
 

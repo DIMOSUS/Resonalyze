@@ -68,7 +68,10 @@ internal sealed class AsioDuplexSession : IAudioDuplexSession
             stream.Position = 0;
         }
 
-        int requiredSamples = session.ReadSamples + signalSampleCount + captureTailSamples;
+        // The driver is already running. AcceptedSamples includes blocks queued
+        // before/while the stream was rewound; using processed ReadSamples here
+        // could omit that lead-in and finish one ASIO packet too early.
+        int requiredSamples = session.AcceptedSamples + signalSampleCount + captureTailSamples;
         await session.WaitForSamplesAsync(requiredSamples, cancellationToken)
             .ConfigureAwait(false);
         float[][] channels = session.CompleteCaptureSnapshot();

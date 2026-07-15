@@ -67,6 +67,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
 
     public int Sequence { get; set; }
     public int ReadSamples => accumulator?.ReadSamples ?? 0;
+    public int AcceptedSamples => capturePump.AcceptedFrames;
     public int ChannelCount { get; }
 
     public async Task StartAsync(

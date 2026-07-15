@@ -61,6 +61,7 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
 
     public int Sequence { get; set; }
     public int ReadSamples => accumulator?.ReadSamples ?? 0;
+    public int AcceptedSamples => capturePump.AcceptedFrames;
     public long DiscontinuityCount => Interlocked.Read(ref discontinuityCount);
     public long SilentPacketCount => Interlocked.Read(ref silentPacketCount);
     public long TimestampErrorCount => Interlocked.Read(ref timestampErrorCount);

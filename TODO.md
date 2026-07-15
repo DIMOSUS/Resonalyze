@@ -138,7 +138,9 @@ Linux dev env where the work was done).
   samples outside the session lock (so the worker can keep returning queue slots).
   The PCM device-to-pump handoff uses a value packet rather than allocating an
   application-owned EventArgs per callback; disposal drops queued work and detaches
-  subscribers before waiting for an already in-flight worker block.
+  subscribers before waiting for an already in-flight worker block. Sweep baselines
+  use pump-accepted frames (including queued work), so worker latency cannot shorten
+  the requested capture tail.
   The remaining item is device/driver integration: run an averaged ASIO measurement
   on real hardware (ideally a slow driver).
 - [ ] **Sweep-run quality: unambiguous checks only, by decision.** The

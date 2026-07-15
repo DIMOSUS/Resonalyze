@@ -8,7 +8,7 @@ public sealed class SweepRunAudioOrchestratorTests
     public async Task FirstRunStartsCaptureBeforePlaybackAndWaitsForTail()
     {
         List<string> calls = [];
-        var capture = new FakeCaptureSession(calls) { ReadSamples = 7 };
+        var capture = new FakeCaptureSession(calls) { AcceptedSamples = 7 };
         var playback = new CompletingPlaybackDevice(calls);
         var orchestrator = new SweepRunAudioOrchestrator(capture, playback);
 
@@ -19,7 +19,7 @@ public sealed class SweepRunAudioOrchestratorTests
             CancellationToken.None);
 
         Assert.Equal(
-            ["capture-start", "playback-start", "playback-wait", "capture-wait", "snapshot"],
+            ["capture-start", "capture-position", "playback-start", "playback-wait", "capture-position", "capture-wait", "snapshot"],
             calls);
         Assert.Equal(132, capture.RequiredSamples);
         Assert.Same(capture.Snapshot, result);
@@ -39,11 +39,30 @@ public sealed class SweepRunAudioOrchestratorTests
         await orchestrator.CaptureAsync(source, 100, 25, CancellationToken.None);
 
         Assert.Equal(
-            ["capture-reset", "playback-start", "playback-wait", "capture-wait", "snapshot"],
+            ["capture-reset", "capture-position", "playback-start", "playback-wait", "capture-position", "capture-wait", "snapshot"],
             calls);
         Assert.Equal(1, capture.StartCount);
         Assert.Equal(1, capture.ResetCount);
         Assert.Equal(2, playback.StartCount);
+    }
+
+    [Fact]
+    public async Task PacketAcceptedDuringPlaybackStart_DoesNotShortenTail()
+    {
+        List<string> calls = [];
+        var capture = new FakeCaptureSession(calls) { AcceptedSamples = 7 };
+        var playback = new CompletingPlaybackDevice(
+            calls,
+            () => capture.AcceptedSamples = 115);
+        var orchestrator = new SweepRunAudioOrchestrator(capture, playback);
+
+        await orchestrator.CaptureAsync(
+            new SilenceProvider(new WaveFormat(48_000, 16, 1)),
+            sweepSamples: 100,
+            tailSamples: 25,
+            CancellationToken.None);
+
+        Assert.Equal(140, capture.RequiredSamples);
     }
 
     [Fact]
@@ -95,13 +114,22 @@ public sealed class SweepRunAudioOrchestratorTests
         private readonly List<string> calls;
         private readonly TaskCompletionSource stopSignal =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int acceptedSamples;
 
         public FakeCaptureSession(List<string> calls)
         {
             this.calls = calls;
         }
 
-        public int ReadSamples { get; set; }
+        public int AcceptedSamples
+        {
+            get
+            {
+                calls.Add("capture-position");
+                return acceptedSamples;
+            }
+            set => acceptedSamples = value;
+        }
         public int RequiredSamples { get; private set; }
         public int StartCount { get; private set; }
         public int ResetCount { get; private set; }
@@ -118,7 +146,7 @@ public sealed class SweepRunAudioOrchestratorTests
         {
             calls.Add("capture-reset");
             ResetCount++;
-            ReadSamples = 0;
+            acceptedSamples = 0;
         }
 
         public Task WaitForSamplesAsync(int sampleCount, CancellationToken cancellationToken)
@@ -143,10 +171,12 @@ public sealed class SweepRunAudioOrchestratorTests
     private sealed class CompletingPlaybackDevice : IAudioPlaybackDevice
     {
         private readonly List<string> calls;
+        private readonly Action? onStart;
 
-        public CompletingPlaybackDevice(List<string> calls)
+        public CompletingPlaybackDevice(List<string> calls, Action? onStart = null)
         {
             this.calls = calls;
+            this.onStart = onStart;
         }
 
         public WaveFormat PlaybackFormat { get; } = new(48_000, 16, 1);
@@ -156,6 +186,7 @@ public sealed class SweepRunAudioOrchestratorTests
         {
             calls.Add("playback-start");
             StartCount++;
+            onStart?.Invoke();
             return Task.CompletedTask;
         }
 

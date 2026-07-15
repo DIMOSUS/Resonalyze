@@ -27,6 +27,7 @@ internal sealed class AsioCapturePump : IDisposable
     private int generation;
     private int failureGeneration;
     private Exception? failureException;
+    private int acceptedFrames;
     private int inFlightCount;
     private bool failurePending;
     private bool stopping;
@@ -56,6 +57,17 @@ internal sealed class AsioCapturePump : IDisposable
             lock (sync)
             {
                 return stopping;
+            }
+        }
+    }
+
+    public int AcceptedFrames
+    {
+        get
+        {
+            lock (sync)
+            {
+                return acceptedFrames;
             }
         }
     }
@@ -169,6 +181,8 @@ internal sealed class AsioCapturePump : IDisposable
                 return false;
             }
 
+            int newAcceptedFrames = checked(acceptedFrames + frameCount);
+
             int slotIndex = freeSlots.Pop();
             Slot slot = slots[slotIndex];
             for (int channel = 0; channel < channelCount; channel++)
@@ -183,6 +197,7 @@ internal sealed class AsioCapturePump : IDisposable
             slot.FrameCount = frameCount;
             slot.SampleType = sampleType;
             slot.Generation = generation;
+            acceptedFrames = newAcceptedFrames;
             pendingSlots.Enqueue(slotIndex);
             Monitor.Pulse(sync);
             return true;
@@ -291,6 +306,7 @@ internal sealed class AsioCapturePump : IDisposable
         failed = false;
         failurePending = false;
         failureException = null;
+        acceptedFrames = 0;
         while (pendingSlots.Count > 0)
         {
             freeSlots.Push(pendingSlots.Dequeue());

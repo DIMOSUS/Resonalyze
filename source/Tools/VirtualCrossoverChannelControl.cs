@@ -21,6 +21,10 @@ public partial class VirtualCrossoverChannelControl : UserControl
     public VirtualCrossoverChannelControl()
     {
         InitializeComponent();
+        // The ripple cap is the DSP's single source of truth (above it the Chebyshev
+        // pole math is undefined); the designer value is only a default.
+        numericHighPassRipple.Maximum = (decimal)CrossoverFilter.MaximumChebyshevRippleDb;
+        numericLowPassRipple.Maximum = (decimal)CrossoverFilter.MaximumChebyshevRippleDb;
         PopulateCrossoverCombos();
         WireEvents();
         UpdateCrossoverAvailability();

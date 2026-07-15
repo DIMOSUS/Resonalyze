@@ -142,15 +142,15 @@ public sealed class CrossoverFilterTests
     [InlineData(48)]
     public void Bessel_IsMinus3DbAtCorner(int slope)
     {
-        // The prototype table is normalized to the -3 dB frequency, so every
-        // order lands there; the table's four-digit precision allows ~0.05 dB.
+        // The prototype table is normalized to the -3 dB frequency, so every order
+        // lands there; the table's four-digit FSF/Q precision leaves ~0.06 dB of slack.
         double lowPassDb = MagnitudeDb(CrossoverFilter.Response(
             LowPass(CrossoverFilterFamily.Bessel, 1_000, slope), 1_000, SampleRate));
         double highPassDb = MagnitudeDb(CrossoverFilter.Response(
             HighPass(CrossoverFilterFamily.Bessel, 1_000, slope), 1_000, SampleRate));
 
-        Assert.Equal(-3.0103, lowPassDb, 0.05);
-        Assert.Equal(-3.0103, highPassDb, 0.05);
+        Assert.Equal(-3.0103, lowPassDb, 0.07);
+        Assert.Equal(-3.0103, highPassDb, 0.07);
     }
 
     [Fact]
@@ -211,31 +211,46 @@ public sealed class CrossoverFilterTests
         return (maxDelay - minDelay) / maxDelay;
     }
 
-    [Theory]
-    [InlineData(6)]
-    [InlineData(12)]
-    [InlineData(18)]
-    [InlineData(24)]
-    [InlineData(30)]
-    [InlineData(36)]
-    [InlineData(42)]
-    [InlineData(48)]
-    public void Chebyshev_IsMinus3DbAtCorner(int slope)
+    [Fact]
+    public void Chebyshev_HitsMinus3DbAtCorner_AcrossTheMatrix()
     {
-        // The prototype is scaled by its own -3 dB frequency, so the corner the caller
-        // enters lands at -3 dB for every order and ripple — like the other families.
-        // Tested at a low corner: Chebyshev's high-Q sections make the digital cascade
-        // more sensitive to bilinear warping than Butterworth/Bessel, so a high corner
-        // drifts a few tenths of a dB (a faithful DSP effect), swamping the design check.
-        const double corner = 200;
-        var edge = new CrossoverEdge(CrossoverFilterFamily.Chebyshev, corner, slope, 1.0);
-        double lowPassDb = MagnitudeDb(CrossoverFilter.Response(
-            new CrossoverSpec(CrossoverKind.LowPass, edge), corner, SampleRate));
-        double highPassDb = MagnitudeDb(CrossoverFilter.Response(
-            new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: edge), corner, SampleRate));
+        // Each section's frequency scale factor is applied in the bilinear (prewarped)
+        // domain, so the corner lands at -3 dB for every rate, corner, order, ripple and
+        // side — including the high, steep tweeter high-passes a raw digital multiply
+        // used to throw many dB off. This matrix is the regression guard for that fix.
+        double[] sampleRates = [44_100, 48_000, 96_000];
+        double[] corners = [200, 1_000, 5_000, 10_000];
+        int[] slopes = [6, 12, 18, 24, 30, 36, 42, 48];
+        double[] ripples = [0.1, 0.5, 1.0, 3.0];
 
-        Assert.Equal(-3.0103, lowPassDb, 0.05);
-        Assert.Equal(-3.0103, highPassDb, 0.05);
+        var failures = new List<string>();
+        foreach (double sampleRate in sampleRates)
+        foreach (double corner in corners)
+        {
+            if (corner >= sampleRate * 0.5)
+            {
+                continue;
+            }
+
+            foreach (int slope in slopes)
+            foreach (double ripple in ripples)
+            foreach (bool highPass in new[] { false, true })
+            {
+                var edge = new CrossoverEdge(CrossoverFilterFamily.Chebyshev, corner, slope, ripple);
+                CrossoverSpec spec = highPass
+                    ? new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: edge)
+                    : new CrossoverSpec(CrossoverKind.LowPass, edge);
+                double db = MagnitudeDb(CrossoverFilter.Response(spec, corner, sampleRate));
+                if (Math.Abs(db - -3.0103) > 0.05)
+                {
+                    failures.Add(
+                        $"Fs={sampleRate} Fc={corner} {slope}dB/oct r={ripple} " +
+                        $"{(highPass ? "HP" : "LP")} -> {db:0.000} dB");
+                }
+            }
+        }
+
+        Assert.True(failures.Count == 0, string.Join("; ", failures.Take(12)));
     }
 
     [Fact]
@@ -271,6 +286,30 @@ public sealed class CrossoverFilterTests
         Assert.True(
             chebyDb < butterDb - 3.0,
             $"Chebyshev {chebyDb:0.0} dB should sit well below Butterworth {butterDb:0.0} dB past the corner.");
+    }
+
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(-1.0)]
+    [InlineData(3.5)]
+    [InlineData(6.0)]
+    [InlineData(double.NaN)]
+    public void BuildSections_RejectsOutOfRangeChebyshevRipple(double ripple)
+    {
+        // A ripple above 10·log10(2) ≈ 3.01 dB makes acosh(1/ε) undefined and poisons
+        // the coefficients with NaN, so the DSP refuses it up front rather than trusting
+        // the UI to have clamped. Below/at the cap the filter builds fine.
+        Assert.Throws<ArgumentOutOfRangeException>(() => CrossoverFilter.BuildSections(
+            new CrossoverEdge(CrossoverFilterFamily.Chebyshev, 1_000, 24, ripple),
+            highPass: false,
+            SampleRate));
+
+        var atCap = CrossoverFilter.BuildSections(
+            new CrossoverEdge(
+                CrossoverFilterFamily.Chebyshev, 1_000, 24, CrossoverFilter.MaximumChebyshevRippleDb),
+            highPass: false,
+            SampleRate);
+        Assert.All(atCap, section => Assert.True(double.IsFinite(section.B0)));
     }
 
     [Fact]

@@ -47,6 +47,14 @@ public sealed record CrossoverSpec(
 public static class CrossoverFilter
 {
     /// <summary>
+    /// The largest passband ripple a Chebyshev edge accepts. Above 10·log10(2) ≈
+    /// 3.0103 dB the prototype's ε exceeds 1 and the -3 dB normalization (acosh(1/ε))
+    /// is undefined and yields NaN, so the ripple is capped just below that. Single
+    /// source of truth shared by the UI, the project validator and BuildSections.
+    /// </summary>
+    public const double MaximumChebyshevRippleDb = 3.0;
+
+    /// <summary>
     /// The slopes each family offers, matching common DSP hardware. Linkwitz-Riley
     /// filters only exist in even orders built from a squared Butterworth, and DSPs
     /// ship the 12/24/48 variants. Bessel is realized from a fixed -3 dB prototype
@@ -194,6 +202,16 @@ public static class CrossoverFilter
                 $"A {edge.Family} crossover does not support " +
                 $"{edge.SlopeDbPerOctave} dB/octave.");
         }
+        // A Chebyshev ripple outside (0, max] makes the prototype's acosh(1/ε) undefined
+        // and poisons every coefficient with NaN, so the DSP refuses it rather than
+        // relying on the UI to have clamped — an imported or hand-edited project might not.
+        if (edge.Family == CrossoverFilterFamily.Chebyshev &&
+            !(edge.RippleDb > 0 && edge.RippleDb <= MaximumChebyshevRippleDb))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(edge),
+                $"A Chebyshev crossover ripple must be in (0, {MaximumChebyshevRippleDb}] dB.");
+        }
 
         var sections = new List<BiquadCoefficients>();
         int order = edge.SlopeDbPerOctave / 6;
@@ -246,18 +264,19 @@ public static class CrossoverFilter
         bool highPass,
         double sampleRateHz)
     {
-        // Unlike Butterworth, every Bessel section sits at its own scaled corner:
-        // frequency scale factor (FSF) times the cutoff for the low-pass, cutoff
-        // divided by FSF for the high-pass (the s -> 1/s transform inverts it).
+        // Unlike Butterworth, every Bessel section sits at its own scaled corner: the
+        // frequency scale factor (FSF) applied in the prewarped domain (see
+        // ScaledSectionHz), divided rather than multiplied for the high-pass (the
+        // s -> 1/s transform inverts it).
         ((double Fsf, double Q)[] pairs, double? realFsf) = BesselPrototype(order);
         foreach ((double fsf, double q) in pairs)
         {
-            double sectionHz = highPass ? frequencyHz / fsf : frequencyHz * fsf;
+            double sectionHz = ScaledSectionHz(frequencyHz, fsf, highPass, sampleRateHz);
             sections.Add(SecondOrderSection(sectionHz, q, highPass, sampleRateHz));
         }
         if (realFsf is { } real)
         {
-            double sectionHz = highPass ? frequencyHz / real : frequencyHz * real;
+            double sectionHz = ScaledSectionHz(frequencyHz, real, highPass, sampleRateHz);
             sections.Add(FirstOrderSection(sectionHz, highPass, sampleRateHz));
         }
     }
@@ -272,12 +291,11 @@ public static class CrossoverFilter
     {
         // Chebyshev Type I: the poles lie on an ellipse set by the passband ripple.
         // ε from the ripple; a scales the ellipse. The natural prototype is normalized
-        // to the ripple (passband) edge, so every section is scaled by the prototype's
-        // own -3 dB frequency (ω3) — that makes the corner the user enters land at
-        // -3 dB, matching Butterworth/Bessel here. A section sits at radius/ω3 times the
-        // cutoff (divided, for the high-pass, by the s -> 1/s inversion), same as Bessel.
-        double ripple = Math.Max(rippleDb, 1e-3);
-        double epsilon = Math.Sqrt(Math.Pow(10.0, ripple / 10.0) - 1.0);
+        // to the ripple (passband) edge, so every section's radius is scaled by the
+        // prototype's own -3 dB frequency (ω3) — that makes the corner the user enters
+        // land at -3 dB, matching the other families. Each scale factor is applied in
+        // the prewarped domain (ScaledSectionHz), divided for the high-pass (s -> 1/s).
+        double epsilon = Math.Sqrt(Math.Pow(10.0, rippleDb / 10.0) - 1.0);
         double a = Math.Asinh(1.0 / epsilon) / order;
         double sinhA = Math.Sinh(a);
         double coshA = Math.Cosh(a);
@@ -291,15 +309,15 @@ public static class CrossoverFilter
             double omega = coshA * Math.Cos(theta);  // pole imaginary part
             double radius = Math.Sqrt(sigma * sigma + omega * omega);
             double q = radius / (-2.0 * sigma);
-            double fsf = radius / omega3;
-            double sectionHz = highPass ? frequencyHz / fsf : frequencyHz * fsf;
+            double sectionHz = ScaledSectionHz(
+                frequencyHz, radius / omega3, highPass, sampleRateHz);
             sections.Add(SecondOrderSection(sectionHz, q, highPass, sampleRateHz));
         }
         if (order % 2 == 1)
         {
             // The odd-order real pole sits at s = -sinh(a); scale it the same way.
-            double fsf = sinhA / omega3;
-            double sectionHz = highPass ? frequencyHz / fsf : frequencyHz * fsf;
+            double sectionHz = ScaledSectionHz(
+                frequencyHz, sinhA / omega3, highPass, sampleRateHz);
             sections.Add(FirstOrderSection(sectionHz, highPass, sampleRateHz));
         }
         else
@@ -309,7 +327,7 @@ public static class CrossoverFilter
             // there is -ripple dB — odd orders already pass through 0 dB. Pull the whole
             // cascade down by that ripple so the passband equiripples in [-ripple, 0] dB
             // instead of [0, +ripple].
-            double gain = Math.Pow(10.0, -ripple / 20.0);
+            double gain = Math.Pow(10.0, -rippleDb / 20.0);
             sections[firstIndex] = ScaleGain(sections[firstIndex], gain);
         }
     }
@@ -322,6 +340,22 @@ public static class CrossoverFilter
             B1 = section.B1 * gain,
             B2 = section.B2 * gain
         };
+
+    // Places a prototype section corner by applying its frequency scale factor in the
+    // BILINEAR (prewarped) domain, not the raw digital domain: prewarp the crossover
+    // corner to its analog frequency, scale there (divide for a high-pass, the s -> 1/s
+    // inversion), then map back to a digital corner with atan for the RBJ section to
+    // prewarp again. A direct digital multiply (frequencyHz * fsf) equals this only for
+    // f << Fs; near the top of the band it diverges hard — a steep tweeter high-pass at
+    // 5–10 kHz on a 48 kHz DSP would land many dB off its -3 dB corner.
+    private static double ScaledSectionHz(
+        double cornerHz, double fsf, bool highPass, double sampleRateHz)
+    {
+        double corner = ClampBelowNyquist(cornerHz, sampleRateHz);
+        double warpedCorner = Math.Tan(Math.PI * corner / sampleRateHz);
+        double warpedSection = highPass ? warpedCorner / fsf : warpedCorner * fsf;
+        return sampleRateHz / Math.PI * Math.Atan(warpedSection);
+    }
 
     // The Bessel analog prototype normalized to the -3 dB frequency (TI SLOA049):
     // per order the second-order sections as (frequency scale factor, Q) plus the

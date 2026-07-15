@@ -122,10 +122,12 @@ public sealed class VirtualCrossoverChannelSettings
         {
             throw new InvalidDataException("The crossover slope is invalid.");
         }
-        // Ripple only drives the Chebyshev family; a non-positive value would make its
-        // pole math undefined, so it is validated only there.
+        // Ripple only drives the Chebyshev family; outside (0, max] its pole math is
+        // undefined (NaN), so it is validated only there, against the same cap the UI
+        // and the DSP use.
         if (edge.Family == CrossoverFilterFamily.Chebyshev &&
-            (!double.IsFinite(edge.RippleDb) || edge.RippleDb is <= 0 or > 6))
+            (!double.IsFinite(edge.RippleDb) || edge.RippleDb <= 0 ||
+             edge.RippleDb > CrossoverFilter.MaximumChebyshevRippleDb))
         {
             throw new InvalidDataException("The crossover passband ripple is invalid.");
         }

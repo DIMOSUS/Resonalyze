@@ -6,8 +6,6 @@ namespace Resonalyze.History;
 internal sealed class MeasurementHistoryPersistence
 {
     private const int CurrentSchemaVersion = 1;
-    private const string FileName = "measurement-history.json";
-
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
@@ -17,30 +15,42 @@ internal sealed class MeasurementHistoryPersistence
     };
 
     private readonly string pathOnDisk;
+    // History operations save immediately, so a transient load/access failure
+    // must not turn the empty recovery view into the persisted source of truth.
+    private bool preserveExistingFileBeforeSave;
+
+    public string? LoadWarning { get; private set; }
 
     public MeasurementHistoryPersistence(string? pathOnDisk = null)
     {
         this.pathOnDisk = pathOnDisk
-            ?? Path.Combine(AppContext.BaseDirectory, FileName);
+            ?? ApplicationDataPaths.Current.HistoryFile;
     }
 
     public IReadOnlyList<MeasurementHistoryEntry> Load()
     {
+        LoadWarning = null;
         try
         {
             if (!File.Exists(pathOnDisk))
             {
+                preserveExistingFileBeforeSave = false;
                 return Array.Empty<MeasurementHistoryEntry>();
             }
 
             using FileStream stream = File.OpenRead(pathOnDisk);
             StoreFile? file = JsonSerializer.Deserialize<StoreFile>(stream, SerializerOptions);
-            if (file?.SchemaVersion != CurrentSchemaVersion)
+            if (file == null)
             {
-                return Array.Empty<MeasurementHistoryEntry>();
+                throw new InvalidDataException("The history file is empty.");
+            }
+            if (file.SchemaVersion != CurrentSchemaVersion)
+            {
+                throw new InvalidDataException(
+                    $"History schema version {file.SchemaVersion} is not supported.");
             }
 
-            return file.Entries
+            IReadOnlyList<MeasurementHistoryEntry> entries = file.Entries
                 .Where(entry =>
                     !string.IsNullOrWhiteSpace(entry.SourceFilePath) &&
                     File.Exists(entry.SourceFilePath))
@@ -56,15 +66,36 @@ internal sealed class MeasurementHistoryPersistence
                     Snapshot = null
                 })
                 .ToArray();
+            preserveExistingFileBeforeSave = false;
+            return entries;
         }
-        catch
+        catch (Exception exception)
         {
+            BackupResult backup = BackupUnusableFile();
+            string? backupPath = backup.Path;
+            string preservation = backupPath == null
+                ? "The unusable file could not be backed up. History changes will not be saved " +
+                    "until the original file can be preserved; check file permissions."
+                : $"The unusable file was preserved as '{backupPath}'.";
+            LoadWarning = $"Measurement history could not be loaded: {exception.Message}\r\n\r\n{preservation}";
+            preserveExistingFileBeforeSave = backup.Status == BackupStatus.Failed;
             return Array.Empty<MeasurementHistoryEntry>();
         }
     }
 
     public void Save(IReadOnlyList<MeasurementHistoryEntry> entries)
     {
+        if (preserveExistingFileBeforeSave)
+        {
+            BackupResult backup = BackupUnusableFile();
+            if (backup.Status == BackupStatus.Failed)
+            {
+                return;
+            }
+
+            preserveExistingFileBeforeSave = false;
+        }
+
         StoreFile file = new()
         {
             SchemaVersion = CurrentSchemaVersion,
@@ -83,8 +114,10 @@ internal sealed class MeasurementHistoryPersistence
                 .ToList()
         };
 
-        // Temp file + move keeps the store intact if the write is interrupted;
-        // a corrupted store silently wipes the whole history list on next load.
+        // Temp file + move keeps the store intact if the write is interrupted.
+        string directory = Path.GetDirectoryName(pathOnDisk)
+            ?? throw new InvalidOperationException("History directory cannot be resolved.");
+        Directory.CreateDirectory(directory);
         string tempPath = pathOnDisk + ".tmp";
         using (FileStream stream = File.Create(tempPath))
         {
@@ -94,11 +127,50 @@ internal sealed class MeasurementHistoryPersistence
         File.Move(tempPath, pathOnDisk, overwrite: true);
     }
 
+    private BackupResult BackupUnusableFile()
+    {
+        try
+        {
+            if (!File.Exists(pathOnDisk))
+            {
+                return new BackupResult(BackupStatus.NotFound, null);
+            }
+
+            string backupPath = GetAvailableBackupPath();
+            File.Move(pathOnDisk, backupPath);
+            return new BackupResult(BackupStatus.Preserved, backupPath);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return new BackupResult(BackupStatus.Failed, null);
+        }
+    }
+
+    private string GetAvailableBackupPath()
+    {
+        string backupPath = pathOnDisk + ".backup";
+        for (int suffix = 1; File.Exists(backupPath); suffix++)
+        {
+            backupPath = pathOnDisk + $".backup.{suffix}";
+        }
+
+        return backupPath;
+    }
+
     private sealed class StoreFile
     {
         public int SchemaVersion { get; set; } = CurrentSchemaVersion;
         public List<PersistedEntry> Entries { get; set; } = [];
     }
+
+    private enum BackupStatus
+    {
+        NotFound,
+        Preserved,
+        Failed
+    }
+
+    private readonly record struct BackupResult(BackupStatus Status, string? Path);
 
     private sealed class PersistedEntry
     {

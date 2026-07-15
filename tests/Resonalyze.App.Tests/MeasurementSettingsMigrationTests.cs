@@ -82,6 +82,42 @@ public sealed class MeasurementSettingsMigrationTests
     }
 
     [Fact]
+    public void RestoreImpulseResponse_PreservesCurrentWasapiConfiguration()
+    {
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        measurement.Init(
+            12,
+            48_000,
+            24,
+            1.0,
+            PlaybackChannel.Mono,
+            audioBackend: AudioBackend.WasapiShared,
+            waveInputChannelOffset: 0,
+            waveLoopbackInputChannelOffset: 1,
+            wasapiCaptureEndpointId: "capture-id",
+            wasapiRenderEndpointId: "render-id",
+            wasapiBufferMilliseconds: 40,
+            wasapiCaptureEndpointName: "USB Input",
+            wasapiRenderEndpointName: "USB Output");
+
+        measurement.RestoreImpulseResponse(
+            12,
+            48_000,
+            24,
+            1.0,
+            PlaybackChannel.Mono,
+            [System.Numerics.Complex.Zero, System.Numerics.Complex.One],
+            1);
+
+        Assert.Equal(AudioBackend.WasapiShared, measurement.AudioBackend);
+        Assert.Equal("capture-id", measurement.WasapiCaptureEndpointId);
+        Assert.Equal("render-id", measurement.WasapiRenderEndpointId);
+        Assert.Equal(40, measurement.WasapiBufferMilliseconds);
+        Assert.Equal("USB Input", measurement.WasapiCaptureEndpointName);
+        Assert.Equal("USB Output", measurement.WasapiRenderEndpointName);
+    }
+
+    [Fact]
     public void WasapiChannelOffsetsAreNotLimitedToStereo()
     {
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());

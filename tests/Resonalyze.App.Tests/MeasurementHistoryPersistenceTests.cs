@@ -16,6 +16,19 @@ public sealed class MeasurementHistoryPersistenceTests : IDisposable
         storePath = Path.Combine(directory, "measurement-history.json");
     }
 
+    [Fact]
+    public void Load_PreservesEarlierBackupOnRepeatedCorruption()
+    {
+        File.WriteAllText(storePath + ".backup", "earlier corruption");
+        File.WriteAllText(storePath, "{ later corruption");
+        var persistence = new MeasurementHistoryPersistence(storePath);
+
+        persistence.Load();
+
+        Assert.Equal("earlier corruption", File.ReadAllText(storePath + ".backup"));
+        Assert.Equal("{ later corruption", File.ReadAllText(storePath + ".backup.1"));
+    }
+
     public void Dispose()
     {
         try
@@ -78,6 +91,43 @@ public sealed class MeasurementHistoryPersistenceTests : IDisposable
         var persistence = new MeasurementHistoryPersistence(storePath);
 
         Assert.Empty(persistence.Load());
+        Assert.NotNull(persistence.LoadWarning);
+        Assert.False(File.Exists(storePath));
+        Assert.True(File.Exists(storePath + ".backup"));
+    }
+
+    [Fact]
+    public void Load_ReportsAndBacksUpUnsupportedStore()
+    {
+        File.WriteAllText(storePath, "{ \"schemaVersion\": 999, \"entries\": [] }");
+        var persistence = new MeasurementHistoryPersistence(storePath);
+
+        Assert.Empty(persistence.Load());
+        Assert.Contains("version 999 is not supported", persistence.LoadWarning);
+        Assert.True(File.Exists(storePath + ".backup"));
+    }
+
+    [Fact]
+    public void Save_DoesNotOverwriteStoreThatCouldNotBeReadOrBackedUp()
+    {
+        const string original = "{ \"schemaVersion\": 1, \"entries\": [] }";
+        File.WriteAllText(storePath, original);
+        var persistence = new MeasurementHistoryPersistence(storePath);
+
+        using (File.Open(storePath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.Empty(persistence.Load());
+            persistence.Save(Array.Empty<MeasurementHistoryEntry>());
+
+            Assert.True(File.Exists(storePath));
+            Assert.False(File.Exists(storePath + ".backup"));
+        }
+
+        Assert.Equal(original, File.ReadAllText(storePath));
+        persistence.Save(Array.Empty<MeasurementHistoryEntry>());
+
+        Assert.Equal(original, File.ReadAllText(storePath + ".backup"));
+        Assert.True(File.Exists(storePath));
     }
 
     internal static MeasurementHistoryEntry CreateEntry(string? sourceFilePath) =>

@@ -1,0 +1,87 @@
+namespace Resonalyze.App.Tests;
+
+public sealed class MeasurementSettingsFileRecoveryTests : IDisposable
+{
+    private readonly string directory = Path.Combine(
+        Path.GetTempPath(),
+        $"resonalyze-settings-{Guid.NewGuid():N}");
+
+    [Fact]
+    public void LoadOrDefault_CorruptFileIsBackedUpAndReported()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "measurement-settings.json");
+        File.WriteAllText(path, "{ not json");
+
+        MeasurementSettingsFile settings = MeasurementSettingsFile.LoadOrDefault(path);
+
+        Assert.NotNull(settings.LoadWarning);
+        Assert.Contains("could not be loaded", settings.LoadWarning);
+        Assert.False(File.Exists(path));
+        Assert.True(File.Exists(path + ".backup"));
+    }
+
+    [Fact]
+    public void LoadOrDefault_PreservesEarlierBackupOnRepeatedCorruption()
+    {
+        string path = Path.Combine(directory, "measurement-settings.json");
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(path + ".backup", "earlier corruption");
+        File.WriteAllText(path, "{ later corruption");
+
+        MeasurementSettingsFile.LoadOrDefault(path);
+
+        Assert.Equal("earlier corruption", File.ReadAllText(path + ".backup"));
+        Assert.Equal("{ later corruption", File.ReadAllText(path + ".backup.1"));
+    }
+
+    [Fact]
+    public void LoadOrDefault_UnsupportedVersionIsBackedUpAndReported()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "measurement-settings.json");
+        File.WriteAllText(path, "{ \"SchemaVersion\": 999 }");
+
+        MeasurementSettingsFile settings = MeasurementSettingsFile.LoadOrDefault(path);
+
+        Assert.Contains("version 999 is not supported", settings.LoadWarning);
+        Assert.True(File.Exists(path + ".backup"));
+    }
+
+    [Fact]
+    public void Save_DoesNotOverwriteFileThatCouldNotBeReadOrBackedUp()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "measurement-settings.json");
+        const string original = "{ \"SchemaVersion\": 8 }";
+        File.WriteAllText(path, original);
+
+        MeasurementSettingsFile settings;
+        using (File.Open(path, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            settings = MeasurementSettingsFile.LoadOrDefault(path);
+            settings.Measurement.SampleRate = 96_000;
+            settings.Save();
+
+            Assert.True(File.Exists(path));
+            Assert.False(File.Exists(path + ".backup"));
+        }
+
+        Assert.Equal(original, File.ReadAllText(path));
+        settings.Save();
+
+        Assert.Equal(original, File.ReadAllText(path + ".backup"));
+        Assert.Contains("96000", File.ReadAllText(path));
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+        catch (IOException)
+        {
+        }
+    }
+}

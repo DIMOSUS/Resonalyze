@@ -44,7 +44,7 @@ Key structural points:
 
 - **`Shell/Form1` is the hub**, split into partial classes by concern (`Form1.Measurement.cs`, `Form1.Plotting.cs`, `Form1.History.cs`, `Form1.Compare.cs`, etc.). The `Mode` enum in `Form1.cs` defines all analysis modes (frequency/phase/group delay/waterfall/burst decay/live spectrum/time alignment/EQ wizard/signal generator/virtual crossover); `ModeSwitching/ModeController` orchestrates tab switches.
 - **`Options/`** holds one settings panel per mode (`FROptions`, `IROpt`, `GDOpt`, ...), docked into the shell via `Shell/DockedModeSettingsHost`.
-- **`Tools/`** contains the larger feature panels: EQ Wizard, Signal Generator, Virtual DSP (`VirtualCrossoverPanel` + project file persistence), and PDF tuning-sheet export (PDFsharp/MigraDoc).
+- **`Tools/`** contains the larger feature panels: EQ Wizard, Signal Generator, Virtual DSP (`VirtualCrossoverPanel` + project file persistence), and PDF tuning-sheet export (PDFsharp/MigraDoc). `EqWizardPanel` is self-contained: it loads its own impulse response, computes its source FR with the selected microphone calibration, uses a mode-local target curve and persists through `MeasurementSettingsFile.EqWizard`; do not couple it to overlays or the current measurement.
 - **`Overlays/`** manages persistent overlay slots and calculated (math) overlays; **`History/`** persists measurement snapshots with per-entry working state.
 - Update checking uses NetSparkle + `Settings/GitHubReleaseChecker`.
 
@@ -60,3 +60,12 @@ Enforced by `.editorconfig`; notable deviations from common C# defaults:
 - `var` only when the type is apparent; explicit types otherwise, including built-ins.
 - CRLF line endings, 4-space indent, Allman braces, braces always.
 - New non-UI code uses file-scoped namespaces (see `Program.cs`, `ModeController.cs`).
+- Keep static WinForms controls in `.Designer.cs`. For genuinely dynamic controls, use a designer-defined `TableLayoutPanel` or `FlowLayoutPanel`; avoid absolute 96-DPI coordinates because controls created after `InitializeComponent` miss designer autoscaling.
+
+## User data paths
+
+Implicit user data (settings, history, overlays, Virtual DSP state and crash
+logs) is rooted by `ApplicationDataPaths`. Installed mode uses
+`%LocalAppData%\Resonalyze`; a `portable.flag` file beside the executable opts
+into portable storage beside the app. Do not introduce new direct
+`AppContext.BaseDirectory` persistence paths.

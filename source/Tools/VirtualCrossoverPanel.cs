@@ -3346,8 +3346,7 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         try
         {
-            string path = Path.Combine(
-                AppContext.BaseDirectory, "tools", "virtual-dsp-align.log");
+            string path = ApplicationDataPaths.Current.VirtualDspAlignmentLogFile;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             File.WriteAllText(path, text);
         }

@@ -8,8 +8,6 @@ namespace Resonalyze;
 internal sealed class MeasurementSettingsFile
 {
     private const int CurrentSchemaVersion = 8;
-    private const string FileName = "measurement-settings.json";
-
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
@@ -35,26 +33,38 @@ internal sealed class MeasurementSettingsFile
     [JsonIgnore]
     public bool LegacyDualDeviceLoopbackReset { get; private set; }
 
-    private static string PathOnDisk =>
-        Path.Combine(AppContext.BaseDirectory, FileName);
+    [JsonIgnore]
+    public string? LoadWarning { get; private set; }
 
-    public static MeasurementSettingsFile LoadOrDefault()
+    [JsonIgnore]
+    private string pathOnDisk = ApplicationDataPaths.Current.SettingsFile;
+
+    [JsonIgnore]
+    // A load failure is safe to recover from only after the original file has
+    // been moved aside. Keep automatic UI saves from overwriting it meanwhile.
+    private bool preserveExistingFileBeforeSave;
+
+    public static MeasurementSettingsFile LoadOrDefault(string? pathOnDisk = null)
     {
+        string path = pathOnDisk ?? ApplicationDataPaths.Current.SettingsFile;
         try
         {
-            if (!File.Exists(PathOnDisk))
+            if (!File.Exists(path))
             {
-                return new MeasurementSettingsFile();
+                return new MeasurementSettingsFile { pathOnDisk = path };
             }
 
-            using FileStream stream = File.OpenRead(PathOnDisk);
+            using FileStream stream = File.OpenRead(path);
             MeasurementSettingsFile? settings =
                 JsonSerializer.Deserialize<MeasurementSettingsFile>(
                     stream,
                     SerializerOptions);
             if (settings == null || settings.SchemaVersion is not (7 or CurrentSchemaVersion))
             {
-                return new MeasurementSettingsFile();
+                throw new InvalidDataException(
+                    settings == null
+                        ? "The settings file is empty."
+                        : $"Settings schema version {settings.SchemaVersion} is not supported.");
             }
 
             if (settings.SchemaVersion == 7)
@@ -69,12 +79,54 @@ internal sealed class MeasurementSettingsFile
             }
 
             settings.MigrateLegacyDualDeviceLoopback();
+            settings.pathOnDisk = path;
             return settings;
         }
-        catch
+        catch (Exception exception)
         {
-            return new MeasurementSettingsFile();
+            BackupResult backup = BackupUnusableFile(path);
+            string? backupPath = backup.Path;
+            string preservation = backupPath == null
+                ? "The unusable file could not be backed up. Changes will not be saved " +
+                    "until the original file can be preserved; check file permissions."
+                : $"The unusable file was preserved as '{backupPath}'.";
+            return new MeasurementSettingsFile
+            {
+                pathOnDisk = path,
+                LoadWarning = $"Settings could not be loaded: {exception.Message}\r\n\r\n{preservation}",
+                preserveExistingFileBeforeSave = backup.Status == BackupStatus.Failed
+            };
         }
+    }
+
+    private static BackupResult BackupUnusableFile(string path)
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return new BackupResult(BackupStatus.NotFound, null);
+            }
+
+            string backupPath = GetAvailableBackupPath(path);
+            File.Move(path, backupPath);
+            return new BackupResult(BackupStatus.Preserved, backupPath);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return new BackupResult(BackupStatus.Failed, null);
+        }
+    }
+
+    private static string GetAvailableBackupPath(string path)
+    {
+        string backupPath = path + ".backup";
+        for (int suffix = 1; File.Exists(backupPath); suffix++)
+        {
+            backupPath = path + $".backup.{suffix}";
+        }
+
+        return backupPath;
     }
 
     // The separate-loopback-device capability was removed: microphone and
@@ -99,17 +151,39 @@ internal sealed class MeasurementSettingsFile
 
     public void Save()
     {
+        if (preserveExistingFileBeforeSave)
+        {
+            BackupResult backup = BackupUnusableFile(pathOnDisk);
+            if (backup.Status == BackupStatus.Failed)
+            {
+                return;
+            }
+
+            preserveExistingFileBeforeSave = false;
+        }
+
         SchemaVersion = CurrentSchemaVersion;
-        // Temp file + move keeps the settings intact if the write is interrupted;
-        // a corrupted file silently loads as defaults.
-        string tempPath = PathOnDisk + ".tmp";
+        // Temp file + move keeps the settings intact if the write is interrupted.
+        string directory = Path.GetDirectoryName(pathOnDisk)
+            ?? throw new InvalidOperationException("Settings directory cannot be resolved.");
+        Directory.CreateDirectory(directory);
+        string tempPath = pathOnDisk + ".tmp";
         using (FileStream stream = File.Create(tempPath))
         {
             JsonSerializer.Serialize(stream, this, SerializerOptions);
         }
 
-        File.Move(tempPath, PathOnDisk, overwrite: true);
+        File.Move(tempPath, pathOnDisk, overwrite: true);
     }
+
+    private enum BackupStatus
+    {
+        NotFound,
+        Preserved,
+        Failed
+    }
+
+    private readonly record struct BackupResult(BackupStatus Status, string? Path);
 
     public void ApplyTo(
         ExpSweepMeasurement measurement,
@@ -242,49 +316,52 @@ internal sealed class MeasurementSettingsFile
                 captureEndpointId,
                 renderEndpointId,
                 Clamp(SampleRate, 44_100, 384_000));
-            measurement.Init(
-                Clamp(Octaves, 1, 32),
-                sampleRate,
-                Bits is 16 or 24 ? Bits : 24,
-                Math.Clamp(RequestedDurationSeconds, 0.001, 100.0),
-                Enum.IsDefined(PlaybackChannel)
-                    ? PlaybackChannel
-                    : PlaybackChannel.Mono,
-                NormalizeDeviceNumber(
-                    AudioDeviceCatalog.GetPlaybackDevices(),
-                    OutputDeviceNumber),
-                NormalizeDeviceNumber(
-                    AudioDeviceCatalog.GetRecordingDevices(),
-                    InputDeviceNumber),
-                backend,
-                NormalizeAsioDriverName(AsioDriverName),
-                NormalizeAsioChannelOffset(
-                    AsioDriverName,
+            measurement.Init(new SweepMeasurementConfiguration(
+                new SweepSignalConfiguration(
+                    Clamp(Octaves, 1, 32),
                     sampleRate,
-                    AsioInputChannelOffset,
-                    input: true),
-                NormalizeAsioChannelOffset(
-                    AsioDriverName,
-                    sampleRate,
-                    AsioOutputChannelOffset,
-                    input: false),
-                IsWasapiBackend(backend)
-                    ? Math.Max(0, WaveInputChannelOffset)
-                    : NormalizeWaveChannelOffset(WaveInputChannelOffset),
-                IsWasapiBackend(backend)
-                    ? NormalizeOptionalWasapiChannelOffset(WaveLoopbackInputChannelOffset)
-                    : NormalizeOptionalWaveChannelOffset(WaveLoopbackInputChannelOffset),
-                NormalizeOptionalAsioChannelOffset(
-                    AsioDriverName,
-                    sampleRate,
-                    AsioLoopbackInputChannelOffset),
-                Clamp(AverageRunCount, 1, 64),
-                ConfirmEachAverageRun,
-                captureEndpointId,
-                renderEndpointId,
-                Clamp(WasapiBufferMilliseconds, 10, 100),
-                WasapiCaptureEndpointName,
-                WasapiRenderEndpointName);
+                    Bits is 16 or 24 ? Bits : 24,
+                    Math.Clamp(RequestedDurationSeconds, 0.001, 100.0),
+                    Enum.IsDefined(PlaybackChannel)
+                        ? PlaybackChannel
+                        : PlaybackChannel.Mono),
+                new SweepAudioConfiguration(
+                    Backend: backend,
+                    OutputDeviceNumber: NormalizeDeviceNumber(
+                        AudioDeviceCatalog.GetPlaybackDevices(),
+                        OutputDeviceNumber),
+                    InputDeviceNumber: NormalizeDeviceNumber(
+                        AudioDeviceCatalog.GetRecordingDevices(),
+                        InputDeviceNumber),
+                    WaveInputChannelOffset: IsWasapiBackend(backend)
+                        ? Math.Max(0, WaveInputChannelOffset)
+                        : NormalizeWaveChannelOffset(WaveInputChannelOffset),
+                    WaveLoopbackInputChannelOffset: IsWasapiBackend(backend)
+                        ? NormalizeOptionalWasapiChannelOffset(WaveLoopbackInputChannelOffset)
+                        : NormalizeOptionalWaveChannelOffset(WaveLoopbackInputChannelOffset),
+                    AsioDriverName: NormalizeAsioDriverName(AsioDriverName),
+                    AsioInputChannelOffset: NormalizeAsioChannelOffset(
+                        AsioDriverName,
+                        sampleRate,
+                        AsioInputChannelOffset,
+                        input: true),
+                    AsioLoopbackInputChannelOffset: NormalizeOptionalAsioChannelOffset(
+                        AsioDriverName,
+                        sampleRate,
+                        AsioLoopbackInputChannelOffset),
+                    AsioOutputChannelOffset: NormalizeAsioChannelOffset(
+                        AsioDriverName,
+                        sampleRate,
+                        AsioOutputChannelOffset,
+                        input: false),
+                    WasapiCaptureEndpointId: captureEndpointId,
+                    WasapiRenderEndpointId: renderEndpointId,
+                    WasapiCaptureEndpointName: WasapiCaptureEndpointName,
+                    WasapiRenderEndpointName: WasapiRenderEndpointName,
+                    WasapiBufferMilliseconds: Clamp(WasapiBufferMilliseconds, 10, 100)),
+                new SweepAveragingConfiguration(
+                    Clamp(AverageRunCount, 1, 64),
+                    ConfirmEachAverageRun)));
         }
     }
 

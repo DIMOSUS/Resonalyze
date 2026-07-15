@@ -239,12 +239,14 @@ tool has set crossovers, delays and polarity — so crossovers, phase/time and
 convolution are deliberately out of its scope (see the note at the end). The
 items below are what a car DSP tune actually needs, roughly in priority order.
 
-- [ ] ★ **No boostability/reliability mask**: the fitter sees only dB curves and
-  will boost a deep interference null (wasting amplifier headroom and blocking an
-  octave) — the worst failure mode in a reflective car cabin. Fix: mask from
-  coherence + null depth/width + driver band; a **cuts-only mode** as the default
-  for car tuning. (The clipping-profile half is fixed: `TotalGainMaxDb` caps
-  preamp + band peak.)
+- [ ] **Boostability/reliability mask — driver-band refinement remains.** DONE: Auto
+  Tune defaults to a **cuts-only** mode (wizard checkbox → `EqAutoTuner.CutsOnlyMode`),
+  the safe car-tuning choice; when boosts are enabled they are gated by
+  `EqBoostabilityMask` — refused in low-coherence bins (a loopback-transfer source's
+  γ²) and inside narrow deep interference nulls, cuts always allowed, per-band boost
+  still capped by Max Gain / `TotalGainMaxDb`. Residual: the "driver band" is only the
+  user's From/To window; auto-deriving each driver's usable band (from the measured
+  roll-off or the crossover) so the mask also blocks boosts outside it is not done.
 - [ ] ★ **Only peaking bands — no shelves.** `PeqBand` is `(Fc, Q, gain)` with no
   filter type, so `EqAutoTuner`, the preview (`DigitalEqualizationResponse`) and
   the parsers are peaking-only. Car targets are shelved (bass boost + downward

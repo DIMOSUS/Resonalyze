@@ -246,6 +246,127 @@ public sealed class EqAutoTunerTests
     }
 
     [Fact]
+    public void Tune_CutsOnlyMode_NeverBoosts()
+    {
+        // Source has a +8 dB peak at 500 Hz and a -8 dB dip at 3000 Hz against a flat
+        // target. Cuts-only must shave the peak but leave the dip alone (no boost).
+        var peak = new PeqBand(500, 3.0, 8.0);
+        var dip = new PeqBand(3_000, 3.0, -8.0);
+        IReadOnlyList<SignalPoint> source = Grid(f => peak.MagnitudeDbAt(f) + dip.MagnitudeDbAt(f));
+        IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
+
+        EqualizationCurve curve = EqAutoTuner.Tune(
+            source, target, new EqAutoTuner.Options { CutsOnlyMode = true });
+
+        Assert.All(curve.Bands, band => Assert.True(band.GainDb <= 0 + 1e-9));
+        // The whole EQ (bands + preamp) never boosts anywhere.
+        double maxGain = EqualizationCurve
+            .LogFrequencyGrid(20, 20_000, 400)
+            .Max(curve.MagnitudeDbAt);
+        Assert.True(maxGain <= 0.05, $"Cuts-only produced a {maxGain:0.0} dB boost.");
+        // The +8 dB peak is still corrected downward.
+        Assert.True(curve.MagnitudeDbAt(500) < -1.0);
+    }
+
+    [Fact]
+    public void Tune_BoostsAllowed_SkipsANarrowDeepNull()
+    {
+        // A narrow deep null at 3 kHz (uncorrectable) and a broad shallow dip at 200 Hz
+        // (a correctable trend) against a flat target. With boosts enabled, the fit must
+        // boost the broad dip but never centre a boost inside the narrow null.
+        IReadOnlyList<SignalPoint> source = Grid(f =>
+            NotchDb(f, 3_000, 12, 0.15) + NotchDb(f, 200, 6, 0.7));
+        IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
+
+        EqualizationCurve curve = EqAutoTuner.Tune(
+            source, target, new EqAutoTuner.Options { CutsOnlyMode = false });
+
+        Assert.DoesNotContain(
+            curve.Bands,
+            band => band.GainDb > 0 && band.FrequencyHz is >= 2_400 and <= 3_600);
+        Assert.Contains(
+            curve.Bands,
+            band => band.GainDb > 0 && band.FrequencyHz is >= 130 and <= 320);
+    }
+
+    [Fact]
+    public void Tune_BoostsAllowed_LowCoherenceRegionIsNotBoosted()
+    {
+        // A broad, boostable dip at 1 kHz that the fit WOULD boost — but the coherence
+        // there is below the floor, so the boost is withheld. Without the coherence it
+        // is boosted (the control assertion), isolating the coherence gate.
+        IReadOnlyList<SignalPoint> source = Grid(f => NotchDb(f, 1_000, 6, 0.7));
+        IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
+        var options = new EqAutoTuner.Options { CutsOnlyMode = false };
+
+        IReadOnlyList<SignalPoint> coherence = Grid(
+            f => Math.Abs(Math.Log2(f / 1_000)) < 0.5 ? 0.2 : 0.95);
+
+        EqualizationCurve gated = EqAutoTuner.Tune(source, target, options, coherence);
+        EqualizationCurve ungated = EqAutoTuner.Tune(source, target, options);
+
+        Assert.DoesNotContain(
+            gated.Bands,
+            band => band.GainDb > 0 && band.FrequencyHz is >= 700 and <= 1_400);
+        Assert.Contains(
+            ungated.Bands,
+            band => band.GainDb > 0 && band.FrequencyHz is >= 700 and <= 1_400);
+    }
+
+    [Fact]
+    public void Tune_CutsOnly_ClusterOfNarrowPeaks_EachGetsCut()
+    {
+        // Five narrow peaks packed ~0.2 octave apart between 1-2 kHz above a flat
+        // target. The old fixed 0.33-octave band spacing let the first cut sterilise
+        // its neighbours, leaving most of the cluster above target; the per-band
+        // footprint must now cut essentially the whole cluster.
+        double[] centres = { 1050, 1200, 1400, 1600, 1850 };
+        IReadOnlyList<SignalPoint> source = Grid(
+            f => centres.Sum(c => new PeqBand(c, 8, 5).MagnitudeDbAt(f)));
+        IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
+
+        EqualizationCurve curve = EqAutoTuner.Tune(
+            source,
+            target,
+            new EqAutoTuner.Options
+            {
+                CutsOnlyMode = true,
+                MinFrequencyHz = 200,
+                MaxFrequencyHz = 2000,
+                BandGainMinDb = -18
+            });
+
+        // Nothing in the cluster still pokes meaningfully above the target.
+        double worstAbove = EqualizationCurve
+            .LogFrequencyGrid(1_000, 2_000, 200)
+            .Max(f => SampleDb(source, f) + curve.MagnitudeDbAt(f));
+        Assert.True(worstAbove <= 1.0, $"Cluster peak of +{worstAbove:0.0} dB left uncut.");
+        // It took more than the ~2 bands the old coarse spacing allowed in one octave.
+        Assert.True(curve.Bands.Count >= 3, $"Only {curve.Bands.Count} bands used on the cluster.");
+    }
+
+    private static double SampleDb(IReadOnlyList<SignalPoint> curve, double frequencyHz)
+    {
+        SignalPoint below = curve[0], above = curve[^1];
+        foreach (SignalPoint p in curve)
+        {
+            if (p.X <= frequencyHz && p.X >= below.X) below = p;
+            if (p.X >= frequencyHz) { above = p; break; }
+        }
+
+        if (above.X <= below.X) return below.Y;
+        double t = (Math.Log(frequencyHz) - Math.Log(below.X)) / (Math.Log(above.X) - Math.Log(below.X));
+        return below.Y + t * (above.Y - below.Y);
+    }
+
+    // A symmetric V-notch used to synthesise correctable dips and uncorrectable nulls.
+    private static double NotchDb(double f, double centerHz, double depthDb, double halfWidthOctaves)
+    {
+        double octaves = Math.Abs(Math.Log2(f / centerHz));
+        return octaves >= halfWidthOctaves ? 0.0 : -depthDb * (1.0 - octaves / halfWidthOctaves);
+    }
+
+    [Fact]
     public void Tune_HighFrequencyTarget_FitsDigitalResponseAtConfiguredRate()
     {
         const double sampleRate = 44_100;

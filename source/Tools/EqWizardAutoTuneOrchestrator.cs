@@ -10,7 +10,8 @@ internal sealed class EqWizardAutoTuneRequest
     public EqWizardAutoTuneRequest(
         IEnumerable<SignalPoint> source,
         IEnumerable<SignalPoint> target,
-        EqAutoTuner.Options options)
+        EqAutoTuner.Options options,
+        IEnumerable<SignalPoint>? coherence = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(target);
@@ -19,11 +20,15 @@ internal sealed class EqWizardAutoTuneRequest
         Source = Array.AsReadOnly(source.ToArray());
         Target = Array.AsReadOnly(target.ToArray());
         Options = options;
+        Coherence = coherence == null ? null : Array.AsReadOnly(coherence.ToArray());
     }
 
     public IReadOnlyList<SignalPoint> Source { get; }
     public IReadOnlyList<SignalPoint> Target { get; }
     public EqAutoTuner.Options Options { get; }
+
+    /// <summary>Optional (Hz, γ²) coherence used to gate boosts; null when the source carries none.</summary>
+    public IReadOnlyList<SignalPoint>? Coherence { get; }
 }
 
 /// <summary>
@@ -40,7 +45,8 @@ internal sealed class EqWizardAutoTuneOrchestrator
         : this(request => EqAutoTuner.Tune(
             request.Source,
             request.Target,
-            request.Options))
+            request.Options,
+            request.Coherence))
     {
     }
 

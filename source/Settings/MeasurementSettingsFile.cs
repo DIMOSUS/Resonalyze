@@ -521,6 +521,10 @@ internal sealed class MeasurementSettingsFile
         public int SourceSmoothingInverseOctaves { get; set; }
         public MicrophoneCalibrationMode CalibrationMode { get; set; } =
             MicrophoneCalibrationMode.Off;
+
+        // Auto Tune only cuts, never boosts. The safe default for a car tune; see
+        // EqAutoTuner.Options.CutsOnlyMode.
+        public bool CutsOnly { get; set; } = true;
     }
 
     internal sealed class ImpulseResponseSettings

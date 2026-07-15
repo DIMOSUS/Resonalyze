@@ -46,10 +46,13 @@ public static class EqAutoTuner
         public double StopResidualDb { get; init; } = 0.5;
 
         /// <summary>
-        /// Minimum centre-frequency spacing (in octaves) between bands, so the fit
-        /// does not stack several bands at the same frequency.
+        /// The footprint (in octaves) sterilised around each placed band, so the fit
+        /// does not re-nibble the very same peak it just corrected. Kept small on
+        /// purpose: a cluster of narrow peaks spaced wider than this each still gets its
+        /// own band, which a coarse spacing would prevent. A boost pinned at the boost
+        /// ceiling instead blocks the wider <see cref="SaturatedBlockOctaves"/> span.
         /// </summary>
-        public double MinBandSpacingOctaves { get; init; } = 0.33;
+        public double MinBandSpacingOctaves { get; init; } = 0.1;
 
         /// <summary>
         /// When a boost is limited by the remaining boost headroom (the correction
@@ -64,6 +67,25 @@ public static class EqAutoTuner
 
         /// <summary>Sample rate of the DSP that will realize the fitted RBJ biquads.</summary>
         public double SampleRateHz { get; init; } = 48_000;
+
+        /// <summary>
+        /// When true, the fit places only cut bands — it never boosts. Boosting a
+        /// reflective cabin's response is where an auto EQ does harm (filling an
+        /// interference null wastes headroom and a band on a dip that does not survive a
+        /// small mic move); cutting the peaks and leaving level on the table is the
+        /// conservative correction, which is why the car-tuning EQ Wizard defaults it on.
+        /// It defaults OFF here so the general curve fitter stays unconstrained; even
+        /// off, boosts are gated to reliable regions by <see cref="BoostMask"/> (high
+        /// coherence, not inside a narrow deep null) and capped by <see
+        /// cref="BandGainMaxDb"/>.
+        /// </summary>
+        public bool CutsOnlyMode { get; init; }
+
+        /// <summary>
+        /// The reliability policy that decides, per frequency, whether a boost band may
+        /// be placed there — consulted only when <see cref="CutsOnlyMode"/> is off.
+        /// </summary>
+        public EqBoostabilityMask.Options BoostMask { get; init; } = new();
     }
 
     // Quality factors tried for each band; the one that lowers the residual error
@@ -76,11 +98,15 @@ public static class EqAutoTuner
     /// Fits an equalization curve so that <paramref name="source"/> + curve best
     /// matches <paramref name="target"/>. Both curves are (Hz, dB) and need not share
     /// the same frequency points; they are resampled onto a common logarithmic grid.
+    /// <paramref name="coherence"/> is an optional (Hz, γ²) curve used only to gate
+    /// boosts to reliable regions (see <see cref="Options.BoostMask"/>); passing null
+    /// leaves boosting masked by null-detection and the fitting band alone.
     /// </summary>
     public static EqualizationCurve Tune(
         IReadOnlyList<SignalPoint> source,
         IReadOnlyList<SignalPoint> target,
-        Options? options = null)
+        Options? options = null,
+        IReadOnlyList<SignalPoint>? coherence = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(target);
@@ -147,6 +173,21 @@ public static class EqAutoTuner
             qCandidates = new[] { Clamp(1.0, opt.QMin, opt.QMax) };
         }
 
+        // Per-point boostability: cuts are always allowed, boosts only where the mode
+        // and the reliability mask permit. In cuts-only mode nothing may be boosted, so
+        // the mask (and the coherence resample it would need) is skipped entirely.
+        bool[] boostAllowed;
+        if (opt.CutsOnlyMode)
+        {
+            boostAllowed = new bool[n]; // all false
+        }
+        else
+        {
+            double[]? coherenceGrid = ResampleCoherence(coherence, grid);
+            boostAllowed = EqBoostabilityMask.ComputeBoostAllowed(
+                grid, sourceDb, valid, coherenceGrid, opt.BoostMask);
+        }
+
         var bands = new List<PeqBand>();
         var contribution = new double[n];
         var bestContribution = new double[n];
@@ -164,6 +205,16 @@ public static class EqAutoTuner
             }
 
             double desired = residual[peakIndex];
+
+            // A boost the mode or the reliability mask forbids here is not fitted at
+            // all: skip the whole contiguous deficit around it so the band budget goes
+            // to cuts elsewhere instead of nibbling an uncorrectable region.
+            if (desired > 0 && !boostAllowed[peakIndex])
+            {
+                BlockPositiveRun(blocked, residual, valid, peakIndex);
+                continue;
+            }
+
             double gainDb;
             bool boostHeadroomLimited = false;
             if (desired > 0)
@@ -232,8 +283,11 @@ public static class EqAutoTuner
                 }
             }
 
-            // Keep the next band away from this one. A boost that hit the headroom
-            // limit blocks a wider span, since that whole region is already maxed out.
+            // Sterilise only a narrow footprint around this band's centre — enough to
+            // stop it re-nibbling the very same peak, but far smaller than the old
+            // fixed spacing so a cluster of narrow peaks each keeps its own band. A
+            // boost pinned at the headroom limit blocks the wider saturated span, since
+            // that whole region genuinely cannot improve further.
             BlockAround(
                 blocked,
                 grid,
@@ -261,6 +315,49 @@ public static class EqAutoTuner
         }
 
         return new EqualizationCurve(bands, preamp);
+    }
+
+    // Marks the maximal contiguous run of positive-residual (boost-wanting) points
+    // around center as blocked, so a masked-off boost region is skipped whole without
+    // touching the adjacent cut valleys. Always blocks at least center, guaranteeing
+    // the fitting loop makes progress.
+    private static void BlockPositiveRun(
+        bool[] blocked,
+        double[] residual,
+        bool[] valid,
+        int center)
+    {
+        blocked[center] = true;
+        for (int i = center - 1; i >= 0 && valid[i] && residual[i] > 0; i--)
+        {
+            blocked[i] = true;
+        }
+
+        for (int i = center + 1; i < residual.Length && valid[i] && residual[i] > 0; i++)
+        {
+            blocked[i] = true;
+        }
+    }
+
+    // Resamples an optional (Hz, γ²) coherence curve onto the fitting grid. A missing
+    // curve yields null (the mask then treats every point as reliable); a frequency
+    // outside the curve holds the nearest coherence value.
+    private static double[]? ResampleCoherence(
+        IReadOnlyList<SignalPoint>? coherence,
+        IReadOnlyList<double> grid)
+    {
+        if (coherence == null || coherence.Count == 0)
+        {
+            return null;
+        }
+
+        var result = new double[grid.Count];
+        for (int i = 0; i < grid.Count; i++)
+        {
+            result[i] = CurveSampling.InterpolateDbLog(coherence, grid[i], clampEnds: true);
+        }
+
+        return result;
     }
 
     private static void BlockAround(

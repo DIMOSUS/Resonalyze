@@ -33,6 +33,10 @@ public partial class EqWizardPanel
         EqualizationCurve.LogFrequencyGrid(20, 20_000, 512).ToArray();
 
     private IImpulseMeasurement? loadedIr;
+    // The loaded IR's per-frequency coherence (γ²), present only for a loopback-transfer
+    // source; used to gate Auto Tune boosts to reliable regions. Null for a plain sweep
+    // deconvolution, which carries no coherence.
+    private IReadOnlyList<SignalPoint>? sourceCoherence;
     private EqWizardCurve? cachedSourceCurve;
     private bool sourceCurveDirty = true;
     private int irLoadGeneration;
@@ -94,7 +98,7 @@ public partial class EqWizardPanel
             return;
         }
 
-        loadedIr = CreateMeasurement(file);
+        (loadedIr, sourceCoherence) = CreateMeasurement(file);
         InvalidateSourceCurve();
         buttonLoadIr.Text = System.IO.Path.GetFileNameWithoutExtension(dialog.FileName);
         toolTip.SetToolTip(
@@ -104,21 +108,52 @@ public partial class EqWizardPanel
     }
 
     // Mirrors the history preview: a loopback-transfer file equalizes its transfer
-    // IR; everything else uses the sweep-deconvolution IR.
-    private static IImpulseMeasurement CreateMeasurement(ImpulseResponseFile file)
+    // IR; everything else uses the sweep-deconvolution IR. The transfer path also
+    // carries per-frequency coherence (γ²); the sweep path has none.
+    private static (IImpulseMeasurement Measurement, IReadOnlyList<SignalPoint>? Coherence)
+        CreateMeasurement(ImpulseResponseFile file)
     {
         Complex[]? transfer = file.GetTransferImpulseResponse();
         if (file.MeasurementMode == SweepMeasurementMode.LoopbackTransfer &&
             transfer is { Length: > 0 } &&
             file.TransferPeakIndex is int transferPeak)
         {
-            return new ImpulseMeasurementView(transfer, transferPeak, file.SampleRate);
+            return (
+                new ImpulseMeasurementView(transfer, transferPeak, file.SampleRate),
+                ExtractTransferCoherence(file));
         }
 
-        return new ImpulseMeasurementView(
-            file.GetSweepDeconvolutionImpulseResponse(),
-            file.SweepDeconvolutionPeakIndex,
-            file.SampleRate);
+        return (
+            new ImpulseMeasurementView(
+                file.GetSweepDeconvolutionImpulseResponse(),
+                file.SweepDeconvolutionPeakIndex,
+                file.SampleRate),
+            null);
+    }
+
+    // Converts the raw half-spectrum coherence bins stored with a loopback-transfer
+    // measurement into an ascending (Hz, γ²) curve, dropping the DC bin (undefined on
+    // a log axis). Returns null when the file carries no coherence.
+    private static IReadOnlyList<SignalPoint>? ExtractTransferCoherence(ImpulseResponseFile file)
+    {
+        if (file.TransferCoherence is not { Length: > 1 } coherence || file.SampleRate <= 0)
+        {
+            return null;
+        }
+
+        int fftLength = (coherence.Length - 1) * 2;
+        var points = new List<SignalPoint>(coherence.Length - 1);
+        for (int k = 1; k < coherence.Length; k++)
+        {
+            double frequency = (double)k * file.SampleRate / fftLength;
+            double gammaSquared = coherence[k];
+            if (double.IsFinite(frequency) && frequency > 0 && double.IsFinite(gammaSquared))
+            {
+                points.Add(new SignalPoint(frequency, gammaSquared));
+            }
+        }
+
+        return points.Count >= 2 ? points : null;
     }
 
     // The source FR is an expensive FFT that only changes with the loaded IR, the
@@ -396,6 +431,7 @@ public partial class EqWizardPanel
             NumericTargetOffset.Value = NumericTargetOffset.ClampValue(settings.TargetOffsetDb);
             numericGainMin.Value = numericGainMin.ClampValue(settings.GainMinDb);
             numericGainMax.Value = numericGainMax.ClampValue(settings.GainMaxDb);
+            checkBoxCutsOnly.Checked = settings.CutsOnly;
             SetSourceSmoothing(settings.SourceSmoothingInverseOctaves);
             darkComboBoxBands.SelectedIndex =
                 Math.Clamp(settings.BandCount, 1, MaxPeqSlotCount) - 1;
@@ -435,7 +471,8 @@ public partial class EqWizardPanel
         GainMaxDb = (double)numericGainMax.Value,
         BandCount = Math.Clamp(activeBandCount, 1, MaxPeqSlotCount),
         SourceSmoothingInverseOctaves = SourceSmoothingInverseOctaves,
-        CalibrationMode = calibrationMode
+        CalibrationMode = calibrationMode,
+        CutsOnly = checkBoxCutsOnly.Checked
     };
 
     private void RaiseSettingsChanged()

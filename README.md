@@ -1296,6 +1296,14 @@ count itself**, up to the **Max Filters** limit (4–32). A cumulative-boost cap
 minimum band spacing keep it from stacking many maxed-out bands where the response
 simply cannot be corrected (for example a deep-bass roll-off).
 
+**Cuts only** (on by default) is the safe choice for a car tune: Auto Tune places
+only cut bands and never boosts. A boost cannot fill a reflective cabin's
+interference null — it just burns amplifier headroom on a dip that shifts the moment
+the microphone moves. Unticking it lets Auto Tune boost too, but only where boosting
+is trustworthy: high measured coherence (when the source is a loopback-transfer
+measurement) and not inside a narrow, deep null. Every boost still obeys the Max Gain
+limit and the total-gain ceiling.
+
 A **From / To** frequency window limits where bands are placed; it is drawn on the
 plot as a shaded band between dashed guides, and the same window bounds the error
 metrics in the results panel.

@@ -50,6 +50,7 @@ namespace Resonalyze
             numericGainMax = new DarkNumericUpDown();
             labelGainMax = new Label();
             checkBoxBypass = new CheckBox();
+            checkBoxCutsOnly = new CheckBox();
             panelAutoTune = new Panel();
             buttonOverlaySettings = new Button();
             comboBoxCalibration = new DarkComboBox();
@@ -188,7 +189,7 @@ namespace Resonalyze
             buttonAutoTune.BackColor = Color.FromArgb(46, 51, 67);
             buttonAutoTune.FlatStyle = FlatStyle.Popup;
             buttonAutoTune.ForeColor = Color.White;
-            buttonAutoTune.Location = new Point(6, 130);
+            buttonAutoTune.Location = new Point(6, 156);
             buttonAutoTune.Name = "buttonAutoTune";
             buttonAutoTune.Size = new Size(173, 24);
             buttonAutoTune.TabIndex = 46;
@@ -353,6 +354,20 @@ namespace Resonalyze
             checkBoxBypass.Text = "Bypass";
             checkBoxBypass.UseVisualStyleBackColor = true;
             // 
+            // checkBoxCutsOnly
+            // 
+            checkBoxCutsOnly.AutoSize = true;
+            checkBoxCutsOnly.Checked = true;
+            checkBoxCutsOnly.CheckState = CheckState.Checked;
+            checkBoxCutsOnly.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            checkBoxCutsOnly.ForeColor = Color.FromArgb(210, 214, 222);
+            checkBoxCutsOnly.Location = new Point(6, 132);
+            checkBoxCutsOnly.Name = "checkBoxCutsOnly";
+            checkBoxCutsOnly.Size = new Size(75, 19);
+            checkBoxCutsOnly.TabIndex = 48;
+            checkBoxCutsOnly.Text = "Cuts only";
+            checkBoxCutsOnly.UseVisualStyleBackColor = true;
+            // 
             // panelAutoTune
             // 
             panelAutoTune.BackColor = Color.FromArgb(46, 51, 62);
@@ -367,10 +382,11 @@ namespace Resonalyze
             panelAutoTune.Controls.Add(numericToHz);
             panelAutoTune.Controls.Add(labelBandsLimit);
             panelAutoTune.Controls.Add(comboBoxBandsLimit);
+            panelAutoTune.Controls.Add(checkBoxCutsOnly);
             panelAutoTune.Controls.Add(buttonAutoTune);
-            panelAutoTune.Location = new Point(5, 601);
+            panelAutoTune.Location = new Point(6, 575);
             panelAutoTune.Name = "panelAutoTune";
-            panelAutoTune.Size = new Size(186, 160);
+            panelAutoTune.Size = new Size(186, 186);
             panelAutoTune.TabIndex = 54;
             // 
             // buttonOverlaySettings
@@ -514,6 +530,7 @@ namespace Resonalyze
         private DarkNumericUpDown numericGainMax;
         private Label labelGainMax;
         private CheckBox checkBoxBypass;
+        private CheckBox checkBoxCutsOnly;
         private Panel panelAutoTune;
         private Button buttonOverlaySettings;
         private DarkComboBox comboBoxCalibration;

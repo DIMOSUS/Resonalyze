@@ -85,6 +85,13 @@ public partial class EqWizardPanel : UserControl
         NumericTargetOffset.ValueChanged += (_, _) => OnTargetOffsetChanged();
         NumericGain.ValueChanged += (_, _) => DrawSelectedCurves();
         checkBoxBypass.CheckedChanged += (_, _) => DrawSelectedCurves();
+        checkBoxCutsOnly.CheckedChanged += (_, _) =>
+        {
+            // Only the next fit reads it, but orphan any in-flight one so a result
+            // computed under the old setting cannot land.
+            autoTuneOrchestrator.Invalidate();
+            RaiseSettingsChanged();
+        };
         buttonAutoTune.Click += (_, _) => AutoTune();
         buttonOverlaySettings.Click += (_, _) => OpenTargetSettings();
         buttonImport.Click += (_, _) => ImportPeq();
@@ -220,6 +227,11 @@ public partial class EqWizardPanel : UserControl
             "Lower edge of the Auto Tune frequency window; also bounds the error metrics.");
         SetTip(labelToHz, numericToHz,
             "Upper edge of the Auto Tune frequency window; also bounds the error metrics.");
+        SetTip(checkBoxCutsOnly,
+            "Auto Tune only cuts, never boosts — the safe default for a car tune " +
+            "(a boost cannot fill an interference null, it just burns headroom). " +
+            "Uncheck to allow boosts, still limited to reliable regions: high " +
+            "coherence and not inside a narrow, deep null.");
         SetTip(buttonAutoTune,
             "Automatically fit the bands and preamp so Source + EQ approaches the " +
             "target within the frequency window.");
@@ -570,11 +582,11 @@ public partial class EqWizardPanel : UserControl
         lastStats = BuildStats(render, eq);
         ResultsChanged?.Invoke(lastStats);
 
-        // Fill the gap between Source + EQ and the target first, so the curves
-        // draw on top of the shaded band.
+        // Shade the gap between Source + EQ and the target first (red above, blue
+        // below), so the curves draw on top of the two-colour deviation band.
         if (showEqCurves)
         {
-            AddFillBetween(model, render.SourcePlusEq!, render.Target);
+            AddDeviationFill(model, render.SourcePlusEq!, render.Target);
         }
 
         if (render.Source != null)
@@ -682,7 +694,8 @@ public partial class EqWizardPanel : UserControl
         var request = new EqWizardAutoTuneRequest(
             render.Source.Points.Select(point => new SignalPoint(point.X, point.Y)),
             render.Target.Points.Select(point => new SignalPoint(point.X, point.Y)),
-            CreateAutoTuneOptions());
+            CreateAutoTuneOptions(),
+            sourceCoherence);
 
         // Only the Auto Tune button is disabled while the fit runs — the user
         // can still switch the target, offsets, smoothing, the band limit or
@@ -742,7 +755,11 @@ public partial class EqWizardPanel : UserControl
             // (preamp + bands) must not exceed 0 dB anywhere, or the profile
             // clips before the user ever sees the headroom read-out.
             TotalGainMaxDb = 0,
-            SampleRateHz = EqSampleRate
+            SampleRateHz = EqSampleRate,
+            // Cuts-only is the safe default for a car tune: never boost an
+            // interference null. Unchecking it allows boosts, still gated to
+            // reliable regions (high coherence, not inside a narrow deep null).
+            CutsOnlyMode = checkBoxCutsOnly.Checked
         };
 
         // Q has no panel-level range control, so take its bounds from a band field.
@@ -967,24 +984,96 @@ public partial class EqWizardPanel : UserControl
                 points));
     }
 
-    // Shades the area between two aligned curves (Source + EQ and the target),
-    // visualising the residual error after applying the EQ.
-    private static void AddFillBetween(
+    // Translucent fills for the deviation band between Source + EQ and the target:
+    // red where the result sits above the target, blue where it sits below.
+    private static readonly OxyColor AboveTargetFill = OxyColor.FromArgb(72, 232, 80, 80);
+    private static readonly OxyColor BelowTargetFill = OxyColor.FromArgb(104, 64, 176, 255);
+
+    // Shades the area between Source + EQ and the target in two colours — above the
+    // target red, below it blue — so over- and under-correction read at a glance.
+    // OxyPlot's TwoColorAreaSeries only splits on a horizontal limit, not a sloped
+    // curve, so two AreaSeries are clamped to the target instead: the "above" one
+    // fills max(curve, target)..target (zero-width where the curve is below), the
+    // "below" one min(curve, target)..target. The two curves are index-aligned on
+    // the same frequencies; an exact crossing point is inserted wherever they
+    // intersect so neither colour bleeds past the target line.
+    private static void AddDeviationFill(
         PlotModel model,
-        EqWizardCurve first,
-        EqWizardCurve second)
+        EqWizardCurve curve,
+        EqWizardCurve target)
     {
-        OxyColor color = first.Color;
+        IReadOnlyList<DataPoint> c = curve.Points;
+        IReadOnlyList<DataPoint> t = target.Points;
+        int n = Math.Min(c.Count, t.Count);
+        if (n < 2)
+        {
+            return;
+        }
+
+        var curveAug = new List<DataPoint>(n + 8);
+        var targetAug = new List<DataPoint>(n + 8);
+        for (int i = 0; i < n; i++)
+        {
+            curveAug.Add(c[i]);
+            targetAug.Add(t[i]);
+            if (i + 1 >= n)
+            {
+                continue;
+            }
+
+            double d0 = c[i].Y - t[i].Y;
+            double d1 = c[i + 1].Y - t[i + 1].Y;
+            // Opposite signs => the result crosses the target inside this segment.
+            if (double.IsFinite(d0) && double.IsFinite(d1) && d0 * d1 < 0)
+            {
+                double f = d0 / (d0 - d1);
+                double crossX = InterpolateLogX(c[i].X, c[i + 1].X, f);
+                double crossY = t[i].Y + f * (t[i + 1].Y - t[i].Y);
+                curveAug.Add(new DataPoint(crossX, crossY));
+                targetAug.Add(new DataPoint(crossX, crossY));
+            }
+        }
+
+        AddClampedFill(model, curveAug, targetAug, above: true, AboveTargetFill);
+        AddClampedFill(model, curveAug, targetAug, above: false, BelowTargetFill);
+    }
+
+    private static void AddClampedFill(
+        PlotModel model,
+        IReadOnlyList<DataPoint> curve,
+        IReadOnlyList<DataPoint> target,
+        bool above,
+        OxyColor fill)
+    {
         var area = new AreaSeries
         {
             Color = OxyColors.Transparent,
-            Fill = OxyColor.FromArgb(48, color.R, color.G, color.B),
+            Fill = fill,
             StrokeThickness = 0,
             Tag = WizardSeriesTag
         };
-        area.Points.AddRange(first.Points);
-        area.Points2.AddRange(second.Points);
+        for (int i = 0; i < curve.Count; i++)
+        {
+            double clamped = above
+                ? Math.Max(curve[i].Y, target[i].Y)
+                : Math.Min(curve[i].Y, target[i].Y);
+            area.Points.Add(new DataPoint(curve[i].X, clamped));
+            area.Points2.Add(target[i]);
+        }
+
         model.Series.Add(area);
+    }
+
+    // Interpolates between two frequencies at fraction f in the log domain, matching
+    // how the plot's logarithmic X axis draws the segment.
+    private static double InterpolateLogX(double x0, double x1, double f)
+    {
+        if (x0 > 0 && x1 > 0)
+        {
+            return Math.Exp(Math.Log(x0) + f * (Math.Log(x1) - Math.Log(x0)));
+        }
+
+        return x0 + f * (x1 - x0);
     }
 
     private void InitializePeqSlotTable()

@@ -14,7 +14,6 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
     private readonly Dictionary<ProcessingSlotId, CacheEntry> cache = new();
     private readonly Func<VirtualCrossoverSourceSnapshot, DspChannelChain, int,
         CancellationToken, Complex[]> processChannel;
-    private CancellationTokenSource? activeProcessing;
     private CancellationTokenSource revisionCancellation = new();
     private long revision;
     private bool disposed;
@@ -49,18 +48,15 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
     /// </summary>
     public long Invalidate()
     {
-        CancellationTokenSource? processingToCancel;
         CancellationTokenSource revisionToCancel;
         long newRevision;
         lock (sync)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
             newRevision = ++revision;
-            processingToCancel = activeProcessing;
             revisionToCancel = revisionCancellation;
             revisionCancellation = new CancellationTokenSource();
         }
-        Cancel(processingToCancel);
         Cancel(revisionToCancel);
         revisionToCancel.Dispose();
         return newRevision;
@@ -81,7 +77,6 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
         ArgumentNullException.ThrowIfNull(snapshot);
 
         CancellationTokenSource processingCancellation;
-        CancellationTokenSource? previousProcessing;
         var results = new VirtualCrossoverProcessedChannel?[snapshot.Channels.Count];
         var misses = new List<PendingChannel>();
         lock (sync)
@@ -92,9 +87,9 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
                 return null;
             }
 
-            previousProcessing = activeProcessing;
-            processingCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            activeProcessing = processingCancellation;
+            processingCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                revisionCancellation.Token);
 
             for (int index = 0; index < snapshot.Channels.Count; index++)
             {
@@ -114,8 +109,6 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
                 }
             }
         }
-        Cancel(previousProcessing);
-
         try
         {
             if (misses.Count > 0)
@@ -149,7 +142,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
             lock (sync)
             {
                 if (disposed || snapshot.Revision != revision ||
-                    !ReferenceEquals(activeProcessing, processingCancellation))
+                    processingCancellation.IsCancellationRequested)
                 {
                     return null;
                 }
@@ -174,13 +167,6 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
         }
         finally
         {
-            lock (sync)
-            {
-                if (ReferenceEquals(activeProcessing, processingCancellation))
-                {
-                    activeProcessing = null;
-                }
-            }
             processingCancellation.Dispose();
         }
     }
@@ -193,7 +179,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
     {
         ArgumentNullException.ThrowIfNull(operation);
 
-        CancellationToken revisionToken;
+        CancellationTokenSource linked;
         lock (sync)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
@@ -201,25 +187,27 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
             {
                 return null;
             }
-            revisionToken = revisionCancellation.Token;
+            linked = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                revisionCancellation.Token);
         }
 
-        using CancellationTokenSource linked =
-            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, revisionToken);
-        try
+        using (linked)
         {
-            T result = await Task.Run(() => operation(linked.Token), linked.Token);
-            return IsCurrent(candidateRevision) ? result : null;
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return null;
+            try
+            {
+                T result = await Task.Run(() => operation(linked.Token), linked.Token);
+                return IsCurrent(candidateRevision) ? result : null;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return null;
+            }
         }
     }
 
     public void Dispose()
     {
-        CancellationTokenSource? processingToCancel;
         CancellationTokenSource revisionToCancel;
         lock (sync)
         {
@@ -229,12 +217,9 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
             }
 
             disposed = true;
-            processingToCancel = activeProcessing;
-            activeProcessing = null;
             cache.Clear();
             revisionToCancel = revisionCancellation;
         }
-        Cancel(processingToCancel);
         Cancel(revisionToCancel);
         revisionToCancel.Dispose();
     }
@@ -278,12 +263,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
     {
         private readonly VirtualCrossoverSourceSnapshot source;
         private readonly int sampleRate;
-        private readonly double gainDb;
-        private readonly double delayMs;
-        private readonly bool invertPolarity;
-        private readonly CrossoverSpec? crossover;
-        private readonly double peqPreampDb;
-        private readonly PeqBand[] peqBands;
+        private readonly DspChannelChainCacheKey chain;
 
         public CacheKey(
             VirtualCrossoverSourceSnapshot source,
@@ -292,43 +272,69 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
         {
             this.source = source;
             this.sampleRate = sampleRate;
-            gainDb = chain.GainDb;
-            delayMs = chain.DelayMs;
-            invertPolarity = chain.InvertPolarity;
-            crossover = chain.Crossover;
-            peqPreampDb = chain.Peq?.PreampDb ?? 0;
-            peqBands = chain.Peq?.Bands.ToArray() ?? Array.Empty<PeqBand>();
+            this.chain = new DspChannelChainCacheKey(chain);
         }
 
         public bool Equals(CacheKey? other) =>
             other != null &&
             ReferenceEquals(source, other.source) &&
             sampleRate == other.sampleRate &&
-            gainDb == other.gainDb &&
-            delayMs == other.delayMs &&
-            invertPolarity == other.invertPolarity &&
-            EqualityComparer<CrossoverSpec?>.Default.Equals(crossover, other.crossover) &&
-            peqPreampDb == other.peqPreampDb &&
-            peqBands.SequenceEqual(other.peqBands);
+            chain.Equals(other.chain);
 
         public override bool Equals(object? obj) => obj is CacheKey other && Equals(other);
 
         public override int GetHashCode()
         {
-            var hash = new HashCode();
-            hash.Add(source);
-            hash.Add(sampleRate);
-            hash.Add(gainDb);
-            hash.Add(delayMs);
-            hash.Add(invertPolarity);
-            hash.Add(crossover);
-            hash.Add(peqPreampDb);
-            foreach (PeqBand band in peqBands)
-            {
-                hash.Add(band);
-            }
-            return hash.ToHashCode();
+            return HashCode.Combine(source, sampleRate, chain);
         }
+    }
+}
+
+internal sealed class DspChannelChainCacheKey : IEquatable<DspChannelChainCacheKey>
+{
+    private readonly double gainDb;
+    private readonly double delayMs;
+    private readonly bool invertPolarity;
+    private readonly CrossoverSpec? crossover;
+    private readonly double peqPreampDb;
+    private readonly PeqBand[] peqBands;
+
+    public DspChannelChainCacheKey(DspChannelChain chain)
+    {
+        ArgumentNullException.ThrowIfNull(chain);
+        gainDb = chain.GainDb;
+        delayMs = chain.DelayMs;
+        invertPolarity = chain.InvertPolarity;
+        crossover = chain.Crossover;
+        peqPreampDb = chain.Peq?.PreampDb ?? 0;
+        peqBands = chain.Peq?.Bands.ToArray() ?? Array.Empty<PeqBand>();
+    }
+
+    public bool Equals(DspChannelChainCacheKey? other) =>
+        other != null &&
+        gainDb == other.gainDb &&
+        delayMs == other.delayMs &&
+        invertPolarity == other.invertPolarity &&
+        EqualityComparer<CrossoverSpec?>.Default.Equals(crossover, other.crossover) &&
+        peqPreampDb == other.peqPreampDb &&
+        peqBands.SequenceEqual(other.peqBands);
+
+    public override bool Equals(object? obj) =>
+        obj is DspChannelChainCacheKey other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(gainDb);
+        hash.Add(delayMs);
+        hash.Add(invertPolarity);
+        hash.Add(crossover);
+        hash.Add(peqPreampDb);
+        foreach (PeqBand band in peqBands)
+        {
+            hash.Add(band);
+        }
+        return hash.ToHashCode();
     }
 }
 

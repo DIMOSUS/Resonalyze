@@ -4218,7 +4218,7 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         private readonly Complex[] source;
         private readonly int sampleRate;
-        private readonly DspChannelChain chain;
+        private readonly DspChannelChainCacheKey chain;
 
         public AlignmentProcessingCacheKey(
             Complex[] source,
@@ -4227,7 +4227,7 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             this.source = source;
             this.sampleRate = sampleRate;
-            this.chain = chain;
+            this.chain = new DspChannelChainCacheKey(chain);
         }
 
         public bool Equals(AlignmentProcessingCacheKey? other) =>

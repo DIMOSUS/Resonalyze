@@ -6,6 +6,23 @@ namespace Resonalyze.App.Tests;
 public sealed class VirtualCrossoverProcessingCoordinatorTests
 {
     [Fact]
+    public void ChainCacheKey_ComparesIndependentPeqCurvesByValue()
+    {
+        DspChannelChain first = CreatePeqChain(-2.0, -4.0);
+        DspChannelChain sameValues = CreatePeqChain(-2.0, -4.0);
+        DspChannelChain changedBand = CreatePeqChain(-2.0, -3.5);
+        DspChannelChain changedPreamp = CreatePeqChain(-1.5, -4.0);
+
+        var firstKey = new DspChannelChainCacheKey(first);
+        var sameKey = new DspChannelChainCacheKey(sameValues);
+
+        Assert.Equal(firstKey, sameKey);
+        Assert.Equal(firstKey.GetHashCode(), sameKey.GetHashCode());
+        Assert.NotEqual(firstKey, new DspChannelChainCacheKey(changedBand));
+        Assert.NotEqual(firstKey, new DspChannelChainCacheKey(changedPreamp));
+    }
+
+    [Fact]
     public async Task ProcessAsync_ReturnsResultsInSnapshotOrderAndCachesByProcessedKey()
     {
         int processCount = 0;
@@ -168,6 +185,61 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
         coordinator.Invalidate();
 
         Assert.Null(await work);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_SameRevisionAllowsConcurrentConsumers()
+    {
+        using var entered = new CountdownEvent(2);
+        using var release = new ManualResetEventSlim();
+        using var coordinator = new VirtualCrossoverProcessingCoordinator(
+            (source, chain, sampleRate, cancellationToken) =>
+            {
+                entered.Signal();
+                Assert.True(release.Wait(TimeSpan.FromSeconds(5)));
+                cancellationToken.ThrowIfCancellationRequested();
+                return source.Apply(chain, sampleRate);
+            });
+        long revision = coordinator.Invalidate();
+        VirtualCrossoverProcessingSnapshot left = CreateSnapshot(
+            revision, 0, false, 3);
+        VirtualCrossoverProcessingSnapshot right = CreateSnapshot(
+            revision, 0, true, 11);
+
+        Task<VirtualCrossoverRenderResult?> leftTask = coordinator.ProcessAsync(left);
+        Task<VirtualCrossoverRenderResult?> rightTask = coordinator.ProcessAsync(right);
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+        release.Set();
+
+        Assert.NotNull(await leftTask);
+        Assert.NotNull(await rightTask);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_InvalidateCancelsAllConcurrentConsumers()
+    {
+        using var entered = new CountdownEvent(2);
+        using var release = new ManualResetEventSlim();
+        using var coordinator = new VirtualCrossoverProcessingCoordinator(
+            (source, chain, sampleRate, cancellationToken) =>
+            {
+                entered.Signal();
+                Assert.True(release.Wait(TimeSpan.FromSeconds(5)));
+                cancellationToken.ThrowIfCancellationRequested();
+                return source.Apply(chain, sampleRate);
+            });
+        long revision = coordinator.Invalidate();
+
+        Task<VirtualCrossoverRenderResult?> leftTask = coordinator.ProcessAsync(
+            CreateSnapshot(revision, 0, false, 3));
+        Task<VirtualCrossoverRenderResult?> rightTask = coordinator.ProcessAsync(
+            CreateSnapshot(revision, 0, true, 11));
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+        coordinator.Invalidate();
+        release.Set();
+
+        Assert.Null(await leftTask);
+        Assert.Null(await rightTask);
     }
 
     [Fact]
@@ -334,10 +406,33 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
         revisionField.SetValue(coordinator, revision);
     }
 
+    private static VirtualCrossoverProcessingSnapshot CreateSnapshot(
+        long revision,
+        int channelIndex,
+        bool rightSide,
+        int peakIndex) =>
+        new(
+            revision,
+            [new VirtualCrossoverChannelSnapshot(
+                channelIndex,
+                new ProcessingSlotId(channelIndex, rightSide),
+                new VirtualCrossoverSourceSnapshot(CreateImpulse(32, peakIndex, 1.0)),
+                48_000,
+                DspChannelChain.Identity)]);
+
     private static Complex[] CreateImpulse(int length, int peakIndex, double amplitude)
     {
         var impulse = new Complex[length];
         impulse[peakIndex] = amplitude;
         return impulse;
     }
+
+    private static DspChannelChain CreatePeqChain(double preampDb, double bandGainDb) =>
+        new(
+            GainDb: 1.5,
+            DelayMs: 2.25,
+            InvertPolarity: true,
+            Peq: new EqualizationCurve(
+                [new PeqBand(1_000, 1.4, bandGainDb)],
+                preampDb));
 }

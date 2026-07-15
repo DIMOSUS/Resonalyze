@@ -47,6 +47,8 @@ public partial class EqWizardPanel : UserControl
     };
 
     private readonly List<PeqSlotControl> peqSlots = new();
+    private readonly EqWizardAutoTuneOrchestrator autoTuneOrchestrator = new();
+    private readonly EqWizardImportExportCoordinator importExportCoordinator = new();
     private TableLayoutPanel peqSlotTable = null!;
     private PlotLabelsPanelController plotLabels = null!;
     private PlotWatermarkAnnotation hintAnnotation = null!;
@@ -55,7 +57,6 @@ public partial class EqWizardPanel : UserControl
     private RectangleAnnotation rangeFill = null!;
     private int selectedBandIndex = -1;
     private int activeBandCount;
-    private long autoTuneRevision;
     private EqTuneStats? lastStats;
     private bool suppressRedraw;
     private bool suppressWindowClamp;
@@ -249,6 +250,8 @@ public partial class EqWizardPanel : UserControl
 
     private int SourceSmoothingInverseOctaves =>
         comboBoxSmooth.SelectedItem is int value ? value : 0;
+
+    private int EqSampleRate => loadedIr?.SampleRate ?? 48_000;
 
     // Reports the current tuning result (or null when nothing is being tuned) to the
     // results panel. Wired by the host form; null until then.
@@ -532,7 +535,7 @@ public partial class EqWizardPanel : UserControl
         // switches), so any redraw orphans an in-flight fit computed against
         // the previous state. Over-invalidation is safe: the stale result is
         // simply dropped and the user re-runs Auto Tune.
-        autoTuneRevision++;
+        autoTuneOrchestrator.Invalidate();
 
         // Auto Tune applies many control changes at once; it redraws once at the end
         // instead of on every intermediate change.
@@ -649,7 +652,8 @@ public partial class EqWizardPanel : UserControl
         double peakCut = double.PositiveInfinity;
         foreach (double frequency in EqualizationCurve.LogFrequencyGrid(20, 20_000, 256))
         {
-            double gain = eq.MagnitudeDbAt(frequency);
+            double gain = DigitalEqualizationResponse.MagnitudeDbAt(
+                eq, frequency, EqSampleRate);
             peakBoost = Math.Max(peakBoost, gain);
             peakCut = Math.Min(peakCut, gain);
         }
@@ -675,26 +679,21 @@ public partial class EqWizardPanel : UserControl
             return;
         }
 
-        var source = render.Source.Points
-            .Select(point => new SignalPoint(point.X, point.Y))
-            .ToList();
-        var target = render.Target.Points
-            .Select(point => new SignalPoint(point.X, point.Y))
-            .ToList();
-        EqAutoTuner.Options options = CreateAutoTuneOptions();
+        var request = new EqWizardAutoTuneRequest(
+            render.Source.Points.Select(point => new SignalPoint(point.X, point.Y)),
+            render.Target.Points.Select(point => new SignalPoint(point.X, point.Y)),
+            CreateAutoTuneOptions());
 
         // Only the Auto Tune button is disabled while the fit runs — the user
         // can still switch the target, offsets, smoothing, the band limit or
         // the whole history measurement. A result computed against the old
         // inputs must not be written over the new state, so anything that
         // changes the fit's inputs bumps this revision and orphans the result.
-        long revision = ++autoTuneRevision;
-
-        EqualizationCurve tuned;
+        EqualizationCurve? tuned;
         buttonAutoTune.Enabled = false;
         try
         {
-            tuned = await Task.Run(() => EqAutoTuner.Tune(source, target, options));
+            tuned = await autoTuneOrchestrator.TuneLatestAsync(request);
         }
         catch (Exception exception)
         {
@@ -709,7 +708,7 @@ public partial class EqWizardPanel : UserControl
             }
         }
 
-        if (IsDisposed || revision != autoTuneRevision)
+        if (IsDisposed || tuned == null)
         {
             return;
         }
@@ -742,7 +741,8 @@ public partial class EqWizardPanel : UserControl
             // The wizard's output is a profile for a real DSP: the total gain
             // (preamp + bands) must not exceed 0 dB anywhere, or the profile
             // clips before the user ever sees the headroom read-out.
-            TotalGainMaxDb = 0
+            TotalGainMaxDb = 0,
+            SampleRateHz = EqSampleRate
         };
 
         // Q has no panel-level range control, so take its bounds from a band field.
@@ -810,19 +810,17 @@ public partial class EqWizardPanel : UserControl
         return (minHz, maxHz);
     }
 
-    private const string TuningSheetFilter = "Tuning sheet (PDF) (*.pdf)|*.pdf";
-
-    // Writes the current PEQ in the format chosen in the dialog. The text profile
-    // formats are followed by a printable "tuning sheet" PDF entry.
+    // The panel owns only the native dialog and UI feedback. Target resolution,
+    // sample-rate-specific format setup, PDF/text dispatch and I/O errors belong
+    // to the coordinator and are covered without WinForms.
     private void ExportPeq()
     {
-        IReadOnlyList<IEqProfileFormat> formats = EqProfileFormats.Exportable;
         using var dialog = new SaveFileDialog
         {
             AddExtension = true,
-            DefaultExt = formats[0].Extension,
+            DefaultExt = importExportCoordinator.DefaultExportExtension,
             FileName = "eq",
-            Filter = EqFormatFileDialogs.BuildFilter(formats, TuningSheetFilter),
+            Filter = importExportCoordinator.ExportFilter,
             Title = "Export PEQ"
         };
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
@@ -830,27 +828,21 @@ public partial class EqWizardPanel : UserControl
             return;
         }
 
-        IEqProfileFormat? format = EqFormatFileDialogs.ResolveFormat(
-            formats, dialog.FilterIndex);
         EqualizationCurve curve = BuildEqualizationCurve();
-        try
+        (double minHz, double maxHz) = GetFrequencyWindow();
+        EqWizardFileResult result = importExportCoordinator.Export(
+            new EqWizardExportRequest(
+                dialog.FileName,
+                importExportCoordinator.ResolveExportTarget(dialog.FilterIndex),
+                curve,
+                EqSampleRate,
+                System.IO.Path.GetFileNameWithoutExtension(dialog.FileName),
+                minHz,
+                maxHz,
+                lastStats));
+        if (!result.Success)
         {
-            if (format == null)
-            {
-                // The tuning sheet is the trailing filter entry; its title is
-                // the file name.
-                string title = System.IO.Path.GetFileNameWithoutExtension(dialog.FileName);
-                (double minHz, double maxHz) = GetFrequencyWindow();
-                TuningSheetPdf.Export(dialog.FileName, title, curve, minHz, maxHz, lastStats);
-            }
-            else
-            {
-                System.IO.File.WriteAllText(dialog.FileName, format.Export(curve));
-            }
-        }
-        catch (Exception exception)
-        {
-            ShowFileError("PEQ could not be exported.", exception);
+            ShowFileError("PEQ could not be exported.", result.Exception!);
         }
     }
 
@@ -858,11 +850,10 @@ public partial class EqWizardPanel : UserControl
     // tolerates broken or hand-edited files, so only file access can fail here.
     private void ImportPeq()
     {
-        IReadOnlyList<IEqProfileFormat> formats = EqProfileFormats.Importable;
         using var dialog = new OpenFileDialog
         {
             CheckFileExists = true,
-            Filter = EqFormatFileDialogs.BuildFilter(formats),
+            Filter = importExportCoordinator.ImportFilter,
             Title = "Import PEQ"
         };
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
@@ -870,23 +861,19 @@ public partial class EqWizardPanel : UserControl
             return;
         }
 
-        // No trailing entry, so the index always resolves to a format.
-        IEqProfileFormat format =
-            EqFormatFileDialogs.ResolveFormat(formats, dialog.FilterIndex)!;
-        EqualizationCurve curve;
-        try
+        EqWizardFileResult<EqualizationCurve> result = importExportCoordinator.Import(
+            new EqWizardImportRequest(
+                dialog.FileName,
+                importExportCoordinator.ResolveImportTarget(dialog.FilterIndex)));
+        if (!result.Success)
         {
-            curve = format.Import(System.IO.File.ReadAllText(dialog.FileName));
-        }
-        catch (Exception exception)
-        {
-            ShowFileError("PEQ could not be imported.", exception);
+            ShowFileError("PEQ could not be imported.", result.Exception!);
             return;
         }
 
         // Show the imported EQ rather than leaving it hidden behind bypass.
         checkBoxBypass.Checked = false;
-        ApplyEqualizationCurve(curve);
+        ApplyEqualizationCurve(result.Value!);
     }
 
     private void ShowFileError(string message, Exception exception)
@@ -936,7 +923,10 @@ public partial class EqWizardPanel : UserControl
 
         var eqWithoutGain = new EqualizationCurve(eq.Bands, 0);
         var points = baseline.Points
-            .Select(point => new DataPoint(point.X, eqWithoutGain.MagnitudeDbAt(point.X)))
+            .Select(point => new DataPoint(
+                point.X,
+                DigitalEqualizationResponse.MagnitudeDbAt(
+                    eqWithoutGain, point.X, EqSampleRate)))
             .ToArray();
         AddWizardSeries(
             model,
@@ -962,7 +952,10 @@ public partial class EqWizardPanel : UserControl
             (double)slot.GainInput.Value);
 
         var points = baseline.Points
-            .Select(point => new DataPoint(point.X, point.Y + band.MagnitudeDbAt(point.X)))
+            .Select(point => new DataPoint(
+                point.X,
+                point.Y + DigitalEqualizationResponse.MagnitudeDbAt(
+                    band, point.X, EqSampleRate)))
             .ToArray();
         AddWizardSeries(
             model,

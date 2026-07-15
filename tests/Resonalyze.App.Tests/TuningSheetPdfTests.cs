@@ -21,7 +21,8 @@ public sealed class TuningSheetPdfTests
         try
         {
             var stats = new EqTuneStats(2.1, 5.4, 3, 3.2, -9.5, -3.2);
-            TuningSheetPdf.Export(path, "LEFT MID", curve, 20, 20_000, stats);
+            TuningSheetPdf.Export(
+                path, "LEFT MID", curve, 20, 20_000, 48_000, stats);
 
             Assert.True(File.Exists(path));
             byte[] bytes = File.ReadAllBytes(path);
@@ -45,7 +46,8 @@ public sealed class TuningSheetPdfTests
         string path = Path.Combine(Path.GetTempPath(), $"tuning_{Guid.NewGuid():N}.pdf");
         try
         {
-            TuningSheetPdf.Export(path, "Empty", curve, 40, 16_000, null);
+            TuningSheetPdf.Export(
+                path, "Empty", curve, 40, 16_000, 48_000, null);
             Assert.True(new FileInfo(path).Length > 0);
         }
         finally

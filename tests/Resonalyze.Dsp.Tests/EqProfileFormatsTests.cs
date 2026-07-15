@@ -240,7 +240,11 @@ public sealed class EqProfileFormatsTests
         IReadOnlyList<double> grid = EqualizationCurve.LogFrequencyGrid(20, 20_000, 64);
         for (int i = 0; i < grid.Count; i++)
         {
-            Assert.Equal(Math.Round(curve.MagnitudeDbAt(grid[i]), 1), gains[i], 3);
+            Assert.Equal(
+                Math.Round(DigitalEqualizationResponse.MagnitudeDbAt(
+                    curve, grid[i], 48_000), 1),
+                gains[i],
+                3);
         }
     }
 

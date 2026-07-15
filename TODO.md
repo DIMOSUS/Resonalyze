@@ -107,14 +107,15 @@ Linux dev env where the work was done).
   `processed[0].SampleRate` for every trace, while `CrossSideTargetMs` already
   uses per-channel `SampleRate` — so mixed rates in one project are possible.
   Either enforce a single rate or map each trace by its own.
-- [~] **`VirtualCrossoverPanel` (~2.6k lines) — correctness kernels extracted;
-  deeper decoupling deferred.** The non-UI, correctness-critical logic is pulled
-  into tested units (`VirtualCrossoverSourceRules`,
-  `VirtualCrossoverAnalysis.SumLossCurve`, `PreparedDspResponse.GroupDelayMs`,
-  `VirtualCrossoverJunctions`). The panel stays a large view-controller by nature
-  (~60-70% irreducible WinForms/OxyPlot wiring); deeper extractions (decouple
-  `ChannelRuntime` from its control, then the process/alignment cores) are
-  deferred to a Windows session where the interactive paths can be exercised.
+- [ ] **`VirtualCrossoverPanel` remains a large view-controller.** Interactive
+  redraw revision/cancellation, processed-response caching and background DSP
+  scheduling now live in `VirtualCrossoverProcessingCoordinator`; its source
+  snapshots own write-once IR copies and stale results cannot enter the cache or
+  reach the view. The panel still owns source selection/loading, left/right
+  session state, auto-alignment orchestration, project persistence, metric-data
+  preparation and OxyPlot construction. Continue with one tested vertical slice
+  at a time (the source-loading coordinator or session model are the next useful
+  boundaries); do not describe the remaining code as inherently UI-bound.
 - [ ] **`DelayTableText` parses rendered fixed-width columns** (18/37 chars) for
   copy-values instead of holding a value model (format+parse are co-located and
   tested). Deferred: a value model pushes the change into the panel's
@@ -249,11 +250,6 @@ Linux dev env where the work was done).
   symmetrically**. All three fold into one redesign of the greedy loop:
   frequency × Q × gain search with width-based spacing and a boost-penalized
   score, then a coordinate-descent polish over all bands + preamp.
-- [ ] **EQ Wizard fits the ANALOG peaking prototype while Virtual DSP and the
-  exports run RBJ digital biquads** — ~3–4 dB apart at 18–20 kHz (48 kHz). Fit
-  and preview should evaluate `PeakingBiquad.Compute` + `BiquadResponse` at the
-  measurement rate; the analog model stays as an explicit choice. Needs its own
-  validation (fits change near Nyquist).
 - [ ] **miniDSP export needs a target-device profile**: the sample rate is a
   constructor parameter now, but device biquad limits are not checked and the
   preamp burns a biquad slot instead of mapping to the device's gain control.

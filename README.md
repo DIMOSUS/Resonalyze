@@ -1367,7 +1367,10 @@ across sides for the channels you tick in a small dialog, and a **Mono**
 checkbox turns a pair into a single shared driver — the typical one-subwoofer
 car layout — that feeds both sides' sums. **Add channel** / **Remove channel**
 grow the setup from two up to eight pairs; the blocks live in a scrolling list,
-so a many-way system stays in one window without crowding the plots.
+so a many-way system stays in one window without crowding the plots. Every
+channel in a project must share one sample rate — a measurement recorded at a
+different rate is refused; clear the existing sources first to switch the whole
+project to a new rate.
 
 Each channel runs through:
 

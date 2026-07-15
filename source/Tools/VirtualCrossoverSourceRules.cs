@@ -15,10 +15,12 @@ internal static class VirtualCrossoverSourceRules
         Reject,
 
         /// <summary>
-        /// Usable, but one or more already-assigned channels run at a different
-        /// sample rate and must be cleared first (all channels must share one).
+        /// Has a transfer IR, but one or more already-assigned channels run at a
+        /// different sample rate. A project is locked to a single rate, so the
+        /// candidate is refused; the user must clear the existing sources to
+        /// switch the project to a new rate.
         /// </summary>
-        NeedsConfirmClear,
+        RejectSampleRateMismatch,
 
         /// <summary>Usable as-is.</summary>
         Accept
@@ -41,6 +43,6 @@ internal static class VirtualCrossoverSourceRules
         }
 
         bool anyMismatch = otherResolvedSampleRates.Any(rate => rate != candidateSampleRate);
-        return anyMismatch ? Decision.NeedsConfirmClear : Decision.Accept;
+        return anyMismatch ? Decision.RejectSampleRateMismatch : Decision.Accept;
     }
 }

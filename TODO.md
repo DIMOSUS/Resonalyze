@@ -98,12 +98,6 @@ Linux dev env where the work was done).
   (`VirtualCrossoverAutoSetupDialog`): extra channel rows use hardcoded pixel
   offsets (`RowTop = 42`, `RowStep = 28`), so rows 4–8 can overlap scaled
   designer controls. Verify on Windows and switch to layout-panel positioning.
-- [ ] **Uniform-sample-rate assumption in the Virtual DSP plots.**
-  `BuildImpulseRender`/`BuildPhaseCurves` (in `VirtualCrossoverPanel`, feeding
-  `VirtualCrossoverAcousticPlot`) take `processed[0].Channel.SampleRate` for every
-  trace, while `BuildMagnitudeCurves` and the stereo-Δ read-out already use
-  per-channel `SampleRate` — so mixed rates in one project are possible. Either
-  enforce a single rate or map each trace by its own.
 - [ ] **`VirtualCrossoverPanel` decomposition — residual boundaries.** The bulk
   is done: the UI-free runtime session model (`VirtualCrossoverChannel`/`State`),
   the source-loading pipeline (`ResolvedVirtualDspSource` + `TryAssignSource`),

@@ -36,10 +36,10 @@ public sealed class VirtualCrossoverSourceRulesTests
     }
 
     [Fact]
-    public void AMismatchedSampleRate_NeedsConfirmClear()
+    public void AMismatchedSampleRate_IsRejected()
     {
         Assert.Equal(
-            VirtualCrossoverSourceRules.Decision.NeedsConfirmClear,
+            VirtualCrossoverSourceRules.Decision.RejectSampleRateMismatch,
             VirtualCrossoverSourceRules.Evaluate(
                 hasTransferIr: true,
                 candidateSampleRate: 48_000,

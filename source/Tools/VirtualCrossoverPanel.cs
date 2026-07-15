@@ -1102,59 +1102,33 @@ public partial class VirtualCrossoverPanel : UserControl
             return false;
         }
 
-        // A mismatched sample rate is not a dead end for an interactive pick: the
-        // user picks whether the new measurement wins (clearing the incompatible
-        // sides) or loses. The compatibility decision scans EVERY resolved side of
-        // every pair — the virtual sums of both sides read one shared rate.
+        // A project is locked to one sample rate: mixed rates are refused outright
+        // rather than partially supported, because the analysis reads a single
+        // shared rate. The compatibility decision scans EVERY resolved side of
+        // every pair — the virtual sums of both sides read that one rate.
         List<(VirtualCrossoverChannel Channel, bool RightSide, VirtualCrossoverChannelState State)> others =
             ResolvedSidesExcept(targetState).ToList();
         VirtualCrossoverSourceRules.Decision decision = VirtualCrossoverSourceRules.Evaluate(
             hasTransferIr: true,
             candidateSampleRate: resolved.SampleRate,
             otherResolvedSampleRates: others.Select(item => item.State.SampleRate));
-        if (decision == VirtualCrossoverSourceRules.Decision.NeedsConfirmClear)
+        if (decision == VirtualCrossoverSourceRules.Decision.RejectSampleRateMismatch)
         {
             // A silent reload cannot prompt, so an incompatible source stays
-            // unresolved (the button shows the warning glyph) instead of clearing
-            // the others behind the user's back.
-            if (policy == SourceConflictPolicy.RejectSilently)
+            // unresolved (the button shows the warning glyph); an interactive pick
+            // explains why it was refused and how to switch the project's rate.
+            if (policy == SourceConflictPolicy.Prompt)
             {
-                return false;
+                int projectSampleRate = others[0].State.SampleRate;
+                ShowError(
+                    $"This measurement is {resolved.SampleRate} Hz, but the project " +
+                    $"already uses {projectSampleRate} Hz.",
+                    "All channels in a Virtual DSP project must share one sample " +
+                    "rate. Clear the existing channel sources first to switch the " +
+                    "project to a different rate.");
             }
 
-            List<(VirtualCrossoverChannel Channel, bool RightSide, VirtualCrossoverChannelState State)> mismatched =
-                others.Where(item => item.State.SampleRate != resolved.SampleRate).ToList();
-            string mismatchedList = string.Join(
-                ", ",
-                mismatched.Select(item =>
-                    $"{SideLabel(item.Channel, item.RightSide)} " +
-                    $"({item.State.SampleRate} Hz)"));
-            DialogResult answer = MessageBox.Show(
-                FindForm(),
-                $"This measurement is {resolved.SampleRate} Hz, but channel " +
-                $"{mismatchedList} uses a different sample rate. All channels " +
-                "must share one." +
-                Environment.NewLine + Environment.NewLine +
-                "Assign it anyway and clear the mismatched channel sources?",
-                "Virtual DSP",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Warning);
-            if (answer != DialogResult.Yes)
-            {
-                return false;
-            }
-
-            // The modal dialog pumped messages: a project-import continuation
-            // may have wiped the slot underneath it while the user decided.
-            if (targetState.SourceRevision != sourceRevision)
-            {
-                return false;
-            }
-
-            foreach ((VirtualCrossoverChannel other, bool otherRight, _) in mismatched)
-            {
-                ClearSourceCore(other, otherRight);
-            }
+            return false;
         }
 
         resolved.ApplyTo(targetState);

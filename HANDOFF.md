@@ -35,8 +35,7 @@ left; this file says **who** should take **what** and **how** to work.
    `TransferFunction.ComputeAveragedRelativeIr`); `DspChannelChain.Response`
    re-implements `PreparedDspResponse.Create`;
    `SweepAnalysis.DeconvolveWithInverseFilter` has three overloads with
-   manual float→double conversion; single-frame
-   `TransferFunction.ComputeRelativeIr` is dead outside tests.
+   manual float→double conversion.
 3. **Magic numbers in harmonic analysis** (`DataHelper`) — name/document
    `h+0.03`/`h−0.5`, THD window `5.5…1.5`, silent smoothing doubling.
 4. **`OverlaySlotState` record** — replace the triple field-mapping between

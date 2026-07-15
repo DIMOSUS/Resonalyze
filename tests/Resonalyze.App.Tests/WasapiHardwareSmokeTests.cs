@@ -66,11 +66,15 @@ public sealed class WasapiHardwareSmokeTests
         int wrongRate = mixRate == 48_000 ? 44_100 : 48_000;
         using (var measurement = new ExpSweepMeasurement(Factory))
         {
-            measurement.Init(
-                8, wrongRate, 24, 0.25, PlaybackChannel.Right,
-                audioBackend: AudioBackend.WasapiShared,
-                waveInputChannelOffset: 0, waveLoopbackInputChannelOffset: 1,
-                wasapiCaptureEndpointId: captureId, wasapiRenderEndpointId: renderId);
+            measurement.Init(new SweepMeasurementConfiguration(
+                new SweepSignalConfiguration(8, wrongRate, 24, 0.25, PlaybackChannel.Right),
+                new SweepAudioConfiguration(
+                    Backend: AudioBackend.WasapiShared,
+                    WaveInputChannelOffset: 0,
+                    WaveLoopbackInputChannelOffset: 1,
+                    WasapiCaptureEndpointId: captureId,
+                    WasapiRenderEndpointId: renderId),
+                new SweepAveragingConfiguration()));
 
             Assert.False(await measurement.RunAsync());
             Assert.NotNull(measurement.LastError);
@@ -90,13 +94,16 @@ public sealed class WasapiHardwareSmokeTests
 
         int sampleRate = SharedMixRate(captureId);
         using var measurement = new ExpSweepMeasurement(Factory);
-        measurement.Init(
-            12, sampleRate, 24, 1.0, PlaybackChannel.Right,
-            audioBackend: AudioBackend.WasapiShared,
-            waveInputChannelOffset: 0, waveLoopbackInputChannelOffset: 1,
-            averageRunCount: 8,
-            wasapiCaptureEndpointId: captureId, wasapiRenderEndpointId: renderId,
-            wasapiBufferMilliseconds: 100);
+        measurement.Init(new SweepMeasurementConfiguration(
+            new SweepSignalConfiguration(12, sampleRate, 24, 1.0, PlaybackChannel.Right),
+            new SweepAudioConfiguration(
+                Backend: AudioBackend.WasapiShared,
+                WaveInputChannelOffset: 0,
+                WaveLoopbackInputChannelOffset: 1,
+                WasapiCaptureEndpointId: captureId,
+                WasapiRenderEndpointId: renderId,
+                WasapiBufferMilliseconds: 100),
+            new SweepAveragingConfiguration(8)));
 
         bool succeeded = await measurement.RunAsync();
 
@@ -124,13 +131,16 @@ public sealed class WasapiHardwareSmokeTests
         Assert.NotNull(sampleRate);
 
         using var measurement = new ExpSweepMeasurement(Factory);
-        measurement.Init(
-            8, sampleRate!.Value, 24, 0.25, PlaybackChannel.Right,
-            audioBackend: AudioBackend.WasapiExclusive,
-            waveInputChannelOffset: 0, waveLoopbackInputChannelOffset: 1,
-            averageRunCount: 1,
-            wasapiCaptureEndpointId: captureId, wasapiRenderEndpointId: renderId,
-            wasapiBufferMilliseconds: 100);
+        measurement.Init(new SweepMeasurementConfiguration(
+            new SweepSignalConfiguration(8, sampleRate!.Value, 24, 0.25, PlaybackChannel.Right),
+            new SweepAudioConfiguration(
+                Backend: AudioBackend.WasapiExclusive,
+                WaveInputChannelOffset: 0,
+                WaveLoopbackInputChannelOffset: 1,
+                WasapiCaptureEndpointId: captureId,
+                WasapiRenderEndpointId: renderId,
+                WasapiBufferMilliseconds: 100),
+            new SweepAveragingConfiguration(1)));
 
         bool succeeded = await measurement.RunAsync();
 
@@ -149,12 +159,16 @@ public sealed class WasapiHardwareSmokeTests
         int sampleRate = SharedMixRate(captureId);
         using (var measurement = new ExpSweepMeasurement(Factory))
         {
-            measurement.Init(
-                16, sampleRate, 24, 5.0, PlaybackChannel.Right,
-                audioBackend: AudioBackend.WasapiShared,
-                waveInputChannelOffset: 0, waveLoopbackInputChannelOffset: 1,
-                wasapiCaptureEndpointId: captureId, wasapiRenderEndpointId: renderId,
-                wasapiBufferMilliseconds: 100);
+            measurement.Init(new SweepMeasurementConfiguration(
+                new SweepSignalConfiguration(16, sampleRate, 24, 5.0, PlaybackChannel.Right),
+                new SweepAudioConfiguration(
+                    Backend: AudioBackend.WasapiShared,
+                    WaveInputChannelOffset: 0,
+                    WaveLoopbackInputChannelOffset: 1,
+                    WasapiCaptureEndpointId: captureId,
+                    WasapiRenderEndpointId: renderId,
+                    WasapiBufferMilliseconds: 100),
+                new SweepAveragingConfiguration()));
 
             Task<bool> running = measurement.RunAsync();
             await Task.Delay(500);

@@ -118,11 +118,12 @@ public sealed class TransferFunctionTests
     }
 
     [Fact]
-    public void ComputeRelativeIr_IdenticalSignalsProducesUnitImpulse()
+    public void ComputeAveragedRelativeIr_SingleFrameIdenticalSignalsProducesUnitImpulse()
     {
         double[] reference = CreateImpulse(128);
 
-        double[] ir = TransferFunction.ComputeRelativeIr(reference, reference);
+        double[] ir = TransferFunction.ComputeAveragedRelativeIr(
+            [new TransferFunctionFrame(reference, reference)]).ImpulseResponse;
 
         Assert.Equal(256, ir.Length);
         Assert.Equal(1.0, ir[0], precision: 9);
@@ -132,39 +133,33 @@ public sealed class TransferFunctionTests
     }
 
     [Fact]
-    public void ComputeRelativeIr_RecoversRelativeDelay()
+    public void ComputeAveragedRelativeIr_SingleFrameRecoversRelativeDelay()
     {
         const int delay = 17;
         double[] reference = CreateImpulse(128);
         double[] target = Delay(reference, delay);
 
-        double[] ir = TransferFunction.ComputeRelativeIr(reference, target);
+        TransferEstimateResult result = TransferFunction.ComputeAveragedRelativeIr(
+            [new TransferFunctionFrame(reference, target)]);
 
-        int peakIndex = FindPeakIndex(ir);
-        Assert.Equal(delay, peakIndex);
-        Assert.Equal(1.0, ir[delay], precision: 9);
+        Assert.Equal(delay, result.PeakIndex);
+        Assert.Equal(1.0, result.ImpulseResponse[delay], precision: 9);
     }
 
     [Fact]
-    public void ComputeRelativeIr_RecoversRelativeGain()
+    public void ComputeAveragedRelativeIr_SingleFrameRecoversRelativeGain()
     {
         const double gain = 0.375;
         double[] reference = CreateImpulse(128);
         double[] target = reference.Select(sample => sample * gain).ToArray();
 
-        double[] ir = TransferFunction.ComputeRelativeIr(reference, target);
+        double[] ir = TransferFunction.ComputeAveragedRelativeIr(
+            [new TransferFunctionFrame(reference, target)]).ImpulseResponse;
 
         Assert.Equal(gain, ir[0], precision: 9);
         Assert.All(
             ir.Skip(1).Take(127),
             sample => Assert.Equal(0.0, sample, precision: 8));
-    }
-
-    [Fact]
-    public void ComputeRelativeIr_RejectsMismatchedLengths()
-    {
-        Assert.Throws<ArgumentException>(() =>
-            TransferFunction.ComputeRelativeIr([1.0, 2.0], [1.0]));
     }
 
     [Fact]
@@ -511,22 +506,5 @@ public sealed class TransferFunctionTests
         }
 
         return output;
-    }
-
-    private static int FindPeakIndex(IReadOnlyList<double> samples)
-    {
-        int peakIndex = 0;
-        double peakMagnitude = 0;
-        for (int i = 0; i < samples.Count; i++)
-        {
-            double magnitude = Math.Abs(samples[i]);
-            if (magnitude > peakMagnitude)
-            {
-                peakMagnitude = magnitude;
-                peakIndex = i;
-            }
-        }
-
-        return peakIndex;
     }
 }

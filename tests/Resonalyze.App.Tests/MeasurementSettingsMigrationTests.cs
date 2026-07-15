@@ -55,20 +55,23 @@ public sealed class MeasurementSettingsMigrationTests
     public void WasapiEndpointIdsAndBufferAreCapturedWithoutOpeningHardware()
     {
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        measurement.Init(
-            12,
-            48_000,
-            24,
-            1.0,
-            PlaybackChannel.Mono,
-            audioBackend: AudioBackend.WasapiShared,
-            waveInputChannelOffset: 0,
-            waveLoopbackInputChannelOffset: 1,
-            wasapiCaptureEndpointId: "capture-id",
-            wasapiRenderEndpointId: "render-id",
-            wasapiBufferMilliseconds: 40,
-            wasapiCaptureEndpointName: "USB Input",
-            wasapiRenderEndpointName: "USB Output");
+        measurement.Init(new SweepMeasurementConfiguration(
+            new SweepSignalConfiguration(
+                12,
+                48_000,
+                24,
+                1.0,
+                PlaybackChannel.Mono),
+            new SweepAudioConfiguration(
+                Backend: AudioBackend.WasapiShared,
+                WaveInputChannelOffset: 0,
+                WaveLoopbackInputChannelOffset: 1,
+                WasapiCaptureEndpointId: "capture-id",
+                WasapiRenderEndpointId: "render-id",
+                WasapiBufferMilliseconds: 40,
+                WasapiCaptureEndpointName: "USB Input",
+                WasapiRenderEndpointName: "USB Output"),
+            new SweepAveragingConfiguration()));
 
         MeasurementSettingsFile.SweepMeasurementSettings captured =
             MeasurementSettingsFile.SweepMeasurementSettings.Capture(measurement);
@@ -85,20 +88,23 @@ public sealed class MeasurementSettingsMigrationTests
     public void RestoreImpulseResponse_PreservesCurrentWasapiConfiguration()
     {
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        measurement.Init(
-            12,
-            48_000,
-            24,
-            1.0,
-            PlaybackChannel.Mono,
-            audioBackend: AudioBackend.WasapiShared,
-            waveInputChannelOffset: 0,
-            waveLoopbackInputChannelOffset: 1,
-            wasapiCaptureEndpointId: "capture-id",
-            wasapiRenderEndpointId: "render-id",
-            wasapiBufferMilliseconds: 40,
-            wasapiCaptureEndpointName: "USB Input",
-            wasapiRenderEndpointName: "USB Output");
+        measurement.Init(new SweepMeasurementConfiguration(
+            new SweepSignalConfiguration(
+                12,
+                48_000,
+                24,
+                1.0,
+                PlaybackChannel.Mono),
+            new SweepAudioConfiguration(
+                Backend: AudioBackend.WasapiShared,
+                WaveInputChannelOffset: 0,
+                WaveLoopbackInputChannelOffset: 1,
+                WasapiCaptureEndpointId: "capture-id",
+                WasapiRenderEndpointId: "render-id",
+                WasapiBufferMilliseconds: 40,
+                WasapiCaptureEndpointName: "USB Input",
+                WasapiRenderEndpointName: "USB Output"),
+            new SweepAveragingConfiguration()));
 
         measurement.RestoreImpulseResponse(
             12,
@@ -121,17 +127,20 @@ public sealed class MeasurementSettingsMigrationTests
     public void WasapiChannelOffsetsAreNotLimitedToStereo()
     {
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        measurement.Init(
-            12,
-            48_000,
-            24,
-            1.0,
-            PlaybackChannel.Mono,
-            audioBackend: AudioBackend.WasapiShared,
-            waveInputChannelOffset: 5,
-            waveLoopbackInputChannelOffset: 7,
-            wasapiCaptureEndpointId: "capture-id",
-            wasapiRenderEndpointId: "render-id");
+        measurement.Init(new SweepMeasurementConfiguration(
+            new SweepSignalConfiguration(
+                12,
+                48_000,
+                24,
+                1.0,
+                PlaybackChannel.Mono),
+            new SweepAudioConfiguration(
+                Backend: AudioBackend.WasapiShared,
+                WaveInputChannelOffset: 5,
+                WaveLoopbackInputChannelOffset: 7,
+                WasapiCaptureEndpointId: "capture-id",
+                WasapiRenderEndpointId: "render-id"),
+            new SweepAveragingConfiguration()));
 
         Assert.Equal(5, measurement.WaveInputChannelOffset);
         Assert.Equal(7, measurement.WaveLoopbackInputChannelOffset);

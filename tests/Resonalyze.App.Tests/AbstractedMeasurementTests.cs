@@ -12,15 +12,17 @@ public sealed class AbstractedMeasurementTests
     private static ExpSweepMeasurement CreateSweep(IAudioSessionFactory factory, int runs = 1)
     {
         var measurement = new ExpSweepMeasurement(factory);
-        measurement.Init(
-            octaves: 4,
-            sampleRate: 44_100,
-            bits: 24,
-            requestedDuration: 0.05,
-            playbackChannel: PlaybackChannel.Mono,
-            waveInputChannelOffset: 0,
-            waveLoopbackInputChannelOffset: 1,
-            averageRunCount: runs);
+        measurement.Init(new SweepMeasurementConfiguration(
+            new SweepSignalConfiguration(
+                4,
+                44_100,
+                24,
+                0.05,
+                PlaybackChannel.Mono),
+            new SweepAudioConfiguration(
+                WaveInputChannelOffset: 0,
+                WaveLoopbackInputChannelOffset: 1),
+            new SweepAveragingConfiguration(runs)));
         return measurement;
     }
 

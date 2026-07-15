@@ -246,29 +246,6 @@ public static class TransferFunction
         return relative;
     }
 
-    // The H1 estimate cross / (auto + eps), optionally shaped by a spectral
-    // filter, transformed back to the time domain.
-    private static Complex[] InverseH1Response(
-        Complex[] crossSpectrum,
-        double[] referencePowerSpectrum,
-        double epsilon,
-        IReadOnlyList<double>? filter)
-    {
-        int fftLength = crossSpectrum.Length;
-        var relative = new Complex[fftLength];
-        for (int bin = 0; bin < fftLength; bin++)
-        {
-            relative[bin] = crossSpectrum[bin] / (referencePowerSpectrum[bin] + epsilon);
-            if (filter != null && filter.Count == fftLength)
-            {
-                relative[bin] *= filter[bin];
-            }
-        }
-
-        Fourier.Inverse(relative, FourierOptions.Matlab);
-        return relative;
-    }
-
     private static double MagnitudeSquared(Complex value) =>
         value.Real * value.Real + value.Imaginary * value.Imaginary;
 
@@ -525,53 +502,6 @@ public static class TransferFunction
 
     internal static int WrapIndex(int index, int length) =>
         DspMath.WrapIndex(index, length);
-
-    public static double[] ComputeRelativeIr(
-        IReadOnlyList<double> referenceMic,
-        IReadOnlyList<double> targetMic,
-        double epsilon = 1e-12,
-        IReadOnlyList<double>? filter = null)
-    {
-        ArgumentNullException.ThrowIfNull(referenceMic);
-        ArgumentNullException.ThrowIfNull(targetMic);
-        if (referenceMic.Count != targetMic.Count)
-        {
-            throw new ArgumentException("Input arrays must have same length.");
-        }
-        if (referenceMic.Count == 0)
-        {
-            throw new ArgumentException("Input arrays must not be empty.");
-        }
-        if (!double.IsFinite(epsilon) || epsilon < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(epsilon));
-        }
-
-        int fftLength = DspMath.NextPowerOfTwo(checked(referenceMic.Count * 2));
-        var crossSpectrum = new Complex[fftLength];
-        var referencePowerSpectrum = new double[fftLength];
-        AccumulateFrameSpectra(
-            referenceMic,
-            targetMic,
-            referenceMic.Count,
-            crossSpectrum,
-            referencePowerSpectrum,
-            targetPowerSpectrum: null);
-
-        Complex[] relative = InverseH1Response(
-            crossSpectrum,
-            referencePowerSpectrum,
-            epsilon,
-            filter);
-
-        var impulseResponse = new double[fftLength];
-        for (int i = 0; i < impulseResponse.Length; i++)
-        {
-            impulseResponse[i] = relative[i].Real;
-        }
-
-        return impulseResponse;
-    }
 }
 
 public readonly record struct TransferFunctionFrame(

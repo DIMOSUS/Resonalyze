@@ -1,4 +1,5 @@
 using System.Numerics;
+using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp.Tests;
 
@@ -11,7 +12,10 @@ public sealed class SyntheticIntegrationTests
     public void TimeAlignmentChain_RecoversKnownFractionalDelay()
     {
         const double expectedDelaySamples = 86.5;
-        double[] reference = CreateDeterministicBroadbandSignal(SignalLength);
+        // A unit impulse is a flat (white) reference, so the transfer estimate's
+        // power gate passes every bin; fractionally delaying it exercises the
+        // full time-alignment chain on genuinely broadband content.
+        double[] reference = CreateImpulseSignal(SignalLength);
         double[] target = ApplyFractionalDelay(reference, expectedDelaySamples, kernelHalfLength: 64);
 
         double measuredDelay = MeasureDelaySamples(
@@ -119,10 +123,13 @@ public sealed class SyntheticIntegrationTests
         IReadOnlyList<double>? filter,
         PeakSearchMode peakSearchMode)
     {
-        double[] relativeIr = TransferFunction.ComputeRelativeIr(
-            reference,
-            target,
-            filter: filter);
+        double[] relativeIr = TransferFunction.ComputeAveragedRelativeIr(
+            [new TransferFunctionFrame(reference, target)]).ImpulseResponse;
+        if (filter != null)
+        {
+            relativeIr = ApplySpectralFilter(relativeIr, filter);
+        }
+
         double[] envelope = SignalEnvelope.Envelope(relativeIr);
         PeakSearchResult peak = SignalEnvelope.FindPeak(
             envelope,
@@ -145,26 +152,40 @@ public sealed class SyntheticIntegrationTests
         return peak.SelectedIndex + fractionalOffset;
     }
 
+    // Shapes the impulse response with a zero-phase spectral window — the same
+    // frequency-domain multiply the H1 estimate applies before its IFFT, so a
+    // bandpass over the estimate is reproduced on the returned IR.
+    private static double[] ApplySpectralFilter(
+        double[] impulseResponse,
+        IReadOnlyList<double> filter)
+    {
+        var spectrum = new Complex[impulseResponse.Length];
+        for (int i = 0; i < impulseResponse.Length; i++)
+        {
+            spectrum[i] = new Complex(impulseResponse[i], 0.0);
+        }
+
+        Fourier.Forward(spectrum, FourierOptions.Matlab);
+        int bins = Math.Min(spectrum.Length, filter.Count);
+        for (int bin = 0; bin < bins; bin++)
+        {
+            spectrum[bin] *= filter[bin];
+        }
+
+        Fourier.Inverse(spectrum, FourierOptions.Matlab);
+        var result = new double[impulseResponse.Length];
+        for (int i = 0; i < result.Length; i++)
+        {
+            result[i] = spectrum[i].Real;
+        }
+
+        return result;
+    }
+
     private static double[] CreateImpulseSignal(int length)
     {
         var signal = new double[length];
         signal[0] = 1.0;
-        return signal;
-    }
-
-    private static double[] CreateDeterministicBroadbandSignal(int length)
-    {
-        var signal = new double[length];
-        for (int i = 0; i < length; i++)
-        {
-            double t = i / (double)SampleRate;
-            signal[i] =
-                0.8 * Math.Sin(2.0 * Math.PI * 311.0 * t) +
-                0.6 * Math.Sin(2.0 * Math.PI * 997.0 * t + 0.31) +
-                0.5 * Math.Sin(2.0 * Math.PI * 3_203.0 * t + 1.17) +
-                0.4 * Math.Sin(2.0 * Math.PI * 7_111.0 * t + 2.04);
-        }
-
         return signal;
     }
 

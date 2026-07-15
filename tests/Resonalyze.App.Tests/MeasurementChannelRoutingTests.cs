@@ -8,15 +8,18 @@ public sealed class MeasurementChannelRoutingTests
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
 
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
-            measurement.Init(
-                8,
-                48_000,
-                24,
-                0.25,
-                PlaybackChannel.Right,
-                audioBackend: AudioBackend.Wave,
-                waveInputChannelOffset: 0,
-                waveLoopbackInputChannelOffset: 0));
+            measurement.Init(new SweepMeasurementConfiguration(
+                new SweepSignalConfiguration(
+                    8,
+                    48_000,
+                    24,
+                    0.25,
+                    PlaybackChannel.Right),
+                new SweepAudioConfiguration(
+                    Backend: AudioBackend.Wave,
+                    WaveInputChannelOffset: 0,
+                    WaveLoopbackInputChannelOffset: 0),
+                new SweepAveragingConfiguration())));
 
         Assert.Contains("different channels", exception.Message);
     }

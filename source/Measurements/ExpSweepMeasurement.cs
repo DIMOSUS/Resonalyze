@@ -89,61 +89,6 @@ namespace Resonalyze
             private set => currentLevels = value;
         }
 
-        /// <summary>
-        /// Compatibility adapter for callers compiled against the original flat
-        /// parameter list. New code should use the grouped configuration overload.
-        /// </summary>
-        [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-        public void Init(
-            int octaves,
-            int sampleRate,
-            int bits,
-            double requestedDuration,
-            PlaybackChannel playbackChannel,
-            int outputDeviceNumber = -1,
-            int inputDeviceNumber = -1,
-            AudioBackend audioBackend = AudioBackend.Wave,
-            string? asioDriverName = null,
-            int asioInputChannelOffset = 0,
-            int asioOutputChannelOffset = 0,
-            int waveInputChannelOffset = 0,
-            int? waveLoopbackInputChannelOffset = null,
-            int? asioLoopbackInputChannelOffset = null,
-            int averageRunCount = 1,
-            bool confirmEachAverageRun = false,
-            string? wasapiCaptureEndpointId = null,
-            string? wasapiRenderEndpointId = null,
-            int wasapiBufferMilliseconds = 100,
-            string? wasapiCaptureEndpointName = null,
-            string? wasapiRenderEndpointName = null)
-        {
-            Init(new SweepMeasurementConfiguration(
-                new SweepSignalConfiguration(
-                    octaves,
-                    sampleRate,
-                    bits,
-                    requestedDuration,
-                    playbackChannel),
-                new SweepAudioConfiguration(
-                    audioBackend,
-                    outputDeviceNumber,
-                    inputDeviceNumber,
-                    waveInputChannelOffset,
-                    waveLoopbackInputChannelOffset,
-                    asioDriverName,
-                    asioInputChannelOffset,
-                    asioLoopbackInputChannelOffset,
-                    asioOutputChannelOffset,
-                    wasapiCaptureEndpointId,
-                    wasapiRenderEndpointId,
-                    wasapiCaptureEndpointName,
-                    wasapiRenderEndpointName,
-                    wasapiBufferMilliseconds),
-                new SweepAveragingConfiguration(
-                    averageRunCount,
-                    confirmEachAverageRun)));
-        }
-
         public void Init(SweepMeasurementConfiguration configuration)
         {
             ArgumentNullException.ThrowIfNull(configuration);

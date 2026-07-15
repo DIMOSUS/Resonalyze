@@ -4234,7 +4234,7 @@ public partial class VirtualCrossoverPanel : UserControl
             other != null &&
             ReferenceEquals(source, other.source) &&
             sampleRate == other.sampleRate &&
-            chain == other.chain;
+            chain.Equals(other.chain);
 
         public override bool Equals(object? obj) =>
             obj is AlignmentProcessingCacheKey other && Equals(other);

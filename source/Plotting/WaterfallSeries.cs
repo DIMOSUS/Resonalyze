@@ -331,6 +331,12 @@ namespace Resonalyze
                     {
                         var p0_ = upPoints[k];
                         var p1_ = downPoints[k];
+                        // Points past the measured window resample to NaN (no
+                        // fabricated decay); a NaN screen coordinate overflows GDI+.
+                        if (double.IsNaN(p0_.Y))
+                        {
+                            continue;
+                        }
                         OxyRect rect = new OxyRect(p0_, new OxySize(1, p1_.Y - p0_.Y));
                         rc.DrawRectangle(rect, BackgroundColor, OxyColors.Undefined, 0, EdgeRenderingMode.Automatic);
                     }
@@ -340,6 +346,13 @@ namespace Resonalyze
                     {
                         var p0_ = upPoints[k];
                         var p1_ = upPoints[k + 1];
+
+                        // Skip any segment touching the NaN "no data" tail rather
+                        // than bridging the gap with a fabricated line.
+                        if (double.IsNaN(p0_.Y) || double.IsNaN(p1_.Y))
+                        {
+                            continue;
+                        }
 
                         lPen.Color = colors[k + 1];
                         rc.DrawLine(p0_.X, p0_.Y, p1_.X, p1_.Y, lPen, EdgeRenderingMode.Automatic);

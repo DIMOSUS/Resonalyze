@@ -41,10 +41,6 @@ Linux dev env where the work was done).
 
 ## DSP library (`dsp/`)
 
-- [ ] **`EqAutoTuner` greedy fit has no polish pass.** Band gain is fixed from
-  the residual at the peak before Q is chosen (no joint gain/Q optimization),
-  there is no final coordinate-descent pass (`CrossoverAutoSetup` already has
-  one to borrow), and the preamp is rounded to integer dB *before* the fit.
 - [ ] **`CrossoverAutoSetup.Optimizer.Score()` recomputes every channel** on
   each junction/gain trial (~300–1500 calls per junction). Filter magnitudes
   are cached, but the amplitudes of untouched channels are not.
@@ -103,19 +99,23 @@ Linux dev env where the work was done).
   offsets (`RowTop = 42`, `RowStep = 28`), so rows 4–8 can overlap scaled
   designer controls. Verify on Windows and switch to layout-panel positioning.
 - [ ] **Uniform-sample-rate assumption in the Virtual DSP plots.**
-  `DrawImpulseCurves`/`DrawPhaseCurves`/`DrawMagnitudeCurves` take
-  `processed[0].SampleRate` for every trace, while `CrossSideTargetMs` already
-  uses per-channel `SampleRate` — so mixed rates in one project are possible.
-  Either enforce a single rate or map each trace by its own.
-- [ ] **`VirtualCrossoverPanel` remains a large view-controller.** Interactive
-  redraw revision/cancellation, processed-response caching and background DSP
-  scheduling now live in `VirtualCrossoverProcessingCoordinator`; its source
-  snapshots own write-once IR copies and stale results cannot enter the cache or
-  reach the view. The panel still owns source selection/loading, left/right
-  session state, auto-alignment orchestration, project persistence, metric-data
-  preparation and OxyPlot construction. Continue with one tested vertical slice
-  at a time (the source-loading coordinator or session model are the next useful
-  boundaries); do not describe the remaining code as inherently UI-bound.
+  `BuildImpulseRender`/`BuildPhaseCurves` (in `VirtualCrossoverPanel`, feeding
+  `VirtualCrossoverAcousticPlot`) take `processed[0].Channel.SampleRate` for every
+  trace, while `BuildMagnitudeCurves` and the stereo-Δ read-out already use
+  per-channel `SampleRate` — so mixed rates in one project are possible. Either
+  enforce a single rate or map each trace by its own.
+- [ ] **`VirtualCrossoverPanel` decomposition — residual boundaries.** The bulk
+  is done: the UI-free runtime session model (`VirtualCrossoverChannel`/`State`),
+  the source-loading pipeline (`ResolvedVirtualDspSource` + `TryAssignSource`),
+  both OxyPlot presenters (`VirtualCrossoverAcousticPlot` / `DspChainPlot`), the
+  metric computation (`VirtualCrossoverMetrics` + shared `ProcessedChannels`) and
+  the shared Auto delay `AlignmentReprocessor` are extracted; the panel dropped
+  ~4250 → ~3060 lines. Remaining, lower-value slices: a full source
+  resolver/assignment boundary (the panel still orchestrates the file/History/
+  restore flow around the shared core), splitting `VirtualCrossoverMetrics` into
+  curve building vs side-processing orchestration, and moving `ProcessedChannel`'s
+  `OxyColor` out into the render binding. Persistence, calibration and control
+  binding are inherently UI-bound — leave them.
 - [ ] **`DelayTableText` parses rendered fixed-width columns** (18/37 chars) for
   copy-values instead of holding a value model (format+parse are co-located and
   tested). Deferred: a value model pushes the change into the panel's
@@ -238,21 +238,56 @@ Linux dev env where the work was done).
   fix hooks `ControlAdded` recursively and re-enters the apply debounce, so it
   needs a live check that dynamically-added rows apply exactly once.
 
-## EQ Wizard
+## EQ Wizard (car DSP tuning)
+
+This mode does magnitude correction toward a car target AFTER the Virtual DSP
+tool has set crossovers, delays and polarity — so crossovers, phase/time and
+convolution are deliberately out of its scope (see the note at the end). The
+items below are what a car DSP tune actually needs, roughly in priority order.
 
 - [ ] ★ **No boostability/reliability mask**: the fitter sees only dB curves and
-  will boost a deep interference null (wasting headroom and blocking an octave).
-  Fix: mask from coherence + null depth/width + driver band; a cuts-only mode
-  (sensible default for car tuning). (The clipping-profile half is fixed:
-  `TotalGainMaxDb` caps preamp + band peak.)
-- [ ] **Band spacing ignores the chosen Q** (fixed ±0.33/±1 oct blocks); **gain
-  is fixed before Q is searched**; **the objective treats boosts and cuts
-  symmetrically**. All three fold into one redesign of the greedy loop:
-  frequency × Q × gain search with width-based spacing and a boost-penalized
-  score, then a coordinate-descent polish over all bands + preamp.
-- [ ] **miniDSP export needs a target-device profile**: the sample rate is a
-  constructor parameter now, but device biquad limits are not checked and the
-  preamp burns a biquad slot instead of mapping to the device's gain control.
+  will boost a deep interference null (wasting amplifier headroom and blocking an
+  octave) — the worst failure mode in a reflective car cabin. Fix: mask from
+  coherence + null depth/width + driver band; a **cuts-only mode** as the default
+  for car tuning. (The clipping-profile half is fixed: `TotalGainMaxDb` caps
+  preamp + band peak.)
+- [ ] ★ **Only peaking bands — no shelves.** `PeqBand` is `(Fc, Q, gain)` with no
+  filter type, so `EqAutoTuner`, the preview (`DigitalEqualizationResponse`) and
+  the parsers are peaking-only. Car targets are shelved (bass boost + downward
+  tilt), which a stack of peaking bands approximates poorly (wasted slots,
+  ringing). It is also a lossy-import bug: `PeqTextFile`/REW parsing silently
+  drops every non-`PK` filter, so a REW/Equalizer APO car tune imported here loses
+  its shelves. Add low/high shelf to `PeqBand` + `DigitalEqualizationResponse` and
+  make the parsers/formatters round-trip them. (HP/LP/notch/all-pass are NOT
+  needed here — the Virtual DSP tool owns crossovers and time alignment.)
+- [ ] **Spatial averaging of several measurements.** A single mic point
+  over-corrects for that seat's position-specific nulls; car tuning averages a
+  handful of positions around the headrest. The mode loads ONE IR — add
+  multi-measurement (moving-mic / N-position) averaging before the fit, working
+  together with the reliability mask above.
+- [ ] **Source from History / the Virtual DSP channels, not just a file.** Car
+  audio is multi-channel and the tune iterates "measure a channel → EQ it". The
+  mode only loads a saved `.json` (deliberately decoupled per AGENTS.md); a
+  History / per-channel source picker would remove the round-trip and enable
+  per-channel EQ of the just-measured driver.
+- [ ] **Greedy fit redesign.** Band spacing ignores the chosen Q (fixed ±0.33/±1
+  oct blocks); band gain is fixed from the peak residual before Q is searched; the
+  preamp is rounded to integer dB *before* the fit; and the objective treats
+  boosts and cuts symmetrically. Fold into one redesign: frequency × Q × gain
+  search with width-based spacing and a boost-penalized score, then a
+  coordinate-descent polish over all bands + preamp (borrow the one in
+  `CrossoverAutoSetup`).
+- [ ] **Device export needs a target-device profile.** The export sample rate is
+  a constructor parameter now, but device biquad limits are not checked and the
+  preamp burns a biquad slot instead of mapping to the device's gain control. Car
+  DSPs (Helix / Audison / miniDSP) have a fixed per-channel band budget and a
+  separate master gain the profile must respect.
+
+Deliberately out of scope for car DSP tuning (do not add here): FIR/convolution
+export (car DSPs are biquad), a phase / min-phase / all-pass view (the Virtual
+DSP crossover + delay tool owns phase and time), real-time PC audio preview (you
+listen in the car after loading the profile), arbitrary target-curve import (the
+Car / CarMild / XCurve presets cover it), and HP/LP filter types (crossover tool).
 
 ## Time Alignment / unwrap
 

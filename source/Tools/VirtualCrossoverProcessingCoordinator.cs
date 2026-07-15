@@ -11,7 +11,7 @@ namespace Resonalyze;
 internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
 {
     private readonly object sync = new();
-    private readonly Dictionary<int, CacheEntry> cache = new();
+    private readonly Dictionary<CacheKey, CacheEntry> cache = new();
     private readonly Func<VirtualCrossoverSourceSnapshot, DspChannelChain, int,
         CancellationToken, Complex[]> processChannel;
     private CancellationTokenSource? activeProcessing;
@@ -94,7 +94,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
             {
                 VirtualCrossoverChannelSnapshot channel = snapshot.Channels[index];
                 var key = new CacheKey(channel.Source, channel.SampleRate, channel.Chain);
-                if (cache.TryGetValue(channel.Id, out CacheEntry? entry) && entry.Key.Equals(key))
+                if (cache.TryGetValue(key, out CacheEntry? entry))
                 {
                     results[index] = new VirtualCrossoverProcessedChannel(
                         channel.Id,
@@ -150,8 +150,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
                 foreach (PendingChannel pending in misses)
                 {
                     VirtualCrossoverProcessedChannel result = results[pending.ResultIndex]!;
-                    cache[pending.Channel.Id] = new CacheEntry(
-                        pending.Key,
+                    cache[pending.Key] = new CacheEntry(
                         result.ImpulseResponse,
                         result.PeakIndex);
                 }
@@ -227,7 +226,6 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
         CacheKey Key);
 
     private sealed record CacheEntry(
-        CacheKey Key,
         Complex[] ImpulseResponse,
         int PeakIndex);
 

@@ -6,7 +6,7 @@ namespace Resonalyze.App.Tests;
 public sealed class VirtualCrossoverProcessingCoordinatorTests
 {
     [Fact]
-    public async Task ProcessAsync_ReturnsResultsInSnapshotOrderAndCachesByChannel()
+    public async Task ProcessAsync_ReturnsResultsInSnapshotOrderAndCachesByProcessedKey()
     {
         int processCount = 0;
         using var coordinator = new VirtualCrossoverProcessingCoordinator(
@@ -76,6 +76,69 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
 
         Assert.NotNull(current);
         Assert.Equal(newRevision, current.Revision);
+        Assert.Equal(2, processCount);
+    }
+
+
+    [Fact]
+    public async Task ProcessAsync_CachesBothSourcesForSameChannelId()
+    {
+        int processCount = 0;
+        using var coordinator = new VirtualCrossoverProcessingCoordinator(
+            (source, chain, sampleRate, _) =>
+            {
+                Interlocked.Increment(ref processCount);
+                return source.Apply(chain, sampleRate);
+            });
+        var left = new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 3, 1.0));
+        var right = new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 11, 1.0));
+        long revision = coordinator.Invalidate();
+        var leftSnapshot = new VirtualCrossoverProcessingSnapshot(
+            revision,
+            [new VirtualCrossoverChannelSnapshot(0, left, 48_000, DspChannelChain.Identity)]);
+        var rightSnapshot = new VirtualCrossoverProcessingSnapshot(
+            revision,
+            [new VirtualCrossoverChannelSnapshot(0, right, 48_000, DspChannelChain.Identity)]);
+
+        await coordinator.ProcessAsync(leftSnapshot);
+        await coordinator.ProcessAsync(rightSnapshot);
+        VirtualCrossoverRenderResult? leftAgain = await coordinator.ProcessAsync(leftSnapshot);
+
+        Assert.NotNull(leftAgain);
+        Assert.Equal(3, leftAgain.Channels[0].PeakIndex);
+        Assert.Equal(2, processCount);
+    }
+
+    [Fact]
+    public async Task InvalidateDuringCompletedComputation_DropsResultAtCommitGuard()
+    {
+        VirtualCrossoverProcessingCoordinator? coordinator = null;
+        int processCount = 0;
+        coordinator = new VirtualCrossoverProcessingCoordinator(
+            (source, chain, sampleRate, _) =>
+            {
+                Interlocked.Increment(ref processCount);
+                Complex[] result = source.Apply(chain, sampleRate);
+                ForceRevisionWithoutCancellation(coordinator!, coordinator.CurrentRevision + 1);
+                return result;
+            });
+        using var disposeCoordinator = coordinator;
+        var source = new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 4, 1.0));
+        long oldRevision = coordinator.Invalidate();
+        var oldSnapshot = new VirtualCrossoverProcessingSnapshot(
+            oldRevision,
+            [new VirtualCrossoverChannelSnapshot(0, source, 48_000, DspChannelChain.Identity)]);
+
+        VirtualCrossoverRenderResult? stale = await coordinator.ProcessAsync(oldSnapshot);
+
+        Assert.Null(stale);
+        long currentRevision = coordinator.CurrentRevision;
+        var currentSnapshot = new VirtualCrossoverProcessingSnapshot(
+            currentRevision,
+            [new VirtualCrossoverChannelSnapshot(0, source, 48_000, DspChannelChain.Identity)]);
+        VirtualCrossoverRenderResult? current = await coordinator.ProcessAsync(currentSnapshot);
+
+        Assert.Null(current);
         Assert.Equal(2, processCount);
     }
 
@@ -193,6 +256,19 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
 
         Assert.NotNull(render);
         Assert.Empty(render.Channels);
+    }
+
+    private static void ForceRevisionWithoutCancellation(
+        VirtualCrossoverProcessingCoordinator coordinator,
+        long revision)
+    {
+        System.Reflection.FieldInfo? revisionField =
+            typeof(VirtualCrossoverProcessingCoordinator).GetField(
+                "revision",
+                System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.NonPublic);
+        Assert.NotNull(revisionField);
+        revisionField.SetValue(coordinator, revision);
     }
 
     private static Complex[] CreateImpulse(int length, int peakIndex, double amplitude)

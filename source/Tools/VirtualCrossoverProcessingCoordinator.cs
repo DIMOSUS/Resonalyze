@@ -11,10 +11,11 @@ namespace Resonalyze;
 internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
 {
     private readonly object sync = new();
-    private readonly Dictionary<CacheKey, CacheEntry> cache = new();
+    private readonly Dictionary<ProcessingSlotId, CacheEntry> cache = new();
     private readonly Func<VirtualCrossoverSourceSnapshot, DspChannelChain, int,
         CancellationToken, Complex[]> processChannel;
     private CancellationTokenSource? activeProcessing;
+    private CancellationTokenSource revisionCancellation = new();
     private long revision;
     private bool disposed;
 
@@ -49,14 +50,19 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
     public long Invalidate()
     {
         CancellationTokenSource? processingToCancel;
+        CancellationTokenSource revisionToCancel;
         long newRevision;
         lock (sync)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
             newRevision = ++revision;
             processingToCancel = activeProcessing;
+            revisionToCancel = revisionCancellation;
+            revisionCancellation = new CancellationTokenSource();
         }
         Cancel(processingToCancel);
+        Cancel(revisionToCancel);
+        revisionToCancel.Dispose();
         return newRevision;
     }
 
@@ -94,7 +100,8 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
             {
                 VirtualCrossoverChannelSnapshot channel = snapshot.Channels[index];
                 var key = new CacheKey(channel.Source, channel.SampleRate, channel.Chain);
-                if (cache.TryGetValue(key, out CacheEntry? entry))
+                if (cache.TryGetValue(channel.SlotId, out CacheEntry? entry) &&
+                    entry.Key.Equals(key))
                 {
                     results[index] = new VirtualCrossoverProcessedChannel(
                         channel.Id,
@@ -150,7 +157,8 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
                 foreach (PendingChannel pending in misses)
                 {
                     VirtualCrossoverProcessedChannel result = results[pending.ResultIndex]!;
-                    cache[pending.Key] = new CacheEntry(
+                    cache[pending.Channel.SlotId] = new CacheEntry(
+                        pending.Key,
                         result.ImpulseResponse,
                         result.PeakIndex);
                 }
@@ -177,9 +185,42 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
         }
     }
 
+    public async Task<T?> RunAuxiliaryAsync<T>(
+        long candidateRevision,
+        Func<CancellationToken, T> operation,
+        CancellationToken cancellationToken = default)
+        where T : class
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+
+        CancellationToken revisionToken;
+        lock (sync)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (candidateRevision != revision)
+            {
+                return null;
+            }
+            revisionToken = revisionCancellation.Token;
+        }
+
+        using CancellationTokenSource linked =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, revisionToken);
+        try
+        {
+            T result = await Task.Run(() => operation(linked.Token), linked.Token);
+            return IsCurrent(candidateRevision) ? result : null;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+    }
+
     public void Dispose()
     {
         CancellationTokenSource? processingToCancel;
+        CancellationTokenSource revisionToCancel;
         lock (sync)
         {
             if (disposed)
@@ -191,8 +232,11 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
             processingToCancel = activeProcessing;
             activeProcessing = null;
             cache.Clear();
+            revisionToCancel = revisionCancellation;
         }
         Cancel(processingToCancel);
+        Cancel(revisionToCancel);
+        revisionToCancel.Dispose();
     }
 
     private static void Cancel(CancellationTokenSource? cancellation)
@@ -226,6 +270,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
         CacheKey Key);
 
     private sealed record CacheEntry(
+        CacheKey Key,
         Complex[] ImpulseResponse,
         int PeakIndex);
 
@@ -317,6 +362,16 @@ internal sealed class VirtualCrossoverChannelSnapshot
         VirtualCrossoverSourceSnapshot source,
         int sampleRate,
         DspChannelChain chain)
+        : this(id, new ProcessingSlotId(id, false), source, sampleRate, chain)
+    {
+    }
+
+    public VirtualCrossoverChannelSnapshot(
+        int id,
+        ProcessingSlotId slotId,
+        VirtualCrossoverSourceSnapshot source,
+        int sampleRate,
+        DspChannelChain chain)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(chain);
@@ -326,6 +381,7 @@ internal sealed class VirtualCrossoverChannelSnapshot
         }
 
         Id = id;
+        SlotId = slotId;
         Source = source;
         SampleRate = sampleRate;
         Chain = new DspChannelChain(
@@ -339,10 +395,13 @@ internal sealed class VirtualCrossoverChannelSnapshot
     }
 
     public int Id { get; }
+    public ProcessingSlotId SlotId { get; }
     public VirtualCrossoverSourceSnapshot Source { get; }
     public int SampleRate { get; }
     public DspChannelChain Chain { get; }
 }
+
+internal readonly record struct ProcessingSlotId(int ChannelIndex, bool RightSide);
 
 internal sealed class VirtualCrossoverProcessingSnapshot
 {

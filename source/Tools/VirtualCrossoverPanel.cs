@@ -126,9 +126,9 @@ public partial class VirtualCrossoverPanel : UserControl
 
         buttonAutoDelay.Click += (_, _) => AutoAlignDelay();
         buttonAutoSetup.Click += (_, _) => OpenAutoSetupWizard();
-        buttonCaptureOverlay.Click += (_, _) => CaptureSumToOverlay();
-        buttonExport.Click += (_, _) => ExportTuningSheet();
-        buttonPhaseGate.Click += (_, _) => OpenPhaseGateDialog();
+        buttonCaptureOverlay.Click += async (_, _) => await CaptureSumToOverlayAsync();
+        buttonExport.Click += async (_, _) => await ExportTuningSheetAsync();
+        buttonPhaseGate.Click += async (_, _) => await OpenPhaseGateDialogAsync();
         buttonSessionImport.Click += async (_, _) => await ImportSessionAsync();
         buttonSessionExport.Click += (_, _) => ExportSession();
         buttonAddChannel.Click += (_, _) => AddChannel();
@@ -1126,7 +1126,6 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         targetState.TransferImpulseResponse = transferIr;
-        targetState.ProcessedCache = null;
         targetState.TransferPeakIndex = Math.Clamp(
             snapshot.TransferPeakIndex ?? 0, 0, transferIr.Length - 1);
         targetState.SampleRate = snapshot.SampleRate;
@@ -1239,7 +1238,6 @@ public partial class VirtualCrossoverPanel : UserControl
                 state.SourceRevision == revision)
             {
                 state.TransferImpulseResponse = transferIr;
-                state.ProcessedCache = null;
                 state.TransferPeakIndex = Math.Clamp(
                     snapshot.TransferPeakIndex ?? 0, 0, transferIr.Length - 1);
                 state.SampleRate = snapshot.SampleRate;
@@ -1780,67 +1778,8 @@ public partial class VirtualCrossoverPanel : UserControl
         long Revision,
         List<ProcessedChannel> Channels);
 
-    private sealed class ProcessedChannelCacheKey : IEquatable<ProcessedChannelCacheKey>
-    {
-        private readonly Complex[] source;
-        private readonly int sampleRate;
-        private readonly double gainDb;
-        private readonly double delayMs;
-        private readonly bool invertPolarity;
-        private readonly CrossoverSpec? crossover;
-        private readonly double peqPreampDb;
-        private readonly PeqBand[] peqBands;
-
-        public ProcessedChannelCacheKey(
-            Complex[] source,
-            int sampleRate,
-            DspChannelChain chain)
-        {
-            this.source = source;
-            this.sampleRate = sampleRate;
-            gainDb = chain.GainDb;
-            delayMs = chain.DelayMs;
-            invertPolarity = chain.InvertPolarity;
-            crossover = chain.Crossover;
-            peqPreampDb = chain.Peq?.PreampDb ?? 0;
-            peqBands = chain.Peq?.Bands.ToArray() ?? Array.Empty<PeqBand>();
-        }
-
-        public bool Equals(ProcessedChannelCacheKey? other) =>
-            other != null &&
-            ReferenceEquals(source, other.source) &&
-            sampleRate == other.sampleRate &&
-            gainDb == other.gainDb &&
-            delayMs == other.delayMs &&
-            invertPolarity == other.invertPolarity &&
-            EqualityComparer<CrossoverSpec?>.Default.Equals(crossover, other.crossover) &&
-            peqPreampDb == other.peqPreampDb &&
-            peqBands.SequenceEqual(other.peqBands);
-
-        public override bool Equals(object? obj) =>
-            obj is ProcessedChannelCacheKey other && Equals(other);
-
-        public override int GetHashCode()
-        {
-            var hash = new HashCode();
-            hash.Add(RuntimeHelpers.GetHashCode(source));
-            hash.Add(sampleRate);
-            hash.Add(gainDb);
-            hash.Add(delayMs);
-            hash.Add(invertPolarity);
-            hash.Add(crossover);
-            hash.Add(peqPreampDb);
-            foreach (PeqBand band in peqBands)
-            {
-                hash.Add(band);
-            }
-
-            return hash.ToHashCode();
-        }
-    }
-
-    private List<ProcessedChannel> ProcessChannels(
-        IReadOnlyDictionary<ChannelRuntime, AlignmentOverride>? alignmentOverrides = null)
+    private List<ProcessedChannel> ProcessChannelsForAlignment(
+        IReadOnlyDictionary<ChannelRuntime, AlignmentOverride> alignmentOverrides)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.ProcessChannels");
         var processed = new List<ProcessedChannel>();
@@ -1868,43 +1807,17 @@ public partial class VirtualCrossoverPanel : UserControl
                 else
                 {
                     chain = channel.Settings.ToChain();
-                    if (alignmentOverrides != null)
-                    {
-                        AlignmentOverride alignment = alignmentOverrides.TryGetValue(
-                            channel,
-                            out AlignmentOverride value)
-                            ? value
-                            : new AlignmentOverride(0, false);
-                        chain = chain with
-                        {
-                            DelayMs = alignment.DelayMs,
-                            InvertPolarity = alignment.InvertPolarity
-                        };
-                    }
-                }
-            }
-
-            // The shared per-channel cache serves interactive redraws (UI thread
-            // only). The overrides path (Auto delay's pre-scan with zeroed
-            // delays) does not cache: the actual search runs its own cropped,
-            // thread-confined pipeline in ComputeAutoAlignment /
-            // ComputeStereoAlignment.
-            var cacheKey = new ProcessedChannelCacheKey(ir, channel.SampleRate, chain);
-            ProcessedChannelCache? cached = alignmentOverrides == null
-                ? channel.ProcessedCache
-                : null;
-            if (cached?.Key.Equals(cacheKey) == true)
-            {
-                using (AppProfiler.Zone("VirtualDSP.ProcessChannels.CacheHit"))
-                {
-                    processed.Add(new ProcessedChannel(
+                    AlignmentOverride alignment = alignmentOverrides.TryGetValue(
                         channel,
-                        cached.ImpulseResponse,
-                        cached.PeakIndex,
-                        ChannelColors[i]));
+                        out AlignmentOverride value)
+                        ? value
+                        : new AlignmentOverride(0, false);
+                    chain = chain with
+                    {
+                        DelayMs = alignment.DelayMs,
+                        InvertPolarity = alignment.InvertPolarity
+                    };
                 }
-
-                continue;
             }
 
             Complex[] result;
@@ -1918,12 +1831,6 @@ public partial class VirtualCrossoverPanel : UserControl
             using (AppProfiler.Zone("VirtualDSP.ProcessChannels.FindPeak"))
             {
                 peakIndex = VirtualCrossoverAnalysis.FindPeakIndex(result);
-            }
-
-            if (alignmentOverrides == null)
-            {
-                channel.ProcessedCache = new ProcessedChannelCache(
-                    cacheKey, result, peakIndex);
             }
 
             using (AppProfiler.Zone("VirtualDSP.ProcessChannels.AddResult"))
@@ -1964,6 +1871,9 @@ public partial class VirtualCrossoverPanel : UserControl
                 : channel.Settings.ToChain();
             snapshots.Add(new VirtualCrossoverChannelSnapshot(
                 i,
+                new ProcessingSlotId(
+                    i,
+                    !channel.Pair.Mono && channel.ActiveRight),
                 source,
                 state.SampleRate,
                 chain));
@@ -2182,6 +2092,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private sealed class SideProcessJob
     {
         public required int Id { get; init; }
+        public required ProcessingSlotId SlotId { get; init; }
         public required ChannelSideState State { get; init; }
         public required VirtualCrossoverSourceSnapshot Source { get; init; }
         public required int SampleRate { get; init; }
@@ -2223,8 +2134,9 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         var jobs = new List<StereoDeltaJob>();
         int nextId = 0;
-        foreach (ChannelRuntime channel in channels)
+        for (int channelIndex = 0; channelIndex < channels.Count; channelIndex++)
         {
+            ChannelRuntime channel = channels[channelIndex];
             bool mono = channel.Pair.Mono;
 
             VirtualCrossoverChannelSettings leftSettings = channel.SideSettings(false);
@@ -2271,6 +2183,11 @@ public partial class VirtualCrossoverPanel : UserControl
                 new()
                 {
                     Id = nextId++,
+                    SlotId = new ProcessingSlotId(
+                        channelIndex,
+                        !channel.Pair.Mono && ReferenceEquals(
+                            state,
+                            channel.PhysicalSideState(true))),
                     State = state,
                     Source = source,
                     SampleRate = state.SampleRate,
@@ -2301,6 +2218,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     revision,
                     sides.Select(side => new VirtualCrossoverChannelSnapshot(
                         side.Id,
+                        side.SlotId,
                         side.Source,
                         side.SampleRate,
                         side.Chain))));
@@ -2336,12 +2254,15 @@ public partial class VirtualCrossoverPanel : UserControl
         bool anyArrivalWork = jobs.Any(job => job.Sides.Any(side => side.Arrival == null));
         if (anyArrivalWork)
         {
-            await Task.Run(() =>
+            object? arrivalCompleted = await processingCoordinator.RunAuxiliaryAsync(
+                revision,
+                cancellationToken =>
             {
                 foreach (StereoDeltaJob job in jobs)
                 {
                     foreach (SideProcessJob side in job.Sides)
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
                         if (side.Arrival == null)
                         {
                             side.Arrival =
@@ -2354,9 +2275,9 @@ public partial class VirtualCrossoverPanel : UserControl
                         }
                     }
                 }
+                return new object();
             });
-
-            if (!processingCoordinator.IsCurrent(revision))
+            if (arrivalCompleted == null)
             {
                 return [];
             }
@@ -2424,8 +2345,9 @@ public partial class VirtualCrossoverPanel : UserControl
         bool oppositeRight = !project.ActiveSideRight;
         var jobs = new List<SideProcessJob>();
         int nextId = 0;
-        foreach (ChannelRuntime channel in channels)
+        for (int channelIndex = 0; channelIndex < channels.Count; channelIndex++)
         {
+            ChannelRuntime channel = channels[channelIndex];
             VirtualCrossoverChannelSettings settings =
                 channel.SideSettings(oppositeRight);
             ChannelSideState state = channel.SideState(oppositeRight);
@@ -2441,6 +2363,9 @@ public partial class VirtualCrossoverPanel : UserControl
             jobs.Add(new SideProcessJob
             {
                 Id = nextId++,
+                SlotId = new ProcessingSlotId(
+                    channelIndex,
+                    !channel.Pair.Mono && oppositeRight),
                 State = state,
                 Source = source,
                 SampleRate = state.SampleRate,
@@ -2458,6 +2383,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 revision,
                 jobs.Select(side => new VirtualCrossoverChannelSnapshot(
                     side.Id,
+                    side.SlotId,
                     side.Source,
                     side.SampleRate,
                     side.Chain))));
@@ -2655,7 +2581,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         var alignment = new Dictionary<ChannelRuntime, AlignmentOverride>();
-        List<ProcessedChannel> processed = ProcessChannels(alignment);
+        List<ProcessedChannel> processed = ProcessChannelsForAlignment(alignment);
         if (processed.Count < 2)
         {
             System.Media.SystemSounds.Beep.Play();
@@ -2733,7 +2659,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 return;
             }
 
-            ApplyAlignmentResult(processed, alignment, log);
+            await ApplyAlignmentResultAsync(processed, alignment, log);
         }
         catch (Exception exception)
         {
@@ -2791,7 +2717,7 @@ public partial class VirtualCrossoverPanel : UserControl
     // Applies the computed delays/polarities to the channels and their controls,
     // redraws, and closes the log with this run's outcome. UI-thread work: it
     // touches controls and the plots, so it stays out of the background compute.
-    private void ApplyAlignmentResult(
+    private async Task ApplyAlignmentResultAsync(
         List<ProcessedChannel> processed,
         Dictionary<ChannelRuntime, AlignmentOverride> alignment,
         System.Text.StringBuilder log)
@@ -2813,7 +2739,8 @@ public partial class VirtualCrossoverPanel : UserControl
         // RedrawAll pushes the read-out asynchronously (the ApplyChain FFTs run off
         // the UI thread), so recompute the metric synchronously from the just-
         // applied settings so the log ends with this run's true outcome.
-        List<ProcessedChannel> outcome = ProcessChannels();
+        ProcessedRender? render = await ProcessChannelsAsync();
+        List<ProcessedChannel> outcome = render?.Channels ?? [];
         (List<AnalysisCurve>? outcomeMagnitudes, AnalysisCurve? outcomeSum) =
             BuildMetricCurves(outcome);
         log.AppendLine(FormatMetricDetail(
@@ -2850,12 +2777,12 @@ public partial class VirtualCrossoverPanel : UserControl
             searchIrs[ordered[i]] = croppedIrs[i];
         }
 
-        var searchCache = new Dictionary<ChannelRuntime, ProcessedChannelCache>();
+        var searchCache = new Dictionary<ChannelRuntime, AlignmentProcessingCache>();
         IReadOnlyList<AlignmentSnapshot> Reprocess(
             IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides)
         {
-            var results = new ProcessedChannelCache[ordered.Count];
-            var keys = new ProcessedChannelCacheKey[ordered.Count];
+            var results = new AlignmentProcessingCache[ordered.Count];
+            var keys = new AlignmentProcessingCacheKey[ordered.Count];
             var chains = new DspChannelChain[ordered.Count];
             var missing = new List<int>();
             for (int i = 0; i < ordered.Count; i++)
@@ -2867,9 +2794,9 @@ public partial class VirtualCrossoverPanel : UserControl
                     DelayMs = over.DelayMs,
                     InvertPolarity = over.InvertPolarity
                 };
-                keys[i] = new ProcessedChannelCacheKey(
+                keys[i] = new AlignmentProcessingCacheKey(
                     searchIrs[channel], channel.SampleRate, chains[i]);
-                ProcessedChannelCache? cached = searchCache.GetValueOrDefault(channel);
+                AlignmentProcessingCache? cached = searchCache.GetValueOrDefault(channel);
                 if (cached?.Key.Equals(keys[i]) == true)
                 {
                     results[i] = cached;
@@ -2884,7 +2811,7 @@ public partial class VirtualCrossoverPanel : UserControl
             {
                 Complex[] result = VirtualCrossoverAnalysis.ApplyChain(
                     searchIrs[ordered[i]], chains[i], ordered[i].SampleRate);
-                results[i] = new ProcessedChannelCache(
+                results[i] = new AlignmentProcessingCache(
                     keys[i], result, VirtualCrossoverAnalysis.FindPeakIndex(result));
             });
             foreach (int i in missing)
@@ -3070,7 +2997,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 return;
             }
 
-            ApplyStereoAlignmentResult(union, engineAlignment, log);
+            await ApplyStereoAlignmentResultAsync(union, engineAlignment, log);
         }
         catch (Exception exception)
         {
@@ -3118,15 +3045,15 @@ public partial class VirtualCrossoverPanel : UserControl
             searchIrs[union[i]] = croppedIrs[i];
         }
 
-        var searchCache = new Dictionary<SideAlignmentChannel, ProcessedChannelCache>();
-        ProcessedChannelCache ComputeFresh(
+        var searchCache = new Dictionary<SideAlignmentChannel, AlignmentProcessingCache>();
+        AlignmentProcessingCache ComputeFresh(
             SideAlignmentChannel side,
-            ProcessedChannelCacheKey key,
+            AlignmentProcessingCacheKey key,
             DspChannelChain chain)
         {
             Complex[] result = VirtualCrossoverAnalysis.ApplyChain(
                 searchIrs[side], chain, side.State.SampleRate);
-            return new ProcessedChannelCache(
+            return new AlignmentProcessingCache(
                 key, result, VirtualCrossoverAnalysis.FindPeakIndex(result));
         }
 
@@ -3137,8 +3064,8 @@ public partial class VirtualCrossoverPanel : UserControl
         IReadOnlyList<AlignmentSnapshot> Reprocess(
             IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides)
         {
-            var results = new ProcessedChannelCache[union.Count];
-            var keys = new ProcessedChannelCacheKey[union.Count];
+            var results = new AlignmentProcessingCache[union.Count];
+            var keys = new AlignmentProcessingCacheKey[union.Count];
             var chains = new DspChannelChain[union.Count];
             var missing = new List<int>();
             for (int i = 0; i < union.Count; i++)
@@ -3150,9 +3077,9 @@ public partial class VirtualCrossoverPanel : UserControl
                     DelayMs = over.DelayMs,
                     InvertPolarity = over.InvertPolarity
                 };
-                keys[i] = new ProcessedChannelCacheKey(
+                keys[i] = new AlignmentProcessingCacheKey(
                     searchIrs[side], side.State.SampleRate, chains[i]);
-                ProcessedChannelCache? cached = searchCache.GetValueOrDefault(side);
+                AlignmentProcessingCache? cached = searchCache.GetValueOrDefault(side);
                 if (cached?.Key.Equals(keys[i]) == true)
                 {
                     results[i] = cached;
@@ -3256,7 +3183,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // Applies the stereo proposal to BOTH sides' settings, rebinds the visible
     // controls and closes the log with the active side's metric.
-    private void ApplyStereoAlignmentResult(
+    private async Task ApplyStereoAlignmentResultAsync(
         List<SideAlignmentChannel> union,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         System.Text.StringBuilder log)
@@ -3281,7 +3208,8 @@ public partial class VirtualCrossoverPanel : UserControl
         ScheduleSave();
         RedrawAll();
         // The read-out follows the active side; the log records which one.
-        List<ProcessedChannel> outcome = ProcessChannels();
+        ProcessedRender? render = await ProcessChannelsAsync();
+        List<ProcessedChannel> outcome = render?.Channels ?? [];
         (List<AnalysisCurve>? outcomeMagnitudes, AnalysisCurve? outcomeSum) =
             BuildMetricCurves(outcome);
         log.AppendLine($"Metric ({(project.ActiveSideRight ? "R" : "L")} side):");
@@ -3544,9 +3472,14 @@ public partial class VirtualCrossoverPanel : UserControl
     // Opens the manual phase-gate dialog: the gate offset and Tukey shoulders
     // with a live preview of every processed channel IR, so reflections can be
     // cut out of the phase view visually.
-    private void OpenPhaseGateDialog()
+    private async Task OpenPhaseGateDialogAsync()
     {
-        List<ProcessedChannel> processed = ProcessChannels();
+        ProcessedRender? render = await ProcessChannelsAsync();
+        if (render == null)
+        {
+            return;
+        }
+        List<ProcessedChannel> processed = render.Channels;
         if (processed.Count == 0)
         {
             System.Media.SystemSounds.Beep.Play();
@@ -3682,9 +3615,14 @@ public partial class VirtualCrossoverPanel : UserControl
     // Saves the current complex sum as a Captured overlay in Frequency Response,
     // closing the loop: virtual alignment -> comparison against real measurements
     // and target curves -> EQ Wizard.
-    private void CaptureSumToOverlay()
+    private async Task CaptureSumToOverlayAsync()
     {
-        List<ProcessedChannel> processed = ProcessChannels();
+        ProcessedRender? render = await ProcessChannelsAsync();
+        if (render == null)
+        {
+            return;
+        }
+        List<ProcessedChannel> processed = render.Channels;
         if (processed.Count < 2 || OverlayCaptureRequested == null)
         {
             System.Media.SystemSounds.Beep.Play();
@@ -3727,7 +3665,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // Writes the DSP settings of every participating channel as a tuning sheet:
     // a printable PDF or a plain-text file.
-    private void ExportTuningSheet()
+    private async Task ExportTuningSheetAsync()
     {
         using var dialog = new SaveFileDialog
         {
@@ -3743,7 +3681,12 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         // The sheet subtitle takes the compact single-line summary.
-        List<ProcessedChannel> metricChannels = ProcessChannels();
+        ProcessedRender? render = await ProcessChannelsAsync();
+        if (render == null)
+        {
+            return;
+        }
+        List<ProcessedChannel> metricChannels = render.Channels;
         (List<AnalysisCurve>? metricMagnitudes, AnalysisCurve? metricSum) =
             BuildMetricCurves(metricChannels);
         string metricLine = FormatMetricLabel(
@@ -4145,8 +4088,6 @@ public partial class VirtualCrossoverPanel : UserControl
         // distortion knee); null when the source had no sweep deconvolution.
         public IReadOnlyList<SignalPoint>? DistortionCurve { get; set; }
 
-        public ProcessedChannelCache? ProcessedCache { get; set; }
-
         // The band-limited envelope arrival and gated band level of this
         // side's PROCESSED response, keyed by the processed array's identity
         // and the measured band — the L/R/Δ read-out re-runs on every redraw,
@@ -4176,7 +4117,6 @@ public partial class VirtualCrossoverPanel : UserControl
             SampleRate = 0;
             TransferCoherence = null;
             DistortionCurve = null;
-            ProcessedCache = null;
             ArrivalCache = null;
             SourceRevision++;
         }
@@ -4248,11 +4188,6 @@ public partial class VirtualCrossoverPanel : UserControl
             get => Active.SampleRate;
             set => Active.SampleRate = value;
         }
-        public ProcessedChannelCache? ProcessedCache
-        {
-            get => Active.ProcessedCache;
-            set => Active.ProcessedCache = value;
-        }
     }
 
     // One side of a channel pair as the STEREO alignment engine sees it: the
@@ -4279,8 +4214,37 @@ public partial class VirtualCrossoverPanel : UserControl
         public int SampleRate => State.SampleRate;
     }
 
-    private sealed record ProcessedChannelCache(
-        ProcessedChannelCacheKey Key,
+    private sealed class AlignmentProcessingCacheKey : IEquatable<AlignmentProcessingCacheKey>
+    {
+        private readonly Complex[] source;
+        private readonly int sampleRate;
+        private readonly DspChannelChain chain;
+
+        public AlignmentProcessingCacheKey(
+            Complex[] source,
+            int sampleRate,
+            DspChannelChain chain)
+        {
+            this.source = source;
+            this.sampleRate = sampleRate;
+            this.chain = chain;
+        }
+
+        public bool Equals(AlignmentProcessingCacheKey? other) =>
+            other != null &&
+            ReferenceEquals(source, other.source) &&
+            sampleRate == other.sampleRate &&
+            chain == other.chain;
+
+        public override bool Equals(object? obj) =>
+            obj is AlignmentProcessingCacheKey other && Equals(other);
+
+        public override int GetHashCode() => HashCode.Combine(source, sampleRate, chain);
+    }
+
+    private sealed record AlignmentProcessingCache(
+        AlignmentProcessingCacheKey Key,
         Complex[] ImpulseResponse,
         int PeakIndex);
+
 }

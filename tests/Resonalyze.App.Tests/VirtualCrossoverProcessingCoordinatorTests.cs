@@ -81,7 +81,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
 
 
     [Fact]
-    public async Task ProcessAsync_CachesBothSourcesForSameChannelId()
+    public async Task ProcessAsync_CachesIndependentPhysicalSideSlots()
     {
         int processCount = 0;
         using var coordinator = new VirtualCrossoverProcessingCoordinator(
@@ -95,10 +95,20 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
         long revision = coordinator.Invalidate();
         var leftSnapshot = new VirtualCrossoverProcessingSnapshot(
             revision,
-            [new VirtualCrossoverChannelSnapshot(0, left, 48_000, DspChannelChain.Identity)]);
+            [new VirtualCrossoverChannelSnapshot(
+                0,
+                new ProcessingSlotId(0, false),
+                left,
+                48_000,
+                DspChannelChain.Identity)]);
         var rightSnapshot = new VirtualCrossoverProcessingSnapshot(
             revision,
-            [new VirtualCrossoverChannelSnapshot(0, right, 48_000, DspChannelChain.Identity)]);
+            [new VirtualCrossoverChannelSnapshot(
+                0,
+                new ProcessingSlotId(0, true),
+                right,
+                48_000,
+                DspChannelChain.Identity)]);
 
         await coordinator.ProcessAsync(leftSnapshot);
         await coordinator.ProcessAsync(rightSnapshot);
@@ -107,6 +117,57 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
         Assert.NotNull(leftAgain);
         Assert.Equal(3, leftAgain.Channels[0].PeakIndex);
         Assert.Equal(2, processCount);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ReplacesOldConfigurationForSameSlot()
+    {
+        int processCount = 0;
+        using var coordinator = new VirtualCrossoverProcessingCoordinator(
+            (source, chain, sampleRate, _) =>
+            {
+                Interlocked.Increment(ref processCount);
+                return source.Apply(chain, sampleRate);
+            });
+        var source = new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 3, 1.0));
+        var slot = new ProcessingSlotId(0, false);
+        long revision = coordinator.Invalidate();
+        var original = new VirtualCrossoverProcessingSnapshot(
+            revision,
+            [new VirtualCrossoverChannelSnapshot(
+                0, slot, source, 48_000, DspChannelChain.Identity)]);
+        var changed = new VirtualCrossoverProcessingSnapshot(
+            revision,
+            [new VirtualCrossoverChannelSnapshot(
+                0, slot, source, 48_000, new DspChannelChain(GainDb: 6))]);
+
+        await coordinator.ProcessAsync(original);
+        await coordinator.ProcessAsync(changed);
+        await coordinator.ProcessAsync(original);
+
+        Assert.Equal(3, processCount);
+    }
+
+    [Fact]
+    public async Task RunAuxiliaryAsync_InvalidateCancelsWork()
+    {
+        using var entered = new ManualResetEventSlim();
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        long revision = coordinator.Invalidate();
+        Task<object?> work = coordinator.RunAuxiliaryAsync(
+            revision,
+            cancellationToken =>
+            {
+                entered.Set();
+                cancellationToken.WaitHandle.WaitOne();
+                cancellationToken.ThrowIfCancellationRequested();
+                return new object();
+            });
+
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+        coordinator.Invalidate();
+
+        Assert.Null(await work);
     }
 
     [Fact]
@@ -119,7 +180,9 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
             {
                 Interlocked.Increment(ref processCount);
                 Complex[] result = source.Apply(chain, sampleRate);
-                ForceRevisionWithoutCancellation(coordinator!, coordinator.CurrentRevision + 1);
+                ForceRevisionWithoutCancellation(
+                    coordinator!,
+                    coordinator!.CurrentRevision + 1);
                 return result;
             });
         using var disposeCoordinator = coordinator;

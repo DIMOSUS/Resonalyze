@@ -43,6 +43,10 @@ public sealed class ApplicationDataPathsTests : IDisposable
         File.WriteAllText(
             Path.Combine(executable, "measurement-settings.json"),
             "legacy settings");
+        File.WriteAllText(Path.Combine(executable, "crash.log"), "legacy crash");
+        File.WriteAllText(
+            Path.Combine(executable, "measurement-error.log"),
+            "legacy measurement error");
         string legacyOverlay = Path.Combine(executable, "overlays", "FrequencyResponse");
         Directory.CreateDirectory(legacyOverlay);
         File.WriteAllText(Path.Combine(legacyOverlay, "overlay-01.json"), "legacy overlay");
@@ -60,6 +64,29 @@ public sealed class ApplicationDataPathsTests : IDisposable
                 paths.OverlaysDirectory,
                 "FrequencyResponse",
                 "overlay-01.json")));
+        Assert.Equal("legacy crash", File.ReadAllText(paths.CrashLogFile));
+        Assert.Equal(
+            "legacy measurement error",
+            File.ReadAllText(paths.MeasurementErrorLogFile));
+        Assert.True(File.Exists(paths.MigrationMarkerFile));
+        Assert.True(File.Exists(Path.Combine(executable, "measurement-settings.json")));
+    }
+
+    [Fact]
+    public void Prepare_DoesNotRestoreDeletedDataAfterMigrationCompleted()
+    {
+        string executable = CreateDirectory("app");
+        string local = CreateDirectory("local");
+        File.WriteAllText(
+            Path.Combine(executable, "measurement-settings.json"),
+            "legacy settings");
+        var paths = new ApplicationDataPaths(executable, local);
+
+        Assert.Empty(paths.Prepare());
+        File.Delete(paths.SettingsFile);
+
+        Assert.Empty(paths.Prepare());
+        Assert.False(File.Exists(paths.SettingsFile));
         Assert.True(File.Exists(Path.Combine(executable, "measurement-settings.json")));
     }
 

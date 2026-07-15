@@ -10,6 +10,7 @@ internal sealed class ApplicationDataPaths
 {
     private const string ApplicationDirectoryName = "Resonalyze";
     private const string PortableMarkerFileName = "portable.flag";
+    private const string MigrationMarkerFileName = ".migration-v1-complete";
 
     public static ApplicationDataPaths Current { get; } = CreateDefault();
 
@@ -45,6 +46,8 @@ internal sealed class ApplicationDataPaths
         Path.Combine(RootDirectory, "measurement-error.log");
     public string VirtualDspAlignmentLogFile =>
         Path.Combine(ToolsDirectory, "virtual-dsp-align.log");
+    internal string MigrationMarkerFile =>
+        Path.Combine(RootDirectory, MigrationMarkerFileName);
 
     public IReadOnlyList<string> Prepare()
     {
@@ -60,15 +63,34 @@ internal sealed class ApplicationDataPaths
             return warnings;
         }
 
-        if (IsPortable || PathsEqual(RootDirectory, executableDirectory))
+        if (IsPortable ||
+            PathsEqual(RootDirectory, executableDirectory) ||
+            File.Exists(MigrationMarkerFile))
         {
             return warnings;
         }
 
         CopyLegacyFile("measurement-settings.json", SettingsFile, warnings);
         CopyLegacyFile("measurement-history.json", HistoryFile, warnings);
+        CopyLegacyFile("crash.log", CrashLogFile, warnings);
+        CopyLegacyFile("measurement-error.log", MeasurementErrorLogFile, warnings);
         CopyLegacyDirectory("overlays", OverlaysDirectory, warnings);
         CopyLegacyDirectory("tools", ToolsDirectory, warnings);
+
+        if (warnings.Count == 0)
+        {
+            try
+            {
+                File.WriteAllText(MigrationMarkerFile, string.Empty);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                warnings.Add(
+                    $"Legacy data migration completed, but its marker '{MigrationMarkerFile}' " +
+                    $"could not be written: {exception.Message}");
+            }
+        }
+
         return warnings;
     }
 

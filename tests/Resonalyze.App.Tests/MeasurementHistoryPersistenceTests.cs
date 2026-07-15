@@ -16,6 +16,19 @@ public sealed class MeasurementHistoryPersistenceTests : IDisposable
         storePath = Path.Combine(directory, "measurement-history.json");
     }
 
+    [Fact]
+    public void Load_PreservesEarlierBackupOnRepeatedCorruption()
+    {
+        File.WriteAllText(storePath + ".backup", "earlier corruption");
+        File.WriteAllText(storePath, "{ later corruption");
+        var persistence = new MeasurementHistoryPersistence(storePath);
+
+        persistence.Load();
+
+        Assert.Equal("earlier corruption", File.ReadAllText(storePath + ".backup"));
+        Assert.Equal("{ later corruption", File.ReadAllText(storePath + ".backup.1"));
+    }
+
     public void Dispose()
     {
         try

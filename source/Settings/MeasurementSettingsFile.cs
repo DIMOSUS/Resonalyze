@@ -100,14 +100,25 @@ internal sealed class MeasurementSettingsFile
                 return null;
             }
 
-            string backupPath = path + ".backup";
-            File.Move(path, backupPath, overwrite: true);
+            string backupPath = GetAvailableBackupPath(path);
+            File.Move(path, backupPath);
             return backupPath;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             return null;
         }
+    }
+
+    private static string GetAvailableBackupPath(string path)
+    {
+        string backupPath = path + ".backup";
+        for (int suffix = 1; File.Exists(backupPath); suffix++)
+        {
+            backupPath = path + $".backup.{suffix}";
+        }
+
+        return backupPath;
     }
 
     // The separate-loopback-device capability was removed: microphone and

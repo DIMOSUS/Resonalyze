@@ -116,14 +116,25 @@ internal sealed class MeasurementHistoryPersistence
                 return null;
             }
 
-            string backupPath = pathOnDisk + ".backup";
-            File.Move(pathOnDisk, backupPath, overwrite: true);
+            string backupPath = GetAvailableBackupPath();
+            File.Move(pathOnDisk, backupPath);
             return backupPath;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             return null;
         }
+    }
+
+    private string GetAvailableBackupPath()
+    {
+        string backupPath = pathOnDisk + ".backup";
+        for (int suffix = 1; File.Exists(backupPath); suffix++)
+        {
+            backupPath = pathOnDisk + $".backup.{suffix}";
+        }
+
+        return backupPath;
     }
 
     private sealed class StoreFile

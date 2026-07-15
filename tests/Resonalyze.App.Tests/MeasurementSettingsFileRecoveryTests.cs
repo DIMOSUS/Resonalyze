@@ -22,6 +22,20 @@ public sealed class MeasurementSettingsFileRecoveryTests : IDisposable
     }
 
     [Fact]
+    public void LoadOrDefault_PreservesEarlierBackupOnRepeatedCorruption()
+    {
+        string path = Path.Combine(directory, "measurement-settings.json");
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(path + ".backup", "earlier corruption");
+        File.WriteAllText(path, "{ later corruption");
+
+        MeasurementSettingsFile.LoadOrDefault(path);
+
+        Assert.Equal("earlier corruption", File.ReadAllText(path + ".backup"));
+        Assert.Equal("{ later corruption", File.ReadAllText(path + ".backup.1"));
+    }
+
+    [Fact]
     public void LoadOrDefault_UnsupportedVersionIsBackedUpAndReported()
     {
         Directory.CreateDirectory(directory);

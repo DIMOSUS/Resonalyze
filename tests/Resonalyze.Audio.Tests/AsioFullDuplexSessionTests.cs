@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using NAudio.Wave.Asio;
 
 namespace Resonalyze.Audio.Tests;
@@ -5,7 +6,7 @@ namespace Resonalyze.Audio.Tests;
 public sealed class AsioFullDuplexSessionTests
 {
     [Fact]
-    public async Task ResetCapture_WhileOldBlockWaitsToCommit_DropsOldGeneration()
+    public async Task Pump_ResetCaptureWhileOldBlockWaitsToCommit_DropsOldGeneration()
     {
         using var oldBlockAtCommit = new ManualResetEventSlim();
         using var releaseOldBlock = new ManualResetEventSlim();
@@ -22,19 +23,27 @@ public sealed class AsioFullDuplexSessionTests
                     releaseOldBlock.Wait(TimeSpan.FromSeconds(2));
                 }
             });
+        var failure = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var pump = new AsioCapturePump(
+            1,
+            session.ProcessCaptureBlock,
+            (_, exception) => failure.TrySetException(exception));
+        pump.Prepare(sizeof(float));
         session.ResetCapture(expectedTotalSamples: 8);
+        pump.Reset(1);
 
-        Task oldProcessing = Task.Run(() =>
-            session.ProcessCaptureBlock(CreateBlock(value: 1, generation: 1)));
+        Assert.True(Enqueue(pump, 1));
         Assert.True(oldBlockAtCommit.Wait(TimeSpan.FromSeconds(2)));
 
         session.ResetCapture(expectedTotalSamples: 8);
+        pump.Reset(2);
         releaseOldBlock.Set();
-        await oldProcessing.WaitAsync(TimeSpan.FromSeconds(2));
-        Assert.Equal(0, session.ReadSamples);
+        Assert.True(Enqueue(pump, 2));
+        await session.WaitForSamplesAsync(1, CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(2));
 
-        session.ProcessCaptureBlock(CreateBlock(value: 2, generation: 2));
-
+        Assert.False(failure.Task.IsCompleted);
         Assert.Equal([2f], session.CompleteCaptureSnapshot()[0]);
     }
 
@@ -79,5 +88,23 @@ public sealed class AsioFullDuplexSessionTests
             AsioSampleType.Float32LSB,
             FrameCount: 1,
             Generation: generation);
+    }
+
+    private static bool Enqueue(AsioCapturePump pump, float value)
+    {
+        float[] source = [value];
+        GCHandle handle = GCHandle.Alloc(source, GCHandleType.Pinned);
+        try
+        {
+            return pump.TryEnqueue(
+                [handle.AddrOfPinnedObject()],
+                0,
+                AsioSampleType.Float32LSB,
+                1);
+        }
+        finally
+        {
+            handle.Free();
+        }
     }
 }

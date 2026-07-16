@@ -31,6 +31,24 @@ public sealed record AlignmentCandidate(
     double DipDb = 0);
 
 /// <summary>
+/// The broadband leading-edge onset of one processed IR (see
+/// <see cref="VirtualCrossoverAnalysis.EstimateBroadbandOnset"/>): the first
+/// Hilbert-envelope crossings of 10 % (<see cref="EarlyMs"/>), 25 %
+/// (<see cref="OnsetMs"/>, the working figure) and 50 % (<see cref="LateMs"/>)
+/// of the envelope's own maximum. The crossings are monotonic in the
+/// threshold; how far they disagree is the front's sharpness — a sharp direct
+/// front keeps them within a fraction of a crossover period, a modal
+/// low-frequency build-up spreads them over milliseconds. Callers comparing
+/// two channels must gate on the spread of the DIFFERENCE across the three
+/// thresholds, not on one channel's spread alone.
+/// </summary>
+public readonly record struct BroadbandOnsetEstimate(
+    double EarlyMs,
+    double OnsetMs,
+    double LateMs,
+    bool IsValid);
+
+/// <summary>
 /// One extremum of a band-limited time-domain cross-correlation search.
 /// </summary>
 public sealed record CorrelationDelayCandidate(
@@ -375,6 +393,84 @@ public static class VirtualCrossoverAnalysis
                 BandpassPassOctaves = Math.Log2(high / low),
                 BandpassFadeOctaves = 1.0
             });
+    }
+
+    /// <summary>
+    /// The broadband leading-edge onset of a processed channel IR: the first
+    /// crossings of the Hilbert envelope at 10 / 25 / 50 % of its own maximum
+    /// (sub-sample). This is a different observable from
+    /// <see cref="FindBandLimitedArrivalMs"/>, which marks the first PEAK of an
+    /// octave-band envelope around a junction: two drivers meeting at a
+    /// crossover occupy opposite halves of that shared band, so their
+    /// envelope-peak times lag their fronts by different rise times (narrower
+    /// sub-band → later peak) and the arrival DIFFERENCE carries a systematic
+    /// ~1/bandwidth bias — measured at ~0.3-0.4 ms (0.45-0.8 periods) on real
+    /// mid/tweeter junctions. The threshold onset marks the front itself, which
+    /// is what a human validates on the IR plot, and is bias-free where the
+    /// front is sharp (high junctions). At low frequencies the front smears
+    /// into modal build-up and the crossing wanders with the threshold — the
+    /// 10-vs-50 % spread is the honesty figure callers must gate on.
+    /// </summary>
+    public static BroadbandOnsetEstimate EstimateBroadbandOnset(
+        Complex[] impulseResponse,
+        int sampleRate)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponse);
+        if (impulseResponse.Length == 0)
+        {
+            throw new ArgumentException(
+                "The impulse response is empty.",
+                nameof(impulseResponse));
+        }
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+
+        var samples = new double[impulseResponse.Length];
+        for (int i = 0; i < samples.Length; i++)
+        {
+            samples[i] = impulseResponse[i].Real;
+        }
+
+        double[] envelope = SignalEnvelope.Envelope(samples);
+        double peak = envelope.Max();
+        if (!(peak > 0.0) || !double.IsFinite(peak))
+        {
+            return new BroadbandOnsetEstimate(0, 0, 0, IsValid: false);
+        }
+
+        double early = EnvelopeCrossingMs(envelope, 0.10 * peak, sampleRate);
+        double onset = EnvelopeCrossingMs(envelope, 0.25 * peak, sampleRate);
+        double late = EnvelopeCrossingMs(envelope, 0.50 * peak, sampleRate);
+        bool valid = double.IsFinite(early) &&
+            double.IsFinite(onset) &&
+            double.IsFinite(late);
+        return valid
+            ? new BroadbandOnsetEstimate(early, onset, late, IsValid: true)
+            : new BroadbandOnsetEstimate(0, 0, 0, IsValid: false);
+    }
+
+    // First crossing of the level with a linear sub-sample refinement between
+    // the straddling samples.
+    private static double EnvelopeCrossingMs(
+        double[] envelope,
+        double level,
+        int sampleRate)
+    {
+        for (int i = 0; i < envelope.Length; i++)
+        {
+            if (envelope[i] >= level)
+            {
+                double previous = i > 0 ? envelope[i - 1] : 0.0;
+                double fraction = envelope[i] > previous
+                    ? (level - previous) / (envelope[i] - previous)
+                    : 0.0;
+                return (i - 1 + fraction) * 1_000.0 / sampleRate;
+            }
+        }
+
+        return double.NaN;
     }
 
     /// <summary>

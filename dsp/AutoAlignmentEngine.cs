@@ -95,11 +95,14 @@ public delegate IReadOnlyList<AlignmentSnapshot> AlignmentReprocessor(
 
 /// <summary>
 /// Two-stage automatic time alignment of a multi-way system. Stage 1:
-/// Time-Alignment-style band-limited first arrivals give a coarse delay per
-/// channel (robust, no phase ambiguity). Stage 2: walking pair by pair
-/// outward from the reference, a phase correlation fine-tunes each channel
-/// against its settled neighbor inside their shared pair band, also deciding
-/// whether its polarity should flip. The latest-arriving channel is the
+/// Time-Alignment-style band-limited first arrivals (PHAT-refined where the
+/// peak is trustworthy) give a coarse delay per channel. Stage 2: walking
+/// pair by pair outward from the reference, a summation-loss search
+/// fine-tunes each channel against its settled neighbor inside their shared
+/// pair band, also deciding whether its polarity should flip. At sharp-front
+/// junctions the stage-2 window is locked to the drivers' broadband IR
+/// onsets (see the onset-lock constants), so the loss metric can only polish
+/// within the physically correct lobe. The latest-arriving channel is the
 /// fixed reference, so the proposed delays stay non-negative by
 /// construction.
 /// </summary>
@@ -139,10 +142,10 @@ public static class AutoAlignmentEngine
     // shift's alignment-preserving property.
     private const double MaxDelayMs = 100;
 
-    // Diagnostics only: a deliberately wide fine-search window (many periods at a
-    // high crossover, ~one at a low one) whose candidates are logged but never
-    // chosen. It surfaces summation optima that sit several lobes outside the
-    // working window, so a log can show whether a better lobe exists there.
+    // A deliberately wide fine-search window (many periods at a high crossover,
+    // ~one at a low one). Its candidates are always logged, surfacing summation
+    // optima several lobes outside the working window; at a junction the onset
+    // lock does not govern, the promotion path below may also CHOOSE from them.
     private const double DiagnosticFineRangeMs = 3.0;
     private const double DiagnosticCorrelationRangeMs = 3.0;
 
@@ -150,8 +153,9 @@ public static class AutoAlignmentEngine
     // stage-2 window instead of the arrival envelope. Below it the peak is noise
     // (a low-frequency junction with too few in-band periods), and the arrival
     // estimate stands. Deliberately low: even a modest genuine peak beats the
-    // arrival envelope, and the loss search plus the wide-window promotion recover
-    // from a seed that still lands a little off.
+    // arrival envelope, and a seed that still lands a little off is recovered
+    // downstream — by the onset lock at sharp junctions, by the loss search and
+    // the wide-window promotion below it.
     private const double PhatSeedMinCoefficient = 0.15;
 
     // The minimum dominance (Confidence: |best extremum| minus |its rival|) the
@@ -166,19 +170,18 @@ public static class AutoAlignmentEngine
     private const double PhatSeedMinDominance = 0.1;
 
     // How much better (in score dB) a wide-window optimum must be before it
-    // unseats the arrival-anchored fine pick. The narrow window is centered on
-    // the coarse arrival, which at a high crossover can be a whole lobe off
-    // (spread corners bias the two envelopes by more than a period); the
-    // promotion recovers that lobe, while the margin keeps the physically-
-    // minimal arrival pick unless a distinctly better summation exists
-    // elsewhere. Calibrated on two field runs of the same cabin: a FALSE hop
-    // (the tweeter pair walking visibly ahead of its mid while the other
-    // side's junction worsened) offered 1.40 dB, a GENUINE lobe recovery
-    // (the arrival lobe combing at dip -5.6 everywhere, the user's manual
-    // optimum two periods earlier at dip -1.6) offered 1.91 dB — comb noise
-    // between real lobes runs up to ~1.4 dB, a real envelope error shows as
-    // ~2 dB across the whole basin. A distance-scaled ramp cannot separate
-    // those two points at any slope; this flat threshold does.
+    // unseats the arrival-anchored fine pick, at a junction the onset lock
+    // does not govern (below its frequency gate, or a smeared front): there
+    // the window is still centered on the coarse arrival, which can sit a
+    // whole lobe off, and the promotion recovers that lobe while the margin
+    // keeps the physically-minimal arrival pick unless a distinctly better
+    // summation exists elsewhere. Calibrated on two pre-lock field runs of
+    // the same cabin (2.3 kHz mid/tweeter junctions, since taken over by the
+    // lock — the physics transfers): a FALSE hop offered 1.40 dB, a GENUINE
+    // lobe recovery offered 1.91 dB — comb noise between real lobes runs up
+    // to ~1.4 dB, a real envelope error shows as ~2 dB across the whole
+    // basin. A distance-scaled ramp cannot separate those two points at any
+    // slope; this flat threshold does.
     private const double WideWindowPromotionMarginDb = 1.6;
 
     // The gain above which a declined promotion is worth a log line: below it
@@ -189,18 +192,56 @@ public static class AutoAlignmentEngine
     // the arrival-anchored fine result. The promotion exists to recover a coarse
     // arrival that landed a lobe or two off at a degenerate junction (a spectral
     // gap between the corners degrades the whitened correlation into near-equal
-    // lobes) — real data needs up to ~2 periods of reach for that (the r mid/
-    // tweeter cabin junction recovers the user's manual optimum ~1.8 periods off
-    // the fine pick). Beyond that the summation surface is a comb of near-equal
-    // minima spaced one period apart: which lobe is physically correct is set by
-    // the arrival, NOT by the sum (they differ by fractions of a dB). Without a
-    // cap the ±3 ms diagnostic window lets a marginally-better comb ALIAS three
-    // to four periods away unseat the envelope at a high crossover — the field
-    // failure where the tweeter walked ~1.7 ms (~3.9 periods) off its mid for a
-    // 0.25 dB "gain". 2.5 periods clears the legitimate ~1.8-period recovery and
-    // rejects the ~3.9-period alias. The wide window also scores under a weaker
-    // arrival prior, which inflates far aliases; the reach cap bounds that too.
+    // lobes) — real data needs up to ~2 periods of reach for that. Beyond it
+    // the summation surface is a comb of near-equal minima spaced one period
+    // apart: which lobe is physically correct is set by the arrival, NOT by the
+    // sum (they differ by fractions of a dB). Without a cap the ±3 ms
+    // diagnostic window let a marginally-better comb ALIAS unseat the envelope
+    // — the pre-lock field failure where the tweeter walked ~1.7 ms
+    // (~3.9 periods) off its mid for a 0.25 dB "gain"; that junction class is
+    // now onset-locked, and this cap guards the remaining, un-locked domain.
+    // 2.5 periods clears the legitimate ~1.8-period recovery and rejects the
+    // ~3.9-period alias. The wide window also scores under a weaker arrival
+    // prior, which inflates far aliases; the reach cap bounds that too.
     private const double PromotionReachPeriods = 2.5;
+
+    // ---- The onset lock -----------------------------------------------------
+    // At a high junction the summation surface is a comb of near-equal minima
+    // and fractions of a dB cannot choose a lobe; the band-limited arrival that
+    // anchors the search marks the first PEAK of an octave-band envelope, and
+    // the two drivers occupy opposite halves of that shared band, so their
+    // peak times lag their true fronts by different rise times — a measured
+    // ~0.3-0.4 ms systematic bias (0.45-0.8 periods at 1.5-2.3 kHz) that
+    // regularly parks the anchor between lobes for the sum to finish the miss.
+    // The broadband threshold onset (EstimateBroadbandOnset) marks the front
+    // itself — the same feature a human validates on the IR plot — so where
+    // the front is sharp the search is LOCKED to it: the window IS
+    // onset-anchor ± the reach below, every escape hatch (edge retry, wide
+    // promotion) stays shut, and the sum's only job is polishing inside the
+    // correct lobe and choosing polarity.
+
+    // The slowest junction whose fronts are still sharp enough to lock on.
+    // Field data: at 1.5-2.3 kHz the 10-vs-50 % onset spread is ~0.3 period
+    // (locks engage); at 220 Hz it is milliseconds (thresholds land on modal
+    // build-up, not a front) and at 80 Hz there is no front at all — those
+    // junctions keep the arrival-anchored search unchanged.
+    private const double OnsetLockMinCrossoverHz = 700;
+
+    // The lock's half-window in crossover periods. It must admit the true lobe
+    // given the onset estimate's own error (~0.3 period) plus the crossover's
+    // legitimate per-driver group-delay split (fractions of a period), and the
+    // flip partner half a period out so the polarity decision stays with the
+    // invert rules — while excluding the next same-polarity lobe a full period
+    // out. 0.75 sits between those bounds.
+    private const double OnsetLockReachPeriods = 0.75;
+
+    // The honesty gate: the onset DIFFERENCE between the two drivers is read at
+    // 10/25/50 % thresholds, and the lock engages only when those three
+    // readings agree within this many periods. A sharp direct front keeps them
+    // within ~0.3 period; a smeared or reflection-led front (off-axis driver,
+    // modal bass) spreads them and the lock stands down rather than pin the
+    // search to a guess.
+    private const double OnsetLockMaxSpreadPeriods = 0.5;
 
     /// <summary>
     /// Runs the two-stage alignment. <paramref name="channelsByBand"/> holds
@@ -216,7 +257,26 @@ public static class AutoAlignmentEngine
         IReadOnlyList<AlignmentJunction> pairs,
         AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
-        StringBuilder log)
+        StringBuilder log) =>
+        Compute(channelsByBand, pairs, reprocess, alignment, log, onsetLocks: null);
+
+    // One onset-locked junction: which channel the lock was applied to during
+    // its fine search, how far the chosen delay landed from the onset-aligned
+    // anchor, and the lock's half-window. The co-move consumes this so its
+    // shared per-pair delta cannot push a locked junction's front gap past the
+    // cap the fine search honored.
+    private sealed record OnsetLockState(
+        IAlignmentChannel SearchedChannel,
+        double GapMs,
+        double CapMs);
+
+    private static void Compute(
+        IReadOnlyList<AlignmentSnapshot> channelsByBand,
+        IReadOnlyList<AlignmentJunction> pairs,
+        AlignmentReprocessor reprocess,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        StringBuilder log,
+        Dictionary<AlignmentJunction, OnsetLockState>? onsetLocks)
     {
         ArgumentNullException.ThrowIfNull(channelsByBand);
         ArgumentNullException.ThrowIfNull(pairs);
@@ -263,14 +323,16 @@ public static class AutoAlignmentEngine
             AlignChannelAtJunction(
                 byBand[i].Channel, byBand[i + 1].Channel, pairs[i],
                 timeline, byBand, reprocess, alignment, log,
-                untrustedSeedJunctions: untrustedSeeds);
+                untrustedSeedJunctions: untrustedSeeds,
+                onsetLocks: onsetLocks);
         }
         for (int i = referenceIndex + 1; i < byBand.Count; i++)
         {
             AlignChannelAtJunction(
                 byBand[i].Channel, byBand[i - 1].Channel, pairs[i - 1],
                 timeline, byBand, reprocess, alignment, log,
-                untrustedSeedJunctions: untrustedSeeds);
+                untrustedSeedJunctions: untrustedSeeds,
+                onsetLocks: onsetLocks);
         }
     }
 
@@ -374,18 +436,21 @@ public static class AutoAlignmentEngine
 
     // Fine-aligns one channel against its settled neighbor(s) and writes the
     // result into the alignment map: the stage-2 body shared by the mono walk
-    // and the stereo right-side descent. With a SECONDARY settled neighbor
-    // (the shared mono subwoofer below a descent channel) the search optimizes
-    // BOTH junctions at once: both neighbors join the fixed set, the band
-    // spans both junctions, and the window covers both junctions' coarse
-    // bases — otherwise the channel buys a perfect upper junction while
-    // parking a whole period off its lower one. An external prior (the
-    // cross-side Δ-consistent delay) replaces the base as the gentle
-    // tie-break when supplied. A physically impossible negative delay is
-    // converted into a uniform shift of every OTHER channel in
-    // <paramref name="shiftScope"/> (a uniform shift preserves the alignment)
-    // — in a stereo run the scope must span BOTH sides, or the shift would
-    // silently break the inter-side scene offset.
+    // and the stereo right-side descent. The search window has three
+    // authorities, strongest first: a scene lock (the image pin IS the
+    // window), the onset lock (sharp-front junctions pin to the broadband
+    // onset anchor), and otherwise the coarse base(s) ± the period-scaled
+    // range. With a SECONDARY settled neighbor (the shared mono subwoofer
+    // below a descent channel) the search optimizes BOTH junctions at once:
+    // both neighbors join the fixed set, the band spans both junctions, and
+    // the window covers both junctions' coarse bases — otherwise the channel
+    // buys a perfect upper junction while parking a whole period off its
+    // lower one. An external prior (the cross-side Δ-consistent delay)
+    // replaces the base as the gentle tie-break when supplied. A physically
+    // impossible negative delay is converted into a uniform shift of every
+    // OTHER channel in <paramref name="shiftScope"/> (a uniform shift
+    // preserves the alignment) — in a stereo run the scope must span BOTH
+    // sides, or the shift would silently break the inter-side scene offset.
     private static void AlignChannelAtJunction(
         IAlignmentChannel channel,
         IAlignmentChannel neighborChannel,
@@ -400,7 +465,8 @@ public static class AutoAlignmentEngine
         double? priorOverrideMs = null,
         double? sceneLockToleranceMs = null,
         bool? forcedPolarity = null,
-        IReadOnlySet<AlignmentJunction>? untrustedSeedJunctions = null)
+        IReadOnlySet<AlignmentJunction>? untrustedSeedJunctions = null,
+        Dictionary<AlignmentJunction, OnsetLockState>? onsetLocks = null)
     {
         // Widen the window when the coarse seed ACROSS this junction (or its
         // secondary, for a joint two-neighbour search) was the untrusted arrival
@@ -429,6 +495,81 @@ public static class AutoAlignmentEngine
         // both junctions constrain the channel.
         double anchorMs = priorOverrideMs ?? (primaryBase + secondaryBase) / 2.0;
 
+        // Reprocess so the settled neighbors participate with their new
+        // delays and polarities. The searched channel is dropped from the
+        // override map so its response is the raw, undelayed IR — the search
+        // provides the delay, and chosen.DelayMs is then the absolute delay
+        // to assign. Without this reset, a uniform shift applied earlier to
+        // a not-yet-searched channel (the negative-delay branch below) would
+        // bake a stray offset into variableIr that the reported delay does
+        // not account for, mis-aligning that channel by the shift. Hoisted out
+        // of SearchJunction: the fine, wide and retry searches all run on the
+        // same settled state, and the onset lock reads the same IRs.
+        var searchAlignment =
+            new Dictionary<IAlignmentChannel, AlignmentOverride>(alignment);
+        searchAlignment.Remove(channel);
+        IReadOnlyList<AlignmentSnapshot> current = reprocess(searchAlignment);
+        Complex[] variableIr = current
+            .First(item => item.Channel == channel).ImpulseResponse;
+        var neighborIrs = new List<Complex[]>
+        {
+            current.First(item => item.Channel == neighborChannel).ImpulseResponse
+        };
+        if (secondaryNeighbor != null)
+        {
+            neighborIrs.Add(current
+                .First(item => item.Channel == secondaryNeighbor).ImpulseResponse);
+        }
+
+        // The onset lock (see the constants block): at a sharp-front junction
+        // the search window is pinned to the broadband onset-aligned delay and
+        // the arrival-anchored machinery below only polishes inside it. A
+        // second neighbor means a joint two-junction search whose window spans
+        // both bases — no single onset anchor exists there (those are the low,
+        // mono-adjacent junctions the frequency gate excludes anyway), and a
+        // scene lock outranks: the image pin already IS the window.
+        double? onsetAnchorMs = null;
+        double onsetCapMs = 0;
+        if (secondaryNeighbor == null &&
+            sceneLockToleranceMs == null &&
+            pair.CrossoverHz >= OnsetLockMinCrossoverHz)
+        {
+            BroadbandOnsetEstimate own =
+                VirtualCrossoverAnalysis.EstimateBroadbandOnset(
+                    variableIr, channel.SampleRate);
+            BroadbandOnsetEstimate other =
+                VirtualCrossoverAnalysis.EstimateBroadbandOnset(
+                    neighborIrs[0], neighborChannel.SampleRate);
+            if (own.IsValid && other.IsValid)
+            {
+                double periodMs = 2.0 * halfPeriodMs;
+                // The spread of the onset DIFFERENCE across the thresholds —
+                // per-channel spreads partially cancel (both fronts widen with
+                // the threshold together), and the difference is the quantity
+                // the anchor actually uses.
+                double early = other.EarlyMs - own.EarlyMs;
+                double mid = other.OnsetMs - own.OnsetMs;
+                double late = other.LateMs - own.LateMs;
+                double spreadMs =
+                    Math.Max(early, Math.Max(mid, late)) -
+                    Math.Min(early, Math.Min(mid, late));
+                if (spreadMs <= OnsetLockMaxSpreadPeriods * periodMs)
+                {
+                    onsetAnchorMs = mid;
+                    onsetCapMs = OnsetLockReachPeriods * periodMs;
+                    anchorMs = mid;
+                }
+                else
+                {
+                    log.AppendLine(
+                        $"  onset lock declined for {channel.Name}: threshold " +
+                        $"spread {spreadMs:0.000} ms exceeds " +
+                        $"{OnsetLockMaxSpreadPeriods:0.00} of the " +
+                        $"{pair.CrossoverHz:0} Hz period — the front is not " +
+                        "sharp enough to pin.");
+                }
+            }
+        }
 
         // One junction search: candidates of the prior-penalized loss score in
         // a window spanning the coarse base(s) (the PHAT-seeded timeline,
@@ -439,30 +580,6 @@ public static class AutoAlignmentEngine
         (IReadOnlyList<AlignmentCandidate> Candidates, double WindowLowMs, double WindowHighMs)
             SearchJunction(double? windowOverrideMs = null)
         {
-            // Reprocess so the settled neighbors participate with their new
-            // delays and polarities. The searched channel is dropped from the
-            // override map so its response is the raw, undelayed IR — the search
-            // provides the delay, and chosen.DelayMs is then the absolute delay
-            // to assign. Without this reset, a uniform shift applied earlier to
-            // a not-yet-searched channel (the negative-delay branch below) would
-            // bake a stray offset into variableIr that the reported delay does
-            // not account for, mis-aligning that channel by the shift.
-            var searchAlignment =
-                new Dictionary<IAlignmentChannel, AlignmentOverride>(alignment);
-            searchAlignment.Remove(channel);
-            IReadOnlyList<AlignmentSnapshot> current = reprocess(searchAlignment);
-            Complex[] variableIr = current
-                .First(item => item.Channel == channel).ImpulseResponse;
-            var neighborIrs = new List<Complex[]>
-            {
-                current.First(item => item.Channel == neighborChannel).ImpulseResponse
-            };
-            if (secondaryNeighbor != null)
-            {
-                neighborIrs.Add(current
-                    .First(item => item.Channel == secondaryNeighbor).ImpulseResponse);
-            }
-
             // Only where the coarse seed was untrusted (arrival fallback at a
             // low junction) let the cap grow toward a half period so the window
             // can reach a half-period-away flip partner the fixed cap would
@@ -482,6 +599,15 @@ public static class AutoAlignmentEngine
                 // sum (and decides polarity) inside it.
                 windowLowMs = anchorMs - lockTolerance;
                 windowHighMs = anchorMs + lockTolerance;
+            }
+            else if (onsetAnchorMs is { } onsetAnchor && windowOverrideMs == null)
+            {
+                // The onset lock: same principle as the scene lock — the
+                // window IS the constraint. The wide DIAGNOSTIC sweep (a
+                // windowOverrideMs caller) still sees past it, so the log
+                // keeps showing what the lock excluded.
+                windowLowMs = onsetAnchor - onsetCapMs;
+                windowHighMs = onsetAnchor + onsetCapMs;
             }
             IReadOnlyList<AlignmentCandidate> candidates =
                 VirtualCrossoverAnalysis.FindAlignmentCandidates(
@@ -514,6 +640,9 @@ public static class AutoAlignmentEngine
                 (sceneLockToleranceMs is { } tol
                     ? $", SCENE-LOCKED \u00b1{tol:0.00} ms"
                     : "") +
+                (onsetAnchorMs is { } onsetForLog
+                    ? $", ONSET-LOCKED {onsetForLog:0.000} \u00b1{onsetCapMs:0.000} ms"
+                    : "") +
                 ", candidates " +
                 string.Join("; ", candidates.Select(item =>
                     $"{item.DelayMs:0.000} ms" +
@@ -534,9 +663,10 @@ public static class AutoAlignmentEngine
                     $"(margin {candidates[0].ScoreDb - chosen.ScoreDb:0.00} dB)");
             }
 
-            // Diagnostic wide sweep: the same junction searched across a much
-            // wider window so lobes beyond the working range appear in the log.
-            // Purely informational — the chosen result above is untouched.
+            // Wide sweep: the same junction searched across a much wider
+            // window so lobes beyond the working range appear in the log.
+            // At an un-locked junction the promotion below may adopt its
+            // winner; under a scene or onset lock it is log-only.
             (IReadOnlyList<AlignmentCandidate> wide, double wideLow, double wideHigh) =
                 SearchJunction(windowOverrideMs: DiagnosticFineRangeMs);
             log.AppendLine(
@@ -564,7 +694,7 @@ public static class AutoAlignmentEngine
             double retryRangeMs = Math.Min(1.8 * halfPeriodMs, 3.0);
             bool atEdge = chosen.DelayMs <= windowLow + 0.02 ||
                 chosen.DelayMs >= windowHigh - 0.02;
-            if (sceneLockToleranceMs == null &&
+            if (sceneLockToleranceMs == null && onsetAnchorMs == null &&
                 retryRangeMs > (windowHigh - windowLow) / 2.0 && atEdge)
             {
                 (IReadOnlyList<AlignmentCandidate> retried, _, _) =
@@ -585,14 +715,19 @@ public static class AutoAlignmentEngine
             }
 
             // Promote the wide-window optimum when it clearly beats the
-            // arrival-anchored pick: the coarse arrival can sit a whole lobe off
-            // at a high crossover, and the narrow window cannot reach the true
-            // summation optimum a few periods away. AlignmentSelection applies
-            // the same flip/tie rules to the wide set, and the margin ensures a
-            // mere lobe/flip impostor cannot pull the result off the arrival —
-            // and with a cross-side prior in the scores, a promotion that walks
-            // away from the other side's timing pays for that distance too.
-            if (wide.Count > 0 && sceneLockToleranceMs == null)
+            // arrival-anchored pick — the un-locked junctions' recovery from a
+            // coarse arrival that sat a whole lobe off, where the narrow
+            // window cannot reach the true summation optimum a few periods
+            // away. AlignmentSelection applies the same flip/tie rules to the
+            // wide set, and the margin ensures a mere lobe/flip impostor
+            // cannot pull the result off the arrival — and with a cross-side
+            // prior in the scores, a promotion that walks away from the other
+            // side's timing pays for that distance too. An onset-locked
+            // junction never promotes: the wide window's deeper sums are
+            // exactly the comb aliases the lock exists to refuse — they stay
+            // in the [diag] log line only.
+            if (wide.Count > 0 && sceneLockToleranceMs == null &&
+                onsetAnchorMs == null)
             {
                 AlignmentCandidate wideChosen =
                     AlignmentSelection.Select(wide, anchorMs);
@@ -612,17 +747,45 @@ public static class AutoAlignmentEngine
                 double promotionStepMs =
                     Math.Abs(wideChosen.DelayMs - arrivalPick.DelayMs);
                 double periodsMoved = promotionStepMs / periodMs;
-                double gainDb = AcousticScore(wideChosen) - AcousticScore(chosen);
+                double fineScore = AcousticScore(chosen);
+                double gainDb = AcousticScore(wideChosen) - fineScore;
                 if (gainDb > WideWindowPromotionMarginDb &&
                     promotionStepMs <= promotionReachMs)
                 {
+                    // The gate above decides THAT a promotion happens, and the
+                    // deepest-summing wide lobe is what tripped it. But inside a
+                    // comb basin the promotion-worthy lobes differ by fractions
+                    // of a dB, and the deepest sum is not necessarily the
+                    // physically correct cycle — the arrival is (the same
+                    // envelope-first rule as the fine tie-break, one comb over).
+                    // The pre-lock field failure that pinned this: at a 1500 Hz
+                    // mid/tweeter split TWO adjacent same-polarity lobes both
+                    // cleared the gate and the 0.14 dB-deeper one sat a full
+                    // period past the user's correct alignment. That junction
+                    // class is onset-locked now, but the same comb physics
+                    // holds wherever the promotion still runs. Snap to the
+                    // arrival-nearest lobe that still clears the gate;
+                    // wideChosen itself qualifies, so this only ever pulls the
+                    // pick closer to the arrival, never onto a declined junction.
+                    AlignmentCandidate promoted = AlignmentSelection.SelectPromotionLobe(
+                        wide,
+                        wideChosen,
+                        AcousticScore,
+                        fineScore,
+                        WideWindowPromotionMarginDb,
+                        arrivalPick.DelayMs,
+                        anchorMs,
+                        promotionReachMs);
+                    promotionStepMs = Math.Abs(promoted.DelayMs - arrivalPick.DelayMs);
+                    periodsMoved = promotionStepMs / periodMs;
+                    gainDb = AcousticScore(promoted) - fineScore;
                     log.AppendLine(
-                        $"  promoted {wideChosen.DelayMs:0.000} ms" +
-                        $"{(wideChosen.InvertPolarity ? " inv" : "")} " +
+                        $"  promoted {promoted.DelayMs:0.000} ms" +
+                        $"{(promoted.InvertPolarity ? " inv" : "")} " +
                         $"over {chosen.DelayMs:0.000} ms" +
                         $"{(chosen.InvertPolarity ? " inv" : "")} " +
                         $"(gain {gainDb:0.00} dB at {periodsMoved:0.0} periods)");
-                    chosen = wideChosen;
+                    chosen = promoted;
                 }
                 else if (gainDb > PromotionNoteworthyGainDb &&
                     promotionStepMs > promotionReachMs)
@@ -655,6 +818,22 @@ public static class AutoAlignmentEngine
             alignment[channel] = new AlignmentOverride(
                 Math.Clamp(Math.Round(newDelay, 2), 0, MaxDelayMs),
                 chosen.InvertPolarity);
+
+            if (onsetAnchorMs is { } settledAnchor)
+            {
+                // The gap is relative (chosen minus anchor), so the uniform
+                // shifts that follow — negative-delay recovery, the bridge
+                // advance, the final normalization — leave it intact: they
+                // move both ends of the junction equally.
+                double gapMs = chosen.DelayMs - settledAnchor;
+                log.AppendLine(
+                    $"  onset gap after: {gapMs:+0.000;-0.000} ms " +
+                    $"({gapMs / (2.0 * halfPeriodMs):+0.00;-0.00}T)");
+                if (onsetLocks != null)
+                {
+                    onsetLocks[pair] = new OnsetLockState(channel, gapMs, onsetCapMs);
+                }
+            }
         }
     }
 
@@ -760,8 +939,15 @@ public static class AutoAlignmentEngine
                 nameof(plan));
         }
 
+        // Onset-locked junctions accumulated across both sides: the co-move
+        // must respect the front pins the fine searches honored.
+        var onsetLocks = new Dictionary<AlignmentJunction, OnsetLockState>(
+            ReferenceEqualityComparer.Instance);
+
         // Stage L: the left side, exactly like a mono run.
-        Compute(plan.LeftChannelsByBand, plan.LeftPairs, reprocess, alignment, log);
+        Compute(
+            plan.LeftChannelsByBand, plan.LeftPairs, reprocess, alignment, log,
+            onsetLocks);
 
         // The union of both sides: the scope of every uniform shift from here
         // on. Shifting one side alone would silently break the inter-side
@@ -1135,7 +1321,7 @@ public static class AutoAlignmentEngine
                 channel, neighbor, pair,
                 rightTimeline, allChannels, reprocess, alignment, log,
                 secondary, secondaryPair, crossTarget, sceneLock, inheritedPolarity,
-                rightUntrustedSeeds);
+                rightUntrustedSeeds, onsetLocks);
         }
         for (int i = bridgeIndex - 1; i >= 0; i--)
         {
@@ -1150,7 +1336,7 @@ public static class AutoAlignmentEngine
         // scene, their junction sums pay the price — moving BOTH sides of a
         // pair by one shared delta keeps the pair's L-R timing (the scene)
         // untouched while trading junction loss between the sides.
-        RebalancePairsKeepingScene(plan, reprocess, alignment, log);
+        RebalancePairsKeepingScene(plan, reprocess, alignment, log, onsetLocks);
 
         // Final normalization: the smallest total latency that preserves every
         // relation — the minimum proposed delay lands exactly at zero.
@@ -1313,7 +1499,8 @@ public static class AutoAlignmentEngine
         StereoAlignmentPlan plan,
         AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
-        StringBuilder log)
+        StringBuilder log,
+        IReadOnlyDictionary<AlignmentJunction, OnsetLockState> onsetLocks)
     {
         if (plan.PairLinks == null)
         {
@@ -1438,15 +1625,38 @@ public static class AutoAlignmentEngine
             double lobeHighMs = PairComoveSearchRangeMs;
             foreach (AlignmentJunction junction in adjacent)
             {
-                IAlignmentChannel neighbor =
-                    junction.Lower.Channel == link.Left ||
-                    junction.Lower.Channel == link.Right
-                        ? junction.Upper.Channel
-                        : junction.Lower.Channel;
+                bool lowerIsMover = junction.Lower.Channel == link.Left ||
+                    junction.Lower.Channel == link.Right;
+                IAlignmentChannel mover = lowerIsMover
+                    ? junction.Lower.Channel
+                    : junction.Upper.Channel;
+                IAlignmentChannel neighbor = lowerIsMover
+                    ? junction.Upper.Channel
+                    : junction.Lower.Channel;
                 double neighborDelta = comoveDeltas.GetValueOrDefault(neighbor);
                 double halfPeriodMs = 500.0 / junction.CrossoverHz;
                 lobeLowMs = Math.Max(lobeLowMs, neighborDelta - halfPeriodMs);
                 lobeHighMs = Math.Min(lobeHighMs, neighborDelta + halfPeriodMs);
+
+                // An onset-locked junction bounds the move by its remaining
+                // front slack, not just the lobe: the fine search honored
+                // |gap| <= cap and the co-move must keep honoring it. The gap
+                // was stored relative to the searched channel, so the sign of
+                // this pair's contribution depends on which end is moving:
+                // gap_after = gap ± (delta − neighborDelta).
+                if (onsetLocks.TryGetValue(junction, out OnsetLockState? locked))
+                {
+                    bool moverWasSearched =
+                        ReferenceEquals(locked.SearchedChannel, mover);
+                    double slackLow = moverWasSearched
+                        ? neighborDelta - locked.CapMs - locked.GapMs
+                        : neighborDelta + locked.GapMs - locked.CapMs;
+                    double slackHigh = moverWasSearched
+                        ? neighborDelta + locked.CapMs - locked.GapMs
+                        : neighborDelta + locked.GapMs + locked.CapMs;
+                    lobeLowMs = Math.Max(lobeLowMs, slackLow);
+                    lobeHighMs = Math.Min(lobeHighMs, slackHigh);
+                }
             }
 
             // Both bounds are fixed BEFORE the search so the winning delta

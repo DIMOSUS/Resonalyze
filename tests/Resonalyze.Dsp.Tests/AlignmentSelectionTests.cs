@@ -88,4 +88,105 @@ public sealed class AlignmentSelectionTests
 
         Assert.Equal(invertedFar, chosen);
     }
+
+    // AutoAlignmentEngine.AcousticScore: the prior-free figure the promotion
+    // compares across search windows.
+    private static double AcousticScore(AlignmentCandidate candidate) =>
+        candidate.LossDb + VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
+        (candidate.DipDb - candidate.LossDb);
+
+    [Fact]
+    public void SelectPromotionLobe_SnapsToArrivalNearestLobeNotDeepestSum()
+    {
+        // The field failure verbatim: a left tweeter at a 1500 Hz mid/tweeter
+        // split (period 1000/1500 ≈ 0.667 ms). The arrival-anchored fine pick
+        // (10.320 ms) combs to a -5.7 dB dip, so a promotion is warranted, but
+        // the wide diagnostic window holds a comb of same-polarity lobes. The
+        // deepest sum, 8.926 ms, beats the user's physically-correct 9.524 ms by
+        // only 0.14 dB while sitting a full period farther from the arrival — so
+        // score alone hops the tweeter one lobe too far. The arrival must break
+        // that near-tie, exactly as it does for the fine pick. Values are the
+        // logged [diag] wide candidates (delay, invert, score, avg=Loss, dip).
+        AlignmentCandidate[] wide =
+        [
+            new(9.231, true, -1.27, -0.42, -1.9),
+            new(8.926, false, -1.27, -0.44, -1.7),
+            new(8.627, true, -1.39, -0.43, -1.7),
+            new(9.524, false, -1.41, -0.45, -2.2),
+            new(8.336, false, -1.60, -0.46, -1.9),
+            new(11.222, true, -1.71, -0.68, -2.5),
+        ];
+        var finePick = new AlignmentCandidate(10.320, false, -3.27, -0.88, -5.7);
+
+        // The score-only winner IS the wrong lobe — this is the bug the snap fixes.
+        AlignmentCandidate scoreWinner = AlignmentSelection.Select(wide, 10.302);
+        Assert.Equal(8.926, scoreWinner.DelayMs);
+
+        AlignmentCandidate promoted = AlignmentSelection.SelectPromotionLobe(
+            wide,
+            scoreWinner,
+            AcousticScore,
+            fineScoreDb: AcousticScore(finePick),
+            marginDb: 1.6,                          // WideWindowPromotionMarginDb
+            arrivalPickMs: finePick.DelayMs,
+            anchorMs: 10.302,
+            reachMs: 2.5 * (1000.0 / 1500.0));      // PromotionReachPeriods · period
+
+        Assert.Equal(9.524, promoted.DelayMs);
+    }
+
+    [Fact]
+    public void SelectPromotionLobe_KeepsDeepestWhenItIsAlreadyArrivalNearest()
+    {
+        // A closer-to-arrival lobe that also sums deeper leaves nothing to snap:
+        // the gate winner is returned unchanged.
+        AlignmentCandidate[] wide =
+        [
+            new(9.6, false, -1.20, -0.40, -1.6),
+            new(8.7, false, -1.35, -0.45, -1.9),
+        ];
+        var finePick = new AlignmentCandidate(10.0, false, -3.20, -0.90, -5.5);
+        AlignmentCandidate gateWinner = AlignmentSelection.Select(wide, 9.8);
+
+        AlignmentCandidate promoted = AlignmentSelection.SelectPromotionLobe(
+            wide,
+            gateWinner,
+            AcousticScore,
+            fineScoreDb: AcousticScore(finePick),
+            marginDb: 1.6,
+            arrivalPickMs: finePick.DelayMs,
+            anchorMs: 9.8,
+            reachMs: 2.5 * (1000.0 / 1500.0));
+
+        Assert.Equal(9.6, promoted.DelayMs);
+    }
+
+    [Fact]
+    public void SelectPromotionLobe_KeepsBelowMarginLobesOutOfTheSnap()
+    {
+        // A lobe closer to the arrival that does NOT clear the gate on its own
+        // (it barely beats the fine pick) must not be snapped to — the snap only
+        // ranges over lobes that independently earn a promotion. Here the closer
+        // 9.9 ms lobe gains only ~0.5 dB over the fine pick, so the gate winner
+        // stands.
+        var gateWinner = new AlignmentCandidate(8.9, false, -1.27, -0.44, -1.7);
+        AlignmentCandidate[] wide =
+        [
+            new(9.9, false, -2.90, -0.80, -4.8),    // nearer arrival, but weak sum
+            gateWinner,
+        ];
+        var finePick = new AlignmentCandidate(10.3, false, -3.10, -0.85, -5.4);
+
+        AlignmentCandidate promoted = AlignmentSelection.SelectPromotionLobe(
+            wide,
+            gateWinner,
+            AcousticScore,
+            fineScoreDb: AcousticScore(finePick),
+            marginDb: 1.6,
+            arrivalPickMs: finePick.DelayMs,
+            anchorMs: 10.28,
+            reachMs: 2.5 * (1000.0 / 1500.0));
+
+        Assert.Equal(8.9, promoted.DelayMs);
+    }
 }

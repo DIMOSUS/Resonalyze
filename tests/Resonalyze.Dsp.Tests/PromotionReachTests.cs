@@ -6,18 +6,23 @@ using Xunit.Abstractions;
 namespace Resonalyze.Dsp.Tests;
 
 /// <summary>
-/// The field regressions the user hit on the real cabin measurements with an
-/// auto-crossover that split mid/tweeter at 2300 Hz — two doors into the same
-/// failure: (a) the wide-window promotion unseated the tweeter's
-/// arrival-anchored pick with a comb ALIAS ~1.7 ms (nearly four crossover
-/// periods) away for a 0.25 dB summation "gain"; (b) with the promotion capped,
-/// the scene-preserving co-move walked the tweeter pair up to a period off its
-/// mid through its flat ±1.2 ms window for 0.1-1 dB of mean junction loss. Both
-/// are the same physics: on a high junction the summation surface is a comb of
-/// near-equal minima and fractions of a dB cannot choose a lobe — the arrival
-/// can. With both reach caps, mid and tweeter stay on the SAME summation lobe
-/// (band-limited arrivals within one crossover period of each other — the
-/// residual is the crossover's own per-driver group delay, not a misalignment).
+/// The field regressions the user hit on the real cabin measurements — three
+/// doors into one failure: (a) the wide-window promotion unseated the
+/// tweeter's arrival-anchored pick with a comb ALIAS ~1.7 ms (nearly four
+/// crossover periods) away for a 0.25 dB summation "gain" (2300 Hz split);
+/// (b) with the promotion capped, the scene-preserving co-move walked the
+/// tweeter pair up to a period off its mid for 0.1-1 dB of mean junction
+/// loss; (c) at a 1500 Hz split the promotion fired legitimately but hopped
+/// onto the deepest-summing lobe a full period past the physically correct
+/// one, because the band-limited arrival anchor itself carries a ~0.3-0.4 ms
+/// envelope-rise bias at these junctions. All three are the same physics: on
+/// a high junction the summation surface is a comb of near-equal minima and
+/// fractions of a dB cannot choose a lobe — only the drivers' FRONTS can.
+/// The onset lock closes every door at once: the search window is pinned to
+/// the broadband threshold-onset anchor (bias-free where the front is sharp)
+/// and the retry/promotion escape hatches stay shut. The contract here: mid
+/// and tweeter fronts land within the lock's reach of each other, at BOTH
+/// splits, for BOTH field gain configs, on BOTH sides.
 /// </summary>
 public sealed class PromotionReachTests
 {
@@ -35,11 +40,55 @@ public sealed class PromotionReachTests
         new(CrossoverFilterFamily.Butterworth, frequencyHz, 24);
 
     // Both tweeter gains are real field configs: -5 dB exposed the promotion
-    // alias, 0 dB exposed the co-move door once the promotion was capped.
+    // alias, 0 dB exposed the co-move door once the promotion was capped. The
+    // 2300 Hz split is the original failure cabin config; the 1500 Hz split
+    // reproduces the later lobe-hop failure one octave down. The alignment
+    // must not depend on the tweeter's gain at all — the fronts are where
+    // they are.
     [Theory]
-    [InlineData(-5.0)]
-    [InlineData(0.0)]
-    public void ComputeStereo_RealCabin_PromotionKeepsMidAndTweeterOnOneLobe(
+    [InlineData(2_300, 200, 2_300, -5.0)]
+    [InlineData(2_300, 200, 2_300, 0.0)]
+    [InlineData(1_500, 220, 1_900, -5.0)]
+    [InlineData(1_500, 220, 1_900, 0.0)]
+    public void ComputeStereo_RealCabin_OnsetLockKeepsMidAndTweeterFrontsTogether(
+        double midTwrHz,
+        double woofMidHz,
+        double bridgeBandLowHz,
+        double tweeterGainDb)
+    {
+        StereoRun run = RunRealCabin(woofMidHz, midTwrHz, bridgeBandLowHz, tweeterGainDb);
+
+        output.WriteLine(run.Log);
+        output.WriteLine(run.GapReport);
+
+        // The contract: the mid and tweeter FRONTS (broadband threshold
+        // onsets, the feature a human validates on the IR plot) sit within
+        // the onset lock's reach of each other. The pre-lock failures opened
+        // 0.7-1.7 ms cross-lobe front gaps here.
+        double onePeriodMs = 1_000.0 / midTwrHz;
+        Assert.InRange(Math.Abs(run.LeftFrontGapMs), 0, 0.75 * onePeriodMs);
+        Assert.InRange(Math.Abs(run.RightFrontGapMs), 0, 0.75 * onePeriodMs);
+
+        // The mechanism pin: the mid/tweeter junction must actually have been
+        // onset-locked (sharp fronts, spread gate passed) — a silently
+        // disengaged lock would hand the junction back to the comb.
+        Assert.Contains("ONSET-LOCKED", run.Log);
+        Assert.Contains("onset gap after", run.Log);
+    }
+
+    private sealed record StereoRun(
+        string Log,
+        double LeftFrontGapMs,
+        double RightFrontGapMs,
+        string GapReport);
+
+    // Runs the full stereo auto-alignment on the real cabin IRs with the
+    // crossovers placed by the caller, and measures the final mid/tweeter
+    // front gaps from the broadband onsets of the aligned IRs.
+    private StereoRun RunRealCabin(
+        double woofMidHz,
+        double midTwrHz,
+        double bridgeBandLowHz,
         double tweeterGainDb)
     {
         Channel Load(string file, string name, DspChannelChain chain)
@@ -48,24 +97,22 @@ public sealed class PromotionReachTests
             return new Channel(name, rate, ir, chain);
         }
 
-        const double WoofMidHz = 200;
-        const double MidTwrHz = 2_300;
         Channel sub = Load("sub woof closed window.json", "sub", new DspChannelChain(
             Crossover: new CrossoverSpec(CrossoverKind.LowPass, Bw(80))));
         Channel leftWoof = Load("l woof.json", "L woof", new DspChannelChain(
-            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(WoofMidHz), Bw(80))));
+            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(woofMidHz), Bw(80))));
         Channel leftMid = Load("l mid.json", "L mid", new DspChannelChain(
-            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(MidTwrHz), Bw(WoofMidHz))));
+            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(midTwrHz), Bw(woofMidHz))));
         Channel leftTwr = Load("l twr.json", "L twr", new DspChannelChain(
             GainDb: tweeterGainDb,
-            Crossover: new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: Bw(MidTwrHz))));
+            Crossover: new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: Bw(midTwrHz))));
         Channel rightWoof = Load("r woof.json", "R woof", new DspChannelChain(
-            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(WoofMidHz), Bw(80))));
+            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(woofMidHz), Bw(80))));
         Channel rightMid = Load("r mid.json", "R mid", new DspChannelChain(
-            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(MidTwrHz), Bw(WoofMidHz))));
+            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(midTwrHz), Bw(woofMidHz))));
         Channel rightTwr = Load("r twr.json", "R twr", new DspChannelChain(
             GainDb: tweeterGainDb,
-            Crossover: new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: Bw(MidTwrHz))));
+            Crossover: new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: Bw(midTwrHz))));
 
         Channel[] all = [sub, leftWoof, leftMid, leftTwr, rightWoof, rightMid, rightTwr];
         Channel[] leftByBand = [sub, leftWoof, leftMid, leftTwr];
@@ -107,7 +154,7 @@ public sealed class PromotionReachTests
         AlignmentJunction Junction(
             AlignmentSnapshot lower, AlignmentSnapshot upper, double fc) =>
             new(lower, upper, fc, Math.Max(20, fc / 2), Math.Min(20_000, fc * 2));
-        double[] crossovers = [80, WoofMidHz, MidTwrHz];
+        double[] crossovers = [80, woofMidHz, midTwrHz];
         List<AlignmentJunction> leftPairs = crossovers
             .Select((fc, i) => Junction(leftSnapshots[i], leftSnapshots[i + 1], fc))
             .ToList();
@@ -116,13 +163,12 @@ public sealed class PromotionReachTests
             .ToList();
 
         const double SceneOffsetMs = 0.25;
-        const double BridgeBandLowHz = 2_300;
         const double BridgeBandHighHz = 20_000;
         List<StereoPairLink> pairLinks =
         [
-            new(leftWoof, rightWoof, 80, WoofMidHz),
-            new(leftMid, rightMid, WoofMidHz, MidTwrHz),
-            new(leftTwr, rightTwr, BridgeBandLowHz, BridgeBandHighHz)
+            new(leftWoof, rightWoof, 80, woofMidHz),
+            new(leftMid, rightMid, woofMidHz, midTwrHz),
+            new(leftTwr, rightTwr, bridgeBandLowHz, BridgeBandHighHz)
         ];
         var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
         var log = new StringBuilder();
@@ -135,7 +181,7 @@ public sealed class PromotionReachTests
                 new HashSet<IAlignmentChannel> { sub },
                 leftTwr,
                 rightTwr,
-                BridgeBandLowHz,
+                bridgeBandLowHz,
                 BridgeBandHighHz,
                 SceneOffsetMs,
                 pairLinks),
@@ -143,46 +189,29 @@ public sealed class PromotionReachTests
             alignment,
             log);
 
-        output.WriteLine(log.ToString());
-
         IReadOnlyList<AlignmentSnapshot> final = Reprocess(alignment);
-        double MidTwrArrival(Channel mid, Channel twr, out double midMs, out double twrMs)
+        double FrontGap(Channel mid, Channel twr, out double midMs, out double twrMs)
         {
-            midMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+            midMs = VirtualCrossoverAnalysis.EstimateBroadbandOnset(
                 final.First(item => ReferenceEquals(item.Channel, mid)).ImpulseResponse,
-                mid.SampleRate, 1_150, 4_600);
-            twrMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+                mid.SampleRate).OnsetMs;
+            twrMs = VirtualCrossoverAnalysis.EstimateBroadbandOnset(
                 final.First(item => ReferenceEquals(item.Channel, twr)).ImpulseResponse,
-                twr.SampleRate, 1_150, 4_600);
+                twr.SampleRate).OnsetMs;
             return midMs - twrMs;
         }
 
-        double leftGap = MidTwrArrival(leftMid, leftTwr, out double lMid, out double lTwr);
-        double rightGap = MidTwrArrival(rightMid, rightTwr, out double rMid, out double rTwr);
-        output.WriteLine(
-            $"LEFT  mid {lMid:0.000} / twr {lTwr:0.000} ms -> C/D gap {leftGap:+0.000;-0.000} ms");
-        output.WriteLine(
-            $"RIGHT mid {rMid:0.000} / twr {rTwr:0.000} ms -> C/D gap {rightGap:+0.000;-0.000} ms");
-        output.WriteLine(
+        double leftGap = FrontGap(leftMid, leftTwr, out double lMid, out double lTwr);
+        double rightGap = FrontGap(rightMid, rightTwr, out double rMid, out double rTwr);
+        string gapReport =
+            $"LEFT  mid front {lMid:0.000} / twr {lTwr:0.000} ms -> gap {leftGap:+0.000;-0.000} ms\n" +
+            $"RIGHT mid front {rMid:0.000} / twr {rTwr:0.000} ms -> gap {rightGap:+0.000;-0.000} ms\n" +
             $"delays: L mid {alignment.GetValueOrDefault(leftMid).DelayMs:0.00} " +
             $"L twr {alignment.GetValueOrDefault(leftTwr).DelayMs:0.00} | " +
             $"R mid {alignment.GetValueOrDefault(rightMid).DelayMs:0.00} " +
-            $"R twr {alignment.GetValueOrDefault(rightTwr).DelayMs:0.00}");
+            $"R twr {alignment.GetValueOrDefault(rightTwr).DelayMs:0.00}";
 
-        // The contract: mid and tweeter land on the SAME summation lobe, i.e.
-        // their band-limited arrivals sit within one crossover period of each
-        // other (1000/2300 ≈ 0.43 ms). The bug promoted the tweeter a couple of
-        // periods off, opening a >0.7 ms cross-lobe gap. The residual inside one
-        // period is the crossover's inherent per-driver group delay, not a
-        // misalignment.
-        const double OnePeriodMs = 1_000.0 / MidTwrHz;
-        Assert.InRange(Math.Abs(leftGap), 0, OnePeriodMs);
-        Assert.InRange(Math.Abs(rightGap), 0, OnePeriodMs);
-
-        // The promotion must not have walked the tweeter off the envelope: the
-        // declined-alias diagnostic fires only when the reach cap rejects a
-        // multi-period comb alias, which is exactly this cabin's failure mode.
-        Assert.Contains("promotion declined", log.ToString());
+        return new StereoRun(log.ToString(), leftGap, rightGap, gapReport);
     }
 
     private static (int SampleRate, Complex[] Ir) LoadTransferIr(string fileName)

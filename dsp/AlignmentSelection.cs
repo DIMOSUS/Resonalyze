@@ -68,4 +68,45 @@ public static class AlignmentSelection
             .OrderBy(item => Math.Abs(item.DelayMs - baseDeltaMs))
             .First();
     }
+
+    /// <summary>
+    /// After the wide-window promotion gate has decided that a promotion happens,
+    /// chooses WHICH comb lobe to promote to. Inside a comb basin the
+    /// promotion-worthy lobes differ by fractions of a dB, and the deepest-summing
+    /// one is not necessarily the physically correct cycle — the arrival is (the
+    /// same envelope-first principle as <see cref="Select"/>'s delay tie-break,
+    /// one comb over). So among the candidates that share
+    /// <paramref name="gateWinner"/>'s polarity and each INDEPENDENTLY clear the
+    /// gate — acoustic score (via <paramref name="acousticScore"/>, a prior-free
+    /// figure comparable across search windows) beats <paramref name="fineScoreDb"/>
+    /// by more than <paramref name="marginDb"/>, and delay within
+    /// <paramref name="reachMs"/> of <paramref name="arrivalPickMs"/> — this
+    /// returns the one nearest <paramref name="anchorMs"/>.
+    /// <paramref name="gateWinner"/> itself always satisfies those predicates, so
+    /// the result is never empty and never lands on a junction the gate would
+    /// have declined; it only ever pulls the pick to a closer-to-arrival lobe of
+    /// equal promotion standing.
+    /// </summary>
+    public static AlignmentCandidate SelectPromotionLobe(
+        IReadOnlyList<AlignmentCandidate> wideCandidates,
+        AlignmentCandidate gateWinner,
+        Func<AlignmentCandidate, double> acousticScore,
+        double fineScoreDb,
+        double marginDb,
+        double arrivalPickMs,
+        double anchorMs,
+        double reachMs)
+    {
+        ArgumentNullException.ThrowIfNull(wideCandidates);
+        ArgumentNullException.ThrowIfNull(gateWinner);
+        ArgumentNullException.ThrowIfNull(acousticScore);
+
+        return wideCandidates
+            .Where(item => item.InvertPolarity == gateWinner.InvertPolarity &&
+                acousticScore(item) - fineScoreDb > marginDb &&
+                Math.Abs(item.DelayMs - arrivalPickMs) <= reachMs)
+            .OrderBy(item => Math.Abs(item.DelayMs - anchorMs))
+            .DefaultIfEmpty(gateWinner)
+            .First();
+    }
 }

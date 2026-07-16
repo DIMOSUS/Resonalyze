@@ -196,46 +196,73 @@ public sealed class AutoAlignmentEngineTests
     [Fact]
     public void Compute_ResultAtTheWindowEdge_RetriesWidened()
     {
-        // Stage 1 seeds the search at 1.0 ms, but the search-time optimum is
-        // +0.4 ms — just outside the [0.5, 1.5] fine window, so the first pass
-        // pins to the window edge (0.1 ms off the optimum, clearly the best
-        // in-window score) and the widened retry must find the true optimum.
-        // A farther-out optimum recovers through the wide-window promotion
-        // instead (next test), because the arrival prior pushes the selection
-        // off the edge and the retry never triggers.
+        // A 600 Hz junction — below the onset lock's frequency gate, so the
+        // edge-retry recovery still owns the seed-error case. Stage 1 seeds
+        // the search at 1.0 ms, but the search-time optimum is +0.1 ms — just
+        // outside the [0.167, 1.833] fine window, so the first pass pins to
+        // the window edge and the widened retry must find the true optimum.
+        // (At a locked junction the onset anchor recenters the window on the
+        // search-time front directly and no retry is needed — see
+        // Compute_SeedErrorAtASharpJunction_OnsetLockRecoversDirectly.)
         var woofer = new TestChannel("W", DelayedImpulse(1.0));
         var tweeter = new TestChannel(
-            "T", DelayedImpulse(0.0), reprocessIr: DelayedImpulse(0.6));
+            "T", DelayedImpulse(0.0), reprocessIr: DelayedImpulse(0.9));
         var log = new StringBuilder();
 
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
-            Run([woofer, tweeter], [1_000], log);
+            Run([woofer, tweeter], [600], log);
 
-        Assert.InRange(alignment[tweeter].DelayMs, 0.35, 0.45);
+        Assert.InRange(alignment[tweeter].DelayMs, 0.05, 0.15);
         Assert.Contains("WARNING: fine result at the search edge", log.ToString());
     }
 
     [Fact]
     public void Compute_OptimumBeyondTheRetryReach_PromotesTheWideWindowPick()
     {
-        // A 2 kHz junction: the fine window is ±0.5 ms and the retry reach is
-        // ±0.45 ms (1.8 half-periods), while the search-time optimum sits at
-        // +2.0 ms — 1.0 ms (two periods) past the stage-1 seed. Only the ±3 ms
-        // diagnostic sweep reaches it; its clearly better summation is within
-        // the promotion reach cap (2.5 periods), so it must be promoted. A more
-        // distant optimum would be a comb alias the arrival, not the sum, must
-        // resolve — the reach cap declines those (pinned on real data in
-        // PromotionReachTests / RealMeasurementArrivalTests).
+        // A 600 Hz junction — below the onset lock's frequency gate, where the
+        // wide-window promotion still owns the far-lobe recovery. The
+        // search-time optimum sits at +2.7 ms, a full period past the fine
+        // window around the 1.0 ms seed: the fine pass settles on the comb
+        // lobe at ~1.03 ms inside its window, and only the ±3 ms diagnostic
+        // sweep reaches the true optimum. Its clearly better summation is
+        // within the promotion reach cap (2.5 periods), so it must be
+        // promoted. (At a locked junction the promotion is shut and the onset
+        // anchor resolves the lobe instead.)
         var woofer = new TestChannel("W", DelayedImpulse(1.0));
         var tweeter = new TestChannel(
-            "T", DelayedImpulse(0.0), reprocessIr: DelayedImpulse(-1.0));
+            "T", DelayedImpulse(0.0), reprocessIr: DelayedImpulse(-1.7));
+        var log = new StringBuilder();
+
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
+            Run([woofer, tweeter], [600], log);
+
+        Assert.InRange(alignment[tweeter].DelayMs, 2.6, 2.8);
+        Assert.Contains("promoted", log.ToString());
+    }
+
+    [Fact]
+    public void Compute_SeedErrorAtASharpJunction_OnsetLockRecoversDirectly()
+    {
+        // A 2 kHz junction: the stage-1 seed says 1.0 ms but the search-time
+        // optimum is +0.4 ms — 1.2 periods off, beyond the fine window around
+        // the seed. Above the lock's frequency gate the broadband onsets of
+        // the search-time IRs re-anchor the window on the true front, so the
+        // optimum is found directly: no edge retry, no promotion, and the
+        // chosen delay lands on the front-aligned lobe.
+        var woofer = new TestChannel("W", DelayedImpulse(1.0));
+        var tweeter = new TestChannel(
+            "T", DelayedImpulse(0.0), reprocessIr: DelayedImpulse(0.6));
         var log = new StringBuilder();
 
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
             Run([woofer, tweeter], [2_000], log);
 
-        Assert.InRange(alignment[tweeter].DelayMs, 1.9, 2.1);
-        Assert.Contains("promoted", log.ToString());
+        Assert.InRange(alignment[tweeter].DelayMs, 0.35, 0.45);
+        Assert.Contains("ONSET-LOCKED", log.ToString());
+        Assert.Contains("onset gap after", log.ToString());
+        Assert.DoesNotContain(
+            "WARNING: fine result at the search edge", log.ToString());
+        Assert.DoesNotContain("promoted", log.ToString());
     }
 
     [Fact]

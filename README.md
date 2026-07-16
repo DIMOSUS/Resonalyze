@@ -1536,7 +1536,12 @@ it defaults to Off because the measurements are loopback-referenced.
   back to the arrival estimate) — set the coarse offsets, then a
   fractional-delay search minimizes the sum-loss metric at each junction,
   reading the same direct-sound gate as the displayed metric so late room
-  reflections the alignment cannot change do not steer it. Each candidate is
+  reflections the alignment cannot change do not steer it. At mid/tweeter-class
+  junctions with sharp impulse fronts, the search is additionally **locked to
+  the drivers' broadband IR onsets** — the wavefronts you would align by eye on
+  the impulse plot — so the summation comb (whose near-equal lobes repeat every
+  crossover period) can fine-tune only within the physically correct lobe and
+  can never walk a driver a whole cycle off its neighbor. Each candidate is
   scored by its in-band average loss *and* how far
   its deepest smoothed notch falls below that average, so a solution that only
   looks good on average while hiding a sharp cancellation at the crossover

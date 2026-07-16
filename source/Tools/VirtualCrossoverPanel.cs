@@ -644,6 +644,11 @@ public partial class VirtualCrossoverPanel : UserControl
         OxyColor color = ChannelColors[index];
         control.SetAccentColor(Color.FromArgb(color.R, color.G, color.B));
 
+        // Register the block's per-field tooltips at creation, not once in the
+        // constructor: blocks added later (a loaded project with more channels, the
+        // Add-channel button) are created here too and would otherwise show none.
+        control.ApplyTooltips(toolTip);
+
         var channel = new VirtualCrossoverChannel(ChannelNameFor(index));
         channelControls[channel] = control;
         control.SettingsChanged += (_, _) => OnChannelSettingsChanged(channel);
@@ -1499,10 +1504,8 @@ public partial class VirtualCrossoverPanel : UserControl
             buttonSessionImport,
             "Load a saved session file, replacing the current state.\r\n" +
             "Sources are re-resolved from history or their file paths.");
-        foreach (VirtualCrossoverChannel channel in channels)
-        {
-            ControlFor(channel).ApplyTooltips(toolTip);
-        }
+        // The per-channel block tooltips are applied in CreateChannel, so every
+        // block — including ones added after construction — carries them.
     }
 
     // ---------------------------------------------------------------- redraw

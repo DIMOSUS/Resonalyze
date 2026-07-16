@@ -150,8 +150,10 @@ public partial class VirtualCrossoverChannelControl : UserControl
     public void ApplyTooltips(ToolTip toolTip)
     {
         ArgumentNullException.ThrowIfNull(toolTip);
-        toolTip.SetToolTip(
-            numericGain,
+        // The numeric fields register on their inner editor too (via ApplyToolTip) so
+        // the tip still shows while the value is being edited, not only when idle.
+        numericGain.ApplyToolTip(
+            toolTip,
             "Channel gain (dB).\r\n" +
             "Relative levels are only honest when the measurements\r\n" +
             "were captured through the same playback chain;\r\n" +
@@ -161,8 +163,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
             "Invert the channel polarity — the DSP polarity switch.\r\n" +
             "Also the null test: with polarity flipped, the deepest\r\n" +
             "notch at the crossover frequency marks perfect alignment.");
-        toolTip.SetToolTip(
-            numericDelay,
+        numericDelay.ApplyToolTip(
+            toolTip,
             "Channel delay (ms) — the value you would dial into\r\n" +
             "this DSP channel.\r\n" +
             "The mm readout is the equivalent distance in air.");
@@ -191,6 +193,70 @@ public partial class VirtualCrossoverChannelControl : UserControl
             "Inverted — it pulls first (wired in reverse).\r\n" +
             "Unknown — no source selected.\r\n" +
             "Independent of the Invert switch.");
+        toolTip.SetToolTip(
+            comboBoxCrossoverKind,
+            "This driver's crossover role:\r\n" +
+            "Off — full range; High-pass — only above the HP corner;\r\n" +
+            "Low-pass — only below the LP corner; Band-pass — both.\r\n" +
+            "Only the edges the role uses stay editable.");
+
+        // The family, slope and ripple descriptions are identical for the high- and
+        // low-pass edges, so both rows share one text each.
+        const string familyTip =
+            "Filter alignment for this edge:\r\n" +
+            "Linkwitz-Riley — -6 dB at the corner, two edges sum flat\r\n" +
+            "(the car-audio default);\r\n" +
+            "Butterworth — maximally flat passband, -3 dB at the corner;\r\n" +
+            "Bessel — gentlest phase and transient, shallowest knee;\r\n" +
+            "Chebyshev — steepest knee, at the cost of passband ripple.";
+        const string slopeTip =
+            "Filter slope (dB/oct): steeper isolates the band harder\r\n" +
+            "but rotates phase more around the corner.\r\n" +
+            "The available slopes follow the chosen family\r\n" +
+            "(Linkwitz-Riley only 12/24/48).";
+        string rippleTip =
+            "Chebyshev passband ripple (dB): trades passband flatness\r\n" +
+            "for a steeper knee — more ripple, steeper cut.\r\n" +
+            "Editable only for a Chebyshev edge; capped at " +
+            $"{CrossoverFilter.MaximumChebyshevRippleDb:0.#} dB, above\r\n" +
+            "which the filter's pole math is undefined.";
+
+        numericHighPassHz.ApplyToolTip(
+            toolTip,
+            "High-pass corner (Hz): this driver plays only above it.\r\n" +
+            "A tweeter/midrange low-cut that keeps excursion and\r\n" +
+            "distortion out of the band it should not reproduce.");
+        toolTip.SetToolTip(comboBoxHighPassFamily, familyTip);
+        toolTip.SetToolTip(comboBoxHighPassSlope, slopeTip);
+        numericHighPassRipple.ApplyToolTip(toolTip, rippleTip);
+
+        numericLowPassHz.ApplyToolTip(
+            toolTip,
+            "Low-pass corner (Hz): this driver plays only below it.\r\n" +
+            "A woofer/midbass high-cut so it hands off cleanly to the\r\n" +
+            "driver above instead of beaming or breaking up.");
+        toolTip.SetToolTip(comboBoxLowPassFamily, familyTip);
+        toolTip.SetToolTip(comboBoxLowPassSlope, slopeTip);
+        numericLowPassRipple.ApplyToolTip(toolTip, rippleTip);
+
+        toolTip.SetToolTip(
+            buttonPeqLoad,
+            "Load a parametric EQ for this channel from a file\r\n" +
+            "(an EQ Wizard export or a compatible PEQ list); the bands\r\n" +
+            "add on top of the crossover in the processed response.");
+        toolTip.SetToolTip(
+            buttonPeqClear,
+            "Remove the loaded PEQ from this channel.");
+
+        toolTip.SetToolTip(
+            checkBoxShowRaw,
+            "Plot this channel's raw measured response — the driver\r\n" +
+            "before the DSP chain, drawn translucent for an A/B\r\n" +
+            "against the processed trace.");
+        toolTip.SetToolTip(
+            checkBoxShowProcessed,
+            "Plot this channel's processed response — the measured\r\n" +
+            "driver after gain, delay, polarity, the crossover and PEQ.");
     }
 
     /// <summary>

@@ -506,7 +506,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         if (ShowResetButton && GetResetButtonBounds().Contains(e.Location))
         {
             resetPressed = true;
-            Value = defaultValue!.Value;
+            ResetToDefault();
             Invalidate();
             return;
         }
@@ -791,10 +791,23 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         return currentValue.ToString(format, CultureInfo.CurrentCulture);
     }
 
+    // Snaps back to the default. Shares the read-only guard with the step paths so
+    // the reset button honours the lock too — otherwise ReadOnly blocks typing and
+    // spinning but a reset click still rewrites the value.
+    private void ResetToDefault()
+    {
+        if (readOnly || !defaultValue.HasValue)
+        {
+            return;
+        }
+
+        Value = defaultValue.Value;
+    }
+
     // Commit first: stepping must apply to what the user typed, not overwrite
     // uncommitted editor text with lastCommitted ± increment. A read-only field
-    // ignores every step path alike (spin buttons, wheel, arrow keys) — the single
-    // choke point that makes ReadOnly a true lock, not just a typing block.
+    // ignores every step path alike (spin buttons, wheel, arrow keys, reset) — the
+    // single choke point that makes ReadOnly a true lock, not just a typing block.
     private void StepUp()
     {
         if (readOnly)

@@ -314,6 +314,89 @@ public sealed class EqAutoTunerTests
     }
 
     [Fact]
+    public void Tune_BoostSkirtDoesNotFillAForbiddenBin()
+    {
+        // A broad, boostable dip at 1 kHz with a low-coherence core (900-1100 Hz). The
+        // core's own centre is forbidden, but the reliable shoulders just outside it are
+        // deep and get boosted. A wide boost on a shoulder pours several dB into the
+        // forbidden core through its skirt — the exact case the centre-only mask misses.
+        IReadOnlyList<SignalPoint> source = Grid(f => NotchDb(f, 1_000, 6, 0.8));
+        IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
+        IReadOnlyList<SignalPoint> coherence = Grid(
+            f => f is >= 900 and <= 1_100 ? 0.2 : 0.95);
+
+        // Control: with the cap lifted, a shoulder band's skirt fills the forbidden core.
+        EqualizationCurve spilled = EqAutoTuner.Tune(
+            source,
+            target,
+            new EqAutoTuner.Options
+            {
+                CutsOnlyMode = false,
+                PreampMinDb = 0,
+                PreampMaxDb = 0,
+                ForbiddenRegionMaxBoostDb = double.PositiveInfinity
+            },
+            coherence);
+        Assert.True(
+            spilled.MagnitudeDbAt(1_000) > 0.5,
+            $"Control: skirt should have filled the core, got {spilled.MagnitudeDbAt(1_000):0.00} dB.");
+
+        // Treatment: the default cap keeps the core quiet while the shoulders are still boosted.
+        EqualizationCurve gated = EqAutoTuner.Tune(
+            source,
+            target,
+            new EqAutoTuner.Options
+            {
+                CutsOnlyMode = false,
+                PreampMinDb = 0,
+                PreampMaxDb = 0
+            },
+            coherence);
+        Assert.True(
+            gated.MagnitudeDbAt(1_000) <= 0.5,
+            $"Forbidden core boosted by {gated.MagnitudeDbAt(1_000):0.00} dB.");
+        Assert.Contains(
+            gated.Bands,
+            band => band.GainDb > 0 &&
+                (band.FrequencyHz is >= 600 and < 900 or >= 1_100 and <= 1_600));
+    }
+
+    [Fact]
+    public void Tune_MaskedNullInsideABroadDip_StillCorrectsTheShoulders()
+    {
+        // A broad, boostable dip (centre 1 kHz, ±1 octave) with a narrow deep null carved
+        // at its floor. The deepest point is the forbidden null; the old code then blocked
+        // the WHOLE positive residual and abandoned the wide dip. Blocking only the
+        // forbidden core leaves the reliable shoulders to be corrected while the null floor
+        // itself stays unfilled.
+        IReadOnlyList<SignalPoint> source = Grid(
+            f => NotchDb(f, 1_000, 6, 1.0) + NotchDb(f, 1_000, 12, 0.12));
+        IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
+
+        EqualizationCurve curve = EqAutoTuner.Tune(
+            source,
+            target,
+            new EqAutoTuner.Options
+            {
+                CutsOnlyMode = false,
+                PreampMinDb = 0,
+                PreampMaxDb = 0
+            });
+
+        // Both reliable shoulders of the broad dip are boosted back toward the target...
+        Assert.True(
+            curve.MagnitudeDbAt(750) > 1.5,
+            $"Low shoulder left uncorrected ({curve.MagnitudeDbAt(750):0.00} dB).");
+        Assert.True(
+            curve.MagnitudeDbAt(1_350) > 1.5,
+            $"High shoulder left uncorrected ({curve.MagnitudeDbAt(1_350):0.00} dB).");
+        // ...but the narrow null at the floor is not filled.
+        Assert.True(
+            curve.MagnitudeDbAt(1_000) <= 0.5,
+            $"Null floor boosted by {curve.MagnitudeDbAt(1_000):0.00} dB.");
+    }
+
+    [Fact]
     public void Tune_CutsOnly_ClusterOfNarrowPeaks_EachGetsCut()
     {
         // Five narrow peaks packed ~0.2 octave apart between 1-2 kHz above a flat

@@ -86,6 +86,18 @@ public static class EqAutoTuner
         /// be placed there — consulted only when <see cref="CutsOnlyMode"/> is off.
         /// </summary>
         public EqBoostabilityMask.Options BoostMask { get; init; } = new();
+
+        /// <summary>
+        /// The most cumulative boost a fit may add at a masked-off bin (a low-coherence
+        /// bin or a narrow deep null). The reliability mask only clears a boost band's
+        /// CENTRE; a wide, low-Q boost centred on a reliable point can still pour several
+        /// dB into an adjacent forbidden region through its skirt — quietly filling the
+        /// very null the mask meant to protect. Any candidate whose placement would push
+        /// the total boost at a forbidden bin past this is rejected, so the fit narrows
+        /// the band (or withholds it) instead. Consulted only for boosts; +infinity
+        /// restores the unguarded behaviour (skirt spill allowed).
+        /// </summary>
+        public double ForbiddenRegionMaxBoostDb { get; init; } = 0.5;
     }
 
     // Quality factors tried for each band; the one that lowers the residual error
@@ -207,11 +219,12 @@ public static class EqAutoTuner
             double desired = residual[peakIndex];
 
             // A boost the mode or the reliability mask forbids here is not fitted at
-            // all: skip the whole contiguous deficit around it so the band budget goes
-            // to cuts elsewhere instead of nibbling an uncorrectable region.
+            // all: skip the contiguous FORBIDDEN deficit around it, but stop at the
+            // first boost-allowed point so the reliable shoulders of a wide dip whose
+            // core is a null still get their own bands.
             if (desired > 0 && !boostAllowed[peakIndex])
             {
-                BlockPositiveRun(blocked, residual, valid, peakIndex);
+                BlockForbiddenBoostRun(blocked, residual, boostAllowed, valid, peakIndex);
                 continue;
             }
 
@@ -242,14 +255,21 @@ public static class EqAutoTuner
 
             double frequencyHz = Math.Round(grid[peakIndex]);
 
-            // Pick the Q that minimises the residual RMS after this band is applied.
+            // Pick the Q that minimises the residual RMS after this band is applied. A
+            // boost band additionally may not push the cumulative boost past
+            // ForbiddenRegionMaxBoostDb at any masked-off bin: its centre cleared the
+            // mask, but a wide skirt must not fill an adjacent null or low-coherence
+            // region. Candidates that would are discarded from the search.
+            bool isBoost = gainDb > 0;
             double bestQ = qCandidates[0];
             double bestRms = double.MaxValue;
+            bool anyCandidateFits = false;
             foreach (double candidate in qCandidates)
             {
                 double q = Math.Round(candidate, 1);
                 var band = new PeqBand(frequencyHz, q, gainDb);
                 double sumSquares = 0;
+                bool spillsIntoForbidden = false;
                 for (int i = 0; i < n; i++)
                 {
                     if (!valid[i])
@@ -260,10 +280,22 @@ public static class EqAutoTuner
                     double c = DigitalEqualizationResponse.MagnitudeDbAt(
                         band, grid[i], opt.SampleRateHz);
                     contribution[i] = c;
+                    if (isBoost && !boostAllowed[i] &&
+                        eqSum[i] + c > opt.ForbiddenRegionMaxBoostDb)
+                    {
+                        spillsIntoForbidden = true;
+                    }
+
                     double r = residual[i] - c;
                     sumSquares += r * r;
                 }
 
+                if (spillsIntoForbidden)
+                {
+                    continue;
+                }
+
+                anyCandidateFits = true;
                 double rms = sumSquares / validCount;
                 if (rms < bestRms)
                 {
@@ -271,6 +303,15 @@ public static class EqAutoTuner
                     bestQ = q;
                     Array.Copy(contribution, bestContribution, n);
                 }
+            }
+
+            if (!anyCandidateFits)
+            {
+                // Even the narrowest Q would over-fill a masked bin through its skirt;
+                // don't boost across it. Sterilise a small footprint and move on so the
+                // budget helps elsewhere.
+                BlockAround(blocked, grid, peakIndex, opt.MinBandSpacingOctaves);
+                continue;
             }
 
             bands.Add(new PeqBand(frequencyHz, bestQ, gainDb));
@@ -317,23 +358,30 @@ public static class EqAutoTuner
         return new EqualizationCurve(bands, preamp);
     }
 
-    // Marks the maximal contiguous run of positive-residual (boost-wanting) points
-    // around center as blocked, so a masked-off boost region is skipped whole without
-    // touching the adjacent cut valleys. Always blocks at least center, guaranteeing
-    // the fitting loop makes progress.
-    private static void BlockPositiveRun(
+    // Marks the contiguous run of masked-off boost-wanting points (residual > 0 AND
+    // not boost-allowed) around center as blocked, so a forbidden region is skipped
+    // without touching the adjacent cut valleys. It stops at the first boost-allowed
+    // point on each side: a wide correctable dip with a narrow null at its floor keeps
+    // its reliable shoulders available for correction — only the forbidden core is
+    // dropped. Always blocks at least center, guaranteeing the loop makes progress.
+    private static void BlockForbiddenBoostRun(
         bool[] blocked,
         double[] residual,
+        bool[] boostAllowed,
         bool[] valid,
         int center)
     {
         blocked[center] = true;
-        for (int i = center - 1; i >= 0 && valid[i] && residual[i] > 0; i--)
+        for (int i = center - 1;
+            i >= 0 && valid[i] && residual[i] > 0 && !boostAllowed[i];
+            i--)
         {
             blocked[i] = true;
         }
 
-        for (int i = center + 1; i < residual.Length && valid[i] && residual[i] > 0; i++)
+        for (int i = center + 1;
+            i < residual.Length && valid[i] && residual[i] > 0 && !boostAllowed[i];
+            i++)
         {
             blocked[i] = true;
         }

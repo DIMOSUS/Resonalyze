@@ -9,9 +9,12 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_ProjectWithoutAnAllPass_LoadsWithTheStageOff()
     {
-        // Adding the all-pass is a compatible schema change, so no version bump: an
-        // older file simply carries no such properties. They must land on "no all-pass"
-        // rather than a live filter silently rotating a channel's phase.
+        // Adding the all-pass needed no version bump of its own (the schema is at 4, and
+        // Migrate covers 3 -> 4): new properties with defaults are a compatible change,
+        // and a file that predates them simply carries none. What matters is where their
+        // absence lands — "no all-pass", not a live filter silently rotating a channel's
+        // phase. Stripping them from a current payload is exactly that case; the older
+        // schema versions reach it through Migrate, which those tests cover.
         string root = CreateTemporaryDirectory();
         try
         {

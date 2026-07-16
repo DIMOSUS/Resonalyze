@@ -122,37 +122,26 @@ public static class CrossoverFilter
                 "The crossover corner frequency must be positive.");
         }
 
-        CrossoverSpec spec = highPass
-            ? new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: edge)
-            : new CrossoverSpec(CrossoverKind.LowPass, LowPassEdge: edge);
-
-        // An octave-and-a-half either side of the corner captures the peak. The
-        // finite-difference step is small relative to the frequency, keeping the
-        // phase change per step well under π so no unwrapping is needed.
-        double nyquist = sampleRateHz / 2.0;
+        // Two octaves either side of the corner captures the peak. Each point is read in
+        // closed form from the cascade, so a steep edge sitting near Nyquist — where the
+        // delay peak is both tallest and narrowest — is measured rather than aliased.
+        IReadOnlyList<BiquadCoefficients> sections =
+            BuildSections(edge, highPass, sampleRateHz);
         double lo = edge.FrequencyHz / 4.0;
-        double hi = Math.Min(edge.FrequencyHz * 4.0, nyquist * 0.99);
+        double hi = Math.Min(edge.FrequencyHz * 4.0, sampleRateHz / 2.0 * 0.99);
         const int steps = 400;
         double max = 0.0;
         for (int i = 0; i <= steps; i++)
         {
-            double f = lo * Math.Pow(hi / lo, (double)i / steps);
-            double delta = f * 1e-3;
-            if (f - delta <= 0 || f + delta >= nyquist)
+            double frequency = lo * Math.Pow(hi / lo, (double)i / steps);
+            double samples = 0;
+            foreach (BiquadCoefficients section in sections)
             {
-                continue;
+                samples += BiquadResponse.GroupDelaySamples(
+                    section, frequency, sampleRateHz);
             }
 
-            Complex below = Response(spec, f - delta, sampleRateHz);
-            Complex above = Response(spec, f + delta, sampleRateHz);
-            // Arg(H(f−δ)·conj(H(f+δ))) = φ(f−δ) − φ(f+δ), the principal-value
-            // phase increase over 2·δ Hz; τ = that / (2π·2δ).
-            double phaseIncrease = (below * Complex.Conjugate(above)).Phase;
-            double groupDelay = phaseIncrease / (2.0 * Math.PI * 2.0 * delta);
-            if (groupDelay > max)
-            {
-                max = groupDelay;
-            }
+            max = Math.Max(max, samples / sampleRateHz);
         }
 
         return max;

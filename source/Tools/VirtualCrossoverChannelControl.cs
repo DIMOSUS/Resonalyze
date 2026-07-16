@@ -14,10 +14,17 @@ namespace Resonalyze;
 public partial class VirtualCrossoverChannelControl : UserControl
 {
 
+    /// <summary>
+    /// The rate the readouts assume until the project resolves its first source and can
+    /// report a real one. Shared with the host, which falls back to it for the same
+    /// reason, so the assumption is stated once.
+    /// </summary>
+    public const double DefaultSampleRateHz = 48_000;
+
     private string channelName = "A";
     private bool suppressChangeEvents;
     private bool muted;
-    private double sampleRateHz = 48_000;
+    private double sampleRateHz = DefaultSampleRateHz;
 
     public VirtualCrossoverChannelControl()
     {
@@ -41,8 +48,10 @@ public partial class VirtualCrossoverChannelControl : UserControl
     /// <summary>
     /// The project's sample rate, pushed by the host so the all-pass group-delay readout
     /// reflects the digital filter the chain actually runs rather than the analog ideal.
-    /// Holds 48 kHz until a source resolves; the figure barely moves between rates, but
-    /// the readout and the plots should never disagree.
+    /// The host feeds every block the PROJECT's rate, including blocks with no source of
+    /// their own — a block cannot report a rate it has no measurement for, but it still
+    /// sits in a project that has one. A non-positive value is ignored, leaving
+    /// <see cref="DefaultSampleRateHz"/> standing.
     /// </summary>
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -217,8 +226,9 @@ public partial class VirtualCrossoverChannelControl : UserControl
         toolTip.SetToolTip(
             checkBoxBypass,
             "Bypass the DSP chain: feed the raw measured signal with\r\n" +
-            "no gain, delay, polarity, crossover or PEQ — the driver's\r\n" +
-            "natural band-pass, for an A/B against the processed result.");
+            "no gain, delay, polarity, crossover, all-pass or PEQ —\r\n" +
+            "the driver's natural band-pass, for an A/B against the\r\n" +
+            "processed result.");
         toolTip.SetToolTip(
             checkBoxMono,
             "One physical driver serving both sides (typically the\r\n" +
@@ -593,7 +603,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         }
 
         double milliseconds =
-            AllPassFilter.GroupDelaySeconds(stage, stage.FrequencyHz, sampleRateHz) * 1_000.0;
+            AllPassFilter.CornerGroupDelaySeconds(stage, sampleRateHz) * 1_000.0;
         // Two decimals at the values that matter (a 60-100 Hz alignment lands near
         // 5-15 ms), but drop them past 100 ms: a low corner with a high Q reaches
         // four digits (10 Hz at Q 20 is over a second) and would overflow the label.

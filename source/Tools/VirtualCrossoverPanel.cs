@@ -591,8 +591,11 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    // The "what the DSP does" part of one side, copied onto the other. PeqBand
-    // is an immutable record, so a fresh list is a deep enough copy.
+    // The POSITION-INDEPENDENT part of one side, copied onto the other: the settings
+    // that describe the driver rather than where it sits. Delay, polarity and the
+    // all-pass are deliberately not among them — each aligns a driver against its own
+    // side's geometry, and a left tweeter's phase correction is not a right tweeter's.
+    // PeqBand is an immutable record, so a fresh list is a deep enough copy.
     private static void CopyChainSettings(
         VirtualCrossoverChannelSettings from,
         VirtualCrossoverChannelSettings to)
@@ -662,6 +665,46 @@ public partial class VirtualCrossoverPanel : UserControl
     // look it up; the algorithmic paths read the model directly.
     private VirtualCrossoverChannelControl ControlFor(VirtualCrossoverChannel channel) =>
         channelControls[channel];
+
+    // The project runs at ONE sample rate — a measurement that disagrees is rejected on
+    // load — so the first resolved side answers for the whole project. Both physical
+    // sides are read because the side currently on screen may be the empty one. A project
+    // with no source yet has no rate of its own, and the blocks keep their default.
+    private double ProjectSampleRateHz
+    {
+        get
+        {
+            foreach (VirtualCrossoverChannel channel in channels)
+            {
+                int leftRate = channel.PhysicalSideState(rightSide: false).SampleRate;
+                if (leftRate > 0)
+                {
+                    return leftRate;
+                }
+
+                int rightRate = channel.PhysicalSideState(rightSide: true).SampleRate;
+                if (rightRate > 0)
+                {
+                    return rightRate;
+                }
+            }
+
+            return VirtualCrossoverChannelControl.DefaultSampleRateHz;
+        }
+    }
+
+    // Every block's all-pass readout evaluates the digital filter, so every block needs
+    // the project's rate — including the ones with no source, which have none to report
+    // but are tuned against the same project. Broadcast rather than pushed per channel:
+    // resolving a source on ONE channel changes the rate every other block must use.
+    private void PushProjectSampleRateToChannels()
+    {
+        double sampleRateHz = ProjectSampleRateHz;
+        foreach (VirtualCrossoverChannel channel in channels)
+        {
+            ControlFor(channel).SampleRateHz = sampleRateHz;
+        }
+    }
 
     // Channel names run A, B, C… by index; shared with the tuning sheets.
     private static string ChannelNameFor(int index) =>
@@ -1296,10 +1339,6 @@ public partial class VirtualCrossoverPanel : UserControl
             channel.TransferImpulseResponse is { } ir
                 ? VirtualCrossoverAnalysis.EstimatePolarity(ir)
                 : PolarityEstimate.Unknown);
-        // The block's all-pass group-delay readout evaluates the digital filter, so it
-        // needs the rate the chain runs at. An unresolved source reports 0; the control
-        // keeps its 48 kHz default until a real measurement lands.
-        control.SampleRateHz = channel.SampleRate;
         toolTip.SetToolTip(
             control.SourceButton,
             resolved
@@ -1489,13 +1528,15 @@ public partial class VirtualCrossoverPanel : UserControl
         toolTip.SetToolTip(
             buttonCopyLeftToRight,
             "Copy the LEFT side's gain, crossover and PEQ onto the\r\n" +
-            "RIGHT side for the channels you pick. Sources and delays\r\n" +
-            "stay with their side; mono channels are not offered.");
+            "RIGHT side for the channels you pick. Sources, delay,\r\n" +
+            "polarity and all-pass stay with their side; mono channels\r\n" +
+            "are not offered.");
         toolTip.SetToolTip(
             buttonCopyRightToLeft,
             "Copy the RIGHT side's gain, crossover and PEQ onto the\r\n" +
-            "LEFT side for the channels you pick. Sources and delays\r\n" +
-            "stay with their side; mono channels are not offered.");
+            "LEFT side for the channels you pick. Sources, delay,\r\n" +
+            "polarity and all-pass stay with their side; mono channels\r\n" +
+            "are not offered.");
         toolTip.SetToolTip(
             buttonAutoSetup,
             "Crossover wizard: detect each channel's driver type from\r\n" +
@@ -1525,6 +1566,10 @@ public partial class VirtualCrossoverPanel : UserControl
     private void RedrawAll()
     {
         using var _ = AppProfiler.Zone("VirtualDSP.RedrawAll");
+        // Ahead of the suppress guard, and here rather than at each of the several places
+        // a source resolves: every one of them ends in a redraw, so this is the single
+        // point that cannot be forgotten. The setter no-ops when the rate is unchanged.
+        PushProjectSampleRateToChannels();
         if (suppressProjectEvents)
         {
             return;

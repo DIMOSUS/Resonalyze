@@ -160,27 +160,28 @@ public sealed class PreparedDspResponse
     }
 
     /// <summary>
-    /// Filter group delay τ_g = -dφ/dω at <paramref name="frequencyHz"/>, in
-    /// milliseconds, read from the complex response by a central difference
-    /// (-Im(H'/H) / 2π). Working from the complex response avoids phase
-    /// unwrapping, which a coarse log grid could alias at a steep crossover.
+    /// Group delay τ_g = -dφ/dω of the whole chain at <paramref name="frequencyHz"/>, in
+    /// milliseconds, summed in closed form from the biquad cascade (see
+    /// <see cref="BiquadResponse.GroupDelaySamples"/>). The bulk delay adds itself; the
+    /// scalar gain — including the constant π a polarity flip contributes — has no
+    /// frequency dependence and so adds nothing.
+    /// <para>
+    /// This used to secant the complex response and read -Im(H'/H). That never wrapped,
+    /// but it approximates H rather than φ, so it flattened exactly the sharp peaks worth
+    /// seeing: a Q-20 all-pass near Nyquist read 1.4 ms against a true 127 ms. The closed
+    /// form removes both the error and any chance of this disagreeing with the readouts
+    /// that share the helper.
+    /// </para>
     /// </summary>
     public double GroupDelayMs(double frequencyHz)
     {
-        double delta = Math.Max(frequencyHz * 1e-3, 1e-6);
-        double lowFrequency = Math.Max(frequencyHz - delta, 1e-3);
-        double highFrequency = frequencyHz + delta;
-        Complex low = Response(lowFrequency);
-        Complex high = Response(highFrequency);
-        Complex center = Response(frequencyHz);
-        if (center.Magnitude < 1e-20)
+        double samples = 0;
+        foreach (BiquadCoefficients section in sections)
         {
-            return 0;
+            samples += BiquadResponse.GroupDelaySamples(section, frequencyHz, sampleRate);
         }
 
-        Complex derivative = (high - low) / (highFrequency - lowFrequency);
-        double phaseSlope = (derivative / center).Imaginary; // dφ/df
-        return -phaseSlope / (2.0 * Math.PI) * 1000.0;
+        return (samples / sampleRate * 1_000.0) + delayMs;
     }
 
     public void ApplyToSpectrum(Complex[] spectrum)

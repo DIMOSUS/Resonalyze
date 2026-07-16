@@ -159,6 +159,111 @@ public sealed class AllPassFilterTests
             $"Group delay {actual * 1000:0.000} ms, expected {expected * 1000:0.000} ms.");
     }
 
+    [Theory]
+    [InlineData(AllPassType.FirstOrder, 100, 1.0)]
+    [InlineData(AllPassType.FirstOrder, 23_900, 1.0)]
+    [InlineData(AllPassType.SecondOrder, 100, 1.0)]
+    [InlineData(AllPassType.SecondOrder, 21_600, 5.0)]
+    [InlineData(AllPassType.SecondOrder, 23_900, 5.0)]
+    [InlineData(AllPassType.SecondOrder, 23_900, 20.0)]
+    [InlineData(AllPassType.SecondOrder, 23_952, 20.0)]
+    public void GroupDelay_IntegratesToTheStagesTotalPhaseSwing(
+        AllPassType type, double corner, double q)
+    {
+        // An independent check on the group delay, needing no reference implementation:
+        // a stable all-pass of order N sweeps exactly N·pi of phase from DC to Nyquist,
+        // so the integral of its delay across the band is pinned at N·pi (in samples ×
+        // rad/sample) for ANY corner and Q. A wrap, a scale slip or a misplaced section
+        // all break it. Crucially it holds just as tightly for the sharp near-Nyquist
+        // cases, where a finite difference of the phase collapses.
+        const double sampleRate = 48_000;
+        double expected = (type == AllPassType.SecondOrder ? 2.0 : 1.0) * Math.PI;
+        var spec = new AllPassSpec(type, corner, q);
+
+        // Trapezoid across the closed band. The half-weighted endpoints are not a detail:
+        // an all-pass has a finite, sizeable delay at DC and at Nyquist, so dropping them
+        // leaves an O(h·τ(0)) error that swamps the check.
+        double TauSamples(double omega) => AllPassFilter.GroupDelaySeconds(
+            spec, omega * sampleRate / Math.Tau, sampleRate) * sampleRate;
+
+        const int steps = 200_000;
+        double sum = (TauSamples(0) + TauSamples(Math.PI)) / 2.0;
+        for (int i = 1; i < steps; i++)
+        {
+            sum += TauSamples(Math.PI * i / steps);
+        }
+
+        double integral = sum * Math.PI / steps;
+        Assert.True(
+            Math.Abs(integral - expected) < 1e-3,
+            $"{type} f0={corner} Q={q}: integral {integral:0.0000}, expected {expected:0.0000}.");
+    }
+
+    [Theory]
+    // 0.45, 0.98 and 0.998 of Nyquist. The absolute values are pinned by the integral
+    // invariant above; these floors pin the FAILURE MODE. A fixed-step phase difference
+    // turns several pi across its step here, so the principal value wrapped and reported
+    // -5.2 ms for a filter holding 31.8 ms, and -0.6 ms for one holding 265 ms.
+    [InlineData(10_800, 5.0, 0.4)]
+    [InlineData(10_800, 20.0, 1.6)]
+    [InlineData(23_520, 5.0, 6.0)]
+    [InlineData(23_520, 20.0, 25.0)]
+    [InlineData(23_952, 5.0, 60.0)]
+    [InlineData(23_952, 20.0, 250.0)]
+    public void SecondOrder_GroupDelayNearNyquist_IsNeverWrappedAway(
+        double corner, double q, double atLeastMs)
+    {
+        const double sampleRate = 48_000;
+
+        double actual = AllPassFilter.GroupDelaySeconds(
+            new AllPassSpec(AllPassType.SecondOrder, corner, q), corner, sampleRate) * 1_000.0;
+
+        Assert.True(
+            actual > atLeastMs,
+            $"f0={corner} Q={q}: {actual:0.000} ms, expected more than {atLeastMs} ms.");
+    }
+
+    [Fact]
+    public void CornerGroupDelay_ReadsTheClampedCorner_NotTheRequestedOne()
+    {
+        // A corner at or above Nyquist is silently clamped to just below it, so the
+        // filter is emphatically NOT off — near Nyquist its delay peak is enormous. The
+        // readout has to follow the section, or it reports on a filter that is not there.
+        // The old guard returned 0 ms here, for a stage holding a quarter of a second.
+        const double sampleRate = 48_000;
+        var atNyquist = new AllPassSpec(AllPassType.SecondOrder, 24_000, 20.0);
+        var atTheClamp = new AllPassSpec(
+            AllPassType.SecondOrder, sampleRate * 0.499, 20.0);
+
+        double actual = AllPassFilter.CornerGroupDelaySeconds(atNyquist, sampleRate);
+
+        Assert.Equal(
+            AllPassFilter.CornerGroupDelaySeconds(atTheClamp, sampleRate), actual, 9);
+        Assert.True(actual > 0.2, $"Expected a huge delay, got {actual * 1000:0.0} ms.");
+    }
+
+    [Fact]
+    public void GroupDelay_AgreesWithThePreparedChain()
+    {
+        // The block's readout and the chain plot must never print different numbers for
+        // the same filter. They agree only because both read the one shared helper.
+        const int sampleRate = 48_000;
+        foreach (double corner in new[] { 100.0, 1_000.0, 21_600.0, 23_900.0 })
+        {
+            foreach (double q in new[] { 0.5, 5.0, 20.0 })
+            {
+                var spec = new AllPassSpec(AllPassType.SecondOrder, corner, q);
+                PreparedDspResponse prepared = PreparedDspResponse.Create(
+                    new DspChannelChain(AllPass: spec), sampleRate);
+
+                double readout = AllPassFilter.GroupDelaySeconds(spec, corner, sampleRate);
+                double plot = prepared.GroupDelayMs(corner) / 1_000.0;
+
+                Assert.Equal(readout, plot, 12);
+            }
+        }
+    }
+
     [Fact]
     public void SecondOrder_GroupDelayGrowsWithQ()
     {

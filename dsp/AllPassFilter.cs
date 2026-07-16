@@ -94,11 +94,9 @@ public static class AllPassFilter
 
     /// <summary>
     /// Group delay (seconds) the all-pass adds at <paramref name="frequencyHz"/>, read
-    /// from the exact digital biquad rather than the analog ideal (τ = 4Q/ω₀), which
-    /// the bilinear transform's frequency warping pulls away from as the corner climbs
-    /// toward Nyquist. This is the number that matters acoustically: it is why an
-    /// all-pass works, and — on a low corner, where it can reach many milliseconds —
-    /// its main risk. Zero for an Off stage.
+    /// from the exact digital biquad rather than the analog ideal (τ = 4Q/ω₀), which the
+    /// bilinear transform's frequency warping pulls away from as the corner climbs
+    /// toward Nyquist. Zero for an Off stage.
     /// </summary>
     public static double GroupDelaySeconds(
         AllPassSpec spec,
@@ -106,26 +104,34 @@ public static class AllPassFilter
         double sampleRateHz)
     {
         ArgumentNullException.ThrowIfNull(spec);
-        IReadOnlyList<BiquadCoefficients> sections = BuildSections(spec, sampleRateHz);
-        if (sections.Count == 0)
+        double samples = 0;
+        foreach (BiquadCoefficients section in BuildSections(spec, sampleRateHz))
         {
-            return 0;
+            samples += BiquadResponse.GroupDelaySamples(section, frequencyHz, sampleRateHz);
         }
 
-        // Central difference on the complex response: Arg(H(f−δ)·conj(H(f+δ))) is the
-        // principal-value phase increase over 2δ Hz, so no unwrapping is needed.
-        double delta = Math.Max(frequencyHz * 1e-3, 1e-6);
-        double low = frequencyHz - delta;
-        double high = frequencyHz + delta;
-        if (low <= 0 || high >= sampleRateHz / 2.0)
-        {
-            return 0;
-        }
+        return samples / sampleRateHz;
+    }
 
-        Complex below = Evaluate(sections, low, sampleRateHz);
-        Complex above = Evaluate(sections, high, sampleRateHz);
-        double phaseIncrease = (below * Complex.Conjugate(above)).Phase;
-        return phaseIncrease / (2.0 * Math.PI * 2.0 * delta);
+    /// <summary>
+    /// Group delay (seconds) at the stage's own corner — where a second-order section's
+    /// delay peaks, and the figure worth showing a user: it is why an all-pass works,
+    /// and on a low corner, where it runs to many milliseconds, its main risk.
+    /// <para>
+    /// Evaluated at the corner the filter ACTUALLY runs at. <see cref="BuildSections"/>
+    /// clamps a corner at or above Nyquist below it, so reading the delay at the
+    /// requested frequency instead would miss the peak — and near Nyquist that peak is
+    /// enormous (a Q of 20 just under Nyquist holds a quarter of a second), which is
+    /// precisely where a readout must not understate.
+    /// </para>
+    /// </summary>
+    public static double CornerGroupDelaySeconds(AllPassSpec spec, double sampleRateHz)
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+        return GroupDelaySeconds(
+            spec,
+            BilinearTransform.ClampBelowNyquist(spec.FrequencyHz, sampleRateHz),
+            sampleRateHz);
     }
 
     private static Complex Evaluate(

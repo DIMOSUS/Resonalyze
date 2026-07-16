@@ -55,7 +55,8 @@ result with fewer blind tuning passes.
 
 <p align="center">
   <strong>Virtual DSP</strong> — combine measured drivers through gain, delay,
-  polarity, crossover filters, and PEQ before touching the hardware DSP.
+  polarity, crossover filters, an all-pass stage, and PEQ before touching the
+  hardware DSP.
 </p>
 
 <table>
@@ -126,7 +127,8 @@ file is provided with every release.
   math cannot
 - **Virtual DSP** tool: run up to eight measured L/R driver pairs (with mono
   channels for a shared subwoofer) through virtual DSP chains — gain, delay,
-  polarity, Butterworth / Linkwitz-Riley / Bessel / Chebyshev crossovers, and imported
+  polarity, Butterworth / Linkwitz-Riley / Bessel / Chebyshev crossovers, an
+  all-pass stage, and imported
   PEQ — and see their complex sum, sum loss, the opposite side's sum, phase
   tracking, per-pair Δ L−R timing, auto crossover proposals, a stereo-aware
   auto delay with a scene offset, gated phase view, overlay capture, sessions,
@@ -196,7 +198,7 @@ Resonalyze is built around a focused engineering workflow:
   the real phase-aware sum falls short of a phase-blind magnitude addition — a
   direct read-out of the summation loss you are dialing out. The **Virtual
   DSP** tool takes this to its conclusion: complete virtual DSP chains
-  (gain, delay, polarity, crossover filters, PEQ) per driver, tuned against the
+  (gain, delay, polarity, crossover filters, all-pass, PEQ) per driver, tuned against the
   live predicted sum before a single setting is applied to the hardware. Two
   auto-fit modes do the tedious part: an **Auto crossover** optimizer searches
   the crossover frequencies, filter families, slopes, and cut-only gains that
@@ -239,8 +241,8 @@ comparison, and transparent data matter more than a large legacy feature set.
       <h3>Virtual DSP</h3>
       <img src="assets/images/visual_dsp.png" alt="Virtual DSP crossover design">
       <p>Measure each driver once, then design gain, delay, polarity,
-      crossover filters, PEQ, and the complex acoustic sum before applying
-      settings to the real DSP.</p>
+      crossover filters, an all-pass stage, PEQ, and the complex acoustic sum
+      before applying settings to the real DSP.</p>
     </td>
     <td width="50%">
       <h3>EQ Wizard</h3>
@@ -1392,12 +1394,20 @@ Each channel runs through:
   **Bessel** (6–48 dB/oct, near-constant group delay), or **Chebyshev**
   (6–48 dB/oct, with a selectable passband **ripple** for a steeper knee) with
   its own corner frequency
+- **All-pass** — 1st order (180° of phase swing, −90° at the corner) or 2nd
+  order (360°, −180° at the corner, with a **Q** setting how abruptly it turns).
+  Magnitude is untouched; only phase moves, which makes it the tool for lining
+  drivers up through a crossover where a delay (constant everywhere) and a
+  polarity flip (180° everywhere) are both too blunt — a sub-to-midbass hand-off
+  at 60–100 Hz is the classic case. It runs as its own stage, so it applies with
+  the crossover off, and a live read-out shows the **group delay** it adds at its
+  corner (≈ 4Q/ω₀) — the reason it works, and on a low corner its main risk
 - **PEQ** — load a parametric EQ profile (any format the EQ Wizard imports) into
   the chain
 - **Mute** — temporarily remove a channel from the plots, sum, loss metric,
   overlay capture, and Auto delay without clearing its source or settings
 - **Bypass** — feed the channel's raw measured signal into the sum with the
-  whole chain skipped (no gain, delay, polarity, crossover, or PEQ), for an A/B
+  whole chain skipped (no gain, delay, polarity, crossover, all-pass, or PEQ), for an A/B
   against the processed result; unlike Mute, the channel stays in the sum.
   Auto delay refuses to run while any participating channel is bypassed — the
   proposed delay and polarity could not act on the raw signal, yet the channel
@@ -1563,8 +1573,8 @@ it defaults to Off because the measurements are loopback-referenced.
   or feed it onward to the EQ Wizard.
 - **Export…** writes the whole setup as a tuning sheet (printable PDF or plain
   text): for every side of every pair (a mono pair prints once) the gain, delay
-  in ms and mm, polarity, crossover filters, and PEQ bands — exactly the list
-  you type into the DSP, both sides in one sheet.
+  in ms and mm, polarity, crossover filters, the all-pass stage, and PEQ bands —
+  exactly the list you type into the DSP, both sides in one sheet.
 - **Save session... / Load session...** exports or imports the complete session
   JSON (sources, chains, gate, and view state) for sharing or archiving.
 

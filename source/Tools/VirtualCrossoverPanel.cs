@@ -1485,7 +1485,10 @@ public partial class VirtualCrossoverPanel : UserControl
             "Well-aligned drivers start together.");
         toolTip.SetToolTip(
             comboBoxSmoothing,
-            "Fractional-octave smoothing of the magnitude curves.");
+            "Fractional-octave smoothing of the magnitude curves —\r\n" +
+            "and of the curves the Sum loss read-out is measured from,\r\n" +
+            "so it still moves those numbers in the Phase and Impulse\r\n" +
+            "views, where the drawn traces are not smoothed at all.");
         toolTip.SetToolTip(
             radioDspGroupDelay,
             "What the lower plot shows for each channel's DSP chain:\r\n" +
@@ -1493,7 +1496,10 @@ public partial class VirtualCrossoverPanel : UserControl
             "group delay in ms, excluding the channel's bulk delay).");
         toolTip.SetToolTip(
             comboBoxCalibration,
-            "Microphone calibration applied to the magnitude curves.\r\n" +
+            "Microphone calibration applied to the magnitude curves —\r\n" +
+            "and to the curves the Sum loss read-out is measured from,\r\n" +
+            "so it still moves those numbers in the Phase and Impulse\r\n" +
+            "views, where no calibrated trace is drawn.\r\n" +
             "The measurement is loopback-referenced, so this is\r\n" +
             "optional; 0° / 90° appear when their files are configured\r\n" +
             "in Record Settings.");
@@ -1548,7 +1554,12 @@ public partial class VirtualCrossoverPanel : UserControl
             buttonPhaseGate,
             "Configure the gate for the phase and impulse views:\r\n" +
             "offset and Tukey fades, with an IR preview — cut the\r\n" +
-            "window before the first reflection for clean traces.");
+            "window before the first reflection for clean traces.\r\n" +
+            "Where the gate SITS — its offset and the detrend τ — belongs\r\n" +
+            "to the side you are viewing (L or R): their drivers arrive at\r\n" +
+            "different times, so fitting one no longer disturbs the other.\r\n" +
+            "The Tukey lengths, window mode, detrend mode and FDW cycles\r\n" +
+            "are shared, so both sides read at one resolution and method.");
         toolTip.SetToolTip(
             buttonSessionExport,
             "Save the whole session (sources, DSP chains, gate, view)\r\n" +
@@ -1638,32 +1649,38 @@ public partial class VirtualCrossoverPanel : UserControl
     // mutable project settings after this method awaits.
     private async Task<ProcessedRender?> ProcessChannelsAsync()
     {
-        using var _ = AppProfiler.Zone("VirtualDSP.ProcessChannelsAsync");
+        // Tracy zones are thread-bound and strictly LIFO, so no zone may span
+        // an await: only the synchronous snapshot section is zoned here, and
+        // the heavy per-channel DSP is zoned inside the coordinator's worker
+        // threads where it actually runs.
         long revision = processingCoordinator.CurrentRevision;
         var snapshots = new List<VirtualCrossoverChannelSnapshot>();
         var bindings = new Dictionary<int, (VirtualCrossoverChannel Channel, OxyColor Color)>();
-        for (int i = 0; i < channels.Count; i++)
+        using (AppProfiler.Zone("VirtualDSP.SnapshotChannels"))
         {
-            VirtualCrossoverChannel channel = channels[i];
-            VirtualCrossoverChannelState state = channel.SideState(channel.ActiveRight);
-            if (!channel.Settings.Enabled ||
-                state.ProcessingSource is not { } source)
+            for (int i = 0; i < channels.Count; i++)
             {
-                continue;
-            }
+                VirtualCrossoverChannel channel = channels[i];
+                VirtualCrossoverChannelState state = channel.SideState(channel.ActiveRight);
+                if (!channel.Settings.Enabled ||
+                    state.ProcessingSource is not { } source)
+                {
+                    continue;
+                }
 
-            DspChannelChain chain = channel.Settings.Bypass
-                ? DspChannelChain.Identity
-                : channel.Settings.ToChain();
-            snapshots.Add(new VirtualCrossoverChannelSnapshot(
-                i,
-                new ProcessingSlotId(
+                DspChannelChain chain = channel.Settings.Bypass
+                    ? DspChannelChain.Identity
+                    : channel.Settings.ToChain();
+                snapshots.Add(new VirtualCrossoverChannelSnapshot(
                     i,
-                    !channel.Pair.Mono && channel.ActiveRight),
-                source,
-                state.SampleRate,
-                chain));
-            bindings.Add(i, (channel, ChannelColors[i]));
+                    new ProcessingSlotId(
+                        i,
+                        !channel.Pair.Mono && channel.ActiveRight),
+                    source,
+                    state.SampleRate,
+                    chain));
+                bindings.Add(i, (channel, ChannelColors[i]));
+            }
         }
 
         VirtualCrossoverRenderResult? render =
@@ -1689,11 +1706,10 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private async Task RedrawMainPlotAsync()
     {
-        using var _ = AppProfiler.Zone("VirtualDSP.RedrawMainPlot");
-
         // The heavy ApplyChain FFTs run off the UI thread; the existing curves stay
         // on screen until the new data is ready, so there is no clear-then-fill
-        // flicker during the compute.
+        // flicker during the compute. No Tracy zone spans the awaits (zones are
+        // per-thread LIFO); the synchronous frame build at the end carries one.
         ProcessedRender? render = await ProcessChannelsAsync();
         if (render == null || mainPlotView.IsDisposed)
         {
@@ -1722,14 +1738,42 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         // The processed magnitudes and the complex sum feed both the drawn
-        // curves and the sum-loss metric, so they are built once here.
-        (List<AnalysisCurve>? magnitudes, AnalysisCurve? sumCurve) =
-            metrics.BuildCurves(processed);
+        // curves and the sum-loss metric, so they are built once here. This is
+        // the synchronous UI-thread part of the frame (curve building — the
+        // phase view's gated FFTs included — metric update, OxyPlot draw), so
+        // it takes the redraw zone. The steps carry a zone each: this stretch
+        // dominates the frame, and the split says which one to answer for.
+        using var _ = AppProfiler.Zone("VirtualDSP.RedrawMainPlot");
+        List<AnalysisCurve>? magnitudes;
+        AnalysisCurve? sumCurve;
+        using (AppProfiler.Zone("VirtualDSP.BuildCurves"))
+        {
+            (magnitudes, sumCurve) = metrics.BuildCurves(processed);
+        }
 
-        UpdateMetric(processed, magnitudes, sumCurve, stereoDeltas);
-        UpdateCrossoverWarning(processed);
+        using (AppProfiler.Zone("VirtualDSP.UpdateMetric"))
+        {
+            UpdateMetric(processed, magnitudes, sumCurve, stereoDeltas);
+        }
 
-        acousticPlot.Draw(BuildAcousticRender(processed, magnitudes, sumCurve, oppositeSum));
+        using (AppProfiler.Zone("VirtualDSP.UpdateCrossoverWarning"))
+        {
+            UpdateCrossoverWarning(processed);
+        }
+
+        // Split from the draw on purpose: building the curves (the phase view's
+        // gated FFTs) and handing them to OxyPlot are different suspects, and as
+        // one expression they were indistinguishable.
+        AcousticRender acousticRender;
+        using (AppProfiler.Zone("VirtualDSP.BuildAcousticRender"))
+        {
+            acousticRender = BuildAcousticRender(processed, magnitudes, sumCurve, oppositeSum);
+        }
+
+        using (AppProfiler.Zone("VirtualDSP.AcousticPlotDraw"))
+        {
+            acousticPlot.Draw(acousticRender);
+        }
     }
 
     // Assembles the ready-to-draw frame for the active view. While a session
@@ -1768,6 +1812,9 @@ public partial class VirtualCrossoverPanel : UserControl
         AnalysisCurve? sumCurve,
         AnalysisCurve? oppositeSumCurve)
     {
+        // The processed curves arrive prebuilt from BuildCurves, but a shown RAW
+        // curve is spectrum-built right here, one channel after another.
+        using var _ = AppProfiler.Zone("VirtualDSP.BuildMagnitudeCurves");
         var curves = new List<AcousticCurve>();
         for (int i = 0; i < processed.Count; i++)
         {
@@ -1847,7 +1894,14 @@ public partial class VirtualCrossoverPanel : UserControl
         // analysis modes), as a compact per-junction column with the full banded
         // breakdown on hover. The stereo Δ block (final L−R envelope arrival
         // difference per pair) appends below the sum-loss column.
-        List<VirtualCrossoverMetric.Entry> entries = metrics.BuildEntries(processed, magnitudes, sumCurve);
+        // Zoned apart from the formatting and the host callback below it: the
+        // per-junction banded analysis is the part with real work in it.
+        List<VirtualCrossoverMetric.Entry> entries;
+        using (AppProfiler.Zone("VirtualDSP.BuildEntries"))
+        {
+            entries = metrics.BuildEntries(processed, magnitudes, sumCurve);
+        }
+
         string compact = VirtualCrossoverMetric.FormatCompact(entries);
         string detail = entries.Count > 0 ? VirtualCrossoverMetric.FormatDetail(entries) : string.Empty;
         if (stereoDeltas is { Count: > 0 })
@@ -2507,6 +2561,9 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private List<AcousticCurve> BuildPhaseCurves(List<ProcessedChannel> processed)
     {
+        // The gate's own path: every shown channel is gated and FFT'd here, one
+        // after another, plus one more for the sum.
+        using var _ = AppProfiler.Zone("VirtualDSP.BuildPhaseCurves");
         // One shared absolute reference (the earliest arrival) keeps the curves'
         // relative phase intact — that relative alignment through the crossover
         // region is exactly what this view is for.
@@ -2516,35 +2573,47 @@ public partial class VirtualCrossoverPanel : UserControl
             ?? ResolveGateOffsetMs(reference, sampleRate);
         double detrendMs = ResolveCommonDetrendMs(processed, gateOffsetMs, sampleRate);
 
-        var curves = new List<AcousticCurve>();
+        // Read the gate and project state ONCE, here on the UI thread: every curve gets
+        // the identical settings anyway, and the workers below must not reach back into
+        // gatePreview or project.
+        PhaseAnalysisSettings settings = CreateVirtualPhaseSettings(
+            gateOffsetMs,
+            PhaseDetrendMode.Manual,
+            detrendMs);
+
+        var jobs = new List<(string Title, Complex[] Ir, OxyColor Color, double Thickness)>();
         foreach (ProcessedChannel item in processed)
         {
-            if (!item.Channel.Settings.ShowProcessedCurve)
+            if (item.Channel.Settings.ShowProcessedCurve)
             {
-                continue;
+                jobs.Add((item.Channel.Name, item.ImpulseResponse, item.Color, 1.8));
             }
-
-            curves.Add(new AcousticCurve(
-                item.Channel.Name,
-                BuildPhasePoints(item.ImpulseResponse, sampleRate, gateOffsetMs, detrendMs),
-                item.Color,
-                1.8,
-                LineStyle.Solid));
         }
 
         if (processed.Count >= 2 && checkBoxShowSum.Checked)
         {
-            Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
-                processed.Select(item => item.ImpulseResponse).ToList());
-            curves.Add(new AcousticCurve(
+            jobs.Add((
                 "Sum",
-                BuildPhasePoints(sum, sampleRate, gateOffsetMs, detrendMs),
+                VirtualCrossoverAnalysis.SumImpulseResponses(
+                    processed.Select(item => item.ImpulseResponse).ToList()),
                 SumColor,
-                2.4,
-                LineStyle.Solid));
+                2.4));
         }
 
-        return curves;
+        // One gated FFT per curve, and they are independent: GetGatedPhaseData allocates
+        // its own buffers and reads only the settings captured above, so the curves build
+        // across cores. AsOrdered keeps the plot order stable. Same shape as the
+        // magnitude curves in VirtualCrossoverMetrics.BuildCurves.
+        return jobs
+            .AsParallel()
+            .AsOrdered()
+            .Select(job => new AcousticCurve(
+                job.Title,
+                BuildPhasePoints(job.Ir, sampleRate, settings),
+                job.Color,
+                job.Thickness,
+                LineStyle.Solid))
+            .ToList();
     }
 
     // The impulse view is the gate dialog's IR preview promoted to the main
@@ -2554,6 +2623,7 @@ public partial class VirtualCrossoverPanel : UserControl
     // Well-aligned drivers visibly start together.
     private AcousticImpulseRender? BuildImpulseRender(List<ProcessedChannel> processed)
     {
+        using var _ = AppProfiler.Zone("VirtualDSP.BuildImpulseRender");
         // Only the shown traces set the gate offset and the ms-axis window, so
         // an auto gate never centers on a channel whose curve is hidden.
         List<ProcessedChannel> shown = processed
@@ -2585,17 +2655,23 @@ public partial class VirtualCrossoverPanel : UserControl
             gatePreview?.RightMs ?? project.PhaseGateRightMs);
     }
 
-    // A stored gate offset is used as-is; an unconfigured project follows the
+    // The gate of the side on screen. The view draws one side at a time and the two
+    // sides' drivers arrive at different times, so each keeps its own placement:
+    // fitting the gate on one no longer throws the other off.
+    private VirtualCrossoverPhaseGateSettings ActiveGate =>
+        project.PhaseGateFor(project.ActiveSideRight);
+
+    // A stored gate offset is used as-is; an unconfigured side follows the
     // earliest processed arrival, so the gate tracks source and delay changes
     // until the user pins it in the gate dialog.
     private double ResolveGateOffsetMs(int referenceSample, int sampleRate) =>
-        project.PhaseGateOffsetMs ?? referenceSample * 1_000.0 / sampleRate;
+        ActiveGate.OffsetMs ?? referenceSample * 1_000.0 / sampleRate;
 
     // The τ detrend follows the same pattern: unconfigured projects reference
     // the earliest arrival. One τ serves every curve, so their relative phase —
     // the whole point of this view — survives the detrend.
     private double ResolveDetrendMs(int referenceSample, int sampleRate) =>
-        project.PhaseDetrendMs ?? referenceSample * 1_000.0 / sampleRate;
+        ActiveGate.DetrendMs ?? referenceSample * 1_000.0 / sampleRate;
 
     private double ResolveCommonDetrendMs(
         List<ProcessedChannel> processed,
@@ -2639,11 +2715,13 @@ public partial class VirtualCrossoverPanel : UserControl
             Unwrap: false,
             SmoothingInverseOctaves: 0.0);
 
-    private List<SignalPoint> BuildPhasePoints(
+    // Static on purpose: the caller reads the gate and project state once on the UI
+    // thread and hands the settings down, so this runs on a pool thread without the
+    // compiler letting it reach back into a control.
+    private static List<SignalPoint> BuildPhasePoints(
         Complex[] impulseResponse,
         int sampleRate,
-        double gateOffsetMs,
-        double detrendMs)
+        PhaseAnalysisSettings settings)
     {
         // The gate construction is shared with the Phase mode (DataHelper's
         // gated extraction): a Tukey window of left + plateau + right whose
@@ -2652,10 +2730,6 @@ public partial class VirtualCrossoverPanel : UserControl
         // fractional-sample phase reference; every curve built with the same τ
         // is directly comparable regardless of where its gate sits.
         var view = new ImpulseMeasurementView(impulseResponse, 0, sampleRate);
-        PhaseAnalysisSettings settings = CreateVirtualPhaseSettings(
-            gateOffsetMs,
-            PhaseDetrendMode.Manual,
-            detrendMs);
         List<SignalPoint> phase = DataHelper.GetGatedPhaseData(view, settings);
 
         // Wrapped phase jumps from +180° to −180° between adjacent bins; a NaN
@@ -2740,11 +2814,15 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             if (dialog.ShowDialog(FindForm()) == DialogResult.OK)
             {
-                project.PhaseGateOffsetMs = dialog.GateOffsetMs;
+                // Only the PLACEMENT lands on the side being viewed. The window's
+                // lengths and the analysis modes are project-wide, so both sides keep
+                // reading the phase at the same resolution and by the same method.
+                VirtualCrossoverPhaseGateSettings gate = ActiveGate;
+                gate.OffsetMs = dialog.GateOffsetMs;
+                gate.DetrendMs = dialog.DetrendMs;
                 project.PhaseGateLeftMs = dialog.LeftMs;
                 project.PhaseGatePlateauMs = dialog.PlateauMs;
                 project.PhaseGateRightMs = dialog.RightMs;
-                project.PhaseDetrendMs = dialog.DetrendMs;
                 project.PhaseWindowMode = dialog.WindowMode;
                 project.PhaseFdwCycles = dialog.FdwCycles;
                 project.PhaseDetrendMode = dialog.DetrendMode;

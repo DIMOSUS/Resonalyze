@@ -380,7 +380,10 @@ This configuration defines `TRACY_ENABLE` and references `Tracy-CSharp`; normal
 Debug and Release builds do not load Tracy. Add instrumentation through
 `AppProfiler.Zone(...)`, `AppProfiler.FrameMark(...)`, and
 `AppProfiler.SetThreadName(...)` so profiling code stays isolated behind the
-build flag.
+build flag. Tracy zones are thread-bound and strictly LIFO: never let a zone
+span an `await` (Tracy terminates the session with "Invalid order of zone
+begin and end events") — zone the synchronous sections, including inside
+`Task.Run` bodies.
 
 The Release executable is produced at:
 
@@ -1435,7 +1438,14 @@ toggle to check that
 the channels track each other through the crossover region. Its **Gate...**
 dialog exposes **Fixed / FDW**, 4 / 6 / 8 cycles, and **Off / Auto / Manual**
 detrend alongside the IR preview, Tukey left / plateau / right controls, and
-gate offset. Virtual DSP deliberately keeps phase wrapped to -180..+180 degrees.
+gate offset. Where the gate SITS — its offset and the detrend τ — belongs to the
+side you are viewing: the left and right drivers sit at different distances, so their
+arrivals and their first reflections do not land together, and fitting the gate on one
+side no longer disturbs the other's traces. Everything that decides how the phase is
+READ stays project-wide — the Tukey lengths (they set the frequency resolution), the
+window mode, the detrend mode and the FDW cycle count — because two sides read through
+different windows could not be compared, which is what the view is for.
+Virtual DSP deliberately keeps phase wrapped to -180..+180 degrees.
 Auto chooses one common reference channel, displays the resolved τ, and applies
 that exact value to every driver and the complex sum; it never independently
 flattens the channels, so their relative phase and timing remain intact. A

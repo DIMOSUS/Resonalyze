@@ -115,6 +115,13 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
             {
                 await Task.Run(() =>
                 {
+                    // Tracy zones live here, on the worker threads, because a
+                    // zone must begin and end synchronously on one thread — the
+                    // panel's async callers cannot carry one across their
+                    // awaits. The outer zone times the whole batch on the
+                    // scheduling worker; the per-channel zones time each
+                    // chain's FFTs on whichever pool thread runs it.
+                    using var _ = AppProfiler.Zone("VirtualDSP.ProcessChannels");
                     Parallel.For(
                         0,
                         misses.Count,
@@ -124,6 +131,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
                         },
                         index =>
                         {
+                            using var __ = AppProfiler.Zone("VirtualDSP.ProcessChannel");
                             PendingChannel pending = misses[index];
                             Complex[] response = processChannel(
                                 pending.Channel.Source,
@@ -350,10 +358,37 @@ internal sealed class DspChannelChainCacheKey : IEquatable<DspChannelChainCacheK
 /// <summary>
 /// Write-once source owned by the processing layer. Construction copies the
 /// panel's measurement array once, when the source is loaded, so background
-/// work never observes later mutation of panel-owned data.
+/// work never observes later mutation of panel-owned data — and keeps only the
+/// head of it (see <see cref="RenderCropLength"/>).
 /// </summary>
 internal sealed class VirtualCrossoverSourceSnapshot
 {
+    /// <summary>
+    /// How much of a measured transfer IR the chain is run over.
+    /// <para>
+    /// A sweep writes the whole record — 524288 samples, ~12 s, of which the last three
+    /// quarters sit at the noise floor (measured: −67 dBFS against the peak) while the
+    /// arrival lands inside the first thousand. Running the chain over all of it costs a
+    /// 1048576-point FFT per side: the length is exactly 2^19, so ANY filter-tail padding
+    /// tips <c>NextPowerOfTwo</c> to 2^20 — 82 ms and 16 MB per side, against 10 ms and
+    /// 2 MB over the head alone.
+    /// </para>
+    /// <para>
+    /// Nothing downstream reads past it: the magnitude window's analysis length is clamped
+    /// to 32768 by <c>GetOversampledLength</c>, and the phase gate is a few hundred samples
+    /// zero-padded to its own fixed FFT. Verified against three real cabin measurements —
+    /// the magnitude and phase curves come out identical to 0.00000 dB and 0.00000°.
+    /// </para>
+    /// </summary>
+    private const int RenderCropLength = 65_536;
+
+    /// <summary>
+    /// The most any curve reads after the arrival — the magnitude's clamped analysis
+    /// length. A measurement whose arrival sits so late that this would not fit keeps its
+    /// full length rather than being quietly cut short.
+    /// </summary>
+    private const int RenderCropPostPeakSamples = 32_768;
+
     private readonly Complex[] impulseResponse;
 
     public VirtualCrossoverSourceSnapshot(Complex[] impulseResponse)
@@ -363,11 +398,35 @@ internal sealed class VirtualCrossoverSourceSnapshot
         {
             throw new ArgumentException("The impulse response is empty.", nameof(impulseResponse));
         }
-        this.impulseResponse = impulseResponse.ToArray();
+        this.impulseResponse = TakeHead(impulseResponse);
     }
 
     public Complex[] Apply(DspChannelChain chain, int sampleRate) =>
         VirtualCrossoverAnalysis.ApplyChain(impulseResponse, chain, sampleRate);
+
+    // Truncation from sample 0 — deliberately NOT a window centred on the arrival. Every
+    // channel keeps its own peak index, the channels keep their relative timing, and the
+    // user's absolute gate offset still points where they put it. A per-channel crop
+    // offset breaks all three at once, which is why the auto-delay search has to share one
+    // offset across channels (VirtualCrossoverAnalysis.CropSharedDirectSoundWindow);
+    // starting at 0 sidesteps the question entirely.
+    private static Complex[] TakeHead(Complex[] impulseResponse)
+    {
+        if (impulseResponse.Length <= RenderCropLength)
+        {
+            return impulseResponse.ToArray();
+        }
+
+        int peakIndex = VirtualCrossoverAnalysis.FindPeakIndex(impulseResponse);
+        if (peakIndex + RenderCropPostPeakSamples > RenderCropLength)
+        {
+            return impulseResponse.ToArray();
+        }
+
+        var head = new Complex[RenderCropLength];
+        Array.Copy(impulseResponse, head, RenderCropLength);
+        return head;
+    }
 }
 
 internal sealed class VirtualCrossoverChannelSnapshot

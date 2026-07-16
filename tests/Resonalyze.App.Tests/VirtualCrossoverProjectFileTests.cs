@@ -56,6 +56,88 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void LoadOrDefault_V4Project_CopiesItsOneGateOntoBothSides()
+    {
+        // v4 kept a single gate for the whole project. Both sides must inherit it, so a
+        // migrated project draws exactly as it did before the split — the sides only
+        // diverge once the user moves one of them.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile();
+            saved.Save(root);
+
+            // Rewrite the payload as v4 wrote it: the gate flat on the project.
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
+            JsonObject root4 = file.AsObject();
+            root4["version"] = 4;
+            root4.Remove("phaseGateLeft");
+            root4.Remove("phaseGateRight");
+            root4["phaseGateOffsetMs"] = 12.34;
+            root4["phaseGateLeftMs"] = 0.25;
+            root4["phaseGatePlateauMs"] = 6.5;
+            root4["phaseGateRightMs"] = 2.0;
+            root4["phaseDetrendMs"] = 13.07;
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Equal(VirtualCrossoverProjectFile.CurrentVersion, loaded.Version);
+            foreach (bool rightSide in new[] { false, true })
+            {
+                VirtualCrossoverPhaseGateSettings gate = loaded.PhaseGateFor(rightSide);
+                Assert.Equal(12.34, gate.OffsetMs);
+                Assert.Equal(13.07, gate.DetrendMs);
+            }
+
+            // The window's lengths never moved off the project, so they carry across
+            // untouched rather than through the migration.
+            Assert.Equal(0.25, loaded.PhaseGateLeftMs);
+            Assert.Equal(6.5, loaded.PhaseGatePlateauMs);
+            Assert.Equal(2.0, loaded.PhaseGateRightMs);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_V4ProjectOnAnAutoGate_KeepsBothSidesOnAuto()
+    {
+        // v4 spelled "follow the earliest arrival" as a null offset/detrend. That has to
+        // migrate to the same thing, not to a pinned zero.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            new VirtualCrossoverProjectFile().Save(root);
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonObject file = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            file["version"] = 4;
+            file.Remove("phaseGateLeft");
+            file.Remove("phaseGateRight");
+            file["phaseGateOffsetMs"] = null;
+            file["phaseDetrendMs"] = null;
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            foreach (bool rightSide in new[] { false, true })
+            {
+                Assert.Null(loaded.PhaseGateFor(rightSide).OffsetMs);
+                Assert.Null(loaded.PhaseGateFor(rightSide).DetrendMs);
+            }
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void AllPass_RoundTripsThroughTheProjectFile()
     {
         string root = CreateTemporaryDirectory();
@@ -133,11 +215,22 @@ public sealed class VirtualCrossoverProjectFileTests
                 ShowSumCurve = false,
                 ShowLossCurve = true,
                 ShowPhaseView = true,
-                PhaseGateOffsetMs = 12.34,
+                // Deliberately different per side: the round trip has to keep the
+                // PLACEMENT apart, which is the whole point of it being per-side.
+                PhaseGateLeft = new VirtualCrossoverPhaseGateSettings
+                {
+                    OffsetMs = 12.34,
+                    DetrendMs = 13.07
+                },
+                PhaseGateRight = new VirtualCrossoverPhaseGateSettings
+                {
+                    OffsetMs = 15.5,
+                    DetrendMs = 16.25
+                },
+                // …while the window's lengths are one setting for the whole project.
                 PhaseGateLeftMs = 0.25,
                 PhaseGatePlateauMs = 6.5,
                 PhaseGateRightMs = 2.0,
-                PhaseDetrendMs = 13.07,
                 PhaseWindowMode = PhaseWindowMode.FrequencyDependent,
                 PhaseFdwCycles = 8,
                 PhaseDetrendMode = PhaseDetrendMode.Manual
@@ -172,11 +265,18 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.Equal(original.ShowSumCurve, loaded.ShowSumCurve);
             Assert.Equal(original.ShowLossCurve, loaded.ShowLossCurve);
             Assert.Equal(original.ShowPhaseView, loaded.ShowPhaseView);
-            Assert.Equal(original.PhaseGateOffsetMs, loaded.PhaseGateOffsetMs);
+            foreach (bool rightSide in new[] { false, true })
+            {
+                VirtualCrossoverPhaseGateSettings savedGate = original.PhaseGateFor(rightSide);
+                VirtualCrossoverPhaseGateSettings loadedGate = loaded.PhaseGateFor(rightSide);
+                Assert.Equal(savedGate.OffsetMs, loadedGate.OffsetMs);
+                Assert.Equal(savedGate.DetrendMs, loadedGate.DetrendMs);
+            }
+
             Assert.Equal(original.PhaseGateLeftMs, loaded.PhaseGateLeftMs);
             Assert.Equal(original.PhaseGatePlateauMs, loaded.PhaseGatePlateauMs);
             Assert.Equal(original.PhaseGateRightMs, loaded.PhaseGateRightMs);
-            Assert.Equal(original.PhaseDetrendMs, loaded.PhaseDetrendMs);
+
             Assert.Equal(original.PhaseWindowMode, loaded.PhaseWindowMode);
             Assert.Equal(original.PhaseFdwCycles, loaded.PhaseFdwCycles);
             Assert.Equal(original.PhaseDetrendMode, loaded.PhaseDetrendMode);
@@ -404,16 +504,14 @@ public sealed class VirtualCrossoverProjectFileTests
         };
         Assert.Throws<InvalidDataException>(() => badSmoothing.Validate());
 
-        var badGateOffset = new VirtualCrossoverProjectFile
-        {
-            PhaseGateOffsetMs = -1
-        };
+        // Both sides are validated, not just the left: an imported project must not
+        // smuggle a broken gate in through the side that happens to be off screen.
+        var badGateOffset = new VirtualCrossoverProjectFile();
+        badGateOffset.PhaseGateLeft.OffsetMs = -1;
         Assert.Throws<InvalidDataException>(() => badGateOffset.Validate());
 
-        var badDetrend = new VirtualCrossoverProjectFile
-        {
-            PhaseDetrendMs = double.NaN
-        };
+        var badDetrend = new VirtualCrossoverProjectFile();
+        badDetrend.PhaseGateRight.DetrendMs = double.NaN;
         Assert.Throws<InvalidDataException>(() => badDetrend.Validate());
 
         var emptyGate = new VirtualCrossoverProjectFile

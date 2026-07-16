@@ -13,6 +13,49 @@ public enum DspPlotMode
 }
 
 /// <summary>
+/// WHERE the phase gate sits for one side: the offset the Tukey window's left shoulder
+/// ends at, and the τ the traces are detrended against.
+/// <para>
+/// Only placement lives here, because only placement is physical: the left and right
+/// drivers sit at different distances from the microphone, so their arrivals — and the
+/// reflections the gate exists to cut — do not land at the same time. Everything that
+/// decides HOW the phase is read stays on the project: the window's left/plateau/right
+/// LENGTHS (they set the frequency resolution), the window mode, the detrend mode and the
+/// FDW cycle count. Two sides read through different-length windows would not be
+/// comparable, and comparing them is what the view is for.
+/// </para>
+/// </summary>
+public sealed class VirtualCrossoverPhaseGateSettings
+{
+    /// <summary>
+    /// Null follows this side's earliest processed arrival automatically, so the gate
+    /// tracks source and delay changes until the user pins it in the gate dialog.
+    /// </summary>
+    public double? OffsetMs { get; set; }
+
+    /// <summary>
+    /// The linear-phase reference (ms, absolute from the IR start) removed from every
+    /// channel and the sum alike, so the traces stay readable while their relative phase
+    /// is preserved. Null follows this side's earliest processed arrival.
+    /// </summary>
+    public double? DetrendMs { get; set; }
+
+    public void Validate()
+    {
+        if (OffsetMs is { } offset &&
+            (!double.IsFinite(offset) || offset is < 0 or > 10_000))
+        {
+            throw new InvalidDataException("The phase gate offset is invalid.");
+        }
+        if (DetrendMs is { } detrend &&
+            (!double.IsFinite(detrend) || detrend is < 0 or > 10_000))
+        {
+            throw new InvalidDataException("The phase detrend is invalid.");
+        }
+    }
+}
+
+/// <summary>
 /// One channel of the virtual crossover: which measurement feeds it and the DSP
 /// chain applied before the virtual sum. The source is re-resolved on load — by
 /// history entry first, then by file path — so a renamed history label or a moved
@@ -215,7 +258,7 @@ public sealed class VirtualCrossoverProjectFile
     // step in Migrate below. Files from a NEWER version (a downgraded app)
     // are never migrated: LoadOrDefault backs them up and starts fresh,
     // LoadFrom rejects them with an explicit error.
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 5;
     public const int MaximumChannelCount = 8;
     private const string FileName = "virtual-crossover.json";
 
@@ -283,11 +326,31 @@ public sealed class VirtualCrossoverProjectFile
     public MicrophoneCalibrationMode CalibrationMode { get; set; } =
         MicrophoneCalibrationMode.Off;
 
-    // Phase-view gate, mirroring the Phase mode: a Tukey window of left + plateau
-    // + right milliseconds whose left shoulder ends at the gate offset, so room
-    // reflections can be gated out of the phase traces. A null offset follows the
-    // earliest processed arrival automatically (the pre-configuration default).
-    public double? PhaseGateOffsetMs { get; set; }
+    /// <summary>
+    /// The phase gate's placement, per SIDE. The two sides' drivers sit at different
+    /// distances, so their arrivals — and the reflections the gate exists to cut — do not
+    /// land at the same time; one shared gate meant that fitting it on one side threw the
+    /// other's traces off.
+    /// </summary>
+    public VirtualCrossoverPhaseGateSettings PhaseGateLeft { get; set; } = new();
+    public VirtualCrossoverPhaseGateSettings PhaseGateRight { get; set; } = new();
+
+    // Schema v4 payload, kept only so an older file deserializes for migration: WHERE the
+    // gate sits went per-side in v5. Migrate copies these onto BOTH sides, so a migrated
+    // project draws exactly as it did; nothing else reads them. Nullable purely to tell
+    // "absent" from a real value — v4's own offset/detrend were already nullable, and null
+    // there meant "follow the earliest arrival", which migrates to the same thing.
+    [JsonPropertyName("phaseGateOffsetMs")]
+    public double? LegacyPhaseGateOffsetMs { get; set; }
+    [JsonPropertyName("phaseDetrendMs")]
+    public double? LegacyPhaseDetrendMs { get; set; }
+
+    // The Tukey window's LENGTHS stay project-wide, alongside the analysis modes below:
+    // they set the frequency resolution the phase is read at, and two sides read through
+    // different-length windows cannot be compared against each other — which is the whole
+    // reason the view exists. Only the gate's PLACEMENT (offset, and the τ it references)
+    // is per-side, since only that follows the drivers' differing distances.
+    // These kept v4's names on the wire, so an older file deserializes straight into them.
     public double PhaseGateLeftMs { get; set; } =
         FrequencyResponseOptions.DefaultPhaseLeftMs;
     public double PhaseGatePlateauMs { get; set; } =
@@ -295,11 +358,9 @@ public sealed class VirtualCrossoverProjectFile
     public double PhaseGateRightMs { get; set; } =
         FrequencyResponseOptions.DefaultPhaseRightMs;
 
-    // Phase-view τ detrend (ms, absolute from the IR start): one linear-phase
-    // reference removed from every channel and the sum alike, so the traces stay
-    // readable while their relative phase is preserved. Null follows the
-    // earliest processed arrival automatically.
-    public double? PhaseDetrendMs { get; set; }
+    // These three decide HOW the phase is analysed rather than where it is looked at,
+    // so the two sides must be analysed alike.
+    //
     // Fixed by default: the Virtual DSP phase view exists to align channels at
     // the listening position, where the early in-cabin reflections FDW removes
     // are physically part of the summed sound — and of any verification
@@ -308,6 +369,10 @@ public sealed class VirtualCrossoverProjectFile
     public PhaseWindowMode PhaseWindowMode { get; set; } = PhaseWindowMode.Fixed;
     public int PhaseFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
     public PhaseDetrendMode PhaseDetrendMode { get; set; } = PhaseDetrendMode.Auto;
+
+    /// <summary>The gate of one side; the tool always draws and edits the ACTIVE side's.</summary>
+    public VirtualCrossoverPhaseGateSettings PhaseGateFor(bool rightSide) =>
+        rightSide ? PhaseGateRight : PhaseGateLeft;
 
     public static string GetPath(string? rootDirectory = null) =>
         Path.Combine(
@@ -414,6 +479,25 @@ public sealed class VirtualCrossoverProjectFile
         if (file.Version == 3)
         {
             file.Version = 4;
+        }
+        if (file.Version == 4)
+        {
+            // v4 pinned the gate's PLACEMENT once for the whole project, so fitting it on
+            // one side threw the other's traces off — the sides' arrivals differ. Both
+            // sides inherit the old shared value, leaving a migrated project drawing
+            // exactly as before; they diverge only once the user moves one of them. The
+            // window's lengths did not move: they kept their names on the project and
+            // deserialize straight into it.
+            foreach (VirtualCrossoverPhaseGateSettings gate in
+                new[] { file.PhaseGateLeft, file.PhaseGateRight })
+            {
+                gate.OffsetMs = file.LegacyPhaseGateOffsetMs;
+                gate.DetrendMs = file.LegacyPhaseDetrendMs;
+            }
+
+            file.LegacyPhaseGateOffsetMs = null;
+            file.LegacyPhaseDetrendMs = null;
+            file.Version = 5;
         }
     }
 
@@ -531,16 +615,8 @@ public sealed class VirtualCrossoverProjectFile
         {
             PhaseFdwCycles = PhaseAnalysisSettings.DefaultFdwCycles;
         }
-        if (PhaseGateOffsetMs is { } gateOffset &&
-            (!double.IsFinite(gateOffset) || gateOffset is < 0 or > 10_000))
-        {
-            throw new InvalidDataException("The phase gate offset is invalid.");
-        }
-        if (PhaseDetrendMs is { } detrend &&
-            (!double.IsFinite(detrend) || detrend is < 0 or > 10_000))
-        {
-            throw new InvalidDataException("The phase detrend is invalid.");
-        }
+        PhaseGateLeft.Validate();
+        PhaseGateRight.Validate();
         if (!IsValidGatePart(PhaseGateLeftMs) ||
             !IsValidGatePart(PhaseGatePlateauMs) ||
             !IsValidGatePart(PhaseGateRightMs) ||

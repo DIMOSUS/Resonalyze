@@ -1110,12 +1110,51 @@ namespace Resonalyze.Dsp
             return new AnalysisCurve("Group Delay", data);
         }
 
+        // The SEED grid: how many anchors span one kernel width before refinement. Not
+        // the guarantee — SmoothingRelativeTolerance is.
+        private const double SmoothingAnchorsPerKernel = 16.0;
+
+        // A span between two anchors is interpolated when the chord's error at its
+        // midpoint is within this, relative to the local value. ~0.04 dB: far under the
+        // 30 dB margin the reliability gates compare against, and under anything the
+        // group-delay ratio resolves.
+        private const double SmoothingRelativeTolerance = 0.005;
+
+        // …floored at this fraction of the array's peak. Below it every caller has
+        // already thrown the bin away — both gates carry a -60 dB global backstop, the
+        // unwrap's on amplitude and the group delay's on energy (hence the tighter figure
+        // here, since energy compares as |H|²) — so chasing precision into the noise
+        // floor would only buy subdivision nobody reads.
+        private const double SmoothingScaleFloor = 1e-6;
+
+        // Refinement stops here: a span this short is at the bin grid's own resolution,
+        // and the exact evaluation is what further splitting would converge to anyway.
+        private const int SmoothingMinimumSpan = 2;
+
         // Hann-weighted fractional-octave moving average over the linear FFT bin
         // grid (bin 0 excluded). A strictly non-negative kernel, unlike the Lanczos
         // used for display smoothing: the group-delay division needs the smoothed
         // energy to stay positive, and a signed kernel could cancel it near sharp
         // spectral transitions and reintroduce the very spikes being removed.
-        private static double[] SmoothBinsHann(
+        //
+        // Evaluated on LOG-spaced anchors and interpolated between them, with every span
+        // checked against the exact curve at its midpoint and split until it agrees.
+        //
+        // Evaluating at every linear bin asks for orders of magnitude more resolution
+        // than a fractional-octave average carries, and the cost is quadratic: the kernel
+        // widens in proportion to frequency, so the naive form ran ~1.1e8 iterations (each
+        // with a cosine) over a 32k FFT — half a second per curve, on the UI thread.
+        //
+        // The seeded grid alone is NOT enough, though: "smoothed" does not mean "linear".
+        // Across a sweep's band edge or a steep stopband the average falls exponentially,
+        // and a chord drawn over that reads high — 10 dB high at the edge of the band,
+        // worst exactly where the value is small and the dB error therefore largest. The
+        // midpoint probe is what turns the bound from a hope into an assertion, and it
+        // costs nothing on the smooth stretches that make up most of a response.
+        // Internal rather than private so the tests can hold it against an exact
+        // reference: its contract is an error bound, and nothing observable through the
+        // public surface pins that.
+        internal static double[] SmoothBinsHann(
             double[] source,
             double smoothingOctaves,
             double binWidthHz,
@@ -1123,38 +1162,151 @@ namespace Resonalyze.Dsp
         {
             int count = source.Length;
             double[] result = new double[count];
+            if (count < 2)
+            {
+                return result;
+            }
+
             double frequencyRatio = Math.Pow(2.0, smoothingOctaves * 0.5);
             double halfWidthFloor = Math.Max(minHalfWidthHz, binWidthHz * 2.0);
 
+            double peak = 0.0;
             for (int i = 1; i < count; i++)
             {
-                double frequency = i * binWidthHz;
-                double halfDelta = Math.Max(
-                    frequency * (frequencyRatio - 1.0),
-                    halfWidthFloor);
-                int win = (int)Math.Ceiling(halfDelta / binWidthHz);
-
-                double weightedSum = 0.0;
-                double weightSum = 0.0;
-                for (int j = Math.Max(i - win, 1);
-                    j <= Math.Min(i + win, count - 1);
-                    j++)
-                {
-                    double x = (j - i) * binWidthHz / halfDelta;
-                    if (Math.Abs(x) >= 1.0)
-                    {
-                        continue;
-                    }
-
-                    double weight = 0.5 * (1.0 + Math.Cos(Math.PI * x));
-                    weightedSum += source[j] * weight;
-                    weightSum += weight;
-                }
-
-                result[i] = weightSum > 0.0 ? weightedSum / weightSum : source[i];
+                peak = Math.Max(peak, Math.Abs(source[i]));
             }
 
+            double toleranceFloor = peak * SmoothingScaleFloor;
+
+            // Never advance by less than one bin: at the low end a log step is
+            // sub-bin, and the walk then degenerates to the exact per-bin evaluation
+            // on its own — which is also where the kernel is narrowest and cheapest.
+            double anchorStep = Math.Pow(2.0, smoothingOctaves / SmoothingAnchorsPerKernel);
+            var anchors = new List<int>();
+            for (double position = 1.0; position < count;)
+            {
+                int anchor = (int)position;
+                anchors.Add(anchor);
+                position = Math.Max(position * anchorStep, anchor + 1.0);
+            }
+
+            if (anchors[^1] != count - 1)
+            {
+                anchors.Add(count - 1);
+            }
+
+            double previous = HannAverageAt(
+                source, anchors[0], binWidthHz, frequencyRatio, halfWidthFloor);
+            for (int a = 0; a + 1 < anchors.Count; a++)
+            {
+                double next = HannAverageAt(
+                    source, anchors[a + 1], binWidthHz, frequencyRatio, halfWidthFloor);
+                FillSpan(
+                    source,
+                    result,
+                    anchors[a],
+                    anchors[a + 1],
+                    previous,
+                    next,
+                    binWidthHz,
+                    frequencyRatio,
+                    halfWidthFloor,
+                    toleranceFloor);
+                previous = next;
+            }
+
+            result[anchors[^1]] = previous;
             return result;
+        }
+
+        // Fills [low, high) by the chord between the ends when that tracks the exact curve
+        // at the midpoint, and splits on the midpoint when it does not. The probe is the
+        // whole point: it is where a chord over a convex stretch is furthest from it, so
+        // accepting it bounds the error across the span.
+        private static void FillSpan(
+            double[] source,
+            double[] result,
+            int low,
+            int high,
+            double lowValue,
+            double highValue,
+            double binWidthHz,
+            double frequencyRatio,
+            double halfWidthFloor,
+            double toleranceFloor)
+        {
+            result[low] = lowValue;
+            if (high - low <= SmoothingMinimumSpan)
+            {
+                for (int i = low + 1; i < high; i++)
+                {
+                    result[i] = HannAverageAt(
+                        source, i, binWidthHz, frequencyRatio, halfWidthFloor);
+                }
+
+                return;
+            }
+
+            int middle = (low + high) / 2;
+            double exact = HannAverageAt(
+                source, middle, binWidthHz, frequencyRatio, halfWidthFloor);
+            double interpolated =
+                lowValue + ((highValue - lowValue) * (middle - low) / (double)(high - low));
+            double tolerance =
+                SmoothingRelativeTolerance * Math.Max(Math.Abs(exact), toleranceFloor);
+            if (Math.Abs(exact - interpolated) <= tolerance)
+            {
+                double slope = (highValue - lowValue) / (high - low);
+                for (int i = low + 1; i < high; i++)
+                {
+                    result[i] = lowValue + (slope * (i - low));
+                }
+
+                return;
+            }
+
+            FillSpan(
+                source, result, low, middle, lowValue, exact,
+                binWidthHz, frequencyRatio, halfWidthFloor, toleranceFloor);
+            FillSpan(
+                source, result, middle, high, exact, highValue,
+                binWidthHz, frequencyRatio, halfWidthFloor, toleranceFloor);
+        }
+
+        // The exact Hann-weighted average centred on one bin — the kernel the anchors
+        // sample. Kept whole so the anchored walk above and any future direct caller
+        // cannot drift apart.
+        private static double HannAverageAt(
+            double[] source,
+            int index,
+            double binWidthHz,
+            double frequencyRatio,
+            double halfWidthFloor)
+        {
+            double frequency = index * binWidthHz;
+            double halfDelta = Math.Max(
+                frequency * (frequencyRatio - 1.0),
+                halfWidthFloor);
+            int win = (int)Math.Ceiling(halfDelta / binWidthHz);
+
+            double weightedSum = 0.0;
+            double weightSum = 0.0;
+            for (int j = Math.Max(index - win, 1);
+                j <= Math.Min(index + win, source.Length - 1);
+                j++)
+            {
+                double x = (j - index) * binWidthHz / halfDelta;
+                if (Math.Abs(x) >= 1.0)
+                {
+                    continue;
+                }
+
+                double weight = 0.5 * (1.0 + Math.Cos(Math.PI * x));
+                weightedSum += source[j] * weight;
+                weightSum += weight;
+            }
+
+            return weightSum > 0.0 ? weightedSum / weightSum : source[index];
         }
     }
 }

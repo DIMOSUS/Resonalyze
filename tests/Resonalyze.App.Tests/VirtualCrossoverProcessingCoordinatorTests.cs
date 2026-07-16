@@ -35,6 +35,54 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     }
 
     [Fact]
+    public void SourceSnapshot_RunsTheChainOverTheHeadOfALongMeasurement()
+    {
+        // A sweep's transfer IR is written full length — 524288 samples, ~12 s, with the
+        // arrival in the first thousand and the rest at the noise floor. That length is
+        // exactly 2^19, so the filter tail tips the FFT to 2^20 and every side costs a
+        // million-point transform to feed curves that read 32k samples around the arrival.
+        // The snapshot keeps the head; the processed response must shrink with it.
+        var full = new Complex[524_288];
+        full[260] = 1.0;
+        for (int i = 261; i < full.Length; i++)
+        {
+            full[i] = 1e-4 * Math.Sin(i * 0.01); // decay/noise nothing reads
+        }
+
+        var snapshot = new VirtualCrossoverSourceSnapshot(full);
+        Complex[] processed = snapshot.Apply(
+            new DspChannelChain(
+                Crossover: new CrossoverSpec(
+                    CrossoverKind.HighPass,
+                    HighPassEdge: new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24))),
+            48_000);
+
+        // 65536 head + the filter tail, rounded up — not the 1048576 the full record forced.
+        Assert.True(
+            processed.Length <= 131_072,
+            $"Processed length {processed.Length}: the head crop did not take.");
+        // The arrival still sits where it did: truncation starts at sample 0, so no index,
+        // no inter-channel timing and no absolute gate offset moves.
+        Assert.InRange(VirtualCrossoverAnalysis.FindPeakIndex(processed), 200, 400);
+    }
+
+    [Fact]
+    public void SourceSnapshot_KeepsAMeasurementWhoseArrivalWouldNotFitTheHead()
+    {
+        // The guard: an arrival late enough that the head would cut into what the curves
+        // read keeps its full record rather than being quietly truncated into it.
+        var late = new Complex[524_288];
+        late[60_000] = 1.0;
+
+        var snapshot = new VirtualCrossoverSourceSnapshot(late);
+        Complex[] processed = snapshot.Apply(new DspChannelChain(GainDb: 1), 48_000);
+
+        Assert.True(
+            processed.Length >= 524_288,
+            $"Processed length {processed.Length}: a late arrival must not be cropped away.");
+    }
+
+    [Fact]
     public void ChainCacheKey_SeesTheAllPass()
     {
         // The key is written by hand, so a stage it forgets never fails to compile — it

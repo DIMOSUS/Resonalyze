@@ -66,6 +66,44 @@ public sealed class VirtualCrossoverSheetTests
     }
 
     [Fact]
+    public void DescribeAllPass_CoversEveryType()
+    {
+        // The sheet is how a tuning leaves the app for the hardware, so the all-pass has
+        // to be on it. Q is printed only where it exists: a first-order section has none.
+        var channel = new VirtualCrossoverChannelSettings
+        {
+            AllPassFrequencyHz = 90,
+            AllPassQ = 2.5
+        };
+
+        channel.AllPassType = AllPassType.Off;
+        Assert.Equal("Off", VirtualCrossoverSheet.DescribeAllPass(channel));
+
+        channel.AllPassType = AllPassType.FirstOrder;
+        Assert.Equal("1st order @ 90 Hz", VirtualCrossoverSheet.DescribeAllPass(channel));
+
+        channel.AllPassType = AllPassType.SecondOrder;
+        Assert.Equal("2nd order @ 90 Hz Q 2.5", VirtualCrossoverSheet.DescribeAllPass(channel));
+    }
+
+    [Fact]
+    public void FormatText_OmitsTheAllPassLineWhenTheStageIsOff()
+    {
+        // An Off stage is the default on every channel; printing "All-pass Off" on each
+        // one would just be noise on the sheet.
+        VirtualCrossoverProjectFile project = CreateProject();
+        Assert.DoesNotContain("All-pass", VirtualCrossoverSheet.FormatText(project, string.Empty));
+
+        project.Pairs[0].Left.AllPassType = AllPassType.SecondOrder;
+        project.Pairs[0].Left.AllPassFrequencyHz = 90;
+        project.Pairs[0].Left.AllPassQ = 2.5;
+
+        Assert.Contains(
+            "All-pass   2nd order @ 90 Hz Q 2.5",
+            VirtualCrossoverSheet.FormatText(project, string.Empty));
+    }
+
+    [Fact]
     public void DescribeCrossover_CoversEveryKind()
     {
         var channel = new VirtualCrossoverChannelSettings

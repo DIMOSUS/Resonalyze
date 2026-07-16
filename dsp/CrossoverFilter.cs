@@ -351,7 +351,7 @@ public static class CrossoverFilter
     private static double ScaledSectionHz(
         double cornerHz, double fsf, bool highPass, double sampleRateHz)
     {
-        double corner = ClampBelowNyquist(cornerHz, sampleRateHz);
+        double corner = BilinearTransform.ClampBelowNyquist(cornerHz, sampleRateHz);
         double warpedCorner = Math.Tan(Math.PI * corner / sampleRateHz);
         double warpedSection = highPass ? warpedCorner / fsf : warpedCorner * fsf;
         return sampleRateHz / Math.PI * Math.Atan(warpedSection);
@@ -372,14 +372,6 @@ public static class CrossoverFilter
         _ => throw new ArgumentOutOfRangeException(nameof(order))
     };
 
-    // A section corner at or above Nyquist cannot be realized by the bilinear
-    // transform (the prewarp tangent blows up), so it is clamped just below —
-    // the same way DSP hardware limits its frequency entry. Applied per section
-    // because Bessel scale factors can push a section past Nyquist even when the
-    // nominal cutoff itself is fine.
-    private static double ClampBelowNyquist(double frequencyHz, double sampleRateHz) =>
-        Math.Min(frequencyHz, sampleRateHz * 0.499);
-
     // RBJ cookbook LP/HP biquad (bilinear transform, prewarped at the corner),
     // normalized to a0 = 1 with a1/a2 negated for the additive-feedback convention
     // of BiquadCoefficients.
@@ -389,7 +381,7 @@ public static class CrossoverFilter
         bool highPass,
         double sampleRateHz)
     {
-        double w0 = Math.Tau * ClampBelowNyquist(frequencyHz, sampleRateHz) / sampleRateHz;
+        double w0 = Math.Tau * BilinearTransform.ClampBelowNyquist(frequencyHz, sampleRateHz) / sampleRateHz;
         double cos = Math.Cos(w0);
         double alpha = Math.Sin(w0) / (2.0 * q);
         double a0 = 1.0 + alpha;
@@ -420,7 +412,7 @@ public static class CrossoverFilter
         double sampleRateHz)
     {
         double k = Math.Tan(
-            Math.PI * ClampBelowNyquist(frequencyHz, sampleRateHz) / sampleRateHz);
+            Math.PI * BilinearTransform.ClampBelowNyquist(frequencyHz, sampleRateHz) / sampleRateHz);
         double a0 = k + 1.0;
 
         double b0 = highPass ? 1.0 / a0 : k / a0;

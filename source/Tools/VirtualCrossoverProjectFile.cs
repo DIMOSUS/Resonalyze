@@ -43,6 +43,24 @@ public sealed class VirtualCrossoverChannelSettings
     public CrossoverEdge HighPassEdge { get; set; } =
         new(CrossoverFilterFamily.LinkwitzRiley, 2_000, 24);
 
+    /// <summary>
+    /// The largest all-pass Q a project accepts. Unlike the Chebyshev ripple cap this is
+    /// NOT a mathematical limit — an extreme Q is merely a very sharp phase turn and stays
+    /// perfectly stable — it is just the sane range the UI offers, kept here so the field
+    /// and the validator cannot drift apart. The real lower bound (Q > 0, or alpha divides
+    /// by zero) is enforced by the DSP itself.
+    /// </summary>
+    public const double MaximumAllPassQ = 20.0;
+
+    /// <summary>
+    /// The all-pass stage: a phase rotation with no effect on magnitude. Independent of
+    /// <see cref="CrossoverKind"/> — hardware runs it as its own stage, so it applies
+    /// even with the crossover off.
+    /// </summary>
+    public AllPassType AllPassType { get; set; } = AllPassType.Off;
+    public double AllPassFrequencyHz { get; set; } = 2_000;
+    public double AllPassQ { get; set; } = 1.0;
+
     public double PeqPreampDb { get; set; }
     public List<PeqBand> PeqBands { get; set; } = new();
     /// <summary>The PEQ file the bands came from; display only.</summary>
@@ -68,7 +86,8 @@ public sealed class VirtualCrossoverChannelSettings
         EqualizationCurve? peq = PeqBands.Count > 0 || PeqPreampDb != 0
             ? new EqualizationCurve(PeqBands, PeqPreampDb)
             : null;
-        return new DspChannelChain(GainDb, DelayMs, InvertPolarity, crossover, peq);
+        var allPass = new AllPassSpec(AllPassType, AllPassFrequencyHz, AllPassQ);
+        return new DspChannelChain(GainDb, DelayMs, InvertPolarity, crossover, peq, allPass);
     }
 
     public void Validate()
@@ -87,6 +106,7 @@ public sealed class VirtualCrossoverChannelSettings
         }
         ValidateEdge(LowPassEdge);
         ValidateEdge(HighPassEdge);
+        ValidateAllPass();
         if (!double.IsFinite(PeqPreampDb) || Math.Abs(PeqPreampDb) > 60)
         {
             throw new InvalidDataException("The PEQ preamp is invalid.");
@@ -103,6 +123,26 @@ public sealed class VirtualCrossoverChannelSettings
             {
                 throw new InvalidDataException("A PEQ band is invalid.");
             }
+        }
+    }
+
+    // Validated even when the type is Off, for the same reason as the crossover edges:
+    // the values stay visible (greyed) in the UI and must round-trip as sane ones.
+    private void ValidateAllPass()
+    {
+        if (!Enum.IsDefined(AllPassType))
+        {
+            throw new InvalidDataException("The all-pass type is invalid.");
+        }
+        if (!double.IsFinite(AllPassFrequencyHz) || AllPassFrequencyHz is < 10 or > 24_000)
+        {
+            throw new InvalidDataException("The all-pass frequency is invalid.");
+        }
+        // Q drives only the second-order section, but it is bounded regardless so an
+        // imported project cannot smuggle in a value the UI could never show.
+        if (!double.IsFinite(AllPassQ) || AllPassQ <= 0 || AllPassQ > MaximumAllPassQ)
+        {
+            throw new InvalidDataException("The all-pass Q is invalid.");
         }
     }
 

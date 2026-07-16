@@ -1,9 +1,124 @@
+using System.Numerics;
+using System.Text.Json.Nodes;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
 public sealed class VirtualCrossoverProjectFileTests
 {
+    [Fact]
+    public void LoadOrDefault_ProjectWithoutAnAllPass_LoadsWithTheStageOff()
+    {
+        // Adding the all-pass is a compatible schema change, so no version bump: an
+        // older file simply carries no such properties. They must land on "no all-pass"
+        // rather than a live filter silently rotating a channel's phase.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile();
+            saved.Pairs[0].Left.AllPassType = AllPassType.SecondOrder;
+            saved.Pairs[0].Left.AllPassFrequencyHz = 120;
+            saved.Pairs[0].Left.AllPassQ = 2.5;
+            saved.Save(root);
+
+            // Strip the all-pass properties back out — exactly how a file written before
+            // the stage existed looks.
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
+            foreach (JsonNode? pair in file["pairs"]!.AsArray())
+            {
+                foreach (string side in new[] { "left", "right" })
+                {
+                    JsonObject channel = pair![side]!.AsObject();
+                    channel.Remove("allPassType");
+                    channel.Remove("allPassFrequencyHz");
+                    channel.Remove("allPassQ");
+                }
+            }
+
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Equal(AllPassType.Off, loaded.Pairs[0].Left.AllPassType);
+            // The filled-in defaults must themselves be valid, or the very next save
+            // would throw on a project the user never touched.
+            loaded.Validate();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AllPass_RoundTripsThroughTheProjectFile()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile();
+            saved.Pairs[1].Right.AllPassType = AllPassType.FirstOrder;
+            saved.Pairs[1].Right.AllPassFrequencyHz = 90;
+            saved.Pairs[1].Right.AllPassQ = 3.5;
+            saved.Save(root);
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Equal(AllPassType.FirstOrder, loaded.Pairs[1].Right.AllPassType);
+            Assert.Equal(90, loaded.Pairs[1].Right.AllPassFrequencyHz);
+            Assert.Equal(3.5, loaded.Pairs[1].Right.AllPassQ);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Save_RejectsInvalidAllPassValues()
+    {
+        var badType = new VirtualCrossoverProjectFile();
+        badType.Pairs[0].Left.AllPassType = (AllPassType)42;
+        Assert.Throws<InvalidDataException>(() => badType.Validate());
+
+        var badFrequency = new VirtualCrossoverProjectFile();
+        badFrequency.Pairs[0].Left.AllPassFrequencyHz = 0;
+        Assert.Throws<InvalidDataException>(() => badFrequency.Validate());
+
+        // Q <= 0 divides by zero in the section's alpha and NaN-poisons the chain.
+        var badQ = new VirtualCrossoverProjectFile();
+        badQ.Pairs[0].Right.AllPassQ = 0;
+        Assert.Throws<InvalidDataException>(() => badQ.Validate());
+
+        var hugeQ = new VirtualCrossoverProjectFile();
+        hugeQ.Pairs[0].Right.AllPassQ =
+            VirtualCrossoverChannelSettings.MaximumAllPassQ + 1;
+        Assert.Throws<InvalidDataException>(() => hugeQ.Validate());
+    }
+
+    [Fact]
+    public void ToChain_AppliesTheAllPassEvenWithTheCrossoverOff()
+    {
+        // Hardware runs the all-pass as its own stage, so it must not be gated by the
+        // crossover kind. At its corner a second-order section is -180° with the
+        // magnitude untouched.
+        var settings = new VirtualCrossoverChannelSettings
+        {
+            CrossoverKind = CrossoverKind.Off,
+            AllPassType = AllPassType.SecondOrder,
+            AllPassFrequencyHz = 1_000,
+            AllPassQ = 1.0
+        };
+
+        Complex response = settings.ToChain().Response(1_000, 48_000);
+
+        Assert.Equal(1.0, response.Magnitude, 9);
+        Assert.Equal(-1.0, response.Real, 6);
+    }
+
     [Fact]
     public void SaveAndLoad_RoundTripsTheProject()
     {

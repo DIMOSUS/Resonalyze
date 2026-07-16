@@ -5,16 +5,19 @@ namespace Resonalyze.Dsp;
 /// <summary>
 /// The linear DSP chain of one virtual-crossover channel, mirroring what a DSP
 /// applies before the driver: gain, delay, a polarity switch, the crossover
-/// filters and a PEQ stage. Because every stage is LTI, multiplying a measured
-/// transfer response by <see cref="Response"/> predicts exactly what the
-/// microphone would capture after dialing these settings into the hardware.
+/// filters, an all-pass stage and a PEQ stage. Because every stage is LTI,
+/// multiplying a measured transfer response by <see cref="Response"/> predicts
+/// exactly what the microphone would capture after dialing these settings into the
+/// hardware. Being LTI, the stages also commute: the order they are applied in here
+/// does not change the response.
 /// </summary>
 public sealed record DspChannelChain(
     double GainDb = 0,
     double DelayMs = 0,
     bool InvertPolarity = false,
     CrossoverSpec? Crossover = null,
-    EqualizationCurve? Peq = null)
+    EqualizationCurve? Peq = null,
+    AllPassSpec? AllPass = null)
 {
     public static DspChannelChain Identity { get; } = new();
 
@@ -33,6 +36,13 @@ public sealed record DspChannelChain(
         if (Crossover is { Kind: not CrossoverKind.Off } crossover)
         {
             response *= CrossoverFilter.Response(crossover, frequencyHz, sampleRateHz);
+        }
+
+        // Independent of the crossover: real processors run the all-pass as its own
+        // stage, so it applies even with the crossover switched off.
+        if (AllPass is { Type: not AllPassType.Off } allPass)
+        {
+            response *= AllPassFilter.Response(allPass, frequencyHz, sampleRateHz);
         }
 
         if (Peq is { } peq)

@@ -6,6 +6,60 @@ namespace Resonalyze.App.Tests;
 public sealed class VirtualCrossoverProcessingCoordinatorTests
 {
     [Fact]
+    public void ChannelSnapshot_PreservesEveryChainStage()
+    {
+        // The snapshot deep-copies the chain to detach the PEQ's mutable band list from
+        // the UI thread. Copying member by member silently drops any stage the copy
+        // forgets — and an optional record parameter means the compiler never says a
+        // word. Assert on the whole chain, so the next stage added cannot regress here.
+        var chain = new DspChannelChain(
+            GainDb: -3,
+            DelayMs: 0.5,
+            InvertPolarity: true,
+            Crossover: new CrossoverSpec(
+                CrossoverKind.HighPass,
+                HighPassEdge: new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24)),
+            Peq: new EqualizationCurve([new PeqBand(1_000, 1.0, -2.0)], -1.0),
+            AllPass: new AllPassSpec(AllPassType.SecondOrder, 90, 2.5));
+
+        var snapshot = new VirtualCrossoverChannelSnapshot(
+            1, new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 3, 1.0)), 48_000, chain);
+
+        // The PEQ is deliberately a fresh instance and EqualizationCurve has no value
+        // equality, so compare everything else wholesale — that is what has to survive
+        // the copy, including stages added later — and the PEQ by content.
+        Assert.Equal(chain with { Peq = null }, snapshot.Chain with { Peq = null });
+        Assert.Equal(chain.Peq!.PreampDb, snapshot.Chain.Peq!.PreampDb);
+        Assert.Equal(chain.Peq.Bands, snapshot.Chain.Peq.Bands);
+        Assert.NotSame(chain.Peq, snapshot.Chain.Peq);
+    }
+
+    [Fact]
+    public void ChainCacheKey_SeesTheAllPass()
+    {
+        // The key is written by hand, so a stage it forgets never fails to compile — it
+        // just makes the coordinator serve a stale render: the user turns the all-pass
+        // and the plot does not move.
+        var baseline = new DspChannelChain(
+            AllPass: new AllPassSpec(AllPassType.SecondOrder, 90, 2.5));
+        var key = new DspChannelChainCacheKey(baseline);
+
+        Assert.Equal(key, new DspChannelChainCacheKey(baseline));
+        Assert.NotEqual(
+            key,
+            new DspChannelChainCacheKey(
+                baseline with { AllPass = new AllPassSpec(AllPassType.FirstOrder, 90, 2.5) }));
+        Assert.NotEqual(
+            key,
+            new DspChannelChainCacheKey(
+                baseline with { AllPass = new AllPassSpec(AllPassType.SecondOrder, 120, 2.5) }));
+        Assert.NotEqual(
+            key,
+            new DspChannelChainCacheKey(
+                baseline with { AllPass = new AllPassSpec(AllPassType.SecondOrder, 90, 1.0) }));
+    }
+
+    [Fact]
     public void ChainCacheKey_ComparesIndependentPeqCurvesByValue()
     {
         DspChannelChain first = CreatePeqChain(-2.0, -4.0);
@@ -36,6 +90,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
         var first = new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 3, 1.0));
         var second = new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 9, 0.5));
         long revision = coordinator.Invalidate();
+
         var snapshot = new VirtualCrossoverProcessingSnapshot(
             revision,
             [

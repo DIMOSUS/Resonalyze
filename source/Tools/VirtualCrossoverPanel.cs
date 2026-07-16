@@ -890,6 +890,10 @@ public partial class VirtualCrossoverPanel : UserControl
             control.LowPassSlopeComboBox.SelectedItem = settings.LowPassEdge.SlopeDbPerOctave;
             control.LowPassRippleInput.Value = Clamp(
                 control.LowPassRippleInput, settings.LowPassEdge.RippleDb);
+            control.AllPassTypeComboBox.SelectedItem = settings.AllPassType;
+            control.AllPassFrequencyInput.Value = Clamp(
+                control.AllPassFrequencyInput, settings.AllPassFrequencyHz);
+            control.AllPassQInput.Value = Clamp(control.AllPassQInput, settings.AllPassQ);
             control.ShowRawCheckBox.Checked = settings.ShowRawCurve;
             control.ShowProcessedCheckBox.Checked = settings.ShowProcessedCurve;
             control.BypassCheckBox.Checked = settings.Bypass;
@@ -911,6 +915,10 @@ public partial class VirtualCrossoverPanel : UserControl
         settings.CrossoverKind = control.SelectedCrossoverKind;
         settings.HighPassEdge = control.HighPassEdge;
         settings.LowPassEdge = control.LowPassEdge;
+        AllPassSpec allPass = control.AllPassStage;
+        settings.AllPassType = allPass.Type;
+        settings.AllPassFrequencyHz = allPass.FrequencyHz;
+        settings.AllPassQ = allPass.Q;
         settings.ShowRawCurve = control.ShowRawCheckBox.Checked;
         settings.ShowProcessedCurve = control.ShowProcessedCheckBox.Checked;
         settings.Enabled = !control.Muted;
@@ -1288,6 +1296,10 @@ public partial class VirtualCrossoverPanel : UserControl
             channel.TransferImpulseResponse is { } ir
                 ? VirtualCrossoverAnalysis.EstimatePolarity(ir)
                 : PolarityEstimate.Unknown);
+        // The block's all-pass group-delay readout evaluates the digital filter, so it
+        // needs the rate the chain runs at. An unresolved source reports 0; the control
+        // keeps its 48 kHz default until a real measurement lands.
+        control.SampleRateHz = channel.SampleRate;
         toolTip.SetToolTip(
             control.SourceButton,
             resolved

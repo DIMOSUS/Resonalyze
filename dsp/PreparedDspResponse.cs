@@ -48,6 +48,13 @@ public sealed class PreparedDspResponse
             AddCrossoverSections(sections, crossover, sampleRate);
         }
 
+        // Independent of the crossover: real processors run the all-pass as its own
+        // stage, so it applies even with the crossover switched off.
+        if (chain.AllPass is { Type: not AllPassType.Off } allPass)
+        {
+            sections.AddRange(AllPassFilter.BuildSections(allPass, sampleRate));
+        }
+
         if (chain.Peq is { } peq)
         {
             linearGain *= Math.Pow(10.0, peq.PreampDb / 20.0);

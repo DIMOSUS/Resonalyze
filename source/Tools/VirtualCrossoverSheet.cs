@@ -47,6 +47,10 @@ internal static class VirtualCrossoverSheet
                 builder.AppendLine(
                     $"  Polarity   {(channel.InvertPolarity ? "Inverted" : "Normal")}");
                 builder.AppendLine($"  Crossover  {DescribeCrossover(channel)}");
+                if (channel.AllPassType != AllPassType.Off)
+                {
+                    builder.AppendLine($"  All-pass   {DescribeAllPass(channel)}");
+                }
                 if (channel.PeqBands.Count > 0 || channel.PeqPreampDb != 0)
                 {
                     builder.AppendLine(
@@ -85,6 +89,25 @@ internal static class VirtualCrossoverSheet
 
         yield return (pair.Left, " L");
         yield return (pair.Right, " R");
+    }
+
+    /// <summary>
+    /// The all-pass stage as a tuning-sheet line. Q is printed only for a second-order
+    /// section — a first-order one has no Q to dial in.
+    /// </summary>
+    public static string DescribeAllPass(VirtualCrossoverChannelSettings channel)
+    {
+        ArgumentNullException.ThrowIfNull(channel);
+
+        return channel.AllPassType switch
+        {
+            AllPassType.FirstOrder =>
+                $"1st order @ {Number(channel.AllPassFrequencyHz, "0.###")} Hz",
+            AllPassType.SecondOrder =>
+                $"2nd order @ {Number(channel.AllPassFrequencyHz, "0.###")} Hz " +
+                $"Q {Number(channel.AllPassQ, "0.0#")}",
+            _ => "Off"
+        };
     }
 
     public static string DescribeCrossover(VirtualCrossoverChannelSettings channel)

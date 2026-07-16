@@ -32,20 +32,24 @@ public sealed record AlignmentCandidate(
 
 /// <summary>
 /// The broadband leading-edge onset of one processed IR (see
-/// <see cref="VirtualCrossoverAnalysis.EstimateBroadbandOnset"/>): the first
+/// <see cref="VirtualCrossoverAnalysis.EstimateBroadbandOnset"/>): the
 /// Hilbert-envelope crossings of 10 % (<see cref="EarlyMs"/>), 25 %
 /// (<see cref="OnsetMs"/>, the working figure) and 50 % (<see cref="LateMs"/>)
-/// of the envelope's own maximum. The crossings are monotonic in the
-/// threshold; how far they disagree is the front's sharpness — a sharp direct
-/// front keeps them within a fraction of a crossover period, a modal
-/// low-frequency build-up spreads them over milliseconds. Callers comparing
-/// two channels must gate on the spread of the DIFFERENCE across the three
-/// thresholds, not on one channel's spread alone.
+/// of the first credible arrival's peak level, on that peak's own rising
+/// front. The crossings are monotonic in the threshold; how far they disagree
+/// is the front's sharpness — a sharp direct front keeps them within a
+/// fraction of a crossover period, a modal low-frequency build-up spreads
+/// them over milliseconds. Callers comparing two channels must gate on the
+/// spread of the DIFFERENCE across the three thresholds, not on one channel's
+/// spread alone — and on <see cref="SnrDb"/> (the record's strongest envelope
+/// peak against its noise floor): a noise-only record still produces three
+/// stable-looking crossings, and only the SNR exposes it.
 /// </summary>
 public readonly record struct BroadbandOnsetEstimate(
     double EarlyMs,
     double OnsetMs,
     double LateMs,
+    double SnrDb,
     bool IsValid);
 
 /// <summary>
@@ -396,9 +400,20 @@ public static class VirtualCrossoverAnalysis
     }
 
     /// <summary>
-    /// The broadband leading-edge onset of a processed channel IR: the first
-    /// crossings of the Hilbert envelope at 10 / 25 / 50 % of its own maximum
-    /// (sub-sample). This is a different observable from
+    /// The broadband leading-edge onset of a processed channel IR: the
+    /// crossings of the Hilbert envelope at 10 / 25 / 50 % of the FIRST
+    /// CREDIBLE ARRIVAL's own peak level, found by walking backward down that
+    /// peak's rising front (sub-sample). The arrival peak comes from the same
+    /// first-arrival search the Time Alignment detector runs (25 dB depth
+    /// below the strongest peak, noise-gated, with the physical rejection of
+    /// the Hilbert transform's own symmetric pre-ringing) — thresholds
+    /// measured against the whole crop's global maximum would let a stronger
+    /// late reflection usurp all three crossings while leaving their spread
+    /// deceptively tight, and the backward walk pins every crossing to the
+    /// rising front immediately preceding the chosen arrival. A direct sound
+    /// weaker than the 25 dB search depth times the dominant arrival instead —
+    /// the same convention as every other arrival in the tool.
+    /// This is a different observable from
     /// <see cref="FindBandLimitedArrivalMs"/>, which marks the first PEAK of an
     /// octave-band envelope around a junction: two drivers meeting at a
     /// crossover occupy opposite halves of that shared band, so their
@@ -409,7 +424,10 @@ public static class VirtualCrossoverAnalysis
     /// is what a human validates on the IR plot, and is bias-free where the
     /// front is sharp (high junctions). At low frequencies the front smears
     /// into modal build-up and the crossing wanders with the threshold — the
-    /// 10-vs-50 % spread is the honesty figure callers must gate on.
+    /// 10-vs-50 % spread is one honesty figure callers must gate on;
+    /// <see cref="BroadbandOnsetEstimate.SnrDb"/> (the record's envelope
+    /// peak-to-noise grade) is the other, refusing noise-only records whose
+    /// random crossings can otherwise look stable.
     /// </summary>
     public static BroadbandOnsetEstimate EstimateBroadbandOnset(
         Complex[] impulseResponse,
@@ -434,43 +452,64 @@ public static class VirtualCrossoverAnalysis
         }
 
         double[] envelope = SignalEnvelope.Envelope(samples);
-        double peak = envelope.Max();
-        if (!(peak > 0.0) || !double.IsFinite(peak))
+        // The shared first-arrival physics (depth, noise gate, Hilbert
+        // pre-ringing ceiling) with its stock thresholds; no bandpass kernel —
+        // the signal is broadband, so only the Hilbert skirt is assumed.
+        var defaults = new TimeAlignmentAnalysisOptions();
+        PeakSearchResult peakSearch = SignalEnvelope.FindPeak(
+            envelope,
+            sampleRate,
+            new PeakSearchOptions
+            {
+                Mode = PeakSearchMode.FirstArrival,
+                FirstPeakThresholdBelowMaxDb = defaults.FirstPeakThresholdBelowMaxDb,
+                FirstPeakMinimumSnrDb = defaults.FirstPeakMinimumSnrDb,
+                SearchWindowMilliseconds = defaults.PeakSearchWindowMilliseconds
+            });
+        double arrivalPeak = envelope[peakSearch.SelectedIndex];
+        if (!(peakSearch.StrongestPeak > 0.0) ||
+            !double.IsFinite(peakSearch.StrongestPeak) ||
+            !(arrivalPeak > 0.0))
         {
-            return new BroadbandOnsetEstimate(0, 0, 0, IsValid: false);
+            return new BroadbandOnsetEstimate(0, 0, 0, 0, IsValid: false);
         }
 
-        double early = EnvelopeCrossingMs(envelope, 0.10 * peak, sampleRate);
-        double onset = EnvelopeCrossingMs(envelope, 0.25 * peak, sampleRate);
-        double late = EnvelopeCrossingMs(envelope, 0.50 * peak, sampleRate);
-        bool valid = double.IsFinite(early) &&
-            double.IsFinite(onset) &&
-            double.IsFinite(late);
-        return valid
-            ? new BroadbandOnsetEstimate(early, onset, late, IsValid: true)
-            : new BroadbandOnsetEstimate(0, 0, 0, IsValid: false);
+        double snrDb = SignalEnvelope.EstimatePeakConfidenceDecibels(
+            envelope, peakSearch.StrongestPeak);
+        double early = RisingFrontCrossingMs(
+            envelope, peakSearch.SelectedIndex, 0.10 * arrivalPeak, sampleRate);
+        double onset = RisingFrontCrossingMs(
+            envelope, peakSearch.SelectedIndex, 0.25 * arrivalPeak, sampleRate);
+        double late = RisingFrontCrossingMs(
+            envelope, peakSearch.SelectedIndex, 0.50 * arrivalPeak, sampleRate);
+        return new BroadbandOnsetEstimate(early, onset, late, snrDb, IsValid: true);
     }
 
-    // First crossing of the level with a linear sub-sample refinement between
-    // the straddling samples.
-    private static double EnvelopeCrossingMs(
+    // The LAST crossing of the level before the peak — the peak's own rising
+    // front, immune to anything earlier or later in the crop — with a linear
+    // sub-sample refinement. A front still above the level at sample 0 reads
+    // as 0 (never negative: the crop boundary is the earliest observable time).
+    private static double RisingFrontCrossingMs(
         double[] envelope,
+        int peakIndex,
         double level,
         int sampleRate)
     {
-        for (int i = 0; i < envelope.Length; i++)
+        int index = peakIndex;
+        while (index > 0 && envelope[index - 1] >= level)
         {
-            if (envelope[i] >= level)
-            {
-                double previous = i > 0 ? envelope[i - 1] : 0.0;
-                double fraction = envelope[i] > previous
-                    ? (level - previous) / (envelope[i] - previous)
-                    : 0.0;
-                return (i - 1 + fraction) * 1_000.0 / sampleRate;
-            }
+            index--;
         }
 
-        return double.NaN;
+        if (index == 0)
+        {
+            return 0.0;
+        }
+
+        double below = envelope[index - 1];
+        double above = envelope[index];
+        double fraction = above > below ? (level - below) / (above - below) : 0.0;
+        return (index - 1 + fraction) * 1_000.0 / sampleRate;
     }
 
     /// <summary>

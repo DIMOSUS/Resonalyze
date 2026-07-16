@@ -244,6 +244,18 @@ public static class AutoAlignmentEngine
     private const double OnsetLockMaxSpreadPeriods = 0.5;
 
     /// <summary>
+    /// The minimum envelope peak-to-noise grade (dB) both channels' onset
+    /// estimates must carry before the lock trusts them. The spread gate alone
+    /// cannot refuse a noise-only record: random crossings can look stable
+    /// across the three thresholds. A pure-noise Hilbert envelope grades its
+    /// strongest excursion ~13-14 dB over the record's quiet quarter (the
+    /// Rayleigh peak factor at this crop length), while real loopback
+    /// measurements run 40 dB and far beyond — 20 dB separates the two with
+    /// margin on both sides. Public so tests assert against the same figure.
+    /// </summary>
+    public const double OnsetLockMinimumSnrDb = 20;
+
+    /// <summary>
     /// Runs the two-stage alignment. <paramref name="channelsByBand"/> holds
     /// the initial snapshots ordered along the spectrum;
     /// <paramref name="pairs"/>[i] joins channels i and i+1 of that order.
@@ -540,7 +552,17 @@ public static class AutoAlignmentEngine
             BroadbandOnsetEstimate other =
                 VirtualCrossoverAnalysis.EstimateBroadbandOnset(
                     neighborIrs[0], neighborChannel.SampleRate);
-            if (own.IsValid && other.IsValid)
+            if (own.IsValid && other.IsValid &&
+                (own.SnrDb < OnsetLockMinimumSnrDb ||
+                 other.SnrDb < OnsetLockMinimumSnrDb))
+            {
+                log.AppendLine(
+                    $"  onset lock declined for {channel.Name}: envelope SNR " +
+                    $"{own.SnrDb:0.0} / {other.SnrDb:0.0} dB below the " +
+                    $"{OnsetLockMinimumSnrDb:0} dB floor — the fronts are not " +
+                    "measured, so nothing honest to pin to.");
+            }
+            else if (own.IsValid && other.IsValid)
             {
                 double periodMs = 2.0 * halfPeriodMs;
                 // The spread of the onset DIFFERENCE across the thresholds —

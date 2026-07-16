@@ -69,6 +69,17 @@ public sealed class PromotionReachTests
         Assert.InRange(Math.Abs(run.LeftFrontGapMs), 0, 0.75 * onePeriodMs);
         Assert.InRange(Math.Abs(run.RightFrontGapMs), 0, 0.75 * onePeriodMs);
 
+        // Independent cross-check with a DIFFERENT detector: the front gaps
+        // above are measured by the same onset estimator that anchored the
+        // lock, so alone they only prove self-consistency. The octave-band
+        // envelope arrival is a separate observable; it carries its own
+        // ~0.45-0.8-period rise-time bias at these junctions (see
+        // EstimateBroadbandOnset docs), so its gap is asserted loosely — but a
+        // whole-cycle slip the onset estimator somehow agreed with itself on
+        // (≥ 2 periods) cannot hide from it.
+        Assert.InRange(Math.Abs(run.LeftBandArrivalGapMs), 0, 1.5 * onePeriodMs);
+        Assert.InRange(Math.Abs(run.RightBandArrivalGapMs), 0, 1.5 * onePeriodMs);
+
         // The mechanism pin: the mid/tweeter junction must actually have been
         // onset-locked (sharp fronts, spread gate passed) — a silently
         // disengaged lock would hand the junction back to the comb.
@@ -80,6 +91,8 @@ public sealed class PromotionReachTests
         string Log,
         double LeftFrontGapMs,
         double RightFrontGapMs,
+        double LeftBandArrivalGapMs,
+        double RightBandArrivalGapMs,
         string GapReport);
 
     // Runs the full stereo auto-alignment on the real cabin IRs with the
@@ -201,17 +214,32 @@ public sealed class PromotionReachTests
             return midMs - twrMs;
         }
 
+        double BandArrivalGap(Channel mid, Channel twr)
+        {
+            double midMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+                final.First(item => ReferenceEquals(item.Channel, mid)).ImpulseResponse,
+                mid.SampleRate, midTwrHz / 2, midTwrHz * 2);
+            double twrMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+                final.First(item => ReferenceEquals(item.Channel, twr)).ImpulseResponse,
+                twr.SampleRate, midTwrHz / 2, midTwrHz * 2);
+            return midMs - twrMs;
+        }
+
         double leftGap = FrontGap(leftMid, leftTwr, out double lMid, out double lTwr);
         double rightGap = FrontGap(rightMid, rightTwr, out double rMid, out double rTwr);
+        double leftBandGap = BandArrivalGap(leftMid, leftTwr);
+        double rightBandGap = BandArrivalGap(rightMid, rightTwr);
         string gapReport =
             $"LEFT  mid front {lMid:0.000} / twr {lTwr:0.000} ms -> gap {leftGap:+0.000;-0.000} ms\n" +
             $"RIGHT mid front {rMid:0.000} / twr {rTwr:0.000} ms -> gap {rightGap:+0.000;-0.000} ms\n" +
+            $"band arrival gaps: L {leftBandGap:+0.000;-0.000} / R {rightBandGap:+0.000;-0.000} ms\n" +
             $"delays: L mid {alignment.GetValueOrDefault(leftMid).DelayMs:0.00} " +
             $"L twr {alignment.GetValueOrDefault(leftTwr).DelayMs:0.00} | " +
             $"R mid {alignment.GetValueOrDefault(rightMid).DelayMs:0.00} " +
             $"R twr {alignment.GetValueOrDefault(rightTwr).DelayMs:0.00}";
 
-        return new StereoRun(log.ToString(), leftGap, rightGap, gapReport);
+        return new StereoRun(
+            log.ToString(), leftGap, rightGap, leftBandGap, rightBandGap, gapReport);
     }
 
     private static (int SampleRate, Complex[] Ir) LoadTransferIr(string fileName)

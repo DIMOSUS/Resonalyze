@@ -161,6 +161,104 @@ public sealed class FrequencyDependentPhaseTests
     }
 
     [Fact]
+    public void Fdw_IsLinear_SpectrumOfASumIsTheSumOfTheSpectra()
+    {
+        // Virtual DSP's core invariant: the tool draws per-channel FDW phase
+        // next to the FDW phase of the sample-wise summed IR, so the analysis
+        // must satisfy FDW(A+B) = FDW(A) + FDW(B) bin for bin — otherwise the
+        // drawn Sum need not match the vector sum of the drawn channels. Two
+        // channels with DIFFERENT early reflections make the bank spectra
+        // rotate differently between window lengths, which is exactly where
+        // the earlier log-magnitude/shortest-arc interpolation broke
+        // superposition by tens of degrees; the complex-linear interpolation
+        // is exact here (the FFT and the window lerp are both linear). The
+        // comparison runs on the complex spectra across ALL bins, so it also
+        // covers every point BETWEEN the bank centers where the interpolation
+        // acts.
+        var first = new Complex[4_096];
+        first[480] = Complex.One;
+        first[480 + 62] = new Complex(0.7, 0.0); // +0.7 at 1.3 ms
+        var second = new Complex[4_096];
+        second[480] = Complex.One;
+        second[480 + 101] = new Complex(-0.5, 0.0); // -0.5 at 2.1 ms
+        var summed = new Complex[4_096];
+        for (int i = 0; i < summed.Length; i++)
+        {
+            summed[i] = first[i] + second[i];
+        }
+
+        PhaseAnalysisSettings settings = Settings(
+            PhaseWindowMode.FrequencyDependent, 6, PhaseDetrendMode.Manual);
+        Complex[] firstSpectrum = DataHelper.GetPhaseAnalysisSpectrum(
+            new SyntheticMeasurement(first, SampleRate, 480),
+            settings,
+            out int firstStart);
+        Complex[] secondSpectrum = DataHelper.GetPhaseAnalysisSpectrum(
+            new SyntheticMeasurement(second, SampleRate, 480),
+            settings,
+            out int secondStart);
+        Complex[] sumSpectrum = DataHelper.GetPhaseAnalysisSpectrum(
+            new SyntheticMeasurement(summed, SampleRate, 480),
+            settings,
+            out int sumStart);
+
+        Assert.Equal(firstStart, secondStart);
+        Assert.Equal(firstStart, sumStart);
+        for (int bin = 1; bin < sumSpectrum.Length / 2; bin++)
+        {
+            Complex expected = firstSpectrum[bin] + secondSpectrum[bin];
+            double error = (sumSpectrum[bin] - expected).Magnitude;
+            Assert.True(error <= 1e-9 * (1.0 + expected.Magnitude),
+                $"Superposition broken by {error:e} at bin {bin} " +
+                $"({bin * (double)SampleRate / sumSpectrum.Length:0.#} Hz).");
+        }
+    }
+
+    [Fact]
+    public void WrappedPhase_MasksBinsBelowTheReliabilityGate()
+    {
+        // A narrowband tone burst has no energy far above its band: the wrapped
+        // phase there is noise and must be blanked (NaN), not drawn as ±180°
+        // chaos. In-band bins stay finite.
+        var impulse = new Complex[8_192];
+        const int Start = 480;
+        const int Length = 480; // 10 ms burst at 1 kHz
+        for (int i = 0; i < Length; i++)
+        {
+            double window = 0.5 * (1 - Math.Cos(2 * Math.PI * i / (Length - 1.0)));
+            impulse[Start + i] = new Complex(
+                window * Math.Sin(2 * Math.PI * 1_000.0 * i / SampleRate), 0.0);
+        }
+        var measurement = new SyntheticMeasurement(impulse, SampleRate, Start + Length / 2);
+
+        List<SignalPoint> phase = DataHelper.GetGatedPhaseData(
+            measurement,
+            Settings(PhaseWindowMode.Fixed, 6, PhaseDetrendMode.Manual));
+
+        Assert.Contains(phase, point =>
+            point.X is >= 800 and <= 1_200 && !double.IsNaN(point.Y));
+        Assert.All(
+            phase.Where(point => point.X is >= 10_000 and <= 20_000),
+            point => Assert.True(double.IsNaN(point.Y),
+                $"Unreliable bin at {point.X:0.#} Hz was drawn ({point.Y:0.###} rad)."));
+    }
+
+    [Fact]
+    public void WrappedPhase_KeepsEveryBinOfAFlatSpectrum()
+    {
+        // The masking must not over-fire: a pure delay is reliable everywhere,
+        // so no bin of its wrapped phase goes missing.
+        SyntheticMeasurement measurement = DelayedImpulse(480);
+        List<SignalPoint> phase = DataHelper.GetGatedPhaseData(
+            measurement,
+            Settings(PhaseWindowMode.Fixed, 6, PhaseDetrendMode.Manual));
+
+        Assert.All(
+            phase.Where(point => point.X is >= 100 and <= 20_000),
+            point => Assert.False(double.IsNaN(point.Y)));
+    }
+
+    [Fact]
     public void FdwSuppressesLateReflectionMoreAtHighFrequency()
     {
         SyntheticMeasurement measurement = ReflectedImpulse();

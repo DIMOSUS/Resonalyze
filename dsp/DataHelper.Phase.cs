@@ -213,8 +213,14 @@ namespace Resonalyze.Dsp
             for (double center = binWidth; center <= nyquist;
                  center *= Math.Pow(2.0, 1.0 / FdwCentersPerOctave))
             {
+                // cycles/frequency is the analysis time AFTER the left-shoulder
+                // anchor — the same convention as the minimum-gate floor above
+                // and the duration the docs promise. Counting the shoulder
+                // inside the cycles would silently shorten the post-arrival
+                // window by the configured fade, making FDW more aggressive
+                // than advertised whenever the fade is long.
                 int effectiveGate = Math.Clamp(
-                    (int)Math.Round(cycles * sampleRate / center),
+                    left + (int)Math.Round(cycles * sampleRate / center),
                     minimumGate,
                     fixedGate);
                 if (effectiveGate == previousGate)
@@ -337,25 +343,31 @@ namespace Resonalyze.Dsp
             }
         }
 
-        private static Complex InterpolateSpectrum(Complex lower, Complex upper, double t)
-        {
-            const double epsilon = 1e-300;
-            double lowerMagnitude = Math.Max(lower.Magnitude, epsilon);
-            double upperMagnitude = Math.Max(upper.Magnitude, epsilon);
-            double logMagnitude = Math.Log(lowerMagnitude) +
-                (Math.Log(upperMagnitude) - Math.Log(lowerMagnitude)) * t;
-            Complex rotation = upper / upperMagnitude * Complex.Conjugate(lower / lowerMagnitude);
-            double deltaPhase = Math.Atan2(rotation.Imaginary, rotation.Real);
-            return Complex.FromPolarCoordinates(
-                Math.Exp(logMagnitude),
-                lower.Phase + deltaPhase * t);
-        }
+        // Complex LINEAR interpolation between two bank spectra. The FFT is
+        // linear, so lerping the spectra IS analyzing the IR through the lerped
+        // time window w = (1−t)·w_lower + t·w_upper — and, critically, it is the
+        // only blend that preserves superposition, FDW(ΣIR) = Σ FDW(IR), the
+        // invariant Virtual DSP's channels-vs-Sum phase view rests on. The
+        // earlier log-magnitude / shortest-arc-phase blend was nonlinear: two
+        // channels whose spectra rotate differently between neighboring windows
+        // interpolated to a different phase than their vector sum did (tens of
+        // degrees from the order of operations alone), so the drawn Sum did not
+        // have to match the drawn channels. Where the two windows genuinely
+        // disagree in phase the lerp can pass near zero — that is a real null
+        // of the interpolated window, and the reliability gate masks it,
+        // instead of an arc gliding over it with a fabricated magnitude.
+        private static Complex InterpolateSpectrum(Complex lower, Complex upper, double t) =>
+            lower + (upper - lower) * t;
 
-        // Reliability gates for the unwrapped phase: bins this far below the LOCAL
+        // Reliability gates for the phase output: bins this far below the LOCAL
         // magnitude envelope — or with squared coherence below the floor, when
-        // coherence is available — still contribute their phase to the output, but
-        // never anchor the unwrap, so one noisy or masked bin cannot shift the
-        // whole tail by 2π. The magnitude gate reads against an octave-smoothed
+        // coherence is available — are treated as carrying no trustworthy phase.
+        // Unwrapped, they still contribute their phase but never anchor the
+        // unwrap, so one noisy or masked bin cannot shift the whole tail by 2π.
+        // Wrapped, they are blanked (NaN) outright: a wrapped display has no
+        // bridging to hide behind, and drawing the phase of a null, a filter
+        // stop-band or an incoherent band paints ±180° noise that reads as
+        // signal. The magnitude gate reads against an octave-smoothed
         // local envelope rather than the global curve maximum: one tall resonance
         // (a subwoofer's cabin peak) must not disqualify a quieter but perfectly
         // repeatable band tens of dB below it. An absolute backstop against the
@@ -410,26 +422,23 @@ namespace Resonalyze.Dsp
             double referenceShift = referenceSamples - extractionStart;
             var data = new List<SignalPoint>(n / 2);
 
-            double[] localEnvelope = Array.Empty<double>();
-            double absoluteFloor = 0.0;
-            if (unwrap)
+            // The reliability gate serves both output modes (see the constants
+            // above), so its envelope is always computed.
+            double maxMagnitude = 0.0;
+            var magnitude = new double[n / 2];
+            for (int i = 1; i < n / 2; i++)
             {
-                double maxMagnitude = 0.0;
-                var magnitude = new double[n / 2];
-                for (int i = 1; i < n / 2; i++)
-                {
-                    magnitude[i] = spectrum[i].Magnitude;
-                    maxMagnitude = Math.Max(maxMagnitude, magnitude[i]);
-                }
-
-                localEnvelope = SmoothBinsHann(
-                    magnitude,
-                    UnwrapEnvelopeOctaves,
-                    sampleRate / (double)n,
-                    minHalfWidthHz: 0.0);
-                absoluteFloor =
-                    maxMagnitude * Math.Pow(10.0, UnwrapAbsoluteFloorDb / 20.0);
+                magnitude[i] = spectrum[i].Magnitude;
+                maxMagnitude = Math.Max(maxMagnitude, magnitude[i]);
             }
+
+            double[] localEnvelope = SmoothBinsHann(
+                magnitude,
+                UnwrapEnvelopeOctaves,
+                sampleRate / (double)n,
+                minHalfWidthHz: 0.0);
+            double absoluteFloor =
+                maxMagnitude * Math.Pow(10.0, UnwrapAbsoluteFloorDb / 20.0);
             double localGateRatio = Math.Pow(10.0, UnwrapMagnitudeGateDb / 20.0);
 
             bool hasAnchor = false;
@@ -448,16 +457,18 @@ namespace Resonalyze.Dsp
                 double referenced = spectrum[i].Phase + Math.Tau * i * referenceShift / n;
                 double wrapped = Math.Atan2(Math.Sin(referenced), Math.Cos(referenced));
 
-                if (!unwrap)
-                {
-                    data.Add(new SignalPoint(f, wrapped));
-                    continue;
-                }
-
                 bool reliable = spectrum[i].Magnitude >= absoluteFloor &&
                     spectrum[i].Magnitude >= localEnvelope[i] * localGateRatio &&
                     (coherence == null ||
                      CoherenceAt(coherence, f, sampleRate) >= UnwrapCoherenceFloor);
+
+                if (!unwrap)
+                {
+                    // Wrapped output blanks unreliable bins instead of drawing
+                    // their ±180° noise as if it were a curve.
+                    data.Add(new SignalPoint(f, reliable ? wrapped : double.NaN));
+                    continue;
+                }
 
                 if (!hasAnchor)
                 {
@@ -611,6 +622,26 @@ namespace Resonalyze.Dsp
                 measurement.SampleRate,
                 unwrap,
                 coherence);
+        }
+
+        /// <summary>
+        /// The gated complex analysis spectrum behind the phase views — the
+        /// Fixed-gate FFT or the FDW-combined bank, per
+        /// <paramref name="settings"/> — with the extraction start needed to
+        /// re-reference it to an absolute sample. This is the quantity the
+        /// FDW linearity contract is stated on (FDW of a sum of IRs equals
+        /// the sum of the FDW spectra), so callers can verify or build on
+        /// superposition directly. Returns a copy: the underlying array is a
+        /// shared cache entry.
+        /// </summary>
+        public static Complex[] GetPhaseAnalysisSpectrum(
+            IImpulseMeasurement measurement,
+            PhaseAnalysisSettings settings,
+            out int extractionStart)
+        {
+            Complex[] spectrum = BuildAnalysisSpectrum(
+                measurement, settings, out extractionStart);
+            return (Complex[])spectrum.Clone();
         }
 
         public static List<SignalPoint> GetGatedPhaseData(

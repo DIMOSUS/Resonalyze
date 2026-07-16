@@ -2658,7 +2658,11 @@ public partial class VirtualCrossoverPanel : UserControl
             detrendMs);
         List<SignalPoint> phase = DataHelper.GetGatedPhaseData(view, settings);
 
+        // Wrapped phase jumps from +180° to −180° between adjacent bins; a NaN
+        // break keeps the plot from drawing that wrap as a vertical line that
+        // reads like a real phase transition.
         var points = new List<SignalPoint>(phase.Count);
+        double previous = double.NaN;
         foreach (SignalPoint point in phase)
         {
             if (point.X is < 20 or > 20_000)
@@ -2666,7 +2670,15 @@ public partial class VirtualCrossoverPanel : UserControl
                 continue;
             }
 
-            points.Add(new SignalPoint(point.X, point.Y / Math.PI * 180.0));
+            double degrees = point.Y / Math.PI * 180.0;
+            if (!double.IsNaN(previous) && !double.IsNaN(degrees) &&
+                Math.Abs(degrees - previous) > 180.0)
+            {
+                points.Add(new SignalPoint(point.X, double.NaN));
+            }
+
+            points.Add(new SignalPoint(point.X, degrees));
+            previous = degrees;
         }
 
         return points;

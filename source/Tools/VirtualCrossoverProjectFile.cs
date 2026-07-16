@@ -300,8 +300,12 @@ public sealed class VirtualCrossoverProjectFile
     // readable while their relative phase is preserved. Null follows the
     // earliest processed arrival automatically.
     public double? PhaseDetrendMs { get; set; }
-    public PhaseWindowMode PhaseWindowMode { get; set; } =
-        PhaseWindowMode.FrequencyDependent;
+    // Fixed by default: the Virtual DSP phase view exists to align channels at
+    // the listening position, where the early in-cabin reflections FDW removes
+    // are physically part of the summed sound — and of any verification
+    // measurement taken afterwards. FDW remains a per-project opt-in for
+    // inspecting the drivers' direct sound.
+    public PhaseWindowMode PhaseWindowMode { get; set; } = PhaseWindowMode.Fixed;
     public int PhaseFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
     public PhaseDetrendMode PhaseDetrendMode { get; set; } = PhaseDetrendMode.Auto;
 

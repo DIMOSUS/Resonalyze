@@ -63,12 +63,22 @@ public sealed class PROptTests
         Assert.Equal(expectedSlope, actualSlope, tolerance: 1e-9);
         Assert.Equal(expectedPeak, actualPeak, tolerance: 1e-9);
 
+        // The guard that makes the equality asserts above meaningful: the fixed
+        // and FDW τ estimates must be distinguishable at the same precision the
+        // equality is asserted, or the test could not tell which spectrum the
+        // panel used. For this delta-plus-reflection setup the two estimates
+        // legitimately agree to a few microseconds — the reflection's ripple
+        // integrates to (almost) nothing over the whole band — and the old
+        // 1e-5 margin was only met by the nonlinear-interpolation artifact the
+        // complex-linear FDW blend removed. The real remaining difference (the
+        // sub-transition band where FDW keeps the fixed window) is ~3.5e-6 ms,
+        // comfortably above the 1e-9 the path check runs at.
         (double fixedSlope, _) = DataHelper.EstimatePhaseDetrend(
             view,
             options.PhaseGateOffsetMs,
             options.PhaseLeftMs,
             options.PhasePlateauMs,
             options.PhaseRightMs);
-        Assert.NotEqual(fixedSlope, actualSlope, tolerance: 0.00001);
+        Assert.NotEqual(fixedSlope, actualSlope, tolerance: 1e-9);
     }
 }

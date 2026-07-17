@@ -54,11 +54,17 @@ public readonly record struct BroadbandOnsetEstimate(
 
 /// <summary>
 /// One extremum of a band-limited time-domain cross-correlation search.
+/// <see cref="EdgePinned"/> marks an extremum found on (or within a couple of
+/// samples of) the lag-window boundary: that is not a measured lobe but the
+/// window's cut through one whose true extremum can lie outside, so both the
+/// position and the magnitude are artifacts of where the window happened to
+/// end — callers gating on either must not trust an edge-pinned value.
 /// </summary>
 public sealed record CorrelationDelayCandidate(
     double DelayMs,
     double Coefficient,
-    bool InvertPolarity);
+    bool InvertPolarity,
+    bool EdgePinned = false);
 
 /// <summary>
 /// Diagnostic result of a time-domain delay search around a crossover.
@@ -663,6 +669,13 @@ public static class VirtualCrossoverAnalysis
         return 0.5 - 0.5 * Math.Cos(Math.Tau * position);
     }
 
+    // How close (in lag samples) to the search-window boundary an extremum may
+    // sit before it is flagged edge-pinned. A truncated lobe's argmax lands on
+    // the boundary itself or, after the discrete grid samples its slope, one
+    // sample inside — two samples covers both without reaching lag positions a
+    // genuinely interior lobe would occupy (windows are hundreds of samples).
+    private const int CorrelationEdgeGuardSamples = 2;
+
     // The extremum inside the lag window, refined to sub-sample precision with the
     // shared windowed-sinc interpolation (a plain 3-point parabola systematically
     // mislocates a sinc-shaped correlation peak). Positive lags are read at their
@@ -690,13 +703,16 @@ public static class VirtualCrossoverAnalysis
         }
 
         bool interior = Math.Abs(bestLag - centerLag) < rangeSamples;
+        bool edgePinned =
+            Math.Abs(bestLag - centerLag) >= rangeSamples - CorrelationEdgeGuardSamples;
         double refinedLag = interior
             ? TransferFunction.RefinePeakLag(correlation, bestLag, fftLength, sign)
             : bestLag;
         return new CorrelationDelayCandidate(
             refinedLag * 1000.0 / sampleRate,
             normalizer > 0 ? sign * best / normalizer : 0,
-            !findMaximum);
+            !findMaximum,
+            edgePinned);
     }
 
     // One spectrum bin of the alignment problem: the combined fixed spectrum,

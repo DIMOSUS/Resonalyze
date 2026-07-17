@@ -969,6 +969,37 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void FindBandLimitedCorrelationDelay_FlagsWindowEdgeExtremaAsEdgePinned()
+    {
+        // The true peak sits ~4.1 ms out while the window reaches 3 ms: the
+        // argmax lands on (or one grid sample inside) the boundary — a cut
+        // through the rising lobe, not a measured extremum, so its position
+        // AND magnitude are artifacts of where the window ended. The flag is
+        // the honest signal callers gate on; re-centering the window on the
+        // true lag clears it.
+        Complex[] first = UnitImpulse(8_192, 2_000);
+        Complex[] second = UnitImpulse(8_192, 2_000 - 197);
+        const double offsetMs = 197.0 / SampleRate * 1_000.0;
+
+        CorrelationAlignmentResult pinned =
+            VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
+                first, second, SampleRate,
+                centerFrequencyHz: 100, passOctaves: 1, searchRangeMs: 3,
+                phaseTransform: true);
+        CorrelationAlignmentResult centered =
+            VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
+                first, second, SampleRate,
+                centerFrequencyHz: 100, passOctaves: 1, searchRangeMs: 3,
+                centerLagMs: offsetMs, phaseTransform: true);
+
+        Assert.True(pinned.PositivePeak.EdgePinned);
+        Assert.False(centered.PositivePeak.EdgePinned);
+        // Sub-sample refinement may move the interior peak a hair off the
+        // sample grid; the point here is the flag, not the position.
+        Assert.InRange(centered.PositivePeak.DelayMs, offsetMs - 0.05, offsetMs + 0.05);
+    }
+
+    [Fact]
     public void EstimatePolarity_ReadsTheFirstSignificantExcursion()
     {
         Complex[] positive = UnitImpulse(256, 50);

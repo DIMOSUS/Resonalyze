@@ -149,6 +149,35 @@ public static class AutoAlignmentEngine
     private const double DiagnosticFineRangeMs = 3.0;
     private const double DiagnosticCorrelationRangeMs = 3.0;
 
+    // The wide diagnostic sweep must reach past the flip partner half a period
+    // out even at a LOW junction, where the fixed millisecond span above is
+    // sub-period — otherwise the [diag] line (and the promotion pool at
+    // un-locked junctions) simply cannot contain the true optimum it exists to
+    // surface. 1.25 half periods clears that partner with margin; mid/high
+    // junctions keep the fixed span, already many periods there.
+    private const double DiagnosticFineReachHalfPeriods = 1.25;
+
+    // The stage-1 correlation window in periods of the pair crossover. The
+    // peak-vs-trough dominance gate below is only meaningful when BOTH
+    // polarity partners are complete lobes inside the window, and the arrival
+    // estimate the window centers on can itself sit up to a half period off at
+    // a low junction — so the window must hold at least a full period to each
+    // side. Under the fixed ±3 ms window a field 85 Hz junction had its
+    // non-inverted rival lobe cut by the window edge: the truncated value
+    // understated the rival, the dominance gate passed on the corrupted
+    // number, and the timeline was seeded from the cut — a 3.6 ms miss the
+    // fine search could no longer reach. Mid/high junctions stay on the fixed
+    // floor (±3 ms already spans several periods there).
+    private const double SeedCorrelationWindowPeriods = 1.25;
+
+    // The stage-1 / diagnostic correlation half-window for a junction: the
+    // fixed floor, grown with the crossover period at low junctions so both
+    // polarity partners fit as whole lobes.
+    private static double SeedCorrelationRangeMs(double crossoverHz) =>
+        Math.Max(
+            DiagnosticCorrelationRangeMs,
+            SeedCorrelationWindowPeriods * 1000.0 / crossoverHz);
+
     // The minimum non-inverted PHAT peak correlation for its position to seed the
     // stage-2 window instead of the arrival envelope. Below it the peak is noise
     // (a low-frequency junction with too few in-band periods), and the arrival
@@ -393,12 +422,32 @@ public static class AutoAlignmentEngine
             // mid/high junction it lands the stage-2 window on the correct lobe
             // directly, sparing the wide-window recovery. Only the peak POSITION
             // is used (polarity and the final lobe stay with the loss search), and
-            // only when the peak carries a real correlation — otherwise the arrival
-            // envelope stands. The PHAT window is centered on the arrival estimate,
-            // so a trusted peak is by construction within reach of it. The timeline
-            // stores arrivals as (upper - lower); the PHAT peak is the delay to add
-            // to the upper channel, i.e. the same quantity negated.
+            // only when the peak is the honest winner of its window — otherwise
+            // the arrival envelope stands. Each distrust rule guards a distinct
+            // failure, checked in the order the earlier ones corrupt the later
+            // ones' inputs:
+            //  - an EDGE-PINNED extremum is a lobe cut by the window boundary,
+            //    so its position and magnitude (and hence every comparison
+            //    below) are artifacts of where the window ended;
+            //  - a DOMINANT INVERTED TROUGH means the correlation's strongest
+            //    alignment is the flipped one, and the non-inverted peak is a
+            //    half-period impostor — seeding from the loser would park the
+            //    fine window a fraction of a period off (the field failure:
+            //    trough −0.58 vs peak +0.46 at an 85 Hz junction, seeded from
+            //    the peak, 3.6 ms miss); near-ties fall under the dominance
+            //    floor below either way;
+            //  - a WEAK or BARELY-DOMINANT peak is lobe ambiguity, decided by
+            //    noise (see the two constants);
+            //  - a peak FARTHER FROM THE ARRIVAL than half a period (or the
+            //    fixed window floor, whichever is larger — the reach the fixed
+            //    window used to enforce by construction) is a cycle-skip
+            //    candidate the now period-wide window must not hand to the
+            //    timeline.
+            // The timeline stores arrivals as (upper - lower); the PHAT peak is
+            // the delay to add to the upper channel, i.e. the same quantity
+            // negated.
             double passOctaves = Math.Log2(pair.BandHighHz / pair.BandLowHz);
+            double centerLagMs = lowerArrival - upperArrival;
             CorrelationAlignmentResult phat =
                 VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
                     pair.Lower.ImpulseResponse,
@@ -406,12 +455,25 @@ public static class AutoAlignmentEngine
                     pair.Lower.Channel.SampleRate,
                     pair.CrossoverHz,
                     passOctaves,
-                    DiagnosticCorrelationRangeMs,
-                    centerLagMs: lowerArrival - upperArrival,
+                    SeedCorrelationRangeMs(pair.CrossoverHz),
+                    centerLagMs,
                     phaseTransform: true);
-            bool trustPhat =
-                phat.PositivePeak.Coefficient >= PhatSeedMinCoefficient &&
-                phat.Confidence >= PhatSeedMinDominance;
+            double peakOffsetMs = phat.PositivePeak.DelayMs - centerLagMs;
+            double maxPeakOffsetMs = Math.Max(
+                DiagnosticCorrelationRangeMs, 500.0 / pair.CrossoverHz);
+            string? distrust =
+                phat.PositivePeak.EdgePinned || phat.NegativeTrough.EdgePinned
+                    ? "edge-pinned extremum"
+                    : phat.BestByMagnitude.InvertPolarity
+                        ? "inverted trough dominates"
+                        : phat.PositivePeak.Coefficient < PhatSeedMinCoefficient
+                            ? "peak too weak"
+                            : phat.Confidence < PhatSeedMinDominance
+                                ? "peak-trough near-tie"
+                                : Math.Abs(peakOffsetMs) > maxPeakOffsetMs
+                                    ? "peak beyond the arrival's reach"
+                                    : null;
+            bool trustPhat = distrust == null;
             double increment =
                 trustPhat ? -phat.PositivePeak.DelayMs : upperArrival - lowerArrival;
             timeline[pair.Upper.Channel] = timeline[pair.Lower.Channel] + increment;
@@ -440,7 +502,7 @@ public static class AutoAlignmentEngine
                 $"phat peak {phat.PositivePeak.DelayMs:+0.000;-0.000} ms " +
                 $"(r {phat.PositivePeak.Coefficient:+0.000;-0.000}, " +
                 $"dom {phat.Confidence:0.000}) -> seed " +
-                $"{(trustPhat ? "phat" : "arrival")}");
+                $"{(trustPhat ? "phat" : $"arrival ({distrust})")}");
         }
 
         return timeline;
@@ -688,9 +750,13 @@ public static class AutoAlignmentEngine
             // Wide sweep: the same junction searched across a much wider
             // window so lobes beyond the working range appear in the log.
             // At an un-locked junction the promotion below may adopt its
-            // winner; under a scene or onset lock it is log-only.
+            // winner; under a scene or onset lock it is log-only. At a low
+            // junction the fixed span is sub-period, so it grows to reach the
+            // flip partner half a period out (see DiagnosticFineReachHalfPeriods).
             (IReadOnlyList<AlignmentCandidate> wide, double wideLow, double wideHigh) =
-                SearchJunction(windowOverrideMs: DiagnosticFineRangeMs);
+                SearchJunction(windowOverrideMs: Math.Max(
+                    DiagnosticFineRangeMs,
+                    DiagnosticFineReachHalfPeriods * halfPeriodMs));
             log.AppendLine(
                 $"  [diag] wide {wideLow:0.000}..{wideHigh:0.000} ms: " +
                 (wide.Count > 0
@@ -1816,7 +1882,8 @@ public static class AutoAlignmentEngine
         log.AppendLine(
             "[corr] band-limited cross-correlation diagnostics " +
             "(full pair band, " +
-            $"window ±{DiagnosticCorrelationRangeMs:0.###} ms; " +
+            $"window ±max({DiagnosticCorrelationRangeMs:0.###} ms, " +
+            $"{SeedCorrelationWindowPeriods:0.##} fc periods); " +
             "[corr] raw amplitude, [phat] phase-transform / whitened)");
 
         foreach (AlignmentJunction pair in pairs)
@@ -1866,7 +1933,7 @@ public static class AutoAlignmentEngine
                 pair.Lower.Channel.SampleRate,
                 pair.CrossoverHz,
                 passOctaves,
-                DiagnosticCorrelationRangeMs,
+                SeedCorrelationRangeMs(pair.CrossoverHz),
                 centerLagMs,
                 phaseTransform);
         CorrelationDelayCandidate best = result.BestByMagnitude;
@@ -1876,6 +1943,7 @@ public static class AutoAlignmentEngine
             $"{pair.Upper.Channel.Name}: " +
             $"fc {result.CenterFrequencyHz:0} Hz, " +
             $"band {result.BandLowHz:0}-{result.BandHighHz:0} Hz, " +
+            $"window ±{result.SearchRangeMs:0.###} ms, " +
             $"delay to add to {pair.Upper.Channel.Name}: " +
             $"{best.DelayMs:+0.000;-0.000} ms, " +
             $"invert {(best.InvertPolarity ? "yes" : "no")}, " +
@@ -1883,8 +1951,10 @@ public static class AutoAlignmentEngine
             $"confidence {result.Confidence:0.000}");
         log.AppendLine(
             $"  [{tag}] peak {result.PositivePeak.DelayMs:+0.000;-0.000} ms " +
-            $"(r {result.PositivePeak.Coefficient:+0.000;-0.000}); " +
+            $"(r {result.PositivePeak.Coefficient:+0.000;-0.000}" +
+            $"{(result.PositivePeak.EdgePinned ? ", edge" : "")}); " +
             $"trough {result.NegativeTrough.DelayMs:+0.000;-0.000} ms " +
-            $"(r {result.NegativeTrough.Coefficient:+0.000;-0.000}, inv)");
+            $"(r {result.NegativeTrough.Coefficient:+0.000;-0.000}, inv" +
+            $"{(result.NegativeTrough.EdgePinned ? ", edge" : "")})");
     }
 }

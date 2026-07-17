@@ -45,6 +45,23 @@ public sealed class AutoAlignmentEngineTests
             new DspChannelChain(DelayMs: delayMs, InvertPolarity: invert),
             SampleRate);
 
+    // A first arrival plus a competing later copy — the shape that splits the
+    // envelope arrival (reads the first copy) from the whitened-correlation
+    // peak (follows the stronger copy).
+    private static Complex[] ImpulseWithEcho(
+        double offsetMs, double amplitude, double echoMs, double echoAmplitude)
+    {
+        var ir = new Complex[IrLength];
+        ir[BasePosition + (int)Math.Round(offsetMs / 1000.0 * SampleRate)] =
+            amplitude;
+        ir[BasePosition + (int)Math.Round((offsetMs + echoMs) / 1000.0 * SampleRate)] +=
+            echoAmplitude;
+        return ir;
+    }
+
+    private static string LogLine(string log, string contains) =>
+        log.Split('\n').First(line => line.Contains(contains));
+
     private static Dictionary<IAlignmentChannel, AlignmentOverride> Run(
         TestChannel[] byBand,
         double[] crossoversHz,
@@ -263,6 +280,64 @@ public sealed class AutoAlignmentEngineTests
         Assert.DoesNotContain(
             "WARNING: fine result at the search edge", log.ToString());
         Assert.DoesNotContain("promoted", log.ToString());
+    }
+
+    [Fact]
+    public void Compute_TroughDominantLowJunction_SeedsFromTheArrivalAndFindsTheInvertedLobe()
+    {
+        // The field failure this pins (an 85 Hz junction): the upper channel
+        // is genuinely inverted and ~15 ms early, so the whitened
+        // correlation's strongest extremum is the inverted trough at the true
+        // offset while the non-inverted "peak" is only a half-period
+        // side-lobe of it. The old gate read the trough's dominance as
+        // confidence in that peak and seeded the timeline from the losing
+        // lobe, parking the fine window milliseconds short of the optimum. A
+        // trough-dominant junction must fall back to the arrival envelope,
+        // widen (WIDE SEED), and let the loss search take the inverted lobe.
+        var midbass = new TestChannel("B", DelayedImpulse(15.2));
+        var mid = new TestChannel("C", DelayedImpulse(0.0, invert: true));
+        var log = new StringBuilder();
+
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
+            Run([midbass, mid], [85], log);
+
+        string text = log.ToString();
+        Assert.False(alignment.ContainsKey(midbass));
+        AlignmentOverride result = alignment[mid];
+        Assert.True(result.InvertPolarity);
+        Assert.InRange(result.DelayMs, 15.0, 15.4);
+        Assert.Contains(
+            "seed arrival (inverted trough dominates)", LogLine(text, "Pair B/C"));
+        Assert.Contains("WIDE SEED", LogLine(text, "Channel C:"));
+    }
+
+    [Fact]
+    public void Compute_DominantPeakFarFromTheArrival_IsNotTrustedAsTheSeed()
+    {
+        // A low junction whose upper channel is a soft direct sound under a
+        // STRONG late reflection: the arrival detector honestly reads the
+        // direct copy (well inside its 25 dB search depth) while the whitened
+        // peak aligns the neighbor with the reflection, ~9 ms past it — a
+        // cycle-skip candidate. The fixed ±3 ms window used to exclude such a
+        // peak by construction; the period-wide window sees it, so the reach
+        // rule must refuse it and keep the TIMELINE on the arrival envelope,
+        // widened (WIDE SEED). What the loss search and the promotion then
+        // make of the deliberately ambiguous summation surface is their
+        // pinned-elsewhere business — this test pins the seed contract.
+        var midbass = new TestChannel("B", DelayedImpulse(15.0));
+        var mid = new TestChannel(
+            "C", ImpulseWithEcho(0.0, 0.35, 8.0, 1.0));
+        var log = new StringBuilder();
+
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
+            Run([midbass, mid], [85], log);
+
+        string text = log.ToString();
+        Assert.False(alignment.ContainsKey(midbass));
+        Assert.Contains(
+            "seed arrival (peak beyond the arrival's reach)",
+            LogLine(text, "Pair B/C"));
+        Assert.Contains("WIDE SEED", LogLine(text, "Channel C:"));
     }
 
     [Fact]

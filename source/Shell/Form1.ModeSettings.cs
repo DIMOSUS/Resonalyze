@@ -139,7 +139,8 @@ public partial class Form1
                 opt.Init(
                     liveSpectrumOptions,
                     microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees0),
-                    microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees90));
+                    microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees90),
+                    plotModelFactory.LiveSplOffsetDb.HasValue);
                 opt.ResetAverageRequested += liveSpectrumController.ResetAverage;
             },
             ApplyLiveSpectrumOptionsAsync,

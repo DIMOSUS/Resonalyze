@@ -12,6 +12,7 @@ public sealed class OverlayCollection
 {
     private readonly List<Overlay> overlays = new();
     private readonly Action notifyPlotChanged;
+    private Func<MagnitudeScale>? getCurrentMagnitudeScale;
 
     public OverlayCollection(
         Form1 form,
@@ -95,6 +96,15 @@ public sealed class OverlayCollection
     public OxyPlot.WindowsForms.PlotView PlotView { get; }
     public Form1 Form { get; }
 
+    // The magnitude scale the plot is currently drawn in, so a captured overlay is
+    // tagged with its unit and only shown again on a matching axis. Defaults to
+    // Relative until the shell provides the live value.
+    public void SetMagnitudeScaleProvider(Func<MagnitudeScale> provider) =>
+        getCurrentMagnitudeScale = provider;
+
+    public MagnitudeScale CurrentMagnitudeScale =>
+        getCurrentMagnitudeScale?.Invoke() ?? MagnitudeScale.Relative;
+
     // Lands any debounced offset saves immediately; the shell calls this on
     // close so an offset changed within the debounce window still persists.
     public void FlushPendingSaves()
@@ -122,12 +132,24 @@ public sealed class OverlayCollection
 
     public void Show(Mode mode)
     {
+        Mode overlayMode = OverlayModeFor(mode);
+        MagnitudeScale scale = CurrentMagnitudeScale;
         foreach (Overlay overlay in overlays)
         {
-            if (overlay.Checked && overlay.SeriesMode == OverlayModeFor(mode))
+            if (!overlay.Checked || overlay.SeriesMode != overlayMode)
             {
-                overlay.Show();
+                continue;
             }
+
+            // In the magnitude mode an overlay shows only on the axis it was captured
+            // on: dBr/dBc overlays in Relative, dB SPL overlays in SPL.
+            if (overlayMode == Mode.FrequencyResponse &&
+                overlay.CapturedMagnitudeScale != scale)
+            {
+                continue;
+            }
+
+            overlay.Show();
         }
 
         notifyPlotChanged();
@@ -438,6 +460,9 @@ public sealed class Overlay
     private DataPoint[]? sourcePoints;
     private DataPoint[]? drawPoints;
     private string? capturedYAxisKey;
+    // The magnitude scale this slot was captured in (meaningful for a captured
+    // FR curve; Relative for every other kind). Gates which magnitude mode shows it.
+    private MagnitudeScale capturedMagnitudeScale = MagnitudeScale.Relative;
     // Phase representation of a captured curve: true unwrapped, false wrapped, null
     // unknown. Drives the wrapped-difference choice in phase overlay operations.
     private bool? phaseUnwrapped;
@@ -537,6 +562,8 @@ public sealed class Overlay
     public Mode SeriesMode { get; private set; }
     public bool Checked => checkBox.Checked;
     public OverlayKind Kind => kind;
+
+    public MagnitudeScale CapturedMagnitudeScale => capturedMagnitudeScale;
     public bool HasCaptureData => sourcePoints is { Length: > 1 };
 
     // The overlay mode for the current view; Frequency Response and Live Spectrum
@@ -1245,6 +1272,8 @@ public sealed class Overlay
         kind = OverlayKind.Captured;
         operationConfigured = false;
         sourcePoints = points;
+        // The curve was drawn in the plot's current scale, so it carries that unit.
+        capturedMagnitudeScale = collection.CurrentMagnitudeScale;
         capturedYAxisKey = string.IsNullOrEmpty(selected.YAxisKey)
             ? null
             : selected.YAxisKey;
@@ -1302,6 +1331,8 @@ public sealed class Overlay
         targetConfigured = false;
         // Imported text gives no wrap/unwrap hint; leave it unknown.
         phaseUnwrapped = null;
+        // Imported points are assumed to be in the current view's unit.
+        capturedMagnitudeScale = collection.CurrentMagnitudeScale;
         capturedYAxisKey = null;
         sourcePoints = imported
             .Select(point => new DataPoint(point.X, point.Y))
@@ -1545,6 +1576,9 @@ public sealed class Overlay
         Hide();
         kind = OverlayKind.Target;
         capturedYAxisKey = null;
+        // Targets and operations are defined in relative dB; they belong to the
+        // Relative axis until an SPL-native form exists.
+        capturedMagnitudeScale = MagnitudeScale.Relative;
         Title = dialog.OverlayName;
         targetSourceSlot = dialog.SourceSlot;
         targetPreset = dialog.Preset;
@@ -1686,6 +1720,7 @@ public sealed class Overlay
         Hide();
         kind = OverlayKind.Operation;
         capturedYAxisKey = null;
+        capturedMagnitudeScale = MagnitudeScale.Relative;
         Title = dialog.OverlayName;
         sourceSlotA = dialog.SourceSlotA;
         sourceSlotB = dialog.SourceSlotB;
@@ -1798,7 +1833,11 @@ public sealed class Overlay
 
         if (checkBox.Checked)
         {
-            if (SeriesMode == CurrentOverlayMode)
+            // Show only on a matching mode and — in the magnitude mode — a matching
+            // scale, so an SPL overlay is not drawn on the dBr axis or vice versa.
+            if (SeriesMode == CurrentOverlayMode &&
+                (SeriesMode != Mode.FrequencyResponse ||
+                 capturedMagnitudeScale == collection.CurrentMagnitudeScale))
             {
                 Show();
             }
@@ -1818,6 +1857,7 @@ public sealed class Overlay
         SeriesMode = file.Mode;
         kind = file.Kind;
         Title = file.Title;
+        capturedMagnitudeScale = file.CapturedMagnitudeScale;
         strokeThickness = file.StrokeThickness;
         lineStyle = file.LineStyle;
         opacityPercent = file.OpacityPercent;
@@ -1925,6 +1965,7 @@ public sealed class Overlay
             Slot = Index,
             Kind = kind,
             Title = Title,
+            CapturedMagnitudeScale = capturedMagnitudeScale,
             Offset = (double)offsetControl.Value,
             ColorArgb = panel.BackColor.ToArgb(),
             StrokeThickness = strokeThickness,

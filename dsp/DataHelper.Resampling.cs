@@ -148,6 +148,205 @@ namespace Resonalyze.Dsp
             return output;
         }
 
+        /// <summary>
+        /// FFT-size-independent band levels for an RTA shown in absolute units, ABOVE the
+        /// FFT resolution limit. Where <see cref="LogarithmicResample"/> interpolates and
+        /// averages AMPLITUDE (correct for a relative / transfer trace), this integrates
+        /// POWER over each display band, so a broadband level does not shift with the FFT
+        /// length: the summed bin power in a fixed frequency band is invariant to N (at
+        /// higher N there are more, narrower bins, each carrying proportionally less
+        /// power). The summed power is divided by the window's equivalent noise bandwidth
+        /// so a noise band reads its true power rather than the coherent-gain (tone)
+        /// over-estimate, while a bin-centred full-scale tone under a rectangular
+        /// window still reads its calibrated level. Each bin contributes only the fraction
+        /// of its power overlapping the band, and no band is narrower than the window's
+        /// spectral main lobe, so the level is continuous (no jump as a bin centre crosses
+        /// a band edge), never sub-bin, and a tone keeps its whole main lobe.
+        /// <para>
+        /// The N-invariance holds only where the fixed <c>1/12</c>-octave reference band is
+        /// WIDER than that main lobe. Below the crossover (a low frequency, a long window
+        /// such as Flat Top, or a short FFT) the band is floored to the main lobe, whose
+        /// width in Hz — <c>mainLobeBins·Fs/N</c> — DOES shrink with N, so a broadband
+        /// level there drops ~3 dB per doubling of N. This is the unavoidable resolution
+        /// limit of a single FFT (the <c>1/12</c>-octave band is simply finer than the FFT
+        /// resolves), shared by every FFT RTA, and it is the deliberate cost of the
+        /// main-lobe floor: without it a coherent tone in that region would read low. Use a
+        /// longer FFT for finer low-frequency resolution.
+        /// </para>
+        /// The
+        /// integration band is a FIXED reference resolution, NOT the display smoothing:
+        /// because band power grows with bandwidth, tying it to smoothing would lift a
+        /// quiet spectrum by many dB. <paramref name="smoothingOctaves"/> instead applies
+        /// afterwards as a level-preserving dB average that only smooths scatter. The grid
+        /// is bounded so every emitted band fits WHOLE inside the resolved range: none
+        /// straddles Nyquist or DC (a half-empty band would show a false roll-off on a flat
+        /// input), and nothing above the last bin is synthesized from it.
+        /// <para>
+        /// Returns RELATIVE band levels in dB (<c>10·log10</c> of the band power); the
+        /// caller adds any microphone-calibration correction and the SPL offset.
+        /// </para>
+        /// </summary>
+        /// <param name="amplitudeSpectrum">
+        /// Tone-calibrated amplitude per bin (index = bin, 0..N/2), as produced by
+        /// <c>SpectrumAnalysis.ComputeInputMagnitudeSpectrum</c>.
+        /// </param>
+        public static List<SignalPoint> LogarithmicPowerBandResample(
+            IReadOnlyList<double> amplitudeSpectrum,
+            int fftLength,
+            int sampleRate,
+            double windowEnbwBins,
+            double windowMainLobeBins,
+            double start,
+            double stop,
+            int steps,
+            double smoothingOctaves)
+        {
+            ArgumentNullException.ThrowIfNull(amplitudeSpectrum);
+            if (steps < 2)
+            {
+                throw new ArgumentOutOfRangeException(nameof(steps));
+            }
+
+            var output = new List<SignalPoint>(steps);
+            double binWidth = fftLength > 0 ? (double)sampleRate / fftLength : 0.0;
+            int maxBin = Math.Min(amplitudeSpectrum.Count - 1, fftLength / 2);
+            if (binWidth <= 0.0 || maxBin < 1 || start <= 0.0 || stop <= start)
+            {
+                return output;
+            }
+
+            double enbw = windowEnbwBins > 0.0 ? windowEnbwBins : 1.0;
+
+            // The window's spectral resolution, in Hz: the main-lobe width, not the
+            // (narrower) equivalent NOISE bandwidth. A band is never integrated narrower
+            // than this, so a sub-bin band does not read a random fraction of a bin, and
+            // a coherent tone keeps its whole main lobe.
+            double mainLobeBins = windowMainLobeBins > 0.0 ? windowMainLobeBins : 1.0;
+            double resolutionHz = mainLobeBins * binWidth;
+
+            // The band the power is integrated over is a FIXED reference resolution — a
+            // fixed fractional octave, widened to the window main lobe or the grid cell
+            // where those are coarser — NOT the display smoothing. Tying the band to
+            // smoothing lifts the level, because band power grows with bandwidth: a wide
+            // smoothing swept ever more Hz into each band and raised a quiet spectrum by
+            // many dB at high frequencies. Smoothing is applied afterwards, as a
+            // level-preserving average that only smooths scatter.
+            const double referenceBandOctaves = 1.0 / 12.0;
+
+            double preliminaryStop = Math.Min(stop, maxBin * binWidth);
+            if (preliminaryStop <= start)
+            {
+                return output;
+            }
+
+            double gridHalfOctaves = 0.5 * Math.Log2(preliminaryStop / start) / (steps - 1);
+            double halfOctaves = Math.Max(gridHalfOctaves, referenceBandOctaves * 0.5);
+            double upperFactor = Math.Pow(2.0, halfOctaves);
+            double lowerFactor = 1.0 / upperFactor;
+
+            // Keep the WHOLE band inside the resolved spectrum, not just its centre. A
+            // band whose fractional-octave OR main-lobe width spilled past the last bin
+            // (near Nyquist) or below the first bin (near 20 Hz with a wide main lobe)
+            // would integrate a half-empty band and show a false roll-off on an input
+            // that is actually flat. Bound the centre so both the octave band
+            // [f/upperFactor, f·upperFactor] and the resolution band [f ± resolutionHz/2]
+            // fit within the resolved range [firstBinLowEdge, lastBinHighEdge].
+            double lowerEdge = 0.5 * binWidth;
+            double upperEdge = (maxBin + 0.5) * binWidth;
+            double effectiveStart = Math.Max(
+                start,
+                Math.Max(lowerEdge * upperFactor, lowerEdge + resolutionHz * 0.5));
+            double effectiveStop = Math.Min(
+                stop,
+                Math.Min(upperEdge / upperFactor, upperEdge - resolutionHz * 0.5));
+            if (effectiveStop <= effectiveStart)
+            {
+                return output;
+            }
+
+            // First pass: the fixed-resolution band POWER (linear) at each grid point.
+            var frequencies = new double[steps];
+            var bandPowers = new double[steps];
+            for (int i = 0; i < steps; i++)
+            {
+                double frequency = LogPositionToFrequency(i / (steps - 1.0), effectiveStart, effectiveStop);
+                frequencies[i] = frequency;
+                double lowFrequency = frequency * lowerFactor;
+                double highFrequency = frequency * upperFactor;
+                if (highFrequency - lowFrequency < resolutionHz)
+                {
+                    double half = resolutionHz * 0.5;
+                    lowFrequency = frequency - half;
+                    highFrequency = frequency + half;
+                }
+
+                // Integrate the fraction of every bin's power that overlaps the band —
+                // each bin owns the frequency interval [(k-½)·Δf, (k+½)·Δf], and only
+                // its overlap with the band counts — so the level is continuous as
+                // bins cross band edges instead of jumping when a centre lands inside.
+                // Dividing by the window ENBW turns the coherent-gain bin power into
+                // true band power (a rectangular-window tone still reads its level).
+                double bandPower = 0.0;
+                int firstBin = Math.Max(1, (int)Math.Ceiling(lowFrequency / binWidth - 0.5));
+                int lastBin = Math.Min(maxBin, (int)Math.Floor(highFrequency / binWidth + 0.5));
+                for (int bin = firstBin; bin <= lastBin; bin++)
+                {
+                    double binLow = (bin - 0.5) * binWidth;
+                    double binHigh = (bin + 0.5) * binWidth;
+                    double overlap =
+                        Math.Min(highFrequency, binHigh) - Math.Max(lowFrequency, binLow);
+                    if (overlap <= 0.0)
+                    {
+                        continue;
+                    }
+
+                    double amplitude = amplitudeSpectrum[bin];
+                    bandPower += amplitude * amplitude * (overlap / binWidth);
+                }
+
+                bandPowers[i] = bandPower / enbw;
+            }
+
+            // Second pass: display smoothing as a level-preserving moving MEAN of the
+            // band POWERS over the requested fractional octave. A mean (not a sum) leaves
+            // a flat or sloped spectrum's level unchanged and only smooths scatter; a
+            // tone is diluted toward the surrounding level, as any smoothing softens a
+            // spike. Averaging in the power domain (not dB) keeps a silent neighbour at
+            // zero power rather than -160 dB, so it does not swamp a nearby tone. It never
+            // lifts the level the way widening the integration band would.
+            double octavesPerStep = Math.Log2(effectiveStop / effectiveStart) / (steps - 1);
+            int smoothingHalfSteps = smoothingOctaves > 0.0 && octavesPerStep > 0.0
+                ? (int)Math.Round(smoothingOctaves * 0.5 / octavesPerStep)
+                : 0;
+
+            // 10·log10(power) == 20·log10(sqrt(power)); reuse the amplitude floor.
+            if (smoothingHalfSteps <= 0)
+            {
+                for (int i = 0; i < steps; i++)
+                {
+                    output.Add(new SignalPoint(frequencies[i], AmplitudeToDecibels(Math.Sqrt(bandPowers[i]))));
+                }
+
+                return output;
+            }
+
+            var prefix = new double[steps + 1];
+            for (int i = 0; i < steps; i++)
+            {
+                prefix[i + 1] = prefix[i] + bandPowers[i];
+            }
+
+            for (int i = 0; i < steps; i++)
+            {
+                int lowIndex = Math.Max(0, i - smoothingHalfSteps);
+                int highIndex = Math.Min(steps - 1, i + smoothingHalfSteps);
+                double mean = (prefix[highIndex + 1] - prefix[lowIndex]) / (highIndex - lowIndex + 1);
+                output.Add(new SignalPoint(frequencies[i], AmplitudeToDecibels(Math.Sqrt(mean))));
+            }
+
+            return output;
+        }
+
         public static List<SignalPoint> SmoothLinear(List<SignalPoint> input, double smoothingOctaves = 1.0 / 6.0)
         {
             if (input.Count < 2)

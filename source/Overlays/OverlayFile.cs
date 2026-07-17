@@ -59,6 +59,14 @@ public sealed class OverlayFile
     // default axis, older app builds ignore this property.
     public string? CapturedYAxisKey { get; set; }
 
+    // The magnitude scale the samples were captured in: dBr/dBc (Relative) or
+    // dB SPL. An SPL overlay only makes sense on an SPL axis and vice versa, so this
+    // gates which magnitude mode shows it. Additive with a safe default, so it needs
+    // no file version bump: older files deserialize to Relative and older app builds
+    // ignore the unknown property.
+    public Resonalyze.Dsp.MagnitudeScale CapturedMagnitudeScale { get; set; } =
+        Resonalyze.Dsp.MagnitudeScale.Relative;
+
     // Captured phase curves only: true if the samples are an unwrapped (continuous)
     // representation, false if wrapped (-180..180), null if unknown (e.g. imported text
     // or a non-phase mode). Additive and nullable, so it needs no file version bump:

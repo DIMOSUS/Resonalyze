@@ -1,4 +1,5 @@
 using Resonalyze.Dsp;
+using Resonalyze.Ui;
 
 namespace Resonalyze.Options
 {
@@ -16,6 +17,18 @@ namespace Resonalyze.Options
         private WindowType userWindowType = WindowType.Hann;
         private int userOverlapPercent = 50;
 
+        // The user's RTA (input magnitude) choice, tracked independently so the SPL
+        // mode — which forces the RTA on and locks its checkbox — can restore the
+        // real preference when the plot returns to the relative scale.
+        private bool userShowInputMagnitude;
+
+        // The user's last chosen signal, remembered so a scale switch keeps it when the
+        // new scale still offers it, and restores it on the way back. The two scales
+        // differ only by their exclusive signal: periodic pink (the transfer function's
+        // reference) is relative-only, Silent (an ambient RTA with no excitation) is
+        // SPL-only; the plain Pink/Brown/White excitations are shared.
+        private NoiseColor userSignalType = NoiseColor.PinkPeriodic;
+
         /// <summary>
         /// Raised when the user clicks Reset Average. Handled live (without an
         /// Apply / restart) so the Infinite averaging preset can be cleared.
@@ -27,9 +40,15 @@ namespace Resonalyze.Options
             InitializeComponent();
             SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
             buttonResetAverage.Click += (_, _) => ResetAverageRequested?.Invoke();
-            signalTypeComboBox.SelectionChangeCommitted += (_, _) => UpdatePeriodicPinkControls();
+            signalTypeComboBox.SelectionChangeCommitted += (_, _) =>
+            {
+                CaptureUserSignalType();
+                UpdatePeriodicPinkControls();
+            };
             windowComboBox.SelectionChangeCommitted += (_, _) => CaptureUserWindow();
             overlapComboBox.SelectionChangeCommitted += (_, _) => CaptureUserOverlap();
+            radioMagnitudeSpl.CheckedChanged += (_, _) => UpdateScaleDependentControls();
+            checkInputMagnitude.Click += (_, _) => CaptureUserInputMagnitude();
             InitializeToolTips();
             Disposed += (_, _) => toolTip.Dispose();
         }
@@ -37,16 +56,13 @@ namespace Resonalyze.Options
         public void Init(
             LiveSpectrumOptions options,
             bool hasZeroDegreeCalibration,
-            bool hasNinetyDegreeCalibration)
+            bool hasNinetyDegreeCalibration,
+            bool isSplAvailable)
         {
-            signalTypeComboBox.Items.Clear();
+            // The signal list is populated per scale in UpdateScaleDependentControls
+            // below; remember the stored signal so it survives a scale round-trip.
             signalTypeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            signalTypeComboBox.Items.Add(
-                new NoiseColorOption(NoiseColor.PinkPeriodic, "Pink noise (periodic)"));
-            signalTypeComboBox.Items.Add(new NoiseColorOption(NoiseColor.Pink, "Pink noise"));
-            signalTypeComboBox.Items.Add(new NoiseColorOption(NoiseColor.Brown, "Brown / red noise"));
-            signalTypeComboBox.Items.Add(new NoiseColorOption(NoiseColor.White, "White noise"));
-            signalTypeComboBox.SelectedIndex = FindNoiseColorIndex(options.NoiseColor);
+            userSignalType = options.NoiseColor;
 
             sequenceLengthComboBox.Items.Clear();
             foreach (int sequenceLength in SequenceLengths)
@@ -76,7 +92,6 @@ namespace Resonalyze.Options
                 new WindowOption(WindowType.Rectangular, "Rectangular"));
             userWindowType = options.WindowType;
             windowComboBox.SelectedIndex = FindWindowIndex(options.WindowType);
-            UpdatePeriodicPinkControls();
 
             averagingComboBox.Items.Clear();
             averagingComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -97,8 +112,21 @@ namespace Resonalyze.Options
 
             checkMainCurve.Checked = options.ShowMainCurve;
             checkInputMagnitude.Checked = options.ShowInputMagnitude;
+            userShowInputMagnitude = options.ShowInputMagnitude;
             checkPeakHold.Checked = options.PeakHold;
             checkCoherence.Checked = options.ShowCoherence;
+
+            // SPL shows the microphone (RTA) spectrum in absolute dB SPL; it is
+            // offerable only when a matching SPL calibration is configured for the
+            // live input. A stale/absent calibration mutes the choice (kept Enabled so
+            // the dark theme's muted colour is used, not the near-black system grey).
+            UiStyle.SetTextEnabledLook(radioMagnitudeSpl, isSplAvailable, interactive: true);
+            bool spl = options.MagnitudeScale == MagnitudeScale.SoundPressureLevel
+                && isSplAvailable;
+            radioMagnitudeSpl.Checked = spl;
+            radioMagnitudeRelative.Checked = !spl;
+            UpdateScaleDependentControls();
+
             MicrophoneCalibrationComboHelper.Configure(
                 comboCalibration,
                 options.CalibrationMode,
@@ -132,13 +160,18 @@ namespace Resonalyze.Options
                     ? averagingOption.Speed
                     : AveragingSpeed.Medium;
             options.ShowMainCurve = checkMainCurve.Checked;
-            options.ShowInputMagnitude = checkInputMagnitude.Checked;
+            // Persist the user's real RTA choice, not the value forced (and locked) on
+            // while SPL mode is selected.
+            options.ShowInputMagnitude = userShowInputMagnitude;
             options.PeakHold = checkPeakHold.Checked;
             options.ShowCoherence = checkCoherence.Checked;
             options.CoherenceThresholdPercent =
                 coherenceLimitComboBox.SelectedItem is CoherenceLimitOption limitOption
                     ? limitOption.Percent
                     : CoherenceLimits[0];
+            options.MagnitudeScale = radioMagnitudeSpl.Checked
+                ? MagnitudeScale.SoundPressureLevel
+                : MagnitudeScale.Relative;
         }
 
         private static int FindCoherenceLimitIndex(int thresholdPercent) =>
@@ -195,6 +228,89 @@ namespace Resonalyze.Options
                 windowComboBox.SelectedIndex = FindWindowIndex(userWindowType);
                 overlapComboBox.Enabled = true;
                 overlapComboBox.SelectedIndex = FindOverlapIndex(userOverlapPercent);
+            }
+        }
+
+        // In SPL mode the plot is the absolute microphone (RTA) spectrum. The transfer
+        // function and coherence are dimensionless ratios with no SPL under noise
+        // excitation, so their curve controls are disabled. The RTA is the one shown
+        // curve, so it is forced on and locked; its relative-mode preference is kept in
+        // userShowInputMagnitude and restored when the scale returns to relative.
+        private void UpdateScaleDependentControls()
+        {
+            bool spl = radioMagnitudeSpl.Checked;
+            UpdateSignalTypesForScale(spl);
+
+            // Mute (rather than WinForms-disable) the transfer/coherence controls so
+            // they read as the theme's muted colour, not the near-black system grey.
+            UiStyle.SetTextEnabledLook(labelMainCurve, !spl);
+            UiStyle.SetTextEnabledLook(checkMainCurve, !spl, interactive: true);
+            UiStyle.SetTextEnabledLook(labelInputMagnitude, !spl);
+            UiStyle.SetTextEnabledLook(checkInputMagnitude, !spl, interactive: true);
+            UiStyle.SetTextEnabledLook(label9, !spl);
+            UiStyle.SetTextEnabledLook(checkCoherence, !spl, interactive: true);
+            UiStyle.SetTextEnabledLook(label10, !spl);
+            // The coherence-limit combo is a DarkComboBox, which mutes itself on Enabled.
+            coherenceLimitComboBox.Enabled = !spl;
+
+            checkInputMagnitude.Checked = spl || userShowInputMagnitude;
+        }
+
+        // The signal list follows the scale, differing only by the one scale-exclusive
+        // signal. SPL is a reference-free RTA, so periodic pink — which exists only to
+        // converge the transfer function fast — is dropped and Silent (an ambient RTA
+        // with no excitation) is offered alongside the plain Pink/Brown/White colours
+        // you can still play and measure the SPL of. The relative scale needs a known
+        // reference, so it drops Silent and offers periodic pink. The last signal is
+        // kept when the new scale still has it (Pink/Brown/White carry across), so a
+        // scale round-trip does not silently swap the excitation.
+        private void UpdateSignalTypesForScale(bool spl)
+        {
+            signalTypeComboBox.Items.Clear();
+            if (spl)
+            {
+                signalTypeComboBox.Items.Add(new NoiseColorOption(NoiseColor.Silent, "Silent"));
+            }
+            else
+            {
+                signalTypeComboBox.Items.Add(
+                    new NoiseColorOption(NoiseColor.PinkPeriodic, "Pink noise (periodic)"));
+            }
+
+            signalTypeComboBox.Items.Add(new NoiseColorOption(NoiseColor.Pink, "Pink noise"));
+            signalTypeComboBox.Items.Add(new NoiseColorOption(NoiseColor.Brown, "Brown / red noise"));
+            signalTypeComboBox.Items.Add(new NoiseColorOption(NoiseColor.White, "White noise"));
+
+            // Keep the remembered signal if this scale offers it; otherwise use the
+            // scale's exclusive default (Silent for SPL, periodic pink for relative).
+            int index = TryFindNoiseColorIndex(userSignalType);
+            if (index < 0)
+            {
+                index = FindNoiseColorIndex(spl ? NoiseColor.Silent : NoiseColor.PinkPeriodic);
+            }
+
+            signalTypeComboBox.SelectedIndex = index;
+            UpdatePeriodicPinkControls();
+        }
+
+        // Only a real user commit updates the remembered signal — never the programmatic
+        // re-selection above, which would pollute it with an auto-picked default.
+        private void CaptureUserSignalType()
+        {
+            if (signalTypeComboBox.SelectedItem is NoiseColorOption option)
+            {
+                userSignalType = option.NoiseColor;
+            }
+        }
+
+        // Only a real user toggle updates the remembered RTA preference. In SPL mode the
+        // checkbox is muted (AutoCheck off), so a click cannot change it — guard on that
+        // rather than Enabled, which stays true for the muted look.
+        private void CaptureUserInputMagnitude()
+        {
+            if (checkInputMagnitude.AutoCheck)
+            {
+                userShowInputMagnitude = checkInputMagnitude.Checked;
             }
         }
 
@@ -295,6 +411,12 @@ namespace Resonalyze.Options
 
         private int FindNoiseColorIndex(NoiseColor noiseColor)
         {
+            int index = TryFindNoiseColorIndex(noiseColor);
+            return index >= 0 ? index : 0;
+        }
+
+        private int TryFindNoiseColorIndex(NoiseColor noiseColor)
+        {
             for (int index = 0; index < signalTypeComboBox.Items.Count; index++)
             {
                 if (signalTypeComboBox.Items[index] is NoiseColorOption option &&
@@ -304,7 +426,7 @@ namespace Resonalyze.Options
                 }
             }
 
-            return 0;
+            return -1;
         }
 
         private sealed class NoiseColorOption
@@ -367,6 +489,18 @@ namespace Resonalyze.Options
             toolTip.SetToolTip(
                 comboCalibration,
                 "Applies the selected microphone calibration file to Live Spectrum.");
+            toolTip.SetToolTip(
+                labelScale,
+                "Vertical scale of the live plot.");
+            toolTip.SetToolTip(
+                radioMagnitudeRelative,
+                "Native scale: the transfer function and RTA in relative dB.");
+            toolTip.SetToolTip(
+                radioMagnitudeSpl,
+                "Absolute dB SPL. Shows the microphone (RTA) spectrum from the SPL "
+                + "calibration; the transfer function is a dimensionless ratio with no "
+                + "scalar SPL under noise, so it is hidden. Available only when a matching "
+                + "SPL calibration is configured for the live input.");
         }
     }
 }

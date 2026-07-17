@@ -594,6 +594,67 @@ public sealed class PlotModelFactoryTests
         Assert.NotEmpty(factory.CreateFrequencyResponse(includeCurves: true).Series);
     }
 
+    [Fact]
+    public void CreateFrequencyResponse_InSplMode_UsesTheSplAxisAndLimits()
+    {
+        ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        // The result's own frozen calibration (matching the default Wave input) plus
+        // its input identity and a captured loopback level are the ingredients of K.
+        var anchor = new SplCalibration
+        {
+            ReferenceLevelDbSpl = 94,
+            MeasuredLevelDbFs = -20,
+            Backend = Resonalyze.Audio.AudioBackend.Wave,
+            SampleRate = 44_100,
+            Bits = 24,
+            MicrophoneChannelOffset = 0,
+            InputDeviceNumber = -1
+        };
+        measurement.MeasurementSplCalibration = anchor;
+        measurement.MeasurementInput = anchor.CaptureIdentity;
+        measurement.RestoreLevelSnapshot(new InputLevelMeterSnapshot(
+            new InputLevelMeterEntry(true, -3, -6, false, false),
+            new InputLevelMeterEntry(true, -6, -9, false, true)));
+        using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
+
+        var splOptions = new FrequencyResponseOptions
+        {
+            MagnitudeScale = MagnitudeScale.SoundPressureLevel
+        };
+        OxyPlot.PlotModel model = CreateFactory(
+                measurement, noise, frequencyResponseOptions: splOptions)
+            .CreateFrequencyResponse(includeCurves: true);
+
+        var dbAxis = (OxyPlot.Axes.LinearAxis)model.Axes.First(
+            axis => axis.Key == PlotModelFactory.DecibelAxisKey);
+        Assert.Equal("dB SPL", dbAxis.Title);
+        // Curves sit near 40–110 dB, so the axis must reach well above the dBr
+        // ceiling of 10 or the plot would be blank.
+        Assert.Equal(PlotModelStyle.SplDecibelMaximum, dbAxis.Maximum);
+        Assert.Equal(PlotModelStyle.SplDecibelAbsoluteMaximum, dbAxis.AbsoluteMaximum);
+    }
+
+    [Fact]
+    public void CreateFrequencyResponse_WithoutCalibration_StaysOnTheRelativeAxis()
+    {
+        ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
+        var splOptions = new FrequencyResponseOptions
+        {
+            MagnitudeScale = MagnitudeScale.SoundPressureLevel
+        };
+
+        OxyPlot.PlotModel model = CreateFactory(
+                measurement, noise, frequencyResponseOptions: splOptions)
+            .CreateFrequencyResponse(includeCurves: true);
+
+        // SPL was requested but no calibration is available: fall back to dBr/dBc.
+        var dbAxis = (OxyPlot.Axes.LinearAxis)model.Axes.First(
+            axis => axis.Key == PlotModelFactory.DecibelAxisKey);
+        Assert.Equal("dBr/dBc", dbAxis.Title);
+        Assert.Equal(PlotModelStyle.RelativeDecibelMaximum, dbAxis.Maximum);
+    }
+
     private static ExpSweepMeasurement CreateSweepOnlyMeasurement()
     {
         var sweep = new Complex[2048];
@@ -662,7 +723,9 @@ public sealed class PlotModelFactoryTests
         FrequencyResponseOptions? phaseResponseOptions = null,
         CurveVisibilityOptions? frequencyResponseVisibility = null,
         CurveVisibilityOptions? phaseResponseVisibility = null,
-        CurveVisibilityOptions? groupDelayVisibility = null)
+        CurveVisibilityOptions? groupDelayVisibility = null,
+        FrequencyResponseOptions? frequencyResponseOptions = null,
+        LiveSpectrumOptions? liveSpectrumOptions = null)
     {
         string calibrationPath = Path.Combine(
             Path.GetTempPath(),
@@ -672,15 +735,216 @@ public sealed class PlotModelFactoryTests
             measurement,
             noiseMeasurement,
             mode => new CalibrationFile(calibrationPath),
-            new FrequencyResponseOptions(),
+            frequencyResponseOptions ?? new FrequencyResponseOptions(),
             phaseResponseOptions ?? new FrequencyResponseOptions(),
             groupDelayOptions ?? new FrequencyResponseOptions(),
             frequencyResponseVisibility ?? new CurveVisibilityOptions(),
             phaseResponseVisibility ?? new CurveVisibilityOptions(),
             groupDelayVisibility ?? new CurveVisibilityOptions(),
             impulseOptions ?? new ImpulseResponseOptions(),
-            new LiveSpectrumOptions(),
+            liveSpectrumOptions ?? new LiveSpectrumOptions(),
             new WaterfallGenerateOptions(),
             new WaterfallGenerateOptions());
+    }
+
+    // A live analyzer configured for the default Wave input, so it produces a
+    // concrete input identity an SPL anchor can be pinned to.
+    private static NoiseMeasurement CreateLiveAnalyzer()
+    {
+        var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
+        noise.Init(
+            44_100,
+            24,
+            60,
+            PlaybackChannel.Mono,
+            sequenceLength: 2048,
+            waveInputChannelOffset: 0,
+            waveLoopbackInputChannelOffset: 1);
+        return noise;
+    }
+
+    // An SPL anchor captured on the input the live analyzer runs on, so it validates.
+    private static SplCalibration LiveAnchorMatching(
+        NoiseMeasurement noise,
+        double referenceLevelDbSpl,
+        double measuredLevelDbFs)
+    {
+        MeasurementInputIdentity id = noise.CurrentInputIdentity();
+        return new SplCalibration
+        {
+            ReferenceLevelDbSpl = referenceLevelDbSpl,
+            MeasuredLevelDbFs = measuredLevelDbFs,
+            Backend = id.Backend,
+            SampleRate = id.SampleRate,
+            Bits = id.Bits,
+            MicrophoneChannelOffset = id.MicrophoneChannelOffset,
+            InputDeviceNumber = id.InputDeviceNumber,
+            WasapiCaptureEndpointId = id.WasapiCaptureEndpointId,
+            AsioDriverName = id.AsioDriverName
+        };
+    }
+
+    [Fact]
+    public void CreateLiveSpectrum_InSplMode_UsesTheSplAxis()
+    {
+        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using NoiseMeasurement noise = CreateLiveAnalyzer();
+        // Live uses the CONFIGURED calibration (there is no frozen snapshot), validated
+        // against the live input.
+        measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);
+        var options = new LiveSpectrumOptions
+        {
+            MagnitudeScale = MagnitudeScale.SoundPressureLevel
+        };
+
+        PlotModelFactory factory =
+            CreateFactory(measurement, noise, liveSpectrumOptions: options);
+
+        Assert.Equal(MagnitudeScale.SoundPressureLevel, factory.EffectiveLiveSpectrumScale);
+        Assert.Equal(94 - (-16), factory.LiveSplOffsetDb!.Value, precision: 9);
+
+        OxyPlot.PlotModel model = factory.CreateLiveSpectrum();
+        var dbAxis = (OxyPlot.Axes.LinearAxis)model.Axes.First(
+            axis => axis.Key == PlotModelFactory.DecibelAxisKey);
+        Assert.Equal("dB SPL", dbAxis.Title);
+        Assert.Equal(PlotModelStyle.SplDecibelMaximum, dbAxis.Maximum);
+        Assert.Contains("SPL", model.Title);
+    }
+
+    [Fact]
+    public void LiveSplOffset_UnavailableWithoutOrWithMismatchedCalibration()
+    {
+        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using NoiseMeasurement noise = CreateLiveAnalyzer();
+        var options = new LiveSpectrumOptions
+        {
+            MagnitudeScale = MagnitudeScale.SoundPressureLevel
+        };
+        PlotModelFactory factory =
+            CreateFactory(measurement, noise, liveSpectrumOptions: options);
+
+        // No configured calibration: SPL requested but unavailable, stay on native dB.
+        Assert.Null(factory.LiveSplOffsetDb);
+        Assert.Equal(MagnitudeScale.Relative, factory.EffectiveLiveSpectrumScale);
+        var dbAxis = (OxyPlot.Axes.LinearAxis)factory.CreateLiveSpectrum().Axes.First(
+            axis => axis.Key == PlotModelFactory.DecibelAxisKey);
+        Assert.Equal("dB", dbAxis.Title);
+
+        // A calibration captured on a different digital input (sample rate) does not
+        // apply to this live input.
+        SplCalibration mismatched = LiveAnchorMatching(noise, 94, -16);
+        mismatched.SampleRate = 48_000;
+        measurement.SplCalibration = mismatched;
+        Assert.Null(factory.LiveSplOffsetDb);
+        Assert.Equal(MagnitudeScale.Relative, factory.EffectiveLiveSpectrumScale);
+    }
+
+    [Fact]
+    public void LiveSplPeakHold_HoldsBandPowerNotTheSumOfPerBinMaxima()
+    {
+        // Finding: two frames whose energy sits in different bins of one band must not
+        // peak-hold to the SUM of their bin maxima (+3 dB over any real band level).
+        // The controller holds the max of BuildMainDisplayPoints (already band powers),
+        // so the held level is one frame's band, not both bins added.
+        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using NoiseMeasurement noise = CreateLiveAnalyzer();
+        measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);
+        var options = new LiveSpectrumOptions
+        {
+            CalibrationMode = MicrophoneCalibrationMode.Off,
+            SmoothingInverseOctaves = 6,
+            MagnitudeScale = MagnitudeScale.SoundPressureLevel
+        };
+        PlotModelFactory factory =
+            CreateFactory(measurement, noise, liveSpectrumOptions: options);
+
+        int binCount = noise.SequenceLength / 2;
+        // Two adjacent bins near 1 kHz (44100/2048 ≈ 21.5 Hz/bin, ~5 bins per 1/6 oct).
+        const int binA = 47;
+        const int binB = 48;
+        var frameA = new double[binCount];
+        var frameB = new double[binCount];
+        var frameBoth = new double[binCount];
+        frameA[binA] = 1.0;
+        frameB[binB] = 1.0;
+        frameBoth[binA] = 1.0;
+        frameBoth[binB] = 1.0;
+
+        List<SignalPoint> bandA = factory.BuildMainDisplayPoints(frameA, rtaOnly: true);
+        List<SignalPoint> bandB = factory.BuildMainDisplayPoints(frameB, rtaOnly: true);
+        List<SignalPoint> bandBoth = factory.BuildMainDisplayPoints(frameBoth, rtaOnly: true);
+
+        // The peak band across the two single-bin frames (what a correct peak hold shows).
+        int peak = 0;
+        for (int i = 1; i < bandBoth.Count; i++)
+        {
+            if (bandBoth[i].Y > bandBoth[peak].Y)
+            {
+                peak = i;
+            }
+        }
+
+        double held = Math.Max(bandA[peak].Y, bandB[peak].Y);
+        // Both bins present in one frame is ~3 dB above either alone; the peak hold of
+        // the two single-bin frames must stay near a single band, well below that sum.
+        Assert.True(
+            bandBoth[peak].Y - held > 2.0,
+            $"peak hold {held:0.00} dB reached the summed band {bandBoth[peak].Y:0.00} dB");
+    }
+
+    [Fact]
+    public void CreateLiveSpectrum_MicOnly_ShowsTheRtaWithNoCoherenceAxis()
+    {
+        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
+        // No loopback configured: the analyzer is a single-channel RTA.
+        noise.Init(44_100, 24, 60, PlaybackChannel.Mono, sequenceLength: 2048, waveInputChannelOffset: 0);
+        Assert.True(noise.IsMicOnly);
+
+        var options = new LiveSpectrumOptions { ShowCoherence = true };
+        PlotModelFactory factory =
+            CreateFactory(measurement, noise, liveSpectrumOptions: options);
+
+        OxyPlot.PlotModel model = factory.CreateLiveSpectrum();
+
+        Assert.Contains("RTA", model.Title);
+        // There is no transfer function, so no coherence axis even though the
+        // coherence curve is requested.
+        Assert.DoesNotContain(model.Axes, axis => axis.Key == PlotModelFactory.CoherenceAxisKey);
+    }
+
+    [Fact]
+    public void LiveRta_InSplMode_IsLiftedByTheCalibrationOffset()
+    {
+        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using NoiseMeasurement noise = CreateLiveAnalyzer();
+
+        // The SPL RTA is power-integrated (not a constant shift of the amplitude
+        // trace), so isolate the OFFSET: two calibrations differing only in offset
+        // must move the identical power-band curve by exactly the offset difference.
+        var options = new LiveSpectrumOptions
+        {
+            CalibrationMode = MicrophoneCalibrationMode.Off,
+            SmoothingInverseOctaves = 0,
+            MagnitudeScale = MagnitudeScale.SoundPressureLevel
+        };
+        PlotModelFactory factory =
+            CreateFactory(measurement, noise, liveSpectrumOptions: options);
+
+        var magnitude = new double[noise.SequenceLength / 2];
+        Array.Fill(magnitude, 0.1);
+
+        measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);  // offset 110
+        LineSeries lower = factory.BuildInputMagnitudeSeries(magnitude);
+        measurement.SplCalibration = LiveAnchorMatching(noise, 104, -16); // offset 120
+        LineSeries higher = factory.BuildInputMagnitudeSeries(magnitude);
+
+        Assert.Equal(lower.Points.Count, higher.Points.Count);
+        Assert.NotEmpty(lower.Points);
+        for (int i = 0; i < lower.Points.Count; i++)
+        {
+            Assert.Equal(lower.Points[i].X, higher.Points[i].X, precision: 9);
+            Assert.Equal(lower.Points[i].Y + 10.0, higher.Points[i].Y, precision: 6);
+        }
     }
 }

@@ -1,9 +1,41 @@
 using System.Drawing;
+using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
 public sealed class OverlayFileTests
 {
+    [Fact]
+    public void SaveAndLoad_RoundTripsCapturedMagnitudeScale()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = new OverlayFile
+            {
+                SavedAtUtc = DateTimeOffset.UtcNow,
+                Mode = Mode.FrequencyResponse,
+                Slot = 2,
+                Title = "SPL overlay",
+                ColorArgb = Color.Orange.ToArgb(),
+                CapturedMagnitudeScale = MagnitudeScale.SoundPressureLevel,
+                Points = [new OverlayPoint(20, 80), new OverlayPoint(20_000, 70)]
+            };
+
+            original.Save(root);
+            OverlayFile? loaded = OverlayFile.Load(Mode.FrequencyResponse, 2, root);
+
+            Assert.NotNull(loaded);
+            Assert.Equal(MagnitudeScale.SoundPressureLevel, loaded!.CapturedMagnitudeScale);
+            // A file written before the field existed defaults to Relative.
+            Assert.Equal(MagnitudeScale.Relative, new OverlayFile().CapturedMagnitudeScale);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public void SaveAndLoad_RoundTripsOverlayData()
     {

@@ -43,6 +43,7 @@ namespace Resonalyze
         private AveragingSpeed appliedAveragingSpeed;
         private volatile bool inProgress;
         private bool disposed;
+        private double playbackDuration = 60.0;
 
         public event Action<bool>? Completed;
         internal event Action<InputLevelMeterSnapshot>? LevelsAvailable;
@@ -80,6 +81,33 @@ namespace Resonalyze
                     AsioLoopbackInputChannelOffset.Value != AsioInputChannelOffset
                 : WaveLoopbackInputChannelOffset.HasValue &&
                     WaveLoopbackInputChannelOffset.Value != WaveInputChannelOffset;
+
+        /// <summary>
+        /// True when no loopback reference is configured, so the analyzer runs as a
+        /// single-channel RTA: it captures the microphone only and accumulates its
+        /// auto-power. There is no transfer function or coherence in this mode — only
+        /// the reference-free spectrum, which can still be shown relative or in dB SPL.
+        /// </summary>
+        public bool IsMicOnly => !HasConfiguredLoopback;
+
+        public bool IsRtaCapture =>
+            IsMicOnly || LiveSpectrumOptions.NoiseColor == NoiseColor.Silent;
+
+        /// <summary>
+        /// The digital identity of the microphone input this analyzer is configured
+        /// for, so an SPL calibration anchor can be validated against the live input
+        /// (the same way a completed sweep validates its own). Mirrors the sweep's
+        /// mapping: the microphone channel is the ASIO or Wave/WASAPI input offset,
+        /// and the device number is meaningful only for the Wave backend.
+        /// </summary>
+        public MeasurementInputIdentity CurrentInputIdentity() => new(
+            AudioBackend,
+            SampleRate,
+            Bits,
+            AudioBackend == AudioBackend.Asio ? AsioInputChannelOffset : WaveInputChannelOffset,
+            AudioBackend == AudioBackend.Wave ? InputDeviceNumber : null,
+            WasapiCaptureEndpointId,
+            AsioDriverName);
 
         public void Init(
             int sampleRate,
@@ -140,6 +168,19 @@ namespace Resonalyze
             WaveInputChannelOffset = normalizedWaveInputChannelOffset;
             WaveLoopbackInputChannelOffset = normalizedWaveLoopbackInputChannelOffset;
             LiveSpectrumOptions = liveSpectrumOptions ?? new LiveSpectrumOptions();
+            playbackDuration = requestedDuration;
+
+            RefreshPlaybackSignal();
+        }
+
+        public void RefreshPlaybackSignal()
+        {
+            ThrowIfDisposed();
+            if (InProgress)
+            {
+                throw new InvalidOperationException(
+                    "Cannot replace the playback signal during an active measurement.");
+            }
 
             signal?.Dispose();
             signal = new NoiseSignal();
@@ -152,13 +193,13 @@ namespace Resonalyze
             // first audio callbacks. Non-periodic colours still need the full
             // length (a short loop of aperiodic noise would seam audibly).
             double signalDuration =
-                LiveSpectrumOptions.NoiseColor == NoiseColor.PinkPeriodic
-                    ? SequenceLength / (double)sampleRate
-                    : requestedDuration;
+                LiveSpectrumOptions.NoiseColor is NoiseColor.PinkPeriodic or NoiseColor.Silent
+                    ? SequenceLength / (double)SampleRate
+                    : playbackDuration;
             signal.FillData(
                 signalDuration,
-                bits,
-                sampleRate,
+                Bits,
+                SampleRate,
                 LiveSpectrumOptions.NoiseColor,
                 SequenceLength);
         }
@@ -230,44 +271,56 @@ namespace Resonalyze
         public LiveSpectrumSnapshot? GetAccumulatedSpectrumSnapshot(
             bool includeInputMagnitude = true)
         {
-            Complex[] crossSpectrum;
-            double[] referencePowerSpectrum;
+            Complex[]? crossSpectrum;
+            double[]? referencePowerSpectrum;
             double[] targetPowerSpectrum;
             int frameCount;
             lock (dataSync)
             {
-                if (accumulatedCrossSpectrum == null ||
-                    accumulatedReferencePowerSpectrum == null ||
-                    accumulatedTargetPowerSpectrum == null)
+                // The mic auto-power is the one accumulator every mode fills; the
+                // cross-spectrum and reference power exist only for the dual-channel
+                // (loopback) transfer path. A reference-free (mic-only) capture has
+                // just the auto-power, and that alone drives the RTA.
+                if (accumulatedTargetPowerSpectrum == null)
                 {
                     return null;
                 }
 
-                crossSpectrum = (Complex[])accumulatedCrossSpectrum.Clone();
-                referencePowerSpectrum = (double[])accumulatedReferencePowerSpectrum.Clone();
                 targetPowerSpectrum = (double[])accumulatedTargetPowerSpectrum.Clone();
+                crossSpectrum = accumulatedCrossSpectrum != null
+                    ? (Complex[])accumulatedCrossSpectrum.Clone()
+                    : null;
+                referencePowerSpectrum = accumulatedReferencePowerSpectrum != null
+                    ? (double[])accumulatedReferencePowerSpectrum.Clone()
+                    : null;
                 frameCount = averagedFrameCount;
             }
 
-            double[] magnitude = SpectrumAnalysis.ComputeH1MagnitudeSpectrum(
-                crossSpectrum,
-                referencePowerSpectrum);
+            bool micOnly = crossSpectrum == null || referencePowerSpectrum == null;
+            // Without a reference channel there is no transfer function and no
+            // coherence; the RTA is the whole measurement.
+            double[] magnitude = micOnly
+                ? Array.Empty<double>()
+                : SpectrumAnalysis.ComputeH1MagnitudeSpectrum(
+                    crossSpectrum!,
+                    referencePowerSpectrum!);
             // γ² of a single frame is identically 1 in every energized bin
             // whatever the real relation between the channels, and the first
             // few EMA frames are barely better — the display would mark the
             // whole curve "trusted" exactly when no statistics exist yet. Until
             // a few frames have accumulated the coherence is UNKNOWN (null),
             // not perfect.
-            double[]? coherence = frameCount >= MinCoherenceFrames
+            double[]? coherence = !micOnly && frameCount >= MinCoherenceFrames
                 ? SpectrumAnalysis.ComputeCoherence(
-                    crossSpectrum,
-                    referencePowerSpectrum,
+                    crossSpectrum!,
+                    referencePowerSpectrum!,
                     targetPowerSpectrum)
                 : null;
             // The microphone auto-power is already accumulated for coherence. Only
             // normalize it into a reference-free RTA curve when the caller will show
-            // that curve; the transform otherwise adds avoidable UI snapshot work.
-            double[]? inputMagnitude = includeInputMagnitude
+            // that curve; the transform otherwise adds avoidable UI snapshot work. In
+            // mic-only mode the RTA is the only curve, so it is always computed.
+            double[]? inputMagnitude = includeInputMagnitude || micOnly
                 ? SpectrumAnalysis.ComputeInputMagnitudeSpectrum(
                     targetPowerSpectrum,
                     EffectiveWindowType,
@@ -524,7 +577,14 @@ namespace Resonalyze
 
                 foreach (float[][] frame in reframer.Push(sequence))
                 {
-                    AccumulateTransferSequence(frame);
+                    if (IsRtaCapture)
+                    {
+                        AccumulateMicOnlySequence(frame);
+                    }
+                    else
+                    {
+                        AccumulateTransferSequence(frame);
+                    }
                 }
             }
         }
@@ -615,6 +675,53 @@ namespace Resonalyze
             }
         }
 
+        // The single-channel path: only the microphone auto-power is captured and
+        // averaged, with the same settle/seed/EMA logic as the transfer path so the
+        // RTA converges identically. Cross- and reference-power stay null, which the
+        // snapshot reads as "mic only" (no transfer function, no coherence).
+        private void AccumulateMicOnlySequence(float[][] sequence)
+        {
+            int microphoneIndex = captureMicrophoneIndex;
+            if ((uint)microphoneIndex >= (uint)sequence.Length)
+            {
+                throw new InvalidOperationException(
+                    "Live RTA requires a microphone input.");
+            }
+
+            double[] targetPower = SpectrumAnalysis.ComputeAutoPowerSpectrumFrame(
+                sequence[microphoneIndex],
+                EffectiveWindowType);
+
+            lock (dataSync)
+            {
+                if (accumulatedTargetPowerSpectrum == null)
+                {
+                    if (sequencesCounter <= 2)
+                    {
+                        sequencesCounter++;
+                        return;
+                    }
+
+                    accumulatedTargetPowerSpectrum = targetPower;
+                    averagedFrameCount = 1;
+                    sequencesCounter++;
+                    return;
+                }
+
+                double alpha = infiniteAveraging
+                    ? 1.0 / (averagedFrameCount + 1)
+                    : transferAlpha;
+                for (int i = 0; i < accumulatedTargetPowerSpectrum.Length; i++)
+                {
+                    accumulatedTargetPowerSpectrum[i] =
+                        (1 - alpha) * accumulatedTargetPowerSpectrum[i] +
+                        alpha * targetPower[i];
+                }
+                averagedFrameCount++;
+                sequencesCounter++;
+            }
+        }
+
         private TransferSpectrumFrame ComputeTransferSpectrumFrame(float[][] sequence)
         {
             int microphoneIndex = captureMicrophoneIndex;
@@ -659,6 +766,8 @@ namespace Resonalyze
                 frame.TargetPowerSpectrum,
                 EffectiveWindowType,
                 SequenceLength);
+            // The mic-only RTA path uses a different (single-FFT) frame; warm it too.
+            _ = SpectrumAnalysis.ComputeAutoPowerSpectrumFrame(target, EffectiveWindowType);
         }
 
         // Periodic pink noise is exactly one FFT-length period, so every analysis block
@@ -668,6 +777,24 @@ namespace Resonalyze
             LiveSpectrumOptions.NoiseColor == NoiseColor.PinkPeriodic
                 ? WindowType.Rectangular
                 : LiveSpectrumOptions.WindowType;
+
+        /// <summary>
+        /// The equivalent noise bandwidth (in FFT bins) of the window actually used
+        /// for the live spectrum, so a power-integrated RTA can recover true band
+        /// power from the tone-calibrated amplitude spectrum. Reflects the periodic-pink
+        /// rectangular override (ENBW 1.0), not just the stored window choice.
+        /// </summary>
+        public double AnalysisWindowEnbwBins =>
+            Windowing.EquivalentNoiseBandwidthBins(EffectiveWindowType, SequenceLength);
+
+        /// <summary>
+        /// The spectral main-lobe width (in FFT bins) of the live window, so a
+        /// power-integrated RTA never draws a band narrower than the window can resolve
+        /// and keeps a tone's whole main lobe. Reflects the periodic-pink rectangular
+        /// override (2 bins), not just the stored window choice.
+        /// </summary>
+        public double AnalysisWindowMainLobeBins =>
+            Windowing.MainLobeWidthBins(EffectiveWindowType);
 
         private static int? NormalizeOptionalWaveChannel(int? channel) =>
             channel.HasValue

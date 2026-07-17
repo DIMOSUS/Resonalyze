@@ -27,17 +27,38 @@ internal static class PlotModelStyle
         });
     }
 
-    public static void AddDecibelAxis(PlotModel model, string title = "dB")
+    // Default view and hard clamps for the loopback-referenced (dBr/dBc) axis.
+    public const double RelativeDecibelMinimum = -90;
+    public const double RelativeDecibelMaximum = 0;
+    public const double RelativeDecibelAbsoluteMinimum = -120;
+    public const double RelativeDecibelAbsoluteMaximum = 10;
+
+    // Default view and hard clamps for the absolute dB SPL axis. The window frames
+    // a typical in-cabin response (noise floor to peaks); the clamp ceiling sits at
+    // loud/painful levels (car audio can get there) but well short of anything
+    // physically absurd — 120 dB is already the threshold of pain.
+    public const double SplDecibelMinimum = 0;
+    public const double SplDecibelMaximum = 120;
+    public const double SplDecibelAbsoluteMinimum = -20;
+    public const double SplDecibelAbsoluteMaximum = 150;
+
+    public static void AddDecibelAxis(
+        PlotModel model,
+        string title = "dB",
+        double minimum = RelativeDecibelMinimum,
+        double maximum = RelativeDecibelMaximum,
+        double absoluteMinimum = RelativeDecibelAbsoluteMinimum,
+        double absoluteMaximum = RelativeDecibelAbsoluteMaximum)
     {
         model.Axes.Insert(0, new LinearAxis
         {
             Key = PlotModelFactory.DecibelAxisKey,
             Position = AxisPosition.Left,
-            AbsoluteMinimum = -120,
-            AbsoluteMaximum = 10,
+            AbsoluteMinimum = absoluteMinimum,
+            AbsoluteMaximum = absoluteMaximum,
             MajorStep = 10,
-            Minimum = -90,
-            Maximum = 0,
+            Minimum = minimum,
+            Maximum = maximum,
             MajorGridlineStyle = LineStyle.Solid,
             MinorGridlineStyle = LineStyle.Dot,
             Title = title,

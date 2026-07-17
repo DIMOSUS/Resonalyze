@@ -61,6 +61,8 @@ public sealed class NoiseSignal : IDisposable
         var random = new Random(42);
         switch (noiseColor)
         {
+            case NoiseColor.Silent:
+                break;
             case NoiseColor.PinkPeriodic:
                 FillPinkPeriodic(random, periodLength);
                 break;

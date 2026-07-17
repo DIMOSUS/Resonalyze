@@ -9,11 +9,12 @@ internal static class UiStyle
     // muted pass, keyed weakly so controls are not kept alive.
     private static readonly ConditionalWeakTable<Control, object> enabledForeColors = new();
 
-    // Standard Label/CheckBox controls paint disabled text with a dark emboss (Label) or a
-    // low-contrast system grey (CheckBox), which reads as near-black on the dark theme. Rather
-    // than letting WinForms disable them, keep them Enabled and mute the text colour instead —
-    // matching how DarkComboBox/DarkNumericUpDown render their own disabled state. Pass
-    // interactive:true for check boxes so the muted look also stops them toggling or taking focus.
+    // Standard Label/CheckBox/RadioButton controls paint disabled text with a dark emboss
+    // (Label) or a low-contrast system grey (CheckBox/RadioButton), which reads as near-black
+    // on the dark theme. Rather than letting WinForms disable them, keep them Enabled and mute
+    // the text colour instead — matching how DarkComboBox/DarkNumericUpDown render their own
+    // disabled state. Pass interactive:true for check boxes and radio buttons so the muted look
+    // also stops them toggling or taking focus.
     public static void SetTextEnabledLook(Control control, bool enabled, bool interactive = false)
     {
         if (enabled)
@@ -33,10 +34,24 @@ internal static class UiStyle
             control.ForeColor = UiPalette.TextMuted;
         }
 
-        if (interactive && control is CheckBox checkBox)
+        if (!interactive)
         {
-            checkBox.AutoCheck = enabled;
-            checkBox.TabStop = enabled;
+            return;
+        }
+
+        // RadioButton and CheckBox both expose AutoCheck/TabStop but share no common
+        // property for them, so switch on the concrete type. AutoCheck:false makes a
+        // click leave the state untouched, matching a disabled control's behaviour.
+        switch (control)
+        {
+            case RadioButton radioButton:
+                radioButton.AutoCheck = enabled;
+                radioButton.TabStop = enabled;
+                break;
+            case CheckBox checkBox:
+                checkBox.AutoCheck = enabled;
+                checkBox.TabStop = enabled;
+                break;
         }
     }
 

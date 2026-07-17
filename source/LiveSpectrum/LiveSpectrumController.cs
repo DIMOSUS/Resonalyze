@@ -35,7 +35,9 @@ internal sealed class LiveSpectrumController : IDisposable
     private const long PeakHoldSuppressionMs = 1000;
     private bool disposed;
     private bool redrawInProgress;
-    private double[]? peakHoldMagnitude;
+    // The peak-hold envelope is held over the DISPLAYED band curve (freq, dB), not the
+    // raw FFT bins, so the SPL band power it shows is the peak of a real band level.
+    private List<SignalPoint>? peakHoldPoints;
     private long peakHoldResumeTick;
     private LiveSpectrumSnapshot? lastSnapshot;
     // The ~30 fps redraw reuses these series and refills their points in place;
@@ -83,6 +85,44 @@ internal sealed class LiveSpectrumController : IDisposable
     public bool InProgress => measurement.InProgress;
     public bool TimerEnabled => timer.Enabled;
 
+    // Whether the plot is currently rendering the absolute dB SPL (RTA) view. SPL is
+    // only effective when it is both selected and backed by a matching calibration,
+    // so this reflects what will actually be drawn — never a stale-calibration request.
+    private bool RenderingSpl =>
+        plotModelFactory.EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel;
+
+    // The plot shows only the reference-free RTA (no transfer function or coherence)
+    // when the SPL view is active OR the capture has no loopback reference at all.
+    private bool RtaOnly => RenderingSpl || measurement.IsRtaCapture;
+
+    // The reference-free RTA is normally optional, but it IS the only curve in the
+    // RTA-only views, so it is always computed there even if its checkbox is off.
+    private bool NeedsInputMagnitude =>
+        liveSpectrumOptions.ShowInputMagnitude || RtaOnly;
+
+    // The display transform behind the peak-hold envelope at the last drawn frame.
+    // peakHoldPoints holds FINISHED display values, so any change to how a level maps
+    // to the display — the scale, the RTA-only shaping, the smoothing band width, the
+    // microphone-correction mode, or the SPL offset (e.g. a re-calibration to a new
+    // offset) — makes the old envelope incompatible; it must be dropped, not max-ed
+    // against the new values.
+    private readonly record struct PeakHoldDisplayKey(
+        MagnitudeScale Scale,
+        bool RtaOnly,
+        int SmoothingInverseOctaves,
+        MicrophoneCalibrationMode CalibrationMode,
+        double? SplOffsetDb);
+
+    private PeakHoldDisplayKey renderedPeakHoldKey;
+
+    private PeakHoldDisplayKey CurrentPeakHoldKey() => new(
+        RenderingSpl ? MagnitudeScale.SoundPressureLevel : MagnitudeScale.Relative,
+        RtaOnly,
+        liveSpectrumOptions.SmoothingInverseOctaves,
+        liveSpectrumOptions.CalibrationMode,
+        // The offset only shapes the display in SPL; in relative it is irrelevant.
+        RenderingSpl ? plotModelFactory.LiveSplOffsetDb : null);
+
     /// <summary>
     /// Clears the running average and peak-hold envelope without interrupting
     /// capture. Useful for the Infinite averaging preset.
@@ -103,7 +143,14 @@ internal sealed class LiveSpectrumController : IDisposable
 
         if (!liveSpectrumOptions.PeakHold)
         {
-            peakHoldMagnitude = null;
+            peakHoldPoints = null;
+        }
+
+        // Any change to the display transform (scale, smoothing, mic correction, SPL
+        // offset) makes the held display points incompatible; drop the envelope.
+        if (CurrentPeakHoldKey() != renderedPeakHoldKey)
+        {
+            SuspendPeakHold();
         }
 
         // Rebuild the model even while running: display options such as the coherence
@@ -116,7 +163,7 @@ internal sealed class LiveSpectrumController : IDisposable
     // the average ramps up from zero are not latched into the envelope.
     private void SuspendPeakHold()
     {
-        peakHoldMagnitude = null;
+        peakHoldPoints = null;
         peakHoldResumeTick = Environment.TickCount64 + PeakHoldSuppressionMs;
     }
 
@@ -158,6 +205,7 @@ internal sealed class LiveSpectrumController : IDisposable
             measurementSettings.WasapiCaptureEndpointId,
             measurementSettings.WasapiRenderEndpointId,
             measurementSettings.WasapiBufferMilliseconds);
+        NormalizeSilentSignal();
     }
 
     public async Task ToggleAsync()
@@ -195,7 +243,7 @@ internal sealed class LiveSpectrumController : IDisposable
     public void ForgetLastCurve()
     {
         lastSnapshot = null;
-        peakHoldMagnitude = null;
+        peakHoldPoints = null;
         RemoveOverloadAnnotation(plotView.Model);
     }
 
@@ -209,15 +257,139 @@ internal sealed class LiveSpectrumController : IDisposable
         RebuildModel();
     }
 
+    /// <summary>
+    /// Drops display state that is incompatible with any calibration change.
+    /// This must run even while another mode owns the visible plot.
+    /// </summary>
+    public void InvalidateCalibration()
+    {
+        SuspendPeakHold();
+    }
+
+    /// <summary>
+    /// Reacts to any calibration change — an SPL anchor added/cleared, its offset
+    /// re-measured, or a different microphone-correction file bound to the same mode.
+    /// This runs in EVERY app mode, not only while Live Spectrum is visible, because a
+    /// calibration change can force the signal either way — losing SPL normalizes a
+    /// <see cref="NoiseColor.Silent"/> RTA back to a real excitation, gaining it drops a
+    /// stale periodic-pink excitation back to Silent — and drops the now-incompatible
+    /// peak-hold envelope wherever the analyzer sits. It rebuilds the plot only when Live Spectrum is the visible
+    /// mode (a running one is restarted if a Silent capture must fall back; an idle one
+    /// simply re-renders). Returns whether the live signal type changed, so the caller
+    /// can persist the normalized options. Safe whether running or idle.
+    /// </summary>
+    public async Task<bool> RefreshCalibrationAsync()
+    {
+        InvalidateCalibration();
+
+        // A running capture whose signal no longer fits the effective scale must be
+        // restarted: a Silent RTA that lost SPL needs a real excitation, and a periodic
+        // pink capture that just gained SPL must drop its now-pointless excitation for
+        // the ambient mic-only RTA. Either way the playback and analysis path change, so
+        // stop it, normalize the signal, and restart on the corrected one.
+        bool restart = measurement.InProgress && SignalNeedsNormalization();
+        if (restart)
+        {
+            await StopAsync();
+        }
+
+        bool signalChanged = NormalizeSilentSignal();
+
+        if (restart && getCurrentMode() == Mode.LiveSpectrum)
+        {
+            await StartAsync();
+            return signalChanged;
+        }
+
+        // Only the VISIBLE Live Spectrum rebuilds its model here; in another mode the
+        // normalization above already removed the stale Silent, and the model is rebuilt
+        // when Live Spectrum next becomes visible (RestoreLastCurve).
+        if (getCurrentMode() == Mode.LiveSpectrum)
+        {
+            RebuildModel();
+        }
+
+        return signalChanged;
+    }
+
+    // Forces the runtime signal to one the effective scale actually offers, so the
+    // stored NoiseColor never diverges from what the panel and the playback show. The
+    // two scale-exclusive signals swap symmetrically: Silent (an ambient RTA with no
+    // excitation) is SPL-only, so off SPL it falls back to periodic pink; periodic pink
+    // (the transfer-function reference) is relative-only, so under the reference-free
+    // SPL RTA it falls back to Silent — which also restores the original signal after a
+    // Silent→pink calibration-loss round-trip. The shared Pink/Brown/White colours are
+    // valid on both scales and are never touched.
+    internal static bool NormalizeSignalType(
+        LiveSpectrumOptions options,
+        MagnitudeScale effectiveScale)
+    {
+        NoiseColor normalized = NormalizedSignalType(options.NoiseColor, effectiveScale);
+        if (normalized == options.NoiseColor)
+        {
+            return false;
+        }
+
+        options.NoiseColor = normalized;
+        return true;
+    }
+
+    private static NoiseColor NormalizedSignalType(
+        NoiseColor color,
+        MagnitudeScale effectiveScale)
+    {
+        bool spl = effectiveScale == MagnitudeScale.SoundPressureLevel;
+        if (color == NoiseColor.Silent && !spl)
+        {
+            return NoiseColor.PinkPeriodic;
+        }
+
+        if (color == NoiseColor.PinkPeriodic && spl)
+        {
+            return NoiseColor.Silent;
+        }
+
+        return color;
+    }
+
+    // Whether the current runtime signal is not valid for the effective scale and would
+    // be swapped by NormalizeSignalType. A running measurement must restart when it is,
+    // because either direction changes the playback (pink excitation ↔ zero) and the
+    // analysis path (transfer vs. mic-only RTA).
+    private bool SignalNeedsNormalization() =>
+        NormalizedSignalType(
+            liveSpectrumOptions.NoiseColor,
+            plotModelFactory.EffectiveLiveSpectrumScale) != liveSpectrumOptions.NoiseColor;
+
+    private bool NormalizeSilentSignal()
+    {
+        bool changed = NormalizeSignalType(
+            liveSpectrumOptions,
+            plotModelFactory.EffectiveLiveSpectrumScale);
+        if (changed)
+        {
+            measurement.RefreshPlaybackSignal();
+        }
+
+        return changed;
+    }
+
     // Recreates the plot model (and therefore its axes) from the current options, redraws
     // the last snapshot, and restores overlays. Safe to call while running: the next
     // TimerTick simply renders onto the fresh model.
     private void RebuildModel()
     {
         PlotModel model = plotModelFactory.CreateLiveSpectrum();
-        if (lastSnapshot != null)
+        // Prefer a freshly computed snapshot so a scale switch picks up curves the
+        // stored one may lack (e.g. the RTA when SPL is turned on): the accumulators
+        // survive a stop, so this still works when the analyzer is paused. Fall back
+        // to the last drawn snapshot when no accumulation is available.
+        LiveSpectrumSnapshot? snapshot =
+            measurement.GetAccumulatedSpectrumSnapshot(NeedsInputMagnitude) ?? lastSnapshot;
+        if (snapshot != null)
         {
-            AddLiveSpectrumSeries(model, lastSnapshot);
+            lastSnapshot = snapshot;
+            AddLiveSpectrumSeries(model, snapshot);
         }
 
         plotView.Model = model;
@@ -247,19 +419,12 @@ internal sealed class LiveSpectrumController : IDisposable
         {
             await selectLiveSpectrumAsync();
         }
-        if (!measurement.HasConfiguredLoopback)
-        {
-            MessageBox.Show(
-                owner,
-                "Live Transfer Function requires a configured loopback input.\r\n\r\n" +
-                "Open Record Settings and select a Wave or ASIO loopback channel.",
-                "Loopback required",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
-            updateRecordButton();
-            return;
-        }
 
+        NormalizeSilentSignal();
+
+        // With no loopback the analyzer runs as a single-channel RTA (mic auto-power)
+        // instead of a dual-channel transfer function; both are valid, so starting is
+        // no longer gated on a configured loopback.
         SuspendPeakHold();
         lastSnapshot = null;
         plotView.Model = plotModelFactory.CreateLiveSpectrum();
@@ -273,7 +438,7 @@ internal sealed class LiveSpectrumController : IDisposable
     private async Task StopAsync()
     {
         LiveSpectrumSnapshot? finalSnapshot = measurement.GetAccumulatedSpectrumSnapshot(
-            liveSpectrumOptions.ShowInputMagnitude);
+            NeedsInputMagnitude);
         timer.Stop();
         await measurement.AbortAsync();
 
@@ -305,7 +470,7 @@ internal sealed class LiveSpectrumController : IDisposable
         try
         {
             LiveSpectrumSnapshot? snapshot = measurement.GetAccumulatedSpectrumSnapshot(
-                liveSpectrumOptions.ShowInputMagnitude);
+                NeedsInputMagnitude);
             PlotModel? model = plotView.Model;
             if (snapshot == null || model == null || getCurrentMode() != Mode.LiveSpectrum)
             {
@@ -338,25 +503,47 @@ internal sealed class LiveSpectrumController : IDisposable
         }
         attachedModel = model;
 
+        // The plot is the reference-free microphone (RTA) spectrum whenever the SPL
+        // view is active (the transfer function has no scalar SPL under noise) or the
+        // capture has no loopback at all (there is no transfer function to draw). In
+        // those RTA-only views the transfer function and coherence are hidden, the RTA
+        // is forced on, and the peak hold envelops it instead of the transfer curve.
+        bool rtaOnly = RtaOnly;
+        renderedPeakHoldKey = CurrentPeakHoldKey();
+
         if (liveSpectrumOptions.PeakHold)
         {
-            UpdatePeakHold(snapshot.Magnitude);
-            if (peakHoldMagnitude != null)
+            double[]? peakSource = rtaOnly ? snapshot.InputMagnitude : snapshot.Magnitude;
+            if (peakSource is { Length: > 0 })
+            {
+                // Envelope the DISPLAYED band curve, not the raw bins: in SPL the
+                // display sums bin powers per band, so per-bin peaks summed later
+                // would add maxima from different frames and overstate the band.
+                List<SignalPoint> current =
+                    plotModelFactory.BuildMainDisplayPoints(peakSource, rtaOnly);
+                UpdatePeakHold(current);
+            }
+            else
+            {
+                peakHoldPoints = null;
+            }
+
+            if (peakHoldPoints != null)
             {
                 if (peakHoldSeries == null)
                 {
-                    peakHoldSeries = plotModelFactory.BuildPeakHoldSeries(peakHoldMagnitude);
+                    peakHoldSeries = plotModelFactory.BuildPeakHoldSeries(peakHoldPoints);
                     peakHoldSeries.Tag = LiveSpectrumPeakHoldTag;
                 }
                 else
                 {
-                    plotModelFactory.UpdatePeakHoldSeries(peakHoldSeries, peakHoldMagnitude);
+                    plotModelFactory.UpdatePeakHoldSeries(peakHoldSeries, peakHoldPoints);
                 }
                 model.Series.Add(peakHoldSeries);
             }
         }
 
-        if (liveSpectrumOptions.ShowMainCurve)
+        if (!rtaOnly && liveSpectrumOptions.ShowMainCurve)
         {
             if (snapshot.Coherence != null &&
                 liveSpectrumOptions.CoherenceThresholdPercent > 0)
@@ -403,8 +590,10 @@ internal sealed class LiveSpectrumController : IDisposable
 
         // Reference-free RTA magnitude of the microphone input, overlaid on the
         // same dB axis. It is independent of coherence and the reference channel,
-        // so it is never split or dimmed by the coherence threshold.
-        if (snapshot.InputMagnitude != null && liveSpectrumOptions.ShowInputMagnitude)
+        // so it is never split or dimmed by the coherence threshold. In the RTA-only
+        // views it is the only trace, forced on (and lifted to dB SPL by the factory).
+        if (snapshot.InputMagnitude != null &&
+            (liveSpectrumOptions.ShowInputMagnitude || rtaOnly))
         {
             if (inputMagnitudeSeries == null)
             {
@@ -420,7 +609,9 @@ internal sealed class LiveSpectrumController : IDisposable
             model.Series.Add(inputMagnitudeSeries);
         }
 
-        if (snapshot.Coherence != null && liveSpectrumOptions.ShowCoherence)
+        // Coherence describes the transfer-function estimate, which the RTA-only
+        // views do not show, so it is drawn only alongside the transfer function.
+        if (!rtaOnly && snapshot.Coherence != null && liveSpectrumOptions.ShowCoherence)
         {
             if (coherenceSeries == null)
             {
@@ -435,25 +626,26 @@ internal sealed class LiveSpectrumController : IDisposable
         }
     }
 
-    private void UpdatePeakHold(double[] magnitude)
+    // Holds the per-band maximum of the displayed curve over time. The grid frequency
+    // per index is stable across ticks, so a per-index max of the dB level is the peak
+    // of the band level actually shown (a band level is monotone in its power).
+    private void UpdatePeakHold(List<SignalPoint> current)
     {
         if (Environment.TickCount64 < peakHoldResumeTick)
         {
             return;
         }
 
-        if (peakHoldMagnitude == null || peakHoldMagnitude.Length != magnitude.Length)
+        if (peakHoldPoints == null || peakHoldPoints.Count != current.Count)
         {
-            peakHoldMagnitude = (double[])magnitude.Clone();
+            peakHoldPoints = new List<SignalPoint>(current);
             return;
         }
 
-        for (int i = 0; i < peakHoldMagnitude.Length; i++)
+        for (int i = 0; i < current.Count; i++)
         {
-            if (magnitude[i] > peakHoldMagnitude[i])
-            {
-                peakHoldMagnitude[i] = magnitude[i];
-            }
+            double held = Math.Max(peakHoldPoints[i].Y, current[i].Y);
+            peakHoldPoints[i] = new SignalPoint(current[i].X, held);
         }
     }
 

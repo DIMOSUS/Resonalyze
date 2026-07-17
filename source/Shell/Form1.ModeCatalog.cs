@@ -47,7 +47,10 @@ public partial class Form1
                         frequencyResponseVisibility,
                         microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees0),
                         microphoneCalibration.Has(MicrophoneCalibrationMode.Degrees90)),
-                    opt => opt.SetOptions(frequencyResponseOptions, frequencyResponseVisibility))),
+                    opt => opt.SetOptions(frequencyResponseOptions, frequencyResponseVisibility),
+                    // Switching dBr <-> SPL rescales the axis, so the old zoom is
+                    // meaningless: refit instead of restoring it.
+                    viewResetKey: () => frequencyResponseOptions.MagnitudeScale)),
             [ModeTab.Phase] = new(
                 ModeTab.Phase,
                 Mode.PhaseResponse,

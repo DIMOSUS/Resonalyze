@@ -224,6 +224,13 @@ public partial class Form1
                 DrawSelectedMode(true);
             }
 
+            // The Frequency Response panel evaluates dB SPL availability only when it
+            // opens; a run changes it in both directions (a good run captures the
+            // loopback level SPL needs; a failed/aborted run clears the level snapshot),
+            // so re-offer or withdraw SPL after EVERY completion, not just success.
+            dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
+                panel => panel.RefreshSplAvailability());
+
             if (success)
             {
                 NotifyDegradedSweepAverage();

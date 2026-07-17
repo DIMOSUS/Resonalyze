@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Resonalyze.Dsp;
+using Resonalyze.Ui;
 
 namespace Resonalyze.Options
 {
@@ -49,6 +50,15 @@ namespace Resonalyze.Options
                 checkBoxShowHd4.Checked = visibility.ShowHd4;
                 checkBoxShowThdPlusNoise.Checked = visibility.ShowThdPlusNoise;
                 checkBoxShowNoiseFloor.Checked = visibility.ShowNoiseFloor;
+                // Keep the radio Enabled and mute it instead, so a disabled SPL choice
+                // renders in the theme's muted colour rather than the near-black system
+                // grey that WinForms would paint on the dark background.
+                bool splAvailable = IsSplAvailable();
+                UiStyle.SetTextEnabledLook(radioMagnitudeSpl, splAvailable, interactive: true);
+                bool spl = frequencyResponseOptions.MagnitudeScale == MagnitudeScale.SoundPressureLevel
+                    && splAvailable;
+                radioMagnitudeSpl.Checked = spl;
+                radioMagnitudeRelative.Checked = !spl;
                 UpdateTukeyWindowLimits();
             });
             UpdateIrPreview();
@@ -74,7 +84,44 @@ namespace Resonalyze.Options
             visibility.ShowHd4 = checkBoxShowHd4.Checked;
             visibility.ShowThdPlusNoise = checkBoxShowThdPlusNoise.Checked;
             visibility.ShowNoiseFloor = checkBoxShowNoiseFloor.Checked;
+            frequencyResponseOptions.MagnitudeScale = radioMagnitudeSpl.Checked
+                ? MagnitudeScale.SoundPressureLevel
+                : MagnitudeScale.Relative;
             UpdateIrPreview();
+        }
+
+        // SPL is offerable exactly when the plot can render it — mirror
+        // MeasurementPlotContext.SplOffsetDb: this measurement's own (snapshot)
+        // calibration, a captured loopback level, and an input that matches the anchor.
+        // Using the snapshot rather than the configured calibration keeps the panel in
+        // step with the plot for a completed run and for a loaded file (whose anchor is
+        // its own, not the app's currently configured one).
+        private bool IsSplAvailable() =>
+            Measurement is { } measurement &&
+            measurement.MeasurementSplCalibration is { } calibration &&
+            measurement.CurrentLevels.Loopback.Available &&
+            measurement.InputMatches(calibration);
+
+        /// <summary>
+        /// Re-evaluates whether dB SPL can be offered, without disturbing the current
+        /// selection. The panel can open before a measurement runs (no captured
+        /// loopback level yet), so the choice starts disabled; the host calls this once
+        /// a measurement or a loaded file provides the level, so the user can switch to
+        /// SPL without reopening the panel.
+        /// </summary>
+        public void RefreshSplAvailability()
+        {
+            bool available = IsSplAvailable();
+            UiStyle.SetTextEnabledLook(radioMagnitudeSpl, available, interactive: true);
+
+            // If SPL was the chosen scale but is no longer available (a run failed, or a
+            // file without a usable anchor was loaded), the plot already fell back to
+            // relative — move the selection with it so the checked radio does not
+            // contradict the axis.
+            if (!available && radioMagnitudeSpl.Checked)
+            {
+                radioMagnitudeRelative.Checked = true;
+            }
         }
 
         private void numericWindow_ValueChanged(object sender, EventArgs e)
@@ -132,6 +179,17 @@ namespace Resonalyze.Options
             toolTip.SetToolTip(
                 comboCalibration,
                 "Applies the selected microphone calibration file to the displayed frequency response.");
+            toolTip.SetToolTip(
+                labelScale,
+                "Vertical scale of the magnitude plot.");
+            toolTip.SetToolTip(
+                radioMagnitudeRelative,
+                "Native scale: the response in dBr (relative to the loopback reference), " +
+                "distortion and noise in dBc (relative to the fundamental).");
+            toolTip.SetToolTip(
+                radioMagnitudeSpl,
+                "Absolute dB SPL from the microphone SPL calibration. Available only when this " +
+                "measurement has a valid calibration and a captured loopback level.");
             toolTip.SetToolTip(
                 checkBoxShowPrimary,
                 "Shows the primary frequency-response curve.");

@@ -126,8 +126,20 @@ public partial class Form1
                     file.AverageRunCount,
                     file.AcceptedAverageRunCount);
                 expSweepMeasurement.RestoreLevelSnapshot(file.GetMeterSnapshot());
+                // The loaded file's own calibration is this result's snapshot (what
+                // it was measured under), so it can be shown in dB SPL. The configured
+                // calibration for the next new run is left untouched. Its capture
+                // identity stands in for the result's input, so re-saving the file
+                // validates the anchor against the input it was measured on — not the
+                // app's current device — and keeps it.
+                expSweepMeasurement.MeasurementSplCalibration = file.SplCalibration;
+                expSweepMeasurement.MeasurementInput = file.SplCalibration?.CaptureIdentity;
                 ApplyLoadedImpulseResponseState(dialog.FileName);
                 sessionTracker.MarkLoadedFile(dialog.FileName, file);
+                // A loaded file carries its own SPL calibration and loopback level, so
+                // an open Frequency Response panel can now offer dB SPL for it.
+                dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
+                    panel => panel.RefreshSplAvailability());
             }
             catch (Exception exception)
             {

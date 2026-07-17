@@ -80,6 +80,69 @@ internal sealed class PlotModelFactory
     public void SetCompareSourceProvider(Func<CompareAnalysisSource?> provider) =>
         getCompareSource = provider;
 
+    /// <summary>
+    /// The scale the Frequency Response plot actually renders in — SPL only when it
+    /// is both selected and available, matching <c>renderSpl</c> in
+    /// <see cref="CreateFrequencyResponse"/>. Overlays gate on this, not on the
+    /// requested scale, so a stale-calibration fallback to dBr does not mis-tag or
+    /// mis-show overlays.
+    /// </summary>
+    public MagnitudeScale EffectiveFrequencyResponseScale =>
+        frequencyResponseOptions.MagnitudeScale == MagnitudeScale.SoundPressureLevel &&
+        measurementContext.SplOffsetDb.HasValue
+            ? MagnitudeScale.SoundPressureLevel
+            : MagnitudeScale.Relative;
+
+    /// <summary>
+    /// The offset that turns the reference-free live RTA magnitude (raw microphone
+    /// dBFS) into dB SPL: <c>SPL = mic + calibration.OffsetDb</c>. Unlike the swept
+    /// frequency response there is NO loopback term — the RTA is already the plain
+    /// microphone spectrum, not a loopback-referenced transfer. Null when SPL cannot
+    /// be shown: no configured SPL calibration, or one captured on a different digital
+    /// input than the live analyzer is running on.
+    /// </summary>
+    public double? LiveSplOffsetDb
+    {
+        get
+        {
+            // Live analysis is always "now", so it reads the configured calibration
+            // (the one set for the next run), not a frozen measurement snapshot.
+            if (expSweepMeasurement.SplCalibration is not { } calibration)
+            {
+                return null;
+            }
+
+            // Validate against the live input, not the app's saved sweep input, so a
+            // calibration from a different device does not scale the live RTA.
+            if (!calibration.MatchesInput(noiseMeasurement.CurrentInputIdentity()))
+            {
+                return null;
+            }
+
+            return calibration.OffsetDb;
+        }
+    }
+
+    /// <summary>
+    /// The scale the Live Spectrum plot actually renders in — SPL only when it is
+    /// both selected and available. The live controller and overlays gate on this,
+    /// not on the requested scale, so a missing/mismatched calibration falls back to
+    /// the native dB view instead of an empty SPL plot.
+    /// </summary>
+    public MagnitudeScale EffectiveLiveSpectrumScale =>
+        liveSpectrumOptions.MagnitudeScale == MagnitudeScale.SoundPressureLevel &&
+        LiveSplOffsetDb.HasValue
+            ? MagnitudeScale.SoundPressureLevel
+            : MagnitudeScale.Relative;
+
+    // The dB offset applied to the live RTA / peak-hold curves when the plot is in
+    // SPL mode; zero in the native (relative) view. The transfer function is never
+    // shifted — it is a dimensionless ratio, not an absolute level.
+    private double LiveSplRenderOffset =>
+        EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel
+            ? LiveSplOffsetDb ?? 0.0
+            : 0.0;
+
     private CalibrationFile? GetCalibration(FrequencyResponseOptions options) =>
         options.CalibrationMode == MicrophoneCalibrationMode.Off
             ? null
@@ -95,6 +158,13 @@ internal sealed class PlotModelFactory
         PlotModel model = PlotModelStyle.CreateTitledModel(
             measurementContext.CreateTitle("Frequency Response"));
 
+        // dB SPL is available only with a valid calibration and loopback level for
+        // this measurement; otherwise the plot stays in native loopback-referenced dB.
+        bool splRequested =
+            frequencyResponseOptions.MagnitudeScale == MagnitudeScale.SoundPressureLevel;
+        double? splOffset = splRequested ? measurementContext.SplOffsetDb : null;
+        bool renderSpl = splOffset.HasValue;
+
         // Magnitude is derived from the loopback transfer IR, which is required.
         if (measurementContext.CanIncludeCurves(includeCurves) &&
             measurementContext.HasTransferImpulseResponse)
@@ -103,19 +173,26 @@ internal sealed class PlotModelFactory
                 frequencyResponseOptions,
                 GetCalibration(frequencyResponseOptions),
                 frequencyResponseVisibility.ToSpectrumCurves());
+            if (renderSpl)
+            {
+                curves = SplConversion.ToSoundPressureLevel(curves, splOffset!.Value);
+            }
+
             foreach (AnalysisCurve curve in curves)
             {
                 AddLineSeries(
                     model,
                     curve,
-                    DistortionTrackerFormat(curve.Kind),
+                    renderSpl ? SplTrackerFormat : DistortionTrackerFormat(curve.Kind),
                     Mode.FrequencyResponse,
                     DecibelAxisKey);
             }
 
             // Overlay the Compare magnitude (primary only; harmonics stay Main-only to
             // keep the plot readable), computed with the identical options/calibration.
-            if (TryCreateCompareMeasurement() is { } compare)
+            // The Compare source carries no loopback level or calibration, so it has no
+            // absolute reference; it is omitted in SPL mode rather than drawn as dBr.
+            if (!renderSpl && TryCreateCompareMeasurement() is { } compare)
             {
                 IReadOnlyList<AnalysisCurve> compareCurves = DataHelper.GetSpectrum(
                     compare.Measurement,
@@ -139,6 +216,13 @@ internal sealed class PlotModelFactory
                 frequencyResponseVisibility.ShowCoherence);
 
             AddHiddenHarmonicAnnotation(model, curves);
+
+            // The user asked for SPL but this measurement cannot supply it (no
+            // calibration, no loopback level, or a calibration from another input).
+            if (splRequested && !renderSpl)
+            {
+                AddSplUnavailableAnnotation(model);
+            }
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
                  !measurementContext.HasTransferImpulseResponse)
@@ -147,12 +231,31 @@ internal sealed class PlotModelFactory
         }
 
         PlotModelStyle.AddFrequencyAxis(model);
-        // The primary response is the loopback-referenced transfer magnitude (dBr,
-        // relative to the reference); the harmonic / THD / noise curves are ratios to
-        // the fundamental (dBc, relative to H1). The axis names both.
-        PlotModelStyle.AddDecibelAxis(model, "dBr/dBc");
+        // In SPL mode the whole plot is absolute dB SPL, which needs a different
+        // default window and clamps (curves sit near 40–110 dB, far above the dBr
+        // ceiling). Otherwise the primary is the loopback-referenced transfer
+        // magnitude (dBr) and the harmonic / THD / noise curves are ratios to the
+        // fundamental (dBc); the axis names both.
+        if (renderSpl)
+        {
+            PlotModelStyle.AddDecibelAxis(
+                model,
+                "dB SPL",
+                PlotModelStyle.SplDecibelMinimum,
+                PlotModelStyle.SplDecibelMaximum,
+                PlotModelStyle.SplDecibelAbsoluteMinimum,
+                PlotModelStyle.SplDecibelAbsoluteMaximum);
+        }
+        else
+        {
+            PlotModelStyle.AddDecibelAxis(model, "dBr/dBc");
+        }
+
         return model;
     }
+
+    // In SPL mode every trace is an absolute level; the tracker reads dB SPL.
+    private const string SplTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.00} dB SPL";
 
     // The tracker unit for a frequency-response curve: the primary is the transfer
     // magnitude relative to the loopback reference (dBr), every distortion curve
@@ -616,19 +719,57 @@ internal sealed class PlotModelFactory
         return model;
     }
 
+    // The reference-free RTA is the only trace when the plot is in SPL, or when the
+    // capture has no loopback reference to form a transfer function from.
+    private bool LiveRtaOnly =>
+        EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel ||
+        noiseMeasurement.IsMicOnly;
+
     public PlotModel CreateLiveSpectrum()
     {
-        PlotModel model = PlotModelStyle.CreateTitledModel("Live Transfer Function");
+        // In SPL mode the whole plot is the absolute microphone (RTA) spectrum in
+        // dB SPL; a mic-only capture shows the RTA in the native scale. Either way the
+        // transfer function and its coherence are absent, so the title, axis and
+        // (absent) coherence axis follow the RTA.
+        bool renderSpl =
+            EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel;
+        bool rtaOnly = LiveRtaOnly;
+        PlotModel model = PlotModelStyle.CreateTitledModel(
+            renderSpl
+                ? "Live Spectrum — dB SPL"
+                : rtaOnly
+                    ? "Live Spectrum (RTA)"
+                    : "Live Transfer Function");
 
         PlotModelStyle.AddFrequencyAxis(model);
-        PlotModelStyle.AddDecibelAxis(model);
-        if (liveSpectrumOptions.ShowCoherence)
+        if (renderSpl)
         {
-            AddCoherenceAxis(model);
+            PlotModelStyle.AddDecibelAxis(
+                model,
+                "dB SPL",
+                PlotModelStyle.SplDecibelMinimum,
+                PlotModelStyle.SplDecibelMaximum,
+                PlotModelStyle.SplDecibelAbsoluteMinimum,
+                PlotModelStyle.SplDecibelAbsoluteMaximum);
+        }
+        else
+        {
+            PlotModelStyle.AddDecibelAxis(model);
+            if (!rtaOnly && liveSpectrumOptions.ShowCoherence)
+            {
+                AddCoherenceAxis(model);
+            }
         }
 
         return model;
     }
+
+    // The live magnitude tracker unit: absolute dB SPL when the RTA is shown on the
+    // SPL axis, otherwise the native relative dB.
+    private string LiveMagnitudeTracker() =>
+        EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel
+            ? "{0}\n{2:0.0} Hz\n{4:0.00} dB SPL"
+            : "{0}\n{2:0.0} Hz\n{4:0.00} dB";
 
     public LineSeries BuildNoiseSeries(double[] accumulatedData)
     {
@@ -653,32 +794,90 @@ internal sealed class PlotModelFactory
         var series = new LineSeries
         {
             Color = OxyColor.FromRgb(80, 170, 255),
-            Title = "Input Spectrum (RTA)",
-            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
+            Title = "Input Spectrum (RTA)"
         };
         UpdateInputMagnitudeSeries(series, inputMagnitude);
         return series;
     }
 
-    public void UpdateInputMagnitudeSeries(LineSeries series, double[] inputMagnitude) =>
-        FillPoints(series, ResampleLiveSpectrumMagnitude(inputMagnitude));
+    // The RTA is the raw microphone spectrum, so it is the one live curve with an
+    // honest absolute level: in SPL mode it is lifted by the microphone SPL offset,
+    // AND integrated as power per band so the absolute level is FFT-size-independent.
+    public void UpdateInputMagnitudeSeries(LineSeries series, double[] inputMagnitude)
+    {
+        series.TrackerFormatString = LiveMagnitudeTracker();
+        FillPoints(series, ResampleLiveRta(inputMagnitude));
+    }
 
-    public LineSeries BuildPeakHoldSeries(double[] peakHoldData)
+    // The current main trace as displayed points: the RTA (power-integrated in SPL)
+    // when the RTA is the shown curve, the transfer function otherwise. The peak-hold
+    // envelope is accumulated over THESE points, not the raw bins — in SPL the display
+    // sums bin powers per band, so a per-bin peak then summed would add maxima from
+    // different frames and overstate the band's true peak power.
+    public List<SignalPoint> BuildMainDisplayPoints(double[] magnitude, bool rtaOnly) =>
+        rtaOnly
+            ? ResampleLiveRta(magnitude)
+            : ResampleLiveSpectrumMagnitude(magnitude, 0.0);
+
+    public LineSeries BuildPeakHoldSeries(List<SignalPoint> peakHoldPoints)
     {
         var series = new LineSeries
         {
             Color = OxyColor.FromAColor(170, OxyColor.FromRgb(255, 196, 0)),
             LineStyle = LineStyle.Solid,
             StrokeThickness = 1.0,
-            Title = "Peak Hold",
-            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
+            Title = "Peak Hold"
         };
-        UpdatePeakHoldSeries(series, peakHoldData);
+        UpdatePeakHoldSeries(series, peakHoldPoints);
         return series;
     }
 
-    public void UpdatePeakHoldSeries(LineSeries series, double[] peakHoldData) =>
-        FillPoints(series, ResampleLiveSpectrumMagnitude(peakHoldData));
+    // The envelope is already in display points (band levels in SPL, amplitude dB
+    // otherwise); just draw it with the matching tracker unit.
+    public void UpdatePeakHoldSeries(LineSeries series, List<SignalPoint> peakHoldPoints)
+    {
+        series.TrackerFormatString = LiveMagnitudeTracker();
+        FillPoints(series, peakHoldPoints);
+    }
+
+    // The RTA trace. In SPL mode it is a true, FFT-size-independent band level: bin
+    // power is integrated per display band, the microphone calibration is applied per
+    // band, and the SPL offset lifts it to dB SPL. In the native (relative) view it
+    // stays the amplitude-averaged spectrum in dB.
+    private List<SignalPoint> ResampleLiveRta(double[] amplitudeSpectrum)
+    {
+        if (EffectiveLiveSpectrumScale != MagnitudeScale.SoundPressureLevel)
+        {
+            return ResampleLiveSpectrumMagnitude(amplitudeSpectrum, 0.0);
+        }
+
+        double smoothingOctaves = liveSpectrumOptions.SmoothingInverseOctaves > 0
+            ? 1.0 / liveSpectrumOptions.SmoothingInverseOctaves
+            : 0.0;
+        List<SignalPoint> bands = DataHelper.LogarithmicPowerBandResample(
+            amplitudeSpectrum,
+            noiseMeasurement.SequenceLength,
+            noiseMeasurement.SampleRate,
+            noiseMeasurement.AnalysisWindowEnbwBins,
+            noiseMeasurement.AnalysisWindowMainLobeBins,
+            20,
+            20000,
+            1024,
+            smoothingOctaves);
+
+        double offsetDb = LiveSplRenderOffset;
+        CalibrationFile? calibration = GetCalibration(liveSpectrumOptions);
+        for (int i = 0; i < bands.Count; i++)
+        {
+            // The microphone correction is a per-frequency dB gain (same sign
+            // convention as LogarithmicResample); it applies identically to a power
+            // level, so subtract it at the band centre, then lift to dB SPL.
+            double correction = calibration?.GetDecibelCorrection(bands[i].X) ?? 0.0;
+            bands[i] = new SignalPoint(bands[i].X, bands[i].Y - correction + offsetDb);
+        }
+
+        return bands;
+    }
 
     private static void FillPoints(LineSeries series, List<SignalPoint> points)
     {
@@ -689,7 +888,9 @@ internal sealed class PlotModelFactory
         }
     }
 
-    private List<SignalPoint> ResampleLiveSpectrumMagnitude(double[] magnitude)
+    private List<SignalPoint> ResampleLiveSpectrumMagnitude(
+        double[] magnitude,
+        double offsetDb = 0.0)
     {
         int length = noiseMeasurement.SequenceLength;
         int binCount = Math.Min(length / 2, magnitude.Length);
@@ -699,7 +900,7 @@ internal sealed class PlotModelFactory
         {
             double frequency =
                 i * ((double)noiseMeasurement.SampleRate / length);
-            double decibels = DataHelper.AmplitudeToDecibels(magnitude[i]);
+            double decibels = DataHelper.AmplitudeToDecibels(magnitude[i]) + offsetDb;
             data.Add(new DataPoint(frequency, decibels));
         }
 
@@ -1285,6 +1486,19 @@ internal sealed class PlotModelFactory
             TextFlowDirection = TextFlowDirection.TopDown,
             FontSize = 13,
             TextColor = OxyColors.Gray,
+            TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
+        });
+    }
+
+    private static void AddSplUnavailableAnnotation(PlotModel model)
+    {
+        model.Annotations.Add(new OverlayTextAnnotation
+        {
+            Text = "No SPL calibration for this measurement — showing dBr/dBc",
+            TextPosition = new DataPoint(0.5, 3),
+            TextFlowDirection = TextFlowDirection.TopDown,
+            FontSize = 12,
+            TextColor = OxyColor.FromRgb(255, 170, 0),
             TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
         });
     }

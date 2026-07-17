@@ -7,7 +7,7 @@ namespace Resonalyze;
 
 internal sealed class MeasurementSettingsFile
 {
-    private const int CurrentSchemaVersion = 8;
+    private const int CurrentSchemaVersion = 9;
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
@@ -59,7 +59,7 @@ internal sealed class MeasurementSettingsFile
                 JsonSerializer.Deserialize<MeasurementSettingsFile>(
                     stream,
                     SerializerOptions);
-            if (settings == null || settings.SchemaVersion is not (7 or CurrentSchemaVersion))
+            if (settings == null || settings.SchemaVersion is < 7 or > CurrentSchemaVersion)
             {
                 throw new InvalidDataException(
                     settings == null
@@ -75,9 +75,21 @@ internal sealed class MeasurementSettingsFile
                     Resonalyze.Dsp.PhaseDetrendMode.Manual;
                 settings.PhaseResponse.PhaseFdwCycles =
                     PhaseAnalysisSettings.DefaultFdwCycles;
-                settings.SchemaVersion = CurrentSchemaVersion;
             }
 
+            // Version 9 added the SPL calibration; 7 and 8 files simply carry none.
+            // A structurally broken anchor drops to null rather than failing the
+            // whole settings load — the measurement configuration is the value here.
+            try
+            {
+                settings.Measurement.SplCalibration?.Validate();
+            }
+            catch (InvalidDataException)
+            {
+                settings.Measurement.SplCalibration = null;
+            }
+
+            settings.SchemaVersion = CurrentSchemaVersion;
             settings.MigrateLegacyDualDeviceLoopback();
             settings.pathOnDisk = path;
             return settings;
@@ -267,6 +279,7 @@ internal sealed class MeasurementSettingsFile
         public bool ConfirmEachAverageRun { get; set; }
         public string? MicrophoneCalibration0DegreesPath { get; set; }
         public string? MicrophoneCalibration90DegreesPath { get; set; }
+        public SplCalibration? SplCalibration { get; set; }
 
         // A loopback reference channel is mandatory: every analysis mode is derived from the
         // transfer IR, which only exists when the loopback is captured alongside the microphone.
@@ -299,7 +312,8 @@ internal sealed class MeasurementSettingsFile
                 AsioLoopbackInputChannelOffset = measurement.AsioLoopbackInputChannelOffset,
                 AsioOutputChannelOffset = measurement.AsioOutputChannelOffset,
                 AverageRunCount = measurement.AverageRunCount,
-                ConfirmEachAverageRun = measurement.ConfirmEachAverageRun
+                ConfirmEachAverageRun = measurement.ConfirmEachAverageRun,
+                SplCalibration = measurement.SplCalibration
             };
 
         public void ApplyTo(ExpSweepMeasurement measurement)
@@ -362,6 +376,8 @@ internal sealed class MeasurementSettingsFile
                 new SweepAveragingConfiguration(
                     Clamp(AverageRunCount, 1, 64),
                     ConfirmEachAverageRun)));
+            // Metadata, applied after Init (which does not touch it).
+            measurement.SplCalibration = SplCalibration;
         }
     }
 
@@ -375,6 +391,7 @@ internal sealed class MeasurementSettingsFile
         public bool Unwrap { get; set; } = true;
         public bool UseCalibration { get; set; } = true;
         public MicrophoneCalibrationMode? CalibrationMode { get; set; }
+        public MagnitudeScale MagnitudeScale { get; set; } = MagnitudeScale.Relative;
         public bool ShowCoherence { get; set; } = true;
         public bool ShowMeasuredPhase { get; set; } = true;
         public bool ShowMinimumPhase { get; set; } = true;
@@ -414,6 +431,7 @@ internal sealed class MeasurementSettingsFile
                 Unwrap = options.Unwrap,
                 UseCalibration = options.UseCalibration,
                 CalibrationMode = options.CalibrationMode,
+                MagnitudeScale = options.MagnitudeScale,
                 ShowCoherence = visibility.ShowCoherence,
                 ShowMeasuredPhase = visibility.ShowMeasuredPhase,
                 ShowMinimumPhase = visibility.ShowMinimumPhase,
@@ -452,6 +470,9 @@ internal sealed class MeasurementSettingsFile
             options.Offset = Clamp(Offset, -32768, 32768);
             options.Unwrap = Unwrap;
             options.CalibrationMode = NormalizeCalibrationMode(CalibrationMode, UseCalibration);
+            options.MagnitudeScale = Enum.IsDefined(MagnitudeScale)
+                ? MagnitudeScale
+                : MagnitudeScale.Relative;
             visibility.ShowCoherence = ShowCoherence;
             visibility.ShowMeasuredPhase = ShowMeasuredPhase;
             visibility.ShowMinimumPhase = ShowMinimumPhase;
@@ -616,6 +637,7 @@ internal sealed class MeasurementSettingsFile
         public bool PeakHold { get; set; }
         public bool ShowCoherence { get; set; } = true;
         public int CoherenceThresholdPercent { get; set; } = 25;
+        public MagnitudeScale MagnitudeScale { get; set; } = MagnitudeScale.Relative;
 
         public static LiveSpectrumSettings Capture(
             LiveSpectrumOptions options) =>
@@ -641,7 +663,8 @@ internal sealed class MeasurementSettingsFile
                 PeakHold = options.PeakHold,
                 ShowCoherence = options.ShowCoherence,
                 CoherenceThresholdPercent =
-                    NormalizeCoherenceThreshold(options.CoherenceThresholdPercent)
+                    NormalizeCoherenceThreshold(options.CoherenceThresholdPercent),
+                MagnitudeScale = options.MagnitudeScale
             };
 
         public void ApplyTo(LiveSpectrumOptions options)
@@ -666,6 +689,9 @@ internal sealed class MeasurementSettingsFile
             options.ShowCoherence = ShowCoherence;
             options.CoherenceThresholdPercent =
                 NormalizeCoherenceThreshold(CoherenceThresholdPercent);
+            options.MagnitudeScale = Enum.IsDefined(MagnitudeScale)
+                ? MagnitudeScale
+                : MagnitudeScale.Relative;
         }
 
         private static int NormalizeCoherenceThreshold(int thresholdPercent) =>

@@ -133,6 +133,20 @@ namespace Resonalyze
             overlayCollection = dependencies.OverlayCollection;
             plotLabelsPanelController = dependencies.PlotLabelsPanelController;
             plotModelFactory = dependencies.PlotModelFactory;
+            // Overlays are tagged with, and gated by, the magnitude scale the plot is
+            // ACTUALLY rendered in — SPL only when the plot is showing SPL (selected and
+            // available). Live Spectrum shares Frequency Response's overlay slots, so it
+            // must report its OWN effective scale here; otherwise a Live SPL plot would
+            // gate overlays as Relative and show dBr overlays on the dB SPL axis. Every
+            // other mode, and any dBr fallback, is Relative. Wired after plotModelFactory
+            // is assigned (the lambda reads it).
+            overlayCollection.SetMagnitudeScaleProvider(
+                () => CurrentMode switch
+                {
+                    Mode.FrequencyResponse => plotModelFactory.EffectiveFrequencyResponseScale,
+                    Mode.LiveSpectrum => plotModelFactory.EffectiveLiveSpectrumScale,
+                    _ => Dsp.MagnitudeScale.Relative
+                });
             liveSpectrumController = dependencies.LiveSpectrumController;
             modeController = dependencies.ModeController;
             commandController = dependencies.CommandController;

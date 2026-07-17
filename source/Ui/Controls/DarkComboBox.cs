@@ -445,6 +445,26 @@ public sealed class DarkComboBox : UserControl
         LayoutInnerControls();
     }
 
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        // DeviceDpi is only final once the handle exists in its monitor's context, and
+        // the drop-down button column is positioned from it. A control created at
+        // runtime (e.g. an added Virtual DSP channel) lays out at the default 96 DPI in
+        // the constructor; re-run it here so the button and text are not left offset on
+        // a higher-DPI display. Designer-placed instances are covered by the form's
+        // startup scale pass; runtime-added ones are not.
+        LayoutInnerControls();
+        Invalidate();
+    }
+
+    protected override void OnDpiChangedAfterParent(EventArgs e)
+    {
+        base.OnDpiChangedAfterParent(e);
+        LayoutInnerControls();
+        Invalidate();
+    }
+
     protected override void OnLayout(LayoutEventArgs e)
     {
         base.OnLayout(e);

@@ -178,6 +178,16 @@ public static class AutoAlignmentEngine
             DiagnosticCorrelationRangeMs,
             SeedCorrelationWindowPeriods * 1000.0 / crossoverHz);
 
+    // How far from the arrival estimate a trusted seed peak may sit: half a
+    // period — the next same-polarity lobe is a full period out, so half a
+    // period is the no-cycle-skip bound — floored at the FIXED window span.
+    // The floor is deliberately the fixed ±3 ms, not the grown window: at a
+    // mid/high junction it keeps exactly the reach the fixed window used to
+    // enforce by construction, and at a low junction the grown window may SEE
+    // farther lobes but must never hand one to the timeline.
+    private static double SeedPeakReachMs(double crossoverHz) =>
+        Math.Max(DiagnosticCorrelationRangeMs, 500.0 / crossoverHz);
+
     // The minimum non-inverted PHAT peak correlation for its position to seed the
     // stage-2 window instead of the arrival envelope. Below it the peak is noise
     // (a low-frequency junction with too few in-band periods), and the arrival
@@ -459,20 +469,31 @@ public static class AutoAlignmentEngine
                     centerLagMs,
                     phaseTransform: true);
             double peakOffsetMs = phat.PositivePeak.DelayMs - centerLagMs;
-            double maxPeakOffsetMs = Math.Max(
-                DiagnosticCorrelationRangeMs, 500.0 / pair.CrossoverHz);
-            string? distrust =
-                phat.PositivePeak.EdgePinned || phat.NegativeTrough.EdgePinned
-                    ? "edge-pinned extremum"
-                    : phat.BestByMagnitude.InvertPolarity
-                        ? "inverted trough dominates"
-                        : phat.PositivePeak.Coefficient < PhatSeedMinCoefficient
-                            ? "peak too weak"
-                            : phat.Confidence < PhatSeedMinDominance
-                                ? "peak-trough near-tie"
-                                : Math.Abs(peakOffsetMs) > maxPeakOffsetMs
-                                    ? "peak beyond the arrival's reach"
-                                    : null;
+            string? Distrust()
+            {
+                if (phat.PositivePeak.EdgePinned || phat.NegativeTrough.EdgePinned)
+                {
+                    return "edge-pinned extremum";
+                }
+                if (phat.BestByMagnitude.InvertPolarity)
+                {
+                    return "inverted trough dominates";
+                }
+                if (phat.PositivePeak.Coefficient < PhatSeedMinCoefficient)
+                {
+                    return "peak too weak";
+                }
+                if (phat.Confidence < PhatSeedMinDominance)
+                {
+                    return "peak-trough near-tie";
+                }
+                if (Math.Abs(peakOffsetMs) > SeedPeakReachMs(pair.CrossoverHz))
+                {
+                    return "peak beyond the arrival's reach";
+                }
+                return null;
+            }
+            string? distrust = Distrust();
             bool trustPhat = distrust == null;
             double increment =
                 trustPhat ? -phat.PositivePeak.DelayMs : upperArrival - lowerArrival;

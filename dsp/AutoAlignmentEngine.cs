@@ -779,6 +779,18 @@ public static class AutoAlignmentEngine
                     $"{(candidates[0].InvertPolarity ? " inv" : "")} " +
                     $"(margin {candidates[0].ScoreDb - chosen.ScoreDb:0.00} dB)");
             }
+            else if (candidates.Count > 0 && chosen.InvertPolarity &&
+                AlignmentSelection.DeclinedInvertRescue(candidates, anchorMs)
+                    is { } rescue)
+            {
+                log.AppendLine(
+                    $"  kept {chosen.DelayMs:0.000} ms inv: rescue " +
+                    $"{rescue.DelayMs:0.000} ms " +
+                    $"(margin {chosen.ScoreDb - rescue.ScoreDb:0.00} dB) is " +
+                    $"{Math.Abs(rescue.DelayMs - anchorMs) - Math.Abs(chosen.DelayMs - anchorMs):0.000} ms " +
+                    "farther from the arrival (reach " +
+                    $"{AlignmentSelection.DefaultInvertPreferenceReachMs:0.00} ms)");
+            }
 
             // Wide sweep: the same junction searched across a much wider
             // window so lobes beyond the working range appear in the log.

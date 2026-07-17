@@ -20,8 +20,8 @@ public sealed class StereoAlignmentRealDataTests
         Complex[] RawIr,
         DspChannelChain BaseChain) : IAlignmentChannel;
 
-    private static CrossoverEdge Bw(double frequencyHz) =>
-        new(CrossoverFilterFamily.Butterworth, frequencyHz, 24);
+    private static CrossoverEdge Bw(double frequencyHz, int slopeDbPerOctave = 24) =>
+        new(CrossoverFilterFamily.Butterworth, frequencyHz, slopeDbPerOctave);
 
     [Fact]
     public void ComputeStereo_RealCabin_BridgesTheTweetersAndKeepsTheMonoSub()
@@ -219,6 +219,111 @@ public sealed class StereoAlignmentRealDataTests
             final.First(item => item.Channel == rightTwr).ImpulseResponse,
             rightTwr.SampleRate, BridgeBandLowHz, BridgeBandHighHz);
         Assert.InRange(leftTwrArrival - rightTwrArrival, 0.15, 0.35);
+    }
+
+    [Fact]
+    public void Compute_RealCabin_SubJunctionKeepsTheInvertedLobeNearTheArrival()
+    {
+        // The field failure of 2026-07-17 verbatim: the user's 4-way left side
+        // (sub LP 80 Bw24, woof 80 Bw24 / 220 Bw36, mid 200 Bw24 / 1500 Bw36
+        // at -3.5 dB, twr HP 1900 Bw36 at -7.5 dB). At the 80 Hz sub/woofer
+        // junction the whitened correlation is decisively inverted near the
+        // arrival (trough r -0.97 at -0.28 ms), and the fine search ranks that
+        // lobe first (0.499 ms inv). But the WIDE-SEED window dilutes the
+        // arrival prior enough that a non-inverted lobe 4.98 ms out came
+        // within 0.03 dB, and the invert preference swapped onto it — parking
+        // the sub 5 ms behind the woofer on the impulse view. The reach gate
+        // must decline that swap and keep the near-arrival inverted lobe.
+        Channel Load(string file, string name, DspChannelChain chain)
+        {
+            (int rate, Complex[] ir) = LoadTransferIr(file);
+            return new Channel(name, rate, ir, chain);
+        }
+
+        Channel sub = Load("sub woof closed window.json", "sub", new DspChannelChain(
+            Crossover: new CrossoverSpec(CrossoverKind.LowPass, Bw(80))));
+        Channel woof = Load("l woof.json", "L woof", new DspChannelChain(
+            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(220, 36), Bw(80))));
+        Channel mid = Load("l mid.json", "L mid", new DspChannelChain(
+            GainDb: -3.5,
+            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(1_500, 36), Bw(200))));
+        Channel twr = Load("l twr.json", "L twr", new DspChannelChain(
+            GainDb: -7.5,
+            Crossover: new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: Bw(1_900, 36))));
+
+        Channel[] byBand = [sub, woof, mid, twr];
+        var cache = new Dictionary<(Channel, double, bool), AlignmentSnapshot>();
+        AlignmentSnapshot Snapshot(Channel channel, AlignmentOverride over)
+        {
+            (Channel, double, bool) key = (channel, over.DelayMs, over.InvertPolarity);
+            if (!cache.TryGetValue(key, out AlignmentSnapshot? hit))
+            {
+                Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+                    channel.RawIr,
+                    channel.BaseChain with
+                    {
+                        DelayMs = over.DelayMs,
+                        InvertPolarity = over.InvertPolarity
+                    },
+                    channel.SampleRate);
+                hit = new AlignmentSnapshot(
+                    channel, processed, VirtualCrossoverAnalysis.FindPeakIndex(processed));
+                cache[key] = hit;
+            }
+
+            return hit;
+        }
+
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            byBand.Select(channel =>
+                Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+
+        List<AlignmentSnapshot> snapshots = byBand
+            .Select(channel => Snapshot(channel, default))
+            .ToList();
+        double[] crossovers = [80, 220, 1_500];
+        List<AlignmentJunction> junctions = crossovers
+            .Select((fc, i) => new AlignmentJunction(
+                snapshots[i], snapshots[i + 1], fc,
+                Math.Max(20, fc / 2), Math.Min(20_000, fc * 2)))
+            .ToList();
+
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+        var log = new StringBuilder();
+        AutoAlignmentEngine.Compute(snapshots, junctions, Reprocess, alignment, log);
+
+        // The declined swap leaves its trace: the rescue was in margin but
+        // beyond the arrival reach.
+        Assert.Contains("farther from the arrival", log.ToString());
+
+        // The sub junction flips (the woofer relative to the reference sub) —
+        // and the flip stays contained there: the cascade compensates the
+        // mid's polarity by delay, not by rippling the inversion upward.
+        Assert.True(
+            alignment.GetValueOrDefault(woof).InvertPolarity !=
+            alignment.GetValueOrDefault(sub).InvertPolarity,
+            "The sub/woofer junction lost its inverted near-arrival lobe.");
+        Assert.Equal(
+            alignment.GetValueOrDefault(mid).InvertPolarity,
+            alignment.GetValueOrDefault(sub).InvertPolarity);
+        Assert.Equal(
+            alignment.GetValueOrDefault(twr).InvertPolarity,
+            alignment.GetValueOrDefault(sub).InvertPolarity);
+
+        // THE regression: with the final delays applied, the sub's band-limited
+        // arrival stays within a cabin-width of the woofer's (the fix lands at
+        // +0.79 ms; the failure sat at +4.98, the mirrored lobe at -5.75).
+        IReadOnlyList<AlignmentSnapshot> final = Reprocess(alignment);
+        double subArrival = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+            final[0].ImpulseResponse, sub.SampleRate, 40, 160);
+        double woofArrival = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+            final[1].ImpulseResponse, woof.SampleRate, 40, 160);
+        Assert.InRange(subArrival - woofArrival, -2.5, 2.5);
+
+        // Still a physically realizable, normalized field.
+        Assert.All(byBand, channel =>
+            Assert.True(alignment.GetValueOrDefault(channel).DelayMs >= 0));
     }
 
     [Fact]

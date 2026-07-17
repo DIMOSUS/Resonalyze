@@ -17,9 +17,29 @@ public static class AlignmentSelection
     /// driver wins by the full arrival-prior penalty of its non-inverted
     /// impostors — several dB, not fractions. Same envelope-first principle
     /// as the wide-window promotion margin: a half-period flip hop must be
-    /// plainly better, not marginally.
+    /// plainly better, not marginally. That "several dB" premise only holds
+    /// near the arrival: a WIDE-SEED search dilutes the prior (sigma scales
+    /// with the window), so the margin is additionally fenced by
+    /// <see cref="DefaultInvertPreferenceReachMs"/>.
     /// </summary>
     public const double DefaultInvertPreferenceMarginDb = 0.5;
+
+    /// <summary>
+    /// How much farther from the arrival estimate (ms) a non-inverted rescue
+    /// may sit than the inverted winner it replaces. The invert margin's
+    /// rationale assumes the rescue IS the arrival-proximal candidate being
+    /// narrowly outscored by a flip impostor; when the best non-inverted
+    /// alternative instead lies a distant lobe away, swapping trades
+    /// milliseconds of envelope alignment for polarity cosmetics. The field
+    /// failure that pinned this: an 80 Hz sub/midbass junction where the
+    /// inverted winner sat 0.79 ms from the arrival and the margin (0.03 dB!)
+    /// handed the result to a non-inverted lobe 4.98 ms out — the sub started
+    /// 5 ms behind the midbass. The reach is absolute, not period-scaled,
+    /// because the audible cost (transient smear) is absolute: legitimate flip
+    /// rescues at mid/tweeter junctions sit within a fraction of a ms, while a
+    /// low junction's half-period hop costs several.
+    /// </summary>
+    public const double DefaultInvertPreferenceReachMs = 0.75;
 
     /// <summary>
     /// Among same-polarity candidates within this score margin (dB), the one
@@ -31,13 +51,17 @@ public static class AlignmentSelection
     /// <summary>
     /// Selects from <paramref name="candidates"/> (must be non-empty, best
     /// first): prefers a non-inverted candidate over an inverted winner within
-    /// the invert margin, then breaks near-ties of the chosen polarity by
-    /// closeness to <paramref name="baseDeltaMs"/>.
+    /// the invert margin — but only a candidate that does not sit more than
+    /// <paramref name="invertPreferenceReachMs"/> farther from
+    /// <paramref name="baseDeltaMs"/> than the winner it replaces — then
+    /// breaks near-ties of the chosen polarity by closeness to
+    /// <paramref name="baseDeltaMs"/>.
     /// </summary>
     public static AlignmentCandidate Select(
         IReadOnlyList<AlignmentCandidate> candidates,
         double baseDeltaMs,
         double invertPreferenceMarginDb = DefaultInvertPreferenceMarginDb,
+        double invertPreferenceReachMs = DefaultInvertPreferenceReachMs,
         double delayTieMarginDb = DefaultDelayTieMarginDb)
     {
         ArgumentNullException.ThrowIfNull(candidates);
@@ -51,8 +75,11 @@ public static class AlignmentSelection
         AlignmentCandidate best = candidates[0];
         if (best.InvertPolarity)
         {
+            double bestDistanceMs = Math.Abs(best.DelayMs - baseDeltaMs);
             AlignmentCandidate? bestNormal = candidates
-                .Where(item => !item.InvertPolarity)
+                .Where(item => !item.InvertPolarity &&
+                    Math.Abs(item.DelayMs - baseDeltaMs) - bestDistanceMs <=
+                        invertPreferenceReachMs)
                 .OrderByDescending(item => item.ScoreDb)
                 .FirstOrDefault();
             if (bestNormal != null &&
@@ -67,6 +94,38 @@ public static class AlignmentSelection
                 item.ScoreDb >= best.ScoreDb - delayTieMarginDb)
             .OrderBy(item => Math.Abs(item.DelayMs - baseDeltaMs))
             .First();
+    }
+
+    /// <summary>
+    /// The non-inverted candidate the invert preference would have adopted
+    /// under the score margin alone, when the reach gate blocked every
+    /// eligible rescue — null when no rescue was in margin, or when one within
+    /// reach exists (so <see cref="Select"/> swapped instead of declining).
+    /// Purely diagnostic: lets the caller log WHY an inverted winner stood.
+    /// </summary>
+    public static AlignmentCandidate? DeclinedInvertRescue(
+        IReadOnlyList<AlignmentCandidate> candidates,
+        double baseDeltaMs,
+        double invertPreferenceMarginDb = DefaultInvertPreferenceMarginDb,
+        double invertPreferenceReachMs = DefaultInvertPreferenceReachMs)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+        if (candidates.Count == 0 || !candidates[0].InvertPolarity)
+        {
+            return null;
+        }
+
+        AlignmentCandidate best = candidates[0];
+        double bestDistanceMs = Math.Abs(best.DelayMs - baseDeltaMs);
+        List<AlignmentCandidate> inMargin = candidates
+            .Where(item => !item.InvertPolarity &&
+                item.ScoreDb >= best.ScoreDb - invertPreferenceMarginDb)
+            .ToList();
+        return inMargin.Count == 0 || inMargin.Any(item =>
+                Math.Abs(item.DelayMs - baseDeltaMs) - bestDistanceMs <=
+                    invertPreferenceReachMs)
+            ? null
+            : inMargin.OrderByDescending(item => item.ScoreDb).First();
     }
 
     /// <summary>

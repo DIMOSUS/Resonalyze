@@ -89,6 +89,77 @@ public sealed class AlignmentSelectionTests
         Assert.Equal(invertedFar, chosen);
     }
 
+    [Fact]
+    public void Select_KeepsTheInvertedWinnerWhenTheRescueIsBeyondTheArrivalReach()
+    {
+        // The 80 Hz sub/midbass field failure verbatim: the inverted winner
+        // sits 0.79 ms from the arrival (the whitened correlation put its
+        // trough at r -0.97 there), while the best non-inverted candidate is a
+        // lobe 4.98 ms out that the WIDE-SEED-diluted prior let within
+        // 0.03 dB. Swapping parked the sub 5 ms behind the midbass; the reach
+        // gate must keep the inverted winner.
+        var inverted = new AlignmentCandidate(0.499, true, -1.06);
+        var normalFar = new AlignmentCandidate(-3.694, false, -1.10);
+        var normalWorse = new AlignmentCandidate(4.752, false, -2.49);
+
+        AlignmentCandidate chosen = AlignmentSelection.Select(
+            [inverted, normalFar, normalWorse], baseDeltaMs: 1.285);
+
+        Assert.Equal(inverted, chosen);
+    }
+
+    [Fact]
+    public void Select_SwapsToACloserRescueWhenTheBestNormalIsBeyondReach()
+    {
+        // The reach gate filters candidates, not the preference itself: with
+        // the best-scoring non-inverted lobe beyond reach, a lower-scoring one
+        // near the arrival still rescues the polarity.
+        var inverted = new AlignmentCandidate(0.5, true, -1.0);
+        var normalFar = new AlignmentCandidate(-3.7, false, -1.1);
+        var normalNear = new AlignmentCandidate(0.9, false, -1.45);
+
+        AlignmentCandidate chosen = AlignmentSelection.Select(
+            [inverted, normalFar, normalNear], baseDeltaMs: 1.285);
+
+        Assert.Equal(normalNear, chosen);
+    }
+
+    [Fact]
+    public void DeclinedInvertRescue_ReportsTheBlockedSwap()
+    {
+        var inverted = new AlignmentCandidate(0.499, true, -1.06);
+        var normalFar = new AlignmentCandidate(-3.694, false, -1.10);
+
+        AlignmentCandidate? declined = AlignmentSelection.DeclinedInvertRescue(
+            [inverted, normalFar], baseDeltaMs: 1.285);
+
+        Assert.Equal(normalFar, declined);
+    }
+
+    [Fact]
+    public void DeclinedInvertRescue_IsNullWhenAReachableRescueExists()
+    {
+        // A within-reach normal candidate means Select swapped rather than
+        // declined — nothing to report even though a farther one also sits in
+        // margin.
+        var inverted = new AlignmentCandidate(0.5, true, -1.0);
+        var normalFar = new AlignmentCandidate(-3.7, false, -1.1);
+        var normalNear = new AlignmentCandidate(0.9, false, -1.45);
+
+        Assert.Null(AlignmentSelection.DeclinedInvertRescue(
+            [inverted, normalFar, normalNear], baseDeltaMs: 1.285));
+    }
+
+    [Fact]
+    public void DeclinedInvertRescue_IsNullWithoutAMarginNormal()
+    {
+        var inverted = new AlignmentCandidate(0.5, true, -1.0);
+        var normalOutscored = new AlignmentCandidate(-3.7, false, -1.9);
+
+        Assert.Null(AlignmentSelection.DeclinedInvertRescue(
+            [inverted, normalOutscored], baseDeltaMs: 1.285));
+    }
+
     // AutoAlignmentEngine.AcousticScore: the prior-free figure the promotion
     // compares across search windows.
     private static double AcousticScore(AlignmentCandidate candidate) =>

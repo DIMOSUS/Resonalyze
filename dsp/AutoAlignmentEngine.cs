@@ -487,6 +487,18 @@ public static class AutoAlignmentEngine
                 {
                     return "peak-trough near-tie";
                 }
+                if (phat.PositiveRival is { } rival &&
+                    phat.PositivePeak.Coefficient - rival.Coefficient <
+                        PhatSeedMinDominance)
+                {
+                    // Confidence compares the peak against the TROUGH only; a
+                    // same-polarity lobe one period over is invisible to it. A
+                    // near-tie against that rival means the choice of lobe —
+                    // and with it a whole-period cycle skip — would be decided
+                    // by which reflection ran slightly hotter, so the seed
+                    // falls back to the polarity-blind arrival instead.
+                    return "same-polarity rival near-tie";
+                }
                 if (Math.Abs(peakOffsetMs) > SeedPeakReachMs(pair.CrossoverHz))
                 {
                     return "peak beyond the arrival's reach";
@@ -1976,6 +1988,11 @@ public static class AutoAlignmentEngine
             $"{(result.PositivePeak.EdgePinned ? ", edge" : "")}); " +
             $"trough {result.NegativeTrough.DelayMs:+0.000;-0.000} ms " +
             $"(r {result.NegativeTrough.Coefficient:+0.000;-0.000}, inv" +
-            $"{(result.NegativeTrough.EdgePinned ? ", edge" : "")})");
+            $"{(result.NegativeTrough.EdgePinned ? ", edge" : "")})" +
+            (result.PositiveRival is { } rival
+                ? $"; rival {rival.DelayMs:+0.000;-0.000} ms " +
+                    $"(r {rival.Coefficient:+0.000;-0.000}" +
+                    $"{(rival.EdgePinned ? ", edge" : "")})"
+                : ""));
     }
 }

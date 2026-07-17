@@ -1000,6 +1000,38 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void FindBandLimitedCorrelationDelay_ReportsTheSamePolarityRival()
+    {
+        // Two positive copies ~a period apart in the second channel produce
+        // two same-polarity alignment lobes. The strongest OTHER lobe must
+        // come back as PositiveRival — the ambiguity peak-vs-trough
+        // Confidence cannot see — while a clean single-copy pair reports no
+        // comparable rival (kernel side structure only).
+        Complex[] first = UnitImpulse(8_192, 2_000);
+        var second = new Complex[8_192];
+        second[1_800] = 0.97;
+        second[1_236] = 1.0;
+        double centerMs = 200.0 / SampleRate * 1_000.0;
+
+        CorrelationAlignmentResult result =
+            VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
+                first, second, SampleRate,
+                centerFrequencyHz: 85, passOctaves: 3.5, searchRangeMs: 15,
+                centerLagMs: centerMs, phaseTransform: true);
+
+        Assert.NotNull(result.PositiveRival);
+        Assert.False(result.PositiveRival!.InvertPolarity);
+        Assert.True(result.PositiveRival.Coefficient > 0);
+        // The two lobes sit the copies' spacing apart and carry comparable
+        // whitened correlation — the near-tie the seed gate must refuse.
+        Assert.InRange(
+            Math.Abs(result.PositivePeak.DelayMs - result.PositiveRival.DelayMs),
+            10.0, 13.5);
+        Assert.True(
+            result.PositivePeak.Coefficient - result.PositiveRival.Coefficient < 0.2);
+    }
+
+    [Fact]
     public void EstimatePolarity_ReadsTheFirstSignificantExcursion()
     {
         Complex[] positive = UnitImpulse(256, 50);

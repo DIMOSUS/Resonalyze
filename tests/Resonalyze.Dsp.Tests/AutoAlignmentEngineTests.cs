@@ -62,7 +62,8 @@ public sealed class AutoAlignmentEngineTests
     private static Dictionary<IAlignmentChannel, AlignmentOverride> Run(
         TestChannel[] byBand,
         double[] crossoversHz,
-        StringBuilder log)
+        StringBuilder log,
+        (double LowHz, double HighHz)[]? bands = null)
     {
         var snapshots = byBand.ToDictionary(
             channel => channel,
@@ -75,8 +76,8 @@ public sealed class AutoAlignmentEngineTests
                 snapshots[byBand[i]],
                 snapshots[byBand[i + 1]],
                 fc,
-                Math.Max(20, fc / 2),
-                Math.Min(20_000, fc * 2)))
+                bands?[i].LowHz ?? Math.Max(20, fc / 2),
+                bands?[i].HighHz ?? Math.Min(20_000, fc * 2)))
             .ToList();
 
         IReadOnlyList<AlignmentSnapshot> Reprocess(
@@ -333,6 +334,34 @@ public sealed class AutoAlignmentEngineTests
         Assert.False(alignment.ContainsKey(midbass));
         Assert.Contains(
             "seed arrival (peak beyond the arrival's reach)",
+            TestLog.Line(text, "Pair B/C"));
+        Assert.Contains("WIDE SEED", TestLog.Line(text, "Channel C:"));
+    }
+
+    [Fact]
+    public void Compute_SamePolarityRivalNearTie_IsNotTrustedAsTheSeed()
+    {
+        // Two same-polarity correlation lobes a full period apart, the FAR
+        // one marginally stronger — the configuration peak-vs-trough
+        // Confidence cannot see (the second positive lobe is simply absent
+        // from it), so the far lobe used to seed as a confidently
+        // "unambiguous" peak: a silent whole-period cycle skip that stage 2
+        // could no longer recover (its window and the wide sweep both reach
+        // well under a period). The junction band is WIDE so the whitened
+        // kernel's own trough stays shallow — the trough rules must not be
+        // the ones refusing this seed; the rival rule must.
+        var midbass = new TestChannel("B", DelayedImpulse(15.0));
+        var mid = new TestChannel(
+            "C", ImpulseWithEcho(0.0, 0.97, 11.76, 1.0));
+        var log = new StringBuilder();
+
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
+            Run([midbass, mid], [85], log, bands: [(30, 340)]);
+
+        string text = log.ToString();
+        Assert.False(alignment.ContainsKey(midbass));
+        Assert.Contains(
+            "seed arrival (same-polarity rival near-tie)",
             TestLog.Line(text, "Pair B/C"));
         Assert.Contains("WIDE SEED", TestLog.Line(text, "Channel C:"));
     }

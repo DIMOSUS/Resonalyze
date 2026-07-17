@@ -54,16 +54,28 @@ public readonly record struct BroadbandOnsetEstimate(
 
 /// <summary>
 /// One extremum of a band-limited time-domain cross-correlation search.
+/// <see cref="EdgePinned"/> marks an extremum found on (or within a couple of
+/// samples of) the lag-window boundary: that is not a measured lobe but the
+/// window's cut through one whose true extremum can lie outside, so both the
+/// position and the magnitude are artifacts of where the window happened to
+/// end — callers gating on either must not trust an edge-pinned value.
 /// </summary>
 public sealed record CorrelationDelayCandidate(
     double DelayMs,
     double Coefficient,
-    bool InvertPolarity);
+    bool InvertPolarity,
+    bool EdgePinned = false);
 
 /// <summary>
 /// Diagnostic result of a time-domain delay search around a crossover.
 /// <see cref="DelayMs"/> is the delay to add to the second impulse response
 /// passed to the search so it aligns with the first.
+/// <see cref="PositiveRival"/> is the strongest OTHER positive local maximum
+/// in the window, outside the main peak's own lobe — the same-polarity
+/// neighbor a period away that <see cref="Confidence"/> (peak vs trough)
+/// cannot see. A trust decision between two same-polarity lobes needs the
+/// peak to beat this rival too, or the choice of lobe is ambiguity, not
+/// measurement. Null when the window holds no separated positive structure.
 /// </summary>
 public sealed record CorrelationAlignmentResult(
     double CenterFrequencyHz,
@@ -71,7 +83,8 @@ public sealed record CorrelationAlignmentResult(
     double BandHighHz,
     double SearchRangeMs,
     CorrelationDelayCandidate PositivePeak,
-    CorrelationDelayCandidate NegativeTrough)
+    CorrelationDelayCandidate NegativeTrough,
+    CorrelationDelayCandidate? PositiveRival = null)
 {
     public CorrelationDelayCandidate BestByMagnitude =>
         Math.Abs(NegativeTrough.Coefficient) > Math.Abs(PositivePeak.Coefficient)
@@ -634,10 +647,13 @@ public static class VirtualCrossoverAnalysis
         int centerLag = (int)Math.Round(centerLagMs / 1000.0 * sampleRate);
         CorrelationDelayCandidate positive = FindCorrelationExtremum(
             correlation, centerLag, rangeSamples, normalizer, sampleRate,
-            findMaximum: true);
+            findMaximum: true, out int positiveLag);
         CorrelationDelayCandidate negative = FindCorrelationExtremum(
             correlation, centerLag, rangeSamples, normalizer, sampleRate,
-            findMaximum: false);
+            findMaximum: false, out _);
+        CorrelationDelayCandidate? positiveRival = FindPositiveRival(
+            correlation, centerLag, rangeSamples, positiveLag, normalizer,
+            sampleRate);
 
         return new CorrelationAlignmentResult(
             centerFrequencyHz,
@@ -645,7 +661,78 @@ public static class VirtualCrossoverAnalysis
             highHz,
             searchRangeMs,
             positive,
-            negative);
+            negative,
+            positiveRival);
+    }
+
+    // The strongest POSITIVE local maximum outside the main peak's own lobe —
+    // the contiguous positive region around it — i.e. the same-polarity rival
+    // one period over. A window boundary lag also qualifies when a
+    // non-positive gap separates it from the main lobe: a rival cut by the
+    // window still testifies, with its truncated value as a lower bound. Lags
+    // still connected to the main lobe never qualify, so the peak's own slope
+    // cannot masquerade as a rival. Null when the window holds no separated
+    // positive structure.
+    private static CorrelationDelayCandidate? FindPositiveRival(
+        double[] correlation,
+        int centerLag,
+        int rangeSamples,
+        int mainLag,
+        double normalizer,
+        int sampleRate)
+    {
+        int fftLength = correlation.Length;
+        double Value(int lag) =>
+            correlation[TransferFunction.WrapIndex(lag, fftLength)];
+
+        int windowLow = centerLag - rangeSamples;
+        int windowHigh = centerLag + rangeSamples;
+        int lobeLow = mainLag;
+        while (lobeLow > windowLow && Value(lobeLow - 1) > 0)
+        {
+            lobeLow--;
+        }
+        int lobeHigh = mainLag;
+        while (lobeHigh < windowHigh && Value(lobeHigh + 1) > 0)
+        {
+            lobeHigh++;
+        }
+
+        int bestLag = 0;
+        double best = 0;
+        for (int lag = windowLow; lag <= windowHigh; lag++)
+        {
+            if (lag >= lobeLow && lag <= lobeHigh)
+            {
+                continue;
+            }
+            double value = Value(lag);
+            if (value <= best)
+            {
+                continue;
+            }
+            bool boundary = lag == windowLow || lag == windowHigh;
+            if (boundary || (value >= Value(lag - 1) && value >= Value(lag + 1)))
+            {
+                best = value;
+                bestLag = lag;
+            }
+        }
+        if (best <= 0)
+        {
+            return null;
+        }
+
+        int edgeGuard = Math.Min(CorrelationEdgeGuardSamples, rangeSamples - 1);
+        bool edgePinned = Math.Abs(bestLag - centerLag) >= rangeSamples - edgeGuard;
+        double refinedLag = edgePinned
+            ? bestLag
+            : TransferFunction.RefinePeakLag(correlation, bestLag, fftLength, 1.0);
+        return new CorrelationDelayCandidate(
+            refinedLag * 1000.0 / sampleRate,
+            normalizer > 0 ? best / normalizer : 0,
+            InvertPolarity: false,
+            edgePinned);
     }
 
     // A smooth band-pass magnitude: a raised cosine over log frequency, one at
@@ -663,6 +750,13 @@ public static class VirtualCrossoverAnalysis
         return 0.5 - 0.5 * Math.Cos(Math.Tau * position);
     }
 
+    // How close (in lag samples) to the search-window boundary an extremum may
+    // sit before it is flagged edge-pinned. A truncated lobe's argmax lands on
+    // the boundary itself or, after the discrete grid samples its slope, one
+    // sample inside — two samples covers both without reaching lag positions a
+    // genuinely interior lobe would occupy (windows are hundreds of samples).
+    private const int CorrelationEdgeGuardSamples = 2;
+
     // The extremum inside the lag window, refined to sub-sample precision with the
     // shared windowed-sinc interpolation (a plain 3-point parabola systematically
     // mislocates a sinc-shaped correlation peak). Positive lags are read at their
@@ -673,7 +767,8 @@ public static class VirtualCrossoverAnalysis
         int rangeSamples,
         double normalizer,
         int sampleRate,
-        bool findMaximum)
+        bool findMaximum,
+        out int extremumLag)
     {
         int fftLength = correlation.Length;
         double sign = findMaximum ? 1.0 : -1.0;
@@ -689,14 +784,23 @@ public static class VirtualCrossoverAnalysis
             }
         }
 
-        bool interior = Math.Abs(bestLag - centerLag) < rangeSamples;
-        double refinedLag = interior
-            ? TransferFunction.RefinePeakLag(correlation, bestLag, fftLength, sign)
-            : bestLag;
+        extremumLag = bestLag;
+        int distance = Math.Abs(bestLag - centerLag);
+        // The guard never consumes the whole window: a degenerate few-sample
+        // window keeps a non-edge center instead of flagging every lag.
+        int edgeGuard = Math.Min(CorrelationEdgeGuardSamples, rangeSamples - 1);
+        bool edgePinned = distance >= rangeSamples - edgeGuard;
+        // An edge-pinned extremum keeps its integer lag: sub-sample refinement
+        // on a cut lobe would drift the reported position toward the true
+        // extremum OUTSIDE the window, misstating what was measured.
+        double refinedLag = edgePinned
+            ? bestLag
+            : TransferFunction.RefinePeakLag(correlation, bestLag, fftLength, sign);
         return new CorrelationDelayCandidate(
             refinedLag * 1000.0 / sampleRate,
             normalizer > 0 ? sign * best / normalizer : 0,
-            !findMaximum);
+            !findMaximum,
+            edgePinned);
     }
 
     // One spectrum bin of the alignment problem: the combined fixed spectrum,

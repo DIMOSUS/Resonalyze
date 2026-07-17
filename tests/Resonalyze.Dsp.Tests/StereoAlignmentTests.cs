@@ -43,9 +43,6 @@ public sealed class StereoAlignmentTests
         return ir;
     }
 
-    private static string LogLine(string log, string contains) =>
-        log.Split('\n').First(line => line.Contains(contains));
-
     private static AlignmentSnapshot Snapshot(
         TestChannel channel, AlignmentOverride over)
     {
@@ -656,12 +653,12 @@ public sealed class StereoAlignmentTests
 
         string text = log.ToString();
         // The premise: exactly the low junction fell back to the arrival seed.
-        Assert.Contains("seed arrival", LogLine(text, "Pair sub/woof"));
-        Assert.Contains("seed phat", LogLine(text, "Pair woof/mid"));
+        Assert.Contains("seed arrival", TestLog.Line(text, "Pair sub/woof"));
+        Assert.Contains("seed phat", TestLog.Line(text, "Pair woof/mid"));
 
         // Issue 1: the untrusted junction widens on the descending search of its lower
         // channel. Issue 2: the trusted junction is not polluted by its shared channel.
-        Assert.Contains("WIDE SEED", LogLine(text, "Channel sub:"));
-        Assert.DoesNotContain("WIDE SEED", LogLine(text, "Channel woof:"));
+        Assert.Contains("WIDE SEED", TestLog.Line(text, "Channel sub:"));
+        Assert.DoesNotContain("WIDE SEED", TestLog.Line(text, "Channel woof:"));
     }
 }

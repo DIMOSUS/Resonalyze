@@ -702,12 +702,17 @@ public static class VirtualCrossoverAnalysis
             }
         }
 
-        bool interior = Math.Abs(bestLag - centerLag) < rangeSamples;
-        bool edgePinned =
-            Math.Abs(bestLag - centerLag) >= rangeSamples - CorrelationEdgeGuardSamples;
-        double refinedLag = interior
-            ? TransferFunction.RefinePeakLag(correlation, bestLag, fftLength, sign)
-            : bestLag;
+        int distance = Math.Abs(bestLag - centerLag);
+        // The guard never consumes the whole window: a degenerate few-sample
+        // window keeps a non-edge center instead of flagging every lag.
+        int edgeGuard = Math.Min(CorrelationEdgeGuardSamples, rangeSamples - 1);
+        bool edgePinned = distance >= rangeSamples - edgeGuard;
+        // An edge-pinned extremum keeps its integer lag: sub-sample refinement
+        // on a cut lobe would drift the reported position toward the true
+        // extremum OUTSIDE the window, misstating what was measured.
+        double refinedLag = edgePinned
+            ? bestLag
+            : TransferFunction.RefinePeakLag(correlation, bestLag, fftLength, sign);
         return new CorrelationDelayCandidate(
             refinedLag * 1000.0 / sampleRate,
             normalizer > 0 ? sign * best / normalizer : 0,

@@ -59,9 +59,6 @@ public sealed class AutoAlignmentEngineTests
         return ir;
     }
 
-    private static string LogLine(string log, string contains) =>
-        log.Split('\n').First(line => line.Contains(contains));
-
     private static Dictionary<IAlignmentChannel, AlignmentOverride> Run(
         TestChannel[] byBand,
         double[] crossoversHz,
@@ -307,8 +304,8 @@ public sealed class AutoAlignmentEngineTests
         Assert.True(result.InvertPolarity);
         Assert.InRange(result.DelayMs, 15.0, 15.4);
         Assert.Contains(
-            "seed arrival (inverted trough dominates)", LogLine(text, "Pair B/C"));
-        Assert.Contains("WIDE SEED", LogLine(text, "Channel C:"));
+            "seed arrival (inverted trough dominates)", TestLog.Line(text, "Pair B/C"));
+        Assert.Contains("WIDE SEED", TestLog.Line(text, "Channel C:"));
     }
 
     [Fact]
@@ -336,8 +333,8 @@ public sealed class AutoAlignmentEngineTests
         Assert.False(alignment.ContainsKey(midbass));
         Assert.Contains(
             "seed arrival (peak beyond the arrival's reach)",
-            LogLine(text, "Pair B/C"));
-        Assert.Contains("WIDE SEED", LogLine(text, "Channel C:"));
+            TestLog.Line(text, "Pair B/C"));
+        Assert.Contains("WIDE SEED", TestLog.Line(text, "Channel C:"));
     }
 
     [Fact]

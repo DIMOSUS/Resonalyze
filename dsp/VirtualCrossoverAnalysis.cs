@@ -1586,13 +1586,18 @@ public static class VirtualCrossoverAnalysis
     /// <summary>
     /// The gated band level (dB) of one processed response: the same
     /// direct-sound Tukey gate as the alignment spectra, anchored at the
-    /// response's own peak, then the log-frequency-weighted mean of the bin
-    /// magnitudes in dB inside the band. The absolute figure carries an
-    /// arbitrary reference (the raw transfer-spectrum scale), so it is meant
-    /// for DIFFERENCES between responses measured over the same band — e.g.
-    /// the L−R level asymmetry of a stereo pair, the companion of the
-    /// arrival Δ: timing (ITD) and level (ILD) steer the image together.
-    /// Null when the band holds no bins.
+    /// response's own peak, then the 1/f-weighted mean of the bin POWERS
+    /// (|H|^2) inside the band, converted back to dB. Averaging energy rather
+    /// than dB values is what lets the figure track perceived loudness and
+    /// shrug off the narrow interference nulls a reflective cabin riddles the
+    /// response with: a deep null drags a dB (geometric-mean) average down by
+    /// most of its depth yet removes almost none of the band energy, so the
+    /// power average barely moves. The absolute figure carries an arbitrary
+    /// reference (the raw transfer-spectrum scale), so it is meant for
+    /// DIFFERENCES between responses measured over the same band — e.g. the
+    /// L−R level asymmetry of a stereo pair, the companion of the arrival Δ:
+    /// timing (ITD) and level (ILD) steer the image together. Null when the
+    /// band holds no bins.
     /// </summary>
     public static double? MeasureBandLevelDb(
         Complex[] impulseResponse,
@@ -1636,12 +1641,16 @@ public static class VirtualCrossoverAnalysis
         {
             double frequencyHz = bin * (double)sampleRate / length;
             double weight = 1.0 / frequencyHz;
-            total += weight * 20.0 * Math.Log10(
-                Math.Max(spectrum[bin].Magnitude, 1e-12));
+            double magnitude = spectrum[bin].Magnitude;
+            total += weight * magnitude * magnitude;
             weightSum += weight;
         }
 
-        return weightSum > 0 ? total / weightSum : null;
+        // Convert the mean power back to dB once, at the end. The 1e-24 floor
+        // mirrors the old per-bin 1e-12 magnitude floor (-240 dB).
+        return weightSum > 0
+            ? 10.0 * Math.Log10(Math.Max(total / weightSum, 1e-24))
+            : null;
     }
 
     /// <summary>

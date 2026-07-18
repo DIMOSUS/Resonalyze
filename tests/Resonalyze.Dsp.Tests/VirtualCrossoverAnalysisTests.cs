@@ -817,6 +817,32 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void MeasureBandLevelDb_AveragesEnergy_SoAnInterferenceCombBarelyDropsIt()
+    {
+        // A comb (impulse minus an equal copy 200 samples later) is the archetype
+        // of cabin interference: |H|^2 = 2 - 2cos(200w), a train of deep nulls whose
+        // period (48 kHz / 200 = 240 Hz) packs ~10 nulls into 400-2800 Hz. Its mean
+        // energy is 2 (the peaks reach +6 dB), so an energy average reads +3.01 dB
+        // over the single impulse, while a dB (geometric-mean) average reads ~0 dB
+        // because the nulls' depth exactly cancels the peaks in the log domain.
+        // Pins that the metric averages POWER, not dB.
+        Complex[] single = UnitImpulse(8_192, 480);
+        Complex[] comb = UnitImpulse(8_192, 480);
+        comb[680] = -Complex.One;
+
+        double? singleLevel =
+            VirtualCrossoverAnalysis.MeasureBandLevelDb(single, SampleRate, 400, 2_800);
+        double? combLevel =
+            VirtualCrossoverAnalysis.MeasureBandLevelDb(comb, SampleRate, 400, 2_800);
+
+        Assert.NotNull(singleLevel);
+        Assert.NotNull(combLevel);
+        // Power domain: ~+3 dB (measured 2.85, shy of the ideal 3.01 by finite-band
+        // and discrete-bin effects). A dB-domain mean would land near 0 dB.
+        Assert.InRange(combLevel.Value - singleLevel.Value, 2.5, 3.1);
+    }
+
+    [Fact]
     public void MeasureBandLevelDb_BandWithoutBinsReturnsNull()
     {
         // 23 990 - 23 999 Hz at 48 kHz falls between the last usable FFT bin

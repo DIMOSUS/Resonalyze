@@ -1463,8 +1463,10 @@ The acoustic plot shows raw and processed curves per channel for the active
 side, the complex **Sum**, the **opposite side's Sum** as a dashed translucent
 curve (so the two sides' tunes compare at a glance without flipping back and
 forth), and the **Sum loss** curve (blanked where every channel is filtered
-more than 40 dB below the loudest point — out there the "loss" would be the
-phase arithmetic of noise floors, not audible summation), with a **Phase view**
+more than 30 dB below the loudest level within an octave — out there the "loss"
+would be the phase arithmetic of noise floors, not audible summation; measuring
+against the local level rather than one global peak keeps a tilted in-room curve
+readable up top instead of blanking the treble), with a **Phase view**
 toggle to check that
 the channels track each other through the crossover region. Its **Gate...**
 dialog exposes **Fixed / FDW**, 4 / 6 / 8 cycles, and **Off / Auto / Manual**

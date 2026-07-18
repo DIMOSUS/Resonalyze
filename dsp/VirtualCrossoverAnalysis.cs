@@ -1732,22 +1732,36 @@ public static class VirtualCrossoverAnalysis
     }
 
     /// <summary>
-    /// How far below the loudest in-curve level the channels' combined magnitude
-    /// may fall before the summation loss stops being measured at that point.
-    /// Where every channel is filtered that far down, the "loss" is the phase
-    /// arithmetic of two noise floors — it swings to deep fake dips well outside
-    /// any driver's band — so those points become NaN: the drawn curve breaks
-    /// and the average/dip read-outs skip them.
+    /// How far below the loudest combined level in a point's own neighborhood
+    /// (±<see cref="SumLossLevelGateReferenceOctaves"/> octaves) the channels'
+    /// combined magnitude may fall before the summation loss stops being measured
+    /// at that point. Where every channel is filtered that far down, the "loss" is
+    /// the phase arithmetic of two noise floors — it swings to deep fake dips well
+    /// outside any driver's band — so those points become NaN: the drawn curve
+    /// breaks and the average/dip read-outs skip them. Judging each point against a
+    /// local reference rather than one global peak keeps a steeply tilted in-room
+    /// response (loud bass, quiet treble) measured across its whole range instead
+    /// of blanking everything an octave or two above the bass.
     /// </summary>
-    public const double SumLossLevelGateDb = 40;
+    public const double SumLossLevelGateDb = 25;
+
+    /// <summary>
+    /// The half-width, in octaves, of the neighborhood the summation-loss level
+    /// gate (<see cref="SumLossLevelGateDb"/>) measures each point against. One
+    /// octave to each side matches the band a crossover junction spans, so the
+    /// gate reference tracks the local driver level rather than a distant global
+    /// peak.
+    /// </summary>
+    public const double SumLossLevelGateReferenceOctaves = 1.0;
 
     /// <summary>
     /// The per-point summation-loss curve (dB, &lt;= 0): the complex sum minus the
     /// phase-blind magnitude sum of the channel curves, over their shared index
-    /// grid (truncated to the shortest). Points where the combined magnitude sits
-    /// more than <see cref="SumLossLevelGateDb"/> below its in-curve peak read
-    /// NaN (see there). This is the single definition the panel's drawn
-    /// "Sum loss" curve, <see cref="AverageSumLossDb"/> and
+    /// grid (truncated to the shortest). Points whose combined magnitude sits more
+    /// than <see cref="SumLossLevelGateDb"/> below the loudest combined level in
+    /// their own ±<see cref="SumLossLevelGateReferenceOctaves"/>-octave
+    /// neighborhood read NaN (see there). This is the single definition the panel's
+    /// drawn "Sum loss" curve, <see cref="AverageSumLossDb"/> and
     /// <see cref="MinimumSumLossDb"/> all read, so the drawn and measured loss
     /// cannot drift apart.
     /// </summary>
@@ -1764,8 +1778,8 @@ public static class VirtualCrossoverAnalysis
             count = Math.Min(count, curve.Count);
         }
 
-        var magnitudeSums = new double[Math.Max(0, count)];
-        double peakMagnitude = 0;
+        count = Math.Max(0, count);
+        var magnitudeSums = new double[count];
         for (int i = 0; i < count; i++)
         {
             double magnitudeSum = 0;
@@ -1775,25 +1789,91 @@ public static class VirtualCrossoverAnalysis
             }
 
             magnitudeSums[i] = magnitudeSum;
-            if (double.IsFinite(magnitudeSum))
-            {
-                peakMagnitude = Math.Max(peakMagnitude, magnitudeSum);
-            }
         }
 
-        double gateFloor =
-            peakMagnitude * DataHelper.DecibelsToAmplitude(-SumLossLevelGateDb);
-        var points = new List<SignalPoint>(Math.Max(0, count));
+        double[] localPeaks = LocalMagnitudePeaks(sumCurve, magnitudeSums, count);
+        double gate = DataHelper.DecibelsToAmplitude(-SumLossLevelGateDb);
+        var points = new List<SignalPoint>(count);
         for (int i = 0; i < count; i++)
         {
+            double gateFloor = localPeaks[i] * gate;
+            bool measurable = localPeaks[i] > 0 && magnitudeSums[i] >= gateFloor;
             points.Add(new SignalPoint(
                 sumCurve[i].X,
-                magnitudeSums[i] >= gateFloor
+                measurable
                     ? sumCurve[i].Y - DataHelper.AmplitudeToDecibels(magnitudeSums[i])
                     : double.NaN));
         }
 
         return points;
+    }
+
+    /// <summary>
+    /// For each point, the loudest combined magnitude within
+    /// ±<see cref="SumLossLevelGateReferenceOctaves"/> octaves of it — the local
+    /// level the summation-loss gate measures that point against, so a steadily
+    /// tilted in-room response is judged region by region instead of against one
+    /// global (typically bass) peak. Non-finite sums count as zero. Runs in O(n)
+    /// with a monotonic deque over the frequency-sorted grid.
+    /// </summary>
+    private static double[] LocalMagnitudePeaks(
+        IReadOnlyList<SignalPoint> curve,
+        double[] magnitudeSums,
+        int count)
+    {
+        var peaks = new double[count];
+        if (count == 0)
+        {
+            return peaks;
+        }
+
+        var reference = new double[count];
+        for (int i = 0; i < count; i++)
+        {
+            reference[i] = double.IsFinite(magnitudeSums[i]) ? magnitudeSums[i] : 0.0;
+        }
+
+        double ratio = Math.Pow(2, SumLossLevelGateReferenceOctaves);
+        // Indices of a monotonically decreasing magnitude run over [start, end);
+        // the front is the largest reference level inside the current window.
+        var deque = new int[count];
+        int head = 0;
+        int tail = 0;
+        int start = 0;
+        int end = 0;
+        for (int i = 0; i < count; i++)
+        {
+            double lower = curve[i].X / ratio;
+            double upper = curve[i].X * ratio;
+
+            // Grow to the right to cover every point within +1 octave. The bound
+            // rises with i, so end never rewinds.
+            while (end < count && curve[end].X <= upper)
+            {
+                while (tail > head && reference[deque[tail - 1]] <= reference[end])
+                {
+                    tail--;
+                }
+
+                deque[tail++] = end;
+                end++;
+            }
+
+            // Drop points that fell below -1 octave. This bound also only rises.
+            while (start < end && curve[start].X < lower)
+            {
+                if (tail > head && deque[head] == start)
+                {
+                    head++;
+                }
+
+                start++;
+            }
+
+            peaks[i] = tail > head ? reference[deque[head]] : reference[i];
+        }
+
+        return peaks;
     }
 
     /// <summary>

@@ -390,29 +390,36 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
-    public void SumLossCurve_GatesPointsWhereEveryChannelIsFilteredAway()
+    public void SumLossCurve_GatesPointsFarBelowTheirLocalNeighborhoodPeak()
     {
         // Outside every channel's band the "loss" is the phase arithmetic of
         // noise floors — it swings to deep fake dips no listener can hear. A
         // point whose combined channel magnitude sits more than the level gate
-        // below the in-curve peak reads NaN, so the drawn curve breaks there
-        // and the avg/dip read-outs skip it instead of reporting the fake dip.
+        // below the loudest level within an octave of it reads NaN, so the drawn
+        // curve breaks there and the avg/dip read-outs skip it. The reference is
+        // local, so a quiet-but-in-band region (a tilted treble) is judged against
+        // its own level rather than a distant louder band.
         var channel = new List<SignalPoint>
         {
-            new(30, -70.0), new(1_000, 0.0), new(2_000, 0.0)
+            new(500, 0.0), new(1_000, 0.0), new(1_500, -40.0), new(6_000, -3.0)
         };
         var sum = new List<SignalPoint>
         {
-            new(30, -76.0), new(1_000, 0.0), new(2_000, 0.0)
+            new(500, 0.0), new(1_000, 0.0), new(1_500, -40.0), new(6_000, -3.0)
         };
 
         List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(sum, [channel]);
 
-        Assert.True(double.IsNaN(loss[0].Y));
+        // 1500 Hz sits 40 dB below its neighbor at 1000 Hz (within an octave) — gated.
+        Assert.True(double.IsNaN(loss[2].Y));
+        // The in-band points read their true 0 dB single-channel loss.
+        Assert.Equal(0.0, loss[0].Y, 3);
         Assert.Equal(0.0, loss[1].Y, 3);
-        Assert.Equal(0.0, loss[2].Y, 3);
+        // 6 kHz is quiet in absolute terms, but no louder neighbor sits within an
+        // octave (nearest is 1.5 kHz, further down and quieter), so it is kept.
+        Assert.Equal(0.0, loss[3].Y, 3);
         double? dip = VirtualCrossoverAnalysis.MinimumSumLossDb(
-            sum, [channel], 20, 3_000);
+            sum, [channel], 20, 8_000);
         Assert.NotNull(dip);
         Assert.Equal(0.0, dip.Value, 3);
     }

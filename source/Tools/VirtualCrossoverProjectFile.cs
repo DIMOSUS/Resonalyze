@@ -316,6 +316,31 @@ public sealed class VirtualCrossoverProjectFile
     public bool ShowImpulseView { get; set; }
     public int SmoothingInverseOctaves { get; set; } = 12;
 
+    // The dip-ignoring psychoacoustic smoothing mode (see SpectrumSmoothing in
+    // dsp). Stored as a separate additive flag while SmoothingInverseOctaves
+    // keeps the plain base width, so an older build opens such a session as
+    // plain 1/6-octave smoothing instead of rejecting the file.
+    public bool PsychoacousticSmoothing { get; set; }
+
+    /// <summary>
+    /// The in-memory smoothing code of this project (see
+    /// <see cref="OverlayFile.SmoothingCode"/> for the pattern): the
+    /// psychoacoustic code when the flag is set, the stored width otherwise.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int SmoothingCode =>
+        PsychoacousticSmoothing
+            ? Resonalyze.Dsp.SpectrumSmoothing.PsychoacousticCode
+            : SmoothingInverseOctaves;
+
+    public void SetSmoothingCode(int code)
+    {
+        PsychoacousticSmoothing =
+            Resonalyze.Dsp.SpectrumSmoothing.IsPsychoacoustic(code);
+        SmoothingInverseOctaves =
+            Resonalyze.Dsp.SpectrumSmoothing.EquivalentInverseOctaves(code);
+    }
+
     // Which curve the per-channel DSP chain plot shows. Additive: older files lack
     // it and default to Magnitude.
     public DspPlotMode DspPlotMode { get; set; } = DspPlotMode.Magnitude;

@@ -1861,7 +1861,7 @@ public sealed class Overlay
         strokeThickness = file.StrokeThickness;
         lineStyle = file.LineStyle;
         opacityPercent = file.OpacityPercent;
-        smoothingInverseOctaves = file.SmoothingInverseOctaves;
+        smoothingInverseOctaves = file.SmoothingCode;
 
         updatingControls = true;
         try
@@ -1970,9 +1970,9 @@ public sealed class Overlay
             ColorArgb = panel.BackColor.ToArgb(),
             StrokeThickness = strokeThickness,
             LineStyle = lineStyle,
-            OpacityPercent = opacityPercent,
-            SmoothingInverseOctaves = smoothingInverseOctaves
+            OpacityPercent = opacityPercent
         };
+        file.SetSmoothingCode(smoothingInverseOctaves);
 
         if (kind == OverlayKind.Operation)
         {

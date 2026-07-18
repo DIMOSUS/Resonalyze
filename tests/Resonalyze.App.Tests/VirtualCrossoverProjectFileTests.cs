@@ -687,6 +687,40 @@ public sealed class VirtualCrossoverProjectFileTests
         Assert.Equal(1.0, chain.Response(1_000, 48_000).Magnitude, 12);
     }
 
+    [Fact]
+    public void PsychoacousticSmoothing_RoundTripsAsAPlainWidthPlusFlag()
+    {
+        // The psychoacoustic mode persists as its plain base width plus a
+        // separate additive flag, so an OLDER build opens the session as plain
+        // 1/6-octave smoothing instead of rejecting an unknown code — the same
+        // pattern as every other additive project field.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = new VirtualCrossoverProjectFile();
+            original.SetSmoothingCode(Dsp.SpectrumSmoothing.PsychoacousticCode);
+            Assert.Equal(
+                Dsp.SpectrumSmoothing.PsychoacousticBaseInverseOctaves,
+                original.SmoothingInverseOctaves);
+            Assert.True(original.PsychoacousticSmoothing);
+
+            original.Save(root);
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Equal(
+                Dsp.SpectrumSmoothing.PsychoacousticCode, loaded.SmoothingCode);
+            // Selecting a plain width afterwards clears the flag.
+            loaded.SetSmoothingCode(12);
+            Assert.False(loaded.PsychoacousticSmoothing);
+            Assert.Equal(12, loaded.SmoothingCode);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string CreateTemporaryDirectory()
     {
         string path = Path.Combine(

@@ -729,9 +729,7 @@ namespace Resonalyze.Dsp
 
             return new AnalysisCurve(
                 "Phase",
-                smoothingInverseOctaves > 0
-                    ? SmoothLinear(data, 1.0 / smoothingInverseOctaves)
-                    : data);
+                SmoothPhaseCurve(data, smoothingInverseOctaves));
         }
 
         public static AnalysisCurve GetPhase(
@@ -745,9 +743,7 @@ namespace Resonalyze.Dsp
                 .ToList();
             return new AnalysisCurve(
                 "Phase",
-                settings.SmoothingInverseOctaves > 0
-                    ? SmoothLinear(data, 1.0 / settings.SmoothingInverseOctaves)
-                    : data);
+                SmoothPhaseCurve(data, settings.SmoothingInverseOctaves));
         }
 
 
@@ -793,9 +789,7 @@ namespace Resonalyze.Dsp
 
             return new AnalysisCurve(
                 "Minimum Phase",
-                smoothingInverseOctaves > 0
-                    ? SmoothLinear(data, 1.0 / smoothingInverseOctaves)
-                    : data,
+                SmoothPhaseCurve(data, smoothingInverseOctaves),
                 AnalysisCurveKind.MinimumPhase);
         }
 
@@ -824,9 +818,7 @@ namespace Resonalyze.Dsp
             }
             return new AnalysisCurve(
                 "Minimum Phase",
-                smoothingInverseOctaves > 0
-                    ? SmoothLinear(data, 1.0 / smoothingInverseOctaves)
-                    : data,
+                SmoothPhaseCurve(data, smoothingInverseOctaves),
                 AnalysisCurveKind.MinimumPhase);
         }
 
@@ -887,9 +879,7 @@ namespace Resonalyze.Dsp
 
             return new AnalysisCurve(
                 "Excess Phase",
-                smoothingInverseOctaves > 0
-                    ? SmoothLinear(data, 1.0 / smoothingInverseOctaves)
-                    : data,
+                SmoothPhaseCurve(data, smoothingInverseOctaves),
                 AnalysisCurveKind.ExcessPhase);
         }
 
@@ -920,9 +910,7 @@ namespace Resonalyze.Dsp
             }
             return new AnalysisCurve(
                 "Excess Phase",
-                settings.SmoothingInverseOctaves > 0
-                    ? SmoothLinear(data, 1.0 / settings.SmoothingInverseOctaves)
-                    : data,
+                SmoothPhaseCurve(data, settings.SmoothingInverseOctaves),
                 AnalysisCurveKind.ExcessPhase);
         }
 
@@ -1039,8 +1027,10 @@ namespace Resonalyze.Dsp
                 energy[i] = h.Real * h.Real + h.Imaginary * h.Imaginary;
             }
 
-            double smoothingOctaves = smoothingInverseOctaves > 0.0
-                ? 1.0 / smoothingInverseOctaves
+            double decodedOctaves =
+                SpectrumSmoothing.SmoothingOctaves(smoothingInverseOctaves);
+            double smoothingOctaves = decodedOctaves > 0.0
+                ? decodedOctaves
                 : GroupDelayStabilizationOctaves;
             int sampleRate = measurement.SampleRate;
             int gateSamples = Math.Clamp(
@@ -1137,6 +1127,18 @@ namespace Resonalyze.Dsp
         // energy to stay positive, and a signed kernel could cancel it near sharp
         // spectral transitions and reintroduce the very spikes being removed.
         //
+        // Display smoothing for the phase-domain curves (phase, minimum/excess
+        // phase): the stored code decodes through SpectrumSmoothing, so the
+        // psychoacoustic magnitude mode falls back to its plain base width here
+        // — the asymmetric dip floor is a magnitude concept and would bias a
+        // signed phase trace upward. Off (0) passes the data through untouched.
+        private static List<SignalPoint> SmoothPhaseCurve(
+            List<SignalPoint> data, double smoothingInverseOctaves)
+        {
+            double octaves = SpectrumSmoothing.SmoothingOctaves(smoothingInverseOctaves);
+            return octaves > 0 ? SmoothLinear(data, octaves) : data;
+        }
+
         // Evaluated on LOG-spaced anchors and interpolated between them, with every span
         // checked against the exact curve at its midpoint and split until it agrees.
         //

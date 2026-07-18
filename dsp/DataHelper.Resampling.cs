@@ -33,7 +33,8 @@ namespace Resonalyze.Dsp
             int steps,
             CalibrationFile? calibration = null,
             double smoothingOctaves = 1.0 / 6.0,
-            bool dBUnpack = true)
+            bool dBUnpack = true,
+            bool psychoacoustic = false)
         {
             if (input.Count < 2)
             {
@@ -133,6 +134,25 @@ namespace Resonalyze.Dsp
                     filteredValue = Sample(centerIndex).Y;
                 }
 
+                if (psychoacoustic)
+                {
+                    // The asymmetric floor (see SpectrumSmoothing): the median of
+                    // the samples inside the smoothing half-width ignores any
+                    // feature narrower than half the window regardless of its
+                    // depth, so flooring the mean at it erases narrow
+                    // interference dips while a narrow peak — which lifts the
+                    // mean above the median — keeps exactly its plain-smoothed
+                    // height, and anything wider than the window moves both
+                    // figures together and passes through unchanged.
+                    int medianRadius = (int)Math.Ceiling(halfDeltaFrequency / inputStep);
+                    double median = WindowMedian(
+                        input, centerIndex - medianRadius, centerIndex + medianRadius);
+                    if (double.IsFinite(median))
+                    {
+                        filteredValue = Math.Max(filteredValue, median);
+                    }
+                }
+
                 if (calibration != null)
                 {
                     output.Add(new SignalPoint(
@@ -146,6 +166,36 @@ namespace Resonalyze.Dsp
             }
 
             return output;
+        }
+
+        // The median of the finite Y values over an index window (bounds clamped
+        // to the grid), NaN when the window holds none. The psychoacoustic
+        // floor's robust center: unlike the weighted mean it is untouched by a
+        // deep feature occupying less than half the window.
+        private static double WindowMedian(
+            List<SignalPoint> input, int firstIndex, int lastIndex)
+        {
+            var values = new List<double>();
+            for (int i = Math.Max(firstIndex, 0);
+                 i <= Math.Min(lastIndex, input.Count - 1);
+                 i++)
+            {
+                if (double.IsFinite(input[i].Y))
+                {
+                    values.Add(input[i].Y);
+                }
+            }
+
+            if (values.Count == 0)
+            {
+                return double.NaN;
+            }
+
+            values.Sort();
+            int middle = values.Count / 2;
+            return values.Count % 2 == 1
+                ? values[middle]
+                : 0.5 * (values[middle - 1] + values[middle]);
         }
 
         /// <summary>
@@ -199,7 +249,8 @@ namespace Resonalyze.Dsp
             double start,
             double stop,
             int steps,
-            double smoothingOctaves)
+            double smoothingOctaves,
+            bool psychoacoustic = false)
         {
             ArgumentNullException.ThrowIfNull(amplitudeSpectrum);
             if (steps < 2)
@@ -336,11 +387,31 @@ namespace Resonalyze.Dsp
                 prefix[i + 1] = prefix[i] + bandPowers[i];
             }
 
+            var medianScratch = psychoacoustic ? new List<double>() : null;
             for (int i = 0; i < steps; i++)
             {
                 int lowIndex = Math.Max(0, i - smoothingHalfSteps);
                 int highIndex = Math.Min(steps - 1, i + smoothingHalfSteps);
                 double mean = (prefix[highIndex + 1] - prefix[lowIndex]) / (highIndex - lowIndex + 1);
+                if (medianScratch != null)
+                {
+                    // The asymmetric floor (see SpectrumSmoothing), in the power
+                    // domain where this smoother lives — the median is monotonic
+                    // under the dB mapping, so flooring powers floors levels.
+                    medianScratch.Clear();
+                    for (int sample = lowIndex; sample <= highIndex; sample++)
+                    {
+                        medianScratch.Add(bandPowers[sample]);
+                    }
+
+                    medianScratch.Sort();
+                    int middle = medianScratch.Count / 2;
+                    double median = medianScratch.Count % 2 == 1
+                        ? medianScratch[middle]
+                        : 0.5 * (medianScratch[middle - 1] + medianScratch[middle]);
+                    mean = Math.Max(mean, median);
+                }
+
                 output.Add(new SignalPoint(frequencies[i], AmplitudeToDecibels(Math.Sqrt(mean))));
             }
 

@@ -37,6 +37,45 @@ public sealed class OverlayFileTests
     }
 
     [Fact]
+    public void SaveAndLoad_RoundTripsPsychoacousticSmoothingAsAPlainWidthPlusFlag()
+    {
+        // Same additive-field pattern as CapturedMagnitudeScale: the file keeps
+        // a plain valid width in the legacy field (older builds read 1/6) and
+        // the psychoacoustic mode travels in its own flag.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = new OverlayFile
+            {
+                SavedAtUtc = DateTimeOffset.UtcNow,
+                Mode = Mode.FrequencyResponse,
+                Slot = 3,
+                Title = "Psycho overlay",
+                ColorArgb = Color.Teal.ToArgb(),
+                Points = [new OverlayPoint(20, 0), new OverlayPoint(20_000, -3)]
+            };
+            original.SetSmoothingCode(SpectrumSmoothing.PsychoacousticCode);
+            Assert.Equal(
+                SpectrumSmoothing.PsychoacousticBaseInverseOctaves,
+                original.SmoothingInverseOctaves);
+
+            original.Save(root);
+            OverlayFile? loaded = OverlayFile.Load(Mode.FrequencyResponse, 3, root);
+
+            Assert.NotNull(loaded);
+            Assert.Equal(
+                SpectrumSmoothing.PsychoacousticCode, loaded!.SmoothingCode);
+            Assert.Equal(
+                SpectrumSmoothing.PsychoacousticBaseInverseOctaves,
+                loaded.SmoothingInverseOctaves);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void SaveAndLoad_RoundTripsOverlayData()
     {
         string root = CreateTemporaryDirectory();

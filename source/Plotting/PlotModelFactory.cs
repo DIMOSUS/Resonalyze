@@ -851,9 +851,8 @@ internal sealed class PlotModelFactory
             return ResampleLiveSpectrumMagnitude(amplitudeSpectrum, 0.0);
         }
 
-        double smoothingOctaves = liveSpectrumOptions.SmoothingInverseOctaves > 0
-            ? 1.0 / liveSpectrumOptions.SmoothingInverseOctaves
-            : 0.0;
+        double smoothingOctaves = SpectrumSmoothing.SmoothingOctaves(
+            liveSpectrumOptions.SmoothingInverseOctaves);
         List<SignalPoint> bands = DataHelper.LogarithmicPowerBandResample(
             amplitudeSpectrum,
             noiseMeasurement.SequenceLength,
@@ -863,7 +862,9 @@ internal sealed class PlotModelFactory
             20,
             20000,
             1024,
-            smoothingOctaves);
+            smoothingOctaves,
+            psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(
+                liveSpectrumOptions.SmoothingInverseOctaves));
 
         double offsetDb = LiveSplRenderOffset;
         CalibrationFile? calibration = GetCalibration(liveSpectrumOptions);
@@ -910,9 +911,10 @@ internal sealed class PlotModelFactory
             20000,
             1024,
             GetCalibration(liveSpectrumOptions),
-            liveSpectrumOptions.SmoothingInverseOctaves > 0
-                ? 1.0 / liveSpectrumOptions.SmoothingInverseOctaves
-                : 0.0);
+            SpectrumSmoothing.SmoothingOctaves(
+                liveSpectrumOptions.SmoothingInverseOctaves),
+            psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(
+                liveSpectrumOptions.SmoothingInverseOctaves));
     }
 
     public LineSeries BuildCoherenceSeries(double[] coherence)
@@ -1133,12 +1135,18 @@ internal sealed class PlotModelFactory
         List<SignalPoint> points,
         double smoothingInverseOctaves)
     {
-        if (smoothingInverseOctaves <= 0 || points.Count < 3)
+        // Coherence is a 0..1 confidence trace, not a magnitude: the
+        // psychoacoustic code decodes to its plain base width here — the
+        // asymmetric dip floor would inflate exactly the low-coherence
+        // stretches the curve exists to expose.
+        double smoothingOctaves =
+            SpectrumSmoothing.SmoothingOctaves(smoothingInverseOctaves);
+        if (smoothingOctaves <= 0 || points.Count < 3)
         {
             return points;
         }
 
-        double halfWindowOctaves = 0.5 / smoothingInverseOctaves;
+        double halfWindowOctaves = 0.5 * smoothingOctaves;
         double lowerFactor = Math.Pow(2.0, -halfWindowOctaves);
         double upperFactor = Math.Pow(2.0, halfWindowOctaves);
         var smoothed = new List<SignalPoint>(points.Count);

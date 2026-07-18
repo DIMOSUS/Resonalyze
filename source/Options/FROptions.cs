@@ -19,7 +19,8 @@ namespace Resonalyze.Options
             InitializeComponent();
             numericLeftWindow.ValueChanged += TukeyWindow_ValueChanged;
             numericRightWindow.ValueChanged += TukeyWindow_ValueChanged;
-            SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
+            SmoothingPresetOptions.Configure(
+                comboSmoothingInverseOctaves, includePsychoacoustic: true);
             InitializeToolTips();
         }
 

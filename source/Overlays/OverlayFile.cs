@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
@@ -50,6 +51,33 @@ public sealed class OverlayFile
     public OverlayLineStyle LineStyle { get; set; } = OverlayLineStyle.Solid;
     public int OpacityPercent { get; set; } = 100;
     public int SmoothingInverseOctaves { get; set; }
+
+    // The dip-ignoring psychoacoustic smoothing mode (see SpectrumSmoothing in
+    // dsp). Stored as a separate additive flag while SmoothingInverseOctaves
+    // keeps the plain base width, so an older build reads such a file as plain
+    // 1/6-octave smoothing instead of rejecting an unknown code. Additive with
+    // a safe default — no file version bump.
+    public bool PsychoacousticSmoothing { get; set; }
+
+    /// <summary>
+    /// The in-memory smoothing code of this file: the psychoacoustic code when
+    /// the flag is set, the stored width otherwise. The write-side counterpart
+    /// is <see cref="SetSmoothingCode"/>; every reader and writer goes through
+    /// this pair so the dual representation cannot half-apply.
+    /// </summary>
+    [JsonIgnore]
+    public int SmoothingCode =>
+        PsychoacousticSmoothing
+            ? Resonalyze.Dsp.SpectrumSmoothing.PsychoacousticCode
+            : SmoothingInverseOctaves;
+
+    public void SetSmoothingCode(int code)
+    {
+        PsychoacousticSmoothing =
+            Resonalyze.Dsp.SpectrumSmoothing.IsPsychoacoustic(code);
+        SmoothingInverseOctaves =
+            Resonalyze.Dsp.SpectrumSmoothing.EquivalentInverseOctaves(code);
+    }
 
     // Captured kind: the stored curve samples.
     public OverlayPoint[] Points { get; set; } = Array.Empty<OverlayPoint>();
@@ -585,7 +613,7 @@ public sealed record TargetCurveResult(
 public static class OverlaySmoothing
 {
     public static IReadOnlyList<int> SupportedInverseOctaves { get; } =
-        [0, 48, 24, 12, 6, 3, 2, 1];
+        [0, 48, 24, 12, 6, SpectrumSmoothing.PsychoacousticCode, 3, 2, 1];
 
     public static bool SupportsMode(Mode mode)
     {
@@ -600,5 +628,9 @@ public static class OverlaySmoothing
         SupportedInverseOctaves.Contains(inverseOctaves);
 
     public static string GetLabel(int inverseOctaves) =>
-        inverseOctaves == 0 ? "Off" : $"1/{inverseOctaves} octave";
+        inverseOctaves == 0
+            ? "Off"
+            : SpectrumSmoothing.IsPsychoacoustic(inverseOctaves)
+                ? "Psychoacoustic"
+                : $"1/{inverseOctaves} octave";
 }

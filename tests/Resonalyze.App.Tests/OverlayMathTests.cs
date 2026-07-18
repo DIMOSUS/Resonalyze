@@ -414,4 +414,39 @@ public sealed class OverlayMathTests
                 getValue(index)))
             .ToArray();
     }
+
+    [Fact]
+    public void SmoothByOctaves_PsychoacousticIgnoresANarrowDipAndKeepsAPeak()
+    {
+        // A fine log grid (1/96 octave) around 1 kHz, flat at 0 dB, with a
+        // -24 dB dip and a +9 dB peak each 5 points (~1/19 octave) wide — both
+        // far narrower than half the 1/6-octave base window. The plain
+        // smoothing keeps a diluted copy of both; the psychoacoustic mode must
+        // erase the dip and reproduce the peak at exactly its plain height.
+        OverlayPoint[] points = Enumerable.Range(0, 385)
+            .Select(index =>
+            {
+                double frequency = 250.0 * Math.Pow(2, index / 96.0);
+                double value = index is >= 190 and <= 194 ? -24.0
+                    : index is >= 280 and <= 284 ? 9.0
+                    : 0.0;
+                return new OverlayPoint(frequency, value);
+            })
+            .ToArray();
+
+        OverlayPoint[] plain = OverlayMath.SmoothByOctaves(
+            points, Dsp.SpectrumSmoothing.PsychoacousticBaseInverseOctaves);
+        OverlayPoint[] psycho = OverlayMath.SmoothByOctaves(
+            points, Dsp.SpectrumSmoothing.PsychoacousticCode);
+
+        double plainDip = plain.Min(point => point.Y);
+        double psychoDip = psycho.Min(point => point.Y);
+        Assert.True(plainDip < -1.0, $"plain smoothing lost the dip ({plainDip:0.00} dB)");
+        Assert.True(psychoDip > -0.05, $"psychoacoustic kept the dip ({psychoDip:0.00} dB)");
+
+        double plainPeak = plain.Max(point => point.Y);
+        double psychoPeak = psycho.Max(point => point.Y);
+        Assert.True(plainPeak > 0.5, $"the peak vanished entirely ({plainPeak:0.00} dB)");
+        Assert.Equal(plainPeak, psychoPeak, precision: 6);
+    }
 }

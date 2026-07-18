@@ -26,7 +26,11 @@ public static class OverlayMath
             throw new ArgumentOutOfRangeException(nameof(inverseOctaves));
         }
 
-        double halfWidth = 0.5 / inverseOctaves;
+        // The psychoacoustic mode smooths at its base width and additionally
+        // floors each point at the window median (below), so narrow
+        // interference dips drop out while peaks and broad structure survive.
+        bool psychoacoustic = SpectrumSmoothing.IsPsychoacoustic(inverseOctaves);
+        double halfWidth = 0.5 * SpectrumSmoothing.SmoothingOctaves(inverseOctaves);
         var result = new OverlayPoint[points.Count];
         int left = 0;
         int right = 0;
@@ -72,14 +76,52 @@ public static class OverlayMath
                 weightSum += weight;
             }
 
-            result[center] = new OverlayPoint(
-                centerPoint.X,
-                weightSum > 1e-12
-                    ? weightedSum / weightSum
-                    : centerPoint.Y);
+            double value = weightSum > 1e-12
+                ? weightedSum / weightSum
+                : centerPoint.Y;
+            if (psychoacoustic)
+            {
+                double median = WindowMedian(points, left, right);
+                if (double.IsFinite(median))
+                {
+                    value = Math.Max(value, median);
+                }
+            }
+
+            result[center] = new OverlayPoint(centerPoint.X, value);
         }
 
         return result;
+    }
+
+    // The median of the finite Y values over [first, last] — the robust center
+    // the psychoacoustic floor compares the windowed mean against: a dip
+    // narrower than half the window cannot move it. NaN when the window holds
+    // no finite value.
+    private static double WindowMedian(
+        IReadOnlyList<OverlayPoint> points, int first, int last)
+    {
+        var values = new List<double>();
+        for (int i = Math.Max(first, 0);
+             i <= Math.Min(last, points.Count - 1);
+             i++)
+        {
+            if (!double.IsNaN(points[i].Y))
+            {
+                values.Add(points[i].Y);
+            }
+        }
+
+        if (values.Count == 0)
+        {
+            return double.NaN;
+        }
+
+        values.Sort();
+        int middle = values.Count / 2;
+        return values.Count % 2 == 1
+            ? values[middle]
+            : 0.5 * (values[middle - 1] + values[middle]);
     }
 
     /// <summary>

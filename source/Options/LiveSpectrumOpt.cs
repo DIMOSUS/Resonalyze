@@ -38,7 +38,8 @@ namespace Resonalyze.Options
         public LiveSpectrumOpt()
         {
             InitializeComponent();
-            SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
+            SmoothingPresetOptions.Configure(
+                comboSmoothingInverseOctaves, includePsychoacoustic: true);
             buttonResetAverage.Click += (_, _) => ResetAverageRequested?.Invoke();
             signalTypeComboBox.SelectionChangeCommitted += (_, _) =>
             {

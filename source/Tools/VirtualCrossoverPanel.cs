@@ -310,8 +310,8 @@ public partial class VirtualCrossoverPanel : UserControl
             acousticPlot.ConfigureForView(CurrentAcousticView());
             UpdateGateButtonAvailability();
             comboBoxSmoothing.SelectedItem =
-                OverlaySmoothing.IsValid(project.SmoothingInverseOctaves)
-                    ? project.SmoothingInverseOctaves
+                OverlaySmoothing.IsValid(project.SmoothingCode)
+                    ? project.SmoothingCode
                     : 12;
             radioDspMagnitude.Checked = project.DspPlotMode == DspPlotMode.Magnitude;
             radioDspPhase.Checked = project.DspPlotMode == DspPlotMode.Phase;
@@ -900,9 +900,9 @@ public partial class VirtualCrossoverPanel : UserControl
         project.ShowLossCurve = checkBoxShowLoss.Checked;
         project.ShowPhaseView = radioViewPhase.Checked;
         project.ShowImpulseView = radioViewImpulse.Checked;
-        project.SmoothingInverseOctaves = comboBoxSmoothing.SelectedItem is int value
+        project.SetSmoothingCode(comboBoxSmoothing.SelectedItem is int value
             ? value
-            : 12;
+            : 12);
         ScheduleSave();
         RedrawAll();
     }
@@ -1488,7 +1488,11 @@ public partial class VirtualCrossoverPanel : UserControl
             "Fractional-octave smoothing of the magnitude curves —\r\n" +
             "and of the curves the Sum loss read-out is measured from,\r\n" +
             "so it still moves those numbers in the Phase and Impulse\r\n" +
-            "views, where the drawn traces are not smoothed at all.");
+            "views, where the drawn traces are not smoothed at all.\r\n" +
+            "Psychoacoustic: 1/6 octave that additionally ignores dips\r\n" +
+            "narrower than half its window — narrow interference nulls\r\n" +
+            "the ear barely hears drop out, peaks and broad valleys stay.\r\n" +
+            "The junction metric numbers stay unsmoothed and honest.");
         toolTip.SetToolTip(
             radioDspGroupDelay,
             "What the lower plot shows for each channel's DSP chain:\r\n" +

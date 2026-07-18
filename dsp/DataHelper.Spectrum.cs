@@ -53,9 +53,10 @@ namespace Resonalyze.Dsp
                 20000,
                 1024,
                 frequencyResponseOptions.UseCalibration ? calibration : null,
-                frequencyResponseOptions.SmoothingInverseOctaves > 0
-                    ? 1.0 / frequencyResponseOptions.SmoothingInverseOctaves
-                    : 0.0);
+                SpectrumSmoothing.SmoothingOctaves(
+                    frequencyResponseOptions.SmoothingInverseOctaves),
+                psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(
+                    frequencyResponseOptions.SmoothingInverseOctaves));
             return new AnalysisCurve("Frequency Response", data);
         }
 

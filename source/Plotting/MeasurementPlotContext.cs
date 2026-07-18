@@ -160,9 +160,11 @@ internal sealed class MeasurementPlotContext
         // clean harmonics-only figure and the noise level is honest at its stated
         // analysis resolution — no fused THD+N, no arbitrary bandwidth convention.
         var distortionOptions = new DistortionOptions(
-            SmoothingOctaves: options.SmoothingInverseOctaves > 0
-                ? HarmonicSmoothingWidthFactor / options.SmoothingInverseOctaves
-                : 0.0,
+            // Harmonic curves scale the display width by a factor; the
+            // psychoacoustic code contributes its plain base width — the dip
+            // floor is for the fundamental's magnitude trace only.
+            SmoothingOctaves: HarmonicSmoothingWidthFactor *
+                SpectrumSmoothing.SmoothingOctaves(options.SmoothingInverseOctaves),
             // Estimate the noise floor only when its own curve is requested.
             IncludeNoise: (curves & SpectrumCurves.NoiseFloor) != 0);
 

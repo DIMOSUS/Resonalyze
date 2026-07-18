@@ -454,8 +454,12 @@ namespace Resonalyze
             if (GenerateOptions.WaterfallMode == WaterfallMode.BurstDecay)
             {
                 int offset = measurement.PeakIndex - GenerateOptions.LeftTukeyWindow + GenerateOptions.Offset;
-                double smoothingOctaves = GenerateOptions.SmoothingInverseOctaves > 0
-                    ? 1.0 / GenerateOptions.SmoothingInverseOctaves
+                // Burst decay integrates per-frequency energy envelopes; the
+                // psychoacoustic code decodes to its plain base width here.
+                double decodedOctaves = SpectrumSmoothing.SmoothingOctaves(
+                    GenerateOptions.SmoothingInverseOctaves);
+                double smoothingOctaves = decodedOctaves > 0
+                    ? decodedOctaves
                     : 1.0 / 48.0;
                 IReadOnlyList<BurstDecaySlice> slices = WaterfallAnalysis.BuildBurstDecayRawSlices(
                     measurement,
@@ -511,16 +515,18 @@ namespace Resonalyze
 
                 Parallel.For(0, RawSlices.Count, i =>
                 {
-                    double smoothingOctaves = GenerateOptions.SmoothingInverseOctaves > 0
-                        ? 1.0 / GenerateOptions.SmoothingInverseOctaves
-                        : 0.0;
+                    // Waterfall slices are magnitude spectra, so the
+                    // psychoacoustic mode applies its dip floor per slice.
                     List<SignalPoint> resampled = DataHelper.LogarithmicResample(
                         OxyPlotAdapter.ToSignalPoints(RawSlices[i].Data),
                         minFrequency,
                         maxFrequency,
                         width,
                         null,
-                        smoothingOctaves);
+                        SpectrumSmoothing.SmoothingOctaves(
+                            GenerateOptions.SmoothingInverseOctaves),
+                        psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(
+                            GenerateOptions.SmoothingInverseOctaves));
                     ResampleSlices[i].Data = OxyPlotAdapter.ToDataPoints(resampled);
                 });
             }

@@ -178,27 +178,30 @@ public static class AutoAlignmentEngine
             DiagnosticCorrelationRangeMs,
             SeedCorrelationWindowPeriods * 1000.0 / crossoverHz);
 
-    // How far from the arrival estimate a trusted seed peak may sit: half a
-    // period — the next same-polarity lobe is a full period out, so half a
+    // How far from the arrival estimate a trusted seed extremum may sit: half
+    // a period — the next same-polarity lobe is a full period out, so half a
     // period is the no-cycle-skip bound — floored at the FIXED window span.
     // The floor is deliberately the fixed ±3 ms, not the grown window: at a
     // mid/high junction it keeps exactly the reach the fixed window used to
     // enforce by construction, and at a low junction the grown window may SEE
     // farther lobes but must never hand one to the timeline.
-    private static double SeedPeakReachMs(double crossoverHz) =>
+    private static double SeedReachMs(double crossoverHz) =>
         Math.Max(DiagnosticCorrelationRangeMs, 500.0 / crossoverHz);
 
-    // The minimum non-inverted PHAT peak correlation for its position to seed the
-    // stage-2 window instead of the arrival envelope. Below it the peak is noise
-    // (a low-frequency junction with too few in-band periods), and the arrival
-    // estimate stands. Deliberately low: even a modest genuine peak beats the
-    // arrival envelope, and a seed that still lands a little off is recovered
-    // downstream — by the onset lock at sharp junctions, by the loss search and
-    // the wide-window promotion below it.
+    // The minimum |r| of the dominant PHAT extremum (peak or trough — the seed
+    // uses only its POSITION, polarity stays with the loss search) for it to
+    // seed the stage-2 window instead of the arrival envelope. Below it the
+    // extremum is noise (a low-frequency junction with too few in-band
+    // periods), and the arrival estimate stands. Deliberately low: even a
+    // modest genuine extremum beats the arrival envelope, and a seed that
+    // still lands a little off is recovered downstream — by the onset lock at
+    // sharp junctions, by the loss search and the wide-window promotion below
+    // it.
     private const double PhatSeedMinCoefficient = 0.15;
 
     // The minimum dominance (Confidence: |best extremum| minus |its rival|) the
-    // PHAT correlation must show before its peak position is trusted as the seed.
+    // PHAT correlation must show before its extremum position is trusted as the
+    // seed.
     // A junction whose corners leave a spectral gap (e.g. LP 1300 / HP 1800)
     // narrows the effective overlap, and the whitened correlation degenerates
     // into a comb of near-equal lobes: the peak coefficient still looks healthy,
@@ -428,32 +431,37 @@ public static class AutoAlignmentEngine
                 pair.BandLowHz,
                 pair.BandHighHz);
 
-            // Refine the coarse offset with the non-inverted GCC-PHAT peak: at a
-            // mid/high junction it lands the stage-2 window on the correct lobe
-            // directly, sparing the wide-window recovery. Only the peak POSITION
-            // is used (polarity and the final lobe stay with the loss search), and
-            // only when the peak is the honest winner of its window — otherwise
-            // the arrival envelope stands. Each distrust rule guards a distinct
-            // failure, checked in the order the earlier ones corrupt the later
-            // ones' inputs:
+            // Refine the coarse offset with the DOMINANT GCC-PHAT extremum of
+            // either sign: at a mid/high junction it lands the stage-2 window
+            // on the correct lobe directly, sparing the wide-window recovery.
+            // Only the extremum's POSITION is used (polarity and the final
+            // lobe stay with the loss search), and only when it is the honest
+            // winner of its window — otherwise the arrival envelope stands.
+            // Seeding from a dominant TROUGH matters as much as from a peak:
+            // a junction whose true relation is inverted (the cabin sub/woofer
+            // junction, whitened trough r −0.97) used to be sent to the
+            // arrival fallback plus a period-wide window, where the true lobe
+            // and a non-inverted lobe a third of a period out competed within
+            // fractions of a dB — a coin flip that parked the sub 3.5-5 ms off
+            // the woofer's attack in two of three field crossover configs. The
+            // trough position pins that window to the measured physics
+            // instead. Each distrust rule guards a distinct failure, checked
+            // in the order the earlier ones corrupt the later ones' inputs:
             //  - an EDGE-PINNED extremum is a lobe cut by the window boundary,
             //    so its position and magnitude (and hence every comparison
             //    below) are artifacts of where the window ended;
-            //  - a DOMINANT INVERTED TROUGH means the correlation's strongest
-            //    alignment is the flipped one, and the non-inverted peak is a
-            //    half-period impostor — seeding from the loser would park the
-            //    fine window a fraction of a period off (the field failure:
-            //    trough −0.58 vs peak +0.46 at an 85 Hz junction, seeded from
-            //    the peak, 3.6 ms miss); near-ties fall under the dominance
-            //    floor below either way;
-            //  - a WEAK or BARELY-DOMINANT peak is lobe ambiguity, decided by
-            //    noise (see the two constants);
-            //  - a peak FARTHER FROM THE ARRIVAL than half a period (or the
-            //    fixed window floor, whichever is larger — the reach the fixed
-            //    window used to enforce by construction) is a cycle-skip
+            //  - a WEAK or BARELY-DOMINANT extremum is lobe ambiguity, decided
+            //    by noise (see the two constants);
+            //  - a near-tie against the SAME-SIGN rival one period over (a
+            //    lobe Confidence, peak-vs-trough, cannot see) means the choice
+            //    of lobe — and with it a whole-period cycle skip — would be
+            //    decided by which reflection ran slightly hotter;
+            //  - an extremum FARTHER FROM THE ARRIVAL than half a period (or
+            //    the fixed window floor, whichever is larger — the reach the
+            //    fixed window used to enforce by construction) is a cycle-skip
             //    candidate the now period-wide window must not hand to the
             //    timeline.
-            // The timeline stores arrivals as (upper - lower); the PHAT peak is
+            // The timeline stores arrivals as (upper - lower); the extremum is
             // the delay to add to the upper channel, i.e. the same quantity
             // negated.
             double passOctaves = Math.Log2(pair.BandHighHz / pair.BandLowHz);
@@ -468,47 +476,41 @@ public static class AutoAlignmentEngine
                     SeedCorrelationRangeMs(pair.CrossoverHz),
                     centerLagMs,
                     phaseTransform: true);
-            double peakOffsetMs = phat.PositivePeak.DelayMs - centerLagMs;
+            CorrelationDelayCandidate seed = phat.BestByMagnitude;
+            CorrelationDelayCandidate? sameSignRival =
+                seed.InvertPolarity ? phat.NegativeRival : phat.PositiveRival;
+            string seedLabel = seed.InvertPolarity ? "trough" : "peak";
+            double seedOffsetMs = seed.DelayMs - centerLagMs;
             string? Distrust()
             {
                 if (phat.PositivePeak.EdgePinned || phat.NegativeTrough.EdgePinned)
                 {
                     return "edge-pinned extremum";
                 }
-                if (phat.BestByMagnitude.InvertPolarity)
+                if (Math.Abs(seed.Coefficient) < PhatSeedMinCoefficient)
                 {
-                    return "inverted trough dominates";
-                }
-                if (phat.PositivePeak.Coefficient < PhatSeedMinCoefficient)
-                {
-                    return "peak too weak";
+                    return $"{seedLabel} too weak";
                 }
                 if (phat.Confidence < PhatSeedMinDominance)
                 {
                     return "peak-trough near-tie";
                 }
-                if (phat.PositiveRival is { } rival &&
-                    phat.PositivePeak.Coefficient - rival.Coefficient <
+                if (sameSignRival is { } rival &&
+                    Math.Abs(seed.Coefficient) - Math.Abs(rival.Coefficient) <
                         PhatSeedMinDominance)
                 {
-                    // Confidence compares the peak against the TROUGH only; a
-                    // same-polarity lobe one period over is invisible to it. A
-                    // near-tie against that rival means the choice of lobe —
-                    // and with it a whole-period cycle skip — would be decided
-                    // by which reflection ran slightly hotter, so the seed
-                    // falls back to the polarity-blind arrival instead.
                     return "same-polarity rival near-tie";
                 }
-                if (Math.Abs(peakOffsetMs) > SeedPeakReachMs(pair.CrossoverHz))
+                if (Math.Abs(seedOffsetMs) > SeedReachMs(pair.CrossoverHz))
                 {
-                    return "peak beyond the arrival's reach";
+                    return $"{seedLabel} beyond the arrival's reach";
                 }
                 return null;
             }
             string? distrust = Distrust();
             bool trustPhat = distrust == null;
             double increment =
-                trustPhat ? -phat.PositivePeak.DelayMs : upperArrival - lowerArrival;
+                trustPhat ? -seed.DelayMs : upperArrival - lowerArrival;
             timeline[pair.Upper.Channel] = timeline[pair.Lower.Channel] + increment;
             if (!trustPhat)
             {
@@ -532,8 +534,8 @@ public static class AutoAlignmentEngine
                 $"arrivals {lowerArrival:0.000} / {upperArrival:0.000} ms " +
                 $"(peaks {lowerPeakMs:0.000} / {upperPeakMs:0.000} ms), " +
                 $"diff {upperArrival - lowerArrival:+0.000;-0.000} ms, " +
-                $"phat peak {phat.PositivePeak.DelayMs:+0.000;-0.000} ms " +
-                $"(r {phat.PositivePeak.Coefficient:+0.000;-0.000}, " +
+                $"phat {seedLabel} {seed.DelayMs:+0.000;-0.000} ms " +
+                $"(r {seed.Coefficient:+0.000;-0.000}, " +
                 $"dom {phat.Confidence:0.000}) -> seed " +
                 $"{(trustPhat ? "phat" : $"arrival ({distrust})")}");
         }
@@ -2005,6 +2007,11 @@ public static class AutoAlignmentEngine
                 ? $"; rival {rival.DelayMs:+0.000;-0.000} ms " +
                     $"(r {rival.Coefficient:+0.000;-0.000}" +
                     $"{(rival.EdgePinned ? ", edge" : "")})"
+                : "") +
+            (result.NegativeRival is { } invRival
+                ? $"; rival {invRival.DelayMs:+0.000;-0.000} ms " +
+                    $"(r {invRival.Coefficient:+0.000;-0.000}, inv" +
+                    $"{(invRival.EdgePinned ? ", edge" : "")})"
                 : ""));
     }
 }

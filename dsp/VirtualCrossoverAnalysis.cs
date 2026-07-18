@@ -76,6 +76,10 @@ public sealed record CorrelationDelayCandidate(
 /// cannot see. A trust decision between two same-polarity lobes needs the
 /// peak to beat this rival too, or the choice of lobe is ambiguity, not
 /// measurement. Null when the window holds no separated positive structure.
+/// <see cref="NegativeRival"/> is the same figure for the trough's side: the
+/// deepest OTHER negative local minimum outside the trough's own lobe. A
+/// caller seeding from a dominant trough owes it the same rival scrutiny a
+/// dominant peak gets.
 /// </summary>
 public sealed record CorrelationAlignmentResult(
     double CenterFrequencyHz,
@@ -84,7 +88,8 @@ public sealed record CorrelationAlignmentResult(
     double SearchRangeMs,
     CorrelationDelayCandidate PositivePeak,
     CorrelationDelayCandidate NegativeTrough,
-    CorrelationDelayCandidate? PositiveRival = null)
+    CorrelationDelayCandidate? PositiveRival = null,
+    CorrelationDelayCandidate? NegativeRival = null)
 {
     public CorrelationDelayCandidate BestByMagnitude =>
         Math.Abs(NegativeTrough.Coefficient) > Math.Abs(PositivePeak.Coefficient)
@@ -650,10 +655,13 @@ public static class VirtualCrossoverAnalysis
             findMaximum: true, out int positiveLag);
         CorrelationDelayCandidate negative = FindCorrelationExtremum(
             correlation, centerLag, rangeSamples, normalizer, sampleRate,
-            findMaximum: false, out _);
-        CorrelationDelayCandidate? positiveRival = FindPositiveRival(
+            findMaximum: false, out int negativeLag);
+        CorrelationDelayCandidate? positiveRival = FindSameSignRival(
             correlation, centerLag, rangeSamples, positiveLag, normalizer,
-            sampleRate);
+            sampleRate, findMaximum: true);
+        CorrelationDelayCandidate? negativeRival = FindSameSignRival(
+            correlation, centerLag, rangeSamples, negativeLag, normalizer,
+            sampleRate, findMaximum: false);
 
         return new CorrelationAlignmentResult(
             centerFrequencyHz,
@@ -662,28 +670,32 @@ public static class VirtualCrossoverAnalysis
             searchRangeMs,
             positive,
             negative,
-            positiveRival);
+            positiveRival,
+            negativeRival);
     }
 
-    // The strongest POSITIVE local maximum outside the main peak's own lobe —
-    // the contiguous positive region around it — i.e. the same-polarity rival
-    // one period over. A window boundary lag also qualifies when a
-    // non-positive gap separates it from the main lobe: a rival cut by the
-    // window still testifies, with its truncated value as a lower bound. Lags
-    // still connected to the main lobe never qualify, so the peak's own slope
-    // cannot masquerade as a rival. Null when the window holds no separated
-    // positive structure.
-    private static CorrelationDelayCandidate? FindPositiveRival(
+    // The strongest local extremum OF THE MAIN EXTREMUM'S SIGN outside its own
+    // lobe — the contiguous same-sign region around it — i.e. the same-polarity
+    // rival one period over (positive rivals for the peak, negative for the
+    // trough). A window boundary lag also qualifies when an opposite-sign gap
+    // separates it from the main lobe: a rival cut by the window still
+    // testifies, with its truncated value as a bound. Lags still connected to
+    // the main lobe never qualify, so the extremum's own slope cannot
+    // masquerade as a rival. Null when the window holds no separated same-sign
+    // structure.
+    private static CorrelationDelayCandidate? FindSameSignRival(
         double[] correlation,
         int centerLag,
         int rangeSamples,
         int mainLag,
         double normalizer,
-        int sampleRate)
+        int sampleRate,
+        bool findMaximum)
     {
         int fftLength = correlation.Length;
+        double sign = findMaximum ? 1.0 : -1.0;
         double Value(int lag) =>
-            correlation[TransferFunction.WrapIndex(lag, fftLength)];
+            sign * correlation[TransferFunction.WrapIndex(lag, fftLength)];
 
         int windowLow = centerLag - rangeSamples;
         int windowHigh = centerLag + rangeSamples;
@@ -727,11 +739,11 @@ public static class VirtualCrossoverAnalysis
         bool edgePinned = Math.Abs(bestLag - centerLag) >= rangeSamples - edgeGuard;
         double refinedLag = edgePinned
             ? bestLag
-            : TransferFunction.RefinePeakLag(correlation, bestLag, fftLength, 1.0);
+            : TransferFunction.RefinePeakLag(correlation, bestLag, fftLength, sign);
         return new CorrelationDelayCandidate(
             refinedLag * 1000.0 / sampleRate,
-            normalizer > 0 ? best / normalizer : 0,
-            InvertPolarity: false,
+            normalizer > 0 ? sign * best / normalizer : 0,
+            InvertPolarity: !findMaximum,
             edgePinned);
     }
 

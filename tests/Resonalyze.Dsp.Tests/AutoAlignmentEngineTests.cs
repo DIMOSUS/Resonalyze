@@ -281,17 +281,20 @@ public sealed class AutoAlignmentEngineTests
     }
 
     [Fact]
-    public void Compute_TroughDominantLowJunction_SeedsFromTheArrivalAndFindsTheInvertedLobe()
+    public void Compute_TroughDominantLowJunction_SeedsFromTheTroughAndFindsTheInvertedLobe()
     {
-        // The field failure this pins (an 85 Hz junction): the upper channel
+        // The field physics this pins (an 85 Hz junction): the upper channel
         // is genuinely inverted and ~15 ms early, so the whitened
         // correlation's strongest extremum is the inverted trough at the true
         // offset while the non-inverted "peak" is only a half-period
-        // side-lobe of it. The old gate read the trough's dominance as
-        // confidence in that peak and seeded the timeline from the losing
-        // lobe, parking the fine window milliseconds short of the optimum. A
-        // trough-dominant junction must fall back to the arrival envelope,
-        // widen (WIDE SEED), and let the loss search take the inverted lobe.
+        // side-lobe of it. The dominant trough is a measurement like any
+        // dominant peak — its POSITION seeds the timeline directly (polarity
+        // stays with the loss search), the stage-2 window stays NARROW around
+        // the measured lobe, and the far same-polarity alternatives never
+        // enter the candidate list. The pre-symmetric gate used to send this
+        // junction to the arrival fallback plus a period-wide window, where
+        // the true lobe and a non-inverted lobe a third of a period out
+        // competed within fractions of a dB.
         var midbass = new TestChannel("B", DelayedImpulse(15.2));
         var mid = new TestChannel("C", DelayedImpulse(0.0, invert: true));
         var log = new StringBuilder();
@@ -304,9 +307,10 @@ public sealed class AutoAlignmentEngineTests
         AlignmentOverride result = alignment[mid];
         Assert.True(result.InvertPolarity);
         Assert.InRange(result.DelayMs, 15.0, 15.4);
-        Assert.Contains(
-            "seed arrival (inverted trough dominates)", TestLog.Line(text, "Pair B/C"));
-        Assert.Contains("WIDE SEED", TestLog.Line(text, "Channel C:"));
+        string pairLine = TestLog.Line(text, "Pair B/C");
+        Assert.Contains("phat trough", pairLine);
+        Assert.Contains("-> seed phat", pairLine);
+        Assert.DoesNotContain("WIDE SEED", TestLog.Line(text, "Channel C:"));
     }
 
     [Fact]
@@ -363,6 +367,32 @@ public sealed class AutoAlignmentEngineTests
         Assert.Contains(
             "seed arrival (same-polarity rival near-tie)",
             TestLog.Line(text, "Pair B/C"));
+        Assert.Contains("WIDE SEED", TestLog.Line(text, "Channel C:"));
+    }
+
+    [Fact]
+    public void Compute_SameSignTroughRivalNearTie_IsNotTrustedAsTheSeed()
+    {
+        // The mirror of the peak-rival case for the now seed-capable trough:
+        // two INVERTED copies a full period apart give two near-equal trough
+        // lobes, and which one the whitened correlation crowns is decided by
+        // which reflection ran slightly hotter — a whole-period cycle skip if
+        // seeded. The trough may dominate its window, but the NegativeRival
+        // near-tie must send the seed back to the arrival envelope.
+        var midbass = new TestChannel("B", DelayedImpulse(15.0));
+        var mid = new TestChannel(
+            "C", ImpulseWithEcho(0.0, -0.97, 11.76, -1.0));
+        var log = new StringBuilder();
+
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
+            Run([midbass, mid], [85], log, bands: [(30, 340)]);
+
+        string text = log.ToString();
+        Assert.False(alignment.ContainsKey(midbass));
+        string pairLine = TestLog.Line(text, "Pair B/C");
+        Assert.Contains("phat trough", pairLine);
+        Assert.Contains(
+            "seed arrival (same-polarity rival near-tie)", pairLine);
         Assert.Contains("WIDE SEED", TestLog.Line(text, "Channel C:"));
     }
 

@@ -140,12 +140,39 @@ public sealed class StereoAlignmentRealDataTests
         // tops comb-filter, so normal and inverted sum within a fraction of a dB (the
         // captured run was a 0.15 dB near-tie), and the fragile first-lobe sign read
         // disagreed (L Negative / R Positive) — which used to invert the RIGHT tweeter
-        // alone. A near-tie must keep the tops matched, so no channel is inverted on
-        // this symmetric install.
+        // alone. A near-tie must keep the tops matched: the tweeters stay
+        // non-inverted, and every driver pair keeps ONE polarity. Lower down
+        // the cascade may legitimately flip whole pairs (this cabin's
+        // sub/woofer junction is genuinely inverted — whitened trough
+        // r -0.97, position stable across crossover configs — so the woofers
+        // flip relative to the sub), but never one side alone.
         Assert.False(alignment.GetValueOrDefault(leftTwr).InvertPolarity);
         Assert.False(alignment.GetValueOrDefault(rightTwr).InvertPolarity);
-        Assert.All(all, channel =>
-            Assert.False(alignment.GetValueOrDefault(channel).InvertPolarity));
+        Assert.Equal(
+            alignment.GetValueOrDefault(leftWoof).InvertPolarity,
+            alignment.GetValueOrDefault(rightWoof).InvertPolarity);
+        Assert.Equal(
+            alignment.GetValueOrDefault(leftMid).InvertPolarity,
+            alignment.GetValueOrDefault(rightMid).InvertPolarity);
+        Assert.True(
+            alignment.GetValueOrDefault(leftWoof).InvertPolarity !=
+            alignment.GetValueOrDefault(sub).InvertPolarity,
+            "The sub/woofer junction lost its inverted near-arrival lobe.");
+
+        // The attack contract at the shared sub junction: with the final
+        // delays applied, the sub's band-limited arrival stays within a
+        // cabin-width of the left woofer's — the lobe families either side
+        // sit 3.5-5 ms out and audibly detach the bass from the kick.
+        {
+            IReadOnlyList<AlignmentSnapshot> settledFinal = Reprocess(alignment);
+            double subAttackMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+                settledFinal.First(item => item.Channel == sub).ImpulseResponse,
+                sub.SampleRate, 40, 160);
+            double woofAttackMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+                settledFinal.First(item => item.Channel == leftWoof).ImpulseResponse,
+                leftWoof.SampleRate, 40, 160);
+            Assert.InRange(subAttackMs - woofAttackMs, -2.5, 2.5);
+        }
 
         // The bridge contract on real acoustics: with the final delays applied,
         // the right tweeter's band-limited arrival trails the left one by the
@@ -228,12 +255,14 @@ public sealed class StereoAlignmentRealDataTests
         // (sub LP 80 Bw24, woof 80 Bw24 / 220 Bw36, mid 200 Bw24 / 1500 Bw36
         // at -3.5 dB, twr HP 1900 Bw36 at -7.5 dB). At the 80 Hz sub/woofer
         // junction the whitened correlation is decisively inverted near the
-        // arrival (trough r -0.97 at -0.28 ms), and the fine search ranks that
-        // lobe first (0.499 ms inv). But the WIDE-SEED window dilutes the
-        // arrival prior enough that a non-inverted lobe 4.98 ms out came
-        // within 0.03 dB, and the invert preference swapped onto it — parking
-        // the sub 5 ms behind the woofer on the impulse view. The reach gate
-        // must decline that swap and keep the near-arrival inverted lobe.
+        // arrival (trough r -0.97 at -0.28 ms). The engine that shipped the
+        // failure sent the junction to the arrival fallback plus a
+        // period-wide window, where a non-inverted lobe 4.98 ms out came
+        // within 0.03 dB of the true one and the invert preference swapped
+        // onto it — parking the sub 5 ms behind the woofer on the impulse
+        // view. The symmetric seed gate now trusts the dominant trough's
+        // POSITION outright: the stage-2 window stays narrow around the
+        // measured lobe and the far alternatives never become candidates.
         Channel Load(string file, string name, DspChannelChain chain)
         {
             (int rate, Complex[] ir) = LoadTransferIr(file);
@@ -293,23 +322,26 @@ public sealed class StereoAlignmentRealDataTests
         var log = new StringBuilder();
         AutoAlignmentEngine.Compute(snapshots, junctions, Reprocess, alignment, log);
 
-        // The declined swap leaves its trace: the rescue was in margin but
-        // beyond the arrival reach.
-        Assert.Contains("farther from the arrival", log.ToString());
+        // The dominant trough is trusted as the seed — no arrival fallback, no
+        // widened window at this junction.
+        string pairLine = TestLog.Line(log.ToString(), "Pair sub/");
+        Assert.Contains("phat trough", pairLine);
+        Assert.Contains("-> seed phat", pairLine);
 
-        // The sub junction flips (the woofer relative to the reference sub) —
-        // and the flip stays contained there: the cascade compensates the
-        // mid's polarity by delay, not by rippling the inversion upward.
+        // The sub junction flips (relative inversion between sub and woofer)
+        // — and the flip stays contained there: the chain above the woofer
+        // keeps the woofer's polarity instead of rippling the inversion
+        // upward.
         Assert.True(
             alignment.GetValueOrDefault(woof).InvertPolarity !=
             alignment.GetValueOrDefault(sub).InvertPolarity,
             "The sub/woofer junction lost its inverted near-arrival lobe.");
         Assert.Equal(
             alignment.GetValueOrDefault(mid).InvertPolarity,
-            alignment.GetValueOrDefault(sub).InvertPolarity);
+            alignment.GetValueOrDefault(woof).InvertPolarity);
         Assert.Equal(
             alignment.GetValueOrDefault(twr).InvertPolarity,
-            alignment.GetValueOrDefault(sub).InvertPolarity);
+            alignment.GetValueOrDefault(woof).InvertPolarity);
 
         // THE regression: with the final delays applied, the sub's band-limited
         // arrival stays within a cabin-width of the woofer's (the fix lands at
@@ -327,18 +359,25 @@ public sealed class StereoAlignmentRealDataTests
     }
 
     [Fact]
-    public void ComputeStereo_RealCabin_LowJunctionSeedDoesNotFlipTheWoofers()
+    public void ComputeStereo_RealCabin_LowJunctionKeepsTheSubAttackCoherent()
     {
-        // The field regression the user hit after an auto-crossover that placed
-        // the woofer/mid split at 220 Hz (rather than 175): at the 80 Hz sub/
-        // woofer junction the whitened correlation lost dominance (a mono sub
-        // spanning two stereo woofers, too few in-band periods), so the coarse
-        // seed fell back to an arrival that landed a HALF PERIOD off — on a
-        // (flip + half-period) impostor. Both woofers then inverted. With the
-        // untrusted-seed window allowed to reach a half period, the true
-        // non-inverted lobe re-enters the candidate list and AlignmentSelection
-        // rejects the impostor. The woofers must come out non-inverted, and —
-        // the absolute contract — every driver pair keeps a SYMMETRIC polarity.
+        // The hardest sub/woofer configuration of this cabin (woofer/mid split
+        // at 220 Hz, all Bw24): the woofer's band-limited arrival in 40-160 Hz
+        // is BISTABLE — 11.5 ms here (the early front) vs 21.1 ms under the
+        // Bw36 field config (the modal build-up), a 9.6 ms swing on the same
+        // driver — so the pair's arrival diff is garbage and the dominant
+        // whitened trough (r -0.97, position stable across every config of
+        // this cabin) sits beyond the seed's arrival reach: the junction
+        // honestly falls back to the arrival plus a period-wide window. In
+        // that window the true inverted lobe 0.54 ms from the prior and a
+        // non-inverted lobe 3.50 ms out score within 0.04 dB — fractions of a
+        // dB cannot choose a lobe, so the polarity-agnostic envelope
+        // tie-break must take the near one, keeping the sub's attack glued to
+        // the woofers. (An earlier revision of this test pinned NON-inverted
+        // woofers here; that sign was the coin toss coming up lucky-looking —
+        // the 3.50 ms lobe — while the genuinely inverted junction lost 3.5 ms
+        // of bass attack. Polarity is the loss search's business; the attack
+        // is the contract.) Every driver pair still keeps ONE polarity.
         Channel Load(string file, string name, DspChannelChain chain)
         {
             (int rate, Complex[] ir) = LoadTransferIr(file);
@@ -440,13 +479,16 @@ public sealed class StereoAlignmentRealDataTests
             alignment,
             log);
 
-        // The direct fix: neither woofer lands on the half-period flip impostor.
-        Assert.False(
-            alignment.GetValueOrDefault(leftWoof).InvertPolarity,
-            "Left woofer inverted onto the sub/woofer flip impostor.");
-        Assert.False(
-            alignment.GetValueOrDefault(rightWoof).InvertPolarity,
-            "Right woofer inverted onto the sub/woofer flip impostor.");
+        // The direct contract: the sub's attack stays within a cabin-width of
+        // the left woofer's — the competing lobe families sit 3.5-5 ms out.
+        IReadOnlyList<AlignmentSnapshot> settledFinal = Reprocess(alignment);
+        double subAttackMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+            settledFinal.First(item => item.Channel == sub).ImpulseResponse,
+            sub.SampleRate, 40, 160);
+        double woofAttackMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+            settledFinal.First(item => item.Channel == leftWoof).ImpulseResponse,
+            leftWoof.SampleRate, 40, 160);
+        Assert.InRange(subAttackMs - woofAttackMs, -2.5, 2.5);
 
         // The absolute contract regardless of the crossover: automatic delay
         // never inverts one side of a driver pair alone.

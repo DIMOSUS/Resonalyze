@@ -90,6 +90,41 @@ public sealed class AlignmentSelectionTests
     }
 
     [Fact]
+    public void Select_BreaksNearTiesTowardTheArrivalAcrossPolarities()
+    {
+        // The 80 Hz sub/woofer junction under a modal-latched arrival,
+        // verbatim: the non-inverted lobe 3.50 ms from the prior outscored
+        // the true inverted lobe 0.54 ms from it by 0.04 dB, and the old
+        // same-polarity-only tie-break let the score hand the sub a 3.5 ms
+        // attack lag. Fractions of a dB never choose a lobe — the arrival
+        // does, regardless of polarity.
+        var normalFar = new AlignmentCandidate(7.359, false, -2.57);
+        var invertedNear = new AlignmentCandidate(11.398, true, -2.61);
+        var normalFarther = new AlignmentCandidate(14.077, false, -3.39);
+
+        AlignmentCandidate chosen = AlignmentSelection.Select(
+            [normalFar, invertedNear, normalFarther], baseDeltaMs: 10.856);
+
+        Assert.Equal(invertedNear, chosen);
+    }
+
+    [Fact]
+    public void Select_StillPrefersAReachableNormalAfterTheCrossPolarityTieBreak()
+    {
+        // The cross-polarity tie-break hands the near-tie to an inverted
+        // candidate at the arrival; the invert preference then still swaps to
+        // a non-inverted partner that sits within the arrival reach — the
+        // classic flip rescue is unaffected by the new first pass.
+        var invertedNear = new AlignmentCandidate(1.5, true, -0.50);
+        var normalFlip = new AlignmentCandidate(2.0, false, -0.55);
+
+        AlignmentCandidate chosen = AlignmentSelection.Select(
+            [invertedNear, normalFlip], baseDeltaMs: 1.5);
+
+        Assert.Equal(normalFlip, chosen);
+    }
+
+    [Fact]
     public void Select_KeepsTheInvertedWinnerWhenTheRescueIsBeyondTheArrivalReach()
     {
         // The 80 Hz sub/midbass field failure verbatim: the inverted winner

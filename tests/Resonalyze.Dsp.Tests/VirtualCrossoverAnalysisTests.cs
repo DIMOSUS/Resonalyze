@@ -1032,6 +1032,36 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void FindBandLimitedCorrelationDelay_ReportsTheSameSignRivalForTheTrough()
+    {
+        // The mirror of the positive-rival case: two INVERTED copies ~a
+        // period apart produce two same-polarity trough lobes, and a caller
+        // seeding from the dominant trough owes it the same rival scrutiny —
+        // the strongest OTHER negative lobe must come back as NegativeRival.
+        Complex[] first = UnitImpulse(8_192, 2_000);
+        var second = new Complex[8_192];
+        second[1_800] = -0.97;
+        second[1_236] = -1.0;
+        double centerMs = 200.0 / SampleRate * 1_000.0;
+
+        CorrelationAlignmentResult result =
+            VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
+                first, second, SampleRate,
+                centerFrequencyHz: 85, passOctaves: 3.5, searchRangeMs: 15,
+                centerLagMs: centerMs, phaseTransform: true);
+
+        Assert.NotNull(result.NegativeRival);
+        Assert.True(result.NegativeRival!.InvertPolarity);
+        Assert.True(result.NegativeRival.Coefficient < 0);
+        Assert.InRange(
+            Math.Abs(result.NegativeTrough.DelayMs - result.NegativeRival.DelayMs),
+            10.0, 13.5);
+        Assert.True(
+            Math.Abs(result.NegativeTrough.Coefficient) -
+            Math.Abs(result.NegativeRival.Coefficient) < 0.2);
+    }
+
+    [Fact]
     public void EstimatePolarity_ReadsTheFirstSignificantExcursion()
     {
         Complex[] positive = UnitImpulse(256, 50);

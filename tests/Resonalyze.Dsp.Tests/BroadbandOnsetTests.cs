@@ -143,6 +143,42 @@ public sealed class BroadbandOnsetTests
     }
 
     [Fact]
+    public void EstimateBroadbandOnset_ZeroPaddedTailDoesNotInflateTheSnr()
+    {
+        // ApplyChain rounds every processed IR up to a power-of-two FFT
+        // length, so the record the engine analyzes carries a synthetic
+        // silent tail. The envelope noise floor is quantile-based, and half a
+        // record of manufactured silence used to collapse it: the same noise
+        // that grades ~6 dB raw graded ~60 dB padded — waving a noise-only
+        // record through every SNR gate in the engine. The padded grade must
+        // match the raw one and stay below the lock floor.
+        var random = new Random(20_260_717);
+        Complex[] raw = Silence(65_536);
+        for (int i = 0; i < raw.Length; i++)
+        {
+            raw[i] = new Complex(random.NextDouble() * 2.0 - 1.0, 0.0);
+        }
+        Complex[] padded = Silence(131_072);
+        Array.Copy(raw, padded, raw.Length);
+
+        BroadbandOnsetEstimate rawEstimate =
+            VirtualCrossoverAnalysis.EstimateBroadbandOnset(raw, Rate);
+        BroadbandOnsetEstimate paddedEstimate =
+            VirtualCrossoverAnalysis.EstimateBroadbandOnset(padded, Rate);
+
+        Assert.True(rawEstimate.IsValid);
+        Assert.True(paddedEstimate.IsValid);
+        Assert.InRange(
+            paddedEstimate.SnrDb,
+            rawEstimate.SnrDb - 1.0,
+            rawEstimate.SnrDb + 1.0);
+        Assert.True(
+            paddedEstimate.SnrDb < AutoAlignmentEngine.OnsetLockMinimumSnrDb,
+            $"Padded noise graded {paddedEstimate.SnrDb:0.0} dB — above the " +
+            $"{AutoAlignmentEngine.OnsetLockMinimumSnrDb:0} dB lock floor.");
+    }
+
+    [Fact]
     public void EstimateBroadbandOnset_SubCredibleDirectFollowsTheDominantArrival()
     {
         // A direct front below the first-arrival search depth (25 dB under the

@@ -1032,6 +1032,36 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void AnalyzeBandLimitedArrival_ZeroPaddedTailDoesNotInflateTheSnr()
+    {
+        // The band-limited twin of the broadband-onset padding contract: the
+        // synthetic power-of-two tail ApplyChain appends must not collapse the
+        // quantile noise floor behind the arrival SNR that the stereo bridge
+        // and the cross-side ladder gate on.
+        var random = new Random(20_260_718);
+        var raw = new Complex[65_536];
+        for (int i = 0; i < raw.Length; i++)
+        {
+            raw[i] = new Complex((random.NextDouble() * 2.0 - 1.0) * 1e-3, 0.0);
+        }
+        raw[2_000] = Complex.One;
+        var padded = new Complex[131_072];
+        Array.Copy(raw, padded, raw.Length);
+
+        TimeAlignmentAnalysisResult rawResult = VirtualCrossoverAnalysis
+            .AnalyzeBandLimitedArrival(raw, SampleRate, 1_900, 20_000);
+        TimeAlignmentAnalysisResult paddedResult = VirtualCrossoverAnalysis
+            .AnalyzeBandLimitedArrival(padded, SampleRate, 1_900, 20_000);
+
+        Assert.True(rawResult.IsValid);
+        Assert.True(paddedResult.IsValid);
+        Assert.InRange(
+            paddedResult.SignalToNoiseDecibels,
+            rawResult.SignalToNoiseDecibels - 1.0,
+            rawResult.SignalToNoiseDecibels + 1.0);
+    }
+
+    [Fact]
     public void FindBandLimitedCorrelationDelay_ReportsTheSameSignRivalForTheTrough()
     {
         // The mirror of the positive-rival case: two INVERTED copies ~a

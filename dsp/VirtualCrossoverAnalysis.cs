@@ -392,7 +392,7 @@ public static class VirtualCrossoverAnalysis
                 0.0, 0.0, 0.0, false, 0.0, false, 0.0, false, IsValid: false);
         }
 
-        var samples = new double[impulseResponse.Length];
+        var samples = new double[AnalysisLength(impulseResponse)];
         for (int i = 0; i < samples.Length; i++)
         {
             samples[i] = impulseResponse[i].Real;
@@ -463,7 +463,7 @@ public static class VirtualCrossoverAnalysis
             throw new ArgumentOutOfRangeException(nameof(sampleRate));
         }
 
-        var samples = new double[impulseResponse.Length];
+        var samples = new double[AnalysisLength(impulseResponse)];
         for (int i = 0; i < samples.Length; i++)
         {
             samples[i] = impulseResponse[i].Real;
@@ -501,6 +501,52 @@ public static class VirtualCrossoverAnalysis
         double late = RisingFrontCrossingMs(
             envelope, peakSearch.SelectedIndex, 0.50 * arrivalPeak, sampleRate);
         return new BroadbandOnsetEstimate(early, onset, late, snrDb, IsValid: true);
+    }
+
+    // How far below the record's peak a sample must sit to count as part of
+    // the SYNTHETIC tail rather than the measurement. ApplyChain rounds every
+    // processed IR up to a power-of-two FFT length, so the returned record's
+    // tail is manufactured — exact zeros for a scale-only chain, the filter
+    // kernel's sub-noise decay otherwise. -140 dB sits far below any real
+    // measurement's noise floor (loopback captures grade -115 dB at best) and
+    // far above numerical residue, so the cut removes only what the padding
+    // manufactured.
+    private const double SyntheticTailFloorRatio = 1e-7;
+
+    // Where the record's REAL content ends: one past the last sample clearing
+    // the synthetic-tail floor. Envelope noise floors are quantile-based, and
+    // a half-record of manufactured silence collapses them — a pure-noise 65k
+    // record zero-padded to 131k grades ~60 dB SNR instead of ~6, waving
+    // noise-only fronts through every SNR gate (the onset lock, the stereo
+    // bridge, the cross-side ladder). The trim is all-or-nothing on the
+    // power-of-two padding signature: NextPowerOfTwo(n) < 2n, so ApplyChain's
+    // measurement content always ends PAST the halfway mark and the padding
+    // is removed in full — while a record whose content ends before the
+    // midpoint is quiet by NATURE (an anechoic or synthetic impulse, mostly
+    // digital silence), not by padding, and is analyzed whole: that silence
+    // is the honest noise floor it claims to be.
+    private static int AnalysisLength(Complex[] impulseResponse)
+    {
+        double peak = 0;
+        for (int i = 0; i < impulseResponse.Length; i++)
+        {
+            peak = Math.Max(peak, Math.Abs(impulseResponse[i].Real));
+        }
+        if (peak <= 0)
+        {
+            return impulseResponse.Length;
+        }
+
+        double floor = peak * SyntheticTailFloorRatio;
+        int last = impulseResponse.Length - 1;
+        while (last > 0 && Math.Abs(impulseResponse[last].Real) < floor)
+        {
+            last--;
+        }
+        int contentLength = last + 1;
+        return contentLength >= impulseResponse.Length / 2
+            ? contentLength
+            : impulseResponse.Length;
     }
 
     // The LAST crossing of the level before the peak — the peak's own rising

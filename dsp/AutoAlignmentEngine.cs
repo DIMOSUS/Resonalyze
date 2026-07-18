@@ -863,6 +863,34 @@ public static class AutoAlignmentEngine
                     $"invert {(chosen.InvertPolarity ? "yes" : "no")}");
             }
 
+            // The wide-seed window reaches comb lobes a trusted seed's window
+            // never admits, and inside one window only the soft prior and the
+            // 0.1 dB tie-break defend the arrival — fractions of a dB overrun
+            // both. Hold any pick beyond the trusted window's own reach to the
+            // promotion standard: a lobe hop must be plainly better on the
+            // prior-free acoustic score, or the best arrival-adjacent
+            // candidate stands (see AlignmentSelection.GateWideSeedLobe).
+            if (wideSeed && sceneLockToleranceMs == null && onsetAnchorMs == null)
+            {
+                double trustedReachMs = Math.Clamp(
+                    halfPeriodMs, MinFineAlignmentRangeMs, MaxFineAlignmentRangeMs);
+                AlignmentCandidate gated = AlignmentSelection.GateWideSeedLobe(
+                    candidates, chosen, AcousticScore, anchorMs,
+                    trustedReachMs, WideWindowPromotionMarginDb);
+                if (gated != chosen)
+                {
+                    log.AppendLine(
+                        $"  wide-seed lobe gate: kept {gated.DelayMs:0.000} ms" +
+                        $"{(gated.InvertPolarity ? " inv" : "")} near the arrival — " +
+                        $"{chosen.DelayMs:0.000} ms" +
+                        $"{(chosen.InvertPolarity ? " inv" : "")} gains only " +
+                        $"{AcousticScore(chosen) - AcousticScore(gated):0.00} dB " +
+                        $"(a lobe hop needs {WideWindowPromotionMarginDb:0.00} dB).");
+                    chosen = gated;
+                    arrivalPick = gated;
+                }
+            }
+
             // Promote the wide-window optimum when it clearly beats the
             // arrival-anchored pick — the un-locked junctions' recovery from a
             // coarse arrival that sat a whole lobe off, where the narrow

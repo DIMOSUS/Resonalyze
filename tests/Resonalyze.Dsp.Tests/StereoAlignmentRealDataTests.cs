@@ -516,6 +516,192 @@ public sealed class StereoAlignmentRealDataTests
             Assert.True(alignment.GetValueOrDefault(channel).DelayMs >= 0));
     }
 
+    [Fact]
+    public void ComputeStereo_RealCabinV3_WideSeedLobeGateKeepsTheSubOnTheMidbass()
+    {
+        // The field failure of 2026-07-18 verbatim (assets/test_data/v3, the
+        // user's next cabin revision): sub LP 80 Bw24 mono, midbass 80 Bw24 /
+        // 220 Bw36, mid 280 Bw24 / 1500 Bw36 at -3.5 dB, twit HP 1900 Bw36 at
+        // -7.5 dB, scene offset +0.27 ms. At the 80 Hz sub/midbass junction
+        // the PHAT extrema near-tie (trough r -0.925 vs peak +0.904), so the
+        // seed honestly falls back to the arrival — and the WIDE-SEED fine
+        // window, grown toward a half period, itself admitted a comb lobe
+        // 4.4 ms off the arrival that beat the arrival-adjacent inverted
+        // candidate by 0.13 dB: 0.03 dB past the tie margin, and a hop worth
+        // only ~0.6 dB prior-free where the promotion demands 1.6. The left
+        // midbass started 4.0 ms early, the right followed the cross-side
+        // cascade to 6.3 ms. The wide-seed lobe gate now holds an in-window
+        // hop to the same promotion standard, so the junction keeps the
+        // inverted lobe on the arrival and the sub stays glued to the
+        // midbasses.
+        Channel Load(string file, string name, DspChannelChain chain)
+        {
+            (int rate, Complex[] ir) = LoadTransferIr(Path.Combine("v3", file));
+            return new Channel(name, rate, ir, chain);
+        }
+
+        Channel sub = Load("subwoofer.json", "sub", new DspChannelChain(
+            Crossover: new CrossoverSpec(CrossoverKind.LowPass, Bw(80))));
+        Channel leftMidbass = Load("l midbass.json", "L midbass", new DspChannelChain(
+            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(220, 36), Bw(80))));
+        Channel leftMid = Load("l mid.json", "L mid", new DspChannelChain(
+            GainDb: -3.5,
+            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(1_500, 36), Bw(280))));
+        Channel leftTwit = Load("l twit.json", "L twit", new DspChannelChain(
+            GainDb: -7.5,
+            Crossover: new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: Bw(1_900, 36))));
+        Channel rightMidbass = Load("r midbass.json", "R midbass", new DspChannelChain(
+            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(220, 36), Bw(80))));
+        Channel rightMid = Load("r mid.json", "R mid", new DspChannelChain(
+            GainDb: -3.5,
+            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(1_500, 36), Bw(280))));
+        Channel rightTwit = Load("r twit.json", "R twit", new DspChannelChain(
+            GainDb: -7.5,
+            Crossover: new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: Bw(1_900, 36))));
+
+        Channel[] all =
+            [sub, leftMidbass, leftMid, leftTwit, rightMidbass, rightMid, rightTwit];
+        Channel[] leftByBand = [sub, leftMidbass, leftMid, leftTwit];
+        Channel[] rightByBand = [sub, rightMidbass, rightMid, rightTwit];
+
+        // The same shared direct-sound crop the panel runs the search on (the
+        // full-length run lands on identical delays; the crop keeps the
+        // seven-channel cascade's FFTs affordable in the suite).
+        Complex[][] cropped = VirtualCrossoverAnalysis.CropSharedDirectSoundWindow(
+            all.Select(channel => channel.RawIr).ToList(), 65_536, 8_192);
+        Dictionary<Channel, Complex[]> croppedByChannel = all
+            .Select((channel, i) => (channel, ir: cropped[i]))
+            .ToDictionary(item => item.channel, item => item.ir);
+
+        var cache = new Dictionary<(Channel, double, bool), AlignmentSnapshot>();
+        AlignmentSnapshot Snapshot(Channel channel, AlignmentOverride over)
+        {
+            (Channel, double, bool) key = (channel, over.DelayMs, over.InvertPolarity);
+            if (!cache.TryGetValue(key, out AlignmentSnapshot? hit))
+            {
+                Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+                    croppedByChannel[channel],
+                    channel.BaseChain with
+                    {
+                        DelayMs = over.DelayMs,
+                        InvertPolarity = over.InvertPolarity
+                    },
+                    channel.SampleRate,
+                    out ValidSampleRange validRange);
+                hit = new AlignmentSnapshot(
+                    channel, processed,
+                    VirtualCrossoverAnalysis.FindPeakIndex(processed),
+                    validRange);
+                cache[key] = hit;
+            }
+
+            return hit;
+        }
+
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            all.Select(channel =>
+                Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+
+        List<AlignmentSnapshot> leftSnapshots = leftByBand
+            .Select(channel => Snapshot(channel, default))
+            .ToList();
+        List<AlignmentSnapshot> rightSnapshots = rightByBand
+            .Select(channel => Snapshot(channel, default))
+            .ToList();
+        AlignmentJunction Junction(
+            AlignmentSnapshot lower, AlignmentSnapshot upper, double fc) =>
+            new(lower, upper, fc, Math.Max(20, fc / 2), Math.Min(20_000, fc * 2));
+        double[] crossovers = [80, 220, 1_500];
+        List<AlignmentJunction> leftPairs = crossovers
+            .Select((fc, i) => Junction(leftSnapshots[i], leftSnapshots[i + 1], fc))
+            .ToList();
+        List<AlignmentJunction> rightPairs = crossovers
+            .Select((fc, i) => Junction(rightSnapshots[i], rightSnapshots[i + 1], fc))
+            .ToList();
+
+        const double SceneOffsetMs = 0.27;
+        const double BridgeBandLowHz = 1_900;
+        const double BridgeBandHighHz = 20_000;
+        List<StereoPairLink> pairLinks =
+        [
+            new(leftMidbass, rightMidbass, 80, 220),
+            new(leftMid, rightMid, 280, 1_500),
+            new(leftTwit, rightTwit, BridgeBandLowHz, BridgeBandHighHz)
+        ];
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+        var log = new StringBuilder();
+        AutoAlignmentEngine.ComputeStereo(
+            new StereoAlignmentPlan(
+                leftSnapshots,
+                leftPairs,
+                rightSnapshots,
+                rightPairs,
+                new HashSet<IAlignmentChannel> { sub },
+                leftTwit,
+                rightTwit,
+                BridgeBandLowHz,
+                BridgeBandHighHz,
+                SceneOffsetMs,
+                pairLinks),
+            Reprocess,
+            alignment,
+            log);
+
+        // The mechanism, not just the outcome: this junction runs WIDE SEED
+        // and the gate is what refuses the marginal hop.
+        Assert.Contains("WIDE SEED", TestLog.Line(log.ToString(), "Channel L midbass"));
+        Assert.Contains("wide-seed lobe gate: kept", log.ToString());
+
+        // THE regression: the sub's proposed delay stays on the midbass
+        // arrival lobe (the fix lands 0.25 ms apart; the failure sat 4.03 ms
+        // out on the left and 6.31 on the right).
+        double subDelay = alignment.GetValueOrDefault(sub).DelayMs;
+        Assert.InRange(
+            subDelay - alignment.GetValueOrDefault(leftMidbass).DelayMs, -0.1, 0.75);
+        Assert.InRange(
+            subDelay - alignment.GetValueOrDefault(rightMidbass).DelayMs, -0.5, 3.0);
+
+        // With the delays applied the bass attack is coherent: the sub's
+        // band-limited arrival within a cabin-width of the left midbass's.
+        IReadOnlyList<AlignmentSnapshot> final = Reprocess(alignment);
+        double subAttackMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+            final.First(item => item.Channel == sub).ImpulseResponse,
+            sub.SampleRate, 40, 160);
+        double midbassAttackMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+            final.First(item => item.Channel == leftMidbass).ImpulseResponse,
+            leftMidbass.SampleRate, 40, 160);
+        Assert.InRange(subAttackMs - midbassAttackMs, -2.5, 2.5);
+
+        // The junction keeps its genuinely inverted near-arrival lobe (the
+        // dominant whitened trough), symmetrically across the pair, and the
+        // handover sums healthily on both sides.
+        Assert.True(
+            alignment.GetValueOrDefault(leftMidbass).InvertPolarity !=
+            alignment.GetValueOrDefault(sub).InvertPolarity,
+            "The sub/midbass junction lost its inverted near-arrival lobe.");
+        Assert.Equal(
+            alignment.GetValueOrDefault(leftMidbass).InvertPolarity,
+            alignment.GetValueOrDefault(rightMidbass).InvertPolarity);
+        foreach (Channel midbass in new[] { leftMidbass, rightMidbass })
+        {
+            (double LossDb, double DipDb)? junction =
+                VirtualCrossoverAnalysis.MeasureSumLoss(
+                    final.First(item => item.Channel == midbass).ImpulseResponse,
+                    new List<Complex[]>
+                    {
+                        final.First(item => item.Channel == sub).ImpulseResponse
+                    },
+                    midbass.SampleRate, 40, 160);
+            Assert.NotNull(junction);
+            Assert.InRange(junction.Value.LossDb, -1.5, 0);
+        }
+
+        // Still a physically realizable, normalized field.
+        Assert.All(all, channel =>
+            Assert.True(alignment.GetValueOrDefault(channel).DelayMs >= 0));
+    }
+
     private static (int SampleRate, Complex[] Ir) LoadTransferIr(string fileName)
     {
         string path = Path.Combine(FindTestDataDirectory(), fileName);

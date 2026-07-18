@@ -1598,7 +1598,12 @@ it defaults to Off because the measurements are loopback-referenced.
   polarity, because fractions of a dB can never choose between comb lobes —
   so it does not add delay or flip polarity without a real improvement,
   sidestepping the flip-plus-half-period impostor a steep crossover can
-  otherwise hide. Each
+  otherwise hide. Where an untrusted coarse seed widens a low junction's search
+  window toward a half period, the window itself spans foreign comb lobes, and
+  fractions of a dB slip past both the prior and the tie-break — so a pick
+  beyond the trusted window's own reach is held to the promotion standard: the
+  hop must be plainly better on the prior-free score, or the best
+  arrival-adjacent candidate stands. Each
   polarity seeds its own candidates, so the non-inverted optimum is always on
   the table for that preference even where the inverted curve edges it
   everywhere. The search runs on a background task with a busy

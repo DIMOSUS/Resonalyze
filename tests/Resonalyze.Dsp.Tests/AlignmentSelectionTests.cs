@@ -295,4 +295,83 @@ public sealed class AlignmentSelectionTests
 
         Assert.Equal(8.9, promoted.DelayMs);
     }
+
+    [Fact]
+    public void GateWideSeedLobe_PassesThroughAChosenWithinReach()
+    {
+        // The chosen candidate sits inside the trusted window's reach — the
+        // gate has nothing to defend against and must not touch the pick.
+        var chosen = new AlignmentCandidate(1.1, false, -0.90, -0.30, -1.5);
+        AlignmentCandidate[] candidates =
+        [
+            chosen,
+            new(0.2, true, -1.10, -0.35, -1.8),
+        ];
+
+        AlignmentCandidate gated = AlignmentSelection.GateWideSeedLobe(
+            candidates, chosen, AcousticScore,
+            anchorMs: 0.3, nearReachMs: 2.5, lobeHopMarginDb: 1.6);
+
+        Assert.Equal(chosen, gated);
+    }
+
+    [Fact]
+    public void GateWideSeedLobe_ReturnsTheArrivalLobeWhenTheHopLacksTheMargin()
+    {
+        // The v3 field failure: at an 80 Hz sub/midbass junction the wide-seed
+        // window admitted a lobe 4.4 ms off the arrival that beat the
+        // arrival-adjacent inverted candidate by 0.13 dB — 0.03 dB past the
+        // tie margin — and started the midbass 4 ms early. Prior-free the hop
+        // gains only ~0.6 dB, far below the 1.6 dB a lobe hop needs, so the
+        // gate must hand the pick back to the arrival lobe.
+        var farLobe = new AlignmentCandidate(-4.026, false, -1.00, -0.14, -0.8);
+        var arrivalLobe = new AlignmentCandidate(-0.246, true, -1.13, -0.29, -2.0);
+        AlignmentCandidate[] candidates =
+        [
+            farLobe,
+            arrivalLobe,
+            new(3.295, false, -2.08, -0.96, -2.7),
+        ];
+
+        AlignmentCandidate gated = AlignmentSelection.GateWideSeedLobe(
+            candidates, farLobe, AcousticScore,
+            anchorMs: 0.339, nearReachMs: 2.5, lobeHopMarginDb: 1.6);
+
+        Assert.Equal(arrivalLobe, gated);
+    }
+
+    [Fact]
+    public void GateWideSeedLobe_KeepsAFarLobeThatClearsTheMargin()
+    {
+        // A genuine recovery: the arrival-adjacent candidate sums badly and the
+        // far lobe is plainly (not marginally) better on the prior-free score,
+        // so it stands — the same standard the wide-window promotion applies.
+        var farLobe = new AlignmentCandidate(-4.0, false, -0.60, -0.10, -0.4);
+        var arrivalLobe = new AlignmentCandidate(-0.2, true, -2.30, -1.20, -3.6);
+
+        AlignmentCandidate gated = AlignmentSelection.GateWideSeedLobe(
+            [farLobe, arrivalLobe], farLobe, AcousticScore,
+            anchorMs: 0.3, nearReachMs: 2.5, lobeHopMarginDb: 1.6);
+
+        Assert.Equal(farLobe, gated);
+    }
+
+    [Fact]
+    public void GateWideSeedLobe_StandsWhenNoCandidateSitsNearTheArrival()
+    {
+        // With no local optimum inside the reach there is no arrival lobe to
+        // defend — the search's own pick stands rather than inventing one.
+        var farLobe = new AlignmentCandidate(-4.0, false, -1.00, -0.14, -0.8);
+        AlignmentCandidate[] candidates =
+        [
+            farLobe,
+            new(3.3, false, -2.08, -0.96, -2.7),
+        ];
+
+        AlignmentCandidate gated = AlignmentSelection.GateWideSeedLobe(
+            candidates, farLobe, AcousticScore,
+            anchorMs: 0.339, nearReachMs: 2.5, lobeHopMarginDb: 1.6);
+
+        Assert.Equal(farLobe, gated);
+    }
 }

@@ -149,6 +149,54 @@ public static class AlignmentSelection
     }
 
     /// <summary>
+    /// The envelope-first lobe gate for a WIDE-SEED fine window. An untrusted
+    /// coarse seed widens the fine window toward a half period, so the window
+    /// itself spans foreign comb lobes — territory that, under a trusted seed,
+    /// only the wide-window PROMOTION could reach, and only by clearing a flat
+    /// prior-free margin. Inside one window the sole defenses are the quadratic
+    /// arrival prior and the score tie-break, and both are overrun by fractions
+    /// of a dB: the field failure that pinned this was an 80 Hz sub/midbass
+    /// junction where a lobe 4.4 ms off the arrival beat the arrival-adjacent
+    /// candidate by 0.13 dB — 0.03 dB past the tie margin — and started the
+    /// midbass 4 ms early. So the same standard the promotion applies between
+    /// windows applies within one: a <paramref name="chosen"/> farther than
+    /// <paramref name="nearReachMs"/> from <paramref name="anchorMs"/> stands
+    /// only when its prior-free acoustic score beats the best candidate within
+    /// that reach (picked by the usual <see cref="Select"/> rules) by more than
+    /// <paramref name="lobeHopMarginDb"/>. With no candidate inside the reach
+    /// there is nothing to defend and <paramref name="chosen"/> stands.
+    /// </summary>
+    public static AlignmentCandidate GateWideSeedLobe(
+        IReadOnlyList<AlignmentCandidate> candidates,
+        AlignmentCandidate chosen,
+        Func<AlignmentCandidate, double> acousticScore,
+        double anchorMs,
+        double nearReachMs,
+        double lobeHopMarginDb)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+        ArgumentNullException.ThrowIfNull(chosen);
+        ArgumentNullException.ThrowIfNull(acousticScore);
+        if (Math.Abs(chosen.DelayMs - anchorMs) <= nearReachMs)
+        {
+            return chosen;
+        }
+
+        List<AlignmentCandidate> near = candidates
+            .Where(item => Math.Abs(item.DelayMs - anchorMs) <= nearReachMs)
+            .ToList();
+        if (near.Count == 0)
+        {
+            return chosen;
+        }
+
+        AlignmentCandidate nearBest = Select(near, anchorMs);
+        return acousticScore(chosen) - acousticScore(nearBest) > lobeHopMarginDb
+            ? chosen
+            : nearBest;
+    }
+
+    /// <summary>
     /// After the wide-window promotion gate has decided that a promotion happens,
     /// chooses WHICH comb lobe to promote to. Inside a comb basin the
     /// promotion-worthy lobes differ by fractions of a dB, and the deepest-summing

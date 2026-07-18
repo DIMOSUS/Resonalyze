@@ -346,6 +346,83 @@ public sealed class PlotModelFactoryTests
     private static IReadOnlyList<string> SeriesTitles(OxyPlot.PlotModel model) =>
         model.Series.OfType<LineSeries>().Select(series => series.Title).ToList();
 
+    [Theory]
+    [InlineData(0, CurveSource.Main)]
+    [InlineData(6, CurveSource.Main)]
+    [InlineData(SpectrumSmoothing.PsychoacousticCode, CurveSource.Main)]
+    [InlineData(0, CurveSource.Compare)]
+    [InlineData(6, CurveSource.Compare)]
+    [InlineData(SpectrumSmoothing.PsychoacousticCode, CurveSource.Compare)]
+    public void RawOverlayCapture_WithCalibration_ReproducesDisplayedFrequencyResponse(
+        int smoothing,
+        CurveSource source)
+    {
+        CalibrationFile calibration = CalibrationFile.Parse(
+            """
+            20 18
+            35 -12
+            70 15
+            130 -9
+            250 12
+            500 -7
+            1000 10
+            2000 -6
+            4000 9
+            8000 -5
+            12000 8
+            20000 -4
+            """);
+        var options = new FrequencyResponseOptions
+        {
+            CalibrationMode = MicrophoneCalibrationMode.Degrees0,
+            SmoothingInverseOctaves = smoothing
+        };
+        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        PlotModelFactory factory = CreateFactory(
+            measurement,
+            noiseMeasurement,
+            frequencyResponseOptions: options,
+            calibration: calibration);
+
+        if (source == CurveSource.Compare)
+        {
+            var compareImpulse = new Complex[2048];
+            compareImpulse[64] = Complex.One;
+            compareImpulse[77] = new Complex(0.35, 0.0);
+            factory.SetCompareSourceProvider(() => new CompareAnalysisSource(
+                "Reference",
+                44_100,
+                compareImpulse,
+                64));
+        }
+
+        LineSeries displayed = factory.CreateFrequencyResponse(includeCurves: true)
+            .Series
+            .OfType<LineSeries>()
+            .Single(series => series.Tag is CurveTag tag &&
+                tag.Mode == Mode.FrequencyResponse &&
+                tag.Kind == AnalysisCurveKind.Primary &&
+                tag.Source == source);
+        RawCurveCapture? capture = factory.BuildRawCurve((CurveTag)displayed.Tag!);
+
+        Assert.True(capture.HasValue);
+        Assert.Equal(
+            RawCurveRenderer.PointCount,
+            capture.Value.CalibrationCorrectionDb.Count);
+        List<SignalPoint> overlay = RawCurveRenderer.Render(
+            capture.Value.Spectrum,
+            capture.Value.CalibrationCorrectionDb,
+            smoothing);
+
+        Assert.Equal(displayed.Points.Count, overlay.Count);
+        for (int i = 0; i < overlay.Count; i++)
+        {
+            Assert.Equal(displayed.Points[i].X, overlay[i].X);
+            Assert.Equal(displayed.Points[i].Y, overlay[i].Y, tolerance: 1e-12);
+        }
+    }
+
     [Fact]
     public void ComplexSum_OfTwoIdenticalTransferResponses_AddsSixDecibels()
     {
@@ -725,7 +802,8 @@ public sealed class PlotModelFactoryTests
         CurveVisibilityOptions? phaseResponseVisibility = null,
         CurveVisibilityOptions? groupDelayVisibility = null,
         FrequencyResponseOptions? frequencyResponseOptions = null,
-        LiveSpectrumOptions? liveSpectrumOptions = null)
+        LiveSpectrumOptions? liveSpectrumOptions = null,
+        CalibrationFile? calibration = null)
     {
         string calibrationPath = Path.Combine(
             Path.GetTempPath(),
@@ -734,7 +812,7 @@ public sealed class PlotModelFactoryTests
         return new PlotModelFactory(
             measurement,
             noiseMeasurement,
-            mode => new CalibrationFile(calibrationPath),
+            mode => calibration ?? new CalibrationFile(calibrationPath),
             frequencyResponseOptions ?? new FrequencyResponseOptions(),
             phaseResponseOptions ?? new FrequencyResponseOptions(),
             groupDelayOptions ?? new FrequencyResponseOptions(),

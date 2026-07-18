@@ -176,13 +176,14 @@ internal sealed class PlotModelFactory
         IReadOnlyList<SignalPoint>? spectrum = tag.Source == CurveSource.Compare
             ? TryCreateCompareMeasurement() is { } compare
                 ? MeasurementPlotContext.BuildRawPrimarySpectrum(
-                    compare.Measurement, frequencyResponseOptions, calibration)
+                    compare.Measurement, frequencyResponseOptions)
                 : null
-            : measurementContext.CreateRawPrimarySpectrum(
-                frequencyResponseOptions, calibration);
+            : measurementContext.CreateRawPrimarySpectrum(frequencyResponseOptions);
         return spectrum is { Count: > 1 }
             ? new RawCurveCapture(
                 spectrum,
+                RawCurveRenderer.CaptureCalibrationCorrection(
+                    frequencyResponseOptions.UseCalibration ? calibration : null),
                 (int)Math.Round(frequencyResponseOptions.SmoothingInverseOctaves))
             : null;
     }

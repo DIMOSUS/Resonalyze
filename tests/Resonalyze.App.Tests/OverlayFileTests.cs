@@ -86,7 +86,11 @@ public sealed class OverlayFileTests
                     new OverlayPoint(0, -40),
                     new OverlayPoint(5, -41),
                     new OverlayPoint(10, -42)
-                ]
+                ],
+                RawCalibrationCorrectionDb =
+                    Enumerable.Range(0, RawCurveRenderer.PointCount)
+                        .Select(index => index * 0.01)
+                        .ToArray()
             };
 
             original.Save(root);
@@ -95,8 +99,13 @@ public sealed class OverlayFileTests
             Assert.NotNull(loaded);
             Assert.Equal(3, loaded!.RawSpectrum.Length);
             Assert.Equal(-42, loaded.RawSpectrum[2].Y, 6);
+            Assert.Equal(
+                RawCurveRenderer.PointCount,
+                loaded.RawCalibrationCorrectionDb.Length);
+            Assert.Equal(10.23, loaded.RawCalibrationCorrectionDb[^1], 6);
             // A file written before the field existed carries no raw spectrum.
             Assert.Empty(new OverlayFile().RawSpectrum);
+            Assert.Empty(new OverlayFile().RawCalibrationCorrectionDb);
         }
         finally
         {

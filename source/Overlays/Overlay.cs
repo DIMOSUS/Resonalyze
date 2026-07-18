@@ -9,14 +9,79 @@ using ToolTip = System.Windows.Forms.ToolTip;
 namespace Resonalyze;
 
 /// <summary>
-/// A captured analysis curve's oversampled RAW spectrum plus the display-smoothing
-/// code the mode was drawn with, handed to a new overlay so it stores the original
-/// curve and reproduces the mode's smoothing EXACTLY (the same LogarithmicResample)
-/// while its own smoothing stays adjustable — Off reveals the raw curve.
+/// A captured analysis curve's uncalibrated oversampled spectrum, frozen calibration
+/// correction on the display grid, and display-smoothing code. Keeping calibration
+/// separate preserves the primary curve's smooth-then-calibrate operation order.
 /// </summary>
 public readonly record struct RawCurveCapture(
     IReadOnlyList<SignalPoint> Spectrum,
+    IReadOnlyList<double> CalibrationCorrectionDb,
     int SmoothingCode);
+
+internal static class RawCurveRenderer
+{
+    public const double StartFrequency = 20.0;
+    public const double StopFrequency = 20_000.0;
+    public const int PointCount = 1024;
+
+    public static double[] CaptureCalibrationCorrection(CalibrationFile? calibration)
+    {
+        if (calibration == null)
+        {
+            return Array.Empty<double>();
+        }
+
+        var correction = new double[PointCount];
+        for (int i = 0; i < correction.Length; i++)
+        {
+            double frequency = DataHelper.LogPositionToFrequency(
+                i / (PointCount - 1.0),
+                StartFrequency,
+                StopFrequency);
+            correction[i] = calibration.GetDecibelCorrection(frequency);
+        }
+
+        return correction;
+    }
+
+    public static List<SignalPoint> Render(
+        IReadOnlyList<SignalPoint> spectrum,
+        IReadOnlyList<double> calibrationCorrectionDb,
+        int smoothing)
+    {
+        List<SignalPoint> input = spectrum as List<SignalPoint> ?? spectrum.ToList();
+        List<SignalPoint> result = DataHelper.LogarithmicResample(
+            input,
+            StartFrequency,
+            StopFrequency,
+            PointCount,
+            calibration: null,
+            SpectrumSmoothing.SmoothingOctaves(smoothing),
+            dBUnpack: true,
+            psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(smoothing));
+
+        if (calibrationCorrectionDb.Count == 0)
+        {
+            return result;
+        }
+        if (calibrationCorrectionDb.Count != result.Count)
+        {
+            throw new ArgumentException(
+                "Calibration correction must match the rendered curve grid.",
+                nameof(calibrationCorrectionDb));
+        }
+
+        for (int i = 0; i < result.Count; i++)
+        {
+            SignalPoint point = result[i];
+            result[i] = new SignalPoint(
+                point.X,
+                point.Y - calibrationCorrectionDb[i]);
+        }
+
+        return result;
+    }
+}
 
 public sealed class OverlayCollection
 {
@@ -495,6 +560,9 @@ public sealed class Overlay
     // reference exactly. Null for fallback captures (imported, operations, legacy,
     // non-FR), which re-smooth the display-resolution sourcePoints instead.
     private List<SignalPoint>? rawSpectrumPoints;
+    // Frozen microphone correction at the 1024 output frequencies. It remains
+    // separate because the primary FR smooths first and calibrates afterwards.
+    private double[] rawCalibrationCorrectionDb = Array.Empty<double>();
 
     // Operation kind. Each operand is either a captured slot (SourceSlotA/B) or, when
     // SourceCurveKeyA/B is set, a live analysis curve resolved from the plot by its
@@ -1303,13 +1371,15 @@ public sealed class Overlay
         RawCurveCapture? raw = tag != null ? collection.TryGetRawCapture(tag) : null;
         DataPoint[] points;
         List<SignalPoint>? spectrum;
+        double[] calibrationCorrectionDb;
         int seedSmoothing;
         if (raw is { } rawCapture && rawCapture.Spectrum.Count >= 2)
         {
             // Keep the oversampled spectrum for exact re-smoothing, and derive the
             // display-resolution raw curve (Off) for export / operations / legacy.
             spectrum = rawCapture.Spectrum as List<SignalPoint> ?? rawCapture.Spectrum.ToList();
-            points = SmoothRawSpectrum(spectrum, 0);
+            calibrationCorrectionDb = rawCapture.CalibrationCorrectionDb.ToArray();
+            points = SmoothRawSpectrum(spectrum, calibrationCorrectionDb, 0);
             seedSmoothing = rawCapture.SmoothingCode;
         }
         else
@@ -1317,6 +1387,7 @@ public sealed class Overlay
             points = new DataPoint[selected.Points.Count];
             selected.Points.CopyTo(points);
             spectrum = null;
+            calibrationCorrectionDb = Array.Empty<double>();
             seedSmoothing = 0;
         }
 
@@ -1328,6 +1399,7 @@ public sealed class Overlay
         operationConfigured = false;
         sourcePoints = points;
         rawSpectrumPoints = spectrum;
+        rawCalibrationCorrectionDb = calibrationCorrectionDb;
         // The curve was drawn in the plot's current scale, so it carries that unit.
         capturedMagnitudeScale = collection.CurrentMagnitudeScale;
         capturedYAxisKey = string.IsNullOrEmpty(selected.YAxisKey)
@@ -1396,6 +1468,7 @@ public sealed class Overlay
         capturedCurveKind = null;
         // Imported points are a display curve, not an oversampled spectrum.
         rawSpectrumPoints = null;
+        rawCalibrationCorrectionDb = Array.Empty<double>();
         // Imported points are assumed to be in the current view's unit.
         capturedMagnitudeScale = collection.CurrentMagnitudeScale;
         capturedYAxisKey = null;
@@ -1989,6 +2062,7 @@ public sealed class Overlay
             rawSpectrumPoints = file.RawSpectrum.Length >= 2
                 ? file.RawSpectrum.Select(point => new SignalPoint(point.X, point.Y)).ToList()
                 : null;
+            rawCalibrationCorrectionDb = file.RawCalibrationCorrectionDb.ToArray();
             capturedYAxisKey = GetCapturedYAxisKey(file);
             UpdateDrawPoints();
             SetAvailability(true);
@@ -2086,6 +2160,7 @@ public sealed class Overlay
             file.RawSpectrum = rawSpectrumPoints != null
                 ? rawSpectrumPoints.Select(point => new OverlayPoint(point.X, point.Y)).ToArray()
                 : Array.Empty<OverlayPoint>();
+            file.RawCalibrationCorrectionDb = rawCalibrationCorrectionDb.ToArray();
             file.CapturedYAxisKey = capturedYAxisKey;
         }
 
@@ -2296,7 +2371,10 @@ public sealed class Overlay
         // raw — reproduces the on-screen reference rather than a re-smoothed decimation.
         if (rawSpectrumPoints != null)
         {
-            DataPoint[] exact = SmoothRawSpectrum(rawSpectrumPoints, smoothing);
+            DataPoint[] exact = SmoothRawSpectrum(
+                rawSpectrumPoints,
+                rawCalibrationCorrectionDb,
+                smoothing);
             if (exact.Length < 2)
             {
                 return null;
@@ -2324,20 +2402,17 @@ public sealed class Overlay
             .ToArray();
     }
 
-    // Re-smooths the stored oversampled spectrum with the SAME LogarithmicResample the
-    // mode's primary curve uses (calibration already baked in at capture), so smoothing
-    // an overlay matches the reference exactly and Off yields the raw curve.
-    private static DataPoint[] SmoothRawSpectrum(List<SignalPoint> spectrum, int smoothing)
+    // Re-smooths the stored uncalibrated spectrum, then subtracts the correction
+    // frozen at capture, in the same order as the primary frequency-response path.
+    private static DataPoint[] SmoothRawSpectrum(
+        List<SignalPoint> spectrum,
+        IReadOnlyList<double> calibrationCorrectionDb,
+        int smoothing)
     {
-        List<SignalPoint> resampled = DataHelper.LogarithmicResample(
+        List<SignalPoint> resampled = RawCurveRenderer.Render(
             spectrum,
-            20,
-            20000,
-            1024,
-            calibration: null,
-            SpectrumSmoothing.SmoothingOctaves(smoothing),
-            dBUnpack: true,
-            psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(smoothing));
+            calibrationCorrectionDb,
+            smoothing);
         var result = new DataPoint[resampled.Count];
         for (int i = 0; i < result.Length; i++)
         {
@@ -2381,6 +2456,7 @@ public sealed class Overlay
         phaseUnwrapped = null;
         capturedCurveKind = null;
         rawSpectrumPoints = null;
+        rawCalibrationCorrectionDb = Array.Empty<double>();
         operationConfigured = false;
         sourceSlotA = 0;
         sourceSlotB = 0;

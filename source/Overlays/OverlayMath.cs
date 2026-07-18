@@ -7,6 +7,9 @@ namespace Resonalyze;
 /// </summary>
 public static class OverlayMath
 {
+    private const double GaussianRadiusSigma = 3.0;
+    private const double GaussianTaperStartSigma = 2.5;
+
     public static bool SupportsAmplitudeSpace(Mode mode)
     {
         return mode is Mode.FrequencyResponse or Mode.LiveSpectrum;
@@ -52,7 +55,7 @@ public static class OverlayMath
                 : SpectrumSmoothing.SmoothingOctaves(inverseOctaves);
             double halfWidth = 0.5 * smoothingOctaves;
             double radius = psychoacoustic
-                ? 3.0 * smoothingOctaves / 2.354820045
+                ? GaussianRadiusSigma * smoothingOctaves / 2.354820045
                 : halfWidth;
             int left = center;
             while (left > 0 &&
@@ -86,7 +89,18 @@ public static class OverlayMath
                 {
                     double sigma = smoothingOctaves / 2.354820045;
                     double normalized = distance / sigma;
-                    weight = Math.Exp(-0.5 * normalized * normalized);
+                    if (normalized >= GaussianRadiusSigma)
+                    {
+                        continue;
+                    }
+
+                    double taper = normalized <= GaussianTaperStartSigma
+                        ? 1.0
+                        : 0.5 * (1.0 + Math.Cos(
+                            Math.PI *
+                            (normalized - GaussianTaperStartSigma) /
+                            (GaussianRadiusSigma - GaussianTaperStartSigma)));
+                    weight = Math.Exp(-0.5 * normalized * normalized) * taper;
                     double amplitude = Math.Pow(10.0, points[sample].Y / 20.0);
                     sampleValue = amplitude * amplitude * amplitude;
                 }

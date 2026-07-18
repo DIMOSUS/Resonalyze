@@ -214,6 +214,39 @@ public sealed class DataHelperResampleTests
             $"psychoacoustic smoothing introduced a {maximumFloorSlopeChange:0.000} dB step");
     }
 
+    [Theory]
+    [InlineData(256)]
+    [InlineData(512)]
+    [InlineData(2_048)]
+    public void LogarithmicResample_PsychoacousticHonoursTwoBinResolutionFloor(
+        int fftLength)
+    {
+        const int sampleRate = 48_000;
+        double binWidth = (double)sampleRate / fftLength;
+        int centerBin = 4;
+        double centerFrequency = centerBin * binWidth;
+        var input = new List<SignalPoint>(fftLength / 2 + 1);
+        for (int bin = 0; bin <= fftLength / 2; bin++)
+        {
+            input.Add(new SignalPoint(
+                bin * binWidth,
+                bin == centerBin ? 20.0 : 0.0));
+        }
+
+        List<SignalPoint> output = DataHelper.LogarithmicResample(
+            input,
+            centerFrequency,
+            centerFrequency * 2.0,
+            64,
+            smoothingOctaves: 1.0 / 6.0,
+            psychoacoustic: true);
+
+        // Without the resolution floor the Gaussian is effectively a single-bin
+        // lookup here and the first point remains 20 dB. Two-bin support must
+        // mix in the neighbouring 0 dB bins even with cubic peak weighting.
+        Assert.InRange(output[0].Y, 1.0, 19.0);
+    }
+
     [Fact]
     public void LogarithmicPowerBandResample_PsychoacousticDoesNotClipANarrowDip()
     {

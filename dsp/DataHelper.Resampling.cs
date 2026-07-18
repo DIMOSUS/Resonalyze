@@ -177,14 +177,19 @@ namespace Resonalyze.Dsp
             bool dBUnpack,
             double fallback)
         {
-            const double GaussianFwhmToSigma = 1.0 / 2.354820045;
-            double sigmaOctaves = smoothingOctaves * GaussianFwhmToSigma;
+            const double GaussianRadiusSigma = 3.0;
+            const double GaussianTaperStartSigma = 2.5;
+            double sigmaOctaves = PsychoacousticGaussianSigmaOctaves(
+                centerFrequency,
+                smoothingOctaves,
+                inputStep,
+                GaussianRadiusSigma);
             if (sigmaOctaves <= 0.0 || inputStep <= 0.0)
             {
                 return fallback;
             }
 
-            double radiusOctaves = 3.0 * sigmaOctaves;
+            double radiusOctaves = GaussianRadiusSigma * sigmaOctaves;
             double lowFrequency = centerFrequency / Math.Pow(2.0, radiusOctaves);
             double highFrequency = centerFrequency * Math.Pow(2.0, radiusOctaves);
             int firstIndex = Math.Max(
@@ -206,7 +211,20 @@ namespace Resonalyze.Dsp
 
                 double distanceOctaves = Math.Log2(point.X / centerFrequency);
                 double normalized = distanceOctaves / sigmaOctaves;
-                double weight = Math.Exp(-0.5 * normalized * normalized);
+                double absoluteNormalized = Math.Abs(normalized);
+                if (absoluteNormalized >= GaussianRadiusSigma)
+                {
+                    continue;
+                }
+
+                double taper = absoluteNormalized <= GaussianTaperStartSigma
+                    ? 1.0
+                    : 0.5 * (1.0 + Math.Cos(
+                        Math.PI *
+                        (absoluteNormalized - GaussianTaperStartSigma) /
+                        (GaussianRadiusSigma - GaussianTaperStartSigma)));
+                double weight =
+                    Math.Exp(-0.5 * normalized * normalized) * taper;
                 double value = dBUnpack ? DecibelsToAmplitude(point.Y) : point.Y;
                 weightedCubeSum += value * value * value * weight;
                 weightSum += weight;
@@ -219,6 +237,37 @@ namespace Resonalyze.Dsp
 
             double cubicMean = Math.Cbrt(weightedCubeSum / weightSum);
             return dBUnpack ? AmplitudeToDecibels(cubicMean) : cubicMean;
+        }
+
+        private static double PsychoacousticGaussianSigmaOctaves(
+            double centerFrequency,
+            double smoothingOctaves,
+            double inputStep,
+            double radiusSigma)
+        {
+            const double GaussianFwhmToSigma = 1.0 / 2.354820045;
+            double requestedSigma = smoothingOctaves * GaussianFwhmToSigma;
+            if (centerFrequency <= 0.0 || inputStep <= 0.0 || radiusSigma <= 0.0)
+            {
+                return requestedSigma;
+            }
+
+            // Match the ordinary resampler's minimum half-width of two FFT bins.
+            // On a log axis equal Hz distances are asymmetric, so use whichever
+            // side requires the larger octave radius. Below two bins only the
+            // upper distance is defined; DC bounds the available lower side.
+            double minimumRadiusHz = 2.0 * inputStep;
+            double upperRadiusOctaves = Math.Log2(
+                (centerFrequency + minimumRadiusHz) / centerFrequency);
+            double lowerRadiusOctaves = centerFrequency > minimumRadiusHz
+                ? Math.Log2(
+                    centerFrequency / (centerFrequency - minimumRadiusHz))
+                : upperRadiusOctaves;
+            double minimumRadiusOctaves =
+                Math.Max(upperRadiusOctaves, lowerRadiusOctaves);
+            return Math.Max(
+                requestedSigma,
+                minimumRadiusOctaves / radiusSigma);
         }
 
         /// <summary>
@@ -446,9 +495,13 @@ namespace Resonalyze.Dsp
             double octavesPerStep)
         {
             const double GaussianFwhmToSigma = 1.0 / 2.354820045;
+            const double GaussianRadiusSigma = 3.0;
+            const double GaussianTaperStartSigma = 2.5;
             double sigmaSteps =
                 smoothingOctaves * GaussianFwhmToSigma / octavesPerStep;
-            int radius = Math.Max(1, (int)Math.Ceiling(3.0 * sigmaSteps));
+            int radius = Math.Max(
+                1,
+                (int)Math.Ceiling(GaussianRadiusSigma * sigmaSteps));
             int firstIndex = Math.Max(0, centerIndex - radius);
             int lastIndex = Math.Min(bandPowers.Count - 1, centerIndex + radius);
             double weightSum = 0.0;
@@ -456,7 +509,20 @@ namespace Resonalyze.Dsp
             for (int index = firstIndex; index <= lastIndex; index++)
             {
                 double normalized = (index - centerIndex) / sigmaSteps;
-                double weight = Math.Exp(-0.5 * normalized * normalized);
+                double absoluteNormalized = Math.Abs(normalized);
+                if (absoluteNormalized >= GaussianRadiusSigma)
+                {
+                    continue;
+                }
+
+                double taper = absoluteNormalized <= GaussianTaperStartSigma
+                    ? 1.0
+                    : 0.5 * (1.0 + Math.Cos(
+                        Math.PI *
+                        (absoluteNormalized - GaussianTaperStartSigma) /
+                        (GaussianRadiusSigma - GaussianTaperStartSigma)));
+                double weight =
+                    Math.Exp(-0.5 * normalized * normalized) * taper;
                 weightedCubeSum +=
                     Math.Pow(Math.Max(0.0, bandPowers[index]), 1.5) * weight;
                 weightSum += weight;

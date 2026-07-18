@@ -115,6 +115,11 @@ public sealed class OverlayFile
     // bump: older files deserialize to empty and older app builds ignore the property.
     public OverlayPoint[] RawSpectrum { get; set; } = Array.Empty<OverlayPoint>();
 
+    // Captured FR only: microphone correction frozen on the 1024 logarithmic output
+    // frequencies. It is subtracted after smoothing, matching the primary FR path.
+    // Empty means no calibration or a legacy raw capture.
+    public double[] RawCalibrationCorrectionDb { get; set; } = Array.Empty<double>();
+
     // Operation kind: recipe referencing two operands. Each operand is a captured slot
     // (SourceSlotA/B), unless SourceCurveKeyA/B is set — then it is a live analysis
     // curve resolved by its CurveTag Key on every rebuild. Additive and nullable, so no
@@ -398,6 +403,23 @@ public sealed class OverlayFile
                 throw new InvalidDataException(
                     $"Overlay point {i} contains a non-finite value.");
             }
+        }
+
+        if (RawSpectrum == null || RawCalibrationCorrectionDb == null)
+        {
+            throw new InvalidDataException("The raw overlay data is invalid.");
+        }
+        if (RawCalibrationCorrectionDb.Length != 0 &&
+            (RawSpectrum.Length < 2 ||
+             RawCalibrationCorrectionDb.Length != RawCurveRenderer.PointCount))
+        {
+            throw new InvalidDataException(
+                "The raw calibration correction does not match the overlay grid.");
+        }
+        if (RawCalibrationCorrectionDb.Any(value => !double.IsFinite(value)))
+        {
+            throw new InvalidDataException(
+                "The raw calibration correction contains a non-finite value.");
         }
     }
 

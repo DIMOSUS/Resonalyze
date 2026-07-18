@@ -69,11 +69,11 @@ public sealed class StereoAlignmentRealDataTests
                         InvertPolarity = over.InvertPolarity
                     },
                     channel.SampleRate,
-                    out int validSampleCount);
+                    out ValidSampleRange validRange);
                 hit = new AlignmentSnapshot(
                     channel, processed,
                     VirtualCrossoverAnalysis.FindPeakIndex(processed),
-                    validSampleCount);
+                    validRange);
                 cache[key] = hit;
             }
 
@@ -298,11 +298,11 @@ public sealed class StereoAlignmentRealDataTests
                         InvertPolarity = over.InvertPolarity
                     },
                     channel.SampleRate,
-                    out int validSampleCount);
+                    out ValidSampleRange validRange);
                 hit = new AlignmentSnapshot(
                     channel, processed,
                     VirtualCrossoverAnalysis.FindPeakIndex(processed),
-                    validSampleCount);
+                    validRange);
                 cache[key] = hit;
             }
 
@@ -427,11 +427,11 @@ public sealed class StereoAlignmentRealDataTests
                         InvertPolarity = over.InvertPolarity
                     },
                     channel.SampleRate,
-                    out int validSampleCount);
+                    out ValidSampleRange validRange);
                 hit = new AlignmentSnapshot(
                     channel, processed,
                     VirtualCrossoverAnalysis.FindPeakIndex(processed),
-                    validSampleCount);
+                    validRange);
                 cache[key] = hit;
             }
 

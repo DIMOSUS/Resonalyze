@@ -1077,26 +1077,33 @@ public sealed class VirtualCrossoverAnalysisTests
         raw[2_000] += Complex.One;
 
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            raw, new DspChannelChain(GainDb: -3), SampleRate,
-            out int validSampleCount);
+            raw, new DspChannelChain(DelayMs: 25), SampleRate,
+            out ValidSampleRange validRange);
 
-        Assert.Equal(raw.Length, validSampleCount);
+        int delaySamples = (int)(25.0 / 1_000.0 * SampleRate);
+        Assert.Equal(
+            new ValidSampleRange(delaySamples, delaySamples + raw.Length),
+            validRange);
 
         TimeAlignmentAnalysisResult viaMetadata = VirtualCrossoverAnalysis
             .AnalyzeBandLimitedArrival(
-                processed, SampleRate, 1_900, 20_000, validSampleCount);
-        TimeAlignmentAnalysisResult viaCrop = VirtualCrossoverAnalysis
-            .AnalyzeBandLimitedArrival(
-                processed.Take(validSampleCount).ToArray(),
-                SampleRate, 1_900, 20_000);
+                processed, SampleRate, 1_900, 20_000, validRange);
+        TimeAlignmentAnalysisResult raw2 = VirtualCrossoverAnalysis
+            .AnalyzeBandLimitedArrival(raw, SampleRate, 1_900, 20_000);
 
+        // The delay prefix is excluded from the noise floor while the arrival
+        // position stays in full-record coordinates: the raw read plus the
+        // 25 ms delay, at the raw record's SNR.
         Assert.True(viaMetadata.IsValid);
-        Assert.Equal(
-            viaCrop.SignalToNoiseDecibels, viaMetadata.SignalToNoiseDecibels, 6);
-        Assert.Equal(
-            viaCrop.FirstArrivalDelayMilliseconds,
-            viaMetadata.FirstArrivalDelayMilliseconds,
-            6);
+        Assert.InRange(
+            viaMetadata.SignalToNoiseDecibels,
+            raw2.SignalToNoiseDecibels - 1.0,
+            raw2.SignalToNoiseDecibels + 1.0);
+        Assert.InRange(
+            viaMetadata.FirstArrivalDelayMilliseconds -
+                raw2.FirstArrivalDelayMilliseconds,
+            24.9,
+            25.1);
     }
 
     [Fact]

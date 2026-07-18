@@ -125,11 +125,11 @@ public sealed class RealMeasurementArrivalTests
                     InvertPolarity = over.InvertPolarity
                 },
                 channel.SampleRate,
-                out int validSampleCount);
+                out ValidSampleRange validRange);
             return new AlignmentSnapshot(
                 channel, processed,
                 VirtualCrossoverAnalysis.FindPeakIndex(processed),
-                validSampleCount);
+                validRange);
         }
 
         List<AlignmentSnapshot> baseSnapshots = channels

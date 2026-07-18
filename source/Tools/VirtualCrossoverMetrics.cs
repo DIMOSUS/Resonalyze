@@ -230,6 +230,7 @@ internal sealed class VirtualCrossoverMetrics
                 SideProcessJob side = byId[processed.Id];
                 side.ProcessedIr = processed.ImpulseResponse;
                 side.ProcessedPeak = processed.PeakIndex;
+                side.ProcessedValidRange = processed.ValidRange;
             }
         }
 
@@ -265,7 +266,8 @@ internal sealed class VirtualCrossoverMetrics
                             side.Arrival =
                                 VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
                                     side.ProcessedIr!, side.SampleRate,
-                                    job.LowHz, job.HighHz);
+                                    job.LowHz, job.HighHz,
+                                    side.ProcessedValidRange);
                             side.LevelDb = VirtualCrossoverAnalysis.MeasureBandLevelDb(
                                 side.ProcessedIr!, side.SampleRate,
                                 job.LowHz, job.HighHz);
@@ -397,6 +399,7 @@ internal sealed class VirtualCrossoverMetrics
             SideProcessJob side = byId[processed.Id];
             side.ProcessedIr = processed.ImpulseResponse;
             side.ProcessedPeak = processed.PeakIndex;
+            side.ProcessedValidRange = processed.ValidRange;
         }
 
         Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
@@ -419,6 +422,7 @@ internal sealed class VirtualCrossoverMetrics
         public required DspChannelChain Chain { get; init; }
         public Complex[]? ProcessedIr { get; set; }
         public int ProcessedPeak { get; set; }
+        public ValidSampleRange ProcessedValidRange { get; set; }
         public TimeAlignmentAnalysisResult? Arrival { get; set; }
         public double? LevelDb { get; set; }
         public bool ArrivalFromCache { get; set; }

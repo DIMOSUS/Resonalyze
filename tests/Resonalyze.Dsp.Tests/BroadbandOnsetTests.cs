@@ -268,17 +268,17 @@ public sealed class BroadbandOnsetTests
 
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
             raw, new DspChannelChain(GainDb: -3), Rate,
-            out int validSampleCount);
+            out ValidSampleRange validRange);
 
-        Assert.Equal(raw.Length, validSampleCount);
+        Assert.Equal(new ValidSampleRange(0, raw.Length), validRange);
         Assert.True(processed.Length >= 4 * raw.Length);
 
         BroadbandOnsetEstimate viaMetadata =
             VirtualCrossoverAnalysis.EstimateBroadbandOnset(
-                processed, Rate, validSampleCount);
+                processed, Rate, validRange);
         BroadbandOnsetEstimate viaCrop =
             VirtualCrossoverAnalysis.EstimateBroadbandOnset(
-                processed.Take(validSampleCount).ToArray(), Rate);
+                processed.Take(validRange.EndSample).ToArray(), Rate);
 
         Assert.True(viaMetadata.IsValid);
         Assert.Equal(viaCrop.SnrDb, viaMetadata.SnrDb, 6);
@@ -287,6 +287,49 @@ public sealed class BroadbandOnsetTests
             viaMetadata.SnrDb < AutoAlignmentEngine.OnsetLockMinimumSnrDb,
             $"Short padded noise graded {viaMetadata.SnrDb:0.0} dB via " +
             "metadata — above the lock floor.");
+    }
+
+    [Fact]
+    public void EstimateBroadbandOnset_DelayPrefixDoesNotInflateTheSnr()
+    {
+        // The review catch on the end-only metadata: the chain DELAY shifts
+        // the content right and manufactures a silent PREFIX inside
+        // [0..end) — 25 ms of zeros ahead of a short noise record lifted its
+        // grade from ~6 to ~26 dB, past the 20 dB onset-lock floor. The
+        // range metadata must exclude the prefix too, and the reported
+        // positions must stay in full-record coordinates: the onset of the
+        // delayed record reads the delay later, not at zero.
+        var random = new Random(20_260_724);
+        var raw = new Complex[4_096];
+        for (int i = 0; i < raw.Length; i++)
+        {
+            raw[i] = new Complex(random.NextDouble() * 2.0 - 1.0, 0.0);
+        }
+
+        Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+            raw, new DspChannelChain(DelayMs: 25), Rate,
+            out ValidSampleRange validRange);
+
+        int delaySamples = (int)(25.0 / 1_000.0 * Rate);
+        Assert.Equal(
+            new ValidSampleRange(delaySamples, delaySamples + raw.Length),
+            validRange);
+
+        BroadbandOnsetEstimate rawEstimate =
+            VirtualCrossoverAnalysis.EstimateBroadbandOnset(raw, Rate);
+        BroadbandOnsetEstimate viaMetadata =
+            VirtualCrossoverAnalysis.EstimateBroadbandOnset(
+                processed, Rate, validRange);
+
+        Assert.True(rawEstimate.IsValid);
+        Assert.True(viaMetadata.IsValid);
+        Assert.InRange(
+            viaMetadata.SnrDb, rawEstimate.SnrDb - 1.0, rawEstimate.SnrDb + 1.0);
+        Assert.True(
+            viaMetadata.SnrDb < AutoAlignmentEngine.OnsetLockMinimumSnrDb,
+            $"Delayed noise graded {viaMetadata.SnrDb:0.0} dB — above the " +
+            $"{AutoAlignmentEngine.OnsetLockMinimumSnrDb:0} dB lock floor.");
+        Assert.InRange(viaMetadata.OnsetMs - rawEstimate.OnsetMs, 24.9, 25.1);
     }
 
     [Fact]
@@ -307,17 +350,17 @@ public sealed class BroadbandOnsetTests
         var chain = new DspChannelChain(
             Peq: new EqualizationCurve([new PeqBand(20, 10, 12)]));
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            raw, chain, Rate, out int validSampleCount);
+            raw, chain, Rate, out ValidSampleRange validRange);
 
-        Assert.Equal(raw.Length, validSampleCount);
+        Assert.Equal(new ValidSampleRange(0, raw.Length), validRange);
         Assert.True(processed.Length > 2 * raw.Length);
 
         BroadbandOnsetEstimate viaMetadata =
             VirtualCrossoverAnalysis.EstimateBroadbandOnset(
-                processed, Rate, validSampleCount);
+                processed, Rate, validRange);
         BroadbandOnsetEstimate viaCrop =
             VirtualCrossoverAnalysis.EstimateBroadbandOnset(
-                processed.Take(validSampleCount).ToArray(), Rate);
+                processed.Take(validRange.EndSample).ToArray(), Rate);
 
         Assert.True(viaMetadata.IsValid);
         Assert.Equal(viaCrop.SnrDb, viaMetadata.SnrDb, 6);

@@ -97,10 +97,10 @@ internal sealed class AlignmentReprocessor
         {
             Complex[] result = VirtualCrossoverAnalysis.ApplyChain(
                 croppedImpulseResponses[i], chains[i], sampleRates[i],
-                out int validSampleCount);
+                out ValidSampleRange validRange);
             results[i] = new CacheEntry(
                 keys[i], result, VirtualCrossoverAnalysis.FindPeakIndex(result),
-                validSampleCount);
+                validRange);
         });
         foreach (int i in missing)
         {
@@ -112,7 +112,7 @@ internal sealed class AlignmentReprocessor
                 channel,
                 results[i].ImpulseResponse,
                 results[i].PeakIndex,
-                results[i].ValidSampleCount))
+                results[i].ValidRange))
             .ToList();
     }
 
@@ -120,7 +120,7 @@ internal sealed class AlignmentReprocessor
         CacheKey Key,
         Complex[] ImpulseResponse,
         int PeakIndex,
-        int ValidSampleCount);
+        ValidSampleRange ValidRange);
 
     // Identity of a processed result: the cropped source (reference), the sample
     // rate and the chain by value (independent equal-valued PEQ chains match, so

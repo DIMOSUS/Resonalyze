@@ -101,7 +101,12 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
                     results[index] = new VirtualCrossoverProcessedChannel(
                         channel.Id,
                         entry.ImpulseResponse,
-                        entry.PeakIndex);
+                        entry.PeakIndex,
+                        VirtualCrossoverAnalysis.ChainValidRange(
+                            channel.Source.SampleCount,
+                            channel.Chain,
+                            channel.SampleRate,
+                            entry.ImpulseResponse.Length));
                 }
                 else
                 {
@@ -142,7 +147,12 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
                             results[pending.ResultIndex] = new VirtualCrossoverProcessedChannel(
                                 pending.Channel.Id,
                                 response,
-                                VirtualCrossoverAnalysis.FindPeakIndex(response));
+                                VirtualCrossoverAnalysis.FindPeakIndex(response),
+                                VirtualCrossoverAnalysis.ChainValidRange(
+                                    pending.Channel.Source.SampleCount,
+                                    pending.Channel.Chain,
+                                    pending.Channel.SampleRate,
+                                    response.Length));
                         });
                 }, processingCancellation.Token);
             }
@@ -404,6 +414,15 @@ internal sealed class VirtualCrossoverSourceSnapshot
     public Complex[] Apply(DspChannelChain chain, int sampleRate) =>
         VirtualCrossoverAnalysis.ApplyChain(impulseResponse, chain, sampleRate);
 
+    /// <summary>
+    /// The source measurement's length: with a processed response's length
+    /// and its chain, enough to recover the ApplyChain valid range without
+    /// re-running the chain (see
+    /// <see cref="VirtualCrossoverAnalysis.ChainValidRange"/>) — the cache
+    /// keeps processed arrays only.
+    /// </summary>
+    public int SampleCount => impulseResponse.Length;
+
     // Truncation from sample 0 — deliberately NOT a window centred on the arrival. Every
     // channel keeps its own peak index, the channels keep their relative timing, and the
     // user's absolute gate offset still points where they put it. A per-channel crop
@@ -498,7 +517,8 @@ internal sealed class VirtualCrossoverProcessingSnapshot
 internal sealed record VirtualCrossoverProcessedChannel(
     int Id,
     Complex[] ImpulseResponse,
-    int PeakIndex);
+    int PeakIndex,
+    ValidSampleRange ValidRange);
 
 internal sealed record VirtualCrossoverRenderResult(
     long Revision,

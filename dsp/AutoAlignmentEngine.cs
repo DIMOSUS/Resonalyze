@@ -25,18 +25,18 @@ public interface IAlignmentChannel
 /// <summary>
 /// One channel's processed impulse response for an alignment round: the full
 /// DSP chain applied, ready for arrival detection and correlation.
-/// <see cref="ValidSampleCount"/> is where the MEASURED content ends inside
-/// the (FFT-length-padded) record — the figure the
-/// <see cref="VirtualCrossoverAnalysis.ApplyChain(System.Numerics.Complex[], DspChannelChain, int, out int)"/>
-/// overload reports — so envelope/SNR analyses stop before the manufactured
-/// tail. Zero (the default) means unknown: the analyses then fall back to the
-/// padding-signature heuristic.
+/// <see cref="ValidRange"/> is where the MEASURED content sits inside the
+/// (delay-shifted, FFT-length-padded) record — the range the
+/// <see cref="VirtualCrossoverAnalysis.ApplyChain(System.Numerics.Complex[], DspChannelChain, int, out ValidSampleRange)"/>
+/// overload reports — so envelope/SNR analyses skip both the delay prefix
+/// and the manufactured tail. The default (empty) range means unknown: the
+/// analyses then fall back to the padding-signature heuristic.
 /// </summary>
 public sealed record AlignmentSnapshot(
     IAlignmentChannel Channel,
     Complex[] ImpulseResponse,
     int PeakIndex,
-    int ValidSampleCount = 0);
+    ValidSampleRange ValidRange = default);
 
 /// <summary>
 /// Adjacent channels along the spectrum with their shared junction: the pair
@@ -432,13 +432,13 @@ public static class AutoAlignmentEngine
                 pair.Lower.Channel.SampleRate,
                 pair.BandLowHz,
                 pair.BandHighHz,
-                pair.Lower.ValidSampleCount);
+                pair.Lower.ValidRange);
             double upperArrival = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
                 pair.Upper.ImpulseResponse,
                 pair.Upper.Channel.SampleRate,
                 pair.BandLowHz,
                 pair.BandHighHz,
-                pair.Upper.ValidSampleCount);
+                pair.Upper.ValidRange);
 
             // Refine the coarse offset with the DOMINANT GCC-PHAT extremum of
             // either sign: at a mid/high junction it lands the stage-2 window
@@ -658,11 +658,11 @@ public static class AutoAlignmentEngine
             BroadbandOnsetEstimate own =
                 VirtualCrossoverAnalysis.EstimateBroadbandOnset(
                     variableIr, channel.SampleRate,
-                    variableSnapshot.ValidSampleCount);
+                    variableSnapshot.ValidRange);
             BroadbandOnsetEstimate other =
                 VirtualCrossoverAnalysis.EstimateBroadbandOnset(
                     neighborIrs[0], neighborChannel.SampleRate,
-                    primaryNeighborSnapshot.ValidSampleCount);
+                    primaryNeighborSnapshot.ValidRange);
             if (own.IsValid && other.IsValid &&
                 (own.SnrDb < OnsetLockMinimumSnrDb ||
                  other.SnrDb < OnsetLockMinimumSnrDb))
@@ -1130,14 +1130,14 @@ public static class AutoAlignmentEngine
                 plan.BridgeLeft.SampleRate,
                 plan.BridgeBandLowHz,
                 plan.BridgeBandHighHz,
-                leftBridgeSnapshot.ValidSampleCount);
+                leftBridgeSnapshot.ValidRange);
         TimeAlignmentAnalysisResult rightBridge =
             VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
                 rightBridgeSnapshot.ImpulseResponse,
                 plan.BridgeRight.SampleRate,
                 plan.BridgeBandLowHz,
                 plan.BridgeBandHighHz,
-                rightBridgeSnapshot.ValidSampleCount);
+                rightBridgeSnapshot.ValidRange);
 
         // The bridge is the SINGLE link between the sides, so its arrivals are
         // gated instead of trusted: a silent band reports zeros (IsValid off),
@@ -1263,11 +1263,11 @@ public static class AutoAlignmentEngine
                 TimeAlignmentAnalysisResult left =
                     VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
                         leftIr, link.Left.SampleRate, lowHz, highHz,
-                        leftSnapshot.ValidSampleCount);
+                        leftSnapshot.ValidRange);
                 TimeAlignmentAnalysisResult right =
                     VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
                         rightIr, rightChannel.SampleRate, lowHz, highHz,
-                        rightSnapshot.ValidSampleCount);
+                        rightSnapshot.ValidRange);
                 if (!left.IsValid || !right.IsValid ||
                     left.SignalToNoiseDecibels < MinimumArrivalSnrDb ||
                     right.SignalToNoiseDecibels < MinimumArrivalSnrDb)
@@ -1285,11 +1285,11 @@ public static class AutoAlignmentEngine
                 TimeAlignmentAnalysisResult leftProbe =
                     VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
                         leftIr, link.Left.SampleRate, probeLowHz, highHz,
-                        leftSnapshot.ValidSampleCount);
+                        leftSnapshot.ValidRange);
                 TimeAlignmentAnalysisResult rightProbe =
                     VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
                         rightIr, rightChannel.SampleRate, probeLowHz, highHz,
-                        rightSnapshot.ValidSampleCount);
+                        rightSnapshot.ValidRange);
                 if (!leftProbe.IsValid || !rightProbe.IsValid ||
                     leftProbe.SignalToNoiseDecibels < MinimumArrivalSnrDb ||
                     rightProbe.SignalToNoiseDecibels < MinimumArrivalSnrDb)
@@ -1973,13 +1973,13 @@ public static class AutoAlignmentEngine
                 pair.Lower.Channel.SampleRate,
                 pair.BandLowHz,
                 pair.BandHighHz,
-                pair.Lower.ValidSampleCount);
+                pair.Lower.ValidRange);
             double upperArrival = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
                 pair.Upper.ImpulseResponse,
                 pair.Upper.Channel.SampleRate,
                 pair.BandLowHz,
                 pair.BandHighHz,
-                pair.Upper.ValidSampleCount);
+                pair.Upper.ValidRange);
             double centerLagMs = lowerArrival - upperArrival;
 
             AppendCorrelationMode(

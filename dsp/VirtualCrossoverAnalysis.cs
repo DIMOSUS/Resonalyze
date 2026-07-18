@@ -76,6 +76,10 @@ public sealed record CorrelationDelayCandidate(
 /// cannot see. A trust decision between two same-polarity lobes needs the
 /// peak to beat this rival too, or the choice of lobe is ambiguity, not
 /// measurement. Null when the window holds no separated positive structure.
+/// <see cref="NegativeRival"/> is the same figure for the trough's side: the
+/// deepest OTHER negative local minimum outside the trough's own lobe. A
+/// caller seeding from a dominant trough owes it the same rival scrutiny a
+/// dominant peak gets.
 /// </summary>
 public sealed record CorrelationAlignmentResult(
     double CenterFrequencyHz,
@@ -84,7 +88,8 @@ public sealed record CorrelationAlignmentResult(
     double SearchRangeMs,
     CorrelationDelayCandidate PositivePeak,
     CorrelationDelayCandidate NegativeTrough,
-    CorrelationDelayCandidate? PositiveRival = null)
+    CorrelationDelayCandidate? PositiveRival = null,
+    CorrelationDelayCandidate? NegativeRival = null)
 {
     public CorrelationDelayCandidate BestByMagnitude =>
         Math.Abs(NegativeTrough.Coefficient) > Math.Abs(PositivePeak.Coefficient)
@@ -106,6 +111,23 @@ public enum PolarityEstimate
     Unknown,
     Positive,
     Negative
+}
+
+/// <summary>
+/// The sample range of a processed impulse response that holds MEASURED
+/// content: <see cref="VirtualCrossoverAnalysis.ApplyChain(System.Numerics.Complex[], DspChannelChain, int, out ValidSampleRange)"/>
+/// shifts the input by the chain delay (manufacturing silence before
+/// <see cref="StartSample"/>) and rounds the FFT length up (manufacturing a
+/// tail from <see cref="EndSample"/> on). Envelope noise floors must be read
+/// inside the range only — both the delay prefix and the FFT tail collapse a
+/// quantile floor — while reported positions stay in full-record coordinates.
+/// The default (empty) range means unknown: analyses fall back to the
+/// padding-signature heuristic, which can trim only the tail.
+/// </summary>
+public readonly record struct ValidSampleRange(int StartSample, int EndSample)
+{
+    /// <summary>Whether the range is known (non-empty).</summary>
+    public bool IsKnown => EndSample > StartSample;
 }
 
 /// <summary>
@@ -138,7 +160,61 @@ public static class VirtualCrossoverAnalysis
     public static Complex[] ApplyChain(
         Complex[] impulseResponse,
         DspChannelChain chain,
-        int sampleRate)
+        int sampleRate) =>
+        ApplyChain(impulseResponse, chain, sampleRate, out _);
+
+    /// <summary>
+    /// The <see cref="ValidSampleRange"/> that
+    /// <see cref="ApplyChain(Complex[], DspChannelChain, int, out ValidSampleRange)"/>
+    /// reports for an input of <paramref name="inputLength"/> samples through
+    /// <paramref name="chain"/> into a record of
+    /// <paramref name="outputLength"/>: the input shifted by the chain delay.
+    /// Pure arithmetic, so a caller holding a CACHED processed response can
+    /// recover the range without re-running the chain. The measurement's own
+    /// quiet regions (leading silence, an anechoic tail INSIDE the input)
+    /// stay part of the range: they are recorded silence, not padding.
+    /// </summary>
+    public static ValidSampleRange ChainValidRange(
+        int inputLength,
+        DspChannelChain chain,
+        int sampleRate,
+        int outputLength)
+    {
+        ArgumentNullException.ThrowIfNull(chain);
+        // The delay is SIGNED: a positive delay shifts the content right
+        // (manufacturing the silent prefix the start excludes), a negative
+        // one shifts it left, so the content ENDS earlier — the vacated tail
+        // is manufactured silence exactly like the FFT padding, and the head
+        // samples the shift pushes past zero wrap to the buffer's far end,
+        // outside the range either way.
+        double delaySamplesExact = chain.DelayMs / 1_000.0 * sampleRate;
+        int startSample = Math.Clamp(
+            (int)Math.Floor(Math.Max(0.0, delaySamplesExact)),
+            0,
+            Math.Max(0, outputLength - 1));
+        int endSample = Math.Min(
+            outputLength, inputLength + (int)Math.Ceiling(delaySamplesExact));
+        // A delay that shifts the whole input out of the record leaves no
+        // contiguous measured range: report unknown rather than an empty lie.
+        return endSample > startSample
+            ? new ValidSampleRange(startSample, endSample)
+            : default;
+    }
+
+    /// <summary>
+    /// <see cref="ApplyChain(Complex[], DspChannelChain, int)"/>, additionally
+    /// reporting WHERE the measured content sits inside the returned record
+    /// (see <see cref="ValidSampleRange"/>): the chain delay manufactures
+    /// silence before it, and the FFT sizing manufactures a tail after it —
+    /// zeros for a scale-only chain, the filter kernel's decay otherwise —
+    /// neither carrying measurement noise, so envelope/SNR analyses must read
+    /// inside the range (see <see cref="EstimateBroadbandOnset"/>).
+    /// </summary>
+    public static Complex[] ApplyChain(
+        Complex[] impulseResponse,
+        DspChannelChain chain,
+        int sampleRate,
+        out ValidSampleRange validRange)
     {
         ArgumentNullException.ThrowIfNull(impulseResponse);
         ArgumentNullException.ThrowIfNull(chain);
@@ -160,6 +236,8 @@ public static class VirtualCrossoverAnalysis
             FilterTailDecayDb, MinFilterTailPadding, MaxFilterTailPadding);
         int length = DspMath.NextPowerOfTwo(
             impulseResponse.Length + delaySamples + tailPadding);
+        validRange = ChainValidRange(
+            impulseResponse.Length, chain, sampleRate, length);
         if (preparedChain.IsTimeDomainScaleOnly)
         {
             return preparedChain.ApplyTimeDomainScale(impulseResponse, length);
@@ -333,9 +411,11 @@ public static class VirtualCrossoverAnalysis
         Complex[] impulseResponse,
         int sampleRate,
         double lowFrequencyHz,
-        double highFrequencyHz) =>
+        double highFrequencyHz,
+        ValidSampleRange validRange = default) =>
         AnalyzeBandLimitedArrival(
-            impulseResponse, sampleRate, lowFrequencyHz, highFrequencyHz)
+            impulseResponse, sampleRate, lowFrequencyHz, highFrequencyHz,
+            validRange)
             .FirstArrivalDelayMilliseconds;
 
     /// <summary>
@@ -364,7 +444,8 @@ public static class VirtualCrossoverAnalysis
         Complex[] impulseResponse,
         int sampleRate,
         double lowFrequencyHz,
-        double highFrequencyHz)
+        double highFrequencyHz,
+        ValidSampleRange validRange = default)
     {
         ArgumentNullException.ThrowIfNull(impulseResponse);
         if (impulseResponse.Length == 0)
@@ -387,10 +468,12 @@ public static class VirtualCrossoverAnalysis
                 0.0, 0.0, 0.0, false, 0.0, false, 0.0, false, IsValid: false);
         }
 
-        var samples = new double[impulseResponse.Length];
+        (int startSample, int analysisLength) =
+            AnalysisWindow(impulseResponse, validRange);
+        var samples = new double[analysisLength];
         for (int i = 0; i < samples.Length; i++)
         {
-            samples[i] = impulseResponse[i].Real;
+            samples[i] = impulseResponse[startSample + i].Real;
         }
 
         // Gentle spectral fades keep the zero-phase bandpass ringing tame, and
@@ -400,7 +483,7 @@ public static class VirtualCrossoverAnalysis
         // missed a soft direct rise sitting under a strong in-room modal
         // build-up (the under-seat midbass in its 80-200 Hz pair band) and
         // latched the arrival onto the mode, milliseconds late.
-        return TimeAlignmentAnalysis.Analyze(
+        TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
             samples,
             sampleRate,
             new TimeAlignmentAnalysisOptions
@@ -410,6 +493,26 @@ public static class VirtualCrossoverAnalysis
                 BandpassPassOctaves = Math.Log2(high / low),
                 BandpassFadeOctaves = 1.0
             });
+        if (startSample > 0 && result.IsValid)
+        {
+            // Arrival positions are reported in FULL-record coordinates, so a
+            // caller comparing two channels never reads their (differing)
+            // delay prefixes as timing. EnvelopeSamples and the envelope peak
+            // indices stay window-local: they index the returned envelope
+            // array, which covers the analysis window only.
+            double startMs = startSample * 1_000.0 / sampleRate;
+            result = result with
+            {
+                FirstArrivalPeakSample =
+                    result.FirstArrivalPeakSample + startSample,
+                FirstArrivalDelayMilliseconds =
+                    result.FirstArrivalDelayMilliseconds + startMs,
+                StrongestPeakSample = result.StrongestPeakSample + startSample,
+                StrongestDelayMilliseconds =
+                    result.StrongestDelayMilliseconds + startMs
+            };
+        }
+        return result;
     }
 
     /// <summary>
@@ -444,7 +547,8 @@ public static class VirtualCrossoverAnalysis
     /// </summary>
     public static BroadbandOnsetEstimate EstimateBroadbandOnset(
         Complex[] impulseResponse,
-        int sampleRate)
+        int sampleRate,
+        ValidSampleRange validRange = default)
     {
         ArgumentNullException.ThrowIfNull(impulseResponse);
         if (impulseResponse.Length == 0)
@@ -458,10 +562,12 @@ public static class VirtualCrossoverAnalysis
             throw new ArgumentOutOfRangeException(nameof(sampleRate));
         }
 
-        var samples = new double[impulseResponse.Length];
+        (int startSample, int analysisLength) =
+            AnalysisWindow(impulseResponse, validRange);
+        var samples = new double[analysisLength];
         for (int i = 0; i < samples.Length; i++)
         {
-            samples[i] = impulseResponse[i].Real;
+            samples[i] = impulseResponse[startSample + i].Real;
         }
 
         double[] envelope = SignalEnvelope.Envelope(samples);
@@ -495,7 +601,102 @@ public static class VirtualCrossoverAnalysis
             envelope, peakSearch.SelectedIndex, 0.25 * arrivalPeak, sampleRate);
         double late = RisingFrontCrossingMs(
             envelope, peakSearch.SelectedIndex, 0.50 * arrivalPeak, sampleRate);
-        return new BroadbandOnsetEstimate(early, onset, late, snrDb, IsValid: true);
+        // Positions are reported in FULL-record coordinates regardless of the
+        // analysis window, so a caller comparing two channels' onsets never
+        // sees their (differing) delay prefixes as timing.
+        double startMs = startSample * 1_000.0 / sampleRate;
+        return new BroadbandOnsetEstimate(
+            early + startMs, onset + startMs, late + startMs, snrDb, IsValid: true);
+    }
+
+    // How far below the record's peak a sample must sit to count as part of
+    // the SYNTHETIC tail rather than the measurement. ApplyChain rounds every
+    // processed IR up to a power-of-two FFT length, so the returned record's
+    // tail is manufactured — exact zeros for a scale-only chain, the filter
+    // kernel's sub-noise decay otherwise. -140 dB sits far below any real
+    // measurement's noise floor (loopback captures grade -115 dB at best) and
+    // far above numerical residue, so the cut removes only what the padding
+    // manufactured.
+    private const double SyntheticTailFloorRatio = 1e-7;
+
+    // The minimum share of above-floor samples inside the content region
+    // (everything up to the last above-floor sample) for the trailing silence
+    // to read as ApplyChain padding. A measured record carries its noise
+    // floor in every sample, so its content region is dense right up to where
+    // the padding begins; a synthetic or anechoic record is mostly digital
+    // silence throughout, and its trailing silence is the honest noise floor
+    // it claims to be, not padding.
+    private const double PaddedContentMinimumDensity = 0.5;
+
+    // The sample window an envelope analysis reads. Envelope noise floors are
+    // quantile-based, and manufactured silence collapses them — a pure-noise
+    // 65k record zero-padded to 131k grades ~60 dB SNR instead of ~6, and a
+    // 25 ms delay prefix alone lifts a short noise record past the 20 dB
+    // onset-lock floor — waving noise-only fronts through every SNR gate
+    // (the onset lock, the stereo bridge, the cross-side ladder). The
+    // authoritative answer is the caller's ValidSampleRange — the ApplyChain
+    // metadata, immune to the amplitude of any individual sample and covering
+    // BOTH the delay prefix and the FFT tail. Callers without the metadata
+    // fall back to the padding-signature heuristic below, which can trim only
+    // the tail.
+    private static (int StartSample, int Length) AnalysisWindow(
+        Complex[] impulseResponse,
+        ValidSampleRange validRange)
+    {
+        if (validRange.IsKnown)
+        {
+            int start = Math.Clamp(
+                validRange.StartSample, 0, impulseResponse.Length - 1);
+            int end = Math.Clamp(
+                validRange.EndSample, start + 1, impulseResponse.Length);
+            return (start, end - start);
+        }
+
+        return (0, AnalysisLength(impulseResponse));
+    }
+
+    // Where the record's REAL content ends, by amplitude signature — the
+    // fallback for callers without ApplyChain metadata: a trailing sub-floor
+    // run behind a DENSE content region is ApplyChain's power-of-two padding
+    // and is removed in full — whatever its share of the record, so a short
+    // import padded far past its midpoint is caught too — while a sparse
+    // record (a synthetic or windowed impulse, mostly digital silence by
+    // nature) is analyzed whole.
+    private static int AnalysisLength(Complex[] impulseResponse)
+    {
+        double peak = 0;
+        for (int i = 0; i < impulseResponse.Length; i++)
+        {
+            peak = Math.Max(peak, Math.Abs(impulseResponse[i].Real));
+        }
+        if (peak <= 0)
+        {
+            return impulseResponse.Length;
+        }
+
+        double floor = peak * SyntheticTailFloorRatio;
+        int last = impulseResponse.Length - 1;
+        while (last > 0 && Math.Abs(impulseResponse[last].Real) < floor)
+        {
+            last--;
+        }
+        int contentLength = last + 1;
+        if (contentLength == impulseResponse.Length)
+        {
+            return impulseResponse.Length;
+        }
+
+        int aboveFloor = 0;
+        for (int i = 0; i < contentLength; i++)
+        {
+            if (Math.Abs(impulseResponse[i].Real) >= floor)
+            {
+                aboveFloor++;
+            }
+        }
+        return aboveFloor >= contentLength * PaddedContentMinimumDensity
+            ? contentLength
+            : impulseResponse.Length;
     }
 
     // The LAST crossing of the level before the peak — the peak's own rising
@@ -650,10 +851,13 @@ public static class VirtualCrossoverAnalysis
             findMaximum: true, out int positiveLag);
         CorrelationDelayCandidate negative = FindCorrelationExtremum(
             correlation, centerLag, rangeSamples, normalizer, sampleRate,
-            findMaximum: false, out _);
-        CorrelationDelayCandidate? positiveRival = FindPositiveRival(
+            findMaximum: false, out int negativeLag);
+        CorrelationDelayCandidate? positiveRival = FindSameSignRival(
             correlation, centerLag, rangeSamples, positiveLag, normalizer,
-            sampleRate);
+            sampleRate, findMaximum: true);
+        CorrelationDelayCandidate? negativeRival = FindSameSignRival(
+            correlation, centerLag, rangeSamples, negativeLag, normalizer,
+            sampleRate, findMaximum: false);
 
         return new CorrelationAlignmentResult(
             centerFrequencyHz,
@@ -662,28 +866,32 @@ public static class VirtualCrossoverAnalysis
             searchRangeMs,
             positive,
             negative,
-            positiveRival);
+            positiveRival,
+            negativeRival);
     }
 
-    // The strongest POSITIVE local maximum outside the main peak's own lobe —
-    // the contiguous positive region around it — i.e. the same-polarity rival
-    // one period over. A window boundary lag also qualifies when a
-    // non-positive gap separates it from the main lobe: a rival cut by the
-    // window still testifies, with its truncated value as a lower bound. Lags
-    // still connected to the main lobe never qualify, so the peak's own slope
-    // cannot masquerade as a rival. Null when the window holds no separated
-    // positive structure.
-    private static CorrelationDelayCandidate? FindPositiveRival(
+    // The strongest local extremum OF THE MAIN EXTREMUM'S SIGN outside its own
+    // lobe — the contiguous same-sign region around it — i.e. the same-polarity
+    // rival one period over (positive rivals for the peak, negative for the
+    // trough). A window boundary lag also qualifies when an opposite-sign gap
+    // separates it from the main lobe: a rival cut by the window still
+    // testifies, with its truncated value as a bound. Lags still connected to
+    // the main lobe never qualify, so the extremum's own slope cannot
+    // masquerade as a rival. Null when the window holds no separated same-sign
+    // structure.
+    private static CorrelationDelayCandidate? FindSameSignRival(
         double[] correlation,
         int centerLag,
         int rangeSamples,
         int mainLag,
         double normalizer,
-        int sampleRate)
+        int sampleRate,
+        bool findMaximum)
     {
         int fftLength = correlation.Length;
+        double sign = findMaximum ? 1.0 : -1.0;
         double Value(int lag) =>
-            correlation[TransferFunction.WrapIndex(lag, fftLength)];
+            sign * correlation[TransferFunction.WrapIndex(lag, fftLength)];
 
         int windowLow = centerLag - rangeSamples;
         int windowHigh = centerLag + rangeSamples;
@@ -727,11 +935,11 @@ public static class VirtualCrossoverAnalysis
         bool edgePinned = Math.Abs(bestLag - centerLag) >= rangeSamples - edgeGuard;
         double refinedLag = edgePinned
             ? bestLag
-            : TransferFunction.RefinePeakLag(correlation, bestLag, fftLength, 1.0);
+            : TransferFunction.RefinePeakLag(correlation, bestLag, fftLength, sign);
         return new CorrelationDelayCandidate(
             refinedLag * 1000.0 / sampleRate,
-            normalizer > 0 ? best / normalizer : 0,
-            InvertPolarity: false,
+            normalizer > 0 ? sign * best / normalizer : 0,
+            InvertPolarity: !findMaximum,
             edgePinned);
     }
 

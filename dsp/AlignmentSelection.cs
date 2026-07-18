@@ -42,20 +42,28 @@ public static class AlignmentSelection
     public const double DefaultInvertPreferenceReachMs = 0.75;
 
     /// <summary>
-    /// Among same-polarity candidates within this score margin (dB), the one
-    /// closest to the arrival-based estimate wins — the physically minimal
-    /// correction.
+    /// Among candidates within this score margin (dB), the one closest to the
+    /// arrival-based estimate wins — the physically minimal correction. The
+    /// tie-break is polarity-AGNOSTIC on the first pass: fractions of a dB
+    /// never choose a lobe, and the flip partner a third of a period out is a
+    /// lobe like any other. The field case that made it so: an 80 Hz
+    /// sub/woofer junction (arrival latched 10 ms early) offered a
+    /// non-inverted lobe 3.5 ms from the prior at −2.57 dB and the true
+    /// inverted lobe 0.54 ms from it at −2.61 dB — a 0.04 dB "preference"
+    /// that cost 3 ms of bass attack.
     /// </summary>
     public const double DefaultDelayTieMarginDb = 0.1;
 
     /// <summary>
     /// Selects from <paramref name="candidates"/> (must be non-empty, best
-    /// first): prefers a non-inverted candidate over an inverted winner within
-    /// the invert margin — but only a candidate that does not sit more than
+    /// first): first breaks near-ties of the score by closeness to
+    /// <paramref name="baseDeltaMs"/> REGARDLESS of polarity (the envelope
+    /// outranks fractions of a dB, and a flip partner is a lobe like any
+    /// other); then prefers a non-inverted candidate over an inverted winner
+    /// within the invert margin — but only one that does not sit more than
     /// <paramref name="invertPreferenceReachMs"/> farther from
-    /// <paramref name="baseDeltaMs"/> than the winner it replaces — then
-    /// breaks near-ties of the chosen polarity by closeness to
-    /// <paramref name="baseDeltaMs"/>.
+    /// <paramref name="baseDeltaMs"/> than the winner it replaces — and
+    /// finally re-breaks near-ties within the chosen polarity.
     /// </summary>
     public static AlignmentCandidate Select(
         IReadOnlyList<AlignmentCandidate> candidates,
@@ -72,7 +80,10 @@ public static class AlignmentSelection
                 nameof(candidates));
         }
 
-        AlignmentCandidate best = candidates[0];
+        AlignmentCandidate best = candidates
+            .Where(item => item.ScoreDb >= candidates[0].ScoreDb - delayTieMarginDb)
+            .OrderBy(item => Math.Abs(item.DelayMs - baseDeltaMs))
+            .First();
         if (best.InvertPolarity)
         {
             double bestDistanceMs = Math.Abs(best.DelayMs - baseDeltaMs);
@@ -107,15 +118,24 @@ public static class AlignmentSelection
         IReadOnlyList<AlignmentCandidate> candidates,
         double baseDeltaMs,
         double invertPreferenceMarginDb = DefaultInvertPreferenceMarginDb,
-        double invertPreferenceReachMs = DefaultInvertPreferenceReachMs)
+        double invertPreferenceReachMs = DefaultInvertPreferenceReachMs,
+        double delayTieMarginDb = DefaultDelayTieMarginDb)
     {
         ArgumentNullException.ThrowIfNull(candidates);
-        if (candidates.Count == 0 || !candidates[0].InvertPolarity)
+        if (candidates.Count == 0)
         {
             return null;
         }
 
-        AlignmentCandidate best = candidates[0];
+        AlignmentCandidate best = candidates
+            .Where(item => item.ScoreDb >= candidates[0].ScoreDb - delayTieMarginDb)
+            .OrderBy(item => Math.Abs(item.DelayMs - baseDeltaMs))
+            .First();
+        if (!best.InvertPolarity)
+        {
+            return null;
+        }
+
         double bestDistanceMs = Math.Abs(best.DelayMs - baseDeltaMs);
         List<AlignmentCandidate> inMargin = candidates
             .Where(item => !item.InvertPolarity &&

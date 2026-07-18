@@ -1032,6 +1032,111 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void AnalyzeBandLimitedArrival_ZeroPaddedTailDoesNotInflateTheSnr()
+    {
+        // The band-limited twin of the broadband-onset padding contract: the
+        // synthetic power-of-two tail ApplyChain appends must not collapse the
+        // quantile noise floor behind the arrival SNR that the stereo bridge
+        // and the cross-side ladder gate on.
+        var random = new Random(20_260_718);
+        var raw = new Complex[65_536];
+        for (int i = 0; i < raw.Length; i++)
+        {
+            raw[i] = new Complex((random.NextDouble() * 2.0 - 1.0) * 1e-3, 0.0);
+        }
+        raw[2_000] = Complex.One;
+        var padded = new Complex[131_072];
+        Array.Copy(raw, padded, raw.Length);
+
+        TimeAlignmentAnalysisResult rawResult = VirtualCrossoverAnalysis
+            .AnalyzeBandLimitedArrival(raw, SampleRate, 1_900, 20_000);
+        TimeAlignmentAnalysisResult paddedResult = VirtualCrossoverAnalysis
+            .AnalyzeBandLimitedArrival(padded, SampleRate, 1_900, 20_000);
+
+        Assert.True(rawResult.IsValid);
+        Assert.True(paddedResult.IsValid);
+        Assert.InRange(
+            paddedResult.SignalToNoiseDecibels,
+            rawResult.SignalToNoiseDecibels - 1.0,
+            rawResult.SignalToNoiseDecibels + 1.0);
+    }
+
+    [Fact]
+    public void AnalyzeBandLimitedArrival_ApplyChainMetadataPinsTheAnalysisRange()
+    {
+        // The band-limited twin of the onset metadata contract: a short
+        // record through a REAL scale-only ApplyChain (content far before the
+        // padded record's midpoint) analyzed with the validSampleCount
+        // metadata must read exactly like an explicit crop to it.
+        var random = new Random(20_260_723);
+        var raw = new Complex[4_096];
+        for (int i = 0; i < raw.Length; i++)
+        {
+            raw[i] = new Complex((random.NextDouble() * 2.0 - 1.0) * 1e-3, 0.0);
+        }
+        raw[2_000] += Complex.One;
+
+        Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+            raw, new DspChannelChain(DelayMs: 25), SampleRate,
+            out ValidSampleRange validRange);
+
+        int delaySamples = (int)(25.0 / 1_000.0 * SampleRate);
+        Assert.Equal(
+            new ValidSampleRange(delaySamples, delaySamples + raw.Length),
+            validRange);
+
+        TimeAlignmentAnalysisResult viaMetadata = VirtualCrossoverAnalysis
+            .AnalyzeBandLimitedArrival(
+                processed, SampleRate, 1_900, 20_000, validRange);
+        TimeAlignmentAnalysisResult raw2 = VirtualCrossoverAnalysis
+            .AnalyzeBandLimitedArrival(raw, SampleRate, 1_900, 20_000);
+
+        // The delay prefix is excluded from the noise floor while the arrival
+        // position stays in full-record coordinates: the raw read plus the
+        // 25 ms delay, at the raw record's SNR.
+        Assert.True(viaMetadata.IsValid);
+        Assert.InRange(
+            viaMetadata.SignalToNoiseDecibels,
+            raw2.SignalToNoiseDecibels - 1.0,
+            raw2.SignalToNoiseDecibels + 1.0);
+        Assert.InRange(
+            viaMetadata.FirstArrivalDelayMilliseconds -
+                raw2.FirstArrivalDelayMilliseconds,
+            24.9,
+            25.1);
+    }
+
+    [Fact]
+    public void FindBandLimitedCorrelationDelay_ReportsTheSameSignRivalForTheTrough()
+    {
+        // The mirror of the positive-rival case: two INVERTED copies ~a
+        // period apart produce two same-polarity trough lobes, and a caller
+        // seeding from the dominant trough owes it the same rival scrutiny —
+        // the strongest OTHER negative lobe must come back as NegativeRival.
+        Complex[] first = UnitImpulse(8_192, 2_000);
+        var second = new Complex[8_192];
+        second[1_800] = -0.97;
+        second[1_236] = -1.0;
+        double centerMs = 200.0 / SampleRate * 1_000.0;
+
+        CorrelationAlignmentResult result =
+            VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
+                first, second, SampleRate,
+                centerFrequencyHz: 85, passOctaves: 3.5, searchRangeMs: 15,
+                centerLagMs: centerMs, phaseTransform: true);
+
+        Assert.NotNull(result.NegativeRival);
+        Assert.True(result.NegativeRival!.InvertPolarity);
+        Assert.True(result.NegativeRival.Coefficient < 0);
+        Assert.InRange(
+            Math.Abs(result.NegativeTrough.DelayMs - result.NegativeRival.DelayMs),
+            10.0, 13.5);
+        Assert.True(
+            Math.Abs(result.NegativeTrough.Coefficient) -
+            Math.Abs(result.NegativeRival.Coefficient) < 0.2);
+    }
+
+    [Fact]
     public void EstimatePolarity_ReadsTheFirstSignificantExcursion()
     {
         Complex[] positive = UnitImpulse(256, 50);

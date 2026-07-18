@@ -449,4 +449,31 @@ public sealed class OverlayMathTests
         Assert.True(plainPeak > 0.5, $"the peak vanished entirely ({plainPeak:0.00} dB)");
         Assert.Equal(plainPeak, psychoPeak, precision: 6);
     }
+
+    [Fact]
+    public void SmoothByOctaves_FloorDisabledMatchesPlainBaseWidthExactly()
+    {
+        // A phase-like signed curve with a sharp negative excursion: with the
+        // floor disabled (phase / group-delay / coherence semantics) the
+        // psychoacoustic code must decode to plain 1/6-octave smoothing —
+        // identical per point, no upward bias anywhere.
+        OverlayPoint[] points = Enumerable.Range(0, 385)
+            .Select(index => new OverlayPoint(
+                250.0 * Math.Pow(2, index / 96.0),
+                index is >= 190 and <= 194 ? -170.0 : 20.0 * Math.Sin(index / 25.0)))
+            .ToArray();
+
+        OverlayPoint[] plain = OverlayMath.SmoothByOctaves(
+            points, Dsp.SpectrumSmoothing.PsychoacousticBaseInverseOctaves);
+        OverlayPoint[] gated = OverlayMath.SmoothByOctaves(
+            points,
+            Dsp.SpectrumSmoothing.PsychoacousticCode,
+            psychoacousticFloor: false);
+
+        Assert.Equal(plain.Length, gated.Length);
+        for (int i = 0; i < plain.Length; i++)
+        {
+            Assert.Equal(plain[i].Y, gated[i].Y, precision: 9);
+        }
+    }
 }

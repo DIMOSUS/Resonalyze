@@ -1627,7 +1627,10 @@ public sealed class Overlay
                 previewShown = true;
                 previewActive = true;
                 PreviewCaptured(settings);
-            });
+            },
+            // A captured coherence trace must not offer the magnitude-only
+            // psychoacoustic mode (see MagnitudeSmoothingSemantics).
+            allowPsychoacousticSmoothing: MagnitudeSmoothingSemantics);
         DialogResult result = dialog.ShowDialog(collection.Form);
         previewActive = false;
         if (result != DialogResult.OK)
@@ -2078,7 +2081,10 @@ public sealed class Overlay
             settings.BlendWidthOctaves,
             settings.UseAmplitudeSpace,
             wrapPhaseDifference);
-        points = OverlayMath.SmoothByOctaves(points, settings.SmoothingInverseOctaves);
+        points = OverlayMath.SmoothByOctaves(
+            points,
+            settings.SmoothingInverseOctaves,
+            psychoacousticFloor: MagnitudeSmoothingSemantics);
         if (points.Length < 2)
         {
             return null;
@@ -2193,6 +2199,16 @@ public sealed class Overlay
         drawPoints = BuildCapturedPoints(smoothingInverseOctaves);
     }
 
+    // Whether this slot's curve carries dB MAGNITUDE semantics — the only
+    // domain where the psychoacoustic smoothing's asymmetric median floor is
+    // honest. Phase and group-delay modes and a captured coherence trace
+    // (whatever the mode) must smooth at the plain base width instead: an
+    // upward-only floor would bias a signed phase/delay curve and would
+    // inflate exactly the low-coherence stretches that trace exists to expose.
+    private bool MagnitudeSmoothingSemantics =>
+        OverlayMath.SupportsAmplitudeSpace(SeriesMode) &&
+        capturedYAxisKey != PlotModelFactory.CoherenceAxisKey;
+
     // Parameterized so the settings dialog's live preview can render a candidate
     // smoothing without committing it to the slot first.
     private DataPoint[]? BuildCapturedPoints(int smoothing)
@@ -2204,7 +2220,8 @@ public sealed class Overlay
 
         OverlayPoint[] smoothed = OverlayMath.SmoothByOctaves(
             sourcePoints.Select(point => new OverlayPoint(point.X, point.Y)).ToArray(),
-            smoothing);
+            smoothing,
+            psychoacousticFloor: MagnitudeSmoothingSemantics);
         double offset = (double)offsetControl.Value;
         return smoothed
             .Select(point => new DataPoint(point.X, point.Y + offset))

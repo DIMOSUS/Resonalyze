@@ -12,6 +12,9 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
     // Save; the caller restores its stored state on Cancel.
     private readonly Action<OverlayTargetPreview>? previewChanged;
     private readonly bool isolatedTarget;
+    // Magnitude-only gate for the Psychoacoustic smoothing item, mirroring the
+    // captured/operation dialogs.
+    private readonly bool includePsychoacousticSmoothing;
     private readonly bool initialized;
     private Color selectedColor;
     private bool suppressEvents;
@@ -35,6 +38,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
     {
         this.previewChanged = previewChanged;
         this.isolatedTarget = isolatedTarget;
+        includePsychoacousticSmoothing = OverlayMath.SupportsAmplitudeSpace(mode);
         selectedColor = color;
 
         InitializeComponent();
@@ -51,7 +55,9 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         deviationModeComboBox.SelectedItem = deviationMode;
         thicknessInput.Value = (decimal)Math.Clamp(strokeThickness, 0.5, 10);
         styleComboBox.SelectedItem = lineStyle;
-        smoothingComboBox.SelectedItem = smoothingInverseOctaves;
+        smoothingComboBox.SelectedItem = includePsychoacousticSmoothing
+            ? smoothingInverseOctaves
+            : Dsp.SpectrumSmoothing.EquivalentInverseOctaves(smoothingInverseOctaves);
         opacityTrackBar.Value = Math.Clamp(opacityPercent, 10, 100);
         suppressEvents = false;
 
@@ -153,6 +159,12 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
 
         foreach (int value in OverlaySmoothing.SupportedInverseOctaves)
         {
+            if (Dsp.SpectrumSmoothing.IsPsychoacoustic(value) &&
+                !includePsychoacousticSmoothing)
+            {
+                continue;
+            }
+
             smoothingComboBox.Items.Add(value);
         }
         smoothingComboBox.Format += (_, args) =>

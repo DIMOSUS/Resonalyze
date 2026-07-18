@@ -760,17 +760,19 @@ periodic pink noise, where overlapped frames are correlated and add no averaging
 displayed curve, using the same presets as the Frequency Response mode.
 
 Every magnitude-smoothing selector (Frequency Response, Live Spectrum,
-Waterfall, Burst Decay, Virtual DSP, EQ Wizard, overlays) also offers
+Fourier Waterfall, Virtual DSP, EQ Wizard, magnitude overlays) also offers
 **Psychoacoustic**: 1/6-octave smoothing where each point is additionally floored
 at its window's median, so an interference dip narrower than half the window
 drops out of the drawn curve entirely — the ear largely ignores such notches,
 and no EQ or delay move can genuinely fill them — while a narrow peak (an
 audible resonance) keeps exactly its plain-smoothed height and anything wider
 than the window passes through unchanged. It shapes magnitude curves only:
-phase, group delay, coherence, and harmonic traces fall back to the plain
-1/6-octave width, and the Virtual DSP junction metric read-outs stay
-unsmoothed — the curve may look calm while the dip number still reports an
-honest cancellation. Files that store a smoothing choice (overlays, Virtual
+phase, group-delay and coherence traces (including captured overlays of them)
+and the harmonic widths fall back to the plain 1/6-octave width, Burst Decay
+does not offer the mode at all (its per-band envelope pipeline has no
+magnitude grid to floor), and the Auto delay engine never reads the display
+smoothing — the drawn curve and the panel's Sum-loss read-outs follow the
+selection, the proposed delays do not. Files that store a smoothing choice (overlays, Virtual
 DSP sessions) save the mode as a plain 1/6-octave width plus a separate flag,
 so older builds open them with plain smoothing instead of rejecting them.
 

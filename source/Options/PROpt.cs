@@ -51,7 +51,8 @@ namespace Resonalyze.Options
                 numericLeftWindow.Value = ClampToControl(numericLeftWindow, opt.PhaseLeftMs);
                 numericRightWindow.Value = ClampToControl(numericRightWindow, opt.PhaseRightMs);
                 comboSmoothingInverseOctaves.SelectedItem =
-                    SmoothingPresetOptions.Normalize(opt.SmoothingInverseOctaves);
+                    SmoothingPresetOptions.Normalize(
+                    opt.SmoothingInverseOctaves, includePsychoacoustic: false);
                 numericOffset.Value = ClampToControl(numericOffset, opt.PhaseDetrendMs);
                 comboWindowMode.SelectedIndex = opt.PhaseWindowMode == PhaseWindowMode.Fixed ? 0 : 1;
                 comboFdwCycles.SelectedItem = opt.PhaseFdwCycles is 4 or 6 or 8

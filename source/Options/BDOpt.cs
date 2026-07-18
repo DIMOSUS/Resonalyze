@@ -17,8 +17,11 @@ namespace Resonalyze.Options
             InitializeComponent();
             numericLeftWindow.ValueChanged += TukeyWindow_ValueChanged;
             numericRightWindow.ValueChanged += TukeyWindow_ValueChanged;
-            SmoothingPresetOptions.Configure(
-                comboSmoothingInverseOctaves, includePsychoacoustic: true);
+            // Width presets only: burst decay integrates per-frequency energy
+            // envelopes, and its pipeline has no magnitude grid to apply the
+            // psychoacoustic median floor to — offering the mode here would be
+            // a silent alias of plain 1/6.
+            SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
             InitializeToolTips();
         }
 
@@ -38,7 +41,8 @@ namespace Resonalyze.Options
                 numericDbRange.Value = burstDecayGenOptions.DbRange;
 
                 comboSmoothingInverseOctaves.SelectedItem =
-                    SmoothingPresetOptions.Normalize(burstDecayGenOptions.SmoothingInverseOctaves);
+                    SmoothingPresetOptions.Normalize(
+                    burstDecayGenOptions.SmoothingInverseOctaves, includePsychoacoustic: false);
 
                 numericOffset.Value = burstDecayGenOptions.Offset;
 

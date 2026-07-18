@@ -67,7 +67,9 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         checkBoxInvPhase.Checked = compareInvertPolarity;
         thicknessInput.Value = (decimal)Math.Clamp(strokeThickness, 0.5, 10);
         styleComboBox.SelectedItem = lineStyle;
-        smoothingComboBox.SelectedItem = smoothingInverseOctaves;
+        smoothingComboBox.SelectedItem = supportsAmplitudeSpace
+            ? smoothingInverseOctaves
+            : Dsp.SpectrumSmoothing.EquivalentInverseOctaves(smoothingInverseOctaves);
         opacityTrackBar.Value = Math.Clamp(opacityPercent, 10, 100);
         SelectBlendWidth(blendWidthOctaves);
         UpdateColorButton();
@@ -94,9 +96,10 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
     public OverlayLineStyle LineStyle =>
         (OverlayLineStyle)styleComboBox.SelectedItem!;
     public int OpacityPercent => opacityTrackBar.Value;
-    public int SmoothingInverseOctaves => supportsSmoothing
-        ? (int)smoothingComboBox.SelectedItem!
-        : 0;
+    public int SmoothingInverseOctaves =>
+        supportsSmoothing && smoothingComboBox.SelectedItem is int value
+            ? value
+            : 0;
 
     private void PopulateControls(
         IReadOnlyList<OverlaySlotOption> availableSources,
@@ -156,6 +159,14 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
 
         foreach (int value in OverlaySmoothing.SupportedInverseOctaves)
         {
+            // The psychoacoustic mode is magnitude-only; in phase/GD modes the
+            // operation result is a signed curve its floor would bias upward.
+            if (Dsp.SpectrumSmoothing.IsPsychoacoustic(value) &&
+                !supportsAmplitudeSpace)
+            {
+                continue;
+            }
+
             smoothingComboBox.Items.Add(value);
         }
         smoothingComboBox.Format += (_, args) =>

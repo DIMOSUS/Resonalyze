@@ -12,9 +12,18 @@ public static class OverlayMath
         return mode is Mode.FrequencyResponse or Mode.LiveSpectrum;
     }
 
+    /// <summary>
+    /// Fractional-octave smoothing of an overlay curve.
+    /// <paramref name="psychoacousticFloor"/> gates the psychoacoustic mode's
+    /// asymmetric median floor — a MAGNITUDE concept: the caller must pass
+    /// false for phase, group-delay and coherence curves, where the code then
+    /// decodes to its plain 1/6-octave base width so those traces stay
+    /// unbiased instead of being pulled upward at every narrow dip.
+    /// </summary>
     public static OverlayPoint[] SmoothByOctaves(
         IReadOnlyList<OverlayPoint> points,
-        int inverseOctaves)
+        int inverseOctaves,
+        bool psychoacousticFloor = true)
     {
         ArgumentNullException.ThrowIfNull(points);
         if (points.Count < 2 || inverseOctaves == 0)
@@ -29,7 +38,8 @@ public static class OverlayMath
         // The psychoacoustic mode smooths at its base width and additionally
         // floors each point at the window median (below), so narrow
         // interference dips drop out while peaks and broad structure survive.
-        bool psychoacoustic = SpectrumSmoothing.IsPsychoacoustic(inverseOctaves);
+        bool psychoacoustic = psychoacousticFloor &&
+            SpectrumSmoothing.IsPsychoacoustic(inverseOctaves);
         double halfWidth = 0.5 * SpectrumSmoothing.SmoothingOctaves(inverseOctaves);
         var result = new OverlayPoint[points.Count];
         int left = 0;

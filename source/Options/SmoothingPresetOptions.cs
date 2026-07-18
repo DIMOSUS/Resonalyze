@@ -50,15 +50,22 @@ internal static class SmoothingPresetOptions
         comboBox.DropDownStyle = ComboBoxStyle.DropDownList;
     }
 
-    public static int Normalize(double inverseOctaves)
+    /// <summary>
+    /// Maps a stored smoothing value onto this preset list.
+    /// <paramref name="includePsychoacoustic"/> must match the combo's
+    /// <see cref="Configure"/> call: a combo WITH the psycho item keeps the
+    /// code as itself (snapping it to the numerically nearest width would land
+    /// on "Off"), a width-only combo decodes it to the plain base width so the
+    /// returned value always resolves to an existing item.
+    /// </summary>
+    public static int Normalize(
+        double inverseOctaves, bool includePsychoacoustic = true)
     {
-        // The psychoacoustic code passes through as itself: snapping it to the
-        // numerically nearest width would land on "Off". A combo without the
-        // psycho item resolves the returned code to no selection, so those
-        // combos pre-decode via SpectrumSmoothing.EquivalentInverseOctaves.
         if (SpectrumSmoothing.IsPsychoacoustic(inverseOctaves))
         {
-            return SpectrumSmoothing.PsychoacousticCode;
+            return includePsychoacoustic
+                ? SpectrumSmoothing.PsychoacousticCode
+                : SpectrumSmoothing.PsychoacousticBaseInverseOctaves;
         }
 
         int rounded = (int)Math.Round(inverseOctaves);

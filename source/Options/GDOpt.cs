@@ -36,7 +36,8 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
             numericLeftWindow.Value = ClampToControl(numericLeftWindow, opt.GroupDelayLeftMs);
             numericRightWindow.Value = ClampToControl(numericRightWindow, opt.GroupDelayRightMs);
             comboSmoothingInverseOctaves.SelectedItem =
-                SmoothingPresetOptions.Normalize(opt.SmoothingInverseOctaves);
+                SmoothingPresetOptions.Normalize(
+                    opt.SmoothingInverseOctaves, includePsychoacoustic: false);
             checkBoxShowGroupDelay.Checked = visibility.ShowGroupDelay;
             checkBoxShowCoherence.Checked = visibility.ShowCoherence;
         });

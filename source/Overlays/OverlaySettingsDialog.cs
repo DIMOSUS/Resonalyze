@@ -3,6 +3,10 @@ namespace Resonalyze;
 internal sealed partial class OverlaySettingsDialog : Form
 {
     private readonly bool supportsSmoothing;
+    // Whether the Psychoacoustic smoothing mode is offered: only for a curve
+    // with dB magnitude semantics — the caller withholds it for a captured
+    // coherence trace, and non-magnitude modes exclude it here.
+    private readonly bool includePsychoacousticSmoothing;
     // Live preview: fired with a snapshot of the candidate settings on every control
     // change so the caller can restyle the shown curve immediately. Nothing is
     // committed until Save; the caller restores its stored state on Cancel.
@@ -18,10 +22,13 @@ internal sealed partial class OverlaySettingsDialog : Form
         OverlayLineStyle lineStyle,
         int opacityPercent,
         int smoothingInverseOctaves,
-        Action<OverlayCapturedPreview>? previewChanged = null)
+        Action<OverlayCapturedPreview>? previewChanged = null,
+        bool allowPsychoacousticSmoothing = true)
     {
         this.previewChanged = previewChanged;
         supportsSmoothing = OverlaySmoothing.SupportsMode(mode);
+        includePsychoacousticSmoothing = allowPsychoacousticSmoothing &&
+            OverlayMath.SupportsAmplitudeSpace(mode);
         selectedColor = color;
 
         InitializeComponent();
@@ -33,7 +40,9 @@ internal sealed partial class OverlaySettingsDialog : Form
         nameTextBox.Text = name;
         thicknessInput.Value = (decimal)Math.Clamp(strokeThickness, 0.5, 10);
         styleComboBox.SelectedItem = lineStyle;
-        smoothingComboBox.SelectedItem = smoothingInverseOctaves;
+        smoothingComboBox.SelectedItem = includePsychoacousticSmoothing
+            ? smoothingInverseOctaves
+            : Dsp.SpectrumSmoothing.EquivalentInverseOctaves(smoothingInverseOctaves);
         opacityTrackBar.Value = Math.Clamp(opacityPercent, 10, 100);
         UpdateColorButton();
         UpdateOpacityLabel();
@@ -46,9 +55,10 @@ internal sealed partial class OverlaySettingsDialog : Form
     public OverlayLineStyle LineStyle =>
         (OverlayLineStyle)styleComboBox.SelectedItem!;
     public int OpacityPercent => opacityTrackBar.Value;
-    public int SmoothingInverseOctaves => supportsSmoothing
-        ? (int)smoothingComboBox.SelectedItem!
-        : 0;
+    public int SmoothingInverseOctaves =>
+        supportsSmoothing && smoothingComboBox.SelectedItem is int value
+            ? value
+            : 0;
     public bool ClearRequested { get; private set; }
 
     private void PopulateControls()
@@ -57,6 +67,12 @@ internal sealed partial class OverlaySettingsDialog : Form
 
         foreach (int value in OverlaySmoothing.SupportedInverseOctaves)
         {
+            if (Dsp.SpectrumSmoothing.IsPsychoacoustic(value) &&
+                !includePsychoacousticSmoothing)
+            {
+                continue;
+            }
+
             smoothingComboBox.Items.Add(value);
         }
         smoothingComboBox.Format += (_, args) =>

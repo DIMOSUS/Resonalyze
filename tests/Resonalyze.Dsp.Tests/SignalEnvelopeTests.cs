@@ -275,6 +275,31 @@ public sealed class SignalEnvelopeTests
         Assert.InRange(confidence, 51.2, 51.5);
     }
 
+    [Fact]
+    public void EstimatePeakConfidenceDecibels_IgnoresTheDeconvolutionFftTail()
+    {
+        // A transfer IR's long FFT tail sits 100+ dB below the peak — far under
+        // any real floor. Here 40% of the record is such a −140 dB tail over a
+        // −60 dB real noise floor. The quietest quarter would otherwise land in
+        // the tail and read ~131 dB; the valid-region bound must grade the
+        // recording by its real −60 dB floor instead (the bug that reported a
+        // clean cabin sweep as 123 dB while its envelope showed ~65).
+        double[] envelope = Enumerable.Repeat(0.001, 1000).ToArray();
+        for (int i = 400; i < 800; i++)
+        {
+            envelope[i] = 1e-7;
+        }
+        envelope[100] = 1.0;
+
+        double confidence = SignalEnvelope.EstimatePeakConfidenceDecibels(
+            envelope,
+            peak: 1.0);
+
+        // The −60 dB floor minus the Rayleigh compensation (≈ 8.64 dB), the same
+        // as the reverb-tail case — NOT the ~131 dB the raw quartile would read.
+        Assert.InRange(confidence, 51.2, 51.5);
+    }
+
     private static double[] CreateSine(int length, int bin, double amplitude)
     {
         var signal = new double[length];

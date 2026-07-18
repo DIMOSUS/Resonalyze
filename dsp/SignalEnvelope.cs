@@ -165,12 +165,36 @@ public static class SignalEnvelope
     // robust floor: there under-estimating noise is the safe direction.
     private const double RayleighLowestQuartileRmsRatio = 0.370;
 
+    // A transfer IR deconvolved over a long FFT carries a contiguous "tail" of
+    // numerical silence — 100+ dB below the peak, far under any real acoustic or
+    // electronic noise floor. On a clean cabin sweep it can fill a third of the
+    // record near −140 dB; left in, the quietest-quartile estimate lands entirely
+    // in it and inflates the reported SNR by tens of dB (an envelope showing ~65
+    // dB read 123). So the confidence figure measures noise only over the VALID
+    // region — samples within this many dB of the peak — the same intent as the
+    // ValidSampleRange the Auto-delay path already crops the FFT tail with (there
+    // the envelope arrives pre-cropped, so this bound is a no-op). FindPeak keeps
+    // the raw full-envelope floor: it gates on max(noise, −25 dB-below-peak), so
+    // the tail never reaches its threshold and the measured arrival is unaffected.
+    private const double DeconvolutionFloorDropDb = 100.0;
+
     public static double EstimatePeakConfidenceDecibels(
         IReadOnlyList<double> envelope,
         double peak)
     {
         ArgumentNullException.ThrowIfNull(envelope);
-        double noiseRms = EstimateEnvelopeNoiseRms(envelope)
+        double validFloor = peak * Math.Pow(10.0, -DeconvolutionFloorDropDb / 20.0);
+        var valid = new List<double>(envelope.Count);
+        foreach (double sample in envelope)
+        {
+            if (sample >= validFloor)
+            {
+                valid.Add(sample);
+            }
+        }
+
+        double noiseRms =
+            EstimateEnvelopeNoiseRms(valid.Count > 0 ? valid : envelope)
             / RayleighLowestQuartileRmsRatio;
         return DataHelper.AmplitudeToDecibels(peak / Math.Max(noiseRms, 1e-12));
     }

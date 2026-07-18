@@ -1506,9 +1506,14 @@ beside the mode switch): the pair's band-limited cross-correlation, raw and
 GCC-PHAT-whitened, drawn over ±1.5 crossover periods of extra delay on the
 upper channel — positive lobes are normal-polarity alignments, negative lobes
 the same alignments with the channel inverted — together with the
-dip-penalized junction score for both polarities, each point honestly
-re-gated, i.e. the very surface Auto delay ranks its candidates on. The
-channels enter fully processed, so 0 ms is the alignment as it currently
+junction's **prior-free acoustic score** for both polarities — the
+dip-penalized summation loss, honestly re-gated at every point (the same
+figure the engine's own lobe-hop and promotion gates compare). This is
+deliberately the acoustics ALONE: the searches additionally weigh the
+arrival prior and the lobe/onset/scene locks, so Auto delay's pick may
+sit off this curve's deepest lobe on purpose — the gap between the solid
+and dashed markers is exactly that envelope-versus-summation trade, drawn.
+The channels enter fully processed, so 0 ms is the alignment as it currently
 stands (the solid marker), the dashed marker is the band-limited
 envelope-arrival estimate the searches anchor on, and every near-tied comb
 lobe the log's `[corr]`/`[phat]` lines enumerate is visible as such. A **Sum loss** read-out (avg / dip

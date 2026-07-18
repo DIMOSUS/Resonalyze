@@ -1553,11 +1553,15 @@ public partial class VirtualCrossoverPanel : UserControl
             radioDspCorrelation,
             "Junction correlation: the selected adjacent pair's band-limited\r\n" +
             "cross-correlation (corr + PHAT; negative lobes = the upper\r\n" +
-            "channel inverted) and the dip-penalized junction score versus an\r\n" +
-            "extra delay on the upper channel, in both polarities — the comb\r\n" +
-            "of alignment lobes Auto delay chooses between, drawn. Channels\r\n" +
-            "enter with their current delays, so 0 ms is the alignment as it\r\n" +
-            "stands and the dashed marker is the envelope-arrival estimate.");
+            "channel inverted) and the PRIOR-FREE acoustic score — the\r\n" +
+            "dip-penalized junction loss, honestly re-gated per point — versus\r\n" +
+            "an extra delay on the upper channel, in both polarities: the comb\r\n" +
+            "of alignment lobes. Auto delay weighs this acoustics TOGETHER\r\n" +
+            "with the arrival prior and the lobe/onset/scene gates, so its\r\n" +
+            "pick may deliberately sit off this curve's deepest lobe — the\r\n" +
+            "gap to the dashed envelope-arrival marker shows that trade.\r\n" +
+            "Channels enter with their current delays: 0 ms is the alignment\r\n" +
+            "as it stands.");
         toolTip.SetToolTip(
             comboBoxCorrelationPair,
             "Which adjacent channel pair the correlation view analyzes\r\n" +

@@ -56,6 +56,9 @@ namespace Resonalyze.Options
             labelCalibration90 = new Label();
             buttonCalibration90 = new Button();
             buttonClearCalibration90 = new Button();
+            labelSplCalibration = new Label();
+            buttonSplCalibration = new Button();
+            buttonClearSplCalibration = new Button();
             waveAudioBackendPanel = new WaveAudioBackendPanel();
             asioAudioBackendPanel = new AsioAudioBackendPanel();
             (numericUpDownRequestedDuration).BeginInit();
@@ -169,7 +172,7 @@ namespace Resonalyze.Options
             button1.DialogResult = DialogResult.OK;
             button1.FlatStyle = FlatStyle.Popup;
             button1.ForeColor = Color.White;
-            button1.Location = new Point(12, 554);
+            button1.Location = new Point(12, 579);
             button1.Name = "button1";
             button1.Size = new Size(311, 23);
             button1.TabIndex = 12;
@@ -240,7 +243,7 @@ namespace Resonalyze.Options
             // 
             labelAudioBackend.AutoSize = true;
             labelAudioBackend.ForeColor = SystemColors.ControlLight;
-            labelAudioBackend.Location = new Point(12, 285);
+            labelAudioBackend.Location = new Point(12, 310);
             labelAudioBackend.Name = "labelAudioBackend";
             labelAudioBackend.Size = new Size(87, 15);
             labelAudioBackend.TabIndex = 23;
@@ -250,7 +253,7 @@ namespace Resonalyze.Options
             // 
             comboBoxAudioBackend.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxAudioBackend.ForeColor = Color.White;
-            comboBoxAudioBackend.Location = new Point(153, 277);
+            comboBoxAudioBackend.Location = new Point(153, 302);
             comboBoxAudioBackend.Margin = new Padding(0);
             comboBoxAudioBackend.MinimumSize = new Size(36, 19);
             comboBoxAudioBackend.Name = "comboBoxAudioBackend";
@@ -363,11 +366,45 @@ namespace Resonalyze.Options
             buttonClearCalibration90.Text = "X";
             buttonClearCalibration90.UseVisualStyleBackColor = true;
             buttonClearCalibration90.Click += buttonClearCalibration90_Click;
-            // 
+            //
+            // labelSplCalibration
+            //
+            labelSplCalibration.AutoSize = true;
+            labelSplCalibration.ForeColor = SystemColors.ControlLight;
+            labelSplCalibration.Location = new Point(12, 274);
+            labelSplCalibration.Name = "labelSplCalibration";
+            labelSplCalibration.Size = new Size(85, 15);
+            labelSplCalibration.TabIndex = 36;
+            labelSplCalibration.Text = "SPL calibration";
+            //
+            // buttonSplCalibration
+            //
+            buttonSplCalibration.FlatStyle = FlatStyle.Popup;
+            buttonSplCalibration.ForeColor = Color.White;
+            buttonSplCalibration.Location = new Point(153, 269);
+            buttonSplCalibration.Name = "buttonSplCalibration";
+            buttonSplCalibration.Size = new Size(143, 23);
+            buttonSplCalibration.TabIndex = 37;
+            buttonSplCalibration.Text = "Calibrate...";
+            buttonSplCalibration.UseVisualStyleBackColor = true;
+            buttonSplCalibration.Click += buttonSplCalibration_Click;
+            //
+            // buttonClearSplCalibration
+            //
+            buttonClearSplCalibration.FlatStyle = FlatStyle.Popup;
+            buttonClearSplCalibration.ForeColor = Color.White;
+            buttonClearSplCalibration.Location = new Point(299, 269);
+            buttonClearSplCalibration.Name = "buttonClearSplCalibration";
+            buttonClearSplCalibration.Size = new Size(24, 23);
+            buttonClearSplCalibration.TabIndex = 38;
+            buttonClearSplCalibration.Text = "X";
+            buttonClearSplCalibration.UseVisualStyleBackColor = true;
+            buttonClearSplCalibration.Click += buttonClearSplCalibration_Click;
+            //
             // waveAudioBackendPanel
-            // 
+            //
             waveAudioBackendPanel.BackColor = Color.FromArgb(45, 50, 60);
-            waveAudioBackendPanel.Location = new Point(12, 310);
+            waveAudioBackendPanel.Location = new Point(12, 335);
             waveAudioBackendPanel.Name = "waveAudioBackendPanel";
             waveAudioBackendPanel.Size = new Size(311, 213);
             waveAudioBackendPanel.TabIndex = 25;
@@ -375,7 +412,7 @@ namespace Resonalyze.Options
             // asioAudioBackendPanel
             // 
             asioAudioBackendPanel.BackColor = Color.FromArgb(45, 50, 60);
-            asioAudioBackendPanel.Location = new Point(12, 310);
+            asioAudioBackendPanel.Location = new Point(12, 335);
             asioAudioBackendPanel.Name = "asioAudioBackendPanel";
             asioAudioBackendPanel.Size = new Size(311, 213);
             asioAudioBackendPanel.TabIndex = 26;
@@ -385,9 +422,12 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(334, 589);
+            ClientSize = new Size(334, 614);
             Controls.Add(asioAudioBackendPanel);
             Controls.Add(waveAudioBackendPanel);
+            Controls.Add(buttonClearSplCalibration);
+            Controls.Add(buttonSplCalibration);
+            Controls.Add(labelSplCalibration);
             Controls.Add(buttonClearCalibration90);
             Controls.Add(buttonCalibration90);
             Controls.Add(labelCalibration90);
@@ -452,6 +492,9 @@ namespace Resonalyze.Options
         private Label labelCalibration90;
         private Button buttonCalibration90;
         private Button buttonClearCalibration90;
+        private Label labelSplCalibration;
+        private Button buttonSplCalibration;
+        private Button buttonClearSplCalibration;
         private WaveAudioBackendPanel waveAudioBackendPanel;
         private AsioAudioBackendPanel asioAudioBackendPanel;
     }

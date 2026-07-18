@@ -423,6 +423,35 @@ public sealed class SpectrumAnalysisTests
             SpectrumAnalysis.ComputeInputMagnitudeSpectrum([1.0], WindowType.Hann, 1));
     }
 
+    [Theory]
+    [InlineData(WindowType.Hann)]
+    [InlineData(WindowType.Rectangular)]
+    public void ComputeAutoPowerSpectrumFrame_MatchesTheTransferFrameTargetPower(WindowType windowType)
+    {
+        // The mic-only RTA path accumulates ComputeAutoPowerSpectrumFrame; it must
+        // produce exactly the target auto-power the dual-channel transfer frame does,
+        // so a reference-free capture reads the same RTA as one with a loopback.
+        const int length = 512;
+        float[] signal = CreateSine(length, bin: 40);
+
+        double[] autoPower = SpectrumAnalysis.ComputeAutoPowerSpectrumFrame(signal, windowType);
+        TransferSpectrumFrame frame =
+            SpectrumAnalysis.ComputeTransferSpectrumFrame(signal, signal, windowType);
+
+        Assert.Equal(frame.TargetPowerSpectrum.Length, autoPower.Length);
+        for (int i = 0; i < autoPower.Length; i++)
+        {
+            Assert.Equal(frame.TargetPowerSpectrum[i], autoPower[i], precision: 9);
+        }
+    }
+
+    [Fact]
+    public void ComputeAutoPowerSpectrumFrame_RejectsEmpty()
+    {
+        Assert.Throws<ArgumentException>(
+            () => SpectrumAnalysis.ComputeAutoPowerSpectrumFrame(Array.Empty<float>()));
+    }
+
     private static float[] CreateImpulse(int length)
     {
         var impulse = new float[length];

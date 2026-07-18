@@ -11,7 +11,7 @@ namespace Resonalyze;
 public sealed class ImpulseResponseFile
 {
     public const string CurrentFormat = "resonalyze-impulse-response";
-    public const int CurrentVersion = 6;
+    public const int CurrentVersion = 7;
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -41,6 +41,12 @@ public sealed class ImpulseResponseFile
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? TransferPeakIndex { get; set; }
+
+    // The SPL calibration in effect when the measurement ran. Its microphone-side
+    // offset, combined with this file's own loopback levels, is what later places
+    // the response on an SPL axis.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SplCalibration? SplCalibration { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public LevelSnapshotFileEntry? MicrophoneLevels { get; set; }
@@ -92,6 +98,16 @@ public sealed class ImpulseResponseFile
         LevelSnapshotFileEntry? loopbackLevels =
             CreateLevelSnapshotFileEntry(levels.Loopback);
 
+        // Stamp the calibration frozen onto this result at run time (not the current
+        // configured one), and only when it belongs to this measurement's own input.
+        // A calibration left over from a different device/rate/bits/channel would
+        // otherwise be trusted on reload (loaded files skip the live match) and show
+        // a confidently wrong dB SPL offset.
+        SplCalibration? splCalibration =
+            measurement.MeasurementSplCalibration is { } anchor && measurement.InputMatches(anchor)
+                ? anchor
+                : null;
+
         return new ImpulseResponseFile
         {
             SavedAtUtc = DateTimeOffset.UtcNow,
@@ -104,6 +120,7 @@ public sealed class ImpulseResponseFile
             SweepDeconvolutionPeakIndex = sweepDeconvolution.PeakIndex,
             AverageRunCount = measurement.AverageRunCount,
             AcceptedAverageRunCount = measurement.AcceptedAverageRunCount,
+            SplCalibration = splCalibration,
             AudioSession = CreateAudioSessionFileEntry(
                 measurement.LastAudioSessionDiagnostics,
                 measurement.SampleRate,
@@ -374,6 +391,7 @@ public sealed class ImpulseResponseFile
         ValidateLevelEntry(LoopbackLevels, nameof(LoopbackLevels));
         ValidatePreview(PreviewFrequencyResponse);
         ValidateAudioSession(AudioSession);
+        SplCalibration?.Validate();
     }
 
     private static (double[] Real, double[]? Imaginary) ConvertSamples(

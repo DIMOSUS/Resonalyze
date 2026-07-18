@@ -78,6 +78,44 @@ namespace Resonalyze
         public int AverageRunCount { get; private set; } = 1;
         public int AcceptedAverageRunCount { get; private set; } = 1;
         public bool ConfirmEachAverageRun { get; private set; }
+        // The SPL calibration CONFIGURED for the next run (follows the settings /
+        // dialog). It is snapshotted into MeasurementSplCalibration when a run
+        // starts, so recalibrating afterwards never rewrites an existing result.
+        public SplCalibration? SplCalibration { get; set; }
+
+        // The SPL calibration that belongs to the CURRENT result: a snapshot taken
+        // when the sweep ran, or the calibration a loaded file carried. This — not
+        // the configured one — is what the plot reads and what a save stamps, so a
+        // later recalibration (or a preamp-gain change followed by one) cannot
+        // retroactively change the meaning of an already-measured impulse response.
+        public SplCalibration? MeasurementSplCalibration { get; set; }
+
+        // The input identity the CURRENT result was produced on: a snapshot of the
+        // input when the sweep ran, or the input a loaded file was measured on. The
+        // SPL anchor is validated against this, not the app's current configuration,
+        // so re-saving a loaded file cannot drop an anchor that was valid for it.
+        public MeasurementInputIdentity? MeasurementInput { get; set; }
+
+        /// <summary>
+        /// Whether <paramref name="calibration"/> was captured on the same digital
+        /// input that produced the current result. Both the live plot and the saved
+        /// file gate on this — the anchor is valid only for its own tract.
+        /// </summary>
+        public bool InputMatches(SplCalibration calibration)
+        {
+            ArgumentNullException.ThrowIfNull(calibration);
+            return MeasurementInput is { } identity && calibration.MatchesInput(identity);
+        }
+
+        private MeasurementInputIdentity CurrentInputIdentity() => new(
+            AudioBackend,
+            SampleRate,
+            Bits,
+            AudioBackend == AudioBackend.Asio ? AsioInputChannelOffset : WaveInputChannelOffset,
+            AudioBackend == AudioBackend.Wave ? InputDeviceNumber : null,
+            WasapiCaptureEndpointId,
+            AsioDriverName);
+
         // Per-run acceptance outcome of the last completed measurement; null until
         // a measurement ran (or when the result was restored from a file).
         internal SweepRunQualityReport? QualityReport { get; private set; }
@@ -136,6 +174,10 @@ namespace Resonalyze
             AsioOutputChannelOffset = audio.AsioOutputChannelOffset;
             sweepDeconvolutionResult = null;
             transferResult = null;
+            // The old result is gone; its calibration and input snapshots go with it.
+            // The next run re-snapshots the configured calibration and input.
+            MeasurementSplCalibration = null;
+            MeasurementInput = null;
             TransferCoherence = null;
             MicrophoneRecordedSamples = null;
             LoopbackRecordedSamples = null;
@@ -175,6 +217,11 @@ namespace Resonalyze
                 inProgress = true;
                 sweepDeconvolutionResult = null;
                 transferResult = null;
+                // Freeze the calibration and the input in effect at run start onto this
+                // result, so a later setting change cannot rewrite what it means or
+                // which input it is validated against.
+                MeasurementSplCalibration = SplCalibration;
+                MeasurementInput = CurrentInputIdentity();
                 TransferCoherence = null;
                 MicrophoneRecordedSamples = null;
                 LoopbackRecordedSamples = null;

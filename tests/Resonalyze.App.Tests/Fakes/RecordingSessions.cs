@@ -96,10 +96,12 @@ internal sealed class RecordingStreamingSession : IAudioStreamingSession
     public event Action? CaptureDiscontinuity;
 
     public bool Disposed { get; private set; }
+    public AudioPlaybackSignal? LastPlaybackSignal { get; private set; }
 
     public async Task RunAsync(
         AudioPlaybackSignal loopingSignal, int sequenceLength, CancellationToken cancellationToken)
     {
+        LastPlaybackSignal = loopingSignal;
         _ = CaptureDiscontinuity;
         for (int f = 0; f < framesToRaise; f++)
         {

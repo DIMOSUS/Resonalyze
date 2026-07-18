@@ -36,6 +36,41 @@ internal sealed class MeasurementPlotContext
     public bool HasTransferImpulseResponse =>
         expSweepMeasurement.TransferImpulseResponse is { Length: > 0 };
 
+    /// <summary>
+    /// The offset K that turns the loopback-referenced magnitude (dBr) into dB SPL:
+    /// <c>K = loopbackPeakDbFs + calibrationOffsetDb</c>. Null when SPL cannot be
+    /// shown — no calibration, no captured loopback level, or a calibration that does
+    /// not belong to the input that produced this result.
+    /// </summary>
+    public double? SplOffsetDb
+    {
+        get
+        {
+            // The result's own frozen calibration, not the configured one, so a live
+            // recalibration does not retroactively rescale the measurement on screen.
+            if (expSweepMeasurement.MeasurementSplCalibration is not { } calibration)
+            {
+                return null;
+            }
+
+            InputLevelMeterEntry loopback = expSweepMeasurement.CurrentLevels.Loopback;
+            if (!loopback.Available)
+            {
+                return null;
+            }
+
+            // Validate against the result's own input identity (a live snapshot, or a
+            // loaded file's). A loaded file's anchor matches its own identity, so it is
+            // trusted; a live anchor from a different input is refused.
+            if (!expSweepMeasurement.InputMatches(calibration))
+            {
+                return null;
+            }
+
+            return loopback.PeakDbFs + calibration.OffsetDb;
+        }
+    }
+
     // All analysis (magnitude, phase, group delay, impulse, decays) is derived from the
     // loopback transfer IR, which is now mandatory for every measurement. Callers must gate
     // on HasTransferImpulseResponse; the sweep deconvolution is reserved for harmonics/noise.

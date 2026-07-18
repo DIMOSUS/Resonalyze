@@ -304,6 +304,24 @@ Car / CarMild / XCurve presets cover it), and HP/LP filter types (crossover tool
 
 ## Live Spectrum / coherence
 
+- [ ] **RTA tone level is only accurate with a Flat Top window — periodic pink
+  forces rectangular, so it cannot carry dB SPL there.** RESOLVED for the general
+  case: Flat Top is a selectable Live Spectrum window and reads a tone at its true,
+  FFT-length-independent amplitude. Validated against the SPL calibrator on white
+  noise + Flat Top + smoothing OFF: the RTA read the 94 dB tone at −12.63 dB, the
+  flat-top calibration at −13 dBFS — 0.37 dB agreement, confirming the calibration
+  and the RTA are consistent end-to-end. (Two gotchas seen while validating, both
+  expected: a rectangular window scallops an off-bin tone ~2.4 dB low; and smoothing
+  dilutes a pure-tone spike more at finer resolution — 1024→−14.8, 2048→−19.6,
+  4096→−25.2 dB — so smoothing must be OFF to read a tone level.)
+  Residual: periodic pink pins the window to rectangular (leakage-free and correct
+  for the transfer function), and the RTA shares that windowed FFT, so it cannot use
+  Flat Top in that mode. If Live Spectrum ever gets its own dB SPL scale (as
+  Frequency Response now has) AND periodic-pink tone accuracy is wanted, decouple the
+  RTA window from the transfer: a separate flat-top mic FFT for the input magnitude
+  (computed only when the RTA is shown), leaving the transfer/coherence on
+  rectangular. Real swept measurements are unaffected either way (the deconvolved
+  transfer has no single-tone scalloping).
 - [ ] **EMA coherence has no effective average count** (overlap-correlated
   frames, alpha-dependent memory): expose K_eff ≈ (2−α)/α (reduced for overlap)
   alongside the curve and feed it to the same debias the sweep path uses.

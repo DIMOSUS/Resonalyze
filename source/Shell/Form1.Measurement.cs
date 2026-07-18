@@ -196,6 +196,54 @@ public partial class Form1
         expSweepMeasurement.InProgress &&
         expSweepMeasurement.AverageRunCount > 1;
 
+    // Commit a calibration change (microphone 0°/90° file or the SPL anchor) the
+    // moment it happens: into the settings and to disk (debounced, flushed on
+    // close), onto the live measurement so the next impulse response stamps the SPL
+    // anchor, and onto the plot so a microphone calibration shows at once. None of
+    // it needs an Apply-settings click — a completed calibration is not a tentative
+    // edit, and losing it because Apply was not pressed is the whole bug here.
+    private async void PersistCalibration(MeasurementOptions.CalibrationSelection selection)
+    {
+        measurementSettings.Measurement.MicrophoneCalibration0DegreesPath =
+            selection.MicrophoneCalibration0DegreesPath;
+        measurementSettings.Measurement.MicrophoneCalibration90DegreesPath =
+            selection.MicrophoneCalibration90DegreesPath;
+        measurementSettings.Measurement.SplCalibration = selection.SplCalibration;
+        expSweepMeasurement.SplCalibration = selection.SplCalibration;
+        RefreshCalibrationConsumers();
+        // Persist the calibration itself up front so it survives even if the redraw
+        // below fails; the normalized live options are re-saved afterwards.
+        ScheduleMeasurementSettingsSave();
+
+        IReadOnlyList<AxisViewport> viewports = CaptureAxisViewports();
+        try
+        {
+            // Normalize Live Spectrum for the calibration change in EVERY mode — drop
+            // its stale peak hold, and fall a Silent RTA back to a real excitation once
+            // SPL is gone — not only while it is the visible mode; it rebuilds its own
+            // model only when visible, so any other mode still refreshes below.
+            bool liveSignalChanged = await liveSpectrumController.RefreshCalibrationAsync();
+
+            // If the live signal was normalized (Silent → periodic pink), capture the
+            // options so the change reaches disk: a plain schedule serializes the
+            // un-captured LiveSpectrum settings and would keep the stale Silent.
+            if (liveSignalChanged)
+            {
+                SaveMeasurementSettings();
+            }
+
+            if (CurrentMode != Mode.LiveSpectrum)
+            {
+                await RefreshCurrentModePlotAsync(viewports);
+            }
+        }
+        catch (Exception exception)
+        {
+            // The calibration is already saved and applied; only the redraw failed.
+            ShowMeasurementError("Failed to redraw after a calibration change.", exception);
+        }
+    }
+
     private void buttonRecordOpt_Click(object sender, EventArgs e)
     {
         if (dockedMeasurementSettingsHost.IsOpen)
@@ -208,7 +256,12 @@ public partial class Form1
         dockedHistoryHost.Close();
         dockedMeasurementSettingsHost.Toggle(
             "measurement-settings",
-            () => new MeasurementOptions(),
+            () =>
+            {
+                var options = new MeasurementOptions(audioSessionFactory);
+                options.CalibrationChanged += PersistCalibration;
+                return options;
+            },
             dialog => dialog.Init(expSweepMeasurement, measurementSettings.Measurement),
             async dialog =>
             {

@@ -13,6 +13,17 @@ namespace Resonalyze.Dsp
         Degrees90
     }
 
+    /// <summary>
+    /// The vertical scale of a frequency-response plot: the native
+    /// loopback-referenced dB (the default), or absolute dB SPL derived from the
+    /// microphone SPL calibration.
+    /// </summary>
+    public enum MagnitudeScale
+    {
+        Relative,
+        SoundPressureLevel
+    }
+
     public sealed class FrequencyResponseOptions
     {
         public int Window { get; set; } = 4096;
@@ -31,6 +42,11 @@ namespace Resonalyze.Dsp
                 ? MicrophoneCalibrationMode.Degrees0
                 : MicrophoneCalibrationMode.Off;
         }
+
+        // Whether the magnitude plot reads in native loopback-referenced dB or in
+        // absolute dB SPL. Presentation only: the curves are computed the same way,
+        // then shifted to SPL at draw time when a valid calibration is available.
+        public MagnitudeScale MagnitudeScale { get; set; } = MagnitudeScale.Relative;
 
         // Phase-mode windowing (milliseconds): the Tukey gate is left + plateau + right
         // with the peak at the fade-in/plateau boundary. PhaseDetrendMs is the τ used

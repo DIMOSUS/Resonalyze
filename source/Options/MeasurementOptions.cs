@@ -16,6 +16,16 @@ namespace Resonalyze.Options
     public partial class MeasurementOptions : Form
     {
         private readonly ToolTip deviceToolTip = new();
+        // Raised the moment any calibration (microphone 0°/90° file or the SPL
+        // anchor) is selected, captured, or cleared, so the host can apply and
+        // persist it immediately instead of only when the panel is applied.
+        public event Action<CalibrationSelection>? CalibrationChanged;
+
+        /// <summary>A snapshot of the three calibrations the panel manages.</summary>
+        public sealed record CalibrationSelection(
+            string? MicrophoneCalibration0DegreesPath,
+            string? MicrophoneCalibration90DegreesPath,
+            SplCalibration? SplCalibration);
         private WindowsAudioEndpointService? endpointService;
         private Font? normalStatusFont;
         private Font? warningStatusFont;
@@ -29,6 +39,12 @@ namespace Resonalyze.Options
         private bool initializing;
         private string? microphoneCalibration0DegreesPath;
         private string? microphoneCalibration90DegreesPath;
+        // The SPL calibration anchor and the factory used to capture it. The
+        // factory is only present when the form is created for real use (the
+        // parameterless designer constructor leaves it null, which disables the
+        // Calibrate button).
+        private readonly IAudioSessionFactory? audioSessionFactory;
+        private SplCalibration? splCalibration;
         // Remembers the loopback channel choice while a mono or missing
         // recording device forces the combo to "None", so selecting a stereo
         // device again restores it instead of losing it on the next apply.
@@ -97,6 +113,13 @@ namespace Resonalyze.Options
             WireAudioBackendPanelEvents();
             TryStartEndpointMonitoring();
             Disposed += (_, _) => DisposeEndpointMonitoring();
+        }
+
+        public MeasurementOptions(IAudioSessionFactory audioSessionFactory)
+            : this()
+        {
+            this.audioSessionFactory = audioSessionFactory ??
+                throw new ArgumentNullException(nameof(audioSessionFactory));
         }
 
         private void TryStartEndpointMonitoring()
@@ -274,7 +297,10 @@ namespace Resonalyze.Options
             checkBoxConfirmEachAverageRun.Checked = settings.ConfirmEachAverageRun;
             microphoneCalibration0DegreesPath = settings.MicrophoneCalibration0DegreesPath;
             microphoneCalibration90DegreesPath = settings.MicrophoneCalibration90DegreesPath;
+            splCalibration = settings.SplCalibration;
             UpdateCalibrationButtons();
+            // The button's own refresh happens in the UpdateAudioBackendControls
+            // call at the end of Init, once the device/rate selections are settled.
             RefreshSampleRateOptions(settings.SampleRate);
             initializing = false;
             RefreshAsioDriverInfo(
@@ -292,6 +318,7 @@ namespace Resonalyze.Options
                 NormalizeCalibrationPath(microphoneCalibration0DegreesPath);
             settings.MicrophoneCalibration90DegreesPath =
                 NormalizeCalibrationPath(microphoneCalibration90DegreesPath);
+            settings.SplCalibration = splCalibration;
 
             int sampleRate = GetSelectedSampleRate();
             // Read the bit depth from the control, the single UI source of truth,
@@ -449,6 +476,10 @@ namespace Resonalyze.Options
             preferredWasapiRenderEndpointId = wasapiRenderEndpointId;
             preferredWasapiCaptureEndpointName = settings.WasapiCaptureEndpointName;
             preferredWasapiRenderEndpointName = settings.WasapiRenderEndpointName;
+
+            // Keep the live measurement's anchor in step with the applied settings,
+            // so a freshly captured impulse response stamps the current calibration.
+            expSweepMeasurement.SplCalibration = splCalibration;
         }
 
         private void buttonCalibration0_Click(object? sender, EventArgs e)
@@ -456,6 +487,7 @@ namespace Resonalyze.Options
             microphoneCalibration0DegreesPath =
                 SelectCalibrationFile(microphoneCalibration0DegreesPath);
             UpdateCalibrationButtons();
+            RaiseCalibrationChanged();
         }
 
         private void buttonCalibration90_Click(object? sender, EventArgs e)
@@ -463,18 +495,162 @@ namespace Resonalyze.Options
             microphoneCalibration90DegreesPath =
                 SelectCalibrationFile(microphoneCalibration90DegreesPath);
             UpdateCalibrationButtons();
+            RaiseCalibrationChanged();
         }
 
         private void buttonClearCalibration0_Click(object? sender, EventArgs e)
         {
             microphoneCalibration0DegreesPath = null;
             UpdateCalibrationButtons();
+            RaiseCalibrationChanged();
         }
 
         private void buttonClearCalibration90_Click(object? sender, EventArgs e)
         {
             microphoneCalibration90DegreesPath = null;
             UpdateCalibrationButtons();
+            RaiseCalibrationChanged();
+        }
+
+        private void RaiseCalibrationChanged() =>
+            CalibrationChanged?.Invoke(new CalibrationSelection(
+                NormalizeCalibrationPath(microphoneCalibration0DegreesPath),
+                NormalizeCalibrationPath(microphoneCalibration90DegreesPath),
+                splCalibration));
+
+        private void buttonSplCalibration_Click(object? sender, EventArgs e)
+        {
+            if (audioSessionFactory == null)
+            {
+                return;
+            }
+
+            AudioSessionRequest request;
+            try
+            {
+                request = BuildCalibrationCaptureRequest();
+            }
+            catch (Exception exception)
+            {
+                MessageBox.Show(
+                    this,
+                    exception.Message,
+                    "SPL calibration",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            using var dialog = new SplCalibrationDialog(audioSessionFactory, request, splCalibration);
+            if (dialog.ShowDialog(this) == DialogResult.OK && dialog.Result != null)
+            {
+                splCalibration = dialog.Result;
+                UpdateSplCalibrationButton();
+                // A completed physical calibration is not a tentative edit: persist
+                // it now instead of waiting for an Apply that the user may never
+                // make (the panel only applies on the Apply button, not on close).
+                RaiseCalibrationChanged();
+            }
+        }
+
+        private void buttonClearSplCalibration_Click(object? sender, EventArgs e)
+        {
+            splCalibration = null;
+            UpdateSplCalibrationButton();
+            RaiseCalibrationChanged();
+        }
+
+        // The capture side of the currently selected audio configuration, with no
+        // loopback: the SPL calibration listens to the microphone alone against an
+        // external calibrator. Playback is silent, so the render selection only
+        // needs to be openable.
+        private AudioSessionRequest BuildCalibrationCaptureRequest()
+        {
+            var backend = (AudioBackend)comboBoxAudioBackend.SelectedIndex;
+            PlaybackChannel playbackChannel = comboBoxChannel.SelectedIndex >= 0
+                ? (PlaybackChannel)comboBoxChannel.SelectedIndex
+                : PlaybackChannel.Mono;
+            return AudioSessionRequestBuilder.Build(
+                backend,
+                GetSelectedSampleRate(),
+                (int)numericUpDownBits.Value,
+                playbackChannel,
+                waveInputChannelOffset: GetSelectedWaveInputChannelOffset(),
+                waveLoopbackInputChannelOffset: null,
+                asioInputChannelOffset: GetSelectedAsioInputChannelOffset(),
+                asioLoopbackInputChannelOffset: null,
+                asioOutputChannelOffset: GetSelectedAsioOutputChannelOffset(),
+                outputDeviceNumber: GetSelectedPlaybackDeviceNumber(),
+                inputDeviceNumber: GetSelectedRecordingDeviceNumber(),
+                wasapiCaptureEndpointId:
+                    comboBoxRecordingDevice.SelectedItem is AudioEndpointDescriptor capture
+                        ? capture.Id
+                        : null,
+                wasapiRenderEndpointId:
+                    comboBoxPlaybackDevice.SelectedItem is AudioEndpointDescriptor render
+                        ? render.Id
+                        : null,
+                asioDriverName:
+                    comboBoxAsioDriver.SelectedItem is AsioDeviceInfo asio
+                        ? asio.DriverName
+                        : null,
+                bufferMilliseconds: 100,
+                expectedCaptureSamples: 0);
+        }
+
+        private void UpdateSplCalibrationButton()
+        {
+            buttonSplCalibration.Enabled = audioSessionFactory != null;
+            buttonClearSplCalibration.Enabled = splCalibration != null;
+
+            if (splCalibration == null)
+            {
+                buttonSplCalibration.Text = "Calibrate...";
+                buttonSplCalibration.ForeColor = Color.White;
+                deviceToolTip.SetToolTip(
+                    buttonSplCalibration,
+                    audioSessionFactory != null
+                        ? "Measure the offset from a 1 kHz acoustic calibrator so measurements " +
+                            "can be shown in dB SPL. Uses the currently selected input."
+                        : "SPL calibration is unavailable.");
+                deviceToolTip.SetToolTip(buttonClearSplCalibration, "No SPL calibration.");
+                return;
+            }
+
+            buttonSplCalibration.Text =
+                $"{splCalibration.ReferenceLevelDbSpl:0} dB · {splCalibration.OffsetDb:+0.0;-0.0;0.0} dB";
+            bool stale = !CurrentInputMatches(splCalibration);
+            buttonSplCalibration.ForeColor = stale ? Color.Gold : Color.White;
+            string detail =
+                $"Measured {splCalibration.MeasuredLevelDbFs:0.0} dBFS at " +
+                $"{splCalibration.MeasuredFrequencyHz:0} Hz " +
+                $"({splCalibration.ReferenceLevelDbSpl:0} dB SPL reference).\r\n" +
+                $"Offset {splCalibration.OffsetDb:+0.0;-0.0;0.0} dB · " +
+                $"{splCalibration.CapturedAtUtc.ToLocalTime():g}.";
+            if (stale)
+            {
+                detail += "\r\n⚠ The current input differs from the calibrated one — recalibrate.";
+            }
+            deviceToolTip.SetToolTip(buttonSplCalibration, detail);
+            deviceToolTip.SetToolTip(buttonClearSplCalibration, "Clear the SPL calibration.");
+        }
+
+        private bool CurrentInputMatches(SplCalibration calibration)
+        {
+            var backend = (AudioBackend)comboBoxAudioBackend.SelectedIndex;
+            int microphoneChannelOffset = backend == AudioBackend.Asio
+                ? GetSelectedAsioInputChannelOffset()
+                : GetSelectedWaveInputChannelOffset();
+            return calibration.MatchesInput(
+                backend,
+                GetSelectedSampleRate(),
+                (int)numericUpDownBits.Value,
+                microphoneChannelOffset,
+                backend == AudioBackend.Wave ? GetSelectedRecordingDeviceNumber() : null,
+                comboBoxRecordingDevice.SelectedItem is AudioEndpointDescriptor capture
+                    ? capture.Id
+                    : null,
+                comboBoxAsioDriver.SelectedItem is AsioDeviceInfo asio ? asio.DriverName : null);
         }
 
         private string? SelectCalibrationFile(string? currentPath)
@@ -729,6 +905,9 @@ namespace Resonalyze.Options
             buttonDeviceSettings.Visible = useWasapi;
             buttonDeviceSettings.Enabled = useWasapi;
             labelAsioLoopbackChannel.Enabled = useAsio;
+            // Refresh the stale marker: the calibration is pinned to one input, so
+            // switching backend/device must flag it if it no longer matches.
+            UpdateSplCalibrationButton();
             if (useWasapi)
             {
                 labelPlaybackDevice.Text = "Output endpoint";

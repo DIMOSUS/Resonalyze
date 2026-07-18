@@ -119,6 +119,12 @@ file is provided with every release.
   fixed gate and useful resolution at low frequencies
 - Selectable microphone calibration profiles (**0°** / **90°**) applied per view,
   with lenient parsing of common `.txt` / `.cal` / `.frd` / `.csv` correction files
+- **Absolute dB SPL**: calibrate against an acoustic 1 kHz calibrator (94 / 104 /
+  114 dB) and read the Frequency Response and the Live Spectrum RTA on a true
+  dB SPL axis. The anchor is stored as its ingredients (reference and measured
+  levels, tone frequency, capture identity) and re-validated against each
+  measurement, quietly falling back to relative dB with a note when it does not
+  apply
 - Time Alignment with sub-sample delay estimation from the transfer IR, refined
   by a GCC-PHAT cross-correlation
 - Crossover summation prediction: the true **complex (vector) sum** of two
@@ -185,6 +191,12 @@ Resonalyze is built around a focused engineering workflow:
   that flags exactly which bands are trustworthy. An optional
   confirm-between-runs pause turns the same path into spatial averaging across
   microphone positions.
+- **Absolute, calibrated levels**
+  Calibrate the microphone against an acoustic 1 kHz calibrator and read the
+  Frequency Response and the live RTA in real **dB SPL**, not just relative dB. The
+  anchor is stored as its ingredients and re-validated against every measurement,
+  so a reading is shown as absolute only when it is genuinely backed — otherwise
+  the plot falls back to relative dB and says so.
 - **Crossover summation prediction**
   Measure each driver once, then virtually align, combine, and optimize your
   loudspeaker system before applying a single change to the DSP.
@@ -264,8 +276,8 @@ comparison, and transparent data matter more than a large legacy feature set.
       <h3>Frequency Response</h3>
       <img src="assets/images/fr.jpg" alt="Frequency response plot">
       <p>One-click loudspeaker response measurement with smoothing,
-      calibration, distortion curves, overlays, target comparison, and an
-      optional coherence curve from averaged sweeps.</p>
+      calibration, an optional dB SPL scale, distortion curves, overlays, target
+      comparison, and an optional coherence curve from averaged sweeps.</p>
     </td>
   </tr>
   <tr>
@@ -273,8 +285,8 @@ comparison, and transparent data matter more than a large legacy feature set.
       <h3>Live Spectrum</h3>
       <img src="assets/images/noise.jpg" alt="Live Spectrum plot">
       <p>Real-time loopback transfer-function analyzer with selectable excitation
-      noise, coherence, averaging, overlap, peak hold, and unreliable-band
-      marking.</p>
+      noise, coherence, averaging, overlap, peak hold, unreliable-band marking, and
+      an absolute dB SPL RTA from an acoustic calibrator.</p>
     </td>
     <td width="50%">
       <h3>Impulse Response</h3>
@@ -477,9 +489,11 @@ active record provides one; their preview marks the gate position used for the
 analysis.
 
 Live Spectrum has its own docked settings panel. It lets you choose the
-**Signal Type** (excitation noise), pick a microphone **calibration** profile
-(Off / 0° / 90°), and select a **Sequence Length** from a power-of-two list. The sequence length is the FFT
-block size used by the live analyzer and is preserved between sessions.
+**Signal Type** (excitation noise), a **Scale** (relative dB or dB SPL, when an
+[SPL anchor](#sound-pressure-level-db-spl) applies), a microphone **calibration**
+profile (Off / 0° / 90°), and a **Sequence Length** from a power-of-two list. The
+sequence length is the FFT block size used by the live analyzer and is preserved
+between sessions.
 
 ## Phase and Group Delay
 
@@ -703,6 +717,20 @@ microphone spectrum when the room or measurement chain contains unrelated noise.
 It is not a magic denoiser, but it lets you focus on the driven response rather
 than on whatever the microphone happens to hear.
 
+A **Scale** control switches the plot between relative dB and **dB SPL** (offered
+only while a matching [SPL anchor](#sound-pressure-level-db-spl) applies to the
+live input). In dB SPL the transfer function is hidden — a dimensionless ratio has
+no absolute level under noise excitation — and the whole plot becomes the
+microphone **RTA** on a true dB SPL axis. That RTA level is integrated as power
+per fractional-octave band, so the absolute reading is independent of the FFT size
+*above* the analysis resolution limit; the low-frequency region where a single FFT
+cannot resolve that band is shaded to flag that its level there is
+resolution-limited (a longer FFT resolves lower). Because dB SPL needs no
+excitation, it also unlocks a **Silent** signal type — an ambient RTA that plays
+nothing and simply measures what the microphone hears — while the periodic pink
+noise, which exists only to converge the transfer function, is dropped from the
+list.
+
 **Signal Type** selects the excitation noise, ordered by usefulness:
 
 - **Pink noise (periodic)** — the default. One FFT-length period of exactly pink
@@ -750,11 +778,12 @@ off leaves only the optional RTA, peak-hold, and coherence curves.
 curve: the plain magnitude spectrum of the microphone input **alone**, with no
 division by the loopback reference. It is what a classic RTA shows — the actual
 spectral content the microphone hears — and is drawn on the same dB axis as the
-transfer function. Because it is a single-channel level rather than a ratio, its
-vertical position is uncalibrated (it floats with input gain), and coherence does
-not apply to it, so it is never dimmed by the **Coherence Limit**. Its level is
-normalized by the analysis window's coherent gain, so switching windows does not
-shift it.
+transfer function. Coherence does not apply to it, so it is never dimmed by the
+**Coherence Limit**, and its level is normalized by the analysis window's coherent
+gain, so switching windows does not shift it. In relative dB it is a single-channel
+level whose vertical position floats with input gain; with the **Scale** set to
+**dB SPL** it becomes calibrated absolute sound pressure (and the only curve —
+see [Sound Pressure Level](#sound-pressure-level-db-spl)).
 
 **Peak Hold** overlays a second curve that retains the maximum level seen on the
 trace until it is reset. **Coherence** (on by default) toggles the γ² curve
@@ -1063,6 +1092,8 @@ Files are saved as indented, human-readable JSON. Each file contains:
 - optional transfer-function coherence (γ²) data when two or more sweeps were
   averaged, plus the requested and accepted run counts
 - stored microphone and loopback Peak/RMS meter values from the measurement
+- an optional [SPL calibration anchor](#sound-pressure-level-db-spl) when one was
+  configured, so the measurement can be placed on a dB SPL axis after reloading
 - embedded preview frequency-response data for the Measurement History panel
 
 Click **Load** to open a previously saved response. Resonalyze validates the
@@ -1075,7 +1106,7 @@ Decay, autocorrelation, and loopback-based Time Alignment — can then be genera
 without repeating the measurement.
 
 Saving and loading are disabled while a measurement is running. The current file
-format identifier is `resonalyze-impulse-response`, version `4`. Files are meant
+format identifier is `resonalyze-impulse-response`, version `7`. Files are meant
 to stay human-readable, but editing the sample arrays by hand may make a file
 invalid or produce misleading analysis results. Files that do not yet contain
 the embedded preview-frequency-response section can still be loaded; Resonalyze
@@ -1628,6 +1659,43 @@ is still honored as the 0° profile when no 0° file is configured; the project
 copies it to the build and publish output automatically. Replace its example
 data with the correction curve for your microphone, or point the 0° / 90°
 profiles at your own files.
+
+## Sound Pressure Level (dB SPL)
+
+The microphone calibration above corrects the response *shape*; an **SPL
+calibration** anchors its absolute *level*, so the Frequency Response and the Live
+Spectrum RTA can be read directly in dB SPL instead of relative dB.
+
+In **Record Settings**, next to the microphone-calibration files, a **Calibrate**
+button listens to an external acoustic calibrator (a 94 / 104 / 114 dB tone at
+1 kHz) and records the microphone's digital level at that known pressure. The
+listen is capture-only — it plays nothing — and the tone level is read from a
+flat-top power spectrum, whose peak bin holds the true amplitude within
+hundredths of a dB wherever the tone lands between bins (a Hann or rectangular
+window would read a few dB low). The capture rejects anything that is not a clean,
+dominant, on-frequency tone, and fails on clipping or an unsteady level rather
+than storing a wrong number.
+
+What is stored is the anchor's *ingredients* — the reference and measured levels,
+the tone frequency, and the digital capture identity — not a baked "shift by N dB"
+value. The Frequency Response is a loopback-referenced transfer function, so
+turning the anchor into an SPL shift also uses each measurement's own loopback
+level; the Live Spectrum RTA is the plain microphone spectrum, so it needs only
+`SPL = mic level + anchor offset`, with no loopback term.
+
+The anchor is valid only at the gain it was captured at. Resonalyze records the
+digital input identity so a changed input is flagged — the **Calibrate** button
+turns gold — and the dialog warns that the analog preamp gain, which software
+cannot see, must not move after calibrating. Where an SPL reading cannot be
+honored (no anchor, or one captured on a different input), the plot silently
+falls back to relative dB and says so, instead of showing an unbacked absolute
+scale.
+
+In the **Frequency Response** and **Live Spectrum** settings a **Scale** control
+then switches between relative dB and **dB SPL**; the dB SPL option is offered
+only while a matching anchor applies to the current measurement or live input. The
+anchor is saved with the measurement settings and stamped onto every captured
+impulse response, so a saved measurement keeps its absolute reference.
 
 ## Architecture
 

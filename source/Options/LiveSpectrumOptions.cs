@@ -20,7 +20,8 @@ namespace Resonalyze.Options
         PinkPeriodic,
         Pink,
         Brown,
-        White
+        White,
+        Silent
     }
 
     /// <summary>
@@ -98,5 +99,13 @@ namespace Resonalyze.Options
         /// Zero disables smoothing.
         /// </summary>
         public int SmoothingInverseOctaves { get; set; } = 6;
+
+        /// <summary>
+        /// Vertical scale of the live plot. In <see cref="MagnitudeScale.SoundPressureLevel"/>
+        /// the reference-free RTA (microphone) spectrum is shown in absolute dB SPL
+        /// (mic + calibration offset). The transfer function is a dimensionless ratio
+        /// with no scalar SPL under noise excitation, so it is not shown on the SPL axis.
+        /// </summary>
+        public MagnitudeScale MagnitudeScale { get; set; } = MagnitudeScale.Relative;
     }
 }

@@ -712,6 +712,25 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         LayoutEditor();
     }
 
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        // DeviceDpi is only final once the handle exists in its monitor's context.
+        // A control created at runtime (e.g. an added Virtual DSP channel) lays its
+        // editor out at the default 96 DPI in the constructor, so without this the
+        // text stays offset inside a higher-DPI field. Designer-placed instances are
+        // masked by the form's startup scale pass; runtime-added ones are not.
+        LayoutEditor();
+    }
+
+    protected override void OnDpiChangedAfterParent(EventArgs e)
+    {
+        base.OnDpiChangedAfterParent(e);
+        // Moving the window to a monitor at another scale re-fires this; the inner
+        // editor must be re-laid-out for the new DeviceDpi.
+        LayoutEditor();
+    }
+
     private void EditorKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.KeyCode == Keys.Enter)

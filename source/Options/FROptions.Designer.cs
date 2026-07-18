@@ -38,6 +38,9 @@ namespace Resonalyze.Options
             comboSmoothingInverseOctaves = new DarkComboBox();
             comboCalibration = new DarkComboBox();
             label2 = new Label();
+            labelScale = new Label();
+            radioMagnitudeRelative = new RadioButton();
+            radioMagnitudeSpl = new RadioButton();
             labelCurves = new Label();
             checkBoxShowPrimary = new CheckBox();
             checkBoxShowCoherence = new CheckBox();
@@ -176,11 +179,45 @@ namespace Resonalyze.Options
             label2.TabIndex = 46;
             label2.Text = "Calibration";
             //
+            // labelScale
+            //
+            labelScale.AutoSize = true;
+            labelScale.ForeColor = SystemColors.ControlLight;
+            labelScale.Location = new Point(12, 137);
+            labelScale.Name = "labelScale";
+            labelScale.Size = new Size(35, 15);
+            labelScale.TabIndex = 55;
+            labelScale.Text = "Scale";
+            //
+            // radioMagnitudeRelative
+            //
+            radioMagnitudeRelative.AutoSize = true;
+            radioMagnitudeRelative.Checked = true;
+            radioMagnitudeRelative.ForeColor = SystemColors.ControlLight;
+            radioMagnitudeRelative.Location = new Point(72, 135);
+            radioMagnitudeRelative.Name = "radioMagnitudeRelative";
+            radioMagnitudeRelative.Size = new Size(72, 19);
+            radioMagnitudeRelative.TabIndex = 56;
+            radioMagnitudeRelative.TabStop = true;
+            radioMagnitudeRelative.Text = "dBr/dBc";
+            radioMagnitudeRelative.UseVisualStyleBackColor = true;
+            //
+            // radioMagnitudeSpl
+            //
+            radioMagnitudeSpl.AutoSize = true;
+            radioMagnitudeSpl.ForeColor = SystemColors.ControlLight;
+            radioMagnitudeSpl.Location = new Point(153, 135);
+            radioMagnitudeSpl.Name = "radioMagnitudeSpl";
+            radioMagnitudeSpl.Size = new Size(66, 19);
+            radioMagnitudeSpl.TabIndex = 57;
+            radioMagnitudeSpl.Text = "dB SPL";
+            radioMagnitudeSpl.UseVisualStyleBackColor = true;
+            //
             // labelCurves
             //
             labelCurves.AutoSize = true;
             labelCurves.ForeColor = Color.FromArgb(150, 170, 205);
-            labelCurves.Location = new Point(12, 136);
+            labelCurves.Location = new Point(12, 165);
             labelCurves.Name = "labelCurves";
             labelCurves.Size = new Size(46, 15);
             labelCurves.TabIndex = 53;
@@ -190,7 +227,7 @@ namespace Resonalyze.Options
             //
             checkBoxShowPrimary.AutoSize = true;
             checkBoxShowPrimary.ForeColor = SystemColors.ControlLight;
-            checkBoxShowPrimary.Location = new Point(12, 158);
+            checkBoxShowPrimary.Location = new Point(12, 187);
             checkBoxShowPrimary.Name = "checkBoxShowPrimary";
             checkBoxShowPrimary.Size = new Size(161, 19);
             checkBoxShowPrimary.TabIndex = 48;
@@ -201,7 +238,7 @@ namespace Resonalyze.Options
             //
             checkBoxShowCoherence.AutoSize = true;
             checkBoxShowCoherence.ForeColor = SystemColors.ControlLight;
-            checkBoxShowCoherence.Location = new Point(12, 290);
+            checkBoxShowCoherence.Location = new Point(12, 319);
             checkBoxShowCoherence.Name = "checkBoxShowCoherence";
             checkBoxShowCoherence.Size = new Size(134, 19);
             checkBoxShowCoherence.TabIndex = 54;
@@ -212,7 +249,7 @@ namespace Resonalyze.Options
             //
             checkBoxShowHd2.AutoSize = true;
             checkBoxShowHd2.ForeColor = SystemColors.ControlLight;
-            checkBoxShowHd2.Location = new Point(12, 180);
+            checkBoxShowHd2.Location = new Point(12, 209);
             checkBoxShowHd2.Name = "checkBoxShowHd2";
             checkBoxShowHd2.Size = new Size(81, 19);
             checkBoxShowHd2.TabIndex = 49;
@@ -223,7 +260,7 @@ namespace Resonalyze.Options
             //
             checkBoxShowHd3.AutoSize = true;
             checkBoxShowHd3.ForeColor = SystemColors.ControlLight;
-            checkBoxShowHd3.Location = new Point(12, 202);
+            checkBoxShowHd3.Location = new Point(12, 231);
             checkBoxShowHd3.Name = "checkBoxShowHd3";
             checkBoxShowHd3.Size = new Size(81, 19);
             checkBoxShowHd3.TabIndex = 50;
@@ -234,7 +271,7 @@ namespace Resonalyze.Options
             //
             checkBoxShowHd4.AutoSize = true;
             checkBoxShowHd4.ForeColor = SystemColors.ControlLight;
-            checkBoxShowHd4.Location = new Point(12, 224);
+            checkBoxShowHd4.Location = new Point(12, 253);
             checkBoxShowHd4.Name = "checkBoxShowHd4";
             checkBoxShowHd4.Size = new Size(81, 19);
             checkBoxShowHd4.TabIndex = 51;
@@ -245,7 +282,7 @@ namespace Resonalyze.Options
             //
             checkBoxShowThdPlusNoise.AutoSize = true;
             checkBoxShowThdPlusNoise.ForeColor = SystemColors.ControlLight;
-            checkBoxShowThdPlusNoise.Location = new Point(12, 246);
+            checkBoxShowThdPlusNoise.Location = new Point(12, 275);
             checkBoxShowThdPlusNoise.Name = "checkBoxShowThdPlusNoise";
             checkBoxShowThdPlusNoise.Size = new Size(82, 19);
             checkBoxShowThdPlusNoise.TabIndex = 52;
@@ -256,7 +293,7 @@ namespace Resonalyze.Options
             //
             checkBoxShowNoiseFloor.AutoSize = true;
             checkBoxShowNoiseFloor.ForeColor = SystemColors.ControlLight;
-            checkBoxShowNoiseFloor.Location = new Point(12, 268);
+            checkBoxShowNoiseFloor.Location = new Point(12, 297);
             checkBoxShowNoiseFloor.Name = "checkBoxShowNoiseFloor";
             checkBoxShowNoiseFloor.Size = new Size(114, 19);
             checkBoxShowNoiseFloor.TabIndex = 53;
@@ -266,7 +303,7 @@ namespace Resonalyze.Options
             // irPlotView
             //
             irPlotView.BackColor = Color.FromArgb(32, 36, 46);
-            irPlotView.Location = new Point(12, 316);
+            irPlotView.Location = new Point(12, 345);
             irPlotView.Name = "irPlotView";
             irPlotView.PanCursor = Cursors.Hand;
             irPlotView.Size = new Size(241, 300);
@@ -281,8 +318,11 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 623);
+            ClientSize = new Size(265, 652);
             Controls.Add(irPlotView);
+            Controls.Add(labelScale);
+            Controls.Add(radioMagnitudeRelative);
+            Controls.Add(radioMagnitudeSpl);
             Controls.Add(checkBoxShowNoiseFloor);
             Controls.Add(checkBoxShowThdPlusNoise);
             Controls.Add(checkBoxShowHd4);
@@ -326,6 +366,9 @@ namespace Resonalyze.Options
         private DarkComboBox comboSmoothingInverseOctaves;
         private DarkComboBox comboCalibration;
         private Label label2;
+        private Label labelScale;
+        private RadioButton radioMagnitudeRelative;
+        private RadioButton radioMagnitudeSpl;
         private Label labelCurves;
         private CheckBox checkBoxShowPrimary;
         private CheckBox checkBoxShowCoherence;

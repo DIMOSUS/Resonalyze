@@ -70,6 +70,54 @@ namespace Resonalyze.Dsp
             return copy;
         }
 
+        /// <summary>
+        /// The window's equivalent noise bandwidth, in FFT bins:
+        /// <c>ENBW = N·Σw² / (Σw)²</c>. It is the factor by which a windowed
+        /// periodogram over-states broadband noise power relative to the coherent
+        /// (tone) calibration, so dividing a band's summed bin power by it recovers
+        /// the true noise power. Rectangular is 1.0 (Hann ≈ 1.5, Blackman-Harris
+        /// ≈ 2.0, flat-top ≈ 3.77). Always ≥ 1.
+        /// </summary>
+        public static double EquivalentNoiseBandwidthBins(WindowType windowType, int length)
+        {
+            if (length <= 1)
+            {
+                return 1.0;
+            }
+
+            double[] window = SharedAnalysisWindow(windowType, length);
+            double sum = 0.0;
+            double sumOfSquares = 0.0;
+            for (int i = 0; i < window.Length; i++)
+            {
+                sum += window[i];
+                sumOfSquares += window[i] * window[i];
+            }
+
+            if (sum <= 0.0)
+            {
+                return 1.0;
+            }
+
+            return length * sumOfSquares / (sum * sum);
+        }
+
+        /// <summary>
+        /// The full width of the window's spectral main lobe, in FFT bins (twice the
+        /// first-null distance). Unlike the equivalent NOISE bandwidth, this bounds a
+        /// coherent tone's energy: a band at least this wide captures essentially the
+        /// whole main lobe, so summing its bin power and dividing by ENBW recovers the
+        /// tone's amplitude. Rectangular 2, Hann 4, Blackman-Harris 8, flat-top 10.
+        /// </summary>
+        public static int MainLobeWidthBins(WindowType windowType) => windowType switch
+        {
+            WindowType.Rectangular => 2,
+            WindowType.Hann => 4,
+            WindowType.BlackmanHarris => 8,
+            WindowType.FlatTop => 10,
+            _ => 4
+        };
+
         private static double AnalysisWindowValue(WindowType windowType, int index, int length)
         {
             if (length <= 1)

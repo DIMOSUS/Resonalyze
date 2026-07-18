@@ -177,6 +177,42 @@ public static class SpectrumAnalysis
     }
 
     /// <summary>
+    /// The single-channel auto-power spectrum <c>|FFT(x·w)|²</c> of one captured
+    /// channel, one value per bin (0..N/2). This is exactly the target auto-power
+    /// <see cref="ComputeTransferSpectrumFrame"/> produces, but with a single FFT: a
+    /// reference-free RTA needs no cross-spectrum, reference power or coherence, so a
+    /// mic-only capture accumulates just this.
+    /// </summary>
+    public static double[] ComputeAutoPowerSpectrumFrame(
+        IReadOnlyList<float> samples,
+        WindowType windowType = WindowType.Hann)
+    {
+        ArgumentNullException.ThrowIfNull(samples);
+        if (samples.Count == 0)
+        {
+            throw new ArgumentException("Samples must not be empty.", nameof(samples));
+        }
+
+        double[] window = Windowing.SharedAnalysisWindow(windowType, samples.Count);
+        var spectrum = new Complex[samples.Count];
+        for (int i = 0; i < samples.Count; i++)
+        {
+            spectrum[i] = new Complex(samples[i] * window[i], 0.0);
+        }
+
+        Fourier.Forward(spectrum, FourierOptions.Matlab);
+
+        int binCount = samples.Count / 2;
+        var power = new double[binCount];
+        for (int i = 0; i < binCount; i++)
+        {
+            power[i] = spectrum[i].Magnitude * spectrum[i].Magnitude;
+        }
+
+        return power;
+    }
+
+    /// <summary>
     /// Computes the magnitude-squared coherence γ² from averaged cross- and
     /// auto-spectra: |&lt;Sxy&gt;|² / (&lt;Sxx&gt;·&lt;Syy&gt;). The inputs must
     /// be accumulated over several frames; for a single frame coherence is

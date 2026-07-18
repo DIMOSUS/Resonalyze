@@ -1642,9 +1642,13 @@ it defaults to Off because the measurements are loopback-referenced.
   free junction search with the cross-side timing as a gentle prior only. A
   final scene-preserving pass may then shift BOTH sides of a pair by one shared
   delta — which cannot touch the image — to recover junction summation the pin
-  cost. A **Mono** channel (the shared subwoofer) is timed by the left pass
-  alone; its junction against the right side is measured and reported, with a
-  warning when only a manual compromise delay would serve both sides.
+  cost. A **Mono** channel (the shared subwoofer) is walked by the left pass;
+  its junction against the right side is measured and reported. A final mono
+  co-move then gives that right junction its vote: one shared channel's delay
+  and polarity cannot touch the L/R scene, so the pass sweeps both across half
+  a junction period and keeps the best mean of the two handovers — the
+  compromise that previously had to be dialed in by hand when the sides
+  disagreed about the sub.
 - **Capture to overlay** saves the predicted sum as a Captured overlay in
   Frequency Response — compare it against real measurements and target curves,
   or feed it onward to the EQ Wizard.

@@ -191,9 +191,13 @@ public sealed class StereoAlignmentRealDataTests
             rightTwr.SampleRate, BridgeBandLowHz, BridgeBandHighHz);
         Assert.InRange(leftArrival - rightArrival, 0.15, 0.35);
 
-        // The mono sub is timed by the left side alone: its delay relative to
-        // the left woofer must match a left-only engine run bit for bit (both
-        // runs may differ by uniform shifts only).
+        // The mono sub is WALKED by the left side alone (the right descent
+        // reports its junction rather than tuning it), but the final mono
+        // co-move may then move the sub by up to half a junction period to
+        // serve BOTH sides' handovers — so the stereo run's sub-to-woofer
+        // timing may differ from a left-only run by exactly that pass's
+        // reach, never more. (This used to be a bit-for-bit equality; the
+        // co-move is the deliberate design change that retired it.)
         var leftOnly = new Dictionary<IAlignmentChannel, AlignmentOverride>();
         AutoAlignmentEngine.Compute(
             leftSnapshots, leftPairs, Reprocess, leftOnly, new StringBuilder());
@@ -201,9 +205,11 @@ public sealed class StereoAlignmentRealDataTests
             - alignment.GetValueOrDefault(leftWoof).DelayMs;
         double leftOnlyRelative = leftOnly.GetValueOrDefault(sub).DelayMs
             - leftOnly.GetValueOrDefault(leftWoof).DelayMs;
-        Assert.InRange(Math.Abs(stereoRelative - leftOnlyRelative), 0, 0.011);
+        Assert.InRange(Math.Abs(stereoRelative - leftOnlyRelative), 0, 6.25);
 
-        // The pinned right sub junction is reported, not tuned.
+        // The pinned right sub junction is reported, not tuned, during the
+        // walk; the mono co-move afterwards is the one pass allowed to act
+        // on it.
         Assert.Contains("mono, timed by the left side", log.ToString());
 
         // The field regression this cabin exposed: the right woofer used to
@@ -488,8 +494,16 @@ public sealed class StereoAlignmentRealDataTests
             alignment,
             log);
 
-        // The direct contract: the sub's attack stays within a cabin-width of
-        // the left woofer's — the competing lobe families sit 3.5-5 ms out.
+        // The direct contract: the sub's attack stays within half a junction
+        // period of the left woofer's. It used to be a tighter cabin-width
+        // (±2.5 ms) — the walk alone keeps it there — but the mono co-move
+        // may now trade attack for measured TWO-SIDED junction gain (on this
+        // cabin it buys 1.4 dB of mean dip-penalized loss with a
+        // flip-partner move), which is exactly the compromise the old
+        // "consider a compromise mono delay by hand" warning asked the user
+        // to dial in manually. The half period is the co-move's own search
+        // bound; past it would mean a full-period comb slip, which no
+        // two-junction mean may buy.
         IReadOnlyList<AlignmentSnapshot> settledFinal = Reprocess(alignment);
         double subAttackMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
             settledFinal.First(item => item.Channel == sub).ImpulseResponse,
@@ -497,7 +511,7 @@ public sealed class StereoAlignmentRealDataTests
         double woofAttackMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
             settledFinal.First(item => item.Channel == leftWoof).ImpulseResponse,
             leftWoof.SampleRate, 40, 160);
-        Assert.InRange(subAttackMs - woofAttackMs, -2.5, 2.5);
+        Assert.InRange(subAttackMs - woofAttackMs, -6.25, 6.25);
 
         // The absolute contract regardless of the crossover: automatic delay
         // never inverts one side of a driver pair alone.
@@ -654,13 +668,15 @@ public sealed class StereoAlignmentRealDataTests
         Assert.Contains("wide-seed lobe gate: kept", log.ToString());
 
         // THE regression: the sub's proposed delay stays on the midbass
-        // arrival lobe (the fix lands 0.25 ms apart; the failure sat 4.03 ms
-        // out on the left and 6.31 on the right).
+        // arrival lobe (the walk lands 0.25 ms from the left midbass and the
+        // mono co-move then trades up to a fraction of a period for the mean
+        // of BOTH junctions — 0.95/3.05 on this data; the failure sat 4.03 ms
+        // out on the left and 6.31 on the right, a whole lobe away).
         double subDelay = alignment.GetValueOrDefault(sub).DelayMs;
         Assert.InRange(
-            subDelay - alignment.GetValueOrDefault(leftMidbass).DelayMs, -0.1, 0.75);
+            subDelay - alignment.GetValueOrDefault(leftMidbass).DelayMs, -0.1, 1.4);
         Assert.InRange(
-            subDelay - alignment.GetValueOrDefault(rightMidbass).DelayMs, -0.5, 3.0);
+            subDelay - alignment.GetValueOrDefault(rightMidbass).DelayMs, -0.5, 3.5);
 
         // With the delays applied the bass attack is coherent: the sub's
         // band-limited arrival within a cabin-width of the left midbass's.
@@ -726,6 +742,170 @@ public sealed class StereoAlignmentRealDataTests
         }
 
         return (sampleRate, impulseResponse);
+    }
+
+    [Fact]
+    public void ComputeStereo_RealCabinV3Bw36_MonoComoveServesBothSubJunctions()
+    {
+        // The field failure of 2026-07-18, evening round (same v3 cabin, sub
+        // LP steepened to BW36, per-side mid/twit gains): on the LEFT the
+        // sub/midbass lobes are near-tied, so the walk parks the sub on a
+        // non-inverted lobe whose junction against the RIGHT midbass — which
+        // never votes, the sub being timed by the left pass — suffers a broad
+        // 80-110 Hz suck-out. The user found by hand that pulling the sub
+        // ~3.8 ms earlier AND inverting it stitches better with BOTH sides.
+        // The mono co-move automates exactly that compromise: a mono
+        // channel's delay/polarity cannot touch the L-R scene, so the final
+        // pass sweeps both across half a junction period and keeps the best
+        // MEAN of the two sub junctions (it lands 0.2 ms from the user's
+        // hand-tuned point on this data).
+        Channel Load(string file, string name, DspChannelChain chain)
+        {
+            (int rate, Complex[] ir) = LoadTransferIr(Path.Combine("v3", file));
+            return new Channel(name, rate, ir, chain);
+        }
+
+        Channel sub = Load("subwoofer.json", "sub", new DspChannelChain(
+            Crossover: new CrossoverSpec(CrossoverKind.LowPass, Bw(80, 36))));
+        Channel leftMidbass = Load("l midbass.json", "L midbass", new DspChannelChain(
+            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(220, 36), Bw(80))));
+        Channel leftMid = Load("l mid.json", "L mid", new DspChannelChain(
+            GainDb: -5,
+            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(1_500, 36), Bw(280))));
+        Channel leftTwit = Load("l twit.json", "L twit", new DspChannelChain(
+            GainDb: -8,
+            Crossover: new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: Bw(1_900, 36))));
+        Channel rightMidbass = Load("r midbass.json", "R midbass", new DspChannelChain(
+            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(220, 36), Bw(80))));
+        Channel rightMid = Load("r mid.json", "R mid", new DspChannelChain(
+            Crossover: new CrossoverSpec(CrossoverKind.BandPass, Bw(1_500, 36), Bw(280))));
+        Channel rightTwit = Load("r twit.json", "R twit", new DspChannelChain(
+            GainDb: -4,
+            Crossover: new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: Bw(1_900, 36))));
+
+        Channel[] all =
+            [sub, leftMidbass, leftMid, leftTwit, rightMidbass, rightMid, rightTwit];
+        Channel[] leftByBand = [sub, leftMidbass, leftMid, leftTwit];
+        Channel[] rightByBand = [sub, rightMidbass, rightMid, rightTwit];
+
+        Complex[][] cropped = VirtualCrossoverAnalysis.CropSharedDirectSoundWindow(
+            all.Select(channel => channel.RawIr).ToList(), 65_536, 8_192);
+        Dictionary<Channel, Complex[]> croppedByChannel = all
+            .Select((channel, i) => (channel, ir: cropped[i]))
+            .ToDictionary(item => item.channel, item => item.ir);
+
+        var cache = new Dictionary<(Channel, double, bool), AlignmentSnapshot>();
+        AlignmentSnapshot Snapshot(Channel channel, AlignmentOverride over)
+        {
+            (Channel, double, bool) key = (channel, over.DelayMs, over.InvertPolarity);
+            if (!cache.TryGetValue(key, out AlignmentSnapshot? hit))
+            {
+                Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+                    croppedByChannel[channel],
+                    channel.BaseChain with
+                    {
+                        DelayMs = over.DelayMs,
+                        InvertPolarity = over.InvertPolarity
+                    },
+                    channel.SampleRate,
+                    out ValidSampleRange validRange);
+                hit = new AlignmentSnapshot(
+                    channel, processed,
+                    VirtualCrossoverAnalysis.FindPeakIndex(processed),
+                    validRange);
+                cache[key] = hit;
+            }
+
+            return hit;
+        }
+
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            all.Select(channel =>
+                Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+
+        List<AlignmentSnapshot> leftSnapshots = leftByBand
+            .Select(channel => Snapshot(channel, default))
+            .ToList();
+        List<AlignmentSnapshot> rightSnapshots = rightByBand
+            .Select(channel => Snapshot(channel, default))
+            .ToList();
+        AlignmentJunction Junction(
+            AlignmentSnapshot lower, AlignmentSnapshot upper, double fc) =>
+            new(lower, upper, fc, Math.Max(20, fc / 2), Math.Min(20_000, fc * 2));
+        double[] crossovers = [80, 220, 1_500];
+        List<AlignmentJunction> leftPairs = crossovers
+            .Select((fc, i) => Junction(leftSnapshots[i], leftSnapshots[i + 1], fc))
+            .ToList();
+        List<AlignmentJunction> rightPairs = crossovers
+            .Select((fc, i) => Junction(rightSnapshots[i], rightSnapshots[i + 1], fc))
+            .ToList();
+
+        List<StereoPairLink> pairLinks =
+        [
+            new(leftMidbass, rightMidbass, 80, 220),
+            new(leftMid, rightMid, 280, 1_500),
+            new(leftTwit, rightTwit, 1_900, 20_000)
+        ];
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+        var log = new StringBuilder();
+        AutoAlignmentEngine.ComputeStereo(
+            new StereoAlignmentPlan(
+                leftSnapshots,
+                leftPairs,
+                rightSnapshots,
+                rightPairs,
+                new HashSet<IAlignmentChannel> { sub },
+                leftTwit,
+                rightTwit,
+                1_900,
+                20_000,
+                0.27,
+                pairLinks),
+            Reprocess,
+            alignment,
+            log);
+
+        // The mechanism: the mono co-move fired, and with a polarity flip —
+        // the walk's non-inverted left-lobe pick could not serve the right.
+        Assert.Contains("Co-move sub:", log.ToString());
+        Assert.Contains("polarity flipped", log.ToString());
+
+        // The compromise the user dialed by hand: the sub RELATIVELY inverted
+        // against the (symmetric) midbass pair, sitting between the two
+        // sides' timings — about level with the right midbass, ahead of the
+        // left one — instead of 4.4 ms behind both.
+        Assert.True(
+            alignment.GetValueOrDefault(sub).InvertPolarity !=
+            alignment.GetValueOrDefault(leftMidbass).InvertPolarity,
+            "The sub junction lost its relative inversion.");
+        Assert.Equal(
+            alignment.GetValueOrDefault(leftMidbass).InvertPolarity,
+            alignment.GetValueOrDefault(rightMidbass).InvertPolarity);
+        double subDelay = alignment.GetValueOrDefault(sub).DelayMs;
+        Assert.InRange(
+            subDelay - alignment.GetValueOrDefault(rightMidbass).DelayMs, -1.5, 1.5);
+        Assert.InRange(
+            subDelay - alignment.GetValueOrDefault(leftMidbass).DelayMs, -2.6, 0.5);
+
+        // Both handovers healthy — the whole point of the compromise.
+        IReadOnlyList<AlignmentSnapshot> final = Reprocess(alignment);
+        foreach (Channel midbass in new[] { leftMidbass, rightMidbass })
+        {
+            (double LossDb, double DipDb)? junction =
+                VirtualCrossoverAnalysis.MeasureSumLoss(
+                    final.First(item => item.Channel == midbass).ImpulseResponse,
+                    new List<Complex[]>
+                    {
+                        final.First(item => item.Channel == sub).ImpulseResponse
+                    },
+                    midbass.SampleRate, 40, 160);
+            Assert.NotNull(junction);
+            Assert.InRange(junction.Value.LossDb, -1.0, 0);
+        }
+
+        Assert.All(all, channel =>
+            Assert.True(alignment.GetValueOrDefault(channel).DelayMs >= 0));
     }
 
     private static string FindTestDataDirectory()

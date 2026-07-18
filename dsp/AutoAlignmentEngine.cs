@@ -1525,6 +1525,14 @@ public static class AutoAlignmentEngine
         // untouched while trading junction loss between the sides.
         RebalancePairsKeepingScene(plan, reprocess, alignment, log, onsetLocks);
 
+        // A mono channel's own final polish: its delay (and polarity) is
+        // scene-invariant by construction — one shared channel moves both
+        // sides' handovers identically — so with everything else settled, the
+        // best compromise across its left AND right junctions is searched
+        // directly. This is the only pass where the right junction gets a
+        // vote on the mono channel at all.
+        ComoveMonoChannels(plan, reprocess, alignment, log);
+
         // Final normalization: the smallest total latency that preserves every
         // relation — the minimum proposed delay lands exactly at zero.
         // (Channels without an entry sit at zero, so this only acts when a
@@ -1611,6 +1619,18 @@ public static class AutoAlignmentEngine
     // comb lobe off its mid at a high junction.
     private const double PairComoveSearchRangeMs = 1.2;
     private const double PairComoveMinimumGainDb = 0.05;
+
+    // The mono-channel co-move (see ComoveMonoChannels): the search spans a
+    // full half period of the mono channel's tightest junction to each side,
+    // in BOTH polarities. Unlike the pair co-move this deliberately reaches
+    // other comb lobes: a mono channel is timed by the left pass alone, so
+    // the walk's lobe choice never heard the right junction's vote — the
+    // field failure that pinned this had the sub/midbass junctions near-tied
+    // on the left while the right junction clearly preferred the flip partner
+    // a third of a period away, and only a hand-tuned compromise served both
+    // sides. With the polarity dimension the half-period window covers every
+    // lobe family exactly once, judged by the mean of the two junctions.
+    private const double MonoComoveSearchHalfPeriods = 1.0;
 
     // The right bridge top inherits the left top's sign (set before the right walk,
     // so the right lowers align against a correctly-signed top). Automatic delay
@@ -1922,6 +1942,157 @@ public static class AutoAlignmentEngine
                 log.AppendLine(
                     $"Co-move {link.Left.Name}+{link.Right.Name}: kept " +
                     $"(best gain {bestScore - baseline:0.00} dB below the " +
+                    $"{PairComoveMinimumGainDb:0.00} dB threshold)");
+            }
+        }
+    }
+
+    // The mono-channel co-move: a mono channel (the shared subwoofer) is timed
+    // by the LEFT pass and the right descent treats it as fixed, so the lobe
+    // the walk chose only ever heard the left junction's vote. Moving or
+    // flipping ONE mono channel cannot touch any pair's L-R timing — the
+    // scene is invariant by construction — so the final polish sweeps its
+    // delay across ± MonoComoveSearchHalfPeriods of its tightest junction
+    // period, in both polarities, and keeps the best MEAN dip-penalized loss
+    // over its junctions on the two sides: the compromise a user would
+    // otherwise dial in by hand. Every probe is an HONEST reprocess of the
+    // mono channel (chain re-applied at the probed delay/polarity, gates
+    // re-anchored), not a spectrum rotation: at multi-millisecond deltas the
+    // rotation probe's fixed gate anchoring misgrades candidates by whole dB,
+    // and a lobe decision must not ride on that error.
+    private static void ComoveMonoChannels(
+        StereoAlignmentPlan plan,
+        AlignmentReprocessor reprocess,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        StringBuilder log)
+    {
+        foreach (IAlignmentChannel mono in plan.MonoChannels)
+        {
+            // The mono channel's junctions, one per side. A junction of the
+            // left walk and its same-fc twin from the right list differ in the
+            // NEIGHBOR channel, which is what matters here.
+            List<AlignmentJunction> junctions = plan.LeftPairs
+                .Concat(plan.RightPairs)
+                .Where(pair => pair.Lower.Channel == mono ||
+                    pair.Upper.Channel == mono)
+                .Distinct()
+                .ToList();
+            if (junctions.Count < 2)
+            {
+                // A single junction had its full say during the walk; there is
+                // no second side to compromise with.
+                continue;
+            }
+
+            AlignmentOverride over = alignment.GetValueOrDefault(mono);
+            double halfPeriodMs = junctions.Min(pair => 500.0 / pair.CrossoverHz);
+            double reachMs = MonoComoveSearchHalfPeriods * halfPeriodMs;
+            double minDelta = Math.Max(-reachMs, -over.DelayMs);
+            double maxDelta = Math.Min(reachMs, MaxDelayMs - over.DelayMs);
+
+            double Score(double deltaMs, bool flip)
+            {
+                var trial =
+                    new Dictionary<IAlignmentChannel, AlignmentOverride>(alignment)
+                    {
+                        [mono] = new AlignmentOverride(
+                            Math.Round(over.DelayMs + deltaMs, 2),
+                            over.InvertPolarity ^ flip)
+                    };
+                IReadOnlyList<AlignmentSnapshot> current = reprocess(trial);
+                Complex[] IrOf(IAlignmentChannel channel) =>
+                    current.First(item => item.Channel == channel).ImpulseResponse;
+                double total = 0;
+                int measured = 0;
+                foreach (AlignmentJunction junction in junctions)
+                {
+                    IAlignmentChannel neighbor = junction.Lower.Channel == mono
+                        ? junction.Upper.Channel
+                        : junction.Lower.Channel;
+                    (double LossDb, double DipDb)? loss =
+                        VirtualCrossoverAnalysis.MeasureSumLoss(
+                            IrOf(mono),
+                            new List<Complex[]> { IrOf(neighbor) },
+                            mono.SampleRate,
+                            junction.BandLowHz,
+                            junction.BandHighHz);
+                    if (loss is { } value)
+                    {
+                        total += value.LossDb +
+                            VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
+                            (value.DipDb - value.LossDb);
+                        measured++;
+                    }
+                }
+
+                return measured > 0 ? total / measured : double.NegativeInfinity;
+            }
+
+            double baseline = Score(0, flip: false);
+            if (double.IsNegativeInfinity(baseline))
+            {
+                continue;
+            }
+
+            // Every probe re-renders the mono channel, so the grid is kept
+            // lean: a half-millisecond coarse pass over both polarities, then
+            // two shrinking refinements around the winner — ~40 reprocesses
+            // for the widest (80 Hz) junction window, each costing one
+            // channel's chain (the others are cache hits).
+            double bestDelta = 0;
+            bool bestFlip = false;
+            double bestScore = baseline;
+            const double CoarseStepMs = 0.5;
+            foreach (bool flip in new[] { false, true })
+            {
+                for (double delta = minDelta;
+                    delta <= maxDelta + 1e-9;
+                    delta += CoarseStepMs)
+                {
+                    double score = Score(delta, flip);
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        bestDelta = delta;
+                        bestFlip = flip;
+                    }
+                }
+            }
+            foreach (double step in new[] { 0.1, 0.02 })
+            {
+                double center = bestDelta;
+                double reach = step * 5;
+                for (double delta = Math.Max(minDelta, center - reach);
+                    delta <= Math.Min(maxDelta, center + reach) + 1e-9;
+                    delta += step)
+                {
+                    double score = Score(delta, bestFlip);
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        bestDelta = delta;
+                    }
+                }
+            }
+
+            if ((bestDelta != 0 || bestFlip) &&
+                bestScore > baseline + PairComoveMinimumGainDb)
+            {
+                alignment[mono] = new AlignmentOverride(
+                    Math.Round(over.DelayMs + bestDelta, 2),
+                    over.InvertPolarity ^ bestFlip);
+                log.AppendLine(
+                    $"Co-move {mono.Name}: {bestDelta:+0.00;-0.00} ms" +
+                    (bestFlip ? ", polarity flipped" : "") +
+                    $" (mean dip-penalized junction loss over both sides " +
+                    $"{baseline:0.00} -> {bestScore:0.00} dB; a mono move " +
+                    "cannot touch the scene)");
+            }
+            else
+            {
+                log.AppendLine(
+                    $"Co-move {mono.Name}: kept (best gain " +
+                    $"{bestScore - baseline:0.00} dB below the " +
                     $"{PairComoveMinimumGainDb:0.00} dB threshold)");
             }
         }

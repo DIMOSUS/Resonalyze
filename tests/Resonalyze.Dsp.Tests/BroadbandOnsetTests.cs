@@ -179,6 +179,42 @@ public sealed class BroadbandOnsetTests
     }
 
     [Fact]
+    public void EstimateBroadbandOnset_ShortRecordPaddedPastItsMidpointIsStillCaught()
+    {
+        // The review catch on the padding trim's first cut: a SHORT input
+        // through ApplyChain gains the 8192-sample minimum tail and rounds
+        // up, so its content can end well BEFORE the record's midpoint (4096
+        // noise samples become a 16384 record). A midpoint-based padding
+        // signature waves that record through untrimmed. The signature is the
+        // content region's DENSITY instead: measured noise is dense right up
+        // to where the padding begins, however short the record.
+        var random = new Random(20_260_719);
+        Complex[] raw = Silence(4_096);
+        for (int i = 0; i < raw.Length; i++)
+        {
+            raw[i] = new Complex(random.NextDouble() * 2.0 - 1.0, 0.0);
+        }
+        Complex[] padded = Silence(16_384);
+        Array.Copy(raw, padded, raw.Length);
+
+        BroadbandOnsetEstimate rawEstimate =
+            VirtualCrossoverAnalysis.EstimateBroadbandOnset(raw, Rate);
+        BroadbandOnsetEstimate paddedEstimate =
+            VirtualCrossoverAnalysis.EstimateBroadbandOnset(padded, Rate);
+
+        Assert.True(rawEstimate.IsValid);
+        Assert.True(paddedEstimate.IsValid);
+        Assert.InRange(
+            paddedEstimate.SnrDb,
+            rawEstimate.SnrDb - 1.0,
+            rawEstimate.SnrDb + 1.0);
+        Assert.True(
+            paddedEstimate.SnrDb < AutoAlignmentEngine.OnsetLockMinimumSnrDb,
+            $"Short padded noise graded {paddedEstimate.SnrDb:0.0} dB — above " +
+            $"the {AutoAlignmentEngine.OnsetLockMinimumSnrDb:0} dB lock floor.");
+    }
+
+    [Fact]
     public void EstimateBroadbandOnset_SubCredibleDirectFollowsTheDominantArrival()
     {
         // A direct front below the first-arrival search depth (25 dB under the

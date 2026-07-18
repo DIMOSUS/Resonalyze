@@ -513,18 +513,26 @@ public static class VirtualCrossoverAnalysis
     // manufactured.
     private const double SyntheticTailFloorRatio = 1e-7;
 
+    // The minimum share of above-floor samples inside the content region
+    // (everything up to the last above-floor sample) for the trailing silence
+    // to read as ApplyChain padding. A measured record carries its noise
+    // floor in every sample, so its content region is dense right up to where
+    // the padding begins; a synthetic or anechoic record is mostly digital
+    // silence throughout, and its trailing silence is the honest noise floor
+    // it claims to be, not padding.
+    private const double PaddedContentMinimumDensity = 0.5;
+
     // Where the record's REAL content ends: one past the last sample clearing
     // the synthetic-tail floor. Envelope noise floors are quantile-based, and
-    // a half-record of manufactured silence collapses them — a pure-noise 65k
-    // record zero-padded to 131k grades ~60 dB SNR instead of ~6, waving
-    // noise-only fronts through every SNR gate (the onset lock, the stereo
-    // bridge, the cross-side ladder). The trim is all-or-nothing on the
-    // power-of-two padding signature: NextPowerOfTwo(n) < 2n, so ApplyChain's
-    // measurement content always ends PAST the halfway mark and the padding
-    // is removed in full — while a record whose content ends before the
-    // midpoint is quiet by NATURE (an anechoic or synthetic impulse, mostly
-    // digital silence), not by padding, and is analyzed whole: that silence
-    // is the honest noise floor it claims to be.
+    // a record whose second half is manufactured silence collapses them — a
+    // pure-noise 65k record zero-padded to 131k grades ~60 dB SNR instead of
+    // ~6, waving noise-only fronts through every SNR gate (the onset lock,
+    // the stereo bridge, the cross-side ladder). The trim is all-or-nothing
+    // on the padding signature: a trailing sub-floor run behind a DENSE
+    // content region is ApplyChain's power-of-two padding and is removed in
+    // full — whatever its share of the record, so a short import padded far
+    // past its midpoint is caught too — while a sparse record (a synthetic or
+    // windowed impulse, mostly digital silence by nature) is analyzed whole.
     private static int AnalysisLength(Complex[] impulseResponse)
     {
         double peak = 0;
@@ -544,7 +552,20 @@ public static class VirtualCrossoverAnalysis
             last--;
         }
         int contentLength = last + 1;
-        return contentLength >= impulseResponse.Length / 2
+        if (contentLength == impulseResponse.Length)
+        {
+            return impulseResponse.Length;
+        }
+
+        int aboveFloor = 0;
+        for (int i = 0; i < contentLength; i++)
+        {
+            if (Math.Abs(impulseResponse[i].Real) >= floor)
+            {
+                aboveFloor++;
+            }
+        }
+        return aboveFloor >= contentLength * PaddedContentMinimumDensity
             ? contentLength
             : impulseResponse.Length;
     }

@@ -215,6 +215,116 @@ public sealed class BroadbandOnsetTests
     }
 
     [Fact]
+    public void EstimateBroadbandOnset_PaddingIsCaughtRegardlessOfTheLastSampleValue()
+    {
+        // The review catch on the trim's midpoint-based first cut: whether it
+        // fired hinged on the value of the SINGLE last noise sample (one
+        // quiet sample pushed the detected content end below the midpoint
+        // and the whole padded record came back, ~60 dB again). Zero the
+        // last sample explicitly: the grade must still match the raw
+        // record's.
+        var random = new Random(20_260_720);
+        Complex[] raw = Silence(65_536);
+        for (int i = 0; i < raw.Length; i++)
+        {
+            raw[i] = new Complex(random.NextDouble() * 2.0 - 1.0, 0.0);
+        }
+        raw[^1] = Complex.Zero;
+        Complex[] padded = Silence(131_072);
+        Array.Copy(raw, padded, raw.Length);
+
+        BroadbandOnsetEstimate rawEstimate =
+            VirtualCrossoverAnalysis.EstimateBroadbandOnset(raw, Rate);
+        BroadbandOnsetEstimate paddedEstimate =
+            VirtualCrossoverAnalysis.EstimateBroadbandOnset(padded, Rate);
+
+        Assert.True(rawEstimate.IsValid);
+        Assert.True(paddedEstimate.IsValid);
+        Assert.InRange(
+            paddedEstimate.SnrDb,
+            rawEstimate.SnrDb - 1.0,
+            rawEstimate.SnrDb + 1.0);
+        Assert.True(
+            paddedEstimate.SnrDb < AutoAlignmentEngine.OnsetLockMinimumSnrDb);
+    }
+
+    [Fact]
+    public void EstimateBroadbandOnset_ApplyChainMetadataPinsTheAnalysisRange()
+    {
+        // The engine's own path for a short import: a 4096-sample noise
+        // record through a REAL scale-only ApplyChain grows to 16384 (the
+        // 8192-sample minimum tail plus power-of-two rounding), content
+        // ending far before the record's midpoint. The ApplyChain
+        // validSampleCount metadata pins the analysis to the measured range
+        // no matter what any amplitude heuristic makes of the record — the
+        // read must equal an explicit crop to the metadata, and a noise-only
+        // record must stay below the lock floor.
+        var random = new Random(20_260_721);
+        var raw = new Complex[4_096];
+        for (int i = 0; i < raw.Length; i++)
+        {
+            raw[i] = new Complex(random.NextDouble() * 2.0 - 1.0, 0.0);
+        }
+
+        Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+            raw, new DspChannelChain(GainDb: -3), Rate,
+            out int validSampleCount);
+
+        Assert.Equal(raw.Length, validSampleCount);
+        Assert.True(processed.Length >= 4 * raw.Length);
+
+        BroadbandOnsetEstimate viaMetadata =
+            VirtualCrossoverAnalysis.EstimateBroadbandOnset(
+                processed, Rate, validSampleCount);
+        BroadbandOnsetEstimate viaCrop =
+            VirtualCrossoverAnalysis.EstimateBroadbandOnset(
+                processed.Take(validSampleCount).ToArray(), Rate);
+
+        Assert.True(viaMetadata.IsValid);
+        Assert.Equal(viaCrop.SnrDb, viaMetadata.SnrDb, 6);
+        Assert.Equal(viaCrop.OnsetMs, viaMetadata.OnsetMs, 6);
+        Assert.True(
+            viaMetadata.SnrDb < AutoAlignmentEngine.OnsetLockMinimumSnrDb,
+            $"Short padded noise graded {viaMetadata.SnrDb:0.0} dB via " +
+            "metadata — above the lock floor.");
+    }
+
+    [Fact]
+    public void EstimateBroadbandOnset_LongRingingChainMetadataStillBoundsTheAnalysis()
+    {
+        // A 20 Hz / Q 10 PEQ boost rings for seconds, so ApplyChain's tail
+        // grows far past the minimum and the manufactured region is the
+        // filter kernel's decay, not zeros — no amplitude heuristic can tell
+        // it from measurement. The metadata still bounds the analysis at the
+        // measured range: the read equals an explicit crop to it.
+        var random = new Random(20_260_722);
+        var raw = new Complex[65_536];
+        for (int i = 0; i < raw.Length; i++)
+        {
+            raw[i] = new Complex(random.NextDouble() * 2.0 - 1.0, 0.0);
+        }
+
+        var chain = new DspChannelChain(
+            Peq: new EqualizationCurve([new PeqBand(20, 10, 12)]));
+        Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+            raw, chain, Rate, out int validSampleCount);
+
+        Assert.Equal(raw.Length, validSampleCount);
+        Assert.True(processed.Length > 2 * raw.Length);
+
+        BroadbandOnsetEstimate viaMetadata =
+            VirtualCrossoverAnalysis.EstimateBroadbandOnset(
+                processed, Rate, validSampleCount);
+        BroadbandOnsetEstimate viaCrop =
+            VirtualCrossoverAnalysis.EstimateBroadbandOnset(
+                processed.Take(validSampleCount).ToArray(), Rate);
+
+        Assert.True(viaMetadata.IsValid);
+        Assert.Equal(viaCrop.SnrDb, viaMetadata.SnrDb, 6);
+        Assert.Equal(viaCrop.OnsetMs, viaMetadata.OnsetMs, 6);
+    }
+
+    [Fact]
     public void EstimateBroadbandOnset_SubCredibleDirectFollowsTheDominantArrival()
     {
         // A direct front below the first-arrival search depth (25 dB under the

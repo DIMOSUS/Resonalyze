@@ -144,9 +144,12 @@ public sealed class PromotionReachTests
                         DelayMs = over.DelayMs,
                         InvertPolarity = over.InvertPolarity
                     },
-                    channel.SampleRate);
+                    channel.SampleRate,
+                    out int validSampleCount);
                 hit = new AlignmentSnapshot(
-                    channel, processed, VirtualCrossoverAnalysis.FindPeakIndex(processed));
+                    channel, processed,
+                    VirtualCrossoverAnalysis.FindPeakIndex(processed),
+                    validSampleCount);
                 cache[key] = hit;
             }
 

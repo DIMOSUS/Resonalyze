@@ -1062,6 +1062,44 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void AnalyzeBandLimitedArrival_ApplyChainMetadataPinsTheAnalysisRange()
+    {
+        // The band-limited twin of the onset metadata contract: a short
+        // record through a REAL scale-only ApplyChain (content far before the
+        // padded record's midpoint) analyzed with the validSampleCount
+        // metadata must read exactly like an explicit crop to it.
+        var random = new Random(20_260_723);
+        var raw = new Complex[4_096];
+        for (int i = 0; i < raw.Length; i++)
+        {
+            raw[i] = new Complex((random.NextDouble() * 2.0 - 1.0) * 1e-3, 0.0);
+        }
+        raw[2_000] += Complex.One;
+
+        Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+            raw, new DspChannelChain(GainDb: -3), SampleRate,
+            out int validSampleCount);
+
+        Assert.Equal(raw.Length, validSampleCount);
+
+        TimeAlignmentAnalysisResult viaMetadata = VirtualCrossoverAnalysis
+            .AnalyzeBandLimitedArrival(
+                processed, SampleRate, 1_900, 20_000, validSampleCount);
+        TimeAlignmentAnalysisResult viaCrop = VirtualCrossoverAnalysis
+            .AnalyzeBandLimitedArrival(
+                processed.Take(validSampleCount).ToArray(),
+                SampleRate, 1_900, 20_000);
+
+        Assert.True(viaMetadata.IsValid);
+        Assert.Equal(
+            viaCrop.SignalToNoiseDecibels, viaMetadata.SignalToNoiseDecibels, 6);
+        Assert.Equal(
+            viaCrop.FirstArrivalDelayMilliseconds,
+            viaMetadata.FirstArrivalDelayMilliseconds,
+            6);
+    }
+
+    [Fact]
     public void FindBandLimitedCorrelationDelay_ReportsTheSameSignRivalForTheTrough()
     {
         // The mirror of the positive-rival case: two INVERTED copies ~a

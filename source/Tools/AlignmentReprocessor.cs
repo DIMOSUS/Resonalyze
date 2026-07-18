@@ -96,9 +96,11 @@ internal sealed class AlignmentReprocessor
         Parallel.ForEach(missing, i =>
         {
             Complex[] result = VirtualCrossoverAnalysis.ApplyChain(
-                croppedImpulseResponses[i], chains[i], sampleRates[i]);
+                croppedImpulseResponses[i], chains[i], sampleRates[i],
+                out int validSampleCount);
             results[i] = new CacheEntry(
-                keys[i], result, VirtualCrossoverAnalysis.FindPeakIndex(result));
+                keys[i], result, VirtualCrossoverAnalysis.FindPeakIndex(result),
+                validSampleCount);
         });
         foreach (int i in missing)
         {
@@ -107,14 +109,18 @@ internal sealed class AlignmentReprocessor
 
         return channels
             .Select((channel, i) => new AlignmentSnapshot(
-                channel, results[i].ImpulseResponse, results[i].PeakIndex))
+                channel,
+                results[i].ImpulseResponse,
+                results[i].PeakIndex,
+                results[i].ValidSampleCount))
             .ToList();
     }
 
     private sealed record CacheEntry(
         CacheKey Key,
         Complex[] ImpulseResponse,
-        int PeakIndex);
+        int PeakIndex,
+        int ValidSampleCount);
 
     // Identity of a processed result: the cropped source (reference), the sample
     // rate and the chain by value (independent equal-valued PEQ chains match, so

@@ -486,25 +486,38 @@ public partial class VirtualCrossoverPanel : UserControl
         };
         comboBoxSmoothing.SelectedIndexChanged += (_, _) => OnViewChanged();
         comboBoxCalibration.SelectedIndexChanged += (_, _) => OnCalibrationChanged();
-        // Three-radio group: each fires on both the check and the uncheck, so act
-        // only on the one that became checked to run the switch exactly once.
+        // The DSP-mode radios span TWO containers (the chain trio on
+        // dspModePanel, Correlation on its own panel beside the pair
+        // selector), and WinForms only auto-excludes radios within one
+        // container — so the exclusivity across the panels is wired by hand.
+        // Each handler still acts only on the radio that became CHECKED (a
+        // check-and-uncheck pair fires both), and it clears the other
+        // container FIRST, so OnDspPlotModeChanged never reads a transient
+        // two-checked state. Clearing fires the cleared radios' handlers with
+        // Checked == false, which the guards ignore.
         radioDspMagnitude.CheckedChanged += (_, _) =>
         {
-            if (radioDspMagnitude.Checked) OnDspPlotModeChanged();
+            if (radioDspMagnitude.Checked) OnChainDspModeChecked();
         };
         radioDspPhase.CheckedChanged += (_, _) =>
         {
-            if (radioDspPhase.Checked) OnDspPlotModeChanged();
+            if (radioDspPhase.Checked) OnChainDspModeChecked();
         };
         radioDspCorrelation.CheckedChanged += (_, _) =>
         {
-            if (radioDspCorrelation.Checked) OnDspPlotModeChanged();
+            if (radioDspCorrelation.Checked)
+            {
+                radioDspMagnitude.Checked = false;
+                radioDspPhase.Checked = false;
+                radioDspGroupDelay.Checked = false;
+                OnDspPlotModeChanged();
+            }
         };
         comboBoxCorrelationPair.SelectedIndexChanged +=
             (_, _) => OnCorrelationPairChanged();
         radioDspGroupDelay.CheckedChanged += (_, _) =>
         {
-            if (radioDspGroupDelay.Checked) OnDspPlotModeChanged();
+            if (radioDspGroupDelay.Checked) OnChainDspModeChecked();
         };
         // Two-radio group: listening to one of them reacts exactly once per
         // side switch.
@@ -1438,6 +1451,15 @@ public partial class VirtualCrossoverPanel : UserControl
         : radioDspGroupDelay.Checked ? DspPlotMode.GroupDelay
         : radioDspCorrelation.Checked ? DspPlotMode.Correlation
         : DspPlotMode.Magnitude;
+
+    // One of the chain-view radios (magnitude / phase / group delay) became
+    // checked: retract the cross-container Correlation radio before acting —
+    // its own container cannot do it (see the wiring comment).
+    private void OnChainDspModeChecked()
+    {
+        radioDspCorrelation.Checked = false;
+        OnDspPlotModeChanged();
+    }
 
     private void OnDspPlotModeChanged()
     {

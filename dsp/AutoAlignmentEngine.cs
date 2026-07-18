@@ -1531,7 +1531,7 @@ public static class AutoAlignmentEngine
         // best compromise across its left AND right junctions is searched
         // directly. This is the only pass where the right junction gets a
         // vote on the mono channel at all.
-        ComoveMonoChannels(plan, reprocess, alignment, log);
+        ComoveMonoChannels(plan, reprocess, alignment, log, allChannels);
 
         // Final normalization: the smallest total latency that preserves every
         // relation — the minimum proposed delay lands exactly at zero.
@@ -1631,6 +1631,20 @@ public static class AutoAlignmentEngine
     // sides. With the polarity dimension the half-period window covers every
     // lobe family exactly once, judged by the mean of the two junctions.
     private const double MonoComoveSearchHalfPeriods = 1.0;
+
+    // A mono lobe/polarity hop must be plainly better than the best IN-LOBE
+    // polish: the window above deliberately opens the neighboring lobe
+    // family, and the pair co-move's 0.05 dB application threshold is noise
+    // scale for that decision — a false hop at a sub junction costs up to
+    // half a period (~6 ms at 80 Hz) of bass attack, the audible failure this
+    // engine keeps fighting. Field anchors: near-tied co-moves measure
+    // 0.01-0.02 dB of "gain"; the two genuine two-sided lobe recoveries
+    // measured 0.20 dB (the v3 BW36 cabin, matching the user's hand-tuned
+    // compromise) and 1.36 dB (the v2 cabin). 0.1 sits an order of magnitude
+    // above the noise ties and half the smallest genuine recovery. Within the
+    // current lobe (same polarity, inside the pair co-move's polish reach)
+    // the plain 0.05 dB threshold still applies.
+    private const double MonoComoveLobeHopMarginDb = 0.1;
 
     // The right bridge top inherits the left top's sign (set before the right walk,
     // so the right lowers align against a correctly-signed top). Automatic delay
@@ -1960,11 +1974,14 @@ public static class AutoAlignmentEngine
     // re-anchored), not a spectrum rotation: at multi-millisecond deltas the
     // rotation probe's fixed gate anchoring misgrades candidates by whole dB,
     // and a lobe decision must not ride on that error.
-    private static void ComoveMonoChannels(
+    // Internal so the tests can pin the pass's coordinate handling directly
+    // (the absolute-offset invariance below has no black-box lever).
+    internal static void ComoveMonoChannels(
         StereoAlignmentPlan plan,
         AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
-        StringBuilder log)
+        StringBuilder log,
+        IReadOnlyList<AlignmentSnapshot> shiftScope)
     {
         foreach (IAlignmentChannel mono in plan.MonoChannels)
         {
@@ -1987,16 +2004,54 @@ public static class AutoAlignmentEngine
             AlignmentOverride over = alignment.GetValueOrDefault(mono);
             double halfPeriodMs = junctions.Min(pair => 500.0 / pair.CrossoverHz);
             double reachMs = MonoComoveSearchHalfPeriods * halfPeriodMs;
-            double minDelta = Math.Max(-reachMs, -over.DelayMs);
-            double maxDelta = Math.Min(reachMs, MaxDelayMs - over.DelayMs);
 
+            // The move is RELATIVE: the mono channel against the rest of the
+            // field. Its own delay hitting zero (or the ceiling) is not a
+            // wall, because the same relative placement is reachable by
+            // shifting every OTHER channel the opposite way together — a
+            // uniform shift of the rest preserves the scene and every
+            // non-mono junction. So the bounds only close where the WHOLE
+            // field runs out of room: two plans that differ by nothing but a
+            // global offset must co-move to the same relative answer.
+            List<IAlignmentChannel> others = shiftScope
+                .Select(item => item.Channel)
+                .Where(channel => channel != mono)
+                .Distinct()
+                .ToList();
+            double maxOtherMs = others.Max(
+                channel => alignment.GetValueOrDefault(channel).DelayMs);
+            double minOtherMs = others.Min(
+                channel => alignment.GetValueOrDefault(channel).DelayMs);
+            double minDelta = Math.Max(
+                -reachMs, -over.DelayMs - (MaxDelayMs - maxOtherMs));
+            double maxDelta = Math.Min(
+                reachMs, MaxDelayMs - over.DelayMs + minOtherMs);
+
+            // The evaluation frame: one uniform lift of EVERY channel keeps
+            // all probe delays non-negative without touching any relation, so
+            // a probe below the mono's own zero needs no per-probe rebasing —
+            // only the mono re-renders per probe, the lifted rest renders
+            // once and stays cached. (Frame delays may exceed the UI ceiling;
+            // they are evaluation-only.)
+            double liftMs = Math.Max(0, -(over.DelayMs + minDelta));
+            var framed = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+            foreach (AlignmentSnapshot item in shiftScope)
+            {
+                AlignmentOverride current = alignment.GetValueOrDefault(item.Channel);
+                framed[item.Channel] = current with
+                {
+                    DelayMs = Math.Round(current.DelayMs + liftMs, 2)
+                };
+            }
+
+            double framedMonoMs = framed[mono].DelayMs;
             double Score(double deltaMs, bool flip)
             {
                 var trial =
-                    new Dictionary<IAlignmentChannel, AlignmentOverride>(alignment)
+                    new Dictionary<IAlignmentChannel, AlignmentOverride>(framed)
                     {
                         [mono] = new AlignmentOverride(
-                            Math.Round(over.DelayMs + deltaMs, 2),
+                            Math.Round(framedMonoMs + deltaMs, 2),
                             over.InvertPolarity ^ flip)
                     };
                 IReadOnlyList<AlignmentSnapshot> current = reprocess(trial);
@@ -2036,12 +2091,34 @@ public static class AutoAlignmentEngine
 
             // Every probe re-renders the mono channel, so the grid is kept
             // lean: a half-millisecond coarse pass over both polarities, then
-            // two shrinking refinements around the winner — ~40 reprocesses
-            // for the widest (80 Hz) junction window, each costing one
-            // channel's chain (the others are cache hits).
+            // two shrinking refinements — ~40 reprocesses for the widest
+            // (80 Hz) junction window, each costing one channel's chain (the
+            // others are cache hits). The polish candidate (same polarity,
+            // within the pair co-move's reach — the current lobe) is tracked
+            // separately: it is what a lobe/polarity hop must PLAINLY beat.
+            double polishReachMs = Math.Min(PairComoveSearchRangeMs, halfPeriodMs);
+            bool IsPolish(double deltaMs, bool flip) =>
+                !flip && Math.Abs(deltaMs) <= polishReachMs + 1e-9;
             double bestDelta = 0;
             bool bestFlip = false;
             double bestScore = baseline;
+            double bestPolishDelta = 0;
+            double bestPolishScore = baseline;
+            void Consider(double deltaMs, bool flip, double score)
+            {
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestDelta = deltaMs;
+                    bestFlip = flip;
+                }
+                if (IsPolish(deltaMs, flip) && score > bestPolishScore)
+                {
+                    bestPolishScore = score;
+                    bestPolishDelta = deltaMs;
+                }
+            }
+
             const double CoarseStepMs = 0.5;
             foreach (bool flip in new[] { false, true })
             {
@@ -2049,37 +2126,64 @@ public static class AutoAlignmentEngine
                     delta <= maxDelta + 1e-9;
                     delta += CoarseStepMs)
                 {
-                    double score = Score(delta, flip);
-                    if (score > bestScore)
-                    {
-                        bestScore = score;
-                        bestDelta = delta;
-                        bestFlip = flip;
-                    }
+                    Consider(delta, flip, Score(delta, flip));
                 }
             }
             foreach (double step in new[] { 0.1, 0.02 })
             {
-                double center = bestDelta;
-                double reach = step * 5;
-                for (double delta = Math.Max(minDelta, center - reach);
-                    delta <= Math.Min(maxDelta, center + reach) + 1e-9;
-                    delta += step)
+                foreach ((double center, bool flip) in
+                    new[] { (bestDelta, bestFlip), (bestPolishDelta, false) }.Distinct())
                 {
-                    double score = Score(delta, bestFlip);
-                    if (score > bestScore)
+                    double refineReach = step * 5;
+                    for (double delta = Math.Max(minDelta, center - refineReach);
+                        delta <= Math.Min(maxDelta, center + refineReach) + 1e-9;
+                        delta += step)
                     {
-                        bestScore = score;
-                        bestDelta = delta;
+                        Consider(delta, flip, Score(delta, flip));
                     }
                 }
+            }
+
+            // The hop gate: a winner outside the current lobe (a polarity
+            // flip, or farther than the polish reach) must beat the best
+            // in-lobe polish by the field-calibrated margin — the pair
+            // co-move's 0.05 dB threshold is noise scale for choosing a lobe.
+            bool hop = bestFlip || Math.Abs(bestDelta) > polishReachMs + 1e-9;
+            if (hop &&
+                bestScore <= bestPolishScore + MonoComoveLobeHopMarginDb)
+            {
+                log.AppendLine(
+                    $"  mono lobe hop declined for {mono.Name}: " +
+                    $"{bestDelta:+0.00;-0.00} ms{(bestFlip ? " flipped" : "")} " +
+                    $"gains only {bestScore - bestPolishScore:0.00} dB over the " +
+                    $"in-lobe polish — a lobe hop needs " +
+                    $"{MonoComoveLobeHopMarginDb:0.00} dB.");
+                bestScore = bestPolishScore;
+                bestDelta = bestPolishDelta;
+                bestFlip = false;
             }
 
             if ((bestDelta != 0 || bestFlip) &&
                 bestScore > baseline + PairComoveMinimumGainDb)
             {
+                // Apply in relative terms: a result below zero (or past the
+                // ceiling) rebases the REST of the field the opposite way —
+                // the exact equivalence the search bounds assumed.
+                double newDelayMs = Math.Round(over.DelayMs + bestDelta, 2);
+                if (newDelayMs < 0)
+                {
+                    ShiftAllExcept(shiftScope, mono, -newDelayMs, alignment, log);
+                    newDelayMs = 0;
+                }
+                else if (newDelayMs > MaxDelayMs)
+                {
+                    ShiftAllExcept(
+                        shiftScope, mono, MaxDelayMs - newDelayMs, alignment, log);
+                    newDelayMs = MaxDelayMs;
+                }
+
                 alignment[mono] = new AlignmentOverride(
-                    Math.Round(over.DelayMs + bestDelta, 2),
+                    newDelayMs,
                     over.InvertPolarity ^ bestFlip);
                 log.AppendLine(
                     $"Co-move {mono.Name}: {bestDelta:+0.00;-0.00} ms" +

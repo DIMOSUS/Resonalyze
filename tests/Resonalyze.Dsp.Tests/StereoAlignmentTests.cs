@@ -692,4 +692,70 @@ public sealed class StereoAlignmentTests
         Assert.Contains("WIDE SEED", TestLog.Line(text, "Channel sub:"));
         Assert.DoesNotContain("WIDE SEED", TestLog.Line(text, "Channel woof:"));
     }
+
+    [Fact]
+    public void ComoveMonoChannels_IsInvariantToTheFieldsAbsoluteOffset()
+    {
+        // The mono co-move works in RELATIVE coordinates: the mono channel's
+        // own delay hitting zero is not a wall, because the same relative
+        // placement is reachable by lifting every other channel together
+        // (scene- and junction-preserving). Two alignments that differ by
+        // nothing but a global offset must therefore produce the SAME
+        // relative answer — here the sub sits at its floor and both woofers
+        // want it ~1.2 ms earlier, so the un-offset run must rebase the rest
+        // of the field instead of settling for a clipped move.
+        var sub = new TestChannel("sub", ImpulseAtMs(10.0));
+        var leftWoof = new TestChannel("L woof", ImpulseAtMs(8.0));
+        var rightWoof = new TestChannel("R woof", ImpulseAtMs(7.5));
+        TestChannel[] all = [sub, leftWoof, rightWoof];
+
+        (double SubRelativeMs, bool SubInverted, string Log) Run(double offsetMs)
+        {
+            IReadOnlyList<AlignmentSnapshot> Reprocess(
+                IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+                all.Select(channel =>
+                    Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+
+            List<AlignmentSnapshot> snapshots = all
+                .Select(channel => Snapshot(channel, default))
+                .ToList();
+            AlignmentJunction leftPair = Junction(snapshots[0], snapshots[1], 80);
+            AlignmentJunction rightPair = Junction(snapshots[0], snapshots[2], 80);
+            var plan = new StereoAlignmentPlan(
+                [snapshots[0], snapshots[1]],
+                [leftPair],
+                [snapshots[0], snapshots[2]],
+                [rightPair],
+                new HashSet<IAlignmentChannel> { sub },
+                leftWoof,
+                rightWoof,
+                40,
+                160,
+                SceneOffsetMs: 0);
+            var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+            {
+                [sub] = new(0 + offsetMs, false),
+                [leftWoof] = new(1.0 + offsetMs, false),
+                [rightWoof] = new(1.0 + offsetMs, false)
+            };
+            var log = new StringBuilder();
+            AutoAlignmentEngine.ComoveMonoChannels(
+                plan, Reprocess, alignment, log, snapshots);
+            return (
+                alignment[sub].DelayMs - alignment[leftWoof].DelayMs,
+                alignment[sub].InvertPolarity,
+                log.ToString());
+        }
+
+        (double atFloor, bool floorInverted, string floorLog) = Run(offsetMs: 0);
+        (double free, bool freeInverted, string freeLog) = Run(offsetMs: 3);
+
+        // Both runs moved (the woofers' junctions clearly want the sub
+        // earlier), the floor run by rebasing the rest of the field.
+        Assert.Contains("Co-move sub:", floorLog);
+        Assert.Contains("Co-move sub:", freeLog);
+        Assert.True(atFloor < -1.5, $"the sub did not move earlier ({atFloor:0.00} ms)");
+        Assert.InRange(Math.Abs(atFloor - free), 0, 0.06);
+        Assert.Equal(freeInverted, floorInverted);
+    }
 }

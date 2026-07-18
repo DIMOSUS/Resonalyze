@@ -1540,10 +1540,14 @@ it defaults to Off because the measurements are loopback-referenced.
   cannot phase-align at the handover loses to one that can, before you ever
   run Auto delay. Ties go to the conventional 24 dB/oct proposal.
 - **Auto delay** aligns in two stages: band-limited first arrivals — refined by a
-  GCC-PHAT cross-correlation where it carries a reliable, unambiguous peak (a
-  junction whose corners leave a spectral gap degenerates the correlation into
-  near-equal lobes, and a near-tie between its peak and trough sends the seed
-  back to the arrival estimate) — set the coarse offsets, then a
+  GCC-PHAT cross-correlation where its dominant extremum, of either polarity,
+  is a reliable, unambiguous read: a genuinely inverted junction (a subwoofer
+  against its midbass is the classic) seeds from the trough's position exactly
+  as a normal one seeds from the peak's, with the polarity decision left to
+  the sum search. A junction whose corners leave a spectral gap degenerates
+  the correlation into near-equal lobes, and a near-tie — peak against trough,
+  or against the same-polarity lobe one period over — sends the seed back to
+  the arrival estimate. The coarse offsets set, a
   fractional-delay search minimizes the sum-loss metric at each junction,
   reading the same direct-sound gate as the displayed metric so late room
   reflections the alignment cannot change do not steer it. At mid/tweeter-class
@@ -1556,9 +1560,12 @@ it defaults to Off because the measurements are loopback-referenced.
   its deepest smoothed notch falls below that average, so a solution that only
   looks good on average while hiding a sharp cancellation at the crossover
   loses to a slightly lossier but flat one. It weighs every near-optimal
-  candidate against an arrival-based prior and a physical tie-break, so it does
-  not add delay or flip polarity without a real improvement — sidestepping the
-  flip-plus-half-period impostor a steep crossover can otherwise hide. Each
+  candidate against an arrival-based prior and a physical tie-break — a score
+  near-tie goes to the candidate nearest the measured arrival regardless of
+  polarity, because fractions of a dB can never choose between comb lobes —
+  so it does not add delay or flip polarity without a real improvement,
+  sidestepping the flip-plus-half-period impostor a steep crossover can
+  otherwise hide. Each
   polarity seeds its own candidates, so the non-inverted optimum is always on
   the table for that preference even where the inverted curve edges it
   everywhere. The search runs on a background task with a busy

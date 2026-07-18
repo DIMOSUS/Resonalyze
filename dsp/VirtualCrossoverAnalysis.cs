@@ -181,13 +181,24 @@ public static class VirtualCrossoverAnalysis
         int outputLength)
     {
         ArgumentNullException.ThrowIfNull(chain);
-        double delaySamplesExact =
-            Math.Max(0.0, chain.DelayMs) / 1_000.0 * sampleRate;
+        // The delay is SIGNED: a positive delay shifts the content right
+        // (manufacturing the silent prefix the start excludes), a negative
+        // one shifts it left, so the content ENDS earlier — the vacated tail
+        // is manufactured silence exactly like the FFT padding, and the head
+        // samples the shift pushes past zero wrap to the buffer's far end,
+        // outside the range either way.
+        double delaySamplesExact = chain.DelayMs / 1_000.0 * sampleRate;
         int startSample = Math.Clamp(
-            (int)Math.Floor(delaySamplesExact), 0, Math.Max(0, outputLength - 1));
+            (int)Math.Floor(Math.Max(0.0, delaySamplesExact)),
+            0,
+            Math.Max(0, outputLength - 1));
         int endSample = Math.Min(
             outputLength, inputLength + (int)Math.Ceiling(delaySamplesExact));
-        return new ValidSampleRange(startSample, endSample);
+        // A delay that shifts the whole input out of the record leaves no
+        // contiguous measured range: report unknown rather than an empty lie.
+        return endSample > startSample
+            ? new ValidSampleRange(startSample, endSample)
+            : default;
     }
 
     /// <summary>

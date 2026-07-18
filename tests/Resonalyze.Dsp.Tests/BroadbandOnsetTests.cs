@@ -333,6 +333,48 @@ public sealed class BroadbandOnsetTests
     }
 
     [Fact]
+    public void EstimateBroadbandOnset_NegativeDelayShrinksTheRangeEnd()
+    {
+        // The review catch on the signed-delay arithmetic: ApplyChain
+        // supports a NEGATIVE delay (the content shifts left), but a range
+        // computed from max(0, delay) kept reporting [0, inputLength) — the
+        // vacated 1200-sample tail inside the range was manufactured silence
+        // and lifted a short noise record from ~6.6 to ~35.5 dB. The end must
+        // follow the signed delay.
+        var random = new Random(20_260_725);
+        var raw = new Complex[4_096];
+        for (int i = 0; i < raw.Length; i++)
+        {
+            raw[i] = new Complex(random.NextDouble() * 2.0 - 1.0, 0.0);
+        }
+
+        Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+            raw, new DspChannelChain(DelayMs: -25), Rate,
+            out ValidSampleRange validRange);
+
+        int delaySamples = (int)(25.0 / 1_000.0 * Rate);
+        Assert.Equal(
+            new ValidSampleRange(0, raw.Length - delaySamples), validRange);
+
+        BroadbandOnsetEstimate rawEstimate =
+            VirtualCrossoverAnalysis.EstimateBroadbandOnset(raw, Rate);
+        BroadbandOnsetEstimate viaMetadata =
+            VirtualCrossoverAnalysis.EstimateBroadbandOnset(
+                processed, Rate, validRange);
+
+        Assert.True(rawEstimate.IsValid);
+        Assert.True(viaMetadata.IsValid);
+        Assert.InRange(
+            viaMetadata.SnrDb,
+            rawEstimate.SnrDb - 1.5,
+            rawEstimate.SnrDb + 1.5);
+        Assert.True(
+            viaMetadata.SnrDb < AutoAlignmentEngine.OnsetLockMinimumSnrDb,
+            $"Advanced noise graded {viaMetadata.SnrDb:0.0} dB — above the " +
+            $"{AutoAlignmentEngine.OnsetLockMinimumSnrDb:0} dB lock floor.");
+    }
+
+    [Fact]
     public void EstimateBroadbandOnset_LongRingingChainMetadataStillBoundsTheAnalysis()
     {
         // A 20 Hz / Q 10 PEQ boost rings for seconds, so ApplyChain's tail

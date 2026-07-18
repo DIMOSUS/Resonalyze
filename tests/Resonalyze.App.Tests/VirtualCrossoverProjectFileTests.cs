@@ -721,6 +721,43 @@ public sealed class VirtualCrossoverProjectFileTests
         }
     }
 
+    [Fact]
+    public void CorrelationPlotMode_RoundTripsAsALegacyValuePlusFlag()
+    {
+        // Same additive pattern as the psychoacoustic smoothing: the stored
+        // enum field keeps a value every build can parse (an older build opens
+        // the session on the magnitude view), the correlation mode travels in
+        // its own flag, and the selected pair index rides along.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = new VirtualCrossoverProjectFile();
+            original.SetDspPlotMode(DspPlotMode.Correlation);
+            original.CorrelationPairIndex = 2;
+            Assert.Equal(DspPlotMode.Magnitude, original.DspPlotMode);
+            Assert.True(original.DspPlotCorrelationView);
+            Assert.Equal(
+                DspPlotMode.Correlation, original.EffectiveDspPlotMode);
+
+            original.Save(root);
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Equal(DspPlotMode.Correlation, loaded.EffectiveDspPlotMode);
+            Assert.Equal(2, loaded.CorrelationPairIndex);
+
+            // Selecting a chain view afterwards clears the flag and stores the
+            // mode plainly.
+            loaded.SetDspPlotMode(DspPlotMode.GroupDelay);
+            Assert.False(loaded.DspPlotCorrelationView);
+            Assert.Equal(DspPlotMode.GroupDelay, loaded.DspPlotMode);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string CreateTemporaryDirectory()
     {
         string path = Path.Combine(

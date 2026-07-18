@@ -59,6 +59,8 @@ namespace Resonalyze
             buttonSessionExport = new Button();
             labelCrossoverWarning = new Label();
             dspModePanel = new Panel();
+            radioDspCorrelation = new RadioButton();
+            comboBoxCorrelationPair = new DarkComboBox();
             labelDspMode = new Label();
             radioDspMagnitude = new RadioButton();
             radioDspPhase = new RadioButton();
@@ -428,9 +430,10 @@ namespace Resonalyze
             dspModePanel.Controls.Add(radioDspMagnitude);
             dspModePanel.Controls.Add(radioDspPhase);
             dspModePanel.Controls.Add(radioDspGroupDelay);
+            dspModePanel.Controls.Add(radioDspCorrelation);
             dspModePanel.Location = new Point(489, 453);
             dspModePanel.Name = "dspModePanel";
-            dspModePanel.Size = new Size(285, 23);
+            dspModePanel.Size = new Size(345, 23);
             dspModePanel.TabIndex = 20;
             // 
             // labelDspMode
@@ -482,6 +485,29 @@ namespace Resonalyze
             radioDspGroupDelay.Text = "Group delay";
             radioDspGroupDelay.UseVisualStyleBackColor = true;
             // 
+            // radioDspCorrelation
+            // 
+            radioDspCorrelation.AutoSize = true;
+            radioDspCorrelation.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            radioDspCorrelation.ForeColor = Color.FromArgb(210, 214, 222);
+            radioDspCorrelation.Location = new Point(288, 1);
+            radioDspCorrelation.Name = "radioDspCorrelation";
+            radioDspCorrelation.Size = new Size(48, 19);
+            radioDspCorrelation.TabIndex = 3;
+            radioDspCorrelation.Text = "Corr";
+            radioDspCorrelation.UseVisualStyleBackColor = true;
+            // 
+            // comboBoxCorrelationPair
+            // 
+            comboBoxCorrelationPair.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxCorrelationPair.Enabled = false;
+            comboBoxCorrelationPair.ForeColor = Color.White;
+            comboBoxCorrelationPair.Location = new Point(841, 455);
+            comboBoxCorrelationPair.MinimumSize = new Size(36, 19);
+            comboBoxCorrelationPair.Name = "comboBoxCorrelationPair";
+            comboBoxCorrelationPair.Size = new Size(70, 19);
+            comboBoxCorrelationPair.TabIndex = 21;
+            // 
             // panel1
             // 
             panel1.BorderStyle = BorderStyle.FixedSingle;
@@ -516,6 +542,7 @@ namespace Resonalyze
             Controls.Add(buttonSessionExport);
             Controls.Add(labelCrossoverWarning);
             Controls.Add(dspModePanel);
+            Controls.Add(comboBoxCorrelationPair);
             Controls.Add(channelListPanel);
             Controls.Add(buttonAddChannel);
             Controls.Add(buttonRemoveChannel);
@@ -575,6 +602,8 @@ namespace Resonalyze
         private RadioButton radioDspMagnitude;
         private RadioButton radioDspPhase;
         private RadioButton radioDspGroupDelay;
+        private RadioButton radioDspCorrelation;
+        private DarkComboBox comboBoxCorrelationPair;
         private Panel panel1;
     }
 }

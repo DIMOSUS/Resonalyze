@@ -4,12 +4,21 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>Which curve the Virtual DSP chain plot shows for each channel.</summary>
+/// <summary>
+/// What the Virtual DSP lower plot shows: one curve per channel's DSP chain
+/// (magnitude / phase / group delay), or the junction-correlation view of one
+/// adjacent channel pair. <see cref="Correlation"/> never reaches the stored
+/// project field — it persists as an additive flag (see
+/// <see cref="VirtualCrossoverProjectFile.SetDspPlotMode"/>) so older builds
+/// open such a session on the magnitude view instead of rejecting an unknown
+/// enum value.
+/// </summary>
 public enum DspPlotMode
 {
     Magnitude,
     Phase,
-    GroupDelay
+    GroupDelay,
+    Correlation
 }
 
 /// <summary>
@@ -342,8 +351,37 @@ public sealed class VirtualCrossoverProjectFile
     }
 
     // Which curve the per-channel DSP chain plot shows. Additive: older files lack
-    // it and default to Magnitude.
+    // it and default to Magnitude. Never stores Correlation — see the flag below.
     public DspPlotMode DspPlotMode { get; set; } = DspPlotMode.Magnitude;
+
+    // The junction-correlation view of the lower plot, stored as a separate
+    // additive flag (same pattern as PsychoacousticSmoothing): the legacy enum
+    // field keeps a value every build knows, so an older build opens the
+    // session on the magnitude view instead of failing on an unknown enum
+    // string. No file version bump.
+    public bool DspPlotCorrelationView { get; set; }
+
+    // Which adjacent channel pair the correlation view analyzes, as an index
+    // into the by-band-ordered pair list (0 = the lowest junction). Additive.
+    public int CorrelationPairIndex { get; set; }
+
+    /// <summary>
+    /// The in-memory lower-plot mode: <see cref="DspPlotMode.Correlation"/>
+    /// when the flag is set, the stored enum value otherwise. Write through
+    /// <see cref="SetDspPlotMode"/> so the dual representation cannot
+    /// half-apply.
+    /// </summary>
+    [JsonIgnore]
+    public DspPlotMode EffectiveDspPlotMode =>
+        DspPlotCorrelationView ? DspPlotMode.Correlation : DspPlotMode;
+
+    public void SetDspPlotMode(DspPlotMode mode)
+    {
+        DspPlotCorrelationView = mode == DspPlotMode.Correlation;
+        DspPlotMode = mode == DspPlotMode.Correlation
+            ? DspPlotMode.Magnitude
+            : mode;
+    }
 
     // Microphone calibration applied to the magnitude curves. The measurement is
     // loopback-referenced, so calibration is optional and off by default.
@@ -631,6 +669,11 @@ public sealed class VirtualCrossoverProjectFile
         {
             throw new InvalidDataException(
                 "The virtual crossover DSP plot mode is invalid.");
+        }
+        if (CorrelationPairIndex is < 0 or >= MaximumChannelCount)
+        {
+            throw new InvalidDataException(
+                "The virtual crossover correlation pair index is invalid.");
         }
         if (!Enum.IsDefined(PhaseWindowMode) || !Enum.IsDefined(PhaseDetrendMode))
         {

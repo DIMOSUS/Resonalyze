@@ -124,8 +124,9 @@ internal static class ImpulseWindowPreview
 
         var windowSeries = new LineSeries
         {
-            Color = OxyColor.FromRgb(50, 210, 120),
-            StrokeThickness = 1.5,
+            Color = OxyColor.FromArgb(127, 50, 210, 120),
+            StrokeThickness = 1.0,
+            LineStyle = LineStyle.Dash,
             Tag = seriesTag,
             TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}"
         };

@@ -63,6 +63,8 @@ public sealed class ImpulseWindowPreviewTests
         // The Tukey gate plateau reaches weight 1 and never leaves [0, 1].
         Assert.Equal(1.0, series[2].Points.Max(point => point.Y), 12);
         Assert.True(series[2].Points.All(point => point.Y is >= 0 and <= 1));
+        // The window outline is dashed so it reads apart from the solid IR traces.
+        Assert.Equal(LineStyle.Dash, series[2].LineStyle);
 
         LineAnnotation mark = Assert.IsType<LineAnnotation>(
             Assert.Single(model.Annotations));

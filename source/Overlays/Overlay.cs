@@ -8,11 +8,22 @@ using ToolTip = System.Windows.Forms.ToolTip;
 
 namespace Resonalyze;
 
+/// <summary>
+/// A captured analysis curve's oversampled RAW spectrum plus the display-smoothing
+/// code the mode was drawn with, handed to a new overlay so it stores the original
+/// curve and reproduces the mode's smoothing EXACTLY (the same LogarithmicResample)
+/// while its own smoothing stays adjustable — Off reveals the raw curve.
+/// </summary>
+public readonly record struct RawCurveCapture(
+    IReadOnlyList<SignalPoint> Spectrum,
+    int SmoothingCode);
+
 public sealed class OverlayCollection
 {
     private readonly List<Overlay> overlays = new();
     private readonly Action notifyPlotChanged;
     private Func<MagnitudeScale>? getCurrentMagnitudeScale;
+    private Func<CurveTag, RawCurveCapture?>? rawCurveProvider;
 
     public OverlayCollection(
         Form1 form,
@@ -104,6 +115,16 @@ public sealed class OverlayCollection
 
     public MagnitudeScale CurrentMagnitudeScale =>
         getCurrentMagnitudeScale?.Invoke() ?? MagnitudeScale.Relative;
+
+    // The shell wires this to recompute a captured analysis curve WITHOUT display
+    // smoothing (with the mode's current smoothing code), so a captured overlay stores
+    // the raw reference and re-applies its own adjustable smoothing on top. Null when
+    // the curve has no raw form; the capture then falls back to the drawn samples.
+    public void SetRawCurveProvider(Func<CurveTag, RawCurveCapture?> provider) =>
+        rawCurveProvider = provider;
+
+    internal RawCurveCapture? TryGetRawCapture(CurveTag tag) =>
+        rawCurveProvider?.Invoke(tag);
 
     // Lands any debounced offset saves immediately; the shell calls this on
     // close so an offset changed within the debounce window still persists.
@@ -466,6 +487,14 @@ public sealed class Overlay
     // Phase representation of a captured curve: true unwrapped, false wrapped, null
     // unknown. Drives the wrapped-difference choice in phase overlay operations.
     private bool? phaseUnwrapped;
+    // Analysis-curve kind the slot was captured from (null for imported text or a
+    // legacy file). Gates magnitude-only smoothing (psychoacoustic) by curve type.
+    private Resonalyze.Dsp.AnalysisCurveKind? capturedCurveKind;
+    // Captured FR only: the oversampled raw spectrum, re-smoothed by the SAME
+    // LogarithmicResample the mode uses so any width (Off = raw) reproduces the
+    // reference exactly. Null for fallback captures (imported, operations, legacy,
+    // non-FR), which re-smooth the display-resolution sourcePoints instead.
+    private List<SignalPoint>? rawSpectrumPoints;
 
     // Operation kind. Each operand is either a captured slot (SourceSlotA/B) or, when
     // SourceCurveKeyA/B is set, a live analysis curve resolved from the plot by its
@@ -1263,8 +1292,34 @@ public sealed class Overlay
             return;
         }
 
-        var points = new DataPoint[selected.Points.Count];
-        selected.Points.CopyTo(points);
+        CurveTag? tag = selected.Tag as CurveTag;
+
+        // Prefer the RAW (unsmoothed) reference so the overlay's own smoothing — which
+        // the user can lower to Off to see the original curve — starts from the true
+        // data, seeded with the mode's current smoothing so the fresh overlay matches
+        // what is on screen. Curves with no raw form (imported text, operations, modes
+        // that do not octave-smooth) fall back to capturing the drawn curve as-is at
+        // smoothing Off, preserving the old behaviour.
+        RawCurveCapture? raw = tag != null ? collection.TryGetRawCapture(tag) : null;
+        DataPoint[] points;
+        List<SignalPoint>? spectrum;
+        int seedSmoothing;
+        if (raw is { } rawCapture && rawCapture.Spectrum.Count >= 2)
+        {
+            // Keep the oversampled spectrum for exact re-smoothing, and derive the
+            // display-resolution raw curve (Off) for export / operations / legacy.
+            spectrum = rawCapture.Spectrum as List<SignalPoint> ?? rawCapture.Spectrum.ToList();
+            points = SmoothRawSpectrum(spectrum, 0);
+            seedSmoothing = rawCapture.SmoothingCode;
+        }
+        else
+        {
+            points = new DataPoint[selected.Points.Count];
+            selected.Points.CopyTo(points);
+            spectrum = null;
+            seedSmoothing = 0;
+        }
+
         string title = $"Overlay {Index}: {selected.Title ?? string.Empty}";
         Mode mode = CurrentOverlayMode;
 
@@ -1272,16 +1327,23 @@ public sealed class Overlay
         kind = OverlayKind.Captured;
         operationConfigured = false;
         sourcePoints = points;
+        rawSpectrumPoints = spectrum;
         // The curve was drawn in the plot's current scale, so it carries that unit.
         capturedMagnitudeScale = collection.CurrentMagnitudeScale;
         capturedYAxisKey = string.IsNullOrEmpty(selected.YAxisKey)
             ? null
             : selected.YAxisKey;
-        phaseUnwrapped = selected.Tag is CurveTag curveTag
-            ? curveTag.PhaseUnwrapped
-            : null;
+        phaseUnwrapped = tag?.PhaseUnwrapped;
+        capturedCurveKind = tag?.Kind;
         SeriesMode = mode;
         Title = title;
+        // Seed the slot's smoothing with the mode's, but never carry the magnitude-only
+        // psychoacoustic mode onto a non-magnitude capture (phase / coherence): decode
+        // it to its plain width there. MagnitudeSmoothingSemantics reads the fields set
+        // just above, so this must follow them.
+        smoothingInverseOctaves = MagnitudeSmoothingSemantics
+            ? seedSmoothing
+            : Dsp.SpectrumSmoothing.EquivalentInverseOctaves(seedSmoothing);
         UpdateKindGlyph();
         UpdateDrawPoints();
 
@@ -1331,6 +1393,9 @@ public sealed class Overlay
         targetConfigured = false;
         // Imported text gives no wrap/unwrap hint; leave it unknown.
         phaseUnwrapped = null;
+        capturedCurveKind = null;
+        // Imported points are a display curve, not an oversampled spectrum.
+        rawSpectrumPoints = null;
         // Imported points are assumed to be in the current view's unit.
         capturedMagnitudeScale = collection.CurrentMagnitudeScale;
         capturedYAxisKey = null;
@@ -1920,6 +1985,10 @@ public sealed class Overlay
                 .Select(point => new DataPoint(point.X, point.Y))
                 .ToArray();
             phaseUnwrapped = file.PhaseUnwrapped;
+            capturedCurveKind = file.CapturedCurveKind;
+            rawSpectrumPoints = file.RawSpectrum.Length >= 2
+                ? file.RawSpectrum.Select(point => new SignalPoint(point.X, point.Y)).ToList()
+                : null;
             capturedYAxisKey = GetCapturedYAxisKey(file);
             UpdateDrawPoints();
             SetAvailability(true);
@@ -2013,6 +2082,10 @@ public sealed class Overlay
                 .Select(point => new OverlayPoint(point.X, point.Y))
                 .ToArray();
             file.PhaseUnwrapped = phaseUnwrapped;
+            file.CapturedCurveKind = capturedCurveKind;
+            file.RawSpectrum = rawSpectrumPoints != null
+                ? rawSpectrumPoints.Select(point => new OverlayPoint(point.X, point.Y)).ToArray()
+                : Array.Empty<OverlayPoint>();
             file.CapturedYAxisKey = capturedYAxisKey;
         }
 
@@ -2207,12 +2280,39 @@ public sealed class Overlay
     // inflate exactly the low-coherence stretches that trace exists to expose.
     private bool MagnitudeSmoothingSemantics =>
         OverlayMath.SupportsAmplitudeSpace(SeriesMode) &&
-        capturedYAxisKey != PlotModelFactory.CoherenceAxisKey;
+        capturedYAxisKey != PlotModelFactory.CoherenceAxisKey &&
+        // When the captured kind is known, only a magnitude-domain curve is eligible;
+        // a phase kind (min/excess phase) never applies the asymmetric floor. A null
+        // kind (imported text, legacy files) falls back to the mode/axis test above.
+        capturedCurveKind is not (
+            Resonalyze.Dsp.AnalysisCurveKind.MinimumPhase or
+            Resonalyze.Dsp.AnalysisCurveKind.ExcessPhase);
 
     // Parameterized so the settings dialog's live preview can render a candidate
     // smoothing without committing it to the slot first.
     private DataPoint[]? BuildCapturedPoints(int smoothing)
     {
+        double offset = (double)offsetControl.Value;
+
+        // Exact path (FR captures): re-smooth the stored oversampled spectrum with the
+        // SAME LogarithmicResample the mode's primary curve uses, so any width — Off =
+        // raw — reproduces the on-screen reference rather than a re-smoothed decimation.
+        if (rawSpectrumPoints != null)
+        {
+            DataPoint[] exact = SmoothRawSpectrum(rawSpectrumPoints, smoothing);
+            if (exact.Length < 2)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < exact.Length; i++)
+            {
+                exact[i] = new DataPoint(exact[i].X, exact[i].Y + offset);
+            }
+
+            return exact;
+        }
+
         if (sourcePoints == null)
         {
             return null;
@@ -2222,10 +2322,32 @@ public sealed class Overlay
             sourcePoints.Select(point => new OverlayPoint(point.X, point.Y)).ToArray(),
             smoothing,
             psychoacousticFloor: MagnitudeSmoothingSemantics);
-        double offset = (double)offsetControl.Value;
         return smoothed
             .Select(point => new DataPoint(point.X, point.Y + offset))
             .ToArray();
+    }
+
+    // Re-smooths the stored oversampled spectrum with the SAME LogarithmicResample the
+    // mode's primary curve uses (calibration already baked in at capture), so smoothing
+    // an overlay matches the reference exactly and Off yields the raw curve.
+    private static DataPoint[] SmoothRawSpectrum(List<SignalPoint> spectrum, int smoothing)
+    {
+        List<SignalPoint> resampled = DataHelper.LogarithmicResample(
+            spectrum,
+            20,
+            20000,
+            1024,
+            calibration: null,
+            SpectrumSmoothing.SmoothingOctaves(smoothing),
+            dBUnpack: true,
+            psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(smoothing));
+        var result = new DataPoint[resampled.Count];
+        for (int i = 0; i < result.Length; i++)
+        {
+            result[i] = new DataPoint(resampled[i].X, resampled[i].Y);
+        }
+
+        return result;
     }
 
     // Redraws this slot's series with the captured-curve dialog's candidate
@@ -2260,6 +2382,8 @@ public sealed class Overlay
         drawPoints = null;
         capturedYAxisKey = null;
         phaseUnwrapped = null;
+        capturedCurveKind = null;
+        rawSpectrumPoints = null;
         operationConfigured = false;
         sourceSlotA = 0;
         sourceSlotB = 0;

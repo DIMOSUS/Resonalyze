@@ -153,6 +153,40 @@ internal sealed class PlotModelFactory
             ? null
             : getCalibration(options.CalibrationMode);
 
+    /// <summary>
+    /// The RAW (unsmoothed) samples of a captured analysis curve plus the mode's
+    /// current display-smoothing code, for the overlay layer: it stores the raw
+    /// reference and re-applies its own adjustable smoothing (Off = raw). Only the
+    /// primary magnitude curve of a frequency-response plot (Main or Compare) has a
+    /// raw form recomputed here; every other kind/mode returns null and the overlay
+    /// falls back to capturing the drawn curve as-is.
+    /// </summary>
+    public RawCurveCapture? BuildRawCurve(CurveTag tag)
+    {
+        // SPL rendering applies an absolute offset the stored relative spectrum does
+        // not carry, so a captured overlay there keeps the drawn-curve fallback.
+        if (tag.Kind != AnalysisCurveKind.Primary ||
+            tag.Mode != Mode.FrequencyResponse ||
+            EffectiveFrequencyResponseScale != MagnitudeScale.Relative)
+        {
+            return null;
+        }
+
+        CalibrationFile? calibration = GetCalibration(frequencyResponseOptions);
+        IReadOnlyList<SignalPoint>? spectrum = tag.Source == CurveSource.Compare
+            ? TryCreateCompareMeasurement() is { } compare
+                ? MeasurementPlotContext.BuildRawPrimarySpectrum(
+                    compare.Measurement, frequencyResponseOptions, calibration)
+                : null
+            : measurementContext.CreateRawPrimarySpectrum(
+                frequencyResponseOptions, calibration);
+        return spectrum is { Count: > 1 }
+            ? new RawCurveCapture(
+                spectrum,
+                (int)Math.Round(frequencyResponseOptions.SmoothingInverseOctaves))
+            : null;
+    }
+
     public PlotModel CreateFrequencyResponse(bool includeCurves)
     {
         PlotModel model = PlotModelStyle.CreateTitledModel(

@@ -101,6 +101,20 @@ public sealed class OverlayFile
     // older files deserialize to null and older app builds ignore the unknown property.
     public bool? PhaseUnwrapped { get; set; }
 
+    // Captured kind: the analysis-curve kind the samples were taken from (magnitude,
+    // harmonic, phase, ...). Lets the settings dialog gate magnitude-only options
+    // (psychoacoustic smoothing) by the actual curve type rather than the mode alone.
+    // Additive and nullable, so no file version bump: older files deserialize to null
+    // (kind unknown) and older app builds ignore the unknown property.
+    public Resonalyze.Dsp.AnalysisCurveKind? CapturedCurveKind { get; set; }
+
+    // Captured FR only: the oversampled raw spectrum the overlay re-smooths with the
+    // mode's own LogarithmicResample, so any smoothing width (Off = raw) reproduces the
+    // on-screen reference exactly instead of a re-smoothed decimation. Empty for
+    // fallback captures (imported, operations, legacy). Additive, so no file version
+    // bump: older files deserialize to empty and older app builds ignore the property.
+    public OverlayPoint[] RawSpectrum { get; set; } = Array.Empty<OverlayPoint>();
+
     // Operation kind: recipe referencing two operands. Each operand is a captured slot
     // (SourceSlotA/B), unless SourceCurveKeyA/B is set — then it is a live analysis
     // curve resolved by its CurveTag Key on every rebuild. Additive and nullable, so no

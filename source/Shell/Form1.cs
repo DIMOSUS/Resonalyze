@@ -147,6 +147,10 @@ namespace Resonalyze
                     Mode.LiveSpectrum => plotModelFactory.EffectiveLiveSpectrumScale,
                     _ => Dsp.MagnitudeScale.Relative
                 });
+            // Lets a captured overlay store the RAW (unsmoothed) reference and seed its
+            // own smoothing with the mode's, so lowering the overlay's smoothing to Off
+            // reveals the original curve instead of the mode-smoothed one.
+            overlayCollection.SetRawCurveProvider(plotModelFactory.BuildRawCurve);
             liveSpectrumController = dependencies.LiveSpectrumController;
             modeController = dependencies.ModeController;
             commandController = dependencies.CommandController;

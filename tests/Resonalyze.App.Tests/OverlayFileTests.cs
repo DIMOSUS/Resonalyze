@@ -37,6 +37,74 @@ public sealed class OverlayFileTests
     }
 
     [Fact]
+    public void SaveAndLoad_RoundTripsCapturedCurveKind()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = new OverlayFile
+            {
+                SavedAtUtc = DateTimeOffset.UtcNow,
+                Mode = Mode.PhaseResponse,
+                Slot = 4,
+                Title = "Phase overlay",
+                ColorArgb = Color.Purple.ToArgb(),
+                CapturedCurveKind = AnalysisCurveKind.ExcessPhase,
+                Points = [new OverlayPoint(20, 10), new OverlayPoint(20_000, -30)]
+            };
+
+            original.Save(root);
+            OverlayFile? loaded = OverlayFile.Load(Mode.PhaseResponse, 4, root);
+
+            Assert.NotNull(loaded);
+            Assert.Equal(AnalysisCurveKind.ExcessPhase, loaded!.CapturedCurveKind);
+            // A file written before the field existed leaves the kind unknown.
+            Assert.Null(new OverlayFile().CapturedCurveKind);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SaveAndLoad_RoundTripsTheRawSpectrum()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = new OverlayFile
+            {
+                SavedAtUtc = DateTimeOffset.UtcNow,
+                Mode = Mode.FrequencyResponse,
+                Slot = 5,
+                Title = "Exact overlay",
+                ColorArgb = Color.Green.ToArgb(),
+                Points = [new OverlayPoint(20, -40), new OverlayPoint(20_000, -60)],
+                RawSpectrum =
+                [
+                    new OverlayPoint(0, -40),
+                    new OverlayPoint(5, -41),
+                    new OverlayPoint(10, -42)
+                ]
+            };
+
+            original.Save(root);
+            OverlayFile? loaded = OverlayFile.Load(Mode.FrequencyResponse, 5, root);
+
+            Assert.NotNull(loaded);
+            Assert.Equal(3, loaded!.RawSpectrum.Length);
+            Assert.Equal(-42, loaded.RawSpectrum[2].Y, 6);
+            // A file written before the field existed carries no raw spectrum.
+            Assert.Empty(new OverlayFile().RawSpectrum);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void SaveAndLoad_RoundTripsPsychoacousticSmoothingAsAPlainWidthPlusFlag()
     {
         // Same additive-field pattern as CapturedMagnitudeScale: the file keeps

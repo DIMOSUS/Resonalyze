@@ -39,16 +39,8 @@ namespace Resonalyze.Dsp
             FrequencyResponseOptions frequencyResponseOptions,
             CalibrationFile? calibration)
         {
-            double leftTukeyWindow = (double)frequencyResponseOptions.LeftTukeyWindow / frequencyResponseOptions.Window * 2.0;
-            double rightTukeyWindow = (double)frequencyResponseOptions.RightTukeyWindow / frequencyResponseOptions.Window * 2.0;
-
-            double[] window = Windowing.TukeyWindow(frequencyResponseOptions.Window, leftTukeyWindow, rightTukeyWindow);
-
-            int h1Start = measurement.PeakIndex - frequencyResponseOptions.LeftTukeyWindow;
-
-            var data = GetOversampledSpectrumData(measurement, h1Start, window);
-            data = LogarithmicResample(
-                data,
+            List<SignalPoint> data = LogarithmicResample(
+                GetOversampledPrimarySpectrum(measurement, frequencyResponseOptions),
                 20,
                 20000,
                 1024,
@@ -58,6 +50,24 @@ namespace Resonalyze.Dsp
                 psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(
                     frequencyResponseOptions.SmoothingInverseOctaves));
             return new AnalysisCurve("Frequency Response", data);
+        }
+
+        /// <summary>
+        /// The oversampled linear-frequency spectrum that feeds
+        /// <see cref="GetPrimarySpectrum"/>: Tukey-windowed around the peak and
+        /// oversampled, BEFORE the logarithmic resample, calibration and smoothing.
+        /// Overlays store this so they reproduce the mode's smoothing EXACTLY (the same
+        /// <see cref="LogarithmicResample"/>) at any width, and Off = the raw curve.
+        /// </summary>
+        public static List<SignalPoint> GetOversampledPrimarySpectrum(
+            IImpulseMeasurement measurement,
+            FrequencyResponseOptions frequencyResponseOptions)
+        {
+            double leftTukeyWindow = (double)frequencyResponseOptions.LeftTukeyWindow / frequencyResponseOptions.Window * 2.0;
+            double rightTukeyWindow = (double)frequencyResponseOptions.RightTukeyWindow / frequencyResponseOptions.Window * 2.0;
+            double[] window = Windowing.TukeyWindow(frequencyResponseOptions.Window, leftTukeyWindow, rightTukeyWindow);
+            int h1Start = measurement.PeakIndex - frequencyResponseOptions.LeftTukeyWindow;
+            return GetOversampledSpectrumData(measurement, h1Start, window);
         }
 
         /// <summary>

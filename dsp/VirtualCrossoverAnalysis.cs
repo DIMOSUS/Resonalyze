@@ -969,17 +969,21 @@ public static class VirtualCrossoverAnalysis
 
     /// <summary>
     /// The junction summation loss as a function of an EXTRA delay applied to
-    /// the variable channel — the surface the fine alignment search ranks its
-    /// candidates on, as a drawable curve. Each probe is HONEST: the variable
+    /// the variable channel — the prior-free acoustic surface of one
+    /// junction, as a drawable curve. Each probe is HONEST: the variable
     /// response is delayed by rotating its FULL spectrum (an exact fractional
     /// delay of the whole record) and the direct-sound gates are re-anchored
     /// on the delayed response by <see cref="MeasureSumLoss"/> — unlike the
     /// <see cref="SumLossEvaluator"/> rotation probe, whose gates stay pinned
     /// where the responses originally sat and which misgrades
-    /// multi-millisecond deltas by whole dB. Pass responses cropped to the
-    /// direct-sound window (the alignment engine's own basis): the rotation
-    /// is circular, so content within <paramref name="endDelayMs"/> of the
-    /// record's end wraps to its start.
+    /// multi-millisecond deltas by whole dB. Both responses are placed into a
+    /// guard-padded frame before the rotation — a shared silent prefix and
+    /// suffix covering the sweep window — so no probed delay can wrap record
+    /// content circularly: without the prefix, a negative delay on an
+    /// early-peaked record carried the direct sound to the END of the array,
+    /// the shared gate (anchored at the remaining, fixed channel) lost the
+    /// variable channel entirely, and the "loss" of a one-channel sum read as
+    /// a fake perfect 0 dB.
     /// </summary>
     public static List<JunctionSweepPoint> JunctionLossSweep(
         Complex[] variableImpulseResponse,
@@ -1007,8 +1011,21 @@ public static class VirtualCrossoverAnalysis
             throw new ArgumentException("The sweep window is invalid.");
         }
 
-        int fftLength = DspMath.NextPowerOfTwo(variableImpulseResponse.Length);
-        Complex[] spectrum = ForwardSpectrum(variableImpulseResponse, fftLength);
+        // The guard covers the widest probed shift in either direction (plus a
+        // few samples for the fractional-delay sinc tails). The SAME offset is
+        // applied to both channels, so their relative timing — the only thing
+        // the gate-re-anchoring measurement reads — is untouched.
+        int guardSamples = 8 + (int)Math.Ceiling(
+            Math.Max(Math.Abs(startDelayMs), Math.Abs(endDelayMs))
+            / 1000.0 * sampleRate);
+        int contentLength = Math.Max(
+            variableImpulseResponse.Length, fixedImpulseResponse.Length);
+        int fftLength = DspMath.NextPowerOfTwo(contentLength + 2 * guardSamples);
+        var variableFrame = new Complex[fftLength];
+        variableImpulseResponse.CopyTo(variableFrame, guardSamples);
+        var fixedFrame = new Complex[fftLength];
+        fixedImpulseResponse.CopyTo(fixedFrame, guardSamples);
+        Complex[] spectrum = ForwardSpectrum(variableFrame, fftLength);
         var points = new List<JunctionSweepPoint>();
         var delayed = new Complex[fftLength];
         for (double delayMs = startDelayMs;
@@ -1033,7 +1050,7 @@ public static class VirtualCrossoverAnalysis
             Fourier.Inverse(delayed, FourierOptions.Matlab);
             (double LossDb, double DipDb)? loss = MeasureSumLoss(
                 delayed,
-                new List<Complex[]> { fixedImpulseResponse },
+                new List<Complex[]> { fixedFrame },
                 sampleRate,
                 bandLowHz,
                 bandHighHz);

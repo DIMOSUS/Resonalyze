@@ -121,6 +121,61 @@ public sealed class JunctionCorrelationCurveTests
     }
 
     [Fact]
+    public void JunctionLossSweep_NegativeDelaysOnAnEarlyPeakStayHonest()
+    {
+        // The review scenario: with the variable channel's direct sound near
+        // the record's START, a negative probe used to wrap it circularly to
+        // the END of the array; the shared gate then anchored on the
+        // remaining fixed channel alone, and the one-channel "sum" read a
+        // fake perfect ~0 dB. The guard frame must keep every probe honest:
+        // each point equals a cleanly CONSTRUCTED pair at the same relative
+        // offset (the gates re-anchor on the peaks, so only the relative
+        // offset matters).
+        Complex[] variable = ImpulseAtSample(96);   // 2 ms into the record
+        Complex[] fixedIr = ImpulseAtSample(480);   // 10 ms
+
+        // Half-millisecond steps are whole samples at 48 kHz, so every
+        // reference impulse lands exactly on the shifted position.
+        List<VirtualCrossoverAnalysis.JunctionSweepPoint> sweep =
+            VirtualCrossoverAnalysis.JunctionLossSweep(
+                variable, fixedIr, SampleRate,
+                bandLowHz: 800, bandHighHz: 1_250,
+                startDelayMs: -6.0, endDelayMs: -1.0, stepMs: 0.5,
+                invertVariable: false);
+
+        Assert.Equal(11, sweep.Count);
+        foreach (VirtualCrossoverAnalysis.JunctionSweepPoint point in sweep)
+        {
+            double relativeMs = 10.0 - (2.0 + point.DelayMs);
+            Complex[] referenceVariable = ImpulseAtSample(240); // 5 ms
+            Complex[] referenceFixed = ImpulseAtSample(
+                240 + (int)Math.Round(relativeMs / 1000.0 * SampleRate));
+            (double LossDb, double DipDb)? reference =
+                VirtualCrossoverAnalysis.MeasureSumLoss(
+                    referenceVariable,
+                    [referenceFixed],
+                    SampleRate, 800, 1_250);
+
+            Assert.NotNull(reference);
+            Assert.True(
+                Math.Abs(point.LossDb - reference.Value.LossDb) < 0.25,
+                $"loss at {point.DelayMs:0.0} ms: sweep {point.LossDb:0.00} " +
+                $"vs honest {reference.Value.LossDb:0.00}");
+            Assert.True(
+                Math.Abs(point.DipDb - reference.Value.DipDb) < 0.5,
+                $"dip at {point.DelayMs:0.0} ms: sweep {point.DipDb:0.00} " +
+                $"vs honest {reference.Value.DipDb:0.00}");
+        }
+    }
+
+    private static Complex[] ImpulseAtSample(int position)
+    {
+        var ir = new Complex[IrLength];
+        ir[position] = 1.0;
+        return ir;
+    }
+
+    [Fact]
     public void JunctionLossSweep_InvertedPolarityShiftsTheCombByHalfAPeriod()
     {
         // With the variable channel inverted the comb flips: the optimum moves

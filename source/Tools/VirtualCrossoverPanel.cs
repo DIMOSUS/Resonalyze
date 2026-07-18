@@ -2918,9 +2918,13 @@ public partial class VirtualCrossoverPanel : UserControl
     // The last applied processed snapshot: the correlation view's data source.
     private ProcessedRender? lastProcessedRender;
 
-    // Coalesces the correlation rebuilds the same way the main redraw loop
-    // coalesces frames: one compute in flight, the newest request wins.
-    private long correlationRebuildStamp;
+    // Single-flight for the correlation rebuilds, mirroring the main redraw
+    // loop: at most ONE sweep computes at a time, and a request that arrives
+    // mid-compute only marks the loop to run once more with the then-latest
+    // state — a stamp alone would merely hide stale results while the stacked
+    // tasks kept burning a full sweep of inverse FFTs each.
+    private Task? correlationRebuildTask;
+    private bool correlationRebuildPending;
 
     // Guards the combo repopulation from feeding its own SelectedIndexChanged
     // back into the project as a user edit.
@@ -2931,9 +2935,7 @@ public partial class VirtualCrossoverPanel : UserControl
         if (CurrentDspPlotMode() == DspPlotMode.Correlation)
         {
             UpdateCorrelationPairChoices();
-            // Fire-and-forget like the redraw loop itself: the stamp inside
-            // coalesces stacked rebuilds and failures keep the last frame.
-            Task ignored = RedrawCorrelationPlotAsync();
+            RequestCorrelationRedraw();
             return;
         }
 
@@ -3016,9 +3018,34 @@ public partial class VirtualCrossoverPanel : UserControl
             radioDspCorrelation.Checked && labels.Count > 0;
     }
 
+    // Runs on the UI thread. Starts the rebuild loop, or — when one is
+    // already computing — marks it to repeat once more with the latest state.
+    private void RequestCorrelationRedraw()
+    {
+        if (correlationRebuildTask is { IsCompleted: false })
+        {
+            correlationRebuildPending = true;
+            return;
+        }
+
+        correlationRebuildTask = RunCorrelationRebuildLoopAsync();
+    }
+
+    private async Task RunCorrelationRebuildLoopAsync()
+    {
+        do
+        {
+            correlationRebuildPending = false;
+            await RedrawCorrelationPlotAsync();
+        }
+        while (correlationRebuildPending && !dspPlotView.IsDisposed &&
+            CurrentDspPlotMode() == DspPlotMode.Correlation);
+
+        correlationRebuildTask = null;
+    }
+
     private async Task RedrawCorrelationPlotAsync()
     {
-        long stamp = ++correlationRebuildStamp;
         List<AdjacentPair> pairs = CurrentCorrelationPairs();
         if (pairs.Count == 0)
         {
@@ -3040,14 +3067,15 @@ public partial class VirtualCrossoverPanel : UserControl
                 $"Correlation view rebuild failed: {exception}");
         }
 
-        if (stamp != correlationRebuildStamp ||
-            dspPlotView.IsDisposed ||
+        if (dspPlotView.IsDisposed ||
             CurrentDspPlotMode() != DspPlotMode.Correlation)
         {
             return;
         }
 
-        if (data != null)
+        // A request that arrived mid-compute means this result is already
+        // stale: skip the draw, the loop is about to recompute anyway.
+        if (data != null && !correlationRebuildPending)
         {
             dspChainPlot.DrawCorrelation(data);
         }
@@ -3089,7 +3117,15 @@ public partial class VirtualCrossoverPanel : UserControl
                 lower, upper, sampleRate, pair.CrossoverHz, passOctaves,
                 windowMs, centerLagMs: 0, phaseTransform: true);
 
-        double stepMs = Math.Max(0.01, windowMs / 60.0);
+        // The score comb repeats per crossover period, so the step must
+        // resolve THAT scale — a fixed points-per-window count aliased at
+        // high junctions (at a 20 kHz-class split, window/60 equals a whole
+        // period and the comb could sample flat). A tenth of a period keeps
+        // the lobes drawn; the window/300 floor bounds the sweep at ~600
+        // points per polarity for pathological corner setups.
+        double stepMs = Math.Max(
+            Math.Min(windowMs / 60.0, 100.0 / pair.CrossoverHz),
+            Math.Max(0.005, windowMs / 300.0));
         List<SignalPoint> ScoreSweep(bool invert) =>
             VirtualCrossoverAnalysis.JunctionLossSweep(
                 upper, lower, sampleRate,

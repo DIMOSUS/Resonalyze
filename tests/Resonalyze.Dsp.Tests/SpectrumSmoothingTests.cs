@@ -36,4 +36,28 @@ public sealed class SpectrumSmoothingTests
         Assert.False(SpectrumSmoothing.IsPsychoacoustic(0));
         Assert.False(SpectrumSmoothing.IsPsychoacoustic(-3));
     }
+
+    [Theory]
+    [InlineData(50.0, 1.0 / 3.0)]
+    [InlineData(100.0, 1.0 / 3.0)]
+    [InlineData(1_000.0, 1.0 / 6.0)]
+    [InlineData(10_000.0, 1.0 / 6.0)]
+    public void PsychoacousticOctaves_UsesTheExpectedEndpointWidths(
+        double frequency,
+        double expected)
+    {
+        Assert.Equal(
+            expected,
+            SpectrumSmoothing.PsychoacousticOctaves(frequency),
+            precision: 12);
+    }
+
+    [Fact]
+    public void PsychoacousticOctaves_InterpolatesOnTheLogFrequencyAxis()
+    {
+        Assert.Equal(
+            1.0 / 4.0,
+            SpectrumSmoothing.PsychoacousticOctaves(Math.Sqrt(100.0 * 1_000.0)),
+            precision: 12);
+    }
 }

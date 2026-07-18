@@ -2157,7 +2157,7 @@ public sealed class Overlay
         points = OverlayMath.SmoothByOctaves(
             points,
             settings.SmoothingInverseOctaves,
-            psychoacousticFloor: MagnitudeSmoothingSemantics);
+            psychoacousticMagnitude: MagnitudeSmoothingSemantics);
         if (points.Length < 2)
         {
             return null;
@@ -2272,17 +2272,14 @@ public sealed class Overlay
         drawPoints = BuildCapturedPoints(smoothingInverseOctaves);
     }
 
-    // Whether this slot's curve carries dB MAGNITUDE semantics — the only
-    // domain where the psychoacoustic smoothing's asymmetric median floor is
-    // honest. Phase and group-delay modes and a captured coherence trace
-    // (whatever the mode) must smooth at the plain base width instead: an
-    // upward-only floor would bias a signed phase/delay curve and would
-    // inflate exactly the low-coherence stretches that trace exists to expose.
+    // Whether this slot's curve carries dB MAGNITUDE semantics, as required by
+    // psychoacoustic cubic averaging. Phase, group-delay and coherence traces
+    // use the plain base width because their signed values are not amplitudes.
     private bool MagnitudeSmoothingSemantics =>
         OverlayMath.SupportsAmplitudeSpace(SeriesMode) &&
         capturedYAxisKey != PlotModelFactory.CoherenceAxisKey &&
         // When the captured kind is known, only a magnitude-domain curve is eligible;
-        // a phase kind (min/excess phase) never applies the asymmetric floor. A null
+        // a phase kind (min/excess phase) never applies magnitude cubic averaging. A null
         // kind (imported text, legacy files) falls back to the mode/axis test above.
         capturedCurveKind is not (
             Resonalyze.Dsp.AnalysisCurveKind.MinimumPhase or
@@ -2321,7 +2318,7 @@ public sealed class Overlay
         OverlayPoint[] smoothed = OverlayMath.SmoothByOctaves(
             sourcePoints.Select(point => new OverlayPoint(point.X, point.Y)).ToArray(),
             smoothing,
-            psychoacousticFloor: MagnitudeSmoothingSemantics);
+            psychoacousticMagnitude: MagnitudeSmoothingSemantics);
         return smoothed
             .Select(point => new DataPoint(point.X, point.Y + offset))
             .ToArray();

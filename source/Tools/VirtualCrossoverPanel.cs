@@ -1540,7 +1540,7 @@ public partial class VirtualCrossoverPanel : UserControl
             "and of the curves the Sum loss read-out is measured from,\r\n" +
             "so it still moves those numbers in the Phase and Impulse\r\n" +
             "views, where the drawn traces are not smoothed at all.\r\n" +
-            "Psychoacoustic: 1/6 octave that additionally ignores dips\r\n" +
+            "Psychoacoustic: variable 1/3 to 1/6 octave with extra peak weighting\r\n" +
             "narrower than half its window — narrow interference nulls\r\n" +
             "the ear barely hears drop out, peaks and broad valleys stay.\r\n" +
             "The junction metric numbers stay unsmoothed and honest.");

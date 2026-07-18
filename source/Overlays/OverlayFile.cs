@@ -52,7 +52,7 @@ public sealed class OverlayFile
     public int OpacityPercent { get; set; } = 100;
     public int SmoothingInverseOctaves { get; set; }
 
-    // The dip-ignoring psychoacoustic smoothing mode (see SpectrumSmoothing in
+    // The psychoacoustic magnitude smoothing mode (see SpectrumSmoothing in
     // dsp). Stored as a separate additive flag while SmoothingInverseOctaves
     // keeps the plain base width, so an older build reads such a file as plain
     // 1/6-octave smoothing instead of rejecting an unknown code. Additive with

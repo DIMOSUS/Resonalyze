@@ -325,7 +325,7 @@ public sealed class VirtualCrossoverProjectFile
     public bool ShowImpulseView { get; set; }
     public int SmoothingInverseOctaves { get; set; } = 12;
 
-    // The dip-ignoring psychoacoustic smoothing mode (see SpectrumSmoothing in
+    // The psychoacoustic magnitude smoothing mode (see SpectrumSmoothing in
     // dsp). Stored as a separate additive flag while SmoothingInverseOctaves
     // keeps the plain base width, so an older build opens such a session as
     // plain 1/6-octave smoothing instead of rejecting the file.

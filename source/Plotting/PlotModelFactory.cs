@@ -1171,8 +1171,7 @@ internal sealed class PlotModelFactory
     {
         // Coherence is a 0..1 confidence trace, not a magnitude: the
         // psychoacoustic code decodes to its plain base width here — the
-        // asymmetric dip floor would inflate exactly the low-coherence
-        // stretches the curve exists to expose.
+        // cubic magnitude mean is not meaningful for this confidence value.
         double smoothingOctaves =
             SpectrumSmoothing.SmoothingOctaves(smoothingInverseOctaves);
         if (smoothingOctaves <= 0 || points.Count < 3)

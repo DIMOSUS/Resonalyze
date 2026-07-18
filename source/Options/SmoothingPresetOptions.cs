@@ -25,10 +25,9 @@ internal static class SmoothingPresetOptions
 
     /// <summary>
     /// Fills a smoothing combo with the width presets.
-    /// <paramref name="includePsychoacoustic"/> adds the dip-ignoring
-    /// psychoacoustic mode — only combos that smooth MAGNITUDE curves may set
-    /// it; phase and group-delay combos must stay width-only, because the
-    /// asymmetric floor would bias a signed curve upward.
+    /// <paramref name="includePsychoacoustic"/> adds psychoacoustic magnitude
+    /// smoothing. Phase and group-delay combos must stay width-only because
+    /// cubic averaging is defined for amplitudes, not signed values.
     /// </summary>
     public static void Configure(
         DarkComboBox comboBox, bool includePsychoacoustic = false)

@@ -416,13 +416,12 @@ public sealed class OverlayMathTests
     }
 
     [Fact]
-    public void SmoothByOctaves_PsychoacousticIgnoresANarrowDipAndKeepsAPeak()
+    public void SmoothByOctaves_PsychoacousticWeightsPeaksWithoutClippingDips()
     {
         // A fine log grid (1/96 octave) around 1 kHz, flat at 0 dB, with a
-        // -24 dB dip and a +9 dB peak each 5 points (~1/19 octave) wide — both
-        // far narrower than half the 1/6-octave base window. The plain
-        // smoothing keeps a diluted copy of both; the psychoacoustic mode must
-        // erase the dip and reproduce the peak at exactly its plain height.
+        // -24 dB dip and a +9 dB peak each 5 points (~1/19 octave) wide.
+        // Psychoacoustic cubic averaging must favour the peak while retaining
+        // a smooth, finite dip instead of clipping it to a median envelope.
         OverlayPoint[] points = Enumerable.Range(0, 385)
             .Select(index =>
             {
@@ -442,19 +441,22 @@ public sealed class OverlayMathTests
         double plainDip = plain.Min(point => point.Y);
         double psychoDip = psycho.Min(point => point.Y);
         Assert.True(plainDip < -1.0, $"plain smoothing lost the dip ({plainDip:0.00} dB)");
-        Assert.True(psychoDip > -0.05, $"psychoacoustic kept the dip ({psychoDip:0.00} dB)");
+        Assert.True(psychoDip > plainDip);
+        Assert.True(
+            psychoDip < -0.1,
+            $"psychoacoustic hard-clipped the dip ({psychoDip:0.00} dB)");
 
         double plainPeak = plain.Max(point => point.Y);
         double psychoPeak = psycho.Max(point => point.Y);
         Assert.True(plainPeak > 0.5, $"the peak vanished entirely ({plainPeak:0.00} dB)");
-        Assert.Equal(plainPeak, psychoPeak, precision: 6);
+        Assert.True(psychoPeak > 1.0);
     }
 
     [Fact]
-    public void SmoothByOctaves_FloorDisabledMatchesPlainBaseWidthExactly()
+    public void SmoothByOctaves_MagnitudeSemanticsDisabledMatchesPlainBaseWidth()
     {
         // A phase-like signed curve with a sharp negative excursion: with the
-        // floor disabled (phase / group-delay / coherence semantics) the
+        // magnitude semantics disabled (phase / group-delay / coherence) the
         // psychoacoustic code must decode to plain 1/6-octave smoothing —
         // identical per point, no upward bias anywhere.
         OverlayPoint[] points = Enumerable.Range(0, 385)
@@ -468,7 +470,7 @@ public sealed class OverlayMathTests
         OverlayPoint[] gated = OverlayMath.SmoothByOctaves(
             points,
             Dsp.SpectrumSmoothing.PsychoacousticCode,
-            psychoacousticFloor: false);
+            psychoacousticMagnitude: false);
 
         Assert.Equal(plain.Length, gated.Length);
         for (int i = 0; i < plain.Length; i++)

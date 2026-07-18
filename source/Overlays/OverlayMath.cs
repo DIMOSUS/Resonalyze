@@ -7,6 +7,9 @@ namespace Resonalyze;
 /// </summary>
 public static class OverlayMath
 {
+    private const double GaussianRadiusSigma = 3.0;
+    private const double GaussianTaperStartSigma = 2.5;
+
     public static bool SupportsAmplitudeSpace(Mode mode)
     {
         return mode is Mode.FrequencyResponse or Mode.LiveSpectrum;
@@ -14,16 +17,14 @@ public static class OverlayMath
 
     /// <summary>
     /// Fractional-octave smoothing of an overlay curve.
-    /// <paramref name="psychoacousticFloor"/> gates the psychoacoustic mode's
-    /// asymmetric median floor — a MAGNITUDE concept: the caller must pass
-    /// false for phase, group-delay and coherence curves, where the code then
-    /// decodes to its plain 1/6-octave base width so those traces stay
-    /// unbiased instead of being pulled upward at every narrow dip.
+    /// <paramref name="psychoacousticMagnitude"/> gates psychoacoustic magnitude
+    /// semantics. The caller must pass false for phase, group-delay and
+    /// coherence curves, where the code decodes to plain 1/6-octave smoothing.
     /// </summary>
     public static OverlayPoint[] SmoothByOctaves(
         IReadOnlyList<OverlayPoint> points,
         int inverseOctaves,
-        bool psychoacousticFloor = true)
+        bool psychoacousticMagnitude = true)
     {
         ArgumentNullException.ThrowIfNull(points);
         if (points.Count < 2 || inverseOctaves == 0)
@@ -35,15 +36,9 @@ public static class OverlayMath
             throw new ArgumentOutOfRangeException(nameof(inverseOctaves));
         }
 
-        // The psychoacoustic mode smooths at its base width and additionally
-        // floors each point at the window median (below), so narrow
-        // interference dips drop out while peaks and broad structure survive.
-        bool psychoacoustic = psychoacousticFloor &&
+        bool psychoacoustic = psychoacousticMagnitude &&
             SpectrumSmoothing.IsPsychoacoustic(inverseOctaves);
-        double halfWidth = 0.5 * SpectrumSmoothing.SmoothingOctaves(inverseOctaves);
         var result = new OverlayPoint[points.Count];
-        int left = 0;
-        int right = 0;
 
         for (int center = 0; center < points.Count; center++)
         {
@@ -55,16 +50,24 @@ public static class OverlayMath
             }
 
             double centerOctaves = Math.Log2(centerPoint.X);
-            while (left < points.Count &&
-                   (points[left].X <= 0 ||
-                    Math.Log2(points[left].X) < centerOctaves - halfWidth))
+            double smoothingOctaves = psychoacoustic
+                ? SpectrumSmoothing.PsychoacousticOctaves(centerPoint.X)
+                : SpectrumSmoothing.SmoothingOctaves(inverseOctaves);
+            double halfWidth = 0.5 * smoothingOctaves;
+            double radius = psychoacoustic
+                ? GaussianRadiusSigma * smoothingOctaves / 2.354820045
+                : halfWidth;
+            int left = center;
+            while (left > 0 &&
+                   points[left - 1].X > 0 &&
+                   Math.Log2(points[left - 1].X) >= centerOctaves - radius)
             {
-                left++;
+                left--;
             }
-            right = Math.Max(right, center);
+            int right = center;
             while (right + 1 < points.Count &&
                    points[right + 1].X > 0 &&
-                   Math.Log2(points[right + 1].X) <= centerOctaves + halfWidth)
+                   Math.Log2(points[right + 1].X) <= centerOctaves + radius)
             {
                 right++;
             }
@@ -80,9 +83,35 @@ public static class OverlayMath
 
                 double distance =
                     Math.Abs(Math.Log2(points[sample].X) - centerOctaves);
-                double weight = 0.5 *
-                    (1 + Math.Cos(Math.PI * distance / halfWidth));
-                weightedSum += points[sample].Y * weight;
+                double weight;
+                double sampleValue;
+                if (psychoacoustic)
+                {
+                    double sigma = smoothingOctaves / 2.354820045;
+                    double normalized = distance / sigma;
+                    if (normalized >= GaussianRadiusSigma)
+                    {
+                        continue;
+                    }
+
+                    double taper = normalized <= GaussianTaperStartSigma
+                        ? 1.0
+                        : 0.5 * (1.0 + Math.Cos(
+                            Math.PI *
+                            (normalized - GaussianTaperStartSigma) /
+                            (GaussianRadiusSigma - GaussianTaperStartSigma)));
+                    weight = Math.Exp(-0.5 * normalized * normalized) * taper;
+                    double amplitude = Math.Pow(10.0, points[sample].Y / 20.0);
+                    sampleValue = amplitude * amplitude * amplitude;
+                }
+                else
+                {
+                    weight = 0.5 *
+                        (1 + Math.Cos(Math.PI * distance / halfWidth));
+                    sampleValue = points[sample].Y;
+                }
+
+                weightedSum += sampleValue * weight;
                 weightSum += weight;
             }
 
@@ -91,47 +120,13 @@ public static class OverlayMath
                 : centerPoint.Y;
             if (psychoacoustic)
             {
-                double median = WindowMedian(points, left, right);
-                if (double.IsFinite(median))
-                {
-                    value = Math.Max(value, median);
-                }
+                value = 20.0 * Math.Log10(Math.Cbrt(value));
             }
 
             result[center] = new OverlayPoint(centerPoint.X, value);
         }
 
         return result;
-    }
-
-    // The median of the finite Y values over [first, last] — the robust center
-    // the psychoacoustic floor compares the windowed mean against: a dip
-    // narrower than half the window cannot move it. NaN when the window holds
-    // no finite value.
-    private static double WindowMedian(
-        IReadOnlyList<OverlayPoint> points, int first, int last)
-    {
-        var values = new List<double>();
-        for (int i = Math.Max(first, 0);
-             i <= Math.Min(last, points.Count - 1);
-             i++)
-        {
-            if (!double.IsNaN(points[i].Y))
-            {
-                values.Add(points[i].Y);
-            }
-        }
-
-        if (values.Count == 0)
-        {
-            return double.NaN;
-        }
-
-        values.Sort();
-        int middle = values.Count / 2;
-        return values.Count % 2 == 1
-            ? values[middle]
-            : 0.5 * (values[middle - 1] + values[middle]);
     }
 
     /// <summary>

@@ -86,46 +86,25 @@ internal sealed class MeasurementPlotContext
     }
 
     /// <summary>
-    /// The oversampled primary spectrum an overlay stores so it can reproduce the
-    /// mode's smoothing EXACTLY (the same <see cref="DataHelper.LogarithmicResample"/>)
-    /// at any width, Off = raw. Calibration is baked in per input point (the mode
-    /// applies it post-smoothing over a near-flat correction, so on the dense
-    /// oversampled grid this is exact for no calibration and within rounding with it).
+    /// The uncalibrated oversampled primary spectrum an overlay stores so it can
+    /// reproduce the mode's smoothing exactly. Calibration is captured separately
+    /// on the output grid and applied only after smoothing, like the primary curve.
     /// Null when there is no transfer IR to analyze.
     /// </summary>
     public IReadOnlyList<SignalPoint>? CreateRawPrimarySpectrum(
-        FrequencyResponseOptions options,
-        CalibrationFile? calibration) =>
+        FrequencyResponseOptions options) =>
         HasTransferImpulseResponse
-            ? BuildRawPrimarySpectrum(CreatePrimaryMeasurement(), options, calibration)
+            ? BuildRawPrimarySpectrum(CreatePrimaryMeasurement(), options)
             : null;
 
     /// <summary>
-    /// The oversampled primary spectrum with calibration baked in (when the options
-    /// enable it), ready to be re-smoothed by <see cref="DataHelper.LogarithmicResample"/>.
+    /// The uncalibrated oversampled primary spectrum, ready to be re-smoothed by
+    /// <see cref="DataHelper.LogarithmicResample"/>.
     /// </summary>
     public static IReadOnlyList<SignalPoint> BuildRawPrimarySpectrum(
         IImpulseMeasurement measurement,
-        FrequencyResponseOptions options,
-        CalibrationFile? calibration)
-    {
-        List<SignalPoint> spectrum =
-            DataHelper.GetOversampledPrimarySpectrum(measurement, options);
-        CalibrationFile? effective = options.UseCalibration ? calibration : null;
-        if (effective == null)
-        {
-            return spectrum;
-        }
-
-        var baked = new List<SignalPoint>(spectrum.Count);
-        foreach (SignalPoint point in spectrum)
-        {
-            baked.Add(new SignalPoint(
-                point.X, point.Y - effective.GetDecibelCorrection(point.X)));
-        }
-
-        return baked;
-    }
+        FrequencyResponseOptions options) =>
+        DataHelper.GetOversampledPrimarySpectrum(measurement, options);
 
     public IImpulseMeasurement CreateSweepDeconvolutionMeasurement()
     {

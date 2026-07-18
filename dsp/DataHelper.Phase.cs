@@ -1130,8 +1130,8 @@ namespace Resonalyze.Dsp
         // Display smoothing for the phase-domain curves (phase, minimum/excess
         // phase): the stored code decodes through SpectrumSmoothing, so the
         // psychoacoustic magnitude mode falls back to its plain base width here
-        // — the asymmetric dip floor is a magnitude concept and would bias a
-        // signed phase trace upward. Off (0) passes the data through untouched.
+        // — cubic magnitude averaging is not meaningful for a signed phase
+        // trace. Off (0) passes the data through untouched.
         private static List<SignalPoint> SmoothPhaseCurve(
             List<SignalPoint> data, double smoothingInverseOctaves)
         {

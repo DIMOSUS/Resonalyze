@@ -90,6 +90,10 @@ namespace Resonalyze.Dsp
             for (int i = 0; i < steps; i++)
             {
                 double frequency = LogPositionToFrequency(i / (steps - 1.0), start, stop);
+                double effectiveSmoothingOctaves = psychoacoustic
+                    ? SpectrumSmoothing.PsychoacousticOctaves(frequency)
+                    : smoothingOctaves;
+                frequencyRatio = Math.Pow(2.0, effectiveSmoothingOctaves * 0.5);
 
                 double halfDeltaFrequency = Math.Max(frequency * (frequencyRatio - 1), inputStep * a);
                 double invHalfDeltaFrequency = 1.0 / halfDeltaFrequency * a;
@@ -136,21 +140,15 @@ namespace Resonalyze.Dsp
 
                 if (psychoacoustic)
                 {
-                    // The asymmetric floor (see SpectrumSmoothing): the median of
-                    // the samples inside the smoothing half-width ignores any
-                    // feature narrower than half the window regardless of its
-                    // depth, so flooring the mean at it erases narrow
-                    // interference dips while a narrow peak — which lifts the
-                    // mean above the median — keeps exactly its plain-smoothed
-                    // height, and anything wider than the window moves both
-                    // figures together and passes through unchanged.
-                    int medianRadius = (int)Math.Ceiling(halfDeltaFrequency / inputStep);
-                    double median = WindowMedian(
-                        input, centerIndex - medianRadius, centerIndex + medianRadius);
-                    if (double.IsFinite(median))
-                    {
-                        filteredValue = Math.Max(filteredValue, median);
-                    }
+                    // A Gaussian cubic mean gives peaks more perceptual weight
+                    // without a hard lower envelope that can kink smooth valleys.
+                    filteredValue = PsychoacousticCubicMean(
+                        input,
+                        frequency,
+                        effectiveSmoothingOctaves,
+                        inputStep,
+                        dBUnpack,
+                        filteredValue);
                 }
 
                 if (calibration != null)
@@ -168,34 +166,108 @@ namespace Resonalyze.Dsp
             return output;
         }
 
-        // The median of the finite Y values over an index window (bounds clamped
-        // to the grid), NaN when the window holds none. The psychoacoustic
-        // floor's robust center: unlike the weighted mean it is untouched by a
-        // deep feature occupying less than half the window.
-        private static double WindowMedian(
-            List<SignalPoint> input, int firstIndex, int lastIndex)
+        // Direct Gaussian approximation of the psychoacoustic smoother. Its FWHM
+        // follows the frequency-dependent octave width and its cubic mean favours
+        // audible peaks without clipping the lower side of the response.
+        private static double PsychoacousticCubicMean(
+            List<SignalPoint> input,
+            double centerFrequency,
+            double smoothingOctaves,
+            double inputStep,
+            bool dBUnpack,
+            double fallback)
         {
-            var values = new List<double>();
-            for (int i = Math.Max(firstIndex, 0);
-                 i <= Math.Min(lastIndex, input.Count - 1);
-                 i++)
+            const double GaussianRadiusSigma = 3.0;
+            const double GaussianTaperStartSigma = 2.5;
+            double sigmaOctaves = PsychoacousticGaussianSigmaOctaves(
+                centerFrequency,
+                smoothingOctaves,
+                inputStep,
+                GaussianRadiusSigma);
+            if (sigmaOctaves <= 0.0 || inputStep <= 0.0)
             {
-                if (double.IsFinite(input[i].Y))
+                return fallback;
+            }
+
+            double radiusOctaves = GaussianRadiusSigma * sigmaOctaves;
+            double lowFrequency = centerFrequency / Math.Pow(2.0, radiusOctaves);
+            double highFrequency = centerFrequency * Math.Pow(2.0, radiusOctaves);
+            int firstIndex = Math.Max(
+                0,
+                (int)Math.Floor((lowFrequency - input[0].X) / inputStep));
+            int lastIndex = Math.Min(
+                input.Count - 1,
+                (int)Math.Ceiling((highFrequency - input[0].X) / inputStep));
+
+            double weightSum = 0.0;
+            double weightedCubeSum = 0.0;
+            for (int index = firstIndex; index <= lastIndex; index++)
+            {
+                SignalPoint point = input[index];
+                if (!double.IsFinite(point.Y) || point.X <= 0.0)
                 {
-                    values.Add(input[i].Y);
+                    continue;
                 }
+
+                double distanceOctaves = Math.Log2(point.X / centerFrequency);
+                double normalized = distanceOctaves / sigmaOctaves;
+                double absoluteNormalized = Math.Abs(normalized);
+                if (absoluteNormalized >= GaussianRadiusSigma)
+                {
+                    continue;
+                }
+
+                double taper = absoluteNormalized <= GaussianTaperStartSigma
+                    ? 1.0
+                    : 0.5 * (1.0 + Math.Cos(
+                        Math.PI *
+                        (absoluteNormalized - GaussianTaperStartSigma) /
+                        (GaussianRadiusSigma - GaussianTaperStartSigma)));
+                double weight =
+                    Math.Exp(-0.5 * normalized * normalized) * taper;
+                double value = dBUnpack ? DecibelsToAmplitude(point.Y) : point.Y;
+                weightedCubeSum += value * value * value * weight;
+                weightSum += weight;
             }
 
-            if (values.Count == 0)
+            if (weightSum <= 1e-12)
             {
-                return double.NaN;
+                return fallback;
             }
 
-            values.Sort();
-            int middle = values.Count / 2;
-            return values.Count % 2 == 1
-                ? values[middle]
-                : 0.5 * (values[middle - 1] + values[middle]);
+            double cubicMean = Math.Cbrt(weightedCubeSum / weightSum);
+            return dBUnpack ? AmplitudeToDecibels(cubicMean) : cubicMean;
+        }
+
+        private static double PsychoacousticGaussianSigmaOctaves(
+            double centerFrequency,
+            double smoothingOctaves,
+            double inputStep,
+            double radiusSigma)
+        {
+            const double GaussianFwhmToSigma = 1.0 / 2.354820045;
+            double requestedSigma = smoothingOctaves * GaussianFwhmToSigma;
+            if (centerFrequency <= 0.0 || inputStep <= 0.0 || radiusSigma <= 0.0)
+            {
+                return requestedSigma;
+            }
+
+            // Match the ordinary resampler's minimum half-width of two FFT bins.
+            // On a log axis equal Hz distances are asymmetric, so use whichever
+            // side requires the larger octave radius. Below two bins only the
+            // upper distance is defined; DC bounds the available lower side.
+            double minimumRadiusHz = 2.0 * inputStep;
+            double upperRadiusOctaves = Math.Log2(
+                (centerFrequency + minimumRadiusHz) / centerFrequency);
+            double lowerRadiusOctaves = centerFrequency > minimumRadiusHz
+                ? Math.Log2(
+                    centerFrequency / (centerFrequency - minimumRadiusHz))
+                : upperRadiusOctaves;
+            double minimumRadiusOctaves =
+                Math.Max(upperRadiusOctaves, lowerRadiusOctaves);
+            return Math.Max(
+                requestedSigma,
+                minimumRadiusOctaves / radiusSigma);
         }
 
         /// <summary>
@@ -387,35 +459,78 @@ namespace Resonalyze.Dsp
                 prefix[i + 1] = prefix[i] + bandPowers[i];
             }
 
-            var medianScratch = psychoacoustic ? new List<double>() : null;
             for (int i = 0; i < steps; i++)
             {
-                int lowIndex = Math.Max(0, i - smoothingHalfSteps);
-                int highIndex = Math.Min(steps - 1, i + smoothingHalfSteps);
-                double mean = (prefix[highIndex + 1] - prefix[lowIndex]) / (highIndex - lowIndex + 1);
-                if (medianScratch != null)
+                double smoothedAmplitude;
+                if (psychoacoustic)
                 {
-                    // The asymmetric floor (see SpectrumSmoothing), in the power
-                    // domain where this smoother lives — the median is monotonic
-                    // under the dB mapping, so flooring powers floors levels.
-                    medianScratch.Clear();
-                    for (int sample = lowIndex; sample <= highIndex; sample++)
-                    {
-                        medianScratch.Add(bandPowers[sample]);
-                    }
-
-                    medianScratch.Sort();
-                    int middle = medianScratch.Count / 2;
-                    double median = medianScratch.Count % 2 == 1
-                        ? medianScratch[middle]
-                        : 0.5 * (medianScratch[middle - 1] + medianScratch[middle]);
-                    mean = Math.Max(mean, median);
+                    smoothedAmplitude = PsychoacousticPowerCubicMean(
+                        bandPowers,
+                        i,
+                        SpectrumSmoothing.PsychoacousticOctaves(frequencies[i]),
+                        octavesPerStep);
+                }
+                else
+                {
+                    int lowIndex = Math.Max(0, i - smoothingHalfSteps);
+                    int highIndex = Math.Min(steps - 1, i + smoothingHalfSteps);
+                    double mean =
+                        (prefix[highIndex + 1] - prefix[lowIndex]) /
+                        (highIndex - lowIndex + 1);
+                    smoothedAmplitude = Math.Sqrt(mean);
                 }
 
-                output.Add(new SignalPoint(frequencies[i], AmplitudeToDecibels(Math.Sqrt(mean))));
+                output.Add(new SignalPoint(
+                    frequencies[i],
+                    AmplitudeToDecibels(smoothedAmplitude)));
             }
 
             return output;
+        }
+
+        private static double PsychoacousticPowerCubicMean(
+            IReadOnlyList<double> bandPowers,
+            int centerIndex,
+            double smoothingOctaves,
+            double octavesPerStep)
+        {
+            const double GaussianFwhmToSigma = 1.0 / 2.354820045;
+            const double GaussianRadiusSigma = 3.0;
+            const double GaussianTaperStartSigma = 2.5;
+            double sigmaSteps =
+                smoothingOctaves * GaussianFwhmToSigma / octavesPerStep;
+            int radius = Math.Max(
+                1,
+                (int)Math.Ceiling(GaussianRadiusSigma * sigmaSteps));
+            int firstIndex = Math.Max(0, centerIndex - radius);
+            int lastIndex = Math.Min(bandPowers.Count - 1, centerIndex + radius);
+            double weightSum = 0.0;
+            double weightedCubeSum = 0.0;
+            for (int index = firstIndex; index <= lastIndex; index++)
+            {
+                double normalized = (index - centerIndex) / sigmaSteps;
+                double absoluteNormalized = Math.Abs(normalized);
+                if (absoluteNormalized >= GaussianRadiusSigma)
+                {
+                    continue;
+                }
+
+                double taper = absoluteNormalized <= GaussianTaperStartSigma
+                    ? 1.0
+                    : 0.5 * (1.0 + Math.Cos(
+                        Math.PI *
+                        (absoluteNormalized - GaussianTaperStartSigma) /
+                        (GaussianRadiusSigma - GaussianTaperStartSigma)));
+                double weight =
+                    Math.Exp(-0.5 * normalized * normalized) * taper;
+                weightedCubeSum +=
+                    Math.Pow(Math.Max(0.0, bandPowers[index]), 1.5) * weight;
+                weightSum += weight;
+            }
+
+            return weightSum > 1e-12
+                ? Math.Cbrt(weightedCubeSum / weightSum)
+                : Math.Sqrt(Math.Max(0.0, bandPowers[centerIndex]));
         }
 
         public static List<SignalPoint> SmoothLinear(List<SignalPoint> input, double smoothingOctaves = 1.0 / 6.0)

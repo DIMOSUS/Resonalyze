@@ -92,12 +92,10 @@ public sealed class DataHelperResampleTests
     }
 
     [Fact]
-    public void LogarithmicResample_PsychoacousticFloorsANarrowDipAtTheWindowMedian()
+    public void LogarithmicResample_PsychoacousticReducesANarrowDipWithoutClippingIt()
     {
-        // A -30 dB notch 30 Hz wide at 1 kHz: well under half the 1/6-octave
-        // window (~±60 Hz), so the window median never sees it. The plain
-        // smoothing dilutes but keeps the dip; the psychoacoustic floor must
-        // erase it.
+        // A -30 dB notch 30 Hz wide at 1 kHz. Cubic averaging should reduce
+        // its perceptual weight, but must not hard-clip it out of the curve.
         List<SignalPoint> input = BuildLinearGrid(
             startHz: 10, stepHz: 10, count: 2400, decibels: 0.0);
         for (int i = 0; i < input.Count; i++)
@@ -117,15 +115,19 @@ public sealed class DataHelperResampleTests
         double plainDip = plain.Min(point => point.Y);
         double psychoDip = psycho.Min(point => point.Y);
         Assert.True(plainDip < -1.5, $"plain smoothing lost the dip ({plainDip:0.00} dB)");
-        Assert.True(psychoDip > -0.5, $"psychoacoustic kept the dip ({psychoDip:0.00} dB)");
+        Assert.True(
+            psychoDip > plainDip,
+            $"psychoacoustic did not reduce the dip ({plainDip:0.00} vs {psychoDip:0.00} dB)");
+        Assert.True(
+            psychoDip < -0.1,
+            $"psychoacoustic hard-clipped the dip ({psychoDip:0.00} dB)");
     }
 
     [Fact]
-    public void LogarithmicResample_PsychoacousticKeepsANarrowPeakAtItsPlainHeight()
+    public void LogarithmicResample_PsychoacousticRetainsANarrowPeak()
     {
-        // A +10 dB peak of the same narrow width: the mean exceeds the median
-        // there, so the floor must not engage — the psychoacoustic curve reads
-        // exactly the plain-smoothed peak (asymmetry: dips vanish, peaks stay).
+        // A +10 dB peak of the same narrow width must remain clearly visible
+        // after the frequency-dependent Gaussian cubic average.
         List<SignalPoint> input = BuildLinearGrid(
             startHz: 10, stepHz: 10, count: 2400, decibels: 0.0);
         for (int i = 0; i < input.Count; i++)
@@ -145,16 +147,17 @@ public sealed class DataHelperResampleTests
         double plainPeak = plain.Max(point => point.Y);
         double psychoPeak = psycho.Max(point => point.Y);
         Assert.True(plainPeak > 0.5, $"the peak vanished entirely ({plainPeak:0.00} dB)");
-        Assert.Equal(plainPeak, psychoPeak, precision: 6);
+        Assert.True(
+            psychoPeak > 1.0,
+            $"psychoacoustic removed the peak ({psychoPeak:0.00} dB)");
+        Assert.True(psychoPeak <= plainPeak);
     }
 
     [Fact]
     public void LogarithmicResample_PsychoacousticKeepsAValleyWiderThanTheWindow()
     {
-        // A -10 dB valley spanning a full octave (700-1400 Hz): both the mean
-        // and the median live inside it across its middle, so the floor
-        // changes nothing — only NARROW interference dips are ignored, a real
-        // broad depression stays visible.
+        // A -10 dB valley spanning a full octave (700-1400 Hz) represents broad
+        // tonal structure and must remain visible.
         List<SignalPoint> input = BuildLinearGrid(
             startHz: 10, stepHz: 10, count: 2400, decibels: 0.0);
         for (int i = 0; i < input.Count; i++)
@@ -175,20 +178,85 @@ public sealed class DataHelperResampleTests
     }
 
     [Fact]
-    public void LogarithmicPowerBandResample_PsychoacousticFloorsANarrowDip()
+    public void LogarithmicResample_PsychoacousticKeepsSmoothCurveContinuous()
+    {
+        var input = new List<SignalPoint>();
+        for (double frequency = 20.0; frequency <= 20_000.0; frequency += 20.0)
+        {
+            double octave = Math.Log2(frequency / 1_000.0);
+            double decibels = 6.0 - 3.0 * octave * octave;
+            input.Add(new SignalPoint(frequency, decibels));
+        }
+
+        List<SignalPoint> plain = DataHelper.LogarithmicResample(
+            input,
+            20.0,
+            20_000.0,
+            512,
+            smoothingOctaves: 1.0 / 6.0);
+        List<SignalPoint> output = DataHelper.LogarithmicResample(
+            input,
+            20.0,
+            20_000.0,
+            512,
+            smoothingOctaves: 1.0 / 6.0,
+            psychoacoustic: true);
+
+        double maximumFloorSlopeChange = Enumerable.Range(1, output.Count - 2)
+            .Where(index => output[index].X is >= 500.0 and <= 2_000.0)
+            .Max(index => Math.Abs(
+                (output[index + 1].Y - plain[index + 1].Y) -
+                2.0 * (output[index].Y - plain[index].Y) +
+                (output[index - 1].Y - plain[index - 1].Y)));
+
+        Assert.True(
+            maximumFloorSlopeChange < 0.04,
+            $"psychoacoustic smoothing introduced a {maximumFloorSlopeChange:0.000} dB step");
+    }
+
+    [Theory]
+    [InlineData(256)]
+    [InlineData(512)]
+    [InlineData(2_048)]
+    public void LogarithmicResample_PsychoacousticHonoursTwoBinResolutionFloor(
+        int fftLength)
+    {
+        const int sampleRate = 48_000;
+        double binWidth = (double)sampleRate / fftLength;
+        int centerBin = 4;
+        double centerFrequency = centerBin * binWidth;
+        var input = new List<SignalPoint>(fftLength / 2 + 1);
+        for (int bin = 0; bin <= fftLength / 2; bin++)
+        {
+            input.Add(new SignalPoint(
+                bin * binWidth,
+                bin == centerBin ? 20.0 : 0.0));
+        }
+
+        List<SignalPoint> output = DataHelper.LogarithmicResample(
+            input,
+            centerFrequency,
+            centerFrequency * 2.0,
+            64,
+            smoothingOctaves: 1.0 / 6.0,
+            psychoacoustic: true);
+
+        // Without the resolution floor the Gaussian is effectively a single-bin
+        // lookup here and the first point remains 20 dB. Two-bin support must
+        // mix in the neighbouring 0 dB bins even with cubic peak weighting.
+        Assert.InRange(output[0].Y, 1.0, 19.0);
+    }
+
+    [Fact]
+    public void LogarithmicPowerBandResample_PsychoacousticDoesNotClipANarrowDip()
     {
         // The RTA path pre-integrates a fixed 1/12-octave reference band, so a
-        // notch smears by that band before the display smoothing ever sees it:
-        // the dip-affected span is roughly notch + 1/12 octave. For the median
-        // floor to read through it, that span must stay under half the
-        // smoothing window — a 1/16-octave notch under 1/3-octave smoothing
-        // (affected ~0.15 oct vs the ±1/6 oct half-window). The plain power
-        // mean still dents there; the psychoacoustic floor must not.
+        // notch smears by that band before the display smoothing ever sees it.
+        // Psychoacoustic smoothing must retain a finite valley rather than
+        // replacing it with a hard lower envelope.
         // Pink amplitude (1/sqrt f): flat band power per fractional octave, so
-        // the smoothing window is untilted — on a tilted window the notch
-        // shifts the median's RANK and leaves a slope-proportional residue,
-        // which is fine for display but would blur what this test pins. The
-        // dip is measured against the same curve computed without the notch.
+        // the smoothing window is untilted. The dip is measured against the
+        // same curve computed without the notch.
         const int fftLength = 8_192;
         const int sampleRate = 48_000;
         double binWidth = (double)sampleRate / fftLength;
@@ -220,7 +288,9 @@ public sealed class DataHelperResampleTests
         double plainDip = DipVsBaseline(psychoacoustic: false);
         double psychoDip = DipVsBaseline(psychoacoustic: true);
         Assert.True(plainDip < -0.5, $"plain smoothing lost the dip ({plainDip:0.00} dB)");
-        Assert.True(psychoDip > -0.05, $"psychoacoustic kept the dip ({psychoDip:0.00} dB)");
+        Assert.True(
+            psychoDip < -0.1,
+            $"psychoacoustic hard-clipped the dip ({psychoDip:0.00} dB)");
     }
 
     private static List<SignalPoint> BuildLinearGrid(

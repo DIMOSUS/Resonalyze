@@ -762,6 +762,56 @@ public static class VirtualCrossoverAnalysis
             throw new ArgumentException("The correlation search settings are invalid.");
         }
 
+        (double[] correlation, double normalizer, double lowHz, double highHz) =
+            ComputeBandLimitedCorrelation(
+                firstImpulseResponse,
+                secondImpulseResponse,
+                sampleRate,
+                centerFrequencyHz,
+                passOctaves,
+                phaseTransform);
+        // The lag window is centered on the arrival-based estimate, not on zero:
+        // a low-frequency junction's relative delay is several milliseconds (the
+        // driver arrivals differ that much), so a window around zero would miss it
+        // the way the stage-2 fine search would miss it around the wrong base.
+        int rangeSamples = Math.Max(1, (int)Math.Round(searchRangeMs / 1000.0 * sampleRate));
+        int centerLag = (int)Math.Round(centerLagMs / 1000.0 * sampleRate);
+        CorrelationDelayCandidate positive = FindCorrelationExtremum(
+            correlation, centerLag, rangeSamples, normalizer, sampleRate,
+            findMaximum: true, out int positiveLag);
+        CorrelationDelayCandidate negative = FindCorrelationExtremum(
+            correlation, centerLag, rangeSamples, normalizer, sampleRate,
+            findMaximum: false, out int negativeLag);
+        CorrelationDelayCandidate? positiveRival = FindSameSignRival(
+            correlation, centerLag, rangeSamples, positiveLag, normalizer,
+            sampleRate, findMaximum: true);
+        CorrelationDelayCandidate? negativeRival = FindSameSignRival(
+            correlation, centerLag, rangeSamples, negativeLag, normalizer,
+            sampleRate, findMaximum: false);
+
+        return new CorrelationAlignmentResult(
+            centerFrequencyHz,
+            lowHz,
+            highHz,
+            searchRangeMs,
+            positive,
+            negative,
+            positiveRival,
+            negativeRival);
+    }
+
+    // The shared core of the band-limited correlation searches and curves: the
+    // raw (unnormalized) correlation sequence over all circular lags plus the
+    // normalizer that maps it into [-1, 1], and the smooth band actually used.
+    private static (double[] Correlation, double Normalizer, double LowHz, double HighHz)
+        ComputeBandLimitedCorrelation(
+            Complex[] firstImpulseResponse,
+            Complex[] secondImpulseResponse,
+            int sampleRate,
+            double centerFrequencyHz,
+            double passOctaves,
+            bool phaseTransform)
+    {
         double nyquist = sampleRate / 2.0;
         double halfOctaves = passOctaves / 2.0;
         double lowHz = Math.Max(20.0, centerFrequencyHz / Math.Pow(2.0, halfOctaves));
@@ -840,34 +890,178 @@ public static class VirtualCrossoverAnalysis
         double normalizer = phaseTransform
             ? weightSum / fftLength
             : Math.Sqrt(firstEnergy * secondEnergy) / fftLength;
-        // The lag window is centered on the arrival-based estimate, not on zero:
-        // a low-frequency junction's relative delay is several milliseconds (the
-        // driver arrivals differ that much), so a window around zero would miss it
-        // the way the stage-2 fine search would miss it around the wrong base.
+        return (correlation, normalizer, lowHz, highHz);
+    }
+
+    /// <summary>
+    /// The band-limited normalized cross-correlation of two processed impulse
+    /// responses as a drawable curve: X is the lag in ms — the delay that,
+    /// added to the SECOND response, would align it with the first at that
+    /// point of the curve — over
+    /// <paramref name="centerLagMs"/> ± <paramref name="searchRangeMs"/> at
+    /// sample resolution; Y is the correlation coefficient in [-1, 1].
+    /// Positive lobes are normal-polarity alignments, negative lobes are the
+    /// same alignments with the second channel inverted — the comb the delay
+    /// searches choose between, made visible. Same band weighting and
+    /// normalization as <see cref="FindBandLimitedCorrelationDelay"/> (see
+    /// there), including the <paramref name="phaseTransform"/> (GCC-PHAT)
+    /// whitening mode.
+    /// </summary>
+    public static List<SignalPoint> BandLimitedCorrelationCurve(
+        Complex[] firstImpulseResponse,
+        Complex[] secondImpulseResponse,
+        int sampleRate,
+        double centerFrequencyHz,
+        double passOctaves = 1.0,
+        double searchRangeMs = 3.0,
+        double centerLagMs = 0.0,
+        bool phaseTransform = false)
+    {
+        ArgumentNullException.ThrowIfNull(firstImpulseResponse);
+        ArgumentNullException.ThrowIfNull(secondImpulseResponse);
+        if (firstImpulseResponse.Length == 0 || secondImpulseResponse.Length == 0)
+        {
+            throw new ArgumentException("Impulse responses are required.");
+        }
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+        if (!(centerFrequencyHz > 0) || !(passOctaves > 0) || !(searchRangeMs > 0))
+        {
+            throw new ArgumentException("The correlation curve settings are invalid.");
+        }
+
+        (double[] correlation, double normalizer, _, _) =
+            ComputeBandLimitedCorrelation(
+                firstImpulseResponse,
+                secondImpulseResponse,
+                sampleRate,
+                centerFrequencyHz,
+                passOctaves,
+                phaseTransform);
+
+        int fftLength = correlation.Length;
         int rangeSamples = Math.Max(1, (int)Math.Round(searchRangeMs / 1000.0 * sampleRate));
         int centerLag = (int)Math.Round(centerLagMs / 1000.0 * sampleRate);
-        CorrelationDelayCandidate positive = FindCorrelationExtremum(
-            correlation, centerLag, rangeSamples, normalizer, sampleRate,
-            findMaximum: true, out int positiveLag);
-        CorrelationDelayCandidate negative = FindCorrelationExtremum(
-            correlation, centerLag, rangeSamples, normalizer, sampleRate,
-            findMaximum: false, out int negativeLag);
-        CorrelationDelayCandidate? positiveRival = FindSameSignRival(
-            correlation, centerLag, rangeSamples, positiveLag, normalizer,
-            sampleRate, findMaximum: true);
-        CorrelationDelayCandidate? negativeRival = FindSameSignRival(
-            correlation, centerLag, rangeSamples, negativeLag, normalizer,
-            sampleRate, findMaximum: false);
+        var points = new List<SignalPoint>(2 * rangeSamples + 1);
+        for (int lag = centerLag - rangeSamples; lag <= centerLag + rangeSamples; lag++)
+        {
+            double value = correlation[TransferFunction.WrapIndex(lag, fftLength)];
+            points.Add(new SignalPoint(
+                lag * 1000.0 / sampleRate,
+                normalizer > 0 ? value / normalizer : 0));
+        }
 
-        return new CorrelationAlignmentResult(
-            centerFrequencyHz,
-            lowHz,
-            highHz,
-            searchRangeMs,
-            positive,
-            negative,
-            positiveRival,
-            negativeRival);
+        return points;
+    }
+
+    /// <summary>
+    /// One probe of <see cref="JunctionLossSweep"/>: the junction's gated
+    /// average loss and 1/6-octave dip with the variable channel delayed by
+    /// <see cref="DelayMs"/> (and inverted, when the sweep's polarity is
+    /// inverted).
+    /// </summary>
+    public sealed record JunctionSweepPoint(
+        double DelayMs,
+        double LossDb,
+        double DipDb);
+
+    /// <summary>
+    /// The junction summation loss as a function of an EXTRA delay applied to
+    /// the variable channel — the prior-free acoustic surface of one
+    /// junction, as a drawable curve. Each probe is HONEST: the variable
+    /// response is delayed by rotating its FULL spectrum (an exact fractional
+    /// delay of the whole record) and the direct-sound gates are re-anchored
+    /// on the delayed response by <see cref="MeasureSumLoss"/> — unlike the
+    /// <see cref="SumLossEvaluator"/> rotation probe, whose gates stay pinned
+    /// where the responses originally sat and which misgrades
+    /// multi-millisecond deltas by whole dB. Both responses are placed into a
+    /// guard-padded frame before the rotation — a shared silent prefix and
+    /// suffix covering the sweep window — so no probed delay can wrap record
+    /// content circularly: without the prefix, a negative delay on an
+    /// early-peaked record carried the direct sound to the END of the array,
+    /// the shared gate (anchored at the remaining, fixed channel) lost the
+    /// variable channel entirely, and the "loss" of a one-channel sum read as
+    /// a fake perfect 0 dB.
+    /// </summary>
+    public static List<JunctionSweepPoint> JunctionLossSweep(
+        Complex[] variableImpulseResponse,
+        Complex[] fixedImpulseResponse,
+        int sampleRate,
+        double bandLowHz,
+        double bandHighHz,
+        double startDelayMs,
+        double endDelayMs,
+        double stepMs,
+        bool invertVariable)
+    {
+        ArgumentNullException.ThrowIfNull(variableImpulseResponse);
+        ArgumentNullException.ThrowIfNull(fixedImpulseResponse);
+        if (variableImpulseResponse.Length == 0 || fixedImpulseResponse.Length == 0)
+        {
+            throw new ArgumentException("Impulse responses are required.");
+        }
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+        if (!(stepMs > 0) || !(endDelayMs > startDelayMs))
+        {
+            throw new ArgumentException("The sweep window is invalid.");
+        }
+
+        // The guard covers the widest probed shift in either direction (plus a
+        // few samples for the fractional-delay sinc tails). The SAME offset is
+        // applied to both channels, so their relative timing — the only thing
+        // the gate-re-anchoring measurement reads — is untouched.
+        int guardSamples = 8 + (int)Math.Ceiling(
+            Math.Max(Math.Abs(startDelayMs), Math.Abs(endDelayMs))
+            / 1000.0 * sampleRate);
+        int contentLength = Math.Max(
+            variableImpulseResponse.Length, fixedImpulseResponse.Length);
+        int fftLength = DspMath.NextPowerOfTwo(contentLength + 2 * guardSamples);
+        var variableFrame = new Complex[fftLength];
+        variableImpulseResponse.CopyTo(variableFrame, guardSamples);
+        var fixedFrame = new Complex[fftLength];
+        fixedImpulseResponse.CopyTo(fixedFrame, guardSamples);
+        Complex[] spectrum = ForwardSpectrum(variableFrame, fftLength);
+        var points = new List<JunctionSweepPoint>();
+        var delayed = new Complex[fftLength];
+        for (double delayMs = startDelayMs;
+            delayMs <= endDelayMs + 1e-9;
+            delayMs += stepMs)
+        {
+            double sign = invertVariable ? -1.0 : 1.0;
+            for (int k = 0; k < fftLength; k++)
+            {
+                // The rotation frequency follows the conjugate mirror above
+                // Nyquist, so the delayed sequence stays real.
+                double frequency = (double)k / fftLength * sampleRate;
+                if (frequency > sampleRate / 2.0)
+                {
+                    frequency -= sampleRate;
+                }
+
+                delayed[k] = sign * spectrum[k] * Complex.Exp(
+                    new Complex(0, -Math.Tau * frequency * delayMs / 1000.0));
+            }
+
+            Fourier.Inverse(delayed, FourierOptions.Matlab);
+            (double LossDb, double DipDb)? loss = MeasureSumLoss(
+                delayed,
+                new List<Complex[]> { fixedFrame },
+                sampleRate,
+                bandLowHz,
+                bandHighHz);
+            if (loss is { } value)
+            {
+                points.Add(new JunctionSweepPoint(
+                    delayMs, value.LossDb, value.DipDb));
+            }
+        }
+
+        return points;
     }
 
     // The strongest local extremum OF THE MAIN EXTREMUM'S SIGN outside its own

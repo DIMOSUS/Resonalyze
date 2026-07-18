@@ -19,7 +19,7 @@ namespace Resonalyze.Options
             numericRightWindow.ValueChanged += TukeyWindow_ValueChanged;
             // Width presets only: burst decay integrates per-frequency energy
             // envelopes, and its pipeline has no magnitude grid to apply the
-            // psychoacoustic median floor to — offering the mode here would be
+            // psychoacoustic magnitude weighting to — offering the mode here would be
             // a silent alias of plain 1/6.
             SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
             InitializeToolTips();

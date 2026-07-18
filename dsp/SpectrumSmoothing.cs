@@ -5,13 +5,11 @@ namespace Resonalyze.Dsp;
 /// smoothing is stored as its positive inverse octave count (6 = 1/6 octave,
 /// 0 = off) — the historical convention every option DTO and file format uses.
 /// The psychoacoustic mode is the single negative code below: it smooths
-/// MAGNITUDE curves with the base fractional-octave width, then floors each
-/// point at the window's median, so narrow interference dips (which the ear
-/// largely ignores, and which no alignment or EQ move can genuinely fill) drop
-/// out of the drawn curve while narrow peaks — audible resonances — and any
-/// structure wider than the window survive untouched. Non-magnitude curves
+/// MAGNITUDE curves with a frequency-dependent bandwidth and a cubic mean,
+/// giving peaks more perceptual weight without hard-clipping valleys.
+/// Non-magnitude curves
 /// (phase, group delay, coherence, harmonic widths) must never apply the
-/// asymmetric floor: for them the code decodes to the plain base width via
+/// magnitude weighting: for them the code decodes to the plain base width via
 /// <see cref="SmoothingOctaves"/>, keeping those curves unbiased.
 /// </summary>
 public static class SpectrumSmoothing
@@ -25,12 +23,26 @@ public static class SpectrumSmoothing
     public const int PsychoacousticCode = -PsychoacousticBaseInverseOctaves;
 
     /// <summary>
-    /// The base fractional-octave width (inverse octaves) of the psychoacoustic
-    /// mode: 1/6 octave — wide enough that a comb-interference notch spans less
-    /// than half the window (so the median ignores it), narrow enough to keep
-    /// the broad tonal balance and real modal valleys visible.
+    /// The high-frequency fractional-octave width (inverse octaves) of the
+    /// psychoacoustic mode. The effective width grows smoothly to 1/3 octave
+    /// below 100 Hz.
     /// </summary>
     public const int PsychoacousticBaseInverseOctaves = 6;
+
+    public static double PsychoacousticOctaves(double frequency)
+    {
+        if (frequency <= 100.0)
+        {
+            return 1.0 / 3.0;
+        }
+        if (frequency >= 1_000.0)
+        {
+            return 1.0 / 6.0;
+        }
+
+        double position = Math.Log10(frequency / 100.0);
+        return 1.0 / 3.0 - position / 6.0;
+    }
 
     public static bool IsPsychoacoustic(double smoothingInverseOctaves) =>
         smoothingInverseOctaves == PsychoacousticCode;

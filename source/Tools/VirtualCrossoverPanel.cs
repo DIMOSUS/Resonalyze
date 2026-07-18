@@ -313,9 +313,16 @@ public partial class VirtualCrossoverPanel : UserControl
                 OverlaySmoothing.IsValid(project.SmoothingCode)
                     ? project.SmoothingCode
                     : 12;
-            radioDspMagnitude.Checked = project.DspPlotMode == DspPlotMode.Magnitude;
-            radioDspPhase.Checked = project.DspPlotMode == DspPlotMode.Phase;
-            radioDspGroupDelay.Checked = project.DspPlotMode == DspPlotMode.GroupDelay;
+            radioDspMagnitude.Checked =
+                project.EffectiveDspPlotMode == DspPlotMode.Magnitude;
+            radioDspPhase.Checked =
+                project.EffectiveDspPlotMode == DspPlotMode.Phase;
+            radioDspGroupDelay.Checked =
+                project.EffectiveDspPlotMode == DspPlotMode.GroupDelay;
+            radioDspCorrelation.Checked =
+                project.EffectiveDspPlotMode == DspPlotMode.Correlation;
+            comboBoxCorrelationPair.Enabled = radioDspCorrelation.Checked &&
+                comboBoxCorrelationPair.Items.Count > 0;
 
             for (int i = 0; i < channels.Count; i++)
             {
@@ -479,19 +486,38 @@ public partial class VirtualCrossoverPanel : UserControl
         };
         comboBoxSmoothing.SelectedIndexChanged += (_, _) => OnViewChanged();
         comboBoxCalibration.SelectedIndexChanged += (_, _) => OnCalibrationChanged();
-        // Three-radio group: each fires on both the check and the uncheck, so act
-        // only on the one that became checked to run the switch exactly once.
+        // The DSP-mode radios span TWO containers (the chain trio on
+        // dspModePanel, Correlation on its own panel beside the pair
+        // selector), and WinForms only auto-excludes radios within one
+        // container — so the exclusivity across the panels is wired by hand.
+        // Each handler still acts only on the radio that became CHECKED (a
+        // check-and-uncheck pair fires both), and it clears the other
+        // container FIRST, so OnDspPlotModeChanged never reads a transient
+        // two-checked state. Clearing fires the cleared radios' handlers with
+        // Checked == false, which the guards ignore.
         radioDspMagnitude.CheckedChanged += (_, _) =>
         {
-            if (radioDspMagnitude.Checked) OnDspPlotModeChanged();
+            if (radioDspMagnitude.Checked) OnChainDspModeChecked();
         };
         radioDspPhase.CheckedChanged += (_, _) =>
         {
-            if (radioDspPhase.Checked) OnDspPlotModeChanged();
+            if (radioDspPhase.Checked) OnChainDspModeChecked();
         };
+        radioDspCorrelation.CheckedChanged += (_, _) =>
+        {
+            if (radioDspCorrelation.Checked)
+            {
+                radioDspMagnitude.Checked = false;
+                radioDspPhase.Checked = false;
+                radioDspGroupDelay.Checked = false;
+                OnDspPlotModeChanged();
+            }
+        };
+        comboBoxCorrelationPair.SelectedIndexChanged +=
+            (_, _) => OnCorrelationPairChanged();
         radioDspGroupDelay.CheckedChanged += (_, _) =>
         {
-            if (radioDspGroupDelay.Checked) OnDspPlotModeChanged();
+            if (radioDspGroupDelay.Checked) OnChainDspModeChecked();
         };
         // Two-radio group: listening to one of them reacts exactly once per
         // side switch.
@@ -1423,16 +1449,41 @@ public partial class VirtualCrossoverPanel : UserControl
     private DspPlotMode CurrentDspPlotMode() =>
         radioDspPhase.Checked ? DspPlotMode.Phase
         : radioDspGroupDelay.Checked ? DspPlotMode.GroupDelay
+        : radioDspCorrelation.Checked ? DspPlotMode.Correlation
         : DspPlotMode.Magnitude;
+
+    // One of the chain-view radios (magnitude / phase / group delay) became
+    // checked: retract the cross-container Correlation radio before acting —
+    // its own container cannot do it (see the wiring comment).
+    private void OnChainDspModeChecked()
+    {
+        radioDspCorrelation.Checked = false;
+        OnDspPlotModeChanged();
+    }
 
     private void OnDspPlotModeChanged()
     {
+        comboBoxCorrelationPair.Enabled =
+            radioDspCorrelation.Checked && comboBoxCorrelationPair.Items.Count > 0;
         if (suppressProjectEvents)
         {
             return;
         }
 
-        project.DspPlotMode = CurrentDspPlotMode();
+        project.SetDspPlotMode(CurrentDspPlotMode());
+        ScheduleSave();
+        RedrawDspPlot();
+    }
+
+    private void OnCorrelationPairChanged()
+    {
+        if (suppressProjectEvents || suppressCorrelationPairEvents)
+        {
+            return;
+        }
+
+        project.CorrelationPairIndex =
+            Math.Max(0, comboBoxCorrelationPair.SelectedIndex);
         ScheduleSave();
         RedrawDspPlot();
     }
@@ -1489,7 +1540,7 @@ public partial class VirtualCrossoverPanel : UserControl
             "and of the curves the Sum loss read-out is measured from,\r\n" +
             "so it still moves those numbers in the Phase and Impulse\r\n" +
             "views, where the drawn traces are not smoothed at all.\r\n" +
-            "Psychoacoustic: 1/6 octave that additionally ignores dips\r\n" +
+            "Psychoacoustic: variable 1/3 to 1/6 octave with extra peak weighting\r\n" +
             "narrower than half its window — narrow interference nulls\r\n" +
             "the ear barely hears drop out, peaks and broad valleys stay.\r\n" +
             "The junction metric numbers stay unsmoothed and honest.");
@@ -1498,6 +1549,23 @@ public partial class VirtualCrossoverPanel : UserControl
             "What the lower plot shows for each channel's DSP chain:\r\n" +
             "Magnitude, Phase, or filter Group delay (the crossover/PEQ\r\n" +
             "group delay in ms, excluding the channel's bulk delay).");
+        toolTip.SetToolTip(
+            radioDspCorrelation,
+            "Junction correlation: the selected adjacent pair's band-limited\r\n" +
+            "cross-correlation (corr + PHAT; negative lobes = the upper\r\n" +
+            "channel inverted) and the PRIOR-FREE acoustic score — the\r\n" +
+            "dip-penalized junction loss, honestly re-gated per point — versus\r\n" +
+            "an extra delay on the upper channel, in both polarities: the comb\r\n" +
+            "of alignment lobes. Auto delay weighs this acoustics TOGETHER\r\n" +
+            "with the arrival prior and the lobe/onset/scene gates, so its\r\n" +
+            "pick may deliberately sit off this curve's deepest lobe — the\r\n" +
+            "gap to the dashed envelope-arrival marker shows that trade.\r\n" +
+            "Channels enter with their current delays: 0 ms is the alignment\r\n" +
+            "as it stands.");
+        toolTip.SetToolTip(
+            comboBoxCorrelationPair,
+            "Which adjacent channel pair the correlation view analyzes\r\n" +
+            "(active side, ordered along the spectrum).");
         toolTip.SetToolTip(
             comboBoxCalibration,
             "Microphone calibration applied to the magnitude curves —\r\n" +
@@ -1725,6 +1793,11 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             return;
         }
+
+        // The correlation view of the lower plot reads the same processed
+        // snapshot the acoustic plot draws; the redraw loop calls
+        // RedrawDspPlot right after this method, so the capture is fresh.
+        lastProcessedRender = render;
 
         // The stereo Δ block and the opposite-side sum read BOTH sides'
         // processed responses; their caches make an unchanged configuration
@@ -2842,8 +2915,30 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
+    // The last applied processed snapshot: the correlation view's data source.
+    private ProcessedRender? lastProcessedRender;
+
+    // Single-flight for the correlation rebuilds, mirroring the main redraw
+    // loop: at most ONE sweep computes at a time, and a request that arrives
+    // mid-compute only marks the loop to run once more with the then-latest
+    // state — a stamp alone would merely hide stale results while the stacked
+    // tasks kept burning a full sweep of inverse FFTs each.
+    private Task? correlationRebuildTask;
+    private bool correlationRebuildPending;
+
+    // Guards the combo repopulation from feeding its own SelectedIndexChanged
+    // back into the project as a user edit.
+    private bool suppressCorrelationPairEvents;
+
     private void RedrawDspPlot()
     {
+        if (CurrentDspPlotMode() == DspPlotMode.Correlation)
+        {
+            UpdateCorrelationPairChoices();
+            RequestCorrelationRedraw();
+            return;
+        }
+
         using var _ = AppProfiler.Zone("VirtualDSP.RedrawDspPlot");
         var curves = new List<DspChainCurve>();
         for (int i = 0; i < channels.Count; i++)
@@ -2867,6 +2962,198 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         dspChainPlot.Draw(CurrentDspPlotMode(), curves);
+    }
+
+    // The adjacent pairs of the correlation view, derived from the LAST
+    // processed snapshot so the combo lists exactly what the plot can analyze
+    // (enabled channels with sources, active side, ordered by band).
+    private List<AdjacentPair> CurrentCorrelationPairs() =>
+        lastProcessedRender is { } render
+            ? ProcessedChannels.GetAdjacentPairs(
+                ProcessedChannels.OrderByBand(render.Channels))
+            : [];
+
+    private void UpdateCorrelationPairChoices()
+    {
+        List<AdjacentPair> pairs = CurrentCorrelationPairs();
+        List<string> labels = pairs
+            .Select(pair => $"{pair.Lower.Channel.Name}-{pair.Upper.Channel.Name}")
+            .ToList();
+        bool changed = comboBoxCorrelationPair.Items.Count != labels.Count;
+        for (int i = 0; !changed && i < labels.Count; i++)
+        {
+            changed = !Equals(comboBoxCorrelationPair.Items[i], labels[i]);
+        }
+
+        int wanted = Math.Clamp(
+            project.CorrelationPairIndex, 0, Math.Max(0, labels.Count - 1));
+        if (!changed && comboBoxCorrelationPair.SelectedIndex == wanted)
+        {
+            return;
+        }
+
+        suppressCorrelationPairEvents = true;
+        try
+        {
+            if (changed)
+            {
+                comboBoxCorrelationPair.Items.Clear();
+                foreach (string label in labels)
+                {
+                    comboBoxCorrelationPair.Items.Add(label);
+                }
+            }
+
+            if (labels.Count > 0)
+            {
+                comboBoxCorrelationPair.SelectedIndex = wanted;
+            }
+        }
+        finally
+        {
+            suppressCorrelationPairEvents = false;
+        }
+
+        comboBoxCorrelationPair.Enabled =
+            radioDspCorrelation.Checked && labels.Count > 0;
+    }
+
+    // Runs on the UI thread. Starts the rebuild loop, or — when one is
+    // already computing — marks it to repeat once more with the latest state.
+    private void RequestCorrelationRedraw()
+    {
+        if (correlationRebuildTask is { IsCompleted: false })
+        {
+            correlationRebuildPending = true;
+            return;
+        }
+
+        correlationRebuildTask = RunCorrelationRebuildLoopAsync();
+    }
+
+    private async Task RunCorrelationRebuildLoopAsync()
+    {
+        do
+        {
+            correlationRebuildPending = false;
+            await RedrawCorrelationPlotAsync();
+        }
+        while (correlationRebuildPending && !dspPlotView.IsDisposed &&
+            CurrentDspPlotMode() == DspPlotMode.Correlation);
+
+        correlationRebuildTask = null;
+    }
+
+    private async Task RedrawCorrelationPlotAsync()
+    {
+        List<AdjacentPair> pairs = CurrentCorrelationPairs();
+        if (pairs.Count == 0)
+        {
+            dspChainPlot.DrawCorrelation(null);
+            return;
+        }
+
+        AdjacentPair pair = pairs[Math.Clamp(
+            project.CorrelationPairIndex, 0, pairs.Count - 1)];
+        JunctionCorrelationView? data = null;
+        try
+        {
+            data = await Task.Run(() => BuildCorrelationView(pair));
+        }
+        catch (Exception exception)
+        {
+            // Best-effort like every redraw: keep the last frame.
+            System.Diagnostics.Debug.WriteLine(
+                $"Correlation view rebuild failed: {exception}");
+        }
+
+        if (dspPlotView.IsDisposed ||
+            CurrentDspPlotMode() != DspPlotMode.Correlation)
+        {
+            return;
+        }
+
+        // A request that arrived mid-compute means this result is already
+        // stale: skip the draw, the loop is about to recompute anyway.
+        if (data != null && !correlationRebuildPending)
+        {
+            dspChainPlot.DrawCorrelation(data);
+        }
+    }
+
+    // The off-thread compute of one junction's correlation view. Both
+    // channels enter PROCESSED (delays, polarity, filters applied), so lag 0
+    // is the current alignment and every reading is a correction to the
+    // UPPER channel. The pair is cropped to the alignment engine's own
+    // direct-sound window first: the correlation and the honest loss sweep
+    // then read the same basis Auto delay searches, and the sweep's per-point
+    // inverse FFTs shrink from the capture length to the crop.
+    private static JunctionCorrelationView BuildCorrelationView(AdjacentPair pair)
+    {
+        using var _ = AppProfiler.Zone("VirtualDSP.BuildCorrelationView");
+        int sampleRate = pair.Lower.Channel.SampleRate;
+        Complex[][] cropped = VirtualCrossoverAnalysis.CropSharedDirectSoundWindow(
+            new List<Complex[]>
+            {
+                pair.Lower.ImpulseResponse,
+                pair.Upper.ImpulseResponse
+            },
+            AutoDelaySearchCropLength,
+            AutoDelaySearchCropPrePeakSamples);
+        Complex[] lower = cropped[0];
+        Complex[] upper = cropped[1];
+
+        // The window spans 1.5 crossover periods to each side (floored at the
+        // fixed diagnostic span), so the neighboring comb lobes both ways are
+        // in view even at an 80 Hz junction.
+        double windowMs = Math.Max(3.0, 1.5 * 1000.0 / pair.CrossoverHz);
+        double passOctaves = Math.Log2(pair.BandHighHz / pair.BandLowHz);
+        List<SignalPoint> correlation =
+            VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
+                lower, upper, sampleRate, pair.CrossoverHz, passOctaves,
+                windowMs, centerLagMs: 0, phaseTransform: false);
+        List<SignalPoint> whitened =
+            VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
+                lower, upper, sampleRate, pair.CrossoverHz, passOctaves,
+                windowMs, centerLagMs: 0, phaseTransform: true);
+
+        // The score comb repeats per crossover period, so the step must
+        // resolve THAT scale — a fixed points-per-window count aliased at
+        // high junctions (at a 20 kHz-class split, window/60 equals a whole
+        // period and the comb could sample flat). A tenth of a period keeps
+        // the lobes drawn; the window/300 floor bounds the sweep at ~600
+        // points per polarity for pathological corner setups.
+        double stepMs = Math.Max(
+            Math.Min(windowMs / 60.0, 100.0 / pair.CrossoverHz),
+            Math.Max(0.005, windowMs / 300.0));
+        List<SignalPoint> ScoreSweep(bool invert) =>
+            VirtualCrossoverAnalysis.JunctionLossSweep(
+                upper, lower, sampleRate,
+                pair.BandLowHz, pair.BandHighHz,
+                -windowMs, windowMs, stepMs, invert)
+            .Select(point => new SignalPoint(
+                point.DelayMs,
+                point.LossDb +
+                    VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
+                    (point.DipDb - point.LossDb)))
+            .ToList();
+
+        double arrivalLagMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+                lower, sampleRate, pair.BandLowHz, pair.BandHighHz)
+            - VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+                upper, sampleRate, pair.BandLowHz, pair.BandHighHz);
+
+        return new JunctionCorrelationView(
+            $"{pair.Lower.Channel.Name}-{pair.Upper.Channel.Name}",
+            pair.Upper.Channel.Name,
+            pair.CrossoverHz,
+            pair.BandLowHz,
+            pair.BandHighHz,
+            correlation,
+            whitened,
+            ScoreSweep(invert: false),
+            ScoreSweep(invert: true),
+            arrivalLagMs);
     }
 
     // ------------------------------------------------------- capture / export

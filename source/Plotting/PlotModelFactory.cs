@@ -176,13 +176,14 @@ internal sealed class PlotModelFactory
         IReadOnlyList<SignalPoint>? spectrum = tag.Source == CurveSource.Compare
             ? TryCreateCompareMeasurement() is { } compare
                 ? MeasurementPlotContext.BuildRawPrimarySpectrum(
-                    compare.Measurement, frequencyResponseOptions, calibration)
+                    compare.Measurement, frequencyResponseOptions)
                 : null
-            : measurementContext.CreateRawPrimarySpectrum(
-                frequencyResponseOptions, calibration);
+            : measurementContext.CreateRawPrimarySpectrum(frequencyResponseOptions);
         return spectrum is { Count: > 1 }
             ? new RawCurveCapture(
                 spectrum,
+                RawCurveRenderer.CaptureCalibrationCorrection(
+                    frequencyResponseOptions.UseCalibration ? calibration : null),
                 (int)Math.Round(frequencyResponseOptions.SmoothingInverseOctaves))
             : null;
     }
@@ -1171,8 +1172,7 @@ internal sealed class PlotModelFactory
     {
         // Coherence is a 0..1 confidence trace, not a magnitude: the
         // psychoacoustic code decodes to its plain base width here — the
-        // asymmetric dip floor would inflate exactly the low-coherence
-        // stretches the curve exists to expose.
+        // cubic magnitude mean is not meaningful for this confidence value.
         double smoothingOctaves =
             SpectrumSmoothing.SmoothingOctaves(smoothingInverseOctaves);
         if (smoothingOctaves <= 0 || points.Count < 3)

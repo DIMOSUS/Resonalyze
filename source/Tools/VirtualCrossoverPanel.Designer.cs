@@ -63,11 +63,15 @@ namespace Resonalyze
             radioDspMagnitude = new RadioButton();
             radioDspPhase = new RadioButton();
             radioDspGroupDelay = new RadioButton();
+            radioDspCorrelation = new RadioButton();
+            comboBoxCorrelationPair = new DarkComboBox();
             panel1 = new Panel();
+            panel2 = new Panel();
             sideSelectorPanel.SuspendLayout();
             (numericSceneOffset).BeginInit();
             dspModePanel.SuspendLayout();
             panel1.SuspendLayout();
+            panel2.SuspendLayout();
             SuspendLayout();
             // 
             // mainPlotView
@@ -86,7 +90,7 @@ namespace Resonalyze
             // dspPlotView
             // 
             dspPlotView.BackColor = Color.FromArgb(40, 44, 80);
-            dspPlotView.Location = new Point(489, 480);
+            dspPlotView.Location = new Point(490, 455);
             dspPlotView.Name = "dspPlotView";
             dspPlotView.PanCursor = Cursors.Hand;
             dspPlotView.Size = new Size(739, 275);
@@ -202,7 +206,7 @@ namespace Resonalyze
             labelSceneOffset.AutoSize = true;
             labelSceneOffset.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelSceneOffset.ForeColor = Color.FromArgb(210, 214, 222);
-            labelSceneOffset.Location = new Point(359, 513);
+            labelSceneOffset.Location = new Point(359, 488);
             labelSceneOffset.Name = "labelSceneOffset";
             labelSceneOffset.Size = new Size(80, 15);
             labelSceneOffset.TabIndex = 22;
@@ -214,7 +218,7 @@ namespace Resonalyze
             numericSceneOffset.DecimalPlaces = 2;
             numericSceneOffset.ForeColor = Color.White;
             numericSceneOffset.Increment = new decimal(new int[] { 5, 0, 0, 131072 });
-            numericSceneOffset.Location = new Point(359, 531);
+            numericSceneOffset.Location = new Point(359, 506);
             numericSceneOffset.Maximum = new decimal(new int[] { 5, 0, 0, 0 });
             numericSceneOffset.Minimum = new decimal(new int[] { 5, 0, 0, int.MinValue });
             numericSceneOffset.MinimumSize = new Size(36, 19);
@@ -326,7 +330,7 @@ namespace Resonalyze
             buttonAutoDelay.BackColor = Color.FromArgb(46, 51, 67);
             buttonAutoDelay.FlatStyle = FlatStyle.Popup;
             buttonAutoDelay.ForeColor = Color.White;
-            buttonAutoDelay.Location = new Point(359, 558);
+            buttonAutoDelay.Location = new Point(359, 533);
             buttonAutoDelay.Name = "buttonAutoDelay";
             buttonAutoDelay.Size = new Size(125, 24);
             buttonAutoDelay.TabIndex = 12;
@@ -338,7 +342,7 @@ namespace Resonalyze
             buttonAutoSetup.BackColor = Color.FromArgb(46, 51, 67);
             buttonAutoSetup.FlatStyle = FlatStyle.Popup;
             buttonAutoSetup.ForeColor = Color.White;
-            buttonAutoSetup.Location = new Point(359, 480);
+            buttonAutoSetup.Location = new Point(359, 455);
             buttonAutoSetup.Name = "buttonAutoSetup";
             buttonAutoSetup.Size = new Size(125, 24);
             buttonAutoSetup.TabIndex = 19;
@@ -428,7 +432,7 @@ namespace Resonalyze
             dspModePanel.Controls.Add(radioDspMagnitude);
             dspModePanel.Controls.Add(radioDspPhase);
             dspModePanel.Controls.Add(radioDspGroupDelay);
-            dspModePanel.Location = new Point(489, 453);
+            dspModePanel.Location = new Point(490, 733);
             dspModePanel.Name = "dspModePanel";
             dspModePanel.Size = new Size(285, 23);
             dspModePanel.TabIndex = 20;
@@ -482,6 +486,29 @@ namespace Resonalyze
             radioDspGroupDelay.Text = "Group delay";
             radioDspGroupDelay.UseVisualStyleBackColor = true;
             // 
+            // radioDspCorrelation
+            // 
+            radioDspCorrelation.AutoSize = true;
+            radioDspCorrelation.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            radioDspCorrelation.ForeColor = Color.FromArgb(210, 214, 222);
+            radioDspCorrelation.Location = new Point(5, 1);
+            radioDspCorrelation.Name = "radioDspCorrelation";
+            radioDspCorrelation.Size = new Size(83, 19);
+            radioDspCorrelation.TabIndex = 3;
+            radioDspCorrelation.Text = "Correlation";
+            radioDspCorrelation.UseVisualStyleBackColor = true;
+            // 
+            // comboBoxCorrelationPair
+            // 
+            comboBoxCorrelationPair.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxCorrelationPair.Enabled = false;
+            comboBoxCorrelationPair.ForeColor = Color.White;
+            comboBoxCorrelationPair.Location = new Point(93, 1);
+            comboBoxCorrelationPair.MinimumSize = new Size(36, 19);
+            comboBoxCorrelationPair.Name = "comboBoxCorrelationPair";
+            comboBoxCorrelationPair.Size = new Size(74, 19);
+            comboBoxCorrelationPair.TabIndex = 21;
+            // 
             // panel1
             // 
             panel1.BorderStyle = BorderStyle.FixedSingle;
@@ -493,6 +520,16 @@ namespace Resonalyze
             panel1.Size = new Size(233, 23);
             panel1.TabIndex = 24;
             // 
+            // panel2
+            // 
+            panel2.BorderStyle = BorderStyle.FixedSingle;
+            panel2.Controls.Add(radioDspCorrelation);
+            panel2.Controls.Add(comboBoxCorrelationPair);
+            panel2.Location = new Point(781, 733);
+            panel2.Name = "panel2";
+            panel2.Size = new Size(170, 23);
+            panel2.TabIndex = 25;
+            // 
             // VirtualCrossoverPanel
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
@@ -500,6 +537,7 @@ namespace Resonalyze
             AutoScroll = true;
             BackColor = Color.FromArgb(40, 44, 54);
             BorderStyle = BorderStyle.FixedSingle;
+            Controls.Add(panel2);
             Controls.Add(panel1);
             Controls.Add(labelView);
             Controls.Add(checkBoxShowSum);
@@ -536,6 +574,8 @@ namespace Resonalyze
             dspModePanel.PerformLayout();
             panel1.ResumeLayout(false);
             panel1.PerformLayout();
+            panel2.ResumeLayout(false);
+            panel2.PerformLayout();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -575,6 +615,9 @@ namespace Resonalyze
         private RadioButton radioDspMagnitude;
         private RadioButton radioDspPhase;
         private RadioButton radioDspGroupDelay;
+        private RadioButton radioDspCorrelation;
+        private DarkComboBox comboBoxCorrelationPair;
         private Panel panel1;
+        private Panel panel2;
     }
 }

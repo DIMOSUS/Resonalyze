@@ -63,7 +63,8 @@ public sealed class AutoAlignmentEngineTests
         TestChannel[] byBand,
         double[] crossoversHz,
         StringBuilder log,
-        (double LowHz, double HighHz)[]? bands = null)
+        (double LowHz, double HighHz)[]? bands = null,
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
         var snapshots = byBand.ToDictionary(
             channel => channel,
@@ -103,8 +104,26 @@ public sealed class AutoAlignmentEngineTests
             junctions,
             Reprocess,
             alignment,
-            log);
+            log,
+            decisions);
         return alignment;
+    }
+
+    [Fact]
+    public void Compute_ReportsPerChannelDecisions()
+    {
+        var woofer = new TestChannel("W", DelayedImpulse(1.0));
+        var tweeter = new TestChannel("T", DelayedImpulse(0.0));
+        var log = new StringBuilder();
+        var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
+
+        Run([woofer, tweeter], [1_000], log, decisions: decisions);
+
+        // The reference is not searched; it anchors everyone else.
+        Assert.Equal(AlignmentConfidence.High, decisions[woofer].Confidence);
+        Assert.Contains("reference", decisions[woofer].Detail);
+        // The searched channel records the junction it was decided at.
+        Assert.Contains("vs W", decisions[tweeter].Detail);
     }
 
     [Fact]

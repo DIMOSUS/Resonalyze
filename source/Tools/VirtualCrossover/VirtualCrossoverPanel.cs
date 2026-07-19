@@ -2642,7 +2642,8 @@ public partial class VirtualCrossoverPanel : UserControl
             project.StereoSceneOffsetMs,
             (sceneOffsetMs, adjustGains) => RunStereoProposalAsync(
                 leftSide, rightSide, union, bridgeLeft, bridgeRight,
-                bridgeBandLowHz, bridgeBandHighHz, sceneOffsetMs, adjustGains));
+                bridgeBandLowHz, bridgeBandHighHz, sceneOffsetMs, adjustGains),
+            DescribeLeftRightPolarityMismatch(leftSide, rightSide));
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
             dialog.Result is not { } result ||
             IsDisposed)
@@ -2652,6 +2653,52 @@ public partial class VirtualCrossoverPanel : UserControl
 
         await ApplyConfirmedAutoDelayAsync(result);
     }
+
+    // A launch-time red heads-up for the Auto delay dialog when a driver's LEFT
+    // and RIGHT measured polarities disagree — one side's impulse response
+    // reads inverted relative to the other, typically a swapped speaker wire.
+    // Read from the raw transfer IRs (the same figure the channel's "IR:"
+    // badge shows), so it reflects the MEASUREMENT, not the virtual Invert
+    // switch: the alignment can mask the fault by inverting one side, but the
+    // physical wiring stays wrong. Null when every measured pair agrees.
+    private static string? DescribeLeftRightPolarityMismatch(
+        IEnumerable<VirtualCrossoverSideAlignmentChannel> leftSide,
+        IReadOnlyCollection<VirtualCrossoverSideAlignmentChannel> rightSide)
+    {
+        var names = new List<string>();
+        foreach (VirtualCrossoverSideAlignmentChannel right in
+            rightSide.Where(side => side.RightSide))
+        {
+            VirtualCrossoverSideAlignmentChannel? left = leftSide.FirstOrDefault(
+                side => side.Runtime == right.Runtime && !side.RightSide);
+            if (left == null ||
+                left.State.TransferImpulseResponse is not { } leftIr ||
+                right.State.TransferImpulseResponse is not { } rightIr)
+            {
+                continue;
+            }
+
+            PolarityEstimate leftPolarity = VirtualCrossoverAnalysis.EstimatePolarity(leftIr);
+            PolarityEstimate rightPolarity = VirtualCrossoverAnalysis.EstimatePolarity(rightIr);
+            if (leftPolarity != PolarityEstimate.Unknown &&
+                rightPolarity != PolarityEstimate.Unknown &&
+                leftPolarity != rightPolarity)
+            {
+                names.Add(right.Runtime.Name);
+            }
+        }
+
+        return FormatPolarityMismatchWarning(names);
+    }
+
+    // The dialog status line for a set of drivers whose L/R measured polarities
+    // disagree; null (no warning) when the set is empty.
+    internal static string? FormatPolarityMismatchWarning(
+        IReadOnlyList<string> mismatchedDrivers) =>
+        mismatchedDrivers.Count == 0
+            ? null
+            : $"⚠ L/R polarity mismatch on {string.Join(", ", mismatchedDrivers)} — " +
+              "one side measured inverted (check wiring).";
 
     // Computes the stereo proposal on a background thread: the alignment
     // cascade, then (when asked) the cut-only gain balance from the run's

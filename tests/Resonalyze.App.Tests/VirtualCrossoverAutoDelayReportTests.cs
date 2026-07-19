@@ -121,4 +121,23 @@ public sealed class VirtualCrossoverAutoDelayReportTests
             .First(line => line.StartsWith("A ", StringComparison.Ordinal));
         Assert.Contains("ref", referenceRow);
     }
+
+    [Fact]
+    public void FormatPolarityMismatchWarning_NoMismatchGivesNoWarning()
+    {
+        Assert.Null(VirtualCrossoverPanel.FormatPolarityMismatchWarning([]));
+    }
+
+    [Fact]
+    public void FormatPolarityMismatchWarning_NamesTheDriversAndFlagsInversion()
+    {
+        string? warning = VirtualCrossoverPanel.FormatPolarityMismatchWarning(
+            ["Midbass", "Tweeter"]);
+
+        Assert.NotNull(warning);
+        Assert.StartsWith("⚠", warning);
+        Assert.Contains("Midbass", warning);
+        Assert.Contains("Tweeter", warning);
+        Assert.Contains("inverted", warning);
+    }
 }

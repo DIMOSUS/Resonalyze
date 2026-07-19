@@ -65,11 +65,14 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
     /// Seeds the dialog: the run mode (a single-side run has no L/R offset to
     /// honor), the persisted scene offset, and the panel's compute delegate
     /// (scene offset ms, balance gains) -> proposal.
+    /// <paramref name="polarityWarning"/> is a non-empty red heads-up shown at
+    /// launch when a driver's left and right measured polarities disagree.
     /// </summary>
     public void Init(
         bool stereo,
         double sceneOffsetMs,
-        Func<double, bool, Task<AutoDelayRunResult>> runner)
+        Func<double, bool, Task<AutoDelayRunResult>> runner,
+        string? polarityWarning = null)
     {
         this.stereo = stereo;
         this.runner = runner;
@@ -96,6 +99,11 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
                   "against each other.") +
             Environment.NewLine + Environment.NewLine +
             "Run computes a proposal; nothing is applied until Apply.";
+
+        if (!string.IsNullOrEmpty(polarityWarning))
+        {
+            SetStatus(polarityWarning, StatusError);
+        }
     }
 
     // Once a proposal exists, any input change makes it stale: Apply must

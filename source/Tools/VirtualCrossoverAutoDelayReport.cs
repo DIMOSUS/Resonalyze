@@ -21,6 +21,7 @@ internal sealed record AutoDelayChannelOutcome(
     bool AfterInvert,
     double AfterGainDb,
     bool GainAdjusted,
+    AlignmentDecisionKind? DelayKind,
     AlignmentConfidence? DelayConfidence,
     string DelayDetail,
     AlignmentConfidence? GainConfidence,
@@ -150,7 +151,7 @@ internal static class VirtualCrossoverAutoDelayReport
                         $"{outcome.BeforeGainDb:0.0} -> {outcome.AfterGainDb:0.0}")
                     : FormattableString.Invariant(
                         $"{outcome.BeforeGainDb:0.0} (kept)"),
-                ConfidenceCell(outcome.DelayConfidence),
+                DelayCell(outcome.DelayKind, outcome.DelayConfidence),
                 ConfidenceCell(outcome.GainConfidence)
             })
             .ToList();
@@ -193,11 +194,27 @@ internal static class VirtualCrossoverAutoDelayReport
         text.AppendLine();
         text.AppendLine("Confidence — how decisively the measurement supported the choice:");
         text.AppendLine("  delay: the chosen alignment's score margin over rival");
-        text.AppendLine("         lobes and polarity (locks pin to measured physics);");
+        text.AppendLine("         lobes and polarity;");
+        text.AppendLine("         locked = pinned by an onset/scene constraint (the");
+        text.AppendLine("         constraint chose, not the acoustics), ref = the fixed");
+        text.AppendLine("         anchor the others align to;");
         text.AppendLine("  gain:  how flat the level relation is across the band");
         text.AppendLine("         (the L-R difference for right channels).");
         return text.ToString();
     }
+
+    // The delay column carries decision KINDS beyond confidence: a locked
+    // pick was chosen by its constraint and the reference was not chosen at
+    // all, so showing a confidence for either would misread as the
+    // measurement's vote.
+    private static string DelayCell(
+        AlignmentDecisionKind? kind, AlignmentConfidence? confidence) =>
+        kind switch
+        {
+            AlignmentDecisionKind.Reference => "ref",
+            AlignmentDecisionKind.Locked => "locked",
+            _ => ConfidenceCell(confidence)
+        };
 
     private static string PolarityCell(bool beforeInvert, bool afterInvert)
     {

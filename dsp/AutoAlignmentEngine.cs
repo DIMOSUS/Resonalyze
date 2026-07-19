@@ -23,13 +23,32 @@ public enum AlignmentConfidence
 }
 
 /// <summary>
+/// What kind of decision set a channel's delay: a free junction search
+/// (confidence = the rival margin), a pick pinned by an onset/scene lock
+/// (a constraint of the physics or the task — NOT a measure of how the
+/// acoustics voted, so it carries no confidence), the fixed reference
+/// (nothing was chosen at all), or the stereo bridge (an arrival fit,
+/// confidence = the weaker side's SNR).
+/// </summary>
+public enum AlignmentDecisionKind
+{
+    Search,
+    Locked,
+    Reference,
+    Bridge
+}
+
+/// <summary>
 /// How one channel's delay/polarity decision was reached, for the user
-/// report: the qualitative confidence plus a short human-readable summary
-/// (the rival margin and the gates that shaped the pick). Distinct from the
-/// diagnostic log, which records everything.
+/// report: the decision kind, the qualitative confidence where one is
+/// meaningful (free searches and the bridge; null for locked and reference
+/// channels) and a short human-readable summary (the rival margin and the
+/// gates that shaped the pick). Distinct from the diagnostic log, which
+/// records everything.
 /// </summary>
 public sealed record AlignmentDecision(
-    AlignmentConfidence Confidence,
+    AlignmentDecisionKind Kind,
+    AlignmentConfidence? Confidence,
     string Detail);
 
 /// <summary>
@@ -398,7 +417,8 @@ public static class AutoAlignmentEngine
             // The latest-arriving channel is the fixed anchor everyone else
             // aligns to — there is no search whose robustness could be judged.
             decisions[reference] = new AlignmentDecision(
-                AlignmentConfidence.High, "reference (others align to it)");
+                AlignmentDecisionKind.Reference, Confidence: null,
+                "reference (others align to it)");
         }
 
         // Stage 2: sequential pairwise fine alignment, walking outward from the
@@ -1087,10 +1107,12 @@ public static class AutoAlignmentEngine
     // prior-free score margin of the chosen candidate over its best RIVAL —
     // another lobe (a quarter period away or more) or the opposite polarity;
     // fine, wide and retry candidates are pooled, which the prior-free score
-    // keeps on one scale. The gates then temper the mapping: a lock pins the
-    // window to measured physics, so a slim in-window margin does not make
-    // the pick fragile; a wide (untrusted) seed and a window-edge retry mean
-    // the coarse base itself was suspect.
+    // keeps on one scale. An onset/scene lock is a CONSTRAINT (of the
+    // measured physics or the stereo mandate), not a measure of how the
+    // acoustics voted — a locked pick reports the Locked kind with no
+    // confidence, and the margin stays in the detail for the curious. For a
+    // free search the gates temper the mapping: a wide (untrusted) seed and
+    // a window-edge retry mean the coarse base itself was suspect.
     private static AlignmentDecision BuildDecision(
         AlignmentCandidate chosen,
         IReadOnlyList<AlignmentCandidate> pool,
@@ -1115,23 +1137,27 @@ public static class AutoAlignmentEngine
             }
         }
 
-        AlignmentConfidence confidence =
-            margin >= WideWindowPromotionMarginDb ? AlignmentConfidence.High
-            : margin >= DecisionMediumMarginDb ? AlignmentConfidence.Medium
-            : AlignmentConfidence.Low;
-        if (onsetLocked || sceneLocked)
+        AlignmentDecisionKind kind = onsetLocked || sceneLocked
+            ? AlignmentDecisionKind.Locked
+            : AlignmentDecisionKind.Search;
+        AlignmentConfidence? confidence = null;
+        if (kind == AlignmentDecisionKind.Search)
         {
-            confidence = (AlignmentConfidence)Math.Max(
-                (int)confidence, (int)AlignmentConfidence.Medium);
-        }
-        if (wideSeed)
-        {
-            confidence = (AlignmentConfidence)Math.Min(
-                (int)confidence, (int)AlignmentConfidence.Medium);
-        }
-        if (edgeRetry)
-        {
-            confidence = AlignmentConfidence.Low;
+            AlignmentConfidence level =
+                margin >= WideWindowPromotionMarginDb ? AlignmentConfidence.High
+                : margin >= DecisionMediumMarginDb ? AlignmentConfidence.Medium
+                : AlignmentConfidence.Low;
+            if (wideSeed)
+            {
+                level = (AlignmentConfidence)Math.Min(
+                    (int)level, (int)AlignmentConfidence.Medium);
+            }
+            if (edgeRetry)
+            {
+                level = AlignmentConfidence.Low;
+            }
+
+            confidence = level;
         }
 
         // Invariant: the detail feeds the user report, which must read the
@@ -1161,7 +1187,7 @@ public static class AutoAlignmentEngine
             detail += ", window-edge retry";
         }
 
-        return new AlignmentDecision(confidence, detail);
+        return new AlignmentDecision(kind, confidence, detail);
     }
 
     // A uniform delay shift of every channel in the scope but one: the standard
@@ -1372,6 +1398,7 @@ public static class AutoAlignmentEngine
             string bridgeSnrText = FormattableString.Invariant(
                 $"{leftBridge.SignalToNoiseDecibels:0} / {rightBridge.SignalToNoiseDecibels:0} dB");
             decisions[plan.BridgeRight] = new AlignmentDecision(
+                AlignmentDecisionKind.Bridge,
                 bridgeConfidence,
                 $"bridge to {plan.BridgeLeft.Name}: arrival SNR {bridgeSnrText}");
         }

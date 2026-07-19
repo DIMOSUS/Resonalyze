@@ -119,11 +119,19 @@ public sealed class AutoAlignmentEngineTests
 
         Run([woofer, tweeter], [1_000], log, decisions: decisions);
 
-        // The reference is not searched; it anchors everyone else.
-        Assert.Equal(AlignmentConfidence.High, decisions[woofer].Confidence);
+        // The reference is not searched — nothing was chosen, so it carries
+        // the Reference kind and no confidence.
+        Assert.Equal(AlignmentDecisionKind.Reference, decisions[woofer].Kind);
+        Assert.Null(decisions[woofer].Confidence);
         Assert.Contains("reference", decisions[woofer].Detail);
-        // The searched channel records the junction it was decided at.
+        // The clean synthetic junction has razor-sharp fronts, so the onset
+        // lock pins the tweeter: the decision reports the Locked kind (the
+        // constraint chose, not the acoustics) with no confidence, naming the
+        // junction and the constraint in the detail.
+        Assert.Equal(AlignmentDecisionKind.Locked, decisions[tweeter].Kind);
+        Assert.Null(decisions[tweeter].Confidence);
         Assert.Contains("vs W", decisions[tweeter].Detail);
+        Assert.Contains("onset-locked", decisions[tweeter].Detail);
     }
 
     [Fact]

@@ -19,6 +19,7 @@ public sealed class VirtualCrossoverAutoDelayReportTests
         double beforeGain = 0,
         double afterGain = 0,
         bool gainAdjusted = false,
+        AlignmentDecisionKind? delayKind = null,
         AlignmentConfidence? delayConfidence = null,
         string delayDetail = "",
         AlignmentConfidence? gainConfidence = null,
@@ -29,7 +30,7 @@ public sealed class VirtualCrossoverAutoDelayReportTests
             runtime, runtime.Settings, name,
             beforeDelay, beforeInvert, beforeGain,
             afterDelay, afterInvert, afterGain, gainAdjusted,
-            delayConfidence, delayDetail, gainConfidence, gainDetail);
+            delayKind, delayConfidence, delayDetail, gainConfidence, gainDetail);
     }
 
     [Fact]
@@ -47,9 +48,13 @@ public sealed class VirtualCrossoverAutoDelayReportTests
                 Outcome(
                     "B L", 0.5, 0.85, afterInvert: true,
                     beforeGain: -2.0, afterGain: -2.0,
+                    delayKind: AlignmentDecisionKind.Search,
                     delayConfidence: AlignmentConfidence.Low,
                     delayDetail: "vs A L: margin 0.2 dB, wide seed",
-                    gainDetail: "kept (mono channel)")
+                    gainDetail: "kept (mono channel)"),
+                Outcome(
+                    "C R", 1.0, 1.2,
+                    delayKind: AlignmentDecisionKind.Locked)
             ],
             stereo: true,
             sceneOffsetMs: 0.27,
@@ -62,7 +67,7 @@ public sealed class VirtualCrossoverAutoDelayReportTests
         Assert.Contains("gain tilt +2.0 dB", report);
         // The at-a-glance summary: change counts, the predicted sum-loss
         // improvement per side, and one warning line per LOW-confidence call.
-        Assert.Contains("Changes: 2 delays, 1 polarities, 1 gains", report);
+        Assert.Contains("Changes: 3 delays, 1 polarities, 1 gains", report);
         Assert.Contains("Left   -2.0 -> -0.6 dB", report);
         Assert.Contains("Right  -2.4 -> -0.8 dB", report);
         Assert.Contains(
@@ -74,6 +79,13 @@ public sealed class VirtualCrossoverAutoDelayReportTests
         Assert.Contains("norm -> inv", report);
         Assert.Contains("high", report);
         Assert.Contains("LOW", report);
+        // A locked pick is a constraint of the task, not a measurement vote:
+        // its row reads "locked" instead of a confidence, and it raises no
+        // LOW warning even without a confidence figure.
+        string lockedRow = report.Split('\n')
+            .First(line => line.StartsWith("C R", StringComparison.Ordinal));
+        Assert.Contains("locked", lockedRow);
+        Assert.DoesNotContain("Warning: C R", report);
         // The notes wrap each channel into short indented lines, so the
         // dialog's word-wrapping report box never needs a horizontal scroll.
         Assert.Contains("  B L\r\n", report);
@@ -85,7 +97,10 @@ public sealed class VirtualCrossoverAutoDelayReportTests
     public void Format_SingleSideWithoutGains()
     {
         string report = VirtualCrossoverAutoDelayReport.Format(
-            [Outcome("A", 0.0, 0.75, delayDetail: "reference (others align to it)")],
+            [Outcome(
+                "A", 0.0, 0.75,
+                delayKind: AlignmentDecisionKind.Reference,
+                delayDetail: "reference (others align to it)")],
             stereo: false,
             sceneOffsetMs: 0,
             gainsRequested: false,
@@ -100,5 +115,10 @@ public sealed class VirtualCrossoverAutoDelayReportTests
             report);
         Assert.DoesNotContain("Warning:", report);
         Assert.Contains("0.0 (kept)", report);
+        // The reference was not chosen at all — its row reads "ref", not a
+        // confidence.
+        string referenceRow = report.Split('\n')
+            .First(line => line.StartsWith("A ", StringComparison.Ordinal));
+        Assert.Contains("ref", referenceRow);
     }
 }

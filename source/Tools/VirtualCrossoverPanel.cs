@@ -2339,6 +2339,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 over.InvertPolarity,
                 gainAdjusted ? gain!.ProposedGainDb : settings.GainDb,
                 gainAdjusted,
+                decision?.Kind,
                 decision?.Confidence,
                 decision?.Detail ?? string.Empty,
                 gain?.Confidence,

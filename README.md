@@ -136,7 +136,9 @@ file is provided with every release.
   polarity, Butterworth / Linkwitz-Riley / Bessel / Chebyshev crossovers, an
   all-pass stage, and imported
   PEQ — and see their complex sum, sum loss, the opposite side's sum, phase
-  tracking, per-pair Δ L−R timing, auto crossover proposals, a stereo-aware
+  tracking, a per-junction phase read-out (phase at the crossover, the
+  coherence-maximizing delay fix and its lobe margin), per-pair Δ L−R timing,
+  auto crossover proposals, a stereo-aware
   auto delay with a scene offset, gated phase view, overlay capture, sessions,
   and tuning-sheet export
 - Live Spectrum: real-time loopback transfer function with selectable excitation
@@ -1512,8 +1514,30 @@ The channels enter fully processed, so 0 ms is the alignment as it currently
 stands (the solid marker), the dashed marker is the band-limited
 envelope-arrival estimate the searches anchor on, and every near-tied comb
 lobe the log's `[corr]`/`[phat]` lines enumerate is visible as such. A **Sum loss** read-out (avg / dip
-per junction plus a total) turns tuning into numbers you can minimize, and a
-**Δ L−R** block below it reports each stereo pair's final inter-side state:
+per junction plus a total) turns tuning into numbers you can minimize.
+
+A **Junction phase** block below it reads each adjacent pair's steady-state
+cross-phase — the regime sustained program material actually sums in.
+(Deliberately NOT the direct-sound / FDW phase: on field measurements the
+room adds several milliseconds of apparent group delay at subwoofer
+frequencies, so a direct-sound read would recommend a confidently wrong
+delay.) Three figures per junction: **φfc** — the fitted phase of the lower
+channel minus the upper at the crossover frequency (≈0° means the handover
+is phase-aligned; near ±180° the cure is a polarity flip, not a delay);
+**fix ms** — the extra delay on the pair's LOWER channel that would maximize
+the overlap-band coherence, relative to the current settings (positive:
+delay it further); and **lobe** — how decisively that optimum beats the
+nearest whole-period rival lobe. Below 0.10 the line is flagged with `!`:
+the overlap band is then too narrow to rule out a period hop, so read the
+phase but do not chase the fix. Read the columns right to left — lobe says
+whether to trust the line, φfc says how the junction stands, fix says where
+to move — and treat fixes under ~0.1–0.2 ms as noise. The block is purely
+informative (nothing feeds back into Auto delay), and its tooltip — pinned
+while the mouse stays on the read-out — carries the full fit per junction:
+the coherence now and at the optimum, the rival lobe and margin, the
+residual slope Δτ and the fit rms over the measured band.
+
+A **Δ L−R** block below reports each stereo pair's final inter-side state:
 the two sides' band-limited envelope arrivals in the pair's shared band
 (fully processed chains included) with their difference — positive means the
 right side leads, the same sign convention as the scene offset, so after a

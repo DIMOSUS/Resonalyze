@@ -94,6 +94,72 @@ public sealed class VirtualCrossoverMetricsTests
             [Processed("A", Impulse(), 5, 48_000)], magnitudes: null, sumCurve: null));
     }
 
+    // A channel processed through a real crossover chain, for the junction
+    // phase read-out: the settings carry the crossover (so the junction and its
+    // overlap band resolve) and the IR is the chain-applied impulse.
+    private static ProcessedChannel ProcessedThroughChain(
+        string name,
+        CrossoverKind kind,
+        double crossoverHz,
+        double delayMs = 0)
+    {
+        var channel = new VirtualCrossoverChannel(name) { SampleRate = 48_000 };
+        channel.Settings.CrossoverKind = kind;
+        var edge = new CrossoverEdge(
+            CrossoverFilterFamily.LinkwitzRiley, crossoverHz, 24);
+        if (kind == CrossoverKind.LowPass)
+        {
+            channel.Settings.LowPassEdge = edge;
+        }
+        else
+        {
+            channel.Settings.HighPassEdge = edge;
+        }
+        channel.Settings.DelayMs = delayMs;
+
+        var impulse = new Complex[8_192];
+        impulse[480] = Complex.One;
+        Complex[] ir = VirtualCrossoverAnalysis.ApplyChain(
+            impulse, channel.Settings.ToChain(), 48_000);
+        return new ProcessedChannel(
+            channel, ir, VirtualCrossoverAnalysis.FindPeakIndex(ir), OxyColors.White);
+    }
+
+    [Fact]
+    public void BuildPhaseEntries_IsEmptyForFewerThanTwoChannels()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyCurve);
+
+        Assert.Empty(metrics.BuildPhaseEntries(
+            [ProcessedThroughChain("A", CrossoverKind.LowPass, 200)]));
+    }
+
+    [Fact]
+    public void BuildPhaseEntries_ReadsTheJunctionAndRecoversAMisalignment()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyCurve);
+
+        // Passed upper-first on purpose: the entries must order by band, not by
+        // argument order. The upper channel runs 2 ms late, so the read-out
+        // recommends the same extra delay on the lower one.
+        List<VirtualCrossoverMetric.PhaseEntry> entries = metrics.BuildPhaseEntries(
+        [
+            ProcessedThroughChain("B", CrossoverKind.HighPass, 200, delayMs: 2.0),
+            ProcessedThroughChain("A", CrossoverKind.LowPass, 200)
+        ]);
+
+        VirtualCrossoverMetric.PhaseEntry entry = Assert.Single(entries);
+        Assert.Equal("A/B", entry.Junction);
+        Assert.Equal("A", entry.LowerChannel);
+        Assert.Equal(200, entry.CrossoverHz);
+        Assert.Equal(100, entry.LowHz);
+        Assert.Equal(400, entry.HighHz);
+        Assert.InRange(entry.Result.BestExtraDelayMs, 1.9, 2.1);
+        Assert.InRange(entry.Result.BestScore, 0.95, 1.0);
+    }
+
     [Fact]
     public async Task ComputeOppositeSumCurveAsync_ReturnsNull_WithFewerThanTwoParticipatingChannels()
     {

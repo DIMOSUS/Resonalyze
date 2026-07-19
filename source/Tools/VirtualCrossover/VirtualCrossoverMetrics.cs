@@ -117,6 +117,66 @@ internal sealed class VirtualCrossoverMetrics
     }
 
     /// <summary>
+    /// The per-junction phase read-outs: each adjacent pair's steady-state
+    /// cross-phase analysis (coherence, phase at the crossover, the
+    /// coherence-maximizing extra delay on the lower channel and the lobe
+    /// margin). Purely informative — nothing here feeds the alignment engine.
+    /// One analysis spectrum is built per channel and shared by the junctions
+    /// it participates in. Empty when there is no junction to read.
+    /// </summary>
+    public List<VirtualCrossoverMetric.PhaseEntry> BuildPhaseEntries(
+        List<ProcessedChannel> processed)
+    {
+        var entries = new List<VirtualCrossoverMetric.PhaseEntry>();
+        if (processed.Count < 2)
+        {
+            return entries;
+        }
+
+        var spectra = new Dictionary<ProcessedChannel, Complex[]>();
+        Complex[] SpectrumOf(ProcessedChannel item)
+        {
+            if (!spectra.TryGetValue(item, out Complex[]? spectrum))
+            {
+                spectrum = JunctionPhaseAlignment.BuildAnalysisSpectrum(
+                    item.ImpulseResponse);
+                spectra.Add(item, spectrum);
+            }
+
+            return spectrum;
+        }
+
+        foreach (AdjacentPair pair in ProcessedChannels.GetAdjacentPairs(
+            ProcessedChannels.OrderByBand(processed)))
+        {
+            if (pair.Lower.Channel.SampleRate != pair.Upper.Channel.SampleRate)
+            {
+                continue;
+            }
+
+            JunctionPhaseResult? result = JunctionPhaseAlignment.AnalyzeSpectra(
+                SpectrumOf(pair.Lower),
+                SpectrumOf(pair.Upper),
+                pair.Lower.Channel.SampleRate,
+                pair.CrossoverHz,
+                pair.BandLowHz,
+                pair.BandHighHz);
+            if (result != null)
+            {
+                entries.Add(new VirtualCrossoverMetric.PhaseEntry(
+                    $"{pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}",
+                    pair.Lower.Channel.Name,
+                    pair.CrossoverHz,
+                    pair.BandLowHz,
+                    pair.BandHighHz,
+                    result));
+            }
+        }
+
+        return entries;
+    }
+
+    /// <summary>
     /// The final per-pair L−R timing: both sides' fully processed responses
     /// (current delays included) get their band-limited envelope arrival read
     /// in the pair's shared band, and the difference (positive: right leads —

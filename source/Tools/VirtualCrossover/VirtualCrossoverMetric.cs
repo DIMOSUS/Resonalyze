@@ -1,3 +1,5 @@
+using Resonalyze.Dsp;
+
 namespace Resonalyze;
 
 /// <summary>
@@ -175,6 +177,97 @@ internal static class VirtualCrossoverMetric
             "to center the image alongside the timing \u2014\r\na single " +
             "microphone underestimates the binaural difference (no head " +
             "shadow).";
+    }
+
+    /// <summary>
+    /// One junction's phase read-out for the label: the pair name, the lower
+    /// channel's name (the one the recommended extra delay applies to), the
+    /// crossover and overlap band it was read over, and the analysis result.
+    /// </summary>
+    internal readonly record struct PhaseEntry(
+        string Junction,
+        string LowerChannel,
+        double CrossoverHz,
+        double LowHz,
+        double HighHz,
+        JunctionPhaseResult Result);
+
+    // Below this lobe margin the compact line gets a "!" — the overlap band is
+    // too narrow to rule out a whole-period hop, so the recommendation is
+    // ambiguous. The field probe read ~0.19 on a healthy octave-wide junction
+    // and ~0.04 on a deliberately narrowed one.
+    private const double AmbiguousLobeMargin = 0.10;
+
+    /// <summary>
+    /// Compact per-junction phase column for the host read-out panel: the
+    /// fitted phase at the crossover, the coherence-maximizing extra delay on
+    /// the lower channel, and the lobe margin ("—" when the sweep window holds
+    /// no rival lobe; "!" when the margin is too small to trust the fix).
+    /// </summary>
+    public static string FormatPhaseCompact(IReadOnlyList<PhaseEntry> entries)
+    {
+        if (entries.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var builder = new System.Text.StringBuilder(
+            "Junction phase\r\n       φfc fix ms  lobe\r\n");
+        foreach (PhaseEntry entry in entries)
+        {
+            JunctionPhaseResult result = entry.Result;
+            string phase = $"{result.PhaseAtCrossoverDeg,4:+0;-0;0}°";
+            string fix = $"{result.BestExtraDelayMs,6:+0.00;-0.00}";
+            string lobe = result.LobeMargin.HasValue
+                ? $"{result.LobeMargin.Value,5:0.00}"
+                : "    —";
+            string warning =
+                result.LobeMargin is { } margin && margin < AmbiguousLobeMargin
+                    ? " !"
+                    : string.Empty;
+            builder.AppendLine(
+                $"{entry.Junction.PadRight(6)}{phase} {fix} {lobe}{warning}");
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    /// <summary>
+    /// Full junction-phase breakdown for the tooltip: every fitted figure per
+    /// junction plus the legend that explains how to act on the numbers.
+    /// </summary>
+    public static string FormatPhaseDetail(IReadOnlyList<PhaseEntry> entries)
+    {
+        if (entries.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        return "Junction phase (steady state — what sustained bass sums to)\r\n" +
+            string.Join("\r\n", entries.Select(entry =>
+            {
+                JunctionPhaseResult result = entry.Result;
+                string rival = result.RivalScore.HasValue
+                    ? $"rival lobe {result.RivalScore.Value:0.00} at " +
+                        $"{result.RivalExtraDelayMs!.Value:+0.00;-0.00} ms " +
+                        $"(margin {result.LobeMargin!.Value:0.00})"
+                    : "no rival lobe in the sweep window";
+                return $"{entry.Junction} @ {FrequencyText.Format(entry.CrossoverHz)}: " +
+                    $"φ {result.PhaseAtCrossoverDeg:+0;-0;0}° at fc; " +
+                    $"coherence {result.CurrentScore:0.00} now, " +
+                    $"best {result.BestScore:0.00} at " +
+                    $"{result.BestExtraDelayMs:+0.00;-0.00} ms " +
+                    $"on {entry.LowerChannel};\r\n   {rival}; " +
+                    $"fit Δτ {result.FitDelayMs:+0.00;-0.00} ms, " +
+                    $"rms {result.FitRmsDeg:0}° " +
+                    $"({FrequencyText.Format(entry.LowHz)} – " +
+                    $"{FrequencyText.Format(entry.HighHz)})";
+            })) +
+            "\r\nfix: extra delay on the LOWER channel (add to its Delay) that " +
+            "maximizes the\r\nband coherence. φ near ±180°: flip a " +
+            "polarity instead of chasing a delay.\r\nlobe: how decisively the " +
+            "optimum beats the nearest whole-period rival;\r\nsmall margin (!) " +
+            "= the overlap band is too narrow to rule the rival out.";
     }
 
     /// <summary>

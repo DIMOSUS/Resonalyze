@@ -151,6 +151,95 @@ public sealed class VirtualCrossoverMetricTests
         });
     }
 
+    private static VirtualCrossoverMetric.PhaseEntry PhaseJunction(
+        double? lobeMargin = 0.19,
+        double? rivalExtraMs = -12.20,
+        double? rivalScore = 0.78) =>
+        new(
+            "A/B",
+            "A",
+            80,
+            40,
+            160,
+            new Resonalyze.Dsp.JunctionPhaseResult(
+                CurrentScore: 0.96,
+                PhaseAtCrossoverDeg: -3.4,
+                BestExtraDelayMs: -0.30,
+                BestScore: 0.97,
+                RivalExtraDelayMs: rivalExtraMs,
+                RivalScore: rivalScore,
+                LobeMargin: lobeMargin,
+                FitDelayMs: 2.62,
+                FitRmsDeg: 10.3));
+
+    [Fact]
+    public void FormatPhaseCompact_RendersPhaseFixAndMargin()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            string text = VirtualCrossoverMetric.FormatPhaseCompact([PhaseJunction()]);
+
+            Assert.Equal(
+                "Junction phase\r\n" +
+                "       φfc fix ms  lobe\r\n" +
+                "A/B     -3°  -0.30  0.19",
+                text);
+        });
+    }
+
+    [Fact]
+    public void FormatPhaseCompact_FlagsAnAmbiguousLobeMargin()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            string text = VirtualCrossoverMetric.FormatPhaseCompact(
+                [PhaseJunction(lobeMargin: 0.04)]);
+
+            Assert.Contains("A/B     -3°  -0.30  0.04 !", text);
+        });
+    }
+
+    [Fact]
+    public void FormatPhaseCompact_DashesAMissingRivalLobe()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            string text = VirtualCrossoverMetric.FormatPhaseCompact(
+                [PhaseJunction(lobeMargin: null, rivalExtraMs: null, rivalScore: null)]);
+
+            Assert.Contains("A/B     -3°  -0.30     —", text);
+            Assert.DoesNotContain("!", text);
+        });
+    }
+
+    [Fact]
+    public void FormatPhaseCompact_EmptyListRendersNothing()
+    {
+        Assert.Equal(
+            string.Empty,
+            VirtualCrossoverMetric.FormatPhaseCompact([]));
+    }
+
+    [Fact]
+    public void FormatPhaseDetail_ListsEveryFigureAndTheLegend()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            string text = VirtualCrossoverMetric.FormatPhaseDetail([PhaseJunction()]);
+
+            Assert.Contains(
+                "A/B @ 80 Hz: φ -3° at fc; coherence 0.96 now, " +
+                "best 0.97 at -0.30 ms on A;",
+                text);
+            Assert.Contains(
+                "rival lobe 0.78 at -12.20 ms (margin 0.19); " +
+                "fit Δτ +2.62 ms, rms 10° (40 Hz – 160 Hz)",
+                text);
+            Assert.Contains("extra delay on the LOWER channel", text);
+            Assert.Contains("flip a polarity", text);
+        });
+    }
+
     private static void RunWithInvariantCulture(Action assertions)
     {
         CultureInfo previous = CultureInfo.CurrentCulture;

@@ -57,6 +57,7 @@ public sealed class JunctionPhaseAlignmentTests
         Assert.InRange(result.PhaseAtCrossoverDeg, -5.0, 5.0);
         Assert.InRange(result.PhaseConsistency, 0.9, 1.0);
         Assert.InRange(result.BestExtraDelayMs, -0.05, 0.05);
+        Assert.False(result.BestInvert);
         Assert.True(result.BestScore >= result.CurrentScore - 1e-9);
         Assert.InRange(result.FitDelayMs, -0.05, 0.05);
     }
@@ -99,6 +100,7 @@ public sealed class JunctionPhaseAlignmentTests
             new DspChannelChain(DelayMs: 2.0, Crossover: HighPass));
 
         Assert.InRange(result.BestExtraDelayMs, 1.9, 2.1);
+        Assert.False(result.BestInvert);
         Assert.InRange(result.BestScore, 0.95, 1.0);
         // The slope fit reads the same misalignment: the lower channel is
         // 2 ms EARLIER, so its residual "later" delay is negative.
@@ -107,18 +109,43 @@ public sealed class JunctionPhaseAlignmentTests
     }
 
     [Fact]
-    public void Analyze_InvertedLowerChannelReadsHalfTurnNotADelay()
+    public void Analyze_InvertedLowerChannelRecommendsAFlipNotADelay()
     {
         JunctionPhaseResult result = AnalyzeJunction(
             new DspChannelChain(InvertPolarity: true, Crossover: LowPass),
             new DspChannelChain(Crossover: HighPass));
 
-        // The phase read-out must say "polarity", loudly: half a turn at the
-        // crossover and a strongly negative coherence at the current settings.
+        // Half a turn at the crossover and a strongly negative score now.
         Assert.True(Math.Abs(result.PhaseAtCrossoverDeg) > 150.0);
         Assert.True(result.CurrentScore < -0.9);
-        // The best a pure delay can do against a flip is a half-period shift.
-        Assert.InRange(Math.Abs(result.BestExtraDelayMs), 1.5, 3.5);
+        // A genuine inversion aligns the whole band flat: the recommendation is
+        // a polarity flip at ~zero extra delay, NOT the half-period delay a
+        // delay-only search would have chased. The flip beats that delay
+        // decisively (a wide band separates the two hypotheses).
+        Assert.True(result.BestInvert);
+        Assert.InRange(result.BestExtraDelayMs, -0.05, 0.05);
+        Assert.InRange(result.BestScore, 0.95, 1.0);
+        Assert.True(result.LobeMargin!.Value > 0.1);
+    }
+
+    [Fact]
+    public void Analyze_HalfPeriodDelayRecommendsADelayNotAFlip()
+    {
+        // The symmetric case to the inversion test: a normal-polarity channel
+        // half a crossover period late reads the SAME ±180° at fc, but here the
+        // honest fix is the delay, not a flip. φ alone cannot tell the two
+        // apart — the whole-band score must, and it does because a delay
+        // realigns the band while a flip would leave it sloping.
+        double halfPeriodMs = 0.5 * 1000.0 / CrossoverHz;
+        JunctionPhaseResult result = AnalyzeJunction(
+            new DspChannelChain(Crossover: LowPass),
+            new DspChannelChain(DelayMs: halfPeriodMs, Crossover: HighPass));
+
+        Assert.True(Math.Abs(result.PhaseAtCrossoverDeg) > 150.0);
+        Assert.False(result.BestInvert);
+        Assert.InRange(result.BestExtraDelayMs, halfPeriodMs - 0.1, halfPeriodMs + 0.1);
+        Assert.InRange(result.BestScore, 0.95, 1.0);
+        Assert.True(result.LobeMargin!.Value > 0.1);
     }
 
     [Fact]
@@ -234,6 +261,7 @@ public sealed class JunctionPhaseAlignmentTests
         Assert.Equal(reference.CurrentScore, shifted.CurrentScore, 3);
         Assert.Equal(reference.BestScore, shifted.BestScore, 3);
         Assert.Equal(reference.BestExtraDelayMs, shifted.BestExtraDelayMs, 2);
+        Assert.Equal(reference.BestInvert, shifted.BestInvert);
         Assert.Equal(
             reference.PhaseAtCrossoverDeg, shifted.PhaseAtCrossoverDeg, 0);
         Assert.Equal(reference.PhaseConsistency, shifted.PhaseConsistency, 3);
@@ -241,12 +269,72 @@ public sealed class JunctionPhaseAlignmentTests
         Assert.Equal(reference.FitRmsDeg, shifted.FitRmsDeg, 0);
     }
 
+    [Theory]
+    [InlineData(44_100)]
+    [InlineData(48_000)]
+    [InlineData(96_000)]
+    [InlineData(192_000)]
+    public void Analyze_RecommendsTheSameFixAcrossSampleRates(int sampleRate)
+    {
+        // The SAME physical scene — a broadband direct arrival plus a decaying
+        // low-frequency modal tail, the upper channel 0.6 ms late — sampled at
+        // four rates. With a fixed sample-count window the high-rate captures
+        // would truncate the tail and drift the fix; the time-sized window
+        // keeps the recommendation rate-independent.
+        const double delayMs = 0.6;
+        Complex[] lower = DecayingScene(sampleRate, extraDelayMs: 0);
+        Complex[] upper = DecayingScene(sampleRate, extraDelayMs: delayMs);
+
+        JunctionPhaseResult? result = JunctionPhaseAlignment.Analyze(
+            lower, upper, sampleRate, 200, 120, 340);
+
+        Assert.NotNull(result);
+        Assert.False(result!.BestInvert);
+        // The lower channel must be delayed by the same 0.6 ms to catch the
+        // late upper one, at every rate, to a hair.
+        Assert.InRange(result.BestExtraDelayMs, delayMs - 0.08, delayMs + 0.08);
+    }
+
+    // A one-second IR: a short broadband click at 10 ms, then a 200 Hz mode
+    // decaying over ~180 ms — content the analysis window must capture whole
+    // for the fix to be stable. extraDelayMs shifts the whole scene later.
+    private static Complex[] DecayingScene(int sampleRate, double extraDelayMs)
+    {
+        var ir = new Complex[sampleRate];
+        int start = (int)Math.Round((10.0 + extraDelayMs) * sampleRate / 1000.0);
+        // Broadband click (a few-sample triangle) for wideband alignment.
+        for (int i = -2; i <= 2; i++)
+        {
+            int index = start + i;
+            if ((uint)index < (uint)ir.Length)
+            {
+                ir[index] += new Complex(3.0 - Math.Abs(i), 0);
+            }
+        }
+        // Decaying 200 Hz mode.
+        double tau = 0.18 * sampleRate;
+        int modeLength = (int)(tau * 5);
+        for (int i = 0; i < modeLength; i++)
+        {
+            int index = start + i;
+            if ((uint)index >= (uint)ir.Length)
+            {
+                break;
+            }
+
+            ir[index] += new Complex(
+                Math.Exp(-i / tau) * Math.Sin(Math.Tau * 200 * i / sampleRate), 0);
+        }
+
+        return ir;
+    }
+
     [Fact]
     public void Analyze_TruncatedLongIrStillReadsTheAlignment()
     {
         // IRs longer than the analysis window (every real capture) are
         // tail-faded, not rejected; the readout must survive the crop.
-        var longImpulse = new Complex[65_536];
+        var longImpulse = new Complex[200_000];
         longImpulse[480] = Complex.One;
         Complex[] lower = VirtualCrossoverAnalysis.ApplyChain(
             longImpulse, new DspChannelChain(Crossover: LowPass), SampleRate);

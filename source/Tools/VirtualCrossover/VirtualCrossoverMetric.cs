@@ -232,10 +232,10 @@ internal static class VirtualCrossoverMetric
     private const double AmbiguousLobeMargin = 0.10;
 
     /// <summary>
-    /// Compact per-junction phase column for the host read-out panel: the
-    /// fitted phase at the crossover, the coherence-maximizing extra delay on
-    /// the lower channel, and the lobe margin ("—" when the sweep window holds
-    /// no rival lobe; "!" when the margin is too small to trust the fix).
+    /// Compact per-junction phase column for the host read-out panel: the phase
+    /// at the crossover, the score-maximizing extra delay on the lower channel
+    /// (with an "i" when flipping that channel's polarity scores better), and
+    /// the lobe margin ("!" when the margin is too small to trust the fix).
     /// </summary>
     public static string FormatPhaseCompact(IReadOnlyList<PhaseEntry> entries)
     {
@@ -245,7 +245,7 @@ internal static class VirtualCrossoverMetric
         }
 
         var builder = new System.Text.StringBuilder(
-            "Junction phase\r\n       φfc  fix ms  lobe\r\n");
+            "Junction phase\r\n       φfc  fix ms   lobe\r\n");
         foreach (PhaseEntry entry in entries)
         {
             JunctionPhaseResult result = entry.Result;
@@ -260,6 +260,9 @@ internal static class VirtualCrossoverMetric
                     ? $"{result.PhaseAtCrossoverDeg,4:+0;-0;0}°"
                     : "    —";
             string fix = $"{result.BestExtraDelayMs,6:+0.00;-0.00;0.00}";
+            // "i" flags a recommended polarity flip on the lower channel; a
+            // space keeps the columns aligned when no flip is wanted.
+            string polarity = result.BestInvert ? "i" : " ";
             string lobe = result.LobeMargin.HasValue
                 ? $"{result.LobeMargin.Value,5:0.00}"
                 : "    —";
@@ -268,7 +271,7 @@ internal static class VirtualCrossoverMetric
                     ? " !"
                     : string.Empty;
             builder.AppendLine(
-                $"{entry.Junction.PadRight(6)}{phase} {fix} {lobe}{warning}");
+                $"{entry.Junction.PadRight(6)}{phase} {fix}{polarity} {lobe}{warning}");
         }
 
         return builder.ToString().TrimEnd();
@@ -300,25 +303,33 @@ internal static class VirtualCrossoverMetric
                             $"(R {result.PhaseConsistency:0.00})"
                         : $"φ unreliable (R {result.PhaseConsistency:0.00} — " +
                             "a notch or gap sits at the handover)";
+                string flip = result.BestInvert
+                    ? $", invert {entry.LowerChannel}"
+                    : $" (flip scores {result.OppositePolarityScore:0.00})";
                 return $"{entry.Junction} @ {FrequencyText.Format(entry.CrossoverHz)}: " +
                     $"{phaseNote}; " +
-                    $"coherence {result.CurrentScore:0.00} now, " +
+                    $"phase score {result.CurrentScore:0.00} now, " +
                     $"best {result.BestScore:0.00} at " +
                     $"{result.BestExtraDelayMs:+0.00;-0.00;0.00} ms " +
-                    $"on {entry.LowerChannel};\r\n   {rival}; " +
+                    $"on {entry.LowerChannel}{flip};\r\n   {rival}; " +
                     $"fit Δτ {result.FitDelayMs:+0.00;-0.00;0.00} ms, " +
                     $"rms {result.FitRmsDeg:0}° " +
                     $"({FrequencyText.Format(entry.LowHz)} – " +
                     $"{FrequencyText.Format(entry.HighHz)})";
             })) +
-            "\r\nfix: extra delay on the LOWER channel (add to its Delay) that " +
-            "maximizes the\r\nband coherence. φ near ±180°: flip a " +
-            "polarity instead of chasing a delay.\r\nφ is measured in a narrow " +
-            "window around fc; R (0..1) is how much its bins\r\nagree — a low R " +
-            "dashes the column instead of showing a mush number.\r\nlobe: how " +
-            "decisively the optimum beats the nearest whole-period rival;" +
-            "\r\nsmall margin (!) " +
-            "= the overlap band is too narrow to rule the rival out.";
+            "\r\nphase score: Σw·cos(Δφ)/Σw over the band (−1..+1), a phase-" +
+            "alignment score,\r\nnot the magnitude coherence γ². fix: the delay " +
+            "to add to the LOWER channel\r\nthat best aligns the band; \"i\" (or " +
+            "\"invert\") means flipping that channel's\r\npolarity scores better " +
+            "still. A negative fix advances the lower channel —\r\napply it as a " +
+            "+delay on the UPPER one when the lower is already at 0.\r\nφ near " +
+            "±180° does NOT by itself settle polarity (an inverted channel and " +
+            "a\r\nhalf-period delay look identical at fc), so the flip is decided " +
+            "by the whole-\r\nband score, not by φ. φ is a narrow circular mean " +
+            "around fc; R (0..1) is how\r\nmuch its bins agree — a low R dashes " +
+            "it. lobe: how decisively the best beats\r\nthe nearest rival (a " +
+            "period hop or the opposite polarity); small margin (!) =\r\n" +
+            "ambiguous, don't trust the fix.";
     }
 
     /// <summary>

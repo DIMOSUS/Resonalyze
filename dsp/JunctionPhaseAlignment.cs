@@ -4,8 +4,8 @@ using MathNet.Numerics.IntegralTransforms;
 namespace Resonalyze.Dsp;
 
 /// <summary>
-/// One junction's phase read-out: how coherently two adjacent processed channels
-/// sum in their overlap band, and what delay change would maximize it.
+/// One junction's phase read-out: how well two adjacent processed channels sum
+/// in phase across their overlap band, and what change would improve it.
 /// </summary>
 /// <remarks>
 /// All figures read the steady-state response (a long analysis window over the
@@ -17,8 +17,10 @@ namespace Resonalyze.Dsp;
 /// here.
 /// </remarks>
 /// <param name="CurrentScore">
-/// Energy-weighted band coherence Σw·cos(Δφ)/Σw at the CURRENT settings:
-/// 1 = perfectly in phase across the band, −1 = perfectly out of phase.
+/// Energy-weighted in-phase score Σw·cos(Δφ)/Σw at the CURRENT settings:
+/// 1 = perfectly in phase across the band, −1 = perfectly out of phase. This
+/// is a phase-alignment score, NOT the magnitude-squared coherence γ² the
+/// measurement pipeline reports (that lives in 0..1).
 /// </param>
 /// <param name="PhaseAtCrossoverDeg">
 /// The phase of lower minus upper AT the crossover, wrapped to ±180°: the
@@ -26,8 +28,11 @@ namespace Resonalyze.Dsp;
 /// local measurement, not the straight-line fit's intercept. The intercept
 /// extrapolates through whatever interference notches and spectral gaps bend
 /// the band's phase; on a real mid/tweeter junction it read +158° where the
-/// handover itself stood near −15°. Near 0° the junction is phase-aligned;
-/// near ±180° the fix is a polarity flip, not a delay.
+/// handover itself stood near −15°. Near 0° the junction is phase-aligned.
+/// A φ near ±180° does NOT by itself settle polarity — an inverted channel
+/// and a half-period delay are identical at fc — so the flip decision comes
+/// from <paramref name="BestInvert"/> (a whole-band score comparison), not
+/// from this angle.
 /// </param>
 /// <param name="PhaseConsistency">
 /// The mean resultant length R (0..1) of that circular mean: how much the
@@ -38,21 +43,41 @@ namespace Resonalyze.Dsp;
 /// <paramref name="PhaseAtCrossoverDeg"/> falls back to the fit intercept).
 /// </param>
 /// <param name="BestExtraDelayMs">
-/// The extra delay ON THE LOWER channel that maximizes the band coherence
-/// (positive: delay the lower channel further). This is the recommended
-/// correction; it is relative to the current settings.
+/// The extra delay ON THE LOWER channel that maximizes the band score, at the
+/// polarity given by <paramref name="BestInvert"/> (positive: delay the lower
+/// channel further). This is the recommended correction, relative to the
+/// current settings. A negative value advances the lower channel — apply it as
+/// a positive delay on the UPPER channel when the lower one is already at 0.
 /// </param>
-/// <param name="BestScore">The coherence at that optimum.</param>
+/// <param name="BestInvert">
+/// True when flipping the LOWER channel's polarity (and applying
+/// <paramref name="BestExtraDelayMs"/>) scores higher than any delay alone.
+/// Derived by comparing the whole-band score of both polarities — a genuine
+/// inversion aligns the band flat, which no single delay can match, so the two
+/// separate for a wide enough band; for a narrow band they tie and the small
+/// <paramref name="LobeMargin"/> flags the ambiguity.
+/// </param>
+/// <param name="BestScore">The phase score at that optimum.</param>
+/// <param name="OppositePolarityScore">
+/// The best score the OTHER polarity reaches over the sweep. The flip decision
+/// is <paramref name="BestInvert"/> = this beats the kept polarity by a clear
+/// margin; when the two are close, the polarity is genuinely ambiguous (a
+/// low-frequency inversion and a half-period delay sum almost alike), so the
+/// read-out keeps the current polarity — the non-disruptive default — rather
+/// than recommending a flip on a coin toss. Exposed so the tooltip can show
+/// how close the alternative sits.
+/// </param>
 /// <param name="RivalExtraDelayMs">
-/// The nearest rival lobe (the best local optimum at least Δt away from the
-/// global one, where Δt is a substantial fraction of the crossover period), or
-/// null when the sweep range holds no other lobe.
+/// The nearest same-polarity rival lobe (the best local optimum at least a
+/// substantial fraction of a period away from the global one), or null when the
+/// sweep range holds no other same-polarity lobe. This is the whole-period-hop
+/// ambiguity; the polarity ambiguity is <paramref name="OppositePolarityScore"/>.
 /// </param>
-/// <param name="RivalScore">The rival lobe's coherence.</param>
+/// <param name="RivalScore">The rival lobe's phase score.</param>
 /// <param name="LobeMargin">
-/// BestScore − RivalScore: how decisively the best lobe beats the runner-up.
-/// Small margins mean the band is too narrow to discriminate whole-period
-/// hops — treat the recommendation with suspicion. Null without a rival.
+/// BestScore − RivalScore: how decisively the best lobe beats the nearest
+/// same-polarity rival. Small margins mean the band is too narrow to
+/// discriminate whole-period hops. Null without a rival.
 /// </param>
 /// <param name="FitDelayMs">
 /// The residual delay from the weighted straight-line fit of the cross-phase:
@@ -69,7 +94,9 @@ public sealed record JunctionPhaseResult(
     double PhaseAtCrossoverDeg,
     double PhaseConsistency,
     double BestExtraDelayMs,
+    bool BestInvert,
     double BestScore,
+    double OppositePolarityScore,
     double? RivalExtraDelayMs,
     double? RivalScore,
     double? LobeMargin,
@@ -86,19 +113,22 @@ public sealed record JunctionPhaseResult(
 /// </summary>
 public static class JunctionPhaseAlignment
 {
-    /// <summary>
-    /// The steady-state analysis window in samples (≈ 0.74 s at 44.1 kHz —
-    /// the same horizon as <see cref="DataHelper.GatedFftLength"/>): long
-    /// enough that the room response has fully decayed into it, short enough
-    /// that one FFT per channel stays cheap on the redraw path.
-    /// </summary>
-    public const int AnalysisLength = 32768;
+    // The steady-state analysis window is sized in TIME, not samples, so the
+    // physical horizon (and therefore the fix it recommends) does not change
+    // when the same measurement is captured at a different sample rate. 0.68 s
+    // keeps the common 44.1/48 kHz rates on the historical 32768-point FFT
+    // while a 192 kHz capture no longer collapses to ~170 ms and loses its
+    // low-frequency modal tail. The cap bounds the UI-thread FFT cost at
+    // exotic rates (768 kHz would otherwise ask for a 1M-point transform per
+    // channel); it still leaves ≥ 0.34 s everywhere.
+    private const double AnalysisDurationSeconds = 0.68;
+    private const int MaxAnalysisLength = 262_144;
 
-    // A truncated IR gets a half-Hann fade over this tail so the cut into a
-    // still-decaying room tail does not splash broadband ripple into the
-    // spectrum. 2048 samples ≈ 46 ms at 44.1 kHz, far below the analysis
-    // window, and the tail it fades sits ~60 dB under the direct sound.
-    private const int TailFadeSamples = 2048;
+    // A truncated IR gets a half-Hann fade over this tail (in TIME, like the
+    // window) so the cut into a still-decaying room tail does not splash
+    // broadband ripple into the spectrum. 46 ms sits far below the window and
+    // fades a tail ~60 dB under the direct sound.
+    private const double TailFadeMs = 46.0;
 
     // Bins whose weight |H_lower|·|H_upper| falls this far below the band
     // maximum carry no trustworthy cross-phase (one side is filtered out or
@@ -118,10 +148,20 @@ public static class JunctionPhaseAlignment
     // below brings the reported optimum well under one step.
     private const int SweepStepsPerPeriod = 128;
 
-    // A local optimum only counts as a RIVAL lobe when it sits at least this
-    // fraction of a period away from the global one; closer bumps are texture
-    // of the same lobe.
+    // A same-polarity local optimum only counts as a RIVAL lobe when it sits at
+    // least this fraction of a period away from the global one; closer bumps
+    // are texture of the same lobe.
     private const double RivalMinimumSeparationPeriods = 0.4;
+
+    // Flipping the lower channel's polarity is recommended only when it beats
+    // the kept polarity's best by at least this score margin. A polarity flip
+    // is a disruptive, easily-wrong change; at low frequencies over a wide
+    // relative band an inversion and a half-period delay sum almost identically
+    // (the two best scores come within ~0.001 on a real 80 Hz sub junction), so
+    // a hair-thin advantage is not enough to advise flipping — keep the current
+    // polarity, the safe default. A genuine inversion clears this easily (it
+    // aligns the whole band flat, which no delay on the kept polarity can).
+    private const double PolarityFlipAdvantage = 0.05;
 
     // The half-width (in octaves) of the window around the crossover that the
     // φ readout is measured over. Wide enough to average interference texture,
@@ -138,12 +178,29 @@ public static class JunctionPhaseAlignment
     public const double MinimumPhaseConsistency = 0.5;
 
     /// <summary>
-    /// The steady-state analysis spectrum of one processed IR: the first
-    /// <see cref="AnalysisLength"/> samples (tail-faded when the IR is longer)
-    /// transformed in place. Callers analyzing several junctions reuse one
-    /// spectrum per channel.
+    /// The analysis-spectrum length (a power of two) for a given sample rate:
+    /// <see cref="AnalysisDurationSeconds"/> of signal, capped. Both spectra
+    /// handed to <see cref="AnalyzeSpectra"/> must have this length, so the
+    /// analyzed physical horizon is rate-independent.
     /// </summary>
-    public static Complex[] BuildAnalysisSpectrum(Complex[] impulseResponse)
+    public static int AnalysisLengthFor(int sampleRate)
+    {
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+
+        int target = (int)Math.Ceiling(sampleRate * AnalysisDurationSeconds);
+        return Math.Min(DspMath.NextPowerOfTwo(Math.Max(1, target)), MaxAnalysisLength);
+    }
+
+    /// <summary>
+    /// The steady-state analysis spectrum of one processed IR at its sample
+    /// rate: the first <see cref="AnalysisLengthFor"/> samples (tail-faded when
+    /// the IR is longer) transformed in place. Callers analyzing several
+    /// junctions reuse one spectrum per channel.
+    /// </summary>
+    public static Complex[] BuildAnalysisSpectrum(Complex[] impulseResponse, int sampleRate)
     {
         ArgumentNullException.ThrowIfNull(impulseResponse);
         if (impulseResponse.Length == 0)
@@ -152,12 +209,14 @@ public static class JunctionPhaseAlignment
                 "The impulse response is empty.", nameof(impulseResponse));
         }
 
-        var spectrum = new Complex[AnalysisLength];
-        int copied = Math.Min(impulseResponse.Length, AnalysisLength);
+        int length = AnalysisLengthFor(sampleRate);
+        var spectrum = new Complex[length];
+        int copied = Math.Min(impulseResponse.Length, length);
         Array.Copy(impulseResponse, spectrum, copied);
-        if (impulseResponse.Length > AnalysisLength)
+        if (impulseResponse.Length > length)
         {
-            int fade = Math.Min(TailFadeSamples, copied);
+            int fade = Math.Min(
+                (int)Math.Round(TailFadeMs * sampleRate / 1000.0), copied);
             for (int i = 0; i < fade; i++)
             {
                 double x = (i + 1.0) / fade;
@@ -182,8 +241,8 @@ public static class JunctionPhaseAlignment
         double bandLowHz,
         double bandHighHz) =>
         AnalyzeSpectra(
-            BuildAnalysisSpectrum(lowerImpulseResponse),
-            BuildAnalysisSpectrum(upperImpulseResponse),
+            BuildAnalysisSpectrum(lowerImpulseResponse, sampleRate),
+            BuildAnalysisSpectrum(upperImpulseResponse, sampleRate),
             sampleRate,
             crossoverHz,
             bandLowHz,
@@ -191,8 +250,8 @@ public static class JunctionPhaseAlignment
 
     /// <summary>
     /// Analyzes one junction from precomputed analysis spectra (both from
-    /// <see cref="BuildAnalysisSpectrum"/>, so both are
-    /// <see cref="AnalysisLength"/> bins of the same sample rate).
+    /// <see cref="BuildAnalysisSpectrum"/> at the same sample rate, so both are
+    /// <see cref="AnalysisLengthFor"/> bins long).
     /// </summary>
     public static JunctionPhaseResult? AnalyzeSpectra(
         Complex[] lowerSpectrum,
@@ -204,16 +263,17 @@ public static class JunctionPhaseAlignment
     {
         ArgumentNullException.ThrowIfNull(lowerSpectrum);
         ArgumentNullException.ThrowIfNull(upperSpectrum);
-        if (lowerSpectrum.Length != AnalysisLength ||
-            upperSpectrum.Length != AnalysisLength)
-        {
-            throw new ArgumentException(
-                $"Analysis spectra must be {AnalysisLength} bins " +
-                "(use BuildAnalysisSpectrum).");
-        }
         if (sampleRate <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+
+        int length = AnalysisLengthFor(sampleRate);
+        if (lowerSpectrum.Length != length || upperSpectrum.Length != length)
+        {
+            throw new ArgumentException(
+                $"Analysis spectra must be {length} bins for {sampleRate} Hz " +
+                "(use BuildAnalysisSpectrum).");
         }
         if (!(crossoverHz > 0) || !(bandHighHz > bandLowHz) || !(bandLowHz > 0))
         {
@@ -232,10 +292,10 @@ public static class JunctionPhaseAlignment
             return null;
         }
 
-        double binWidth = sampleRate / (double)AnalysisLength;
+        double binWidth = sampleRate / (double)length;
         int firstBin = Math.Max(1, (int)Math.Ceiling(bandLowHz / binWidth));
         int lastBin = Math.Min(
-            AnalysisLength / 2 - 1, (int)Math.Floor(bandHighHz / binWidth));
+            length / 2 - 1, (int)Math.Floor(bandHighHz / binWidth));
         if (lastBin < firstBin)
         {
             return null;
@@ -289,9 +349,82 @@ public static class JunctionPhaseAlignment
             FitWeightedLine(frequencies, phases, weights);
         double fitDelayMs = -slope / Math.Tau * 1000.0;
 
-        // φ at the crossover: the weighted circular mean over a narrow window
-        // around fc. Local on purpose — see the result record's remarks. The
-        // unwrapped phases feed cos/sin directly, which is branch-blind.
+        (double phaseAtCrossover, double phaseConsistency) = PhaseAtCrossover(
+            frequencies, phases, weights, crossoverHz, slope, intercept);
+
+        // One extra-delay sweep at the CURRENT polarity. Inverting the lower
+        // channel negates every cross-phase, so the inverted-polarity score at
+        // any delay is exactly the negative of this sweep — no second sweep is
+        // needed, and the best inverted alignment is the sweep's deepest
+        // trough. Comparing the two decides the flip honestly: a genuine
+        // broadband inversion makes the trough reach ~+1 while no single delay
+        // (the peak) can, so they separate; for a narrow band they tie and the
+        // lobe margin flags it. This is why φ ≈ ±180° alone is not used to
+        // recommend a flip — it cannot tell an inverted channel from a
+        // half-period delay, but the whole-band score comparison can.
+        double periodMs = 1000.0 / crossoverHz;
+        double stepMs = periodMs / SweepStepsPerPeriod;
+        double rangeMs = SweepPeriodsEachSide * periodMs;
+        int steps = (int)Math.Round(rangeMs / stepMs);
+        var scores = new double[2 * steps + 1];
+        int maxIndex = 0;
+        int minIndex = 0;
+        for (int s = 0; s < scores.Length; s++)
+        {
+            scores[s] = Score(frequencies, phases, weights, (s - steps) * stepMs);
+            if (scores[s] > scores[maxIndex]) maxIndex = s;
+            if (scores[s] < scores[minIndex]) minIndex = s;
+        }
+
+        double normalBest = scores[maxIndex];
+        double invertedBest = -scores[minIndex];
+        // Recommend a flip only when it clearly wins — see PolarityFlipAdvantage.
+        bool bestInvert = invertedBest > normalBest + PolarityFlipAdvantage;
+        double oppositeScore = bestInvert ? normalBest : invertedBest;
+
+        // Refine on the chosen polarity's sweep, where its optimum is a maximum.
+        int polaritySign = bestInvert ? -1 : 1;
+        double[] signedScores = bestInvert ? Negated(scores) : scores;
+        int bestIndex = bestInvert ? minIndex : maxIndex;
+        (double bestExtraMs, double bestScore) = RefineOptimum(
+            signedScores, bestIndex, steps, stepMs,
+            dt => polaritySign * Score(frequencies, phases, weights, dt));
+
+        // The lobe margin stays a SAME-polarity question — is the best delay at
+        // the right period? — because the polarity ambiguity is reported
+        // separately (OppositePolarityScore) and would otherwise flag every
+        // low-frequency junction, where a flip-plus-half-period always ties.
+        (double? rivalExtraMs, double? rivalScore) = FindRivalLobe(
+            signedScores, bestIndex, steps, stepMs,
+            RivalMinimumSeparationPeriods * periodMs);
+
+        return new JunctionPhaseResult(
+            CurrentScore: Score(frequencies, phases, weights, 0.0),
+            PhaseAtCrossoverDeg: phaseAtCrossover * 180.0 / Math.PI,
+            PhaseConsistency: phaseConsistency,
+            BestExtraDelayMs: bestExtraMs,
+            BestInvert: bestInvert,
+            BestScore: bestScore,
+            OppositePolarityScore: oppositeScore,
+            RivalExtraDelayMs: rivalExtraMs,
+            RivalScore: rivalScore,
+            LobeMargin: rivalScore.HasValue ? bestScore - rivalScore.Value : null,
+            FitDelayMs: fitDelayMs,
+            FitRmsDeg: rmsRad * 180.0 / Math.PI);
+    }
+
+    // φ at the crossover: the weighted circular mean over a narrow window around
+    // fc. Local on purpose (see the result record's remarks): a fit intercept
+    // extrapolates through notches. Falls back to the intercept, flagged
+    // untrustworthy (R = 0), when a spectral gap leaves the window empty.
+    private static (double PhaseRad, double Consistency) PhaseAtCrossover(
+        List<double> frequencies,
+        List<double> phases,
+        List<double> weights,
+        double crossoverHz,
+        double slope,
+        double intercept)
+    {
         double windowLowHz = crossoverHz * Math.Pow(2.0, -PhaseWindowOctaves);
         double windowHighHz = crossoverHz * Math.Pow(2.0, PhaseWindowOctaves);
         double sumCos = 0.0, sumSin = 0.0, sumWindowWeight = 0.0;
@@ -307,65 +440,30 @@ public static class JunctionPhaseAlignment
             sumWindowWeight += weights[k];
         }
 
-        double phaseAtCrossover;
-        double phaseConsistency;
         if (sumWindowWeight > 0.0)
         {
-            phaseAtCrossover = Math.Atan2(sumSin, sumCos);
-            phaseConsistency =
-                Math.Sqrt(sumCos * sumCos + sumSin * sumSin) / sumWindowWeight;
-        }
-        else
-        {
-            // A spectral-gap junction can leave the fc window with no gated
-            // bins at all; fall back to the fit's intercept but mark the
-            // figure untrustworthy rather than presenting it as measured.
-            phaseAtCrossover = intercept + slope * crossoverHz;
-            phaseAtCrossover -=
-                Math.Tau * Math.Round(phaseAtCrossover / Math.Tau);
-            phaseConsistency = 0.0;
+            return (
+                Math.Atan2(sumSin, sumCos),
+                Math.Sqrt(sumCos * sumCos + sumSin * sumSin) / sumWindowWeight);
         }
 
-        double periodMs = 1000.0 / crossoverHz;
-        double stepMs = periodMs / SweepStepsPerPeriod;
-        double rangeMs = SweepPeriodsEachSide * periodMs;
-        int steps = (int)Math.Round(rangeMs / stepMs);
-        var scores = new double[2 * steps + 1];
-        for (int s = 0; s < scores.Length; s++)
-        {
-            scores[s] = Score(frequencies, phases, weights, (s - steps) * stepMs);
-        }
-
-        int bestIndex = 0;
-        for (int s = 1; s < scores.Length; s++)
-        {
-            if (scores[s] > scores[bestIndex])
-            {
-                bestIndex = s;
-            }
-        }
-
-        (double bestExtraMs, double bestScore) =
-            RefineOptimum(scores, bestIndex, steps, stepMs, frequencies, phases, weights);
-
-        (double? rivalExtraMs, double? rivalScore) = FindRivalLobe(
-            scores, bestIndex, steps, stepMs,
-            RivalMinimumSeparationPeriods * periodMs);
-
-        return new JunctionPhaseResult(
-            CurrentScore: Score(frequencies, phases, weights, 0.0),
-            PhaseAtCrossoverDeg: phaseAtCrossover * 180.0 / Math.PI,
-            PhaseConsistency: phaseConsistency,
-            BestExtraDelayMs: bestExtraMs,
-            BestScore: bestScore,
-            RivalExtraDelayMs: rivalExtraMs,
-            RivalScore: rivalScore,
-            LobeMargin: rivalScore.HasValue ? bestScore - rivalScore.Value : null,
-            FitDelayMs: fitDelayMs,
-            FitRmsDeg: rmsRad * 180.0 / Math.PI);
+        double fallback = intercept + slope * crossoverHz;
+        fallback -= Math.Tau * Math.Round(fallback / Math.Tau);
+        return (fallback, 0.0);
     }
 
-    // Energy-weighted band coherence with an extra delay on the lower channel:
+    private static double[] Negated(double[] values)
+    {
+        var result = new double[values.Length];
+        for (int i = 0; i < values.Length; i++)
+        {
+            result[i] = -values[i];
+        }
+
+        return result;
+    }
+
+    // Energy-weighted in-phase score with an extra delay on the lower channel:
     // the delay rotates its phase by −2πf·dt.
     private static double Score(
         List<double> frequencies,
@@ -422,24 +520,22 @@ public static class JunctionPhaseAlignment
         return (slope, intercept, Math.Sqrt(residual / sw));
     }
 
-    // Parabolic refinement over the three samples around the discrete optimum,
-    // then one exact re-evaluation at the refined delay so the reported score
-    // is a real score, not an interpolation.
+    // Parabolic refinement over the three samples around the discrete optimum
+    // (a maximum of signedScores), then one exact re-evaluation at the refined
+    // delay through scoreAt so the reported score is real, not interpolated.
     private static (double ExtraMs, double Score) RefineOptimum(
-        double[] scores,
+        double[] signedScores,
         int bestIndex,
         int steps,
         double stepMs,
-        List<double> frequencies,
-        List<double> phases,
-        List<double> weights)
+        Func<double, double> scoreAt)
     {
         double bestExtraMs = (bestIndex - steps) * stepMs;
-        if (bestIndex > 0 && bestIndex < scores.Length - 1)
+        if (bestIndex > 0 && bestIndex < signedScores.Length - 1)
         {
-            double left = scores[bestIndex - 1];
-            double middle = scores[bestIndex];
-            double right = scores[bestIndex + 1];
+            double left = signedScores[bestIndex - 1];
+            double middle = signedScores[bestIndex];
+            double right = signedScores[bestIndex + 1];
             double denominator = left - 2.0 * middle + right;
             if (denominator < 0)
             {
@@ -449,13 +545,13 @@ public static class JunctionPhaseAlignment
             }
         }
 
-        return (bestExtraMs, Score(frequencies, phases, weights, bestExtraMs));
+        return (bestExtraMs, scoreAt(bestExtraMs));
     }
 
-    // The best local maximum far enough from the global optimum to be a
-    // different lobe (a whole-period hop candidate), not a bump on the same one.
+    // The best same-polarity local maximum far enough from the global optimum to
+    // be a different lobe (a whole-period hop candidate), not a bump on it.
     private static (double? ExtraMs, double? Score) FindRivalLobe(
-        double[] scores,
+        double[] signedScores,
         int bestIndex,
         int steps,
         double stepMs,
@@ -463,9 +559,10 @@ public static class JunctionPhaseAlignment
     {
         double? rivalExtraMs = null;
         double? rivalScore = null;
-        for (int s = 1; s < scores.Length - 1; s++)
+        for (int s = 1; s < signedScores.Length - 1; s++)
         {
-            if (scores[s] < scores[s - 1] || scores[s] <= scores[s + 1])
+            if (signedScores[s] < signedScores[s - 1] ||
+                signedScores[s] <= signedScores[s + 1])
             {
                 continue;
             }
@@ -476,10 +573,10 @@ public static class JunctionPhaseAlignment
             {
                 continue;
             }
-            if (!rivalScore.HasValue || scores[s] > rivalScore.Value)
+            if (!rivalScore.HasValue || signedScores[s] > rivalScore.Value)
             {
                 rivalExtraMs = extraMs;
-                rivalScore = scores[s];
+                rivalScore = signedScores[s];
             }
         }
 

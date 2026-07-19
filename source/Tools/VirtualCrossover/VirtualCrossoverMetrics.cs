@@ -139,7 +139,7 @@ internal sealed class VirtualCrossoverMetrics
             if (!spectra.TryGetValue(item, out Complex[]? spectrum))
             {
                 spectrum = JunctionPhaseAlignment.BuildAnalysisSpectrum(
-                    item.ImpulseResponse);
+                    item.ImpulseResponse, item.Channel.SampleRate);
                 spectra.Add(item, spectrum);
             }
 

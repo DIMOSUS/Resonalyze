@@ -204,7 +204,9 @@ public sealed class VirtualCrossoverMetricTests
         double? lobeMargin = 0.19,
         double? rivalExtraMs = -12.20,
         double? rivalScore = 0.78,
-        double phaseConsistency = 0.93) =>
+        double phaseConsistency = 0.93,
+        bool bestInvert = false,
+        double oppositePolarityScore = 0.42) =>
         new(
             "A/B",
             "A",
@@ -216,7 +218,9 @@ public sealed class VirtualCrossoverMetricTests
                 PhaseAtCrossoverDeg: -3.4,
                 PhaseConsistency: phaseConsistency,
                 BestExtraDelayMs: -0.30,
+                BestInvert: bestInvert,
                 BestScore: 0.97,
+                OppositePolarityScore: oppositePolarityScore,
                 RivalExtraDelayMs: rivalExtraMs,
                 RivalScore: rivalScore,
                 LobeMargin: lobeMargin,
@@ -232,8 +236,8 @@ public sealed class VirtualCrossoverMetricTests
 
             Assert.Equal(
                 "Junction phase\r\n" +
-                "       φfc  fix ms  lobe\r\n" +
-                "A/B     -3°  -0.30  0.19",
+                "       φfc  fix ms   lobe\r\n" +
+                "A/B     -3°  -0.30   0.19",
                 text);
         });
     }
@@ -253,7 +257,7 @@ public sealed class VirtualCrossoverMetricTests
 
             string text = VirtualCrossoverMetric.FormatPhaseCompact([entry]);
 
-            Assert.Contains("A/B     -3°   0.00  0.19", text);
+            Assert.Contains("A/B     -3°   0.00   0.19", text);
             Assert.DoesNotContain("-+", text);
         });
     }
@@ -266,7 +270,7 @@ public sealed class VirtualCrossoverMetricTests
             string text = VirtualCrossoverMetric.FormatPhaseCompact(
                 [PhaseJunction(lobeMargin: 0.04)]);
 
-            Assert.Contains("A/B     -3°  -0.30  0.04 !", text);
+            Assert.Contains("A/B     -3°  -0.30   0.04 !", text);
         });
     }
 
@@ -276,9 +280,10 @@ public sealed class VirtualCrossoverMetricTests
         RunWithInvariantCulture(() =>
         {
             string text = VirtualCrossoverMetric.FormatPhaseCompact(
-                [PhaseJunction(lobeMargin: null, rivalExtraMs: null, rivalScore: null)]);
+                [PhaseJunction(
+                    lobeMargin: null, rivalExtraMs: null, rivalScore: null)]);
 
-            Assert.Contains("A/B     -3°  -0.30     —", text);
+            Assert.Contains("A/B     -3°  -0.30      —", text);
             Assert.DoesNotContain("!", text);
         });
     }
@@ -293,7 +298,7 @@ public sealed class VirtualCrossoverMetricTests
             string text = VirtualCrossoverMetric.FormatPhaseCompact(
                 [PhaseJunction(phaseConsistency: 0.31)]);
 
-            Assert.Contains("A/B       —  -0.30  0.19", text);
+            Assert.Contains("A/B       —  -0.30   0.19", text);
         });
     }
 
@@ -307,6 +312,44 @@ public sealed class VirtualCrossoverMetricTests
 
             Assert.Contains("φ unreliable (R 0.31", text);
             Assert.DoesNotContain("φ -3°", text);
+        });
+    }
+
+    [Fact]
+    public void FormatPhaseCompact_FlagsARecommendedPolarityFlip()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            // BestInvert renders an "i" right after the fix; the columns stay
+            // aligned with the space a non-flipped row uses there.
+            string text = VirtualCrossoverMetric.FormatPhaseCompact(
+                [PhaseJunction(bestInvert: true)]);
+
+            Assert.Contains("A/B     -3°  -0.30i  0.19", text);
+        });
+    }
+
+    [Fact]
+    public void FormatPhaseDetail_SpellsOutARecommendedFlip()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            string text = VirtualCrossoverMetric.FormatPhaseDetail(
+                [PhaseJunction(bestInvert: true)]);
+
+            Assert.Contains("on A, invert A;", text);
+        });
+    }
+
+    [Fact]
+    public void FormatPhaseDetail_ShowsHowCloseAFlipScoresWhenKeepingPolarity()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            string text = VirtualCrossoverMetric.FormatPhaseDetail(
+                [PhaseJunction(bestInvert: false, oppositePolarityScore: 0.42)]);
+
+            Assert.Contains("flip scores 0.42", text);
         });
     }
 
@@ -326,15 +369,15 @@ public sealed class VirtualCrossoverMetricTests
             string text = VirtualCrossoverMetric.FormatPhaseDetail([PhaseJunction()]);
 
             Assert.Contains(
-                "A/B @ 80 Hz: φ -3° at fc (R 0.93); coherence 0.96 now, " +
-                "best 0.97 at -0.30 ms on A;",
+                "A/B @ 80 Hz: φ -3° at fc (R 0.93); phase score 0.96 now, " +
+                "best 0.97 at -0.30 ms on A (flip scores 0.42);",
                 text);
             Assert.Contains(
                 "rival lobe 0.78 at -12.20 ms (margin 0.19); " +
                 "fit Δτ +2.62 ms, rms 10° (40 Hz – 160 Hz)",
                 text);
-            Assert.Contains("extra delay on the LOWER channel", text);
-            Assert.Contains("flip a polarity", text);
+            Assert.Contains("the delay to add to the LOWER channel", text);
+            Assert.Contains("does NOT by itself settle polarity", text);
         });
     }
 

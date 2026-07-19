@@ -1521,7 +1521,10 @@ cross-phase — the regime sustained program material actually sums in.
 (Deliberately NOT the direct-sound / FDW phase: on field measurements the
 room adds several milliseconds of apparent group delay at subwoofer
 frequencies, so a direct-sound read would recommend a confidently wrong
-delay.) Three figures per junction: **φfc** — the phase of the lower
+delay.) The read-out is analyzed in a time-sized window (~0.68 s of the processed
+IR), so the physical horizon — and the fix it recommends — does not change
+when the same measurement is captured at a different sample rate. Three
+figures per junction: **φfc** — the phase of the lower
 channel minus the upper AT the crossover: a weighted circular mean over a
 narrow (±1/6-octave) window around fc, deliberately a local measurement —
 a straight-line fit's intercept extrapolates through whatever interference
@@ -1529,20 +1532,26 @@ notches and spectral gaps bend the band's phase, and on a real mid/tweeter
 junction read +158° where the handover itself stood near −15°. Its
 consistency R (how much the window's bins agree, shown in the tooltip)
 gates the figure: a low R dashes the column instead of presenting mush
-(≈0° means the handover is phase-aligned; near ±180° the cure is a
-polarity flip, not a delay);
+(≈0° means the handover is phase-aligned). A φ near ±180° does **not** by
+itself call for a polarity flip — an inverted channel and a half-period
+delay are identical at fc — so that decision comes from a whole-band
+score comparison, not from the angle;
 **fix ms** — the extra delay on the pair's LOWER channel that would maximize
-the overlap-band coherence, relative to the current settings (positive:
-delay it further); and **lobe** — how decisively that optimum beats the
-nearest whole-period rival lobe. Below 0.10 the line is flagged with `!`:
-the overlap band is then too narrow to rule out a period hop, so read the
-phase but do not chase the fix. Read the columns right to left — lobe says
-whether to trust the line, φfc says how the junction stands, fix says where
-to move — and treat fixes under ~0.1–0.2 ms as noise. The block is purely
-informative (nothing feeds back into Auto delay), and its tooltip — pinned
-while the mouse stays on the read-out — carries the full fit per junction:
-the coherence now and at the optimum, the rival lobe and margin, the
-residual slope Δτ and the fit rms over the measured band.
+the overlap-band phase score, relative to the current settings (positive:
+delay it further; a trailing `i` means flipping that channel's polarity
+scores better still — a negative fix advances the lower channel, so apply
+it as a +delay on the upper one when the lower is already at 0); and
+**lobe** — how decisively that best solution beats the nearest rival (a
+whole-period hop **or** the opposite polarity). Below 0.10 the line is
+flagged with `!`: the band is then too narrow to rule the rival out, so
+read the phase but do not chase the fix. Read the columns right to left —
+lobe says whether to trust the line, φfc says how the junction stands, fix
+says where to move — and treat fixes under ~0.1–0.2 ms as noise. The score
+is a phase-alignment measure (Σw·cos Δφ / Σw, −1…+1), not the magnitude
+coherence γ². The block is purely informative (nothing feeds back into Auto
+delay), and its tooltip — pinned while the mouse stays on the read-out —
+carries the full fit per junction: the phase score now and at the optimum,
+the rival and margin, the residual slope Δτ and the fit rms over the band.
 
 A **Δ L−R** block below reports each stereo pair's final inter-side state:
 the two sides' band-limited envelope arrivals in the pair's shared band

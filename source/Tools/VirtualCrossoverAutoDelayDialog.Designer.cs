@@ -92,7 +92,7 @@ namespace Resonalyze
             // labelStatus
             //
             labelStatus.AutoSize = true;
-            labelStatus.ForeColor = Color.FromArgb(230, 184, 0);
+            labelStatus.ForeColor = Color.FromArgb(185, 190, 200);
             labelStatus.Location = new Point(144, 50);
             labelStatus.Name = "labelStatus";
             labelStatus.Size = new Size(0, 15);

@@ -18,6 +18,13 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         ShowAlways = true
     };
 
+    // Status colors follow the message's meaning, matching the app's dark
+    // palette: an always-amber label read as a warning even for good news.
+    private static readonly Color StatusNeutral = Color.FromArgb(185, 190, 200);
+    private static readonly Color StatusSuccess = Color.FromArgb(96, 210, 120);
+    private static readonly Color StatusWarning = Color.FromArgb(230, 184, 0);
+    private static readonly Color StatusError = Color.FromArgb(240, 100, 110);
+
     private Func<double, bool, Task<AutoDelayRunResult>>? runner;
     private bool stereo;
     private bool running;
@@ -103,7 +110,13 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
 
         Result = null;
         buttonApply.Enabled = false;
-        labelStatus.Text = "Settings changed — Run again to refresh the proposal.";
+        SetStatus("Settings changed — Run again to refresh the proposal.", StatusWarning);
+    }
+
+    private void SetStatus(string text, Color color)
+    {
+        labelStatus.Text = text;
+        labelStatus.ForeColor = color;
     }
 
     // The compute runs seconds of FFT work off the UI thread; the dialog
@@ -134,7 +147,7 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         buttonCancel.Enabled = false;
         numericSceneOffset.Enabled = false;
         checkBoxGains.Enabled = false;
-        labelStatus.Text = "Aligning…";
+        SetStatus("Aligning…", StatusNeutral);
         UseWaitCursor = true;
         try
         {
@@ -148,8 +161,9 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
             Result = result;
             textBoxReport.Text = result.ReportText;
             buttonApply.Enabled = true;
-            labelStatus.Text =
-                "Proposal ready — Apply writes it, Discard keeps the current settings.";
+            SetStatus(
+                "Proposal ready — Apply writes it, Discard keeps the current settings.",
+                StatusSuccess);
         }
         catch (Exception exception)
         {
@@ -159,7 +173,7 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
                 return;
             }
 
-            labelStatus.Text = "Auto delay failed.";
+            SetStatus("Auto delay failed.", StatusError);
             textBoxReport.Text =
                 "Auto delay failed." + Environment.NewLine +
                 Environment.NewLine + exception.Message;

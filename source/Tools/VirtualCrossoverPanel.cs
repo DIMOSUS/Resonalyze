@@ -93,7 +93,6 @@ public partial class VirtualCrossoverPanel : UserControl
     private Task? redrawTask;
     private bool redrawPending;
     private bool savePending;
-    private bool autoDelayBusy;
     private bool loadingProject;
 
     public VirtualCrossoverPanel()
@@ -305,8 +304,6 @@ public partial class VirtualCrossoverPanel : UserControl
                 !project.ShowImpulseView && !project.ShowPhaseView;
             radioSideRight.Checked = project.ActiveSideRight;
             radioSideLeft.Checked = !project.ActiveSideRight;
-            numericSceneOffset.Value = Clamp(
-                numericSceneOffset, project.StereoSceneOffsetMs);
             acousticPlot.ConfigureForView(CurrentAcousticView());
             UpdateGateButtonAvailability();
             comboBoxSmoothing.SelectedItem =
@@ -522,7 +519,6 @@ public partial class VirtualCrossoverPanel : UserControl
         // Two-radio group: listening to one of them reacts exactly once per
         // side switch.
         radioSideRight.CheckedChanged += (_, _) => OnActiveSideChanged();
-        numericSceneOffset.ValueChanged += (_, _) => OnSceneOffsetChanged();
     }
 
     // Flips the whole tool to the other side of every pair: the channel
@@ -555,17 +551,6 @@ public partial class VirtualCrossoverPanel : UserControl
         UpdateSideRadioTexts();
         ScheduleSave();
         RedrawAll();
-    }
-
-    private void OnSceneOffsetChanged()
-    {
-        if (suppressProjectEvents)
-        {
-            return;
-        }
-
-        project.StereoSceneOffsetMs = (double)numericSceneOffset.Value;
-        ScheduleSave();
     }
 
     // The "L→R" / "R→L" commands: copy the DSP-chain part of one side's
@@ -769,10 +754,8 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private void UpdateChannelButtons()
     {
-        buttonAddChannel.Enabled =
-            !autoDelayBusy && channels.Count < MaxChannelCount;
-        buttonRemoveChannel.Enabled =
-            !autoDelayBusy && channels.Count > MinChannelCount;
+        buttonAddChannel.Enabled = channels.Count < MaxChannelCount;
+        buttonRemoveChannel.Enabled = channels.Count > MinChannelCount;
     }
 
     // Appends a channel pair: a fresh block and a matching empty project entry,
@@ -1577,24 +1560,18 @@ public partial class VirtualCrossoverPanel : UserControl
             "in Record Settings.");
         toolTip.SetToolTip(
             buttonAutoDelay,
-            "Align the channels in two stages: band-limited first\r\n" +
-            "arrivals set the coarse delays, then a phase search\r\n" +
-            "(±half a crossover period) fine-tunes them and flips\r\n" +
-            "polarity when the channels sum better inverted.\r\n" +
+            "Open the Auto delay dialog: align the channels in two\r\n" +
+            "stages (band-limited first arrivals, then a phase search\r\n" +
+            "that fine-tunes delays and polarity), review the proposed\r\n" +
+            "before/after table and apply or discard it. The dialog\r\n" +
+            "holds the L/R scene offset and can also balance channel\r\n" +
+            "gains (cut-only).\r\n" +
             "With both sides loaded the run is STEREO: the left side\r\n" +
             "aligns first, the right top driver is timed to the left\r\n" +
             "one (honoring the L/R offset), and the right side\r\n" +
             "descends from it — so the stereo image stays put.\r\n" +
             "Set the crossover filters first — the search targets\r\n" +
             "the overlap region around their corner frequencies.");
-        toolTip.SetToolTip(
-            numericSceneOffset,
-            "Stereo scene offset for Auto delay (ms).\r\n" +
-            "Positive: the RIGHT side arrives earlier by this much,\r\n" +
-            "pulling the image from the driver's axis toward the\r\n" +
-            "dash center on a left-hand-drive car. Typical: 0.2–0.3 ms.\r\n" +
-            "Right-hand drive: enter a negative value.\r\n" +
-            "0 = image centered on the measurement position.");
         toolTip.SetToolTip(
             radioSideLeft,
             "Show and edit the LEFT side of every channel pair.\r\n" +
@@ -2066,7 +2043,17 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        var alignment = new Dictionary<VirtualCrossoverChannel, AlignmentOverride>();
+        await AutoAlignSingleSideAsync();
+    }
+
+    // The single-side Auto delay command: participant validation up front,
+    // then the modal Auto delay dialog. The proposal (delays, polarities and
+    // optionally gains) is computed by the dialog's Run and written only on
+    // its Apply — Discard leaves every channel setting as it was. The
+    // dialog's modality is also what keeps the channel configuration stable
+    // under the background compute.
+    private async Task AutoAlignSingleSideAsync()
+    {
         // Cheap participant snapshot: enabled channels with a resolved
         // measurement. No DSP runs here — the shared crop and every ApplyChain
         // happen later, off the UI thread, inside ComputeAutoAlignment's
@@ -2130,126 +2117,340 @@ public partial class VirtualCrossoverPanel : UserControl
 
         (double minHz, double maxHz) = VirtualCrossoverJunctions.GetCrossoverWindow(
             participants.Select(channel => channel.Settings));
-        var log = new System.Text.StringBuilder();
-        log.AppendLine($"Auto delay {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-        log.AppendLine($"Crossover window: {minHz:0} - {maxHz:0} Hz");
-        log.AppendLine("Previous delay / polarity settings ignored for this run.");
 
-        // The alignment stages are FFT-heavy (~seconds). Run them off the UI
-        // thread so the window stays responsive and shows the busy state instead
-        // of hanging. Every input that could mutate the channel list or its
-        // settings (channel controls, add/remove, session import, the auto
-        // commands) is locked for the duration, so the background compute reads
-        // a stable configuration.
-        SetAutoDelayBusy(true);
+        using var dialog = new VirtualCrossoverAutoDelayDialog();
+        dialog.Init(
+            stereo: false,
+            project.StereoSceneOffsetMs,
+            (_, adjustGains) => RunSingleSideProposalAsync(
+                participants, minHz, maxHz, adjustGains));
+        if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
+            dialog.Result is not { } result ||
+            IsDisposed)
+        {
+            return;
+        }
+
+        await ApplyConfirmedAutoDelayAsync(result);
+    }
+
+    // Compute errors surface inside the dialog; here the confirmed proposal
+    // is COMMITTED first and the outcome metric is appended afterwards as a
+    // separate best-effort stage (also guarding the async-void caller from
+    // an unhandled exception after the await). A metric failure after the
+    // settings are already written must not read as a failed Apply — the
+    // user would naturally re-apply and only add confusion.
+    private async Task ApplyConfirmedAutoDelayAsync(AutoDelayRunResult result)
+    {
         try
         {
-            await Task.Run(() => ComputeAutoAlignment(participants, alignment, log));
-            // The panel (or its form) may have been closed during the compute;
-            // applying results would then touch disposed controls.
-            if (IsDisposed || !IsHandleCreated)
-            {
-                return;
-            }
-
-            await ApplyAlignmentResultAsync(participants, alignment, log);
+            CommitAutoDelayResult(result);
         }
         catch (Exception exception)
         {
-            System.Diagnostics.Debug.WriteLine($"Auto delay failed: {exception}");
+            System.Diagnostics.Debug.WriteLine($"Auto delay apply failed: {exception}");
             if (!IsDisposed && IsHandleCreated)
             {
-                ShowError("Auto delay failed.", exception.Message);
+                ShowError("Auto delay apply failed.", exception.Message);
             }
+
+            return;
         }
-        finally
+
+        try
         {
-            if (!IsDisposed)
+            await AppendOutcomeMetricAsync(result);
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"Auto delay outcome metric failed: {exception}");
+            if (!IsDisposed && IsHandleCreated)
             {
-                SetAutoDelayBusy(false);
+                ShowError(
+                    "Auto delay was applied, but the outcome metric could not " +
+                    "be computed.",
+                    "The settings are in place; only the diagnostic log is " +
+                    "missing its final metric.\r\n\r\n" + exception.Message);
             }
         }
     }
 
-    // Marks the panel busy while Auto delay runs: the heavy stages moved off the
-    // UI thread, so without this the window would look idle while a click does
-    // nothing for seconds. Disables the inputs the compute reads (so it sees a
-    // stable snapshot) and shows a wait state.
-    private void SetAutoDelayBusy(bool busy)
+    // Computes the single-side proposal on a background thread: the alignment
+    // cascade, then (when asked) the cut-only gain balance from the run's
+    // final snapshots. Board levelling only — a single side has no L/R
+    // relation, so the scene offset plays no part here.
+    private async Task<AutoDelayRunResult> RunSingleSideProposalAsync(
+        List<VirtualCrossoverChannel> participants,
+        double windowMinHz,
+        double windowMaxHz,
+        bool adjustGains)
     {
-        autoDelayBusy = busy;
-        buttonAutoDelay.Enabled = !busy;
-        buttonAutoDelay.Text = busy ? "Aligning…" : "Auto delay";
-        buttonAutoSetup.Enabled = !busy;
-        // The background compute iterates the live channel list and its live
-        // settings, so everything that can mutate them must be locked out too:
-        // add/remove change the list (and dispose controls), a session import
-        // replaces the whole configuration mid-search. The side radios flip
-        // the mutable ActiveRight the single-side run reads through — flipping
-        // mid-run would hand the worker the other side's measurements and land
-        // the results on the wrong side's settings.
-        buttonSessionImport.Enabled = !busy;
-        radioSideLeft.Enabled = !busy;
-        radioSideRight.Enabled = !busy;
-        numericSceneOffset.Enabled = !busy;
-        buttonCopyLeftToRight.Enabled = !busy;
-        buttonCopyRightToLeft.Enabled = !busy;
-        UpdateChannelButtons();
-        foreach (VirtualCrossoverChannel channel in channels)
-        {
-            ControlFor(channel).Enabled = !busy;
-        }
+        var log = new System.Text.StringBuilder();
+        log.AppendLine($"Auto delay {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        log.AppendLine($"Crossover window: {windowMinHz:0} - {windowMaxHz:0} Hz");
+        log.AppendLine("Previous delay / polarity settings ignored for this run.");
 
-        Cursor = busy ? Cursors.WaitCursor : Cursors.Default;
-        if (busy)
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+        var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
+        IReadOnlyList<GainBalanceResult>? gains = null;
+        AutoDelaySumLossForecast? sumLoss = null;
+        await Task.Run(() =>
         {
-            MetricChanged?.Invoke("Auto delay\r\naligning…", string.Empty);
-        }
+            AlignmentReprocessor reprocessor =
+                ComputeAutoAlignment(participants, alignment, decisions, log);
+            // The "before" snapshots carry the CURRENT delays and polarities —
+            // the alignment itself deliberately ignores them, so they exist
+            // only for the report's before/after sum-loss forecast.
+            IReadOnlyList<AlignmentSnapshot> beforeSnapshots =
+                reprocessor.Reprocess(participants.ToDictionary(
+                    channel => (IAlignmentChannel)channel,
+                    channel => new AlignmentOverride(
+                        channel.Settings.DelayMs, channel.Settings.InvertPolarity)));
+            if (adjustGains)
+            {
+                gains = ComputeGainBalance(
+                    participants.Select(channel => (
+                        (IAlignmentChannel)channel,
+                        channel.Settings,
+                        channel.Pair.Mono,
+                        RightSide: false,
+                        (IAlignmentChannel?)null)),
+                    reprocessor, alignment, sceneOffsetMs: 0, log);
+            }
+
+            IReadOnlyList<AlignmentSnapshot> afterSnapshots =
+                reprocessor.Reprocess(alignment);
+            sumLoss = ForecastSumLoss(
+                participants.Select(channel =>
+                    ((IAlignmentChannel)channel, channel.Settings)).ToList(),
+                ToIrMap(beforeSnapshots), ToIrMap(afterSnapshots),
+                AdjustedGainMap(gains), windowMinHz, windowMaxHz);
+        });
+
+        List<AutoDelayChannelOutcome> outcomes = BuildOutcomes(
+            participants.Select(channel => (
+                (IAlignmentChannel)channel,
+                Runtime: channel,
+                channel.Settings,
+                channel.Name)),
+            alignment, decisions, gains);
+        string report = VirtualCrossoverAutoDelayReport.Format(
+            outcomes, stereo: false, sceneOffsetMs: 0, adjustGains, sumLoss);
+        // The diagnostic trace is written already at the proposal stage, so a
+        // discarded (or failed-looking) run can still be shared and analyzed;
+        // Apply rewrites it with the results and the outcome metric appended.
+        WriteAlignmentLog(log.ToString());
+        return new AutoDelayRunResult(
+            outcomes, Stereo: false, project.StereoSceneOffsetMs,
+            adjustGains, report, log);
     }
 
-    // Applies the computed delays/polarities to the channels and their controls,
-    // redraws, and closes the log with this run's outcome. UI-thread work: it
-    // touches controls and the plots, so it stays out of the background compute.
-    private async Task ApplyAlignmentResultAsync(
-        List<VirtualCrossoverChannel> participants,
-        Dictionary<VirtualCrossoverChannel, AlignmentOverride> alignment,
+    // Bridges the run's channels to the dsp GainBalanceEngine: bands from the
+    // crossover corners, levels from the run's FINAL snapshots (the current
+    // gain is baked into the chain and subtracted back out by the engine, so
+    // the proposal is absolute, not incremental). Runs on the background
+    // thread, reusing the reprocessor's per-channel FFT cache.
+    private static IReadOnlyList<GainBalanceResult> ComputeGainBalance(
+        IEnumerable<(IAlignmentChannel Channel, VirtualCrossoverChannelSettings Settings,
+            bool Mono, bool RightSide, IAlignmentChannel? LeftPeer)> channels,
+        AlignmentReprocessor reprocessor,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        double sceneOffsetMs,
         System.Text.StringBuilder log)
     {
-        foreach (VirtualCrossoverChannel channel in participants)
+        IReadOnlyList<AlignmentSnapshot> snapshots = reprocessor.Reprocess(alignment);
+        Dictionary<IAlignmentChannel, AlignmentSnapshot> byChannel =
+            snapshots.ToDictionary(snapshot => snapshot.Channel);
+        List<GainBalanceInput> inputs = channels
+            .Select(item =>
+            {
+                (double lowHz, double highHz) =
+                    VirtualCrossoverJunctions.GetChannelBand(item.Settings);
+                return new GainBalanceInput(
+                    item.Channel,
+                    byChannel[item.Channel].ImpulseResponse,
+                    item.Channel.SampleRate,
+                    item.Settings.GainDb,
+                    lowHz,
+                    highHz,
+                    item.Settings.CrossoverKind != CrossoverKind.Off,
+                    item.Mono,
+                    item.RightSide,
+                    item.LeftPeer);
+            })
+            .ToList();
+        return GainBalanceEngine.Compute(inputs, sceneOffsetMs, log);
+    }
+
+    private static Dictionary<IAlignmentChannel, Complex[]> ToIrMap(
+        IReadOnlyList<AlignmentSnapshot> snapshots) =>
+        snapshots.ToDictionary(
+            snapshot => snapshot.Channel,
+            snapshot => snapshot.ImpulseResponse);
+
+    private static Dictionary<IAlignmentChannel, GainBalanceResult>? AdjustedGainMap(
+        IReadOnlyList<GainBalanceResult>? gains) =>
+        gains?.Where(result => result.Adjusted)
+            .ToDictionary(result => result.Channel);
+
+    // The report's headline figure for one side: the same averaged summation
+    // loss the metric read-out shows, predicted from the run's snapshots for
+    // the CURRENT settings and for the proposal. Proposed gain changes enter
+    // as spectrum scales — the reprocessor's chains still carry the current
+    // gains. Null when the side cannot form a sum (fewer than two channels).
+    private static AutoDelaySumLossForecast? ForecastSumLoss(
+        IReadOnlyList<(IAlignmentChannel Channel, VirtualCrossoverChannelSettings Settings)> sideChannels,
+        IReadOnlyDictionary<IAlignmentChannel, Complex[]> beforeIrs,
+        IReadOnlyDictionary<IAlignmentChannel, Complex[]> afterIrs,
+        IReadOnlyDictionary<IAlignmentChannel, GainBalanceResult>? adjustedGains,
+        double windowMinHz,
+        double windowMaxHz)
+    {
+        if (sideChannels.Count < 2)
         {
-            AlignmentOverride result = alignment.GetValueOrDefault(channel);
-            channel.Settings.DelayMs = Math.Round(result.DelayMs, 2);
-            channel.Settings.InvertPolarity = result.InvertPolarity;
-            ApplySettingsToControl(channel);
-            log.AppendLine(
-                $"Result {channel.Name}: " +
-                $"delay {channel.Settings.DelayMs:0.00} ms, " +
-                $"invert {(channel.Settings.InvertPolarity ? "yes" : "no")}");
+            return null;
+        }
+
+        int sampleRate = sideChannels[0].Channel.SampleRate;
+        double? before = VirtualCrossoverAnalysis.PredictedAverageSumLossDb(
+            sideChannels.Select(item => beforeIrs[item.Channel]).ToList(),
+            sampleRate, windowMinHz, windowMaxHz);
+        List<double> scales = sideChannels
+            .Select(item =>
+                adjustedGains != null &&
+                adjustedGains.TryGetValue(item.Channel, out GainBalanceResult? gain)
+                    ? Math.Pow(10.0, (gain.ProposedGainDb - item.Settings.GainDb) / 20.0)
+                    : 1.0)
+            .ToList();
+        double? after = VirtualCrossoverAnalysis.PredictedAverageSumLossDb(
+            sideChannels.Select(item => afterIrs[item.Channel]).ToList(),
+            sampleRate, windowMinHz, windowMaxHz, scales);
+        return before.HasValue && after.HasValue
+            ? new AutoDelaySumLossForecast(before.Value, after.Value)
+            : null;
+    }
+
+    // Assembles the report rows: the current settings as "before", the engine
+    // override (and gain proposal, when present) as "after", with the
+    // decisions' confidence attached. Pure shaping — nothing is written.
+    private static List<AutoDelayChannelOutcome> BuildOutcomes(
+        IEnumerable<(IAlignmentChannel Channel, VirtualCrossoverChannel Runtime,
+            VirtualCrossoverChannelSettings Settings, string Name)> channels,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        Dictionary<IAlignmentChannel, AlignmentDecision> decisions,
+        IReadOnlyList<GainBalanceResult>? gains)
+    {
+        Dictionary<IAlignmentChannel, GainBalanceResult>? gainByChannel =
+            gains?.ToDictionary(result => result.Channel);
+        var outcomes = new List<AutoDelayChannelOutcome>();
+        foreach ((IAlignmentChannel channel, VirtualCrossoverChannel runtime,
+            VirtualCrossoverChannelSettings settings, string name) in channels)
+        {
+            AlignmentOverride over = alignment.GetValueOrDefault(channel);
+            AlignmentDecision? decision = decisions.GetValueOrDefault(channel);
+            GainBalanceResult? gain = gainByChannel?.GetValueOrDefault(channel);
+            bool gainAdjusted = gain?.Adjusted == true;
+            outcomes.Add(new AutoDelayChannelOutcome(
+                runtime,
+                settings,
+                name,
+                settings.DelayMs,
+                settings.InvertPolarity,
+                settings.GainDb,
+                Math.Round(over.DelayMs, 2),
+                over.InvertPolarity,
+                gainAdjusted ? gain!.ProposedGainDb : settings.GainDb,
+                gainAdjusted,
+                decision?.Kind,
+                decision?.Confidence,
+                decision?.Detail ?? string.Empty,
+                gain?.Confidence,
+                gain?.Detail ?? string.Empty));
+        }
+
+        return outcomes;
+    }
+
+    // Writes the CONFIRMED proposal into the channels and their controls,
+    // persists and redraws — the transactional part of Apply, synchronous so
+    // it either fully lands or fails before anything is half-written.
+    // Reached only through the dialog's Apply — Discard never gets here, so
+    // the channels keep their previous settings. The diagnostic log is
+    // rewritten with the results immediately: a later metric failure must
+    // not lose them.
+    private void CommitAutoDelayResult(AutoDelayRunResult result)
+    {
+        foreach (AutoDelayChannelOutcome outcome in result.Outcomes)
+        {
+            outcome.Settings.DelayMs = outcome.AfterDelayMs;
+            outcome.Settings.InvertPolarity = outcome.AfterInvert;
+            if (outcome.GainAdjusted)
+            {
+                outcome.Settings.GainDb = outcome.AfterGainDb;
+            }
+
+            result.Log.AppendLine(
+                $"Result {outcome.Name}: " +
+                $"delay {outcome.AfterDelayMs:0.00} ms, " +
+                $"invert {(outcome.AfterInvert ? "yes" : "no")}" +
+                (outcome.GainAdjusted
+                    ? $", gain {outcome.AfterGainDb:0.0} dB"
+                    : ""));
+        }
+
+        foreach (VirtualCrossoverChannel runtime in
+            result.Outcomes.Select(outcome => outcome.Runtime).Distinct())
+        {
+            ApplySettingsToControl(runtime);
+        }
+
+        if (result.Stereo)
+        {
+            // The offset the proposal was computed with becomes the persisted
+            // value only now, so a discarded experiment does not overwrite it.
+            project.StereoSceneOffsetMs = result.SceneOffsetMs;
         }
 
         ScheduleSave();
         RedrawAll();
+        WriteAlignmentLog(result.Log.ToString());
+    }
+
+    // The best-effort epilogue of Apply: recompute the metric from the
+    // just-applied settings and close the diagnostic log with it.
+    private async Task AppendOutcomeMetricAsync(AutoDelayRunResult result)
+    {
         // RedrawAll pushes the read-out asynchronously (the ApplyChain FFTs run off
         // the UI thread), so recompute the metric synchronously from the just-
-        // applied settings so the log ends with this run's true outcome.
+        // applied settings so the log ends with this run's true outcome. The
+        // side label is captured BEFORE the await: the panel is live again
+        // after the modal closed, and a side switch mid-computation would
+        // otherwise caption the snapshot with the other side's name.
+        bool metricSideRight = project.ActiveSideRight;
         ProcessedRender? render = await ProcessChannelsAsync();
-        List<ProcessedChannel> outcome = render?.Channels ?? [];
+        List<ProcessedChannel> outcomeChannels = render?.Channels ?? [];
         (List<AnalysisCurve>? outcomeMagnitudes, AnalysisCurve? outcomeSum) =
-            metrics.BuildCurves(outcome);
-        log.AppendLine(VirtualCrossoverMetric.FormatDetail(
-            metrics.BuildEntries(outcome, outcomeMagnitudes, outcomeSum)));
-        WriteAlignmentLog(log.ToString());
+            metrics.BuildCurves(outcomeChannels);
+        result.Log.AppendLine(
+            $"Metric ({(metricSideRight ? "R" : "L")} side):");
+        result.Log.AppendLine(VirtualCrossoverMetric.FormatDetail(
+            metrics.BuildEntries(outcomeChannels, outcomeMagnitudes, outcomeSum)));
+        WriteAlignmentLog(result.Log.ToString());
     }
 
     // Bridges the panel's channel model to the dsp AutoAlignmentEngine (where
     // the FFT-heavy alignment stages live, unit-tested): snapshots + junctions
-    // in, an override map out. Runs on a background thread; the AlignmentReprocessor
-    // owns the run-scoped FFT cache, so between consecutive junction searches only
-    // the one or two channels that changed their overrides are re-FFT'd, and the
-    // shared UI-thread coordinator cache is never touched.
-    private void ComputeAutoAlignment(
+    // in, an override map (plus the per-channel decisions for the report) out.
+    // Runs on a background thread; the AlignmentReprocessor owns the run-scoped
+    // FFT cache, so between consecutive junction searches only the one or two
+    // channels that changed their overrides are re-FFT'd, and the shared
+    // UI-thread coordinator cache is never touched. Returned so the gain stage
+    // can reuse the same cache for the final snapshots.
+    private AlignmentReprocessor ComputeAutoAlignment(
         List<VirtualCrossoverChannel> participants,
-        Dictionary<VirtualCrossoverChannel, AlignmentOverride> alignment,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        Dictionary<IAlignmentChannel, AlignmentDecision> decisions,
         System.Text.StringBuilder log)
     {
         // Order along the spectrum by band center; adjacent drivers form the
@@ -2289,18 +2490,14 @@ public partial class VirtualCrossoverPanel : UserControl
                 pairHz, bandLowHz, bandHighHz));
         }
 
-        var engineAlignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
         AutoAlignmentEngine.Compute(
             ordered.Select(channel => snapshots[channel]).ToList(),
             junctions,
             reprocessor.Reprocess,
-            engineAlignment,
-            log);
-
-        foreach ((IAlignmentChannel channel, AlignmentOverride result) in engineAlignment)
-        {
-            alignment[(VirtualCrossoverChannel)channel] = result;
-        }
+            alignment,
+            log,
+            decisions);
+        return reprocessor;
     }
 
     // The Auto delay search reads only the gated direct sound, so it runs on
@@ -2424,8 +2621,38 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        double sceneOffsetMs = project.StereoSceneOffsetMs;
+        using var dialog = new VirtualCrossoverAutoDelayDialog();
+        dialog.Init(
+            stereo: true,
+            project.StereoSceneOffsetMs,
+            (sceneOffsetMs, adjustGains) => RunStereoProposalAsync(
+                leftSide, rightSide, union, bridgeLeft, bridgeRight,
+                bridgeBandLowHz, bridgeBandHighHz, sceneOffsetMs, adjustGains));
+        if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
+            dialog.Result is not { } result ||
+            IsDisposed)
+        {
+            return;
+        }
 
+        await ApplyConfirmedAutoDelayAsync(result);
+    }
+
+    // Computes the stereo proposal on a background thread: the alignment
+    // cascade, then (when asked) the cut-only gain balance from the run's
+    // final snapshots — right channels judged against their left peers, the
+    // level tilt derived from the same scene offset the delays honor.
+    private async Task<AutoDelayRunResult> RunStereoProposalAsync(
+        List<VirtualCrossoverSideAlignmentChannel> leftSide,
+        List<VirtualCrossoverSideAlignmentChannel> rightSide,
+        List<VirtualCrossoverSideAlignmentChannel> union,
+        VirtualCrossoverSideAlignmentChannel bridgeLeft,
+        VirtualCrossoverSideAlignmentChannel bridgeRight,
+        double bridgeBandLowHz,
+        double bridgeBandHighHz,
+        double sceneOffsetMs,
+        bool adjustGains)
+    {
         var log = new System.Text.StringBuilder();
         log.AppendLine($"Auto delay (stereo) {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         log.AppendLine(
@@ -2435,41 +2662,85 @@ public partial class VirtualCrossoverPanel : UserControl
         log.AppendLine("Previous delay / polarity settings ignored for this run.");
 
         var engineAlignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
-        SetAutoDelayBusy(true);
-        try
+        var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
+        IReadOnlyList<GainBalanceResult>? gains = null;
+        AutoDelaySumLossForecast? leftSumLoss = null;
+        AutoDelaySumLossForecast? rightSumLoss = null;
+        await Task.Run(() =>
         {
-            await Task.Run(() => ComputeStereoAlignment(
+            AlignmentReprocessor reprocessor = ComputeStereoAlignment(
                 leftSide, rightSide, union, bridgeLeft, bridgeRight,
                 bridgeBandLowHz, bridgeBandHighHz, sceneOffsetMs,
-                engineAlignment, log));
-            if (IsDisposed || !IsHandleCreated)
+                engineAlignment, decisions, log);
+            // The "before" snapshots carry the CURRENT delays and polarities —
+            // the alignment itself deliberately ignores them, so they exist
+            // only for the report's before/after sum-loss forecast.
+            IReadOnlyList<AlignmentSnapshot> beforeSnapshots =
+                reprocessor.Reprocess(union.ToDictionary(
+                    side => (IAlignmentChannel)side,
+                    side => new AlignmentOverride(
+                        side.Settings.DelayMs, side.Settings.InvertPolarity)));
+            if (adjustGains)
             {
-                return;
+                gains = ComputeGainBalance(
+                    union.Select(side => (
+                        (IAlignmentChannel)side,
+                        side.Settings,
+                        side.Runtime.Pair.Mono,
+                        side.RightSide,
+                        (IAlignmentChannel?)(side.RightSide
+                            ? leftSide.FirstOrDefault(left =>
+                                left.Runtime == side.Runtime && !left.RightSide)
+                            : null))),
+                    reprocessor, engineAlignment, sceneOffsetMs, log);
             }
 
-            await ApplyStereoAlignmentResultAsync(union, engineAlignment, log);
-        }
-        catch (Exception exception)
-        {
-            System.Diagnostics.Debug.WriteLine($"Auto delay failed: {exception}");
-            if (!IsDisposed && IsHandleCreated)
-            {
-                ShowError("Auto delay failed.", exception.Message);
-            }
-        }
-        finally
-        {
-            if (!IsDisposed)
-            {
-                SetAutoDelayBusy(false);
-            }
-        }
+            IReadOnlyList<AlignmentSnapshot> afterSnapshots =
+                reprocessor.Reprocess(engineAlignment);
+            Dictionary<IAlignmentChannel, Complex[]> beforeIrs = ToIrMap(beforeSnapshots);
+            Dictionary<IAlignmentChannel, Complex[]> afterIrs = ToIrMap(afterSnapshots);
+            Dictionary<IAlignmentChannel, GainBalanceResult>? adjustedGains =
+                AdjustedGainMap(gains);
+            (double leftMinHz, double leftMaxHz) =
+                VirtualCrossoverJunctions.GetCrossoverWindow(
+                    leftSide.Select(side => side.Settings));
+            leftSumLoss = ForecastSumLoss(
+                leftSide.Select(side => ((IAlignmentChannel)side, side.Settings)).ToList(),
+                beforeIrs, afterIrs, adjustedGains, leftMinHz, leftMaxHz);
+            (double rightMinHz, double rightMaxHz) =
+                VirtualCrossoverJunctions.GetCrossoverWindow(
+                    rightSide.Select(side => side.Settings));
+            rightSumLoss = ForecastSumLoss(
+                rightSide.Select(side => ((IAlignmentChannel)side, side.Settings)).ToList(),
+                beforeIrs, afterIrs, adjustedGains, rightMinHz, rightMaxHz);
+        });
+
+        // The report groups the two sides of each block together (A L, A R,
+        // B L …) instead of the union's all-left-then-all-right walk order.
+        List<AutoDelayChannelOutcome> outcomes = BuildOutcomes(
+            union
+                .OrderBy(side => channels.IndexOf(side.Runtime))
+                .ThenBy(side => side.RightSide)
+                .Select(side => (
+                    (IAlignmentChannel)side,
+                    side.Runtime,
+                    side.Settings,
+                    side.Name)),
+            engineAlignment, decisions, gains);
+        string report = VirtualCrossoverAutoDelayReport.Format(
+            outcomes, stereo: true, sceneOffsetMs, adjustGains,
+            leftSumLoss, rightSumLoss);
+        // Written already at the proposal stage, so a discarded run can still
+        // be shared and analyzed; Apply rewrites it with the outcome metric.
+        WriteAlignmentLog(log.ToString());
+        return new AutoDelayRunResult(
+            outcomes, Stereo: true, sceneOffsetMs, adjustGains, report, log);
     }
 
     // Bridges the pair/side model to the stereo engine on a background thread,
     // sharing the same AlignmentReprocessor (run-scoped FFT cache) as the
     // single-side run.
-    private void ComputeStereoAlignment(
+    private AlignmentReprocessor ComputeStereoAlignment(
         List<VirtualCrossoverSideAlignmentChannel> leftSide,
         List<VirtualCrossoverSideAlignmentChannel> rightSide,
         List<VirtualCrossoverSideAlignmentChannel> union,
@@ -2479,6 +2750,7 @@ public partial class VirtualCrossoverPanel : UserControl
         double bridgeBandHighHz,
         double sceneOffsetMs,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        Dictionary<IAlignmentChannel, AlignmentDecision> decisions,
         System.Text.StringBuilder log)
     {
         // The whole search runs on a shared direct-sound crop of the measured
@@ -2568,44 +2840,9 @@ public partial class VirtualCrossoverPanel : UserControl
                 pairLinks),
             reprocessor.Reprocess,
             alignment,
-            log);
-    }
-
-    // Applies the stereo proposal to BOTH sides' settings, rebinds the visible
-    // controls and closes the log with the active side's metric.
-    private async Task ApplyStereoAlignmentResultAsync(
-        List<VirtualCrossoverSideAlignmentChannel> union,
-        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
-        System.Text.StringBuilder log)
-    {
-        foreach (VirtualCrossoverSideAlignmentChannel side in union)
-        {
-            AlignmentOverride result = alignment.GetValueOrDefault(side);
-            side.Settings.DelayMs = Math.Round(result.DelayMs, 2);
-            side.Settings.InvertPolarity = result.InvertPolarity;
-            log.AppendLine(
-                $"Result {side.Name}: delay {side.Settings.DelayMs:0.00} ms, " +
-                $"invert {(side.Settings.InvertPolarity ? "yes" : "no")}");
-        }
-
-        foreach (VirtualCrossoverChannel channel in union
-            .Select(side => side.Runtime)
-            .Distinct())
-        {
-            ApplySettingsToControl(channel);
-        }
-
-        ScheduleSave();
-        RedrawAll();
-        // The read-out follows the active side; the log records which one.
-        ProcessedRender? render = await ProcessChannelsAsync();
-        List<ProcessedChannel> outcome = render?.Channels ?? [];
-        (List<AnalysisCurve>? outcomeMagnitudes, AnalysisCurve? outcomeSum) =
-            metrics.BuildCurves(outcome);
-        log.AppendLine($"Metric ({(project.ActiveSideRight ? "R" : "L")} side):");
-        log.AppendLine(VirtualCrossoverMetric.FormatDetail(
-            metrics.BuildEntries(outcome, outcomeMagnitudes, outcomeSum)));
-        WriteAlignmentLog(log.ToString());
+            log,
+            decisions);
+        return reprocessor;
     }
 
     // A diagnostic trace of the last Auto delay run (pair bands, arrivals,

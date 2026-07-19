@@ -39,8 +39,6 @@ namespace Resonalyze
             radioSideRight = new RadioButton();
             buttonCopyLeftToRight = new Button();
             buttonCopyRightToLeft = new Button();
-            labelSceneOffset = new Label();
-            numericSceneOffset = new DarkNumericUpDown();
             labelView = new Label();
             checkBoxShowSum = new CheckBox();
             checkBoxShowLoss = new CheckBox();
@@ -68,7 +66,6 @@ namespace Resonalyze
             panel1 = new Panel();
             panel2 = new Panel();
             sideSelectorPanel.SuspendLayout();
-            (numericSceneOffset).BeginInit();
             dspModePanel.SuspendLayout();
             panel1.SuspendLayout();
             panel2.SuspendLayout();
@@ -201,34 +198,6 @@ namespace Resonalyze
             buttonCopyRightToLeft.Text = "R→L";
             buttonCopyRightToLeft.UseVisualStyleBackColor = false;
             // 
-            // labelSceneOffset
-            // 
-            labelSceneOffset.AutoSize = true;
-            labelSceneOffset.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelSceneOffset.ForeColor = Color.FromArgb(210, 214, 222);
-            labelSceneOffset.Location = new Point(359, 488);
-            labelSceneOffset.Name = "labelSceneOffset";
-            labelSceneOffset.Size = new Size(80, 15);
-            labelSceneOffset.TabIndex = 22;
-            labelSceneOffset.Text = "L/R offset, ms";
-            // 
-            // numericSceneOffset
-            // 
-            numericSceneOffset.BackColor = Color.FromArgb(55, 60, 72);
-            numericSceneOffset.DecimalPlaces = 2;
-            numericSceneOffset.ForeColor = Color.White;
-            numericSceneOffset.Increment = new decimal(new int[] { 5, 0, 0, 131072 });
-            numericSceneOffset.Location = new Point(359, 506);
-            numericSceneOffset.Maximum = new decimal(new int[] { 5, 0, 0, 0 });
-            numericSceneOffset.Minimum = new decimal(new int[] { 5, 0, 0, int.MinValue });
-            numericSceneOffset.MinimumSize = new Size(36, 19);
-            numericSceneOffset.Name = "numericSceneOffset";
-            numericSceneOffset.Size = new Size(125, 19);
-            numericSceneOffset.TabIndex = 23;
-            numericSceneOffset.TextAlign = HorizontalAlignment.Right;
-            numericSceneOffset.ThousandsSeparator = false;
-            numericSceneOffset.Value = new decimal(new int[] { 25, 0, 0, 131072 });
-            // 
             // labelView
             // 
             labelView.AutoSize = true;
@@ -322,7 +291,7 @@ namespace Resonalyze
             comboBoxSmoothing.Location = new Point(853, 412);
             comboBoxSmoothing.MinimumSize = new Size(36, 19);
             comboBoxSmoothing.Name = "comboBoxSmoothing";
-            comboBoxSmoothing.Size = new Size(90, 19);
+            comboBoxSmoothing.Size = new Size(100, 19);
             comboBoxSmoothing.TabIndex = 11;
             // 
             // buttonAutoDelay
@@ -330,7 +299,7 @@ namespace Resonalyze
             buttonAutoDelay.BackColor = Color.FromArgb(46, 51, 67);
             buttonAutoDelay.FlatStyle = FlatStyle.Popup;
             buttonAutoDelay.ForeColor = Color.White;
-            buttonAutoDelay.Location = new Point(359, 533);
+            buttonAutoDelay.Location = new Point(359, 485);
             buttonAutoDelay.Name = "buttonAutoDelay";
             buttonAutoDelay.Size = new Size(125, 24);
             buttonAutoDelay.TabIndex = 12;
@@ -375,7 +344,7 @@ namespace Resonalyze
             // 
             buttonPhaseGate.FlatStyle = FlatStyle.Popup;
             buttonPhaseGate.ForeColor = Color.White;
-            buttonPhaseGate.Location = new Point(949, 410);
+            buttonPhaseGate.Location = new Point(959, 410);
             buttonPhaseGate.Name = "buttonPhaseGate";
             buttonPhaseGate.Size = new Size(80, 24);
             buttonPhaseGate.TabIndex = 16;
@@ -386,7 +355,7 @@ namespace Resonalyze
             // 
             comboBoxCalibration.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxCalibration.ForeColor = Color.White;
-            comboBoxCalibration.Location = new Point(1037, 413);
+            comboBoxCalibration.Location = new Point(1047, 413);
             comboBoxCalibration.MinimumSize = new Size(36, 19);
             comboBoxCalibration.Name = "comboBoxCalibration";
             comboBoxCalibration.Size = new Size(110, 19);
@@ -558,8 +527,6 @@ namespace Resonalyze
             Controls.Add(buttonAddChannel);
             Controls.Add(buttonRemoveChannel);
             Controls.Add(sideSelectorPanel);
-            Controls.Add(labelSceneOffset);
-            Controls.Add(numericSceneOffset);
             Controls.Add(dspPlotView);
             Controls.Add(mainPlotView);
             Font = new Font("Segoe UI", 9F);
@@ -569,7 +536,6 @@ namespace Resonalyze
             Size = new Size(1246, 770);
             sideSelectorPanel.ResumeLayout(false);
             sideSelectorPanel.PerformLayout();
-            (numericSceneOffset).EndInit();
             dspModePanel.ResumeLayout(false);
             dspModePanel.PerformLayout();
             panel1.ResumeLayout(false);
@@ -591,8 +557,6 @@ namespace Resonalyze
         private RadioButton radioSideRight;
         private Button buttonCopyLeftToRight;
         private Button buttonCopyRightToLeft;
-        private Label labelSceneOffset;
-        private DarkNumericUpDown numericSceneOffset;
         private Label labelView;
         private CheckBox checkBoxShowSum;
         private CheckBox checkBoxShowLoss;

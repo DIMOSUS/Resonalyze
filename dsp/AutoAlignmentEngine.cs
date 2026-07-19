@@ -12,6 +12,46 @@ public readonly record struct AlignmentOverride(
     bool InvertPolarity);
 
 /// <summary>
+/// Qualitative confidence of one automatically decided setting, for the user
+/// report. Ordered so that Math.Min/Max express "cap at" / "floor at".
+/// </summary>
+public enum AlignmentConfidence
+{
+    Low,
+    Medium,
+    High
+}
+
+/// <summary>
+/// What kind of decision set a channel's delay: a free junction search
+/// (confidence = the rival margin), a pick pinned by an onset/scene lock
+/// (a constraint of the physics or the task — NOT a measure of how the
+/// acoustics voted, so it carries no confidence), the fixed reference
+/// (nothing was chosen at all), or the stereo bridge (an arrival fit,
+/// confidence = the weaker side's SNR).
+/// </summary>
+public enum AlignmentDecisionKind
+{
+    Search,
+    Locked,
+    Reference,
+    Bridge
+}
+
+/// <summary>
+/// How one channel's delay/polarity decision was reached, for the user
+/// report: the decision kind, the qualitative confidence where one is
+/// meaningful (free searches and the bridge; null for locked and reference
+/// channels) and a short human-readable summary (the rival margin and the
+/// gates that shaped the pick). Distinct from the diagnostic log, which
+/// records everything.
+/// </summary>
+public sealed record AlignmentDecision(
+    AlignmentDecisionKind Kind,
+    AlignmentConfidence? Confidence,
+    string Detail);
+
+/// <summary>
 /// A channel as the alignment engine sees it: an identity (reference
 /// equality keys the override maps), a display name for the diagnostic log
 /// and a sample rate. The caller's channel model implements this.
@@ -318,8 +358,10 @@ public static class AutoAlignmentEngine
         IReadOnlyList<AlignmentJunction> pairs,
         AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
-        StringBuilder log) =>
-        Compute(channelsByBand, pairs, reprocess, alignment, log, onsetLocks: null);
+        StringBuilder log,
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null) =>
+        Compute(channelsByBand, pairs, reprocess, alignment, log,
+            onsetLocks: null, decisions);
 
     // One onset-locked junction: which channel the lock was applied to during
     // its fine search, how far the chosen delay landed from the onset-aligned
@@ -337,7 +379,8 @@ public static class AutoAlignmentEngine
         AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
-        Dictionary<AlignmentJunction, OnsetLockState>? onsetLocks)
+        Dictionary<AlignmentJunction, OnsetLockState>? onsetLocks,
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
         ArgumentNullException.ThrowIfNull(channelsByBand);
         ArgumentNullException.ThrowIfNull(pairs);
@@ -369,6 +412,14 @@ public static class AutoAlignmentEngine
         IAlignmentChannel reference =
             timeline.First(pair => pair.Value == latest).Key;
         log.AppendLine($"Reference: {reference.Name}");
+        if (decisions != null)
+        {
+            // The latest-arriving channel is the fixed anchor everyone else
+            // aligns to — there is no search whose robustness could be judged.
+            decisions[reference] = new AlignmentDecision(
+                AlignmentDecisionKind.Reference, Confidence: null,
+                "reference (others align to it)");
+        }
 
         // Stage 2: sequential pairwise fine alignment, walking outward from the
         // reference along the band order. Each channel is phase-correlated
@@ -385,7 +436,8 @@ public static class AutoAlignmentEngine
                 byBand[i].Channel, byBand[i + 1].Channel, pairs[i],
                 timeline, byBand, reprocess, alignment, log,
                 untrustedSeedJunctions: untrustedSeeds,
-                onsetLocks: onsetLocks);
+                onsetLocks: onsetLocks,
+                decisions: decisions);
         }
         for (int i = referenceIndex + 1; i < byBand.Count; i++)
         {
@@ -393,7 +445,8 @@ public static class AutoAlignmentEngine
                 byBand[i].Channel, byBand[i - 1].Channel, pairs[i - 1],
                 timeline, byBand, reprocess, alignment, log,
                 untrustedSeedJunctions: untrustedSeeds,
-                onsetLocks: onsetLocks);
+                onsetLocks: onsetLocks,
+                decisions: decisions);
         }
     }
 
@@ -584,7 +637,8 @@ public static class AutoAlignmentEngine
         double? sceneLockToleranceMs = null,
         bool? forcedPolarity = null,
         IReadOnlySet<AlignmentJunction>? untrustedSeedJunctions = null,
-        Dictionary<AlignmentJunction, OnsetLockState>? onsetLocks = null)
+        Dictionary<AlignmentJunction, OnsetLockState>? onsetLocks = null,
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
         // Widen the window when the coarse seed ACROSS this junction (or its
         // secondary, for a joint two-neighbour search) was the untrusted arrival
@@ -710,7 +764,9 @@ public static class AutoAlignmentEngine
         // slowest involved crossover — wide enough to absorb the coarse error
         // (which grows with the period), narrow enough not to span two
         // same-polarity lobes of one base.
-        (IReadOnlyList<AlignmentCandidate> Candidates, double WindowLowMs, double WindowHighMs)
+        (IReadOnlyList<AlignmentCandidate> Candidates,
+            IReadOnlyList<AlignmentCandidate> AllOptima,
+            double WindowLowMs, double WindowHighMs)
             SearchJunction(double? windowOverrideMs = null)
         {
             // Only where the coarse seed was untrusted (arrival fallback at a
@@ -753,12 +809,14 @@ public static class AutoAlignmentEngine
                     windowHighMs,
                     priorDelayMs: anchorMs,
                     priorSigmaMs: (windowHighMs - windowLowMs) / 4.0,
-                    forcedPolarity: forcedPolarity);
-            return (candidates, windowLowMs, windowHighMs);
+                    forcedPolarity: forcedPolarity,
+                    out IReadOnlyList<AlignmentCandidate> allOptima);
+            return (candidates, allOptima, windowLowMs, windowHighMs);
         }
 
         {
             (IReadOnlyList<AlignmentCandidate> candidates,
+                IReadOnlyList<AlignmentCandidate> fineOptima,
                 double windowLow, double windowHigh) = SearchJunction();
             log.AppendLine(
                 $"Channel {channel.Name}: " +
@@ -814,7 +872,9 @@ public static class AutoAlignmentEngine
             // winner; under a scene or onset lock it is log-only. At a low
             // junction the fixed span is sub-period, so it grows to reach the
             // flip partner half a period out (see DiagnosticFineReachHalfPeriods).
-            (IReadOnlyList<AlignmentCandidate> wide, double wideLow, double wideHigh) =
+            (IReadOnlyList<AlignmentCandidate> wide,
+                IReadOnlyList<AlignmentCandidate> wideOptima,
+                double wideLow, double wideHigh) =
                 SearchJunction(windowOverrideMs: Math.Max(
                     DiagnosticFineRangeMs,
                     DiagnosticFineReachHalfPeriods * halfPeriodMs));
@@ -843,11 +903,16 @@ public static class AutoAlignmentEngine
             double retryRangeMs = Math.Min(1.8 * halfPeriodMs, 3.0);
             bool atEdge = chosen.DelayMs <= windowLow + 0.02 ||
                 chosen.DelayMs >= windowHigh - 0.02;
+            bool edgeRetry = false;
+            IReadOnlyList<AlignmentCandidate> retriedOptima = [];
             if (sceneLockToleranceMs == null && onsetAnchorMs == null &&
                 retryRangeMs > (windowHigh - windowLow) / 2.0 && atEdge)
             {
-                (IReadOnlyList<AlignmentCandidate> retried, _, _) =
+                edgeRetry = true;
+                (IReadOnlyList<AlignmentCandidate> retried,
+                    IReadOnlyList<AlignmentCandidate> retriedAll, _, _) =
                     SearchJunction(windowOverrideMs: retryRangeMs);
+                retriedOptima = retriedAll;
                 if (retried.Count > 0)
                 {
                     // Through the same selection rules as the primary pick:
@@ -903,6 +968,7 @@ public static class AutoAlignmentEngine
             // junction never promotes: the wide window's deeper sums are
             // exactly the comb aliases the lock exists to refuse — they stay
             // in the [diag] log line only.
+            bool promoted = false;
             if (wide.Count > 0 && sceneLockToleranceMs == null &&
                 onsetAnchorMs == null)
             {
@@ -944,7 +1010,7 @@ public static class AutoAlignmentEngine
                     // arrival-nearest lobe that still clears the gate;
                     // wideChosen itself qualifies, so this only ever pulls the
                     // pick closer to the arrival, never onto a declined junction.
-                    AlignmentCandidate promoted = AlignmentSelection.SelectPromotionLobe(
+                    AlignmentCandidate promotedPick = AlignmentSelection.SelectPromotionLobe(
                         wide,
                         wideChosen,
                         AcousticScore,
@@ -953,16 +1019,17 @@ public static class AutoAlignmentEngine
                         arrivalPick.DelayMs,
                         anchorMs,
                         promotionReachMs);
-                    promotionStepMs = Math.Abs(promoted.DelayMs - arrivalPick.DelayMs);
+                    promotionStepMs = Math.Abs(promotedPick.DelayMs - arrivalPick.DelayMs);
                     periodsMoved = promotionStepMs / periodMs;
-                    gainDb = AcousticScore(promoted) - fineScore;
+                    gainDb = AcousticScore(promotedPick) - fineScore;
                     log.AppendLine(
-                        $"  promoted {promoted.DelayMs:0.000} ms" +
-                        $"{(promoted.InvertPolarity ? " inv" : "")} " +
+                        $"  promoted {promotedPick.DelayMs:0.000} ms" +
+                        $"{(promotedPick.InvertPolarity ? " inv" : "")} " +
                         $"over {chosen.DelayMs:0.000} ms" +
                         $"{(chosen.InvertPolarity ? " inv" : "")} " +
                         $"(gain {gainDb:0.00} dB at {periodsMoved:0.0} periods)");
-                    chosen = promoted;
+                    chosen = promotedPick;
+                    promoted = true;
                 }
                 else if (gainDb > PromotionNoteworthyGainDb &&
                     promotionStepMs > promotionReachMs)
@@ -996,6 +1063,23 @@ public static class AutoAlignmentEngine
                 Math.Clamp(Math.Round(newDelay, 2), 0, MaxDelayMs),
                 chosen.InvertPolarity);
 
+            if (decisions != null)
+            {
+                string versus = neighborChannel.Name +
+                    (secondaryNeighbor != null ? $" + {secondaryNeighbor.Name}" : "");
+                // The rival pool is the UNCAPPED optimum sets: the selection
+                // lists are truncated (six candidates, 1.5 dB gap, judged on
+                // the prior-laden score), so a margin computed over them
+                // could read "unrivaled" only because the rival was cut
+                // before the comparison.
+                decisions[channel] = BuildDecision(
+                    chosen,
+                    fineOptima.Concat(wideOptima).Concat(retriedOptima).ToList(),
+                    halfPeriodMs, versus, wideSeed, edgeRetry, promoted,
+                    onsetLocked: onsetAnchorMs != null,
+                    sceneLocked: sceneLockToleranceMs != null);
+            }
+
             if (onsetAnchorMs is { } settledAnchor)
             {
                 // The gap is relative (chosen minus anchor), so the uniform
@@ -1024,6 +1108,99 @@ public static class AutoAlignmentEngine
         candidate.LossDb +
         VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
         (candidate.DipDb - candidate.LossDb);
+
+    // The rival margin below which a junction decision reads as ambiguous:
+    // comb noise between real lobes runs a few tenths of a dB, so a pick
+    // holding less than this over its best rival was effectively decided by
+    // the arrival prior and the tie-breaks, not by the acoustics.
+    private const double DecisionMediumMarginDb = 0.4;
+
+    // Condenses one junction search into the user-report decision: the
+    // prior-free score margin of the chosen candidate over its best RIVAL —
+    // another lobe (a quarter period away or more) or the opposite polarity;
+    // fine, wide and retry candidates are pooled, which the prior-free score
+    // keeps on one scale. An onset/scene lock is a CONSTRAINT (of the
+    // measured physics or the stereo mandate), not a measure of how the
+    // acoustics voted — a locked pick reports the Locked kind with no
+    // confidence, and the margin stays in the detail for the curious. For a
+    // free search the gates temper the mapping: a wide (untrusted) seed and
+    // a window-edge retry mean the coarse base itself was suspect.
+    private static AlignmentDecision BuildDecision(
+        AlignmentCandidate chosen,
+        IReadOnlyList<AlignmentCandidate> pool,
+        double halfPeriodMs,
+        string versus,
+        bool wideSeed,
+        bool edgeRetry,
+        bool promoted,
+        bool onsetLocked,
+        bool sceneLocked)
+    {
+        double rivalDistanceMs = 0.5 * halfPeriodMs;
+        double chosenScore = AcousticScore(chosen);
+        double margin = double.PositiveInfinity;
+        foreach (AlignmentCandidate candidate in pool)
+        {
+            bool rival = candidate.InvertPolarity != chosen.InvertPolarity ||
+                Math.Abs(candidate.DelayMs - chosen.DelayMs) > rivalDistanceMs;
+            if (rival)
+            {
+                margin = Math.Min(margin, chosenScore - AcousticScore(candidate));
+            }
+        }
+
+        AlignmentDecisionKind kind = onsetLocked || sceneLocked
+            ? AlignmentDecisionKind.Locked
+            : AlignmentDecisionKind.Search;
+        AlignmentConfidence? confidence = null;
+        if (kind == AlignmentDecisionKind.Search)
+        {
+            AlignmentConfidence level =
+                margin >= WideWindowPromotionMarginDb ? AlignmentConfidence.High
+                : margin >= DecisionMediumMarginDb ? AlignmentConfidence.Medium
+                : AlignmentConfidence.Low;
+            if (wideSeed)
+            {
+                level = (AlignmentConfidence)Math.Min(
+                    (int)level, (int)AlignmentConfidence.Medium);
+            }
+            if (edgeRetry)
+            {
+                level = AlignmentConfidence.Low;
+            }
+
+            confidence = level;
+        }
+
+        // Invariant: the detail feeds the user report, which must read the
+        // same regardless of the OS locale (the diagnostic log stays on the
+        // current culture, as everywhere else).
+        string detail = double.IsPositiveInfinity(margin)
+            ? $"vs {versus}: unrivaled"
+            : FormattableString.Invariant($"vs {versus}: margin {margin:0.0} dB");
+        if (onsetLocked)
+        {
+            detail += ", onset-locked";
+        }
+        if (sceneLocked)
+        {
+            detail += ", scene-locked";
+        }
+        if (wideSeed)
+        {
+            detail += ", wide seed";
+        }
+        if (promoted)
+        {
+            detail += ", lobe promoted";
+        }
+        if (edgeRetry)
+        {
+            detail += ", window-edge retry";
+        }
+
+        return new AlignmentDecision(kind, confidence, detail);
+    }
 
     // A uniform delay shift of every channel in the scope but one: the standard
     // way to "advance" a channel that would otherwise need a negative delay.
@@ -1079,7 +1256,8 @@ public static class AutoAlignmentEngine
         StereoAlignmentPlan plan,
         AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
-        StringBuilder log)
+        StringBuilder log,
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(reprocess);
@@ -1124,7 +1302,7 @@ public static class AutoAlignmentEngine
         // Stage L: the left side, exactly like a mono run.
         Compute(
             plan.LeftChannelsByBand, plan.LeftPairs, reprocess, alignment, log,
-            onsetLocks);
+            onsetLocks, decisions);
 
         // The union of both sides: the scope of every uniform shift from here
         // on. Shifting one side alone would silently break the inter-side
@@ -1216,6 +1394,26 @@ public static class AutoAlignmentEngine
         }
         alignment[plan.BridgeRight] = new AlignmentOverride(
             Math.Clamp(Math.Round(bridgeDelay, 2), 0, MaxDelayMs), false);
+        if (decisions != null)
+        {
+            // The bridge is an envelope-arrival fit, not a candidate search:
+            // its robustness is the arrival SNR of the weaker side (clean
+            // measurements run 40-70 dB; the hard refusal floor is
+            // MinimumArrivalSnrDb).
+            double bridgeSnrDb = Math.Min(
+                leftBridge.SignalToNoiseDecibels,
+                rightBridge.SignalToNoiseDecibels);
+            AlignmentConfidence bridgeConfidence =
+                bridgeSnrDb >= BridgeHighSnrDb ? AlignmentConfidence.High
+                : bridgeSnrDb >= BridgeMediumSnrDb ? AlignmentConfidence.Medium
+                : AlignmentConfidence.Low;
+            string bridgeSnrText = FormattableString.Invariant(
+                $"{leftBridge.SignalToNoiseDecibels:0} / {rightBridge.SignalToNoiseDecibels:0} dB");
+            decisions[plan.BridgeRight] = new AlignmentDecision(
+                AlignmentDecisionKind.Bridge,
+                bridgeConfidence,
+                $"bridge to {plan.BridgeLeft.Name}: arrival SNR {bridgeSnrText}");
+        }
 
         // Polarity is a property of the DRIVER, not the side, and automatic delay
         // never inverts one side of a pair alone: the right top INHERITS the left
@@ -1224,7 +1422,7 @@ public static class AutoAlignmentEngine
         // before the right walk so the right lowers align against a correctly-signed
         // top. A genuinely reverse-wired driver is left for a MANUAL flip in the UI,
         // not an asymmetric automatic one.
-        InheritBridgePolarity(plan, alignment, log);
+        InheritBridgePolarity(plan, alignment, log, decisions);
 
         // Stage R: descent from the bridged top toward the low end (and up
         // from it, if the caller had to bridge a non-top pair) — the same walk
@@ -1508,7 +1706,7 @@ public static class AutoAlignmentEngine
                 channel, neighbor, pair,
                 rightTimeline, allChannels, reprocess, alignment, log,
                 secondary, secondaryPair, crossTarget, sceneLock, inheritedPolarity,
-                rightUntrustedSeeds, onsetLocks);
+                rightUntrustedSeeds, onsetLocks, decisions);
         }
         for (int i = bridgeIndex - 1; i >= 0; i--)
         {
@@ -1523,7 +1721,8 @@ public static class AutoAlignmentEngine
         // scene, their junction sums pay the price — moving BOTH sides of a
         // pair by one shared delta keeps the pair's L-R timing (the scene)
         // untouched while trading junction loss between the sides.
-        RebalancePairsKeepingScene(plan, reprocess, alignment, log, onsetLocks);
+        RebalancePairsKeepingScene(
+            plan, reprocess, alignment, log, onsetLocks, decisions);
 
         // A mono channel's own final polish: its delay (and polarity) is
         // scene-invariant by construction — one shared channel moves both
@@ -1531,7 +1730,7 @@ public static class AutoAlignmentEngine
         // best compromise across its left AND right junctions is searched
         // directly. This is the only pass where the right junction gets a
         // vote on the mono channel at all.
-        ComoveMonoChannels(plan, reprocess, alignment, log, allChannels);
+        ComoveMonoChannels(plan, reprocess, alignment, log, allChannels, decisions);
 
         // Final normalization: the smallest total latency that preserves every
         // relation — the minimum proposed delay lands exactly at zero.
@@ -1556,7 +1755,32 @@ public static class AutoAlignmentEngine
 
         // The invariant the user requires of automatic delay: no driver is ever
         // inverted on one side of a pair alone.
-        EnforcePolaritySymmetry(plan, alignment, log);
+        EnforcePolaritySymmetry(plan, alignment, log, decisions);
+    }
+
+    // Post-pass bookkeeping for the user report: a pass that changes a
+    // channel AFTER its decision was recorded appends what it did, so the
+    // report's notes always describe the FINAL delay and polarity rather
+    // than the intermediate walk result.
+    private static void AmendDecision(
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions,
+        IAlignmentChannel channel,
+        string amendment)
+    {
+        if (decisions == null)
+        {
+            return;
+        }
+
+        AlignmentDecision existing = decisions.GetValueOrDefault(channel)
+            ?? new AlignmentDecision(
+                AlignmentDecisionKind.Search, Confidence: null, string.Empty);
+        decisions[channel] = existing with
+        {
+            Detail = existing.Detail.Length > 0
+                ? $"{existing.Detail}; {amendment}"
+                : amendment
+        };
     }
 
     /// <summary>
@@ -1568,6 +1792,13 @@ public static class AutoAlignmentEngine
     /// number that times a whole side.
     /// </summary>
     public const double MinimumArrivalSnrDb = 12;
+
+    // The bridge-decision confidence bands over the weaker side's arrival
+    // SNR: clean field measurements run 40-70 dB, so 30 dB still marks a
+    // comfortably measured bridge, while anything within ~6 dB of the hard
+    // refusal floor above deserves a wary Low.
+    private const double BridgeHighSnrDb = 30;
+    private const double BridgeMediumSnrDb = 18;
 
     // The scene mandate for the right descent: a channel whose pair band
     // reaches into the localization region is PINNED to the cross-side target
@@ -1656,7 +1887,8 @@ public static class AutoAlignmentEngine
     private static void InheritBridgePolarity(
         StereoAlignmentPlan plan,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
-        StringBuilder log)
+        StringBuilder log,
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
         bool leftInvert = alignment.GetValueOrDefault(plan.BridgeLeft).InvertPolarity;
         AlignmentOverride top = alignment.GetValueOrDefault(plan.BridgeRight);
@@ -1664,6 +1896,12 @@ public static class AutoAlignmentEngine
         log.AppendLine(
             $"  bridge polarity: {(leftInvert ? "inverted" : "normal")} " +
             $"(inherited from {plan.BridgeLeft.Name}; auto delay keeps L/R polarity symmetric)");
+        if (leftInvert != top.InvertPolarity)
+        {
+            AmendDecision(
+                decisions, plan.BridgeRight,
+                $"polarity inherited from {plan.BridgeLeft.Name}");
+        }
     }
 
     // Final guarantee for automatic delay: every right driver's polarity flag equals
@@ -1675,7 +1913,8 @@ public static class AutoAlignmentEngine
     private static void EnforcePolaritySymmetry(
         StereoAlignmentPlan plan,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
-        StringBuilder log)
+        StringBuilder log,
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
         void Mirror(IAlignmentChannel left, IAlignmentChannel right)
         {
@@ -1692,6 +1931,8 @@ public static class AutoAlignmentEngine
                 log.AppendLine(
                     $"  polarity symmetry: {right.Name} -> " +
                     $"{(leftInvert ? "inverted" : "normal")} to match {left.Name}");
+                AmendDecision(
+                    decisions, right, $"polarity mirrored from {left.Name}");
             }
         }
 
@@ -1721,7 +1962,8 @@ public static class AutoAlignmentEngine
         AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
-        IReadOnlyDictionary<AlignmentJunction, OnsetLockState> onsetLocks)
+        IReadOnlyDictionary<AlignmentJunction, OnsetLockState> onsetLocks,
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
         if (plan.PairLinks == null)
         {
@@ -1950,6 +2192,13 @@ public static class AutoAlignmentEngine
                     $"{bestDelta:+0.00;-0.00} ms to both sides " +
                     $"(mean dip-penalized junction loss {baseline:0.00} -> " +
                     $"{bestScore:0.00} dB; scene untouched)");
+                // The move is a bounded in-lobe polish (the lobe decision the
+                // recorded confidence describes stands), but the final delays
+                // differ from the walk's — the report must say so.
+                string pairAmendment = FormattableString.Invariant(
+                    $"pair co-move {bestDelta:+0.00;-0.00} ms (scene kept)");
+                AmendDecision(decisions, link.Left, pairAmendment);
+                AmendDecision(decisions, link.Right, pairAmendment);
             }
             else
             {
@@ -1981,7 +2230,8 @@ public static class AutoAlignmentEngine
         AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
-        IReadOnlyList<AlignmentSnapshot> shiftScope)
+        IReadOnlyList<AlignmentSnapshot> shiftScope,
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
         foreach (IAlignmentChannel mono in plan.MonoChannels)
         {
@@ -2191,6 +2441,36 @@ public static class AutoAlignmentEngine
                     $" (mean dip-penalized junction loss over both sides " +
                     $"{baseline:0.00} -> {bestScore:0.00} dB; a mono move " +
                     "cannot touch the scene)");
+                if (decisions != null)
+                {
+                    // The walk's decision (typically "reference") no longer
+                    // describes this channel: the co-move re-decided it from
+                    // BOTH sides' junctions. Its confidence maps the applied
+                    // gain onto the co-move's own field-calibrated scale —
+                    // genuine two-sided recoveries measured 0.20 and 1.36 dB
+                    // (see MonoComoveLobeHopMarginDb), an order of magnitude
+                    // above the 0.01-0.02 dB noise ties that never apply.
+                    double gainDb = bestScore - baseline;
+                    AlignmentConfidence comoveConfidence =
+                        gainDb >= 10 * MonoComoveLobeHopMarginDb
+                            ? AlignmentConfidence.High
+                            : gainDb >= MonoComoveLobeHopMarginDb
+                                ? AlignmentConfidence.Medium
+                                : AlignmentConfidence.Low;
+                    string history = decisions.GetValueOrDefault(mono)?.Detail
+                        ?? string.Empty;
+                    string comoveDetail = FormattableString.Invariant(
+                        $"mono co-move {bestDelta:+0.00;-0.00} ms") +
+                        (bestFlip ? " + invert" : "") +
+                        FormattableString.Invariant(
+                            $", both sides' junctions gain {gainDb:0.00} dB");
+                    decisions[mono] = new AlignmentDecision(
+                        AlignmentDecisionKind.Search,
+                        comoveConfidence,
+                        history.Length > 0
+                            ? $"{history}; {comoveDetail}"
+                            : comoveDetail);
+                }
             }
             else
             {

@@ -144,7 +144,8 @@ public sealed class VirtualCrossoverChannelSettings
 
     public void Validate()
     {
-        if (!double.IsFinite(GainDb) || Math.Abs(GainDb) > 60)
+        if (!double.IsFinite(GainDb) ||
+            Math.Abs(GainDb) > DspChannelChain.MaximumGainDb)
         {
             throw new InvalidDataException("The channel gain is invalid.");
         }

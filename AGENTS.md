@@ -28,8 +28,6 @@ dotnet run --project source/Resonalyze.csproj -c Tracy
 
 Platform constraint: `source/` (the app), `audio/Resonalyze.Audio`, `tests/Resonalyze.Audio.Tests/` and `tests/Resonalyze.App.Tests/` target `net10.0-windows` and only build/run on Windows (WASAPI/ASIO/MME are Windows-only). `dsp/` and `tests/Resonalyze.Dsp.Tests/` target plain `net10.0` and are cross-platform — on a Linux environment, only the DSP library and its tests can be built and run.
 
-Test data: `assets/test_data` is a git submodule ([Resonalyze-test-data](https://github.com/DIMOSUS/Resonalyze-test-data), ~230 MB of real transfer IRs). Some dsp tests read it; run `git submodule update --init assets/test_data` once per clone, or those tests fail with a message pointing here.
-
 ## Architecture
 
 Three projects, with deliberate boundaries (`Dsp` ⟂ `Audio`; the app depends on both):
@@ -75,7 +73,7 @@ callers to pre-convert to `double[]`.
 
 ## Testing Conventions
 
-Tests use xUnit. DSP tests are deterministic and synthetic: `tests/Resonalyze.Dsp.Tests/SyntheticMeasurement.cs` implements `IImpulseMeasurement` so analysis code is exercised against generated impulses/filters/delays rather than recordings. The exception is `RealMeasurementArrivalTests`, which pins field regressions against the real measurements in the `assets/test_data` submodule. App tests focus on file formats and non-UI logic (overlay files, impulse-response files, plot model construction, PDF sheets) plus the measurement layer against a fake `IAudioSessionFactory` (`tests/Resonalyze.App.Tests/Fakes/`) — sweep/averaging/retry/cancellation/device-failure/live paths with no NAudio or hardware. `tests/Resonalyze.Audio.Tests/` exercises the audio internals directly (via `InternalsVisibleTo`): PCM decoding, accumulation, session reuse, WASAPI configuration. Hardware smoke tests are marked `[Trait("Category","Hardware")]` and excluded with `--filter "Category!=Hardware"`.
+Tests use xUnit. DSP tests are deterministic and synthetic: `tests/Resonalyze.Dsp.Tests/SyntheticMeasurement.cs` implements `IImpulseMeasurement` so analysis code is exercised against generated impulses/filters/delays rather than recordings. App tests focus on file formats and non-UI logic (overlay files, impulse-response files, plot model construction, PDF sheets) plus the measurement layer against a fake `IAudioSessionFactory` (`tests/Resonalyze.App.Tests/Fakes/`) — sweep/averaging/retry/cancellation/device-failure/live paths with no NAudio or hardware. `tests/Resonalyze.Audio.Tests/` exercises the audio internals directly (via `InternalsVisibleTo`): PCM decoding, accumulation, session reuse, WASAPI configuration. Hardware smoke tests are marked `[Trait("Category","Hardware")]` and excluded with `--filter "Category!=Hardware"`.
 
 ## Code Style
 

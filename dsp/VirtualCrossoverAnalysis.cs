@@ -375,7 +375,33 @@ public static class VirtualCrossoverAnalysis
         double maxDelayMs,
         double? priorDelayMs = null,
         double priorSigmaMs = 0,
-        bool? forcedPolarity = null)
+        bool? forcedPolarity = null) =>
+        FindAlignmentCandidates(
+            variableImpulseResponse, fixedImpulseResponses, sampleRate,
+            minFrequencyHz, maxFrequencyHz, minDelayMs, maxDelayMs,
+            priorDelayMs, priorSigmaMs, forcedPolarity, out _);
+
+    /// <summary>
+    /// The overload that also reports EVERY refined local optimum (best
+    /// first, uncapped, enriched with the prior-free loss diagnostics). The
+    /// compact main list is truncated for SELECTION — at most
+    /// <see cref="MaxAlignmentCandidates"/> within <see cref="CandidateGapDb"/>
+    /// of the winner, judged on the prior-laden score — so a rival margin or
+    /// confidence computed over it alone could read "unrivaled" merely
+    /// because the rival was cut before the comparison ever ran.
+    /// </summary>
+    public static IReadOnlyList<AlignmentCandidate> FindAlignmentCandidates(
+        Complex[] variableImpulseResponse,
+        IReadOnlyList<Complex[]> fixedImpulseResponses,
+        int sampleRate,
+        double minFrequencyHz,
+        double maxFrequencyHz,
+        double minDelayMs,
+        double maxDelayMs,
+        double? priorDelayMs,
+        double priorSigmaMs,
+        bool? forcedPolarity,
+        out IReadOnlyList<AlignmentCandidate> allOptima)
     {
         List<AlignmentBin> bins = BuildAlignmentBins(
             variableImpulseResponse,
@@ -387,6 +413,7 @@ public static class VirtualCrossoverAnalysis
             maxDelayMs);
         if (bins.Count == 0)
         {
+            allOptima = Array.Empty<AlignmentCandidate>();
             return Array.Empty<AlignmentCandidate>();
         }
 
@@ -397,7 +424,8 @@ public static class VirtualCrossoverAnalysis
             maxFrequencyHz,
             priorDelayMs,
             priorSigmaMs,
-            forcedPolarity);
+            forcedPolarity,
+            out allOptima);
     }
 
     /// <summary>
@@ -1479,7 +1507,8 @@ public static class VirtualCrossoverAnalysis
         double maxFrequencyHz,
         double? priorDelayMs,
         double priorSigmaMs,
-        bool? forcedPolarity = null)
+        bool? forcedPolarity,
+        out IReadOnlyList<AlignmentCandidate> allOptima)
     {
         double weightSum = 0;
         foreach (AlignmentBin bin in bins)
@@ -1627,8 +1656,11 @@ public static class VirtualCrossoverAnalysis
         }
 
         // Best first; drop shadows of a better candidate in the same basin and
-        // everything far behind the winner.
+        // everything far behind the winner. The UNCAPPED sorted set goes out
+        // separately: rival-margin/confidence figures must see every optimum,
+        // including the ones this cut removes from the selection list.
         refined.Sort((a, b) => b.ScoreDb.CompareTo(a.ScoreDb));
+        allOptima = refined;
         var results = new List<AlignmentCandidate>();
         foreach (AlignmentCandidate candidate in refined)
         {
@@ -2077,6 +2109,111 @@ public static class VirtualCrossoverAnalysis
         }
 
         return peaks;
+    }
+
+    /// <summary>
+    /// The predicted average summation loss (dB, &lt;= 0) of a set of processed
+    /// IRs inside a frequency window, computed straight from their spectra:
+    /// the same 20·log10(|ΣH| / Σ|H|) the display read-out averages, evaluated
+    /// on a 1/24-octave grid with 1/3-octave power smoothing instead of the
+    /// display pipeline's gate and options — so an Auto delay proposal can
+    /// quote a before/after figure without touching UI state. The optional
+    /// per-channel linear gains let the caller preview gain changes the
+    /// processing chain has not applied. Null when fewer than two channels or
+    /// the window holds no grid points; a lone channel sums to itself.
+    /// </summary>
+    public static double? PredictedAverageSumLossDb(
+        IReadOnlyList<Complex[]> impulseResponses,
+        int sampleRate,
+        double minFrequencyHz,
+        double maxFrequencyHz,
+        IReadOnlyList<double>? linearGains = null)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponses);
+        if (impulseResponses.Count < 2 || maxFrequencyHz <= minFrequencyHz)
+        {
+            return null;
+        }
+
+        int length = DspMath.NextPowerOfTwo(
+            impulseResponses.Max(impulseResponse => impulseResponse.Length));
+        int bins = length / 2 + 1;
+        var sumSpectrum = new Complex[bins];
+        var channelPower = new double[impulseResponses.Count][];
+        for (int channel = 0; channel < impulseResponses.Count; channel++)
+        {
+            double gain = linearGains != null ? linearGains[channel] : 1.0;
+            var spectrum = new Complex[length];
+            Array.Copy(impulseResponses[channel], spectrum, impulseResponses[channel].Length);
+            Fourier.Forward(spectrum, FourierOptions.Matlab);
+            var power = new double[bins];
+            for (int bin = 0; bin < bins; bin++)
+            {
+                Complex value = spectrum[bin] * gain;
+                sumSpectrum[bin] += value;
+                power[bin] = value.Real * value.Real + value.Imaginary * value.Imaginary;
+            }
+
+            channelPower[channel] = power;
+        }
+
+        var sumPower = new double[bins];
+        for (int bin = 0; bin < bins; bin++)
+        {
+            sumPower[bin] =
+                sumSpectrum[bin].Real * sumSpectrum[bin].Real +
+                sumSpectrum[bin].Imaginary * sumSpectrum[bin].Imaginary;
+        }
+
+        // 1/24-octave grid, each point a plain power mean over ±1/6 octave:
+        // wide enough that a sharp cancellation null reads as the audible
+        // notch it is instead of a -infinity bin, mirroring the smoothed
+        // display curves the panel read-out averages.
+        const double gridStepOctaves = 1.0 / 24.0;
+        double smoothingFactor = Math.Pow(2.0, 1.0 / 6.0);
+        double binWidthHz = (double)sampleRate / length;
+        double MeanPower(double[] power, double centerHz)
+        {
+            int first = Math.Max(1, (int)Math.Ceiling(centerHz / smoothingFactor / binWidthHz));
+            int last = Math.Min(bins - 1, (int)Math.Floor(centerHz * smoothingFactor / binWidthHz));
+            if (last < first)
+            {
+                return 0;
+            }
+
+            double sum = 0;
+            for (int bin = first; bin <= last; bin++)
+            {
+                sum += power[bin];
+            }
+
+            return sum / (last - first + 1);
+        }
+
+        double totalDb = 0;
+        int samples = 0;
+        int steps = (int)Math.Floor(
+            Math.Log2(maxFrequencyHz / minFrequencyHz) / gridStepOctaves);
+        for (int i = 0; i <= steps; i++)
+        {
+            double frequency = minFrequencyHz * Math.Pow(2.0, i * gridStepOctaves);
+            double magnitudeSum = 0;
+            foreach (double[] power in channelPower)
+            {
+                magnitudeSum += Math.Sqrt(MeanPower(power, frequency));
+            }
+
+            double coherent = Math.Sqrt(MeanPower(sumPower, frequency));
+            if (magnitudeSum <= 0 || coherent <= 0)
+            {
+                continue;
+            }
+
+            totalDb += 20.0 * Math.Log10(coherent / magnitudeSum);
+            samples++;
+        }
+
+        return samples > 0 ? totalDb / samples : null;
     }
 
     /// <summary>

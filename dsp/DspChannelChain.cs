@@ -19,6 +19,14 @@ public sealed record DspChannelChain(
     EqualizationCurve? Peq = null,
     AllPassSpec? AllPass = null)
 {
+    /// <summary>
+    /// The supported |GainDb| range of a channel chain — the ONE figure the
+    /// project validator, the gain-balance proposals and the UI clamp must
+    /// agree on, so an automatic proposal can never produce a setting the
+    /// project file refuses to save.
+    /// </summary>
+    public const double MaximumGainDb = 60;
+
     public static DspChannelChain Identity { get; } = new();
 
     /// <summary>

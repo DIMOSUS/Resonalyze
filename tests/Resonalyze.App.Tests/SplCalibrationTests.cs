@@ -207,7 +207,12 @@ public sealed class SplCalibrationTests
                 request,
                 frameLength: 2048,
                 SplToneCriteria.Default,
-                TimeSpan.FromMilliseconds(300),
+                // The fake session ends the capture itself after its fixed frame
+                // count, so the duration is only a hang guard and must sit far
+                // above CI scheduling noise: a 300 ms budget lost the race on a
+                // stalled runner and cancelled the session BEFORE its
+                // discontinuity frame, reading Overran == false.
+                TimeSpan.FromSeconds(30),
                 progress: null,
                 CancellationToken.None);
 

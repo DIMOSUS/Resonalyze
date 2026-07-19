@@ -15,6 +15,59 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void PredictedAverageSumLossDb_AlignedImpulsesSumWithoutLoss()
+    {
+        Complex[] a = UnitImpulse(4_096, 100);
+        Complex[] b = UnitImpulse(4_096, 100);
+
+        double? loss = VirtualCrossoverAnalysis.PredictedAverageSumLossDb(
+            [a, b], SampleRate, 500, 2_000);
+
+        Assert.NotNull(loss);
+        Assert.InRange(loss!.Value, -0.05, 0.001);
+    }
+
+    [Fact]
+    public void PredictedAverageSumLossDb_HalfPeriodOffsetLosesEnergy()
+    {
+        // 0.5 ms is half a period at 1 kHz: around the band center the two
+        // impulses cancel, and the averaged loss over the octave-wide window
+        // must show it clearly.
+        Complex[] a = UnitImpulse(4_096, 100);
+        Complex[] b = UnitImpulse(4_096, 100 + SampleRate / 2_000);
+
+        double? loss = VirtualCrossoverAnalysis.PredictedAverageSumLossDb(
+            [a, b], SampleRate, 700, 1_400);
+
+        Assert.NotNull(loss);
+        Assert.True(loss!.Value < -3.0, $"expected a clear loss, got {loss} dB");
+    }
+
+    [Fact]
+    public void PredictedAverageSumLossDb_GainScaleShiftsTheBalance()
+    {
+        // With one channel scaled to near-zero the "sum" degenerates to the
+        // other channel alone: no cancellation is possible, so the misaligned
+        // pair's deep loss must mostly disappear.
+        Complex[] a = UnitImpulse(4_096, 100);
+        Complex[] b = UnitImpulse(4_096, 100 + SampleRate / 2_000);
+
+        double? balanced = VirtualCrossoverAnalysis.PredictedAverageSumLossDb(
+            [a, b], SampleRate, 700, 1_400);
+        double? lopsided = VirtualCrossoverAnalysis.PredictedAverageSumLossDb(
+            [a, b], SampleRate, 700, 1_400, [1.0, 0.01]);
+
+        Assert.True(lopsided!.Value > balanced!.Value + 3.0);
+    }
+
+    [Fact]
+    public void PredictedAverageSumLossDb_SingleChannelHasNoSum()
+    {
+        Assert.Null(VirtualCrossoverAnalysis.PredictedAverageSumLossDb(
+            [UnitImpulse(4_096, 100)], SampleRate, 500, 2_000));
+    }
+
+    [Fact]
     public void ApplyChain_IdentityKeepsTheImpulse()
     {
         Complex[] ir = UnitImpulse(2_048, 100);

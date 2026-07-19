@@ -63,7 +63,8 @@ public sealed class AutoAlignmentEngineTests
         TestChannel[] byBand,
         double[] crossoversHz,
         StringBuilder log,
-        (double LowHz, double HighHz)[]? bands = null)
+        (double LowHz, double HighHz)[]? bands = null,
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
         var snapshots = byBand.ToDictionary(
             channel => channel,
@@ -103,8 +104,34 @@ public sealed class AutoAlignmentEngineTests
             junctions,
             Reprocess,
             alignment,
-            log);
+            log,
+            decisions);
         return alignment;
+    }
+
+    [Fact]
+    public void Compute_ReportsPerChannelDecisions()
+    {
+        var woofer = new TestChannel("W", DelayedImpulse(1.0));
+        var tweeter = new TestChannel("T", DelayedImpulse(0.0));
+        var log = new StringBuilder();
+        var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
+
+        Run([woofer, tweeter], [1_000], log, decisions: decisions);
+
+        // The reference is not searched — nothing was chosen, so it carries
+        // the Reference kind and no confidence.
+        Assert.Equal(AlignmentDecisionKind.Reference, decisions[woofer].Kind);
+        Assert.Null(decisions[woofer].Confidence);
+        Assert.Contains("reference", decisions[woofer].Detail);
+        // The clean synthetic junction has razor-sharp fronts, so the onset
+        // lock pins the tweeter: the decision reports the Locked kind (the
+        // constraint chose, not the acoustics) with no confidence, naming the
+        // junction and the constraint in the detail.
+        Assert.Equal(AlignmentDecisionKind.Locked, decisions[tweeter].Kind);
+        Assert.Null(decisions[tweeter].Confidence);
+        Assert.Contains("vs W", decisions[tweeter].Detail);
+        Assert.Contains("onset-locked", decisions[tweeter].Detail);
     }
 
     [Fact]

@@ -68,6 +68,83 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void EffectiveOverlapOctaves_IdenticalBroadbandDriversSpanTheWholeBand()
+    {
+        Complex[] a = UnitImpulse(4_096, 100);
+        Complex[] b = UnitImpulse(4_096, 100);
+
+        double octaves = VirtualCrossoverAnalysis.EffectiveOverlapOctaves(
+            b, [a], SampleRate, 500, 2_000);
+
+        // Two flat, equal spectra overlap perfectly (O=1) across the entire
+        // band, whose nominal width is log2(2000/500) = 2 octaves.
+        Assert.InRange(octaves, 1.7, 2.05);
+    }
+
+    [Fact]
+    public void EffectiveOverlapOctaves_DisjointDriversBarelyOverlap()
+    {
+        // The fixed driver rolls off almost two octaves below the band; the
+        // variable is flat. Across 500-2000 Hz only one driver radiates, so
+        // the genuinely shared band collapses toward zero — the degenerate
+        // hand-over the engine's trust floor is there to catch.
+        Complex[] fixedIr = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(4_096, 100),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.LowPass,
+                LowPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.Butterworth, 125, 36))),
+            SampleRate);
+        Complex[] variableIr = UnitImpulse(4_096, 100);
+
+        double octaves = VirtualCrossoverAnalysis.EffectiveOverlapOctaves(
+            variableIr, [fixedIr], SampleRate, 500, 2_000);
+
+        Assert.True(octaves < 0.1, $"expected near-zero overlap, got {octaves:0.000}");
+    }
+
+    [Fact]
+    public void EffectiveOverlapOctaves_CrossoverPairKeepsAFractionOfTheBand()
+    {
+        // A real hand-over: a low-pass and a high-pass sharing a 1 kHz corner.
+        // The two genuinely overlap around the corner but each rolls off alone
+        // toward the band edges, so the effective overlap is a healthy fraction
+        // of the nominal 2 octaves — comfortably above the trust floor and well
+        // clear of the disjoint case.
+        Complex[] lower = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(4_096, 100),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.LowPass,
+                LowPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))),
+            SampleRate);
+        Complex[] upper = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(4_096, 100),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.HighPass,
+                HighPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))),
+            SampleRate);
+
+        double octaves = VirtualCrossoverAnalysis.EffectiveOverlapOctaves(
+            upper, [lower], SampleRate, 500, 2_000);
+
+        Assert.InRange(octaves, 0.3, 1.4);
+    }
+
+    [Fact]
+    public void EffectiveOverlapOctaves_SilentVariableHasNoOverlap()
+    {
+        Complex[] fixedIr = UnitImpulse(4_096, 100);
+        var silent = new Complex[4_096];
+
+        double octaves = VirtualCrossoverAnalysis.EffectiveOverlapOctaves(
+            silent, [fixedIr], SampleRate, 500, 2_000);
+
+        Assert.Equal(0.0, octaves, 6);
+    }
+
+    [Fact]
     public void ApplyChain_IdentityKeepsTheImpulse()
     {
         Complex[] ir = UnitImpulse(2_048, 100);

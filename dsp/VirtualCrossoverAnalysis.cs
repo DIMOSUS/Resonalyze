@@ -1346,6 +1346,60 @@ public static class VirtualCrossoverAnalysis
         return bins;
     }
 
+    /// <summary>
+    /// How many octaves of the pair band the two drivers GENUINELY share, as a
+    /// confidence figure for a junction delay: the integral of the per-bin
+    /// overlap O(f) = 2·min(|F|,|V|)/(|F|+|V|) over log-frequency, using the
+    /// same direct-sound gate and combined-fixed spectra as
+    /// <see cref="BuildAlignmentBins"/>. O(f) is 1 where the two contribute
+    /// equally and falls to 0 where one drowns the other, so this measures the
+    /// width of the region that actually informs the delay — not the nominal
+    /// band, most of which is one driver rolling off alone. A delay fitted over
+    /// a sliver of real overlap is a precise number resting on almost no
+    /// evidence; callers gate trust on this rather than report it as measured.
+    /// The delay SEARCH itself needs no such weight (the cross term conj(F)·V it
+    /// correlates already carries |F|·|V|, so a silent driver's bins vote near
+    /// zero), which is why this is a confidence read-out, not a search change.
+    /// </summary>
+    public static double EffectiveOverlapOctaves(
+        Complex[] variableImpulseResponse,
+        IReadOnlyList<Complex[]> fixedImpulseResponses,
+        int sampleRate,
+        double minFrequencyHz,
+        double maxFrequencyHz)
+    {
+        // The delay bounds only shape BuildAlignmentBins' argument validation
+        // (the bins themselves are delay-free); any valid span works, as in
+        // SumLossEvaluator.Create.
+        List<AlignmentBin> bins = BuildAlignmentBins(
+            variableImpulseResponse,
+            fixedImpulseResponses,
+            sampleRate,
+            minFrequencyHz,
+            maxFrequencyHz,
+            minDelayMs: -1,
+            maxDelayMs: 1);
+
+        double octaves = 0;
+        for (int i = 0; i < bins.Count - 1; i++)
+        {
+            AlignmentBin bin = bins[i];
+            double fixedMag = bin.FixedSum.Magnitude;
+            double variableMag = bin.Variable.Magnitude;
+            double sum = fixedMag + variableMag;
+            double overlap = sum > 0
+                ? 2.0 * Math.Min(fixedMag, variableMag) / sum
+                : 0.0;
+            // LogWeight is 1/f, so 1/LogWeight recovers the bin frequency; the
+            // step to the next retained bin is this stretch of log-frequency.
+            double frequency = 1.0 / bin.LogWeight;
+            double nextFrequency = 1.0 / bins[i + 1].LogWeight;
+            octaves += overlap * Math.Log2(nextFrequency / frequency);
+        }
+
+        return octaves;
+    }
+
     // The per-bin cross spectrum conj(F)·V for the correlation-based delay
     // search — <see cref="FindBestDelayMs"/> keeps the correlation objective
     // because without the polarity freedom the half-period impostor cannot win.

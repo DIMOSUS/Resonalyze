@@ -351,18 +351,13 @@ the output turned down and verify the signal path before running a measurement.
 
 ## Quick Start
 
-Clone the repository together with the measurement-data submodule
-([Resonalyze-test-data](https://github.com/DIMOSUS/Resonalyze-test-data),
-~230 MB of real transfer IRs that back the regression tests):
+Clone the repository:
 
 ```powershell
-git clone --recurse-submodules https://github.com/DIMOSUS/Resonalyze.git
-# or, in an existing clone:
-git submodule update --init assets/test_data
+git clone https://github.com/DIMOSUS/Resonalyze.git
 ```
 
-The app builds and runs without the submodule — only the real-data tests in
-`Resonalyze.Dsp.Tests` need it. Then open:
+Then open:
 
 ```text
 source/Resonalyze.sln

@@ -312,6 +312,30 @@ public sealed class GainBalanceEngineTests
     }
 
     [Fact]
+    public void Compute_ClampsProposalToSupportedGainRange()
+    {
+        // A 70 dB level split: the credibility gate skips the quiet capture
+        // outright (first line of defense), and independently no proposal
+        // may ever leave the chain gain range — the ONE shared constant the
+        // project validator enforces, so an applied proposal can never
+        // produce a project that refuses to save.
+        var loud = Input("loud", 1.0);
+        var quiet = Input("quiet", Math.Pow(10, -70.0 / 20));
+        var log = new StringBuilder();
+
+        IReadOnlyList<GainBalanceResult> results = GainBalanceEngine.Compute(
+            [loud, quiet], sceneOffsetMs: 0, log);
+
+        Assert.All(results, result => Assert.True(
+            result.ProposedGainDb >= -GainBalanceEngine.MaxProposedCutDb &&
+            result.ProposedGainDb <= 0,
+            $"{result.Channel.Name}: {result.ProposedGainDb} dB out of range"));
+        Assert.False(results[1].Adjusted);
+        Assert.Equal(
+            DspChannelChain.MaximumGainDb, GainBalanceEngine.MaxProposedCutDb, 9);
+    }
+
+    [Fact]
     public void Compute_DeadRightSideSkipsItsPairToo()
     {
         // The gate and the pair rule compose: a dead right capture is gated,

@@ -2134,21 +2134,44 @@ public partial class VirtualCrossoverPanel : UserControl
         await ApplyConfirmedAutoDelayAsync(result);
     }
 
-    // Compute errors surface inside the dialog; this guards the apply/metric
-    // stage (an async-void caller would otherwise crash the process on an
-    // unhandled exception after the await).
+    // Compute errors surface inside the dialog; here the confirmed proposal
+    // is COMMITTED first and the outcome metric is appended afterwards as a
+    // separate best-effort stage (also guarding the async-void caller from
+    // an unhandled exception after the await). A metric failure after the
+    // settings are already written must not read as a failed Apply — the
+    // user would naturally re-apply and only add confusion.
     private async Task ApplyConfirmedAutoDelayAsync(AutoDelayRunResult result)
     {
         try
         {
-            await ApplyAutoDelayResultAsync(result);
+            CommitAutoDelayResult(result);
         }
         catch (Exception exception)
         {
             System.Diagnostics.Debug.WriteLine($"Auto delay apply failed: {exception}");
             if (!IsDisposed && IsHandleCreated)
             {
-                ShowError("Auto delay failed.", exception.Message);
+                ShowError("Auto delay apply failed.", exception.Message);
+            }
+
+            return;
+        }
+
+        try
+        {
+            await AppendOutcomeMetricAsync(result);
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"Auto delay outcome metric failed: {exception}");
+            if (!IsDisposed && IsHandleCreated)
+            {
+                ShowError(
+                    "Auto delay was applied, but the outcome metric could not " +
+                    "be computed.",
+                    "The settings are in place; only the diagnostic log is " +
+                    "missing its final metric.\r\n\r\n" + exception.Message);
             }
         }
     }
@@ -2350,10 +2373,13 @@ public partial class VirtualCrossoverPanel : UserControl
     }
 
     // Writes the CONFIRMED proposal into the channels and their controls,
-    // persists, redraws, and closes the diagnostic log with the resulting
-    // metric. Reached only through the dialog's Apply — Discard never gets
-    // here, so the channels keep their previous settings.
-    private async Task ApplyAutoDelayResultAsync(AutoDelayRunResult result)
+    // persists and redraws — the transactional part of Apply, synchronous so
+    // it either fully lands or fails before anything is half-written.
+    // Reached only through the dialog's Apply — Discard never gets here, so
+    // the channels keep their previous settings. The diagnostic log is
+    // rewritten with the results immediately: a later metric failure must
+    // not lose them.
+    private void CommitAutoDelayResult(AutoDelayRunResult result)
     {
         foreach (AutoDelayChannelOutcome outcome in result.Outcomes)
         {
@@ -2388,6 +2414,13 @@ public partial class VirtualCrossoverPanel : UserControl
 
         ScheduleSave();
         RedrawAll();
+        WriteAlignmentLog(result.Log.ToString());
+    }
+
+    // The best-effort epilogue of Apply: recompute the metric from the
+    // just-applied settings and close the diagnostic log with it.
+    private async Task AppendOutcomeMetricAsync(AutoDelayRunResult result)
+    {
         // RedrawAll pushes the read-out asynchronously (the ApplyChain FFTs run off
         // the UI thread), so recompute the metric synchronously from the just-
         // applied settings so the log ends with this run's true outcome. The

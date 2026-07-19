@@ -114,12 +114,12 @@ public static class GainBalanceEngine
     public const double MaxLevelBelowLoudestDb = 30;
 
     /// <summary>
-    /// The hard cap on a proposed cut, mirroring the settings model's
-    /// |GainDb| &lt;= 60 validation — a proposal outside it would fail the
-    /// project save silently. The credibility gate above keeps real solves
-    /// far from this; the clamp is the independent invariant guard.
+    /// The hard cap on a proposed cut — the shared chain gain range, so a
+    /// proposal can never produce a setting the project validator refuses to
+    /// save. The credibility gate above keeps real solves far from this; the
+    /// clamp is the independent invariant guard.
     /// </summary>
-    public const double MaxProposedCutDb = 60;
+    public const double MaxProposedCutDb = DspChannelChain.MaximumGainDb;
 
     /// <summary>
     /// The intentional L/R level tilt (dB) for a stereo scene offset (ms):

@@ -21,9 +21,21 @@ namespace Resonalyze.Dsp;
 /// 1 = perfectly in phase across the band, −1 = perfectly out of phase.
 /// </param>
 /// <param name="PhaseAtCrossoverDeg">
-/// The fitted phase of lower minus upper at the crossover frequency, wrapped to
-/// ±180°. Near 0° the junction is phase-aligned; near ±180° the fix is a
-/// polarity flip, not a delay.
+/// The phase of lower minus upper AT the crossover, wrapped to ±180°: the
+/// weighted circular mean over a narrow window around fc — deliberately a
+/// local measurement, not the straight-line fit's intercept. The intercept
+/// extrapolates through whatever interference notches and spectral gaps bend
+/// the band's phase; on a real mid/tweeter junction it read +158° where the
+/// handover itself stood near −15°. Near 0° the junction is phase-aligned;
+/// near ±180° the fix is a polarity flip, not a delay.
+/// </param>
+/// <param name="PhaseConsistency">
+/// The mean resultant length R (0..1) of that circular mean: how much the
+/// window's bins agree on one phase. Near 1 the φ figure is clean; below
+/// <see cref="JunctionPhaseAlignment.MinimumPhaseConsistency"/> it is mush
+/// (a notch or gap sits right at the handover) and must not be presented as
+/// a number. Zero when no usable energy exists around fc at all (then
+/// <paramref name="PhaseAtCrossoverDeg"/> falls back to the fit intercept).
 /// </param>
 /// <param name="BestExtraDelayMs">
 /// The extra delay ON THE LOWER channel that maximizes the band coherence
@@ -55,6 +67,7 @@ namespace Resonalyze.Dsp;
 public sealed record JunctionPhaseResult(
     double CurrentScore,
     double PhaseAtCrossoverDeg,
+    double PhaseConsistency,
     double BestExtraDelayMs,
     double BestScore,
     double? RivalExtraDelayMs,
@@ -109,6 +122,20 @@ public static class JunctionPhaseAlignment
     // fraction of a period away from the global one; closer bumps are texture
     // of the same lobe.
     private const double RivalMinimumSeparationPeriods = 0.4;
+
+    // The half-width (in octaves) of the window around the crossover that the
+    // φ readout is measured over. Wide enough to average interference texture,
+    // narrow enough to stay a statement about the handover itself; on the
+    // field junction that exposed the intercept artifact, widths from 1/12 to
+    // 1/3 octave all agreed within a few degrees.
+    private const double PhaseWindowOctaves = 1.0 / 6.0;
+
+    /// <summary>
+    /// The <see cref="JunctionPhaseResult.PhaseConsistency"/> below which the
+    /// φ figure must not be presented as a number — the ONE threshold the
+    /// display layers share.
+    /// </summary>
+    public const double MinimumPhaseConsistency = 0.5;
 
     /// <summary>
     /// The steady-state analysis spectrum of one processed IR: the first
@@ -249,8 +276,43 @@ public static class JunctionPhaseAlignment
         (double slope, double intercept, double rmsRad) =
             FitWeightedLine(frequencies, phases, weights);
         double fitDelayMs = -slope / Math.Tau * 1000.0;
-        double phaseAtCrossover = intercept + slope * crossoverHz;
-        phaseAtCrossover -= Math.Tau * Math.Round(phaseAtCrossover / Math.Tau);
+
+        // φ at the crossover: the weighted circular mean over a narrow window
+        // around fc. Local on purpose — see the result record's remarks. The
+        // unwrapped phases feed cos/sin directly, which is branch-blind.
+        double windowLowHz = crossoverHz * Math.Pow(2.0, -PhaseWindowOctaves);
+        double windowHighHz = crossoverHz * Math.Pow(2.0, PhaseWindowOctaves);
+        double sumCos = 0.0, sumSin = 0.0, sumWindowWeight = 0.0;
+        for (int k = 0; k < frequencies.Count; k++)
+        {
+            if (frequencies[k] < windowLowHz || frequencies[k] > windowHighHz)
+            {
+                continue;
+            }
+
+            sumCos += weights[k] * Math.Cos(phases[k]);
+            sumSin += weights[k] * Math.Sin(phases[k]);
+            sumWindowWeight += weights[k];
+        }
+
+        double phaseAtCrossover;
+        double phaseConsistency;
+        if (sumWindowWeight > 0.0)
+        {
+            phaseAtCrossover = Math.Atan2(sumSin, sumCos);
+            phaseConsistency =
+                Math.Sqrt(sumCos * sumCos + sumSin * sumSin) / sumWindowWeight;
+        }
+        else
+        {
+            // A spectral-gap junction can leave the fc window with no gated
+            // bins at all; fall back to the fit's intercept but mark the
+            // figure untrustworthy rather than presenting it as measured.
+            phaseAtCrossover = intercept + slope * crossoverHz;
+            phaseAtCrossover -=
+                Math.Tau * Math.Round(phaseAtCrossover / Math.Tau);
+            phaseConsistency = 0.0;
+        }
 
         double periodMs = 1000.0 / crossoverHz;
         double stepMs = periodMs / SweepStepsPerPeriod;
@@ -281,6 +343,7 @@ public static class JunctionPhaseAlignment
         return new JunctionPhaseResult(
             CurrentScore: Score(frequencies, phases, weights, 0.0),
             PhaseAtCrossoverDeg: phaseAtCrossover * 180.0 / Math.PI,
+            PhaseConsistency: phaseConsistency,
             BestExtraDelayMs: bestExtraMs,
             BestScore: bestScore,
             RivalExtraDelayMs: rivalExtraMs,

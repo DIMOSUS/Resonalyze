@@ -1521,9 +1521,16 @@ cross-phase — the regime sustained program material actually sums in.
 (Deliberately NOT the direct-sound / FDW phase: on field measurements the
 room adds several milliseconds of apparent group delay at subwoofer
 frequencies, so a direct-sound read would recommend a confidently wrong
-delay.) Three figures per junction: **φfc** — the fitted phase of the lower
-channel minus the upper at the crossover frequency (≈0° means the handover
-is phase-aligned; near ±180° the cure is a polarity flip, not a delay);
+delay.) Three figures per junction: **φfc** — the phase of the lower
+channel minus the upper AT the crossover: a weighted circular mean over a
+narrow (±1/6-octave) window around fc, deliberately a local measurement —
+a straight-line fit's intercept extrapolates through whatever interference
+notches and spectral gaps bend the band's phase, and on a real mid/tweeter
+junction read +158° where the handover itself stood near −15°. Its
+consistency R (how much the window's bins agree, shown in the tooltip)
+gates the figure: a low R dashes the column instead of presenting mush
+(≈0° means the handover is phase-aligned; near ±180° the cure is a
+polarity flip, not a delay);
 **fix ms** — the extra delay on the pair's LOWER channel that would maximize
 the overlap-band coherence, relative to the current settings (positive:
 delay it further); and **lobe** — how decisively that optimum beats the

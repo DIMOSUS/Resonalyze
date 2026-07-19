@@ -154,7 +154,8 @@ public sealed class VirtualCrossoverMetricTests
     private static VirtualCrossoverMetric.PhaseEntry PhaseJunction(
         double? lobeMargin = 0.19,
         double? rivalExtraMs = -12.20,
-        double? rivalScore = 0.78) =>
+        double? rivalScore = 0.78,
+        double phaseConsistency = 0.93) =>
         new(
             "A/B",
             "A",
@@ -164,6 +165,7 @@ public sealed class VirtualCrossoverMetricTests
             new Resonalyze.Dsp.JunctionPhaseResult(
                 CurrentScore: 0.96,
                 PhaseAtCrossoverDeg: -3.4,
+                PhaseConsistency: phaseConsistency,
                 BestExtraDelayMs: -0.30,
                 BestScore: 0.97,
                 RivalExtraDelayMs: rivalExtraMs,
@@ -181,9 +183,29 @@ public sealed class VirtualCrossoverMetricTests
 
             Assert.Equal(
                 "Junction phase\r\n" +
-                "       φfc fix ms  lobe\r\n" +
+                "       φfc  fix ms  lobe\r\n" +
                 "A/B     -3°  -0.30  0.19",
                 text);
+        });
+    }
+
+    [Fact]
+    public void FormatPhaseCompact_RendersARoundedZeroFixUnsigned()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            // Since the .NET Core 3.0 signed-zero change, a negative value that
+            // rounds to zero renders through a TWO-section format as "-+0.00";
+            // the three-section form must show a plain unsigned zero.
+            VirtualCrossoverMetric.PhaseEntry entry = PhaseJunction() with
+            {
+                Result = PhaseJunction().Result with { BestExtraDelayMs = -0.004 }
+            };
+
+            string text = VirtualCrossoverMetric.FormatPhaseCompact([entry]);
+
+            Assert.Contains("A/B     -3°   0.00  0.19", text);
+            Assert.DoesNotContain("-+", text);
         });
     }
 
@@ -213,6 +235,33 @@ public sealed class VirtualCrossoverMetricTests
     }
 
     [Fact]
+    public void FormatPhaseCompact_DashesAnInconsistentPhase()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            // A notch or spectral gap at the handover leaves the fc window's
+            // bins disagreeing; the φ column must dash, not show mush.
+            string text = VirtualCrossoverMetric.FormatPhaseCompact(
+                [PhaseJunction(phaseConsistency: 0.31)]);
+
+            Assert.Contains("A/B       —  -0.30  0.19", text);
+        });
+    }
+
+    [Fact]
+    public void FormatPhaseDetail_ExplainsAnInconsistentPhase()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            string text = VirtualCrossoverMetric.FormatPhaseDetail(
+                [PhaseJunction(phaseConsistency: 0.31)]);
+
+            Assert.Contains("φ unreliable (R 0.31", text);
+            Assert.DoesNotContain("φ -3°", text);
+        });
+    }
+
+    [Fact]
     public void FormatPhaseCompact_EmptyListRendersNothing()
     {
         Assert.Equal(
@@ -228,7 +277,7 @@ public sealed class VirtualCrossoverMetricTests
             string text = VirtualCrossoverMetric.FormatPhaseDetail([PhaseJunction()]);
 
             Assert.Contains(
-                "A/B @ 80 Hz: φ -3° at fc; coherence 0.96 now, " +
+                "A/B @ 80 Hz: φ -3° at fc (R 0.93); coherence 0.96 now, " +
                 "best 0.97 at -0.30 ms on A;",
                 text);
             Assert.Contains(

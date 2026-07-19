@@ -55,9 +55,37 @@ public sealed class JunctionPhaseAlignmentTests
 
         Assert.InRange(result.CurrentScore, 0.95, 1.0);
         Assert.InRange(result.PhaseAtCrossoverDeg, -5.0, 5.0);
+        Assert.InRange(result.PhaseConsistency, 0.9, 1.0);
         Assert.InRange(result.BestExtraDelayMs, -0.05, 0.05);
         Assert.True(result.BestScore >= result.CurrentScore - 1e-9);
         Assert.InRange(result.FitDelayMs, -0.05, 0.05);
+    }
+
+    [Fact]
+    public void Analyze_PhaseAtCrossoverTracksTheTrueHandoverPhaseUnderABentBand()
+    {
+        // A deep narrow notch inside the overlap band bends the band's phase —
+        // and a straight-line fit's intercept extrapolates that bend into fc
+        // (a real mid/tweeter junction read +158° that way while the handover
+        // stood near -15°). The LOCAL φ must instead track the true cross-phase
+        // of the chains at the crossover, which for clean synthetic inputs is
+        // known in closed form from the chain responses.
+        var lowerChain = new DspChannelChain(Crossover: LowPass);
+        var upperChain = new DspChannelChain(
+            Crossover: HighPass,
+            Peq: new EqualizationCurve([new PeqBand(300, 20, -30)], 0));
+
+        JunctionPhaseResult result = AnalyzeJunction(lowerChain, upperChain);
+
+        System.Numerics.Complex trueCross =
+            lowerChain.Response(CrossoverHz, SampleRate) *
+            System.Numerics.Complex.Conjugate(
+                upperChain.Response(CrossoverHz, SampleRate));
+        double expectedDeg = trueCross.Phase * 180.0 / Math.PI;
+
+        Assert.InRange(
+            result.PhaseAtCrossoverDeg, expectedDeg - 5.0, expectedDeg + 5.0);
+        Assert.InRange(result.PhaseConsistency, 0.9, 1.0);
     }
 
     [Fact]
@@ -156,6 +184,30 @@ public sealed class JunctionPhaseAlignmentTests
                 CrossoverHz,
                 BandLowHz,
                 BandHighHz));
+    }
+
+    [Fact]
+    public void Analyze_IsInvariantToACommonDelayShift()
+    {
+        // A delay added to EVERY channel is a pure translation of the scene:
+        // the cross-phase, the sweep landscape and the fit must not move.
+        // (Field-checked on real cabin IRs with +1.0 and +2.5 ms shifts —
+        // every figure held to the last displayed digit.)
+        JunctionPhaseResult reference = AnalyzeJunction(
+            new DspChannelChain(DelayMs: 0.40, Crossover: LowPass),
+            new DspChannelChain(DelayMs: 2.03, Crossover: HighPass));
+        JunctionPhaseResult shifted = AnalyzeJunction(
+            new DspChannelChain(DelayMs: 1.40, Crossover: LowPass),
+            new DspChannelChain(DelayMs: 3.03, Crossover: HighPass));
+
+        Assert.Equal(reference.CurrentScore, shifted.CurrentScore, 3);
+        Assert.Equal(reference.BestScore, shifted.BestScore, 3);
+        Assert.Equal(reference.BestExtraDelayMs, shifted.BestExtraDelayMs, 2);
+        Assert.Equal(
+            reference.PhaseAtCrossoverDeg, shifted.PhaseAtCrossoverDeg, 0);
+        Assert.Equal(reference.PhaseConsistency, shifted.PhaseConsistency, 3);
+        Assert.Equal(reference.FitDelayMs, shifted.FitDelayMs, 2);
+        Assert.Equal(reference.FitRmsDeg, shifted.FitRmsDeg, 0);
     }
 
     [Fact]

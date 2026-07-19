@@ -114,8 +114,10 @@ internal static class VirtualCrossoverMetric
             "Arrival (ms)\r\n         L      R  \u0394 L\u2212R\r\n");
         foreach (StereoDelta delta in deltas)
         {
+            // Three sections, like the junction-phase figures: a negative delta
+            // that rounds to zero must not render as "-+0.00".
             string deltaText = delta.DeltaMs.HasValue
-                ? $"{delta.DeltaMs.Value,7:+0.00;-0.00}"
+                ? $"{delta.DeltaMs.Value,7:+0.00;-0.00;0.00}"
                 : "      \u2014";
             builder.AppendLine(
                 $"{delta.Channel.PadRight(3)}" +
@@ -127,7 +129,7 @@ internal static class VirtualCrossoverMetric
         foreach (StereoDelta delta in deltas)
         {
             string levelText = delta.LevelDeltaDb.HasValue
-                ? $"{delta.LevelDeltaDb.Value,7:+0.0;-0.0}"
+                ? $"{delta.LevelDeltaDb.Value,7:+0.0;-0.0;0.0}"
                 : "      \u2014";
             builder.AppendLine($"{delta.Channel.PadRight(3)}{levelText}");
         }
@@ -160,10 +162,10 @@ internal static class VirtualCrossoverMetric
                 }
 
                 string deltaText = delta.DeltaMs.HasValue
-                    ? $"{delta.DeltaMs.Value:+0.000;-0.000} ms"
+                    ? $"{delta.DeltaMs.Value:+0.000;-0.000;0.000} ms"
                     : "\u2014";
                 string levelText = delta.LevelDeltaDb.HasValue
-                    ? $", level {delta.LevelDeltaDb.Value:+0.0;-0.0} dB"
+                    ? $", level {delta.LevelDeltaDb.Value:+0.0;-0.0;0.0} dB"
                     : string.Empty;
                 return $"{delta.Channel}: L {Side(delta.LeftMs)} / " +
                     $"R {Side(delta.RightMs)} ms, \u0394 {deltaText}{levelText} " +
@@ -212,12 +214,21 @@ internal static class VirtualCrossoverMetric
         }
 
         var builder = new System.Text.StringBuilder(
-            "Junction phase\r\n       φfc fix ms  lobe\r\n");
+            "Junction phase\r\n       φfc  fix ms  lobe\r\n");
         foreach (PhaseEntry entry in entries)
         {
             JunctionPhaseResult result = entry.Result;
-            string phase = $"{result.PhaseAtCrossoverDeg,4:+0;-0;0}°";
-            string fix = $"{result.BestExtraDelayMs,6:+0.00;-0.00}";
+            // Signed values format through THREE sections on purpose: since the
+            // .NET Core 3.0 signed-zero change, a negative value that rounds to
+            // zero renders through the two-section form as "-+0.00" (the minus
+            // is prepended to the positive section's literal plus).
+            // A φ whose window bins do not agree (a notch or spectral gap at
+            // the handover) is dashed instead of shown as a confident number.
+            string phase =
+                result.PhaseConsistency >= JunctionPhaseAlignment.MinimumPhaseConsistency
+                    ? $"{result.PhaseAtCrossoverDeg,4:+0;-0;0}°"
+                    : "    —";
+            string fix = $"{result.BestExtraDelayMs,6:+0.00;-0.00;0.00}";
             string lobe = result.LobeMargin.HasValue
                 ? $"{result.LobeMargin.Value,5:0.00}"
                 : "    —";
@@ -249,24 +260,33 @@ internal static class VirtualCrossoverMetric
                 JunctionPhaseResult result = entry.Result;
                 string rival = result.RivalScore.HasValue
                     ? $"rival lobe {result.RivalScore.Value:0.00} at " +
-                        $"{result.RivalExtraDelayMs!.Value:+0.00;-0.00} ms " +
+                        $"{result.RivalExtraDelayMs!.Value:+0.00;-0.00;0.00} ms " +
                         $"(margin {result.LobeMargin!.Value:0.00})"
                     : "no rival lobe in the sweep window";
+                string phaseNote =
+                    result.PhaseConsistency >= JunctionPhaseAlignment.MinimumPhaseConsistency
+                        ? $"φ {result.PhaseAtCrossoverDeg:+0;-0;0}° at fc " +
+                            $"(R {result.PhaseConsistency:0.00})"
+                        : $"φ unreliable (R {result.PhaseConsistency:0.00} — " +
+                            "a notch or gap sits at the handover)";
                 return $"{entry.Junction} @ {FrequencyText.Format(entry.CrossoverHz)}: " +
-                    $"φ {result.PhaseAtCrossoverDeg:+0;-0;0}° at fc; " +
+                    $"{phaseNote}; " +
                     $"coherence {result.CurrentScore:0.00} now, " +
                     $"best {result.BestScore:0.00} at " +
-                    $"{result.BestExtraDelayMs:+0.00;-0.00} ms " +
+                    $"{result.BestExtraDelayMs:+0.00;-0.00;0.00} ms " +
                     $"on {entry.LowerChannel};\r\n   {rival}; " +
-                    $"fit Δτ {result.FitDelayMs:+0.00;-0.00} ms, " +
+                    $"fit Δτ {result.FitDelayMs:+0.00;-0.00;0.00} ms, " +
                     $"rms {result.FitRmsDeg:0}° " +
                     $"({FrequencyText.Format(entry.LowHz)} – " +
                     $"{FrequencyText.Format(entry.HighHz)})";
             })) +
             "\r\nfix: extra delay on the LOWER channel (add to its Delay) that " +
             "maximizes the\r\nband coherence. φ near ±180°: flip a " +
-            "polarity instead of chasing a delay.\r\nlobe: how decisively the " +
-            "optimum beats the nearest whole-period rival;\r\nsmall margin (!) " +
+            "polarity instead of chasing a delay.\r\nφ is measured in a narrow " +
+            "window around fc; R (0..1) is how much its bins\r\nagree — a low R " +
+            "dashes the column instead of showing a mush number.\r\nlobe: how " +
+            "decisively the optimum beats the nearest whole-period rival;" +
+            "\r\nsmall margin (!) " +
             "= the overlap band is too narrow to rule the rival out.";
     }
 

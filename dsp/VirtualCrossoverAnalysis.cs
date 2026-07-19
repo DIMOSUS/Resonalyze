@@ -375,7 +375,33 @@ public static class VirtualCrossoverAnalysis
         double maxDelayMs,
         double? priorDelayMs = null,
         double priorSigmaMs = 0,
-        bool? forcedPolarity = null)
+        bool? forcedPolarity = null) =>
+        FindAlignmentCandidates(
+            variableImpulseResponse, fixedImpulseResponses, sampleRate,
+            minFrequencyHz, maxFrequencyHz, minDelayMs, maxDelayMs,
+            priorDelayMs, priorSigmaMs, forcedPolarity, out _);
+
+    /// <summary>
+    /// The overload that also reports EVERY refined local optimum (best
+    /// first, uncapped, enriched with the prior-free loss diagnostics). The
+    /// compact main list is truncated for SELECTION — at most
+    /// <see cref="MaxAlignmentCandidates"/> within <see cref="CandidateGapDb"/>
+    /// of the winner, judged on the prior-laden score — so a rival margin or
+    /// confidence computed over it alone could read "unrivaled" merely
+    /// because the rival was cut before the comparison ever ran.
+    /// </summary>
+    public static IReadOnlyList<AlignmentCandidate> FindAlignmentCandidates(
+        Complex[] variableImpulseResponse,
+        IReadOnlyList<Complex[]> fixedImpulseResponses,
+        int sampleRate,
+        double minFrequencyHz,
+        double maxFrequencyHz,
+        double minDelayMs,
+        double maxDelayMs,
+        double? priorDelayMs,
+        double priorSigmaMs,
+        bool? forcedPolarity,
+        out IReadOnlyList<AlignmentCandidate> allOptima)
     {
         List<AlignmentBin> bins = BuildAlignmentBins(
             variableImpulseResponse,
@@ -387,6 +413,7 @@ public static class VirtualCrossoverAnalysis
             maxDelayMs);
         if (bins.Count == 0)
         {
+            allOptima = Array.Empty<AlignmentCandidate>();
             return Array.Empty<AlignmentCandidate>();
         }
 
@@ -397,7 +424,8 @@ public static class VirtualCrossoverAnalysis
             maxFrequencyHz,
             priorDelayMs,
             priorSigmaMs,
-            forcedPolarity);
+            forcedPolarity,
+            out allOptima);
     }
 
     /// <summary>
@@ -1479,7 +1507,8 @@ public static class VirtualCrossoverAnalysis
         double maxFrequencyHz,
         double? priorDelayMs,
         double priorSigmaMs,
-        bool? forcedPolarity = null)
+        bool? forcedPolarity,
+        out IReadOnlyList<AlignmentCandidate> allOptima)
     {
         double weightSum = 0;
         foreach (AlignmentBin bin in bins)
@@ -1627,8 +1656,11 @@ public static class VirtualCrossoverAnalysis
         }
 
         // Best first; drop shadows of a better candidate in the same basin and
-        // everything far behind the winner.
+        // everything far behind the winner. The UNCAPPED sorted set goes out
+        // separately: rival-margin/confidence figures must see every optimum,
+        // including the ones this cut removes from the selection list.
         refined.Sort((a, b) => b.ScoreDb.CompareTo(a.ScoreDb));
+        allOptima = refined;
         var results = new List<AlignmentCandidate>();
         foreach (AlignmentCandidate candidate in refined)
         {

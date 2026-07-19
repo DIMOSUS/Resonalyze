@@ -764,7 +764,9 @@ public static class AutoAlignmentEngine
         // slowest involved crossover — wide enough to absorb the coarse error
         // (which grows with the period), narrow enough not to span two
         // same-polarity lobes of one base.
-        (IReadOnlyList<AlignmentCandidate> Candidates, double WindowLowMs, double WindowHighMs)
+        (IReadOnlyList<AlignmentCandidate> Candidates,
+            IReadOnlyList<AlignmentCandidate> AllOptima,
+            double WindowLowMs, double WindowHighMs)
             SearchJunction(double? windowOverrideMs = null)
         {
             // Only where the coarse seed was untrusted (arrival fallback at a
@@ -807,12 +809,14 @@ public static class AutoAlignmentEngine
                     windowHighMs,
                     priorDelayMs: anchorMs,
                     priorSigmaMs: (windowHighMs - windowLowMs) / 4.0,
-                    forcedPolarity: forcedPolarity);
-            return (candidates, windowLowMs, windowHighMs);
+                    forcedPolarity: forcedPolarity,
+                    out IReadOnlyList<AlignmentCandidate> allOptima);
+            return (candidates, allOptima, windowLowMs, windowHighMs);
         }
 
         {
             (IReadOnlyList<AlignmentCandidate> candidates,
+                IReadOnlyList<AlignmentCandidate> fineOptima,
                 double windowLow, double windowHigh) = SearchJunction();
             log.AppendLine(
                 $"Channel {channel.Name}: " +
@@ -868,7 +872,9 @@ public static class AutoAlignmentEngine
             // winner; under a scene or onset lock it is log-only. At a low
             // junction the fixed span is sub-period, so it grows to reach the
             // flip partner half a period out (see DiagnosticFineReachHalfPeriods).
-            (IReadOnlyList<AlignmentCandidate> wide, double wideLow, double wideHigh) =
+            (IReadOnlyList<AlignmentCandidate> wide,
+                IReadOnlyList<AlignmentCandidate> wideOptima,
+                double wideLow, double wideHigh) =
                 SearchJunction(windowOverrideMs: Math.Max(
                     DiagnosticFineRangeMs,
                     DiagnosticFineReachHalfPeriods * halfPeriodMs));
@@ -898,14 +904,15 @@ public static class AutoAlignmentEngine
             bool atEdge = chosen.DelayMs <= windowLow + 0.02 ||
                 chosen.DelayMs >= windowHigh - 0.02;
             bool edgeRetry = false;
-            IReadOnlyList<AlignmentCandidate> retriedCandidates = [];
+            IReadOnlyList<AlignmentCandidate> retriedOptima = [];
             if (sceneLockToleranceMs == null && onsetAnchorMs == null &&
                 retryRangeMs > (windowHigh - windowLow) / 2.0 && atEdge)
             {
                 edgeRetry = true;
-                (IReadOnlyList<AlignmentCandidate> retried, _, _) =
+                (IReadOnlyList<AlignmentCandidate> retried,
+                    IReadOnlyList<AlignmentCandidate> retriedAll, _, _) =
                     SearchJunction(windowOverrideMs: retryRangeMs);
-                retriedCandidates = retried;
+                retriedOptima = retriedAll;
                 if (retried.Count > 0)
                 {
                     // Through the same selection rules as the primary pick:
@@ -1060,9 +1067,14 @@ public static class AutoAlignmentEngine
             {
                 string versus = neighborChannel.Name +
                     (secondaryNeighbor != null ? $" + {secondaryNeighbor.Name}" : "");
+                // The rival pool is the UNCAPPED optimum sets: the selection
+                // lists are truncated (six candidates, 1.5 dB gap, judged on
+                // the prior-laden score), so a margin computed over them
+                // could read "unrivaled" only because the rival was cut
+                // before the comparison.
                 decisions[channel] = BuildDecision(
                     chosen,
-                    candidates.Concat(wide).Concat(retriedCandidates).ToList(),
+                    fineOptima.Concat(wideOptima).Concat(retriedOptima).ToList(),
                     halfPeriodMs, versus, wideSeed, edgeRetry, promoted,
                     onsetLocked: onsetAnchorMs != null,
                     sceneLocked: sceneLockToleranceMs != null);

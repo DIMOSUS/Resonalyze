@@ -102,6 +102,26 @@ public static class GainBalanceEngine
     public const int MinimumSpreadSamples = 8;
 
     /// <summary>
+    /// How far below the LOUDEST adjustable channel a channel's band level
+    /// may sit before it stops being credible as a playing driver. Real
+    /// drivers of one measured system sit within a couple of tens of dB
+    /// before balancing; a dead input's finite noise floor reads 40+ dB down
+    /// — and, being the quietest, would otherwise become the cut-only target
+    /// and drag every gain to its floor (a flat noise floor can even read as
+    /// a HIGH-confidence level). Gated channels keep their gain with the
+    /// reason named; the pair rule then keeps their twins too.
+    /// </summary>
+    public const double MaxLevelBelowLoudestDb = 30;
+
+    /// <summary>
+    /// The hard cap on a proposed cut, mirroring the settings model's
+    /// |GainDb| &lt;= 60 validation — a proposal outside it would fail the
+    /// project save silently. The credibility gate above keeps real solves
+    /// far from this; the clamp is the independent invariant guard.
+    /// </summary>
+    public const double MaxProposedCutDb = 60;
+
+    /// <summary>
     /// The intentional L/R level tilt (dB) for a stereo scene offset (ms):
     /// positive means the RIGHT side plays louder — the same "image toward
     /// the dash center for a left-seated listener" convention as the delay
@@ -188,6 +208,28 @@ public static class GainBalanceEngine
             reasons[input.Channel] = reason;
         }
 
+        // The level-credibility gate: a channel implausibly far below the
+        // loudest adjustable one is a broken or noise-only capture, not the
+        // quietest driver — and the quietest channel is exactly what the
+        // cut-only solve levels everyone down to.
+        List<GainBalanceInput> credible = channels
+            .Where(input => reasons[input.Channel] == null)
+            .ToList();
+        if (credible.Count > 0)
+        {
+            double loudestDb = credible.Max(input => levels[input.Channel]);
+            foreach (GainBalanceInput input in credible)
+            {
+                double belowDb = loudestDb - levels[input.Channel];
+                if (belowDb > MaxLevelBelowLoudestDb)
+                {
+                    reasons[input.Channel] = FormattableString.Invariant(
+                        $"level {belowDb:0} dB below the loudest channel") +
+                        " - looks like a dead capture";
+                }
+            }
+        }
+
         // A stereo pair is balanced as a pair or not at all: adjusting one
         // side while its twin is skipped silently breaks the promised L/R
         // relation for that pair — the adjusted side would chase a tilt its
@@ -262,6 +304,16 @@ public static class GainBalanceEngine
             if (gainDb > -MinimumCutDb)
             {
                 gainDb = 0;
+            }
+            if (gainDb < -MaxProposedCutDb)
+            {
+                // Unreachable while the credibility gate holds (it bounds the
+                // eligible level spread far under this), but the settings
+                // model's |GainDb| <= 60 invariant must never depend on that.
+                log.AppendLine(
+                    $"  {input.Channel.Name}: proposed cut clamped to " +
+                    $"-{MaxProposedCutDb:0} dB (settings range)");
+                gainDb = -MaxProposedCutDb;
             }
 
             (double spreadDb, string spreadDetail) = SpreadOf(input, channels, spectra);

@@ -287,6 +287,53 @@ public sealed class GainBalanceEngineTests
     }
 
     [Fact]
+    public void Compute_DeadChannelCannotDragTheBoardDown()
+    {
+        // A noise-only/broken capture still reads a FINITE level (-80 dB
+        // here) and, being the quietest eligible channel, would become the
+        // cut-only target for the whole board - proposing ~-80 dB gains that
+        // the settings model (|GainDb| <= 60) would refuse to save. The
+        // credibility gate must skip it instead.
+        var mid = Input("mid", 1.0);
+        var dead = Input("dead", 1e-4); // -80 dB, flat -> "stable"
+        var log = new StringBuilder();
+
+        IReadOnlyList<GainBalanceResult> results = GainBalanceEngine.Compute(
+            [mid, dead], sceneOffsetMs: 0, log);
+
+        Assert.False(results[1].Adjusted);
+        Assert.Contains("below the loudest", results[1].SkipReason);
+        Assert.True(results[0].Adjusted);
+        Assert.Equal(0.0, results[0].ProposedGainDb, 1);
+        // The independent invariant guard: whatever happens upstream, a
+        // proposal never leaves the settings model's range.
+        Assert.All(results, result =>
+            Assert.True(result.ProposedGainDb >= -GainBalanceEngine.MaxProposedCutDb));
+    }
+
+    [Fact]
+    public void Compute_DeadRightSideSkipsItsPairToo()
+    {
+        // The gate and the pair rule compose: a dead right capture is gated,
+        // and its healthy left twin must not be levelled alone - the pair's
+        // L/R relation could not follow.
+        var leftMid = Input("mid L", 1.0);
+        GainBalanceInput rightMid = Input(
+            "mid R", 1e-4, rightSide: true, leftPeer: leftMid.Channel);
+        var tweeter = Input("twr", 0.9, bandLowHz: 2_000, bandHighHz: 20_000);
+        var log = new StringBuilder();
+
+        IReadOnlyList<GainBalanceResult> results = GainBalanceEngine.Compute(
+            [leftMid, rightMid, tweeter], sceneOffsetMs: 0.27, log);
+
+        Assert.False(results[1].Adjusted);
+        Assert.Contains("below the loudest", results[1].SkipReason);
+        Assert.False(results[0].Adjusted);
+        Assert.Contains("right side ineligible", results[0].SkipReason);
+        Assert.True(results[2].Adjusted);
+    }
+
+    [Fact]
     public void Compute_SkippedChannelsKeepTheirGain()
     {
         var log = new StringBuilder();

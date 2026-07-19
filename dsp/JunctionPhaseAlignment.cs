@@ -220,6 +220,18 @@ public static class JunctionPhaseAlignment
             return null;
         }
 
+        // A corner the bilinear transform cannot realize (at or above
+        // 0.499·SR) is silently clamped to a DIFFERENT frequency by the
+        // filter, so the spectra here roll off at the clamped corner while
+        // crossoverHz still names the configured one: the sweep would use the
+        // wrong period and the caller would label the result with a frequency
+        // the DSP never produced. There is no measurable handover above the
+        // realizable range — suppress the read-out rather than mislabel it.
+        if (crossoverHz >= sampleRate * BilinearTransform.NyquistFraction)
+        {
+            return null;
+        }
+
         double binWidth = sampleRate / (double)AnalysisLength;
         int firstBin = Math.Max(1, (int)Math.Ceiling(bandLowHz / binWidth));
         int lastBin = Math.Min(

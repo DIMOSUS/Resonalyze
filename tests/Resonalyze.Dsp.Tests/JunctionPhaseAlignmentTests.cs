@@ -174,6 +174,37 @@ public sealed class JunctionPhaseAlignmentTests
     }
 
     [Fact]
+    public void Analyze_SuppressesAJunctionAboveTheRealizableCornerRange()
+    {
+        // At 44.1 kHz the bilinear transform clamps any corner at/above
+        // 0.499·SR ≈ 22 kHz, so a 23 kHz split is realized elsewhere and the
+        // read-out must not label a junction with a frequency the DSP cannot
+        // produce. (The crossover validator accepts corners up to 24 kHz.)
+        const int rate = 44_100;
+        var impulse = new Complex[8_192];
+        impulse[480] = Complex.One;
+        Complex[] lower = VirtualCrossoverAnalysis.ApplyChain(
+            impulse,
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.LowPass,
+                LowPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.LinkwitzRiley, 23_000, 24))),
+            rate);
+        Complex[] upper = VirtualCrossoverAnalysis.ApplyChain(
+            impulse,
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.HighPass,
+                HighPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.LinkwitzRiley, 23_000, 24))),
+            rate);
+
+        JunctionPhaseResult? result = JunctionPhaseAlignment.Analyze(
+            lower, upper, rate, 23_000, 11_500, 20_000);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
     public void AnalyzeSpectra_RejectsForeignSpectrumLengths()
     {
         Assert.Throws<ArgumentException>(() =>

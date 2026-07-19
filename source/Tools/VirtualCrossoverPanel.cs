@@ -2390,13 +2390,17 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
         // RedrawAll pushes the read-out asynchronously (the ApplyChain FFTs run off
         // the UI thread), so recompute the metric synchronously from the just-
-        // applied settings so the log ends with this run's true outcome.
+        // applied settings so the log ends with this run's true outcome. The
+        // side label is captured BEFORE the await: the panel is live again
+        // after the modal closed, and a side switch mid-computation would
+        // otherwise caption the snapshot with the other side's name.
+        bool metricSideRight = project.ActiveSideRight;
         ProcessedRender? render = await ProcessChannelsAsync();
         List<ProcessedChannel> outcomeChannels = render?.Channels ?? [];
         (List<AnalysisCurve>? outcomeMagnitudes, AnalysisCurve? outcomeSum) =
             metrics.BuildCurves(outcomeChannels);
         result.Log.AppendLine(
-            $"Metric ({(project.ActiveSideRight ? "R" : "L")} side):");
+            $"Metric ({(metricSideRight ? "R" : "L")} side):");
         result.Log.AppendLine(VirtualCrossoverMetric.FormatDetail(
             metrics.BuildEntries(outcomeChannels, outcomeMagnitudes, outcomeSum)));
         WriteAlignmentLog(result.Log.ToString());

@@ -107,7 +107,11 @@ public sealed class GainBalanceEngineTests
     [Fact]
     public void RobustSpreadDb_IgnoresASingleOutlier()
     {
-        Assert.Equal(0.0, GainBalanceEngine.RobustSpreadDb([3.0, 3.0, 3.0, 3.0]), 9);
+        Assert.Equal(
+            0.0,
+            GainBalanceEngine.RobustSpreadDb(
+                [3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0]),
+            9);
         // One narrow surviving artifact must not dominate the figure.
         Assert.Equal(
             0.0,
@@ -116,6 +120,20 @@ public sealed class GainBalanceEngineTests
         double spread = GainBalanceEngine.RobustSpreadDb(
             [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
         Assert.InRange(spread, 2.8, 3.1); // IQR 4 / 1.349
+    }
+
+    [Fact]
+    public void RobustSpreadDb_TooFewSamplesIsNotStability()
+    {
+        // A handful of identical points means the band was too narrow to
+        // measure, not that the measurement was perfectly stable — NaN maps
+        // to Low confidence downstream.
+        Assert.True(double.IsNaN(
+            GainBalanceEngine.RobustSpreadDb([3.0, 3.0, 3.0, 3.0])));
+        Assert.Equal(
+            AlignmentConfidence.Low,
+            GainBalanceEngine.ConfidenceOf(
+                GainBalanceEngine.RobustSpreadDb([0.0, 0.0])));
     }
 
     [Fact]
@@ -218,6 +236,54 @@ public sealed class GainBalanceEngineTests
 
         Assert.Equal(0.0, results[0].ProposedGainDb, 1);
         Assert.Equal(0.0, results[1].ProposedGainDb, 1);
+    }
+
+    [Fact]
+    public void Compute_HalfEligiblePairIsKeptTogether()
+    {
+        // The right mid's band (60-500 Hz per its own crossover) fails the
+        // octave rule while the left qualifies: adjusting the left alone
+        // would break the promised L/R relation for the pair — cut-only
+        // forbids the boost that could restore it — so BOTH sides are kept,
+        // each naming the twin's reason.
+        var leftMid = Input("mid L", 1.0);
+        GainBalanceInput rightMid = Input(
+            "mid R", 1.0, bandLowHz: 60, bandHighHz: 500,
+            rightSide: true, leftPeer: leftMid.Channel);
+        var tweeter = Input("twr", 0.5, bandLowHz: 2_000, bandHighHz: 20_000);
+        var log = new StringBuilder();
+
+        IReadOnlyList<GainBalanceResult> results = GainBalanceEngine.Compute(
+            [leftMid, rightMid, tweeter], sceneOffsetMs: 0.27, log);
+
+        Assert.False(results[0].Adjusted);
+        Assert.Contains("right side ineligible", results[0].SkipReason);
+        Assert.False(results[1].Adjusted);
+        // The unpaired tweeter still levels normally (alone -> no cut).
+        Assert.True(results[2].Adjusted);
+        Assert.Equal(0.0, results[2].ProposedGainDb, 1);
+    }
+
+    [Fact]
+    public void Compute_NoSharedBandReadsLowGainConfidence()
+    {
+        // Both sides qualify individually but their crossover bands do not
+        // overlap: the L-R relation the right gain equalizes was never
+        // measured, so its confidence must read Low instead of silently
+        // grading the channel's own in-band flatness.
+        var leftMid = Input("mid L", 1.0, bandLowHz: 2_000, bandHighHz: 20_000);
+        GainBalanceInput rightMid = Input(
+            "mid R", 1.0, bandLowHz: 300, bandHighHz: 600,
+            rightSide: true, leftPeer: leftMid.Channel);
+        var log = new StringBuilder();
+
+        IReadOnlyList<GainBalanceResult> results = GainBalanceEngine.Compute(
+            [leftMid, rightMid], sceneOffsetMs: 0, log);
+
+        Assert.True(results[1].Adjusted);
+        Assert.Equal(AlignmentConfidence.Low, results[1].Confidence);
+        Assert.Contains("L-R band", results[1].Detail);
+        Assert.True(double.IsNaN(results[1].SpreadDb));
     }
 
     [Fact]

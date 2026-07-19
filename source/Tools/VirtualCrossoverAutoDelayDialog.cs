@@ -55,7 +55,7 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
             "left honoring the scene offset. Subwoofers, mono channels\r\n" +
             "and channels without a crossover keep their gain. This is a\r\n" +
             "starting balance, not a final tonal decision.");
-        Disposed += (_, _) => toolTip.Dispose();
+        // The designer's Dispose releases the tooltip; no Disposed handler.
     }
 
     /// <summary>The proposal of the last completed Run, applied on OK.</summary>

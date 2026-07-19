@@ -758,4 +758,60 @@ public sealed class StereoAlignmentTests
         Assert.InRange(Math.Abs(atFloor - free), 0, 0.06);
         Assert.Equal(freeInverted, floorInverted);
     }
+
+    [Fact]
+    public void ComoveMonoChannels_RefreshesTheStaleDecision()
+    {
+        // The same system as the invariance test above: both woofers want the
+        // sub earlier than the left walk left it. The walk recorded the sub
+        // as the untouched reference; once the co-move moves it, the report
+        // must not keep calling it that — the decision is replaced with the
+        // co-move's own kind and confidence, keeping the history in the
+        // detail.
+        var sub = new TestChannel("sub", ImpulseAtMs(10.0));
+        var leftWoof = new TestChannel("L woof", ImpulseAtMs(8.0));
+        var rightWoof = new TestChannel("R woof", ImpulseAtMs(7.5));
+        TestChannel[] all = [sub, leftWoof, rightWoof];
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            all.Select(channel =>
+                Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+        List<AlignmentSnapshot> snapshots = all
+            .Select(channel => Snapshot(channel, default))
+            .ToList();
+        var plan = new StereoAlignmentPlan(
+            [snapshots[0], snapshots[1]],
+            [Junction(snapshots[0], snapshots[1], 80)],
+            [snapshots[0], snapshots[2]],
+            [Junction(snapshots[0], snapshots[2], 80)],
+            new HashSet<IAlignmentChannel> { sub },
+            leftWoof,
+            rightWoof,
+            40,
+            160,
+            SceneOffsetMs: 0);
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            [sub] = new(0, false),
+            [leftWoof] = new(1.0, false),
+            [rightWoof] = new(1.0, false)
+        };
+        var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>
+        {
+            [sub] = new(
+                AlignmentDecisionKind.Reference, Confidence: null,
+                "reference (others align to it)")
+        };
+        var log = new StringBuilder();
+
+        AutoAlignmentEngine.ComoveMonoChannels(
+            plan, Reprocess, alignment, log, snapshots, decisions);
+
+        Assert.Contains("Co-move sub:", log.ToString());
+        AlignmentDecision decision = decisions[sub];
+        Assert.Equal(AlignmentDecisionKind.Search, decision.Kind);
+        Assert.NotNull(decision.Confidence);
+        Assert.Contains("mono co-move", decision.Detail);
+        Assert.Contains("reference", decision.Detail);
+    }
 }

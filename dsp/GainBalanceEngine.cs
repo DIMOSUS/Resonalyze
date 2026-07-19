@@ -94,6 +94,14 @@ public static class GainBalanceEngine
     private const double MinimumCutDb = 0.05;
 
     /// <summary>
+    /// The minimum grid samples a spread estimate needs before it means
+    /// anything — a third of an octave of 1/24-octave points. Fewer reads as
+    /// NaN (mapped to Low confidence), never as a perfectly stable
+    /// measurement: an unmeasurably narrow band is the opposite of certainty.
+    /// </summary>
+    public const int MinimumSpreadSamples = 8;
+
+    /// <summary>
     /// The intentional L/R level tilt (dB) for a stereo scene offset (ms):
     /// positive means the RIGHT side plays louder — the same "image toward
     /// the dash center for a left-seated listener" convention as the delay
@@ -178,6 +186,36 @@ public static class GainBalanceEngine
             }
 
             reasons[input.Channel] = reason;
+        }
+
+        // A stereo pair is balanced as a pair or not at all: adjusting one
+        // side while its twin is skipped silently breaks the promised L/R
+        // relation for that pair — the adjusted side would chase a tilt its
+        // twin cannot follow (cut-only forbids the compensating boost).
+        foreach (GainBalanceInput right in channels)
+        {
+            if (!right.RightSide || right.LeftPeer == null)
+            {
+                continue;
+            }
+
+            GainBalanceInput? left = channels.FirstOrDefault(
+                item => item.Channel == right.LeftPeer);
+            if (left == null)
+            {
+                continue;
+            }
+
+            string? leftReason = reasons[left.Channel];
+            string? rightReason = reasons[right.Channel];
+            if (leftReason == null && rightReason != null)
+            {
+                reasons[left.Channel] = $"right side ineligible: {rightReason}";
+            }
+            else if (rightReason == null && leftReason != null)
+            {
+                reasons[right.Channel] = $"left side ineligible: {leftReason}";
+            }
         }
 
         // One shared left target as high as cut-only allows: every eligible
@@ -307,13 +345,15 @@ public static class GainBalanceEngine
     /// <summary>
     /// A robust spread estimate (σ-equivalent) of a dB curve: the
     /// interquartile range scaled by the normal-distribution factor, so a
-    /// single surviving outlier cannot dominate the figure.
+    /// single surviving outlier cannot dominate the figure. NaN below
+    /// <see cref="MinimumSpreadSamples"/> — too few points to judge is NOT
+    /// the same as perfectly stable.
     /// </summary>
     public static double RobustSpreadDb(IReadOnlyList<double> valuesDb)
     {
-        if (valuesDb.Count < 2)
+        if (valuesDb.Count < MinimumSpreadSamples)
         {
-            return 0;
+            return double.NaN;
         }
 
         List<double> sorted = valuesDb.OrderBy(value => value).ToList();
@@ -335,10 +375,12 @@ public static class GainBalanceEngine
 
     // The spread the confidence is judged by: a right channel with an
     // adjustable left peer measures the L−R difference across the bands'
-    // intersection (the actual quantity its gain equalizes — narrow dips at
-    // different frequencies on the two sides are already smoothed away); any
-    // other channel measures its own in-band flatness (how well-defined "the
-    // channel's level" is at all).
+    // intersection — the actual quantity its gain equalizes. When that
+    // intersection cannot be measured the confidence honestly reads
+    // unavailable (NaN -> Low) rather than silently falling back to the
+    // channel's own flatness, which says nothing about the L/R relation. A
+    // channel without a measured peer judges its own in-band flatness (how
+    // well-defined "the channel's level" is at all).
     private static (double SpreadDb, string Detail) SpreadOf(
         GainBalanceInput input,
         IReadOnlyList<GainBalanceInput> channels,
@@ -352,36 +394,40 @@ public static class GainBalanceEngine
             {
                 double lowHz = Math.Max(input.BandLowHz, peer.BandLowHz);
                 double highHz = Math.Min(input.BandHighHz, peer.BandHighHz);
+                if (highHz <= lowHz)
+                {
+                    return (double.NaN, "no shared L-R band");
+                }
+
                 (double[] rightPower, double rightBinWidth) = spectra[input.Channel];
                 (double[] leftPower, double leftBinWidth) = spectra[peer.Channel];
                 var difference = new List<double>();
-                if (highHz > lowHz)
+                int steps = (int)Math.Floor(
+                    Math.Log2(highHz / lowHz) / SpreadGridStepOctaves);
+                for (int i = 0; i <= steps; i++)
                 {
-                    int steps = (int)Math.Floor(
-                        Math.Log2(highHz / lowHz) / SpreadGridStepOctaves);
-                    for (int i = 0; i <= steps; i++)
+                    double centerHz =
+                        lowHz * Math.Pow(2.0, i * SpreadGridStepOctaves);
+                    double left = SmoothedLevelAtDb(
+                        leftPower, leftBinWidth, centerHz);
+                    double right = SmoothedLevelAtDb(
+                        rightPower, rightBinWidth, centerHz);
+                    if (!double.IsNaN(left) && !double.IsNaN(right))
                     {
-                        double centerHz =
-                            lowHz * Math.Pow(2.0, i * SpreadGridStepOctaves);
-                        double left = SmoothedLevelAtDb(
-                            leftPower, leftBinWidth, centerHz);
-                        double right = SmoothedLevelAtDb(
-                            rightPower, rightBinWidth, centerHz);
-                        if (!double.IsNaN(left) && !double.IsNaN(right))
-                        {
-                            difference.Add(left - right);
-                        }
+                        difference.Add(left - right);
                     }
                 }
 
-                if (difference.Count >= 2)
+                double spread = RobustSpreadDb(difference);
+                if (double.IsNaN(spread))
                 {
-                    double spread = RobustSpreadDb(difference);
-                    // Invariant: the detail feeds the user report, which must
-                    // read the same regardless of the OS locale.
-                    return (spread, FormattableString.Invariant(
-                        $"L-R spread {spread:0.0} dB"));
+                    return (spread, "shared L-R band too narrow to judge");
                 }
+
+                // Invariant: the detail feeds the user report, which must
+                // read the same regardless of the OS locale.
+                return (spread, FormattableString.Invariant(
+                    $"L-R spread {spread:0.0} dB"));
             }
         }
 
@@ -389,7 +435,9 @@ public static class GainBalanceEngine
         List<double> curve = SmoothedBandCurveDb(
             power, binWidth, input.BandLowHz, input.BandHighHz);
         double own = RobustSpreadDb(curve);
-        return (own, FormattableString.Invariant($"in-band spread {own:0.0} dB"));
+        return double.IsNaN(own)
+            ? (own, "band too narrow to judge")
+            : (own, FormattableString.Invariant($"in-band spread {own:0.0} dB"));
     }
 
     // One point of the smoothed curve: the plain power mean over ±1/6 octave

@@ -1410,7 +1410,7 @@ public static class AutoAlignmentEngine
         // before the right walk so the right lowers align against a correctly-signed
         // top. A genuinely reverse-wired driver is left for a MANUAL flip in the UI,
         // not an asymmetric automatic one.
-        InheritBridgePolarity(plan, alignment, log);
+        InheritBridgePolarity(plan, alignment, log, decisions);
 
         // Stage R: descent from the bridged top toward the low end (and up
         // from it, if the caller had to bridge a non-top pair) — the same walk
@@ -1709,7 +1709,8 @@ public static class AutoAlignmentEngine
         // scene, their junction sums pay the price — moving BOTH sides of a
         // pair by one shared delta keeps the pair's L-R timing (the scene)
         // untouched while trading junction loss between the sides.
-        RebalancePairsKeepingScene(plan, reprocess, alignment, log, onsetLocks);
+        RebalancePairsKeepingScene(
+            plan, reprocess, alignment, log, onsetLocks, decisions);
 
         // A mono channel's own final polish: its delay (and polarity) is
         // scene-invariant by construction — one shared channel moves both
@@ -1717,7 +1718,7 @@ public static class AutoAlignmentEngine
         // best compromise across its left AND right junctions is searched
         // directly. This is the only pass where the right junction gets a
         // vote on the mono channel at all.
-        ComoveMonoChannels(plan, reprocess, alignment, log, allChannels);
+        ComoveMonoChannels(plan, reprocess, alignment, log, allChannels, decisions);
 
         // Final normalization: the smallest total latency that preserves every
         // relation — the minimum proposed delay lands exactly at zero.
@@ -1742,7 +1743,32 @@ public static class AutoAlignmentEngine
 
         // The invariant the user requires of automatic delay: no driver is ever
         // inverted on one side of a pair alone.
-        EnforcePolaritySymmetry(plan, alignment, log);
+        EnforcePolaritySymmetry(plan, alignment, log, decisions);
+    }
+
+    // Post-pass bookkeeping for the user report: a pass that changes a
+    // channel AFTER its decision was recorded appends what it did, so the
+    // report's notes always describe the FINAL delay and polarity rather
+    // than the intermediate walk result.
+    private static void AmendDecision(
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions,
+        IAlignmentChannel channel,
+        string amendment)
+    {
+        if (decisions == null)
+        {
+            return;
+        }
+
+        AlignmentDecision existing = decisions.GetValueOrDefault(channel)
+            ?? new AlignmentDecision(
+                AlignmentDecisionKind.Search, Confidence: null, string.Empty);
+        decisions[channel] = existing with
+        {
+            Detail = existing.Detail.Length > 0
+                ? $"{existing.Detail}; {amendment}"
+                : amendment
+        };
     }
 
     /// <summary>
@@ -1849,7 +1875,8 @@ public static class AutoAlignmentEngine
     private static void InheritBridgePolarity(
         StereoAlignmentPlan plan,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
-        StringBuilder log)
+        StringBuilder log,
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
         bool leftInvert = alignment.GetValueOrDefault(plan.BridgeLeft).InvertPolarity;
         AlignmentOverride top = alignment.GetValueOrDefault(plan.BridgeRight);
@@ -1857,6 +1884,12 @@ public static class AutoAlignmentEngine
         log.AppendLine(
             $"  bridge polarity: {(leftInvert ? "inverted" : "normal")} " +
             $"(inherited from {plan.BridgeLeft.Name}; auto delay keeps L/R polarity symmetric)");
+        if (leftInvert != top.InvertPolarity)
+        {
+            AmendDecision(
+                decisions, plan.BridgeRight,
+                $"polarity inherited from {plan.BridgeLeft.Name}");
+        }
     }
 
     // Final guarantee for automatic delay: every right driver's polarity flag equals
@@ -1868,7 +1901,8 @@ public static class AutoAlignmentEngine
     private static void EnforcePolaritySymmetry(
         StereoAlignmentPlan plan,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
-        StringBuilder log)
+        StringBuilder log,
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
         void Mirror(IAlignmentChannel left, IAlignmentChannel right)
         {
@@ -1885,6 +1919,8 @@ public static class AutoAlignmentEngine
                 log.AppendLine(
                     $"  polarity symmetry: {right.Name} -> " +
                     $"{(leftInvert ? "inverted" : "normal")} to match {left.Name}");
+                AmendDecision(
+                    decisions, right, $"polarity mirrored from {left.Name}");
             }
         }
 
@@ -1914,7 +1950,8 @@ public static class AutoAlignmentEngine
         AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
-        IReadOnlyDictionary<AlignmentJunction, OnsetLockState> onsetLocks)
+        IReadOnlyDictionary<AlignmentJunction, OnsetLockState> onsetLocks,
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
         if (plan.PairLinks == null)
         {
@@ -2143,6 +2180,13 @@ public static class AutoAlignmentEngine
                     $"{bestDelta:+0.00;-0.00} ms to both sides " +
                     $"(mean dip-penalized junction loss {baseline:0.00} -> " +
                     $"{bestScore:0.00} dB; scene untouched)");
+                // The move is a bounded in-lobe polish (the lobe decision the
+                // recorded confidence describes stands), but the final delays
+                // differ from the walk's — the report must say so.
+                string pairAmendment = FormattableString.Invariant(
+                    $"pair co-move {bestDelta:+0.00;-0.00} ms (scene kept)");
+                AmendDecision(decisions, link.Left, pairAmendment);
+                AmendDecision(decisions, link.Right, pairAmendment);
             }
             else
             {
@@ -2174,7 +2218,8 @@ public static class AutoAlignmentEngine
         AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
-        IReadOnlyList<AlignmentSnapshot> shiftScope)
+        IReadOnlyList<AlignmentSnapshot> shiftScope,
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
         foreach (IAlignmentChannel mono in plan.MonoChannels)
         {
@@ -2384,6 +2429,36 @@ public static class AutoAlignmentEngine
                     $" (mean dip-penalized junction loss over both sides " +
                     $"{baseline:0.00} -> {bestScore:0.00} dB; a mono move " +
                     "cannot touch the scene)");
+                if (decisions != null)
+                {
+                    // The walk's decision (typically "reference") no longer
+                    // describes this channel: the co-move re-decided it from
+                    // BOTH sides' junctions. Its confidence maps the applied
+                    // gain onto the co-move's own field-calibrated scale —
+                    // genuine two-sided recoveries measured 0.20 and 1.36 dB
+                    // (see MonoComoveLobeHopMarginDb), an order of magnitude
+                    // above the 0.01-0.02 dB noise ties that never apply.
+                    double gainDb = bestScore - baseline;
+                    AlignmentConfidence comoveConfidence =
+                        gainDb >= 10 * MonoComoveLobeHopMarginDb
+                            ? AlignmentConfidence.High
+                            : gainDb >= MonoComoveLobeHopMarginDb
+                                ? AlignmentConfidence.Medium
+                                : AlignmentConfidence.Low;
+                    string history = decisions.GetValueOrDefault(mono)?.Detail
+                        ?? string.Empty;
+                    string comoveDetail = FormattableString.Invariant(
+                        $"mono co-move {bestDelta:+0.00;-0.00} ms") +
+                        (bestFlip ? " + invert" : "") +
+                        FormattableString.Invariant(
+                            $", both sides' junctions gain {gainDb:0.00} dB");
+                    decisions[mono] = new AlignmentDecision(
+                        AlignmentDecisionKind.Search,
+                        comoveConfidence,
+                        history.Length > 0
+                            ? $"{history}; {comoveDetail}"
+                            : comoveDetail);
+                }
             }
             else
             {

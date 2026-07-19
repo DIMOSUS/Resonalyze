@@ -304,6 +304,7 @@ internal sealed class VirtualCrossoverMetrics
                 {
                     side.Arrival = arrival.Result;
                     side.LevelDb = arrival.LevelDb;
+                    side.Latched = arrival.Latched;
                     side.ArrivalFromCache = true;
                 }
             }
@@ -331,6 +332,8 @@ internal sealed class VirtualCrossoverMetrics
                             side.LevelDb = VirtualCrossoverAnalysis.MeasureBandLevelDb(
                                 side.ProcessedIr!, side.SampleRate,
                                 job.LowHz, job.HighHz);
+                            side.Latched = IsModalLatched(
+                                side, job.LowHz, job.HighHz, side.Arrival.Value);
                         }
                     }
                 }
@@ -349,7 +352,7 @@ internal sealed class VirtualCrossoverMetrics
                     {
                         side.State.ArrivalCache =
                             (side.ProcessedIr!, job.LowHz, job.HighHz,
-                                side.Arrival!.Value, side.LevelDb);
+                                side.Arrival!.Value, side.LevelDb, side.Latched);
                     }
                 }
             }
@@ -370,7 +373,8 @@ internal sealed class VirtualCrossoverMetrics
                 if (job.Mono)
                 {
                     return new VirtualCrossoverMetric.StereoDelta(
-                        job.Channel, leftMs, null, job.LowHz, job.HighHz, null);
+                        job.Channel, leftMs, null, job.LowHz, job.HighHz, null,
+                        LeftLatched: job.Left.Latched);
                 }
 
                 TimeAlignmentAnalysisResult right = job.Right.Arrival!.Value;
@@ -385,9 +389,53 @@ internal sealed class VirtualCrossoverMetrics
                     job.Left.LevelDb is { } leftLevel &&
                     job.Right.LevelDb is { } rightLevel
                         ? leftLevel - rightLevel
-                        : null);
+                        : null,
+                    LeftLatched: job.Left.Latched,
+                    RightLatched: job.Right.Latched);
             })
             .ToList();
+    }
+
+    // The alignment engine's modal-latch detection, applied to one side's
+    // read-out arrival: the SAME response measured in the band's upper half
+    // (from the geometric-mean frequency up) must agree with the full-band
+    // read to within the dispersion one direct wave packet can show — half a
+    // period at the probe's low edge. A full-band read landing far BEHIND its
+    // own upper-half read means the envelope latched onto the in-room modal
+    // build-up instead of the direct rise, and the row's L/R difference then
+    // compares different features. The probe only VOTES on the full band's
+    // honesty; its own number is never a substitute.
+    private static bool IsModalLatched(
+        SideProcessJob side,
+        double lowHz,
+        double highHz,
+        TimeAlignmentAnalysisResult fullBand)
+    {
+        if (!fullBand.IsValid ||
+            fullBand.SignalToNoiseDecibels < AutoAlignmentEngine.MinimumArrivalSnrDb)
+        {
+            return false;
+        }
+
+        double probeLowHz = Math.Sqrt(lowHz * highHz);
+        if (highHz < probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
+        {
+            return false;
+        }
+
+        TimeAlignmentAnalysisResult probe =
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                side.ProcessedIr!, side.SampleRate, probeLowHz, highHz,
+                side.ProcessedValidRange);
+        if (!probe.IsValid ||
+            probe.SignalToNoiseDecibels < AutoAlignmentEngine.MinimumArrivalSnrDb)
+        {
+            return false;
+        }
+
+        double toleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
+        return fullBand.FirstArrivalDelayMilliseconds
+            - probe.FirstArrivalDelayMilliseconds > toleranceMs;
     }
 
     /// <summary>
@@ -485,6 +533,7 @@ internal sealed class VirtualCrossoverMetrics
         public ValidSampleRange ProcessedValidRange { get; set; }
         public TimeAlignmentAnalysisResult? Arrival { get; set; }
         public double? LevelDb { get; set; }
+        public bool Latched { get; set; }
         public bool ArrivalFromCache { get; set; }
     }
 

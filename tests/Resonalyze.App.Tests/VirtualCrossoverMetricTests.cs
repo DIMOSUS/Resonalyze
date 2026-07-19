@@ -116,6 +116,55 @@ public sealed class VirtualCrossoverMetricTests
     }
 
     [Fact]
+    public void FormatStereoDeltasCompact_MarksModalLatchedSidesAndTheirDelta()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            // The right side's envelope timed the modal build-up, not the
+            // direct rise: its number and the Δ built on it carry a "~".
+            string text = VirtualCrossoverMetric.FormatStereoDeltasCompact(
+            [
+                new VirtualCrossoverMetric.StereoDelta(
+                    "B", 15.51, 21.81, 80, 220, LevelDeltaDb: 4.5,
+                    RightLatched: true)
+            ]);
+
+            Assert.Contains("B    15.51 ~21.81 ~-6.30", text);
+        });
+    }
+
+    [Fact]
+    public void FormatStereoDeltasDetail_ExplainsAModalLatchedRow()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            string text = VirtualCrossoverMetric.FormatStereoDeltasDetail(
+            [
+                new VirtualCrossoverMetric.StereoDelta(
+                    "B", 15.514, 21.811, 80, 220, RightLatched: true)
+            ]);
+
+            Assert.Contains("B: L 15.514 / R ~21.811 ms, Δ ~-6.297 ms", text);
+            Assert.Contains("modal", text);
+            Assert.Contains("trust its log over this row", text);
+        });
+    }
+
+    [Fact]
+    public void FormatStereoDeltasDetail_OmitsTheLatchLegendWhenNothingLatched()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            string text = VirtualCrossoverMetric.FormatStereoDeltasDetail(
+            [
+                new VirtualCrossoverMetric.StereoDelta("B", 15.514, 21.811, 80, 220)
+            ]);
+
+            Assert.DoesNotContain("modal", text);
+        });
+    }
+
+    [Fact]
     public void FormatStereoDeltasCompact_EmptyListRendersNothing()
     {
         Assert.Equal(

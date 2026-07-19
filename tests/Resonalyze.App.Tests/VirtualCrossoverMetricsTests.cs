@@ -251,6 +251,66 @@ public sealed class VirtualCrossoverMetricsTests
         Assert.NotNull(channel.PhysicalSideState(false).ArrivalCache);
     }
 
+    // A Hann-windowed tone burst: toneHz for cycles periods, scaled by
+    // amplitude, placed at startMs.
+    private static void AddBurst(
+        Complex[] ir, double toneHz, int cycles, double amplitude, double startMs)
+    {
+        int start = (int)(startMs * 48_000 / 1000.0);
+        int length = (int)(cycles * 48_000 / toneHz);
+        for (int i = 0; i < length && start + i < ir.Length; i++)
+        {
+            double window = 0.5 * (1.0 - Math.Cos(Math.Tau * i / length));
+            ir[start + i] += new Complex(
+                amplitude * window * Math.Sin(Math.Tau * toneHz * i / 48_000), 0);
+        }
+    }
+
+    [Fact]
+    public async Task ComputeStereoDeltasAsync_FlagsAModalLatchedSide()
+    {
+        // The left side reproduces the field failure the alignment engine's
+        // cross-side links detect: a weak direct wavelet (34 dB below the
+        // late modal ringing — under the first-arrival detector's −25 dB
+        // prominence floor) followed by a huge low-frequency build-up. The
+        // full 100–400 Hz band then times the build-up, while the band's
+        // upper half (where the 130 Hz ringing is filtered out) times the
+        // wavelet — the disagreement IS the latch. The right side has a
+        // clean dominant direct and must stay unflagged.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyCurve);
+        long revision = coordinator.Invalidate();
+
+        var latched = new Complex[8_192];
+        AddBurst(latched, toneHz: 300, cycles: 3, amplitude: 0.02, startMs: 10);
+        AddBurst(latched, toneHz: 130, cycles: 8, amplitude: 1.0, startMs: 25);
+        var clean = new Complex[8_192];
+        AddBurst(clean, toneHz: 300, cycles: 3, amplitude: 1.0, startMs: 10);
+
+        var channel = new VirtualCrossoverChannel("B");
+        foreach (bool rightSide in new[] { false, true })
+        {
+            VirtualCrossoverChannelState state = channel.PhysicalSideState(rightSide);
+            state.TransferImpulseResponse = rightSide ? clean : latched;
+            state.SampleRate = 48_000;
+            VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
+            settings.CrossoverKind = CrossoverKind.BandPass;
+            settings.HighPassEdge = new CrossoverEdge(
+                CrossoverFilterFamily.LinkwitzRiley, 100, 24);
+            settings.LowPassEdge = new CrossoverEdge(
+                CrossoverFilterFamily.LinkwitzRiley, 400, 24);
+        }
+
+        List<VirtualCrossoverMetric.StereoDelta> deltas =
+            await metrics.ComputeStereoDeltasAsync([channel], revision);
+
+        VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
+        Assert.True(delta.LeftLatched);
+        Assert.False(delta.RightLatched);
+        // The latch flag rides in the per-side cache with the arrival.
+        Assert.True(channel.PhysicalSideState(false).ArrivalCache!.Value.Latched);
+    }
+
     [Fact]
     public async Task ComputeStereoDeltasAsync_MonoChannelReportsNoRightSide()
     {

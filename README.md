@@ -1555,7 +1555,12 @@ together, so this is the read-out for the by-ear gain trim that finishes the
 centering; note a single microphone underestimates the binaural difference
 (no head shadow), so expect to trim a little more than it shows. A side whose
 arrival cannot be measured reliably (a silent band, or a near-noise record)
-shows an honest dash instead of a precise-looking number.
+shows an honest dash instead of a precise-looking number, and a side whose
+full-band envelope timed the room's modal build-up rather than the direct
+rise (its upper-half read lands much earlier — the same detection the
+alignment engine's cross-side links run) is marked with `~`: the number is
+what the envelope measured, but the sides then compare different features
+and the Δ overstates the true skew, so trust the engine's log over that row.
 
 Editing a chain recomputes the prediction on a background task, so dragging a
 gain, delay, or crossover value stays responsive even with several channels

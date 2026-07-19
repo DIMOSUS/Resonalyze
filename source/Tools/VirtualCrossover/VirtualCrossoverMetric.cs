@@ -87,11 +87,19 @@ internal static class VirtualCrossoverMetric
         double? RightMs,
         double LowHz,
         double HighHz,
-        double? LevelDeltaDb = null)
+        double? LevelDeltaDb = null,
+        // A latched side's full-band envelope timed the room's modal build-up,
+        // not the direct rise (the alignment engine's cross-side detection,
+        // rerun here): its number is real but compares a different feature, so
+        // the row's Δ overstates the true skew and renders with a "~".
+        bool LeftLatched = false,
+        bool RightLatched = false)
     {
         public double? DeltaMs => LeftMs.HasValue && RightMs.HasValue
             ? LeftMs.Value - RightMs.Value
             : null;
+
+        public bool AnyLatched => LeftLatched || RightLatched;
     }
 
     /// <summary>
@@ -107,8 +115,15 @@ internal static class VirtualCrossoverMetric
             return string.Empty;
         }
 
-        static string Side(double? value) =>
-            value.HasValue ? $"{value.Value,7:0.00}" : "      \u2014";
+        // "~" marks a modal-latched read (see StereoDelta): the number is what
+        // the envelope measured, but it timed the room build-up, not the
+        // direct rise, so it must not read as a clean skew.
+        static string Side(double? value, bool latched) =>
+            value.HasValue
+                ? latched
+                    ? $"~{value.Value:0.00}".PadLeft(7)
+                    : $"{value.Value,7:0.00}"
+                : "      \u2014";
 
         var builder = new System.Text.StringBuilder(
             "Arrival (ms)\r\n         L      R  \u0394 L\u2212R\r\n");
@@ -117,11 +132,15 @@ internal static class VirtualCrossoverMetric
             // Three sections, like the junction-phase figures: a negative delta
             // that rounds to zero must not render as "-+0.00".
             string deltaText = delta.DeltaMs.HasValue
-                ? $"{delta.DeltaMs.Value,7:+0.00;-0.00;0.00}"
+                ? delta.AnyLatched
+                    ? ("~" + delta.DeltaMs.Value.ToString("+0.00;-0.00;0.00"))
+                        .PadLeft(7)
+                    : $"{delta.DeltaMs.Value,7:+0.00;-0.00;0.00}"
                 : "      \u2014";
             builder.AppendLine(
                 $"{delta.Channel.PadRight(3)}" +
-                $"{Side(delta.LeftMs)}{Side(delta.RightMs)}{deltaText}");
+                $"{Side(delta.LeftMs, delta.LeftLatched)}" +
+                $"{Side(delta.RightMs, delta.RightLatched)}{deltaText}");
         }
 
         builder.AppendLine();
@@ -147,8 +166,10 @@ internal static class VirtualCrossoverMetric
             return string.Empty;
         }
 
-        static string Side(double? value) =>
-            value.HasValue ? $"{value.Value:0.000}" : "\u2014";
+        static string Side(double? value, bool latched) =>
+            value.HasValue
+                ? (latched ? "~" : string.Empty) + $"{value.Value:0.000}"
+                : "\u2014";
 
         return "Final envelope arrivals of the processed sides (ms from the " +
             "IR start, delays\r\nincluded) and \u0394 L\u2212R (positive: right leads; " +
@@ -162,16 +183,26 @@ internal static class VirtualCrossoverMetric
                 }
 
                 string deltaText = delta.DeltaMs.HasValue
-                    ? $"{delta.DeltaMs.Value:+0.000;-0.000;0.000} ms"
+                    ? (delta.AnyLatched ? "~" : string.Empty) +
+                        $"{delta.DeltaMs.Value:+0.000;-0.000;0.000} ms"
                     : "\u2014";
                 string levelText = delta.LevelDeltaDb.HasValue
                     ? $", level {delta.LevelDeltaDb.Value:+0.0;-0.0;0.0} dB"
                     : string.Empty;
-                return $"{delta.Channel}: L {Side(delta.LeftMs)} / " +
-                    $"R {Side(delta.RightMs)} ms, \u0394 {deltaText}{levelText} " +
+                return $"{delta.Channel}: L {Side(delta.LeftMs, delta.LeftLatched)} / " +
+                    $"R {Side(delta.RightMs, delta.RightLatched)} ms, " +
+                    $"\u0394 {deltaText}{levelText} " +
                     $"({FrequencyText.Format(delta.LowHz)} \u2013 " +
                     $"{FrequencyText.Format(delta.HighHz)})";
             })) +
+            (deltas.Any(delta => delta.AnyLatched)
+                ? "\r\n~: the full-band envelope timed the room's modal " +
+                    "build-up, not the direct rise\r\n(its upper half reads " +
+                    "much earlier) \u2014 the sides compare different features," +
+                    "\r\nso this \u0394 overstates the true skew. The alignment " +
+                    "engine detects the same\r\nlatch and times such pairs by " +
+                    "other means; trust its log over this row."
+                : string.Empty) +
             "\r\nLow-band envelopes rise slowly, so the lowest rows carry " +
             "extra tolerance (a fraction of a millisecond is noise there)." +
             "\r\nLevel \u0394 is the gated band level of the processed sides " +

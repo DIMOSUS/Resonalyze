@@ -132,6 +132,61 @@ public sealed class VirtualCrossoverAnalysisTests
         Assert.InRange(octaves, 0.3, 1.4);
     }
 
+    // A low-frequency junction scene at an arbitrary sample rate: a direct
+    // arrival plus an early reflection ~30 ms later (inside the ~85 ms gate at
+    // every rate, but outside the 21 ms window a fixed 4096-sample gate would
+    // give at 192 kHz), band-limited to the 80 Hz overlap so window duration —
+    // hence frequency resolution — actually bears on the recovered delay.
+    private static Complex[] LowJunctionArrival(int sampleRate, double arrivalMs)
+    {
+        int length = sampleRate / 2; // 0.5 s, room for the gate at any rate
+        var ir = new Complex[length];
+        int direct = (int)Math.Round(arrivalMs / 1000.0 * sampleRate);
+        int reflection = (int)Math.Round((arrivalMs + 30.0) / 1000.0 * sampleRate);
+        ir[direct] = Complex.One;
+        if (reflection < length)
+        {
+            ir[reflection] += 0.5;
+        }
+        return VirtualCrossoverAnalysis.ApplyChain(
+            ir,
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.BandPass,
+                LowPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.LinkwitzRiley, 160, 24),
+                HighPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.LinkwitzRiley, 40, 24))),
+            sampleRate);
+    }
+
+    private static double RecoveredJunctionDelayMs(int sampleRate, double knownDelayMs)
+    {
+        // The variable arrives knownDelayMs LATER, so the delay that realigns
+        // it is the negative of that (delay to ADD to the variable).
+        Complex[] fixedIr = LowJunctionArrival(sampleRate, 10.0);
+        Complex[] variableIr = LowJunctionArrival(sampleRate, 10.0 + knownDelayMs);
+        IReadOnlyList<AlignmentCandidate> candidates =
+            VirtualCrossoverAnalysis.FindAlignmentCandidates(
+                variableIr, [fixedIr], sampleRate, 40, 160, -2.0, 2.0);
+        return AlignmentSelection.Select(candidates, 0.0).DelayMs;
+    }
+
+    [Fact]
+    public void FindAlignmentCandidates_RecoversTheSameDelayAcrossSampleRates()
+    {
+        // The gate is sized in time, so the same physical scene must yield the
+        // same delay whatever the sample rate; a sample-fixed gate would shrink
+        // the window at 96 kHz and drift the estimate.
+        const double knownDelayMs = 0.30;
+        double at48k = RecoveredJunctionDelayMs(48_000, knownDelayMs);
+        double at96k = RecoveredJunctionDelayMs(96_000, knownDelayMs);
+
+        Assert.Equal(-knownDelayMs, at48k, 1);
+        Assert.Equal(-knownDelayMs, at96k, 1);
+        Assert.True(Math.Abs(at48k - at96k) < 0.05,
+            $"rate-dependent delay: 48k={at48k:0.000} ms, 96k={at96k:0.000} ms");
+    }
+
     [Fact]
     public void EffectiveOverlapOctaves_SilentVariableHasNoOverlap()
     {

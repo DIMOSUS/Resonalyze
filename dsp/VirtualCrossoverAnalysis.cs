@@ -1245,17 +1245,37 @@ public static class VirtualCrossoverAnalysis
         double MagnitudeSum);
 
     // The direct-sound gate applied to every response before the alignment
-    // spectra are taken: the same shape as the panel's default frequency-
-    // response window (4096 samples, 256-sample cosine fades, anchored one
-    // fade-length before the earliest channel peak). Reading the full IR
-    // instead would fold the entire room decay into every bin — hundreds of
-    // milliseconds of reverberation whose comb structure the alignment cannot
-    // change — so the search would optimize (and be misled by) reflections
-    // while the panel displays the gated direct sound. One gate shared by all
-    // channels, like the metric's shared anchor, so the loss keeps its 0 dB
-    // ceiling.
-    private const int AlignmentGateLengthSamples = 4096;
-    private const int AlignmentGateFadeSamples = 256;
+    // spectra are taken: a cosine-faded Tukey window anchored one fade-length
+    // before the earliest channel peak. Reading the full IR instead would fold
+    // the entire room decay into every bin — hundreds of milliseconds of
+    // reverberation whose comb structure the alignment cannot change — so the
+    // search would optimize (and be misled by) reflections while the panel
+    // displays the gated direct sound. One gate shared by all channels, like
+    // the metric's shared anchor, so the loss keeps its 0 dB ceiling.
+    //
+    // The window is sized in TIME, not samples: historically it was a fixed
+    // 4096 samples, which is ~85 ms at 48 kHz but only 43 ms at 96 kHz and
+    // 21 ms at 192 kHz — the higher the rate, the shorter the physical window.
+    // The delay estimate is flat for any window past ~40 ms and drifts only
+    // below it, so a sample-fixed gate quietly changes the answer at high rates;
+    // pinning the duration (and the fade) keeps every rate on that plateau. The
+    // reference figures reproduce the historical 4096-sample / 256-fade window
+    // EXACTLY at 48 kHz. The analyzed span is then zero-padded to a power-of-two
+    // FFT length sized per rate — window and FFT length kept separate so the
+    // physical window cannot jump across a power-of-two boundary (the same split
+    // as JunctionPhaseAlignment's analysis window).
+    private const int AlignmentGateReferenceRate = 48_000;
+    private const int AlignmentGateReferenceSamples = 4096;
+    private const int AlignmentGateReferenceFadeSamples = 256;
+
+    private static int AlignmentGateSamples(int sampleRate) => (int)Math.Round(
+        (double)AlignmentGateReferenceSamples * sampleRate / AlignmentGateReferenceRate);
+
+    private static int AlignmentGateFadeSamples(int sampleRate) => (int)Math.Round(
+        (double)AlignmentGateReferenceFadeSamples * sampleRate / AlignmentGateReferenceRate);
+
+    private static int AlignmentFftLength(int sampleRate) =>
+        DspMath.NextPowerOfTwo(AlignmentGateSamples(sampleRate));
 
     // The per-bin spectra inside the frequency window, decimated to a bounded
     // bin count so the search stays fast for long IRs. The fixed channels act
@@ -1295,14 +1315,16 @@ public static class VirtualCrossoverAnalysis
         // the fade-in: a fade would attenuate the channels' arrivals unequally
         // (they sit at different fade depths) and bias the loss. When the peak
         // sits closer to the start than a full fade, the fade shrinks to fit.
-        int leftFadeSamples = Math.Min(AlignmentGateFadeSamples, anchor);
+        int gateSamples = AlignmentGateSamples(sampleRate);
+        int fadeSamples = AlignmentGateFadeSamples(sampleRate);
+        int leftFadeSamples = Math.Min(fadeSamples, anchor);
         int gateStart = anchor - leftFadeSamples;
         double[] gate = Windowing.TukeyWindow(
-            AlignmentGateLengthSamples,
-            2.0 * leftFadeSamples / AlignmentGateLengthSamples,
-            2.0 * AlignmentGateFadeSamples / AlignmentGateLengthSamples);
+            gateSamples,
+            2.0 * leftFadeSamples / gateSamples,
+            2.0 * fadeSamples / gateSamples);
 
-        int length = AlignmentGateLengthSamples;
+        int length = AlignmentFftLength(sampleRate);
         Complex[] variableSpectrum = ForwardSpectrum(
             GateDirectSound(variableImpulseResponse, gateStart, gate), length);
         var fixedSpectrum = new Complex[length];
@@ -1902,12 +1924,14 @@ public static class VirtualCrossoverAnalysis
         }
 
         int anchor = FindPeakIndex(impulseResponse);
-        int leftFade = Math.Min(AlignmentGateFadeSamples, anchor);
+        int gateSamples = AlignmentGateSamples(sampleRate);
+        int fadeSamples = AlignmentGateFadeSamples(sampleRate);
+        int leftFade = Math.Min(fadeSamples, anchor);
         double[] gate = Windowing.TukeyWindow(
-            AlignmentGateLengthSamples,
-            2.0 * leftFade / AlignmentGateLengthSamples,
-            2.0 * AlignmentGateFadeSamples / AlignmentGateLengthSamples);
-        int length = AlignmentGateLengthSamples;
+            gateSamples,
+            2.0 * leftFade / gateSamples,
+            2.0 * fadeSamples / gateSamples);
+        int length = AlignmentFftLength(sampleRate);
         Complex[] spectrum = ForwardSpectrum(
             GateDirectSound(impulseResponse, anchor - leftFade, gate), length);
 

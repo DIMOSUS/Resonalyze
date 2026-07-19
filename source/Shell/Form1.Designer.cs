@@ -399,10 +399,10 @@ namespace Resonalyze
             virtualDspMetricLabel.BorderStyle = BorderStyle.FixedSingle;
             virtualDspMetricLabel.Font = new Font("Consolas", 9F);
             virtualDspMetricLabel.ForeColor = Color.FromArgb(230, 184, 0);
-            virtualDspMetricLabel.Location = new Point(1268, 479);
+            virtualDspMetricLabel.Location = new Point(1268, 389);
             virtualDspMetricLabel.Name = "virtualDspMetricLabel";
             virtualDspMetricLabel.Padding = new Padding(8);
-            virtualDspMetricLabel.Size = new Size(214, 341);
+            virtualDspMetricLabel.Size = new Size(214, 431);
             virtualDspMetricLabel.TabIndex = 31;
             virtualDspMetricLabel.Visible = false;
             // 

@@ -174,14 +174,41 @@ namespace Resonalyze
             virtualCrossoverPanel.MetricChanged = (text, detail) =>
             {
                 virtualDspMetricLabel.Text = text;
-                toolTip1.SetToolTip(virtualDspMetricLabel, detail);
+                virtualDspMetricDetail = detail;
             };
+            // The metric breakdown is long, and the automatic ToolTip auto-pops
+            // after seconds (capped at ~32 s) — unreadable. Shown manually it
+            // stays until the mouse leaves the label. The tip is placed fully
+            // to the LEFT of the label on purpose: a tip under the cursor
+            // steals the mouse, fires MouseLeave and flickers in a
+            // show-hide-show loop.
+            virtualDspMetricLabel.MouseEnter += (_, _) =>
+            {
+                if (virtualDspMetricDetail.Length == 0)
+                {
+                    return;
+                }
+
+                Size tipSize = TextRenderer.MeasureText(
+                    virtualDspMetricDetail, SystemFonts.StatusFont ?? Font);
+                toolTip1.Show(
+                    virtualDspMetricDetail,
+                    virtualDspMetricLabel,
+                    -tipSize.Width - 16,
+                    0);
+            };
+            virtualDspMetricLabel.MouseLeave += (_, _) =>
+                toolTip1.Hide(virtualDspMetricLabel);
             modeDescriptors = CreateModeDescriptors();
             ApplyPersistedSettings();
             WireControllerEvents();
             InitializeStartupState();
             WireFormEvents();
         }
+
+        // The full Virtual DSP metric breakdown, shown as a persistent tooltip
+        // by the MouseEnter wiring in the constructor.
+        private string virtualDspMetricDetail = string.Empty;
 
         // BeginInvoke can still throw if the handle is destroyed between the guard
         // and the call — measurement events arrive from audio worker threads while

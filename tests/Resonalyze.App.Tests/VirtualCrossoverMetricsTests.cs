@@ -94,6 +94,72 @@ public sealed class VirtualCrossoverMetricsTests
             [Processed("A", Impulse(), 5, 48_000)], magnitudes: null, sumCurve: null));
     }
 
+    // A channel processed through a real crossover chain, for the junction
+    // phase read-out: the settings carry the crossover (so the junction and its
+    // overlap band resolve) and the IR is the chain-applied impulse.
+    private static ProcessedChannel ProcessedThroughChain(
+        string name,
+        CrossoverKind kind,
+        double crossoverHz,
+        double delayMs = 0)
+    {
+        var channel = new VirtualCrossoverChannel(name) { SampleRate = 48_000 };
+        channel.Settings.CrossoverKind = kind;
+        var edge = new CrossoverEdge(
+            CrossoverFilterFamily.LinkwitzRiley, crossoverHz, 24);
+        if (kind == CrossoverKind.LowPass)
+        {
+            channel.Settings.LowPassEdge = edge;
+        }
+        else
+        {
+            channel.Settings.HighPassEdge = edge;
+        }
+        channel.Settings.DelayMs = delayMs;
+
+        var impulse = new Complex[8_192];
+        impulse[480] = Complex.One;
+        Complex[] ir = VirtualCrossoverAnalysis.ApplyChain(
+            impulse, channel.Settings.ToChain(), 48_000);
+        return new ProcessedChannel(
+            channel, ir, VirtualCrossoverAnalysis.FindPeakIndex(ir), OxyColors.White);
+    }
+
+    [Fact]
+    public void BuildPhaseEntries_IsEmptyForFewerThanTwoChannels()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyCurve);
+
+        Assert.Empty(metrics.BuildPhaseEntries(
+            [ProcessedThroughChain("A", CrossoverKind.LowPass, 200)]));
+    }
+
+    [Fact]
+    public void BuildPhaseEntries_ReadsTheJunctionAndRecoversAMisalignment()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyCurve);
+
+        // Passed upper-first on purpose: the entries must order by band, not by
+        // argument order. The upper channel runs 2 ms late, so the read-out
+        // recommends the same extra delay on the lower one.
+        List<VirtualCrossoverMetric.PhaseEntry> entries = metrics.BuildPhaseEntries(
+        [
+            ProcessedThroughChain("B", CrossoverKind.HighPass, 200, delayMs: 2.0),
+            ProcessedThroughChain("A", CrossoverKind.LowPass, 200)
+        ]);
+
+        VirtualCrossoverMetric.PhaseEntry entry = Assert.Single(entries);
+        Assert.Equal("A/B", entry.Junction);
+        Assert.Equal("A", entry.LowerChannel);
+        Assert.Equal(200, entry.CrossoverHz);
+        Assert.Equal(100, entry.LowHz);
+        Assert.Equal(400, entry.HighHz);
+        Assert.InRange(entry.Result.BestExtraDelayMs, 1.9, 2.1);
+        Assert.InRange(entry.Result.BestScore, 0.95, 1.0);
+    }
+
     [Fact]
     public async Task ComputeOppositeSumCurveAsync_ReturnsNull_WithFewerThanTwoParticipatingChannels()
     {
@@ -183,6 +249,66 @@ public sealed class VirtualCrossoverMetricsTests
         Assert.Equal(20_000, delta.HighHz);
         // The arrival result is cached on the side for reuse on the next redraw.
         Assert.NotNull(channel.PhysicalSideState(false).ArrivalCache);
+    }
+
+    // A Hann-windowed tone burst: toneHz for cycles periods, scaled by
+    // amplitude, placed at startMs.
+    private static void AddBurst(
+        Complex[] ir, double toneHz, int cycles, double amplitude, double startMs)
+    {
+        int start = (int)(startMs * 48_000 / 1000.0);
+        int length = (int)(cycles * 48_000 / toneHz);
+        for (int i = 0; i < length && start + i < ir.Length; i++)
+        {
+            double window = 0.5 * (1.0 - Math.Cos(Math.Tau * i / length));
+            ir[start + i] += new Complex(
+                amplitude * window * Math.Sin(Math.Tau * toneHz * i / 48_000), 0);
+        }
+    }
+
+    [Fact]
+    public async Task ComputeStereoDeltasAsync_FlagsAModalLatchedSide()
+    {
+        // The left side reproduces the field failure the alignment engine's
+        // cross-side links detect: a weak direct wavelet (34 dB below the
+        // late modal ringing — under the first-arrival detector's −25 dB
+        // prominence floor) followed by a huge low-frequency build-up. The
+        // full 100–400 Hz band then times the build-up, while the band's
+        // upper half (where the 130 Hz ringing is filtered out) times the
+        // wavelet — the disagreement IS the latch. The right side has a
+        // clean dominant direct and must stay unflagged.
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyCurve);
+        long revision = coordinator.Invalidate();
+
+        var latched = new Complex[8_192];
+        AddBurst(latched, toneHz: 300, cycles: 3, amplitude: 0.02, startMs: 10);
+        AddBurst(latched, toneHz: 130, cycles: 8, amplitude: 1.0, startMs: 25);
+        var clean = new Complex[8_192];
+        AddBurst(clean, toneHz: 300, cycles: 3, amplitude: 1.0, startMs: 10);
+
+        var channel = new VirtualCrossoverChannel("B");
+        foreach (bool rightSide in new[] { false, true })
+        {
+            VirtualCrossoverChannelState state = channel.PhysicalSideState(rightSide);
+            state.TransferImpulseResponse = rightSide ? clean : latched;
+            state.SampleRate = 48_000;
+            VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
+            settings.CrossoverKind = CrossoverKind.BandPass;
+            settings.HighPassEdge = new CrossoverEdge(
+                CrossoverFilterFamily.LinkwitzRiley, 100, 24);
+            settings.LowPassEdge = new CrossoverEdge(
+                CrossoverFilterFamily.LinkwitzRiley, 400, 24);
+        }
+
+        List<VirtualCrossoverMetric.StereoDelta> deltas =
+            await metrics.ComputeStereoDeltasAsync([channel], revision);
+
+        VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
+        Assert.True(delta.LeftLatched);
+        Assert.False(delta.RightLatched);
+        // The latch flag rides in the per-side cache with the arrival.
+        Assert.True(channel.PhysicalSideState(false).ArrivalCache!.Value.Latched);
     }
 
     [Fact]

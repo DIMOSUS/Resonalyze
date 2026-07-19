@@ -136,7 +136,9 @@ file is provided with every release.
   polarity, Butterworth / Linkwitz-Riley / Bessel / Chebyshev crossovers, an
   all-pass stage, and imported
   PEQ — and see their complex sum, sum loss, the opposite side's sum, phase
-  tracking, per-pair Δ L−R timing, auto crossover proposals, a stereo-aware
+  tracking, a per-junction phase read-out (phase at the crossover, the
+  coherence-maximizing delay fix and its lobe margin), per-pair Δ L−R timing,
+  auto crossover proposals, a stereo-aware
   auto delay with a scene offset, gated phase view, overlay capture, sessions,
   and tuning-sheet export
 - Live Spectrum: real-time loopback transfer function with selectable excitation
@@ -1512,8 +1514,50 @@ The channels enter fully processed, so 0 ms is the alignment as it currently
 stands (the solid marker), the dashed marker is the band-limited
 envelope-arrival estimate the searches anchor on, and every near-tied comb
 lobe the log's `[corr]`/`[phat]` lines enumerate is visible as such. A **Sum loss** read-out (avg / dip
-per junction plus a total) turns tuning into numbers you can minimize, and a
-**Δ L−R** block below it reports each stereo pair's final inter-side state:
+per junction plus a total) turns tuning into numbers you can minimize.
+
+A **Junction phase** block below it reads each adjacent pair's steady-state
+cross-phase — the regime sustained program material actually sums in.
+(Deliberately NOT the direct-sound / FDW phase: on field measurements the
+room adds several milliseconds of apparent group delay at subwoofer
+frequencies, so a direct-sound read would recommend a confidently wrong
+delay.) The read-out is analyzed in a time-sized window (~0.68 s of the processed
+IR), so the physical horizon — and the fix it recommends — does not change
+when the same measurement is captured at a different sample rate. Three
+figures per junction: **φfc** — the phase of the lower
+channel minus the upper AT the crossover: a weighted circular mean over a
+narrow (±1/6-octave) window around fc, deliberately a local measurement —
+a straight-line fit's intercept extrapolates through whatever interference
+notches and spectral gaps bend the band's phase, and on a real mid/tweeter
+junction read +158° where the handover itself stood near −15°. Its
+consistency R (how much the window's bins agree, shown in the tooltip)
+gates the figure: a low R dashes the column instead of presenting mush
+(≈0° means the handover is phase-aligned). A φ near ±180° does **not** by
+itself call for a polarity flip — an inverted channel and a half-period
+delay are identical at fc — so that decision comes from a whole-band
+score comparison, not from the angle;
+**fix ms** — the extra delay on the pair's LOWER channel that would maximize
+the overlap-band phase score, relative to the current settings (positive:
+delay it further; a negative fix advances the lower channel, so apply it as
+a +delay on the upper one when the lower is already at 0). A trailing mark
+carries the polarity call: `i` recommends flipping the lower channel (a
+whole-band score comparison, not the angle — an inverted channel and a
+half-period delay are identical at fc), `~` keeps the current polarity but
+warns that a flip nearly ties (an inversion and a half-period delay sum
+alike, common at a sub, so summation cannot settle the polarity). And
+**lobe** — how decisively that best delay beats the nearest **same-polarity**
+whole-period rival; below 0.10 it is flagged `!` (the band is too narrow to
+rule the period hop out, so don't trust the fix). Read the columns right to
+left — lobe says whether to trust the delay, φfc says how the junction
+stands, fix says where to move — and treat fixes under ~0.1–0.2 ms as noise.
+The score is a phase-alignment measure (Σw·cos Δφ / Σw, −1…+1), not the
+magnitude coherence γ². The block is purely informative (nothing feeds back
+into Auto delay), and its tooltip — pinned while the mouse stays on the
+read-out — carries the full fit per junction: the phase score now and at the
+optimum, how close a flip scores, the rival and margin, the residual slope
+Δτ and the fit rms over the band.
+
+A **Δ L−R** block below reports each stereo pair's final inter-side state:
 the two sides' band-limited envelope arrivals in the pair's shared band
 (fully processed chains included) with their difference — positive means the
 right side leads, the same sign convention as the scene offset, so after a
@@ -1524,7 +1568,12 @@ together, so this is the read-out for the by-ear gain trim that finishes the
 centering; note a single microphone underestimates the binaural difference
 (no head shadow), so expect to trim a little more than it shows. A side whose
 arrival cannot be measured reliably (a silent band, or a near-noise record)
-shows an honest dash instead of a precise-looking number.
+shows an honest dash instead of a precise-looking number, and a side whose
+full-band envelope timed the room's modal build-up rather than the direct
+rise (its upper-half read lands much earlier — the same detection the
+alignment engine's cross-side links run) is marked with `~`: the number is
+what the envelope measured, but the sides then compare different features
+and the Δ overstates the true skew, so trust the engine's log over that row.
 
 Editing a chain recomputes the prediction on a background task, so dragging a
 gain, delay, or crossover value stays responsive even with several channels

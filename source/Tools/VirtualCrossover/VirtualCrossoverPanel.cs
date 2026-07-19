@@ -1956,8 +1956,23 @@ public partial class VirtualCrossoverPanel : UserControl
             entries = metrics.BuildEntries(processed, magnitudes, sumCurve);
         }
 
+        // The junction phase block is informative only: it renders alongside
+        // the sum loss but feeds nothing back into the alignment engine.
+        List<VirtualCrossoverMetric.PhaseEntry> phaseEntries;
+        using (AppProfiler.Zone("VirtualDSP.BuildPhaseEntries"))
+        {
+            phaseEntries = metrics.BuildPhaseEntries(processed);
+        }
+
         string compact = VirtualCrossoverMetric.FormatCompact(entries);
         string detail = entries.Count > 0 ? VirtualCrossoverMetric.FormatDetail(entries) : string.Empty;
+        if (phaseEntries.Count > 0)
+        {
+            compact += "\r\n\r\n" +
+                VirtualCrossoverMetric.FormatPhaseCompact(phaseEntries);
+            detail += (detail.Length > 0 ? "\r\n\r\n" : string.Empty) +
+                VirtualCrossoverMetric.FormatPhaseDetail(phaseEntries);
+        }
         if (stereoDeltas is { Count: > 0 })
         {
             compact += "\r\n\r\n" +

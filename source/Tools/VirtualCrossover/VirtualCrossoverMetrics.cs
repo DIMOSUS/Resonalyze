@@ -117,6 +117,66 @@ internal sealed class VirtualCrossoverMetrics
     }
 
     /// <summary>
+    /// The per-junction phase read-outs: each adjacent pair's steady-state
+    /// cross-phase analysis (the phase score, the phase at the crossover, the
+    /// score-maximizing extra delay and polarity on the lower channel, and the
+    /// lobe margin). Purely informative — nothing here feeds the alignment
+    /// engine. One analysis spectrum is built per channel and shared by the
+    /// junctions it participates in. Empty when there is no junction to read.
+    /// </summary>
+    public List<VirtualCrossoverMetric.PhaseEntry> BuildPhaseEntries(
+        List<ProcessedChannel> processed)
+    {
+        var entries = new List<VirtualCrossoverMetric.PhaseEntry>();
+        if (processed.Count < 2)
+        {
+            return entries;
+        }
+
+        var spectra = new Dictionary<ProcessedChannel, Complex[]>();
+        Complex[] SpectrumOf(ProcessedChannel item)
+        {
+            if (!spectra.TryGetValue(item, out Complex[]? spectrum))
+            {
+                spectrum = JunctionPhaseAlignment.BuildAnalysisSpectrum(
+                    item.ImpulseResponse, item.Channel.SampleRate);
+                spectra.Add(item, spectrum);
+            }
+
+            return spectrum;
+        }
+
+        foreach (AdjacentPair pair in ProcessedChannels.GetAdjacentPairs(
+            ProcessedChannels.OrderByBand(processed)))
+        {
+            if (pair.Lower.Channel.SampleRate != pair.Upper.Channel.SampleRate)
+            {
+                continue;
+            }
+
+            JunctionPhaseResult? result = JunctionPhaseAlignment.AnalyzeSpectra(
+                SpectrumOf(pair.Lower),
+                SpectrumOf(pair.Upper),
+                pair.Lower.Channel.SampleRate,
+                pair.CrossoverHz,
+                pair.BandLowHz,
+                pair.BandHighHz);
+            if (result != null)
+            {
+                entries.Add(new VirtualCrossoverMetric.PhaseEntry(
+                    $"{pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}",
+                    pair.Lower.Channel.Name,
+                    pair.CrossoverHz,
+                    pair.BandLowHz,
+                    pair.BandHighHz,
+                    result));
+            }
+        }
+
+        return entries;
+    }
+
+    /// <summary>
     /// The final per-pair L−R timing: both sides' fully processed responses
     /// (current delays included) get their band-limited envelope arrival read
     /// in the pair's shared band, and the difference (positive: right leads —
@@ -244,6 +304,7 @@ internal sealed class VirtualCrossoverMetrics
                 {
                     side.Arrival = arrival.Result;
                     side.LevelDb = arrival.LevelDb;
+                    side.Latched = arrival.Latched;
                     side.ArrivalFromCache = true;
                 }
             }
@@ -271,6 +332,8 @@ internal sealed class VirtualCrossoverMetrics
                             side.LevelDb = VirtualCrossoverAnalysis.MeasureBandLevelDb(
                                 side.ProcessedIr!, side.SampleRate,
                                 job.LowHz, job.HighHz);
+                            side.Latched = IsModalLatched(
+                                side, job.LowHz, job.HighHz, side.Arrival.Value);
                         }
                     }
                 }
@@ -289,7 +352,7 @@ internal sealed class VirtualCrossoverMetrics
                     {
                         side.State.ArrivalCache =
                             (side.ProcessedIr!, job.LowHz, job.HighHz,
-                                side.Arrival!.Value, side.LevelDb);
+                                side.Arrival!.Value, side.LevelDb, side.Latched);
                     }
                 }
             }
@@ -310,7 +373,8 @@ internal sealed class VirtualCrossoverMetrics
                 if (job.Mono)
                 {
                     return new VirtualCrossoverMetric.StereoDelta(
-                        job.Channel, leftMs, null, job.LowHz, job.HighHz, null);
+                        job.Channel, leftMs, null, job.LowHz, job.HighHz, null,
+                        LeftLatched: job.Left.Latched);
                 }
 
                 TimeAlignmentAnalysisResult right = job.Right.Arrival!.Value;
@@ -325,9 +389,53 @@ internal sealed class VirtualCrossoverMetrics
                     job.Left.LevelDb is { } leftLevel &&
                     job.Right.LevelDb is { } rightLevel
                         ? leftLevel - rightLevel
-                        : null);
+                        : null,
+                    LeftLatched: job.Left.Latched,
+                    RightLatched: job.Right.Latched);
             })
             .ToList();
+    }
+
+    // The alignment engine's modal-latch detection, applied to one side's
+    // read-out arrival: the SAME response measured in the band's upper half
+    // (from the geometric-mean frequency up) must agree with the full-band
+    // read to within the dispersion one direct wave packet can show — half a
+    // period at the probe's low edge. A full-band read landing far BEHIND its
+    // own upper-half read means the envelope latched onto the in-room modal
+    // build-up instead of the direct rise, and the row's L/R difference then
+    // compares different features. The probe only VOTES on the full band's
+    // honesty; its own number is never a substitute.
+    private static bool IsModalLatched(
+        SideProcessJob side,
+        double lowHz,
+        double highHz,
+        TimeAlignmentAnalysisResult fullBand)
+    {
+        if (!fullBand.IsValid ||
+            fullBand.SignalToNoiseDecibels < AutoAlignmentEngine.MinimumArrivalSnrDb)
+        {
+            return false;
+        }
+
+        double probeLowHz = Math.Sqrt(lowHz * highHz);
+        if (highHz < probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
+        {
+            return false;
+        }
+
+        TimeAlignmentAnalysisResult probe =
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                side.ProcessedIr!, side.SampleRate, probeLowHz, highHz,
+                side.ProcessedValidRange);
+        if (!probe.IsValid ||
+            probe.SignalToNoiseDecibels < AutoAlignmentEngine.MinimumArrivalSnrDb)
+        {
+            return false;
+        }
+
+        double toleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
+        return fullBand.FirstArrivalDelayMilliseconds
+            - probe.FirstArrivalDelayMilliseconds > toleranceMs;
     }
 
     /// <summary>
@@ -425,6 +533,7 @@ internal sealed class VirtualCrossoverMetrics
         public ValidSampleRange ProcessedValidRange { get; set; }
         public TimeAlignmentAnalysisResult? Arrival { get; set; }
         public double? LevelDb { get; set; }
+        public bool Latched { get; set; }
         public bool ArrivalFromCache { get; set; }
     }
 

@@ -321,11 +321,39 @@ public sealed class VirtualCrossoverMetricTests
         RunWithInvariantCulture(() =>
         {
             // BestInvert renders an "i" right after the fix; the columns stay
-            // aligned with the space a non-flipped row uses there.
+            // aligned with the space a settled-polarity row uses there.
             string text = VirtualCrossoverMetric.FormatPhaseCompact(
                 [PhaseJunction(bestInvert: true)]);
 
             Assert.Contains("A/B     -3°  -0.30i  0.19", text);
+        });
+    }
+
+    [Fact]
+    public void FormatPhaseCompact_MarksAnAmbiguousPolarityWithTilde()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            // Kept polarity, but the flip nearly ties (best 0.97 vs opposite
+            // 0.96): "~", distinct from the period-hop "!" on the lobe.
+            string text = VirtualCrossoverMetric.FormatPhaseCompact(
+                [PhaseJunction(oppositePolarityScore: 0.96)]);
+
+            Assert.Contains("A/B     -3°  -0.30~  0.19", text);
+            Assert.DoesNotContain("!", text);
+        });
+    }
+
+    [Fact]
+    public void FormatPhaseCompact_LeavesTheSlotBlankWhenPolarityIsSettled()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            // The default opposite score (0.42) is far below best (0.97): the
+            // current polarity is clearly right, so no mark.
+            string text = VirtualCrossoverMetric.FormatPhaseCompact([PhaseJunction()]);
+
+            Assert.Contains("A/B     -3°  -0.30   0.19", text);
         });
     }
 
@@ -377,7 +405,7 @@ public sealed class VirtualCrossoverMetricTests
                 "fit Δτ +2.62 ms, rms 10° (40 Hz – 160 Hz)",
                 text);
             Assert.Contains("the delay to add to the LOWER channel", text);
-            Assert.Contains("does NOT by itself settle polarity", text);
+            Assert.Contains("φ near ±180° never settles it either", text);
         });
     }
 

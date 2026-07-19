@@ -269,30 +269,37 @@ public sealed class JunctionPhaseAlignmentTests
         Assert.Equal(reference.FitRmsDeg, shifted.FitRmsDeg, 0);
     }
 
-    [Theory]
-    [InlineData(44_100)]
-    [InlineData(48_000)]
-    [InlineData(96_000)]
-    [InlineData(192_000)]
-    public void Analyze_RecommendsTheSameFixAcrossSampleRates(int sampleRate)
+    [Fact]
+    public void Analyze_RecommendsTheSameFixAcrossSampleRates()
     {
         // The SAME physical scene — a broadband direct arrival plus a decaying
         // low-frequency modal tail, the upper channel 0.6 ms late — sampled at
-        // four rates. With a fixed sample-count window the high-rate captures
-        // would truncate the tail and drift the fix; the time-sized window
-        // keeps the recommendation rate-independent.
+        // six rates that straddle two power-of-two FFT-size boundaries (32k and
+        // 88.2k double the FFT). With a fixed sample-count window, or with the
+        // whole padded FFT used as the analyzed span, the physical window would
+        // jump across those boundaries and drift the fix; the time-sized window
+        // must recommend the same delay at every rate. Results are compared
+        // directly, not just bracketed.
         const double delayMs = 0.6;
-        Complex[] lower = DecayingScene(sampleRate, extraDelayMs: 0);
-        Complex[] upper = DecayingScene(sampleRate, extraDelayMs: delayMs);
+        int[] rates = { 32_000, 44_100, 48_000, 88_200, 96_000, 192_000 };
+        var fixes = new List<double>();
+        foreach (int rate in rates)
+        {
+            JunctionPhaseResult? result = JunctionPhaseAlignment.Analyze(
+                DecayingScene(rate, extraDelayMs: 0),
+                DecayingScene(rate, extraDelayMs: delayMs),
+                rate, 200, 120, 340);
+            Assert.NotNull(result);
+            Assert.False(result!.BestInvert);
+            fixes.Add(result.BestExtraDelayMs);
+        }
 
-        JunctionPhaseResult? result = JunctionPhaseAlignment.Analyze(
-            lower, upper, sampleRate, 200, 120, 340);
-
-        Assert.NotNull(result);
-        Assert.False(result!.BestInvert);
-        // The lower channel must be delayed by the same 0.6 ms to catch the
-        // late upper one, at every rate, to a hair.
-        Assert.InRange(result.BestExtraDelayMs, delayMs - 0.08, delayMs + 0.08);
+        // The whole set agrees to a hundredth of a millisecond — the only
+        // residual is the different bin grids sampling the response, not the
+        // physical window changing — and every rate lands on the true 0.6 ms.
+        Assert.True(fixes.Max() - fixes.Min() < 0.02,
+            $"fix spread across rates too large: [{string.Join(", ", fixes.Select(v => v.ToString("0.0000")))}]");
+        Assert.All(fixes, value => Assert.InRange(value, delayMs - 0.05, delayMs + 0.05));
     }
 
     // A one-second IR: a short broadband click at 10 ms, then a 200 Hz mode

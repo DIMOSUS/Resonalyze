@@ -115,12 +115,14 @@ public static class JunctionPhaseAlignment
 {
     // The steady-state analysis window is sized in TIME, not samples, so the
     // physical horizon (and therefore the fix it recommends) does not change
-    // when the same measurement is captured at a different sample rate. 0.68 s
-    // keeps the common 44.1/48 kHz rates on the historical 32768-point FFT
-    // while a 192 kHz capture no longer collapses to ~170 ms and loses its
-    // low-frequency modal tail. The cap bounds the UI-thread FFT cost at
-    // exotic rates (768 kHz would otherwise ask for a 1M-point transform per
-    // channel); it still leaves ≥ 0.34 s everywhere.
+    // when the same measurement is captured at a different sample rate. The
+    // analyzed span is exactly this many seconds at every rate; the FFT is the
+    // next power of two above it, and the samples between the two are zero
+    // padding, NOT extra analyzed signal — otherwise the physical window would
+    // jump by up to 1.5× across a power-of-two boundary (0.68 s at 48 kHz but
+    // 1.02 s at 32 kHz for the same 32768-point FFT). The cap bounds the
+    // UI-thread FFT cost at exotic rates (768 kHz would otherwise ask for a
+    // 1M-point transform per channel), trimming the analyzed span there.
     private const double AnalysisDurationSeconds = 0.68;
     private const int MaxAnalysisLength = 262_144;
 
@@ -153,15 +155,18 @@ public static class JunctionPhaseAlignment
     // are texture of the same lobe.
     private const double RivalMinimumSeparationPeriods = 0.4;
 
-    // Flipping the lower channel's polarity is recommended only when it beats
-    // the kept polarity's best by at least this score margin. A polarity flip
-    // is a disruptive, easily-wrong change; at low frequencies over a wide
-    // relative band an inversion and a half-period delay sum almost identically
-    // (the two best scores come within ~0.001 on a real 80 Hz sub junction), so
-    // a hair-thin advantage is not enough to advise flipping — keep the current
-    // polarity, the safe default. A genuine inversion clears this easily (it
-    // aligns the whole band flat, which no delay on the kept polarity can).
-    private const double PolarityFlipAdvantage = 0.05;
+    /// <summary>
+    /// Flipping the lower channel's polarity is recommended only when it beats
+    /// the kept polarity's best by at least this score margin, and the display
+    /// marks the polarity AMBIGUOUS when the two are within it. A polarity flip
+    /// is a disruptive, easily-wrong change; at low frequencies over a wide
+    /// relative band an inversion and a half-period delay sum almost identically
+    /// (the two best scores come within ~0.001 on a real 80 Hz sub junction), so
+    /// a hair-thin advantage is not enough to advise flipping — keep the current
+    /// polarity, the safe default. A genuine inversion clears this easily (it
+    /// aligns the whole band flat, which no delay on the kept polarity can).
+    /// </summary>
+    public const double PolarityFlipAdvantage = 0.05;
 
     // The half-width (in octaves) of the window around the crossover that the
     // φ readout is measured over. Wide enough to average interference texture,
@@ -178,10 +183,27 @@ public static class JunctionPhaseAlignment
     public const double MinimumPhaseConsistency = 0.5;
 
     /// <summary>
-    /// The analysis-spectrum length (a power of two) for a given sample rate:
-    /// <see cref="AnalysisDurationSeconds"/> of signal, capped. Both spectra
-    /// handed to <see cref="AnalyzeSpectra"/> must have this length, so the
-    /// analyzed physical horizon is rate-independent.
+    /// The number of IR samples actually analyzed at a given sample rate:
+    /// <see cref="AnalysisDurationSeconds"/> of signal, but never more than the
+    /// FFT holds (the cap can trim it at exotic rates). This is the physical
+    /// window; it is the same duration at every rate.
+    /// </summary>
+    public static int AnalysisSamplesFor(int sampleRate)
+    {
+        if (sampleRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+        }
+
+        int target = Math.Max(1, (int)Math.Ceiling(sampleRate * AnalysisDurationSeconds));
+        return Math.Min(target, AnalysisLengthFor(sampleRate));
+    }
+
+    /// <summary>
+    /// The analysis-FFT length (a power of two) for a given sample rate: the
+    /// next power of two above <see cref="AnalysisSamplesFor"/>, capped. The
+    /// samples past the analyzed span are zero padding. Both spectra handed to
+    /// <see cref="AnalyzeSpectra"/> must have this length.
     /// </summary>
     public static int AnalysisLengthFor(int sampleRate)
     {
@@ -196,9 +218,10 @@ public static class JunctionPhaseAlignment
 
     /// <summary>
     /// The steady-state analysis spectrum of one processed IR at its sample
-    /// rate: the first <see cref="AnalysisLengthFor"/> samples (tail-faded when
-    /// the IR is longer) transformed in place. Callers analyzing several
-    /// junctions reuse one spectrum per channel.
+    /// rate: exactly <see cref="AnalysisSamplesFor"/> samples (tail-faded when
+    /// the IR is longer), zero-padded to <see cref="AnalysisLengthFor"/> and
+    /// transformed. Callers analyzing several junctions reuse one spectrum per
+    /// channel.
     /// </summary>
     public static Complex[] BuildAnalysisSpectrum(Complex[] impulseResponse, int sampleRate)
     {
@@ -209,11 +232,17 @@ public static class JunctionPhaseAlignment
                 "The impulse response is empty.", nameof(impulseResponse));
         }
 
-        int length = AnalysisLengthFor(sampleRate);
-        var spectrum = new Complex[length];
-        int copied = Math.Min(impulseResponse.Length, length);
+        int fftLength = AnalysisLengthFor(sampleRate);
+        int analysisSamples = AnalysisSamplesFor(sampleRate);
+        var spectrum = new Complex[fftLength];
+        // Only the analyzed span is copied; the rest of the FFT stays zero, so
+        // the physical window is analysisSamples (a fixed duration) regardless
+        // of how much bigger the padded FFT is.
+        int copied = Math.Min(impulseResponse.Length, analysisSamples);
         Array.Copy(impulseResponse, spectrum, copied);
-        if (impulseResponse.Length > length)
+        // Fade only when the IR is cut mid-decay at the window edge (a shorter
+        // IR ends on its own, no cut to fade).
+        if (impulseResponse.Length > analysisSamples)
         {
             int fade = Math.Min(
                 (int)Math.Round(TailFadeMs * sampleRate / 1000.0), copied);

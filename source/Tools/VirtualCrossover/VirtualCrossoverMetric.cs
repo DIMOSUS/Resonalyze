@@ -234,8 +234,9 @@ internal static class VirtualCrossoverMetric
     /// <summary>
     /// Compact per-junction phase column for the host read-out panel: the phase
     /// at the crossover, the score-maximizing extra delay on the lower channel
-    /// (with an "i" when flipping that channel's polarity scores better), and
-    /// the lobe margin ("!" when the margin is too small to trust the fix).
+    /// (with an "i" when flipping that channel's polarity scores clearly better,
+    /// "~" when a flip nearly ties), and the same-polarity lobe margin ("!" when
+    /// it is too small to rule out a whole-period hop).
     /// </summary>
     public static string FormatPhaseCompact(IReadOnlyList<PhaseEntry> entries)
     {
@@ -260,9 +261,17 @@ internal static class VirtualCrossoverMetric
                     ? $"{result.PhaseAtCrossoverDeg,4:+0;-0;0}°"
                     : "    —";
             string fix = $"{result.BestExtraDelayMs,6:+0.00;-0.00;0.00}";
-            // "i" flags a recommended polarity flip on the lower channel; a
-            // space keeps the columns aligned when no flip is wanted.
-            string polarity = result.BestInvert ? "i" : " ";
+            // Polarity slot: "i" recommends flipping the lower channel; "~"
+            // keeps the current polarity but flags that flipping nearly ties
+            // (an inversion and a half-period delay sum alike here — common at
+            // a subwoofer junction), so the polarity is not settled by
+            // summation; a space means the current polarity is clearly right.
+            // This is distinct from the period-hop "!" on the lobe column.
+            string polarity =
+                result.BestInvert ? "i"
+                : result.BestScore - result.OppositePolarityScore
+                    < JunctionPhaseAlignment.PolarityFlipAdvantage ? "~"
+                : " ";
             string lobe = result.LobeMargin.HasValue
                 ? $"{result.LobeMargin.Value,5:0.00}"
                 : "    —";
@@ -319,17 +328,18 @@ internal static class VirtualCrossoverMetric
             })) +
             "\r\nphase score: Σw·cos(Δφ)/Σw over the band (−1..+1), a phase-" +
             "alignment score,\r\nnot the magnitude coherence γ². fix: the delay " +
-            "to add to the LOWER channel\r\nthat best aligns the band; \"i\" (or " +
-            "\"invert\") means flipping that channel's\r\npolarity scores better " +
-            "still. A negative fix advances the lower channel —\r\napply it as a " +
-            "+delay on the UPPER one when the lower is already at 0.\r\nφ near " +
-            "±180° does NOT by itself settle polarity (an inverted channel and " +
-            "a\r\nhalf-period delay look identical at fc), so the flip is decided " +
-            "by the whole-\r\nband score, not by φ. φ is a narrow circular mean " +
-            "around fc; R (0..1) is how\r\nmuch its bins agree — a low R dashes " +
-            "it. lobe: how decisively the best beats\r\nthe nearest rival (a " +
-            "period hop or the opposite polarity); small margin (!) =\r\n" +
-            "ambiguous, don't trust the fix.";
+            "to add to the LOWER channel\r\nthat best aligns the band. A " +
+            "negative fix advances the lower channel — apply\r\nit as a +delay " +
+            "on the UPPER one when the lower is already at 0. Polarity mark:" +
+            "\r\n\"i\" (or \"invert\") = flipping the lower channel scores " +
+            "clearly better; \"~\" = the\r\ncurrent polarity is kept but a flip " +
+            "nearly ties (an inversion and a half-period\r\ndelay sum alike, " +
+            "common at a sub), so summation cannot settle the polarity —\r\nφ " +
+            "near ±180° never settles it either. φ is a narrow circular mean " +
+            "around fc;\r\nR (0..1) is how much its bins agree — a low R dashes " +
+            "it. lobe: how decisively\r\nthe best delay beats the nearest same-" +
+            "polarity whole-period rival; small margin\r\n(!) = the band is too " +
+            "narrow to rule that period hop out, so don't trust the fix.";
     }
 
     /// <summary>

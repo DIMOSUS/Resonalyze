@@ -1538,20 +1538,24 @@ delay are identical at fc — so that decision comes from a whole-band
 score comparison, not from the angle;
 **fix ms** — the extra delay on the pair's LOWER channel that would maximize
 the overlap-band phase score, relative to the current settings (positive:
-delay it further; a trailing `i` means flipping that channel's polarity
-scores better still — a negative fix advances the lower channel, so apply
-it as a +delay on the upper one when the lower is already at 0); and
-**lobe** — how decisively that best solution beats the nearest rival (a
-whole-period hop **or** the opposite polarity). Below 0.10 the line is
-flagged with `!`: the band is then too narrow to rule the rival out, so
-read the phase but do not chase the fix. Read the columns right to left —
-lobe says whether to trust the line, φfc says how the junction stands, fix
-says where to move — and treat fixes under ~0.1–0.2 ms as noise. The score
-is a phase-alignment measure (Σw·cos Δφ / Σw, −1…+1), not the magnitude
-coherence γ². The block is purely informative (nothing feeds back into Auto
-delay), and its tooltip — pinned while the mouse stays on the read-out —
-carries the full fit per junction: the phase score now and at the optimum,
-the rival and margin, the residual slope Δτ and the fit rms over the band.
+delay it further; a negative fix advances the lower channel, so apply it as
+a +delay on the upper one when the lower is already at 0). A trailing mark
+carries the polarity call: `i` recommends flipping the lower channel (a
+whole-band score comparison, not the angle — an inverted channel and a
+half-period delay are identical at fc), `~` keeps the current polarity but
+warns that a flip nearly ties (an inversion and a half-period delay sum
+alike, common at a sub, so summation cannot settle the polarity). And
+**lobe** — how decisively that best delay beats the nearest **same-polarity**
+whole-period rival; below 0.10 it is flagged `!` (the band is too narrow to
+rule the period hop out, so don't trust the fix). Read the columns right to
+left — lobe says whether to trust the delay, φfc says how the junction
+stands, fix says where to move — and treat fixes under ~0.1–0.2 ms as noise.
+The score is a phase-alignment measure (Σw·cos Δφ / Σw, −1…+1), not the
+magnitude coherence γ². The block is purely informative (nothing feeds back
+into Auto delay), and its tooltip — pinned while the mouse stays on the
+read-out — carries the full fit per junction: the phase score now and at the
+optimum, how close a flip scores, the rival and margin, the residual slope
+Δτ and the fit rms over the band.
 
 A **Δ L−R** block below reports each stereo pair's final inter-side state:
 the two sides' band-limited envelope arrivals in the pair's shared band

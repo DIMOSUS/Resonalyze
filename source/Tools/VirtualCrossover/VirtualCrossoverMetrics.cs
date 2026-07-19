@@ -118,11 +118,11 @@ internal sealed class VirtualCrossoverMetrics
 
     /// <summary>
     /// The per-junction phase read-outs: each adjacent pair's steady-state
-    /// cross-phase analysis (coherence, phase at the crossover, the
-    /// coherence-maximizing extra delay on the lower channel and the lobe
-    /// margin). Purely informative — nothing here feeds the alignment engine.
-    /// One analysis spectrum is built per channel and shared by the junctions
-    /// it participates in. Empty when there is no junction to read.
+    /// cross-phase analysis (the phase score, the phase at the crossover, the
+    /// score-maximizing extra delay and polarity on the lower channel, and the
+    /// lobe margin). Purely informative — nothing here feeds the alignment
+    /// engine. One analysis spectrum is built per channel and shared by the
+    /// junctions it participates in. Empty when there is no junction to read.
     /// </summary>
     public List<VirtualCrossoverMetric.PhaseEntry> BuildPhaseEntries(
         List<ProcessedChannel> processed)

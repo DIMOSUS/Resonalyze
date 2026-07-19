@@ -2171,10 +2171,19 @@ public partial class VirtualCrossoverPanel : UserControl
         var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
         var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
         IReadOnlyList<GainBalanceResult>? gains = null;
+        AutoDelaySumLossForecast? sumLoss = null;
         await Task.Run(() =>
         {
             AlignmentReprocessor reprocessor =
                 ComputeAutoAlignment(participants, alignment, decisions, log);
+            // The "before" snapshots carry the CURRENT delays and polarities —
+            // the alignment itself deliberately ignores them, so they exist
+            // only for the report's before/after sum-loss forecast.
+            IReadOnlyList<AlignmentSnapshot> beforeSnapshots =
+                reprocessor.Reprocess(participants.ToDictionary(
+                    channel => (IAlignmentChannel)channel,
+                    channel => new AlignmentOverride(
+                        channel.Settings.DelayMs, channel.Settings.InvertPolarity)));
             if (adjustGains)
             {
                 gains = ComputeGainBalance(
@@ -2186,6 +2195,14 @@ public partial class VirtualCrossoverPanel : UserControl
                         (IAlignmentChannel?)null)),
                     reprocessor, alignment, sceneOffsetMs: 0, log);
             }
+
+            IReadOnlyList<AlignmentSnapshot> afterSnapshots =
+                reprocessor.Reprocess(alignment);
+            sumLoss = ForecastSumLoss(
+                participants.Select(channel =>
+                    ((IAlignmentChannel)channel, channel.Settings)).ToList(),
+                ToIrMap(beforeSnapshots), ToIrMap(afterSnapshots),
+                AdjustedGainMap(gains), windowMinHz, windowMaxHz);
         });
 
         List<AutoDelayChannelOutcome> outcomes = BuildOutcomes(
@@ -2196,7 +2213,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 channel.Name)),
             alignment, decisions, gains);
         string report = VirtualCrossoverAutoDelayReport.Format(
-            outcomes, stereo: false, sceneOffsetMs: 0, adjustGains);
+            outcomes, stereo: false, sceneOffsetMs: 0, adjustGains, sumLoss);
         // The diagnostic trace is written already at the proposal stage, so a
         // discarded (or failed-looking) run can still be shared and analyzed;
         // Apply rewrites it with the results and the outcome metric appended.
@@ -2241,6 +2258,54 @@ public partial class VirtualCrossoverPanel : UserControl
             })
             .ToList();
         return GainBalanceEngine.Compute(inputs, sceneOffsetMs, log);
+    }
+
+    private static Dictionary<IAlignmentChannel, Complex[]> ToIrMap(
+        IReadOnlyList<AlignmentSnapshot> snapshots) =>
+        snapshots.ToDictionary(
+            snapshot => snapshot.Channel,
+            snapshot => snapshot.ImpulseResponse);
+
+    private static Dictionary<IAlignmentChannel, GainBalanceResult>? AdjustedGainMap(
+        IReadOnlyList<GainBalanceResult>? gains) =>
+        gains?.Where(result => result.Adjusted)
+            .ToDictionary(result => result.Channel);
+
+    // The report's headline figure for one side: the same averaged summation
+    // loss the metric read-out shows, predicted from the run's snapshots for
+    // the CURRENT settings and for the proposal. Proposed gain changes enter
+    // as spectrum scales — the reprocessor's chains still carry the current
+    // gains. Null when the side cannot form a sum (fewer than two channels).
+    private static AutoDelaySumLossForecast? ForecastSumLoss(
+        IReadOnlyList<(IAlignmentChannel Channel, VirtualCrossoverChannelSettings Settings)> sideChannels,
+        IReadOnlyDictionary<IAlignmentChannel, Complex[]> beforeIrs,
+        IReadOnlyDictionary<IAlignmentChannel, Complex[]> afterIrs,
+        IReadOnlyDictionary<IAlignmentChannel, GainBalanceResult>? adjustedGains,
+        double windowMinHz,
+        double windowMaxHz)
+    {
+        if (sideChannels.Count < 2)
+        {
+            return null;
+        }
+
+        int sampleRate = sideChannels[0].Channel.SampleRate;
+        double? before = VirtualCrossoverAnalysis.PredictedAverageSumLossDb(
+            sideChannels.Select(item => beforeIrs[item.Channel]).ToList(),
+            sampleRate, windowMinHz, windowMaxHz);
+        List<double> scales = sideChannels
+            .Select(item =>
+                adjustedGains != null &&
+                adjustedGains.TryGetValue(item.Channel, out GainBalanceResult? gain)
+                    ? Math.Pow(10.0, (gain.ProposedGainDb - item.Settings.GainDb) / 20.0)
+                    : 1.0)
+            .ToList();
+        double? after = VirtualCrossoverAnalysis.PredictedAverageSumLossDb(
+            sideChannels.Select(item => afterIrs[item.Channel]).ToList(),
+            sampleRate, windowMinHz, windowMaxHz, scales);
+        return before.HasValue && after.HasValue
+            ? new AutoDelaySumLossForecast(before.Value, after.Value)
+            : null;
     }
 
     // Assembles the report rows: the current settings as "before", the engine
@@ -2561,12 +2626,22 @@ public partial class VirtualCrossoverPanel : UserControl
         var engineAlignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
         var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
         IReadOnlyList<GainBalanceResult>? gains = null;
+        AutoDelaySumLossForecast? leftSumLoss = null;
+        AutoDelaySumLossForecast? rightSumLoss = null;
         await Task.Run(() =>
         {
             AlignmentReprocessor reprocessor = ComputeStereoAlignment(
                 leftSide, rightSide, union, bridgeLeft, bridgeRight,
                 bridgeBandLowHz, bridgeBandHighHz, sceneOffsetMs,
                 engineAlignment, decisions, log);
+            // The "before" snapshots carry the CURRENT delays and polarities —
+            // the alignment itself deliberately ignores them, so they exist
+            // only for the report's before/after sum-loss forecast.
+            IReadOnlyList<AlignmentSnapshot> beforeSnapshots =
+                reprocessor.Reprocess(union.ToDictionary(
+                    side => (IAlignmentChannel)side,
+                    side => new AlignmentOverride(
+                        side.Settings.DelayMs, side.Settings.InvertPolarity)));
             if (adjustGains)
             {
                 gains = ComputeGainBalance(
@@ -2581,6 +2656,25 @@ public partial class VirtualCrossoverPanel : UserControl
                             : null))),
                     reprocessor, engineAlignment, sceneOffsetMs, log);
             }
+
+            IReadOnlyList<AlignmentSnapshot> afterSnapshots =
+                reprocessor.Reprocess(engineAlignment);
+            Dictionary<IAlignmentChannel, Complex[]> beforeIrs = ToIrMap(beforeSnapshots);
+            Dictionary<IAlignmentChannel, Complex[]> afterIrs = ToIrMap(afterSnapshots);
+            Dictionary<IAlignmentChannel, GainBalanceResult>? adjustedGains =
+                AdjustedGainMap(gains);
+            (double leftMinHz, double leftMaxHz) =
+                VirtualCrossoverJunctions.GetCrossoverWindow(
+                    leftSide.Select(side => side.Settings));
+            leftSumLoss = ForecastSumLoss(
+                leftSide.Select(side => ((IAlignmentChannel)side, side.Settings)).ToList(),
+                beforeIrs, afterIrs, adjustedGains, leftMinHz, leftMaxHz);
+            (double rightMinHz, double rightMaxHz) =
+                VirtualCrossoverJunctions.GetCrossoverWindow(
+                    rightSide.Select(side => side.Settings));
+            rightSumLoss = ForecastSumLoss(
+                rightSide.Select(side => ((IAlignmentChannel)side, side.Settings)).ToList(),
+                beforeIrs, afterIrs, adjustedGains, rightMinHz, rightMaxHz);
         });
 
         // The report groups the two sides of each block together (A L, A R,
@@ -2596,7 +2690,8 @@ public partial class VirtualCrossoverPanel : UserControl
                     side.Name)),
             engineAlignment, decisions, gains);
         string report = VirtualCrossoverAutoDelayReport.Format(
-            outcomes, stereo: true, sceneOffsetMs, adjustGains);
+            outcomes, stereo: true, sceneOffsetMs, adjustGains,
+            leftSumLoss, rightSumLoss);
         // Written already at the proposal stage, so a discarded run can still
         // be shared and analyzed; Apply rewrites it with the outcome metric.
         WriteAlignmentLog(log.ToString());

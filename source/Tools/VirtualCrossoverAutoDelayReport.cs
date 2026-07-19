@@ -27,6 +27,14 @@ internal sealed record AutoDelayChannelOutcome(
     string GainDetail);
 
 /// <summary>
+/// One side's predicted average summation loss (dB, &lt;= 0 — how far the
+/// coherent sum falls short of the phase-blind magnitude sum over the
+/// crossover window), for the current settings and for the proposal. The
+/// report's headline figure.
+/// </summary>
+internal sealed record AutoDelaySumLossForecast(double BeforeDb, double AfterDb);
+
+/// <summary>
 /// A completed (not yet applied) Auto delay run: the per-channel outcomes,
 /// the run mode and inputs, the formatted report the dialog shows, and the
 /// diagnostic log the Apply step closes with the resulting metric.
@@ -50,7 +58,9 @@ internal static class VirtualCrossoverAutoDelayReport
         IReadOnlyList<AutoDelayChannelOutcome> outcomes,
         bool stereo,
         double sceneOffsetMs,
-        bool gainsRequested)
+        bool gainsRequested,
+        AutoDelaySumLossForecast? leftSumLoss = null,
+        AutoDelaySumLossForecast? rightSumLoss = null)
     {
         // Invariant numbers throughout: the report is a shareable diagnostic
         // artifact, so it must read the same regardless of the OS locale.
@@ -71,6 +81,58 @@ internal static class VirtualCrossoverAutoDelayReport
         if (!gainsRequested)
         {
             text.AppendLine("Gains not adjusted (checkbox off).");
+        }
+
+        // The at-a-glance summary: what the proposal changes, what it buys
+        // (the same averaged sum loss the metric read-out shows), and which
+        // decisions deserve a second look. The table and notes below are the
+        // detail behind these lines.
+        int delayChanges = outcomes.Count(outcome =>
+            Math.Abs(outcome.AfterDelayMs - outcome.BeforeDelayMs) >= 0.005);
+        int polarityChanges = outcomes.Count(outcome =>
+            outcome.AfterInvert != outcome.BeforeInvert);
+        int gainChanges = outcomes.Count(outcome =>
+            outcome.GainAdjusted &&
+            Math.Abs(outcome.AfterGainDb - outcome.BeforeGainDb) >= 0.05);
+        text.AppendLine();
+        text.AppendLine(
+            $"Changes: {delayChanges} delays, {polarityChanges} polarities, " +
+            $"{gainChanges} gains");
+        if (stereo && (leftSumLoss != null || rightSumLoss != null))
+        {
+            text.AppendLine("Predicted sum loss (avg over the crossover window):");
+            if (leftSumLoss != null)
+            {
+                text.AppendLine(FormattableString.Invariant(
+                    $"  Left   {leftSumLoss.BeforeDb:0.0} -> {leftSumLoss.AfterDb:0.0} dB"));
+            }
+            if (rightSumLoss != null)
+            {
+                text.AppendLine(FormattableString.Invariant(
+                    $"  Right  {rightSumLoss.BeforeDb:0.0} -> {rightSumLoss.AfterDb:0.0} dB"));
+            }
+        }
+        else if (leftSumLoss != null)
+        {
+            string span = FormattableString.Invariant(
+                $"{leftSumLoss.BeforeDb:0.0} -> {leftSumLoss.AfterDb:0.0} dB");
+            text.AppendLine(
+                $"Predicted sum loss: {span} (avg over the crossover window)");
+        }
+        foreach (AutoDelayChannelOutcome outcome in outcomes)
+        {
+            if (outcome.DelayConfidence == AlignmentConfidence.Low)
+            {
+                text.AppendLine(
+                    $"Warning: {outcome.Name} delay has LOW confidence " +
+                    $"({outcome.DelayDetail})");
+            }
+            if (outcome.GainConfidence == AlignmentConfidence.Low)
+            {
+                text.AppendLine(
+                    $"Warning: {outcome.Name} gain has LOW confidence " +
+                    $"({outcome.GainDetail})");
+            }
         }
 
         text.AppendLine();

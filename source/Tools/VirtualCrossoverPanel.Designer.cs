@@ -291,7 +291,7 @@ namespace Resonalyze
             comboBoxSmoothing.Location = new Point(853, 412);
             comboBoxSmoothing.MinimumSize = new Size(36, 19);
             comboBoxSmoothing.Name = "comboBoxSmoothing";
-            comboBoxSmoothing.Size = new Size(90, 19);
+            comboBoxSmoothing.Size = new Size(100, 19);
             comboBoxSmoothing.TabIndex = 11;
             // 
             // buttonAutoDelay
@@ -344,7 +344,7 @@ namespace Resonalyze
             // 
             buttonPhaseGate.FlatStyle = FlatStyle.Popup;
             buttonPhaseGate.ForeColor = Color.White;
-            buttonPhaseGate.Location = new Point(949, 410);
+            buttonPhaseGate.Location = new Point(959, 410);
             buttonPhaseGate.Name = "buttonPhaseGate";
             buttonPhaseGate.Size = new Size(80, 24);
             buttonPhaseGate.TabIndex = 16;
@@ -355,7 +355,7 @@ namespace Resonalyze
             // 
             comboBoxCalibration.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxCalibration.ForeColor = Color.White;
-            comboBoxCalibration.Location = new Point(1037, 413);
+            comboBoxCalibration.Location = new Point(1047, 413);
             comboBoxCalibration.MinimumSize = new Size(36, 19);
             comboBoxCalibration.Name = "comboBoxCalibration";
             comboBoxCalibration.Size = new Size(110, 19);

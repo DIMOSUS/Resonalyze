@@ -53,11 +53,21 @@ public sealed class VirtualCrossoverAutoDelayReportTests
             ],
             stereo: true,
             sceneOffsetMs: 0.27,
-            gainsRequested: true);
+            gainsRequested: true,
+            leftSumLoss: new AutoDelaySumLossForecast(-2.0, -0.6),
+            rightSumLoss: new AutoDelaySumLossForecast(-2.4, -0.8));
 
         Assert.Contains("stereo", report);
         Assert.Contains("Scene offset +0.27 ms", report);
         Assert.Contains("gain tilt +2.0 dB", report);
+        // The at-a-glance summary: change counts, the predicted sum-loss
+        // improvement per side, and one warning line per LOW-confidence call.
+        Assert.Contains("Changes: 2 delays, 1 polarities, 1 gains", report);
+        Assert.Contains("Left   -2.0 -> -0.6 dB", report);
+        Assert.Contains("Right  -2.4 -> -0.8 dB", report);
+        Assert.Contains(
+            "Warning: B L delay has LOW confidence " +
+            "(vs A L: margin 0.2 dB, wide seed)", report);
         Assert.Contains("0.00 -> 1.25", report);
         Assert.Contains("-3.0 -> -4.5", report);
         Assert.Contains("-2.0 (kept)", report);
@@ -78,11 +88,17 @@ public sealed class VirtualCrossoverAutoDelayReportTests
             [Outcome("A", 0.0, 0.75, delayDetail: "reference (others align to it)")],
             stereo: false,
             sceneOffsetMs: 0,
-            gainsRequested: false);
+            gainsRequested: false,
+            leftSumLoss: new AutoDelaySumLossForecast(-1.5, -0.3));
 
         Assert.Contains("single side", report);
         Assert.DoesNotContain("Scene offset", report);
         Assert.Contains("Gains not adjusted", report);
+        Assert.Contains("Changes: 1 delays, 0 polarities, 0 gains", report);
+        Assert.Contains(
+            "Predicted sum loss: -1.5 -> -0.3 dB (avg over the crossover window)",
+            report);
+        Assert.DoesNotContain("Warning:", report);
         Assert.Contains("0.0 (kept)", report);
     }
 }

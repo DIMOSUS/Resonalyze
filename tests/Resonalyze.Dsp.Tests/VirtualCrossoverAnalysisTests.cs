@@ -175,14 +175,21 @@ public sealed class VirtualCrossoverAnalysisTests
     public void FindAlignmentCandidates_RecoversTheSameDelayAcrossSampleRates()
     {
         // The gate is sized in time, so the same physical scene must yield the
-        // same delay whatever the sample rate; a sample-fixed gate would shrink
-        // the window at 96 kHz and drift the estimate.
+        // same delay whatever the sample rate. 192 kHz is the discriminating
+        // case: a fixed 4096-sample gate is only 21 ms there, so it CUTS the
+        // 30 ms reflection this scene carries and drifts the estimate — the old
+        // implementation fails this assertion while 48 and 96 kHz (85 / 43 ms
+        // windows, both past the ~40 ms plateau) would pass either way.
         const double knownDelayMs = 0.30;
         double at48k = RecoveredJunctionDelayMs(48_000, knownDelayMs);
         double at96k = RecoveredJunctionDelayMs(96_000, knownDelayMs);
+        double at192k = RecoveredJunctionDelayMs(192_000, knownDelayMs);
 
         Assert.Equal(-knownDelayMs, at48k, 1);
         Assert.Equal(-knownDelayMs, at96k, 1);
+        Assert.Equal(-knownDelayMs, at192k, 1);
+        Assert.True(Math.Abs(at48k - at192k) < 0.05,
+            $"rate-dependent delay: 48k={at48k:0.000} ms, 192k={at192k:0.000} ms");
         Assert.True(Math.Abs(at48k - at96k) < 0.05,
             $"rate-dependent delay: 48k={at48k:0.000} ms, 96k={at96k:0.000} ms");
     }

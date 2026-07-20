@@ -1500,10 +1500,11 @@ public static class AutoAlignmentEngine
         // Returns the delay that Δ-aligns the right channel to its left
         // counterpart, whether the target is COARSE (good to a fraction of a
         // millisecond — it may pin a lobe but never the tight scene tolerance),
-        // and whether BOTH sides were modal-LATCHED (the geometry-derived
-        // last-rung target, whose lock the caller tightens because the pair's
-        // own in-band sum is mode-shaped there).
-        (double TargetMs, bool Coarse, bool Latched)? CrossSideTargetMs(
+        // and whether it earns a TIGHT (quarter-period) lock — set only by the
+        // last rung when the pair's own arrivals were unmeasurable and CORROBO-
+        // RATED donor geometry replaced them, so the mode-shaped junction sum
+        // gets less in-lobe authority. Null when no target could be trusted.
+        (double TargetMs, bool Coarse, bool TightLock)? CrossSideTargetMs(
             IAlignmentChannel rightChannel,
             StereoPairLink link,
             double bandLowHz,
@@ -1634,30 +1635,29 @@ public static class AutoAlignmentEngine
                     return null;
                 }
 
-                // The ladder's last rung: when no band reads both DIRECT rises
-                // consistently, both sides are modal-latched and every measured
-                // L/R timing figure ON THIS PAIR times room modes, not the
-                // drivers. This rung once used the processed IRs' energy-peak
-                // difference, trusting that the dominant packet is the same
-                // physical feature on both sides — but a field case (bad_plus:
-                // peaks 23.5 vs 17.9 ms, a 5.6 ms "path" no cabin geometry
-                // produces) showed the sides latching onto DIFFERENT modes and
-                // the fabricated target dragging the right midbass past the
-                // scene onto a junction notch. The pair itself is poisoned, but
-                // the cabin's L/R GEOMETRY is still measurable one band up:
-                // the nearest linked pair whose both sides read clean direct
-                // arrivals gives the raw path split the latched pair cannot
-                // (bad_plus: mids +1.37 ms, tweeters +1.41 ms — consistent),
-                // so aim the right delay at the settled left twin's, shifted by
-                // that split and the scene offset. No measurable neighbor
-                // degrades to plain symmetry (split 0: same mirrored hardware).
-                (double SplitMs, string Names)? NeighborRawSplit()
+                // The ladder's last rung: no band read both DIRECT rises, so this
+                // pair's direct arrivals are UNMEASURABLE (a latch on at least
+                // one side under a room mode). This rung once used the processed
+                // IRs' energy-peak difference, trusting that the dominant packet
+                // is the same physical feature on both sides — but a field case
+                // (bad_plus: peaks 23.5 vs 17.9 ms, a 5.6 ms "path" no cabin
+                // geometry produces) showed the sides latching onto DIFFERENT
+                // modes and the fabricated target dragging the right midbass past
+                // the scene onto a junction notch. The pair is poisoned, but the
+                // cabin's L/R GEOMETRY is often measurable on OTHER linked pairs:
+                // each pair whose both sides read a clean direct arrival gives an
+                // L/R split, and where several agree (bad_plus: mids +1.37 ms,
+                // tweeters +1.41 — corroborated) that split is the cabin's L/R
+                // offset, so aim the right delay at the settled left twin's minus
+                // it and the scene. NOT clean geometry in isolation: each split
+                // also carries that donor pair's own L/R filter/driver asymmetry,
+                // which is why corroboration across pairs (not one nearest
+                // donor) earns the tight lock, a lone donor only a soft one, and
+                // no agreement no pin at all — a fabricated split hard-locked is
+                // the very failure this rung exists to avoid.
+                var donorSplits = new List<(double SplitMs, string Names)>();
+                if (plan.PairLinks != null)
                 {
-                    if (plan.PairLinks == null)
-                    {
-                        return null;
-                    }
-
                     static double LinkCenterHz(StereoPairLink item) =>
                         Math.Sqrt(item.BandLowHz * item.BandHighHz);
                     double centerHz = LinkCenterHz(link);
@@ -1672,8 +1672,9 @@ public static class AutoAlignmentEngine
                             item => item.Channel == other.Right);
                         double lowHz2 = other.BandLowHz;
                         double highHz2 = other.BandHighHz;
+                        double probeLow2 = Math.Sqrt(lowHz2 * highHz2);
                         if (otherLeft == null || otherRight == null ||
-                            highHz2 < lowHz2 *
+                            highHz2 < probeLow2 *
                                 VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
                         {
                             continue;
@@ -1684,71 +1685,67 @@ public static class AutoAlignmentEngine
                             VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
                                 side.ImpulseResponse, side.Channel.SampleRate,
                                 lo, hi, side.ValidRange);
-                        TimeAlignmentAnalysisResult leftFull =
-                            Read(otherLeft, lowHz2, highHz2);
-                        TimeAlignmentAnalysisResult rightFull =
-                            Read(otherRight, lowHz2, highHz2);
-                        if (!leftFull.IsValid || !rightFull.IsValid ||
-                            leftFull.SignalToNoiseDecibels < MinimumArrivalSnrDb ||
-                            rightFull.SignalToNoiseDecibels < MinimumArrivalSnrDb)
-                        {
-                            continue;
-                        }
 
-                        // The same honesty probe the pair itself gets: a full-
-                        // band read far behind its own upper half is a latch,
-                        // and a latched neighbor is no geometry reference.
-                        double probeLow2 = Math.Sqrt(lowHz2 * highHz2);
-                        if (highHz2 >= probeLow2 *
-                            VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
+                        // A donor earns trust only if BOTH sides POSITIVELY read a
+                        // clean direct arrival — full band AND its upper half
+                        // valid, SNR-qualified, and agreeing. Absence of a proven
+                        // latch is NOT proof of a direct read: an unmeasurable or
+                        // low-SNR upper half leaves the split unverified, so skip.
+                        double tolerance2 = Math.Max(1.0, 500.0 / probeLow2);
+                        bool CleanDirect(AlignmentSnapshot side, out double rawMs)
                         {
-                            TimeAlignmentAnalysisResult leftProbe2 =
-                                Read(otherLeft, probeLow2, highHz2);
-                            TimeAlignmentAnalysisResult rightProbe2 =
-                                Read(otherRight, probeLow2, highHz2);
-                            double tolerance2 = Math.Max(1.0, 500.0 / probeLow2);
-                            bool Latches(
-                                TimeAlignmentAnalysisResult full,
-                                TimeAlignmentAnalysisResult probe) =>
-                                probe.IsValid &&
+                            TimeAlignmentAnalysisResult full = Read(side, lowHz2, highHz2);
+                            TimeAlignmentAnalysisResult probe = Read(side, probeLow2, highHz2);
+                            rawMs = full.FirstArrivalDelayMilliseconds
+                                - alignment.GetValueOrDefault(side.Channel).DelayMs;
+                            return full.IsValid && probe.IsValid &&
+                                full.SignalToNoiseDecibels >= MinimumArrivalSnrDb &&
                                 probe.SignalToNoiseDecibels >= MinimumArrivalSnrDb &&
                                 full.FirstArrivalDelayMilliseconds -
-                                    probe.FirstArrivalDelayMilliseconds > tolerance2;
-                            if (Latches(leftFull, leftProbe2) ||
-                                Latches(rightFull, rightProbe2))
-                            {
-                                continue;
-                            }
+                                    probe.FirstArrivalDelayMilliseconds <= tolerance2;
                         }
 
-                        // Raw = processed arrival minus the side's current DSP
-                        // delay; positive split = the right side sits farther.
-                        double rawLeft = leftFull.FirstArrivalDelayMilliseconds
-                            - alignment.GetValueOrDefault(other.Left).DelayMs;
-                        double rawRight = rightFull.FirstArrivalDelayMilliseconds
-                            - alignment.GetValueOrDefault(other.Right).DelayMs;
-                        return (rawRight - rawLeft,
-                            $"{other.Left.Name}/{other.Right.Name}");
+                        if (CleanDirect(otherLeft, out double rawLeft) &&
+                            CleanDirect(otherRight, out double rawRight))
+                        {
+                            donorSplits.Add((rawRight - rawLeft,
+                                $"{other.Left.Name}/{other.Right.Name}"));
+                        }
                     }
+                }
 
+                (double PathSplitMs, CrossSideLockTier Tier) resolved =
+                    ResolveLatchedPathSplit(
+                        donorSplits.Select(item => item.SplitMs).ToList(),
+                        CrossSideDonorAgreementMs);
+                if (resolved.Tier == CrossSideLockTier.None)
+                {
+                    // No corroborated geometry: fabricating one (symmetry or a
+                    // lone contradicted donor) and hard-locking to it is exactly
+                    // the confidently-wrong pin this rung must not create. Drop
+                    // the prior — the channel keeps its own-side junction search.
+                    log.AppendLine(
+                        $"  cross-side prior {rightChannel.Name}: withdrawn — " +
+                        "direct arrivals unmeasurable and no linked pair gives a " +
+                        (donorSplits.Count == 0
+                            ? "clean L/R geometry reference"
+                            : $"corroborated one ({donorSplits.Count} donor(s) disagree)"));
                     return null;
                 }
 
                 double leftDelayMs =
                     alignment.GetValueOrDefault(link.Left).DelayMs;
-                (double SplitMs, string Names)? proxy = NeighborRawSplit();
-                double pathSplitMs = proxy?.SplitMs ?? 0.0;
                 double latchedTarget =
-                    leftDelayMs - pathSplitMs - plan.SceneOffsetMs;
+                    leftDelayMs - resolved.PathSplitMs - plan.SceneOffsetMs;
+                bool tight = resolved.Tier == CrossSideLockTier.Tight;
                 log.AppendLine(
                     $"  cross-side prior {rightChannel.Name}: target " +
-                    $"{latchedTarget:0.000} ms — settled {link.Left.Name} " +
-                    (proxy is { } source
-                        ? $"shifted by the {source.Names} raw path split " +
-                          $"{source.SplitMs:+0.000;-0.000} ms"
-                        : "mirrored symmetrically (no measurable neighbor pair)") +
-                    " (both sides' direct reads modal-latched)");
-                return (latchedTarget, true, true);
+                    $"{latchedTarget:0.000} ms — settled {link.Left.Name} shifted " +
+                    $"by the {(tight ? "corroborated" : "lone")} L/R arrival split " +
+                    $"{resolved.PathSplitMs:+0.000;-0.000} ms from " +
+                    $"{string.Join(", ", donorSplits.Select(item => item.Names))} " +
+                    $"(direct arrivals unmeasurable; {(tight ? "quarter" : "half")}-period lock)");
+                return (latchedTarget, true, tight);
             }
 
             double target = arrivals.Left.FirstArrivalDelayMilliseconds
@@ -1803,7 +1800,7 @@ public static class AutoAlignmentEngine
             StereoPairLink? channelLink = plan.PairLinks?.FirstOrDefault(
                 item => item.Right == channel);
             bool lockable = channelLink != null && IsSceneLockable(channelLink);
-            (double TargetMs, bool Coarse, bool Latched)? cross = channelLink == null
+            (double TargetMs, bool Coarse, bool TightLock)? cross = channelLink == null
                 ? null
                 : CrossSideTargetMs(
                     channel,
@@ -1815,19 +1812,20 @@ public static class AutoAlignmentEngine
                     pair.BandLowHz,
                     pair.BandHighHz);
             double? crossTarget = cross?.TargetMs;
-            // A double-latched pair gets a QUARTER-period lock instead of the
-            // usual half: the in-lobe authority the wide lock grants the
-            // junction sum assumes the sum measures direct-field summation,
-            // but under a double latch the same room modes that broke the
-            // arrival detectors shape the sum too — on bad_plus its in-band
-            // optimum sat 0.6 ms past every geometry-consistent point. Where
-            // the room owns the band, the geometry-derived target deserves
-            // the larger say; the sum still fine-tunes inside ±T/4.
+            // A corroborated-geometry latched target (TightLock) gets a QUARTER-
+            // period lock instead of the usual half: the in-lobe authority the
+            // wide lock grants the junction sum assumes the sum measures direct-
+            // field summation, but where the pair's own direct arrivals were
+            // unmeasurable the same room modes shape the sum too — on bad_plus
+            // its in-band optimum sat 0.6 ms past every geometry-consistent
+            // point. There the multi-donor geometry deserves the larger say; the
+            // sum still fine-tunes inside ±T/4. A lone (uncorroborated) donor
+            // keeps the ordinary ±T/2.
             double? sceneLock = cross is not { } resolved
                 ? null
                 : lockable && !resolved.Coarse
                     ? SceneLockToleranceMs
-                    : (resolved.Latched ? 250.0 : 500.0) / Math.Max(
+                    : (resolved.TightLock ? 250.0 : 500.0) / Math.Max(
                         pair.CrossoverHz,
                         secondaryPair?.CrossoverHz ?? pair.CrossoverHz);
 
@@ -1953,6 +1951,63 @@ public static class AutoAlignmentEngine
     // not choose one. With no reliable cross-side arrival at all the free
     // joint-junction search remains.
     private const double SceneLockToleranceMs = 0.05;
+
+    // How close two donor pairs' L/R arrival splits must sit to corroborate one
+    // another as the cabin's L/R path offset. Drivers at different positions do
+    // differ, so this is generous — the point is to reject a lone anomaly (a
+    // donor whose split is dominated by ITS filter/driver asymmetry, not the
+    // cabin geometry) while accepting the consistent offset genuinely shared
+    // pairs read (v3: mids +1.37, tweeters +1.41).
+    private const double CrossSideDonorAgreementMs = 0.6;
+
+    // How a latched pair's cross-side target is resolved from the clean donor
+    // pairs' L/R arrival splits (nearest-frequency first). Corroboration decides
+    // trust: two-plus splits agreeing within CrossSideDonorAgreementMs are the
+    // cabin's real L/R offset (tight quarter-period lock); a lone donor is one
+    // estimate carrying its own DSP asymmetry (loose half-period lock); zero
+    // donors or several that disagree mean the geometry is unknown and the pair
+    // must NOT be pinned (no target — the free own-side search stands). Pure and
+    // deterministic so it is unit-tested directly, unlike the arrival detectors.
+    internal enum CrossSideLockTier { None, Loose, Tight }
+
+    internal static (double PathSplitMs, CrossSideLockTier Tier) ResolveLatchedPathSplit(
+        IReadOnlyList<double> donorSplits, double agreementToleranceMs)
+    {
+        ArgumentNullException.ThrowIfNull(donorSplits);
+        if (donorSplits.Count == 0)
+        {
+            return (0.0, CrossSideLockTier.None);
+        }
+        if (donorSplits.Count == 1)
+        {
+            return (donorSplits[0], CrossSideLockTier.Loose);
+        }
+
+        // The largest set of splits mutually within tolerance of one member.
+        List<double> best = [donorSplits[0]];
+        foreach (double anchor in donorSplits)
+        {
+            var cluster = donorSplits
+                .Where(split => Math.Abs(split - anchor) <= agreementToleranceMs)
+                .ToList();
+            if (cluster.Count > best.Count)
+            {
+                best = cluster;
+            }
+        }
+
+        if (best.Count < 2)
+        {
+            // Several donors, none corroborate: the geometry is ambiguous.
+            return (0.0, CrossSideLockTier.None);
+        }
+
+        double[] sorted = best.OrderBy(split => split).ToArray();
+        double median = sorted.Length % 2 == 1
+            ? sorted[sorted.Length / 2]
+            : 0.5 * (sorted[sorted.Length / 2 - 1] + sorted[sorted.Length / 2]);
+        return (median, CrossSideLockTier.Tight);
+    }
 
     // The lower edge of the localization region. Only the part of a pair's
     // shared band ABOVE this edge carries scene information, so the lock's

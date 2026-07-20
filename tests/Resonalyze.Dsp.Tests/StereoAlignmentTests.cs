@@ -814,4 +814,63 @@ public sealed class StereoAlignmentTests
         Assert.Contains("mono co-move", decision.Detail);
         Assert.Contains("reference", decision.Detail);
     }
+
+    // ---- the pure latched-fallback donor resolver (unit-tested directly, since
+    //      driving the modal-latch detectors synthetically is threshold-brittle) ----
+
+    [Fact]
+    public void ResolveLatchedPathSplit_NoDonors_YieldsNoTarget()
+    {
+        var (split, tier) = AutoAlignmentEngine.ResolveLatchedPathSplit([], 0.6);
+
+        // No geometry reference at all: the caller must NOT fabricate one.
+        Assert.Equal(AutoAlignmentEngine.CrossSideLockTier.None, tier);
+        Assert.Equal(0.0, split);
+    }
+
+    [Fact]
+    public void ResolveLatchedPathSplit_LoneDonor_IsATrustedButLooseEstimate()
+    {
+        var (split, tier) = AutoAlignmentEngine.ResolveLatchedPathSplit([1.37], 0.6);
+
+        // One donor is a usable estimate but carries its own DSP asymmetry, so
+        // it only earns the loose lock — never the tight one.
+        Assert.Equal(AutoAlignmentEngine.CrossSideLockTier.Loose, tier);
+        Assert.Equal(1.37, split, 6);
+    }
+
+    [Fact]
+    public void ResolveLatchedPathSplit_AgreeingDonors_CorroborateForTheTightLock()
+    {
+        // The v3 case: mids +1.37 and tweeters +1.41 agree, so the cabin's L/R
+        // offset is corroborated and pinned tightly at their median.
+        var (split, tier) = AutoAlignmentEngine.ResolveLatchedPathSplit(
+            [1.37, 1.41], 0.6);
+
+        Assert.Equal(AutoAlignmentEngine.CrossSideLockTier.Tight, tier);
+        Assert.Equal(1.39, split, 6);
+    }
+
+    [Fact]
+    public void ResolveLatchedPathSplit_TwoDisagreeingDonors_YieldNoTarget()
+    {
+        // Two donors, no corroboration: the geometry is ambiguous, so the pair
+        // must not be pinned rather than gamble on one.
+        var (_, tier) = AutoAlignmentEngine.ResolveLatchedPathSplit([0.4, 1.5], 0.6);
+
+        Assert.Equal(AutoAlignmentEngine.CrossSideLockTier.None, tier);
+    }
+
+    [Fact]
+    public void ResolveLatchedPathSplit_MajorityCluster_RejectsTheOutlier()
+    {
+        // The reviewer's anomaly case: a nearest donor of +0.40 must NOT win
+        // over two corroborating +1.4-ish donors. The majority cluster's median
+        // is taken and the outlier dropped.
+        var (split, tier) = AutoAlignmentEngine.ResolveLatchedPathSplit(
+            [0.40, 1.50, 1.40], 0.6);
+
+        Assert.Equal(AutoAlignmentEngine.CrossSideLockTier.Tight, tier);
+        Assert.Equal(1.45, split, 6);
+    }
 }

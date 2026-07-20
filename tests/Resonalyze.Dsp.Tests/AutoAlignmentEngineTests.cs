@@ -611,21 +611,22 @@ public sealed class AutoAlignmentEngineTests
         var earlySnapshot = new AlignmentSnapshot(early, early.InitialIr, BasePosition);
         var lateSnapshot = new AlignmentSnapshot(late, late.InitialIr, BasePosition);
 
-        // A field of 20..90 normalizes to 0..70 (a uniform trim, relations kept).
+        // A field of 8..28 normalizes to 0..20 (a uniform trim, relations kept).
         var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
         {
-            [early] = new AlignmentOverride(20.0, false),
-            [late] = new AlignmentOverride(90.0, false)
+            [early] = new AlignmentOverride(8.0, false),
+            [late] = new AlignmentOverride(28.0, false)
         };
         AutoAlignmentEngine.NormalizeAndVerifyFeasibility(
             [earlySnapshot, lateSnapshot], alignment, new StringBuilder());
         Assert.Equal(0.0, alignment[early].DelayMs, 2);
-        Assert.Equal(70.0, alignment[late].DelayMs, 2);
+        Assert.Equal(20.0, alignment[late].DelayMs, 2);
 
-        // A span wider than the DSP's 100 ms range cannot be realized by any
-        // uniform shift: the proposal must refuse loudly, not clamp silently.
+        // A span wider than the DSP's 30 ms delay range (real car processors
+        // cap there) cannot be realized by any uniform shift: the proposal
+        // must refuse loudly, not clamp silently.
         alignment[early] = new AlignmentOverride(0.0, false);
-        alignment[late] = new AlignmentOverride(150.0, false);
+        alignment[late] = new AlignmentOverride(45.0, false);
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(
             () => AutoAlignmentEngine.NormalizeAndVerifyFeasibility(
                 [earlySnapshot, lateSnapshot], alignment, new StringBuilder()));

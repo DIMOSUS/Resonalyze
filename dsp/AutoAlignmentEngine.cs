@@ -184,10 +184,12 @@ public static class AutoAlignmentEngine
     private const double LowJunctionReachFraction = 0.97;
 
     // The delay ceiling a proposal may reach, mirroring the UI's per-channel
-    // delay limit. Kept here so the uniform negative-delay shift can detect —
-    // and log — the rare case where clamping a pinned channel breaks the
-    // shift's alignment-preserving property.
-    private const double MaxDelayMs = 100;
+    // delay limit — which itself mirrors real car DSP hardware: even top-end
+    // processors cap per-channel delay around 30 ms (~10 m of path), so a
+    // proposal past it could never be transferred to the device. Real cabin
+    // spans run well under 10 ms; the ceiling exists for the feasibility
+    // gate, not as an operating region.
+    private const double MaxDelayMs = 30;
 
     // A deliberately wide fine-search window (many periods at a high crossover,
     // ~one at a low one). Its candidates are always logged, surfacing summation

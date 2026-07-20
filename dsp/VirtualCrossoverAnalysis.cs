@@ -1245,17 +1245,37 @@ public static class VirtualCrossoverAnalysis
         double MagnitudeSum);
 
     // The direct-sound gate applied to every response before the alignment
-    // spectra are taken: the same shape as the panel's default frequency-
-    // response window (4096 samples, 256-sample cosine fades, anchored one
-    // fade-length before the earliest channel peak). Reading the full IR
-    // instead would fold the entire room decay into every bin — hundreds of
-    // milliseconds of reverberation whose comb structure the alignment cannot
-    // change — so the search would optimize (and be misled by) reflections
-    // while the panel displays the gated direct sound. One gate shared by all
-    // channels, like the metric's shared anchor, so the loss keeps its 0 dB
-    // ceiling.
-    private const int AlignmentGateLengthSamples = 4096;
-    private const int AlignmentGateFadeSamples = 256;
+    // spectra are taken: a cosine-faded Tukey window anchored one fade-length
+    // before the earliest channel peak. Reading the full IR instead would fold
+    // the entire room decay into every bin — hundreds of milliseconds of
+    // reverberation whose comb structure the alignment cannot change — so the
+    // search would optimize (and be misled by) reflections while the panel
+    // displays the gated direct sound. One gate shared by all channels, like
+    // the metric's shared anchor, so the loss keeps its 0 dB ceiling.
+    //
+    // The window is sized in TIME, not samples: historically it was a fixed
+    // 4096 samples, which is ~85 ms at 48 kHz but only 43 ms at 96 kHz and
+    // 21 ms at 192 kHz — the higher the rate, the shorter the physical window.
+    // The delay estimate is flat for any window past ~40 ms and drifts only
+    // below it, so a sample-fixed gate quietly changes the answer at high rates;
+    // pinning the duration (and the fade) keeps every rate on that plateau. The
+    // reference figures reproduce the historical 4096-sample / 256-fade window
+    // EXACTLY at 48 kHz. The analyzed span is then zero-padded to a power-of-two
+    // FFT length sized per rate — window and FFT length kept separate so the
+    // physical window cannot jump across a power-of-two boundary (the same split
+    // as JunctionPhaseAlignment's analysis window).
+    private const int AlignmentGateReferenceRate = 48_000;
+    private const int AlignmentGateReferenceSamples = 4096;
+    private const int AlignmentGateReferenceFadeSamples = 256;
+
+    private static int AlignmentGateSamples(int sampleRate) => (int)Math.Round(
+        (double)AlignmentGateReferenceSamples * sampleRate / AlignmentGateReferenceRate);
+
+    private static int AlignmentGateFadeSamples(int sampleRate) => (int)Math.Round(
+        (double)AlignmentGateReferenceFadeSamples * sampleRate / AlignmentGateReferenceRate);
+
+    private static int AlignmentFftLength(int sampleRate) =>
+        DspMath.NextPowerOfTwo(AlignmentGateSamples(sampleRate));
 
     // The per-bin spectra inside the frequency window, decimated to a bounded
     // bin count so the search stays fast for long IRs. The fixed channels act
@@ -1295,14 +1315,16 @@ public static class VirtualCrossoverAnalysis
         // the fade-in: a fade would attenuate the channels' arrivals unequally
         // (they sit at different fade depths) and bias the loss. When the peak
         // sits closer to the start than a full fade, the fade shrinks to fit.
-        int leftFadeSamples = Math.Min(AlignmentGateFadeSamples, anchor);
+        int gateSamples = AlignmentGateSamples(sampleRate);
+        int fadeSamples = AlignmentGateFadeSamples(sampleRate);
+        int leftFadeSamples = Math.Min(fadeSamples, anchor);
         int gateStart = anchor - leftFadeSamples;
         double[] gate = Windowing.TukeyWindow(
-            AlignmentGateLengthSamples,
-            2.0 * leftFadeSamples / AlignmentGateLengthSamples,
-            2.0 * AlignmentGateFadeSamples / AlignmentGateLengthSamples);
+            gateSamples,
+            2.0 * leftFadeSamples / gateSamples,
+            2.0 * fadeSamples / gateSamples);
 
-        int length = AlignmentGateLengthSamples;
+        int length = AlignmentFftLength(sampleRate);
         Complex[] variableSpectrum = ForwardSpectrum(
             GateDirectSound(variableImpulseResponse, gateStart, gate), length);
         var fixedSpectrum = new Complex[length];
@@ -1344,6 +1366,96 @@ public static class VirtualCrossoverAnalysis
         }
 
         return bins;
+    }
+
+    /// <summary>
+    /// How much of the effective bins below the in-band signal peak the
+    /// reliability gate keeps: a bin whose weaker channel sits more than this
+    /// far under the loudest combined level in the band is that driver's
+    /// roll-off tail, measurement noise or deconvolution residue — equal levels
+    /// there still read O(f)=1, so without the gate they inflate the overlap
+    /// with band that is not usable. A level gate, not an absolute SNR: matched
+    /// to the alignment loss's own -60 dB bin floor scale, generous enough to
+    /// keep a real hand-over's shoulders.
+    /// </summary>
+    private const double OverlapReliabilityGateDb = 30;
+
+    /// <summary>
+    /// How many octaves of the pair band the two drivers share at COMPARABLE,
+    /// USABLE level — a confidence figure for a junction delay: the integral of
+    /// the per-bin overlap O(f) = 2·min(|F|,|V|)/(|F|+|V|) over log-frequency,
+    /// using the same direct-sound gate and combined-fixed spectra as
+    /// <see cref="BuildAlignmentBins"/>, with a relative level gate (see
+    /// <see cref="OverlapReliabilityGateDb"/>) that drops bins where the weaker
+    /// channel is deep below the in-band signal. O(f) is 1 where the two
+    /// contribute equally and falls to 0 where one drowns the other, so this
+    /// measures the width of the region that actually informs the delay, not the
+    /// nominal band. It measures LEVEL BALANCE, not measurement reliability in
+    /// the coherence/SNR sense (the alignment spectra carry neither), so two
+    /// channels sitting TOGETHER in the noise floor would still read as overlap:
+    /// callers gate trust on it, but it is a coarse figure.
+    /// <para>
+    /// This is a confidence read-out, NOT a search weight. The fine selection
+    /// (<see cref="SearchAlignmentCandidatesByLoss"/>) scores each bin's
+    /// amplitude-NORMALIZED loss weighted only by 1/f, so it is not itself
+    /// amplitude-weighted — applying a per-bin reliability weight inside that
+    /// objective is a separate, unmeasured change, deliberately out of scope
+    /// here.
+    /// </para>
+    /// </summary>
+    public static double EffectiveOverlapOctaves(
+        Complex[] variableImpulseResponse,
+        IReadOnlyList<Complex[]> fixedImpulseResponses,
+        int sampleRate,
+        double minFrequencyHz,
+        double maxFrequencyHz)
+    {
+        // The delay bounds only shape BuildAlignmentBins' argument validation
+        // (the bins themselves are delay-free); any valid span works, as in
+        // SumLossEvaluator.Create.
+        List<AlignmentBin> bins = BuildAlignmentBins(
+            variableImpulseResponse,
+            fixedImpulseResponses,
+            sampleRate,
+            minFrequencyHz,
+            maxFrequencyHz,
+            minDelayMs: -1,
+            maxDelayMs: 1);
+        if (bins.Count < 2)
+        {
+            return 0.0;
+        }
+
+        // The in-band peak of the COMBINED level is the signal reference; a bin
+        // whose weaker channel falls below reference·10^(-gate/20) is not usable
+        // shared band and contributes no overlap.
+        double signalPeak = 0;
+        foreach (AlignmentBin bin in bins)
+        {
+            signalPeak = Math.Max(signalPeak, bin.MagnitudeSum);
+        }
+        double reliabilityFloor =
+            signalPeak * Math.Pow(10.0, -OverlapReliabilityGateDb / 20.0);
+
+        double octaves = 0;
+        for (int i = 0; i < bins.Count - 1; i++)
+        {
+            AlignmentBin bin = bins[i];
+            double fixedMag = bin.FixedSum.Magnitude;
+            double variableMag = bin.Variable.Magnitude;
+            double weaker = Math.Min(fixedMag, variableMag);
+            double sum = fixedMag + variableMag;
+            double overlap = sum > 0 && weaker >= reliabilityFloor
+                ? 2.0 * weaker / sum
+                : 0.0;
+            // LogWeight is 1/f, so 1/LogWeight recovers the bin frequency; the
+            // step to the next retained bin is this stretch of log-frequency.
+            double frequency = 1.0 / bin.LogWeight;
+            double nextFrequency = 1.0 / bins[i + 1].LogWeight;
+            octaves += overlap * Math.Log2(nextFrequency / frequency);
+        }
+
+        return octaves;
     }
 
     // The per-bin cross spectrum conj(F)·V for the correlation-based delay
@@ -1848,12 +1960,14 @@ public static class VirtualCrossoverAnalysis
         }
 
         int anchor = FindPeakIndex(impulseResponse);
-        int leftFade = Math.Min(AlignmentGateFadeSamples, anchor);
+        int gateSamples = AlignmentGateSamples(sampleRate);
+        int fadeSamples = AlignmentGateFadeSamples(sampleRate);
+        int leftFade = Math.Min(fadeSamples, anchor);
         double[] gate = Windowing.TukeyWindow(
-            AlignmentGateLengthSamples,
-            2.0 * leftFade / AlignmentGateLengthSamples,
-            2.0 * AlignmentGateFadeSamples / AlignmentGateLengthSamples);
-        int length = AlignmentGateLengthSamples;
+            gateSamples,
+            2.0 * leftFade / gateSamples,
+            2.0 * fadeSamples / gateSamples);
+        int length = AlignmentFftLength(sampleRate);
         Complex[] spectrum = ForwardSpectrum(
             GateDirectSound(impulseResponse, anchor - leftFade, gate), length);
 

@@ -1072,12 +1072,37 @@ public static class AutoAlignmentEngine
                 // the prior-laden score), so a margin computed over them
                 // could read "unrivaled" only because the rival was cut
                 // before the comparison.
+                // Confidence overlap: the WEAKER of the per-neighbor overlaps
+                // (a two-neighbor search's good overlap with one settled
+                // neighbor must not mask near-none with the other; summing the
+                // fixed IRs would also let them cancel in-band). Each neighbor is
+                // measured in ITS OWN junction band and normalized to that band's
+                // width — not the union both searches span — so a low-junction
+                // partner (say 50-150 Hz) is not judged over five octaves it
+                // never overlaps. A fraction, not an octave count, so the
+                // threshold means the same across narrow and wide bands.
+                double OverlapFractionAgainst(AlignmentJunction junction, Complex[] neighborIr)
+                {
+                    double nominal = Math.Log2(junction.BandHighHz / junction.BandLowHz);
+                    double octaves = VirtualCrossoverAnalysis.EffectiveOverlapOctaves(
+                        variableIr, [neighborIr], channel.SampleRate,
+                        junction.BandLowHz, junction.BandHighHz);
+                    return nominal > 0 ? octaves / nominal : 0;
+                }
+                double overlapFraction = OverlapFractionAgainst(pair, neighborIrs[0]);
+                if (secondaryPair != null && neighborIrs.Count > 1)
+                {
+                    overlapFraction = Math.Min(
+                        overlapFraction,
+                        OverlapFractionAgainst(secondaryPair, neighborIrs[1]));
+                }
                 decisions[channel] = BuildDecision(
                     chosen,
                     fineOptima.Concat(wideOptima).Concat(retriedOptima).ToList(),
                     halfPeriodMs, versus, wideSeed, edgeRetry, promoted,
                     onsetLocked: onsetAnchorMs != null,
-                    sceneLocked: sceneLockToleranceMs != null);
+                    sceneLocked: sceneLockToleranceMs != null,
+                    overlapFraction);
             }
 
             if (onsetAnchorMs is { } settledAnchor)
@@ -1115,6 +1140,18 @@ public static class AutoAlignmentEngine
     // the arrival prior and the tie-breaks, not by the acoustics.
     private const double DecisionMediumMarginDb = 0.4;
 
+    // The genuine two-driver overlap (see
+    // VirtualCrossoverAnalysis.EffectiveOverlapOctaves) as a FRACTION of the
+    // pair band's nominal width below which a junction delay, however cleanly
+    // its lobe won, rests on too little shared band to trust: precise but barely
+    // observed. A fraction, not an absolute octave count, so it means the same
+    // on a narrow steep-crossover band and a wide one. Healthy junctions share
+    // ~19-25% of the band once the reliability gate is applied (measured on the
+    // v3 cabin), so this only fires on a degenerate hand-over where the drivers
+    // barely share a band — it caps a Search pick's reported confidence at Low
+    // and annotates any decision (even a locked one) that hits it.
+    private const double MinTrustedOverlapFraction = 0.12;
+
     // Condenses one junction search into the user-report decision: the
     // prior-free score margin of the chosen candidate over its best RIVAL —
     // another lobe (a quarter period away or more) or the opposite polarity;
@@ -1134,7 +1171,8 @@ public static class AutoAlignmentEngine
         bool edgeRetry,
         bool promoted,
         bool onsetLocked,
-        bool sceneLocked)
+        bool sceneLocked,
+        double overlapFraction)
     {
         double rivalDistanceMs = 0.5 * halfPeriodMs;
         double chosenScore = AcousticScore(chosen);
@@ -1168,6 +1206,13 @@ public static class AutoAlignmentEngine
             {
                 level = AlignmentConfidence.Low;
             }
+            if (overlapFraction < MinTrustedOverlapFraction)
+            {
+                // A clean lobe over almost no shared band is precision without
+                // evidence: the rival margin cannot see how little the two
+                // drivers actually overlapped, so cap the trust here.
+                level = AlignmentConfidence.Low;
+            }
 
             confidence = level;
         }
@@ -1197,6 +1242,14 @@ public static class AutoAlignmentEngine
         if (edgeRetry)
         {
             detail += ", window-edge retry";
+        }
+        // The low-overlap note is a diagnostic about the DATA, so it shows on
+        // every decision that hits it — including a locked one, whose confidence
+        // there is nothing to lower but whose junction is still barely observed.
+        if (overlapFraction < MinTrustedOverlapFraction)
+        {
+            detail += FormattableString.Invariant(
+                $", low overlap ({overlapFraction * 100:0}% of band)");
         }
 
         return new AlignmentDecision(kind, confidence, detail);

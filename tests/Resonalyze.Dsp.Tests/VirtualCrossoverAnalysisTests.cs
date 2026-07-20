@@ -68,6 +68,169 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void EffectiveOverlapOctaves_IdenticalBroadbandDriversSpanTheWholeBand()
+    {
+        Complex[] a = UnitImpulse(4_096, 100);
+        Complex[] b = UnitImpulse(4_096, 100);
+
+        double octaves = VirtualCrossoverAnalysis.EffectiveOverlapOctaves(
+            b, [a], SampleRate, 500, 2_000);
+
+        // Two flat, equal spectra overlap perfectly (O=1) across the entire
+        // band, whose nominal width is log2(2000/500) = 2 octaves.
+        Assert.InRange(octaves, 1.7, 2.05);
+    }
+
+    [Fact]
+    public void EffectiveOverlapOctaves_GatesBandWhereBothChannelsAreFarBelowSignal()
+    {
+        // Both channels are the SAME steep band-pass, so O(f)=1 across the whole
+        // 500-2000 Hz band — yet outside the 500-700 Hz pass-band both fall far
+        // below the in-band peak. Equal levels there are not usable shared band,
+        // so the reliability gate drops them: the overlap reads the pass-band
+        // alone (~1 oct), not the full ~2 that ungated equal levels would count.
+        Complex[] bandPass = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(8_192, 100),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.BandPass,
+                LowPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.LinkwitzRiley, 700, 48),
+                HighPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.LinkwitzRiley, 500, 48))),
+            SampleRate);
+
+        double octaves = VirtualCrossoverAnalysis.EffectiveOverlapOctaves(
+            bandPass, [bandPass], SampleRate, 500, 2_000);
+
+        Assert.InRange(octaves, 0.7, 1.4);
+    }
+
+    [Fact]
+    public void EffectiveOverlapOctaves_DisjointDriversBarelyOverlap()
+    {
+        // The fixed driver rolls off almost two octaves below the band; the
+        // variable is flat. Across 500-2000 Hz only one driver radiates, so
+        // the genuinely shared band collapses toward zero — the degenerate
+        // hand-over the engine's trust floor is there to catch.
+        Complex[] fixedIr = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(4_096, 100),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.LowPass,
+                LowPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.Butterworth, 125, 36))),
+            SampleRate);
+        Complex[] variableIr = UnitImpulse(4_096, 100);
+
+        double octaves = VirtualCrossoverAnalysis.EffectiveOverlapOctaves(
+            variableIr, [fixedIr], SampleRate, 500, 2_000);
+
+        Assert.True(octaves < 0.1, $"expected near-zero overlap, got {octaves:0.000}");
+    }
+
+    [Fact]
+    public void EffectiveOverlapOctaves_CrossoverPairKeepsAFractionOfTheBand()
+    {
+        // A real hand-over: a low-pass and a high-pass sharing a 1 kHz corner.
+        // The two genuinely overlap around the corner but each rolls off alone
+        // toward the band edges, so the effective overlap is a healthy fraction
+        // of the nominal 2 octaves — comfortably above the trust floor and well
+        // clear of the disjoint case.
+        Complex[] lower = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(4_096, 100),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.LowPass,
+                LowPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))),
+            SampleRate);
+        Complex[] upper = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(4_096, 100),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.HighPass,
+                HighPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.LinkwitzRiley, 1_000, 24))),
+            SampleRate);
+
+        double octaves = VirtualCrossoverAnalysis.EffectiveOverlapOctaves(
+            upper, [lower], SampleRate, 500, 2_000);
+
+        Assert.InRange(octaves, 0.3, 1.4);
+    }
+
+    // A low-frequency junction scene at an arbitrary sample rate: a direct
+    // arrival plus an early reflection ~30 ms later (inside the ~85 ms gate at
+    // every rate, but outside the 21 ms window a fixed 4096-sample gate would
+    // give at 192 kHz), band-limited to the 80 Hz overlap so window duration —
+    // hence frequency resolution — actually bears on the recovered delay.
+    private static Complex[] LowJunctionArrival(int sampleRate, double arrivalMs)
+    {
+        int length = sampleRate / 2; // 0.5 s, room for the gate at any rate
+        var ir = new Complex[length];
+        int direct = (int)Math.Round(arrivalMs / 1000.0 * sampleRate);
+        int reflection = (int)Math.Round((arrivalMs + 30.0) / 1000.0 * sampleRate);
+        ir[direct] = Complex.One;
+        if (reflection < length)
+        {
+            ir[reflection] += 0.5;
+        }
+        return VirtualCrossoverAnalysis.ApplyChain(
+            ir,
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.BandPass,
+                LowPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.LinkwitzRiley, 160, 24),
+                HighPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.LinkwitzRiley, 40, 24))),
+            sampleRate);
+    }
+
+    private static double RecoveredJunctionDelayMs(int sampleRate, double knownDelayMs)
+    {
+        // The variable arrives knownDelayMs LATER, so the delay that realigns
+        // it is the negative of that (delay to ADD to the variable).
+        Complex[] fixedIr = LowJunctionArrival(sampleRate, 10.0);
+        Complex[] variableIr = LowJunctionArrival(sampleRate, 10.0 + knownDelayMs);
+        IReadOnlyList<AlignmentCandidate> candidates =
+            VirtualCrossoverAnalysis.FindAlignmentCandidates(
+                variableIr, [fixedIr], sampleRate, 40, 160, -2.0, 2.0);
+        return AlignmentSelection.Select(candidates, 0.0).DelayMs;
+    }
+
+    [Fact]
+    public void FindAlignmentCandidates_RecoversTheSameDelayAcrossSampleRates()
+    {
+        // The gate is sized in time, so the same physical scene must yield the
+        // same delay whatever the sample rate. 192 kHz is the discriminating
+        // case: a fixed 4096-sample gate is only 21 ms there, so it CUTS the
+        // 30 ms reflection this scene carries and drifts the estimate — the old
+        // implementation fails this assertion while 48 and 96 kHz (85 / 43 ms
+        // windows, both past the ~40 ms plateau) would pass either way.
+        const double knownDelayMs = 0.30;
+        double at48k = RecoveredJunctionDelayMs(48_000, knownDelayMs);
+        double at96k = RecoveredJunctionDelayMs(96_000, knownDelayMs);
+        double at192k = RecoveredJunctionDelayMs(192_000, knownDelayMs);
+
+        Assert.Equal(-knownDelayMs, at48k, 1);
+        Assert.Equal(-knownDelayMs, at96k, 1);
+        Assert.Equal(-knownDelayMs, at192k, 1);
+        Assert.True(Math.Abs(at48k - at192k) < 0.05,
+            $"rate-dependent delay: 48k={at48k:0.000} ms, 192k={at192k:0.000} ms");
+        Assert.True(Math.Abs(at48k - at96k) < 0.05,
+            $"rate-dependent delay: 48k={at48k:0.000} ms, 96k={at96k:0.000} ms");
+    }
+
+    [Fact]
+    public void EffectiveOverlapOctaves_SilentVariableHasNoOverlap()
+    {
+        Complex[] fixedIr = UnitImpulse(4_096, 100);
+        var silent = new Complex[4_096];
+
+        double octaves = VirtualCrossoverAnalysis.EffectiveOverlapOctaves(
+            silent, [fixedIr], SampleRate, 500, 2_000);
+
+        Assert.Equal(0.0, octaves, 6);
+    }
+
+    [Fact]
     public void ApplyChain_IdentityKeepsTheImpulse()
     {
         Complex[] ir = UnitImpulse(2_048, 100);

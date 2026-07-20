@@ -520,7 +520,55 @@ public sealed class AutoAlignmentEngineTests
             () => Run([woofer, silentB, silentC], [200, 1_000], log));
 
         Assert.Contains("No junction evidence", error.Message);
-        Assert.Contains("junction base unknown", log.ToString());
+        Assert.Contains("refusing the run", log.ToString());
+    }
+
+    // Deterministic seeded noise: a dead channel in the field is noise, not
+    // digital zeros. Its band-limited envelope SNR reads ~8 dB (a flat record
+    // has no quiet quarter), comfortably under the 12 dB floor — the arrival
+    // detector's own noise reference is what tells noise from signal, which
+    // per-bin spectral levels alone cannot.
+    private static Complex[] NoiseIr(int seed, double amplitude)
+    {
+        var random = new Random(seed);
+        var ir = new Complex[IrLength];
+        for (int i = 0; i < ir.Length; i++)
+        {
+            ir[i] = amplitude * (random.NextDouble() * 2.0 - 1.0);
+        }
+        return ir;
+    }
+
+    [Fact]
+    public void Compute_IndependentEqualLevelNoise_RefusesTheRun()
+    {
+        // Two comparable noise channels pass any per-bin level balance by
+        // construction; the loss surface is noise phases and the prior would
+        // pick a delay. The arrival-SNR evidence gate must refuse the run.
+        var noiseA = new TestChannel("A", NoiseIr(1, 1.0));
+        var noiseB = new TestChannel("B", NoiseIr(2, 1.0));
+        var log = new StringBuilder();
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => Run([noiseA, noiseB], [1_000], log));
+
+        Assert.Contains("No junction evidence", error.Message);
+    }
+
+    [Fact]
+    public void Compute_ActiveAndLowLevelNoise_RefusesTheRun()
+    {
+        // A live neighbor plus a channel that is only -40 dB measurement
+        // noise: bins exist and the noise even "balances" some of them, but
+        // the noise channel's own arrival SNR exposes it.
+        var woofer = new TestChannel("A", DelayedImpulse(1.0));
+        var noise = new TestChannel("B", NoiseIr(3, 0.01));
+        var log = new StringBuilder();
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => Run([woofer, noise], [1_000], log));
+
+        Assert.Contains("No junction evidence", error.Message);
     }
 
     [Fact]
@@ -601,6 +649,18 @@ public sealed class AutoAlignmentEngineTests
                 $"(SNR {row.ProbeSnrDb}, valid {row.ProbeValid}): " +
                 $"expected {row.Expected}, got {actual}");
         }
+
+        // The classifier is self-sufficient: an unmeasurable or near-noise
+        // FULL read cannot be certified (or latched) either — no hidden
+        // caller-side precondition.
+        Assert.Equal(
+            AutoAlignmentEngine.ArrivalCertificate.Unverified,
+            AutoAlignmentEngine.ClassifyArrival(
+                Read(10.0, valid: false), Read(10.2), toleranceMs: 2.0));
+        Assert.Equal(
+            AutoAlignmentEngine.ArrivalCertificate.Unverified,
+            AutoAlignmentEngine.ClassifyArrival(
+                Read(10.0, snrDb: 5.0), Read(10.2), toleranceMs: 2.0));
     }
 
     [Fact]

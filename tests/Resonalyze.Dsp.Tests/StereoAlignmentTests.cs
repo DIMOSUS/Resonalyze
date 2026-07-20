@@ -86,25 +86,32 @@ public sealed class StereoAlignmentTests
             double rightMidEchoMs = 0,
             double leftLateMs = 0,
             double rightMidAmplitude = 1.0,
-            int[]? reprocessCount = null)
+            int[]? reprocessCount = null,
+            double globalLateMs = 0)
     {
-        var sub = new TestChannel("sub", ImpulseAtMs(2.0 + leftLateMs));
-        var leftWoof = new TestChannel("L woof", ImpulseAtMs(1.0 + leftLateMs));
-        var leftMid = new TestChannel("L mid", ImpulseAtMs(0.4 + leftLateMs));
+        var sub = new TestChannel(
+            "sub", ImpulseAtMs(2.0 + leftLateMs + globalLateMs));
+        var leftWoof = new TestChannel(
+            "L woof", ImpulseAtMs(1.0 + leftLateMs + globalLateMs));
+        var leftMid = new TestChannel(
+            "L mid", ImpulseAtMs(0.4 + leftLateMs + globalLateMs));
         var leftTwr = new TestChannel(
-            "L twr", ImpulseAtMs(0.0 + leftLateMs, leftTopAmplitude));
-        var rightWoof = new TestChannel("R woof", ImpulseAtMs(1.0 + rightLateMs));
+            "L twr", ImpulseAtMs(0.0 + leftLateMs + globalLateMs, leftTopAmplitude));
+        var rightWoof = new TestChannel(
+            "R woof", ImpulseAtMs(1.0 + rightLateMs + globalLateMs));
         Complex[] rightMidIr = ImpulseAtMs(
-            0.4 + rightLateMs, rightMidEchoMs > 0 ? 0.6 : rightMidAmplitude);
+            0.4 + rightLateMs + globalLateMs,
+            rightMidEchoMs > 0 ? 0.6 : rightMidAmplitude);
         if (rightMidEchoMs > 0)
         {
             int echoPosition = BasePosition + (int)Math.Round(
-                (0.4 + rightLateMs + rightMidEchoMs) / 1000.0 * SampleRate);
+                (0.4 + rightLateMs + globalLateMs + rightMidEchoMs)
+                    / 1000.0 * SampleRate);
             rightMidIr[echoPosition] += Complex.One;
         }
         var rightMid = new TestChannel("R mid", rightMidIr);
         var rightTwr = new TestChannel(
-            "R twr", ImpulseAtMs(0.0 + rightLateMs, rightTopAmplitude));
+            "R twr", ImpulseAtMs(0.0 + rightLateMs + globalLateMs, rightTopAmplitude));
 
         TestChannel[] leftByBand = [sub, leftWoof, leftMid, leftTwr];
         TestChannel[] rightByBand = [sub, rightWoof, rightMid, rightTwr];
@@ -793,6 +800,38 @@ public sealed class StereoAlignmentTests
         Assert.NotNull(decision.Confidence);
         Assert.Contains("mono co-move", decision.Detail);
         Assert.Contains("reference", decision.Detail);
+    }
+
+    [Fact]
+    public void ComputeStereo_IsInvariantToAGlobalTimeOffset()
+    {
+        // Two systems differing by nothing but a uniform acoustic offset are
+        // the SAME system: every relative quantity — the walk's bases, the
+        // scene, and above all the co-move windows (which once bounded by
+        // absolute [0, ceiling] positions and so depended on the transient
+        // global offset) — must produce the identical normalized proposal.
+        (TestChannel _, TestChannel[] leftA, TestChannel[] rightA,
+            Dictionary<IAlignmentChannel, AlignmentOverride> baseline, _) =
+            RunStereo(sceneOffsetMs: 0.25, linkBands: UserLinkBands);
+        (TestChannel _, TestChannel[] leftB, TestChannel[] rightB,
+            Dictionary<IAlignmentChannel, AlignmentOverride> offset, _) =
+            RunStereo(
+                sceneOffsetMs: 0.25,
+                linkBands: UserLinkBands,
+                globalLateMs: 15.0);
+
+        TestChannel[] channelsA = [leftA[0], leftA[1], leftA[2], rightA[0], rightA[1], rightA[2]];
+        TestChannel[] channelsB = [leftB[0], leftB[1], leftB[2], rightB[0], rightB[1], rightB[2]];
+        for (int i = 0; i < channelsA.Length; i++)
+        {
+            Assert.Equal(
+                baseline.GetValueOrDefault(channelsA[i]).DelayMs,
+                offset.GetValueOrDefault(channelsB[i]).DelayMs,
+                2);
+            Assert.Equal(
+                baseline.GetValueOrDefault(channelsA[i]).InvertPolarity,
+                offset.GetValueOrDefault(channelsB[i]).InvertPolarity);
+        }
     }
 
     // ---- the pure latched-fallback donor resolver (unit-tested directly, since

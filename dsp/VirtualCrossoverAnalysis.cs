@@ -436,20 +436,32 @@ public static class VirtualCrossoverAnalysis
     /// </summary>
     private const double EvidenceNoiseFloorGateDb = 60;
 
-    // The delay-evidence gate: a delay is only OBSERVABLE where both sides
-    // genuinely radiate. With one side silent (or buried tens of dB under its
-    // partner everywhere — measurement noise, deconvolution residue) the loss
-    // |F+V|/(|F|+|V|) is flat at 0 dB for EVERY delay and polarity, so the
-    // search objective degenerates to the arrival prior alone and would
+    /// <summary>
+    /// The minimum integrated log-frequency width of balanced, above-floor
+    /// content the delay-evidence gate demands: a lobe-resolving broadband
+    /// delay cannot be read off a sliver (a lone lucky bin, a single shared
+    /// tone — whose delay is ambiguous modulo its own period). Healthy
+    /// junctions measure 0.4+ octaves of genuine overlap, so a sixth leaves
+    /// comfortable headroom while rejecting point coincidences.
+    /// </summary>
+    private const double MinEvidenceOctaves = 1.0 / 6.0;
+
+    // The delay-evidence STRUCTURE gate: a delay is only OBSERVABLE where both
+    // sides genuinely radiate over a usable width. With one side silent (or
+    // buried tens of dB under its partner everywhere — deconvolution residue)
+    // the loss |F+V|/(|F|+|V|) is flat at 0 dB for EVERY delay and polarity,
+    // so the search objective degenerates to the arrival prior alone and would
     // manufacture a confident "candidate" at the anchor out of nothing.
-    // Evidence exists where some bin has (a) the weaker side within the
-    // reliability gate of the STRONGER SIDE IN THAT BIN — a per-bin balance,
-    // judged locally like the sum-loss level gate, because one global
-    // reference would let a subwoofer's cabin-gain peak veto a perfectly
-    // healthy hand-over region sitting 30 dB below it — and (b) the bin
-    // itself above the in-band noise floor, so two matched residue tails
-    // cannot fake balance. No such bin: the search returns empty and the
-    // caller refuses honestly.
+    // Evidence bins need (a) the weaker side within the reliability gate of
+    // the STRONGER SIDE IN THAT BIN — a per-bin balance, judged locally like
+    // the sum-loss level gate, because one global reference would let a
+    // subwoofer's cabin-gain peak veto a perfectly healthy hand-over region
+    // sitting 30 dB below it — and (b) the bin above the in-band level floor;
+    // their integrated width must reach MinEvidenceOctaves. This grades
+    // spectral STRUCTURE relative to the record itself: it cannot tell true
+    // noise from signal (two comparable noise floors pass a level test by
+    // construction) — the engine's arrival-SNR refusal, which knows each
+    // record's own noise floor, owns that judgement upstream.
     private static bool HoldsDelayEvidence(List<AlignmentBin> bins)
     {
         double signalPeak = 0;
@@ -457,19 +469,31 @@ public static class VirtualCrossoverAnalysis
         {
             signalPeak = Math.Max(signalPeak, bin.MagnitudeSum);
         }
-        double noiseFloor =
+        double levelFloor =
             signalPeak * Math.Pow(10.0, -EvidenceNoiseFloorGateDb / 20.0);
         double balanceRatio = Math.Pow(10.0, -OverlapReliabilityGateDb / 20.0);
-        foreach (AlignmentBin bin in bins)
+        double evidenceOctaves = 0;
+        for (int i = 0; i < bins.Count - 1; i++)
         {
+            AlignmentBin bin = bins[i];
             double weaker = Math.Min(
                 bin.FixedSum.Magnitude, bin.Variable.Magnitude);
             double stronger = Math.Max(
                 bin.FixedSum.Magnitude, bin.Variable.Magnitude);
-            if (bin.MagnitudeSum >= noiseFloor &&
+            if (bin.MagnitudeSum >= levelFloor &&
                 weaker >= stronger * balanceRatio)
             {
-                return true;
+                // LogWeight is 1/f; the step to the next bin is this stretch
+                // of log-frequency (the same accounting as the overlap
+                // read-out).
+                evidenceOctaves += Math.Log2(
+                    bins[i + 1].LogWeight > 0
+                        ? bin.LogWeight / bins[i + 1].LogWeight
+                        : 1.0);
+                if (evidenceOctaves >= MinEvidenceOctaves)
+                {
+                    return true;
+                }
             }
         }
         return false;

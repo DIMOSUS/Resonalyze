@@ -380,12 +380,12 @@ public static class AutoAlignmentEngine
     /// against the same record's upper-half read. LATCHED — the full band
     /// times a feature far LATER than its own upper half (the proven modal
     /// latch): the read times the wrong feature and is garbage. UNVERIFIED —
-    /// the probe cannot certify: its read is unmeasurable/low-SNR, or it
-    /// timed some feature far EARLIER... i.e. the full band leads it beyond
-    /// dispersion (weak in-band HF; the probe is blind to the front) — the
-    /// full read stays usable but earns no certificate (no tight scene lock).
-    /// VERIFIED — the two agree within the dispersion one wavefront can show.
-    /// One classification shared by the cross-side links, the donor
+    /// no certificate either way: the full read itself (or the probe) is
+    /// unmeasurable/low-SNR, or the PROBE timed some far LATER feature than
+    /// the full band's front (weak in-band HF leaves it blind to the front) —
+    /// the full read stays usable but earns no certificate (no tight scene
+    /// lock). VERIFIED — the two agree within the dispersion one wavefront
+    /// can show. One classification shared by the cross-side links, the donor
     /// certificates and the stereo bridge, so the three cannot drift apart.
     /// </summary>
     internal enum ArrivalCertificate
@@ -400,7 +400,9 @@ public static class AutoAlignmentEngine
         TimeAlignmentAnalysisResult probe,
         double toleranceMs)
     {
-        if (!probe.IsValid ||
+        if (!full.IsValid ||
+            full.SignalToNoiseDecibels < MinimumArrivalSnrDb ||
+            !probe.IsValid ||
             probe.SignalToNoiseDecibels < MinimumArrivalSnrDb)
         {
             return ArrivalCertificate.Unverified;
@@ -575,34 +577,41 @@ public static class AutoAlignmentEngine
                     pair.BandHighHz,
                     pair.Upper.ValidRange);
 
-            // An invalid or near-noise arrival is NOT a time: treating it as
-            // one used to hand the timeline a fabricated 0 ms for a channel
-            // that was simply silent in the band, and the fine search then
-            // aligned the neighbor against that fiction. With no honest base
-            // the junction's offset is unknown: seed zero, mark the junction
-            // untrusted (the wide window), skip the PHAT refinement (its search
-            // window would be centered on the same fiction), and say so.
+            // An invalid or near-noise arrival is NOT a time — and, unlike a
+            // mis-TIMED one, it is not rescuable either: the envelope SNR
+            // grades the whole band against the record's own noise floor, so
+            // failing it means the channel has no measurable signal THERE at
+            // all — the junction search downstream would only shape a loss
+            // surface out of noise phases and let the prior pick a delay. The
+            // wide window rescues uncertain timing of a strong signal, never
+            // the absence of one. Refuse the run and point at the channel:
+            // this is a dead driver, a wrong source or a mis-set crossover,
+            // and the user must see that, not a proposal that pretends.
             bool arrivalsMeasured =
                 lowerRead.IsValid && upperRead.IsValid &&
                 lowerRead.SignalToNoiseDecibels >= MinimumArrivalSnrDb &&
                 upperRead.SignalToNoiseDecibels >= MinimumArrivalSnrDb;
             if (!arrivalsMeasured)
             {
-                timeline[pair.Upper.Channel] = timeline[pair.Lower.Channel];
-                untrustedSeedJunctions.Add(pair);
                 string Describe(TimeAlignmentAnalysisResult read) =>
                     !read.IsValid
                         ? "unmeasurable"
-                        : $"SNR {read.SignalToNoiseDecibels:0.0} dB";
+                        : $"near-noise (SNR {read.SignalToNoiseDecibels:0.0} dB, " +
+                          $"minimum {MinimumArrivalSnrDb:0})";
+                string lowerState = Describe(lowerRead);
+                string upperState = Describe(upperRead);
                 log.AppendLine(
                     $"Pair {pair.Lower.Channel.Name}/" +
                     $"{pair.Upper.Channel.Name}: " +
-                    $"fc {pair.CrossoverHz:0} Hz, " +
                     $"band {pair.BandLowHz:0}-{pair.BandHighHz:0} Hz, " +
-                    $"arrivals {Describe(lowerRead)} / {Describe(upperRead)} " +
-                    $"(minimum {MinimumArrivalSnrDb:0} dB) — junction base " +
-                    "unknown, seeded at zero offset with the wide window");
-                continue;
+                    $"arrivals {lowerState} / {upperState} — refusing the run");
+                throw new InvalidOperationException(
+                    $"No junction evidence between {pair.Lower.Channel.Name} " +
+                    $"and {pair.Upper.Channel.Name} in " +
+                    $"{pair.BandLowHz:0}-{pair.BandHighHz:0} Hz: " +
+                    $"{pair.Lower.Channel.Name} is {lowerState}, " +
+                    $"{pair.Upper.Channel.Name} is {upperState}. " +
+                    "Check the channels' sources and crossover settings.");
             }
 
             double lowerArrival = lowerRead.FirstArrivalDelayMilliseconds;

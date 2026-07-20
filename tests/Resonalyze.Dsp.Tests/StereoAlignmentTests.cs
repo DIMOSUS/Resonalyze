@@ -821,7 +821,7 @@ public sealed class StereoAlignmentTests
     [Fact]
     public void ResolveLatchedPathSplit_NoDonors_YieldsNoTarget()
     {
-        var (split, tier, corroborating) =
+        var (split, tier, corroborating, _, _) =
             AutoAlignmentEngine.ResolveLatchedPathSplit([], 0.6);
 
         // No geometry reference at all: the caller must NOT fabricate one.
@@ -833,7 +833,7 @@ public sealed class StereoAlignmentTests
     [Fact]
     public void ResolveLatchedPathSplit_LoneDonor_IsATrustedButLooseEstimate()
     {
-        var (split, tier, corroborating) =
+        var (split, tier, corroborating, low, high) =
             AutoAlignmentEngine.ResolveLatchedPathSplit([1.37], 0.6);
 
         // One donor is a usable estimate but carries its own DSP asymmetry, so
@@ -841,6 +841,8 @@ public sealed class StereoAlignmentTests
         Assert.Equal(AutoAlignmentEngine.CrossSideLockTier.Loose, tier);
         Assert.Equal(1.37, split, 6);
         Assert.Equal(1, corroborating);
+        Assert.Equal(1.37, low, 6);
+        Assert.Equal(1.37, high, 6);
     }
 
     [Fact]
@@ -848,12 +850,14 @@ public sealed class StereoAlignmentTests
     {
         // The v3 case: mids +1.37 and tweeters +1.41 agree, so the cabin's L/R
         // offset is corroborated and pinned tightly at their median.
-        var (split, tier, corroborating) =
+        var (split, tier, corroborating, low, high) =
             AutoAlignmentEngine.ResolveLatchedPathSplit([1.37, 1.41], 0.6);
 
         Assert.Equal(AutoAlignmentEngine.CrossSideLockTier.Tight, tier);
         Assert.Equal(1.39, split, 6);
         Assert.Equal(2, corroborating);
+        Assert.Equal(1.37, low, 6);
+        Assert.Equal(1.41, high, 6);
     }
 
     [Fact]
@@ -861,7 +865,8 @@ public sealed class StereoAlignmentTests
     {
         // Two donors, no corroboration: the geometry is ambiguous, so the pair
         // must not be pinned rather than gamble on one.
-        var (_, tier, _) = AutoAlignmentEngine.ResolveLatchedPathSplit([0.4, 1.5], 0.6);
+        var (_, tier, _, _, _) =
+            AutoAlignmentEngine.ResolveLatchedPathSplit([0.4, 1.5], 0.6);
 
         Assert.Equal(AutoAlignmentEngine.CrossSideLockTier.None, tier);
     }
@@ -871,13 +876,36 @@ public sealed class StereoAlignmentTests
     {
         // The reviewer's anomaly case: a nearest donor of +0.40 must NOT win
         // over two corroborating +1.4-ish donors. The majority cluster's median
-        // is taken and the outlier dropped.
-        var (split, tier, corroborating) =
+        // is taken, the outlier dropped, and the reported [low, high] span
+        // excludes it so the log names only the true cluster members.
+        var (split, tier, corroborating, low, high) =
             AutoAlignmentEngine.ResolveLatchedPathSplit([0.40, 1.50, 1.40], 0.6);
 
         Assert.Equal(AutoAlignmentEngine.CrossSideLockTier.Tight, tier);
         Assert.Equal(1.45, split, 6);
         Assert.Equal(2, corroborating);
+        Assert.Equal(1.40, low, 6);
+        Assert.Equal(1.50, high, 6);
+    }
+
+    [Fact]
+    public void ResolveLatchedPathSplit_ClusterSpanExcludesADonorNearTheMedian()
+    {
+        // The winning cluster is [1.00, 1.05, 1.45, 1.50] (median 1.25); the
+        // 0.70 donor sits 0.55 from that median — inside the tolerance — yet is
+        // NOT in the cluster (1.50 − 0.70 = 0.80 > 0.60). The returned [low,
+        // high] span, not a distance-to-median test, is what keeps it out of
+        // the log.
+        var (split, tier, corroborating, low, high) =
+            AutoAlignmentEngine.ResolveLatchedPathSplit(
+                [0.70, 1.00, 1.05, 1.45, 1.50], 0.60);
+
+        Assert.Equal(AutoAlignmentEngine.CrossSideLockTier.Tight, tier);
+        Assert.Equal(4, corroborating);
+        Assert.Equal(1.00, low, 6);
+        Assert.Equal(1.50, high, 6);
+        Assert.True(0.70 < low, "the 0.70 donor must fall outside the cluster span");
+        Assert.Equal(1.25, split, 6);
     }
 
     [Fact]
@@ -888,7 +916,7 @@ public sealed class StereoAlignmentTests
         // Anchoring on the middle would fake one 3-way cluster; the mutual-span
         // rule instead sees two equally-large disagreeing 2-clusters and refuses
         // to pin — no confidently-wrong tight lock from bridged measurements.
-        var (_, tier, _) =
+        var (_, tier, _, _, _) =
             AutoAlignmentEngine.ResolveLatchedPathSplit([0.45, 1.00, 1.55], 0.60);
 
         Assert.Equal(AutoAlignmentEngine.CrossSideLockTier.None, tier);

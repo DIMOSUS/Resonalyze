@@ -1714,7 +1714,8 @@ public static class AutoAlignmentEngine
                     }
                 }
 
-                (double PathSplitMs, CrossSideLockTier Tier, int Corroborating) resolved =
+                (double PathSplitMs, CrossSideLockTier Tier, int Corroborating,
+                    double ClusterLowMs, double ClusterHighMs) resolved =
                     ResolveLatchedPathSplit(
                         donorSplits.Select(item => item.SplitMs).ToList(),
                         CrossSideDonorAgreementMs);
@@ -1738,12 +1739,14 @@ public static class AutoAlignmentEngine
                 double latchedTarget =
                     leftDelayMs - resolved.PathSplitMs - plan.SceneOffsetMs;
                 bool tight = resolved.Tier == CrossSideLockTier.Tight;
-                // Name only the donors in the WINNING cluster — those within the
-                // agreement tolerance of the chosen split — not the outliers the
-                // resolver rejected.
+                // Name only the donors in the WINNING cluster — the resolver
+                // returns its [low, high] span, and a contiguous sorted window
+                // holds exactly the donors in that range, so this excludes the
+                // outliers the resolver rejected (unlike a distance-to-median
+                // test, which can catch a split just outside the cluster).
                 string donorNames = string.Join(", ", donorSplits
-                    .Where(item => Math.Abs(item.SplitMs - resolved.PathSplitMs)
-                        <= CrossSideDonorAgreementMs)
+                    .Where(item => item.SplitMs >= resolved.ClusterLowMs &&
+                        item.SplitMs <= resolved.ClusterHighMs)
                     .Select(item => item.Names));
                 log.AppendLine(
                     $"  cross-side prior {rightChannel.Name}: target " +
@@ -1977,18 +1980,20 @@ public static class AutoAlignmentEngine
     // deterministic so it is unit-tested directly, unlike the arrival detectors.
     internal enum CrossSideLockTier { None, Loose, Tight }
 
-    internal static (double PathSplitMs, CrossSideLockTier Tier, int Corroborating)
+    internal static (double PathSplitMs, CrossSideLockTier Tier, int Corroborating,
+        double ClusterLowMs, double ClusterHighMs)
         ResolveLatchedPathSplit(
             IReadOnlyList<double> donorSplits, double agreementToleranceMs)
     {
         ArgumentNullException.ThrowIfNull(donorSplits);
         if (donorSplits.Count == 0)
         {
-            return (0.0, CrossSideLockTier.None, 0);
+            return (0.0, CrossSideLockTier.None, 0, 0.0, 0.0);
         }
         if (donorSplits.Count == 1)
         {
-            return (donorSplits[0], CrossSideLockTier.Loose, 1);
+            return (donorSplits[0], CrossSideLockTier.Loose, 1,
+                donorSplits[0], donorSplits[0]);
         }
 
         // The largest window of splits MUTUALLY within tolerance (max − min ≤
@@ -2030,14 +2035,17 @@ public static class AutoAlignmentEngine
         // two equally-large clusters that disagree (windowsAtBest > 1), is not.
         if (bestCount < 2 || windowsAtBest > 1)
         {
-            return (0.0, CrossSideLockTier.None, 0);
+            return (0.0, CrossSideLockTier.None, 0, 0.0, 0.0);
         }
 
         double[] cluster = sorted[bestStart..(bestStart + bestCount)];
         double median = cluster.Length % 2 == 1
             ? cluster[cluster.Length / 2]
             : 0.5 * (cluster[cluster.Length / 2 - 1] + cluster[cluster.Length / 2]);
-        return (median, CrossSideLockTier.Tight, bestCount);
+        // The window is contiguous in the sorted splits, so [min, max] names its
+        // members exactly — the caller filters donors by this range, not by
+        // distance to the median (which can catch an out-of-cluster outlier).
+        return (median, CrossSideLockTier.Tight, bestCount, cluster[0], cluster[^1]);
     }
 
     // The lower edge of the localization region. Only the part of a pair's

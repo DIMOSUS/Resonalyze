@@ -183,12 +183,13 @@ public static class AutoAlignmentEngine
     // AlignmentSelection tie-breaks, exactly as for any other admitted lobe.
     private const double LowJunctionReachFraction = 0.97;
 
-    // The delay ceiling a proposal may reach, mirroring the UI's per-channel
-    // delay limit — which itself mirrors real car DSP hardware: even top-end
-    // processors cap per-channel delay around 30 ms (~10 m of path), so a
-    // proposal past it could never be transferred to the device. Real cabin
-    // spans run well under 10 ms; the ceiling exists for the feasibility
-    // gate, not as an operating region.
+    // The delay ceiling an AUTO DELAY proposal may reach. Deliberately tighter
+    // than the manual UI range (100 ms — the Virtual DSP may model whatever
+    // hardware the user owns): even top-end car processors cap per-channel
+    // delay around 30 ms (~10 m of path), so an automatic proposal past it
+    // could never be transferred to a device. Real cabin spans run well under
+    // 10 ms; the ceiling exists for the feasibility gate, not as an operating
+    // region.
     private const double MaxDelayMs = 30;
 
     // A deliberately wide fine-search window (many periods at a high crossover,

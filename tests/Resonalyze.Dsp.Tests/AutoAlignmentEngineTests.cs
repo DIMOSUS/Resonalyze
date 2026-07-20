@@ -571,6 +571,36 @@ public sealed class AutoAlignmentEngineTests
         Assert.Contains("No junction evidence", error.Message);
     }
 
+    // A continuous shared spectral line: identical in both channels, so no
+    // per-bin level test can tell it from a real junction — but a line has no
+    // timeable front (its band-limited envelope is FLAT, reading ~-7 dB SNR
+    // against the 12 dB floor), which is exactly what the arrival-SNR
+    // evidence refusal measures. A single tone cannot resolve a broadband
+    // delay (it is ambiguous modulo its own period), so refusing is honest.
+    private static Complex[] SharedLineIr(double toneHz, double startMs)
+    {
+        var ir = new Complex[IrLength];
+        int start = BasePosition + (int)Math.Round(startMs / 1000.0 * SampleRate);
+        for (int i = 0; start + i < ir.Length; i++)
+        {
+            ir[start + i] = Math.Sin(Math.Tau * toneHz * i / SampleRate);
+        }
+        return ir;
+    }
+
+    [Fact]
+    public void Compute_SharedNarrowLineOnALowJunction_RefusesTheRun()
+    {
+        var lower = new TestChannel("A", SharedLineIr(120, 1.0));
+        var upper = new TestChannel("B", SharedLineIr(120, 1.2));
+        var log = new StringBuilder();
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => Run([lower, upper], [120], log, bands: [(80, 175)]));
+
+        Assert.Contains("No junction evidence", error.Message);
+    }
+
     [Fact]
     public void Compute_ActiveFixedAndSilentVariable_RefusesTheRun()
     {

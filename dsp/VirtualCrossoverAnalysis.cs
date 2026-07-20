@@ -462,6 +462,14 @@ public static class VirtualCrossoverAnalysis
     // noise from signal (two comparable noise floors pass a level test by
     // construction) — the engine's arrival-SNR refusal, which knows each
     // record's own noise floor, owns that judgement upstream.
+    /// <summary>
+    /// How many CONSECUTIVE evidence bins a qualifying run must hold besides
+    /// the octave width: at a low junction one coarse FFT cell can span a
+    /// sixth of an octave on its own, so width alone would let a lone bin —
+    /// or a gap credited to it — pass as broadband information.
+    /// </summary>
+    private const int MinEvidenceBins = 3;
+
     private static bool HoldsDelayEvidence(List<AlignmentBin> bins)
     {
         double signalPeak = 0;
@@ -472,28 +480,48 @@ public static class VirtualCrossoverAnalysis
         double levelFloor =
             signalPeak * Math.Pow(10.0, -EvidenceNoiseFloorGateDb / 20.0);
         double balanceRatio = Math.Pow(10.0, -OverlapReliabilityGateDb / 20.0);
-        double evidenceOctaves = 0;
-        for (int i = 0; i < bins.Count - 1; i++)
+        bool Evidence(AlignmentBin bin)
         {
-            AlignmentBin bin = bins[i];
             double weaker = Math.Min(
                 bin.FixedSum.Magnitude, bin.Variable.Magnitude);
             double stronger = Math.Max(
                 bin.FixedSum.Magnitude, bin.Variable.Magnitude);
-            if (bin.MagnitudeSum >= levelFloor &&
-                weaker >= stronger * balanceRatio)
+            return bin.MagnitudeSum >= levelFloor &&
+                weaker >= stronger * balanceRatio;
+        }
+
+        // The retained bins are a stride-decimated, zero-dropped sampling of
+        // the FFT grid, so consecutive list entries are not necessarily
+        // neighbors. Adjacency = the smallest FFT-index step present (the
+        // stride wherever any true neighbors survive); a run only accumulates
+        // across ADJACENT evidence pairs, so neither a dropped-bin gap nor a
+        // decimation hole can be credited to a lone lucky bin.
+        int minStep = int.MaxValue;
+        for (int i = 0; i + 1 < bins.Count; i++)
+        {
+            minStep = Math.Min(minStep, bins[i + 1].FftBin - bins[i].FftBin);
+        }
+
+        double runOctaves = 0;
+        int runBins = 1;
+        for (int i = 0; i + 1 < bins.Count; i++)
+        {
+            bool adjacent = bins[i + 1].FftBin - bins[i].FftBin == minStep;
+            if (adjacent && Evidence(bins[i]) && Evidence(bins[i + 1]))
             {
-                // LogWeight is 1/f; the step to the next bin is this stretch
-                // of log-frequency (the same accounting as the overlap
-                // read-out).
-                evidenceOctaves += Math.Log2(
-                    bins[i + 1].LogWeight > 0
-                        ? bin.LogWeight / bins[i + 1].LogWeight
-                        : 1.0);
-                if (evidenceOctaves >= MinEvidenceOctaves)
+                // LogWeight is 1/f, so the pair's stretch of log-frequency is
+                // log2(f[i+1]/f[i]).
+                runOctaves += Math.Log2(bins[i].LogWeight / bins[i + 1].LogWeight);
+                runBins++;
+                if (runOctaves >= MinEvidenceOctaves && runBins >= MinEvidenceBins)
                 {
                     return true;
                 }
+            }
+            else
+            {
+                runOctaves = 0;
+                runBins = 1;
             }
         }
         return false;
@@ -1313,7 +1341,11 @@ public static class VirtualCrossoverAnalysis
         Complex FixedSum,
         Complex Variable,
         double LogWeight,
-        double MagnitudeSum);
+        double MagnitudeSum,
+        // The source FFT bin index, so consumers can tell truly ADJACENT
+        // sampled bins from a gap where zero-magnitude bins were dropped —
+        // the evidence-width gate must not credit a gap to a lone bin.
+        int FftBin);
 
     // The direct-sound gate applied to every response before the alignment
     // spectra are taken: a cosine-faded Tukey window anchored one fade-length
@@ -1432,7 +1464,8 @@ public static class VirtualCrossoverAnalysis
                     fixedSpectrum[bin],
                     variableSpectrum[bin],
                     1.0 / frequencyHz,
-                    magnitudeSum));
+                    magnitudeSum,
+                    bin));
             }
         }
 

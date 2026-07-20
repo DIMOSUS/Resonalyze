@@ -145,7 +145,7 @@ namespace Resonalyze
             numericDelay.ForeColor = Color.White;
             numericDelay.Increment = new decimal(new int[] { 1, 0, 0, 131072 });
             numericDelay.Location = new Point(220, 33);
-            numericDelay.Maximum = new decimal(new int[] { 30, 0, 0, 0 });
+            numericDelay.Maximum = new decimal(new int[] { 100, 0, 0, 0 });
             numericDelay.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
             numericDelay.MinimumSize = new Size(36, 19);
             numericDelay.Name = "numericDelay";

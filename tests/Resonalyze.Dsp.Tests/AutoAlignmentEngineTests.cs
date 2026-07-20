@@ -504,31 +504,102 @@ public sealed class AutoAlignmentEngineTests
     }
 
     [Fact]
-    public void Compute_SilentJunction_RefusesInsteadOfFabricatingADelay()
+    public void Compute_SilentJunction_RefusesTheRunInsteadOfFabricatingADelay()
     {
-        // The B/C junction has NO evidence at all (both IRs empty in — indeed
-        // anywhere near — the band). The engine used to fabricate a candidate
-        // at the coarse anchor and apply it as a result; it must refuse and
-        // say so instead.
+        // The B/C junction has NO evidence at all (both IRs empty). The engine
+        // used to fabricate a candidate at the coarse anchor and apply it as a
+        // result; a partial skip would be no better (earlier uniform shifts
+        // could leave the channel a foreign delay). The whole run must refuse
+        // with the reason.
         var woofer = new TestChannel("A", DelayedImpulse(1.0));
         var silentB = new TestChannel("B", new Complex[IrLength]);
         var silentC = new TestChannel("C", new Complex[IrLength]);
         var log = new StringBuilder();
-        var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
 
-        Dictionary<IAlignmentChannel, AlignmentOverride> alignment = Run(
-            [woofer, silentB, silentC], [200, 1_000], log,
-            decisions: decisions);
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => Run([woofer, silentB, silentC], [200, 1_000], log));
 
-        string text = log.ToString();
-        Assert.Contains("junction base unknown", text);
-        Assert.Contains("NO junction evidence", text);
-        Assert.Contains("left unchanged", text);
-        // The silent channels must not have received a fabricated delay.
-        Assert.Equal(0.0, alignment.GetValueOrDefault(silentC).DelayMs);
-        if (decisions.TryGetValue(silentC, out AlignmentDecision? refused))
+        Assert.Contains("No junction evidence", error.Message);
+        Assert.Contains("junction base unknown", log.ToString());
+    }
+
+    [Fact]
+    public void Compute_ActiveFixedAndSilentVariable_RefusesTheRun()
+    {
+        // The reviewer's exact scenario: the FIXED neighbor radiates normally,
+        // the searched channel is silent. Bins then exist (the fixed side's
+        // energy), the loss is flat 0 dB for every delay, and the arrival
+        // prior alone used to manufacture a confident candidate at the anchor.
+        // The evidence gate must return no candidates and the run must refuse.
+        var woofer = new TestChannel("A", DelayedImpulse(1.0));
+        var silent = new TestChannel("B", new Complex[IrLength]);
+        var log = new StringBuilder();
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => Run([woofer, silent], [1_000], log));
+
+        Assert.Contains("No junction evidence", error.Message);
+    }
+
+    [Fact]
+    public void Compute_SilentFixedAndActiveVariable_RefusesTheRun()
+    {
+        // The mirror direction: the reference channel is the silent one.
+        var silent = new TestChannel("A", new Complex[IrLength]);
+        var tweeter = new TestChannel("B", DelayedImpulse(0.0));
+        var log = new StringBuilder();
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => Run([silent, tweeter], [1_000], log));
+
+        Assert.Contains("No junction evidence", error.Message);
+    }
+
+    private static TimeAlignmentAnalysisResult Read(
+        double arrivalMs, double snrDb = 40, bool valid = true) =>
+        default(TimeAlignmentAnalysisResult) with
         {
-            Assert.Contains("no junction evidence", refused.Detail);
+            FirstArrivalDelayMilliseconds = arrivalMs,
+            SignalToNoiseDecibels = snrDb,
+            IsValid = valid
+        };
+
+    // The single classification behind the cross-side links, the donor
+    // certificates and the stereo bridge — table-tested so the three
+    // consumers cannot drift apart. (An inline table rather than a Theory:
+    // the certificate enum is internal and must not appear in a public test
+    // signature.)
+    [Fact]
+    public void ClassifyArrival_GradesTheHonestyProbe()
+    {
+        var table = new (double FullMs, double ProbeMs, double ProbeSnrDb,
+            bool ProbeValid, AutoAlignmentEngine.ArrivalCertificate Expected)[]
+        {
+            // agreeing reads certify
+            (10.0, 10.4, 40.0, true, AutoAlignmentEngine.ArrivalCertificate.Verified),
+            // full far LATER than its upper half: the proven modal latch
+            (21.2, 13.9, 40.0, true, AutoAlignmentEngine.ArrivalCertificate.Latched),
+            // full far EARLIER: the probe is blind to the front — usable, uncertified
+            (8.0, 20.0, 40.0, true, AutoAlignmentEngine.ArrivalCertificate.Unverified),
+            // probe below the SNR floor cannot certify
+            (10.0, 10.1, 5.0, true, AutoAlignmentEngine.ArrivalCertificate.Unverified),
+            // invalid probe cannot certify
+            (10.0, 0.0, 40.0, false, AutoAlignmentEngine.ArrivalCertificate.Unverified),
+            // exactly at the tolerance edge still certifies
+            (12.0, 10.0, 40.0, true, AutoAlignmentEngine.ArrivalCertificate.Verified),
+        };
+
+        foreach (var row in table)
+        {
+            AutoAlignmentEngine.ArrivalCertificate actual =
+                AutoAlignmentEngine.ClassifyArrival(
+                    Read(row.FullMs),
+                    Read(row.ProbeMs, row.ProbeSnrDb, row.ProbeValid),
+                    toleranceMs: 2.0);
+            Assert.True(row.Expected == actual,
+                $"full {row.FullMs}, probe {row.ProbeMs} " +
+                $"(SNR {row.ProbeSnrDb}, valid {row.ProbeValid}): " +
+                $"expected {row.Expected}, got {actual}");
         }
     }
 

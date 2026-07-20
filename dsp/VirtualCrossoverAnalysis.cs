@@ -411,7 +411,7 @@ public static class VirtualCrossoverAnalysis
             maxFrequencyHz,
             minDelayMs,
             maxDelayMs);
-        if (bins.Count == 0)
+        if (bins.Count == 0 || !HoldsDelayEvidence(bins))
         {
             allOptima = Array.Empty<AlignmentCandidate>();
             return Array.Empty<AlignmentCandidate>();
@@ -426,6 +426,53 @@ public static class VirtualCrossoverAnalysis
             priorSigmaMs,
             forcedPolarity,
             out allOptima);
+    }
+
+    /// <summary>
+    /// How far below the in-band signal peak a bin may sit and still count as
+    /// measured content for the delay-evidence gate — the same scale as the
+    /// loss floor (<see cref="MinBinAmplitudeRatio"/>, −60 dB): below it the
+    /// "content" is measurement noise or deconvolution residue, not a driver.
+    /// </summary>
+    private const double EvidenceNoiseFloorGateDb = 60;
+
+    // The delay-evidence gate: a delay is only OBSERVABLE where both sides
+    // genuinely radiate. With one side silent (or buried tens of dB under its
+    // partner everywhere — measurement noise, deconvolution residue) the loss
+    // |F+V|/(|F|+|V|) is flat at 0 dB for EVERY delay and polarity, so the
+    // search objective degenerates to the arrival prior alone and would
+    // manufacture a confident "candidate" at the anchor out of nothing.
+    // Evidence exists where some bin has (a) the weaker side within the
+    // reliability gate of the STRONGER SIDE IN THAT BIN — a per-bin balance,
+    // judged locally like the sum-loss level gate, because one global
+    // reference would let a subwoofer's cabin-gain peak veto a perfectly
+    // healthy hand-over region sitting 30 dB below it — and (b) the bin
+    // itself above the in-band noise floor, so two matched residue tails
+    // cannot fake balance. No such bin: the search returns empty and the
+    // caller refuses honestly.
+    private static bool HoldsDelayEvidence(List<AlignmentBin> bins)
+    {
+        double signalPeak = 0;
+        foreach (AlignmentBin bin in bins)
+        {
+            signalPeak = Math.Max(signalPeak, bin.MagnitudeSum);
+        }
+        double noiseFloor =
+            signalPeak * Math.Pow(10.0, -EvidenceNoiseFloorGateDb / 20.0);
+        double balanceRatio = Math.Pow(10.0, -OverlapReliabilityGateDb / 20.0);
+        foreach (AlignmentBin bin in bins)
+        {
+            double weaker = Math.Min(
+                bin.FixedSum.Magnitude, bin.Variable.Magnitude);
+            double stronger = Math.Max(
+                bin.FixedSum.Magnitude, bin.Variable.Magnitude);
+            if (bin.MagnitudeSum >= noiseFloor &&
+                weaker >= stronger * balanceRatio)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>

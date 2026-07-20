@@ -219,6 +219,28 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void FindAlignmentCandidates_OneSidedSilence_ReturnsEmpty()
+    {
+        // With one side silent the loss |F+V|/(|F|+|V|) is flat 0 dB for every
+        // delay and polarity — no delay evidence exists, and returning
+        // prior-shaped "candidates" would let a caller fabricate an alignment.
+        Complex[] active = UnitImpulse(4_096, 100);
+        var silent = new Complex[4_096];
+
+        IReadOnlyList<AlignmentCandidate> silentVariable =
+            VirtualCrossoverAnalysis.FindAlignmentCandidates(
+                silent, [active], SampleRate, 500, 2_000, -3, 3,
+                priorDelayMs: 0.5, priorSigmaMs: 1.0);
+        IReadOnlyList<AlignmentCandidate> silentFixed =
+            VirtualCrossoverAnalysis.FindAlignmentCandidates(
+                active, [silent], SampleRate, 500, 2_000, -3, 3,
+                priorDelayMs: 0.5, priorSigmaMs: 1.0);
+
+        Assert.Empty(silentVariable);
+        Assert.Empty(silentFixed);
+    }
+
+    [Fact]
     public void EffectiveOverlapOctaves_SilentVariableHasNoOverlap()
     {
         Complex[] fixedIr = UnitImpulse(4_096, 100);

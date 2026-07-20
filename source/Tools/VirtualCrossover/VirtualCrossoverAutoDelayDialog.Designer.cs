@@ -71,6 +71,8 @@ namespace Resonalyze
             // checkBoxGains
             // 
             checkBoxGains.AutoSize = true;
+            checkBoxGains.Checked = true;
+            checkBoxGains.CheckState = CheckState.Checked;
             checkBoxGains.ForeColor = Color.White;
             checkBoxGains.Location = new Point(196, 14);
             checkBoxGains.Name = "checkBoxGains";

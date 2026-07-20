@@ -426,7 +426,12 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     protected override void OnMouseWheel(MouseEventArgs e)
     {
         base.OnMouseWheel(e);
-        if (!Enabled)
+        // Only a focused (i.e. clicked-into) field responds to the wheel. Merely
+        // hovering must not step the value — otherwise scrolling the channel list
+        // silently edits whatever field the cursor happens to pass over. When
+        // unfocused the wheel is left unconsumed so it bubbles to the AutoScroll
+        // parent and scrolls the list as expected.
+        if (!Enabled || !ContainsFocus)
         {
             return;
         }

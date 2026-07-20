@@ -544,7 +544,12 @@ public sealed class DarkComboBox : UserControl
     protected override void OnMouseWheel(MouseEventArgs e)
     {
         base.OnMouseWheel(e);
-        if (!Enabled || dropDownVisible || modelComboBox.Items.Count == 0)
+        // Only a focused (i.e. clicked-into) combo responds to the wheel. Merely
+        // hovering must not change the selection — otherwise scrolling the channel
+        // list silently edits whatever combo the cursor happens to pass over. When
+        // unfocused the wheel is left unconsumed so it bubbles to the AutoScroll
+        // parent and scrolls the list as expected.
+        if (!Enabled || !ContainsFocus || dropDownVisible || modelComboBox.Items.Count == 0)
         {
             return;
         }

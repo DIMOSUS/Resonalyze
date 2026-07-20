@@ -94,6 +94,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private bool redrawPending;
     private bool savePending;
     private bool loadingProject;
+    private int pendingSourceLoads;
 
     public VirtualCrossoverPanel()
     {
@@ -1062,6 +1063,8 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         int revision = targetState.BeginSourceLoad();
+        pendingSourceLoads++;
+        RefreshAutoActionsEnabled();
         try
         {
             ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(dialog.FileName);
@@ -1086,6 +1089,11 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             ShowError("Failed to load the impulse response.", exception.Message);
         }
+        finally
+        {
+            pendingSourceLoads--;
+            RefreshAutoActionsEnabled();
+        }
     }
 
     private async Task SelectHistoryEntryAsync(VirtualCrossoverChannel channel, Guid entryId)
@@ -1097,6 +1105,8 @@ public partial class VirtualCrossoverPanel : UserControl
         VirtualCrossoverChannelState targetState = channel.SideState(rightSide);
         VirtualCrossoverChannelSettings targetSettings = channel.SideSettings(rightSide);
         int revision = targetState.BeginSourceLoad();
+        pendingSourceLoads++;
+        RefreshAutoActionsEnabled();
         try
         {
             MeasurementHistoryEntry? entry = HistoryService?.FindById(entryId);
@@ -1122,6 +1132,11 @@ public partial class VirtualCrossoverPanel : UserControl
         catch (Exception exception)
         {
             ShowError("Failed to load the history entry.", exception.Message);
+        }
+        finally
+        {
+            pendingSourceLoads--;
+            RefreshAutoActionsEnabled();
         }
     }
 
@@ -1285,6 +1300,8 @@ public partial class VirtualCrossoverPanel : UserControl
         // started — may land. Snapshot loading below is the await that lets
         // the UI act meanwhile.
         int revision = state.BeginSourceLoad();
+        pendingSourceLoads++;
+        RefreshAutoActionsEnabled();
         try
         {
             MeasurementHistorySnapshot? snapshot =
@@ -1304,6 +1321,11 @@ public partial class VirtualCrossoverPanel : UserControl
         catch (Exception exception) when (!showErrors)
         {
             _ = exception;
+        }
+        finally
+        {
+            pendingSourceLoads--;
+            RefreshAutoActionsEnabled();
         }
     }
 
@@ -1657,6 +1679,26 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         redrawTask = RunRedrawLoopAsync();
+        RefreshAutoActionsEnabled();
+    }
+
+    // Auto crossover and Auto delay run on the PROCESSED channel set. While a
+    // source is still loading or the redraw/processing pass is mid-flight, the
+    // curves those searches read are not on screen yet — pressing either then
+    // aligns against stale or absent data — so both are disabled until the panel
+    // settles. (During a project load the whole tree is already disabled.)
+    private void RefreshAutoActionsEnabled()
+    {
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        bool busy = loadingProject
+            || pendingSourceLoads > 0
+            || redrawTask is { IsCompleted: false };
+        buttonAutoSetup.Enabled = !busy;
+        buttonAutoDelay.Enabled = !busy;
     }
 
     // The redraw loop coalesces edits into one trailing pass. Snapshot revision,
@@ -1686,6 +1728,7 @@ public partial class VirtualCrossoverPanel : UserControl
         while (redrawPending && !mainPlotView.IsDisposed);
 
         redrawTask = null;
+        RefreshAutoActionsEnabled();
     }
 
     private sealed record ProcessedRender(

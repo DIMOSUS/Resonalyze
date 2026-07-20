@@ -1498,10 +1498,12 @@ public static class AutoAlignmentEngine
         // band, low SNR) falls back to null and the search keeps its own-side
         // anchor.
         // Returns the delay that Δ-aligns the right channel to its left
-        // counterpart, and whether the target is COARSE (the energy-peak rung
-        // of the ladder, good to a fraction of a millisecond) — a coarse
-        // target may pin a lobe but never the tight scene tolerance.
-        (double TargetMs, bool Coarse)? CrossSideTargetMs(
+        // counterpart, whether the target is COARSE (good to a fraction of a
+        // millisecond — it may pin a lobe but never the tight scene tolerance),
+        // and whether BOTH sides were modal-LATCHED (the geometry-derived
+        // last-rung target, whose lock the caller tightens because the pair's
+        // own in-band sum is mode-shaped there).
+        (double TargetMs, bool Coarse, bool Latched)? CrossSideTargetMs(
             IAlignmentChannel rightChannel,
             StereoPairLink link,
             double bandLowHz,
@@ -1633,42 +1635,120 @@ public static class AutoAlignmentEngine
                 }
 
                 // The ladder's last rung: when no band reads both DIRECT rises
-                // consistently, the pair is timed by its processed IRs' energy
-                // peaks. For a band-passed channel that peak IS its in-band
-                // dominant packet (typically the modal build-up) — the same
-                // physical feature on both sides of one cabin, defined without
-                // any detector threshold. Its L/R difference tracks the true
-                // path split to a fraction of a millisecond — coarse against
-                // the tight scene pin, but the lobe lock only needs the target
-                // within half a junction period.
-                double leftPeakMs = leftSnapshot.PeakIndex
-                    * 1_000.0 / link.Left.SampleRate;
-                double rightPeakMs = rightSnapshot.PeakIndex
-                    * 1_000.0 / rightChannel.SampleRate;
-                // Guard the asymmetric-cabin case: if the two peaks sit farther
-                // apart than any real inter-side path, they are different room
-                // modes, not one shared feature, so their difference is not a
-                // usable L/R split. Withdraw the prior (free own-side search)
-                // rather than pin the pair to a fabricated target.
-                if (Math.Abs(leftPeakMs - rightPeakMs) > MaxInterSideDirectPathMs)
+                // consistently, both sides are modal-latched and every measured
+                // L/R timing figure ON THIS PAIR times room modes, not the
+                // drivers. This rung once used the processed IRs' energy-peak
+                // difference, trusting that the dominant packet is the same
+                // physical feature on both sides — but a field case (bad_plus:
+                // peaks 23.5 vs 17.9 ms, a 5.6 ms "path" no cabin geometry
+                // produces) showed the sides latching onto DIFFERENT modes and
+                // the fabricated target dragging the right midbass past the
+                // scene onto a junction notch. The pair itself is poisoned, but
+                // the cabin's L/R GEOMETRY is still measurable one band up:
+                // the nearest linked pair whose both sides read clean direct
+                // arrivals gives the raw path split the latched pair cannot
+                // (bad_plus: mids +1.37 ms, tweeters +1.41 ms — consistent),
+                // so aim the right delay at the settled left twin's, shifted by
+                // that split and the scene offset. No measurable neighbor
+                // degrades to plain symmetry (split 0: same mirrored hardware).
+                (double SplitMs, string Names)? NeighborRawSplit()
                 {
-                    log.AppendLine(
-                        $"  cross-side prior {rightChannel.Name}: withdrawn — " +
-                        $"energy peaks {leftPeakMs:0.000} / {rightPeakMs:0.000} ms " +
-                        "are too far apart to be one shared feature " +
-                        "(asymmetric modal dominance)");
+                    if (plan.PairLinks == null)
+                    {
+                        return null;
+                    }
+
+                    static double LinkCenterHz(StereoPairLink item) =>
+                        Math.Sqrt(item.BandLowHz * item.BandHighHz);
+                    double centerHz = LinkCenterHz(link);
+                    foreach (StereoPairLink other in plan.PairLinks
+                        .Where(item => item != link)
+                        .OrderBy(item =>
+                            Math.Abs(Math.Log(LinkCenterHz(item) / centerHz))))
+                    {
+                        AlignmentSnapshot? otherLeft = current.FirstOrDefault(
+                            item => item.Channel == other.Left);
+                        AlignmentSnapshot? otherRight = current.FirstOrDefault(
+                            item => item.Channel == other.Right);
+                        double lowHz2 = other.BandLowHz;
+                        double highHz2 = other.BandHighHz;
+                        if (otherLeft == null || otherRight == null ||
+                            highHz2 < lowHz2 *
+                                VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
+                        {
+                            continue;
+                        }
+
+                        TimeAlignmentAnalysisResult Read(
+                            AlignmentSnapshot side, double lo, double hi) =>
+                            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                                side.ImpulseResponse, side.Channel.SampleRate,
+                                lo, hi, side.ValidRange);
+                        TimeAlignmentAnalysisResult leftFull =
+                            Read(otherLeft, lowHz2, highHz2);
+                        TimeAlignmentAnalysisResult rightFull =
+                            Read(otherRight, lowHz2, highHz2);
+                        if (!leftFull.IsValid || !rightFull.IsValid ||
+                            leftFull.SignalToNoiseDecibels < MinimumArrivalSnrDb ||
+                            rightFull.SignalToNoiseDecibels < MinimumArrivalSnrDb)
+                        {
+                            continue;
+                        }
+
+                        // The same honesty probe the pair itself gets: a full-
+                        // band read far behind its own upper half is a latch,
+                        // and a latched neighbor is no geometry reference.
+                        double probeLow2 = Math.Sqrt(lowHz2 * highHz2);
+                        if (highHz2 >= probeLow2 *
+                            VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
+                        {
+                            TimeAlignmentAnalysisResult leftProbe2 =
+                                Read(otherLeft, probeLow2, highHz2);
+                            TimeAlignmentAnalysisResult rightProbe2 =
+                                Read(otherRight, probeLow2, highHz2);
+                            double tolerance2 = Math.Max(1.0, 500.0 / probeLow2);
+                            bool Latches(
+                                TimeAlignmentAnalysisResult full,
+                                TimeAlignmentAnalysisResult probe) =>
+                                probe.IsValid &&
+                                probe.SignalToNoiseDecibels >= MinimumArrivalSnrDb &&
+                                full.FirstArrivalDelayMilliseconds -
+                                    probe.FirstArrivalDelayMilliseconds > tolerance2;
+                            if (Latches(leftFull, leftProbe2) ||
+                                Latches(rightFull, rightProbe2))
+                            {
+                                continue;
+                            }
+                        }
+
+                        // Raw = processed arrival minus the side's current DSP
+                        // delay; positive split = the right side sits farther.
+                        double rawLeft = leftFull.FirstArrivalDelayMilliseconds
+                            - alignment.GetValueOrDefault(other.Left).DelayMs;
+                        double rawRight = rightFull.FirstArrivalDelayMilliseconds
+                            - alignment.GetValueOrDefault(other.Right).DelayMs;
+                        return (rawRight - rawLeft,
+                            $"{other.Left.Name}/{other.Right.Name}");
+                    }
+
                     return null;
                 }
 
-                double peakTarget = leftPeakMs
-                    - plan.SceneOffsetMs
-                    - rightPeakMs;
+                double leftDelayMs =
+                    alignment.GetValueOrDefault(link.Left).DelayMs;
+                (double SplitMs, string Names)? proxy = NeighborRawSplit();
+                double pathSplitMs = proxy?.SplitMs ?? 0.0;
+                double latchedTarget =
+                    leftDelayMs - pathSplitMs - plan.SceneOffsetMs;
                 log.AppendLine(
                     $"  cross-side prior {rightChannel.Name}: target " +
-                    $"{peakTarget:0.000} ms from the processed IR energy peaks " +
-                    $"(L {leftPeakMs:0.000}, raw R {rightPeakMs:0.000} ms — " +
-                    "both sides' direct reads modal-latched)");
-                return (peakTarget, true);
+                    $"{latchedTarget:0.000} ms — settled {link.Left.Name} " +
+                    (proxy is { } source
+                        ? $"shifted by the {source.Names} raw path split " +
+                          $"{source.SplitMs:+0.000;-0.000} ms"
+                        : "mirrored symmetrically (no measurable neighbor pair)") +
+                    " (both sides' direct reads modal-latched)");
+                return (latchedTarget, true, true);
             }
 
             double target = arrivals.Left.FirstArrivalDelayMilliseconds
@@ -1679,7 +1759,7 @@ public static class AutoAlignmentEngine
                 $"(L arrival {arrivals.Left.FirstArrivalDelayMilliseconds:0.000}, " +
                 $"raw R {arrivals.Right.FirstArrivalDelayMilliseconds:0.000} ms " +
                 $"in {usedLowHz:0}-{usedHighHz:0} Hz)");
-            return (target, false);
+            return (target, false, false);
         }
 
         void AlignRight(int index, int neighborIndex, AlignmentJunction pair)
@@ -1723,7 +1803,7 @@ public static class AutoAlignmentEngine
             StereoPairLink? channelLink = plan.PairLinks?.FirstOrDefault(
                 item => item.Right == channel);
             bool lockable = channelLink != null && IsSceneLockable(channelLink);
-            (double TargetMs, bool Coarse)? cross = channelLink == null
+            (double TargetMs, bool Coarse, bool Latched)? cross = channelLink == null
                 ? null
                 : CrossSideTargetMs(
                     channel,
@@ -1735,11 +1815,19 @@ public static class AutoAlignmentEngine
                     pair.BandLowHz,
                     pair.BandHighHz);
             double? crossTarget = cross?.TargetMs;
+            // A double-latched pair gets a QUARTER-period lock instead of the
+            // usual half: the in-lobe authority the wide lock grants the
+            // junction sum assumes the sum measures direct-field summation,
+            // but under a double latch the same room modes that broke the
+            // arrival detectors shape the sum too — on bad_plus its in-band
+            // optimum sat 0.6 ms past every geometry-consistent point. Where
+            // the room owns the band, the geometry-derived target deserves
+            // the larger say; the sum still fine-tunes inside ±T/4.
             double? sceneLock = cross is not { } resolved
                 ? null
                 : lockable && !resolved.Coarse
                     ? SceneLockToleranceMs
-                    : 500.0 / Math.Max(
+                    : (resolved.Latched ? 250.0 : 500.0) / Math.Max(
                         pair.CrossoverHz,
                         secondaryPair?.CrossoverHz ?? pair.CrossoverHz);
 
@@ -1873,17 +1961,6 @@ public static class AutoAlignmentEngine
     // content to pin: the lock requires at least a third of an octave above
     // the edge, the same admission rule the arrival analysis itself applies.
     private const double SceneLockLocalizationLowHz = 300;
-
-    // The widest the two sides of one stereo pair can plausibly differ in
-    // direct-path time, measured from one listening position: a car cabin is
-    // at most a couple of metres across, so ~8 ms bounds any real path split
-    // with generous margin. The energy-peak fallback (below) trusts that both
-    // sides' dominant IR packets are the SAME physical feature; peaks farther
-    // apart than this are almost certainly DIFFERENT room modes dominating L
-    // vs R (an acoustically asymmetric install), so the peak difference is not
-    // a real L/R split and the pair falls back to its own-side junction search
-    // rather than pinning to a fabricated target.
-    private const double MaxInterSideDirectPathMs = 8.0;
 
     // Whether a linked pair reaches far enough into the localization region
     // for the scene to outrank its junction sums: locked in the descent,

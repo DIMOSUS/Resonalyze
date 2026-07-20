@@ -1714,7 +1714,7 @@ public static class AutoAlignmentEngine
                     }
                 }
 
-                (double PathSplitMs, CrossSideLockTier Tier) resolved =
+                (double PathSplitMs, CrossSideLockTier Tier, int Corroborating) resolved =
                     ResolveLatchedPathSplit(
                         donorSplits.Select(item => item.SplitMs).ToList(),
                         CrossSideDonorAgreementMs);
@@ -1738,13 +1738,20 @@ public static class AutoAlignmentEngine
                 double latchedTarget =
                     leftDelayMs - resolved.PathSplitMs - plan.SceneOffsetMs;
                 bool tight = resolved.Tier == CrossSideLockTier.Tight;
+                // Name only the donors in the WINNING cluster — those within the
+                // agreement tolerance of the chosen split — not the outliers the
+                // resolver rejected.
+                string donorNames = string.Join(", ", donorSplits
+                    .Where(item => Math.Abs(item.SplitMs - resolved.PathSplitMs)
+                        <= CrossSideDonorAgreementMs)
+                    .Select(item => item.Names));
                 log.AppendLine(
                     $"  cross-side prior {rightChannel.Name}: target " +
                     $"{latchedTarget:0.000} ms — settled {link.Left.Name} shifted " +
-                    $"by the {(tight ? "corroborated" : "lone")} L/R arrival split " +
-                    $"{resolved.PathSplitMs:+0.000;-0.000} ms from " +
-                    $"{string.Join(", ", donorSplits.Select(item => item.Names))} " +
-                    $"(direct arrivals unmeasurable; {(tight ? "quarter" : "half")}-period lock)");
+                    $"by the {(tight ? $"{resolved.Corroborating}-pair corroborated" : "lone")} " +
+                    $"L/R arrival split {resolved.PathSplitMs:+0.000;-0.000} ms from " +
+                    $"{donorNames} (direct arrivals unmeasurable; " +
+                    $"{(tight ? "quarter" : "half")}-period lock)");
                 return (latchedTarget, true, tight);
             }
 
@@ -1970,43 +1977,67 @@ public static class AutoAlignmentEngine
     // deterministic so it is unit-tested directly, unlike the arrival detectors.
     internal enum CrossSideLockTier { None, Loose, Tight }
 
-    internal static (double PathSplitMs, CrossSideLockTier Tier) ResolveLatchedPathSplit(
-        IReadOnlyList<double> donorSplits, double agreementToleranceMs)
+    internal static (double PathSplitMs, CrossSideLockTier Tier, int Corroborating)
+        ResolveLatchedPathSplit(
+            IReadOnlyList<double> donorSplits, double agreementToleranceMs)
     {
         ArgumentNullException.ThrowIfNull(donorSplits);
         if (donorSplits.Count == 0)
         {
-            return (0.0, CrossSideLockTier.None);
+            return (0.0, CrossSideLockTier.None, 0);
         }
         if (donorSplits.Count == 1)
         {
-            return (donorSplits[0], CrossSideLockTier.Loose);
+            return (donorSplits[0], CrossSideLockTier.Loose, 1);
         }
 
-        // The largest set of splits mutually within tolerance of one member.
-        List<double> best = [donorSplits[0]];
-        foreach (double anchor in donorSplits)
+        // The largest window of splits MUTUALLY within tolerance (max − min ≤
+        // tolerance), not merely within tolerance of one anchor: a chain like
+        // 0.45 / 1.00 / 1.55 all sits within 0.6 of the middle yet spans 1.10,
+        // and must not read as one agreeing cluster. A two-pointer sweep over
+        // the sorted splits finds it in one pass.
+        double[] sorted = donorSplits.OrderBy(split => split).ToArray();
+        int bestCount = 0;
+        int bestStart = 0;
+        int windowsAtBest = 0;
+        int end = 0;
+        for (int start = 0; start < sorted.Length; start++)
         {
-            var cluster = donorSplits
-                .Where(split => Math.Abs(split - anchor) <= agreementToleranceMs)
-                .ToList();
-            if (cluster.Count > best.Count)
+            if (end < start)
             {
-                best = cluster;
+                end = start;
+            }
+            while (end + 1 < sorted.Length &&
+                sorted[end + 1] - sorted[start] <= agreementToleranceMs)
+            {
+                end++;
+            }
+
+            int count = end - start + 1;
+            if (count > bestCount)
+            {
+                bestCount = count;
+                bestStart = start;
+                windowsAtBest = 1;
+            }
+            else if (count == bestCount)
+            {
+                windowsAtBest++;
             }
         }
 
-        if (best.Count < 2)
+        // A lone corroborated cluster is the geometry; a lone unpaired split, or
+        // two equally-large clusters that disagree (windowsAtBest > 1), is not.
+        if (bestCount < 2 || windowsAtBest > 1)
         {
-            // Several donors, none corroborate: the geometry is ambiguous.
-            return (0.0, CrossSideLockTier.None);
+            return (0.0, CrossSideLockTier.None, 0);
         }
 
-        double[] sorted = best.OrderBy(split => split).ToArray();
-        double median = sorted.Length % 2 == 1
-            ? sorted[sorted.Length / 2]
-            : 0.5 * (sorted[sorted.Length / 2 - 1] + sorted[sorted.Length / 2]);
-        return (median, CrossSideLockTier.Tight);
+        double[] cluster = sorted[bestStart..(bestStart + bestCount)];
+        double median = cluster.Length % 2 == 1
+            ? cluster[cluster.Length / 2]
+            : 0.5 * (cluster[cluster.Length / 2 - 1] + cluster[cluster.Length / 2]);
+        return (median, CrossSideLockTier.Tight, bestCount);
     }
 
     // The lower edge of the localization region. Only the part of a pair's

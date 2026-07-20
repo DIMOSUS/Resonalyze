@@ -86,25 +86,32 @@ public sealed class StereoAlignmentTests
             double rightMidEchoMs = 0,
             double leftLateMs = 0,
             double rightMidAmplitude = 1.0,
-            int[]? reprocessCount = null)
+            int[]? reprocessCount = null,
+            double globalLateMs = 0)
     {
-        var sub = new TestChannel("sub", ImpulseAtMs(2.0 + leftLateMs));
-        var leftWoof = new TestChannel("L woof", ImpulseAtMs(1.0 + leftLateMs));
-        var leftMid = new TestChannel("L mid", ImpulseAtMs(0.4 + leftLateMs));
+        var sub = new TestChannel(
+            "sub", ImpulseAtMs(2.0 + leftLateMs + globalLateMs));
+        var leftWoof = new TestChannel(
+            "L woof", ImpulseAtMs(1.0 + leftLateMs + globalLateMs));
+        var leftMid = new TestChannel(
+            "L mid", ImpulseAtMs(0.4 + leftLateMs + globalLateMs));
         var leftTwr = new TestChannel(
-            "L twr", ImpulseAtMs(0.0 + leftLateMs, leftTopAmplitude));
-        var rightWoof = new TestChannel("R woof", ImpulseAtMs(1.0 + rightLateMs));
+            "L twr", ImpulseAtMs(0.0 + leftLateMs + globalLateMs, leftTopAmplitude));
+        var rightWoof = new TestChannel(
+            "R woof", ImpulseAtMs(1.0 + rightLateMs + globalLateMs));
         Complex[] rightMidIr = ImpulseAtMs(
-            0.4 + rightLateMs, rightMidEchoMs > 0 ? 0.6 : rightMidAmplitude);
+            0.4 + rightLateMs + globalLateMs,
+            rightMidEchoMs > 0 ? 0.6 : rightMidAmplitude);
         if (rightMidEchoMs > 0)
         {
             int echoPosition = BasePosition + (int)Math.Round(
-                (0.4 + rightLateMs + rightMidEchoMs) / 1000.0 * SampleRate);
+                (0.4 + rightLateMs + globalLateMs + rightMidEchoMs)
+                    / 1000.0 * SampleRate);
             rightMidIr[echoPosition] += Complex.One;
         }
         var rightMid = new TestChannel("R mid", rightMidIr);
         var rightTwr = new TestChannel(
-            "R twr", ImpulseAtMs(0.0 + rightLateMs, rightTopAmplitude));
+            "R twr", ImpulseAtMs(0.0 + rightLateMs + globalLateMs, rightTopAmplitude));
 
         TestChannel[] leftByBand = [sub, leftWoof, leftMid, leftTwr];
         TestChannel[] rightByBand = [sub, rightWoof, rightMid, rightTwr];
@@ -573,58 +580,38 @@ public sealed class StereoAlignmentTests
     [Fact]
     public void ComputeStereo_NearTheDelayCeilingTheSceneSurvives()
     {
-        // The left side is 99.2 ms late, parking the whole right side just
-        // under the 100 ms delay ceiling. Every pass that adds delay from
-        // here — the co-move above all — must bound its window by the ceiling
-        // UP FRONT: clamping one side after the fact would move the two sides
+        // The left side is 26 ms late, parking the whole right side just
+        // under the 30 ms delay ceiling (real car DSPs cap per-channel delay
+        // around 30 ms — the ceiling is the transferable range, not an
+        // operating region). Every pass that adds delay from here — the
+        // co-move above all — must bound its window by the remaining span UP
+        // FRONT: clamping one side after the fact would move the two sides
         // unequally and silently bend the scene. Both linked pairs must still
         // read the scene offset at the end and nothing may exceed the limit.
+        // (At this realistic lateness the impulses sit well inside the
+        // detector's linear range, so the scene is measured directly on the
+        // final proposal — the normalization is uniform and scene-invariant.)
         (TestChannel sub, TestChannel[] left, TestChannel[] right,
             Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
             StringBuilder log) = RunStereo(
                 sceneOffsetMs: 0.25,
                 rightLateMs: 0,
                 linkBands: UserLinkBands,
-                leftLateMs: 99.2);
+                leftLateMs: 26.0);
 
         Assert.Contains("Co-move", log.ToString());
         Assert.All(
             new[] { sub, left[0], left[1], left[2], right[0], right[1], right[2] },
             channel => Assert.True(
-                alignment.GetValueOrDefault(channel).DelayMs is >= 0 and <= 100));
+                alignment.GetValueOrDefault(channel).DelayMs is >= 0 and <= 30));
 
-        // At this lateness the impulses sit ~110 ms into the record — beyond
-        // the band-arrival detector's search reach, where its read is a
-        // nonlinear function of absolute position. A uniform shift (the final
-        // normalization, which the mono co-move can re-trigger by lifting the
-        // minimum delay) is scene-invariant by definition but moves those
-        // saturated reads unequally, so the scene is measured at the
-        // PRE-normalization positions: the normalization amount added back to
-        // every channel identically, restoring the exact positions the walk
-        // and the co-moves actually balanced.
-        double normalizedMs = 0;
-        Match normalized = Regex.Match(
-            log.ToString(), @"Normalized: -([\d.,]+) ms");
-        if (normalized.Success)
-        {
-            normalizedMs = double.Parse(
-                normalized.Groups[1].Value, CultureInfo.CurrentCulture);
-        }
-
-        Dictionary<IAlignmentChannel, AlignmentOverride> preNormalization =
-            alignment.ToDictionary(
-                item => item.Key,
-                item => item.Value with
-                {
-                    DelayMs = item.Value.DelayMs + normalizedMs
-                });
         double twrDelta =
-            FinalBandArrivalMs(left[2], preNormalization, 2_500, 12_000) -
-            FinalBandArrivalMs(right[2], preNormalization, 2_500, 12_000);
+            FinalBandArrivalMs(left[2], alignment, 2_500, 12_000) -
+            FinalBandArrivalMs(right[2], alignment, 2_500, 12_000);
         Assert.InRange(twrDelta, 0.15, 0.35);
         double midDelta =
-            FinalBandArrivalMs(left[1], preNormalization, 400, 2_500) -
-            FinalBandArrivalMs(right[1], preNormalization, 400, 2_500);
+            FinalBandArrivalMs(left[1], alignment, 400, 2_500) -
+            FinalBandArrivalMs(right[1], alignment, 400, 2_500);
         Assert.InRange(midDelta, 0.15, 0.35);
     }
 
@@ -813,6 +800,38 @@ public sealed class StereoAlignmentTests
         Assert.NotNull(decision.Confidence);
         Assert.Contains("mono co-move", decision.Detail);
         Assert.Contains("reference", decision.Detail);
+    }
+
+    [Fact]
+    public void ComputeStereo_IsInvariantToAGlobalTimeOffset()
+    {
+        // Two systems differing by nothing but a uniform acoustic offset are
+        // the SAME system: every relative quantity — the walk's bases, the
+        // scene, and above all the co-move windows (which once bounded by
+        // absolute [0, ceiling] positions and so depended on the transient
+        // global offset) — must produce the identical normalized proposal.
+        (TestChannel _, TestChannel[] leftA, TestChannel[] rightA,
+            Dictionary<IAlignmentChannel, AlignmentOverride> baseline, _) =
+            RunStereo(sceneOffsetMs: 0.25, linkBands: UserLinkBands);
+        (TestChannel _, TestChannel[] leftB, TestChannel[] rightB,
+            Dictionary<IAlignmentChannel, AlignmentOverride> offset, _) =
+            RunStereo(
+                sceneOffsetMs: 0.25,
+                linkBands: UserLinkBands,
+                globalLateMs: 15.0);
+
+        TestChannel[] channelsA = [leftA[0], leftA[1], leftA[2], rightA[0], rightA[1], rightA[2]];
+        TestChannel[] channelsB = [leftB[0], leftB[1], leftB[2], rightB[0], rightB[1], rightB[2]];
+        for (int i = 0; i < channelsA.Length; i++)
+        {
+            Assert.Equal(
+                baseline.GetValueOrDefault(channelsA[i]).DelayMs,
+                offset.GetValueOrDefault(channelsB[i]).DelayMs,
+                2);
+            Assert.Equal(
+                baseline.GetValueOrDefault(channelsA[i]).InvertPolarity,
+                offset.GetValueOrDefault(channelsB[i]).InvertPolarity);
+        }
     }
 
     // ---- the pure latched-fallback donor resolver (unit-tested directly, since

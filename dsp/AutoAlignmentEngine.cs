@@ -183,11 +183,14 @@ public static class AutoAlignmentEngine
     // AlignmentSelection tie-breaks, exactly as for any other admitted lobe.
     private const double LowJunctionReachFraction = 0.97;
 
-    // The delay ceiling a proposal may reach, mirroring the UI's per-channel
-    // delay limit. Kept here so the uniform negative-delay shift can detect —
-    // and log — the rare case where clamping a pinned channel breaks the
-    // shift's alignment-preserving property.
-    private const double MaxDelayMs = 100;
+    // The delay ceiling an AUTO DELAY proposal may reach. Deliberately tighter
+    // than the manual UI range (100 ms — the Virtual DSP may model whatever
+    // hardware the user owns): even top-end car processors cap per-channel
+    // delay around 30 ms (~10 m of path), so an automatic proposal past it
+    // could never be transferred to a device. Real cabin spans run well under
+    // 10 ms; the ceiling exists for the feasibility gate, not as an operating
+    // region.
+    private const double MaxDelayMs = 30;
 
     // A deliberately wide fine-search window (many periods at a high crossover,
     // ~one at a low one). Its candidates are always logged, surfacing summation
@@ -359,9 +362,89 @@ public static class AutoAlignmentEngine
         AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
-        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null) =>
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
+    {
+        ArgumentNullException.ThrowIfNull(channelsByBand);
+        ArgumentNullException.ThrowIfNull(alignment);
+        RequireOneSampleRate(channelsByBand);
+        // An absolute proposal, per the contract: stale entries would otherwise
+        // leak into the neighbor-base and reprocess reads and skew the result.
+        alignment.Clear();
+        decisions?.Clear();
         Compute(channelsByBand, pairs, reprocess, alignment, log,
             onsetLocks: null, decisions);
+        NormalizeAndVerifyFeasibility(channelsByBand.ToList(), alignment, log);
+    }
+
+    /// <summary>
+    /// The verdict of the arrival honesty probe: a full-band read judged
+    /// against the same record's upper-half read. LATCHED — the full band
+    /// times a feature far LATER than its own upper half (the proven modal
+    /// latch): the read times the wrong feature and is garbage. UNVERIFIED —
+    /// no certificate either way: the full read itself (or the probe) is
+    /// unmeasurable/low-SNR, or the PROBE timed some far LATER feature than
+    /// the full band's front (weak in-band HF leaves it blind to the front) —
+    /// the full read stays usable but earns no certificate (no tight scene
+    /// lock). VERIFIED — the two agree within the dispersion one wavefront
+    /// can show. One classification shared by the cross-side links, the donor
+    /// certificates and the stereo bridge, so the three cannot drift apart.
+    /// </summary>
+    internal enum ArrivalCertificate
+    {
+        Unverified,
+        Latched,
+        Verified
+    }
+
+    internal static ArrivalCertificate ClassifyArrival(
+        TimeAlignmentAnalysisResult full,
+        TimeAlignmentAnalysisResult probe,
+        double toleranceMs)
+    {
+        if (!full.IsValid ||
+            full.SignalToNoiseDecibels < MinimumArrivalSnrDb ||
+            !probe.IsValid ||
+            probe.SignalToNoiseDecibels < MinimumArrivalSnrDb)
+        {
+            return ArrivalCertificate.Unverified;
+        }
+
+        double skewMs = full.FirstArrivalDelayMilliseconds
+            - probe.FirstArrivalDelayMilliseconds;
+        if (skewMs > toleranceMs)
+        {
+            return ArrivalCertificate.Latched;
+        }
+        if (-skewMs > toleranceMs)
+        {
+            return ArrivalCertificate.Unverified;
+        }
+        return ArrivalCertificate.Verified;
+    }
+
+    // Every cross-channel figure in the engine — correlation lags, junction
+    // bands, per-sample delays — assumes ONE sample rate: the searches read a
+    // neighbor's IR with the searched channel's rate, so mixed rates would
+    // silently misscale frequencies and delays rather than fail.
+    private static void RequireOneSampleRate(
+        IEnumerable<AlignmentSnapshot> channels)
+    {
+        int? sampleRate = null;
+        foreach (AlignmentSnapshot snapshot in channels)
+        {
+            if (sampleRate == null)
+            {
+                sampleRate = snapshot.Channel.SampleRate;
+            }
+            else if (snapshot.Channel.SampleRate != sampleRate)
+            {
+                throw new ArgumentException(
+                    "All channels must share one sample rate; " +
+                    $"found {sampleRate} and {snapshot.Channel.SampleRate} Hz. " +
+                    "Resample the measurements to a common rate first.");
+            }
+        }
+    }
 
     // One onset-locked junction: which channel the lock was applied to during
     // its fine search, how far the chosen delay landed from the onset-aligned
@@ -480,18 +563,60 @@ public static class AutoAlignmentEngine
         };
         foreach (AlignmentJunction pair in pairs)
         {
-            double lowerArrival = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-                pair.Lower.ImpulseResponse,
-                pair.Lower.Channel.SampleRate,
-                pair.BandLowHz,
-                pair.BandHighHz,
-                pair.Lower.ValidRange);
-            double upperArrival = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-                pair.Upper.ImpulseResponse,
-                pair.Upper.Channel.SampleRate,
-                pair.BandLowHz,
-                pair.BandHighHz,
-                pair.Upper.ValidRange);
+            TimeAlignmentAnalysisResult lowerRead =
+                VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                    pair.Lower.ImpulseResponse,
+                    pair.Lower.Channel.SampleRate,
+                    pair.BandLowHz,
+                    pair.BandHighHz,
+                    pair.Lower.ValidRange);
+            TimeAlignmentAnalysisResult upperRead =
+                VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                    pair.Upper.ImpulseResponse,
+                    pair.Upper.Channel.SampleRate,
+                    pair.BandLowHz,
+                    pair.BandHighHz,
+                    pair.Upper.ValidRange);
+
+            // An invalid or near-noise arrival is NOT a time — and, unlike a
+            // mis-TIMED one, it is not rescuable either: the envelope SNR
+            // grades the whole band against the record's own noise floor, so
+            // failing it means the channel has no measurable signal THERE at
+            // all — the junction search downstream would only shape a loss
+            // surface out of noise phases and let the prior pick a delay. The
+            // wide window rescues uncertain timing of a strong signal, never
+            // the absence of one. Refuse the run and point at the channel:
+            // this is a dead driver, a wrong source or a mis-set crossover,
+            // and the user must see that, not a proposal that pretends.
+            bool arrivalsMeasured =
+                lowerRead.IsValid && upperRead.IsValid &&
+                lowerRead.SignalToNoiseDecibels >= MinimumArrivalSnrDb &&
+                upperRead.SignalToNoiseDecibels >= MinimumArrivalSnrDb;
+            if (!arrivalsMeasured)
+            {
+                string Describe(TimeAlignmentAnalysisResult read) =>
+                    !read.IsValid
+                        ? "unmeasurable"
+                        : $"near-noise (SNR {read.SignalToNoiseDecibels:0.0} dB, " +
+                          $"minimum {MinimumArrivalSnrDb:0})";
+                string lowerState = Describe(lowerRead);
+                string upperState = Describe(upperRead);
+                log.AppendLine(
+                    $"Pair {pair.Lower.Channel.Name}/" +
+                    $"{pair.Upper.Channel.Name}: " +
+                    $"band {pair.BandLowHz:0}-{pair.BandHighHz:0} Hz, " +
+                    $"arrivals {lowerState} / {upperState} — refusing the run");
+                throw new InvalidOperationException(
+                    $"No junction evidence between {pair.Lower.Channel.Name} " +
+                    $"and {pair.Upper.Channel.Name} in " +
+                    $"{pair.BandLowHz:0}-{pair.BandHighHz:0} Hz: " +
+                    $"{pair.Lower.Channel.Name} is {lowerState}, " +
+                    $"{pair.Upper.Channel.Name} is {upperState}. " +
+                    "Check the channels' sources and crossover settings.");
+            }
+
+            double lowerArrival = lowerRead.FirstArrivalDelayMilliseconds;
+            double upperArrival = upperRead.FirstArrivalDelayMilliseconds;
 
             // Refine the coarse offset with the DOMINANT GCC-PHAT extremum of
             // either sign: at a mid/high junction it lands the stage-2 window
@@ -841,27 +966,27 @@ public static class AutoAlignmentEngine
                     $"(score {item.ScoreDb:0.00}, avg {item.LossDb:0.00}, " +
                     $"dip {item.DipDb:0.0} dB)")));
 
-            AlignmentCandidate chosen = candidates.Count > 0
+            AlignmentCandidate? selected = candidates.Count > 0
                 ? AlignmentSelection.Select(candidates, anchorMs)
-                : new AlignmentCandidate(anchorMs, forcedPolarity ?? false, 0);
-            if (candidates.Count > 0 && chosen != candidates[0])
+                : null;
+            if (selected is { } fineSelected && fineSelected != candidates[0])
             {
                 log.AppendLine(
-                    $"  preferred {chosen.DelayMs:0.000} ms" +
-                    $"{(chosen.InvertPolarity ? " inv" : "")} over " +
+                    $"  preferred {fineSelected.DelayMs:0.000} ms" +
+                    $"{(fineSelected.InvertPolarity ? " inv" : "")} over " +
                     $"{candidates[0].DelayMs:0.000} ms" +
                     $"{(candidates[0].InvertPolarity ? " inv" : "")} " +
-                    $"(margin {candidates[0].ScoreDb - chosen.ScoreDb:0.00} dB)");
+                    $"(margin {candidates[0].ScoreDb - fineSelected.ScoreDb:0.00} dB)");
             }
-            else if (candidates.Count > 0 && chosen.InvertPolarity &&
+            else if (selected is { InvertPolarity: true } keptInverted &&
                 AlignmentSelection.DeclinedInvertRescue(candidates, anchorMs)
                     is { } rescue)
             {
                 log.AppendLine(
-                    $"  kept {chosen.DelayMs:0.000} ms inv: rescue " +
+                    $"  kept {keptInverted.DelayMs:0.000} ms inv: rescue " +
                     $"{rescue.DelayMs:0.000} ms " +
-                    $"(margin {chosen.ScoreDb - rescue.ScoreDb:0.00} dB) is " +
-                    $"{Math.Abs(rescue.DelayMs - anchorMs) - Math.Abs(chosen.DelayMs - anchorMs):0.000} ms " +
+                    $"(margin {keptInverted.ScoreDb - rescue.ScoreDb:0.00} dB) is " +
+                    $"{Math.Abs(rescue.DelayMs - anchorMs) - Math.Abs(keptInverted.DelayMs - anchorMs):0.000} ms " +
                     "farther from the arrival (reach " +
                     $"{AlignmentSelection.DefaultInvertPreferenceReachMs:0.00} ms)");
             }
@@ -887,6 +1012,44 @@ public static class AutoAlignmentEngine
                         $"(score {item.ScoreDb:0.00}, avg {item.LossDb:0.00}, " +
                         $"dip {item.DipDb:0.0} dB)"))
                     : "none"));
+
+            // An empty fine window is not yet "no evidence": the wide sweep
+            // covers several periods, so adopt its selection when it found
+            // structure the narrow window missed.
+            if (selected == null && wide.Count > 0)
+            {
+                selected = AlignmentSelection.Select(wide, anchorMs);
+                log.AppendLine(
+                    $"  fine window empty — adopted {selected.DelayMs:0.000} ms" +
+                    $"{(selected.InvertPolarity ? " inv" : "")} from the wide sweep");
+            }
+
+            // NO usable junction evidence at all (a channel silent or buried in
+            // the band — the evidence gate returned no candidates in either
+            // window). The engine used to fabricate a candidate at the coarse
+            // anchor here — a delay built on an unmeasured or even invalid
+            // arrival, applied as if it were a result. A partial "skip this
+            // channel" is no better: earlier uniform shifts may already have
+            // written a delay into its override, later passes would shift it
+            // again, and the walk would align further channels against an
+            // unaligned neighbor. The only honest outcome is refusing the RUN,
+            // with the reason: an unmeasurable channel needs the user's
+            // attention (a dead driver, a wrong source, a mis-set crossover),
+            // not a proposal that quietly pretends it was aligned.
+            if (selected == null)
+            {
+                log.AppendLine(
+                    $"  NO junction evidence in {bandLowHz:0}-{bandHighHz:0} Hz — " +
+                    "refusing the run");
+                throw new InvalidOperationException(
+                    $"No junction evidence between {channel.Name} and " +
+                    $"{neighborChannel.Name} in " +
+                    $"{bandLowHz:0}-{bandHighHz:0} Hz: one of them is silent or " +
+                    "buried in the shared band, so no delay can be measured " +
+                    "there. Check the channel's source and crossover settings.");
+            }
+
+            AlignmentCandidate chosen = selected;
 
             // The arrival-anchored pick, captured BEFORE the edge-retry can move
             // it: the promotion reach is measured from here, so a retry that
@@ -1059,8 +1222,11 @@ public static class AutoAlignmentEngine
                 newDelay = 0;
             }
 
+            // Unclamped above zero: a value past MaxDelayMs stays honest here —
+            // relations are what matter mid-run, and the final feasibility
+            // check refuses the proposal if the span truly does not fit.
             alignment[channel] = new AlignmentOverride(
-                Math.Clamp(Math.Round(newDelay, 2), 0, MaxDelayMs),
+                Math.Max(0, Math.Round(newDelay, 2)),
                 chosen.InvertPolarity);
 
             if (decisions != null)
@@ -1272,21 +1438,16 @@ public static class AutoAlignmentEngine
             {
                 AlignmentOverride currentAlignment =
                     alignment.GetValueOrDefault(item.Channel);
-                double shifted = currentAlignment.DelayMs + shiftMs;
-                if (shifted > MaxDelayMs)
-                {
-                    // The shift is only alignment-preserving while it is
-                    // uniform; a channel pinned at the ceiling breaks the
-                    // relative delays silently, so say so in the log.
-                    log.AppendLine(
-                        $"  WARNING: uniform shift +{shiftMs:0.000} ms pushes " +
-                        $"{item.Channel.Name} past the {MaxDelayMs:0} ms " +
-                        $"delay limit ({shifted:0.000} ms, clamped) — " +
-                        "the relative alignment is no longer preserved.");
-                }
+                // NO clamping here: the shift is only alignment-preserving
+                // while it is uniform, and a channel pinned at the ceiling
+                // would break the relative delays (and the stereo scene)
+                // SILENTLY. Transient out-of-range values are legal mid-run —
+                // only relations matter until the final normalization, and the
+                // feasibility check after it refuses a proposal whose span
+                // genuinely does not fit the DSP's delay range.
                 alignment[item.Channel] = currentAlignment with
                 {
-                    DelayMs = Math.Min(MaxDelayMs, shifted)
+                    DelayMs = currentAlignment.DelayMs + shiftMs
                 };
             }
         }
@@ -1346,6 +1507,11 @@ public static class AutoAlignmentEngine
                 "Every mono channel must be part of the left walk that tunes it.",
                 nameof(plan));
         }
+        RequireOneSampleRate(plan.LeftChannelsByBand.Concat(rightByBand));
+        // An absolute proposal, per the contract (see Compute): stage L below
+        // uses the PRIVATE overload, so clear here.
+        alignment.Clear();
+        decisions?.Clear();
 
         // Onset-locked junctions accumulated across both sides: the co-move
         // must respect the front pins the fine searches honored.
@@ -1422,6 +1588,69 @@ public static class AutoAlignmentEngine
                 "Check the top pair's sources and crossover band.");
         }
 
+        // The same honesty certificate every cross-side read gets, on the one
+        // read that times a WHOLE side: each side's full-band arrival must
+        // agree with its own upper-half read to within the dispersion one
+        // wavefront can show. SNR alone proves a strong signal, not that both
+        // sides timed the same physical event — a strong early reflection on
+        // one side passes the SNR gate and would skew the entire right side.
+        // Disagreement is positive evidence of that and refuses the bridge; an
+        // unmeasurable upper half (a heavily rolled-off top end) cannot
+        // certify either way, so the bridge proceeds but its confidence is
+        // capped at Low below.
+        bool bridgeVerified = true;
+        double bridgeProbeLowHz =
+            Math.Sqrt(plan.BridgeBandLowHz * plan.BridgeBandHighHz);
+        if (plan.BridgeBandHighHz >= bridgeProbeLowHz *
+            VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
+        {
+            TimeAlignmentAnalysisResult leftProbe =
+                VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                    leftBridgeSnapshot.ImpulseResponse,
+                    plan.BridgeLeft.SampleRate,
+                    bridgeProbeLowHz,
+                    plan.BridgeBandHighHz,
+                    leftBridgeSnapshot.ValidRange);
+            TimeAlignmentAnalysisResult rightProbe =
+                VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                    rightBridgeSnapshot.ImpulseResponse,
+                    plan.BridgeRight.SampleRate,
+                    bridgeProbeLowHz,
+                    plan.BridgeBandHighHz,
+                    rightBridgeSnapshot.ValidRange);
+            double bridgeToleranceMs = Math.Max(1.0, 500.0 / bridgeProbeLowHz);
+            void Certify(
+                TimeAlignmentAnalysisResult full,
+                TimeAlignmentAnalysisResult probe,
+                IAlignmentChannel channel)
+            {
+                switch (ClassifyArrival(full, probe, bridgeToleranceMs))
+                {
+                    case ArrivalCertificate.Latched:
+                        // The full band times a LATER feature than its own
+                        // upper half — the arrival is not the direct front.
+                        throw new InvalidOperationException(
+                            "The stereo bridge reads two different features on " +
+                            $"{channel.Name}: {full.FirstArrivalDelayMilliseconds:0.000} ms " +
+                            $"in {plan.BridgeBandLowHz:0}-{plan.BridgeBandHighHz:0} Hz but " +
+                            $"{probe.FirstArrivalDelayMilliseconds:0.000} ms in its " +
+                            $"{bridgeProbeLowHz:0}-{plan.BridgeBandHighHz:0} Hz half. " +
+                            "The arrival is not a clean direct front, so timing the " +
+                            "whole right side from it would be unreliable. Check the " +
+                            "top pair's measurements for early reflections.");
+                    case ArrivalCertificate.Unverified:
+                        bridgeVerified = false;
+                        break;
+                }
+            }
+            Certify(leftBridge, leftProbe, plan.BridgeLeft);
+            Certify(rightBridge, rightProbe, plan.BridgeRight);
+        }
+        else
+        {
+            bridgeVerified = false;
+        }
+
         double leftArrival = leftBridge.FirstArrivalDelayMilliseconds;
         double rightArrival = rightBridge.FirstArrivalDelayMilliseconds;
         double bridgeDelay = leftArrival - rightArrival - plan.SceneOffsetMs;
@@ -1445,8 +1674,10 @@ public static class AutoAlignmentEngine
                 $"  advanced via a uniform +{shift:0.000} ms shift " +
                 "of every settled channel");
         }
+        // Unclamped above zero (see the result write): the final feasibility
+        // check owns the delay-range verdict.
         alignment[plan.BridgeRight] = new AlignmentOverride(
-            Math.Clamp(Math.Round(bridgeDelay, 2), 0, MaxDelayMs), false);
+            Math.Max(0, Math.Round(bridgeDelay, 2)), false);
         if (decisions != null)
         {
             // The bridge is an envelope-arrival fit, not a candidate search:
@@ -1460,12 +1691,21 @@ public static class AutoAlignmentEngine
                 bridgeSnrDb >= BridgeHighSnrDb ? AlignmentConfidence.High
                 : bridgeSnrDb >= BridgeMediumSnrDb ? AlignmentConfidence.Medium
                 : AlignmentConfidence.Low;
+            if (!bridgeVerified)
+            {
+                // The honesty probe could not certify the arrivals as clean
+                // direct fronts — the bridge stands, but not with high trust.
+                bridgeConfidence = AlignmentConfidence.Low;
+            }
             string bridgeSnrText = FormattableString.Invariant(
                 $"{leftBridge.SignalToNoiseDecibels:0} / {rightBridge.SignalToNoiseDecibels:0} dB");
             decisions[plan.BridgeRight] = new AlignmentDecision(
                 AlignmentDecisionKind.Bridge,
                 bridgeConfidence,
-                $"bridge to {plan.BridgeLeft.Name}: arrival SNR {bridgeSnrText}");
+                $"bridge to {plan.BridgeLeft.Name}: arrival SNR {bridgeSnrText}" +
+                (bridgeVerified
+                    ? ""
+                    : ", arrival not certified by the upper-half probe"));
         }
 
         // Polarity is a property of the DRIVER, not the side, and automatic delay
@@ -1534,13 +1774,19 @@ public static class AutoAlignmentEngine
             // full-band read landing far BEHIND its own upper-half read means
             // the detector latched that side onto the in-room modal build-up
             // instead of the direct rise (the under-seat midbass case:
-            // 21.2 ms in 80-200 Hz vs 13.9 ms one band up) — the two sides
-            // are then timing DIFFERENT features and their difference is
-            // garbage. The narrow upper half itself is NOT a substitute (at a
-            // low band it is an octave of mush that once dragged a woofer
-            // 6 ms off) — it only votes on the full band's honesty.
+            // 21.2 ms in 80-200 Hz vs 13.9 ms one band up); one landing far
+            // AHEAD means the upper half timed some later feature, so the two
+            // bands are not looking at one wavefront either — both directions
+            // fail the certification. The narrow upper half itself is NOT a
+            // substitute (at a low band it is an octave of mush that once
+            // dragged a woofer 6 ms off) — it only votes on the full band's
+            // honesty. Verified is the positive certificate: reads whose probe
+            // was unmeasurable (too-narrow band, silent or low-SNR upper half)
+            // are still usable but UNVERIFIED, and the caller must not grant
+            // them the tight scene lock an honest certificate earns.
             ((TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
-                Reads, bool Latched) MeasureConsistent(double lowHz, double highHz)
+                Reads, bool Latched, bool Verified) MeasureConsistent(
+                    double lowHz, double highHz)
             {
                 TimeAlignmentAnalysisResult left =
                     VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
@@ -1554,14 +1800,14 @@ public static class AutoAlignmentEngine
                     left.SignalToNoiseDecibels < MinimumArrivalSnrDb ||
                     right.SignalToNoiseDecibels < MinimumArrivalSnrDb)
                 {
-                    return (null, false);
+                    return (null, false, false);
                 }
 
                 double probeLowHz = Math.Sqrt(lowHz * highHz);
                 if (highHz <
                     probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
                 {
-                    return ((left, right), false);
+                    return ((left, right), false, false);
                 }
 
                 TimeAlignmentAnalysisResult leftProbe =
@@ -1572,20 +1818,19 @@ public static class AutoAlignmentEngine
                     VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
                         rightIr, rightChannel.SampleRate, probeLowHz, highHz,
                         rightSnapshot.ValidRange);
-                if (!leftProbe.IsValid || !rightProbe.IsValid ||
-                    leftProbe.SignalToNoiseDecibels < MinimumArrivalSnrDb ||
-                    rightProbe.SignalToNoiseDecibels < MinimumArrivalSnrDb)
-                {
-                    return ((left, right), false);
-                }
 
+                // See ClassifyArrival for the direction semantics: LATCHED
+                // poisons the read (ladder/donors), UNVERIFIED keeps it usable
+                // without the certificate, VERIFIED on both sides earns it.
                 double toleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
-                bool leftLatched = left.FirstArrivalDelayMilliseconds
-                    - leftProbe.FirstArrivalDelayMilliseconds > toleranceMs;
-                bool rightLatched = right.FirstArrivalDelayMilliseconds
-                    - rightProbe.FirstArrivalDelayMilliseconds > toleranceMs;
-                if (leftLatched || rightLatched)
+                ArrivalCertificate leftCertificate =
+                    ClassifyArrival(left, leftProbe, toleranceMs);
+                ArrivalCertificate rightCertificate =
+                    ClassifyArrival(right, rightProbe, toleranceMs);
+                if (leftCertificate == ArrivalCertificate.Latched ||
+                    rightCertificate == ArrivalCertificate.Latched)
                 {
+                    bool leftLatched = leftCertificate == ArrivalCertificate.Latched;
                     log.AppendLine(
                         $"  cross-side link {rightChannel.Name}: " +
                         $"{(leftLatched ? link.Left.Name : rightChannel.Name)}" +
@@ -1594,10 +1839,12 @@ public static class AutoAlignmentEngine
                         $"{(leftLatched ? leftProbe : rightProbe).FirstArrivalDelayMilliseconds:0.000} ms" +
                         $" in its {probeLowHz:0}-{highHz:0} Hz half " +
                         "(modal latch: the sides time different features)");
-                    return (null, true);
+                    return (null, true, false);
                 }
 
-                return ((left, right), false);
+                return ((left, right), false,
+                    leftCertificate == ArrivalCertificate.Verified &&
+                    rightCertificate == ArrivalCertificate.Verified);
             }
 
             // The consistency ladder: the pair's own shared band first; when a
@@ -1612,7 +1859,7 @@ public static class AutoAlignmentEngine
             double usedHighHz = bandHighHz;
             bool anyLatch;
             ((TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
-                Reads, bool Latched) measured =
+                Reads, bool Latched, bool Verified) measured =
                 MeasureConsistent(bandLowHz, bandHighHz);
             anyLatch = measured.Latched;
             if (measured.Reads == null && measured.Latched &&
@@ -1698,11 +1945,13 @@ public static class AutoAlignmentEngine
                             TimeAlignmentAnalysisResult probe = Read(side, probeLow2, highHz2);
                             rawMs = full.FirstArrivalDelayMilliseconds
                                 - alignment.GetValueOrDefault(side.Channel).DelayMs;
-                            return full.IsValid && probe.IsValid &&
+                            // A donor must be POSITIVELY clean: only a VERIFIED
+                            // certificate counts (unverified or latched reads
+                            // contribute no geometry).
+                            return full.IsValid &&
                                 full.SignalToNoiseDecibels >= MinimumArrivalSnrDb &&
-                                probe.SignalToNoiseDecibels >= MinimumArrivalSnrDb &&
-                                full.FirstArrivalDelayMilliseconds -
-                                    probe.FirstArrivalDelayMilliseconds <= tolerance2;
+                                ClassifyArrival(full, probe, tolerance2) ==
+                                    ArrivalCertificate.Verified;
                         }
 
                         if (CleanDirect(otherLeft, out double rawLeft) &&
@@ -1758,6 +2007,10 @@ public static class AutoAlignmentEngine
                 return (latchedTarget, true, tight);
             }
 
+            // An UNVERIFIED read (the honesty probe could not run — band too
+            // narrow, silent or low-SNR upper half) is still the best estimate
+            // but no certificate: it pins only the LOBE (Coarse), never the
+            // tight scene tolerance — the same standard the donor rung applies.
             double target = arrivals.Left.FirstArrivalDelayMilliseconds
                 - plan.SceneOffsetMs
                 - arrivals.Right.FirstArrivalDelayMilliseconds;
@@ -1765,8 +2018,9 @@ public static class AutoAlignmentEngine
                 $"  cross-side prior {rightChannel.Name}: target {target:0.000} ms " +
                 $"(L arrival {arrivals.Left.FirstArrivalDelayMilliseconds:0.000}, " +
                 $"raw R {arrivals.Right.FirstArrivalDelayMilliseconds:0.000} ms " +
-                $"in {usedLowHz:0}-{usedHighHz:0} Hz)");
-            return (target, false, false);
+                $"in {usedLowHz:0}-{usedHighHz:0} Hz" +
+                $"{(measured.Verified ? "" : "; arrival not certified by the upper-half probe — lobe pin only")})");
+            return (target, !measured.Verified, false);
         }
 
         void AlignRight(int index, int neighborIndex, AlignmentJunction pair)
@@ -1881,30 +2135,65 @@ public static class AutoAlignmentEngine
         // vote on the mono channel at all.
         ComoveMonoChannels(plan, reprocess, alignment, log, allChannels, decisions);
 
-        // Final normalization: the smallest total latency that preserves every
-        // relation — the minimum proposed delay lands exactly at zero.
-        // (Channels without an entry sit at zero, so this only acts when a
-        // uniform shift raised the whole field.)
-        double minimum = allChannels.Min(
-            item => alignment.GetValueOrDefault(item.Channel).DelayMs);
-        if (minimum > 0.005)
-        {
-            foreach (AlignmentSnapshot item in allChannels)
-            {
-                AlignmentOverride current = alignment.GetValueOrDefault(item.Channel);
-                alignment[item.Channel] = current with
-                {
-                    DelayMs = Math.Round(current.DelayMs - minimum, 2)
-                };
-            }
-            log.AppendLine(
-                $"Normalized: -{minimum:0.000} ms off every channel " +
-                "(minimum delay back to zero)");
-        }
+        NormalizeAndVerifyFeasibility(allChannels, alignment, log);
 
         // The invariant the user requires of automatic delay: no driver is ever
         // inverted on one side of a pair alone.
         EnforcePolaritySymmetry(plan, alignment, log, decisions);
+    }
+
+    // Final normalization + the single feasibility gate. Normalization: the
+    // smallest total latency that preserves every relation — the minimum
+    // proposed delay lands exactly at zero; lifting a NEGATIVE minimum is as
+    // legal as trimming a positive one (both are uniform), so transient
+    // out-of-range values from the shift passes settle here. Feasibility: a
+    // maximum past the DSP's delay ceiling after that means the proposal
+    // PHYSICALLY does not fit — clamping one channel would silently break the
+    // relative alignment (and the stereo scene), so the whole run refuses with
+    // the reason instead.
+    internal static void NormalizeAndVerifyFeasibility(
+        IReadOnlyList<AlignmentSnapshot> scope,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        StringBuilder log)
+    {
+        // Always rebase (even a sub-hundredth minimum: a tiny negative left in
+        // the map would be an unrealizable delay), round onto the DSP's 0.01 ms
+        // grid, and only then judge the range on the values actually proposed.
+        // A channel with no entry and a zero result keeps NO entry — absence
+        // means "nothing proposed" (the reference), and the rebase must not
+        // manufacture zero-delay proposals for it.
+        double minimum = scope.Min(
+            item => alignment.GetValueOrDefault(item.Channel).DelayMs);
+        foreach (AlignmentSnapshot item in scope)
+        {
+            bool hasEntry = alignment.TryGetValue(
+                item.Channel, out AlignmentOverride current);
+            double rebasedMs = Math.Round(current.DelayMs - minimum, 2);
+            if (!hasEntry && rebasedMs == 0.0)
+            {
+                continue;
+            }
+            alignment[item.Channel] = current with { DelayMs = rebasedMs };
+        }
+        if (Math.Abs(minimum) > 0.005)
+        {
+            log.AppendLine(
+                $"Normalized: {-minimum:+0.000;-0.000} ms to every channel " +
+                "(minimum delay back to zero)");
+        }
+
+        AlignmentSnapshot widest = scope.MaxBy(
+            item => alignment.GetValueOrDefault(item.Channel).DelayMs)!;
+        double widestDelayMs = alignment.GetValueOrDefault(widest.Channel).DelayMs;
+        if (widestDelayMs > MaxDelayMs + 0.005)
+        {
+            throw new InvalidOperationException(
+                "The proposed alignment does not fit the DSP delay range: " +
+                $"{widest.Channel.Name} needs {widestDelayMs:0.00} ms with the " +
+                $"earliest channel at 0, but the limit is {MaxDelayMs:0} ms. " +
+                "The measured spread between the earliest and latest channels " +
+                "is wider than the DSP can realize.");
+        }
     }
 
     // Post-pass bookkeeping for the user report: a pass that changes a
@@ -2347,17 +2636,36 @@ public static class AutoAlignmentEngine
             }
 
             // Both bounds are fixed BEFORE the search so the winning delta
-            // applies verbatim to both sides: negative deltas may not push
-            // either channel below zero, positive ones may not push either
-            // past the delay ceiling. Clamping after the fact would move the
-            // two sides unequally and silently bend the very scene this pass
-            // exists to preserve.
-            double minDelta = Math.Max(
-                lobeLowMs,
-                -Math.Min(leftOverride.DelayMs, rightOverride.DelayMs));
-            double maxDelta = Math.Min(
-                lobeHighMs,
-                MaxDelayMs - Math.Max(leftOverride.DelayMs, rightOverride.DelayMs));
+            // applies verbatim to both sides (clamping after the fact would
+            // move the two sides unequally and silently bend the very scene
+            // this pass exists to preserve). The move is RELATIVE — the pair
+            // against the rest of the field — so absolute positions are not
+            // walls: the same relative placement is reachable via a uniform
+            // rebase of everyone, and the bounds only close where the WHOLE
+            // field would run out of the DSP's range. Two plans differing by
+            // nothing but a global offset must co-move to the same relative
+            // answer (the mono co-move already works in this frame).
+            double pairMinMs = Math.Min(leftOverride.DelayMs, rightOverride.DelayMs);
+            double pairMaxMs = Math.Max(leftOverride.DelayMs, rightOverride.DelayMs);
+            List<IAlignmentChannel> fieldOthers = plan.LeftChannelsByBand
+                .Concat(plan.RightChannelsByBand)
+                .Select(item => item.Channel)
+                .Where(channel => channel != link.Left && channel != link.Right)
+                .Distinct()
+                .ToList();
+            double minDelta = lobeLowMs;
+            double maxDelta = lobeHighMs;
+            if (fieldOthers.Count > 0)
+            {
+                double maxOtherMs = fieldOthers.Max(
+                    channel => alignment.GetValueOrDefault(channel).DelayMs);
+                double minOtherMs = fieldOthers.Min(
+                    channel => alignment.GetValueOrDefault(channel).DelayMs);
+                minDelta = Math.Max(
+                    minDelta, -pairMinMs - (MaxDelayMs - maxOtherMs));
+                maxDelta = Math.Min(
+                    maxDelta, MaxDelayMs - pairMaxMs + minOtherMs);
+            }
             // The neighbor lobes can, in principle, exclude zero (a settled
             // neighbor a hair over half a period away); never let the window
             // invert or force a non-zero move — keeping the pair is always legal.

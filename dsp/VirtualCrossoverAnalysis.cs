@@ -411,7 +411,7 @@ public static class VirtualCrossoverAnalysis
             maxFrequencyHz,
             minDelayMs,
             maxDelayMs);
-        if (bins.Count == 0)
+        if (bins.Count == 0 || !HoldsDelayEvidence(bins))
         {
             allOptima = Array.Empty<AlignmentCandidate>();
             return Array.Empty<AlignmentCandidate>();
@@ -426,6 +426,105 @@ public static class VirtualCrossoverAnalysis
             priorSigmaMs,
             forcedPolarity,
             out allOptima);
+    }
+
+    /// <summary>
+    /// How far below the in-band signal peak a bin may sit and still count as
+    /// measured content for the delay-evidence gate — the same scale as the
+    /// loss floor (<see cref="MinBinAmplitudeRatio"/>, −60 dB): below it the
+    /// "content" is measurement noise or deconvolution residue, not a driver.
+    /// </summary>
+    private const double EvidenceNoiseFloorGateDb = 60;
+
+    /// <summary>
+    /// The minimum integrated log-frequency width of balanced, above-floor
+    /// content the delay-evidence gate demands: a lobe-resolving broadband
+    /// delay cannot be read off a sliver (a lone lucky bin, a single shared
+    /// tone — whose delay is ambiguous modulo its own period). Healthy
+    /// junctions measure 0.4+ octaves of genuine overlap, so a sixth leaves
+    /// comfortable headroom while rejecting point coincidences.
+    /// </summary>
+    private const double MinEvidenceOctaves = 1.0 / 6.0;
+
+    // The delay-evidence STRUCTURE gate: a delay is only OBSERVABLE where both
+    // sides genuinely radiate over a usable width. With one side silent (or
+    // buried tens of dB under its partner everywhere — deconvolution residue)
+    // the loss |F+V|/(|F|+|V|) is flat at 0 dB for EVERY delay and polarity,
+    // so the search objective degenerates to the arrival prior alone and would
+    // manufacture a confident "candidate" at the anchor out of nothing.
+    // Evidence bins need (a) the weaker side within the reliability gate of
+    // the STRONGER SIDE IN THAT BIN — a per-bin balance, judged locally like
+    // the sum-loss level gate, because one global reference would let a
+    // subwoofer's cabin-gain peak veto a perfectly healthy hand-over region
+    // sitting 30 dB below it — and (b) the bin above the in-band level floor;
+    // their integrated width must reach MinEvidenceOctaves. This grades
+    // spectral STRUCTURE relative to the record itself: it cannot tell true
+    // noise from signal (two comparable noise floors pass a level test by
+    // construction) — the engine's arrival-SNR refusal, which knows each
+    // record's own noise floor, owns that judgement upstream.
+    /// <summary>
+    /// How many CONSECUTIVE evidence bins a qualifying run must hold besides
+    /// the octave width: at a low junction one coarse FFT cell can span a
+    /// sixth of an octave on its own, so width alone would let a lone bin —
+    /// or a gap credited to it — pass as broadband information.
+    /// </summary>
+    private const int MinEvidenceBins = 3;
+
+    private static bool HoldsDelayEvidence(List<AlignmentBin> bins)
+    {
+        double signalPeak = 0;
+        foreach (AlignmentBin bin in bins)
+        {
+            signalPeak = Math.Max(signalPeak, bin.MagnitudeSum);
+        }
+        double levelFloor =
+            signalPeak * Math.Pow(10.0, -EvidenceNoiseFloorGateDb / 20.0);
+        double balanceRatio = Math.Pow(10.0, -OverlapReliabilityGateDb / 20.0);
+        bool Evidence(AlignmentBin bin)
+        {
+            double weaker = Math.Min(
+                bin.FixedSum.Magnitude, bin.Variable.Magnitude);
+            double stronger = Math.Max(
+                bin.FixedSum.Magnitude, bin.Variable.Magnitude);
+            return bin.MagnitudeSum >= levelFloor &&
+                weaker >= stronger * balanceRatio;
+        }
+
+        // The retained bins are a stride-decimated, zero-dropped sampling of
+        // the FFT grid, so consecutive list entries are not necessarily
+        // neighbors. Adjacency = the smallest FFT-index step present (the
+        // stride wherever any true neighbors survive); a run only accumulates
+        // across ADJACENT evidence pairs, so neither a dropped-bin gap nor a
+        // decimation hole can be credited to a lone lucky bin.
+        int minStep = int.MaxValue;
+        for (int i = 0; i + 1 < bins.Count; i++)
+        {
+            minStep = Math.Min(minStep, bins[i + 1].FftBin - bins[i].FftBin);
+        }
+
+        double runOctaves = 0;
+        int runBins = 1;
+        for (int i = 0; i + 1 < bins.Count; i++)
+        {
+            bool adjacent = bins[i + 1].FftBin - bins[i].FftBin == minStep;
+            if (adjacent && Evidence(bins[i]) && Evidence(bins[i + 1]))
+            {
+                // LogWeight is 1/f, so the pair's stretch of log-frequency is
+                // log2(f[i+1]/f[i]).
+                runOctaves += Math.Log2(bins[i].LogWeight / bins[i + 1].LogWeight);
+                runBins++;
+                if (runOctaves >= MinEvidenceOctaves && runBins >= MinEvidenceBins)
+                {
+                    return true;
+                }
+            }
+            else
+            {
+                runOctaves = 0;
+                runBins = 1;
+            }
+        }
+        return false;
     }
 
     /// <summary>
@@ -1242,7 +1341,11 @@ public static class VirtualCrossoverAnalysis
         Complex FixedSum,
         Complex Variable,
         double LogWeight,
-        double MagnitudeSum);
+        double MagnitudeSum,
+        // The source FFT bin index, so consumers can tell truly ADJACENT
+        // sampled bins from a gap where zero-magnitude bins were dropped —
+        // the evidence-width gate must not credit a gap to a lone bin.
+        int FftBin);
 
     // The direct-sound gate applied to every response before the alignment
     // spectra are taken: a cosine-faded Tukey window anchored one fade-length
@@ -1361,7 +1464,8 @@ public static class VirtualCrossoverAnalysis
                     fixedSpectrum[bin],
                     variableSpectrum[bin],
                     1.0 / frequencyHz,
-                    magnitudeSum));
+                    magnitudeSum,
+                    bin));
             }
         }
 

@@ -64,7 +64,8 @@ public sealed class AutoAlignmentEngineTests
         double[] crossoversHz,
         StringBuilder log,
         (double LowHz, double HighHz)[]? bands = null,
-        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
+        Dictionary<IAlignmentChannel, AlignmentOverride>? alignment = null)
     {
         var snapshots = byBand.ToDictionary(
             channel => channel,
@@ -98,7 +99,7 @@ public sealed class AutoAlignmentEngineTests
                 })
                 .ToList();
 
-        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+        alignment ??= new Dictionary<IAlignmentChannel, AlignmentOverride>();
         AutoAlignmentEngine.Compute(
             byBand.Select(channel => snapshots[channel]).ToList(),
             junctions,
@@ -448,5 +449,277 @@ public sealed class AutoAlignmentEngineTests
             Reprocess,
             new Dictionary<IAlignmentChannel, AlignmentOverride>(),
             new StringBuilder()));
+    }
+
+    // A channel whose sample rate differs from the harness default, for the
+    // mixed-rate rejection below.
+    private sealed class OddRateChannel(string name, Complex[] ir) : IAlignmentChannel
+    {
+        public string Name { get; } = name;
+        public int SampleRate => 44_100;
+        public Complex[] Ir { get; } = ir;
+    }
+
+    [Fact]
+    public void Compute_RejectsMixedSampleRates()
+    {
+        // Every cross-channel figure assumes ONE rate; mixed rates would
+        // silently misscale frequencies and delays rather than fail.
+        var woofer = new TestChannel("W", DelayedImpulse(1.0));
+        var odd = new OddRateChannel("T", DelayedImpulse(0.0));
+        var wooferSnapshot = new AlignmentSnapshot(
+            woofer, woofer.InitialIr, BasePosition);
+        var oddSnapshot = new AlignmentSnapshot(odd, odd.Ir, BasePosition);
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            [wooferSnapshot, oddSnapshot];
+
+        ArgumentException error = Assert.Throws<ArgumentException>(
+            () => AutoAlignmentEngine.Compute(
+                [wooferSnapshot, oddSnapshot],
+                [new AlignmentJunction(wooferSnapshot, oddSnapshot, 1_000, 500, 2_000)],
+                Reprocess,
+                new Dictionary<IAlignmentChannel, AlignmentOverride>(),
+                new StringBuilder()));
+        Assert.Contains("sample rate", error.Message);
+    }
+
+    [Fact]
+    public void Compute_ClearsAStaleAlignmentMap()
+    {
+        // The contract promises an ABSOLUTE proposal: stale entries (a repeat
+        // call with the same dictionary) must not leak into the neighbor bases.
+        var woofer = new TestChannel("W", DelayedImpulse(1.0));
+        var tweeter = new TestChannel("T", DelayedImpulse(0.0));
+        var stale = new TestChannel("stale", DelayedImpulse(0.0));
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            [stale] = new AlignmentOverride(42.0, true)
+        };
+        var log = new StringBuilder();
+
+        Run([woofer, tweeter], [1_000], log, alignment: alignment);
+
+        Assert.False(alignment.ContainsKey(stale));
+    }
+
+    [Fact]
+    public void Compute_SilentJunction_RefusesTheRunInsteadOfFabricatingADelay()
+    {
+        // The B/C junction has NO evidence at all (both IRs empty). The engine
+        // used to fabricate a candidate at the coarse anchor and apply it as a
+        // result; a partial skip would be no better (earlier uniform shifts
+        // could leave the channel a foreign delay). The whole run must refuse
+        // with the reason.
+        var woofer = new TestChannel("A", DelayedImpulse(1.0));
+        var silentB = new TestChannel("B", new Complex[IrLength]);
+        var silentC = new TestChannel("C", new Complex[IrLength]);
+        var log = new StringBuilder();
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => Run([woofer, silentB, silentC], [200, 1_000], log));
+
+        Assert.Contains("No junction evidence", error.Message);
+        Assert.Contains("refusing the run", log.ToString());
+    }
+
+    // Deterministic seeded noise: a dead channel in the field is noise, not
+    // digital zeros. Its band-limited envelope SNR reads ~8 dB (a flat record
+    // has no quiet quarter), comfortably under the 12 dB floor — the arrival
+    // detector's own noise reference is what tells noise from signal, which
+    // per-bin spectral levels alone cannot.
+    private static Complex[] NoiseIr(int seed, double amplitude)
+    {
+        var random = new Random(seed);
+        var ir = new Complex[IrLength];
+        for (int i = 0; i < ir.Length; i++)
+        {
+            ir[i] = amplitude * (random.NextDouble() * 2.0 - 1.0);
+        }
+        return ir;
+    }
+
+    [Fact]
+    public void Compute_IndependentEqualLevelNoise_RefusesTheRun()
+    {
+        // Two comparable noise channels pass any per-bin level balance by
+        // construction; the loss surface is noise phases and the prior would
+        // pick a delay. The arrival-SNR evidence gate must refuse the run.
+        var noiseA = new TestChannel("A", NoiseIr(1, 1.0));
+        var noiseB = new TestChannel("B", NoiseIr(2, 1.0));
+        var log = new StringBuilder();
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => Run([noiseA, noiseB], [1_000], log));
+
+        Assert.Contains("No junction evidence", error.Message);
+    }
+
+    [Fact]
+    public void Compute_ActiveAndLowLevelNoise_RefusesTheRun()
+    {
+        // A live neighbor plus a channel that is only -40 dB measurement
+        // noise: bins exist and the noise even "balances" some of them, but
+        // the noise channel's own arrival SNR exposes it.
+        var woofer = new TestChannel("A", DelayedImpulse(1.0));
+        var noise = new TestChannel("B", NoiseIr(3, 0.01));
+        var log = new StringBuilder();
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => Run([woofer, noise], [1_000], log));
+
+        Assert.Contains("No junction evidence", error.Message);
+    }
+
+    // A continuous shared spectral line: identical in both channels, so no
+    // per-bin level test can tell it from a real junction — but a line has no
+    // timeable front (its band-limited envelope is FLAT, reading ~-7 dB SNR
+    // against the 12 dB floor), which is exactly what the arrival-SNR
+    // evidence refusal measures. A single tone cannot resolve a broadband
+    // delay (it is ambiguous modulo its own period), so refusing is honest.
+    private static Complex[] SharedLineIr(double toneHz, double startMs)
+    {
+        var ir = new Complex[IrLength];
+        int start = BasePosition + (int)Math.Round(startMs / 1000.0 * SampleRate);
+        for (int i = 0; start + i < ir.Length; i++)
+        {
+            ir[start + i] = Math.Sin(Math.Tau * toneHz * i / SampleRate);
+        }
+        return ir;
+    }
+
+    [Fact]
+    public void Compute_SharedNarrowLineOnALowJunction_RefusesTheRun()
+    {
+        var lower = new TestChannel("A", SharedLineIr(120, 1.0));
+        var upper = new TestChannel("B", SharedLineIr(120, 1.2));
+        var log = new StringBuilder();
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => Run([lower, upper], [120], log, bands: [(80, 175)]));
+
+        Assert.Contains("No junction evidence", error.Message);
+    }
+
+    [Fact]
+    public void Compute_ActiveFixedAndSilentVariable_RefusesTheRun()
+    {
+        // The reviewer's exact scenario: the FIXED neighbor radiates normally,
+        // the searched channel is silent. Bins then exist (the fixed side's
+        // energy), the loss is flat 0 dB for every delay, and the arrival
+        // prior alone used to manufacture a confident candidate at the anchor.
+        // The evidence gate must return no candidates and the run must refuse.
+        var woofer = new TestChannel("A", DelayedImpulse(1.0));
+        var silent = new TestChannel("B", new Complex[IrLength]);
+        var log = new StringBuilder();
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => Run([woofer, silent], [1_000], log));
+
+        Assert.Contains("No junction evidence", error.Message);
+    }
+
+    [Fact]
+    public void Compute_SilentFixedAndActiveVariable_RefusesTheRun()
+    {
+        // The mirror direction: the reference channel is the silent one.
+        var silent = new TestChannel("A", new Complex[IrLength]);
+        var tweeter = new TestChannel("B", DelayedImpulse(0.0));
+        var log = new StringBuilder();
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => Run([silent, tweeter], [1_000], log));
+
+        Assert.Contains("No junction evidence", error.Message);
+    }
+
+    private static TimeAlignmentAnalysisResult Read(
+        double arrivalMs, double snrDb = 40, bool valid = true) =>
+        default(TimeAlignmentAnalysisResult) with
+        {
+            FirstArrivalDelayMilliseconds = arrivalMs,
+            SignalToNoiseDecibels = snrDb,
+            IsValid = valid
+        };
+
+    // The single classification behind the cross-side links, the donor
+    // certificates and the stereo bridge — table-tested so the three
+    // consumers cannot drift apart. (An inline table rather than a Theory:
+    // the certificate enum is internal and must not appear in a public test
+    // signature.)
+    [Fact]
+    public void ClassifyArrival_GradesTheHonestyProbe()
+    {
+        var table = new (double FullMs, double ProbeMs, double ProbeSnrDb,
+            bool ProbeValid, AutoAlignmentEngine.ArrivalCertificate Expected)[]
+        {
+            // agreeing reads certify
+            (10.0, 10.4, 40.0, true, AutoAlignmentEngine.ArrivalCertificate.Verified),
+            // full far LATER than its upper half: the proven modal latch
+            (21.2, 13.9, 40.0, true, AutoAlignmentEngine.ArrivalCertificate.Latched),
+            // full far EARLIER: the probe is blind to the front — usable, uncertified
+            (8.0, 20.0, 40.0, true, AutoAlignmentEngine.ArrivalCertificate.Unverified),
+            // probe below the SNR floor cannot certify
+            (10.0, 10.1, 5.0, true, AutoAlignmentEngine.ArrivalCertificate.Unverified),
+            // invalid probe cannot certify
+            (10.0, 0.0, 40.0, false, AutoAlignmentEngine.ArrivalCertificate.Unverified),
+            // exactly at the tolerance edge still certifies
+            (12.0, 10.0, 40.0, true, AutoAlignmentEngine.ArrivalCertificate.Verified),
+        };
+
+        foreach (var row in table)
+        {
+            AutoAlignmentEngine.ArrivalCertificate actual =
+                AutoAlignmentEngine.ClassifyArrival(
+                    Read(row.FullMs),
+                    Read(row.ProbeMs, row.ProbeSnrDb, row.ProbeValid),
+                    toleranceMs: 2.0);
+            Assert.True(row.Expected == actual,
+                $"full {row.FullMs}, probe {row.ProbeMs} " +
+                $"(SNR {row.ProbeSnrDb}, valid {row.ProbeValid}): " +
+                $"expected {row.Expected}, got {actual}");
+        }
+
+        // The classifier is self-sufficient: an unmeasurable or near-noise
+        // FULL read cannot be certified (or latched) either — no hidden
+        // caller-side precondition.
+        Assert.Equal(
+            AutoAlignmentEngine.ArrivalCertificate.Unverified,
+            AutoAlignmentEngine.ClassifyArrival(
+                Read(10.0, valid: false), Read(10.2), toleranceMs: 2.0));
+        Assert.Equal(
+            AutoAlignmentEngine.ArrivalCertificate.Unverified,
+            AutoAlignmentEngine.ClassifyArrival(
+                Read(10.0, snrDb: 5.0), Read(10.2), toleranceMs: 2.0));
+    }
+
+    [Fact]
+    public void NormalizeAndVerifyFeasibility_LiftsTheFieldAndRefusesAWideSpan()
+    {
+        var early = new TestChannel("E", DelayedImpulse(0.0));
+        var late = new TestChannel("L", DelayedImpulse(1.0));
+        var earlySnapshot = new AlignmentSnapshot(early, early.InitialIr, BasePosition);
+        var lateSnapshot = new AlignmentSnapshot(late, late.InitialIr, BasePosition);
+
+        // A field of 8..28 normalizes to 0..20 (a uniform trim, relations kept).
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            [early] = new AlignmentOverride(8.0, false),
+            [late] = new AlignmentOverride(28.0, false)
+        };
+        AutoAlignmentEngine.NormalizeAndVerifyFeasibility(
+            [earlySnapshot, lateSnapshot], alignment, new StringBuilder());
+        Assert.Equal(0.0, alignment[early].DelayMs, 2);
+        Assert.Equal(20.0, alignment[late].DelayMs, 2);
+
+        // A span wider than the DSP's 30 ms delay range (real car processors
+        // cap there) cannot be realized by any uniform shift: the proposal
+        // must refuse loudly, not clamp silently.
+        alignment[early] = new AlignmentOverride(0.0, false);
+        alignment[late] = new AlignmentOverride(45.0, false);
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => AutoAlignmentEngine.NormalizeAndVerifyFeasibility(
+                [earlySnapshot, lateSnapshot], alignment, new StringBuilder()));
+        Assert.Contains("does not fit", error.Message);
     }
 }

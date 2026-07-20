@@ -1075,18 +1075,27 @@ public static class AutoAlignmentEngine
                 // Confidence overlap: the WEAKER of the per-neighbor overlaps
                 // (a two-neighbor search's good overlap with one settled
                 // neighbor must not mask near-none with the other; summing the
-                // fixed IRs would also let them cancel in-band), as a fraction
-                // of the band's nominal width so the threshold means the same
-                // across narrow and wide junction bands.
-                double nominalOctaves = Math.Log2(bandHighHz / bandLowHz);
-                double overlapOctaves = neighborIrs.Count == 0
-                    ? 0
-                    : neighborIrs.Min(neighbor =>
-                        VirtualCrossoverAnalysis.EffectiveOverlapOctaves(
-                            variableIr, [neighbor],
-                            channel.SampleRate, bandLowHz, bandHighHz));
-                double overlapFraction =
-                    nominalOctaves > 0 ? overlapOctaves / nominalOctaves : 0;
+                // fixed IRs would also let them cancel in-band). Each neighbor is
+                // measured in ITS OWN junction band and normalized to that band's
+                // width — not the union both searches span — so a low-junction
+                // partner (say 50-150 Hz) is not judged over five octaves it
+                // never overlaps. A fraction, not an octave count, so the
+                // threshold means the same across narrow and wide bands.
+                double OverlapFractionAgainst(AlignmentJunction junction, Complex[] neighborIr)
+                {
+                    double nominal = Math.Log2(junction.BandHighHz / junction.BandLowHz);
+                    double octaves = VirtualCrossoverAnalysis.EffectiveOverlapOctaves(
+                        variableIr, [neighborIr], channel.SampleRate,
+                        junction.BandLowHz, junction.BandHighHz);
+                    return nominal > 0 ? octaves / nominal : 0;
+                }
+                double overlapFraction = OverlapFractionAgainst(pair, neighborIrs[0]);
+                if (secondaryPair != null && neighborIrs.Count > 1)
+                {
+                    overlapFraction = Math.Min(
+                        overlapFraction,
+                        OverlapFractionAgainst(secondaryPair, neighborIrs[1]));
+                }
                 decisions[channel] = BuildDecision(
                     chosen,
                     fineOptima.Concat(wideOptima).Concat(retriedOptima).ToList(),
@@ -1137,10 +1146,10 @@ public static class AutoAlignmentEngine
     // its lobe won, rests on too little shared band to trust: precise but barely
     // observed. A fraction, not an absolute octave count, so it means the same
     // on a narrow steep-crossover band and a wide one. Healthy junctions share
-    // ~25-32% of the band (measured on the v3 cabin), so this only fires on a
-    // degenerate hand-over where the drivers barely share a band — it caps a
-    // Search pick's reported confidence at Low and annotates any decision (even
-    // a locked one) that hits it.
+    // ~19-25% of the band once the reliability gate is applied (measured on the
+    // v3 cabin), so this only fires on a degenerate hand-over where the drivers
+    // barely share a band — it caps a Search pick's reported confidence at Low
+    // and annotates any decision (even a locked one) that hits it.
     private const double MinTrustedOverlapFraction = 0.12;
 
     // Condenses one junction search into the user-report decision: the

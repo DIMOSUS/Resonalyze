@@ -82,6 +82,30 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void EffectiveOverlapOctaves_GatesBandWhereBothChannelsAreFarBelowSignal()
+    {
+        // Both channels are the SAME steep band-pass, so O(f)=1 across the whole
+        // 500-2000 Hz band — yet outside the 500-700 Hz pass-band both fall far
+        // below the in-band peak. Equal levels there are not usable shared band,
+        // so the reliability gate drops them: the overlap reads the pass-band
+        // alone (~1 oct), not the full ~2 that ungated equal levels would count.
+        Complex[] bandPass = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(8_192, 100),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.BandPass,
+                LowPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.LinkwitzRiley, 700, 48),
+                HighPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.LinkwitzRiley, 500, 48))),
+            SampleRate);
+
+        double octaves = VirtualCrossoverAnalysis.EffectiveOverlapOctaves(
+            bandPass, [bandPass], SampleRate, 500, 2_000);
+
+        Assert.InRange(octaves, 0.7, 1.4);
+    }
+
+    [Fact]
     public void EffectiveOverlapOctaves_DisjointDriversBarelyOverlap()
     {
         // The fixed driver rolls off almost two octaves below the band; the

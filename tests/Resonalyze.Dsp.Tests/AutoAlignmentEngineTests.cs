@@ -64,7 +64,8 @@ public sealed class AutoAlignmentEngineTests
         double[] crossoversHz,
         StringBuilder log,
         (double LowHz, double HighHz)[]? bands = null,
-        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
+        Dictionary<IAlignmentChannel, AlignmentOverride>? alignment = null)
     {
         var snapshots = byBand.ToDictionary(
             channel => channel,
@@ -98,7 +99,7 @@ public sealed class AutoAlignmentEngineTests
                 })
                 .ToList();
 
-        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+        alignment ??= new Dictionary<IAlignmentChannel, AlignmentOverride>();
         AutoAlignmentEngine.Compute(
             byBand.Select(channel => snapshots[channel]).ToList(),
             junctions,
@@ -448,5 +449,115 @@ public sealed class AutoAlignmentEngineTests
             Reprocess,
             new Dictionary<IAlignmentChannel, AlignmentOverride>(),
             new StringBuilder()));
+    }
+
+    // A channel whose sample rate differs from the harness default, for the
+    // mixed-rate rejection below.
+    private sealed class OddRateChannel(string name, Complex[] ir) : IAlignmentChannel
+    {
+        public string Name { get; } = name;
+        public int SampleRate => 44_100;
+        public Complex[] Ir { get; } = ir;
+    }
+
+    [Fact]
+    public void Compute_RejectsMixedSampleRates()
+    {
+        // Every cross-channel figure assumes ONE rate; mixed rates would
+        // silently misscale frequencies and delays rather than fail.
+        var woofer = new TestChannel("W", DelayedImpulse(1.0));
+        var odd = new OddRateChannel("T", DelayedImpulse(0.0));
+        var wooferSnapshot = new AlignmentSnapshot(
+            woofer, woofer.InitialIr, BasePosition);
+        var oddSnapshot = new AlignmentSnapshot(odd, odd.Ir, BasePosition);
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            [wooferSnapshot, oddSnapshot];
+
+        ArgumentException error = Assert.Throws<ArgumentException>(
+            () => AutoAlignmentEngine.Compute(
+                [wooferSnapshot, oddSnapshot],
+                [new AlignmentJunction(wooferSnapshot, oddSnapshot, 1_000, 500, 2_000)],
+                Reprocess,
+                new Dictionary<IAlignmentChannel, AlignmentOverride>(),
+                new StringBuilder()));
+        Assert.Contains("sample rate", error.Message);
+    }
+
+    [Fact]
+    public void Compute_ClearsAStaleAlignmentMap()
+    {
+        // The contract promises an ABSOLUTE proposal: stale entries (a repeat
+        // call with the same dictionary) must not leak into the neighbor bases.
+        var woofer = new TestChannel("W", DelayedImpulse(1.0));
+        var tweeter = new TestChannel("T", DelayedImpulse(0.0));
+        var stale = new TestChannel("stale", DelayedImpulse(0.0));
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            [stale] = new AlignmentOverride(42.0, true)
+        };
+        var log = new StringBuilder();
+
+        Run([woofer, tweeter], [1_000], log, alignment: alignment);
+
+        Assert.False(alignment.ContainsKey(stale));
+    }
+
+    [Fact]
+    public void Compute_SilentJunction_RefusesInsteadOfFabricatingADelay()
+    {
+        // The B/C junction has NO evidence at all (both IRs empty in — indeed
+        // anywhere near — the band). The engine used to fabricate a candidate
+        // at the coarse anchor and apply it as a result; it must refuse and
+        // say so instead.
+        var woofer = new TestChannel("A", DelayedImpulse(1.0));
+        var silentB = new TestChannel("B", new Complex[IrLength]);
+        var silentC = new TestChannel("C", new Complex[IrLength]);
+        var log = new StringBuilder();
+        var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
+
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment = Run(
+            [woofer, silentB, silentC], [200, 1_000], log,
+            decisions: decisions);
+
+        string text = log.ToString();
+        Assert.Contains("junction base unknown", text);
+        Assert.Contains("NO junction evidence", text);
+        Assert.Contains("left unchanged", text);
+        // The silent channels must not have received a fabricated delay.
+        Assert.Equal(0.0, alignment.GetValueOrDefault(silentC).DelayMs);
+        if (decisions.TryGetValue(silentC, out AlignmentDecision? refused))
+        {
+            Assert.Contains("no junction evidence", refused.Detail);
+        }
+    }
+
+    [Fact]
+    public void NormalizeAndVerifyFeasibility_LiftsTheFieldAndRefusesAWideSpan()
+    {
+        var early = new TestChannel("E", DelayedImpulse(0.0));
+        var late = new TestChannel("L", DelayedImpulse(1.0));
+        var earlySnapshot = new AlignmentSnapshot(early, early.InitialIr, BasePosition);
+        var lateSnapshot = new AlignmentSnapshot(late, late.InitialIr, BasePosition);
+
+        // A field of 20..90 normalizes to 0..70 (a uniform trim, relations kept).
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            [early] = new AlignmentOverride(20.0, false),
+            [late] = new AlignmentOverride(90.0, false)
+        };
+        AutoAlignmentEngine.NormalizeAndVerifyFeasibility(
+            [earlySnapshot, lateSnapshot], alignment, new StringBuilder());
+        Assert.Equal(0.0, alignment[early].DelayMs, 2);
+        Assert.Equal(70.0, alignment[late].DelayMs, 2);
+
+        // A span wider than the DSP's 100 ms range cannot be realized by any
+        // uniform shift: the proposal must refuse loudly, not clamp silently.
+        alignment[early] = new AlignmentOverride(0.0, false);
+        alignment[late] = new AlignmentOverride(150.0, false);
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => AutoAlignmentEngine.NormalizeAndVerifyFeasibility(
+                [earlySnapshot, lateSnapshot], alignment, new StringBuilder()));
+        Assert.Contains("does not fit", error.Message);
     }
 }

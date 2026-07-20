@@ -151,12 +151,28 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 return;
             }
 
+            TimeAlignmentArrivalProbe? mainProbe = TimeAlignmentAnalysis.ProbeArrivalHonesty(
+                mainSource.TransferImpulseResponse,
+                mainSource.SampleRate,
+                CreateAnalysisOptions(wrapPeakPositions: true),
+                mainResult,
+                mainSource.TransferCoherence);
             TimeAlignmentCompareAnalysis? compareAnalysis =
                 AnalyzeCompare(mainSource, out string? compareWarning);
+            TimeAlignmentArrivalProbe? compareProbe = compareAnalysis == null
+                ? null
+                : TimeAlignmentAnalysis.ProbeArrivalHonesty(
+                    compareAnalysis.Value.Source.TransferImpulseResponse,
+                    compareAnalysis.Value.Source.SampleRate,
+                    CreateAnalysisOptions(wrapPeakPositions: true),
+                    compareAnalysis.Value.Result,
+                    compareAnalysis.Value.Source.TransferCoherence);
             SetMeasurementResultStatus(
                 mainSource,
                 mainResult,
+                mainProbe,
                 compareAnalysis,
+                compareProbe,
                 compareWarning);
             UpdateEnvelopePreview(
                 mainResult,
@@ -729,15 +745,17 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private void SetMeasurementResultStatus(
         TimeAlignmentAnalysisSource mainSource,
         TimeAlignmentAnalysisResult mainResult,
+        TimeAlignmentArrivalProbe? mainProbe,
         TimeAlignmentCompareAnalysis? compareAnalysis,
+        TimeAlignmentArrivalProbe? compareProbe,
         string? compareWarning)
     {
         statusTextBox.BeginUpdate();
         try
         {
             statusTextBox.Clear();
-            AppendMeasurementResult("Main", mainSource.Levels, mainResult);
-            AppendCompareResult(mainResult, compareAnalysis, compareWarning);
+            AppendMeasurementResult("Main", mainSource.Levels, mainResult, mainProbe);
+            AppendCompareResult(mainResult, compareAnalysis, compareProbe, compareWarning);
             statusTextBox.SelectionStart = 0;
             statusTextBox.SelectionLength = 0;
         }
@@ -750,6 +768,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private void AppendCompareResult(
         TimeAlignmentAnalysisResult mainResult,
         TimeAlignmentCompareAnalysis? compareAnalysis,
+        TimeAlignmentArrivalProbe? compareProbe,
         string? warning)
     {
         if (compareAnalysis == null && warning == null)
@@ -771,6 +790,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             "Compare",
             compareAnalysis!.Value.Source.Levels,
             compareAnalysis.Value.Result,
+            compareProbe,
             mainResult);
     }
 
@@ -778,15 +798,72 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         string title,
         InputLevelMeterSnapshot levels,
         TimeAlignmentAnalysisResult result,
+        TimeAlignmentArrivalProbe? honestyProbe,
         TimeAlignmentAnalysisResult? reference = null)
     {
         AppendSignalQuality(title, result);
         AppendAlignmentConfidence(result);
+        AppendArrivalHonesty(result, honestyProbe);
         AppendLevelLine("Mic", levels.Microphone);
         AppendLevelLine("Loopback", levels.Loopback);
         AppendSeparator();
         AppendDelayTable(result, reference);
         AppendStrongestPeakHint(result);
+    }
+
+    // The auto-alignment engine's arrival honesty probe, surfaced on the
+    // manual table: with a bandpass window active, the full-band first
+    // arrival is re-checked against the band's upper half. A full-band read
+    // far LATER than its own upper half is the modal latch — the read times
+    // the band's late build-up (a room mode), not the direct sound — which
+    // produces a confident wrong number exactly where this tool is used most
+    // (subwoofer and midbass bands).
+    private void AppendArrivalHonesty(
+        TimeAlignmentAnalysisResult result,
+        TimeAlignmentArrivalProbe? probe)
+    {
+        if (!options.UseBandpassWindow)
+        {
+            return;
+        }
+
+        AppendStatusText("Arrival probe: ", UiPalette.TextPrimarySoft);
+        if (probe == null)
+        {
+            AppendStatusText(
+                "pass band too narrow for the upper-half check\r\n",
+                UiPalette.TextSecondarySoft);
+            return;
+        }
+
+        TimeAlignmentArrivalProbe probeValue = probe.Value;
+        switch (probeValue.Certificate)
+        {
+            case AutoAlignmentEngine.ArrivalCertificate.Verified:
+                AppendStatusText(
+                    $"verified — the {probeValue.ProbeLowHz:0}-{probeValue.ProbeHighHz:0} Hz " +
+                    "upper half agrees " +
+                    $"({probeValue.ProbeResult.FirstArrivalDelayMilliseconds:0.000} ms)\r\n",
+                    UiPalette.SuccessGreenSoft);
+                break;
+            case AutoAlignmentEngine.ArrivalCertificate.Latched:
+                AppendStatusText("MODAL LATCH\r\n", UiPalette.ErrorSoft);
+                AppendStatusText(
+                    $"⚠ First Arrival reads {result.FirstArrivalDelayMilliseconds:0.000} ms, " +
+                    $"but the {probeValue.ProbeLowHz:0}-{probeValue.ProbeHighHz:0} Hz upper half " +
+                    $"arrives at {probeValue.ProbeResult.FirstArrivalDelayMilliseconds:0.000} ms.\r\n" +
+                    "The full-band figure times the band's late build-up (a room\r\n" +
+                    "mode), not the direct sound — do not align by it. Move or\r\n" +
+                    "widen the band, or align by the upper-half arrival above.\r\n",
+                    UiPalette.ErrorSoft);
+                break;
+            default:
+                AppendStatusText(
+                    "not certified — the upper half is unmeasurable or does not " +
+                    "show the front\r\n",
+                    UiPalette.TextSecondarySoft);
+                break;
+        }
     }
 
     // A subwoofer or any narrowband/modal measurement can leave the strongest peak
@@ -816,8 +893,26 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     // drag the signal grade down.
     private void AppendSignalQuality(string title, TimeAlignmentAnalysisResult result)
     {
-        string signalGrade = FormatConfidence(result.SignalToNoiseDecibels);
         AppendStatusText($"{title} Signal: ", UiPalette.TextPrimarySoft);
+
+        // Below the same SNR floor the auto-alignment engine refuses to
+        // measure at, the "arrival" is a bump in the noise (independent noise
+        // records read ~8 dB): the manual table still shows its figures, but
+        // graded as not-evidence rather than as a poor measurement.
+        if (result.SignalToNoiseDecibels < AutoAlignmentEngine.MinimumArrivalSnrDb)
+        {
+            AppendStatusText(
+                $"Unmeasurable ({result.SignalToNoiseDecibels:0.0} dB SNR, below " +
+                $"the {AutoAlignmentEngine.MinimumArrivalSnrDb:0} dB floor)\r\n",
+                UiPalette.ErrorSoft);
+            AppendStatusText(
+                "⚠ The arrival is not distinguishable from the record's noise\r\n" +
+                "floor — the delay figures below are noise, not measurements.\r\n",
+                UiPalette.ErrorSoft);
+            return;
+        }
+
+        string signalGrade = FormatConfidence(result.SignalToNoiseDecibels);
         AppendStatusText(
             $"{signalGrade} ({result.SignalToNoiseDecibels:0.0} dB SNR)\r\n",
             GetConfidenceColor(signalGrade));

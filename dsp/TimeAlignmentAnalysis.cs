@@ -56,6 +56,18 @@ public readonly record struct TimeAlignmentAnalysisResult(
     // result reports zeros and must not be shown as an alignment.
     bool IsValid = true);
 
+/// <summary>
+/// The verdict and figures of <see cref="TimeAlignmentAnalysis.ProbeArrivalHonesty"/>:
+/// the upper-half re-read ([ProbeLowHz, ProbeHighHz]) and the tolerance the
+/// full-band arrival was graded against.
+/// </summary>
+public readonly record struct TimeAlignmentArrivalProbe(
+    AutoAlignmentEngine.ArrivalCertificate Certificate,
+    TimeAlignmentAnalysisResult ProbeResult,
+    double ProbeLowHz,
+    double ProbeHighHz,
+    double ToleranceMs);
+
 public static class TimeAlignmentAnalysis
 {
     public static TimeAlignmentAnalysisResult Analyze(
@@ -206,6 +218,66 @@ public static class TimeAlignmentAnalysis
             firstArrival.RefinedByPhat,
             strongest.Confidence,
             strongest.RefinedByPhat);
+    }
+
+    /// <summary>
+    /// The arrival honesty probe for a bandpass-windowed manual measurement:
+    /// the same full-band-vs-upper-half check the auto-alignment engine runs
+    /// on every cross-side read. The upper half of the pass band is
+    /// re-analyzed with the SAME pipeline (only the lower edge rises; the top
+    /// edge and its fade stay put) and the full read is graded against it: a
+    /// full-band arrival far LATER than its own upper half is the proven
+    /// modal latch — the read times the band's late build-up (a room mode),
+    /// not the direct front. Returns null when no bandpass window is active,
+    /// or when the pass band is too narrow to carve a measurable upper half
+    /// (<see cref="VirtualCrossoverAnalysis.MinimumArrivalBandRatio"/>).
+    /// </summary>
+    public static TimeAlignmentArrivalProbe? ProbeArrivalHonesty(
+        IReadOnlyList<double> impulseResponse,
+        int sampleRate,
+        TimeAlignmentAnalysisOptions options,
+        TimeAlignmentAnalysisResult fullResult,
+        IReadOnlyList<double>? coherence = null)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (!options.UseBandpassWindow)
+        {
+            return null;
+        }
+
+        (_, double f2, double f3, _) = BandpassWindow.BandAround(
+            options.BandpassCenterHz,
+            options.BandpassPassOctaves,
+            options.BandpassFadeOctaves);
+        double probeLowHz = Math.Sqrt(f2 * f3);
+        if (f3 < probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
+        {
+            return null;
+        }
+
+        var probeOptions = new TimeAlignmentAnalysisOptions
+        {
+            UseBandpassWindow = true,
+            BandpassCenterHz = Math.Sqrt(probeLowHz * f3),
+            BandpassPassOctaves = Math.Log2(f3 / probeLowHz),
+            BandpassFadeOctaves = options.BandpassFadeOctaves,
+            FirstPeakThresholdBelowMaxDb = options.FirstPeakThresholdBelowMaxDb,
+            FirstPeakMinimumSnrDb = options.FirstPeakMinimumSnrDb,
+            PeakSearchWindowMilliseconds = options.PeakSearchWindowMilliseconds,
+            WrapPeakPositions = options.WrapPeakPositions
+        };
+        TimeAlignmentAnalysisResult probeResult = Analyze(
+            impulseResponse, sampleRate, probeOptions, coherence);
+        // The engine's bridge-probe allowance: the dispersion one wavefront
+        // can show across the band — half a period at the probe's lower edge,
+        // never tighter than 1 ms.
+        double toleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
+        return new TimeAlignmentArrivalProbe(
+            AutoAlignmentEngine.ClassifyArrival(fullResult, probeResult, toleranceMs),
+            probeResult,
+            probeLowHz,
+            f3,
+            toleranceMs);
     }
 
     // The minimum normalized GCC-PHAT peak height for its refined lag to be

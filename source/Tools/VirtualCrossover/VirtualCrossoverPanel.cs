@@ -3060,12 +3060,33 @@ public partial class VirtualCrossoverPanel : UserControl
         return jobs
             .AsParallel()
             .AsOrdered()
-            .Select(job => new AcousticCurve(
-                job.Title,
-                BuildPhasePoints(job.Ir, sampleRate, settings),
-                job.Color,
-                job.Thickness,
-                LineStyle.Solid))
+            .SelectMany(job =>
+            {
+                (List<SignalPoint> points, List<SignalPoint> wrapSegments) =
+                    BuildPhasePoints(job.Ir, sampleRate, settings);
+                var curves = new List<AcousticCurve>(2);
+                // The ±360° wrap verticals: the channel's color faded and
+                // thinned well below the curve, dashed, drawn first (i.e.
+                // under the solid curve) — visible as wraps without competing
+                // with the phase traces. The empty title keeps them out of
+                // the plot-labels panel.
+                if (wrapSegments.Count > 0)
+                {
+                    curves.Add(new AcousticCurve(
+                        string.Empty,
+                        wrapSegments,
+                        OxyColor.FromAColor(110, job.Color),
+                        job.Thickness * 0.4,
+                        LineStyle.Dash));
+                }
+                curves.Add(new AcousticCurve(
+                    job.Title,
+                    points,
+                    job.Color,
+                    job.Thickness,
+                    LineStyle.Solid));
+                return curves;
+            })
             .ToList();
     }
 
@@ -3182,10 +3203,11 @@ public partial class VirtualCrossoverPanel : UserControl
     // Static on purpose: the caller reads the gate and project state once on the UI
     // thread and hands the settings down, so this runs on a pool thread without the
     // compiler letting it reach back into a control.
-    private static List<SignalPoint> BuildPhasePoints(
-        Complex[] impulseResponse,
-        int sampleRate,
-        PhaseAnalysisSettings settings)
+    private static (List<SignalPoint> Points, List<SignalPoint> WrapSegments)
+        BuildPhasePoints(
+            Complex[] impulseResponse,
+            int sampleRate,
+            PhaseAnalysisSettings settings)
     {
         // The gate construction is shared with the Phase mode (DataHelper's
         // gated extraction): a Tukey window of left + plateau + right whose
@@ -3196,11 +3218,14 @@ public partial class VirtualCrossoverPanel : UserControl
         var view = new ImpulseMeasurementView(impulseResponse, 0, sampleRate);
         List<SignalPoint> phase = DataHelper.GetGatedPhaseData(view, settings);
 
-        // Wrapped phase jumps from +180° to −180° between adjacent bins; a NaN
-        // break keeps the plot from drawing that wrap as a vertical line that
-        // reads like a real phase transition.
+        // Wrapped phase jumps from +180° to −180° between adjacent bins. The
+        // main curve breaks at the wrap (NaN) so the jump does not read as a
+        // real phase transition drawn at full stroke; the jump itself goes
+        // into WrapSegments — NaN-separated two-point verticals the caller
+        // draws as a thinner dashed twin, keeping the wrap visible.
         var points = new List<SignalPoint>(phase.Count);
-        double previous = double.NaN;
+        var wrapSegments = new List<SignalPoint>();
+        SignalPoint? previous = null;
         foreach (SignalPoint point in phase)
         {
             if (point.X is < 20 or > 20_000)
@@ -3208,18 +3233,25 @@ public partial class VirtualCrossoverPanel : UserControl
                 continue;
             }
 
-            double degrees = point.Y / Math.PI * 180.0;
-            if (!double.IsNaN(previous) && !double.IsNaN(degrees) &&
-                Math.Abs(degrees - previous) > 180.0)
+            var current = new SignalPoint(point.X, point.Y / Math.PI * 180.0);
+            if (previous is { } before && !double.IsNaN(before.Y) &&
+                !double.IsNaN(current.Y) &&
+                Math.Abs(current.Y - before.Y) > 180.0)
             {
                 points.Add(new SignalPoint(point.X, double.NaN));
+                // Strictly vertical, halfway between the two bins (geometric
+                // mean = the visual midpoint on the log-frequency axis).
+                double wrapHz = Math.Sqrt(before.X * current.X);
+                wrapSegments.Add(new SignalPoint(wrapHz, before.Y));
+                wrapSegments.Add(new SignalPoint(wrapHz, current.Y));
+                wrapSegments.Add(new SignalPoint(wrapHz, double.NaN));
             }
 
-            points.Add(new SignalPoint(point.X, degrees));
-            previous = degrees;
+            points.Add(current);
+            previous = current;
         }
 
-        return points;
+        return (points, wrapSegments);
     }
 
     // Opens the manual phase-gate dialog: the gate offset and Tukey shoulders

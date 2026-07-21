@@ -34,12 +34,15 @@ public static class TransferIrDiagnostics
 {
     /// <summary>
     /// How far below the smoothed spectrum's peak the dominant band extends.
-    /// Field calibration (v3 cabin, 7 records): 20 dB yields driver-shaped
-    /// bands on every record (sub 20-127, midbass 33-329, mid 71-6089,
-    /// tweeter 1016-20k); 25+ dB lets clean full-range records swallow the
-    /// whole audible range and the band loses its meaning.
+    /// Field calibration (v3 cabin, 7 records, threshold sweep 10/12/15/20):
+    /// 15 dB is the sweet spot — driver-shaped bands (sub 20-110, midbass
+    /// 78-320, mid 110-2560, tweeter 1108-20k) with arrivals intact. 20 dB
+    /// lets a mid record swallow 20 Hz-14 kHz (cabin gain and door leakage
+    /// keep its LF/HF shelves within 20 dB of the peak); 12 dB and tighter
+    /// squeezes the midbass band to 82-155 Hz and the band-limited arrival
+    /// read modal-latches (7.4 ms -> 15.3 ms).
     /// </summary>
-    public const double DominantBandThresholdDb = 20.0;
+    public const double DominantBandThresholdDb = 15.0;
 
     // Spectral analysis window: long enough to resolve 1/6 octave at 20 Hz,
     // short enough to keep the FFT cheap; the head artifact this feeds sits

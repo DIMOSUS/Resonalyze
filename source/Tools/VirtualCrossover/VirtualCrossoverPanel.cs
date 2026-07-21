@@ -3021,10 +3021,9 @@ public partial class VirtualCrossoverPanel : UserControl
         // One shared absolute reference (the earliest arrival) keeps the curves'
         // relative phase intact — that relative alignment through the crossover
         // region is exactly what this view is for.
-        int reference = processed.Min(item => item.PeakIndex);
         int sampleRate = processed[0].Channel.SampleRate;
         double gateOffsetMs = gatePreview?.OffsetMs
-            ?? ResolveGateOffsetMs(reference, sampleRate);
+            ?? ResolveGateOffsetMs(processed, sampleRate);
         double detrendMs = ResolveCommonDetrendMs(processed, gateOffsetMs, sampleRate);
 
         // Read the gate and project state ONCE, here on the UI thread: every curve gets
@@ -3061,12 +3060,33 @@ public partial class VirtualCrossoverPanel : UserControl
         return jobs
             .AsParallel()
             .AsOrdered()
-            .Select(job => new AcousticCurve(
-                job.Title,
-                BuildPhasePoints(job.Ir, sampleRate, settings),
-                job.Color,
-                job.Thickness,
-                LineStyle.Solid))
+            .SelectMany(job =>
+            {
+                (List<SignalPoint> points, List<SignalPoint> wrapSegments) =
+                    BuildPhasePoints(job.Ir, sampleRate, settings);
+                var curves = new List<AcousticCurve>(2);
+                // The ±360° wrap verticals: the channel's color faded and
+                // thinned well below the curve, dashed, drawn first (i.e.
+                // under the solid curve) — visible as wraps without competing
+                // with the phase traces. The empty title keeps them out of
+                // the plot-labels panel.
+                if (wrapSegments.Count > 0)
+                {
+                    curves.Add(new AcousticCurve(
+                        string.Empty,
+                        wrapSegments,
+                        OxyColor.FromAColor(110, job.Color),
+                        job.Thickness * 0.4,
+                        LineStyle.Dash));
+                }
+                curves.Add(new AcousticCurve(
+                    job.Title,
+                    points,
+                    job.Color,
+                    job.Thickness,
+                    LineStyle.Solid));
+                return curves;
+            })
             .ToList();
     }
 
@@ -3088,10 +3108,9 @@ public partial class VirtualCrossoverPanel : UserControl
             return null;
         }
 
-        int reference = shown.Min(item => item.PeakIndex);
         int sampleRate = shown[0].Channel.SampleRate;
         double gateOffsetMs = gatePreview?.OffsetMs
-            ?? ResolveGateOffsetMs(reference, sampleRate);
+            ?? ResolveGateOffsetMs(shown, sampleRate);
 
         var traces = shown
             .Select(item => new IrPreviewTrace(
@@ -3115,11 +3134,23 @@ public partial class VirtualCrossoverPanel : UserControl
     private VirtualCrossoverPhaseGateSettings ActiveGate =>
         project.PhaseGateFor(project.ActiveSideRight);
 
-    // A stored gate offset is used as-is; an unconfigured side follows the
-    // earliest processed arrival, so the gate tracks source and delay changes
-    // until the user pins it in the gate dialog.
-    private double ResolveGateOffsetMs(int referenceSample, int sampleRate) =>
-        ActiveGate.OffsetMs ?? referenceSample * 1_000.0 / sampleRate;
+    // A stored gate offset is used as-is; an unconfigured side (Auto) follows
+    // the earliest ESTIMATED IR START of the processed channels — the
+    // band-limited first-arrival front, robust to head garbage that poisons a
+    // bare peak read — so the gate tracks source and delay changes until the
+    // user pins it in the gate dialog.
+    private double ResolveGateOffsetMs(
+        IReadOnlyList<ProcessedChannel> processed,
+        int sampleRate) =>
+        ActiveGate.OffsetMs ?? EarliestStartMs(processed, sampleRate);
+
+    // The Auto gate anchor: the earliest estimated IR start across the
+    // processed channels (memoized per IR in TransferIrStartCache).
+    private static double EarliestStartMs(
+        IReadOnlyList<ProcessedChannel> processed,
+        int sampleRate) =>
+        processed.Min(item => TransferIrStartCache.ResolveStartMs(
+            item.ImpulseResponse, sampleRate, item.PeakIndex));
 
     // The τ detrend follows the same pattern: unconfigured projects reference
     // the earliest arrival. One τ serves every curve, so their relative phase —
@@ -3172,10 +3203,11 @@ public partial class VirtualCrossoverPanel : UserControl
     // Static on purpose: the caller reads the gate and project state once on the UI
     // thread and hands the settings down, so this runs on a pool thread without the
     // compiler letting it reach back into a control.
-    private static List<SignalPoint> BuildPhasePoints(
-        Complex[] impulseResponse,
-        int sampleRate,
-        PhaseAnalysisSettings settings)
+    private static (List<SignalPoint> Points, List<SignalPoint> WrapSegments)
+        BuildPhasePoints(
+            Complex[] impulseResponse,
+            int sampleRate,
+            PhaseAnalysisSettings settings)
     {
         // The gate construction is shared with the Phase mode (DataHelper's
         // gated extraction): a Tukey window of left + plateau + right whose
@@ -3186,11 +3218,14 @@ public partial class VirtualCrossoverPanel : UserControl
         var view = new ImpulseMeasurementView(impulseResponse, 0, sampleRate);
         List<SignalPoint> phase = DataHelper.GetGatedPhaseData(view, settings);
 
-        // Wrapped phase jumps from +180° to −180° between adjacent bins; a NaN
-        // break keeps the plot from drawing that wrap as a vertical line that
-        // reads like a real phase transition.
+        // Wrapped phase jumps from +180° to −180° between adjacent bins. The
+        // main curve breaks at the wrap (NaN) so the jump does not read as a
+        // real phase transition drawn at full stroke; the jump itself goes
+        // into WrapSegments — NaN-separated two-point verticals the caller
+        // draws as a thinner dashed twin, keeping the wrap visible.
         var points = new List<SignalPoint>(phase.Count);
-        double previous = double.NaN;
+        var wrapSegments = new List<SignalPoint>();
+        SignalPoint? previous = null;
         foreach (SignalPoint point in phase)
         {
             if (point.X is < 20 or > 20_000)
@@ -3198,18 +3233,25 @@ public partial class VirtualCrossoverPanel : UserControl
                 continue;
             }
 
-            double degrees = point.Y / Math.PI * 180.0;
-            if (!double.IsNaN(previous) && !double.IsNaN(degrees) &&
-                Math.Abs(degrees - previous) > 180.0)
+            var current = new SignalPoint(point.X, point.Y / Math.PI * 180.0);
+            if (previous is { } before && !double.IsNaN(before.Y) &&
+                !double.IsNaN(current.Y) &&
+                Math.Abs(current.Y - before.Y) > 180.0)
             {
                 points.Add(new SignalPoint(point.X, double.NaN));
+                // Strictly vertical, halfway between the two bins (geometric
+                // mean = the visual midpoint on the log-frequency axis).
+                double wrapHz = Math.Sqrt(before.X * current.X);
+                wrapSegments.Add(new SignalPoint(wrapHz, before.Y));
+                wrapSegments.Add(new SignalPoint(wrapHz, current.Y));
+                wrapSegments.Add(new SignalPoint(wrapHz, double.NaN));
             }
 
-            points.Add(new SignalPoint(point.X, degrees));
-            previous = degrees;
+            points.Add(current);
+            previous = current;
         }
 
-        return points;
+        return (points, wrapSegments);
     }
 
     // Opens the manual phase-gate dialog: the gate offset and Tukey shoulders
@@ -3231,7 +3273,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         int sampleRate = processed[0].Channel.SampleRate;
         int reference = processed.Min(item => item.PeakIndex);
-        double fitOffsetMs = reference * 1_000.0 / sampleRate;
+        double fitOffsetMs = EarliestStartMs(processed, sampleRate);
 
         var traces = processed
             .Select(item => new IrPreviewTrace(
@@ -3244,7 +3286,7 @@ public partial class VirtualCrossoverPanel : UserControl
         dialog.Init(
             traces,
             sampleRate,
-            ResolveGateOffsetMs(reference, sampleRate),
+            ResolveGateOffsetMs(processed, sampleRate),
             project.PhaseGateLeftMs,
             project.PhaseGatePlateauMs,
             project.PhaseGateRightMs,
@@ -3252,7 +3294,8 @@ public partial class VirtualCrossoverPanel : UserControl
             project.PhaseWindowMode,
             project.PhaseFdwCycles,
             project.PhaseDetrendMode,
-            fitOffsetMs);
+            fitOffsetMs,
+            autoOffset: ActiveGate.OffsetMs == null);
         // The callback is wired after Init so seeding the controls does not
         // trigger a redundant redraw; from here every dialog change repaints the
         // phase plot immediately.
@@ -3272,7 +3315,9 @@ public partial class VirtualCrossoverPanel : UserControl
                 // lengths and the analysis modes are project-wide, so both sides keep
                 // reading the phase at the same resolution and by the same method.
                 VirtualCrossoverPhaseGateSettings gate = ActiveGate;
-                gate.OffsetMs = dialog.GateOffsetMs;
+                // Auto pressed = unpinned: store null so this side's gate
+                // keeps following the earliest estimated channel IR start.
+                gate.OffsetMs = dialog.AutoOffset ? null : dialog.GateOffsetMs;
                 gate.DetrendMs = dialog.DetrendMs;
                 project.PhaseGateLeftMs = dialog.LeftMs;
                 project.PhaseGatePlateauMs = dialog.PlateauMs;

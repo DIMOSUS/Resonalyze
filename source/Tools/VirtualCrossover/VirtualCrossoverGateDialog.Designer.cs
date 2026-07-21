@@ -32,7 +32,7 @@ namespace Resonalyze
         {
             labelGateOffset = new Label();
             numericGateOffset = new DarkNumericUpDown();
-            buttonFit = new Button();
+            checkAutoOffset = new CheckBox();
             labelLeft = new Label();
             numericLeft = new DarkNumericUpDown();
             labelPlateau = new Label();
@@ -88,17 +88,22 @@ namespace Resonalyze
             numericGateOffset.TextAlign = HorizontalAlignment.Right;
             numericGateOffset.ThousandsSeparator = false;
             numericGateOffset.Value = new decimal(new int[] { 0, 0, 0, 0 });
-            // 
-            // buttonFit
-            // 
-            buttonFit.FlatStyle = FlatStyle.Popup;
-            buttonFit.ForeColor = Color.White;
-            buttonFit.Location = new Point(198, 10);
-            buttonFit.Name = "buttonFit";
-            buttonFit.Size = new Size(40, 23);
-            buttonFit.TabIndex = 2;
-            buttonFit.Text = "Fit";
-            buttonFit.UseVisualStyleBackColor = true;
+            //
+            // checkAutoOffset
+            //
+            checkAutoOffset.Appearance = Appearance.Button;
+            checkAutoOffset.BackColor = Color.FromArgb(55, 60, 72);
+            checkAutoOffset.FlatAppearance.CheckedBackColor = Color.FromArgb(80, 100, 140);
+            checkAutoOffset.FlatStyle = FlatStyle.Flat;
+            checkAutoOffset.ForeColor = Color.White;
+            checkAutoOffset.Location = new Point(198, 10);
+            checkAutoOffset.Name = "checkAutoOffset";
+            checkAutoOffset.Size = new Size(44, 23);
+            checkAutoOffset.TabIndex = 2;
+            checkAutoOffset.Text = "Auto";
+            checkAutoOffset.TextAlign = ContentAlignment.MiddleCenter;
+            checkAutoOffset.UseCompatibleTextRendering = true;
+            checkAutoOffset.UseVisualStyleBackColor = false;
             // 
             // labelLeft
             // 
@@ -367,7 +372,7 @@ namespace Resonalyze
             ClientSize = new Size(620, 512);
             Controls.Add(labelGateOffset);
             Controls.Add(numericGateOffset);
-            Controls.Add(buttonFit);
+            Controls.Add(checkAutoOffset);
             Controls.Add(labelLeft);
             Controls.Add(numericLeft);
             Controls.Add(labelPlateau);
@@ -411,7 +416,7 @@ namespace Resonalyze
 
         private Label labelGateOffset;
         private DarkNumericUpDown numericGateOffset;
-        private Button buttonFit;
+        private CheckBox checkAutoOffset;
         private Label labelLeft;
         private DarkNumericUpDown numericLeft;
         private Label labelPlateau;

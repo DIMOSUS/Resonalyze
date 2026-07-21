@@ -19,7 +19,7 @@ namespace Resonalyze.Options
             numericLeftWindow.ValueChanged += Gate_ValueChanged;
             numericRightWindow.ValueChanged += Gate_ValueChanged;
             numericGateOffset.ValueChanged += (_, _) => UpdateIrPreview();
-            buttonFit.Click += buttonFit_Click;
+            checkAutoFit.CheckedChanged += (_, _) => AutoFitChanged();
             buttonTauSlope.Click += (_, _) => ApplyEstimatedTau(useSlope: true);
             buttonTauPeak.Click += (_, _) => ApplyEstimatedTau(useSlope: false);
             numericOffset.ValueChanged += (_, _) =>
@@ -47,6 +47,7 @@ namespace Resonalyze.Options
             InitializeControls(() =>
             {
                 numericGateOffset.Value = ClampToControl(numericGateOffset, opt.PhaseGateOffsetMs);
+                checkAutoFit.Checked = opt.PhaseGateAutoFit;
                 numericWindow.Value = ClampToControl(numericWindow, opt.PhasePlateauMs);
                 numericLeftWindow.Value = ClampToControl(numericLeftWindow, opt.PhaseLeftMs);
                 numericRightWindow.Value = ClampToControl(numericRightWindow, opt.PhaseRightMs);
@@ -67,11 +68,15 @@ namespace Resonalyze.Options
             });
             UpdateMinFrequencyLabel();
             UpdatePhaseControlState();
+            // CheckedChanged only fires on a transition, so sync the offset
+            // field's enabled state for a false -> false init too.
+            numericGateOffset.Enabled = !checkAutoFit.Checked;
             UpdateIrPreview();
         }
 
         public void SetOptions(FrequencyResponseOptions opt, CurveVisibilityOptions visibility)
         {
+            opt.PhaseGateAutoFit = checkAutoFit.Checked;
             opt.PhaseGateOffsetMs = (double)numericGateOffset.Value;
             opt.PhasePlateauMs = (double)numericWindow.Value;
             opt.PhaseLeftMs = (double)numericLeftWindow.Value;
@@ -222,19 +227,27 @@ namespace Resonalyze.Options
             }
         }
 
-        // Snap the gate offset to the transfer IR peak (deterministic, gate-independent).
-        private void buttonFit_Click(object? sender, EventArgs e)
+        // Auto pressed: the offset field turns read-only and follows the
+        // estimated IR start; released: the field unlocks keeping the last
+        // value as the manual starting point.
+        private void AutoFitChanged()
         {
-            if (Measurement is not { } measurement ||
-                measurement.Transfer is not { ImpulseResponse.Length: > 0 } transfer ||
-                measurement.SampleRate <= 0)
+            numericGateOffset.Enabled = !checkAutoFit.Checked;
+            if (checkAutoFit.Checked)
             {
-                System.Media.SystemSounds.Beep.Play();
-                return;
+                ApplyAutoGateOffset();
             }
+        }
 
-            double onsetMs = transfer.PeakIndex * 1000.0 / measurement.SampleRate;
-            numericGateOffset.Value = ClampToControl(numericGateOffset, onsetMs);
+        // Snaps the gate offset to the estimated IR start (band-limited
+        // first-arrival front, memoized per IR in TransferIrStartCache).
+        private void ApplyAutoGateOffset()
+        {
+            if (Measurement is { } measurement &&
+                TransferIrStartCache.ResolveStartMs(measurement) is { } startMs)
+            {
+                numericGateOffset.Value = ClampToControl(numericGateOffset, startMs);
+            }
         }
 
         private void numericWindow_ValueChanged(object sender, EventArgs e)
@@ -265,6 +278,13 @@ namespace Resonalyze.Options
 
         protected override void RenderIrPreview()
         {
+            // Auto mode re-snaps the offset whenever the preview refreshes —
+            // which includes every ImpulseResponseChanged of the measurement.
+            if (checkAutoFit.Checked)
+            {
+                ApplyAutoGateOffset();
+            }
+
             if (comboDetrendMode.SelectedIndex == (int)PhaseDetrendMode.Auto)
             {
                 UpdateDetrendDisplay();
@@ -290,10 +310,10 @@ namespace Resonalyze.Options
         {
             numericGateOffset.ApplyToolTip(
                 toolTip,
-                "Gate position: time from the IR start to the end of the left Tukey shoulder. Use Fit to snap it to the transfer IR peak.");
+                "Gate position: time from the IR start to the end of the left Tukey shoulder. Auto keeps it snapped to the detected IR start.");
             toolTip.SetToolTip(
-                buttonFit,
-                "Snap the gate offset to the transfer IR peak.");
+                checkAutoFit,
+                "Keep the gate offset snapped to the detected IR start (band-limited first-arrival front), following every new measurement. Release to set the offset manually.");
             numericWindow.ApplyToolTip(
                 toolTip,
                 "Flat (weight 1) part of the gate after the peak, in milliseconds.");

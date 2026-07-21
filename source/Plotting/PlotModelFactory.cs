@@ -314,6 +314,16 @@ internal sealed class PlotModelFactory
             IImpulseMeasurement primaryMeasurement =
                 measurementContext.CreatePrimaryMeasurement();
             var compare = TryCreateCompareMeasurement();
+            // Auto gate: re-snap the offset to the current measurement's IR
+            // start before reading the settings, so a fresh measurement is
+            // gated correctly even while the options dialog is closed. The
+            // options object is updated (not just a local copy) so the dialog
+            // and the persisted settings show the value the plot used.
+            if (phaseResponseOptions.PhaseGateAutoFit &&
+                measurementContext.ResolveAutoGateOffsetMs() is { } phaseStartMs)
+            {
+                phaseResponseOptions.PhaseGateOffsetMs = phaseStartMs;
+            }
             PhaseAnalysisSettings phaseSettings =
                 phaseResponseOptions.CreatePhaseAnalysisSettings();
             if (phaseSettings.DetrendMode == PhaseDetrendMode.Auto && compare != null)
@@ -383,15 +393,27 @@ internal sealed class PlotModelFactory
                     phaseUnwrapped: true);
             }
 
-            // Overlay the Compare measurement with the identical gate / detrend /
-            // smoothing so the two responses can be read on the same terms.
+            // Overlay the Compare measurement with the identical gate LENGTH,
+            // window mode, detrend and smoothing so the two responses read on
+            // the same terms. The gate's PLACEMENT is per-curve under Auto:
+            // the two records' fronts sit at different times, and one shared
+            // offset would cut the earlier record's direct arrival into the
+            // left shoulder. The extraction re-references every spectrum to
+            // absolute time and both curves share the one τ resolved above,
+            // so their relative phase/delay survives the differing windows.
             if (compare is { } compareData)
             {
+                PhaseAnalysisSettings comparePhaseSettings =
+                    phaseResponseOptions.PhaseGateAutoFit &&
+                    TransferIrStartCache.ResolveStartMs(compareData.Measurement)
+                        is { } compareStartMs
+                        ? phaseSettings with { GateOffsetMs = compareStartMs }
+                        : phaseSettings;
                 if (phaseResponseVisibility.ShowMeasuredPhase)
                 {
                     AnalysisCurve compareCurve = DataHelper.GetPhase(
                         compareData.Measurement,
-                        phaseSettings,
+                        comparePhaseSettings,
                         compareData.Coherence);
                     AddCompareLineSeries(
                         model,
@@ -406,7 +428,7 @@ internal sealed class PlotModelFactory
                 {
                     AnalysisCurve compareCurve = DataHelper.GetMinimumPhase(
                         compareData.Measurement,
-                        phaseSettings);
+                        comparePhaseSettings);
                     AddCompareLineSeries(
                         model,
                         compareCurve,
@@ -420,7 +442,7 @@ internal sealed class PlotModelFactory
                 {
                     AnalysisCurve compareCurve = DataHelper.GetExcessPhase(
                         compareData.Measurement,
-                        phaseSettings,
+                        comparePhaseSettings,
                         compareData.Coherence);
                     AddCompareLineSeries(
                         model,
@@ -504,6 +526,13 @@ internal sealed class PlotModelFactory
             (groupDelayVisibility.ShowGroupDelay || groupDelayVisibility.ShowCoherence))
         {
             const string groupDelayTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.000} ms";
+            // Auto gate: same contract as the phase plot — re-snap the offset
+            // to the current measurement's IR start in the shared options.
+            if (groupDelayOptions.GroupDelayGateAutoFit &&
+                measurementContext.ResolveAutoGateOffsetMs() is { } gdStartMs)
+            {
+                groupDelayOptions.GroupDelayGateOffsetMs = gdStartMs;
+            }
             if (groupDelayVisibility.ShowGroupDelay)
             {
                 // The gate is positioned by its Gate offset (left-shoulder-end) within the
@@ -520,12 +549,22 @@ internal sealed class PlotModelFactory
                 AddLineSeries(model, curve, groupDelayTrackerFormat, Mode.GroupDelay, GroupDelayAxisKey);
                 UpdateGroupDelayRange(curve, ref minimum, ref maximum, ref hasValidData);
 
-                // Overlay the Compare measurement with the identical gate / smoothing.
+                // Overlay the Compare measurement with the identical gate
+                // length / smoothing. Under Auto the gate PLACEMENT is
+                // per-curve (each record's own IR start): group delay reads
+                // absolute from the IR start, so differently placed windows
+                // stay directly comparable while both direct arrivals survive.
                 if (TryCreateCompareMeasurement() is { } compare)
                 {
+                    double compareGateOffsetMs =
+                        groupDelayOptions.GroupDelayGateAutoFit &&
+                        TransferIrStartCache.ResolveStartMs(compare.Measurement)
+                            is { } compareStartMs
+                            ? compareStartMs
+                            : groupDelayOptions.GroupDelayGateOffsetMs;
                     AnalysisCurve compareCurve = DataHelper.GetGroupDelay(
                         compare.Measurement,
-                        groupDelayOptions.GroupDelayGateOffsetMs,
+                        compareGateOffsetMs,
                         groupDelayOptions.GroupDelayLeftMs,
                         groupDelayOptions.GroupDelayPlateauMs,
                         groupDelayOptions.GroupDelayRightMs,

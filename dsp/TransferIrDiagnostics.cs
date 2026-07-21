@@ -21,6 +21,28 @@ public readonly record struct CrosstalkHeadGate(
     double BurstPeakDbReMax);
 
 /// <summary>
+/// The estimated start of a measured IR's honest acoustic content: the 25 %
+/// rising-front crossing (<see cref="StartMs"/>, the working figure) of the
+/// first credible arrival's envelope, read INSIDE the record's dominant band
+/// (see <see cref="TransferIrDiagnostics.EstimateIrStart"/>). The 10 %
+/// (<see cref="EarlyMs"/>) and 50 % (<see cref="LateMs"/>) crossings bound
+/// it; their spread is the front's sharpness — a direct sound keeps them
+/// within a fraction of a millisecond, a modal low-frequency build-up
+/// spreads them over milliseconds — and is the honesty figure a caller
+/// showing one number should surface. <see cref="DominantBandLimited"/> is
+/// false when the dominant-band read was invalid and the figures fall back
+/// to the full-band envelope (which a head artifact CAN poison — see the
+/// estimator's contract).
+/// </summary>
+public readonly record struct IrStartEstimate(
+    double StartMs,
+    double EarlyMs,
+    double LateMs,
+    double BandLowHz,
+    double BandHighHz,
+    bool DominantBandLimited);
+
+/// <summary>
 /// Record-hygiene diagnostics shared by the manual Time Alignment mode and
 /// the auto-delay launcher: where the driver's energy actually lives in
 /// frequency, and whether the record's head carries a playback-crosstalk
@@ -213,6 +235,149 @@ public static class TransferIrDiagnostics
         int high = Expand(peakIndex, +1);
 
         return new DominantBand(gridHz[low], gridHz[high], gridHz[peakIndex]);
+    }
+
+    /// <summary>
+    /// Estimates where the IR's honest acoustic content starts: the rising-
+    /// front crossings of the first credible arrival's Hilbert envelope, read
+    /// inside the record's DOMINANT band. The band-pass is what makes the
+    /// figure robust on real cabin records — a playback-crosstalk click or
+    /// other broadband head garbage carries almost no energy inside a
+    /// band-limited driver's working band, so the in-band envelope never sees
+    /// it, without any head-cleaning pass (field data, v3 cabin: the click at
+    /// ~0.5 ms poisons every full-band read of the midbass and subwoofer
+    /// records — 0.46-3.3 ms against fronts at 4.5-9 ms — while the in-band
+    /// read lands on the front on all seven records). The arrival itself is
+    /// the shared first-arrival physics (25 dB depth, noise gate, pre-ringing
+    /// rejection), so a stronger modal build-up peak seconds later cannot
+    /// usurp the front. Falls back to the full-band envelope when the
+    /// dominant-band read is invalid (then a head artifact CAN poison it —
+    /// <see cref="IrStartEstimate.DominantBandLimited"/> reports which path
+    /// answered); null when no credible arrival exists at all — empty, too
+    /// short or silent records, and noise-only records, which the envelope
+    /// SNR floor refuses (a noise envelope still has a "strongest peak" the
+    /// first-arrival search would fall back to, and only the peak-to-noise
+    /// grade exposes it). The caller keeps whatever figure it used before.
+    /// Analysis is capped to the record's first <see cref="MaxAnalysisSamples"/>
+    /// samples: the front lives there, and the cap keeps the per-refresh cost
+    /// flat, the same convention as <see cref="DetectCrosstalkHead"/>.
+    /// </summary>
+    public static IrStartEstimate? EstimateIrStart(
+        IReadOnlyList<double> impulseResponse,
+        int sampleRate)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponse);
+        if (impulseResponse.Count < IrStartMinimumSamples || sampleRate <= 0)
+        {
+            return null;
+        }
+
+        if (impulseResponse.Count > MaxAnalysisSamples)
+        {
+            var head = new double[MaxAnalysisSamples];
+            for (int i = 0; i < head.Length; i++)
+            {
+                head[i] = impulseResponse[i];
+            }
+            impulseResponse = head;
+        }
+
+        DominantBand band = DetectDominantBand(impulseResponse, sampleRate);
+        TimeAlignmentAnalysisResult inBand = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, sampleRate, new TimeAlignmentAnalysisOptions
+            {
+                UseBandpassWindow = true,
+                BandpassCenterHz = Math.Sqrt(band.LowHz * band.HighHz),
+                BandpassPassOctaves = Math.Log2(band.HighHz / band.LowHz),
+                BandpassFadeOctaves = 0.25
+            });
+        if (IsCredible(inBand))
+        {
+            return CrossingsOf(inBand, band, sampleRate, dominantBandLimited: true);
+        }
+
+        TimeAlignmentAnalysisResult fullBand = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, sampleRate, new TimeAlignmentAnalysisOptions());
+        return IsCredible(fullBand)
+            ? CrossingsOf(fullBand, band, sampleRate, dominantBandLimited: false)
+            : null;
+    }
+
+    // Below this length the spectral analysis behind the estimate is
+    // degenerate (no dominant band to speak of, no quantile noise floor).
+    private const int IrStartMinimumSamples = 256;
+
+    // The envelope peak-to-noise grade a record must clear before its front
+    // is trusted: IsValid alone only refuses flat-zero envelopes, so a
+    // noise-only record would otherwise "measure" a front at wherever its
+    // strongest random peak happens to sit. Same floor as the auto-delay
+    // onset lock (AutoAlignmentEngine.OnsetLockMinimumSnrDb, field-derived);
+    // clean cabin records grade 50+ dB, pure noise ~10-13 dB.
+    private const double IrStartMinimumSnrDb = 20;
+
+    private static bool IsCredible(TimeAlignmentAnalysisResult result) =>
+        result.IsValid && result.SignalToNoiseDecibels >= IrStartMinimumSnrDb;
+
+    /// <summary>
+    /// The <see cref="Complex"/> twin of the estimator above, for callers
+    /// holding a transfer or processed IR in its FFT form.
+    /// </summary>
+    public static IrStartEstimate? EstimateIrStart(
+        IReadOnlyList<Complex> impulseResponse,
+        int sampleRate)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponse);
+        int length = Math.Min(impulseResponse.Count, MaxAnalysisSamples);
+        var samples = new double[length];
+        for (int i = 0; i < length; i++)
+        {
+            samples[i] = impulseResponse[i].Real;
+        }
+        return EstimateIrStart(samples, sampleRate);
+    }
+
+    private static IrStartEstimate CrossingsOf(
+        TimeAlignmentAnalysisResult result,
+        DominantBand band,
+        int sampleRate,
+        bool dominantBandLimited)
+    {
+        double[] envelope = result.EnvelopeSamples;
+        int peakIndex = result.EnvelopePeakIndex;
+        double peak = envelope[peakIndex];
+        return new IrStartEstimate(
+            RisingFrontCrossingMs(envelope, peakIndex, 0.25 * peak, sampleRate),
+            RisingFrontCrossingMs(envelope, peakIndex, 0.10 * peak, sampleRate),
+            RisingFrontCrossingMs(envelope, peakIndex, 0.50 * peak, sampleRate),
+            band.LowHz,
+            band.HighHz,
+            dominantBandLimited);
+    }
+
+    // Walks backward down the arrival peak's own rising front to the first
+    // sample below the threshold and interpolates the crossing (sub-sample).
+    // Pinned to THAT front: an earlier, disjoint event past a dip never
+    // captures the crossing. Reaches 0.0 when the front starts at the record.
+    private static double RisingFrontCrossingMs(
+        IReadOnlyList<double> envelope,
+        int peakIndex,
+        double threshold,
+        int sampleRate)
+    {
+        int i = peakIndex;
+        while (i > 0 && envelope[i] > threshold)
+        {
+            i--;
+        }
+        if (i == peakIndex)
+        {
+            return peakIndex * 1_000.0 / sampleRate;
+        }
+
+        double below = envelope[i];
+        double above = envelope[i + 1];
+        double fraction = above > below ? (threshold - below) / (above - below) : 0.0;
+        return (i + fraction) * 1_000.0 / sampleRate;
     }
 
     // The widest spectral dip the dominant-band expansion steps across

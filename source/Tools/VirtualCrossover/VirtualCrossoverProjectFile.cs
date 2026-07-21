@@ -37,8 +37,9 @@ public enum DspPlotMode
 public sealed class VirtualCrossoverPhaseGateSettings
 {
     /// <summary>
-    /// Null follows this side's earliest processed arrival automatically, so the gate
-    /// tracks source and delay changes until the user pins it in the gate dialog.
+    /// Null (the gate dialog's Auto) follows this side's earliest estimated
+    /// channel IR start automatically, so the gate tracks source and delay
+    /// changes until the user pins it in the gate dialog.
     /// </summary>
     public double? OffsetMs { get; set; }
 

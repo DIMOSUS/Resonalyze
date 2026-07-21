@@ -29,7 +29,7 @@ namespace Resonalyze.Options
         private void InitializeComponent()
         {
             labelGateOffset = new Label();
-            buttonFit = new Button();
+            checkAutoFit = new CheckBox();
             numericGateOffset = new DarkNumericUpDown();
             label9 = new Label();
             labelMinFrequency = new Label();
@@ -59,19 +59,22 @@ namespace Resonalyze.Options
             labelGateOffset.Size = new Size(91, 15);
             labelGateOffset.TabIndex = 60;
             labelGateOffset.Text = "Gate offset (ms)";
-            // 
-            // buttonFit
-            // 
-            buttonFit.BackColor = Color.FromArgb(55, 60, 72);
-            buttonFit.FlatStyle = FlatStyle.Flat;
-            buttonFit.ForeColor = Color.White;
-            buttonFit.Location = new Point(115, 11);
-            buttonFit.Name = "buttonFit";
-            buttonFit.Size = new Size(33, 21);
-            buttonFit.TabIndex = 61;
-            buttonFit.Text = "Fit";
-            buttonFit.UseCompatibleTextRendering = true;
-            buttonFit.UseVisualStyleBackColor = false;
+            //
+            // checkAutoFit
+            //
+            checkAutoFit.Appearance = Appearance.Button;
+            checkAutoFit.BackColor = Color.FromArgb(55, 60, 72);
+            checkAutoFit.FlatAppearance.CheckedBackColor = Color.FromArgb(80, 100, 140);
+            checkAutoFit.FlatStyle = FlatStyle.Flat;
+            checkAutoFit.ForeColor = Color.White;
+            checkAutoFit.Location = new Point(110, 11);
+            checkAutoFit.Name = "checkAutoFit";
+            checkAutoFit.Size = new Size(40, 21);
+            checkAutoFit.TabIndex = 61;
+            checkAutoFit.Text = "Auto";
+            checkAutoFit.TextAlign = ContentAlignment.MiddleCenter;
+            checkAutoFit.UseCompatibleTextRendering = true;
+            checkAutoFit.UseVisualStyleBackColor = false;
             // 
             // numericGateOffset
             // 
@@ -259,7 +262,7 @@ namespace Resonalyze.Options
             Controls.Add(checkBoxShowGroupDelay);
             Controls.Add(labelCurves);
             Controls.Add(numericGateOffset);
-            Controls.Add(buttonFit);
+            Controls.Add(checkAutoFit);
             Controls.Add(labelGateOffset);
             Controls.Add(labelMinFrequency);
             Controls.Add(label9);
@@ -288,7 +291,7 @@ namespace Resonalyze.Options
         #endregion
 
         private Label labelGateOffset;
-        private Button buttonFit;
+        private CheckBox checkAutoFit;
         private DarkNumericUpDown numericGateOffset;
         private Label label9;
         private Label labelMinFrequency;

@@ -49,8 +49,14 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         comboWindowMode.SelectedIndexChanged += (_, _) => OnGateChanged();
         comboFdwCycles.SelectedIndexChanged += (_, _) => OnGateChanged();
         comboDetrendMode.SelectedIndexChanged += (_, _) => OnGateChanged();
-        buttonFit.Click += (_, _) =>
-            numericGateOffset.Value = Clamp(numericGateOffset, fitOffsetMs);
+        checkAutoOffset.CheckedChanged += (_, _) =>
+        {
+            numericGateOffset.Enabled = !checkAutoOffset.Checked;
+            if (checkAutoOffset.Checked)
+            {
+                numericGateOffset.Value = Clamp(numericGateOffset, fitOffsetMs);
+            }
+        };
         buttonTauSlope.Click += (_, _) => ApplyEstimatedTau(useSlope: true);
         buttonTauPeak.Click += (_, _) => ApplyEstimatedTau(useSlope: false);
         buttonSave.Click += (_, _) => CommitGateEditors();
@@ -62,6 +68,12 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
     }
 
     public double GateOffsetMs => (double)numericGateOffset.Value;
+
+    /// <summary>
+    /// Auto pressed: the offset is not pinned — the caller stores null and the
+    /// gate keeps following the earliest estimated channel IR start.
+    /// </summary>
+    public bool AutoOffset => checkAutoOffset.Checked;
     public double LeftMs => (double)numericLeft.Value;
     public double PlateauMs => (double)numericPlateau.Value;
     public double RightMs => (double)numericRight.Value;
@@ -78,8 +90,9 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
             : PhaseDetrendMode.Auto;
     /// <summary>
     /// Seeds the dialog: the processed channel IRs to preview (absolute
-    /// timeline), the current gate values, and the offset the Fit button snaps
-    /// to (the earliest processed arrival).
+    /// timeline), the current gate values, the offset Auto snaps to (the
+    /// earliest estimated channel IR start) and whether the offset is
+    /// currently unpinned (Auto pressed).
     /// </summary>
     public void Init(
         IReadOnlyList<IrPreviewTrace> previewTraces,
@@ -92,13 +105,19 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         PhaseWindowMode windowMode,
         int fdwCycles,
         PhaseDetrendMode detrendMode,
-        double fitToMs)
+        double fitToMs,
+        bool autoOffset)
     {
         traces = previewTraces;
         sampleRate = previewSampleRate;
         fitOffsetMs = fitToMs;
 
         numericGateOffset.Value = Clamp(numericGateOffset, gateOffsetMs);
+        // After the offset: a false -> true transition re-snaps the value to
+        // fitOffsetMs (already seeded) and disables the field; false -> false
+        // never fires CheckedChanged, so sync the enabled state explicitly.
+        checkAutoOffset.Checked = autoOffset;
+        numericGateOffset.Enabled = !autoOffset;
         numericLeft.Value = Clamp(numericLeft, leftMs);
         numericPlateau.Value = Clamp(numericPlateau, plateauMs);
         numericRight.Value = Clamp(numericRight, rightMs);
@@ -249,11 +268,12 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
             toolTip,
             "Gate position: time from the IR start to the end\r\n" +
             "of the left Tukey shoulder.\r\n" +
-            "Use Fit to snap it to the earliest channel arrival.");
+            "Auto keeps it on the earliest channel IR start.");
         toolTip.SetToolTip(
-            buttonFit,
-            "Snap the gate offset to the earliest processed\r\n" +
-            "channel arrival.");
+            checkAutoOffset,
+            "Keep the gate offset on the earliest processed channel's\r\n" +
+            "detected IR start, following source and delay changes.\r\n" +
+            "Release to pin the offset manually.");
         numericLeft.ApplyToolTip(
             toolTip,
             "Tukey fade-in before the arrival, in milliseconds.\r\n" +

@@ -403,6 +403,11 @@ internal sealed class MeasurementSettingsFile
         public bool ShowThdPlusNoise { get; set; } = true;
         public bool ShowNoiseFloor { get; set; } = true;
         public bool ShowGroupDelay { get; set; } = true;
+        // Nullable and deliberately WITHOUT an initializer: System.Text.Json
+        // never assigns a missing property, so an initializer value would
+        // survive deserialization and a pre-Auto file (v <= 9, field absent)
+        // would be indistinguishable from a stored true — see ApplyTo.
+        public bool? PhaseGateAutoFit { get; set; }
         public double PhaseGateOffsetMs { get; set; } = FrequencyResponseOptions.DefaultPhaseGateOffsetMs;
         public double PhaseLeftMs { get; set; } = FrequencyResponseOptions.DefaultPhaseLeftMs;
         public double PhasePlateauMs { get; set; } = FrequencyResponseOptions.DefaultPhasePlateauMs;
@@ -413,6 +418,7 @@ internal sealed class MeasurementSettingsFile
         public int PhaseFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
         public PhaseDetrendMode? PhaseDetrendMode { get; set; } =
             Resonalyze.Dsp.PhaseDetrendMode.Auto;
+        public bool? GroupDelayGateAutoFit { get; set; }
         public double GroupDelayGateOffsetMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayGateOffsetMs;
         public double GroupDelayLeftMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayLeftMs;
         public double GroupDelayPlateauMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayPlateauMs;
@@ -443,6 +449,7 @@ internal sealed class MeasurementSettingsFile
                 ShowThdPlusNoise = visibility.ShowThdPlusNoise,
                 ShowNoiseFloor = visibility.ShowNoiseFloor,
                 ShowGroupDelay = visibility.ShowGroupDelay,
+                PhaseGateAutoFit = options.PhaseGateAutoFit,
                 PhaseGateOffsetMs = options.PhaseGateOffsetMs,
                 PhaseLeftMs = options.PhaseLeftMs,
                 PhasePlateauMs = options.PhasePlateauMs,
@@ -451,6 +458,7 @@ internal sealed class MeasurementSettingsFile
                 PhaseWindowMode = options.PhaseWindowMode,
                 PhaseFdwCycles = options.PhaseFdwCycles,
                 PhaseDetrendMode = options.PhaseDetrendMode,
+                GroupDelayGateAutoFit = options.GroupDelayGateAutoFit,
                 GroupDelayGateOffsetMs = options.GroupDelayGateOffsetMs,
                 GroupDelayLeftMs = options.GroupDelayLeftMs,
                 GroupDelayPlateauMs = options.GroupDelayPlateauMs,
@@ -484,6 +492,12 @@ internal sealed class MeasurementSettingsFile
             visibility.ShowThdPlusNoise = ShowThdPlusNoise;
             visibility.ShowNoiseFloor = ShowNoiseFloor;
             visibility.ShowGroupDelay = ShowGroupDelay;
+            // Absent in a pre-Auto file: enable Auto only when the stored
+            // offset is the untouched default. A deliberately fitted/typed
+            // gate must stay manual — the Auto re-snap would silently
+            // overwrite the user's placement and persist over it.
+            options.PhaseGateAutoFit = PhaseGateAutoFit ??
+                PhaseGateOffsetMs == FrequencyResponseOptions.DefaultPhaseGateOffsetMs;
             options.PhaseGateOffsetMs = ClampMilliseconds(PhaseGateOffsetMs, 0.0, 2000.0);
             options.PhaseLeftMs = ClampMilliseconds(PhaseLeftMs, 0.0, 1000.0);
             options.PhasePlateauMs = ClampMilliseconds(PhasePlateauMs, 0.0, 1000.0);
@@ -502,6 +516,8 @@ internal sealed class MeasurementSettingsFile
                 Enum.IsDefined(detrendMode)
                     ? detrendMode
                     : Resonalyze.Dsp.PhaseDetrendMode.Manual;
+            options.GroupDelayGateAutoFit = GroupDelayGateAutoFit ??
+                GroupDelayGateOffsetMs == FrequencyResponseOptions.DefaultGroupDelayGateOffsetMs;
             options.GroupDelayGateOffsetMs = ClampMilliseconds(GroupDelayGateOffsetMs, 0.0, 2000.0);
             options.GroupDelayLeftMs = ClampMilliseconds(GroupDelayLeftMs, 0.0, 1000.0);
             options.GroupDelayPlateauMs = ClampMilliseconds(GroupDelayPlateauMs, 0.0, 1000.0);

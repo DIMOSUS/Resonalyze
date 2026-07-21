@@ -62,6 +62,12 @@ namespace Resonalyze.Dsp
         public const double DefaultPhaseDetrendMs = 0.0;
         public const double DefaultPhaseSmoothingInverseOctaves = 12.0;
 
+        // Auto keeps the gate offset snapped to the estimated IR start
+        // (TransferIrDiagnostics.EstimateIrStart) whenever the measurement
+        // changes; off leaves the offset to the user. Default on: a first-run
+        // user should see a correctly gated phase without touching anything.
+        public bool PhaseGateAutoFit { get; set; } = true;
+
         public double PhaseGateOffsetMs { get; set; } = DefaultPhaseGateOffsetMs;
         public double PhaseLeftMs { get; set; } = DefaultPhaseLeftMs;
         public double PhasePlateauMs { get; set; } = DefaultPhasePlateauMs;
@@ -92,6 +98,9 @@ namespace Resonalyze.Dsp
         public const double DefaultGroupDelayPlateauMs = 10.0;
         public const double DefaultGroupDelayRightMs = 3.0;
         public const double DefaultGroupDelaySmoothingInverseOctaves = 12.0;
+
+        // The Group Delay twin of PhaseGateAutoFit.
+        public bool GroupDelayGateAutoFit { get; set; } = true;
 
         public double GroupDelayGateOffsetMs { get; set; } = DefaultGroupDelayGateOffsetMs;
         public double GroupDelayLeftMs { get; set; } = DefaultGroupDelayLeftMs;

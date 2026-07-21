@@ -65,6 +65,15 @@ public static class TransferIrDiagnostics
     // same time; only a non-acoustic event can be complement-early.
     private const double PreFrontGuardSeconds = 0.002;
 
+    // The island must close within this long of the candidate — a click is
+    // a millisecond-scale event; anything longer is sound.
+    private const double IslandCapSeconds = 0.010;
+
+    // How much later the full-band first arrival must move after the trial
+    // removal for the burst to be convicted (safely above the band-to-band
+    // dispersion of one wavefront in a cabin, ~1-1.5 ms measured).
+    private const double FirstArrivalJumpMs = 2.0;
+
     private const double FadeSeconds = 0.0004;
 
     public static DominantBand DetectDominantBand(
@@ -130,35 +139,101 @@ public static class TransferIrDiagnostics
             }
         }
 
+        // Expand from the peak, bridging dips narrower than
+        // MaxBridgedGapOctaves: an in-cabin cancellation notch is deep but
+        // narrow and must not cut the driver's working band in half, while
+        // a wide stretch of silence is a real band edge.
         double floorDb = gridDb[peakIndex] - thresholdDb;
-        int low = peakIndex;
-        int high = peakIndex;
-        while (low > 0 && gridDb[low - 1] >= floorDb)
+        int maxGapSteps = (int)Math.Round(MaxBridgedGapOctaves * 24);
+        int solidSteps = (int)Math.Round(MinSolidLandingOctaves * 24);
+        // A bridge must LAND on a solid stretch of band (≥ solidSteps
+        // consecutive points above the floor): real cancellation notches sit
+        // between solid regions, while broadband ripple hovering around the
+        // threshold offers only isolated spikes — chaining bridges through
+        // those would crawl the band arbitrarily far (measured on the field
+        // records: the midbass band tripled before this rule).
+        bool SolidAt(int start, int step)
         {
-            low--;
+            for (int i = 0; i < solidSteps; i++)
+            {
+                int index = start + step * i;
+                if (index < 0 || index >= gridDb.Count || gridDb[index] < floorDb)
+                {
+                    return false;
+                }
+            }
+            return true;
         }
-        while (high < gridDb.Count - 1 && gridDb[high + 1] >= floorDb)
+        int Expand(int from, int step)
         {
-            high++;
+            int edge = from;
+            while (true)
+            {
+                int next = edge + step;
+                if (next < 0 || next >= gridDb.Count)
+                {
+                    return edge;
+                }
+                if (gridDb[next] >= floorDb)
+                {
+                    edge = next;
+                    continue;
+                }
+                int across = -1;
+                for (int k = 2; k <= maxGapSteps; k++)
+                {
+                    int candidate = edge + step * k;
+                    if (candidate < 0 || candidate >= gridDb.Count)
+                    {
+                        break;
+                    }
+                    if (SolidAt(candidate, step))
+                    {
+                        across = candidate;
+                        break;
+                    }
+                }
+                if (across < 0)
+                {
+                    return edge;
+                }
+                edge = across;
+            }
         }
+        int low = Expand(peakIndex, -1);
+        int high = Expand(peakIndex, +1);
 
         return new DominantBand(gridHz[low], gridHz[high], gridHz[peakIndex]);
     }
 
+    // The widest spectral dip the dominant-band expansion steps across
+    // (interference notches); anything wider counts as the band's real edge.
+    private const double MaxBridgedGapOctaves = 0.5;
+
+    // A bridged gap must land on at least this much contiguous above-floor
+    // band on the far side.
+    private const double MinSolidLandingOctaves = 1.0 / 6.0;
+
     /// <summary>
-    /// Looks for a playback-crosstalk click in the record's head, defined by
-    /// physics rather than thresholds on raw samples: in the COMPLEMENT band
-    /// (half an octave above the dominant band's top, where the driver has
-    /// nothing to say) the first arrival must be a valley-separated island
-    /// (<see cref="TimeAlignmentAnalysisResult.StrongestPeakIsSeparateArrival"/> —
-    /// the same disjoint-event test the panel uses, sidelobe-rejected so
-    /// window pre-ring cannot masquerade as it) that PRECEDES the in-band
-    /// front. A genuine early arrival carries its out-of-band content along
-    /// with the in-band wavefront, so it reads the same time in both bands
-    /// and never trips this. Returns null when the record is full-range (no
-    /// complement to test — measured harmless on the v3 field data: engine
-    /// proposals move ≤ 0.01 ms), when the head is clean, or when the island
-    /// cannot be bounded safely away from the real sound.
+    /// Looks for a playback-crosstalk click in the record's head. The
+    /// candidate is the COMPLEMENT band's first arrival (half an octave
+    /// above the dominant band's top, where the driver has nothing to say;
+    /// sidelobe-rejected, so window pre-ring cannot masquerade as it), and
+    /// it must be a short ISLAND far ahead of the in-band front. The island
+    /// is judged on its own envelope, never against later complement
+    /// content: a click hotter than the driver's out-of-band tail — or one
+    /// that is the only complement event at all — is the MORE dangerous
+    /// artifact and must not detect worse than a faint one. The verdict is
+    /// an experiment rather than a threshold: the island is trial-removed
+    /// and the record's full-band first arrival re-read — only a jump well
+    /// past one wavefront's band-to-band dispersion convicts. A genuine
+    /// early arrival never trips this: its complement energy rises into the
+    /// room decay (no island), it sits at the front rather than in the head
+    /// (proportionality guard), and removing sound that IS the first
+    /// arrival of only one band cannot move the full-band read. Returns
+    /// null for full-range records (no complement to test — measured
+    /// harmless on the v3 field data: engine proposals move ≤ 0.01 ms) and
+    /// whenever any of the guards is not met.
     /// </summary>
     public static CrosstalkHeadGate? DetectCrosstalkHead(
         IReadOnlyList<double> impulseResponse,
@@ -199,7 +274,7 @@ public static class TransferIrDiagnostics
                 BandpassPassOctaves = Math.Log2(complementHigh / complementLow),
                 BandpassFadeOctaves = 0.25
             });
-        if (!complement.IsValid || !complement.StrongestPeakIsSeparateArrival)
+        if (!complement.IsValid)
         {
             return null;
         }
@@ -217,23 +292,21 @@ public static class TransferIrDiagnostics
             return null;
         }
 
-        int guard = (int)(sampleRate * PreFrontGuardSeconds);
+        // The candidate: the complement's first arrival, and its island end —
+        // where the complement envelope falls well below the candidate's
+        // peak and stays there, within a short cap. A genuine early front's
+        // complement energy rises into the room decay instead of dropping,
+        // so no end is found.
         int clickIndex = complement.EnvelopePeakIndex;
-        if (clickIndex + guard >= inBand.EnvelopePeakIndex ||
-            clickIndex + guard >= complement.StrongestEnvelopePeakIndex)
-        {
-            return null;
-        }
-
-        // The island's end: where the complement envelope falls well below
-        // the click's peak and stays there.
         double[] envelope = complement.EnvelopeSamples;
         double clickPeak = envelope[clickIndex];
         double islandFloor = clickPeak * Math.Pow(10, -IslandEndBelowPeakDb / 20);
         int hold = Math.Max(1, (int)(sampleRate * IslandEndHoldSeconds));
+        int islandCap = Math.Min(
+            envelope.Length, clickIndex + (int)(sampleRate * IslandCapSeconds));
         int islandEnd = -1;
         int below = 0;
-        for (int i = clickIndex; i < complement.StrongestEnvelopePeakIndex; i++)
+        for (int i = clickIndex; i < islandCap; i++)
         {
             if (envelope[i] < islandFloor)
             {
@@ -253,11 +326,46 @@ public static class TransferIrDiagnostics
         {
             return null;
         }
-
         int fade = Math.Max(1, (int)(sampleRate * FadeSeconds));
         int gateEnd = islandEnd + fade;
-        if (gateEnd + guard >= inBand.EnvelopePeakIndex ||
-            gateEnd + guard >= complement.StrongestEnvelopePeakIndex)
+
+        // Proportionality guard: the candidate must sit far ahead of the
+        // in-band front, and the gate may reach at most half-way to it. This
+        // is what protects genuine co-onset out-of-band content (its island
+        // sits AT the front, not in the head) — and it is deliberately not
+        // an onset-threshold walk, which the click's own in-band shadow and
+        // the window pre-ring ramp both poison (two field-tested failures).
+        int guard = (int)(sampleRate * PreFrontGuardSeconds);
+        if (clickIndex + guard >= inBand.EnvelopePeakIndex ||
+            gateEnd > inBand.EnvelopePeakIndex / 2)
+        {
+            return null;
+        }
+
+        // The verdict is an experiment, not a threshold: trial-remove the
+        // island and re-read the FULL-BAND first arrival. If it jumps later
+        // by more than the dispersion tolerance, the record's first arrival
+        // WAS the head burst — a disjoint event ahead of all sound, i.e.
+        // crosstalk. If the read barely moves, the burst was not driving
+        // anything (measured inert on the field data) and the record is left
+        // alone.
+        var fullBandOptions = new TimeAlignmentAnalysisOptions();
+        TimeAlignmentAnalysisResult rawFull = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, sampleRate, fullBandOptions);
+        if (!rawFull.IsValid)
+        {
+            return null;
+        }
+        var gate = new CrosstalkHeadGate(gateEnd, 0, 0);
+        double[] trialCleaned = CleanCrosstalkHead(
+            impulseResponse is double[] array ? array : [.. impulseResponse],
+            sampleRate,
+            gate);
+        TimeAlignmentAnalysisResult cleanedFull = TimeAlignmentAnalysis.Analyze(
+            trialCleaned, sampleRate, fullBandOptions);
+        if (!cleanedFull.IsValid ||
+            cleanedFull.FirstArrivalDelayMilliseconds -
+            rawFull.FirstArrivalDelayMilliseconds < FirstArrivalJumpMs)
         {
             return null;
         }
@@ -294,6 +402,28 @@ public static class TransferIrDiagnostics
         {
             clean[i] = Complex.Zero;
         }
+        int fade = Math.Max(1, (int)(sampleRate * FadeSeconds));
+        for (int i = 0; i < fade && end + i < clean.Length; i++)
+        {
+            double w = 0.5 - 0.5 * Math.Cos(Math.PI * i / fade);
+            clean[end + i] *= w;
+        }
+        return clean;
+    }
+
+    /// <summary>
+    /// The real-valued twin of the gate above, for callers holding the
+    /// transfer IR as samples (the Time Alignment panel).
+    /// </summary>
+    public static double[] CleanCrosstalkHead(
+        double[] impulseResponse,
+        int sampleRate,
+        CrosstalkHeadGate gate)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponse);
+        var clean = (double[])impulseResponse.Clone();
+        int end = Math.Min(gate.GateEndSample, clean.Length);
+        Array.Clear(clean, 0, end);
         int fade = Math.Max(1, (int)(sampleRate * FadeSeconds));
         for (int i = 0; i < fade && end + i < clean.Length; i++)
         {

@@ -158,19 +158,31 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         try
         {
+            // Crosstalk hygiene first: detection always runs on the RAW
+            // record, then the banded modes analyze the CLEANED record —
+            // the same order the Auto delay engine uses. A broadband click
+            // lands inside the analysis band and the upper-half probe
+            // alike, so analyzing the raw record could green-light
+            // ("verified") an arrival that times the click. The bypass mode
+            // keeps the raw record and flags the contamination instead.
+            CrosstalkHeadGate? mainCrosstalk = TransferIrDiagnostics.DetectCrosstalkHead(
+                mainSource.TransferImpulseResponse, mainSource.SampleRate);
+            TimeAlignmentAnalysisSource mainAnalysisSource =
+                CleanForAnalysis(mainSource, mainCrosstalk);
+
             // One options object per refresh: the Auto mode detects the band
             // from the MAIN record and the Compare measurement is analyzed
             // in the same band, so the delta column compares like with like.
             TimeAlignmentAnalysisOptions analysisOptions =
-                CreateAnalysisOptions(mainSource, wrapPeakPositions: true);
+                CreateAnalysisOptions(mainAnalysisSource, wrapPeakPositions: true);
             UpdateAutoBandLabel();
             UpdateBandpassPreview();
 
             TimeAlignmentAnalysisResult mainResult = TimeAlignmentAnalysis.Analyze(
-                mainSource.TransferImpulseResponse,
-                mainSource.SampleRate,
+                mainAnalysisSource.TransferImpulseResponse,
+                mainAnalysisSource.SampleRate,
                 analysisOptions,
-                mainSource.TransferCoherence);
+                mainAnalysisSource.TransferCoherence);
             if (!mainResult.IsValid)
             {
                 SetStatusText(
@@ -183,15 +195,16 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             }
 
             TimeAlignmentArrivalProbe? mainProbe = TimeAlignmentAnalysis.ProbeArrivalHonesty(
-                mainSource.TransferImpulseResponse,
-                mainSource.SampleRate,
+                mainAnalysisSource.TransferImpulseResponse,
+                mainAnalysisSource.SampleRate,
                 analysisOptions,
                 mainResult,
-                mainSource.TransferCoherence);
-            CrosstalkHeadGate? mainCrosstalk = DetectCrosstalk(
-                mainSource.TransferImpulseResponse, mainSource.SampleRate);
-            TimeAlignmentCompareAnalysis? compareAnalysis =
-                AnalyzeCompare(mainSource, analysisOptions, out string? compareWarning);
+                mainAnalysisSource.TransferCoherence);
+            TimeAlignmentCompareAnalysis? compareAnalysis = AnalyzeCompare(
+                mainSource,
+                analysisOptions,
+                out string? compareWarning,
+                out CrosstalkHeadGate? compareCrosstalk);
             TimeAlignmentArrivalProbe? compareProbe = compareAnalysis == null
                 ? null
                 : TimeAlignmentAnalysis.ProbeArrivalHonesty(
@@ -200,11 +213,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                     analysisOptions,
                     compareAnalysis.Value.Result,
                     compareAnalysis.Value.Source.TransferCoherence);
-            CrosstalkHeadGate? compareCrosstalk = compareAnalysis == null
-                ? null
-                : DetectCrosstalk(
-                    compareAnalysis.Value.Source.TransferImpulseResponse,
-                    compareAnalysis.Value.Source.SampleRate);
             SetMeasurementResultStatus(
                 mainSource,
                 mainResult,
@@ -226,13 +234,19 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
     }
 
-    // The crosstalk check matters exactly where nothing filters the click
-    // out: the full-band mode. In the banded modes the window either kills
-    // it (auto/manual low bands) or the driver drowns it.
-    private CrosstalkHeadGate? DetectCrosstalk(double[] impulseResponse, int sampleRate) =>
-        options.BandMode == TimeAlignmentBandMode.FullBand
-            ? TransferIrDiagnostics.DetectCrosstalkHead(impulseResponse, sampleRate)
-            : null;
+    // The banded modes analyze the record with the convicted click removed
+    // (band detection included); the bypass mode shows the record as-is and
+    // relies on the red flag instead.
+    private TimeAlignmentAnalysisSource CleanForAnalysis(
+        TimeAlignmentAnalysisSource source,
+        CrosstalkHeadGate? crosstalk) =>
+        options.BandMode != TimeAlignmentBandMode.FullBand && crosstalk is { } gate
+            ? source with
+            {
+                TransferImpulseResponse = TransferIrDiagnostics.CleanCrosstalkHead(
+                    source.TransferImpulseResponse, source.SampleRate, gate)
+            }
+            : source;
 
     private bool TryGetMainSource(
         out TimeAlignmentAnalysisSource source,
@@ -465,9 +479,11 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private TimeAlignmentCompareAnalysis? AnalyzeCompare(
         TimeAlignmentAnalysisSource mainSource,
         TimeAlignmentAnalysisOptions analysisOptions,
-        out string? warning)
+        out string? warning,
+        out CrosstalkHeadGate? crosstalk)
     {
         warning = null;
+        crosstalk = null;
         TimeAlignmentCompareMeasurement? compare = getCompareMeasurement();
         if (compare == null)
         {
@@ -494,6 +510,11 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         {
             TimeAlignmentAnalysisSource compareSource =
                 CreateCompareSource(compareValue, snapshot);
+            // The Compare record gets the same hygiene as Main: its own
+            // detection on the raw IR, cleaned analysis in the banded modes.
+            crosstalk = TransferIrDiagnostics.DetectCrosstalkHead(
+                compareSource.TransferImpulseResponse, compareSource.SampleRate);
+            compareSource = CleanForAnalysis(compareSource, crosstalk);
             TimeAlignmentAnalysisResult compareResult = TimeAlignmentAnalysis.Analyze(
                 compareSource.TransferImpulseResponse,
                 compareSource.SampleRate,
@@ -918,12 +939,23 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             return;
         }
 
+        if (options.BandMode == TimeAlignmentBandMode.FullBand)
+        {
+            // Bypass shows the record as-is, so the figures above may time
+            // the click; the banded modes analyze it removed.
+            AppendStatusText(
+                $"⚠ Playback crosstalk at {gate.BurstTimeMs:0.00} ms " +
+                $"({gate.BurstPeakDbReMax:0.0} dB re max) — an electrical copy of\r\n" +
+                "the playback, not the driver's sound; the full-band First Arrival\r\n" +
+                "may be timing it. Switch to Auto band (analyzed with it removed).\r\n",
+                UiPalette.ErrorSoft);
+            return;
+        }
+
         AppendStatusText(
             $"⚠ Playback crosstalk at {gate.BurstTimeMs:0.00} ms " +
-            $"({gate.BurstPeakDbReMax:0.0} dB re max) — an electrical copy of\r\n" +
-            "the playback, not the driver's sound; the full-band First Arrival\r\n" +
-            "may be timing it. Switch to Auto band.\r\n",
-            UiPalette.ErrorSoft);
+            $"({gate.BurstPeakDbReMax:0.0} dB re max) removed from this analysis\r\n",
+            UiPalette.WarningAmber);
     }
 
     // The auto-alignment engine's arrival honesty probe, surfaced on the
@@ -962,13 +994,18 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                     UiPalette.SuccessGreenSoft);
                 break;
             case AutoAlignmentEngine.ArrivalCertificate.Latched:
+                // The upper-half figure is DIAGNOSTIC only: it proves the
+                // full-band read is not the direct front, but it is no
+                // alignment target itself (the engine's field case: an
+                // upper-half read walked a woofer 6 ms off).
                 AppendStatusText(
                     $"MODAL LATCH — full band {result.FirstArrivalDelayMilliseconds:0.000} ms " +
                     $"vs upper half {probeValue.ProbeResult.FirstArrivalDelayMilliseconds:0.000} ms\r\n",
                     UiPalette.ErrorSoft);
                 AppendStatusText(
-                    "⚠ Not the direct front (modal build-up) — align by the " +
-                    "upper-half figure\r\n",
+                    "⚠ Not the direct front (modal build-up) — do not align " +
+                    "from this arrival;\r\nchange the analysis band or check " +
+                    "the measurement.\r\n",
                     UiPalette.ErrorSoft);
                 break;
             default:
@@ -1063,6 +1100,14 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     // honest "coarse alignment" signal rather than a trustworthy sub-sample number.
     private void AppendAlignmentConfidence(TimeAlignmentAnalysisResult result)
     {
+        // The near-noise state above already declared the figures
+        // non-evidence; a confident-looking percentage next to that verdict
+        // would read as a contradiction.
+        if (result.SignalToNoiseDecibels < AutoAlignmentEngine.MinimumArrivalSnrDb)
+        {
+            return;
+        }
+
         int percent = (int)Math.Round(
             Math.Clamp(result.FirstArrivalConfidence, 0.0, 1.0) * 100.0);
         string method = result.FirstArrivalRefinedByPhat

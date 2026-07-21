@@ -925,8 +925,27 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         AppendLevelsLine(levels);
         AppendSeparator();
         AppendDelayTable(result, reference);
-        AppendStrongestPeakHint(result);
+        if (IsArrivalRecommendable(result, honestyProbe, options.BandMode, crosstalk != null))
+        {
+            AppendStrongestPeakHint(result);
+        }
     }
+
+    // Whether the First Arrival may be RECOMMENDED as the alignment figure.
+    // The strongest-peak hint ends with "Use First Arrival for alignment",
+    // and that advice must never print next to a verdict that just
+    // disqualified the arrival: a modal latch, a near-noise record, or a
+    // full-band read over a record with detected crosstalk (the bypass mode
+    // analyzes it raw). The states are independent, so without this gate the
+    // status box could give two opposite instructions at once.
+    internal static bool IsArrivalRecommendable(
+        TimeAlignmentAnalysisResult result,
+        TimeAlignmentArrivalProbe? honestyProbe,
+        TimeAlignmentBandMode bandMode,
+        bool crosstalkDetected) =>
+        result.SignalToNoiseDecibels >= AutoAlignmentEngine.MinimumArrivalSnrDb &&
+        honestyProbe?.Certificate != AutoAlignmentEngine.ArrivalCertificate.Latched &&
+        !(bandMode == TimeAlignmentBandMode.FullBand && crosstalkDetected);
 
     // Field-proven failure (v3): an electrical copy of the playback lands at
     // a fixed early sample in every record of a session; on band-limited

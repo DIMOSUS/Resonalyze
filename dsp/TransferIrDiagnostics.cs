@@ -69,6 +69,12 @@ public static class TransferIrDiagnostics
     // a millisecond-scale event; anything longer is sound.
     private const double IslandCapSeconds = 0.010;
 
+    // How far below the in-band first-arrival peak the in-band envelope must
+    // stay over the whole gated stretch (the gate claims that stretch is
+    // pre-sound). Field margins: the click's in-band shadow reads ~-25 dB,
+    // a co-onset genuine rise ~-10 dB.
+    private const double InBandQuietBeforeGateDb = 15.0;
+
     // How much later the full-band first arrival must move after the trial
     // removal for the burst to be convicted (safely above the band-to-band
     // dispersion of one wavefront in a cabin, ~1-1.5 ms measured).
@@ -230,9 +236,12 @@ public static class TransferIrDiagnostics
     /// early arrival never trips this: its complement energy rises into the
     /// room decay (no island), it sits at the front rather than in the head
     /// (proportionality guard), and removing sound that IS the first
-    /// arrival of only one band cannot move the full-band read. Returns
-    /// null for full-range records (no complement to test — measured
-    /// harmless on the v3 field data: engine proposals move ≤ 0.01 ms) and
+    /// arrival of only one band cannot move the full-band read.
+    /// CONTRACT: this is a field-calibrated detector for BAND-LIMITED
+    /// records, not a universal crosstalk detector — a full-range record
+    /// offers no complement band to test and is always returned untouched
+    /// (null), even if its head carries a click (measured inert on the v3
+    /// field data: engine proposals move ≤ 0.01 ms). Null likewise
     /// whenever any of the guards is not met.
     /// </summary>
     public static CrosstalkHeadGate? DetectCrosstalkHead(
@@ -330,16 +339,37 @@ public static class TransferIrDiagnostics
         int gateEnd = islandEnd + fade;
 
         // Proportionality guard: the candidate must sit far ahead of the
-        // in-band front, and the gate may reach at most half-way to it. This
-        // is what protects genuine co-onset out-of-band content (its island
-        // sits AT the front, not in the head) — and it is deliberately not
-        // an onset-threshold walk, which the click's own in-band shadow and
-        // the window pre-ring ramp both poison (two field-tested failures).
+        // in-band front, and the gate may reach at most half-way from the
+        // candidate to it (midpoint, so an artifact that does not sit near
+        // sample zero is not penalized). This is what protects genuine
+        // co-onset out-of-band content (its island sits AT the front, not in
+        // the head) — and it is deliberately not an onset-threshold walk,
+        // which the click's own in-band shadow and the window pre-ring ramp
+        // both poison (two field-tested failures).
         int guard = (int)(sampleRate * PreFrontGuardSeconds);
         if (clickIndex + guard >= inBand.EnvelopePeakIndex ||
-            gateEnd > inBand.EnvelopePeakIndex / 2)
+            gateEnd > clickIndex + (inBand.EnvelopePeakIndex - clickIndex) / 2)
         {
             return null;
+        }
+
+        // The gate's own claim is "everything before it is pre-sound": the
+        // IN-BAND envelope must stay far below its first-arrival peak over
+        // the whole gated stretch. This is what refuses a co-onset genuine
+        // event (a driver's out-of-band burst travelling WITH a front whose
+        // envelope peaks much later) — there the in-band envelope is already
+        // rising where the island ends. The click's own in-band shadow sits
+        // ~25 dB down on the field records and clears the ceiling.
+        double[] inBandEnvelope = inBand.EnvelopeSamples;
+        double inBandFirstPeak = inBandEnvelope[inBand.EnvelopePeakIndex];
+        double quietCeiling =
+            inBandFirstPeak * Math.Pow(10, -InBandQuietBeforeGateDb / 20);
+        for (int i = 0; i < gateEnd && i < inBandEnvelope.Length; i++)
+        {
+            if (inBandEnvelope[i] > quietCeiling)
+            {
+                return null;
+            }
         }
 
         // The verdict is an experiment, not a threshold: trial-remove the

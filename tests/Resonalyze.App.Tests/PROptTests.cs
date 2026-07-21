@@ -33,6 +33,9 @@ public sealed class PROptTests
             PhaseWindowMode = PhaseWindowMode.FrequencyDependent,
             PhaseFdwCycles = 4,
             PhaseDetrendMode = PhaseDetrendMode.Manual,
+            // The test pins the gate manually; the Auto default would re-snap
+            // the offset to the estimated IR start and shift the τ estimates.
+            PhaseGateAutoFit = false,
             PhaseGateOffsetMs = directSample * 1_000.0 / sampleRate,
             PhaseLeftMs = 1.0,
             PhasePlateauMs = 4.0,

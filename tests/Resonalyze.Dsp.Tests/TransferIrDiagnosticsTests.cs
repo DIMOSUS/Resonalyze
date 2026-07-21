@@ -188,6 +188,75 @@ public sealed class TransferIrDiagnosticsTests
         Assert.Null(TransferIrDiagnostics.DetectCrosstalkHead(impulseResponse, SampleRate));
     }
 
+    [Theory]
+    [InlineData(0.09)]
+    [InlineData(0.15)]
+    public void EstimateIrStart_LandsOnTheFrontDespiteTheHeadClick(
+        double clickAmplitude)
+    {
+        // The field failure the estimator exists for: the broadband click at
+        // sample 30 IS the full-band first arrival, but carries no energy
+        // inside the driver's 300 Hz band — the in-band read must walk the
+        // genuine front at 40 ms instead, at both field click levels.
+        double[] impulseResponse = CrosstalkRecord(clickAmplitude);
+
+        IrStartEstimate? start = TransferIrDiagnostics.EstimateIrStart(
+            impulseResponse, SampleRate);
+
+        Assert.NotNull(start);
+        Assert.True(start.Value.DominantBandLimited);
+        // On the front's rise (40 ms + a fraction of the 100 ms Hann rise),
+        // far past the click at 0.6 ms.
+        Assert.InRange(start.Value.StartMs, 40.0, 65.0);
+        Assert.True(start.Value.EarlyMs <= start.Value.StartMs);
+        Assert.True(start.Value.StartMs <= start.Value.LateMs);
+    }
+
+    [Fact]
+    public void EstimateIrStart_ReadsASharpBroadbandFrontTightly()
+    {
+        var impulseResponse = new double[32_768];
+        int front = SampleRate * 20 / 1000;
+        impulseResponse[front] = 1.0;
+
+        IrStartEstimate? start = TransferIrDiagnostics.EstimateIrStart(
+            impulseResponse, SampleRate);
+
+        Assert.NotNull(start);
+        // A delta's envelope rises within the Hilbert skirt: the crossing
+        // sits within a fraction of a millisecond of the front, and the
+        // 10-vs-50 % spread stays tight.
+        Assert.InRange(start.Value.StartMs, 19.5, 20.05);
+        Assert.InRange(
+            start.Value.LateMs - start.Value.EarlyMs, 0.0, 0.5);
+    }
+
+    [Fact]
+    public void EstimateIrStart_ComplexOverloadMatchesTheRealOne()
+    {
+        double[] impulseResponse = CrosstalkRecord(clickAmplitude: 0.09);
+        var complexIr = Array.ConvertAll(
+            impulseResponse, v => new System.Numerics.Complex(v, 0.0));
+
+        IrStartEstimate? fromReal = TransferIrDiagnostics.EstimateIrStart(
+            impulseResponse, SampleRate);
+        IrStartEstimate? fromComplex = TransferIrDiagnostics.EstimateIrStart(
+            complexIr, SampleRate);
+
+        Assert.Equal(fromReal, fromComplex);
+    }
+
+    [Fact]
+    public void EstimateIrStart_RefusesSilenceAndDegenerateInput()
+    {
+        Assert.Null(TransferIrDiagnostics.EstimateIrStart(
+            new double[16_384], SampleRate));
+        Assert.Null(TransferIrDiagnostics.EstimateIrStart(
+            Array.Empty<double>(), SampleRate));
+        Assert.Null(TransferIrDiagnostics.EstimateIrStart(
+            new double[] { 1.0 }, sampleRate: 0));
+    }
+
     [Fact]
     public void CleanCrosstalkHead_ZerosTheHeadAndKeepsTheRest()
     {

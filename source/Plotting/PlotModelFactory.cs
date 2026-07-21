@@ -314,6 +314,16 @@ internal sealed class PlotModelFactory
             IImpulseMeasurement primaryMeasurement =
                 measurementContext.CreatePrimaryMeasurement();
             var compare = TryCreateCompareMeasurement();
+            // Auto gate: re-snap the offset to the current measurement's IR
+            // start before reading the settings, so a fresh measurement is
+            // gated correctly even while the options dialog is closed. The
+            // options object is updated (not just a local copy) so the dialog
+            // and the persisted settings show the value the plot used.
+            if (phaseResponseOptions.PhaseGateAutoFit &&
+                measurementContext.ResolveAutoGateOffsetMs() is { } phaseStartMs)
+            {
+                phaseResponseOptions.PhaseGateOffsetMs = phaseStartMs;
+            }
             PhaseAnalysisSettings phaseSettings =
                 phaseResponseOptions.CreatePhaseAnalysisSettings();
             if (phaseSettings.DetrendMode == PhaseDetrendMode.Auto && compare != null)
@@ -504,6 +514,13 @@ internal sealed class PlotModelFactory
             (groupDelayVisibility.ShowGroupDelay || groupDelayVisibility.ShowCoherence))
         {
             const string groupDelayTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.000} ms";
+            // Auto gate: same contract as the phase plot — re-snap the offset
+            // to the current measurement's IR start in the shared options.
+            if (groupDelayOptions.GroupDelayGateAutoFit &&
+                measurementContext.ResolveAutoGateOffsetMs() is { } gdStartMs)
+            {
+                groupDelayOptions.GroupDelayGateOffsetMs = gdStartMs;
+            }
             if (groupDelayVisibility.ShowGroupDelay)
             {
                 // The gate is positioned by its Gate offset (left-shoulder-end) within the

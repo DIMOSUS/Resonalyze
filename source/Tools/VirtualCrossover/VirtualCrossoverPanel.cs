@@ -3021,10 +3021,9 @@ public partial class VirtualCrossoverPanel : UserControl
         // One shared absolute reference (the earliest arrival) keeps the curves'
         // relative phase intact — that relative alignment through the crossover
         // region is exactly what this view is for.
-        int reference = processed.Min(item => item.PeakIndex);
         int sampleRate = processed[0].Channel.SampleRate;
         double gateOffsetMs = gatePreview?.OffsetMs
-            ?? ResolveGateOffsetMs(reference, sampleRate);
+            ?? ResolveGateOffsetMs(processed, sampleRate);
         double detrendMs = ResolveCommonDetrendMs(processed, gateOffsetMs, sampleRate);
 
         // Read the gate and project state ONCE, here on the UI thread: every curve gets
@@ -3088,10 +3087,9 @@ public partial class VirtualCrossoverPanel : UserControl
             return null;
         }
 
-        int reference = shown.Min(item => item.PeakIndex);
         int sampleRate = shown[0].Channel.SampleRate;
         double gateOffsetMs = gatePreview?.OffsetMs
-            ?? ResolveGateOffsetMs(reference, sampleRate);
+            ?? ResolveGateOffsetMs(shown, sampleRate);
 
         var traces = shown
             .Select(item => new IrPreviewTrace(
@@ -3115,11 +3113,23 @@ public partial class VirtualCrossoverPanel : UserControl
     private VirtualCrossoverPhaseGateSettings ActiveGate =>
         project.PhaseGateFor(project.ActiveSideRight);
 
-    // A stored gate offset is used as-is; an unconfigured side follows the
-    // earliest processed arrival, so the gate tracks source and delay changes
-    // until the user pins it in the gate dialog.
-    private double ResolveGateOffsetMs(int referenceSample, int sampleRate) =>
-        ActiveGate.OffsetMs ?? referenceSample * 1_000.0 / sampleRate;
+    // A stored gate offset is used as-is; an unconfigured side (Auto) follows
+    // the earliest ESTIMATED IR START of the processed channels — the
+    // band-limited first-arrival front, robust to head garbage that poisons a
+    // bare peak read — so the gate tracks source and delay changes until the
+    // user pins it in the gate dialog.
+    private double ResolveGateOffsetMs(
+        IReadOnlyList<ProcessedChannel> processed,
+        int sampleRate) =>
+        ActiveGate.OffsetMs ?? EarliestStartMs(processed, sampleRate);
+
+    // The Auto gate anchor: the earliest estimated IR start across the
+    // processed channels (memoized per IR in TransferIrStartCache).
+    private static double EarliestStartMs(
+        IReadOnlyList<ProcessedChannel> processed,
+        int sampleRate) =>
+        processed.Min(item => TransferIrStartCache.ResolveStartMs(
+            item.ImpulseResponse, sampleRate, item.PeakIndex));
 
     // The τ detrend follows the same pattern: unconfigured projects reference
     // the earliest arrival. One τ serves every curve, so their relative phase —
@@ -3231,7 +3241,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         int sampleRate = processed[0].Channel.SampleRate;
         int reference = processed.Min(item => item.PeakIndex);
-        double fitOffsetMs = reference * 1_000.0 / sampleRate;
+        double fitOffsetMs = EarliestStartMs(processed, sampleRate);
 
         var traces = processed
             .Select(item => new IrPreviewTrace(
@@ -3244,7 +3254,7 @@ public partial class VirtualCrossoverPanel : UserControl
         dialog.Init(
             traces,
             sampleRate,
-            ResolveGateOffsetMs(reference, sampleRate),
+            ResolveGateOffsetMs(processed, sampleRate),
             project.PhaseGateLeftMs,
             project.PhaseGatePlateauMs,
             project.PhaseGateRightMs,
@@ -3252,7 +3262,8 @@ public partial class VirtualCrossoverPanel : UserControl
             project.PhaseWindowMode,
             project.PhaseFdwCycles,
             project.PhaseDetrendMode,
-            fitOffsetMs);
+            fitOffsetMs,
+            autoOffset: ActiveGate.OffsetMs == null);
         // The callback is wired after Init so seeding the controls does not
         // trigger a redundant redraw; from here every dialog change repaints the
         // phase plot immediately.
@@ -3272,7 +3283,9 @@ public partial class VirtualCrossoverPanel : UserControl
                 // lengths and the analysis modes are project-wide, so both sides keep
                 // reading the phase at the same resolution and by the same method.
                 VirtualCrossoverPhaseGateSettings gate = ActiveGate;
-                gate.OffsetMs = dialog.GateOffsetMs;
+                // Auto pressed = unpinned: store null so this side's gate
+                // keeps following the earliest estimated channel IR start.
+                gate.OffsetMs = dialog.AutoOffset ? null : dialog.GateOffsetMs;
                 gate.DetrendMs = dialog.DetrendMs;
                 project.PhaseGateLeftMs = dialog.LeftMs;
                 project.PhaseGatePlateauMs = dialog.PlateauMs;

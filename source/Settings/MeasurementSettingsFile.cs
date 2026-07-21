@@ -403,6 +403,7 @@ internal sealed class MeasurementSettingsFile
         public bool ShowThdPlusNoise { get; set; } = true;
         public bool ShowNoiseFloor { get; set; } = true;
         public bool ShowGroupDelay { get; set; } = true;
+        public bool PhaseGateAutoFit { get; set; } = true;
         public double PhaseGateOffsetMs { get; set; } = FrequencyResponseOptions.DefaultPhaseGateOffsetMs;
         public double PhaseLeftMs { get; set; } = FrequencyResponseOptions.DefaultPhaseLeftMs;
         public double PhasePlateauMs { get; set; } = FrequencyResponseOptions.DefaultPhasePlateauMs;
@@ -413,6 +414,7 @@ internal sealed class MeasurementSettingsFile
         public int PhaseFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
         public PhaseDetrendMode? PhaseDetrendMode { get; set; } =
             Resonalyze.Dsp.PhaseDetrendMode.Auto;
+        public bool GroupDelayGateAutoFit { get; set; } = true;
         public double GroupDelayGateOffsetMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayGateOffsetMs;
         public double GroupDelayLeftMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayLeftMs;
         public double GroupDelayPlateauMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayPlateauMs;
@@ -443,6 +445,7 @@ internal sealed class MeasurementSettingsFile
                 ShowThdPlusNoise = visibility.ShowThdPlusNoise,
                 ShowNoiseFloor = visibility.ShowNoiseFloor,
                 ShowGroupDelay = visibility.ShowGroupDelay,
+                PhaseGateAutoFit = options.PhaseGateAutoFit,
                 PhaseGateOffsetMs = options.PhaseGateOffsetMs,
                 PhaseLeftMs = options.PhaseLeftMs,
                 PhasePlateauMs = options.PhasePlateauMs,
@@ -451,6 +454,7 @@ internal sealed class MeasurementSettingsFile
                 PhaseWindowMode = options.PhaseWindowMode,
                 PhaseFdwCycles = options.PhaseFdwCycles,
                 PhaseDetrendMode = options.PhaseDetrendMode,
+                GroupDelayGateAutoFit = options.GroupDelayGateAutoFit,
                 GroupDelayGateOffsetMs = options.GroupDelayGateOffsetMs,
                 GroupDelayLeftMs = options.GroupDelayLeftMs,
                 GroupDelayPlateauMs = options.GroupDelayPlateauMs,
@@ -484,6 +488,7 @@ internal sealed class MeasurementSettingsFile
             visibility.ShowThdPlusNoise = ShowThdPlusNoise;
             visibility.ShowNoiseFloor = ShowNoiseFloor;
             visibility.ShowGroupDelay = ShowGroupDelay;
+            options.PhaseGateAutoFit = PhaseGateAutoFit;
             options.PhaseGateOffsetMs = ClampMilliseconds(PhaseGateOffsetMs, 0.0, 2000.0);
             options.PhaseLeftMs = ClampMilliseconds(PhaseLeftMs, 0.0, 1000.0);
             options.PhasePlateauMs = ClampMilliseconds(PhasePlateauMs, 0.0, 1000.0);
@@ -502,6 +507,7 @@ internal sealed class MeasurementSettingsFile
                 Enum.IsDefined(detrendMode)
                     ? detrendMode
                     : Resonalyze.Dsp.PhaseDetrendMode.Manual;
+            options.GroupDelayGateAutoFit = GroupDelayGateAutoFit;
             options.GroupDelayGateOffsetMs = ClampMilliseconds(GroupDelayGateOffsetMs, 0.0, 2000.0);
             options.GroupDelayLeftMs = ClampMilliseconds(GroupDelayLeftMs, 0.0, 1000.0);
             options.GroupDelayPlateauMs = ClampMilliseconds(GroupDelayPlateauMs, 0.0, 1000.0);

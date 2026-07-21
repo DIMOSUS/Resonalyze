@@ -37,6 +37,14 @@ internal sealed class MeasurementPlotContext
         expSweepMeasurement.TransferImpulseResponse is { Length: > 0 };
 
     /// <summary>
+    /// The estimated honest start of the transfer IR (ms) for the Auto gate
+    /// offset; null without a transfer IR. Memoized per IR in
+    /// <see cref="TransferIrStartCache"/>, shared with the options dialogs.
+    /// </summary>
+    public double? ResolveAutoGateOffsetMs() =>
+        TransferIrStartCache.ResolveStartMs(expSweepMeasurement);
+
+    /// <summary>
     /// The offset K that turns the loopback-referenced magnitude (dBr) into dB SPL:
     /// <c>K = loopbackPeakDbFs + calibrationOffsetDb</c>. Null when SPL cannot be
     /// shown — no calibration, no captured loopback level, or a calibration that does

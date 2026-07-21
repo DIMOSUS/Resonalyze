@@ -43,9 +43,10 @@ plots and concrete DSP settings: crossover corners, per-driver delays,
 polarity, and PEQ. The same toolset measures rooms, home loudspeakers,
 headphones, microphones, and complete signal paths.
 
-Where general-purpose analyzers stop at showing you the curves, Resonalyze
-carries the workflow to its conclusion: **Auto delay** and **Auto crossover**
-search the actual settings, and every automatic result comes with an honest
+Resonalyze's center of gravity is the step most measurement workflows leave
+to you: turning a set of per-driver measurements into one coherent system.
+**Auto delay** and **Auto crossover** search the actual settings against the
+phase-aware predicted sum, and every automatic result comes with an honest
 verdict — the engine reports *why* it trusts an arrival, and refuses loudly
 instead of fabricating a number when the measurement cannot support one.
 
@@ -98,6 +99,103 @@ result with fewer blind tuning passes.
     </td>
   </tr>
 </table>
+
+## Why Resonalyze?
+
+If you already use tools like REW, OpenSoundMeter, or Smaart, the obvious
+question is: why install another analyzer?
+
+The short answer: those are broad measurement toolboxes; Resonalyze is a
+focused, end-to-end tuning workflow for **active multi-way systems**. It is
+not that the classics lack EQ or alignment features — REW's alignment tool
+sums a pair of measurements, and its EQ module corrects a response. Resonalyze
+operates one level up: separate per-driver measurements on one absolute time
+base, complete virtual DSP chains, a phase-aware sum of the whole system, and
+optimizers that work every crossover junction and both stereo sides at once.
+Its home turf is the car, where every driver sits at a different distance,
+doors leak and resonate, and the "room" fights back — and its output is not
+just a plot but the DSP settings themselves:
+
+- **Built for multi-way active systems**
+  Measure each driver separately, then design the whole system virtually:
+  crossover corners, slopes and filter families, per-driver delay and polarity,
+  all-pass stages, and PEQ — tuned against the phase-aware predicted sum, and
+  only then written into the hardware DSP. **Auto crossover** and **Auto
+  delay** search these settings automatically, across both stereo sides in one
+  run.
+- **Honest automation**
+  An automatic tuner that guesses is worse than none. Resonalyze's engines
+  certify their evidence: arrival estimates carry confidence and verdicts,
+  modal build-up latches are detected and flagged instead of aligned to,
+  playback-crosstalk contamination is detected and removed from the analysis,
+  and when a measurement cannot support a decision the engine says so out loud
+  instead of returning a plausible-looking number.
+- **Loopback-referenced timing**
+  Measurements can use a recorded loopback channel as the time reference, so
+  delay and transfer-function analysis are tied to the actual playback path
+  instead of to guesswork.
+- **Repeatable, confidence-scored measurements**
+  Average up to 64 sweeps into one cross-spectrum transfer estimate to pull the
+  response out of the noise, and read a per-frequency **coherence** (γ²) curve
+  that flags exactly which bands are trustworthy. An optional
+  confirm-between-runs pause turns the same path into spatial averaging across
+  microphone positions.
+- **Absolute, calibrated levels**
+  Calibrate the microphone against an acoustic 1 kHz calibrator and read the
+  Frequency Response and the live RTA in real **dB SPL**, not just relative dB. The
+  anchor is stored as its ingredients and re-validated against every measurement,
+  so a reading is shown as absolute only when it is genuinely backed — otherwise
+  the plot falls back to relative dB and says so.
+- **Crossover summation prediction**
+  Measure each driver once, then virtually align, combine, and optimize your
+  loudspeaker system before applying a single change to the DSP.
+  Because every measurement carries a loopback transfer IR, Resonalyze can
+  compute the true **complex (vector) sum** of two measurements — `Main ⊕
+  Compare` — summing their impulse responses sample-by-sample so relative delay,
+  polarity, and phase are all accounted for. That predicts how two drivers (or
+  the two sides of a crossover) actually combine, which arithmetic on dB curves
+  cannot. Compare-side **delay** and **polarity** controls let you tune the
+  alignment live, and a companion **sum-loss** curve shows exactly how many dB
+  the real phase-aware sum falls short of a phase-blind magnitude addition — a
+  direct read-out of the summation loss you are dialing out. The **Virtual
+  DSP** tool takes this to its conclusion: complete virtual DSP chains
+  (gain, delay, polarity, crossover filters, all-pass, PEQ) per driver, tuned against the
+  live predicted sum before a single setting is applied to the hardware. Two
+  auto-fit modes do the tedious part: an **Auto crossover** optimizer searches
+  the crossover frequencies, filter families, slopes, and cut-only gains that
+  flatten the summed magnitude (favoring tight, minimally overlapping splits),
+  and **Auto delay** aligns each junction's delay and polarity against the
+  phase-aware sum — across both stereo sides in one run, holding a
+  configurable L/R scene offset between the sides.
+- **Practical loudspeaker alignment**
+  Time Alignment reports first arrival and strongest peak, each refined to
+  sub-sample precision by a GCC-PHAT cross-correlation, plus distance at 20 °C,
+  confidence, signal levels, and a visible envelope around the detected arrival.
+- **Fast compare-and-adjust work**
+  Persistent overlays, calculated overlays, target curves, and on-plot labels
+  make it quick to compare measurements, tuning passes, channels, listening
+  positions, or before/after changes.
+- **Live transfer-function analysis**
+  Live Spectrum drives the system with a selectable excitation signal — including
+  a leakage-free periodic pink noise — and uses a loopback reference, coherence,
+  overlap, averaging, peak hold, and overload detection to show the driven
+  response rather than only the raw microphone spectrum.
+- **Measurement history as a working shelf**
+  Recent captures stay available in memory, saved files are remembered across
+  launches, and each entry has a frequency-response preview. Entries also
+  remember their full working state — active mode, per-mode settings, and shown
+  overlays — so switching between measurements restores the whole context, and a
+  one-click reset starts a fresh session from defaults.
+- **Developer-friendly, inspectable data**
+  IR files, overlays, settings, and history metadata are stored as readable
+  JSON where practical, making measurements easy to archive, diff, and debug.
+
+Resonalyze does not try to be every acoustic tool at once. Its sweet spot is
+measurement-driven multi-way tuning — above all in the car — where timing,
+repeatability, quick comparison, and transparent data matter more than a large
+legacy feature set. For room EQ at home, REW remains excellent; when the
+question is *"what delays, crossovers, and polarities do I put into this
+six-channel DSP"*, that is what Resonalyze is for.
 
 ## Demo
 
@@ -204,98 +302,6 @@ file is provided with every release.
 - Docked, non-modal settings panels with live previews and instant graph
   updates
 - Auto-update support for installed builds through a signed NetSparkle appcast
-
-## Why Resonalyze?
-
-If you already use tools like REW, OpenSoundMeter, or Smaart, the obvious
-question is: why install another analyzer?
-
-The short answer: those tools show you measurements; Resonalyze is built to
-**finish the tune**. Its home turf is the fully active multi-way system —
-typically in a car, where every driver sits at a different distance, doors leak
-and resonate, and the "room" fights back — and its output is not just a plot
-but the DSP settings themselves:
-
-- **Built for multi-way active systems**
-  Measure each driver separately, then design the whole system virtually:
-  crossover corners, slopes and filter families, per-driver delay and polarity,
-  all-pass stages, and PEQ — tuned against the phase-aware predicted sum, and
-  only then written into the hardware DSP. **Auto crossover** and **Auto
-  delay** search these settings automatically, across both stereo sides in one
-  run.
-- **Honest automation**
-  An automatic tuner that guesses is worse than none. Resonalyze's engines
-  certify their evidence: arrival estimates carry confidence and verdicts,
-  modal build-up latches are detected and flagged instead of aligned to,
-  playback-crosstalk contamination is detected and removed from the analysis,
-  and when a measurement cannot support a decision the engine says so out loud
-  instead of returning a plausible-looking number.
-- **Loopback-referenced timing**
-  Measurements can use a recorded loopback channel as the time reference, so
-  delay and transfer-function analysis are tied to the actual playback path
-  instead of to guesswork.
-- **Repeatable, confidence-scored measurements**
-  Average up to 64 sweeps into one cross-spectrum transfer estimate to pull the
-  response out of the noise, and read a per-frequency **coherence** (γ²) curve
-  that flags exactly which bands are trustworthy. An optional
-  confirm-between-runs pause turns the same path into spatial averaging across
-  microphone positions.
-- **Absolute, calibrated levels**
-  Calibrate the microphone against an acoustic 1 kHz calibrator and read the
-  Frequency Response and the live RTA in real **dB SPL**, not just relative dB. The
-  anchor is stored as its ingredients and re-validated against every measurement,
-  so a reading is shown as absolute only when it is genuinely backed — otherwise
-  the plot falls back to relative dB and says so.
-- **Crossover summation prediction**
-  Measure each driver once, then virtually align, combine, and optimize your
-  loudspeaker system before applying a single change to the DSP.
-  Because every measurement carries a loopback transfer IR, Resonalyze can
-  compute the true **complex (vector) sum** of two measurements — `Main ⊕
-  Compare` — summing their impulse responses sample-by-sample so relative delay,
-  polarity, and phase are all accounted for. That predicts how two drivers (or
-  the two sides of a crossover) actually combine, which arithmetic on dB curves
-  cannot. Compare-side **delay** and **polarity** controls let you tune the
-  alignment live, and a companion **sum-loss** curve shows exactly how many dB
-  the real phase-aware sum falls short of a phase-blind magnitude addition — a
-  direct read-out of the summation loss you are dialing out. The **Virtual
-  DSP** tool takes this to its conclusion: complete virtual DSP chains
-  (gain, delay, polarity, crossover filters, all-pass, PEQ) per driver, tuned against the
-  live predicted sum before a single setting is applied to the hardware. Two
-  auto-fit modes do the tedious part: an **Auto crossover** optimizer searches
-  the crossover frequencies, filter families, slopes, and cut-only gains that
-  flatten the summed magnitude (favoring tight, minimally overlapping splits),
-  and **Auto delay** aligns each junction's delay and polarity against the
-  phase-aware sum — across both stereo sides in one run, holding a
-  configurable L/R scene offset between the sides.
-- **Practical loudspeaker alignment**
-  Time Alignment reports first arrival and strongest peak, each refined to
-  sub-sample precision by a GCC-PHAT cross-correlation, plus distance at 20 °C,
-  confidence, signal levels, and a visible envelope around the detected arrival.
-- **Fast compare-and-adjust work**
-  Persistent overlays, calculated overlays, target curves, and on-plot labels
-  make it quick to compare measurements, tuning passes, channels, listening
-  positions, or before/after changes.
-- **Live transfer-function analysis**
-  Live Spectrum drives the system with a selectable excitation signal — including
-  a leakage-free periodic pink noise — and uses a loopback reference, coherence,
-  overlap, averaging, peak hold, and overload detection to show the driven
-  response rather than only the raw microphone spectrum.
-- **Measurement history as a working shelf**
-  Recent captures stay available in memory, saved files are remembered across
-  launches, and each entry has a frequency-response preview. Entries also
-  remember their full working state — active mode, per-mode settings, and shown
-  overlays — so switching between measurements restores the whole context, and a
-  one-click reset starts a fresh session from defaults.
-- **Developer-friendly, inspectable data**
-  IR files, overlays, settings, and history metadata are stored as readable
-  JSON where practical, making measurements easy to archive, diff, and debug.
-
-Resonalyze does not try to be every acoustic tool at once. Its sweet spot is
-measurement-driven multi-way tuning — above all in the car — where timing,
-repeatability, quick comparison, and transparent data matter more than a large
-legacy feature set. For room EQ at home, REW remains excellent; when the
-question is *"what delays, crossovers, and polarities do I put into this
-six-channel DSP"*, that is what Resonalyze is for.
 
 ## Gallery
 

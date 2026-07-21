@@ -434,10 +434,13 @@ Then, in about ten minutes:
    under test unmuted).
 2. Start Resonalyze, open the measurement settings, select the interface, and
    assign the **input** and **loopback** channels. The measurement will not
-   start without a loopback — that is by design.
+   start without a loopback — that is by design. Set **Measurements** to at
+   least `4`: the sweeps are averaged into one cross-spectrum estimate, which
+   lifts the response out of the cabin's noise floor and produces the
+   per-frequency coherence curve that tells you which bands to trust.
 3. Turn the playback level well down, place the mic at the listening position,
-   and run a sweep. Watch the input level meter for microphone level, loopback
-   presence, and headroom.
+   and run the sweeps. Watch the input level meter for microphone level,
+   loopback presence, and headroom.
 4. Explore the views: Frequency Response, Time Alignment (arrival, delay,
    distance), Phase, Impulse. **Save** the impulse response — saved
    measurements are the raw material for everything else.

@@ -13,7 +13,13 @@ public partial class TimeAlignmentPanel : UserControl
 
     internal Label CompareLabel => compareLabel;
 
-    internal CheckBox BandpassCheckBox => bandpassCheckBox;
+    internal RadioButton BandModeFullRadio => bandModeFullRadio;
+
+    internal RadioButton BandModeAutoRadio => bandModeAutoRadio;
+
+    internal RadioButton BandModeManualRadio => bandModeManualRadio;
+
+    internal Label AutoBandLabel => autoBandLabel;
 
     internal DarkNumericUpDown BandpassCenterNumeric => bandpassCenterNumeric;
 

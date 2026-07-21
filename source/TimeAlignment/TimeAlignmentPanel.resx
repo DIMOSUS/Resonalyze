@@ -122,7 +122,7 @@
 Measures arrival time from the currently active loopback-based measurement record.
 
 How it works
-Resonalyze analyzes the active transfer IR immediately, optionally applies a bandpass window, then reports both First Arrival and Strongest Peak.
+Resonalyze analyzes the active transfer IR immediately — full band, auto-banded to the driver's own response, or through a manual bandpass window — then reports both First Arrival and Strongest Peak.
 
 Source selection
 This mode requires a transfer IR recorded with loopback enabled.</value>

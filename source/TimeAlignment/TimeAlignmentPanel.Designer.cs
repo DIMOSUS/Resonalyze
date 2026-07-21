@@ -32,7 +32,10 @@ namespace Resonalyze
             var resources = new System.ComponentModel.ComponentResourceManager(typeof(TimeAlignmentPanel));
             helpLabel = new Label();
             sourceSummaryLabel = new Label();
-            bandpassCheckBox = new CheckBox();
+            bandModeFullRadio = new RadioButton();
+            bandModeAutoRadio = new RadioButton();
+            autoBandLabel = new Label();
+            bandModeManualRadio = new RadioButton();
             bandpassCenterLabel = new Label();
             bandpassCenterNumeric = new DarkNumericUpDown();
             bandpassPassOctavesLabel = new Label();
@@ -66,27 +69,63 @@ namespace Resonalyze
             sourceSummaryLabel.Size = new Size(500, 20);
             sourceSummaryLabel.TabIndex = 3;
             sourceSummaryLabel.Text = "Source: waiting for an impulse response.";
-            // 
-            // bandpassCheckBox
-            // 
-            bandpassCheckBox.AutoSize = true;
-            bandpassCheckBox.BackColor = Color.Transparent;
-            bandpassCheckBox.ForeColor = Color.FromArgb(210, 214, 222);
-            bandpassCheckBox.Location = new Point(18, 242);
-            bandpassCheckBox.Name = "bandpassCheckBox";
-            bandpassCheckBox.Size = new Size(143, 19);
-            bandpassCheckBox.TabIndex = 4;
-            bandpassCheckBox.Text = "Use bandpass window";
-            bandpassCheckBox.UseVisualStyleBackColor = false;
-            // 
+            //
+            // bandModeFullRadio
+            //
+            bandModeFullRadio.AutoSize = true;
+            bandModeFullRadio.BackColor = Color.Transparent;
+            bandModeFullRadio.ForeColor = Color.FromArgb(210, 214, 222);
+            bandModeFullRadio.Location = new Point(18, 234);
+            bandModeFullRadio.Name = "bandModeFullRadio";
+            bandModeFullRadio.Size = new Size(129, 19);
+            bandModeFullRadio.TabIndex = 4;
+            bandModeFullRadio.TabStop = true;
+            bandModeFullRadio.Text = "Full band (bypass)";
+            bandModeFullRadio.UseVisualStyleBackColor = false;
+            //
+            // bandModeAutoRadio
+            //
+            bandModeAutoRadio.AutoSize = true;
+            bandModeAutoRadio.BackColor = Color.Transparent;
+            bandModeAutoRadio.ForeColor = Color.FromArgb(210, 214, 222);
+            bandModeAutoRadio.Location = new Point(18, 256);
+            bandModeAutoRadio.Name = "bandModeAutoRadio";
+            bandModeAutoRadio.Size = new Size(233, 19);
+            bandModeAutoRadio.TabIndex = 5;
+            bandModeAutoRadio.TabStop = true;
+            bandModeAutoRadio.Text = "Auto band from the driver's response";
+            bandModeAutoRadio.UseVisualStyleBackColor = false;
+            //
+            // autoBandLabel
+            //
+            autoBandLabel.ForeColor = Color.FromArgb(150, 156, 168);
+            autoBandLabel.Location = new Point(38, 277);
+            autoBandLabel.Name = "autoBandLabel";
+            autoBandLabel.Size = new Size(280, 15);
+            autoBandLabel.TabIndex = 15;
+            autoBandLabel.Text = "-";
+            //
+            // bandModeManualRadio
+            //
+            bandModeManualRadio.AutoSize = true;
+            bandModeManualRadio.BackColor = Color.Transparent;
+            bandModeManualRadio.ForeColor = Color.FromArgb(210, 214, 222);
+            bandModeManualRadio.Location = new Point(18, 298);
+            bandModeManualRadio.Name = "bandModeManualRadio";
+            bandModeManualRadio.Size = new Size(165, 19);
+            bandModeManualRadio.TabIndex = 6;
+            bandModeManualRadio.TabStop = true;
+            bandModeManualRadio.Text = "Manual bandpass window";
+            bandModeManualRadio.UseVisualStyleBackColor = false;
+            //
             // bandpassCenterLabel
-            // 
+            //
             bandpassCenterLabel.AutoSize = true;
             bandpassCenterLabel.ForeColor = Color.FromArgb(210, 214, 222);
-            bandpassCenterLabel.Location = new Point(18, 276);
+            bandpassCenterLabel.Location = new Point(18, 330);
             bandpassCenterLabel.Name = "bandpassCenterLabel";
             bandpassCenterLabel.Size = new Size(118, 15);
-            bandpassCenterLabel.TabIndex = 5;
+            bandpassCenterLabel.TabIndex = 7;
             bandpassCenterLabel.Text = "Center frequency, Hz";
             // 
             // bandpassCenterNumeric
@@ -95,7 +134,7 @@ namespace Resonalyze
             bandpassCenterNumeric.DecimalPlaces = 0;
             bandpassCenterNumeric.ForeColor = Color.White;
             bandpassCenterNumeric.Increment = new decimal(new int[] { 10, 0, 0, 0 });
-            bandpassCenterNumeric.Location = new Point(180, 272);
+            bandpassCenterNumeric.Location = new Point(180, 326);
             bandpassCenterNumeric.Maximum = new decimal(new int[] { 20000, 0, 0, 0 });
             bandpassCenterNumeric.Minimum = new decimal(new int[] { 20, 0, 0, 0 });
             bandpassCenterNumeric.MinimumSize = new Size(36, 19);
@@ -110,7 +149,7 @@ namespace Resonalyze
             // 
             bandpassPassOctavesLabel.AutoSize = true;
             bandpassPassOctavesLabel.ForeColor = Color.FromArgb(210, 214, 222);
-            bandpassPassOctavesLabel.Location = new Point(18, 310);
+            bandpassPassOctavesLabel.Location = new Point(18, 364);
             bandpassPassOctavesLabel.Name = "bandpassPassOctavesLabel";
             bandpassPassOctavesLabel.Size = new Size(86, 15);
             bandpassPassOctavesLabel.TabIndex = 7;
@@ -122,7 +161,7 @@ namespace Resonalyze
             bandpassPassOctavesNumeric.DecimalPlaces = 1;
             bandpassPassOctavesNumeric.ForeColor = Color.White;
             bandpassPassOctavesNumeric.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
-            bandpassPassOctavesNumeric.Location = new Point(180, 306);
+            bandpassPassOctavesNumeric.Location = new Point(180, 360);
             bandpassPassOctavesNumeric.Maximum = new decimal(new int[] { 8, 0, 0, 0 });
             bandpassPassOctavesNumeric.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
             bandpassPassOctavesNumeric.MinimumSize = new Size(36, 19);
@@ -137,7 +176,7 @@ namespace Resonalyze
             // 
             bandpassFadeOctavesLabel.AutoSize = true;
             bandpassFadeOctavesLabel.ForeColor = Color.FromArgb(210, 214, 222);
-            bandpassFadeOctavesLabel.Location = new Point(18, 344);
+            bandpassFadeOctavesLabel.Location = new Point(18, 398);
             bandpassFadeOctavesLabel.Name = "bandpassFadeOctavesLabel";
             bandpassFadeOctavesLabel.Size = new Size(88, 15);
             bandpassFadeOctavesLabel.TabIndex = 9;
@@ -149,7 +188,7 @@ namespace Resonalyze
             bandpassFadeOctavesNumeric.DecimalPlaces = 1;
             bandpassFadeOctavesNumeric.ForeColor = Color.White;
             bandpassFadeOctavesNumeric.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
-            bandpassFadeOctavesNumeric.Location = new Point(180, 340);
+            bandpassFadeOctavesNumeric.Location = new Point(180, 394);
             bandpassFadeOctavesNumeric.Maximum = new decimal(new int[] { 8, 0, 0, 0 });
             bandpassFadeOctavesNumeric.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
             bandpassFadeOctavesNumeric.MinimumSize = new Size(36, 19);
@@ -197,7 +236,7 @@ namespace Resonalyze
             statusTextBox.Location = new Point(580, 18);
             statusTextBox.Name = "statusTextBox";
             statusTextBox.ReadOnly = true;
-            statusTextBox.ScrollBars = RichTextBoxScrollBars.None;
+            statusTextBox.ScrollBars = RichTextBoxScrollBars.Vertical;
             statusTextBox.Size = new Size(654, 415);
             statusTextBox.TabIndex = 13;
             statusTextBox.Text = "Run a loopback measurement or load an impulse response file with transfer IR.";
@@ -229,7 +268,10 @@ namespace Resonalyze
             Controls.Add(bandpassPassOctavesLabel);
             Controls.Add(bandpassCenterNumeric);
             Controls.Add(bandpassCenterLabel);
-            Controls.Add(bandpassCheckBox);
+            Controls.Add(bandModeManualRadio);
+            Controls.Add(autoBandLabel);
+            Controls.Add(bandModeAutoRadio);
+            Controls.Add(bandModeFullRadio);
             Controls.Add(sourceSummaryLabel);
             Controls.Add(helpLabel);
             Font = new Font("Segoe UI", 9F);
@@ -246,7 +288,10 @@ namespace Resonalyze
         #endregion
         private Label helpLabel;
         private Label sourceSummaryLabel;
-        private CheckBox bandpassCheckBox;
+        private RadioButton bandModeFullRadio;
+        private RadioButton bandModeAutoRadio;
+        private Label autoBandLabel;
+        private RadioButton bandModeManualRadio;
         private Label bandpassCenterLabel;
         private DarkNumericUpDown bandpassCenterNumeric;
         private Label bandpassPassOctavesLabel;

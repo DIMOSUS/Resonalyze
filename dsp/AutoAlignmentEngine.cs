@@ -388,8 +388,11 @@ public static class AutoAlignmentEngine
     /// lock). VERIFIED — the two agree within the dispersion one wavefront
     /// can show. One classification shared by the cross-side links, the donor
     /// certificates and the stereo bridge, so the three cannot drift apart.
+    /// Public because the manual Time Alignment mode surfaces the same
+    /// verdict on its bandpass-windowed reads (see
+    /// <see cref="TimeAlignmentAnalysis.ProbeArrivalHonesty"/>).
     /// </summary>
-    internal enum ArrivalCertificate
+    public enum ArrivalCertificate
     {
         Unverified,
         Latched,

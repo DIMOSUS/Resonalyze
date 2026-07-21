@@ -21,7 +21,10 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private readonly TimeAlignmentPanel panel;
     private readonly Label sourceSummaryLabel;
     private readonly Label compareLabel;
-    private readonly CheckBox bandpassCheckBox;
+    private readonly RadioButton bandModeFullRadio;
+    private readonly RadioButton bandModeAutoRadio;
+    private readonly RadioButton bandModeManualRadio;
+    private readonly Label autoBandLabel;
     private readonly DarkNumericUpDown bandpassCenterNumeric;
     private readonly DarkNumericUpDown bandpassPassOctavesNumeric;
     private readonly DarkNumericUpDown bandpassFadeOctavesNumeric;
@@ -29,7 +32,13 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private readonly PlotView envelopePlotView;
     private readonly StatusRichTextBox statusTextBox;
     private readonly Font resultTableFont;
+    // The band detected for the Auto mode on the last refresh (null when no
+    // data or another mode is active); feeds the preview plot and the label.
+    private DominantBand? lastAutoBand;
     private bool disposed;
+
+    // The fade the Auto mode puts around the detected pass band.
+    private const double AutoBandFadeOctaves = 0.5;
 
     public TimeAlignmentPanelController(
         Form owner,
@@ -54,7 +63,10 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         sourceSummaryLabel = panel.SourceSummaryLabel;
         compareLabel = panel.CompareLabel;
-        bandpassCheckBox = panel.BandpassCheckBox;
+        bandModeFullRadio = panel.BandModeFullRadio;
+        bandModeAutoRadio = panel.BandModeAutoRadio;
+        bandModeManualRadio = panel.BandModeManualRadio;
+        autoBandLabel = panel.AutoBandLabel;
         bandpassCenterNumeric = panel.BandpassCenterNumeric;
         bandpassPassOctavesNumeric = panel.BandpassPassOctavesNumeric;
         bandpassFadeOctavesNumeric = panel.BandpassFadeOctavesNumeric;
@@ -66,7 +78,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         ApplyOptionsToControls();
         WireEvents();
-        UpdateBandpassPreview();
         RefreshAnalysis();
     }
 
@@ -88,7 +99,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     public void RefreshConfiguration()
     {
-        UpdateBandpassPreview();
         RefreshAnalysis();
     }
 
@@ -107,7 +117,18 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private void WireEvents()
     {
-        bandpassCheckBox.CheckedChanged += (_, _) => ApplyBandpassOptionChange();
+        // A radio switch fires CheckedChanged on both the leaving and the
+        // arriving button; reacting to the arriving one alone refreshes once.
+        void OnRadio(object? sender, EventArgs _)
+        {
+            if (sender is RadioButton { Checked: true })
+            {
+                ApplyBandpassOptionChange();
+            }
+        }
+        bandModeFullRadio.CheckedChanged += OnRadio;
+        bandModeAutoRadio.CheckedChanged += OnRadio;
+        bandModeManualRadio.CheckedChanged += OnRadio;
         bandpassCenterNumeric.ValueChanged += (_, _) => ApplyBandpassOptionChange();
         bandpassPassOctavesNumeric.ValueChanged += (_, _) => ApplyBandpassOptionChange();
         bandpassFadeOctavesNumeric.ValueChanged += (_, _) => ApplyBandpassOptionChange();
@@ -116,7 +137,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private void ApplyBandpassOptionChange()
     {
         UpdateOptionsFromControls();
-        UpdateBandpassPreview();
         RefreshAnalysis();
         saveSettings();
     }
@@ -128,6 +148,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         if (!TryGetMainSource(out TimeAlignmentAnalysisSource mainSource, out string noDataMessage))
         {
+            lastAutoBand = null;
+            UpdateAutoBandLabel();
+            UpdateBandpassPreview();
             SetStatusText(noDataMessage);
             ClearEnvelopePreview();
             return;
@@ -135,11 +158,31 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         try
         {
+            // Crosstalk hygiene first: detection always runs on the RAW
+            // record, then the banded modes analyze the CLEANED record —
+            // the same order the Auto delay engine uses. A broadband click
+            // lands inside the analysis band and the upper-half probe
+            // alike, so analyzing the raw record could green-light
+            // ("verified") an arrival that times the click. The bypass mode
+            // keeps the raw record and flags the contamination instead.
+            CrosstalkHeadGate? mainCrosstalk = TransferIrDiagnostics.DetectCrosstalkHead(
+                mainSource.TransferImpulseResponse, mainSource.SampleRate);
+            TimeAlignmentAnalysisSource mainAnalysisSource =
+                CleanForAnalysis(mainSource, mainCrosstalk);
+
+            // One options object per refresh: the Auto mode detects the band
+            // from the MAIN record and the Compare measurement is analyzed
+            // in the same band, so the delta column compares like with like.
+            TimeAlignmentAnalysisOptions analysisOptions =
+                CreateAnalysisOptions(mainAnalysisSource, wrapPeakPositions: true);
+            UpdateAutoBandLabel();
+            UpdateBandpassPreview();
+
             TimeAlignmentAnalysisResult mainResult = TimeAlignmentAnalysis.Analyze(
-                mainSource.TransferImpulseResponse,
-                mainSource.SampleRate,
-                CreateAnalysisOptions(wrapPeakPositions: true),
-                mainSource.TransferCoherence);
+                mainAnalysisSource.TransferImpulseResponse,
+                mainAnalysisSource.SampleRate,
+                analysisOptions,
+                mainAnalysisSource.TransferCoherence);
             if (!mainResult.IsValid)
             {
                 SetStatusText(
@@ -151,12 +194,33 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 return;
             }
 
-            TimeAlignmentCompareAnalysis? compareAnalysis =
-                AnalyzeCompare(mainSource, out string? compareWarning);
+            TimeAlignmentArrivalProbe? mainProbe = TimeAlignmentAnalysis.ProbeArrivalHonesty(
+                mainAnalysisSource.TransferImpulseResponse,
+                mainAnalysisSource.SampleRate,
+                analysisOptions,
+                mainResult,
+                mainAnalysisSource.TransferCoherence);
+            TimeAlignmentCompareAnalysis? compareAnalysis = AnalyzeCompare(
+                mainSource,
+                analysisOptions,
+                out string? compareWarning,
+                out CrosstalkHeadGate? compareCrosstalk);
+            TimeAlignmentArrivalProbe? compareProbe = compareAnalysis == null
+                ? null
+                : TimeAlignmentAnalysis.ProbeArrivalHonesty(
+                    compareAnalysis.Value.Source.TransferImpulseResponse,
+                    compareAnalysis.Value.Source.SampleRate,
+                    analysisOptions,
+                    compareAnalysis.Value.Result,
+                    compareAnalysis.Value.Source.TransferCoherence);
             SetMeasurementResultStatus(
                 mainSource,
                 mainResult,
+                mainProbe,
+                mainCrosstalk,
                 compareAnalysis,
+                compareProbe,
+                compareCrosstalk,
                 compareWarning);
             UpdateEnvelopePreview(
                 mainResult,
@@ -169,6 +233,20 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             ClearEnvelopePreview();
         }
     }
+
+    // The banded modes analyze the record with the convicted click removed
+    // (band detection included); the bypass mode shows the record as-is and
+    // relies on the red flag instead.
+    private TimeAlignmentAnalysisSource CleanForAnalysis(
+        TimeAlignmentAnalysisSource source,
+        CrosstalkHeadGate? crosstalk) =>
+        options.BandMode != TimeAlignmentBandMode.FullBand && crosstalk is { } gate
+            ? source with
+            {
+                TransferImpulseResponse = TransferIrDiagnostics.CleanCrosstalkHead(
+                    source.TransferImpulseResponse, source.SampleRate, gate)
+            }
+            : source;
 
     private bool TryGetMainSource(
         out TimeAlignmentAnalysisSource source,
@@ -257,22 +335,42 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             snapshot.TransferCoherence,
             snapshot.MeterSnapshot);
 
-    private TimeAlignmentAnalysisOptions CreateAnalysisOptions(bool wrapPeakPositions) =>
-        new()
+    private TimeAlignmentAnalysisOptions CreateAnalysisOptions(
+        TimeAlignmentAnalysisSource source,
+        bool wrapPeakPositions)
+    {
+        double centerHz = options.BandpassCenterHz;
+        double passOctaves = options.BandpassPassOctaves;
+        double fadeOctaves = options.BandpassFadeOctaves;
+        lastAutoBand = null;
+        if (options.BandMode == TimeAlignmentBandMode.AutoBand)
         {
-            UseBandpassWindow = options.UseBandpassWindow,
-            BandpassCenterHz = options.BandpassCenterHz,
-            BandpassPassOctaves = options.BandpassPassOctaves,
-            BandpassFadeOctaves = options.BandpassFadeOctaves,
+            DominantBand band = TransferIrDiagnostics.DetectDominantBand(
+                source.TransferImpulseResponse, source.SampleRate);
+            lastAutoBand = band;
+            centerHz = Math.Sqrt(band.LowHz * band.HighHz);
+            passOctaves = Math.Log2(band.HighHz / band.LowHz);
+            fadeOctaves = AutoBandFadeOctaves;
+        }
+
+        return new TimeAlignmentAnalysisOptions
+        {
+            UseBandpassWindow = options.BandMode != TimeAlignmentBandMode.FullBand,
+            BandpassCenterHz = centerHz,
+            BandpassPassOctaves = passOctaves,
+            BandpassFadeOctaves = fadeOctaves,
             FirstPeakThresholdBelowMaxDb = options.FirstPeakThresholdBelowMaxDb,
             FirstPeakMinimumSnrDb = options.FirstPeakMinimumSnrDb,
             PeakSearchWindowMilliseconds = options.PeakSearchWindowMilliseconds,
             WrapPeakPositions = wrapPeakPositions
         };
+    }
 
     private void ApplyOptionsToControls()
     {
-        bandpassCheckBox.Checked = options.UseBandpassWindow;
+        bandModeFullRadio.Checked = options.BandMode == TimeAlignmentBandMode.FullBand;
+        bandModeAutoRadio.Checked = options.BandMode == TimeAlignmentBandMode.AutoBand;
+        bandModeManualRadio.Checked = options.BandMode == TimeAlignmentBandMode.ManualBand;
         bandpassCenterNumeric.Value =
             ClampDecimal(options.BandpassCenterHz, bandpassCenterNumeric);
         bandpassPassOctavesNumeric.Value =
@@ -284,7 +382,10 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private void UpdateOptionsFromControls()
     {
-        options.UseBandpassWindow = bandpassCheckBox.Checked;
+        options.BandMode =
+            bandModeAutoRadio.Checked ? TimeAlignmentBandMode.AutoBand
+            : bandModeManualRadio.Checked ? TimeAlignmentBandMode.ManualBand
+            : TimeAlignmentBandMode.FullBand;
         options.BandpassCenterHz = (double)bandpassCenterNumeric.Value;
         options.BandpassPassOctaves = (double)bandpassPassOctavesNumeric.Value;
         options.BandpassFadeOctaves = (double)bandpassFadeOctavesNumeric.Value;
@@ -293,14 +394,25 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private void UpdateBandpassControlStates()
     {
-        bandpassCenterNumeric.Enabled = bandpassCheckBox.Checked;
-        bandpassPassOctavesNumeric.Enabled = bandpassCheckBox.Checked;
-        bandpassFadeOctavesNumeric.Enabled = bandpassCheckBox.Checked;
+        bool manual = bandModeManualRadio.Checked;
+        bandpassCenterNumeric.Enabled = manual;
+        bandpassPassOctavesNumeric.Enabled = manual;
+        bandpassFadeOctavesNumeric.Enabled = manual;
+    }
+
+    private void UpdateAutoBandLabel()
+    {
+        autoBandLabel.Text = options.BandMode != TimeAlignmentBandMode.AutoBand
+            ? "-"
+            : lastAutoBand is { } band
+                ? $"detected: {band.LowHz:0}-{band.HighHz:0} Hz"
+                : "detected: waiting for a record";
     }
 
     private void UpdateBandpassPreview()
     {
-        bool addCurve = bandpassCheckBox.Checked;
+        bool addCurve = options.BandMode == TimeAlignmentBandMode.ManualBand ||
+            (options.BandMode == TimeAlignmentBandMode.AutoBand && lastAutoBand != null);
         PlotModel model = CreateBandpassPreviewModel(addCurve);
         bandpassPlotView.Model = model;
     }
@@ -336,10 +448,16 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             Color = OxyColor.FromRgb(255, 210, 80),
             StrokeThickness = 2
         };
-        (double f1, double f2, double f3, double f4) = BandpassWindow.BandAround(
-            (double)bandpassCenterNumeric.Value,
-            (double)bandpassPassOctavesNumeric.Value,
-            (double)bandpassFadeOctavesNumeric.Value);
+        (double f1, double f2, double f3, double f4) =
+            options.BandMode == TimeAlignmentBandMode.AutoBand && lastAutoBand is { } band
+                ? BandpassWindow.BandAround(
+                    Math.Sqrt(band.LowHz * band.HighHz),
+                    Math.Log2(band.HighHz / band.LowHz),
+                    AutoBandFadeOctaves)
+                : BandpassWindow.BandAround(
+                    (double)bandpassCenterNumeric.Value,
+                    (double)bandpassPassOctavesNumeric.Value,
+                    (double)bandpassFadeOctavesNumeric.Value);
         const int pointCount = 240;
         double minLog = Math.Log10(20);
         double maxLog = Math.Log10(maxFrequency);
@@ -360,9 +478,12 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private TimeAlignmentCompareAnalysis? AnalyzeCompare(
         TimeAlignmentAnalysisSource mainSource,
-        out string? warning)
+        TimeAlignmentAnalysisOptions analysisOptions,
+        out string? warning,
+        out CrosstalkHeadGate? crosstalk)
     {
         warning = null;
+        crosstalk = null;
         TimeAlignmentCompareMeasurement? compare = getCompareMeasurement();
         if (compare == null)
         {
@@ -389,10 +510,15 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         {
             TimeAlignmentAnalysisSource compareSource =
                 CreateCompareSource(compareValue, snapshot);
+            // The Compare record gets the same hygiene as Main: its own
+            // detection on the raw IR, cleaned analysis in the banded modes.
+            crosstalk = TransferIrDiagnostics.DetectCrosstalkHead(
+                compareSource.TransferImpulseResponse, compareSource.SampleRate);
+            compareSource = CleanForAnalysis(compareSource, crosstalk);
             TimeAlignmentAnalysisResult compareResult = TimeAlignmentAnalysis.Analyze(
                 compareSource.TransferImpulseResponse,
                 compareSource.SampleRate,
-                CreateAnalysisOptions(wrapPeakPositions: true),
+                analysisOptions,
                 compareSource.TransferCoherence);
             if (!compareResult.IsValid)
             {
@@ -729,15 +855,21 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private void SetMeasurementResultStatus(
         TimeAlignmentAnalysisSource mainSource,
         TimeAlignmentAnalysisResult mainResult,
+        TimeAlignmentArrivalProbe? mainProbe,
+        CrosstalkHeadGate? mainCrosstalk,
         TimeAlignmentCompareAnalysis? compareAnalysis,
+        TimeAlignmentArrivalProbe? compareProbe,
+        CrosstalkHeadGate? compareCrosstalk,
         string? compareWarning)
     {
         statusTextBox.BeginUpdate();
         try
         {
             statusTextBox.Clear();
-            AppendMeasurementResult("Main", mainSource.Levels, mainResult);
-            AppendCompareResult(mainResult, compareAnalysis, compareWarning);
+            AppendMeasurementResult(
+                "Main", mainSource.Levels, mainResult, mainProbe, mainCrosstalk);
+            AppendCompareResult(
+                mainResult, compareAnalysis, compareProbe, compareCrosstalk, compareWarning);
             statusTextBox.SelectionStart = 0;
             statusTextBox.SelectionLength = 0;
         }
@@ -750,6 +882,8 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private void AppendCompareResult(
         TimeAlignmentAnalysisResult mainResult,
         TimeAlignmentCompareAnalysis? compareAnalysis,
+        TimeAlignmentArrivalProbe? compareProbe,
+        CrosstalkHeadGate? compareCrosstalk,
         string? warning)
     {
         if (compareAnalysis == null && warning == null)
@@ -771,6 +905,8 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             "Compare",
             compareAnalysis!.Value.Source.Levels,
             compareAnalysis.Value.Result,
+            compareProbe,
+            compareCrosstalk,
             mainResult);
     }
 
@@ -778,15 +914,126 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         string title,
         InputLevelMeterSnapshot levels,
         TimeAlignmentAnalysisResult result,
+        TimeAlignmentArrivalProbe? honestyProbe,
+        CrosstalkHeadGate? crosstalk,
         TimeAlignmentAnalysisResult? reference = null)
     {
         AppendSignalQuality(title, result);
         AppendAlignmentConfidence(result);
-        AppendLevelLine("Mic", levels.Microphone);
-        AppendLevelLine("Loopback", levels.Loopback);
+        AppendArrivalHonesty(result, honestyProbe);
+        AppendCrosstalkFlag(crosstalk);
+        AppendLevelsLine(levels);
         AppendSeparator();
         AppendDelayTable(result, reference);
-        AppendStrongestPeakHint(result);
+        if (IsArrivalRecommendable(result, honestyProbe, options.BandMode, crosstalk != null))
+        {
+            AppendStrongestPeakHint(result);
+        }
+    }
+
+    // Whether the First Arrival may be RECOMMENDED as the alignment figure.
+    // The strongest-peak hint ends with "Use First Arrival for alignment",
+    // and that advice must never print next to a verdict that just
+    // disqualified the arrival: a modal latch, a near-noise record, or a
+    // full-band read over a record with detected crosstalk (the bypass mode
+    // analyzes it raw). The states are independent, so without this gate the
+    // status box could give two opposite instructions at once.
+    internal static bool IsArrivalRecommendable(
+        TimeAlignmentAnalysisResult result,
+        TimeAlignmentArrivalProbe? honestyProbe,
+        TimeAlignmentBandMode bandMode,
+        bool crosstalkDetected) =>
+        result.SignalToNoiseDecibels >= AutoAlignmentEngine.MinimumArrivalSnrDb &&
+        honestyProbe?.Certificate != AutoAlignmentEngine.ArrivalCertificate.Latched &&
+        !(bandMode == TimeAlignmentBandMode.FullBand && crosstalkDetected);
+
+    // Field-proven failure (v3): an electrical copy of the playback lands at
+    // a fixed early sample in every record of a session; on band-limited
+    // drivers it sits within the first-peak threshold and the FULL-BAND
+    // First Arrival confidently times it instead of the sound.
+    private void AppendCrosstalkFlag(CrosstalkHeadGate? crosstalk)
+    {
+        if (crosstalk is not { } gate)
+        {
+            return;
+        }
+
+        if (options.BandMode == TimeAlignmentBandMode.FullBand)
+        {
+            // Bypass shows the record as-is, so the figures above may time
+            // the click; the banded modes analyze it removed.
+            AppendStatusText(
+                $"⚠ Playback crosstalk at {gate.BurstTimeMs:0.00} ms " +
+                $"({gate.BurstPeakDbReMax:0.0} dB re max) — an electrical copy of\r\n" +
+                "the playback, not the driver's sound; the full-band First Arrival\r\n" +
+                "may be timing it. Switch to Auto band (analyzed with it removed).\r\n",
+                UiPalette.ErrorSoft);
+            return;
+        }
+
+        AppendStatusText(
+            $"⚠ Playback crosstalk at {gate.BurstTimeMs:0.00} ms " +
+            $"({gate.BurstPeakDbReMax:0.0} dB re max) removed from this analysis\r\n",
+            UiPalette.WarningAmber);
+    }
+
+    // The auto-alignment engine's arrival honesty probe, surfaced on the
+    // manual table: with a bandpass window active, the full-band first
+    // arrival is re-checked against the band's upper half. A full-band read
+    // far LATER than its own upper half is the modal latch — the read times
+    // the band's late build-up (a room mode), not the direct sound — which
+    // produces a confident wrong number exactly where this tool is used most
+    // (subwoofer and midbass bands).
+    private void AppendArrivalHonesty(
+        TimeAlignmentAnalysisResult result,
+        TimeAlignmentArrivalProbe? probe)
+    {
+        if (options.BandMode == TimeAlignmentBandMode.FullBand)
+        {
+            return;
+        }
+
+        AppendStatusText("Arrival probe: ", UiPalette.TextPrimarySoft);
+        if (probe == null)
+        {
+            AppendStatusText(
+                "pass band too narrow for the upper-half check\r\n",
+                UiPalette.TextSecondarySoft);
+            return;
+        }
+
+        TimeAlignmentArrivalProbe probeValue = probe.Value;
+        switch (probeValue.Certificate)
+        {
+            case AutoAlignmentEngine.ArrivalCertificate.Verified:
+                AppendStatusText(
+                    $"verified — the {probeValue.ProbeLowHz:0}-{probeValue.ProbeHighHz:0} Hz " +
+                    "upper half agrees " +
+                    $"({probeValue.ProbeResult.FirstArrivalDelayMilliseconds:0.000} ms)\r\n",
+                    UiPalette.SuccessGreenSoft);
+                break;
+            case AutoAlignmentEngine.ArrivalCertificate.Latched:
+                // The upper-half figure is DIAGNOSTIC only: it proves the
+                // full-band read is not the direct front, but it is no
+                // alignment target itself (the engine's field case: an
+                // upper-half read walked a woofer 6 ms off).
+                AppendStatusText(
+                    $"MODAL LATCH — full band {result.FirstArrivalDelayMilliseconds:0.000} ms " +
+                    $"vs upper half {probeValue.ProbeResult.FirstArrivalDelayMilliseconds:0.000} ms\r\n",
+                    UiPalette.ErrorSoft);
+                AppendStatusText(
+                    "⚠ Not the direct front (modal build-up) — do not align " +
+                    "from this arrival;\r\nchange the analysis band or check " +
+                    "the measurement.\r\n",
+                    UiPalette.ErrorSoft);
+                break;
+            default:
+                AppendStatusText(
+                    "not certified — the upper half is unmeasurable or does not " +
+                    "show the front\r\n",
+                    UiPalette.TextSecondarySoft);
+                break;
+        }
     }
 
     // A subwoofer or any narrowband/modal measurement can leave the strongest peak
@@ -816,8 +1063,26 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     // drag the signal grade down.
     private void AppendSignalQuality(string title, TimeAlignmentAnalysisResult result)
     {
-        string signalGrade = FormatConfidence(result.SignalToNoiseDecibels);
         AppendStatusText($"{title} Signal: ", UiPalette.TextPrimarySoft);
+
+        // Below the same SNR floor the auto-alignment engine refuses to
+        // measure at, the "arrival" is a bump in the noise (independent noise
+        // records read ~8 dB): the manual table still shows its figures, but
+        // graded as not-evidence rather than as a poor measurement.
+        if (result.SignalToNoiseDecibels < AutoAlignmentEngine.MinimumArrivalSnrDb)
+        {
+            AppendStatusText(
+                $"Unmeasurable ({result.SignalToNoiseDecibels:0.0} dB SNR, below " +
+                $"the {AutoAlignmentEngine.MinimumArrivalSnrDb:0} dB floor)\r\n",
+                UiPalette.ErrorSoft);
+            AppendStatusText(
+                "⚠ The arrival is not distinguishable from the record's noise\r\n" +
+                "floor — the delay figures below are noise, not measurements.\r\n",
+                UiPalette.ErrorSoft);
+            return;
+        }
+
+        string signalGrade = FormatConfidence(result.SignalToNoiseDecibels);
         AppendStatusText(
             $"{signalGrade} ({result.SignalToNoiseDecibels:0.0} dB SNR)\r\n",
             GetConfidenceColor(signalGrade));
@@ -854,6 +1119,14 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     // honest "coarse alignment" signal rather than a trustworthy sub-sample number.
     private void AppendAlignmentConfidence(TimeAlignmentAnalysisResult result)
     {
+        // The near-noise state above already declared the figures
+        // non-evidence; a confident-looking percentage next to that verdict
+        // would read as a contradiction.
+        if (result.SignalToNoiseDecibels < AutoAlignmentEngine.MinimumArrivalSnrDb)
+        {
+            return;
+        }
+
         int percent = (int)Math.Round(
             Math.Clamp(result.FirstArrivalConfidence, 0.0, 1.0) * 100.0);
         string method = result.FirstArrivalRefinedByPhat
@@ -955,16 +1228,27 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         string valueFormat) =>
         DelayTableText.FormatValueWithDelta(value, reference, valueFormat);
 
-    private void AppendLevelLine(string label, InputLevelMeterEntry entry)
+    // Mic and Loopback on one line: the status box holds two full measurement
+    // blocks plus their warnings, so every line of vertical budget counts.
+    private void AppendLevelsLine(InputLevelMeterSnapshot levels)
+    {
+        AppendStatusText("Levels (peak/RMS dBFS): ", UiPalette.TextPrimarySoft);
+        AppendLevelSegment("mic", levels.Microphone);
+        AppendStatusText(", ", UiPalette.TextPrimarySoft);
+        AppendLevelSegment("loop", levels.Loopback);
+        AppendStatusText("\r\n", UiPalette.TextPrimarySoft);
+    }
+
+    private void AppendLevelSegment(string label, InputLevelMeterEntry entry)
     {
         if (!entry.Available)
         {
-            AppendStatusText($"{label}: unavailable\r\n", UiPalette.TextSecondarySoft);
+            AppendStatusText($"{label} unavailable", UiPalette.TextSecondarySoft);
             return;
         }
 
         AppendStatusText(
-            $"{label}: peak {entry.PeakDbFs:0.0} dBFS, RMS {entry.RmsDbFs:0.0} dBFS",
+            $"{label} {entry.PeakDbFs:0.0}/{entry.RmsDbFs:0.0}",
             UiPalette.TextPrimarySoft);
         if (entry.Clipped)
         {
@@ -974,8 +1258,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         {
             AppendStatusText(" FULL SCALE", UiPalette.TextSecondarySoft);
         }
-
-        AppendStatusText("\r\n", UiPalette.TextPrimarySoft);
     }
 
     private static string FormatDelayTableLine(

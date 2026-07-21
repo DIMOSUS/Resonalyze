@@ -734,7 +734,11 @@ internal sealed class MeasurementSettingsFile
         public int MicrophoneInputChannelOffset { get; set; }
         public int LoopbackInputChannelOffset { get; set; }
         public int AsioOutputChannelOffset { get; set; }
+        // Pre-band-mode files carry only this bool; BandMode is null there
+        // and the migration below keeps an explicit manual window, otherwise
+        // adopts the new AutoBand default.
         public bool UseBandpassWindow { get; set; }
+        public string? BandMode { get; set; }
         public double BandpassCenterHz { get; set; } = 1000;
         public double BandpassPassOctaves { get; set; } = 1;
         public double BandpassFadeOctaves { get; set; } = 0.5;
@@ -750,7 +754,8 @@ internal sealed class MeasurementSettingsFile
                 MicrophoneInputChannelOffset = options.MicrophoneInputChannelOffset,
                 LoopbackInputChannelOffset = options.LoopbackInputChannelOffset,
                 AsioOutputChannelOffset = options.AsioOutputChannelOffset,
-                UseBandpassWindow = options.UseBandpassWindow,
+                UseBandpassWindow = options.BandMode == TimeAlignmentBandMode.ManualBand,
+                BandMode = options.BandMode.ToString(),
                 BandpassCenterHz = options.BandpassCenterHz,
                 BandpassPassOctaves = options.BandpassPassOctaves,
                 BandpassFadeOctaves = options.BandpassFadeOctaves,
@@ -780,7 +785,11 @@ internal sealed class MeasurementSettingsFile
                     sampleRate,
                     AsioOutputChannelOffset,
                     input: false);
-            options.UseBandpassWindow = UseBandpassWindow;
+            options.BandMode = Enum.TryParse(BandMode, out TimeAlignmentBandMode mode)
+                ? mode
+                : UseBandpassWindow
+                    ? TimeAlignmentBandMode.ManualBand
+                    : TimeAlignmentBandMode.AutoBand;
             options.BandpassCenterHz = Math.Clamp(BandpassCenterHz, 20.0, 20_000.0);
             options.BandpassPassOctaves = Math.Clamp(BandpassPassOctaves, 0.0, 8.0);
             options.BandpassFadeOctaves = Math.Clamp(BandpassFadeOctaves, 0.0, 8.0);

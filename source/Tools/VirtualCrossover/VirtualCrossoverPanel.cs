@@ -2497,6 +2497,37 @@ public partial class VirtualCrossoverPanel : UserControl
         WriteAlignmentLog(result.Log.ToString());
     }
 
+    // The measured records may carry a playback-crosstalk click at one fixed
+    // early sample (an electrical copy of the playback, ahead of any acoustic
+    // arrival — seen in every record of the same session on the field data).
+    // Field-measured effect on the search: sub-sample GCC-PHAT bias on most
+    // configs and a wrong solution branch on gentle slopes. Head-gate every
+    // record the detector convicts before the search and name it in the log.
+    private static List<AlignmentReprocessInput> CleanCrosstalkHeads(
+        List<AlignmentReprocessInput> inputs,
+        System.Text.StringBuilder log) =>
+        inputs.Select(input =>
+        {
+            double[] real = Array.ConvertAll(
+                input.MeasuredImpulseResponse, sample => sample.Real);
+            CrosstalkHeadGate? gate = TransferIrDiagnostics.DetectCrosstalkHead(
+                real, input.SampleRate);
+            if (gate is not { } convicted)
+            {
+                return input;
+            }
+
+            log.AppendLine(
+                $"{input.Channel.Name}: playback-crosstalk click at " +
+                $"{convicted.BurstTimeMs:0.00} ms ({convicted.BurstPeakDbReMax:0.0} dB " +
+                "re max) removed from the record's head before the search");
+            return input with
+            {
+                MeasuredImpulseResponse = TransferIrDiagnostics.CleanCrosstalkHead(
+                    input.MeasuredImpulseResponse, input.SampleRate, convicted)
+            };
+        }).ToList();
+
     // Bridges the panel's channel model to the dsp AutoAlignmentEngine (where
     // the FFT-heavy alignment stages live, unit-tested): snapshots + junctions
     // in, an override map (plus the per-channel decisions for the report) out.
@@ -2523,11 +2554,13 @@ public partial class VirtualCrossoverPanel : UserControl
         // because every search stage reads only the gated direct sound. The crop
         // and every ApplyChain first run HERE, on the background thread.
         var reprocessor = new AlignmentReprocessor(
-            ordered.Select(channel => new AlignmentReprocessInput(
-                channel,
-                channel.TransferImpulseResponse!,
-                channel.SampleRate,
-                channel.Settings.ToChain())).ToList(),
+            CleanCrosstalkHeads(
+                ordered.Select(channel => new AlignmentReprocessInput(
+                    channel,
+                    channel.TransferImpulseResponse!,
+                    channel.SampleRate,
+                    channel.Settings.ToChain())).ToList(),
+                log),
             AutoDelaySearchCropLength,
             AutoDelaySearchCropPrePeakSamples);
 
@@ -2864,11 +2897,13 @@ public partial class VirtualCrossoverPanel : UserControl
         // (validated on real measurements) while every FFT in the cascade
         // shrinks from the capture length to the crop.
         var reprocessor = new AlignmentReprocessor(
-            union.Select(side => new AlignmentReprocessInput(
-                side,
-                side.State.TransferImpulseResponse!,
-                side.State.SampleRate,
-                side.Settings.ToChain())).ToList(),
+            CleanCrosstalkHeads(
+                union.Select(side => new AlignmentReprocessInput(
+                    side,
+                    side.State.TransferImpulseResponse!,
+                    side.State.SampleRate,
+                    side.Settings.ToChain())).ToList(),
+                log),
             AutoDelaySearchCropLength,
             AutoDelaySearchCropPrePeakSamples);
 

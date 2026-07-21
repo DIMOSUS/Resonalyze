@@ -346,6 +346,165 @@ public sealed class TimeAlignmentAnalysisTests
         Assert.True(result.StrongestPeakIsSeparateArrival);
     }
 
+    // A Hann-windowed tone burst: band-limited content whose envelope peaks
+    // mid-burst, the building block of the honesty-probe scenarios below.
+    private static void AddToneBurst(
+        double[] impulseResponse,
+        double startMs,
+        double frequencyHz,
+        int periods,
+        double amplitude)
+    {
+        int start = (int)Math.Round(startMs * SampleRate / 1000.0);
+        int length = (int)Math.Round(periods * SampleRate / frequencyHz);
+        for (int i = 0; i < length && start + i < impulseResponse.Length; i++)
+        {
+            double hann = 0.5 - 0.5 * Math.Cos(Math.Tau * i / length);
+            impulseResponse[start + i] +=
+                amplitude * hann * Math.Sin(Math.Tau * frequencyHz * i / SampleRate);
+        }
+    }
+
+    private static TimeAlignmentAnalysisOptions OneOctaveAroundOneKilohertz => new()
+    {
+        UseBandpassWindow = true,
+        BandpassCenterHz = 1000,
+        BandpassPassOctaves = 1,
+        BandpassFadeOctaves = 0.5
+    };
+
+    [Fact]
+    public void ProbeArrivalHonesty_WithoutABandpassWindow_ReturnsNull()
+    {
+        var impulseResponse = new double[8_192];
+        impulseResponse[300] = 1.0;
+        var options = new TimeAlignmentAnalysisOptions();
+
+        TimeAlignmentAnalysisResult full = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, options);
+
+        Assert.Null(TimeAlignmentAnalysis.ProbeArrivalHonesty(
+            impulseResponse, SampleRate, options, full));
+    }
+
+    [Fact]
+    public void ProbeArrivalHonesty_PassBandTooNarrowForAnUpperHalf_ReturnsNull()
+    {
+        // Upper half spans passOctaves/2; MinimumArrivalBandRatio is 1/3
+        // octave, so anything under 2/3 octave of pass band cannot be probed.
+        var impulseResponse = new double[8_192];
+        impulseResponse[300] = 1.0;
+        var options = new TimeAlignmentAnalysisOptions
+        {
+            UseBandpassWindow = true,
+            BandpassCenterHz = 1000,
+            BandpassPassOctaves = 0.5,
+            BandpassFadeOctaves = 0.5
+        };
+
+        TimeAlignmentAnalysisResult full = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, options);
+
+        Assert.Null(TimeAlignmentAnalysis.ProbeArrivalHonesty(
+            impulseResponse, SampleRate, options, full));
+    }
+
+    [Fact]
+    public void ProbeArrivalHonesty_CleanImpulse_VerifiesTheArrival()
+    {
+        // A broadband impulse arrives at the same instant in every sub-band,
+        // so the upper-half re-read agrees and certifies the full-band figure.
+        var impulseResponse = new double[32_768];
+        impulseResponse[300] = 1.0;
+
+        TimeAlignmentAnalysisResult full = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, OneOctaveAroundOneKilohertz);
+        TimeAlignmentArrivalProbe? probe = TimeAlignmentAnalysis.ProbeArrivalHonesty(
+            impulseResponse, SampleRate, OneOctaveAroundOneKilohertz, full);
+
+        Assert.NotNull(probe);
+        Assert.Equal(
+            AutoAlignmentEngine.ArrivalCertificate.Verified,
+            probe.Value.Certificate);
+        // The probe band is the upper half of the 707-1414 Hz pass band:
+        // [center, f3].
+        Assert.Equal(1000.0, probe.Value.ProbeLowHz, precision: 6);
+        Assert.InRange(probe.Value.ProbeHighHz, 1414.0, 1414.5);
+        Assert.InRange(
+            Math.Abs(
+                probe.Value.ProbeResult.FirstArrivalDelayMilliseconds -
+                full.FirstArrivalDelayMilliseconds),
+            0.0,
+            probe.Value.ToleranceMs);
+    }
+
+    [Fact]
+    public void ProbeArrivalHonesty_LateFullBandArrival_FlagsTheModalLatch()
+    {
+        // The under-seat-midbass shape: the band's upper half carries a weak
+        // early direct front (-30 dB, below the full-band -25 dB first-peak
+        // threshold), while the band's lower edge carries the loud late
+        // build-up. The full band confidently times the late feature; only
+        // the upper-half re-read exposes that it is not the direct sound.
+        var impulseResponse = new double[32_768];
+        AddToneBurst(impulseResponse, startMs: 5.0, frequencyHz: 1200, periods: 5, amplitude: 0.0316);
+        AddToneBurst(impulseResponse, startMs: 12.0, frequencyHz: 800, periods: 20, amplitude: 1.0);
+
+        TimeAlignmentAnalysisResult full = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, OneOctaveAroundOneKilohertz);
+        TimeAlignmentArrivalProbe? probe = TimeAlignmentAnalysis.ProbeArrivalHonesty(
+            impulseResponse, SampleRate, OneOctaveAroundOneKilohertz, full);
+
+        Assert.NotNull(probe);
+        Assert.Equal(
+            AutoAlignmentEngine.ArrivalCertificate.Latched,
+            probe.Value.Certificate);
+        Assert.True(
+            full.FirstArrivalDelayMilliseconds -
+            probe.Value.ProbeResult.FirstArrivalDelayMilliseconds >
+            probe.Value.ToleranceMs,
+            $"full {full.FirstArrivalDelayMilliseconds:0.000} ms should read far " +
+            $"later than the probe {probe.Value.ProbeResult.FirstArrivalDelayMilliseconds:0.000} ms");
+    }
+
+    [Fact]
+    public void ProbeArrivalHonesty_NoiseFloorUpperHalf_ReturnsUnverified()
+    {
+        // All the signal sits below the probe band (a long 600 Hz burst
+        // against a 1000 Hz probe floor) over a -50 dB noise floor: the full
+        // band measures fine, but the upper half holds only noise (a pure
+        // digital-silence "upper half" is impossible in a synthetic — window
+        // leakage of the burst's edges reads as an early transient — the
+        // noise floor is what buries it, exactly as in a real record) and
+        // cannot certify either way: usable, no certificate.
+        var impulseResponse = new double[32_768];
+        var random = new Random(7);
+        for (int i = 0; i < impulseResponse.Length; i++)
+        {
+            impulseResponse[i] = 0.003 * (random.NextDouble() * 2.0 - 1.0);
+        }
+        AddToneBurst(impulseResponse, startMs: 10.0, frequencyHz: 600, periods: 60, amplitude: 1.0);
+
+        TimeAlignmentAnalysisResult full = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, OneOctaveAroundOneKilohertz);
+        TimeAlignmentArrivalProbe? probe = TimeAlignmentAnalysis.ProbeArrivalHonesty(
+            impulseResponse, SampleRate, OneOctaveAroundOneKilohertz, full);
+
+        Assert.True(full.IsValid);
+        Assert.True(
+            full.SignalToNoiseDecibels >= AutoAlignmentEngine.MinimumArrivalSnrDb,
+            $"full SNR {full.SignalToNoiseDecibels:0.0} dB should clear the floor");
+        Assert.NotNull(probe);
+        Assert.True(
+            probe.Value.ProbeResult.SignalToNoiseDecibels <
+                AutoAlignmentEngine.MinimumArrivalSnrDb,
+            $"probe SNR {probe.Value.ProbeResult.SignalToNoiseDecibels:0.0} dB " +
+            "should sit below the floor");
+        Assert.Equal(
+            AutoAlignmentEngine.ArrivalCertificate.Unverified,
+            probe.Value.Certificate);
+    }
+
     [Fact]
     public void Analyze_FlatUnityCoherence_ReproducesTheNullResultExactly()
     {

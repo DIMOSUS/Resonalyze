@@ -403,7 +403,9 @@ internal sealed class MeasurementSettingsFile
         public bool ShowThdPlusNoise { get; set; } = true;
         public bool ShowNoiseFloor { get; set; } = true;
         public bool ShowGroupDelay { get; set; } = true;
-        public bool PhaseGateAutoFit { get; set; } = true;
+        // Nullable so a pre-Auto file (v <= 9, field absent) is
+        // distinguishable from a stored choice — see ApplyTo.
+        public bool? PhaseGateAutoFit { get; set; } = true;
         public double PhaseGateOffsetMs { get; set; } = FrequencyResponseOptions.DefaultPhaseGateOffsetMs;
         public double PhaseLeftMs { get; set; } = FrequencyResponseOptions.DefaultPhaseLeftMs;
         public double PhasePlateauMs { get; set; } = FrequencyResponseOptions.DefaultPhasePlateauMs;
@@ -414,7 +416,7 @@ internal sealed class MeasurementSettingsFile
         public int PhaseFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
         public PhaseDetrendMode? PhaseDetrendMode { get; set; } =
             Resonalyze.Dsp.PhaseDetrendMode.Auto;
-        public bool GroupDelayGateAutoFit { get; set; } = true;
+        public bool? GroupDelayGateAutoFit { get; set; } = true;
         public double GroupDelayGateOffsetMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayGateOffsetMs;
         public double GroupDelayLeftMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayLeftMs;
         public double GroupDelayPlateauMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayPlateauMs;
@@ -488,7 +490,12 @@ internal sealed class MeasurementSettingsFile
             visibility.ShowThdPlusNoise = ShowThdPlusNoise;
             visibility.ShowNoiseFloor = ShowNoiseFloor;
             visibility.ShowGroupDelay = ShowGroupDelay;
-            options.PhaseGateAutoFit = PhaseGateAutoFit;
+            // Absent in a pre-Auto file: enable Auto only when the stored
+            // offset is the untouched default. A deliberately fitted/typed
+            // gate must stay manual — the Auto re-snap would silently
+            // overwrite the user's placement and persist over it.
+            options.PhaseGateAutoFit = PhaseGateAutoFit ??
+                PhaseGateOffsetMs == FrequencyResponseOptions.DefaultPhaseGateOffsetMs;
             options.PhaseGateOffsetMs = ClampMilliseconds(PhaseGateOffsetMs, 0.0, 2000.0);
             options.PhaseLeftMs = ClampMilliseconds(PhaseLeftMs, 0.0, 1000.0);
             options.PhasePlateauMs = ClampMilliseconds(PhasePlateauMs, 0.0, 1000.0);
@@ -507,7 +514,8 @@ internal sealed class MeasurementSettingsFile
                 Enum.IsDefined(detrendMode)
                     ? detrendMode
                     : Resonalyze.Dsp.PhaseDetrendMode.Manual;
-            options.GroupDelayGateAutoFit = GroupDelayGateAutoFit;
+            options.GroupDelayGateAutoFit = GroupDelayGateAutoFit ??
+                GroupDelayGateOffsetMs == FrequencyResponseOptions.DefaultGroupDelayGateOffsetMs;
             options.GroupDelayGateOffsetMs = ClampMilliseconds(GroupDelayGateOffsetMs, 0.0, 2000.0);
             options.GroupDelayLeftMs = ClampMilliseconds(GroupDelayLeftMs, 0.0, 1000.0);
             options.GroupDelayPlateauMs = ClampMilliseconds(GroupDelayPlateauMs, 0.0, 1000.0);

@@ -5,26 +5,27 @@
 <h1 align="center">Resonalyze</h1>
 
 <p align="center">
-  <strong>Engineering Acoustic Measurements for Loudspeakers and Rooms</strong>
+  <strong>Measurement-Driven Tuning for Car Audio and Multi-Way Loudspeaker Systems</strong>
 </p>
 
 <p align="center">
-  A Windows desktop analyzer for impulse response, frequency response,
-  loopback-referenced timing, live transfer functions, overlays, and practical
-  loudspeaker alignment.
+  Automatic time alignment with honest verdicts, a virtual DSP crossover
+  designer, and engineering-grade acoustic analysis — impulse response,
+  frequency response, phase, loopback-referenced timing, and live transfer
+  functions — on Windows.
 </p>
 
 <p align="center">
-  <em><strong>Measure each driver once, then virtually align, combine, and optimize your
-  loudspeaker system before applying a single change to the DSP.</strong></em>
+  <em><strong>Measure each driver once, then leave the car: align, combine, and optimize
+  the whole system from your desk — and only then type the result into the DSP.</strong></em>
 </p>
 
 <p align="center">
   <a href="https://github.com/DIMOSUS/Resonalyze/releases/latest"><strong>Download latest release</strong></a>
   ·
-  <a href="#quick-start"><strong>Build from source</strong></a>
+  <a href="#your-first-measurement"><strong>Your first measurement</strong></a>
   ·
-  <a href="#measurement-workflow"><strong>Measurement workflow</strong></a>
+  <a href="#building-from-source"><strong>Build from source</strong></a>
 </p>
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
@@ -34,11 +35,19 @@
 [![Build](https://github.com/DIMOSUS/Resonalyze/actions/workflows/build.yml/badge.svg)](https://github.com/DIMOSUS/Resonalyze/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/DIMOSUS/Resonalyze?display_name=tag)](https://github.com/DIMOSUS/Resonalyze/releases/latest)
 
-**Resonalyze** is an open-source desktop application for measuring and
-visualizing the acoustic behavior of audio systems, rooms, loudspeakers,
-headphones, microphones, and complete signal paths. It generates test signals,
-records the response through a Windows audio device, processes the captured
-data, and presents the result as engineering-focused plots.
+**Resonalyze** is an open-source desktop application for measuring and tuning
+multi-way loudspeaker systems — with a special focus on the hardest room of
+all: the **car cabin**. It generates test signals, records the response through
+a Windows audio device, and turns the captured data into engineering-focused
+plots and concrete DSP settings: crossover corners, per-driver delays,
+polarity, and PEQ. The same toolset measures rooms, home loudspeakers,
+headphones, microphones, and complete signal paths.
+
+Where general-purpose analyzers stop at showing you the curves, Resonalyze
+carries the workflow to its conclusion: **Auto delay** and **Auto crossover**
+search the actual settings, and every automatic result comes with an honest
+verdict — the engine reports *why* it trusts an arrival, and refuses loudly
+instead of fabricating a number when the measurement cannot support one.
 
 > Resonalyze is under active development. Treat its results as diagnostic
 > measurements, not as certified laboratory data.
@@ -57,6 +66,19 @@ result with fewer blind tuning passes.
   <strong>Virtual DSP</strong> — combine measured drivers through gain, delay,
   polarity, crossover filters, an all-pass stage, and PEQ before touching the
   hardware DSP.
+</p>
+
+<p align="center">
+  <img src="assets/images/compare.jpg" alt="Sum loss per crossover junction: manual tune vs one automatic pass">
+</p>
+
+<p align="center">
+  <strong>Does the automation actually help?</strong> Sum loss — how many dB
+  the real phase-aware sum falls short of a phase-blind magnitude addition at
+  each crossover junction (average / worst dip). Left: a three-way system
+  tuned by ear over years. Right: the same system after one
+  <strong>Auto&nbsp;crossover</strong> + <strong>Auto&nbsp;delay</strong> pass —
+  the worst junction dip shrinks from −8.0 to −2.3&nbsp;dB.
 </p>
 
 <table>
@@ -98,6 +120,13 @@ The `.zip` builds are self-contained portable packages and do not require a
 separate .NET installation. The installer adds shortcuts, uninstall support,
 and automatic in-app updates for the installed x64 build. A SHA-256 checksum
 file is provided with every release.
+
+> **Windows SmartScreen note:** the builds are not code-signed (signing
+> certificates are expensive for a free open-source project), so the first
+> launch may show a *"Windows protected your PC"* dialog. Click **More info →
+> Run anyway**, or verify the download first against the published SHA-256
+> checksum. The full source code is right here if you prefer to build it
+> yourself.
 
 ## Highlights
 
@@ -181,8 +210,26 @@ file is provided with every release.
 If you already use tools like REW, OpenSoundMeter, or Smaart, the obvious
 question is: why install another analyzer?
 
-Resonalyze is built around a focused engineering workflow:
+The short answer: those tools show you measurements; Resonalyze is built to
+**finish the tune**. Its home turf is the fully active multi-way system —
+typically in a car, where every driver sits at a different distance, doors leak
+and resonate, and the "room" fights back — and its output is not just a plot
+but the DSP settings themselves:
 
+- **Built for multi-way active systems**
+  Measure each driver separately, then design the whole system virtually:
+  crossover corners, slopes and filter families, per-driver delay and polarity,
+  all-pass stages, and PEQ — tuned against the phase-aware predicted sum, and
+  only then written into the hardware DSP. **Auto crossover** and **Auto
+  delay** search these settings automatically, across both stereo sides in one
+  run.
+- **Honest automation**
+  An automatic tuner that guesses is worse than none. Resonalyze's engines
+  certify their evidence: arrival estimates carry confidence and verdicts,
+  modal build-up latches are detected and flagged instead of aligned to,
+  playback-crosstalk contamination is detected and removed from the analysis,
+  and when a measurement cannot support a decision the engine says so out loud
+  instead of returning a plausible-looking number.
 - **Loopback-referenced timing**
   Measurements can use a recorded loopback channel as the time reference, so
   delay and transfer-function analysis are tied to the actual playback path
@@ -244,8 +291,11 @@ Resonalyze is built around a focused engineering workflow:
   JSON where practical, making measurements easy to archive, diff, and debug.
 
 Resonalyze does not try to be every acoustic tool at once. Its sweet spot is
-measurement-driven speaker and room work, where timing, repeatability, quick
-comparison, and transparent data matter more than a large legacy feature set.
+measurement-driven multi-way tuning — above all in the car — where timing,
+repeatability, quick comparison, and transparent data matter more than a large
+legacy feature set. For room EQ at home, REW remains excellent; when the
+question is *"what delays, crossovers, and polarities do I put into this
+six-channel DSP"*, that is what Resonalyze is for.
 
 ## Gallery
 
@@ -351,7 +401,88 @@ To build Resonalyze from source:
 Use conservative playback levels when connecting physical equipment. Start with
 the output turned down and verify the signal path before running a measurement.
 
-## Quick Start
+## Your First Measurement
+
+If you are starting from zero, this is the minimal hardware path — roughly
+€100–200 total:
+
+- **A USB audio interface with at least two inputs** (any entry-level
+  two-channel interface with phantom power works). Two inputs matter because
+  every Resonalyze measurement records a **loopback reference** alongside the
+  microphone — that is what makes the timing analysis absolute.
+  Community-verified so far: **Focusrite Scarlett Solo** (the developer's own
+  rig). Confirmed another interface working? Open an issue and it will be
+  listed here.
+- **An analog measurement microphone** (an inexpensive electret measurement
+  mic with an individual calibration file is ideal; Resonalyze imports the
+  calibration text file). A USB measurement mic such as the UMIK-1 will
+  **not** work — see the [FAQ](#faq) for why.
+- **Two cables**: one to feed the system under test from the interface's
+  output 1, and one short cable from the interface's output 2 straight back
+  into input 2 — that is the loopback.
+
+Then, in about ten minutes:
+
+1. Wire it up: mic → input 1, output 2 → input 2 (loopback), output 1 → the
+   system's input (in a car: the DSP's aux/optical input, with only the driver
+   under test unmuted).
+2. Start Resonalyze, open the measurement settings, select the interface, and
+   assign the **input** and **loopback** channels. The measurement will not
+   start without a loopback — that is by design.
+3. Turn the playback level well down, place the mic at the listening position,
+   and run a sweep. Watch the input level meter for microphone level, loopback
+   presence, and headroom.
+4. Explore the views: Frequency Response, Time Alignment (arrival, delay,
+   distance), Phase, Impulse. **Save** the impulse response — saved
+   measurements are the raw material for everything else.
+5. Measure each driver the same way, then open [Virtual DSP](#virtual-dsp) and
+   let **Auto crossover** and **Auto delay** design the tune against the
+   phase-aware predicted sum before you touch the hardware.
+
+The full path with averaging, coherence, spatial averaging, and comparison is
+described in [Measurement Workflow](#measurement-workflow).
+
+## FAQ
+
+**Can I use a UMIK-1 or another USB microphone?**
+
+No — and it is physics, not stubbornness. Every Resonalyze measurement records
+a loopback reference next to the microphone signal, and the two streams must
+share **one hardware clock** to stay sample-accurate. A USB microphone is its
+own audio device with its own free-running clock; pairing it with a separate
+playback/loopback device gives two streams with an unknown run-to-run start
+offset plus continuous drift — which silently corrupts every timing-sensitive
+result: phase, group delay, and above all automatic delay alignment. This is
+also why the settings deliberately do not offer a separate loopback device.
+Use an analog measurement microphone through a two-input interface instead
+(see [Your First Measurement](#your-first-measurement)).
+
+**Why is the loopback mandatory? REW works without one.**
+
+The loopback records what actually left the playback chain and exactly when it
+left, so every analysis is derived from the mic-vs-loopback **transfer
+function** — timing becomes absolute rather than relative to an arbitrary
+trigger. That absolute time base is what allows separate measurements, taken
+minutes apart, to be combined later: it is the foundation of the whole
+measure-once-tune-at-your-desk workflow, of the complex (vector) sum
+prediction, and of automatic delay alignment. Without a shared reference none
+of those operations would be honest.
+
+**Is one microphone position enough to tune a whole car?**
+
+At that one point, yes, and exactly: sound pressure sums linearly, so the
+predicted combination of individually measured drivers is the physics of what
+the microphone would record — not an approximation. The honest boundaries are
+the ones any single-point method has: the prediction holds at the microphone
+position (put it where your head is), in the linear non-clipping regime,
+with the same playback chain and mic position for every measurement in the
+set, and at a roughly stable cabin temperature. For frequency-response work
+you can go further with spatial averaging (**Confirm each run** pauses between
+sweeps so you can move the microphone). And the final judge of a tune is
+still your ears — the tool's job is to make the version you audition worth
+auditioning.
+
+## Building from Source
 
 Clone the repository:
 

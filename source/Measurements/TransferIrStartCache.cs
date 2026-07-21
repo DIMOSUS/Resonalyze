@@ -36,6 +36,22 @@ internal static class TransferIrStartCache
     }
 
     /// <summary>
+    /// The same estimate for any analysis-layer measurement view (the Compare
+    /// overlay); null without an impulse response.
+    /// </summary>
+    public static double? ResolveStartMs(IImpulseMeasurement measurement)
+    {
+        if (measurement.ImpulseResponse is not { Length: > 0 } impulseResponse ||
+            measurement.SampleRate <= 0)
+        {
+            return null;
+        }
+
+        return ResolveStartMs(
+            impulseResponse, measurement.SampleRate, measurement.PeakIndex);
+    }
+
+    /// <summary>
     /// The same estimate for an IR held directly as an array (the Virtual DSP
     /// processed channels); <paramref name="fallbackPeakIndex"/> answers when
     /// the estimator refuses the record.

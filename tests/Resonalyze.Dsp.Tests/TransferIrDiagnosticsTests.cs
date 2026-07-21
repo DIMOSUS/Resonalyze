@@ -253,8 +253,40 @@ public sealed class TransferIrDiagnosticsTests
             new double[16_384], SampleRate));
         Assert.Null(TransferIrDiagnostics.EstimateIrStart(
             Array.Empty<double>(), SampleRate));
+        // Too short for any spectral analysis — refused BEFORE the FFT, even
+        // at a valid sample rate.
+        Assert.Null(TransferIrDiagnostics.EstimateIrStart(
+            new double[] { 1.0 }, SampleRate));
         Assert.Null(TransferIrDiagnostics.EstimateIrStart(
             new double[] { 1.0 }, sampleRate: 0));
+    }
+
+    [Fact]
+    public void EstimateIrStart_RefusesANoiseOnlyRecord()
+    {
+        // A noise envelope still has a strongest peak the first-arrival
+        // search falls back to; only the SNR floor exposes that there is no
+        // front to measure. Deterministic LCG noise (approx. Gaussian via a
+        // sum of uniforms) so the test never flakes.
+        var impulseResponse = new double[65_536];
+        uint state = 12_345;
+        double NextUniform()
+        {
+            state = state * 1_664_525u + 1_013_904_223u;
+            return state / 4_294_967_296.0;
+        }
+        for (int i = 0; i < impulseResponse.Length; i++)
+        {
+            double sum = 0;
+            for (int k = 0; k < 12; k++)
+            {
+                sum += NextUniform();
+            }
+            impulseResponse[i] = sum - 6.0;
+        }
+
+        Assert.Null(TransferIrDiagnostics.EstimateIrStart(
+            impulseResponse, SampleRate));
     }
 
     [Fact]

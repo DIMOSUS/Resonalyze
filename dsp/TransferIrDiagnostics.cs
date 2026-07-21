@@ -253,8 +253,11 @@ public static class TransferIrDiagnostics
     /// usurp the front. Falls back to the full-band envelope when the
     /// dominant-band read is invalid (then a head artifact CAN poison it —
     /// <see cref="IrStartEstimate.DominantBandLimited"/> reports which path
-    /// answered); null when no credible arrival exists at all (empty, silent
-    /// or noise-only records) — the caller keeps whatever it used before.
+    /// answered); null when no credible arrival exists at all — empty, too
+    /// short or silent records, and noise-only records, which the envelope
+    /// SNR floor refuses (a noise envelope still has a "strongest peak" the
+    /// first-arrival search would fall back to, and only the peak-to-noise
+    /// grade exposes it). The caller keeps whatever figure it used before.
     /// Analysis is capped to the record's first <see cref="MaxAnalysisSamples"/>
     /// samples: the front lives there, and the cap keeps the per-refresh cost
     /// flat, the same convention as <see cref="DetectCrosstalkHead"/>.
@@ -264,7 +267,7 @@ public static class TransferIrDiagnostics
         int sampleRate)
     {
         ArgumentNullException.ThrowIfNull(impulseResponse);
-        if (impulseResponse.Count == 0 || sampleRate <= 0)
+        if (impulseResponse.Count < IrStartMinimumSamples || sampleRate <= 0)
         {
             return null;
         }
@@ -288,17 +291,32 @@ public static class TransferIrDiagnostics
                 BandpassPassOctaves = Math.Log2(band.HighHz / band.LowHz),
                 BandpassFadeOctaves = 0.25
             });
-        if (inBand.IsValid)
+        if (IsCredible(inBand))
         {
             return CrossingsOf(inBand, band, sampleRate, dominantBandLimited: true);
         }
 
         TimeAlignmentAnalysisResult fullBand = TimeAlignmentAnalysis.Analyze(
             impulseResponse, sampleRate, new TimeAlignmentAnalysisOptions());
-        return fullBand.IsValid
+        return IsCredible(fullBand)
             ? CrossingsOf(fullBand, band, sampleRate, dominantBandLimited: false)
             : null;
     }
+
+    // Below this length the spectral analysis behind the estimate is
+    // degenerate (no dominant band to speak of, no quantile noise floor).
+    private const int IrStartMinimumSamples = 256;
+
+    // The envelope peak-to-noise grade a record must clear before its front
+    // is trusted: IsValid alone only refuses flat-zero envelopes, so a
+    // noise-only record would otherwise "measure" a front at wherever its
+    // strongest random peak happens to sit. Same floor as the auto-delay
+    // onset lock (AutoAlignmentEngine.OnsetLockMinimumSnrDb, field-derived);
+    // clean cabin records grade 50+ dB, pure noise ~10-13 dB.
+    private const double IrStartMinimumSnrDb = 20;
+
+    private static bool IsCredible(TimeAlignmentAnalysisResult result) =>
+        result.IsValid && result.SignalToNoiseDecibels >= IrStartMinimumSnrDb;
 
     /// <summary>
     /// The <see cref="Complex"/> twin of the estimator above, for callers

@@ -150,19 +150,19 @@ public sealed class MeasurementSettingsMigrationTests
     }
 
     // A pre-Auto file (v <= 9) has no PhaseGateAutoFit/GroupDelayGateAutoFit
-    // fields — the nullable stays null after deserialization. A deliberately
-    // fitted/typed gate offset must stay manual (Auto would silently re-snap
-    // and persist over it); an untouched default offset gets the new Auto.
+    // fields. These tests deserialize REAL JSON without the fields — the
+    // failure mode they guard is exactly a property initializer surviving
+    // deserialization (System.Text.Json never assigns a missing property),
+    // which a hand-built object with an explicit null cannot catch. A
+    // deliberately fitted/typed gate offset must stay manual (Auto would
+    // silently re-snap and persist over it); an untouched default offset
+    // gets the new Auto.
     [Fact]
     public void PreAutoFileWithACustomGateOffsetStaysManual()
     {
-        var settings = new MeasurementSettingsFile.FrequencyResponseSettings
-        {
-            PhaseGateAutoFit = null,
-            PhaseGateOffsetMs = 6.5,
-            GroupDelayGateAutoFit = null,
-            GroupDelayGateOffsetMs = 12.25
-        };
+        MeasurementSettingsFile.FrequencyResponseSettings settings =
+            DeserializeFrequencyResponse(
+                """{"PhaseGateOffsetMs": 6.5, "GroupDelayGateOffsetMs": 12.25}""");
         var options = new FrequencyResponseOptions();
 
         settings.ApplyTo(options, new CurveVisibilityOptions());
@@ -176,14 +176,8 @@ public sealed class MeasurementSettingsMigrationTests
     [Fact]
     public void PreAutoFileWithTheDefaultGateOffsetGetsAuto()
     {
-        var settings = new MeasurementSettingsFile.FrequencyResponseSettings
-        {
-            PhaseGateAutoFit = null,
-            PhaseGateOffsetMs = FrequencyResponseOptions.DefaultPhaseGateOffsetMs,
-            GroupDelayGateAutoFit = null,
-            GroupDelayGateOffsetMs =
-                FrequencyResponseOptions.DefaultGroupDelayGateOffsetMs
-        };
+        MeasurementSettingsFile.FrequencyResponseSettings settings =
+            DeserializeFrequencyResponse("""{"PhasePlateauMs": 4.0}""");
         var options = new FrequencyResponseOptions();
 
         settings.ApplyTo(options, new CurveVisibilityOptions());
@@ -195,15 +189,14 @@ public sealed class MeasurementSettingsMigrationTests
     [Fact]
     public void StoredAutoFitChoiceIsAppliedAsIs()
     {
-        var settings = new MeasurementSettingsFile.FrequencyResponseSettings
-        {
-            // An explicitly released Auto with the default offset must not be
-            // re-enabled by the missing-field heuristic.
-            PhaseGateAutoFit = false,
-            PhaseGateOffsetMs = FrequencyResponseOptions.DefaultPhaseGateOffsetMs,
-            GroupDelayGateAutoFit = true,
-            GroupDelayGateOffsetMs = 12.25
-        };
+        // An explicitly released Auto with the default offset must not be
+        // re-enabled by the missing-field heuristic.
+        MeasurementSettingsFile.FrequencyResponseSettings settings =
+            DeserializeFrequencyResponse(
+                """
+                {"PhaseGateAutoFit": false,
+                 "GroupDelayGateAutoFit": true, "GroupDelayGateOffsetMs": 12.25}
+                """);
         var options = new FrequencyResponseOptions();
 
         settings.ApplyTo(options, new CurveVisibilityOptions());
@@ -211,6 +204,11 @@ public sealed class MeasurementSettingsMigrationTests
         Assert.False(options.PhaseGateAutoFit);
         Assert.True(options.GroupDelayGateAutoFit);
     }
+
+    private static MeasurementSettingsFile.FrequencyResponseSettings
+        DeserializeFrequencyResponse(string json) =>
+        System.Text.Json.JsonSerializer
+            .Deserialize<MeasurementSettingsFile.FrequencyResponseSettings>(json)!;
 
     // The migration runs inside LoadOrDefault (which reads the real settings
     // path beside the executable), so the unit exercises it directly.

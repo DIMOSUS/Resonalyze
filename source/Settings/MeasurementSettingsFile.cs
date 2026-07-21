@@ -403,9 +403,11 @@ internal sealed class MeasurementSettingsFile
         public bool ShowThdPlusNoise { get; set; } = true;
         public bool ShowNoiseFloor { get; set; } = true;
         public bool ShowGroupDelay { get; set; } = true;
-        // Nullable so a pre-Auto file (v <= 9, field absent) is
-        // distinguishable from a stored choice — see ApplyTo.
-        public bool? PhaseGateAutoFit { get; set; } = true;
+        // Nullable and deliberately WITHOUT an initializer: System.Text.Json
+        // never assigns a missing property, so an initializer value would
+        // survive deserialization and a pre-Auto file (v <= 9, field absent)
+        // would be indistinguishable from a stored true — see ApplyTo.
+        public bool? PhaseGateAutoFit { get; set; }
         public double PhaseGateOffsetMs { get; set; } = FrequencyResponseOptions.DefaultPhaseGateOffsetMs;
         public double PhaseLeftMs { get; set; } = FrequencyResponseOptions.DefaultPhaseLeftMs;
         public double PhasePlateauMs { get; set; } = FrequencyResponseOptions.DefaultPhasePlateauMs;
@@ -416,7 +418,7 @@ internal sealed class MeasurementSettingsFile
         public int PhaseFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
         public PhaseDetrendMode? PhaseDetrendMode { get; set; } =
             Resonalyze.Dsp.PhaseDetrendMode.Auto;
-        public bool? GroupDelayGateAutoFit { get; set; } = true;
+        public bool? GroupDelayGateAutoFit { get; set; }
         public double GroupDelayGateOffsetMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayGateOffsetMs;
         public double GroupDelayLeftMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayLeftMs;
         public double GroupDelayPlateauMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayPlateauMs;

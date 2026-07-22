@@ -67,6 +67,66 @@ public sealed class AudioFileCodecTests : IDisposable
         Assert.Equal(0.5f, read.Channels[0][2], 3);
     }
 
+    // Unique per channel AND per position: a channel rotation, a swap, or a
+    // one-frame slip each break the equality somewhere. The inter-channel step
+    // (0.004) is far above the 24-bit round-trip tolerance.
+    private static float MultichannelSample(int channel, int frame) =>
+        (frame % 997 - 498) / 1_000f + channel * 0.004f;
+
+    [Fact]
+    public void Read_ChannelLimitKeepsExactlyTheLeadingChannels()
+    {
+        // Four channels over MORE frames than one decoder block (32768), so
+        // the running channel cursor crosses several Read calls — the place a
+        // per-block restart would rotate the channel assignment. A WAV reader
+        // always returns whole frames, so the mid-frame boundary itself cannot
+        // be staged here; the cursor continuity across calls is what this
+        // exercises.
+        const int Rate = 48_000;
+        const int Frames = 70_000;
+        const int ChannelCount = 4;
+        var channels = new float[ChannelCount][];
+        for (int c = 0; c < ChannelCount; c++)
+        {
+            channels[c] = new float[Frames];
+            for (int i = 0; i < Frames; i++)
+            {
+                channels[c][i] = MultichannelSample(c, i);
+            }
+        }
+        string path = PathFor("multichannel.wav");
+        AudioFileCodec.WriteWav(path, new AudioFileContent(channels, Rate));
+
+        AudioFileContent limited = AudioFileCodec.Read(
+            path, TimeSpan.FromMinutes(1), channelLimit: 2);
+
+        Assert.Equal(2, limited.ChannelCount);
+        Assert.Equal(Frames, limited.FrameCount);
+        double quantum = 1.0 / (1 << 23);
+        for (int c = 0; c < 2; c++)
+        {
+            for (int i = 0; i < Frames; i++)
+            {
+                Assert.True(
+                    Math.Abs(limited.Channels[c][i] - MultichannelSample(c, i))
+                        <= 2 * quantum,
+                    $"Channel {c} drifted at frame {i}");
+            }
+        }
+
+        // Without a limit the same file yields every channel, and the LAST one
+        // carries its own signal — the limited read kept the right two, not
+        // just any two.
+        AudioFileContent full = AudioFileCodec.Read(path, TimeSpan.FromMinutes(1));
+        Assert.Equal(ChannelCount, full.ChannelCount);
+        for (int i = 0; i < Frames; i += 1_000)
+        {
+            Assert.True(
+                Math.Abs(full.Channels[3][i] - MultichannelSample(3, i))
+                    <= 2 * quantum);
+        }
+    }
+
     [Fact]
     public void Read_RefusesMaterialLongerThanTheBound()
     {

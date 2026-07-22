@@ -259,14 +259,20 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
     // all float32 and all alive at once. Channels beyond two are never stored
     // (the decoder is told to keep two), so two is the multiplier even for
     // multichannel files.
-    private static long ProjectedPipelineBytes(AudioFileInfo info, int projectRate)
+    private static long ProjectedPipelineBytes(
+        long sourceFrames, int sourceRate, int projectRate)
     {
-        double seconds = info.Duration.TotalSeconds;
-        long sourceFrames = (long)Math.Ceiling(seconds * info.SampleRate);
-        long renderedFrames = (long)Math.Ceiling(seconds * projectRate);
-        long resampledFrames = info.SampleRate == projectRate ? 0 : renderedFrames;
+        long renderedFrames = (long)Math.Ceiling(
+            sourceFrames * (double)projectRate / sourceRate);
+        long resampledFrames = sourceRate == projectRate ? 0 : renderedFrames;
         return 4L * 2L * (sourceFrames + resampledFrames + renderedFrames);
     }
+
+    private static long ProjectedPipelineBytes(AudioFileInfo info, int projectRate) =>
+        ProjectedPipelineBytes(
+            (long)Math.Ceiling(info.Duration.TotalSeconds * info.SampleRate),
+            info.SampleRate,
+            projectRate);
 
     // ----------------------------------------------------------------- render
 
@@ -433,6 +439,22 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             TimeSpan.FromMinutes(MaximumTrackMinutes),
             channelLimit: 2,
             cancellationToken);
+
+        // The pick-time budget was a preflight over the container's CLAIMED
+        // duration; the decode is the truth — the file may have been replaced
+        // since the pick, or the header may simply lie — so the same bound is
+        // enforced again on the actual frame count, before the resampled and
+        // rendered buffers come into existence.
+        long actualBytes = ProjectedPipelineBytes(
+            material.FrameCount, material.SampleRate, context.SampleRate);
+        if (actualBytes > MaximumPipelineBytes)
+        {
+            throw new InvalidOperationException(
+                $"The decoded track is larger than its header promised: " +
+                $"rendering would hold ~{actualBytes / 1_000_000} MB of audio " +
+                $"in memory (bound {MaximumPipelineBytes / 1_000_000} MB). " +
+                "Use a shorter excerpt.");
+        }
 
         var renderProgress = new SynchronousProgress<double>(value =>
             progress.Report(new AuditionProgress(

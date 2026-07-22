@@ -1,80 +1,77 @@
-# HANDOFF — remaining TODO work, split by assistant
+# HANDOFF — how to work this repo, and what suits whom
 
-Working notes for continuing the `TODO.md` register. Blocks 1–7 (full review,
-correctness fixes, performance, dedup, Form1 decomposition, weighted phase
-unwrap) are merged into `main`. `TODO.md` is the source of truth for what is
-left; this file says **who** should take **what** and **how** to work.
+`TODO.md` is the register of what is left. This file is not a second one: it
+holds the environment facts a fresh session needs, the workflow that produced
+the merged work, and a note on which of the remaining items suit which kind of
+session.
+
+Last reconciled with `TODO.md` and the code on 2026-07-22 (tip `255de70`).
 
 ## Environment crib (read first)
 
-- `global.json` pins an SDK the container may not have — if `dotnet` fails on
-  the pin, run it with a working directory **outside the repo** (absolute
-  paths to the solution) instead of editing `global.json`.
+- `global.json` pins SDK 10.0.301 (`rollForward: latestPatch`) — a container may
+  not have it. If `dotnet` fails on the pin, run it with a working directory
+  **outside the repo** (absolute paths to the solution) instead of editing
+  `global.json`.
 - Build everything with `-p:EnableWindowsTargeting=true` on Linux:
   `dotnet build source/Resonalyze.sln -c Release -p:EnableWindowsTargeting=true`.
-- `tests/Resonalyze.Dsp.Tests` runs locally (deterministic and synthetic).
-  `tests/Resonalyze.App.Tests` compiles
-  locally but **runs only on the Windows CI** — push a PR to execute it.
-- Workflow used so far: verify every TODO claim against the code before
-  fixing → fix → build + dsp tests → update `TODO.md` honestly (record
-  deliberate non-fixes and residuals) → commit → PR → squash-merge on green
-  CI. Deviations from current behavior ("drift alignments") are called out
-  explicitly in the PR body.
+- `tests/Resonalyze.Dsp.Tests` targets `net10.0` and runs locally — it is
+  deterministic and synthetic, and it is where a behavior claim gets pinned.
+  `tests/Resonalyze.App.Tests` and `tests/Resonalyze.Audio.Tests` target
+  `net10.0-windows`: they compile locally but **run only on the Windows CI**, so
+  push a PR to execute them. The audio suite's hardware cases are excluded there
+  by `--filter "Category!=Hardware"` — nothing in CI touches a real device.
+- Performance work starts with a profile, not with a reading of the code: build
+  `-c Tracy` and profile the actual scenario before optimizing. A scratchpad
+  harness must `ProjectReference` the dsp project, never a `HintPath` to a built
+  DLL.
 
-## Take now (mechanical, locally verifiable) — ordered easiest first
+## Workflow
 
-1. **Deconvolution flatness test** — pure dsp test pinning the `2/N` scaling
-   and envelope compensation (`SyntheticMeasurement`-style; in-band ripple
-   was verified at < 0.01 dB during review).
-2. **DSP duplication**: coherence formula lives twice
-   (`SpectrumAnalysis.ComputeCoherence` vs inline in
-   `TransferFunction.ComputeAveragedRelativeIr`); `DspChannelChain.Response`
-   re-implements `PreparedDspResponse.Create`;
-   `SweepAnalysis.DeconvolveWithInverseFilter` has three overloads with
-   manual float→double conversion.
-3. **Magic numbers in harmonic analysis** (`DataHelper`) — name/document
-   `h+0.03`/`h−0.5`, THD window `5.5…1.5`, silent smoothing doubling.
-4. **`OverlaySlotState` record** — replace the triple field-mapping between
-   overlay, slot file, and UI state.
-5. **`CalibrationFile` → "parser accepts text"** — align with the
-   `IEqProfileFormat` pattern; keeps `LoadError` semantics.
-6. **Options-panel small items**: `SetOptions` reads bits from the
-   measurement instead of the control; `TukeyWindowControlHelper` shadow-value
-   restore (mirror the loopback-channel fix); `LiveSpectrumOpt` three
-   identical floor-index loops → one helper; persist the preferred loopback
-   offset separately from the effective one.
-7. **Split `DataHelper` (~1200 lines)** into Spectrum/Phase/Impulse/Resampling
-   modules — *move-only*, zero behavior change; the dsp tests must pass
-   untouched.
-8. **`FrequencyResponseOptions` grab-bag** — move the UI visibility flags
-   (`ShowHd2`, `ShowGroupDelay`, …) out of the dsp layer; many call sites,
-   all compiler-checked.
-9. **UI polish batch**: per-paint Pen/Brush caching in the dark controls;
-   build the Tools menu once; `ColorPickerDialog` rainbow bitmap cache;
-   split `VirtualCrossoverPanel` (~2.6k lines) into partials; `DelayTableText`
-   value model; surface the silent project-file `.backup` rename;
-   `WireLiveApply` for late-created controls.
+Verify every `TODO.md` claim against the code before fixing — the 2026-07-22
+audit found four items already closed and five described wrongly after just four
+days and 23 commits of drift → fix → build + dsp tests
+→ update `TODO.md` honestly, recording deliberate non-fixes and residuals →
+commit → PR → squash-merge on green CI. Deviations from current behavior are
+called out explicitly in the PR body.
 
-## Leave for the next Fable session
+Two register conventions worth keeping: an item that describes work already done
+keeps only its residual, and a settled decision stays as `[✗]` so the same idea
+is not re-proposed later.
 
-- **`EqAutoTuner` polish pass** — joint gain/Q optimization, a final
-  coordinate-descent pass (borrow from `CrossoverAutoSetup`), preamp rounding
-  *after* the fit. Success is measured in residual dB against the current
-  tuner, not in green builds.
-- **`CrossoverAutoSetup.Optimizer.Score()` caching** — cache invalidation
-  inside an optimizer; a slightly stale score silently degrades convergence.
-  (Acceptable for Opus only with a strict "cached == uncached, bit-identical
-  on a fixed scenario" test.)
-- **WASAPI migration** of the Wave backend + the final recorder merge that
-  depends on it (also needs hardware).
-- A review pass over the merged mechanical blocks.
+## What suits which session
 
-## Needs Windows / hardware (any assistant, deferred)
+The mechanical block this file used to enumerate is essentially finished: the
+deconvolution flatness test, the coherence dedup, the harmonic-analysis
+constants, the `CalibrationFile` text parser, the `DataHelper` split, the
+`FrequencyResponseOptions` carve-out and most of the UI polish batch are in
+`main`. Two deliberate non-fixes from that batch, recorded here so they are not
+rediscovered as oversights: the dark controls still allocate `Pen`/`Brush` per
+paint (a micro-optimization nobody has profiled — Tracy first, and only if a
+repaint actually shows up), and `DelayTableText` still parses its own rendered
+columns (dropped for low payoff). What is left in `TODO.md` falls into three
+kinds.
 
-ASIO channel-window conversion and averaged-session verification; Time
-Alignment analysis caching (live staleness check); crossover-wizard DPI and
-`ChromeTitleBar` DPI; `LogarithmicClipAxis` label trim; PDF base64 images
-(pixel-identical check); `LevelsAvailable` stall check; top-edge resize grip;
-uninstaller settings cleanup; a visual pass on the new phase unwrap with a
-noisy averaged measurement (the tail should no longer jump by 360° past deep
-nulls).
+- **Judgment-heavy, measured in dB rather than green builds.** The EQ Wizard
+  redesigns (shelf filters ★, the greedy-fit rework, spatial averaging) and the
+  Auto delay modelling items (scene-lock tolerance, polarity margin, promotion
+  thresholds from comb statistics). These need a real measurement to argue
+  against, and the field data lives outside the repo — the synthetic suite pins
+  regressions, it does not decide these.
+- **Mechanical and locally verifiable.** `OverlaySlotState`, overlay-curve
+  normalization, the surviving DSP chain-assembly duplication
+  (`DspChannelChain.Response` vs `PreparedDspResponse.Create`), the
+  `VirtualCrossoverPanel` residual boundaries (it has grown back to ~3900 lines
+  since the last split), the waterfall <8-slice guard and the wavelet
+  time-support validity.
+- **Gated on Windows or hardware.** ASIO channel-window conversion and the
+  averaged-session run on a real (ideally slow) driver; Time Alignment analysis
+  caching, which needs a live staleness check; `ChromeTitleBar` DPI across
+  mixed-DPI monitors; `LogarithmicClipAxis` label trim; PDF base64 images with a
+  pixel-identical render check; `TukeyWindowControlHelper` clamp reversibility;
+  `WireLiveApply` for late-created controls; uninstaller settings cleanup.
+
+Two long-standing entries are gone rather than deferred: the WASAPI migration
+shipped (shared + exclusive backends alongside the legacy MME one), and the
+recorder merge that was waiting on it is dropped — the migration landed without
+ever needing the common device abstraction that was its justification.

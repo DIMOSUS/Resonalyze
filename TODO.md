@@ -1,49 +1,34 @@
 # TODO — tech debt from the code reviews
 
 Open items found during the review passes that were deliberately reported
-instead of fixed. Completed items were removed (they live in git history);
-the residual Windows live-checks they left behind are consolidated below.
-Grouped by area, highest-value items marked ★.
+instead of fixed. Completed items are removed (they live in git history), and an
+item describing work already done keeps only the residual. Grouped by area,
+highest-value items marked ★. `[✗]` marks a settled decision kept on purpose, so
+the same idea does not get re-proposed — those are not open work.
 
-## Windows live-checks pending (verification of already-merged DSP work)
-
-The DSP side of these is done and unit-tested on CI; each needs a hands-on
-check in the running app (`source/` is `net10.0-windows`, not buildable on the
-Linux dev env where the work was done).
-
-- [ ] **GCC-PHAT alignment confidence line** renders in the Time Alignment
-  panel ("Alignment: NN% (GCC-PHAT / envelope fallback)"); re-eyeball the fixed
-  0.2 PHAT trust gate on real captures (coherence weighting shifts the peak).
-- [ ] **Excitation-masked H1** (relative regularization + explicit sweep-start
-  edge in `TransferFunction.ComputeAveragedRelativeIr`): re-measure and confirm
-  the transfer FR/IR look right; on reconstructed field captures the infrasonic
-  rumble that used to bias the loopback-referenced sub timing by up to ~0.34 ms
-  is gone, so a fresh sub measurement is the interesting one.
-- [ ] **Butterworth auto-delay polarity**: re-run the user's tune and confirm no
-  channel is inverted on one side of a pair alone.
-- [ ] **Honest dBr/dBc axis + tracker labels** (FR plot title, distortion tracker
-  text) render correctly.
-- [ ] **HD curves at 1/12 smoothing** look right (were over-smoothed); the grey
-  **Noise-floor trace** + legend renders; **harmonic-overlap warning text**
-  renders next to the plot.
-- [ ] **Auto crossover wizard** on a real swept measurement: slope-deviation
-  penalty, tweeter resonance floor, distortion-aware bounds (dirty-low tweeter
-  held above the floor, clean one still at the class floor), coherence-gated
-  band read, and the async Apply path (freeze-during-ranking). Re-eyeball
-  `AchievabilityWeight = 0.5` if field ranking disagrees.
-- [ ] **Virtual DSP load lock**: the disable/"Loading previous session…" note
-  appears immediately on open/import and controls re-enable exactly when curves
-  land.
-- [ ] **Target-curve gains dialog** ("Sub level over mid/treble" field): layout,
-  lazy default fill, freeze-during-ranking.
-- [ ] **Sweep run-quality retry flow** ("Retrying x/y", per-run reject modal,
-  all-runs-failed path) on real hardware.
+Last audited against the code on 2026-07-22 (tip `255de70`). That pass dropped
+the "Windows live-checks pending" section: every item in it shipped in v0.5.3,
+and only the person with the car and the microphone can tick them, so they
+belong in the next field session rather than in a register nobody else can
+close.
 
 ## DSP library (`dsp/`)
 
 - [ ] **`CrossoverAutoSetup.Optimizer.Score()` recomputes every channel** on
   each junction/gain trial (~300–1500 calls per junction). Filter magnitudes
-  are cached, but the amplitudes of untouched channels are not.
+  are cached, but the amplitudes of untouched channels are not. **Unprofiled:**
+  this is a reading of the code, not a measurement — build `-c Tracy`, profile a
+  real ranking run and confirm `Score` dominates before paying for cache
+  invalidation inside an optimizer (a stale score silently degrades
+  convergence).
+- [ ] **The DSP chain is assembled twice.** `DspChannelChain.Response` evaluates
+  gain · polarity · delay · crossover · all-pass · PEQ analytically per
+  frequency, while `PreparedDspResponse.Create` builds the same chain as a
+  cached biquad cascade. The two evaluation strategies are both wanted (one for
+  a single plot point, one for FFT-bin processing), but the assembly order and
+  the gain/preamp folding are copied, so a new stage has to be added in both
+  places or the two quietly disagree. The rest of the review's dedup work is
+  merged; this is the survivor.
 
 ## Virtual DSP / Time Alignment
 
@@ -59,13 +44,12 @@ Linux dev env where the work was done).
   final cascade state: the two sides want OPPOSITE corrections (left +0.53,
   right −1.84 ms), so no scene-preserving pair move satisfies it on both sides.
   At most surface the per-candidate residual GD as a log diagnostic.
-- [ ] **Stereo scene diagnostics (Δ per band)**: the stereo Auto delay cascade
-  is in; the complementary *verification* layer is not — per-band L−R arrival
-  differences of the FINAL tune, compared across bands (0.06 ms repeatability on
-  real measurements), with a warning when a band's Δ walks off the top pair's by
-  a sizable fraction of its junction period (a period slip that survived the
-  per-side sum optimization), and optionally a candidate-list re-pick to fix it
-  for free. Also: L/R polarity consistency per band.
+- [ ] **Nothing judges the per-band stereo Δ.** The read-out exists
+  (`ComputeStereoDeltasAsync` + the metric panel's Δ L−R and level columns), but
+  the numbers are only presented: no warning when a band's Δ walks off the top
+  pair's by a sizable fraction of its junction period — a period slip that
+  survived the per-side sum optimization — and no candidate-list re-pick to
+  correct it for free.
 - [ ] **`SceneLockToleranceMs = 0.05` is aggressive for pairs whose localizable
   band is narrow and low** (e.g. reaching only ~300–400 Hz): the band passes the
   minimum-width admission, but the temporal certainty of such a narrow-band
@@ -82,38 +66,37 @@ Linux dev env where the work was done).
   left woof/mid junction had the inverted impostor out-scoring the true normal
   candidate by 0.23 dB — the old 0.25 saved it by 0.02). The broader fix stands:
   make the margin a function of junction frequency / band coherence, or add an
-  independent polarity witness (`EstimatePolarity` on the band-passed arrivals).
-- [ ] **Promotion / latch constants are field-anchored, not modelled.**
-  `WideWindowPromotionMarginDb` (1.6), `PromotionReachPeriods` (2.5) and
-  `MaxInterSideDirectPathMs` (8) in `AutoAlignmentEngine.cs` are set between a
-  handful of field observations with thin headroom (the false-hop 1.46 dB vs
-  genuine-recovery 1.87 dB split has only ~0.2 dB either side). Minimum: log a
-  diagnostic when a junction lands in the gray zone (currently it silently
-  picks). Better: derive the threshold from comb statistics of the junction.
+  independent polarity witness (`EstimatePolarity` on the band-passed arrivals —
+  it exists, but only as the launch-time L/R mismatch warning, not inside the
+  per-candidate decision).
+- [ ] **Promotion constants are field-anchored, not modelled.**
+  `WideWindowPromotionMarginDb` (1.6) and `PromotionReachPeriods` (2.5) in
+  `AutoAlignmentEngine.cs` are set between a handful of field observations with
+  thin headroom (the false-hop 1.40 dB vs genuine-recovery 1.91 dB split has only
+  ~0.2 dB either side). The gray-zone diagnostic is DONE: a declined promotion
+  worth more than `PromotionNoteworthyGainDb` (0.2) logs which lobe was refused
+  and why (past the reach vs under the margin), and the wide-seed lobe gate logs
+  its own kept pick. Remaining: derive the threshold from comb statistics of the
+  junction. (`MaxInterSideDirectPathMs` is gone — the cross-side work replaced it
+  with the donor-corroborated geometry in #47.)
 - [ ] **Time Alignment analysis is not cached** — `RefreshAnalysis`
   (`TimeAlignmentPanelController`) recomputes Hilbert + GCC-PHAT on every tab
   show even when inputs are unchanged. Needs a live-app check to avoid stale
   display.
-- [ ] **Crossover wizard breaks at 150 %+ DPI**
-  (`VirtualCrossoverAutoSetupDialog`): extra channel rows use hardcoded pixel
-  offsets (`RowTop = 42`, `RowStep = 28`), so rows 4–8 can overlap scaled
-  designer controls. Verify on Windows and switch to layout-panel positioning.
 - [ ] **`VirtualCrossoverPanel` decomposition — residual boundaries.** The bulk
   is done: the UI-free runtime session model (`VirtualCrossoverChannel`/`State`),
   the source-loading pipeline (`ResolvedVirtualDspSource` + `TryAssignSource`),
   both OxyPlot presenters (`VirtualCrossoverAcousticPlot` / `DspChainPlot`), the
   metric computation (`VirtualCrossoverMetrics` + shared `ProcessedChannels`) and
   the shared Auto delay `AlignmentReprocessor` are extracted; the panel dropped
-  ~4250 → ~3060 lines. Remaining, lower-value slices: a full source
-  resolver/assignment boundary (the panel still orchestrates the file/History/
+  ~4250 → ~3060 lines, and the Auto delay work since (#43–#50) has grown it back
+  to ~3900 — the boundaries below are worth more than they were. Remaining,
+  lower-value slices: a full source resolver/assignment
+  boundary (the panel still orchestrates the file/History/
   restore flow around the shared core), splitting `VirtualCrossoverMetrics` into
   curve building vs side-processing orchestration, and moving `ProcessedChannel`'s
   `OxyColor` out into the render binding. Persistence, calibration and control
   binding are inherently UI-bound — leave them.
-- [ ] **`DelayTableText` parses rendered fixed-width columns** (18/37 chars) for
-  copy-values instead of holding a value model (format+parse are co-located and
-  tested). Deferred: a value model pushes the change into the panel's
-  click-position→cell mapping, best verified on Windows, for low payoff.
 - [ ] **PDF images still go through temp files.** The shared `PdfSheet` helper
   centralised the temp-file dance, but MigraDoc 6 supports
   `AddImage("base64:...")`, which would remove it (needs a Windows render check
@@ -121,30 +104,20 @@ Linux dev env where the work was done).
 
 ## Measurement orchestrators
 
-- [ ] **Verify the reused ASIO session on hardware.** Averaged sweeps now keep
-  one open ASIO session across runs (the driver plays silence between runs and
-  only the capture accumulator restarts). Software lifecycle guards are covered
-  deterministically: callback pools are allocated before playback, reset advances
-  a capture epoch and drains queued old blocks, an in-flight old block is rejected
-  at the final locked append, overflow/worker failure can recover on reset, and
-  successful capture completion atomically surfaces a terminal pump failure before
-  clearing that epoch, while ASIO stop drains already accepted work before snapshot;
-  final capture atomically detaches its accumulator before copying the completed
-  samples outside the session lock (so the worker can keep returning queue slots).
-  The PCM device-to-pump handoff uses a value packet rather than allocating an
-  application-owned EventArgs per callback; disposal drops queued work and detaches
-  subscribers before waiting for an already in-flight worker block. Sweep baselines
-  use pump-accepted frames (including queued work), so worker latency cannot shorten
-  the requested capture tail.
-  The remaining item is device/driver integration: run an averaged ASIO measurement
-  on real hardware (ideally a slow driver).
-- [ ] **Sweep-run quality: unambiguous checks only, by decision.** The
-  statistical outlier layer (peak-delay vs median, IR correlation vs a reference
-  run) and the run pre-alignment rework were **rejected by the user
-  (2026-07-11), do not resurrect** — the unambiguous checks (clipping / silent /
+- [ ] **Run an averaged ASIO measurement on real hardware** (ideally a slow
+  driver). Averaged sweeps keep one open ASIO session across runs; every software
+  lifecycle guard around that — callback pools, capture epochs, in-flight block
+  rejection, overflow recovery, terminal-failure surfacing, stop draining,
+  detach-before-copy — is covered deterministically by the test suite (see the
+  commits behind `AsioFullDuplexSession` / `AsioCapturePump`). What no test can
+  reach is device/driver integration.
+- [✗] **Sweep-run quality: unambiguous checks only — DECIDED, do not
+  resurrect.** The statistical outlier layer (peak-delay vs median, IR
+  correlation vs a reference run) and the run pre-alignment rework were rejected
+  by the user (2026-07-11): the unambiguous checks (clipping / silent /
   undersized) plus one retry cover the real field failure mode. Cosmetic tails
-  left as-is: the stored raw samples are only the last run's; the Wave RMS meter
-  integrates the lead-in/tail silence.
+  accepted with it: the stored raw samples are only the last run's; the Wave RMS
+  meter integrates the lead-in/tail silence.
 
 ## Options panels
 
@@ -163,10 +136,6 @@ Linux dev env where the work was done).
   like the loopback-channel one would make the clamp reversible. Deferred to a
   Windows session: control-value re-entrancy across three panels
   (FR/Waterfall/BurstDecay) needs a live render check.
-- [ ] **`LiveSpectrumOpt` shadow fields update only on
-  `SelectionChangeCommitted`.** No current path loses a change (the R reset
-  button raises it too) — fragility for future programmatic writes, not an active
-  bug.
 
 ## UI chrome
 
@@ -174,25 +143,13 @@ Linux dev env where the work was done).
   `DpiChanged` handling: moving the window to a monitor with different DPI
   (PerMonitorV2) leaves the bar height, button widths and tab layout at the old
   scale. Refresh the cached metrics and re-run layout on DPI change.
-- [ ] **Top-edge resize grip still dead over child controls.** The HTTRANSPARENT
-  fix covers the title-bar panel itself; points over the tab buttons and window
-  buttons (which reach y=0) still hit-test as client. Low value; document or fix
-  later.
 
 ## Audio capture layer
 
-- [ ] **`SoundRecorder` / `AsioFullDuplexSession` remain separate classes.** The
-  waiter registry, stop-timeout, accumulator core and metering math are shared;
-  what is left duplicated is the thin device glue (start/first-buffer/stopped
-  choreography, the event triple). A full merge needs a common device
-  abstraction — low value until the WASAPI migration forces one.
 - [ ] **ASIO converts channels `0..offset+count` instead of a window from
   `InputChannelOffset`** (`AsioFullDuplexSession`): a mic on input 7 converts all
   8 channels per callback. Possibly a NAudio `SetChannelOffset` workaround —
   needs hardware to verify.
-- [ ] **Wave backend still uses legacy MME** (`WaveInEvent`/`WaveOutEvent`) with
-  hidden mixer resampling and extra latency; migrate to WASAPI
-  (exclusive/shared) with a device-compatibility pass.
 
 ## Overlays
 
@@ -219,14 +176,6 @@ Linux dev env where the work was done).
 
 ## Shell
 
-- [ ] ★ **`Form1` is still the concurrency hub** (largely mitigated). Mutable
-  state on one object is touched by the UI thread, `Task.Run` plot builds and
-  audio-callback events. The load-bearing carve-outs are done
-  (`MicrophoneCalibrationService`, `StartupAudioWarmup`, `DebouncedSaver`,
-  `CompareSelection`, `ButtonLongPressBehavior`, `MeasurementSessionTracker`,
-  `ActiveOverlaySlotTracker`). What remains on Form1 is the lifecycle/close flags
-  and transient UI bits — inherently form-bound; further slicing is optional
-  polish, not a concurrency risk.
 - [ ] **`WireLiveApply` covers only dialog-open controls.** Controls created
   after wiring never get live-apply behavior. Deferred to a Windows session: the
   fix hooks `ControlAdded` recursively and re-enters the apply debounce, so it
@@ -239,14 +188,12 @@ tool has set crossovers, delays and polarity — so crossovers, phase/time and
 convolution are deliberately out of its scope (see the note at the end). The
 items below are what a car DSP tune actually needs, roughly in priority order.
 
-- [ ] **Boostability/reliability mask — driver-band refinement remains.** DONE: Auto
-  Tune defaults to a **cuts-only** mode (wizard checkbox → `EqAutoTuner.CutsOnlyMode`),
-  the safe car-tuning choice; when boosts are enabled they are gated by
-  `EqBoostabilityMask` — refused in low-coherence bins (a loopback-transfer source's
-  γ²) and inside narrow deep interference nulls, cuts always allowed, per-band boost
-  still capped by Max Gain / `TotalGainMaxDb`. Residual: the "driver band" is only the
-  user's From/To window; auto-deriving each driver's usable band (from the measured
-  roll-off or the crossover) so the mask also blocks boosts outside it is not done.
+- [ ] **The boostability mask has no notion of a driver band.** The mask itself
+  is in (`EqBoostabilityMask`: boosts refused in low-coherence bins and narrow
+  deep nulls, cuts always allowed, Auto Tune cuts-only by default), but the
+  "driver band" it works inside is just the user's From/To window. Derive each
+  driver's usable band from the measured roll-off or the crossover so the mask
+  also blocks boosts outside it.
 - [ ] ★ **Only peaking bands — no shelves.** `PeqBand` is `(Fc, Q, gain)` with no
   filter type, so `EqAutoTuner`, the preview (`DigitalEqualizationResponse`) and
   the parsers are peaking-only. Car targets are shelved (bass boost + downward
@@ -293,10 +240,6 @@ Car / CarMild / XCurve presets cover it), and HP/LP filter types (crossover tool
   into the confidence, or rename the figure. Needs a validation pass on real
   measurements. (Related to the flagship sub group-delay-by-frequency work in the
   memory follow-ups.)
-- [ ] **`WrapPeakPositions` cannot actually produce negative delays** — the peak
-  search is capped at length/2, so the upper-half branch of `ToSignedDelaySamples`
-  is unreachable (harmless for the loopback workflow; the API promises more than
-  it does).
 - [ ] **Display smoothing includes low-reliability bins** (unwrap blanks long
   garbage stretches, but short noisy nulls still enter `SmoothLinear` at full
   weight; magnitude curves behave the same). Optional: reliability-weighted
@@ -304,9 +247,9 @@ Car / CarMild / XCurve presets cover it), and HP/LP filter types (crossover tool
 
 ## Live Spectrum / coherence
 
-- [ ] **RTA tone level is only accurate with a Flat Top window — periodic pink
-  forces rectangular, so it cannot carry dB SPL there.** RESOLVED for the general
-  case: Flat Top is a selectable Live Spectrum window and reads a tone at its true,
+- [✗] **RTA tone level is only accurate with a Flat Top window — RESOLVED for
+  the general case; the periodic-pink residual is conditional.**
+  Flat Top is a selectable Live Spectrum window and reads a tone at its true,
   FFT-length-independent amplitude. Validated against the SPL calibrator on white
   noise + Flat Top + smoothing OFF: the RTA read the 94 dB tone at −12.63 dB, the
   flat-top calibration at −13 dBFS — 0.37 dB agreement, confirming the calibration
@@ -350,12 +293,15 @@ Car / CarMild / XCurve presets cover it), and HP/LP filter types (crossover tool
   3 ms display): the physical window shrinks 4× at 192 kHz and the promised 3 ms
   does not exist at 768 kHz. Parametrize in milliseconds. (The /correlation[0]
   normalization is the standard biased estimator — fine for display.)
-- [ ] **Measurement files validate only after full deserialization**: a crafted
-  file can declare hundreds of millions of samples and hit OOM before
-  `Validate()` runs. Add a file-size cap before parsing, a max-samples cap, and
-  `OutOfMemoryException` handling.
-- [ ] **Uninstaller leaves settings behind.** Offer (or document) removal of the
-  settings/history files on uninstall.
+- [ ] **Measurement files validate only after full deserialization**: a file
+  declaring hundreds of millions of samples hits OOM before `Validate()` runs.
+  Not a security hole (the user opens files from their own disk; the worst case
+  is a crash), but a truncated or corrupted `.json` — or one shared between users
+  now that measurements travel — should fail with a message. Add a file-size cap
+  before parsing, a max-samples cap, and `OutOfMemoryException` handling.
+- [ ] **Uninstaller leaves settings behind.** Keeping them across a reinstall is
+  the defensible default, so the closing move is a line in the docs saying where
+  they live; an opt-in "remove my settings" checkbox only if it is free.
 - [ ] **Release toolchain is unpinned** (`choco install innosetup`, latest
   NetSparkle appcast tool, actions by major tag): pin exact versions (and SHAs
   for actions) once the current-good versions are confirmed. (The shell-injection

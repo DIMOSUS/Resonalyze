@@ -139,14 +139,19 @@ public sealed class AudioFileCodecTests : IDisposable
             AudioFileCodec.Read(path, TimeSpan.FromSeconds(2)));
     }
 
-    [Fact]
-    public void Read_RefusesMaterialPastTheByteBudget()
+    // One second of mono 8 kHz float is a 32 kB payload, but the decode's
+    // PEAK is twice that: while the final array fills, every chunk still
+    // exists. 20 kB fails on the payload alone; 50 kB fits the payload and
+    // must still be refused for the assembly peak (64 kB).
+    [Theory]
+    [InlineData(20_000)]
+    [InlineData(50_000)]
+    public void Read_RefusesMaterialPastTheByteBudget(long budget)
     {
         // The duration bound trusts the header; the byte bound holds when the
-        // header lies or the file was swapped after probing. One second of
-        // mono 8 kHz float is 32 kB — a 20 kB budget must stop the decode.
+        // header lies or the file was swapped after probing.
         const int Rate = 8_000;
-        string path = PathFor("oversized.wav");
+        string path = PathFor($"oversized-{budget}.wav");
         AudioFileCodec.WriteWav(
             path, new AudioFileContent([new float[Rate]], Rate));
 
@@ -155,7 +160,7 @@ public sealed class AudioFileCodecTests : IDisposable
                 path,
                 TimeSpan.FromMinutes(1),
                 channelLimit: int.MaxValue,
-                maximumStoredBytes: 20_000));
+                maximumStoredBytes: budget));
     }
 
     [Fact]

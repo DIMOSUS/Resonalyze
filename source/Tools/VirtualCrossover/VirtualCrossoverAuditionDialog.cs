@@ -59,11 +59,12 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
     private string? sourcePath;
     private string? targetPath;
 
-    // Whether overwriting targetPath has been consented to IN THIS DIALOG: the
-    // SaveFileDialog's own prompt covers a picked path, but a path restored
-    // from the previous opening carries no such consent — the file sitting
-    // there is the PREVIOUS render, and silently replacing it would collapse
-    // an A/B pair into just B.
+    // Whether overwriting targetPath has been consented to IN THIS DIALOG.
+    // Only the SaveFileDialog's OverwritePrompt over an EXISTING file (or the
+    // render-time question below) grants it; a path restored from the
+    // previous opening and a freshly created new file both lack it — in
+    // either case the file on disk is the PREVIOUS render, and silently
+    // replacing it would collapse an A/B pair into just B.
     private bool targetOverwriteConfirmed;
     private string trackSection = string.Empty;
     private string resultSection = string.Empty;
@@ -308,10 +309,14 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             return;
         }
 
+        // Consent tracks what the SaveFileDialog actually asked. For an
+        // EXISTING file its OverwritePrompt just did. A NEW file had nothing
+        // to ask about — the first render creates it freely, and the next
+        // render in this same dialog finds it existing and unconfirmed, so it
+        // asks before replacing variant A with variant B.
+        targetOverwriteConfirmed = File.Exists(dialog.FileName);
         targetPath = dialog.FileName;
         labelTargetFile.Text = dialog.FileName;
-        // The SaveFileDialog's OverwritePrompt already asked if the file exists.
-        targetOverwriteConfirmed = true;
         RefreshRenderEnabled();
     }
 
@@ -360,10 +365,9 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         {
             DialogResult overwrite = MessageBox.Show(
                 this,
-                $"The output file already exists:\r\n{targetPath}\r\n\r\nIt was " +
-                "restored from the previous opening, so it holds that render. " +
-                "Overwrite it?\r\n\r\n(Choose No and Save as... to keep both " +
-                "variants for an A/B.)",
+                $"The output file already exists:\r\n{targetPath}\r\n\r\nIt " +
+                "holds the previous render. Overwrite it?\r\n\r\n(Choose No " +
+                "and Save as... to keep both variants for an A/B.)",
                 "Audition render",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning);

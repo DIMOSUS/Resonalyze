@@ -70,10 +70,11 @@ public static class AudioFileCodec
     /// frame alignment, so dropped channels cost decoding time but no memory.
     /// </param>
     /// <param name="maximumStoredBytes">
-    /// Hard cap on the KEPT samples' memory, checked after every decoder
-    /// block. The duration limit trusts the file to be what its header claims;
-    /// this one holds when it is not — a swapped file or a lying container
-    /// stops decoding at the budget instead of exhausting memory first.
+    /// Hard cap on the decode's PEAK memory — the kept samples plus the
+    /// assembly-time copy of one channel — checked after every decoder block.
+    /// The duration limit trusts the file to be what its header claims; this
+    /// one holds when it is not — a swapped file or a lying container stops
+    /// decoding at the budget instead of exhausting memory first.
     /// </param>
     public static AudioFileContent Read(
         string path,
@@ -155,7 +156,14 @@ public static class AudioFileCodec
                     $"The file is longer than {maximumDuration.TotalMinutes:0} " +
                     "minutes; use a shorter excerpt.");
             }
-            if (keptSamples * sizeof(float) > maximumStoredBytes)
+            // The budget bounds the decode's PEAK, not only the payload:
+            // while the first channel's final array fills during assembly,
+            // every chunk still exists, so the peak reaches
+            // payload + payload / keptChannels. Partial chunks and list
+            // overhead stay outside the count — a few chunk lengths at most,
+            // noise against any realistic budget.
+            long payloadBytes = keptSamples * sizeof(float);
+            if (payloadBytes + payloadBytes / keptChannels > maximumStoredBytes)
             {
                 throw new InvalidOperationException(
                     "The file decodes past the memory budget " +

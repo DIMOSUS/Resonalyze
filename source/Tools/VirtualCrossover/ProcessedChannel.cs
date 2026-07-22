@@ -16,6 +16,19 @@ internal sealed record ProcessedChannel(
     OxyColor Color);
 
 /// <summary>
+/// One side of the car summed: the complex sum of its participating channels'
+/// processed responses, the earliest arrival among them (the window anchor every
+/// curve built from this sum must share) and the project rate they were measured
+/// at. <see cref="ChannelCount"/> is how many channels went in, for read-outs
+/// that need to say so.
+/// </summary>
+internal sealed record VirtualCrossoverSideSum(
+    Complex[] ImpulseResponse,
+    int AnchorIndex,
+    int SampleRate,
+    int ChannelCount);
+
+/// <summary>
 /// Adjacent channels along the spectrum with their shared junction: the pair
 /// crossover frequency and the band (an octave to each side) where the two
 /// drivers genuinely overlap. This band is where coarse arrivals are compared,

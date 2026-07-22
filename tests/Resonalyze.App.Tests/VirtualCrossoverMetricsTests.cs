@@ -199,6 +199,69 @@ public sealed class VirtualCrossoverMetricsTests
     }
 
     [Fact]
+    public async Task ComputeSideSumAsync_HonorsTheMinimumChannelCount()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyCurve);
+        long revision = coordinator.Invalidate();
+
+        // One resolved channel: enough for the audition (minimum 1), not for
+        // the opposite-side overlay (minimum 2).
+        VirtualCrossoverSideSum? forAudition = await metrics.ComputeSideSumAsync(
+            [ResolvedChannel("A", 48_000)], rightSide: false, revision,
+            minimumChannels: 1);
+        VirtualCrossoverSideSum? forOverlay = await metrics.ComputeSideSumAsync(
+            [ResolvedChannel("A", 48_000)], rightSide: false, revision,
+            minimumChannels: 2);
+
+        Assert.NotNull(forAudition);
+        Assert.Equal(1, forAudition.ChannelCount);
+        Assert.Equal(48_000, forAudition.SampleRate);
+        Assert.Null(forOverlay);
+    }
+
+    [Fact]
+    public async Task ComputeSideSumAsync_MonoChannelContributesToBothSidesAtFullLevel()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyCurve);
+        // A mono channel (a sub) resolved on its single slot: program material
+        // routes it into BOTH ears at full level, so both side sums must carry
+        // its response unattenuated.
+        VirtualCrossoverChannel mono = ResolvedChannel("Sub", 48_000);
+        mono.Pair.Mono = true;
+        long revision = coordinator.Invalidate();
+
+        VirtualCrossoverSideSum? left = await metrics.ComputeSideSumAsync(
+            [mono], rightSide: false, revision, minimumChannels: 1);
+        VirtualCrossoverSideSum? right = await metrics.ComputeSideSumAsync(
+            [mono], rightSide: true, revision, minimumChannels: 1);
+
+        Assert.NotNull(left);
+        Assert.NotNull(right);
+        Assert.Equal(left.ImpulseResponse.Length, right.ImpulseResponse.Length);
+        for (int i = 0; i < left.ImpulseResponse.Length; i++)
+        {
+            Assert.Equal(left.ImpulseResponse[i], right.ImpulseResponse[i]);
+        }
+    }
+
+    [Fact]
+    public async Task ComputeSideSumAsync_ReturnsNullForAStaleRevision()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _) => EmptyCurve);
+        long revision = coordinator.Invalidate();
+        coordinator.Invalidate();
+
+        VirtualCrossoverSideSum? result = await metrics.ComputeSideSumAsync(
+            [ResolvedChannel("A", 48_000)], rightSide: false, revision,
+            minimumChannels: 1);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
     public async Task ComputeStereoDeltasAsync_SkipsAStereoPairWithOnlyOneSideResolved()
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();

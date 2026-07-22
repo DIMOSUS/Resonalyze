@@ -452,14 +452,36 @@ internal sealed class VirtualCrossoverMetrics
         bool oppositeRight,
         long revision)
     {
+        VirtualCrossoverSideSum? side = await ComputeSideSumAsync(
+            channels, oppositeRight, revision, minimumChannels: 2);
+        return side == null
+            ? null
+            : buildMagnitudeCurve(
+                side.ImpulseResponse, side.AnchorIndex, side.SampleRate);
+    }
+
+    /// <summary>
+    /// The complex sum of one side's participating channels, processed through
+    /// their chains. Mono channels contribute their single response to both
+    /// sides, exactly as they do physically. Null when the side has fewer than
+    /// <paramref name="minimumChannels"/> participating channels, or when the
+    /// render went stale. Uses the coordinator cache, so it shares processed
+    /// responses and staleness handling with the main redraw.
+    /// </summary>
+    public async Task<VirtualCrossoverSideSum?> ComputeSideSumAsync(
+        IReadOnlyList<VirtualCrossoverChannel> channels,
+        bool rightSide,
+        long revision,
+        int minimumChannels)
+    {
         var jobs = new List<SideProcessJob>();
         int nextId = 0;
         for (int channelIndex = 0; channelIndex < channels.Count; channelIndex++)
         {
             VirtualCrossoverChannel channel = channels[channelIndex];
             VirtualCrossoverChannelSettings settings =
-                channel.SideSettings(oppositeRight);
-            VirtualCrossoverChannelState state = channel.SideState(oppositeRight);
+                channel.SideSettings(rightSide);
+            VirtualCrossoverChannelState state = channel.SideState(rightSide);
             if (!settings.Enabled ||
                 state.ProcessingSource is not { } source)
             {
@@ -474,7 +496,7 @@ internal sealed class VirtualCrossoverMetrics
                 Id = nextId++,
                 SlotId = new ProcessingSlotId(
                     channelIndex,
-                    !channel.Pair.Mono && oppositeRight),
+                    !channel.Pair.Mono && rightSide),
                 State = state,
                 Source = source,
                 SampleRate = state.SampleRate,
@@ -482,7 +504,7 @@ internal sealed class VirtualCrossoverMetrics
             });
         }
 
-        if (jobs.Count < 2)
+        if (jobs.Count < minimumChannels)
         {
             return null;
         }
@@ -512,8 +534,11 @@ internal sealed class VirtualCrossoverMetrics
 
         Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
             jobs.Select(side => side.ProcessedIr!).ToList());
-        int anchor = jobs.Min(side => side.ProcessedPeak);
-        return buildMagnitudeCurve(sum, anchor, jobs[0].SampleRate);
+        return new VirtualCrossoverSideSum(
+            sum,
+            jobs.Min(side => side.ProcessedPeak),
+            jobs[0].SampleRate,
+            jobs.Count);
     }
 
     // One channel side snapshotted on the UI thread for background processing

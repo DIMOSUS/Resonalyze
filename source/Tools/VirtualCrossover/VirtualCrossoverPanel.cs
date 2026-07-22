@@ -130,6 +130,7 @@ public partial class VirtualCrossoverPanel : UserControl
         buttonPhaseGate.Click += async (_, _) => await OpenPhaseGateDialogAsync();
         buttonSessionImport.Click += async (_, _) => await ImportSessionAsync();
         buttonSessionExport.Click += (_, _) => ExportSession();
+        buttonAudition.Click += async (_, _) => await AuditionTrackAsync();
         buttonAddChannel.Click += (_, _) => AddChannel();
         buttonRemoveChannel.Click += (_, _) => RemoveChannel();
         buttonCopyLeftToRight.Click += (_, _) => CopySideSettings(fromRight: false);
@@ -1639,6 +1640,18 @@ public partial class VirtualCrossoverPanel : UserControl
             buttonSessionImport,
             "Load a saved session file, replacing the current state.\r\n" +
             "Sources are re-resolved from history or their file paths.");
+        toolTip.SetToolTip(
+            buttonAudition,
+            "Render a music file through the current tune and save it\r\n" +
+            "as a WAV: the left side's summed response on channel 1,\r\n" +
+            "the right side's on channel 2. Microphone calibration can\r\n" +
+            "be applied as a linear-phase FIR baked into both sides.\r\n" +
+            "What you hear is the MICROPHONE's position — drivers, cabin\r\n" +
+            "and capsule included, not only the DSP — so listen on\r\n" +
+            "headphones. Played back through the same system it would\r\n" +
+            "convolve the car twice.\r\n" +
+            "A track at another sample rate is converted to the project's;\r\n" +
+            "the measured responses are never resampled.");
         // The per-channel block tooltips are applied in CreateChannel, so every
         // block — including ones added after construction — carries them.
     }
@@ -1699,6 +1712,9 @@ public partial class VirtualCrossoverPanel : UserControl
             || redrawTask is { IsCompleted: false };
         buttonAutoSetup.Enabled = !busy;
         buttonAutoDelay.Enabled = !busy;
+        // The audition sums both sides through the coordinator at one revision;
+        // starting it mid-redraw would race the invalidation and render nothing.
+        buttonAudition.Enabled = !busy;
     }
 
     // The redraw loop coalesces edits into one trailing pass. Snapshot revision,

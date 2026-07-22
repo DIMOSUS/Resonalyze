@@ -747,6 +747,75 @@ public sealed class StereoAlignmentTests
     }
 
     [Fact]
+    public void ComoveMonoChannels_SubBandInconsistentHop_IsVetoed()
+    {
+        // The field failure this pins (an 80 Hz sub junction): both woofers
+        // carry a strong inverted narrowband build-up in the junction band's
+        // UPPER half, half a period behind their direct front. Through the
+        // full-band mean the sub then "gains" by flipping onto that build-up
+        // (a comb impostor the margin gate cannot refuse), while the clean
+        // LOWER half — direct sound only — plainly loses. The sub-band
+        // consistency veto is the cross-check narrow-band ranging disciplines
+        // converge on: a true lobe holds every half of the band, an impostor
+        // wins one half and loses the other.
+        Complex[] WooferIr()
+        {
+            Complex[] ir = ImpulseAtMs(8.0);
+            Complex[] mode = VirtualCrossoverAnalysis.ApplyChain(
+                ImpulseAtMs(8.0 + 6.25, -10.0),
+                new DspChannelChain(Crossover: new CrossoverSpec(
+                    CrossoverKind.BandPass,
+                    new CrossoverEdge(CrossoverFilterFamily.Butterworth, 150, 36),
+                    new CrossoverEdge(CrossoverFilterFamily.Butterworth, 100, 36))),
+                SampleRate);
+            for (int i = 0; i < ir.Length; i++)
+            {
+                ir[i] += mode[i];
+            }
+            return ir;
+        }
+        var sub = new TestChannel("sub", ImpulseAtMs(8.0));
+        var leftWoof = new TestChannel("L woof", WooferIr());
+        var rightWoof = new TestChannel("R woof", WooferIr());
+        TestChannel[] all = [sub, leftWoof, rightWoof];
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            all.Select(channel =>
+                Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+        List<AlignmentSnapshot> snapshots = all
+            .Select(channel => Snapshot(channel, default))
+            .ToList();
+        var plan = new StereoAlignmentPlan(
+            [snapshots[0], snapshots[1]],
+            [Junction(snapshots[0], snapshots[1], 80)],
+            [snapshots[0], snapshots[2]],
+            [Junction(snapshots[0], snapshots[2], 80)],
+            new HashSet<IAlignmentChannel> { sub },
+            leftWoof,
+            rightWoof,
+            40,
+            160,
+            SceneOffsetMs: 0);
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            [sub] = new(0, false),
+            [leftWoof] = new(0, false),
+            [rightWoof] = new(0, false)
+        };
+        var log = new StringBuilder();
+
+        AutoAlignmentEngine.ComoveMonoChannels(
+            plan, Reprocess, alignment, log, snapshots);
+
+        Assert.Contains("mono lobe hop vetoed for sub", log.ToString());
+        // The sub stays on the direct-sound lobe: no flip, at most an in-lobe
+        // polish away from the aligned position.
+        Assert.False(alignment[sub].InvertPolarity);
+        Assert.InRange(
+            alignment[sub].DelayMs - alignment[leftWoof].DelayMs, -2.5, 2.5);
+    }
+
+    [Fact]
     public void ComoveMonoChannels_RefreshesTheStaleDecision()
     {
         // The same system as the invariance test above: both woofers want the

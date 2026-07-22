@@ -59,6 +59,45 @@ public sealed class AutoAlignmentEngineTests
         return ir;
     }
 
+    // A SOFT band-limited front under a strong late resonant build-up BELOW
+    // the pair band — the field shape of the modal latch. The front is an
+    // impulse smeared by a band-pass (a real driver through its crossover has
+    // no sharp click), so in the full pair band its low envelope hides below
+    // the 25 dB arrival search depth under the modes' bulk; the band's UPPER
+    // half sits past the modes, where the front stands alone. Causal decaying
+    // sines keep the record's tail (and with it the SNR grade) clean, unlike
+    // a windowed tone burst whose spectral leakage rings across the record.
+    private static Complex[] FrontUnderLateMode(
+        double frontMs, double modeMs, double modeAmplitude)
+    {
+        Complex[] ir = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(BasePosition),
+            new DspChannelChain(
+                DelayMs: frontMs,
+                Crossover: new CrossoverSpec(
+                    CrossoverKind.BandPass,
+                    new CrossoverEdge(CrossoverFilterFamily.Butterworth, 800, 24),
+                    new CrossoverEdge(CrossoverFilterFamily.Butterworth, 80, 24))),
+            SampleRate);
+        int start = BasePosition + (int)Math.Round(modeMs / 1000.0 * SampleRate);
+        // A smooth attack keeps the build-up's onset out of the band's upper
+        // half — an abruptly switched sine is itself a broadband click there.
+        const double AttackSeconds = 0.008;
+        const double DecaySeconds = 0.1;
+        foreach (double modeHz in new[] { 65.0, 72.0, 80.0 })
+        {
+            for (int i = start; i < ir.Length; i++)
+            {
+                double t = (i - start) / (double)SampleRate;
+                ir[i] += modeAmplitude *
+                    (1 - Math.Exp(-t / AttackSeconds)) *
+                    Math.Exp(-t / DecaySeconds) *
+                    Math.Sin(2 * Math.PI * modeHz * t);
+            }
+        }
+        return ir;
+    }
+
     private static Dictionary<IAlignmentChannel, AlignmentOverride> Run(
         TestChannel[] byBand,
         double[] crossoversHz,
@@ -368,6 +407,36 @@ public sealed class AutoAlignmentEngineTests
             "seed arrival (peak beyond the arrival's reach)",
             TestLog.Line(text, "Pair B/C"));
         Assert.Contains("WIDE SEED", TestLog.Line(text, "Channel C:"));
+    }
+
+    [Fact]
+    public void Compute_ModalLatchOnTheArrival_ReanchorsOnTheHalfBandReads()
+    {
+        // The field failure this pins (a 180 Hz midbass/mid junction under a
+        // steep LP): the lower channel's soft direct front hides below the
+        // 25 dB envelope search depth under a strong late resonant build-up
+        // below the band, so the full-band arrival reads the build-up at
+        // ~37 ms, over 20 ms late — while the band's upper half still reads
+        // the front at ~15 ms. The honesty probe must convict that latch and
+        // the pair must re-anchor on the half-band reads: the timeline then
+        // seeds near the true ~5.6 ms relation instead of parking a channel
+        // tens of ms off (the field run inverted the mids a full period out).
+        var midbass = new TestChannel(
+            "B", FrontUnderLateMode(5.0, 15.0, 2.0));
+        var mid = new TestChannel("C", DelayedImpulse(0.0));
+        var log = new StringBuilder();
+
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
+            Run([midbass, mid], [180], log);
+
+        string text = log.ToString();
+        Assert.False(alignment.ContainsKey(midbass));
+        Assert.Contains("(modal latch)", text);
+        // Re-anchored on the half-band front (~15 ms), not the ~37 ms mode.
+        Assert.Contains("arrivals 15", TestLog.Line(text, "Pair B/C"));
+        // The mid lands near its true relation to the front — the latched
+        // read would have based the search two dozen ms away.
+        Assert.InRange(alignment[mid].DelayMs, 3.0, 9.0);
     }
 
     [Fact]

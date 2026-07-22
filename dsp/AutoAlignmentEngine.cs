@@ -621,6 +621,78 @@ public static class AutoAlignmentEngine
             double lowerArrival = lowerRead.FirstArrivalDelayMilliseconds;
             double upperArrival = upperRead.FirstArrivalDelayMilliseconds;
 
+            // The pair-band arrival honesty probe: the same full-band-vs-upper-
+            // half re-read (ClassifyArrival) the cross-side links, the donor
+            // certificates and the stereo bridge already run. A steep low-pass
+            // can concentrate the pair band's energy below the corner, where a
+            // channel's direct front hides under a late in-room modal build-up
+            // deeper than the envelope search depth — the full-band read then
+            // times the mode, whole periods late (field case: a midbass under
+            // LP 180 Hz/36 dB read 21.96 ms in 90-360 Hz against a 10.99 ms
+            // front in its own upper half — a 9.8 ms latch that seeded the
+            // stage-2 window a full period off and inverted the mids). A
+            // convicted latch does two things below: the pair re-anchors on
+            // the half-band reads where both measure (the same ladder the
+            // cross-side links climb), and the seed-reach veto is lifted — the
+            // reach rule measures the PHAT extremum against the arrival, so
+            // with the arrival convicted it would only enforce the very cycle
+            // skip it exists to prevent. The half-band read is a mushier
+            // anchor than an honest full-band one (an octave of HF mush once
+            // dragged a woofer 6 ms off on the cross-side ladder), so it only
+            // recenters the correlation window and the fallback diff; the
+            // trustworthy PHAT extremum, where present, still wins the seed.
+            double probeLowHz = Math.Sqrt(pair.BandLowHz * pair.BandHighHz);
+            bool arrivalLatched = false;
+            if (pair.BandHighHz >=
+                probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
+            {
+                TimeAlignmentAnalysisResult lowerProbe =
+                    VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                        pair.Lower.ImpulseResponse,
+                        pair.Lower.Channel.SampleRate,
+                        probeLowHz,
+                        pair.BandHighHz,
+                        pair.Lower.ValidRange);
+                TimeAlignmentAnalysisResult upperProbe =
+                    VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                        pair.Upper.ImpulseResponse,
+                        pair.Upper.Channel.SampleRate,
+                        probeLowHz,
+                        pair.BandHighHz,
+                        pair.Upper.ValidRange);
+                double probeToleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
+                bool lowerLatched =
+                    ClassifyArrival(lowerRead, lowerProbe, probeToleranceMs) ==
+                        ArrivalCertificate.Latched;
+                bool upperLatched =
+                    ClassifyArrival(upperRead, upperProbe, probeToleranceMs) ==
+                        ArrivalCertificate.Latched;
+                arrivalLatched = lowerLatched || upperLatched;
+                if (arrivalLatched)
+                {
+                    TimeAlignmentAnalysisResult latchedRead =
+                        lowerLatched ? lowerRead : upperRead;
+                    TimeAlignmentAnalysisResult latchedProbe =
+                        lowerLatched ? lowerProbe : upperProbe;
+                    log.AppendLine(
+                        $"  {(lowerLatched ? pair.Lower : pair.Upper).Channel.Name}: " +
+                        $"{latchedRead.FirstArrivalDelayMilliseconds:0.000} ms in " +
+                        $"{pair.BandLowHz:0}-{pair.BandHighHz:0} Hz but " +
+                        $"{latchedProbe.FirstArrivalDelayMilliseconds:0.000} ms in its " +
+                        $"{probeLowHz:0}-{pair.BandHighHz:0} Hz half (modal latch)");
+                    // Re-anchor only when BOTH sides measure in the half band —
+                    // mixing one half-band read with the other side's full-band
+                    // one would compare different wavefronts.
+                    if (lowerProbe.IsValid && upperProbe.IsValid &&
+                        lowerProbe.SignalToNoiseDecibels >= MinimumArrivalSnrDb &&
+                        upperProbe.SignalToNoiseDecibels >= MinimumArrivalSnrDb)
+                    {
+                        lowerArrival = lowerProbe.FirstArrivalDelayMilliseconds;
+                        upperArrival = upperProbe.FirstArrivalDelayMilliseconds;
+                    }
+                }
+            }
+
             // Refine the coarse offset with the DOMINANT GCC-PHAT extremum of
             // either sign: at a mid/high junction it lands the stage-2 window
             // on the correct lobe directly, sparing the wide-window recovery.
@@ -691,7 +763,12 @@ public static class AutoAlignmentEngine
                 {
                     return "same-polarity rival near-tie";
                 }
-                if (Math.Abs(seedOffsetMs) > SeedReachMs(pair.CrossoverHz))
+                // The reach veto grades the extremum against the arrival, so
+                // it only means something while the arrival itself is honest:
+                // against a convicted modal latch it would enforce the very
+                // cycle skip it exists to prevent (see the probe above).
+                if (!arrivalLatched &&
+                    Math.Abs(seedOffsetMs) > SeedReachMs(pair.CrossoverHz))
                 {
                     return $"{seedLabel} beyond the arrival's reach";
                 }
@@ -1865,16 +1942,46 @@ public static class AutoAlignmentEngine
                 Reads, bool Latched, bool Verified) measured =
                 MeasureConsistent(bandLowHz, bandHighHz);
             anyLatch = measured.Latched;
+            bool fallbackDiffers =
+                fallbackLowHz != bandLowHz || fallbackHighHz != bandHighHz;
+            // The junction band doubles as the LINK CERTIFICATE'S WITNESS: the
+            // link certificate can self-verify inside the modal region — the
+            // link band's upper half may still sit under the same mode, so
+            // full and probe agree on the mode and Verified is issued for a
+            // latched read (field case: a midbass link read 22.2 ms in
+            // 80-200 Hz, its 126-200 Hz half saw the same hump, and the
+            // fabricated -8.4 ms split — no cabin geometry produces one —
+            // was scene-locked onto the right midbass). A latch PROVEN one
+            // band up convicts the link read too: the junction band's full-
+            // vs-upper-half skew places the mode inside fc/2..fc, which the
+            // link band contains — so the link's split must not reach the
+            // scene lock, and the pair descends the same ladder a latched
+            // link band would.
+            ((TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
+                Reads, bool Latched, bool Verified)? junctionRung =
+                fallbackDiffers && (measured.Reads != null || measured.Latched)
+                    ? MeasureConsistent(fallbackLowHz, fallbackHighHz)
+                    : null;
             if (measured.Reads == null && measured.Latched &&
-                (fallbackLowHz != bandLowHz || fallbackHighHz != bandHighHz))
+                junctionRung is { } rung)
             {
-                measured = MeasureConsistent(fallbackLowHz, fallbackHighHz);
-                anyLatch |= measured.Latched;
+                measured = rung;
+                anyLatch |= rung.Latched;
                 if (measured.Reads != null)
                 {
                     usedLowHz = fallbackLowHz;
                     usedHighHz = fallbackHighHz;
                 }
+            }
+            else if (measured.Reads != null && junctionRung is { Latched: true })
+            {
+                log.AppendLine(
+                    $"  cross-side link {rightChannel.Name}: " +
+                    $"{bandLowHz:0}-{bandHighHz:0} Hz read discarded — the " +
+                    $"junction band {fallbackLowHz:0}-{fallbackHighHz:0} Hz " +
+                    "convicts a modal latch the link band's own probe cannot see");
+                measured = (null, true, false);
+                anyLatch = true;
             }
             if (measured.Reads is not { } arrivals)
             {
@@ -2393,6 +2500,23 @@ public static class AutoAlignmentEngine
     // the plain 0.05 dB threshold still applies.
     private const double MonoComoveLobeHopMarginDb = 0.1;
 
+    // The sub-band deficit that vetoes a mono lobe/polarity hop even after it
+    // cleared the margin above. The full-band mean cannot tell a genuine
+    // recovery from a comb impostor flattered by an in-room mode: a lobe a
+    // whole period off fits the phase only where its period matches the
+    // frequency, and a mode INSIDE the band can put more summed energy behind
+    // exactly that impostor than behind the direct sound. The cross-check
+    // every narrow-band ranging discipline converges on (sub-band GCC,
+    // multi-scale FWI, GPS widelane ambiguity resolution) is consistency
+    // ACROSS sub-bands: the true alignment holds in every half of the
+    // junction band, the impostor wins one half and loses the other. Field
+    // anchors (v3 cabin, 80 Hz sub junctions): the false full-period hop
+    // "gained" 1.43 dB full-band while losing the clean 40-80 Hz half by
+    // 0.29 dB; the genuine two-sided recovery's worst half-band deficit was
+    // 0.02 dB — the co-move's own noise-tie scale. 0.1 sits between, the
+    // same order-of-magnitude split as the hop margin itself.
+    private const double MonoComoveSubBandVetoMarginDb = 0.1;
+
     // The right bridge top inherits the left top's sign (set before the right walk,
     // so the right lowers align against a correctly-signed top). Automatic delay
     // never inverts one side of a pair alone — a driver's polarity is a property of
@@ -2830,7 +2954,10 @@ public static class AutoAlignmentEngine
             }
 
             double framedMonoMs = framed[mono].DelayMs;
-            double Score(double deltaMs, bool flip)
+            double Score(
+                double deltaMs,
+                bool flip,
+                Func<AlignmentJunction, (double LowHz, double HighHz)>? bandOf = null)
             {
                 var trial =
                     new Dictionary<IAlignmentChannel, AlignmentOverride>(framed)
@@ -2849,13 +2976,15 @@ public static class AutoAlignmentEngine
                     IAlignmentChannel neighbor = junction.Lower.Channel == mono
                         ? junction.Upper.Channel
                         : junction.Lower.Channel;
+                    (double lowHz, double highHz) = bandOf?.Invoke(junction)
+                        ?? (junction.BandLowHz, junction.BandHighHz);
                     (double LossDb, double DipDb)? loss =
                         VirtualCrossoverAnalysis.MeasureSumLoss(
                             IrOf(mono),
                             new List<Complex[]> { IrOf(neighbor) },
                             mono.SampleRate,
-                            junction.BandLowHz,
-                            junction.BandHighHz);
+                            lowHz,
+                            highHz);
                     if (loss is { } value)
                     {
                         total += value.LossDb +
@@ -2946,6 +3075,45 @@ public static class AutoAlignmentEngine
                 bestScore = bestPolishScore;
                 bestDelta = bestPolishDelta;
                 bestFlip = false;
+            }
+            else if (hop)
+            {
+                // The sub-band consistency veto (see
+                // MonoComoveSubBandVetoMarginDb): a hop that cleared the
+                // margin must also HOLD each half of its junction bands —
+                // losing a half it can be measured in means the full-band
+                // gain came from a mode rewarding a comb impostor, not from
+                // a better alignment of the direct sound.
+                foreach (bool upperHalf in new[] { false, true })
+                {
+                    (double LowHz, double HighHz) Half(AlignmentJunction junction) =>
+                        upperHalf
+                            ? (junction.CrossoverHz, junction.BandHighHz)
+                            : (junction.BandLowHz, junction.CrossoverHz);
+                    double polishHalf = Score(bestPolishDelta, false, Half);
+                    if (double.IsNegativeInfinity(polishHalf))
+                    {
+                        continue;
+                    }
+                    double hopHalf = Score(bestDelta, bestFlip, Half);
+                    if (hopHalf >= polishHalf - MonoComoveSubBandVetoMarginDb)
+                    {
+                        continue;
+                    }
+
+                    log.AppendLine(
+                        $"  mono lobe hop vetoed for {mono.Name}: " +
+                        $"{bestDelta:+0.00;-0.00} ms" +
+                        $"{(bestFlip ? " flipped" : "")} wins the full band " +
+                        $"by {bestScore - bestPolishScore:0.00} dB but loses " +
+                        $"the {(upperHalf ? "upper" : "lower")} half-band by " +
+                        $"{polishHalf - hopHalf:0.00} dB — a true lobe holds " +
+                        "every sub-band.");
+                    bestScore = bestPolishScore;
+                    bestDelta = bestPolishDelta;
+                    bestFlip = false;
+                    break;
+                }
             }
 
             if ((bestDelta != 0 || bestFlip) &&

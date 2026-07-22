@@ -120,7 +120,7 @@ public sealed class FastConvolutionTests
         var kernel = new double[2_048];
         kernel[0] = 1.0;
         var reports = new List<double>();
-        var progress = new SynchronousProgress(reports.Add);
+        var progress = new SynchronousProgress<double>(reports.Add);
 
         FastConvolution.Convolve(signal, kernel, progress);
 
@@ -143,12 +143,5 @@ public sealed class FastConvolutionTests
 
         Assert.Throws<OperationCanceledException>(() =>
             FastConvolution.Convolve(signal, kernel, null, cancellation.Token));
-    }
-
-    // Progress<T> posts through a synchronization context, which the test must
-    // not depend on; this reports inline on the calling thread.
-    private sealed class SynchronousProgress(Action<double> handler) : IProgress<double>
-    {
-        public void Report(double value) => handler(value);
     }
 }

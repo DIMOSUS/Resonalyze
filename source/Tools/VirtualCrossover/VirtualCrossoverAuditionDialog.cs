@@ -43,8 +43,11 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
 {
     // A render holds the decoded material, its resampled copy and the result in
     // memory at once, so length is bounded rather than left to fail as an
-    // out-of-memory crash deep in a background task.
+    // out-of-memory crash deep in a background task. The duration cap alone is
+    // not a memory cap — ten minutes at 192 kHz is six times ten minutes at
+    // 32 kHz — so the pipeline's projected bytes are bounded separately.
     private const int MaximumTrackMinutes = 10;
+    private const long MaximumPipelineBytes = 1_000_000_000;
 
     // Progress budget: decoding and writing are single passes over the material
     // against the render's block transforms, so they get the ends of the bar.
@@ -112,11 +115,25 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             return;
         }
 
-        // Probe now, not at render time: an unreadable or over-long file should
-        // say so the moment it is picked, in the report, with Render disabled.
+        if (PathsEqual(dialog.FileName, targetPath))
+        {
+            MessageBox.Show(
+                this,
+                "This file is already chosen as the OUTPUT. Rendering a file " +
+                "onto itself would destroy the source.",
+                "Audition render",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            return;
+        }
+
+        // Probe now, not at render time: an unreadable, over-long or over-sized
+        // file should say so the moment it is picked, in the report, with
+        // Render disabled.
         try
         {
             AudioFileInfo info = AudioFileCodec.Probe(dialog.FileName);
+            long projectedBytes = ProjectedPipelineBytes(info, context.SampleRate);
             var section = new StringBuilder();
             section.AppendLine("== Track ==");
             section.AppendLine(Path.GetFileName(dialog.FileName));
@@ -128,6 +145,23 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
                 section.Append(
                     $"REFUSED: longer than {MaximumTrackMinutes} minutes — " +
                     "use a shorter excerpt.");
+                sourcePath = null;
+                labelSourceFile.Text = "no file chosen";
+            }
+            else if (projectedBytes > MaximumPipelineBytes)
+            {
+                // The duration alone does not bound memory: the render keeps the
+                // decoded stereo source, its resampled copy and both rendered
+                // sides alive at its peak, and that scales with the rates.
+                double allowedMinutes = MaximumPipelineBytes
+                    / (ProjectedPipelineBytes(
+                        info with { Duration = TimeSpan.FromMinutes(1) },
+                        context.SampleRate) * 1.0);
+                section.Append(
+                    $"REFUSED: rendering this would hold ~" +
+                    $"{projectedBytes / 1_000_000} MB of audio in memory " +
+                    $"(bound {MaximumPipelineBytes / 1_000_000} MB). At these " +
+                    $"rates keep the excerpt under ~{allowedMinutes:0} minutes.");
                 sourcePath = null;
                 labelSourceFile.Text = "no file chosen";
             }
@@ -194,9 +228,44 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             return;
         }
 
+        // Writing onto the source would destroy it on the first render — and
+        // the advertised A/B re-render would then process the processed file.
+        if (PathsEqual(dialog.FileName, sourcePath))
+        {
+            MessageBox.Show(
+                this,
+                "This is the source track itself. Choose a different output " +
+                "file — rendering onto the source would destroy it.",
+                "Audition render",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            return;
+        }
+
         targetPath = dialog.FileName;
         labelTargetFile.Text = dialog.FileName;
         RefreshRenderEnabled();
+    }
+
+    private static bool PathsEqual(string? first, string? second) =>
+        first != null && second != null &&
+        string.Equals(
+            Path.GetFullPath(first),
+            Path.GetFullPath(second),
+            StringComparison.OrdinalIgnoreCase);
+
+    // The render's peak working set: the decoded stereo source, its resampled
+    // copy (absent when the rates already match) and the two rendered sides,
+    // all float32 and all alive at once. Channels beyond two are never stored
+    // (the decoder is told to keep two), so two is the multiplier even for
+    // multichannel files.
+    private static long ProjectedPipelineBytes(AudioFileInfo info, int projectRate)
+    {
+        double seconds = info.Duration.TotalSeconds;
+        long sourceFrames = (long)Math.Ceiling(seconds * info.SampleRate);
+        long renderedFrames = (long)Math.Ceiling(seconds * projectRate);
+        long resampledFrames = info.SampleRate == projectRate ? 0 : renderedFrames;
+        return 4L * 2L * (sourceFrames + resampledFrames + renderedFrames);
     }
 
     // ----------------------------------------------------------------- render
@@ -208,7 +277,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             RequestCancel();
             return;
         }
-        if (sourcePath == null || targetPath == null)
+        if (sourcePath == null || targetPath == null || PathsEqual(sourcePath, targetPath))
         {
             return;
         }
@@ -237,9 +306,18 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         resultSection = string.Empty;
         RefreshReport();
 
-        // Progress<T> posts to the UI synchronization context captured here.
+        // The ONE asynchronous hop in the whole progress chain: created here on
+        // the UI thread, so Progress<T> posts to the UI context — in order.
+        // Every layer below it relays synchronously (SynchronousProgress); a
+        // worker-created Progress<T> would post to the thread pool and reorder.
+        // The IsDisposed guard covers reports still queued when the form goes.
         var progress = new Progress<AuditionProgress>(update =>
         {
+            if (IsDisposed)
+            {
+                return;
+            }
+
             labelStatus.Text = update.Status;
             progressBar.Value = (int)Math.Clamp(
                 Math.Round(update.Fraction * progressBar.Maximum),
@@ -347,12 +425,16 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         }
 
         progress.Report(new AuditionProgress("Decoding the track…", 0.01));
+        // Only the first two channels are kept — the render feeds channel 1 to
+        // the left side and channel 2 to the right, and storing a 7.1 layout
+        // would quadruple the decoded footprint for nothing.
         AudioFileContent material = AudioFileCodec.Read(
             sourcePath,
             TimeSpan.FromMinutes(MaximumTrackMinutes),
+            channelLimit: 2,
             cancellationToken);
 
-        var renderProgress = new Progress<double>(value =>
+        var renderProgress = new SynchronousProgress<double>(value =>
             progress.Report(new AuditionProgress(
                 "Rendering through the tune…",
                 DecodeShare + value * RenderShare)));

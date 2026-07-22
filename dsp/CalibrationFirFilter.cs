@@ -9,12 +9,14 @@ namespace Resonalyze.Dsp;
 /// correction (calibrated curve = raw − correction, so the filter's gain is
 /// 10^(−correction/20)), and its phase is exactly linear.
 /// <para>
-/// Linear phase is the point, not an implementation detail: the auralization
-/// convolves BOTH sides of the car with this one filter, and a linear-phase
-/// kernel delays both by the same constant regardless of frequency — the
-/// inter-side timing being auditioned survives to the sample. A minimum-phase
-/// design would add frequency-dependent group delay; small for smooth
-/// calibration curves, but not zero, and zero costs nothing here.
+/// Linear phase is a CHOICE here, not a requirement. Any filter applied
+/// identically to both sides cancels out of the inter-side phase difference —
+/// arg(H_L·C) − arg(H_R·C) = arg(H_L) − arg(H_R) — so a minimum-phase design
+/// would preserve the auditioned scene just as well. Linear phase is kept
+/// because the designed magnitude is realized exactly and the kernel's
+/// symmetry is trivially verifiable; its price — a shared constant delay of
+/// half the kernel and a little pre-ringing — is invisible in an offline
+/// render of a smooth calibration curve.
 /// </para>
 /// <para>
 /// Frequency-sampling design: the correction is sampled onto an FFT grid as a

@@ -152,17 +152,24 @@ public static class Auralization
         bool resampled = request.SourceSampleRate != request.KernelSampleRate;
         if (resampled)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            bool shared = ReferenceEquals(left, right);
+            double half = ResampleProgressShare / 2.0;
             float[] convertedLeft = SampleRateConverter.Resample(
-                left, request.SourceSampleRate, request.KernelSampleRate);
-            cancellationToken.ThrowIfCancellationRequested();
-            float[] convertedRight = ReferenceEquals(left, right)
+                left,
+                request.SourceSampleRate,
+                request.KernelSampleRate,
+                Scaled(progress, 0.0, shared ? ResampleProgressShare : half),
+                cancellationToken);
+            float[] convertedRight = shared
                 ? convertedLeft
                 : SampleRateConverter.Resample(
-                    right, request.SourceSampleRate, request.KernelSampleRate);
+                    right,
+                    request.SourceSampleRate,
+                    request.KernelSampleRate,
+                    Scaled(progress, half, half),
+                    cancellationToken);
             left = convertedLeft;
             right = convertedRight;
-            progress?.Report(ResampleProgressShare);
         }
 
         double convolveShare = resampled ? 1.0 - ResampleProgressShare : 1.0;
@@ -279,11 +286,17 @@ public static class Auralization
         return Math.Sqrt(sumSquares / (end - start));
     }
 
+    // Synchronous on purpose: Progress<T> created here — on a worker thread —
+    // would post every report to the thread pool, and two chained layers of
+    // that reorder freely (a left channel's report after the right's, a stage's
+    // update after the final status). Only the caller's outermost progress may
+    // hop threads.
     private static IProgress<double>? Scaled(
         IProgress<double>? progress, double offset, double share) =>
         progress == null
             ? null
-            : new Progress<double>(value => progress.Report(offset + value * share));
+            : new SynchronousProgress<double>(
+                value => progress.Report(offset + value * share));
 }
 
 /// <summary>

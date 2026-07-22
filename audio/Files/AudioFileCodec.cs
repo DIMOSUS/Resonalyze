@@ -49,19 +49,37 @@ public static class AudioFileCodec
     }
 
     /// <summary>
-    /// Decodes a media file to deinterleaved float PCM at its native rate.
+    /// Decodes a media file to deinterleaved float PCM at its native rate,
+    /// keeping only the first <paramref name="channelLimit"/> channels.
+    /// <para>
+    /// The stream is deinterleaved AS IT DECODES, into per-channel chunk lists:
+    /// no full interleaved copy ever exists beside the per-channel data, and
+    /// channels beyond the limit are never stored at all — a 7.1 file read for
+    /// a stereo render costs a quarter of its decoded size, not the whole of it
+    /// twice. The transient peak is the kept chunks plus one channel's final
+    /// array during assembly.
+    /// </para>
     /// </summary>
     /// <param name="maximumDuration">
     /// Refuses anything longer. A render holds the decoded material, its
     /// resampled copy and the result in memory at once, so an unbounded file is
     /// an out-of-memory crash rather than a slow operation.
     /// </param>
+    /// <param name="channelLimit">
+    /// How many leading channels to keep. The full channel layout still drives
+    /// frame alignment, so dropped channels cost decoding time but no memory.
+    /// </param>
     public static AudioFileContent Read(
         string path,
         TimeSpan maximumDuration,
+        int channelLimit = int.MaxValue,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        if (channelLimit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(channelLimit));
+        }
 
         using var reader = new AudioFileReader(path);
         int channelCount = reader.WaveFormat.Channels;
@@ -72,20 +90,53 @@ public static class AudioFileCodec
                 "The file reports no audio channels.");
         }
 
+        int keptChannels = Math.Min(channelCount, channelLimit);
         long maximumFrames = (long)Math.Ceiling(
             maximumDuration.TotalSeconds * sampleRate);
-        var blocks = new List<float[]>();
+
+        var chunks = new List<float[]>[keptChannels];
+        var current = new float[keptChannels][];
+        var fill = new int[keptChannels];
+        for (int channel = 0; channel < keptChannels; channel++)
+        {
+            chunks[channel] = new List<float[]>();
+            current[channel] = new float[ReadBlockFrames];
+        }
+
+        // The cursor walks the FULL channel layout by a running count across
+        // read boundaries: a decoder is not contractually bound to return whole
+        // frames per call, and restarting the channel assignment per block
+        // would rotate every later sample's channel (L/R swapped from that
+        // point on) if a call ever ended mid-frame.
         var buffer = new float[channelCount * ReadBlockFrames];
-        long sampleCount = 0;
+        long totalSamples = 0;
+        int channelCursor = 0;
         int read;
         while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var block = new float[read];
-            Array.Copy(buffer, block, read);
-            blocks.Add(block);
-            sampleCount += read;
-            if (sampleCount / channelCount > maximumFrames)
+            for (int i = 0; i < read; i++)
+            {
+                if (channelCursor < keptChannels)
+                {
+                    float[] target = current[channelCursor];
+                    target[fill[channelCursor]] = buffer[i];
+                    if (++fill[channelCursor] == target.Length)
+                    {
+                        chunks[channelCursor].Add(target);
+                        current[channelCursor] = new float[ReadBlockFrames];
+                        fill[channelCursor] = 0;
+                    }
+                }
+
+                if (++channelCursor == channelCount)
+                {
+                    channelCursor = 0;
+                }
+            }
+
+            totalSamples += read;
+            if (totalSamples / channelCount > maximumFrames)
             {
                 throw new InvalidOperationException(
                     $"The file is longer than {maximumDuration.TotalMinutes:0} " +
@@ -93,38 +144,42 @@ public static class AudioFileCodec
             }
         }
 
-        long frameCount = sampleCount / channelCount;
+        long frameCount = totalSamples / channelCount;
         if (frameCount == 0)
         {
             throw new InvalidOperationException("The file decoded to no audio.");
         }
 
-        var channels = new float[channelCount][];
-        for (int channel = 0; channel < channelCount; channel++)
+        // Assemble channel by channel, releasing each channel's chunks as its
+        // final array fills, so the transient peak stays one channel wide. A
+        // kept channel may carry one sample past frameCount (a trailing partial
+        // frame at the end of the file); the copy bounds drop it.
+        var channels = new float[keptChannels][];
+        for (int channel = 0; channel < keptChannels; channel++)
         {
-            channels[channel] = new float[frameCount];
-        }
-
-        // Deinterleave by a RUNNING index across block boundaries: a decoder is
-        // not contractually bound to return whole frames per call, and a
-        // per-block frame loop would silently drop a trailing partial frame and
-        // rotate every later sample's channel assignment (L/R swapped from that
-        // point on). A trailing partial frame at the END of the file, if any,
-        // falls outside frameCount and is dropped whole.
-        long flatIndex = 0;
-        foreach (float[] block in blocks)
-        {
-            foreach (float sample in block)
+            var assembled = new float[frameCount];
+            long offset = 0;
+            foreach (float[] chunk in chunks[channel])
             {
-                long frame = flatIndex / channelCount;
-                if (frame >= frameCount)
+                long take = Math.Min(chunk.Length, frameCount - offset);
+                if (take <= 0)
                 {
                     break;
                 }
 
-                channels[flatIndex % channelCount][frame] = sample;
-                flatIndex++;
+                Array.Copy(chunk, 0, assembled, offset, take);
+                offset += take;
             }
+
+            long tail = Math.Min(fill[channel], frameCount - offset);
+            if (tail > 0)
+            {
+                Array.Copy(current[channel], 0, assembled, offset, tail);
+            }
+
+            chunks[channel].Clear();
+            current[channel] = Array.Empty<float>();
+            channels[channel] = assembled;
         }
 
         return new AudioFileContent(channels, sampleRate);

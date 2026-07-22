@@ -60,9 +60,10 @@ public sealed class CalibrationFirFilterTests
     [Fact]
     public void Design_IsExactlyLinearPhase()
     {
-        // Linear phase = symmetric kernel. The auralization applies one filter
-        // to both sides, and only a constant, frequency-independent delay keeps
-        // the inter-side timing intact — that is this symmetry.
+        // Linear phase = symmetric kernel. Not required for the inter-side
+        // scene (any shared filter cancels out of the phase difference), but
+        // it is what this design promises — exact magnitude, constant delay —
+        // so hold it to that.
         double[] kernel = CalibrationFirFilter.Design(
             frequency => 3.0 * Math.Sin(frequency / 700.0), Rate);
 

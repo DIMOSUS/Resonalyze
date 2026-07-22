@@ -266,8 +266,9 @@ file is provided with every release.
   tracking, a per-junction phase read-out (phase at the crossover, the
   coherence-maximizing delay fix and its lobe margin), per-pair Δ L−R timing,
   auto crossover proposals, a stereo-aware
-  auto delay with a scene offset, gated phase view, overlay capture, sessions,
-  and tuning-sheet export
+  auto delay with a scene offset, gated phase view, overlay capture, a
+  headphone track audition (your own music rendered through the tune to a WAV),
+  sessions, and tuning-sheet export
 - Live Spectrum: real-time loopback transfer function with selectable excitation
   (leakage-free periodic pink, pink, brown/red, white noise) and coherence
 - Frequency response, phase, group delay, waterfall, Burst Decay, and
@@ -1852,6 +1853,20 @@ it defaults to Off because the measurements are loopback-referenced.
 - **Capture to overlay** saves the predicted sum as a Captured overlay in
   Frequency Response — compare it against real measurements and target curves,
   or feed it onward to the EQ Wizard.
+- **Audition track…** renders a music file (wav/mp3/flac/m4a and friends)
+  through the tune and writes a stereo WAV: each program channel is convolved
+  with the summed processed response of its side — left sum to channel 1,
+  right sum to channel 2 — with the microphone calibration optionally baked in
+  as a linear-phase FIR, so what you hear matches the calibrated curves on
+  screen. The track is converted to the project's sample rate when needed (the
+  measured responses are never resampled), both channels share one
+  normalization gain so the L/R balance survives, and re-rendering with a
+  different calibration or after a settings tweak is one click — a quick A/B
+  between tune variants. Listen through **headphones only**: each ear gets the
+  measured acoustic path of its side at the microphone position (drivers,
+  cabin, and capsule included) — a stereo auralization of the two sides, not a
+  binaural head simulation — and playing it back through the car would
+  convolve the cabin twice.
 - **Export…** writes the whole setup as a tuning sheet (printable PDF or plain
   text): for every side of every pair (a mono pair prints once) the gain, delay
   in ms and mm, polarity, crossover filters, the all-pass stage, and PEQ bands —

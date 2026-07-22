@@ -55,6 +55,7 @@ namespace Resonalyze
             comboBoxCalibration = new DarkComboBox();
             buttonSessionImport = new Button();
             buttonSessionExport = new Button();
+            buttonAudition = new Button();
             labelCrossoverWarning = new Label();
             dspModePanel = new Panel();
             labelDspMode = new Label();
@@ -371,9 +372,20 @@ namespace Resonalyze
             buttonSessionImport.TabIndex = 17;
             buttonSessionImport.Text = "Load session...";
             buttonSessionImport.UseVisualStyleBackColor = true;
-            // 
+            //
+            // buttonAudition
+            //
+            buttonAudition.FlatStyle = FlatStyle.Popup;
+            buttonAudition.ForeColor = Color.White;
+            buttonAudition.Location = new Point(358, 612);
+            buttonAudition.Name = "buttonAudition";
+            buttonAudition.Size = new Size(125, 24);
+            buttonAudition.TabIndex = 21;
+            buttonAudition.Text = "Audition track...";
+            buttonAudition.UseVisualStyleBackColor = true;
+            //
             // buttonSessionExport
-            // 
+            //
             buttonSessionExport.FlatStyle = FlatStyle.Popup;
             buttonSessionExport.ForeColor = Color.White;
             buttonSessionExport.Location = new Point(358, 642);
@@ -521,6 +533,7 @@ namespace Resonalyze
             Controls.Add(comboBoxCalibration);
             Controls.Add(buttonSessionImport);
             Controls.Add(buttonSessionExport);
+            Controls.Add(buttonAudition);
             Controls.Add(labelCrossoverWarning);
             Controls.Add(dspModePanel);
             Controls.Add(channelListPanel);
@@ -573,6 +586,7 @@ namespace Resonalyze
         private DarkComboBox comboBoxCalibration;
         private Button buttonSessionImport;
         private Button buttonSessionExport;
+        private Button buttonAudition;
         private Label labelCrossoverWarning;
         private Panel dspModePanel;
         private Label labelDspMode;

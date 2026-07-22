@@ -41,8 +41,11 @@ public static class CalibrationFirFilter
     /// Designs the correction filter for the given sample rate.
     /// <paramref name="correctionDb"/> is the calibration's correction in dB at
     /// a frequency in Hz — pass <c>CalibrationFile.GetDecibelCorrection</c>.
-    /// The returned kernel is symmetric (linear-phase) with its peak at
-    /// <c>length / 2</c>, so it delays the signal by exactly that many samples.
+    /// The returned kernel is an ODD-length Type-I FIR: exactly symmetric,
+    /// <c>h[n] = h[N−1−n]</c>, with its peak at the centre tap
+    /// <c>(N−1)/2</c> — the constant delay it adds. (An even-length kernel
+    /// symmetric about a single tap is only circularly symmetric; the edge tap
+    /// has no pair and the phase is not formally linear.)
     /// </summary>
     public static double[] Design(Func<double, double> correctionDb, int sampleRate)
     {
@@ -75,12 +78,15 @@ public static class CalibrationFirFilter
         Fourier.Inverse(spectrum, FourierOptions.Matlab);
 
         // Rotate the zero-phase response so its peak sits at the centre tap
-        // (zero phase → linear phase), then apply a PERIODIC Hann window —
-        // symmetric about the same centre, so the kernel stays exactly
-        // symmetric and the phase exactly linear.
+        // (zero phase → linear phase), then apply a PERIODIC Hann window
+        // symmetric about the same centre. One extra tap makes the kernel
+        // length + 1 — ODD — so tap i pairs with tap length − i exactly
+        // (the wrapped sample at each end is the same ifft value, and both
+        // carry the window's zero): a formal Type-I FIR, not merely a
+        // circularly symmetric one.
         int center = length / 2;
-        var kernel = new double[length];
-        for (int i = 0; i < length; i++)
+        var kernel = new double[length + 1];
+        for (int i = 0; i <= length; i++)
         {
             double window = 0.5 * (1.0 - Math.Cos(2.0 * Math.PI * i / length));
             kernel[i] = spectrum[(i + center) % length].Real * window;

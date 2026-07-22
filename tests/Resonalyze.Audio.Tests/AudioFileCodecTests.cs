@@ -140,6 +140,25 @@ public sealed class AudioFileCodecTests : IDisposable
     }
 
     [Fact]
+    public void Read_RefusesMaterialPastTheByteBudget()
+    {
+        // The duration bound trusts the header; the byte bound holds when the
+        // header lies or the file was swapped after probing. One second of
+        // mono 8 kHz float is 32 kB — a 20 kB budget must stop the decode.
+        const int Rate = 8_000;
+        string path = PathFor("oversized.wav");
+        AudioFileCodec.WriteWav(
+            path, new AudioFileContent([new float[Rate]], Rate));
+
+        Assert.Throws<InvalidOperationException>(() =>
+            AudioFileCodec.Read(
+                path,
+                TimeSpan.FromMinutes(1),
+                channelLimit: int.MaxValue,
+                maximumStoredBytes: 20_000));
+    }
+
+    [Fact]
     public void WriteWav_RefusesEmptyContent()
     {
         Assert.Throws<ArgumentException>(() =>

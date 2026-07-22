@@ -69,16 +69,27 @@ public static class AudioFileCodec
     /// How many leading channels to keep. The full channel layout still drives
     /// frame alignment, so dropped channels cost decoding time but no memory.
     /// </param>
+    /// <param name="maximumStoredBytes">
+    /// Hard cap on the KEPT samples' memory, checked after every decoder
+    /// block. The duration limit trusts the file to be what its header claims;
+    /// this one holds when it is not — a swapped file or a lying container
+    /// stops decoding at the budget instead of exhausting memory first.
+    /// </param>
     public static AudioFileContent Read(
         string path,
         TimeSpan maximumDuration,
         int channelLimit = int.MaxValue,
+        long maximumStoredBytes = long.MaxValue,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         if (channelLimit <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(channelLimit));
+        }
+        if (maximumStoredBytes <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumStoredBytes));
         }
 
         using var reader = new AudioFileReader(path);
@@ -110,6 +121,7 @@ public static class AudioFileCodec
         // point on) if a call ever ended mid-frame.
         var buffer = new float[channelCount * ReadBlockFrames];
         long totalSamples = 0;
+        long keptSamples = 0;
         int channelCursor = 0;
         int read;
         while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
@@ -121,6 +133,7 @@ public static class AudioFileCodec
                 {
                     float[] target = current[channelCursor];
                     target[fill[channelCursor]] = buffer[i];
+                    keptSamples++;
                     if (++fill[channelCursor] == target.Length)
                     {
                         chunks[channelCursor].Add(target);
@@ -141,6 +154,13 @@ public static class AudioFileCodec
                 throw new InvalidOperationException(
                     $"The file is longer than {maximumDuration.TotalMinutes:0} " +
                     "minutes; use a shorter excerpt.");
+            }
+            if (keptSamples * sizeof(float) > maximumStoredBytes)
+            {
+                throw new InvalidOperationException(
+                    "The file decodes past the memory budget " +
+                    $"({maximumStoredBytes / 1_000_000} MB); use a shorter " +
+                    "excerpt.");
             }
         }
 

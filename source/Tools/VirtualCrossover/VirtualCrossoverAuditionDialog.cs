@@ -58,6 +58,13 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
 
     private string? sourcePath;
     private string? targetPath;
+
+    // Whether overwriting targetPath has been consented to IN THIS DIALOG: the
+    // SaveFileDialog's own prompt covers a picked path, but a path restored
+    // from the previous opening carries no such consent — the file sitting
+    // there is the PREVIOUS render, and silently replacing it would collapse
+    // an A/B pair into just B.
+    private bool targetOverwriteConfirmed;
     private string trackSection = string.Empty;
     private string resultSection = string.Empty;
 
@@ -80,9 +87,25 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         this.context = context ?? throw new ArgumentNullException(nameof(context));
         InitializeComponent();
 
+        // The remembered mode wins only when its profile is configured NOW:
+        // a 90° choice remembered from another project must not seed a
+        // project set up for 0° with "90 degrees (file missing)" — which would
+        // silently render as Off — so anything unavailable falls back to the
+        // panel's own setting.
+        MicrophoneCalibrationMode initialMode = lastCalibrationMode switch
+        {
+            MicrophoneCalibrationMode.Degrees0
+                when context.HasZeroDegreeCalibration =>
+                MicrophoneCalibrationMode.Degrees0,
+            MicrophoneCalibrationMode.Degrees90
+                when context.HasNinetyDegreeCalibration =>
+                MicrophoneCalibrationMode.Degrees90,
+            MicrophoneCalibrationMode.Off => MicrophoneCalibrationMode.Off,
+            _ => context.InitialCalibrationMode
+        };
         MicrophoneCalibrationComboHelper.Configure(
             comboBoxCalibration,
-            lastCalibrationMode ?? context.InitialCalibrationMode,
+            initialMode,
             context.HasZeroDegreeCalibration,
             context.HasNinetyDegreeCalibration);
 
@@ -96,8 +119,11 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         }
         if (lastTargetPath != null)
         {
+            // Restored WITHOUT overwrite consent: the file at this path is the
+            // previous opening's render, and Render asks before replacing it.
             targetPath = lastTargetPath;
             labelTargetFile.Text = lastTargetPath;
+            targetOverwriteConfirmed = false;
         }
 
         RefreshRenderEnabled();
@@ -284,6 +310,8 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
 
         targetPath = dialog.FileName;
         labelTargetFile.Text = dialog.FileName;
+        // The SaveFileDialog's OverwritePrompt already asked if the file exists.
+        targetOverwriteConfirmed = true;
         RefreshRenderEnabled();
     }
 
@@ -326,6 +354,25 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         if (sourcePath == null || targetPath == null || PathsEqual(sourcePath, targetPath))
         {
             return;
+        }
+
+        if (File.Exists(targetPath) && !targetOverwriteConfirmed)
+        {
+            DialogResult overwrite = MessageBox.Show(
+                this,
+                $"The output file already exists:\r\n{targetPath}\r\n\r\nIt was " +
+                "restored from the previous opening, so it holds that render. " +
+                "Overwrite it?\r\n\r\n(Choose No and Save as... to keep both " +
+                "variants for an A/B.)",
+                "Audition render",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning);
+            if (overwrite != DialogResult.Yes)
+            {
+                return;
+            }
+
+            targetOverwriteConfirmed = true;
         }
 
         // Resolved on the UI thread: the combo and the resolver belong here.
@@ -474,10 +521,15 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         // Only the first two channels are kept — the render feeds channel 1 to
         // the left side and channel 2 to the right, and storing a 7.1 layout
         // would quadruple the decoded footprint for nothing.
+        // The byte cap makes the budget hold DURING the decode as well: a file
+        // swapped after the pick or a container lying about its duration stops
+        // at the budget instead of exhausting memory before the post-decode
+        // check below ever runs.
         AudioFileContent material = AudioFileCodec.Read(
             sourcePath,
             TimeSpan.FromMinutes(MaximumTrackMinutes),
             channelLimit: 2,
+            MaximumPipelineBytes,
             cancellationToken);
 
         // The pick-time budget was a preflight over the container's CLAIMED

@@ -60,21 +60,22 @@ public sealed class CalibrationFirFilterTests
     [Fact]
     public void Design_IsExactlyLinearPhase()
     {
-        // Linear phase = symmetric kernel. Not required for the inter-side
-        // scene (any shared filter cancels out of the phase difference), but
-        // it is what this design promises — exact magnitude, constant delay —
-        // so hold it to that.
+        // Linear phase = the STANDARD FIR symmetry h[n] == h[N−1−n] over an
+        // odd length (Type I) — every tap has a pair, including the edges. Not
+        // required for the inter-side scene (any shared filter cancels out of
+        // the phase difference), but it is what this design promises — exact
+        // magnitude, constant delay — so hold it to exactly that.
         double[] kernel = CalibrationFirFilter.Design(
             frequency => 3.0 * Math.Sin(frequency / 700.0), Rate);
 
-        int center = kernel.Length / 2;
+        Assert.True(kernel.Length % 2 == 1, "A Type-I FIR has odd length");
         double peak = kernel.Max(Math.Abs);
-        for (int offset = 1; offset < center; offset++)
+        for (int i = 0; i < kernel.Length / 2; i++)
         {
             Assert.True(
-                Math.Abs(kernel[center + offset] - kernel[center - offset]) <
+                Math.Abs(kernel[i] - kernel[kernel.Length - 1 - i]) <
                     peak * 1e-9,
-                $"Asymmetric at offset {offset}");
+                $"Asymmetric at tap {i}");
         }
     }
 

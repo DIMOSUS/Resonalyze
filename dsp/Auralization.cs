@@ -6,11 +6,14 @@ namespace Resonalyze.Dsp;
 /// Renders program material through measured virtual-crossover responses, so a
 /// tune can be listened to instead of only read off a plot.
 /// <para>
-/// What the listener hears is what the MEASUREMENT MICROPHONE heard: the summed
-/// response carries the drivers, the cabin and the microphone as well as the DSP
-/// chain. It is an auralization of one point in the car, for headphones — not a
-/// preview of the electrical preset, and not a binaural rendering (one omni
-/// capsule is not two ears).
+/// The model is a HEADPHONE-ONLY stereo auralization of the measured left and
+/// right acoustic paths: each program channel is convolved with the summed
+/// response of its side (drivers, cabin and microphone capsule included, not
+/// only the DSP), and each side goes to its own ear. That preserves the tune's
+/// inter-side level and timing differences — the things being auditioned. It
+/// is NOT a binaural simulation of a listener's ears, and not literally what
+/// the microphone heard either: the capsule hears both sides SUMMED at one
+/// point, while the render keeps them separate so the balance stays audible.
 /// </para>
 /// </summary>
 public static class Auralization

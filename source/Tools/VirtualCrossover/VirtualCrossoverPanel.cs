@@ -1646,10 +1646,10 @@ public partial class VirtualCrossoverPanel : UserControl
             "as a WAV: the left side's summed response on channel 1,\r\n" +
             "the right side's on channel 2. Microphone calibration can\r\n" +
             "be applied as a linear-phase FIR baked into both sides.\r\n" +
-            "What you hear is the MICROPHONE's position — drivers, cabin\r\n" +
-            "and capsule included, not only the DSP — so listen on\r\n" +
-            "headphones. Played back through the same system it would\r\n" +
-            "convolve the car twice.\r\n" +
+            "Listen through HEADPHONES only: each ear gets its side's\r\n" +
+            "measured acoustic path (drivers, cabin, capsule) at the mic\r\n" +
+            "position — not a binaural head simulation. Played through\r\n" +
+            "the same system it would convolve the car twice.\r\n" +
             "A track at another sample rate is converted to the project's;\r\n" +
             "the measured responses are never resampled.");
         // The per-channel block tooltips are applied in CreateChannel, so every

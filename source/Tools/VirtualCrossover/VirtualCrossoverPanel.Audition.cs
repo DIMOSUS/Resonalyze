@@ -4,10 +4,11 @@ namespace Resonalyze;
 /// The Virtual DSP "Audition track" command: sums both sides of the tune and
 /// hands them to <see cref="VirtualCrossoverAuditionDialog"/>, where the user
 /// picks a music file, a destination and a microphone calibration, and renders
-/// the track through the tune. The result is an auralization of the MEASUREMENT
-/// MICROPHONE's position — drivers, cabin and capsule included — meant for
-/// headphones; played back through the same system it would convolve the car
-/// twice.
+/// the track through the tune. The result is a headphone-only stereo
+/// auralization of the measured left and right acoustic paths at the
+/// microphone position — drivers, cabin and capsule included, but not a
+/// binaural head simulation; played back through the same system it would
+/// convolve the car twice.
 /// </summary>
 public partial class VirtualCrossoverPanel
 {

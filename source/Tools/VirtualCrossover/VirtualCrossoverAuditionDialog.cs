@@ -562,10 +562,11 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             $"{FormatDuration(TimeSpan.FromSeconds(durationSeconds))}");
         section.AppendLine();
         section.Append(
-            "This is what the measurement microphone hears at its position — " +
-            "drivers, cabin and capsule included, not only the DSP. Listen on " +
-            "headphones: playing it back through the same system would convolve " +
-            "the car twice.");
+            "Listen through headphones only. The left and right channels are " +
+            "the measured acoustic response of the corresponding side at the " +
+            "microphone position — drivers, cabin and capsule included, not a " +
+            "binaural head simulation. Playing it back through the same system " +
+            "would convolve the car twice.");
         return section.ToString();
     }
 

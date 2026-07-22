@@ -642,7 +642,7 @@ public static class AutoAlignmentEngine
             // recenters the correlation window and the fallback diff; the
             // trustworthy PHAT extremum, where present, still wins the seed.
             double probeLowHz = Math.Sqrt(pair.BandLowHz * pair.BandHighHz);
-            bool arrivalLatched = false;
+            bool arrivalReanchored = false;
             if (pair.BandHighHz >=
                 probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
             {
@@ -667,8 +667,7 @@ public static class AutoAlignmentEngine
                 bool upperLatched =
                     ClassifyArrival(upperRead, upperProbe, probeToleranceMs) ==
                         ArrivalCertificate.Latched;
-                arrivalLatched = lowerLatched || upperLatched;
-                if (arrivalLatched)
+                if (lowerLatched || upperLatched)
                 {
                     TimeAlignmentAnalysisResult latchedRead =
                         lowerLatched ? lowerRead : upperRead;
@@ -682,13 +681,19 @@ public static class AutoAlignmentEngine
                         $"{probeLowHz:0}-{pair.BandHighHz:0} Hz half (modal latch)");
                     // Re-anchor only when BOTH sides measure in the half band —
                     // mixing one half-band read with the other side's full-band
-                    // one would compare different wavefronts.
+                    // one would compare different wavefronts. A conviction
+                    // WITHOUT a usable replacement anchor changes nothing
+                    // below: the corrupted diff keeps centering the window,
+                    // and the reach veto stays armed — lifting it there would
+                    // trust an extremum measured around the very anchor the
+                    // probe just convicted (review find on the first cut).
                     if (lowerProbe.IsValid && upperProbe.IsValid &&
                         lowerProbe.SignalToNoiseDecibels >= MinimumArrivalSnrDb &&
                         upperProbe.SignalToNoiseDecibels >= MinimumArrivalSnrDb)
                     {
                         lowerArrival = lowerProbe.FirstArrivalDelayMilliseconds;
                         upperArrival = upperProbe.FirstArrivalDelayMilliseconds;
+                        arrivalReanchored = true;
                     }
                 }
             }
@@ -764,10 +769,14 @@ public static class AutoAlignmentEngine
                     return "same-polarity rival near-tie";
                 }
                 // The reach veto grades the extremum against the arrival, so
-                // it only means something while the arrival itself is honest:
-                // against a convicted modal latch it would enforce the very
-                // cycle skip it exists to prevent (see the probe above).
-                if (!arrivalLatched &&
+                // it is lifted only once the pair is RE-ANCHORED on honest
+                // half-band reads: against a convicted-and-replaced anchor it
+                // would enforce the very cycle skip it exists to prevent. A
+                // conviction without a replacement anchor keeps the veto —
+                // the window is still centered on the corrupted diff, and a
+                // strong distant modal peak found there is exactly the skip
+                // candidate the veto guards (see the probe above).
+                if (!arrivalReanchored &&
                     Math.Abs(seedOffsetMs) > SeedReachMs(pair.CrossoverHz))
                 {
                     return $"{seedLabel} beyond the arrival's reach";
@@ -1865,7 +1874,10 @@ public static class AutoAlignmentEngine
             // are still usable but UNVERIFIED, and the caller must not grant
             // them the tight scene lock an honest certificate earns.
             ((TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
-                Reads, bool Latched, bool Verified) MeasureConsistent(
+                Reads, bool Latched, bool Verified,
+                bool LeftLatched, bool RightLatched,
+                (TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
+                    FullReads) MeasureConsistent(
                     double lowHz, double highHz)
             {
                 TimeAlignmentAnalysisResult left =
@@ -1880,14 +1892,14 @@ public static class AutoAlignmentEngine
                     left.SignalToNoiseDecibels < MinimumArrivalSnrDb ||
                     right.SignalToNoiseDecibels < MinimumArrivalSnrDb)
                 {
-                    return (null, false, false);
+                    return (null, false, false, false, false, null);
                 }
 
                 double probeLowHz = Math.Sqrt(lowHz * highHz);
                 if (highHz <
                     probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
                 {
-                    return ((left, right), false, false);
+                    return ((left, right), false, false, false, false, (left, right));
                 }
 
                 TimeAlignmentAnalysisResult leftProbe =
@@ -1919,12 +1931,16 @@ public static class AutoAlignmentEngine
                         $"{(leftLatched ? leftProbe : rightProbe).FirstArrivalDelayMilliseconds:0.000} ms" +
                         $" in its {probeLowHz:0}-{highHz:0} Hz half " +
                         "(modal latch: the sides time different features)");
-                    return (null, true, false);
+                    return (null, true, false,
+                        leftLatched,
+                        rightCertificate == ArrivalCertificate.Latched,
+                        (left, right));
                 }
 
                 return ((left, right), false,
                     leftCertificate == ArrivalCertificate.Verified &&
-                    rightCertificate == ArrivalCertificate.Verified);
+                    rightCertificate == ArrivalCertificate.Verified,
+                    false, false, (left, right));
             }
 
             // The consistency ladder: the pair's own shared band first; when a
@@ -1939,7 +1955,10 @@ public static class AutoAlignmentEngine
             double usedHighHz = bandHighHz;
             bool anyLatch;
             ((TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
-                Reads, bool Latched, bool Verified) measured =
+                Reads, bool Latched, bool Verified,
+                bool LeftLatched, bool RightLatched,
+                (TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
+                    FullReads) measured =
                 MeasureConsistent(bandLowHz, bandHighHz);
             anyLatch = measured.Latched;
             bool fallbackDiffers =
@@ -1951,14 +1970,24 @@ public static class AutoAlignmentEngine
             // latched read (field case: a midbass link read 22.2 ms in
             // 80-200 Hz, its 126-200 Hz half saw the same hump, and the
             // fabricated -8.4 ms split — no cabin geometry produces one —
-            // was scene-locked onto the right midbass). A latch PROVEN one
-            // band up convicts the link read too: the junction band's full-
-            // vs-upper-half skew places the mode inside fc/2..fc, which the
-            // link band contains — so the link's split must not reach the
+            // was scene-locked onto the right midbass). The conviction does
+            // NOT transfer wholesale, though: the witness only proves a mode
+            // somewhere below its own probe half, which may lie below the
+            // link band entirely (review find on the first cut). So the
+            // witness convicts the link read only when the SAME-FEATURE test
+            // holds — the latched side's link read timed the very feature the
+            // witness convicted (the two reads agree within the wavefront
+            // tolerance; the bands overlap and both sit on one mode, so
+            // dispersion between them is small). A link read that timed an
+            // earlier, different feature stands: the mode is outside its
+            // band's reach. On conviction the link's split must not reach the
             // scene lock, and the pair descends the same ladder a latched
             // link band would.
             ((TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
-                Reads, bool Latched, bool Verified)? junctionRung =
+                Reads, bool Latched, bool Verified,
+                bool LeftLatched, bool RightLatched,
+                (TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
+                    FullReads)? junctionRung =
                 fallbackDiffers && (measured.Reads != null || measured.Latched)
                     ? MeasureConsistent(fallbackLowHz, fallbackHighHz)
                     : null;
@@ -1973,15 +2002,31 @@ public static class AutoAlignmentEngine
                     usedHighHz = fallbackHighHz;
                 }
             }
-            else if (measured.Reads != null && junctionRung is { Latched: true })
+            else if (measured.Reads is { } linkReads &&
+                junctionRung is { Latched: true, FullReads: { } witnessReads } witness)
             {
-                log.AppendLine(
-                    $"  cross-side link {rightChannel.Name}: " +
-                    $"{bandLowHz:0}-{bandHighHz:0} Hz read discarded — the " +
-                    $"junction band {fallbackLowHz:0}-{fallbackHighHz:0} Hz " +
-                    "convicts a modal latch the link band's own probe cannot see");
-                measured = (null, true, false);
-                anyLatch = true;
+                double witnessProbeLowHz = Math.Sqrt(fallbackLowHz * fallbackHighHz);
+                double witnessToleranceMs = Math.Max(1.0, 500.0 / witnessProbeLowHz);
+                bool linkTimedTheConvictedFeature =
+                    (witness.LeftLatched && Math.Abs(
+                        linkReads.Left.FirstArrivalDelayMilliseconds -
+                        witnessReads.Left.FirstArrivalDelayMilliseconds) <=
+                            witnessToleranceMs) ||
+                    (witness.RightLatched && Math.Abs(
+                        linkReads.Right.FirstArrivalDelayMilliseconds -
+                        witnessReads.Right.FirstArrivalDelayMilliseconds) <=
+                            witnessToleranceMs);
+                if (linkTimedTheConvictedFeature)
+                {
+                    log.AppendLine(
+                        $"  cross-side link {rightChannel.Name}: " +
+                        $"{bandLowHz:0}-{bandHighHz:0} Hz read discarded — it timed " +
+                        $"the same feature the junction band " +
+                        $"{fallbackLowHz:0}-{fallbackHighHz:0} Hz convicts as a " +
+                        "modal latch the link band's own probe cannot see");
+                    measured = (null, true, false, false, false, null);
+                    anyLatch = true;
+                }
             }
             if (measured.Reads is not { } arrivals)
             {

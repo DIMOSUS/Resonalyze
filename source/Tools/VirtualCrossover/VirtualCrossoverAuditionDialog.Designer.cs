@@ -43,9 +43,9 @@ namespace Resonalyze
             textBoxReport = new TextBox();
             buttonClose = new Button();
             SuspendLayout();
-            //
+            // 
             // labelTrack
-            //
+            // 
             labelTrack.AutoSize = true;
             labelTrack.ForeColor = Color.FromArgb(185, 190, 200);
             labelTrack.Location = new Point(12, 19);
@@ -53,9 +53,9 @@ namespace Resonalyze
             labelTrack.Size = new Size(38, 15);
             labelTrack.TabIndex = 0;
             labelTrack.Text = "Track:";
-            //
+            // 
             // buttonChooseSource
-            //
+            // 
             buttonChooseSource.BackColor = Color.FromArgb(46, 51, 67);
             buttonChooseSource.FlatStyle = FlatStyle.Popup;
             buttonChooseSource.ForeColor = Color.White;
@@ -65,9 +65,9 @@ namespace Resonalyze
             buttonChooseSource.TabIndex = 1;
             buttonChooseSource.Text = "Choose...";
             buttonChooseSource.UseVisualStyleBackColor = false;
-            //
+            // 
             // labelSourceFile
-            //
+            // 
             labelSourceFile.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             labelSourceFile.AutoEllipsis = true;
             labelSourceFile.ForeColor = Color.FromArgb(185, 190, 200);
@@ -76,9 +76,9 @@ namespace Resonalyze
             labelSourceFile.Size = new Size(360, 15);
             labelSourceFile.TabIndex = 2;
             labelSourceFile.Text = "no file chosen";
-            //
+            // 
             // labelOutput
-            //
+            // 
             labelOutput.AutoSize = true;
             labelOutput.ForeColor = Color.FromArgb(185, 190, 200);
             labelOutput.Location = new Point(12, 51);
@@ -86,9 +86,9 @@ namespace Resonalyze
             labelOutput.Size = new Size(48, 15);
             labelOutput.TabIndex = 3;
             labelOutput.Text = "Output:";
-            //
+            // 
             // buttonChooseTarget
-            //
+            // 
             buttonChooseTarget.BackColor = Color.FromArgb(46, 51, 67);
             buttonChooseTarget.FlatStyle = FlatStyle.Popup;
             buttonChooseTarget.ForeColor = Color.White;
@@ -98,9 +98,9 @@ namespace Resonalyze
             buttonChooseTarget.TabIndex = 4;
             buttonChooseTarget.Text = "Save as...";
             buttonChooseTarget.UseVisualStyleBackColor = false;
-            //
+            // 
             // labelTargetFile
-            //
+            // 
             labelTargetFile.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             labelTargetFile.AutoEllipsis = true;
             labelTargetFile.ForeColor = Color.FromArgb(185, 190, 200);
@@ -109,29 +109,29 @@ namespace Resonalyze
             labelTargetFile.Size = new Size(360, 15);
             labelTargetFile.TabIndex = 5;
             labelTargetFile.Text = "no file chosen";
-            //
+            // 
             // labelCalibration
-            //
+            // 
             labelCalibration.AutoSize = true;
             labelCalibration.ForeColor = Color.FromArgb(185, 190, 200);
             labelCalibration.Location = new Point(12, 83);
             labelCalibration.Name = "labelCalibration";
-            labelCalibration.Size = new Size(90, 15);
+            labelCalibration.Size = new Size(89, 15);
             labelCalibration.TabIndex = 6;
             labelCalibration.Text = "Mic calibration:";
-            //
+            // 
             // comboBoxCalibration
-            //
+            // 
             comboBoxCalibration.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxCalibration.ForeColor = Color.White;
-            comboBoxCalibration.Location = new Point(104, 80);
+            comboBoxCalibration.Location = new Point(104, 81);
             comboBoxCalibration.MinimumSize = new Size(36, 19);
             comboBoxCalibration.Name = "comboBoxCalibration";
-            comboBoxCalibration.Size = new Size(130, 19);
+            comboBoxCalibration.Size = new Size(110, 19);
             comboBoxCalibration.TabIndex = 7;
-            //
+            // 
             // buttonRender
-            //
+            // 
             buttonRender.BackColor = Color.FromArgb(46, 51, 67);
             buttonRender.FlatStyle = FlatStyle.Popup;
             buttonRender.ForeColor = Color.White;
@@ -141,9 +141,9 @@ namespace Resonalyze
             buttonRender.TabIndex = 8;
             buttonRender.Text = "Render";
             buttonRender.UseVisualStyleBackColor = false;
-            //
+            // 
             // progressBar
-            //
+            // 
             progressBar.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             progressBar.Location = new Point(144, 112);
             progressBar.Maximum = 1000;
@@ -151,18 +151,18 @@ namespace Resonalyze
             progressBar.Size = new Size(440, 26);
             progressBar.Style = ProgressBarStyle.Continuous;
             progressBar.TabIndex = 9;
-            //
+            // 
             // labelStatus
-            //
+            // 
             labelStatus.AutoSize = true;
             labelStatus.ForeColor = Color.FromArgb(185, 190, 200);
             labelStatus.Location = new Point(12, 146);
             labelStatus.Name = "labelStatus";
             labelStatus.Size = new Size(0, 15);
             labelStatus.TabIndex = 10;
-            //
+            // 
             // textBoxReport
-            //
+            // 
             textBoxReport.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             textBoxReport.BackColor = Color.FromArgb(33, 36, 45);
             textBoxReport.BorderStyle = BorderStyle.FixedSingle;
@@ -175,9 +175,9 @@ namespace Resonalyze
             textBoxReport.ScrollBars = ScrollBars.Vertical;
             textBoxReport.Size = new Size(572, 302);
             textBoxReport.TabIndex = 11;
-            //
+            // 
             // buttonClose
-            //
+            // 
             buttonClose.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             buttonClose.DialogResult = DialogResult.Cancel;
             buttonClose.FlatStyle = FlatStyle.Popup;
@@ -188,9 +188,9 @@ namespace Resonalyze
             buttonClose.TabIndex = 12;
             buttonClose.Text = "Close";
             buttonClose.UseVisualStyleBackColor = true;
-            //
+            // 
             // VirtualCrossoverAuditionDialog
-            //
+            // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(40, 44, 54);

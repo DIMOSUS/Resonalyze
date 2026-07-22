@@ -64,6 +64,17 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
     private CancellationTokenSource? activeRender;
     private bool closeRequested;
 
+    // The last accepted inputs, remembered for the lifetime of the process: a
+    // tuning session renders the SAME track through several tune variants, and
+    // re-picking both files and the calibration on every opening made that
+    // loop needlessly slow. Deliberately not persisted to disk — a stale path
+    // from last week is noise, within one run it is the workflow. The source
+    // is re-probed on restore (the file may have changed or vanished since),
+    // so a dead path degrades to the usual refusal in the report.
+    private static string? lastSourcePath;
+    private static string? lastTargetPath;
+    private static MicrophoneCalibrationMode? lastCalibrationMode;
+
     public VirtualCrossoverAuditionDialog(VirtualCrossoverAuditionContext context)
     {
         this.context = context ?? throw new ArgumentNullException(nameof(context));
@@ -71,13 +82,23 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
 
         MicrophoneCalibrationComboHelper.Configure(
             comboBoxCalibration,
-            context.InitialCalibrationMode,
+            lastCalibrationMode ?? context.InitialCalibrationMode,
             context.HasZeroDegreeCalibration,
             context.HasNinetyDegreeCalibration);
 
         buttonChooseSource.Click += (_, _) => ChooseSource();
         buttonChooseTarget.Click += (_, _) => ChooseTarget();
         buttonRender.Click += async (_, _) => await OnRenderClickedAsync();
+
+        if (lastSourcePath != null)
+        {
+            ApplySourceSelection(lastSourcePath);
+        }
+        if (lastTargetPath != null)
+        {
+            targetPath = lastTargetPath;
+            labelTargetFile.Text = lastTargetPath;
+        }
 
         RefreshRenderEnabled();
         RefreshReport();
@@ -96,6 +117,18 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         }
 
         base.OnFormClosing(e);
+    }
+
+    // Unconditional on purpose: a restore that failed (the file vanished)
+    // leaves null here, and saving that null stops the next opening from
+    // retrying a dead path.
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        lastSourcePath = sourcePath;
+        lastTargetPath = targetPath;
+        lastCalibrationMode =
+            MicrophoneCalibrationComboHelper.GetSelectedMode(comboBoxCalibration);
+        base.OnFormClosed(e);
     }
 
     // ---------------------------------------------------------------- pickers
@@ -127,16 +160,23 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             return;
         }
 
-        // Probe now, not at render time: an unreadable, over-long or over-sized
-        // file should say so the moment it is picked, in the report, with
-        // Render disabled.
+        ApplySourceSelection(dialog.FileName);
+    }
+
+    // Shared by the picker and the same-run restore: probes the file and
+    // either adopts it (path plus the track report section) or leaves the slot
+    // empty with the refusal in the report. Probing here, not at render time,
+    // means an unreadable, over-long or over-sized file says so the moment it
+    // enters, with Render disabled.
+    private void ApplySourceSelection(string fileName)
+    {
         try
         {
-            AudioFileInfo info = AudioFileCodec.Probe(dialog.FileName);
+            AudioFileInfo info = AudioFileCodec.Probe(fileName);
             long projectedBytes = ProjectedPipelineBytes(info, context.SampleRate);
             var section = new StringBuilder();
             section.AppendLine("== Track ==");
-            section.AppendLine(Path.GetFileName(dialog.FileName));
+            section.AppendLine(Path.GetFileName(fileName));
             section.AppendLine(
                 $"{info.ChannelCount} channel(s), {info.SampleRate} Hz, " +
                 $"{FormatDuration(info.Duration)}");
@@ -183,8 +223,8 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
                         "Only the first two channels will feed the two sides.");
                 }
 
-                sourcePath = dialog.FileName;
-                labelSourceFile.Text = dialog.FileName;
+                sourcePath = fileName;
+                labelSourceFile.Text = fileName;
             }
 
             trackSection = section.ToString().TrimEnd();
@@ -195,7 +235,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             labelSourceFile.Text = "no file chosen";
             trackSection =
                 "== Track ==\r\n" +
-                $"{Path.GetFileName(dialog.FileName)}\r\n" +
+                $"{Path.GetFileName(fileName)}\r\n" +
                 $"UNREADABLE: {exception.Message}";
         }
 

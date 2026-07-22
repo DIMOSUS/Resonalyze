@@ -11,10 +11,6 @@ public sealed record AudioFileContent(float[][] Channels, int SampleRate)
     public int ChannelCount => Channels.Length;
 
     public int FrameCount => Channels.Length == 0 ? 0 : Channels[0].Length;
-
-    public TimeSpan Duration => SampleRate <= 0
-        ? TimeSpan.Zero
-        : TimeSpan.FromSeconds(FrameCount / (double)SampleRate);
 }
 
 /// <summary>

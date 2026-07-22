@@ -43,7 +43,6 @@ public sealed class AuralizationTests
 
         Assert.True(trim.Cut);
         Assert.Equal(kernel.Length, trim.Length);
-        Assert.Equal(PeakIndex, trim.PeakIndex);
         // The head is untouched: sample 0 stays sample 0, so the measured
         // propagation delay survives.
         Assert.Equal(response[PeakIndex].Real, kernel[PeakIndex], 10);

@@ -96,32 +96,6 @@ public static class SampleRateConverter
         return output;
     }
 
-    /// <summary>
-    /// The length <see cref="Resample"/> produces, without doing the work — for
-    /// progress reporting and buffer budgeting.
-    /// </summary>
-    public static long ResampledLength(long inputLength, int fromRate, int toRate)
-    {
-        if (fromRate <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(fromRate));
-        }
-        if (toRate <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(toRate));
-        }
-
-        if (fromRate == toRate)
-        {
-            return inputLength;
-        }
-
-        int divisor = GreatestCommonDivisor(fromRate, toRate);
-        int up = toRate / divisor;
-        int down = fromRate / divisor;
-        return (inputLength * up + down - 1) / down;
-    }
-
     // The shared low-pass, designed in the interpolated domain: cutoff at the
     // lower of the two Nyquist limits, DC gain `up` over the whole kernel so the
     // every-up-th taps one output actually reads sum to unity.
@@ -139,7 +113,7 @@ public static class SampleRateConverter
         }
 
         double cutoff = 0.5 / factor;
-        double windowDenominator = BesselI0(KaiserBeta);
+        double windowDenominator = MathNet.Numerics.SpecialFunctions.BesselI0(KaiserBeta);
         var kernel = new double[length];
         for (int i = 0; i < kernel.Length; i++)
         {
@@ -148,34 +122,13 @@ public static class SampleRateConverter
                 ? 2.0 * cutoff
                 : Math.Sin(2.0 * Math.PI * cutoff * offset) / (Math.PI * offset);
             double ratio = offset / center;
-            double window = BesselI0(
+            double window = MathNet.Numerics.SpecialFunctions.BesselI0(
                 KaiserBeta * Math.Sqrt(Math.Max(0.0, 1.0 - ratio * ratio)))
                 / windowDenominator;
             kernel[i] = up * sinc * window;
         }
 
         return kernel;
-    }
-
-    // Zeroth-order modified Bessel function of the first kind, by its series.
-    // The terms fall factorially, so the loop exits on relative epsilon well
-    // before the iteration cap for any β this class uses.
-    private static double BesselI0(double x)
-    {
-        double sum = 1.0;
-        double term = 1.0;
-        for (int k = 1; k < 64; k++)
-        {
-            double factor = x / (2.0 * k);
-            term *= factor * factor;
-            sum += term;
-            if (term < sum * 1e-17)
-            {
-                break;
-            }
-        }
-
-        return sum;
     }
 
     private static int GreatestCommonDivisor(int a, int b)

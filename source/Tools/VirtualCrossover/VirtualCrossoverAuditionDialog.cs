@@ -374,7 +374,6 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         progress.Report(new AuditionProgress("Finished", 1.0));
 
         return new RenderOutcome(
-            material.ChannelCount,
             material.SampleRate,
             rendered,
             leftTrim,
@@ -494,7 +493,6 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         $"{(int)duration.TotalMinutes}:{duration.Seconds:00}";
 
     private sealed record RenderOutcome(
-        int SourceChannelCount,
         int SourceSampleRate,
         AuralizationResult Rendered,
         AuralizationTrim LeftTrim,

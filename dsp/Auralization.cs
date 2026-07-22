@@ -116,7 +116,6 @@ public static class Auralization
 
         trim = new AuralizationTrim(
             length,
-            peakIndex,
             tail * 1000.0 / sampleRate,
             length < response.Length);
         return kernel;
@@ -289,12 +288,10 @@ public static class Auralization
 
 /// <summary>
 /// What <see cref="Auralization.TrimResponse"/> kept: the kernel length, the
-/// arrival it was measured from, the decay window past that arrival, and whether
-/// anything was actually cut.
+/// decay window past the arrival, and whether anything was actually cut.
 /// </summary>
 public readonly record struct AuralizationTrim(
     int Length,
-    int PeakIndex,
     double TailMilliseconds,
     bool Cut);
 

@@ -41,8 +41,9 @@ public sealed class SampleRateConverterTests
 
         float[] output = SampleRateConverter.Resample(input, fromRate, toRate);
 
+        // ceil(length · to / from): one second of material stays one second.
         Assert.Equal(
-            SampleRateConverter.ResampledLength(length, fromRate, toRate),
+            ((long)length * toRate + fromRate - 1) / fromRate,
             output.Length);
         int margin = toRate / 20;
         double maxError = 0;

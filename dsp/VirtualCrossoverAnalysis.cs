@@ -375,11 +375,12 @@ public static class VirtualCrossoverAnalysis
         double maxDelayMs,
         double? priorDelayMs = null,
         double priorSigmaMs = 0,
-        bool? forcedPolarity = null) =>
+        bool? forcedPolarity = null,
+        bool levelMatch = false) =>
         FindAlignmentCandidates(
             variableImpulseResponse, fixedImpulseResponses, sampleRate,
             minFrequencyHz, maxFrequencyHz, minDelayMs, maxDelayMs,
-            priorDelayMs, priorSigmaMs, forcedPolarity, out _);
+            priorDelayMs, priorSigmaMs, forcedPolarity, levelMatch, out _);
 
     /// <summary>
     /// The overload that also reports EVERY refined local optimum (best
@@ -401,6 +402,7 @@ public static class VirtualCrossoverAnalysis
         double? priorDelayMs,
         double priorSigmaMs,
         bool? forcedPolarity,
+        bool levelMatch,
         out IReadOnlyList<AlignmentCandidate> allOptima)
     {
         List<AlignmentBin> bins = BuildAlignmentBins(
@@ -410,7 +412,8 @@ public static class VirtualCrossoverAnalysis
             minFrequencyHz,
             maxFrequencyHz,
             minDelayMs,
-            maxDelayMs);
+            maxDelayMs,
+            levelMatch);
         if (bins.Count == 0 || !HoldsDelayEvidence(bins))
         {
             allOptima = Array.Empty<AlignmentCandidate>();
@@ -1383,6 +1386,13 @@ public static class VirtualCrossoverAnalysis
     // The per-bin spectra inside the frequency window, decimated to a bounded
     // bin count so the search stays fast for long IRs. The fixed channels act
     // as one combined source (superposition).
+    // The widest in-band level correction the search-side level match may
+    // apply, matched to OverlapReliabilityGateDb: a side sitting deeper than
+    // the reliability gate below its partner in the band is roll-off tail or
+    // deconvolution residue, and amplifying residue to parity would let the
+    // delay-evidence gate certify a junction that has no measurable overlap.
+    private const double LevelMatchCapDb = 30;
+
     private static List<AlignmentBin> BuildAlignmentBins(
         Complex[] variableImpulseResponse,
         IReadOnlyList<Complex[]> fixedImpulseResponses,
@@ -1390,7 +1400,8 @@ public static class VirtualCrossoverAnalysis
         double minFrequencyHz,
         double maxFrequencyHz,
         double minDelayMs,
-        double maxDelayMs)
+        double maxDelayMs,
+        bool levelMatch = false)
     {
         ArgumentNullException.ThrowIfNull(variableImpulseResponse);
         ArgumentNullException.ThrowIfNull(fixedImpulseResponses);
@@ -1450,10 +1461,43 @@ public static class VirtualCrossoverAnalysis
         }
 
         int stride = Math.Max(1, (lastBin - firstBin + 1) / 4_096);
+
+        // The search-side level match: score the junction as if the two sides
+        // were gain-matched IN THIS BAND. The true inter-channel timing does
+        // not depend on playback level, but the loss surface's power to
+        // resolve it does — the anti-phase null (the contrast between lobes)
+        // only reaches full depth at equal levels, and a 10 dB imbalance
+        // flattens the landscape until near-tie gates flip on noise (field
+        // case: a sub tuned to -10 dB re the midbass picked a lobe a full
+        // period late that 0 dB resolved cleanly — the level-match-first
+        // discipline every phase-alignment workflow prescribes, applied
+        // internally). One scalar per channel set preserves the spectral
+        // shapes; only the balance moves. Reported losses elsewhere keep the
+        // real gains — this is for the SEARCH's eyes only.
+        double variableScale = 1.0;
+        if (levelMatch)
+        {
+            double variableLevel = 0;
+            double fixedLevel = 0;
+            for (int bin = firstBin; bin <= lastBin; bin += stride)
+            {
+                double frequencyHz = bin * (double)sampleRate / length;
+                variableLevel += variableSpectrum[bin].Magnitude / frequencyHz;
+                fixedLevel += fixedSpectrum[bin].Magnitude / frequencyHz;
+            }
+            if (variableLevel > 0 && fixedLevel > 0)
+            {
+                double cap = Math.Pow(10.0, LevelMatchCapDb / 20.0);
+                variableScale = Math.Clamp(
+                    fixedLevel / variableLevel, 1.0 / cap, cap);
+            }
+        }
+
         for (int bin = firstBin; bin <= lastBin; bin += stride)
         {
+            Complex variableValue = variableSpectrum[bin] * variableScale;
             double magnitudeSum =
-                fixedSpectrum[bin].Magnitude + variableSpectrum[bin].Magnitude;
+                fixedSpectrum[bin].Magnitude + variableValue.Magnitude;
             if (magnitudeSum > 0)
             {
                 double frequencyHz = bin * (double)sampleRate / length;
@@ -1462,7 +1506,7 @@ public static class VirtualCrossoverAnalysis
                 bins.Add(new AlignmentBin(
                     omegaMs,
                     fixedSpectrum[bin],
-                    variableSpectrum[bin],
+                    variableValue,
                     1.0 / frequencyHz,
                     magnitudeSum,
                     bin));
@@ -1999,7 +2043,8 @@ public static class VirtualCrossoverAnalysis
         IReadOnlyList<Complex[]> fixedImpulseResponses,
         int sampleRate,
         double minFrequencyHz,
-        double maxFrequencyHz)
+        double maxFrequencyHz,
+        bool levelMatch = false)
     {
         // The delay window only gates parameter validation here — the
         // measurement itself evaluates the responses exactly as given.
@@ -2010,7 +2055,8 @@ public static class VirtualCrossoverAnalysis
             minFrequencyHz,
             maxFrequencyHz,
             minDelayMs: -1,
-            maxDelayMs: 1);
+            maxDelayMs: 1,
+            levelMatch);
         if (bins.Count == 0)
         {
             return null;
@@ -2129,7 +2175,8 @@ public static class VirtualCrossoverAnalysis
             IReadOnlyList<Complex[]> fixedImpulseResponses,
             int sampleRate,
             double minFrequencyHz,
-            double maxFrequencyHz)
+            double maxFrequencyHz,
+            bool levelMatch = false)
         {
             List<AlignmentBin> bins = BuildAlignmentBins(
                 variableImpulseResponse,
@@ -2138,7 +2185,8 @@ public static class VirtualCrossoverAnalysis
                 minFrequencyHz,
                 maxFrequencyHz,
                 minDelayMs: -1,
-                maxDelayMs: 1);
+                maxDelayMs: 1,
+                levelMatch);
             if (bins.Count == 0)
             {
                 return null;

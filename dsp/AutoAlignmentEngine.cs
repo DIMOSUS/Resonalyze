@@ -1024,6 +1024,9 @@ public static class AutoAlignmentEngine
                     priorDelayMs: anchorMs,
                     priorSigmaMs: (windowHighMs - windowLowMs) / 4.0,
                     forcedPolarity: forcedPolarity,
+                    // Search-side level match: the lobe choice must not depend
+                    // on the channels' playback gains (see BuildAlignmentBins).
+                    levelMatch: true,
                     out IReadOnlyList<AlignmentCandidate> allOptima);
             return (candidates, allOptima, windowLowMs, windowHighMs);
         }
@@ -2726,7 +2729,8 @@ public static class AutoAlignmentEngine
                         new List<Complex[]> { IrOf(neighbor) },
                         mover.SampleRate,
                         junction.BandLowHz,
-                        junction.BandHighHz);
+                        junction.BandHighHz,
+                        levelMatch: true);
                 if (evaluator != null)
                 {
                     evaluators.Add(evaluator);
@@ -3029,7 +3033,8 @@ public static class AutoAlignmentEngine
                             new List<Complex[]> { IrOf(neighbor) },
                             mono.SampleRate,
                             lowHz,
-                            highHz);
+                            highHz,
+                            levelMatch: true);
                     if (loss is { } value)
                     {
                         total += value.LossDb +

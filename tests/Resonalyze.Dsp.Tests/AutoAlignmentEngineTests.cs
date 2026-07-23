@@ -439,6 +439,74 @@ public sealed class AutoAlignmentEngineTests
         Assert.InRange(alignment[mid].DelayMs, 3.0, 9.0);
     }
 
+    // The upper channel of the incomparable-probe case: its full band reads
+    // the (low-passed) direct front, but its upper half is owned by a strong
+    // high-passed late reflection — the half-band probe times a feature far
+    // LATER than the channel's own full-band front, so its certificate is
+    // UNVERIFIED: the probe is valid and clean, yet not the wavefront a
+    // latched partner's probe found.
+    private static Complex[] FrontWithLateHighReflection(
+        double frontMs, double reflectionMs, double reflectionGainDb)
+    {
+        Complex[] ir = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(BasePosition),
+            new DspChannelChain(
+                DelayMs: frontMs,
+                Crossover: new CrossoverSpec(
+                    CrossoverKind.LowPass,
+                    new CrossoverEdge(
+                        CrossoverFilterFamily.Butterworth, 150, 36))),
+            SampleRate);
+        Complex[] late = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(BasePosition),
+            new DspChannelChain(
+                GainDb: reflectionGainDb,
+                DelayMs: reflectionMs,
+                Crossover: new CrossoverSpec(
+                    CrossoverKind.HighPass,
+                    HighPassEdge: new CrossoverEdge(
+                        CrossoverFilterFamily.Butterworth, 220, 36))),
+            SampleRate);
+        for (int i = 0; i < ir.Length; i++)
+        {
+            ir[i] += late[i];
+        }
+        return ir;
+    }
+
+    [Fact]
+    public void Compute_ModalLatchWithIncomparableProbe_KeepsTheFullBandAnchor()
+    {
+        // One side convicted (its half-band probe found the true early
+        // front), the other UNVERIFIED: its probe timed a late high-passed
+        // reflection far behind its own full-band front. The two probes then
+        // time DIFFERENT physical events, so the pair must not re-anchor on
+        // them — the Pair line keeps the full-band arrivals and the reach
+        // veto stays armed (re-anchoring on incomparable probes was the
+        // review find on the second cut).
+        var midbass = new TestChannel("B", FrontUnderLateMode(5.0, 15.0, 2.0));
+        var mid = new TestChannel("C", FrontWithLateHighReflection(0.0, 8.0, 8));
+        var log = new StringBuilder();
+
+        try
+        {
+            Run([midbass, mid], [180], log);
+        }
+        catch (InvalidOperationException)
+        {
+            // A refused run (infeasible spread) is an acceptable outcome for
+            // this deliberately poisoned pair; the seed contract under test
+            // was logged before the refusal.
+        }
+
+        string text = log.ToString();
+        Assert.Contains("(modal latch)", text);
+        string pairLine = TestLog.Line(text, "Pair B/C");
+        // The latched side's full-band anchor (~37 ms) stands — no re-anchor
+        // onto the probes' mismatched wavefronts.
+        Assert.Contains("arrivals 37", pairLine);
+    }
+
     [Fact]
     public void Compute_SamePolarityRivalNearTie_IsNotTrustedAsTheSeed()
     {

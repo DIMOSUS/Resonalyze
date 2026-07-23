@@ -661,12 +661,14 @@ public static class AutoAlignmentEngine
                         pair.BandHighHz,
                         pair.Upper.ValidRange);
                 double probeToleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
+                ArrivalCertificate lowerCertificate =
+                    ClassifyArrival(lowerRead, lowerProbe, probeToleranceMs);
+                ArrivalCertificate upperCertificate =
+                    ClassifyArrival(upperRead, upperProbe, probeToleranceMs);
                 bool lowerLatched =
-                    ClassifyArrival(lowerRead, lowerProbe, probeToleranceMs) ==
-                        ArrivalCertificate.Latched;
+                    lowerCertificate == ArrivalCertificate.Latched;
                 bool upperLatched =
-                    ClassifyArrival(upperRead, upperProbe, probeToleranceMs) ==
-                        ArrivalCertificate.Latched;
+                    upperCertificate == ArrivalCertificate.Latched;
                 if (lowerLatched || upperLatched)
                 {
                     TimeAlignmentAnalysisResult latchedRead =
@@ -679,17 +681,20 @@ public static class AutoAlignmentEngine
                         $"{pair.BandLowHz:0}-{pair.BandHighHz:0} Hz but " +
                         $"{latchedProbe.FirstArrivalDelayMilliseconds:0.000} ms in its " +
                         $"{probeLowHz:0}-{pair.BandHighHz:0} Hz half (modal latch)");
-                    // Re-anchor only when BOTH sides measure in the half band —
-                    // mixing one half-band read with the other side's full-band
-                    // one would compare different wavefronts. A conviction
-                    // WITHOUT a usable replacement anchor changes nothing
-                    // below: the corrupted diff keeps centering the window,
-                    // and the reach veto stays armed — lifting it there would
-                    // trust an extremum measured around the very anchor the
-                    // probe just convicted (review find on the first cut).
-                    if (lowerProbe.IsValid && upperProbe.IsValid &&
-                        lowerProbe.SignalToNoiseDecibels >= MinimumArrivalSnrDb &&
-                        upperProbe.SignalToNoiseDecibels >= MinimumArrivalSnrDb)
+                    // Re-anchor only when BOTH probes read the same physics —
+                    // judged by the CERTIFICATES, not by bare validity: an
+                    // UNVERIFIED side either failed to measure or its probe
+                    // timed a far LATER feature than its own full band (a
+                    // late reflection the half band mistook for the front),
+                    // and either way its probe read is not the wavefront the
+                    // latched side's probe found. A conviction WITHOUT a
+                    // comparable replacement anchor changes nothing below:
+                    // the corrupted diff keeps centering the window, and the
+                    // reach veto stays armed — lifting it there would trust
+                    // an extremum measured around the very anchor the probe
+                    // just convicted (review finds, first and third cut).
+                    if (lowerCertificate != ArrivalCertificate.Unverified &&
+                        upperCertificate != ArrivalCertificate.Unverified)
                     {
                         lowerArrival = lowerProbe.FirstArrivalDelayMilliseconds;
                         upperArrival = upperProbe.FirstArrivalDelayMilliseconds;
@@ -3003,43 +3008,52 @@ public static class AutoAlignmentEngine
             }
 
             double framedMonoMs = framed[mono].DelayMs;
-            double Score(
-                double deltaMs,
-                bool flip,
-                Func<AlignmentJunction, (double LowHz, double HighHz)>? bandOf = null)
+            IReadOnlyList<AlignmentSnapshot> Rendered(double deltaMs, bool flip) =>
+                reprocess(new Dictionary<IAlignmentChannel, AlignmentOverride>(framed)
+                {
+                    [mono] = new AlignmentOverride(
+                        Math.Round(framedMonoMs + deltaMs, 2),
+                        over.InvertPolarity ^ flip)
+                });
+            double? CellScore(
+                IReadOnlyList<AlignmentSnapshot> current,
+                AlignmentJunction junction,
+                double lowHz,
+                double highHz,
+                bool requireDelayEvidence)
             {
-                var trial =
-                    new Dictionary<IAlignmentChannel, AlignmentOverride>(framed)
-                    {
-                        [mono] = new AlignmentOverride(
-                            Math.Round(framedMonoMs + deltaMs, 2),
-                            over.InvertPolarity ^ flip)
-                    };
-                IReadOnlyList<AlignmentSnapshot> current = reprocess(trial);
                 Complex[] IrOf(IAlignmentChannel channel) =>
                     current.First(item => item.Channel == channel).ImpulseResponse;
+                IAlignmentChannel neighbor = junction.Lower.Channel == mono
+                    ? junction.Upper.Channel
+                    : junction.Lower.Channel;
+                (double LossDb, double DipDb)? loss =
+                    VirtualCrossoverAnalysis.MeasureSumLoss(
+                        IrOf(mono),
+                        new List<Complex[]> { IrOf(neighbor) },
+                        mono.SampleRate,
+                        lowHz,
+                        highHz,
+                        levelMatch: true,
+                        requireDelayEvidence);
+                return loss is { } value
+                    ? value.LossDb +
+                        VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
+                        (value.DipDb - value.LossDb)
+                    : null;
+            }
+            double Score(double deltaMs, bool flip)
+            {
+                IReadOnlyList<AlignmentSnapshot> current = Rendered(deltaMs, flip);
                 double total = 0;
                 int measured = 0;
                 foreach (AlignmentJunction junction in junctions)
                 {
-                    IAlignmentChannel neighbor = junction.Lower.Channel == mono
-                        ? junction.Upper.Channel
-                        : junction.Lower.Channel;
-                    (double lowHz, double highHz) = bandOf?.Invoke(junction)
-                        ?? (junction.BandLowHz, junction.BandHighHz);
-                    (double LossDb, double DipDb)? loss =
-                        VirtualCrossoverAnalysis.MeasureSumLoss(
-                            IrOf(mono),
-                            new List<Complex[]> { IrOf(neighbor) },
-                            mono.SampleRate,
-                            lowHz,
-                            highHz,
-                            levelMatch: true);
-                    if (loss is { } value)
+                    if (CellScore(current, junction, junction.BandLowHz,
+                        junction.BandHighHz, requireDelayEvidence: false)
+                        is { } cell)
                     {
-                        total += value.LossDb +
-                            VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
-                            (value.DipDb - value.LossDb);
+                        total += cell;
                         measured++;
                     }
                 }
@@ -3130,39 +3144,69 @@ public static class AutoAlignmentEngine
             {
                 // The sub-band consistency veto (see
                 // MonoComoveSubBandVetoMarginDb): a hop that cleared the
-                // margin must also HOLD each half of its junction bands —
-                // losing a half it can be measured in means the full-band
-                // gain came from a mode rewarding a comb impostor, not from
-                // a better alignment of the direct sound.
-                foreach (bool upperHalf in new[] { false, true })
+                // margin must also HOLD every (junction, half-band) CELL it
+                // can be measured in. Per cell, not per averaged half: a
+                // mean over the junctions would let a deficit on one side
+                // hide behind a surplus on the other (review find). And a
+                // cell casts a vote only where the delay is OBSERVABLE — the
+                // evidence gate refuses halves where one channel is just a
+                // filter tail, whose near-flat loss is noise the level match
+                // amplifies toward parity (review find). Losing a measurable
+                // cell means the full-band gain came from a mode rewarding a
+                // comb impostor, not from a better alignment of the direct
+                // sound.
+                IReadOnlyList<AlignmentSnapshot> hopRender =
+                    Rendered(bestDelta, bestFlip);
+                IReadOnlyList<AlignmentSnapshot> polishRender =
+                    Rendered(bestPolishDelta, false);
+                bool vetoed = false;
+                foreach (AlignmentJunction junction in junctions)
                 {
-                    (double LowHz, double HighHz) Half(AlignmentJunction junction) =>
-                        upperHalf
+                    foreach (bool upperHalf in new[] { false, true })
+                    {
+                        (double lowHz, double highHz) = upperHalf
                             ? (junction.CrossoverHz, junction.BandHighHz)
                             : (junction.BandLowHz, junction.CrossoverHz);
-                    double polishHalf = Score(bestPolishDelta, false, Half);
-                    if (double.IsNegativeInfinity(polishHalf))
-                    {
-                        continue;
-                    }
-                    double hopHalf = Score(bestDelta, bestFlip, Half);
-                    if (hopHalf >= polishHalf - MonoComoveSubBandVetoMarginDb)
-                    {
-                        continue;
-                    }
+                        double? polishCell = CellScore(
+                            polishRender, junction, lowHz, highHz,
+                            requireDelayEvidence: true);
+                        double? hopCell = CellScore(
+                            hopRender, junction, lowHz, highHz,
+                            requireDelayEvidence: true);
+                        if (polishCell is not { } polishCellScore ||
+                            hopCell is not { } hopCellScore ||
+                            hopCellScore >=
+                                polishCellScore - MonoComoveSubBandVetoMarginDb)
+                        {
+                            continue;
+                        }
 
-                    log.AppendLine(
-                        $"  mono lobe hop vetoed for {mono.Name}: " +
-                        $"{bestDelta:+0.00;-0.00} ms" +
-                        $"{(bestFlip ? " flipped" : "")} wins the full band " +
-                        $"by {bestScore - bestPolishScore:0.00} dB but loses " +
-                        $"the {(upperHalf ? "upper" : "lower")} half-band by " +
-                        $"{polishHalf - hopHalf:0.00} dB — a true lobe holds " +
-                        "every sub-band.");
+                        IAlignmentChannel neighbor =
+                            junction.Lower.Channel == mono
+                                ? junction.Upper.Channel
+                                : junction.Lower.Channel;
+                        log.AppendLine(
+                            $"  mono lobe hop vetoed for {mono.Name}: " +
+                            $"{bestDelta:+0.00;-0.00} ms" +
+                            $"{(bestFlip ? " flipped" : "")} wins the full band " +
+                            $"by {bestScore - bestPolishScore:0.00} dB but loses " +
+                            $"the {lowHz:0}-{highHz:0} Hz half vs " +
+                            $"{neighbor.Name} by " +
+                            $"{polishCellScore - hopCellScore:0.00} dB — a true " +
+                            "lobe holds every measurable sub-band.");
+                        vetoed = true;
+                        break;
+                    }
+                    if (vetoed)
+                    {
+                        break;
+                    }
+                }
+                if (vetoed)
+                {
                     bestScore = bestPolishScore;
                     bestDelta = bestPolishDelta;
                     bestFlip = false;
-                    break;
                 }
             }
 

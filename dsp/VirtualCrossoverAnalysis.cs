@@ -2044,7 +2044,8 @@ public static class VirtualCrossoverAnalysis
         int sampleRate,
         double minFrequencyHz,
         double maxFrequencyHz,
-        bool levelMatch = false)
+        bool levelMatch = false,
+        bool requireDelayEvidence = false)
     {
         // The delay window only gates parameter validation here — the
         // measurement itself evaluates the responses exactly as given.
@@ -2057,6 +2058,18 @@ public static class VirtualCrossoverAnalysis
             minDelayMs: -1,
             maxDelayMs: 1,
             levelMatch);
+        // A caller COMPARING alignments across this band (rather than
+        // reporting what a sum happens to measure) must not read a verdict
+        // off a band where the delay is not observable: with one side only a
+        // filter tail or residue there, the loss is near-flat for every
+        // delay and a fraction-of-a-dB "difference" is noise — worse under
+        // the level match, which amplifies exactly such a tail toward
+        // parity. The same structure gate the candidate search runs.
+        if (requireDelayEvidence &&
+            (bins.Count == 0 || !HoldsDelayEvidence(bins)))
+        {
+            return null;
+        }
         if (bins.Count == 0)
         {
             return null;

@@ -409,6 +409,79 @@ public sealed class AutoAlignmentEngineTests
         Assert.Contains("WIDE SEED", TestLog.Line(text, "Channel C:"));
     }
 
+    // A channel whose LOW band arrives late and HIGH band early: two
+    // competing alignment lobes living in different halves of the pair band,
+    // the shape that makes the search's gain (in)variance measurable.
+    private static Complex[] SplitBandArrivals()
+    {
+        Complex[] low = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(BasePosition),
+            new DspChannelChain(
+                GainDb: 6,
+                DelayMs: 10.0,
+                Crossover: new CrossoverSpec(
+                    CrossoverKind.LowPass,
+                    new CrossoverEdge(
+                        CrossoverFilterFamily.Butterworth, 180, 36))),
+            SampleRate);
+        Complex[] high = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(BasePosition),
+            new DspChannelChain(
+                GainDb: -14,
+                DelayMs: 2.0,
+                Crossover: new CrossoverSpec(
+                    CrossoverKind.HighPass,
+                    HighPassEdge: new CrossoverEdge(
+                        CrossoverFilterFamily.Butterworth, 280, 36))),
+            SampleRate);
+        for (int i = 0; i < low.Length; i++)
+        {
+            low[i] += high[i];
+        }
+        return low;
+    }
+
+    [Fact]
+    public void FindAlignmentCandidates_LevelMatch_PinsTheWinnerAcrossGains()
+    {
+        // The discrimination weight of each bin rides the LEVEL BALANCE
+        // between the channels, so with two lobes living in different halves
+        // of the band the winner follows the variable channel's gain: at
+        // 0 dB the louder low half rules (align with the late low arrival),
+        // at -20 dB the equal-level region migrates into the quiet high half
+        // (align with the early high arrival). The precondition below proves
+        // this synthetic genuinely discriminates — without it a clean
+        // impulse pair stays green even with the level match broken. The
+        // level match must then pin ONE winner across 0/-10/-20 dB.
+        Complex[] fixedIr = SplitBandArrivals();
+        double WinnerMs(double gain, bool levelMatch)
+        {
+            Complex[] variable = UnitImpulse(BasePosition)
+                .Select(value => value * gain)
+                .ToArray();
+            IReadOnlyList<AlignmentCandidate> candidates =
+                VirtualCrossoverAnalysis.FindAlignmentCandidates(
+                    variable, [fixedIr], SampleRate, 90, 360, -1, 13,
+                    levelMatch: levelMatch);
+            Assert.NotEmpty(candidates);
+            return candidates[0].DelayMs;
+        }
+
+        double unmatchedLoud = WinnerMs(1.0, levelMatch: false);
+        double unmatchedQuiet = WinnerMs(0.1, levelMatch: false);
+        Assert.True(
+            Math.Abs(unmatchedLoud - unmatchedQuiet) > 2.0,
+            "the synthetic must discriminate: unmatched winners " +
+            $"{unmatchedLoud:0.000} vs {unmatchedQuiet:0.000} ms");
+
+        double matched = WinnerMs(1.0, levelMatch: true);
+        foreach (double gain in new[] { 0.316, 0.1 })
+        {
+            double winner = WinnerMs(gain, levelMatch: true);
+            Assert.InRange(winner, matched - 0.35, matched + 0.35);
+        }
+    }
+
     [Fact]
     public void Compute_ModalLatchOnTheArrival_ReanchorsOnTheHalfBandReads()
     {

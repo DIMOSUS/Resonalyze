@@ -1517,12 +1517,15 @@ public static class AutoAlignmentEngine
                 {
                     // The report must say the objective was deliberately
                     // overridden: without this a negative rival margin reads
-                    // as an algorithm error, not a policy (review find).
+                    // as an algorithm error, not a policy (review find). The
+                    // figure is relative to the PRE-POLICY pick — itself
+                    // already shaped by the prior and the lobe gates, not
+                    // necessarily the global acoustic best.
                     AmendDecision(
                         decisions, channel,
                         "sub-precedence policy: the sub-leading lobe stands " +
-                        $"{precedenceBehindDb:0.00} dB behind the acoustic " +
-                        "best by design");
+                        $"{precedenceBehindDb:0.00} dB behind the pre-policy " +
+                        "pick by design");
                 }
             }
 
@@ -3243,9 +3246,6 @@ public static class AutoAlignmentEngine
                 int measured = 0;
                 foreach (AlignmentJunction junction in junctions)
                 {
-                    // Certified upfront to hold evidence at every junction;
-                    // the gate here is belt-and-suspenders on the same
-                    // delay-invariant read.
                     if (CellScore(current, junction, junction.BandLowHz,
                         junction.BandHighHz, requireDelayEvidence: true)
                         is { } cell)
@@ -3255,7 +3255,16 @@ public static class AutoAlignmentEngine
                     }
                 }
 
-                return measured > 0 ? total / measured : double.NegativeInfinity;
+                // FAIL-CLOSED, not an average of the survivors: the upfront
+                // certification ran on one render, but every probe re-gates
+                // the IRs and the direct-sound window shifts with the probed
+                // delay — a borderline junction can drop out mid-sweep, and a
+                // mean over the rest would be exactly the one-sided vote the
+                // certification exists to prevent (review find). A probe that
+                // cannot measure EVERY junction is not a candidate.
+                return measured == junctions.Count
+                    ? total / measured
+                    : double.NegativeInfinity;
             }
 
             double baseline = Score(0, flip: false);

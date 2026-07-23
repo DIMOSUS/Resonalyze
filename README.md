@@ -1866,7 +1866,13 @@ it defaults to Off because the measurements are loopback-referenced.
   measured responses are never resampled), both channels share one
   normalization gain so the L/R balance survives, and re-rendering with a
   different calibration or after a settings tweak is one click — a quick A/B
-  between tune variants. Listen through **headphones only**: each ear gets the
+  between tune variants. **Subtract cabin** optionally removes a typical
+  body-style cabin transfer function (average sedan, hatchback, SUV, and
+  friends — the pressure-zone bass rise that reaches +15…+27 dB at 20 Hz) as
+  an inverse linear-phase FIR in both kernels: the raw render reproduces the
+  full in-car bass rise as headphone boom the in-car listener never perceives,
+  while the subtracted render leaves this car's deviation from the typical
+  curve audible. Listen through **headphones only**: each ear gets the
   measured acoustic path of its side at the microphone position (drivers,
   cabin, and capsule included) — a stereo auralization of the two sides, not a
   binaural head simulation — and playing it back through the car would

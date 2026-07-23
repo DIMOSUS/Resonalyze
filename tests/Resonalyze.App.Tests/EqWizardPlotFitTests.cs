@@ -5,6 +5,31 @@ namespace Resonalyze.App.Tests;
 public sealed class EqWizardPlotFitTests
 {
     [Fact]
+    public void EqGainAxisRange_FollowsTheBudgetWhenTheCurveFitsInsideIt()
+    {
+        // A flat/small curve: the axis reads as the ±6 dB budget, snapped out one step.
+        (double min, double max) = EqWizardPlotFit.EqGainAxisRange(-6, 6, -1, 2);
+
+        Assert.Equal(-12, min);
+        Assert.Equal(12, max);
+    }
+
+    [Fact]
+    public void EqGainAxisRange_ExpandsToContainASummedCurveTallerThanTheBudget()
+    {
+        // Several overlapping +6 dB bands sum to ~+17 dB, and a stack of cuts reaches
+        // ~-16 dB — both well past the single-band ±6 dB budget. The axis must grow to
+        // contain them (rounded out to the 6 dB step with a step of headroom) rather than
+        // clip the drawn curve, which the old budget-only range did.
+        (double min, double max) = EqWizardPlotFit.EqGainAxisRange(-6, 6, -16.2, 17.3);
+
+        Assert.True(min <= -16.2, $"Axis floor {min} clips the -16.2 dB trough.");
+        Assert.True(max >= 17.3, $"Axis ceiling {max} clips the +17.3 dB peak.");
+        Assert.Equal(-24, min);
+        Assert.Equal(24, max);
+    }
+
+    [Fact]
     public void ForCurve_BringsAnAbsoluteSplCurveInsideTheAxis()
     {
         // A moving-microphone room average sits near 80 dB SPL — completely outside the

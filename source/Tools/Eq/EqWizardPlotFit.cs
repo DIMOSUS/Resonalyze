@@ -67,6 +67,31 @@ internal static class EqWizardPlotFit
             maximum + PanMarginDb);
     }
 
+    /// <summary>The major-step the right EQ-gain axis snaps its bounds to.</summary>
+    private const double EqGainAxisStepDb = 6;
+
+    /// <summary>
+    /// The bounds of the right-hand EQ-gain axis. The axis reads as the boost/cut budget
+    /// at minimum (so it doubles as a read-out of the per-band gain limits even when the
+    /// filter curve is flat), but the drawn curve is the SUMMED response of many
+    /// overlapping bands and can reach several times a single band's limit — so the actual
+    /// curve extent extends the range outward, and the result is snapped to the 6 dB step
+    /// with one step of headroom on each side so the curve never touches the frame. Pass
+    /// 0/0 for the curve extent when no curve is drawn yet (budget-only).
+    /// </summary>
+    public static (double Minimum, double Maximum) EqGainAxisRange(
+        double budgetMinDb,
+        double budgetMaxDb,
+        double curveMinDb,
+        double curveMaxDb)
+    {
+        double low = Math.Min(budgetMinDb, curveMinDb);
+        double high = Math.Max(budgetMaxDb, curveMaxDb);
+        return (
+            Math.Floor(low / EqGainAxisStepDb) * EqGainAxisStepDb - EqGainAxisStepDb,
+            Math.Ceiling(high / EqGainAxisStepDb) * EqGainAxisStepDb + EqGainAxisStepDb);
+    }
+
     /// <summary>
     /// The target offset that lands the target curve on the source: the gap between their
     /// mean levels inside the tuning window, in whole dB. Without it an absolute (SPL)

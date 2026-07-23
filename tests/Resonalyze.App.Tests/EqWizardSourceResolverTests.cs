@@ -250,6 +250,40 @@ public sealed class EqWizardSourceResolverTests
         Assert.False(fromForeign.SupportsCalibration);
     }
 
+    [Theory]
+    [InlineData(AnalysisCurveKind.SecondHarmonic)]
+    [InlineData(AnalysisCurveKind.ThdPlusNoise)]
+    [InlineData(AnalysisCurveKind.MinimumPhase)]
+    public void CreateFromTextCurve_RejectsANonResponseKindEvenWhenRoleSaysResponse(
+        AnalysisCurveKind kind)
+    {
+        // A harmonic/THD/phase slot exports as role=Response but keeps its kind. The text
+        // path must honour the kind, exactly like the slot menu, so exporting such a slot
+        // and loading the text file cannot smuggle it in as a measured response.
+        var curve = new OverlayTextCurve(
+            [new OverlayPoint(100, -40), new OverlayPoint(1_000, -55)],
+            new OverlayTextMetadata(OverlayCurveRole.Response, CurveKind: kind));
+
+        InvalidDataException error = Assert.Throws<InvalidDataException>(
+            () => EqWizardSourceResolver.CreateFromTextCurve(curve, "harmonic.txt"));
+        Assert.Contains("cannot be equalized", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(OverlayCurveRole.Response, AnalysisCurveKind.Primary, true)]
+    [InlineData(OverlayCurveRole.Response, AnalysisCurveKind.InputSpectrum, true)]
+    [InlineData(null, null, true)]
+    [InlineData(OverlayCurveRole.Deviation, AnalysisCurveKind.Primary, false)]
+    [InlineData(OverlayCurveRole.Response, AnalysisCurveKind.SecondHarmonic, false)]
+    [InlineData(OverlayCurveRole.Response, AnalysisCurveKind.ExcessPhase, false)]
+    public void IsEqualizableResponse_GatesBothRoleAndKind(
+        OverlayCurveRole? role,
+        AnalysisCurveKind? kind,
+        bool expected)
+    {
+        Assert.Equal(expected, EqWizardSourceResolver.IsEqualizableResponse(role, kind));
+    }
+
     // ------------------------------------------------------------- point hygiene
 
     [Fact]

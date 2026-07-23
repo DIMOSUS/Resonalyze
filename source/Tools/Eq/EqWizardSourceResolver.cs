@@ -69,15 +69,41 @@ internal sealed class EqWizardSourceResolver
     /// Whether a slot holds something the wizard can equalize: a captured magnitude
     /// response on the plot's own dB axis, tagged with what it is. A calculated or target
     /// slot is a derived shape, a coherence trace is not a level, and an untagged legacy
-    /// capture cannot be told apart from either — none of them are offered.
+    /// capture cannot be told apart from either — none of them are offered. The slot path
+    /// is stricter than the text path: a captured slot always carries a kind, so an
+    /// untagged (null) one is legacy and rejected, whereas a foreign text file legitimately
+    /// declares nothing.
     /// </summary>
     internal static bool IsEligible(OverlayFile file)
     {
         return file.Kind == OverlayKind.Captured &&
             file.CapturedYAxisKey == null &&
-            file.CapturedCurveKind is
-                AnalysisCurveKind.Primary or AnalysisCurveKind.InputSpectrum &&
+            file.CapturedCurveKind is not null &&
+            IsEqualizableResponse(role: null, file.CapturedCurveKind) &&
             file.Points.Length >= 2;
+    }
+
+    /// <summary>
+    /// The single rule for "is this curve a plain measured response the wizard may
+    /// equalize", shared by the overlay-slot and text-import paths so neither can accept
+    /// something the other rejects. A curve qualifies only when its declared role is a
+    /// response (or unstated) AND its declared kind is a full-range magnitude — the swept
+    /// <see cref="AnalysisCurveKind.Primary"/> or the RTA
+    /// <see cref="AnalysisCurveKind.InputSpectrum"/> — or unstated. A harmonic, THD, phase
+    /// or coherence trace, and a deviation or EQ-correction difference, are all refused:
+    /// equalizing them would correct the wrong thing. Unstated (null) is permitted because
+    /// a file written by another tool declares nothing; the slot path adds its own
+    /// non-null requirement on top.
+    /// </summary>
+    internal static bool IsEqualizableResponse(
+        OverlayCurveRole? role,
+        AnalysisCurveKind? curveKind)
+    {
+        bool roleIsResponse = role is null or OverlayCurveRole.Response;
+        bool kindIsFullRangeMagnitude = curveKind is null
+            or AnalysisCurveKind.Primary
+            or AnalysisCurveKind.InputSpectrum;
+        return roleIsResponse && kindIsFullRangeMagnitude;
     }
 
     /// <summary>
@@ -126,8 +152,11 @@ internal sealed class EqWizardSourceResolver
 
     /// <summary>
     /// Imports a text curve. Throws <see cref="InvalidDataException"/> when the file
-    /// declares itself a deviation or an EQ correction: those are differences against a
-    /// target, and equalizing one would correct the error of the error.
+    /// declares itself as anything other than a plain response (see
+    /// <see cref="IsEqualizableResponse"/>): a deviation or EQ correction is a difference
+    /// against a target, and a harmonic, THD or phase curve is not a level — equalizing
+    /// any of them would correct the wrong thing. This closes the text path as an
+    /// end-run around the same rule the overlay-slot menu enforces.
     /// </summary>
     public static EqWizardCurveSource CreateFromTextCurve(
         OverlayTextCurve curve,
@@ -135,12 +164,9 @@ internal sealed class EqWizardSourceResolver
     {
         ArgumentNullException.ThrowIfNull(curve);
 
-        if (curve.Metadata.Role is OverlayCurveRole.Deviation or OverlayCurveRole.EqCorrection)
+        if (!IsEqualizableResponse(curve.Metadata.Role, curve.Metadata.CurveKind))
         {
-            throw new InvalidDataException(
-                $"This file holds a {DescribeRole(curve.Metadata.Role.Value)} curve, " +
-                "which is a difference from a target rather than a measured response. " +
-                "Load the response it was derived from instead.");
+            throw new InvalidDataException(DescribeRejection(curve.Metadata));
         }
 
         IReadOnlyList<SignalPoint> points = NormalizePoints(
@@ -279,10 +305,33 @@ internal sealed class EqWizardSourceResolver
         return $"{unit}, {rate}";
     }
 
-    private static string DescribeRole(OverlayCurveRole role) => role switch
+    // Explains why a text curve was refused, naming whichever of its declared role or
+    // kind disqualified it, so the user knows to load the response it was derived from
+    // (or that this file is the wrong kind of curve) rather than seeing a bare error.
+    private static string DescribeRejection(OverlayTextMetadata metadata)
     {
-        OverlayCurveRole.EqCorrection => "EQ correction",
-        OverlayCurveRole.Deviation => "deviation",
-        _ => "response"
+        if (metadata.Role is OverlayCurveRole.Deviation or OverlayCurveRole.EqCorrection)
+        {
+            string role = metadata.Role == OverlayCurveRole.EqCorrection
+                ? "EQ correction"
+                : "deviation";
+            return $"This file holds a {role} curve, which is a difference from a " +
+                "target rather than a measured response. Load the response it was " +
+                "derived from instead.";
+        }
+
+        return $"This file holds a {DescribeKind(metadata.CurveKind)} curve, which is " +
+            "not a full-range magnitude response and cannot be equalized. Load a " +
+            "measured response (a swept frequency response or an RTA capture) instead.";
+    }
+
+    private static string DescribeKind(AnalysisCurveKind? kind) => kind switch
+    {
+        AnalysisCurveKind.SecondHarmonic or AnalysisCurveKind.ThirdHarmonic
+            or AnalysisCurveKind.FourthHarmonic => "harmonic-distortion",
+        AnalysisCurveKind.ThdPlusNoise => "THD+N",
+        AnalysisCurveKind.MinimumPhase or AnalysisCurveKind.ExcessPhase => "phase",
+        { } value => value.ToString(),
+        null => "non-response"
     };
 }

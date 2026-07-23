@@ -60,7 +60,12 @@ public partial class EqWizardPanel
     private Func<MicrophoneCalibrationMode, CalibrationFile?>? calibrationResolver;
     private bool hasZeroDegreeCalibration;
     private bool hasNinetyDegreeCalibration;
+    // The effective mode of the loaded source (may be Own). Distinct from the persisted
+    // impulse-response preference below: loading a curve forces this to Own/Off, which
+    // must NOT overwrite what the user chose for impulse responses. See EqWizardCalibration.
     private EqWizardCalibrationMode calibrationMode = EqWizardCalibrationMode.Off;
+    // The user's standing file-backed choice for impulse responses; the only one persisted.
+    private MicrophoneCalibrationMode preferredIrCalibrationMode = MicrophoneCalibrationMode.Off;
     private bool suppressCalibrationEvents;
     private bool suppressSampleRateEvents;
     private bool suppressSettingsSave;
@@ -365,8 +370,8 @@ public partial class EqWizardPanel
 
     // The calibration a freshly loaded source starts on:
     //  - a curve that stored its own correction defaults to reproducing it (Own);
-    //  - an impulse response keeps the file-backed choice already in effect (the
-    //    persisted 0°/90° preference), only dropping "own" which cannot apply to it;
+    //  - an impulse response restores the user's standing file-backed preference,
+    //    regardless of what a previously loaded curve forced the effective mode to;
     //  - a curve with no uncalibrated reference cannot be re-calibrated at all (Off).
     private EqWizardCalibrationMode ChooseCalibrationMode(EqWizardCurveSource source)
     {
@@ -376,9 +381,7 @@ public partial class EqWizardPanel
         }
         if (source.Kind == EqWizardSourceKind.ImpulseResponse)
         {
-            return calibrationMode == EqWizardCalibrationMode.Own
-                ? EqWizardCalibrationMode.Off
-                : calibrationMode;
+            return EqWizardCalibration.FromMicrophoneMode(preferredIrCalibrationMode);
         }
 
         return EqWizardCalibrationMode.Off;
@@ -420,7 +423,7 @@ public partial class EqWizardPanel
     {
         // Only a file-backed calibration can be applied while computing an FR; "own"
         // belongs to an imported curve and never reaches here.
-        MicrophoneCalibrationMode mode = ToMicrophoneCalibrationMode(calibrationMode);
+        MicrophoneCalibrationMode mode = EqWizardCalibration.ToMicrophoneMode(calibrationMode);
         var options = new FrequencyResponseOptions
         {
             Window = SourceWindow,
@@ -466,16 +469,8 @@ public partial class EqWizardPanel
             EqWizardCalibrationMode.Degrees0 or EqWizardCalibrationMode.Degrees90 =>
                 RawCurveRenderer.CaptureCalibrationCorrection(
                     calibrationResolver?.Invoke(
-                        ToMicrophoneCalibrationMode(calibrationMode))),
+                        EqWizardCalibration.ToMicrophoneMode(calibrationMode))),
             _ => Array.Empty<double>()
-        };
-
-    private static MicrophoneCalibrationMode ToMicrophoneCalibrationMode(
-        EqWizardCalibrationMode mode) => mode switch
-        {
-            EqWizardCalibrationMode.Degrees0 => MicrophoneCalibrationMode.Degrees0,
-            EqWizardCalibrationMode.Degrees90 => MicrophoneCalibrationMode.Degrees90,
-            _ => MicrophoneCalibrationMode.Off
         };
 
     // A measured curve keeps its NaN gaps: they mark bands the measurement could not
@@ -813,6 +808,10 @@ public partial class EqWizardPanel
         }
 
         calibrationMode = GetSelectedCalibrationMode();
+        // A file-backed choice made against an impulse response (or with nothing loaded)
+        // becomes the standing IR preference; one made against a curve does not.
+        preferredIrCalibrationMode = EqWizardCalibration.UpdatedIrPreference(
+            preferredIrCalibrationMode, loadedSource?.Kind, calibrationMode);
         InvalidateSourceCurve();
         RaiseSettingsChanged();
         DrawSelectedCurves();
@@ -940,14 +939,12 @@ public partial class EqWizardPanel
             targetStrokeThickness = settings.TargetStrokeThickness;
             targetLineStyle = settings.TargetLineStyle;
             targetSmoothingInverseOctaves = settings.TargetSmoothingInverseOctaves;
-            // Only a file-backed mode is persisted: "own" belongs to an imported curve,
-            // and no source is restored, so there is nothing for it to refer to.
-            calibrationMode = settings.CalibrationMode switch
-            {
-                MicrophoneCalibrationMode.Degrees0 => EqWizardCalibrationMode.Degrees0,
-                MicrophoneCalibrationMode.Degrees90 => EqWizardCalibrationMode.Degrees90,
-                _ => EqWizardCalibrationMode.Off
-            };
+            // Only the file-backed impulse-response preference is persisted: "own" belongs
+            // to an imported curve, and no source is restored, so the effective mode simply
+            // starts from that preference.
+            preferredIrCalibrationMode = settings.CalibrationMode;
+            calibrationMode =
+                EqWizardCalibration.FromMicrophoneMode(preferredIrCalibrationMode);
             manualSampleRateHz = settings.ManualSampleRateHz > 0
                 ? settings.ManualSampleRateHz
                 : DefaultSampleRateHz;
@@ -996,7 +993,7 @@ public partial class EqWizardPanel
         GainMaxDb = (double)numericGainMax.Value,
         BandCount = Math.Clamp(activeBandCount, 1, MaxPeqSlotCount),
         SourceSmoothingInverseOctaves = SourceSmoothingInverseOctaves,
-        CalibrationMode = ToMicrophoneCalibrationMode(calibrationMode),
+        CalibrationMode = preferredIrCalibrationMode,
         ManualSampleRateHz = manualSampleRateHz,
         CutsOnly = checkBoxCutsOnly.Checked
     };

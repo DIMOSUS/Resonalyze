@@ -206,10 +206,12 @@ public partial class EqWizardPanel : UserControl
         DrawSelectedCurves();
     }
 
-    // Sizes the right EQ-gain axis to the current boost/cut budget (the Min/Max Gain
-    // limits) with a little headroom, so the filter curve — bounded by those limits —
-    // is always fully on the axis and the axis doubles as a read-out of the budget.
-    private void UpdateEqAxisRange()
+    // Sizes the right EQ-gain axis so it reads as the boost/cut budget yet still contains
+    // the drawn filter curve, whose overlapping bands can sum well past a single band's
+    // limit. The curve extent (its actual min/max in dB) extends the budget-based range;
+    // 0/0 means no curve is drawn yet, leaving the budget range alone. See
+    // EqWizardPlotFit.EqGainAxisRange.
+    private void UpdateEqAxisRange(double curveMinDb = 0, double curveMaxDb = 0)
     {
         if (plotWizard.Model?.Axes.FirstOrDefault(axis => axis.Key == EqGainAxisKey)
             is not LinearAxis eqAxis)
@@ -217,10 +219,11 @@ public partial class EqWizardPanel : UserControl
             return;
         }
 
-        // Round outward to the 6 dB major step and add one step of headroom for the
-        // extra gain that overlapping bands can sum to beyond a single band's limit.
-        double lower = Math.Floor((double)numericGainMin.Value / 6) * 6 - 6;
-        double upper = Math.Ceiling((double)numericGainMax.Value / 6) * 6 + 6;
+        (double lower, double upper) = EqWizardPlotFit.EqGainAxisRange(
+            (double)numericGainMin.Value,
+            (double)numericGainMax.Value,
+            curveMinDb,
+            curveMaxDb);
         eqAxis.Minimum = lower;
         eqAxis.Maximum = upper;
         eqAxis.AbsoluteMinimum = lower;
@@ -1028,6 +1031,23 @@ public partial class EqWizardPanel : UserControl
             model,
             new EqWizardCurve("EQ", OxyColors.White, 1.5, LineStyle.Solid, points),
             EqGainAxisKey);
+
+        // Fit the right axis to the curve just built (the summed band response), so a
+        // stack of overlapping bands taller than one band's limit is not clipped.
+        double curveMin = 0;
+        double curveMax = 0;
+        foreach (DataPoint point in points)
+        {
+            if (!double.IsFinite(point.Y))
+            {
+                continue;
+            }
+
+            curveMin = Math.Min(curveMin, point.Y);
+            curveMax = Math.Max(curveMax, point.Y);
+        }
+
+        UpdateEqAxisRange(curveMin, curveMax);
     }
 
     // Draws the highlighted band's individual contribution relative to the target

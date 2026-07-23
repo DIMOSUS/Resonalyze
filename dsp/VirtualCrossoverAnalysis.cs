@@ -475,10 +475,17 @@ public static class VirtualCrossoverAnalysis
 
     private static bool HoldsDelayEvidence(List<AlignmentBin> bins)
     {
+        // Observability is judged on the RAW magnitudes, before the
+        // search-side level match: the match may rescale the scoring frame,
+        // but it cannot manufacture a measurable overlap — a -60 dB filter
+        // tail amplified by the capped match would land exactly on the
+        // reliability gate and pass as "evidence" otherwise (review find).
         double signalPeak = 0;
         foreach (AlignmentBin bin in bins)
         {
-            signalPeak = Math.Max(signalPeak, bin.MagnitudeSum);
+            signalPeak = Math.Max(
+                signalPeak,
+                bin.FixedSum.Magnitude + bin.RawVariableMagnitude);
         }
         double levelFloor =
             signalPeak * Math.Pow(10.0, -EvidenceNoiseFloorGateDb / 20.0);
@@ -486,10 +493,10 @@ public static class VirtualCrossoverAnalysis
         bool Evidence(AlignmentBin bin)
         {
             double weaker = Math.Min(
-                bin.FixedSum.Magnitude, bin.Variable.Magnitude);
+                bin.FixedSum.Magnitude, bin.RawVariableMagnitude);
             double stronger = Math.Max(
-                bin.FixedSum.Magnitude, bin.Variable.Magnitude);
-            return bin.MagnitudeSum >= levelFloor &&
+                bin.FixedSum.Magnitude, bin.RawVariableMagnitude);
+            return bin.FixedSum.Magnitude + bin.RawVariableMagnitude >= levelFloor &&
                 weaker >= stronger * balanceRatio;
         }
 
@@ -1348,7 +1355,14 @@ public static class VirtualCrossoverAnalysis
         // The source FFT bin index, so consumers can tell truly ADJACENT
         // sampled bins from a gap where zero-magnitude bins were dropped —
         // the evidence-width gate must not credit a gap to a lone bin.
-        int FftBin);
+        int FftBin,
+        // The variable channel's magnitude BEFORE the search-side level
+        // match. Observability is a property of the measurement, not of the
+        // scoring frame: the delay-evidence gate must judge the raw balance,
+        // or a -60 dB filter tail amplified by the (capped) level match
+        // lands exactly on the reliability gate and votes as "evidence"
+        // (review find). FixedSum is never scaled, so it needs no raw twin.
+        double RawVariableMagnitude);
 
     // The direct-sound gate applied to every response before the alignment
     // spectra are taken: a cosine-faded Tukey window anchored one fade-length
@@ -1509,7 +1523,8 @@ public static class VirtualCrossoverAnalysis
                     variableValue,
                     1.0 / frequencyHz,
                     magnitudeSum,
-                    bin));
+                    bin,
+                    variableSpectrum[bin].Magnitude));
             }
         }
 

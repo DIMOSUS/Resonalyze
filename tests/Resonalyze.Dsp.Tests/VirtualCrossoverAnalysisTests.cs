@@ -15,6 +15,26 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void MeasureSumLoss_LevelMatchedMinus60DbTail_HasNoDelayEvidence()
+    {
+        // A variable channel that is only a -60 dB residue of the fixed one:
+        // the capped (+30 dB) search-side level match lifts it to exactly
+        // the -30 dB reliability gate, where a matched-magnitude evidence
+        // read would pass it as measurable overlap. Observability must be
+        // judged on the RAW balance — the level match rescales the scoring
+        // frame, it cannot manufacture a measurable delay.
+        Complex[] fixedIr = UnitImpulse(4_096, 100);
+        var tail = new Complex[4_096];
+        tail[120] = 0.001; // -60 dB, same broadband spectral shape.
+
+        (double LossDb, double DipDb)? loss = VirtualCrossoverAnalysis.MeasureSumLoss(
+            tail, [fixedIr], SampleRate, 500, 2_000,
+            levelMatch: true, requireDelayEvidence: true);
+
+        Assert.Null(loss);
+    }
+
+    [Fact]
     public void PredictedAverageSumLossDb_AlignedImpulsesSumWithoutLoss()
     {
         Complex[] a = UnitImpulse(4_096, 100);

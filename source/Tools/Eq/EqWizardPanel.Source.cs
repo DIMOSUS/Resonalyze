@@ -441,9 +441,9 @@ public partial class EqWizardPanel
 
     // An imported curve is already a finished response. When its uncalibrated reference
     // was stored it is re-rendered exactly the way the mode it came from would — same
-    // resampler, so "Off" reproduces the raw curve and any width matches the original.
-    // Without that reference the stored points are the only truth and both selectors are
-    // disabled, so they are used as-is.
+    // resampler, so the mode's smoothing reproduces the on-screen reference. Without that
+    // reference (a dB SPL RTA, a text curve) the stored display points are the only
+    // truth and are used as-is.
     private IReadOnlyList<SignalPoint> ComputeImportedCurve(EqWizardCurveSource source)
     {
         if (source.RawSpectrum is not { Count: >= 2 } raw)

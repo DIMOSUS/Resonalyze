@@ -106,17 +106,21 @@ public static class EqAutoTuner
     private static readonly double[] CandidateQ =
         { 0.5, 0.7, 1.0, 1.4, 2.0, 2.8, 4.0, 5.6, 8.0, 10.0 };
 
-    // How much more an over-correction counts than an equal under-correction when
-    // choosing a band's Q in cuts-only mode. Over-cutting pushes a point BELOW the target,
-    // where no later cut can lift it back (only a forbidden boost could), so a wide band
-    // that shaves a broad peak by gouging a broad adjacent shoulder well below the target
-    // (a visible hole in the response) loses to a tighter band that leaves the far side of
-    // the peak for another band. It is a soft penalty, not a veto: cutting a narrow peak
-    // is still worth the shallow dip its skirt leaves in an adjacent valley, because the
-    // heavily weighted term only dominates once a WIDE skirt drops a broad span far below
-    // the target. Under-correction (still above target) stays freely fixable and keeps
-    // unit weight.
+    // Cuts-only over-correction penalty when choosing a band's Q. Over-cutting pushes a
+    // point BELOW the target, where no later cut can lift it back (only a forbidden boost
+    // could). Each candidate is charged for the over-cut this band ADDS at a point — the
+    // part of its own cut that lands below the target — with the first
+    // CutsOnlyOverCutFreeDb of it free. Charging the band's own contribution (never the
+    // pre-existing depth) matters: a real response weaves below the target all over, and
+    // any penalty that scales with the depth a point ALREADY had makes every wide Q lose
+    // to the narrowest one — that shredded a smooth response into a swarm of Q=10 slivers
+    // whose notch-comb looked worse than no EQ. With the free zone, a moderately wide
+    // skirt grazing a neighbouring dip by up to 1 dB costs nothing, so the residual RMS
+    // alone picks the band width; only a skirt that digs several dB below the target (the
+    // visible gouge) is weighted up and loses to a tighter band. Under-correction (above
+    // target) is always freely fixable and unpenalised.
     private const double CutsOnlyOverCorrectionWeight = 25.0;
+    private const double CutsOnlyOverCutFreeDb = 1.0;
 
     /// <summary>
     /// Fits an equalization curve so that <paramref name="source"/> + curve best
@@ -324,13 +328,21 @@ public static class EqAutoTuner
                         spillsIntoForbidden = true;
                     }
 
-                    // In cuts-only, a point this band cuts (c < 0) past the target
-                    // (r > 0: corrected below target) is weighted up, so a wide skirt that
-                    // gouges a broad shoulder below the target loses to a tighter band.
+                    // In cuts-only, charge the part of this band's own cut that lands
+                    // below the target, past the free zone. See the constants above for
+                    // why the charge is on the band's contribution, never the depth the
+                    // point already had.
                     double r = residual[i] - c;
-                    sumSquares += opt.CutsOnlyMode && c < 0 && r > 0
-                        ? CutsOnlyOverCorrectionWeight * r * r
-                        : r * r;
+                    sumSquares += r * r;
+                    if (opt.CutsOnlyMode && c < 0)
+                    {
+                        double added = Math.Min(-c, Math.Max(0, r));
+                        if (added > CutsOnlyOverCutFreeDb)
+                        {
+                            double over = added - CutsOnlyOverCutFreeDb;
+                            sumSquares += CutsOnlyOverCorrectionWeight * over * over;
+                        }
+                    }
                 }
 
                 if (spillsIntoForbidden)

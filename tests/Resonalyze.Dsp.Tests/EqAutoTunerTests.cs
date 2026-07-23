@@ -509,6 +509,54 @@ public sealed class EqAutoTunerTests
         Assert.True(curve.Bands.Count >= 3, $"Only {curve.Bands.Count} bands used on the cluster.");
     }
 
+    [Fact]
+    public void Tune_CutsOnly_SmoothLobeBetweenDipsGetsAWideBandNotASwarmOfSlivers()
+    {
+        // The moving-mic RTA shape that shredded the fit: a smooth ~+3.5 dB lobe around
+        // 10.5 kHz whose neighbours on BOTH sides sit below the target (dips cuts-only
+        // cannot lift). Any over-cut penalty that scales with the depth a point already
+        // had charges every wide candidate for merely grazing those dips, so all bands
+        // collapse to the maximum Q and the smooth lobe comes back as a comb of narrow
+        // notches. The lobe must instead be carried by a band of moderate width.
+        const double sampleRate = 44_100;
+        IReadOnlyList<SignalPoint> source = Grid(f =>
+            3.5 * Math.Exp(-Math.Pow(Math.Log2(f / 10_500.0) / 0.4, 2))
+            + NotchDb(f, 6_800, 4.0, 0.55)
+            + NotchDb(f, 16_500, 3.0, 0.45));
+        IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
+
+        EqualizationCurve curve = EqAutoTuner.Tune(
+            source,
+            target,
+            new EqAutoTuner.Options
+            {
+                CutsOnlyMode = true,
+                SampleRateHz = sampleRate,
+                MinFrequencyHz = 2_000,
+                MaxFrequencyHz = 20_000,
+                BandGainMinDb = -15
+            });
+
+        // The lobe's main correction is one moderately wide band, not a max-Q sliver.
+        PeqBand deepest = curve.Bands.OrderBy(band => band.GainDb).First();
+        Assert.True(
+            deepest.FrequencyHz is >= 8_000 and <= 14_000,
+            $"Deepest cut landed at {deepest.FrequencyHz:0} Hz, outside the lobe.");
+        Assert.True(
+            deepest.Q <= 5.6,
+            $"The smooth lobe was cut with a Q={deepest.Q:0.0} sliver.");
+        // And the corrected lobe reads flat, not combed: on the digital response the
+        // wizard realises, no point inside the lobe pops back above the target by more
+        // than a fraction of the lobe.
+        double worstAbove = EqualizationCurve
+            .LogFrequencyGrid(8_500, 13_000, 200)
+            .Max(f => SampleDb(source, f)
+                + DigitalEqualizationResponse.MagnitudeDbAt(curve, f, sampleRate));
+        Assert.True(
+            worstAbove <= 1.2,
+            $"The corrected lobe still pokes +{worstAbove:0.0} dB above the target.");
+    }
+
     private static double SampleDb(IReadOnlyList<SignalPoint> curve, double frequencyHz)
     {
         SignalPoint below = curve[0], above = curve[^1];

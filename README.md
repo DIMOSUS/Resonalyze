@@ -1873,9 +1873,10 @@ it defaults to Off because the measurements are loopback-referenced.
   so both corrections cost one filter): the raw render reproduces the full
   in-car bass rise as headphone boom the in-car listener never perceives, while
   the subtracted render leaves this car's deviation from the typical curve
-  audible. Renders are peak-normalized, not loudness-matched, so an A/B between
-  cabin choices compares tone balance rather than level. Listen through
-  **headphones only**: each ear gets the
+  audible. The subtracted render is level-matched to the same tune without the
+  subtraction, so an A/B between cabin choices differs in tone, not loudness —
+  the removed bass reads as quieter bass, not a track the normalizer turned back
+  up. Listen through **headphones only**: each ear gets the
   measured acoustic path of its side at the microphone position (drivers,
   cabin, and capsule included) — a stereo auralization of the two sides, not a
   binaural head simulation — and playing it back through the car would

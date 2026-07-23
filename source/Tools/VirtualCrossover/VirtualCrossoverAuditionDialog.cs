@@ -44,11 +44,11 @@ internal sealed record VirtualCrossoverAuditionContext(
 /// inverse FIR in both kernels. The raw render carries the full in-car bass
 /// rise (+15…+27 dB at 20 Hz), which headphones reproduce as boom the in-car
 /// listener never perceives; with the typical rise subtracted, what remains
-/// audible at low frequencies is this car's deviation from it. The existing
-/// per-render peak normalization then rescales to the target PEAK — not to a
-/// matched loudness, so an A/B between two cabin choices is a tone-balance
-/// comparison, not a level-matched one (a bass-heavy variant loses the most
-/// headroom and comes back up the most).
+/// audible at low frequencies is this car's deviation from it. The subtracted
+/// render is level-matched to the same tune WITHOUT the subtraction (the
+/// reference kernels below), so an A/B between cabin choices differs in tone,
+/// not loudness — the removed bass reads as quieter bass rather than a track
+/// the normalizer turned back up.
 /// </para>
 /// </summary>
 internal sealed partial class VirtualCrossoverAuditionDialog : Form
@@ -559,17 +559,41 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         double[] rightKernel = Auralization.TrimResponse(
             context.RightSum, context.SampleRate, out AuralizationTrim rightTrim);
 
-        // ONE linear-phase correction FIR carries BOTH the microphone
-        // calibration and the cabin subtraction. Their dB corrections add, so a
-        // single design over the sum is the two applied in series but with half
-        // the taps, half the constant delay, one convolution pass per kernel and
-        // one truncation window. Design() negates the correction it is handed:
-        // the calibration's own correction and the cabin GAIN therefore both
-        // come out with the right sign — calibration applied, cabin rise
-        // subtracted. Baked into the KERNELS, not run over the track (two short
-        // double-precision convolutions instead of a third full-track pass), and
-        // identical on both sides so the inter-side scene is untouched; the
-        // normalization below then reads the corrected response.
+        // The mic calibration and the cabin subtraction go into the KERNELS as
+        // linear-phase FIRs (Design() negates the correction it is handed, so the
+        // calibration's correction and the cabin GAIN both come out right —
+        // calibration applied, cabin rise subtracted). The two combine into ONE
+        // FIR — their dB corrections add — so the OUTPUT kernels cost one
+        // convolution pass and one truncation window, not two, and add half the
+        // constant delay. Applied identically to both sides, so the inter-side
+        // scene is untouched.
+        //
+        // When the cabin is subtracted, a REFERENCE pair of kernels carries the
+        // calibration ALONE (the same tune with the cabin OFF). The render is
+        // level-matched against it below, so an A/B between cabin choices differs
+        // in tone, not loudness — the removed bass reads as quieter bass, not as
+        // a track the normalizer quietly turned back up. The reference is built
+        // BEFORE the combined FIR overwrites the kernels; Convolve returns fresh
+        // arrays, so the two pairs never alias.
+        double[]? referenceLeftKernel = null;
+        double[]? referenceRightKernel = null;
+        if (cabin != null)
+        {
+            if (calibration != null)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                double[] calFir = CalibrationFirFilter.Design(
+                    calibration.GetDecibelCorrection, context.SampleRate);
+                referenceLeftKernel = FastConvolution.Convolve(leftKernel, calFir);
+                referenceRightKernel = FastConvolution.Convolve(rightKernel, calFir);
+            }
+            else
+            {
+                referenceLeftKernel = leftKernel;
+                referenceRightKernel = rightKernel;
+            }
+        }
+
         int correctionFirTaps = 0;
         if (calibration != null || cabin != null)
         {
@@ -624,6 +648,8 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             {
                 LeftKernel = leftKernel,
                 RightKernel = rightKernel,
+                ReferenceLeftKernel = referenceLeftKernel,
+                ReferenceRightKernel = referenceRightKernel,
                 KernelSampleRate = context.SampleRate,
                 SourceChannels = material.Channels,
                 SourceSampleRate = material.SampleRate
@@ -748,7 +774,11 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
 
         section.AppendLine(
             $"Level: {rendered.AppliedGainDb:+0.0;-0.0} dB applied to both " +
-            $"channels (peak at {Auralization.DefaultPeakTarget:0.0} dBFS)");
+            (outcome.CabinApplied
+                ? "channels, matched to the no-cabin render (its peak at " +
+                    $"{Auralization.DefaultPeakTarget:0.0} dBFS) so the A/B is " +
+                    "level-honest"
+                : $"channels (peak at {Auralization.DefaultPeakTarget:0.0} dBFS)"));
         section.AppendLine(
             $"Written: {targetPath}");
         section.AppendLine(

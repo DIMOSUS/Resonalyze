@@ -1869,10 +1869,13 @@ it defaults to Off because the measurements are loopback-referenced.
   between tune variants. **Subtract cabin** optionally removes a typical
   body-style cabin transfer function (average sedan, hatchback, SUV, and
   friends — the pressure-zone bass rise that reaches +15…+27 dB at 20 Hz) as
-  an inverse linear-phase FIR in both kernels: the raw render reproduces the
-  full in-car bass rise as headphone boom the in-car listener never perceives,
-  while the subtracted render leaves this car's deviation from the typical
-  curve audible. Listen through **headphones only**: each ear gets the
+  an inverse linear-phase FIR in both kernels (folded into the calibration FIR,
+  so both corrections cost one filter): the raw render reproduces the full
+  in-car bass rise as headphone boom the in-car listener never perceives, while
+  the subtracted render leaves this car's deviation from the typical curve
+  audible. Renders are peak-normalized, not loudness-matched, so an A/B between
+  cabin choices compares tone balance rather than level. Listen through
+  **headphones only**: each ear gets the
   measured acoustic path of its side at the microphone position (drivers,
   cabin, and capsule included) — a stereo auralization of the two sides, not a
   binaural head simulation — and playing it back through the car would

@@ -78,6 +78,33 @@ public sealed class CabinTransferFunctionTests
     }
 
     [Fact]
+    public void Evaluate_HoldsATabulatedCurveConstantBelowItsFirstAnchor()
+    {
+        CabinTransferFunction cabin =
+            CabinTransferFunction.FromBodyStyle(CabinBodyStyle.BmwF30SkiHatch);
+
+        // The 20 Hz anchor is +34 dB; below it the steep near-corner segment is
+        // NOT extrapolated — every infrasonic frequency holds that same value
+        // rather than climbing to the tens of dB the segment slope would reach.
+        double atFirstAnchor = cabin.Evaluate(20.0);
+        Assert.Equal(atFirstAnchor, cabin.Evaluate(10.0), 6);
+        Assert.Equal(atFirstAnchor, cabin.Evaluate(1.0), 6);
+    }
+
+    [Fact]
+    public void Evaluate_CapsTheInfrasonicSubtraction()
+    {
+        // The compact-sedan slope (13.5 dB/oct) would pass 40 dB well into the
+        // infrasonic; the cap holds it there so the correction FIR never carves
+        // a near-total notch — but a MEASURED anchor is never clipped by it.
+        CabinTransferFunction cabin =
+            CabinTransferFunction.FromBodyStyle(CabinBodyStyle.CompactSedan);
+
+        Assert.InRange(cabin.Evaluate(1.0), 39.99, 40.01);
+        Assert.InRange(cabin.Evaluate(20.0), 26.0, 28.0);
+    }
+
+    [Fact]
     public void Design_SubtractsTheCabinRiseWhenUsedAsACorrection()
     {
         // The audition feeds Evaluate straight into the calibration FIR

@@ -190,12 +190,12 @@ namespace Resonalyze
             textBoxReport.BorderStyle = BorderStyle.FixedSingle;
             textBoxReport.Font = new Font("Consolas", 9F);
             textBoxReport.ForeColor = Color.FromArgb(210, 214, 222);
-            textBoxReport.Location = new Point(12, 178);
+            textBoxReport.Location = new Point(12, 200);
             textBoxReport.Multiline = true;
             textBoxReport.Name = "textBoxReport";
             textBoxReport.ReadOnly = true;
             textBoxReport.ScrollBars = ScrollBars.Vertical;
-            textBoxReport.Size = new Size(572, 324);
+            textBoxReport.Size = new Size(572, 302);
             textBoxReport.TabIndex = 13;
             // 
             // buttonClose

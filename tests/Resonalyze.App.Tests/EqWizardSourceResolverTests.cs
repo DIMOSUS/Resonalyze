@@ -274,6 +274,11 @@ public sealed class EqWizardSourceResolverTests
     [InlineData(OverlayCurveRole.Response, AnalysisCurveKind.InputSpectrum, true)]
     [InlineData(null, null, true)]
     [InlineData(OverlayCurveRole.Deviation, AnalysisCurveKind.Primary, false)]
+    [InlineData(OverlayCurveRole.EqCorrection, null, false)]
+    // A target or calculated curve exported with a (possibly stale) response kind is still
+    // refused on its role alone.
+    [InlineData(OverlayCurveRole.Target, AnalysisCurveKind.Primary, false)]
+    [InlineData(OverlayCurveRole.Calculated, AnalysisCurveKind.Primary, false)]
     [InlineData(OverlayCurveRole.Response, AnalysisCurveKind.SecondHarmonic, false)]
     [InlineData(OverlayCurveRole.Response, AnalysisCurveKind.ExcessPhase, false)]
     public void IsEqualizableResponse_GatesBothRoleAndKind(
@@ -282,6 +287,21 @@ public sealed class EqWizardSourceResolverTests
         bool expected)
     {
         Assert.Equal(expected, EqWizardSourceResolver.IsEqualizableResponse(role, kind));
+    }
+
+    [Theory]
+    [InlineData(OverlayCurveRole.Target)]
+    [InlineData(OverlayCurveRole.Calculated)]
+    public void CreateFromTextCurve_RejectsATargetOrCalculatedCurve(OverlayCurveRole role)
+    {
+        // Even with a response kind attached, a target/calculated file must not import as a
+        // source — the exact leak of a slot exported to text and loaded straight in.
+        var curve = new OverlayTextCurve(
+            [new OverlayPoint(100, 0), new OverlayPoint(1_000, -2)],
+            new OverlayTextMetadata(role, CurveKind: AnalysisCurveKind.Primary));
+
+        Assert.Throws<InvalidDataException>(
+            () => EqWizardSourceResolver.CreateFromTextCurve(curve, "target.txt"));
     }
 
     // ------------------------------------------------------------- point hygiene

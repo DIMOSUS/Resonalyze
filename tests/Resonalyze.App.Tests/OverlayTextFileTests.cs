@@ -31,6 +31,46 @@ public sealed class OverlayTextFileTests
     }
 
     [Fact]
+    public void BuildCurveMetadata_LabelsACapturedResponseAndKeepsItsKind()
+    {
+        OverlayTextMetadata metadata = OverlayTextFile.BuildCurveMetadata(
+            OverlayKind.Captured,
+            AnalysisCurveKind.Primary,
+            MagnitudeScale.SoundPressureLevel,
+            48_000,
+            "Overlay 1");
+
+        Assert.Equal(OverlayCurveRole.Response, metadata.Role);
+        Assert.Equal(AnalysisCurveKind.Primary, metadata.CurveKind);
+        Assert.Equal(MagnitudeScale.SoundPressureLevel, metadata.Scale);
+        Assert.Equal(48_000, metadata.SampleRateHz);
+    }
+
+    [Theory]
+    [InlineData(OverlayKind.Target, OverlayCurveRole.Target)]
+    [InlineData(OverlayKind.Operation, OverlayCurveRole.Calculated)]
+    public void BuildCurveMetadata_LabelsDerivedSlotsAndDropsAStaleResponseKind(
+        OverlayKind kind,
+        OverlayCurveRole expectedRole)
+    {
+        // A slot converted from a captured Primary can still carry that kind; the export
+        // must label the role from the slot's real nature and NOT ship the stale kind, or
+        // the EQ Wizard would read a target/operation as a measured Primary response.
+        OverlayTextMetadata metadata = OverlayTextFile.BuildCurveMetadata(
+            kind,
+            AnalysisCurveKind.Primary,
+            MagnitudeScale.Relative,
+            48_000,
+            "Derived");
+
+        Assert.Equal(expectedRole, metadata.Role);
+        Assert.Null(metadata.CurveKind);
+        // And the wizard refuses what it exports.
+        Assert.False(
+            EqWizardSourceResolver.IsEqualizableResponse(metadata.Role, metadata.CurveKind));
+    }
+
+    [Fact]
     public void Import_IgnoresCommentsAndBlankLinesAndExtraColumns()
     {
         string path = Path.Combine(

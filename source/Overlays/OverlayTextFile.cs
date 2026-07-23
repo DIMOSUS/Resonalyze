@@ -18,7 +18,13 @@ public enum OverlayCurveRole
     Deviation,
 
     /// <summary>target − measurement (the EQ gain needed to reach the target).</summary>
-    EqCorrection
+    EqCorrection,
+
+    /// <summary>A goal curve (an overlay target), not a measurement.</summary>
+    Target,
+
+    /// <summary>A curve computed from other slots (an overlay operation).</summary>
+    Calculated
 }
 
 /// <summary>
@@ -65,6 +71,34 @@ public static class OverlayTextFile
     private const int FormatVersion = 1;
 
     private static readonly char[] Separators = [' ', '\t', ',', ';'];
+
+    /// <summary>
+    /// The header for a curve exported from an overlay slot. The role is authoritative
+    /// from the slot's current <paramref name="kind"/>, never a stored tag that a type
+    /// change could leave stale: a target exports as <see cref="OverlayCurveRole.Target"/>,
+    /// a calculated (operation) slot as <see cref="OverlayCurveRole.Calculated"/>, a
+    /// captured slot as <see cref="OverlayCurveRole.Response"/> — so a consumer that
+    /// equalizes curves cannot mistake a derived shape for a measured response. The curve
+    /// kind is emitted ONLY for a genuine captured response; a target or calculated slot's
+    /// stored kind is not a response identity and must not travel as one.
+    /// </summary>
+    public static OverlayTextMetadata BuildCurveMetadata(
+        OverlayKind kind,
+        AnalysisCurveKind? capturedCurveKind,
+        MagnitudeScale scale,
+        int? sampleRateHz,
+        string? title)
+    {
+        OverlayCurveRole role = kind switch
+        {
+            OverlayKind.Operation => OverlayCurveRole.Calculated,
+            OverlayKind.Target => OverlayCurveRole.Target,
+            _ => OverlayCurveRole.Response
+        };
+        AnalysisCurveKind? exportedKind =
+            kind == OverlayKind.Captured ? capturedCurveKind : null;
+        return new OverlayTextMetadata(role, exportedKind, scale, sampleRateHz, title);
+    }
 
     public static void Export(string path, IReadOnlyList<OverlayPoint> points) =>
         Export(path, points, metadata: null);

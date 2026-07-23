@@ -1449,18 +1449,19 @@ public sealed class Overlay
             return;
         }
 
-        // A deviation or EQ-correction file is a difference from a target, not a measured
-        // response. An overlay slot has no way to record that identity, so importing one
-        // would silently strip it and present a difference as a plain captured response —
-        // which a consumer that equalizes curves (the EQ Wizard) would then treat as one.
-        // Refuse it here rather than let that laundering happen through a round trip.
-        if (imported.Metadata.Role is OverlayCurveRole.Deviation or OverlayCurveRole.EqCorrection)
+        // An imported slot becomes a plain captured response, which has no field for a
+        // non-response role. A file that declares itself as anything other than a response
+        // (a deviation, an EQ correction, a target, a calculated curve) would therefore be
+        // stripped of that identity and could re-export as a response — laundering a
+        // derived shape into an equalization source. Refuse it rather than lose the role.
+        // A headerless foreign file (role unstated) is the safe response default and loads.
+        if (imported.Metadata.Role is { } role && role != OverlayCurveRole.Response)
         {
             MessageBox.Show(
                 collection.Form,
-                "This file holds a deviation or EQ-correction curve — a difference from a " +
-                "target, not a measured response — so it cannot be imported as an overlay. " +
-                "Import the response it was derived from instead.",
+                "This file holds a " + DescribeImportedRole(role) + " curve, not a " +
+                "measured response, so it cannot be imported as an overlay. Import the " +
+                "response it was derived from instead.",
                 "Import from text",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -1535,15 +1536,37 @@ public sealed class Overlay
         }
     }
 
-    // Describes the exported curve so a consumer (the EQ Wizard) reads real units and a
-    // real sample rate instead of assuming them. A calculated slot's role is left
-    // unstated: depending on the operation it may be a sum, an average or a difference.
-    private OverlayTextMetadata BuildExportMetadata() => new(
-        Role: kind == OverlayKind.Operation ? null : OverlayCurveRole.Response,
-        CurveKind: capturedCurveKind,
-        Scale: capturedMagnitudeScale,
-        SampleRateHz: capturedSampleRateHz,
-        Title: Title);
+    // Describes the exported curve so a consumer (the EQ Wizard) reads real units, a real
+    // sample rate, and — crucially — an honest role: the slot's kind decides whether this
+    // is a response, a target or a calculated curve, so a derived shape cannot re-enter as
+    // a measured response through a text round trip.
+    private OverlayTextMetadata BuildExportMetadata() =>
+        OverlayTextFile.BuildCurveMetadata(
+            kind,
+            capturedCurveKind,
+            capturedMagnitudeScale,
+            capturedSampleRateHz,
+            Title);
+
+    private static string DescribeImportedRole(OverlayCurveRole role) => role switch
+    {
+        OverlayCurveRole.Deviation => "deviation",
+        OverlayCurveRole.EqCorrection => "EQ-correction",
+        OverlayCurveRole.Target => "target",
+        OverlayCurveRole.Calculated => "calculated",
+        _ => "derived"
+    };
+
+    // A slot leaving the captured-response kind (becoming a target or an operation) must
+    // drop the response-only metadata it carried, or a stale curve kind or raw spectrum
+    // would travel with the new curve — enough to mislabel an exported target as a Primary
+    // response. Kept in one place so both conversions stay consistent.
+    private void ClearCapturedResponseMetadata()
+    {
+        capturedCurveKind = null;
+        rawSpectrumPoints = null;
+        rawCalibrationCorrectionDb = Array.Empty<double>();
+    }
 
     private void ExportDeviationToText()
     {
@@ -1747,6 +1770,7 @@ public sealed class Overlay
         Hide();
         kind = OverlayKind.Target;
         capturedYAxisKey = null;
+        ClearCapturedResponseMetadata();
         // Targets and operations are defined in relative dB; they belong to the
         // Relative axis until an SPL-native form exists.
         capturedMagnitudeScale = MagnitudeScale.Relative;
@@ -1894,6 +1918,7 @@ public sealed class Overlay
         Hide();
         kind = OverlayKind.Operation;
         capturedYAxisKey = null;
+        ClearCapturedResponseMetadata();
         capturedMagnitudeScale = MagnitudeScale.Relative;
         Title = dialog.OverlayName;
         sourceSlotA = dialog.SourceSlotA;

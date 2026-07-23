@@ -90,10 +90,10 @@ internal sealed class EqWizardSourceResolver
     /// response (or unstated) AND its declared kind is a full-range magnitude — the swept
     /// <see cref="AnalysisCurveKind.Primary"/> or the RTA
     /// <see cref="AnalysisCurveKind.InputSpectrum"/> — or unstated. A harmonic, THD, phase
-    /// or coherence trace, and a deviation or EQ-correction difference, are all refused:
-    /// equalizing them would correct the wrong thing. Unstated (null) is permitted because
-    /// a file written by another tool declares nothing; the slot path adds its own
-    /// non-null requirement on top.
+    /// or coherence trace, and any non-response role (a deviation, an EQ correction, a
+    /// target or a calculated curve), are all refused: equalizing them would correct the
+    /// wrong thing. Unstated (null) is permitted because a file written by another tool
+    /// declares nothing; the slot path adds its own non-null requirement on top.
     /// </summary>
     internal static bool IsEqualizableResponse(
         OverlayCurveRole? role,

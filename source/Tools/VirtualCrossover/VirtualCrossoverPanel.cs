@@ -2196,7 +2196,8 @@ public partial class VirtualCrossoverPanel : UserControl
         dialog.Init(
             stereo: false,
             project.StereoSceneOffsetMs,
-            (_, adjustGains) => RunSingleSideProposalAsync(
+            project.StereoLevelDifferenceDb,
+            (_, adjustGains, _) => RunSingleSideProposalAsync(
                 participants, minHz, maxHz, adjustGains));
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
             dialog.Result is not { } result ||
@@ -2253,7 +2254,8 @@ public partial class VirtualCrossoverPanel : UserControl
     // Computes the single-side proposal on a background thread: the alignment
     // cascade, then (when asked) the cut-only gain balance from the run's
     // final snapshots. Board levelling only — a single side has no L/R
-    // relation, so the scene offset plays no part here.
+    // relation, so neither the scene offset nor the level difference plays a
+    // part here.
     private async Task<AutoDelayRunResult> RunSingleSideProposalAsync(
         List<VirtualCrossoverChannel> participants,
         double windowMinHz,
@@ -2290,7 +2292,7 @@ public partial class VirtualCrossoverPanel : UserControl
                         channel.Pair.Mono,
                         RightSide: false,
                         (IAlignmentChannel?)null)),
-                    reprocessor, alignment, sceneOffsetMs: 0, log);
+                    reprocessor, alignment, levelDifferenceDb: 0, log);
             }
 
             IReadOnlyList<AlignmentSnapshot> afterSnapshots =
@@ -2310,14 +2312,15 @@ public partial class VirtualCrossoverPanel : UserControl
                 channel.Name)),
             alignment, decisions, gains);
         string report = VirtualCrossoverAutoDelayReport.Format(
-            outcomes, stereo: false, sceneOffsetMs: 0, adjustGains, sumLoss);
+            outcomes, stereo: false, sceneOffsetMs: 0, adjustGains,
+            levelDifferenceDb: 0, sumLoss);
         // The diagnostic trace is written already at the proposal stage, so a
         // discarded (or failed-looking) run can still be shared and analyzed;
         // Apply rewrites it with the results and the outcome metric appended.
         WriteAlignmentLog(log.ToString());
         return new AutoDelayRunResult(
             outcomes, Stereo: false, project.StereoSceneOffsetMs,
-            adjustGains, report, log);
+            adjustGains, project.StereoLevelDifferenceDb, report, log);
     }
 
     // Bridges the run's channels to the dsp GainBalanceEngine: bands from the
@@ -2330,7 +2333,7 @@ public partial class VirtualCrossoverPanel : UserControl
             bool Mono, bool RightSide, IAlignmentChannel? LeftPeer)> channels,
         AlignmentReprocessor reprocessor,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
-        double sceneOffsetMs,
+        double levelDifferenceDb,
         System.Text.StringBuilder log)
     {
         IReadOnlyList<AlignmentSnapshot> snapshots = reprocessor.Reprocess(alignment);
@@ -2354,7 +2357,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     item.LeftPeer);
             })
             .ToList();
-        return GainBalanceEngine.Compute(inputs, sceneOffsetMs, log);
+        return GainBalanceEngine.Compute(inputs, levelDifferenceDb, log);
     }
 
     private static Dictionary<IAlignmentChannel, Complex[]> ToIrMap(
@@ -2481,9 +2484,11 @@ public partial class VirtualCrossoverPanel : UserControl
 
         if (result.Stereo)
         {
-            // The offset the proposal was computed with becomes the persisted
-            // value only now, so a discarded experiment does not overwrite it.
+            // The inputs the proposal was computed with become the persisted
+            // values only now, so a discarded experiment does not overwrite
+            // them.
             project.StereoSceneOffsetMs = result.SceneOffsetMs;
+            project.StereoLevelDifferenceDb = result.LevelDifferenceDb;
         }
 
         ScheduleSave();
@@ -2732,9 +2737,11 @@ public partial class VirtualCrossoverPanel : UserControl
         dialog.Init(
             stereo: true,
             project.StereoSceneOffsetMs,
-            (sceneOffsetMs, adjustGains) => RunStereoProposalAsync(
+            project.StereoLevelDifferenceDb,
+            (sceneOffsetMs, adjustGains, levelDifferenceDb) => RunStereoProposalAsync(
                 leftSide, rightSide, union, bridgeLeft, bridgeRight,
-                bridgeBandLowHz, bridgeBandHighHz, sceneOffsetMs, adjustGains),
+                bridgeBandLowHz, bridgeBandHighHz, sceneOffsetMs, adjustGains,
+                levelDifferenceDb),
             DescribeLeftRightPolarityMismatch(leftSide, rightSide));
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
             dialog.Result is not { } result ||
@@ -2794,8 +2801,8 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // Computes the stereo proposal on a background thread: the alignment
     // cascade, then (when asked) the cut-only gain balance from the run's
-    // final snapshots — right channels judged against their left peers, the
-    // level tilt derived from the same scene offset the delays honor.
+    // final snapshots — right channels judged against their left peers, tilted
+    // by the L-R level difference the tuner entered.
     private async Task<AutoDelayRunResult> RunStereoProposalAsync(
         List<VirtualCrossoverSideAlignmentChannel> leftSide,
         List<VirtualCrossoverSideAlignmentChannel> rightSide,
@@ -2805,7 +2812,8 @@ public partial class VirtualCrossoverPanel : UserControl
         double bridgeBandLowHz,
         double bridgeBandHighHz,
         double sceneOffsetMs,
-        bool adjustGains)
+        bool adjustGains,
+        double levelDifferenceDb)
     {
         var log = new System.Text.StringBuilder();
         log.AppendLine($"Auto delay (stereo) {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
@@ -2846,7 +2854,7 @@ public partial class VirtualCrossoverPanel : UserControl
                             ? leftSide.FirstOrDefault(left =>
                                 left.Runtime == side.Runtime && !left.RightSide)
                             : null))),
-                    reprocessor, engineAlignment, sceneOffsetMs, log);
+                    reprocessor, engineAlignment, levelDifferenceDb, log);
             }
 
             IReadOnlyList<AlignmentSnapshot> afterSnapshots =
@@ -2883,12 +2891,13 @@ public partial class VirtualCrossoverPanel : UserControl
             engineAlignment, decisions, gains);
         string report = VirtualCrossoverAutoDelayReport.Format(
             outcomes, stereo: true, sceneOffsetMs, adjustGains,
-            leftSumLoss, rightSumLoss);
+            levelDifferenceDb, leftSumLoss, rightSumLoss);
         // Written already at the proposal stage, so a discarded run can still
         // be shared and analyzed; Apply rewrites it with the outcome metric.
         WriteAlignmentLog(log.ToString());
         return new AutoDelayRunResult(
-            outcomes, Stereo: true, sceneOffsetMs, adjustGains, report, log);
+            outcomes, Stereo: true, sceneOffsetMs, adjustGains,
+            levelDifferenceDb, report, log);
     }
 
     // Bridges the pair/side model to the stereo engine on a background thread,

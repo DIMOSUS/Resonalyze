@@ -236,6 +236,7 @@ public sealed class VirtualCrossoverProjectFileTests
                 PhaseDetrendMode = PhaseDetrendMode.Manual
             };
             original.StereoSceneOffsetMs = -0.4;
+            original.StereoLevelDifferenceDb = -1.5;
             original.ActiveSideRight = true;
             original.Pairs[0].Mono = true;
             original.Pairs[0].Left = new VirtualCrossoverChannelSettings
@@ -281,6 +282,8 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.Equal(original.PhaseFdwCycles, loaded.PhaseFdwCycles);
             Assert.Equal(original.PhaseDetrendMode, loaded.PhaseDetrendMode);
             Assert.Equal(original.StereoSceneOffsetMs, loaded.StereoSceneOffsetMs);
+            Assert.Equal(
+                original.StereoLevelDifferenceDb, loaded.StereoLevelDifferenceDb);
             Assert.Equal(original.ActiveSideRight, loaded.ActiveSideRight);
             Assert.Equal(original.Pairs.Count, loaded.Pairs.Count);
             Assert.True(loaded.Pairs[0].Mono);
@@ -485,6 +488,12 @@ public sealed class VirtualCrossoverProjectFileTests
                 VirtualCrossoverProjectFile.MaximumSceneOffsetMs + 1
         };
         Assert.Throws<InvalidDataException>(() => badSceneOffset.Validate());
+
+        var badLevelDifference = new VirtualCrossoverProjectFile
+        {
+            StereoLevelDifferenceDb = GainBalanceEngine.MaxLevelDifferenceDb + 1
+        };
+        Assert.Throws<InvalidDataException>(() => badLevelDifference.Validate());
 
         var badCalibrationMode = new VirtualCrossoverProjectFile
         {

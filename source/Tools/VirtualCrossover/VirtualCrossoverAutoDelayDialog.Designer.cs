@@ -33,12 +33,15 @@ namespace Resonalyze
             labelSceneOffset = new Label();
             numericSceneOffset = new DarkNumericUpDown();
             checkBoxGains = new CheckBox();
+            labelLevelDifference = new Label();
+            numericLevelDifference = new DarkNumericUpDown();
             buttonRun = new Button();
             labelStatus = new Label();
             textBoxReport = new TextBox();
             buttonApply = new Button();
             buttonCancel = new Button();
             (numericSceneOffset).BeginInit();
+            (numericLevelDifference).BeginInit();
             SuspendLayout();
             // 
             // labelSceneOffset
@@ -79,27 +82,54 @@ namespace Resonalyze
             checkBoxGains.Size = new Size(199, 19);
             checkBoxGains.TabIndex = 2;
             checkBoxGains.Text = "Balance channel gains (cut-only)";
-            // 
+            //
+            // labelLevelDifference
+            //
+            labelLevelDifference.AutoSize = true;
+            labelLevelDifference.ForeColor = Color.FromArgb(185, 190, 200);
+            labelLevelDifference.Location = new Point(411, 16);
+            labelLevelDifference.Name = "labelLevelDifference";
+            labelLevelDifference.Size = new Size(80, 15);
+            labelLevelDifference.TabIndex = 3;
+            labelLevelDifference.Text = "L-R level, dB:";
+            //
+            // numericLevelDifference
+            //
+            numericLevelDifference.BackColor = Color.FromArgb(55, 60, 72);
+            numericLevelDifference.DecimalPlaces = 1;
+            numericLevelDifference.ForeColor = Color.White;
+            numericLevelDifference.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
+            numericLevelDifference.Location = new Point(500, 12);
+            numericLevelDifference.Maximum = new decimal(new int[] { 6, 0, 0, 0 });
+            numericLevelDifference.Minimum = new decimal(new int[] { 6, 0, 0, int.MinValue });
+            numericLevelDifference.MinimumSize = new Size(36, 19);
+            numericLevelDifference.Name = "numericLevelDifference";
+            numericLevelDifference.Size = new Size(72, 21);
+            numericLevelDifference.TabIndex = 4;
+            numericLevelDifference.TextAlign = HorizontalAlignment.Right;
+            numericLevelDifference.ThousandsSeparator = false;
+            numericLevelDifference.Value = new decimal(new int[] { 1, 0, 0, int.MinValue });
+            //
             // buttonRun
-            // 
+            //
             buttonRun.BackColor = Color.FromArgb(46, 51, 67);
             buttonRun.FlatStyle = FlatStyle.Popup;
             buttonRun.ForeColor = Color.White;
             buttonRun.Location = new Point(12, 44);
             buttonRun.Name = "buttonRun";
             buttonRun.Size = new Size(120, 26);
-            buttonRun.TabIndex = 3;
+            buttonRun.TabIndex = 5;
             buttonRun.Text = "Run";
             buttonRun.UseVisualStyleBackColor = false;
-            // 
+            //
             // labelStatus
-            // 
+            //
             labelStatus.AutoSize = true;
             labelStatus.ForeColor = Color.FromArgb(185, 190, 200);
             labelStatus.Location = new Point(144, 50);
             labelStatus.Name = "labelStatus";
             labelStatus.Size = new Size(0, 15);
-            labelStatus.TabIndex = 4;
+            labelStatus.TabIndex = 6;
             // 
             // textBoxReport
             // 
@@ -114,7 +144,7 @@ namespace Resonalyze
             textBoxReport.ReadOnly = true;
             textBoxReport.ScrollBars = ScrollBars.Vertical;
             textBoxReport.Size = new Size(700, 553);
-            textBoxReport.TabIndex = 5;
+            textBoxReport.TabIndex = 7;
             // 
             // buttonApply
             // 
@@ -126,7 +156,7 @@ namespace Resonalyze
             buttonApply.Location = new Point(538, 643);
             buttonApply.Name = "buttonApply";
             buttonApply.Size = new Size(84, 26);
-            buttonApply.TabIndex = 6;
+            buttonApply.TabIndex = 8;
             buttonApply.Text = "Apply";
             buttonApply.UseVisualStyleBackColor = false;
             // 
@@ -139,7 +169,7 @@ namespace Resonalyze
             buttonCancel.Location = new Point(628, 643);
             buttonCancel.Name = "buttonCancel";
             buttonCancel.Size = new Size(84, 26);
-            buttonCancel.TabIndex = 7;
+            buttonCancel.TabIndex = 9;
             buttonCancel.Text = "Discard";
             buttonCancel.UseVisualStyleBackColor = true;
             // 
@@ -152,6 +182,8 @@ namespace Resonalyze
             Controls.Add(labelSceneOffset);
             Controls.Add(numericSceneOffset);
             Controls.Add(checkBoxGains);
+            Controls.Add(labelLevelDifference);
+            Controls.Add(numericLevelDifference);
             Controls.Add(buttonRun);
             Controls.Add(labelStatus);
             Controls.Add(textBoxReport);
@@ -166,6 +198,7 @@ namespace Resonalyze
             StartPosition = FormStartPosition.CenterParent;
             Text = "Auto delay";
             (numericSceneOffset).EndInit();
+            (numericLevelDifference).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -175,6 +208,8 @@ namespace Resonalyze
         private Label labelSceneOffset;
         private DarkNumericUpDown numericSceneOffset;
         private CheckBox checkBoxGains;
+        private Label labelLevelDifference;
+        private DarkNumericUpDown numericLevelDifference;
         private Button buttonRun;
         private Label labelStatus;
         private TextBox textBoxReport;

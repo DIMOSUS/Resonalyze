@@ -59,12 +59,15 @@ public sealed class VirtualCrossoverAutoDelayReportTests
             stereo: true,
             sceneOffsetMs: 0.27,
             gainsRequested: true,
+            levelDifferenceDb: -1.5,
             leftSumLoss: new AutoDelaySumLossForecast(-2.0, -0.6),
             rightSumLoss: new AutoDelaySumLossForecast(-2.4, -0.8));
 
         Assert.Contains("stereo", report);
         Assert.Contains("Scene offset +0.27 ms", report);
-        Assert.Contains("gain tilt +2.0 dB", report);
+        // The tilt is the entered figure, independent of the scene offset, and
+        // signed LEFT minus RIGHT.
+        Assert.Contains("L-R level -1.5 dB (positive: left side louder)", report);
         // The at-a-glance summary: change counts, the predicted sum-loss
         // improvement per side, and one warning line per LOW-confidence call.
         Assert.Contains("Changes: 3 delays, 1 polarities, 1 gains", report);
@@ -104,6 +107,7 @@ public sealed class VirtualCrossoverAutoDelayReportTests
             stereo: false,
             sceneOffsetMs: 0,
             gainsRequested: false,
+            levelDifferenceDb: 0,
             leftSumLoss: new AutoDelaySumLossForecast(-1.5, -0.3));
 
         Assert.Contains("single side", report);

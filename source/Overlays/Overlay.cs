@@ -9,14 +9,22 @@ using ToolTip = System.Windows.Forms.ToolTip;
 namespace Resonalyze;
 
 /// <summary>
-/// A captured analysis curve's uncalibrated oversampled spectrum, frozen calibration
-/// correction on the display grid, and display-smoothing code. Keeping calibration
-/// separate preserves the primary curve's smooth-then-calibrate operation order.
+/// What the plot knows about a curve being captured: its uncalibrated oversampled
+/// spectrum, the calibration correction frozen on the display grid, the display-smoothing
+/// code, and the measurement's sample rate. Keeping calibration separate preserves the
+/// primary curve's smooth-then-calibrate operation order.
 /// </summary>
+/// <remarks>
+/// <paramref name="Spectrum"/> may be EMPTY: some curves have no re-smoothable raw form
+/// (see <see cref="LiveRtaRawCapture"/>) yet still know their sample rate. Such a capture
+/// stores the drawn curve while keeping the metadata, so a consumer outside the
+/// measurement — the EQ Wizard — still knows the rate its filters must be realized at.
+/// </remarks>
 public readonly record struct RawCurveCapture(
     IReadOnlyList<SignalPoint> Spectrum,
     IReadOnlyList<double> CalibrationCorrectionDb,
-    int SmoothingCode);
+    int SmoothingCode,
+    int? SampleRateHz = null);
 
 internal static class RawCurveRenderer
 {
@@ -563,6 +571,9 @@ public sealed class Overlay
     // Frozen microphone correction at the 1024 output frequencies. It remains
     // separate because the primary FR smooths first and calibrates afterwards.
     private double[] rawCalibrationCorrectionDb = Array.Empty<double>();
+    // Sample rate of the captured measurement; null when unknown (imported text,
+    // fallback captures, legacy files). Only consumers outside the plot read it.
+    private int? capturedSampleRateHz;
 
     // Operation kind. Each operand is either a captured slot (SourceSlotA/B) or, when
     // SourceCurveKeyA/B is set, a live analysis curve resolved from the plot by its
@@ -1373,6 +1384,9 @@ public sealed class Overlay
         List<SignalPoint>? spectrum;
         double[] calibrationCorrectionDb;
         int seedSmoothing;
+        // The rate describes the measurement, not the raw form, so it survives a capture
+        // that falls back to the drawn curve (an SPL trace, an operation, a legacy mode).
+        int? sampleRateHz = raw?.SampleRateHz;
         if (raw is { } rawCapture && rawCapture.Spectrum.Count >= 2)
         {
             // Keep the oversampled spectrum for exact re-smoothing, and derive the
@@ -1400,6 +1414,7 @@ public sealed class Overlay
         sourcePoints = points;
         rawSpectrumPoints = spectrum;
         rawCalibrationCorrectionDb = calibrationCorrectionDb;
+        capturedSampleRateHz = sampleRateHz;
         // The curve was drawn in the plot's current scale, so it carries that unit.
         capturedMagnitudeScale = collection.CurrentMagnitudeScale;
         capturedYAxisKey = string.IsNullOrEmpty(selected.YAxisKey)
@@ -1448,10 +1463,10 @@ public sealed class Overlay
             return;
         }
 
-        OverlayPoint[] imported;
+        OverlayTextCurve imported;
         try
         {
-            imported = OverlayTextFile.Import(dialog.FileName);
+            imported = OverlayTextFile.ImportCurve(dialog.FileName);
         }
         catch (Exception exception)
         {
@@ -1465,14 +1480,18 @@ public sealed class Overlay
         targetConfigured = false;
         // Imported text gives no wrap/unwrap hint; leave it unknown.
         phaseUnwrapped = null;
-        capturedCurveKind = null;
+        // A file we exported declares what it holds, so a slot → text → slot round trip
+        // keeps its identity; a foreign headerless file states nothing and stays unknown.
+        capturedCurveKind = imported.Metadata.CurveKind;
         // Imported points are a display curve, not an oversampled spectrum.
         rawSpectrumPoints = null;
         rawCalibrationCorrectionDb = Array.Empty<double>();
-        // Imported points are assumed to be in the current view's unit.
-        capturedMagnitudeScale = collection.CurrentMagnitudeScale;
+        capturedSampleRateHz = imported.Metadata.SampleRateHz;
+        // Believe a declared unit; assume the current view's otherwise.
+        capturedMagnitudeScale =
+            imported.Metadata.Scale ?? collection.CurrentMagnitudeScale;
         capturedYAxisKey = null;
-        sourcePoints = imported
+        sourcePoints = imported.Points
             .Select(point => new DataPoint(point.X, point.Y))
             .ToArray();
         SeriesMode = mode;
@@ -1515,13 +1534,23 @@ public sealed class Overlay
 
         try
         {
-            OverlayTextFile.Export(dialog.FileName, points);
+            OverlayTextFile.Export(dialog.FileName, points, BuildExportMetadata());
         }
         catch (Exception exception)
         {
             ShowStorageError("Overlay could not be exported.", exception);
         }
     }
+
+    // Describes the exported curve so a consumer (the EQ Wizard) reads real units and a
+    // real sample rate instead of assuming them. A calculated slot's role is left
+    // unstated: depending on the operation it may be a sum, an average or a difference.
+    private OverlayTextMetadata BuildExportMetadata() => new(
+        Role: kind == OverlayKind.Operation ? null : OverlayCurveRole.Response,
+        CurveKind: capturedCurveKind,
+        Scale: capturedMagnitudeScale,
+        SampleRateHz: capturedSampleRateHz,
+        Title: Title);
 
     private void ExportDeviationToText()
     {
@@ -1574,7 +1603,18 @@ public sealed class Overlay
 
         try
         {
-            OverlayTextFile.Export(dialog.FileName, result.Deviation);
+            // A deviation / correction is a DIFFERENCE, not a response. Saying so keeps
+            // a consumer that equalizes curves from treating it as one.
+            OverlayTextFile.Export(
+                dialog.FileName,
+                result.Deviation,
+                new OverlayTextMetadata(
+                    Role: exportMode == TargetDeviationMode.Correction
+                        ? OverlayCurveRole.EqCorrection
+                        : OverlayCurveRole.Deviation,
+                    Scale: MagnitudeScale.Relative,
+                    SampleRateHz: capturedSampleRateHz,
+                    Title: $"{Title} - {suffix}"));
         }
         catch (Exception exception)
         {
@@ -2063,6 +2103,7 @@ public sealed class Overlay
                 ? file.RawSpectrum.Select(point => new SignalPoint(point.X, point.Y)).ToList()
                 : null;
             rawCalibrationCorrectionDb = file.RawCalibrationCorrectionDb.ToArray();
+            capturedSampleRateHz = file.SampleRateHz;
             capturedYAxisKey = GetCapturedYAxisKey(file);
             UpdateDrawPoints();
             SetAvailability(true);
@@ -2161,6 +2202,7 @@ public sealed class Overlay
                 ? rawSpectrumPoints.Select(point => new OverlayPoint(point.X, point.Y)).ToArray()
                 : Array.Empty<OverlayPoint>();
             file.RawCalibrationCorrectionDb = rawCalibrationCorrectionDb.ToArray();
+            file.SampleRateHz = capturedSampleRateHz;
             file.CapturedYAxisKey = capturedYAxisKey;
         }
 
@@ -2457,6 +2499,7 @@ public sealed class Overlay
         capturedCurveKind = null;
         rawSpectrumPoints = null;
         rawCalibrationCorrectionDb = Array.Empty<double>();
+        capturedSampleRateHz = null;
         operationConfigured = false;
         sourceSlotA = 0;
         sourceSlotB = 0;

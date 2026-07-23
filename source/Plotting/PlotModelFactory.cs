@@ -163,13 +163,19 @@ internal sealed class PlotModelFactory
     /// </summary>
     public RawCurveCapture? BuildRawCurve(CurveTag tag)
     {
-        // SPL rendering applies an absolute offset the stored relative spectrum does
-        // not carry, so a captured overlay there keeps the drawn-curve fallback.
-        if (tag.Kind != AnalysisCurveKind.Primary ||
-            tag.Mode != Mode.FrequencyResponse ||
-            EffectiveFrequencyResponseScale != MagnitudeScale.Relative)
+        if (tag.Kind != AnalysisCurveKind.Primary || tag.Mode != Mode.FrequencyResponse)
         {
             return null;
+        }
+
+        // SPL rendering applies an absolute offset the stored relative spectrum does
+        // not carry, so a captured overlay there keeps the drawn-curve fallback — but
+        // still learns the rate it was measured at.
+        if (EffectiveFrequencyResponseScale != MagnitudeScale.Relative)
+        {
+            return DescribeWithoutRawForm(
+                (int)Math.Round(frequencyResponseOptions.SmoothingInverseOctaves),
+                expSweepMeasurement.SampleRate);
         }
 
         CalibrationFile? calibration = GetCalibration(frequencyResponseOptions);
@@ -184,9 +190,57 @@ internal sealed class PlotModelFactory
                 spectrum,
                 RawCurveRenderer.CaptureCalibrationCorrection(
                     frequencyResponseOptions.UseCalibration ? calibration : null),
-                (int)Math.Round(frequencyResponseOptions.SmoothingInverseOctaves))
+                (int)Math.Round(frequencyResponseOptions.SmoothingInverseOctaves),
+                // Compare is only offered at the main measurement's rate (see
+                // TryCreateCompareMeasurement), so one rate covers both sources.
+                expSweepMeasurement.SampleRate > 0 ? expSweepMeasurement.SampleRate : null)
             : null;
     }
+
+    /// <summary>
+    /// The RAW (unsmoothed) samples of the live RTA trace plus the mode's current
+    /// smoothing code, so a captured overlay stores the reference and re-applies its own
+    /// smoothing. Only the relative RTA has such a form (see
+    /// <see cref="LiveRtaRawCapture"/>); the SPL one is described without it. Null when
+    /// there is no RTA data to capture.
+    /// </summary>
+    public RawCurveCapture? BuildRawRtaCurve(IReadOnlyList<double>? inputMagnitude)
+    {
+        if (inputMagnitude is not { Count: > 1 })
+        {
+            return null;
+        }
+
+        int smoothingCode = liveSpectrumOptions.SmoothingInverseOctaves;
+        if (EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel)
+        {
+            return DescribeWithoutRawForm(smoothingCode, noiseMeasurement.SampleRate);
+        }
+
+        List<SignalPoint> spectrum = LiveRtaRawCapture.BuildRelativeRaw(
+            inputMagnitude,
+            noiseMeasurement.SequenceLength,
+            noiseMeasurement.SampleRate);
+        if (spectrum.Count < 2)
+        {
+            return DescribeWithoutRawForm(smoothingCode, noiseMeasurement.SampleRate);
+        }
+
+        return new RawCurveCapture(
+            spectrum,
+            RawCurveRenderer.CaptureCalibrationCorrection(
+                GetCalibration(liveSpectrumOptions)),
+            smoothingCode,
+            noiseMeasurement.SampleRate > 0 ? noiseMeasurement.SampleRate : null);
+    }
+
+    // A capture with no re-smoothable samples: the overlay stores the drawn curve, but
+    // the rate travels with it so a consumer outside the measurement is not left guessing.
+    private static RawCurveCapture DescribeWithoutRawForm(int smoothingCode, int sampleRate) =>
+        new(Array.Empty<SignalPoint>(),
+            Array.Empty<double>(),
+            smoothingCode,
+            sampleRate > 0 ? sampleRate : null);
 
     public PlotModel CreateFrequencyResponse(bool includeCurves)
     {

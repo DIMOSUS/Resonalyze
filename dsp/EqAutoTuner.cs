@@ -106,6 +106,18 @@ public static class EqAutoTuner
     private static readonly double[] CandidateQ =
         { 0.5, 0.7, 1.0, 1.4, 2.0, 2.8, 4.0, 5.6, 8.0, 10.0 };
 
+    // How much more an over-correction counts than an equal under-correction when
+    // choosing a band's Q in cuts-only mode. Over-cutting pushes a point BELOW the target,
+    // where no later cut can lift it back (only a forbidden boost could), so a wide band
+    // that shaves a broad peak by gouging a broad adjacent shoulder well below the target
+    // (a visible hole in the response) loses to a tighter band that leaves the far side of
+    // the peak for another band. It is a soft penalty, not a veto: cutting a narrow peak
+    // is still worth the shallow dip its skirt leaves in an adjacent valley, because the
+    // heavily weighted term only dominates once a WIDE skirt drops a broad span far below
+    // the target. Under-correction (still above target) stays freely fixable and keeps
+    // unit weight.
+    private const double CutsOnlyOverCorrectionWeight = 25.0;
+
     /// <summary>
     /// Fits an equalization curve so that <paramref name="source"/> + curve best
     /// matches <paramref name="target"/>. Both curves are (Hz, dB) and need not share
@@ -149,6 +161,7 @@ public static class EqAutoTuner
         var valid = new bool[n];
         int validCount = 0;
         double errorSum = 0;
+        double maxError = double.NegativeInfinity;
         for (int i = 0; i < n; i++)
         {
             if (double.IsFinite(sourceDb[i]) && double.IsFinite(targetDb[i]))
@@ -156,6 +169,7 @@ public static class EqAutoTuner
                 error[i] = targetDb[i] - sourceDb[i];
                 valid[i] = true;
                 errorSum += error[i];
+                maxError = Math.Max(maxError, error[i]);
                 validCount++;
             }
         }
@@ -165,11 +179,35 @@ public static class EqAutoTuner
             return new EqualizationCurve(Array.Empty<PeqBand>());
         }
 
-        // The preamp absorbs the broadband level difference; bands fit the shape.
-        double preamp = Clamp(
-            Math.Round(errorSum / validCount),
-            opt.PreampMinDb,
-            opt.PreampMaxDb);
+        // The preamp absorbs the broadband level difference; bands fit the shape. The
+        // right broadband level depends on which way the bands can move the source:
+        //
+        //  - Boosts allowed: bands correct in both directions, so centre the residual on
+        //    the MEAN error and let bands fan out symmetrically.
+        //  - Cuts only: bands can only pull the source DOWN. A preamp below the largest
+        //    error would drop a point beneath the target, where no cut can lift it back —
+        //    it just leaves that point further off. So align to the point where the
+        //    source is LEAST above the target (the maximum error): this absorbs only the
+        //    excess every point shares, and stays at the ceiling whenever any point is
+        //    already at or below the target (nothing there can be pulled down). Rounding
+        //    up keeps every point at or above the aligned target, so it stays cuttable.
+        //
+        // The ceiling is pre-applied here (not only in the post-band clamp) so the bands
+        // fit against the same level the curve is finally realised at; in cuts-only the
+        // band peak is 0, so 0 (a broadband boost) is the ceiling — cuts-only must never
+        // lift the curve, whatever the level difference or an unbounded TotalGainMaxDb.
+        double preamp;
+        if (opt.CutsOnlyMode)
+        {
+            double cutsCeiling = double.IsFinite(opt.TotalGainMaxDb)
+                ? Math.Min(0.0, Math.Min(opt.PreampMaxDb, opt.TotalGainMaxDb))
+                : Math.Min(0.0, opt.PreampMaxDb);
+            preamp = Clamp(Math.Ceiling(maxError), opt.PreampMinDb, cutsCeiling);
+        }
+        else
+        {
+            preamp = Clamp(Math.Round(errorSum / validCount), opt.PreampMinDb, opt.PreampMaxDb);
+        }
 
         var residual = new double[n];
         for (int i = 0; i < n; i++)
@@ -286,8 +324,13 @@ public static class EqAutoTuner
                         spillsIntoForbidden = true;
                     }
 
+                    // In cuts-only, a point this band cuts (c < 0) past the target
+                    // (r > 0: corrected below target) is weighted up, so a wide skirt that
+                    // gouges a broad shoulder below the target loses to a tighter band.
                     double r = residual[i] - c;
-                    sumSquares += r * r;
+                    sumSquares += opt.CutsOnlyMode && c < 0 && r > 0
+                        ? CutsOnlyOverCorrectionWeight * r * r
+                        : r * r;
                 }
 
                 if (spillsIntoForbidden)

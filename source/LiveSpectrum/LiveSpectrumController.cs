@@ -22,15 +22,19 @@ internal sealed class LiveSpectrumController : IDisposable
     // Same guard the sweep path has (Form1.ShowMeasurementError): no modal
     // error dialog while the owner is tearing down.
     private readonly Func<bool> suppressErrorDialogs;
-    // The live transfer-function curve carries a CurveTag (like every analysis curve)
-    // so overlays can bind to it by key; the remaining live-spectrum helper series stay
-    // string-tagged for internal bookkeeping only.
+    // The live transfer-function curve and the reference-free RTA carry a CurveTag
+    // (like every analysis curve) so overlays can bind to them by key and capture
+    // their raw form; the remaining live-spectrum helper series stay string-tagged
+    // for internal bookkeeping only.
     private static readonly CurveTag LiveSpectrumTag =
         new(Mode.LiveSpectrum, AnalysisCurveKind.Primary, CurveSource.Main);
+    // The RTA is a curve in its own right, not a helper: it is the only trace in the
+    // RTA-only views and the source a moving-microphone tune is built from.
+    internal static readonly CurveTag LiveSpectrumInputMagnitudeTag =
+        new(Mode.LiveSpectrum, AnalysisCurveKind.InputSpectrum, CurveSource.Main);
     private const string LiveSpectrumLowCoherenceTag = "live-spectrum:low-coherence";
     private const string LiveSpectrumCoherenceTag = "live-spectrum:coherence";
     private const string LiveSpectrumPeakHoldTag = "live-spectrum:peak-hold";
-    private const string LiveSpectrumInputMagnitudeTag = "live-spectrum:input-magnitude";
     private const string OverloadAnnotationTag = "live-spectrum:overload";
     private const long PeakHoldSuppressionMs = 1000;
     private bool disposed;
@@ -84,6 +88,15 @@ internal sealed class LiveSpectrumController : IDisposable
 
     public bool InProgress => measurement.InProgress;
     public bool TimerEnabled => timer.Enabled;
+
+    /// <summary>
+    /// The raw form of the RTA trace as last drawn, for an overlay capturing it. The
+    /// controller owns this because the RTA data lives in the drawn snapshot, not in the
+    /// plot factory; the factory turns the samples into the scale-appropriate raw curve.
+    /// Null when no RTA has been drawn (never started, or the trace is switched off).
+    /// </summary>
+    public RawCurveCapture? BuildRawRtaCapture() =>
+        plotModelFactory.BuildRawRtaCurve(lastSnapshot?.InputMagnitude);
 
     // Whether the plot is currently rendering the absolute dB SPL (RTA) view. SPL is
     // only effective when it is both selected and backed by a matching calibration,

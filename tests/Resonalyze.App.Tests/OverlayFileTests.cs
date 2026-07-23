@@ -838,6 +838,46 @@ public sealed class OverlayFileTests
         }
     }
 
+    [Fact]
+    public void SaveAndLoad_RoundTripsTheCapturedSampleRate()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            OverlayFile original = CreateMinimalOverlay(Mode.FrequencyResponse, 7);
+            original.SampleRateHz = 96_000;
+
+            original.Save(root);
+            OverlayFile? loaded = OverlayFile.Load(Mode.FrequencyResponse, 7, root);
+
+            Assert.NotNull(loaded);
+            Assert.Equal(96_000, loaded!.SampleRateHz);
+            // A file written before the field existed leaves the rate unstated.
+            Assert.Null(new OverlayFile().SampleRateHz);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Save_RejectsANonPositiveSampleRate()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            OverlayFile original = CreateMinimalOverlay(Mode.FrequencyResponse, 8);
+            original.SampleRateHz = 0;
+
+            Assert.Throws<InvalidDataException>(() => original.Save(root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static OverlayFile CreateMinimalOverlay(Mode mode, int slot)
     {
         return new OverlayFile

@@ -120,6 +120,13 @@ public sealed class OverlayFile
     // Empty means no calibration or a legacy raw capture.
     public double[] RawCalibrationCorrectionDb { get; set; } = Array.Empty<double>();
 
+    // Sample rate of the measurement this slot was captured from. Carried so a
+    // consumer that equalizes the stored curve (the EQ Wizard) can realize its
+    // biquads at the rate the curve was measured at instead of assuming one.
+    // Additive and nullable, so it needs no file version bump: older files
+    // deserialize to null (rate unknown) and older app builds ignore it.
+    public int? SampleRateHz { get; set; }
+
     // Operation kind: recipe referencing two operands. Each operand is a captured slot
     // (SourceSlotA/B), unless SourceCurveKeyA/B is set — then it is a live analysis
     // curve resolved by its CurveTag Key on every rebuild. Additive and nullable, so no
@@ -420,6 +427,10 @@ public sealed class OverlayFile
         {
             throw new InvalidDataException(
                 "The raw calibration correction contains a non-finite value.");
+        }
+        if (SampleRateHz is <= 0)
+        {
+            throw new InvalidDataException("The captured sample rate is invalid.");
         }
     }
 

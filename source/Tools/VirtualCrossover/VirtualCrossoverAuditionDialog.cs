@@ -38,6 +38,18 @@ internal sealed record VirtualCrossoverAuditionContext(
 /// timing (the thing being auditioned) shifts by exactly the same constant on
 /// each channel.
 /// </para>
+/// <para>
+/// "Subtract cabin" optionally removes a typical body-style cabin transfer
+/// function (see <see cref="CabinTransferFunction"/>) the same way — an
+/// inverse FIR in both kernels. The raw render carries the full in-car bass
+/// rise (+15…+27 dB at 20 Hz), which headphones reproduce as boom the in-car
+/// listener never perceives; with the typical rise subtracted, what remains
+/// audible at low frequencies is this car's deviation from it. The subtracted
+/// render is level-matched to the same tune WITHOUT the subtraction (the
+/// reference kernels below), so an A/B between cabin choices differs in tone,
+/// not loudness — the removed bass reads as quieter bass rather than a track
+/// the normalizer turned back up.
+/// </para>
 /// </summary>
 internal sealed partial class VirtualCrossoverAuditionDialog : Form
 {
@@ -82,6 +94,23 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
     private static string? lastSourcePath;
     private static string? lastTargetPath;
     private static MicrophoneCalibrationMode? lastCalibrationMode;
+    // Seeded with the averaged sedan — the typical headphone listener wants
+    // the typical rise gone; "off (as measured)" stays one click away and is
+    // remembered like any other choice once picked.
+    private static CabinBodyStyle? lastCabinStyle = CabinBodyStyle.Sedan;
+
+    // "off" first so index 0 — the fallback everywhere — is the honest raw
+    // render; the styles follow the CabinTransferFunction presets.
+    private static readonly CabinOption[] CabinOptions =
+    [
+        new(null, "off (as measured)"),
+        new(CabinBodyStyle.Sedan, "average sedan"),
+        new(CabinBodyStyle.CompactSedan, "compact sedan"),
+        new(CabinBodyStyle.Hatchback, "hatchback"),
+        new(CabinBodyStyle.Wagon, "wagon"),
+        new(CabinBodyStyle.Suv, "SUV / crossover"),
+        new(CabinBodyStyle.BmwF30SkiHatch, "BMW F30, ski hatch open")
+    ];
 
     public VirtualCrossoverAuditionDialog(VirtualCrossoverAuditionContext context)
     {
@@ -109,6 +138,15 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             initialMode,
             context.HasZeroDegreeCalibration,
             context.HasNinetyDegreeCalibration);
+
+        comboBoxCabin.DropDownStyle = ComboBoxStyle.DropDownList;
+        foreach (CabinOption option in CabinOptions)
+        {
+            comboBoxCabin.Items.Add(option);
+        }
+
+        comboBoxCabin.SelectedIndex = Math.Max(
+            0, Array.FindIndex(CabinOptions, option => option.Style == lastCabinStyle));
 
         buttonChooseSource.Click += (_, _) => ChooseSource();
         buttonChooseTarget.Click += (_, _) => ChooseTarget();
@@ -155,6 +193,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         lastTargetPath = targetPath;
         lastCalibrationMode =
             MicrophoneCalibrationComboHelper.GetSelectedMode(comboBoxCalibration);
+        lastCabinStyle = SelectedCabinStyle;
         base.OnFormClosed(e);
     }
 
@@ -397,6 +436,13 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             calibration = null;
         }
 
+        CabinTransferFunction? cabin = SelectedCabinStyle is { } cabinStyle
+            ? CabinTransferFunction.FromBodyStyle(cabinStyle)
+            : null;
+        string cabinLabel = cabin == null
+            ? "off"
+            : comboBoxCabin.GetItemText(comboBoxCabin.SelectedItem);
+
         var cancellation = new CancellationTokenSource();
         activeRender = cancellation;
         SetRunning(true);
@@ -429,7 +475,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             RenderOutcome outcome = await Task.Run(
                 () => ExecuteRender(
                     context, source, target, calibration, calibrationLabel,
-                    progress, cancellation.Token),
+                    cabin, cabinLabel, progress, cancellation.Token),
                 cancellation.Token);
             resultSection = FormatResult(outcome, target);
             labelStatus.Text = "Finished.";
@@ -474,6 +520,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         buttonChooseSource.Enabled = !running;
         buttonChooseTarget.Enabled = !running;
         comboBoxCalibration.Enabled = !running && comboBoxCalibration.Items.Count > 1;
+        comboBoxCabin.Enabled = !running;
         buttonRender.Text = running ? "Cancel" : "Render";
         if (running)
         {
@@ -490,6 +537,9 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         buttonRender.Enabled =
             activeRender != null || (sourcePath != null && targetPath != null);
 
+    private CabinBodyStyle? SelectedCabinStyle =>
+        comboBoxCabin.SelectedItem is CabinOption option ? option.Style : null;
+
     // The whole pipeline on the worker thread: trim, calibrate, decode, render,
     // write. Static and argument-fed so it cannot touch a control.
     private static RenderOutcome ExecuteRender(
@@ -498,6 +548,8 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         string targetPath,
         CalibrationFile? calibration,
         string calibrationLabel,
+        CabinTransferFunction? cabin,
+        string cabinLabel,
         IProgress<AuditionProgress> progress,
         CancellationToken cancellationToken)
     {
@@ -507,16 +559,51 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         double[] rightKernel = Auralization.TrimResponse(
             context.RightSum, context.SampleRate, out AuralizationTrim rightTrim);
 
-        // The calibration FIR is baked into the KERNELS, not run over the track:
-        // two short double-precision convolutions instead of a third full-track
-        // pass, and the normalization below then reads the calibrated response.
-        int firTaps = 0;
-        if (calibration != null)
+        // The mic calibration and the cabin subtraction go into the KERNELS as
+        // linear-phase FIRs (Design() negates the correction it is handed, so the
+        // calibration's correction and the cabin GAIN both come out right —
+        // calibration applied, cabin rise subtracted). The two combine into ONE
+        // FIR — their dB corrections add — so the OUTPUT kernels cost one
+        // convolution pass and one truncation window, not two, and add half the
+        // constant delay. Applied identically to both sides, so the inter-side
+        // scene is untouched.
+        //
+        // When the cabin is subtracted, a REFERENCE pair of kernels carries the
+        // calibration ALONE (the same tune with the cabin OFF). The render is
+        // level-matched against it below, so an A/B between cabin choices differs
+        // in tone, not loudness — the removed bass reads as quieter bass, not as
+        // a track the normalizer quietly turned back up. The reference is built
+        // BEFORE the combined FIR overwrites the kernels; Convolve returns fresh
+        // arrays, so the two pairs never alias.
+        double[]? referenceLeftKernel = null;
+        double[]? referenceRightKernel = null;
+        if (cabin != null)
+        {
+            if (calibration != null)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                double[] calFir = CalibrationFirFilter.Design(
+                    calibration.GetDecibelCorrection, context.SampleRate);
+                referenceLeftKernel = FastConvolution.Convolve(leftKernel, calFir);
+                referenceRightKernel = FastConvolution.Convolve(rightKernel, calFir);
+            }
+            else
+            {
+                referenceLeftKernel = leftKernel;
+                referenceRightKernel = rightKernel;
+            }
+        }
+
+        int correctionFirTaps = 0;
+        if (calibration != null || cabin != null)
         {
             cancellationToken.ThrowIfCancellationRequested();
             double[] fir = CalibrationFirFilter.Design(
-                calibration.GetDecibelCorrection, context.SampleRate);
-            firTaps = fir.Length;
+                frequencyHz =>
+                    (calibration?.GetDecibelCorrection(frequencyHz) ?? 0.0) +
+                    (cabin?.Evaluate(frequencyHz) ?? 0.0),
+                context.SampleRate);
+            correctionFirTaps = fir.Length;
             leftKernel = FastConvolution.Convolve(leftKernel, fir);
             rightKernel = FastConvolution.Convolve(rightKernel, fir);
         }
@@ -561,6 +648,8 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             {
                 LeftKernel = leftKernel,
                 RightKernel = rightKernel,
+                ReferenceLeftKernel = referenceLeftKernel,
+                ReferenceRightKernel = referenceRightKernel,
                 KernelSampleRate = context.SampleRate,
                 SourceChannels = material.Channels,
                 SourceSampleRate = material.SampleRate
@@ -580,8 +669,11 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             rightTrim,
             leftKernel.Length,
             rightKernel.Length,
-            firTaps,
-            calibrationLabel);
+            correctionFirTaps,
+            calibrationLabel,
+            cabin != null,
+            cabinLabel,
+            cabin?.Evaluate(20.0) ?? 0.0);
     }
 
     // Through a temporary file beside the target: a cancel or a failure part-way
@@ -656,8 +748,18 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             rendered.Channels[0].Length / (double)rendered.SampleRate;
         var section = new StringBuilder();
         section.AppendLine("== Result ==");
-        section.AppendLine($"Calibration: {outcome.CalibrationLabel}" +
-            (outcome.FirTaps > 0 ? $" (FIR {outcome.FirTaps} taps)" : string.Empty));
+        section.AppendLine($"Calibration: {outcome.CalibrationLabel}");
+        section.AppendLine($"Cabin subtracted: {outcome.CabinLabel}" +
+            (outcome.CabinApplied
+                ? $" (−{outcome.CabinTwentyHzDb:0.#} dB at 20 Hz)"
+                : string.Empty));
+        if (outcome.CorrectionFirTaps > 0)
+        {
+            // One filter carries both corrections, so it is reported once.
+            section.AppendLine(
+                $"Correction FIR: {outcome.CorrectionFirTaps} taps, linear " +
+                "phase (calibration and cabin combined)");
+        }
         section.AppendLine(
             $"Kernels: {outcome.LeftKernelTaps} taps left, " +
             $"{outcome.RightKernelTaps} taps right; decay kept " +
@@ -672,13 +774,26 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
 
         section.AppendLine(
             $"Level: {rendered.AppliedGainDb:+0.0;-0.0} dB applied to both " +
-            $"channels (peak at {Auralization.DefaultPeakTarget:0.0} dBFS)");
+            (outcome.CabinApplied
+                ? "channels, matched to the no-cabin render (its peak at " +
+                    $"{Auralization.DefaultPeakTarget:0.0} dBFS) so the A/B is " +
+                    "level-honest"
+                : $"channels (peak at {Auralization.DefaultPeakTarget:0.0} dBFS)"));
         section.AppendLine(
             $"Written: {targetPath}");
         section.AppendLine(
             $"Stereo, {rendered.SampleRate} Hz, 24-bit, " +
             $"{FormatDuration(TimeSpan.FromSeconds(durationSeconds))}");
         section.AppendLine();
+        if (outcome.CabinApplied)
+        {
+            section.AppendLine(
+                $"The typical {outcome.CabinLabel} bass rise was subtracted: " +
+                "at low frequencies you are hearing this car's deviation from " +
+                "that typical curve, not the in-car level.");
+            section.AppendLine();
+        }
+
         section.Append(
             "Listen through headphones only. The left and right channels are " +
             "the measured acoustic response of the corresponding side at the " +
@@ -700,6 +815,14 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         AuralizationTrim RightTrim,
         int LeftKernelTaps,
         int RightKernelTaps,
-        int FirTaps,
-        string CalibrationLabel);
+        int CorrectionFirTaps,
+        string CalibrationLabel,
+        bool CabinApplied,
+        string CabinLabel,
+        double CabinTwentyHzDb);
+
+    private sealed record CabinOption(CabinBodyStyle? Style, string Label)
+    {
+        public override string ToString() => Label;
+    }
 }

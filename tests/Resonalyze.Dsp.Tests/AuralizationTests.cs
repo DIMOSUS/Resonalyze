@@ -103,6 +103,73 @@ public sealed class AuralizationTests
     }
 
     [Fact]
+    public void Render_LevelMatchesToTheReferenceKernels()
+    {
+        // The output kernel attenuates (as a cabin subtraction does); the
+        // reference kernel — the same tune without that subtraction — does not.
+        // The render must normalize to the LOUDER reference peak, so the output
+        // lands BELOW full scale by exactly the attenuation: the removed energy
+        // stays audibly removed instead of being normalized back up.
+        var source = new float[500];
+        source[0] = 1.0f;
+        double target = Math.Pow(10.0, Auralization.DefaultPeakTarget / 20.0);
+
+        AuralizationResult matched = Auralization.Render(new AuralizationRequest
+        {
+            LeftKernel = [0.5],
+            RightKernel = [0.5],
+            ReferenceLeftKernel = [1.0],
+            ReferenceRightKernel = [1.0],
+            KernelSampleRate = Rate,
+            SourceChannels = [source, source],
+            SourceSampleRate = Rate
+        });
+
+        // Reference peak 1.0 sets the gain; the 0.5 output rides at half of it,
+        // and the reported gain is the reference's own (−1 dBFS on its peak).
+        Assert.Equal(0.5 * target, matched.Channels[0].Max(Math.Abs), 4);
+        Assert.Equal(Auralization.DefaultPeakTarget, matched.AppliedGainDb, 2);
+
+        // Control: the SAME output kernel with NO reference normalizes to its
+        // own peak and reaches full scale — the difference the reference makes.
+        AuralizationResult unmatched = Auralization.Render(new AuralizationRequest
+        {
+            LeftKernel = [0.5],
+            RightKernel = [0.5],
+            KernelSampleRate = Rate,
+            SourceChannels = [source, source],
+            SourceSampleRate = Rate
+        });
+        Assert.Equal(target, unmatched.Channels[0].Max(Math.Abs), 4);
+    }
+
+    [Fact]
+    public void Render_ReferenceLouderOrQuieter_NeverClipsTheOutput()
+    {
+        // "Min of the two gains" = divide by the LARGER peak. Whichever of the
+        // output and the reference is louder, the output must stay at or below
+        // full scale — the divisor is never smaller than the output's own peak.
+        var source = new float[500];
+        source[0] = 1.0f;
+        double target = Math.Pow(10.0, Auralization.DefaultPeakTarget / 20.0);
+
+        AuralizationResult louderOutput = Auralization.Render(new AuralizationRequest
+        {
+            LeftKernel = [1.0],
+            RightKernel = [1.0],
+            ReferenceLeftKernel = [0.5],
+            ReferenceRightKernel = [0.5],
+            KernelSampleRate = Rate,
+            SourceChannels = [source, source],
+            SourceSampleRate = Rate
+        });
+
+        // Output peak 1.0 > reference 0.5, so the output itself sets the gain
+        // and reaches — but does not exceed — full scale.
+        Assert.Equal(target, louderOutput.Channels[0].Max(Math.Abs), 4);
+    }
+
+    [Fact]
     public void Render_MonoSourceFeedsBothSides()
     {
         double[] kernel = [1.0];

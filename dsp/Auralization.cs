@@ -175,17 +175,49 @@ public static class Auralization
             right = convertedRight;
         }
 
+        // Reference kernels turn the normalization into a level-MATCHED one: the
+        // same source is convolved through a second pair of kernels (typically
+        // the tune WITHOUT the cabin subtraction) purely to read that render's
+        // peak. Rendered from the already-resampled source, so the material is
+        // converted only once. Their peak feeds the divisor below, so two renders
+        // that differ only by the reference (an A/B of cabin choices) come out at
+        // one shared gain and the difference stays audible instead of being
+        // normalized away. The reference outputs are read for their peak and
+        // dropped; only the real render is kept.
+        bool hasReference =
+            request.ReferenceLeftKernel != null && request.ReferenceRightKernel != null;
+        int convolvePasses = hasReference ? 4 : 2;
         double convolveShare = resampled ? 1.0 - ResampleProgressShare : 1.0;
         double convolveBase = resampled ? ResampleProgressShare : 0.0;
+        double passShare = convolveShare / convolvePasses;
+        int pass = 0;
+
+        double referencePeak = 0.0;
+        if (hasReference)
+        {
+            float[] referenceLeft = FastConvolution.Convolve(
+                left,
+                request.ReferenceLeftKernel!,
+                Scaled(progress, convolveBase + passShare * pass++, passShare),
+                cancellationToken);
+            float[] referenceRight = FastConvolution.Convolve(
+                right,
+                request.ReferenceRightKernel!,
+                Scaled(progress, convolveBase + passShare * pass++, passShare),
+                cancellationToken);
+            referencePeak = Math.Max(
+                AbsolutePeak(referenceLeft), AbsolutePeak(referenceRight));
+        }
+
         float[] renderedLeft = FastConvolution.Convolve(
             left,
             request.LeftKernel,
-            Scaled(progress, convolveBase, convolveShare / 2.0),
+            Scaled(progress, convolveBase + passShare * pass++, passShare),
             cancellationToken);
         float[] renderedRight = FastConvolution.Convolve(
             right,
             request.RightKernel,
-            Scaled(progress, convolveBase + convolveShare / 2.0, convolveShare / 2.0),
+            Scaled(progress, convolveBase + passShare * pass++, passShare),
             cancellationToken);
 
         // The kernels are trimmed per side, so the two convolutions come out at
@@ -197,7 +229,8 @@ public static class Auralization
         renderedRight = PadTo(renderedRight, commonLength);
 
         double gain = Normalize(
-            renderedLeft, renderedRight, request.PeakTargetDbfs, cancellationToken);
+            renderedLeft, renderedRight, referencePeak,
+            request.PeakTargetDbfs, cancellationToken);
         progress?.Report(1.0);
         return new AuralizationResult(
             [renderedLeft, renderedRight],
@@ -212,14 +245,21 @@ public static class Auralization
     private const double ResampleProgressShare = 0.2;
 
     // One gain for BOTH channels: scaling the sides independently would level the
-    // very inter-side balance the tune is being auditioned for.
+    // very inter-side balance the tune is being auditioned for. The divisor is
+    // the LARGEST peak in play — both channels and, when a level-matched render
+    // was asked for, the reference render's peak too. Dividing by the larger
+    // peak is the smaller of the two candidate gains: it cannot clip either
+    // render, and it pins this render to the reference's level so the two are
+    // directly comparable.
     private static double Normalize(
         float[] left,
         float[] right,
+        double referencePeak,
         double peakTargetDbfs,
         CancellationToken cancellationToken)
     {
-        double peak = Math.Max(AbsolutePeak(left), AbsolutePeak(right));
+        double peak = Math.Max(
+            Math.Max(AbsolutePeak(left), AbsolutePeak(right)), referencePeak);
         if (peak <= 0)
         {
             return 1.0;
@@ -319,6 +359,17 @@ public sealed record AuralizationRequest
 
     /// <summary>Trimmed summed response of the right side of the car.</summary>
     public required double[] RightKernel { get; init; }
+
+    /// <summary>
+    /// Optional left kernel of a REFERENCE render used only for level matching:
+    /// the source is convolved through it to read its peak, and the main render
+    /// is normalized to the larger of its own and this peak, so the two land at
+    /// one gain. Both reference kernels must be set together, or neither.
+    /// </summary>
+    public double[]? ReferenceLeftKernel { get; init; }
+
+    /// <summary>Right counterpart of <see cref="ReferenceLeftKernel"/>.</summary>
+    public double[]? ReferenceRightKernel { get; init; }
 
     /// <summary>The project's rate — both kernels share it, and the render adopts it.</summary>
     public required int KernelSampleRate { get; init; }

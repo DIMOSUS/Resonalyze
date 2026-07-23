@@ -45,8 +45,8 @@ public sealed record GainBalanceResult(
 /// so narrow interference dips barely register and band width does not bias
 /// the figure), measured at 0 dB gain by subtracting the current gain from the
 /// chain-applied response. Every eligible left channel is levelled to one
-/// target, every eligible right channel to that target plus the scene tilt
-/// derived from the stereo scene offset; the shared target sits as high as the
+/// target, every eligible right channel to that target MINUS the L-R level
+/// difference the caller asks for; the shared target sits as high as the
 /// cut-only constraint allows (the quietest channel ends at 0 dB of cut).
 /// </summary>
 public static class GainBalanceEngine
@@ -65,14 +65,14 @@ public static class GainBalanceEngine
     /// </summary>
     public const double EligibilityMinOctaveFraction = 1.0 / 3.0;
 
-    // The time-intensity trading anchor: a 0.27 ms scene offset (image at the
-    // cabin center for a left-seated listener) maps to the near side sitting
-    // 2 dB below the far side — ~135 µs/dB, inside the psychoacoustic trading
-    // range. Interpolated linearly and clamped: the offset control reaches
-    // ±5 ms, and extrapolating the trade that far would demand ±37 dB.
-    public const double SceneTiltReferenceMs = 0.27;
-    public const double SceneTiltReferenceDb = 2.0;
-    public const double MaxSceneTiltDb = 6.0;
+    /// <summary>
+    /// The range of the intentional L-R level difference the caller may ask
+    /// for. The tilt is the tuner's decision, not a derived figure — but past
+    /// this magnitude a "level difference" stops being an image placement and
+    /// becomes one side switched off, so the engine treats a larger request as
+    /// a typo and clamps it.
+    /// </summary>
+    public const double MaxLevelDifferenceDb = 6.0;
 
     // Confidence thresholds on the robust in-band spread of the smoothed
     // level (or of the L−R difference): a flat relation means the single
@@ -122,16 +122,18 @@ public static class GainBalanceEngine
     public const double MaxProposedCutDb = DspChannelChain.MaximumGainDb;
 
     /// <summary>
-    /// The intentional L/R level tilt (dB) for a stereo scene offset (ms):
-    /// positive means the RIGHT side plays louder — the same "image toward
-    /// the dash center for a left-seated listener" convention as the delay
-    /// offset itself. Clamped to <see cref="MaxSceneTiltDb"/>.
+    /// The intentional L-R level difference (dB) as the balance will apply
+    /// it: LEFT minus RIGHT, so a positive value means the left side plays
+    /// louder and a negative one asks for the near side of a left-seated
+    /// listener to sit below the far side (the level half of the same image
+    /// placement the delay scene offset makes in time). Clamped to
+    /// <see cref="MaxLevelDifferenceDb"/>, and a non-finite request reads as
+    /// no tilt at all.
     /// </summary>
-    public static double SceneTiltDb(double sceneOffsetMs) =>
-        Math.Clamp(
-            sceneOffsetMs / SceneTiltReferenceMs * SceneTiltReferenceDb,
-            -MaxSceneTiltDb,
-            MaxSceneTiltDb);
+    public static double LevelDifferenceDb(double requestedDb) =>
+        double.IsFinite(requestedDb)
+            ? Math.Clamp(requestedDb, -MaxLevelDifferenceDb, MaxLevelDifferenceDb)
+            : 0;
 
     /// <summary>
     /// Why a channel's gain is left alone, or null when it is adjustable.
@@ -168,24 +170,27 @@ public static class GainBalanceEngine
     }
 
     /// <summary>
-    /// Computes the cut-only gain proposal for every channel. The scene offset
-    /// only matters when right-side channels participate; pass 0 for a
-    /// single-side run.
+    /// Computes the cut-only gain proposal for every channel. The requested
+    /// L-R level difference only matters when right-side channels
+    /// participate; pass 0 for a single-side run.
     /// </summary>
     public static IReadOnlyList<GainBalanceResult> Compute(
         IReadOnlyList<GainBalanceInput> channels,
-        double sceneOffsetMs,
+        double levelDifferenceDb,
         StringBuilder log)
     {
         ArgumentNullException.ThrowIfNull(channels);
         ArgumentNullException.ThrowIfNull(log);
 
-        double tiltDb = channels.Any(input => input.RightSide)
-            ? SceneTiltDb(sceneOffsetMs)
+        double differenceDb = channels.Any(input => input.RightSide)
+            ? LevelDifferenceDb(levelDifferenceDb)
             : 0;
+        // The request is L-R while every target below is expressed relative to
+        // the LEFT board, so the right side's own offset is its negation.
+        double tiltDb = -differenceDb;
         log.AppendLine(
-            $"Gain balance: scene tilt {tiltDb:+0.00;-0.00} dB " +
-            "(positive: right side louder), cut-only");
+            $"Gain balance: L-R level difference {differenceDb:+0.00;-0.00} dB " +
+            "(positive: left side louder), cut-only");
 
         var spectra = new Dictionary<IAlignmentChannel, (double[] Power, double BinWidthHz)>();
         var levels = new Dictionary<IAlignmentChannel, double>();

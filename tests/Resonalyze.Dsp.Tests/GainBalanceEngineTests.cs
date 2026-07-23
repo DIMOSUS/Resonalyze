@@ -5,11 +5,11 @@ namespace Resonalyze.Dsp.Tests;
 
 /// <summary>
 /// The cut-only gain balance: eligibility (octave rule over the crossover
-/// band), 1/f-weighted band levels, the scene tilt with its clamp, and the
-/// joint cut-only solve (board levelling + L/R tilt as one system, shifted so
-/// the quietest participant lands at 0 dB of cut). Synthetic spectra are
-/// scaled delta impulses (flat by construction), so every expected level is
-/// plain arithmetic.
+/// band), 1/f-weighted band levels, the requested L-R level difference
+/// (LEFT minus RIGHT) with its clamp, and the joint cut-only solve (board
+/// levelling + L/R tilt as one system, shifted so the quietest participant
+/// lands at 0 dB of cut). Synthetic spectra are scaled delta impulses (flat
+/// by construction), so every expected level is plain arithmetic.
 /// </summary>
 public sealed class GainBalanceEngineTests
 {
@@ -45,16 +45,42 @@ public sealed class GainBalanceEngineTests
             rightSide, leftPeer);
 
     [Fact]
-    public void SceneTiltDb_InterpolatesAndClamps()
+    public void LevelDifferenceDb_PassesTheRequestThroughAndClamps()
     {
-        Assert.Equal(0.0, GainBalanceEngine.SceneTiltDb(0), 9);
-        Assert.Equal(2.0, GainBalanceEngine.SceneTiltDb(0.27), 9);
-        Assert.Equal(-2.0, GainBalanceEngine.SceneTiltDb(-0.27), 9);
-        Assert.Equal(1.0, GainBalanceEngine.SceneTiltDb(0.135), 9);
-        // The offset control reaches ±5 ms; the trade must not extrapolate to
-        // ±37 dB of board attenuation.
-        Assert.Equal(6.0, GainBalanceEngine.SceneTiltDb(5.0), 9);
-        Assert.Equal(-6.0, GainBalanceEngine.SceneTiltDb(-5.0), 9);
+        // The tilt is the tuner's own figure now: inside the range it is
+        // taken verbatim, with no derivation from the scene offset.
+        Assert.Equal(0.0, GainBalanceEngine.LevelDifferenceDb(0), 9);
+        Assert.Equal(2.0, GainBalanceEngine.LevelDifferenceDb(2.0), 9);
+        Assert.Equal(-1.5, GainBalanceEngine.LevelDifferenceDb(-1.5), 9);
+        // Past the range a "level difference" is one side switched off.
+        Assert.Equal(6.0, GainBalanceEngine.LevelDifferenceDb(40.0), 9);
+        Assert.Equal(-6.0, GainBalanceEngine.LevelDifferenceDb(-40.0), 9);
+        // A non-finite request must not poison every target with NaN.
+        Assert.Equal(0.0, GainBalanceEngine.LevelDifferenceDb(double.NaN), 9);
+    }
+
+    [Fact]
+    public void Compute_ReadsTheDifferenceAsLeftMinusRight()
+    {
+        // The one sign the whole feature hangs on: the request is L-R, so the
+        // typical left-hand-drive figure (-1 dB) must land on the LEFT board
+        // as the cut — reading it as R-L would attenuate the far side and
+        // push the image the wrong way.
+        var leftMid = Input("mid L", 1.0);
+        GainBalanceInput rightMid = Input(
+            "mid R", 1.0, rightSide: true, leftPeer: leftMid.Channel);
+        var log = new StringBuilder();
+
+        IReadOnlyList<GainBalanceResult> results = GainBalanceEngine.Compute(
+            [leftMid, rightMid], levelDifferenceDb: -1.0, log);
+
+        Assert.Equal(-1.0, results[0].ProposedGainDb, 1);
+        Assert.Equal(0.0, results[1].ProposedGainDb, 1);
+        // The log is written in the current culture (unlike the report, which
+        // is invariant), so the expectation is formatted the same way.
+        Assert.Contains(
+            $"L-R level difference {-1.0:+0.00;-0.00} dB (positive: left side louder)",
+            log.ToString());
     }
 
     [Fact]
@@ -155,7 +181,7 @@ public sealed class GainBalanceEngineTests
                 Input("B", 0.5),     //  -6 dB
                 Input("C", 0.25)     // -12 dB — the cut-only floor
             ],
-            sceneOffsetMs: 0,
+            levelDifferenceDb: 0,
             log);
 
         Assert.All(results, result => Assert.True(result.Adjusted));
@@ -169,7 +195,7 @@ public sealed class GainBalanceEngineTests
     }
 
     [Fact]
-    public void Compute_SceneTiltAttenuatesTheNearSide()
+    public void Compute_LevelDifferenceAttenuatesTheNearSide()
     {
         var leftMid = Input("mid L", 1.0);
         GainBalanceInput rightMid = Input(
@@ -177,10 +203,10 @@ public sealed class GainBalanceEngineTests
         var log = new StringBuilder();
 
         IReadOnlyList<GainBalanceResult> results = GainBalanceEngine.Compute(
-            [leftMid, rightMid], sceneOffsetMs: 0.27, log);
+            [leftMid, rightMid], levelDifferenceDb: -2.0, log);
 
-        // +0.27 ms scene offset = the right side louder by 2 dB; cut-only, so
-        // the LEFT board takes the -2 dB and the right stays at 0.
+        // L-R = -2 dB asks for the left side 2 dB BELOW the right; cut-only,
+        // so the LEFT board takes the -2 dB and the right stays at 0.
         Assert.Equal(-2.0, results[0].ProposedGainDb, 1);
         Assert.Equal(0.0, results[1].ProposedGainDb, 1);
     }
@@ -194,7 +220,7 @@ public sealed class GainBalanceEngineTests
         var log = new StringBuilder();
 
         IReadOnlyList<GainBalanceResult> results = GainBalanceEngine.Compute(
-            [leftMid, rightMid], sceneOffsetMs: -0.27, log);
+            [leftMid, rightMid], levelDifferenceDb: 2.0, log);
 
         Assert.Equal(0.0, results[0].ProposedGainDb, 1);
         Assert.Equal(-2.0, results[1].ProposedGainDb, 1);
@@ -203,7 +229,7 @@ public sealed class GainBalanceEngineTests
     [Fact]
     public void Compute_QuietRightForcesTheLeftDown()
     {
-        // The right mid is physically 3 dB quieter while the scene wants it
+        // The right mid is physically 3 dB quieter while the tuner wants it
         // 2 dB LOUDER than the left: sequential "level left, then match right"
         // would need a +boost. The joint solve cuts the left instead.
         var leftMid = Input("mid L", 1.0);
@@ -213,7 +239,7 @@ public sealed class GainBalanceEngineTests
         var log = new StringBuilder();
 
         IReadOnlyList<GainBalanceResult> results = GainBalanceEngine.Compute(
-            [leftMid, rightMid], sceneOffsetMs: 0.27, log);
+            [leftMid, rightMid], levelDifferenceDb: -2.0, log);
 
         Assert.Equal(-5.0, results[0].ProposedGainDb, 1);
         Assert.Equal(0.0, results[1].ProposedGainDb, 1);
@@ -231,7 +257,7 @@ public sealed class GainBalanceEngineTests
                 Input("A", 1.0),
                 Input("B", 0.5, currentGainDb: -6.02)
             ],
-            sceneOffsetMs: 0,
+            levelDifferenceDb: 0,
             log);
 
         Assert.Equal(0.0, results[0].ProposedGainDb, 1);
@@ -254,7 +280,7 @@ public sealed class GainBalanceEngineTests
         var log = new StringBuilder();
 
         IReadOnlyList<GainBalanceResult> results = GainBalanceEngine.Compute(
-            [leftMid, rightMid, tweeter], sceneOffsetMs: 0.27, log);
+            [leftMid, rightMid, tweeter], levelDifferenceDb: -2.0, log);
 
         Assert.False(results[0].Adjusted);
         Assert.Contains("right side ineligible", results[0].SkipReason);
@@ -278,7 +304,7 @@ public sealed class GainBalanceEngineTests
         var log = new StringBuilder();
 
         IReadOnlyList<GainBalanceResult> results = GainBalanceEngine.Compute(
-            [leftMid, rightMid], sceneOffsetMs: 0, log);
+            [leftMid, rightMid], levelDifferenceDb: 0, log);
 
         Assert.True(results[1].Adjusted);
         Assert.Equal(AlignmentConfidence.Low, results[1].Confidence);
@@ -299,7 +325,7 @@ public sealed class GainBalanceEngineTests
         var log = new StringBuilder();
 
         IReadOnlyList<GainBalanceResult> results = GainBalanceEngine.Compute(
-            [mid, dead], sceneOffsetMs: 0, log);
+            [mid, dead], levelDifferenceDb: 0, log);
 
         Assert.False(results[1].Adjusted);
         Assert.Contains("below the loudest", results[1].SkipReason);
@@ -324,7 +350,7 @@ public sealed class GainBalanceEngineTests
         var log = new StringBuilder();
 
         IReadOnlyList<GainBalanceResult> results = GainBalanceEngine.Compute(
-            [loud, quiet], sceneOffsetMs: 0, log);
+            [loud, quiet], levelDifferenceDb: 0, log);
 
         Assert.All(results, result => Assert.True(
             result.ProposedGainDb >= -GainBalanceEngine.MaxProposedCutDb &&
@@ -348,7 +374,7 @@ public sealed class GainBalanceEngineTests
         var log = new StringBuilder();
 
         IReadOnlyList<GainBalanceResult> results = GainBalanceEngine.Compute(
-            [leftMid, rightMid, tweeter], sceneOffsetMs: 0.27, log);
+            [leftMid, rightMid, tweeter], levelDifferenceDb: -2.0, log);
 
         Assert.False(results[1].Adjusted);
         Assert.Contains("below the loudest", results[1].SkipReason);
@@ -369,7 +395,7 @@ public sealed class GainBalanceEngineTests
                 Input("raw", 1.0, currentGainDb: 1.5, bandLowHz: 20,
                     bandHighHz: 20_000, hasCrossover: false)
             ],
-            sceneOffsetMs: 0,
+            levelDifferenceDb: 0,
             log);
 
         Assert.False(results[1].Adjusted);

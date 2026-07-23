@@ -45,6 +45,7 @@ internal sealed record AutoDelayRunResult(
     bool Stereo,
     double SceneOffsetMs,
     bool GainsRequested,
+    double LevelDifferenceDb,
     string ReportText,
     StringBuilder Log);
 
@@ -60,6 +61,7 @@ internal static class VirtualCrossoverAutoDelayReport
         bool stereo,
         double sceneOffsetMs,
         bool gainsRequested,
+        double levelDifferenceDb,
         AutoDelaySumLossForecast? leftSumLoss = null,
         AutoDelaySumLossForecast? rightSumLoss = null)
     {
@@ -76,7 +78,8 @@ internal static class VirtualCrossoverAutoDelayReport
                 "(positive: right side leads)" +
                 (gainsRequested
                     ? FormattableString.Invariant(
-                        $", gain tilt {GainBalanceEngine.SceneTiltDb(sceneOffsetMs):+0.0;-0.0;0.0} dB")
+                        $", L-R level {GainBalanceEngine.LevelDifferenceDb(levelDifferenceDb):+0.0;-0.0;0.0} dB") +
+                      " (positive: left side louder)"
                     : ""));
         }
         if (!gainsRequested)

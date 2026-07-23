@@ -313,6 +313,13 @@ public sealed class VirtualCrossoverProjectFile
     // left-seated driver; right-seated drivers use a negative value.
     public double StereoSceneOffsetMs { get; set; } = 0.25;
 
+    // The intentional level difference (dB) the Auto delay gain balance aims
+    // for, read as LEFT minus RIGHT: the default asks for the left side 1 dB
+    // BELOW the right, the same image direction as the scene offset traded as
+    // level instead of time. The tuner's own figure, not a value derived from
+    // the offset. Additive: older files lack it and open on this default.
+    public double StereoLevelDifferenceDb { get; set; } = -1.0;
+
     // Which side the tool currently displays and edits (view state).
     public bool ActiveSideRight { get; set; }
 
@@ -656,6 +663,13 @@ public sealed class VirtualCrossoverProjectFile
             Math.Abs(StereoSceneOffsetMs) > MaximumSceneOffsetMs)
         {
             throw new InvalidDataException("The stereo scene offset is invalid.");
+        }
+        if (!double.IsFinite(StereoLevelDifferenceDb) ||
+            Math.Abs(StereoLevelDifferenceDb) >
+                GainBalanceEngine.MaxLevelDifferenceDb)
+        {
+            throw new InvalidDataException(
+                "The stereo L/R level difference is invalid.");
         }
         if (!OverlaySmoothing.IsValid(SmoothingInverseOctaves))
         {

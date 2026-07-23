@@ -149,6 +149,54 @@ public static class AlignmentSelection
     }
 
     /// <summary>
+    /// The sub-precedence preference for a junction with the shared mono
+    /// sub: when <paramref name="chosen"/> leaves the sub TRAILING the rest
+    /// of the stack (its lead, signed by <paramref name="leadSign"/> and
+    /// measured from the envelope anchor, is below
+    /// −<paramref name="slackMs"/>), the nearest candidate on the LEADING
+    /// side whose prior-free score (via <paramref name="acousticScore"/>)
+    /// sits within <paramref name="marginDb"/> of the chosen's — and no
+    /// farther than <paramref name="reachMs"/> past the anchor, a sub
+    /// leading by whole periods being detached the other way — replaces it.
+    /// The psychoacoustics behind the asymmetry: the first wavefront binds
+    /// the bass to the localizable midbass transient (precedence effect), so
+    /// a slightly leading sub reads as "bass up front" while a trailing one
+    /// reads as sluggish, detached bass. Returns <paramref name="chosen"/>
+    /// unchanged when it already leads (or sits within the slack) or no
+    /// eligible leading candidate exists.
+    /// </summary>
+    public static AlignmentCandidate PreferSubLeading(
+        IEnumerable<AlignmentCandidate> pool,
+        AlignmentCandidate chosen,
+        Func<AlignmentCandidate, double> acousticScore,
+        double anchorMs,
+        double leadSign,
+        double marginDb,
+        double slackMs,
+        double reachMs)
+    {
+        ArgumentNullException.ThrowIfNull(pool);
+        ArgumentNullException.ThrowIfNull(chosen);
+        ArgumentNullException.ThrowIfNull(acousticScore);
+        if (leadSign * (chosen.DelayMs - anchorMs) >= -slackMs)
+        {
+            return chosen;
+        }
+
+        double chosenScore = acousticScore(chosen);
+        return pool
+            .Where(item =>
+            {
+                double leadMs = leadSign * (item.DelayMs - anchorMs);
+                return leadMs >= -slackMs && leadMs <= reachMs &&
+                    acousticScore(item) >= chosenScore - marginDb;
+            })
+            .OrderBy(item => Math.Abs(item.DelayMs - anchorMs))
+            .DefaultIfEmpty(chosen)
+            .First();
+    }
+
+    /// <summary>
     /// The envelope-first lobe gate for a WIDE-SEED fine window. An untrusted
     /// coarse seed widens the fine window toward a half period, so the window
     /// itself spans foreign comb lobes — territory that, under a trusted seed,

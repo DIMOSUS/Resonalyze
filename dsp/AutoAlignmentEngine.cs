@@ -261,6 +261,30 @@ public static class AutoAlignmentEngine
     // near-tie sends the seed back to the polarity-blind arrival envelope.
     private const double PhatSeedMinDominance = 0.1;
 
+    // The sub-precedence margin: at a junction with the shared mono sub, a
+    // near-tie between the comb lobe that leaves the sub TRAILING the stack
+    // and the one that leaves it LEADING is not acoustically resolvable —
+    // but it is perceptually one-sided. The first wavefront binds the bass
+    // to the localizable midbass transient (precedence effect), so a
+    // slightly leading sub reads as "bass up front" while a trailing one
+    // reads as sluggish, detached bass — the failure owners hand-tune away.
+    // The margin sits deliberately ABOVE the near-tie scale and just under
+    // the ~1.4 dB comb-noise ceiling the promotion margin's field
+    // calibration measured between real lobes: within that ceiling the
+    // summation cannot pick a lobe honestly anyway (an in-room mode can
+    // flatter either side by up to that much), so the psychoacoustics
+    // decide; beyond it the summation stands. Owner-calibrated on the v3
+    // cabin: the leading lobe measured 0.66-0.73 dB under the trailing pick
+    // on the prior-free level-matched score, yet the trailing tune was
+    // rejected by ear ("the bass lags") and the leading one localized the
+    // bass to the front stage.
+    private const double SubPrecedenceMarginDb = 1.0;
+
+    // Candidates within this of the envelope anchor count as neither leading
+    // nor trailing: the preference re-decides genuine lobe choices, not the
+    // sub-millisecond polish around the envelope-aligned point.
+    private const double SubPrecedenceSlackMs = 0.5;
+
     // How much better (in score dB) a wide-window optimum must be before it
     // unseats the arrival-anchored fine pick, at a junction the onset lock
     // does not govern (below its frequency gate, or a smeared front): there
@@ -466,7 +490,8 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
         Dictionary<AlignmentJunction, OnsetLockState>? onsetLocks,
-        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
+        IReadOnlyCollection<IAlignmentChannel>? monoChannels = null)
     {
         ArgumentNullException.ThrowIfNull(channelsByBand);
         ArgumentNullException.ThrowIfNull(pairs);
@@ -523,7 +548,8 @@ public static class AutoAlignmentEngine
                 timeline, byBand, reprocess, alignment, log,
                 untrustedSeedJunctions: untrustedSeeds,
                 onsetLocks: onsetLocks,
-                decisions: decisions);
+                decisions: decisions,
+                monoChannels: monoChannels);
         }
         for (int i = referenceIndex + 1; i < byBand.Count; i++)
         {
@@ -532,7 +558,8 @@ public static class AutoAlignmentEngine
                 timeline, byBand, reprocess, alignment, log,
                 untrustedSeedJunctions: untrustedSeeds,
                 onsetLocks: onsetLocks,
-                decisions: decisions);
+                decisions: decisions,
+                monoChannels: monoChannels);
         }
     }
 
@@ -857,7 +884,8 @@ public static class AutoAlignmentEngine
         bool? forcedPolarity = null,
         IReadOnlySet<AlignmentJunction>? untrustedSeedJunctions = null,
         Dictionary<AlignmentJunction, OnsetLockState>? onsetLocks = null,
-        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
+        IReadOnlyCollection<IAlignmentChannel>? monoChannels = null)
     {
         // Widen the window when the coarse seed ACROSS this junction (or its
         // secondary, for a joint two-neighbour search) was the untrusted arrival
@@ -1310,6 +1338,51 @@ public static class AutoAlignmentEngine
                 }
             }
 
+            // The sub-precedence preference (see SubPrecedenceMarginDb): at a
+            // junction with the shared mono sub, a pick that leaves the sub
+            // TRAILING the stack yields to the nearest candidate on the
+            // LEADING side of the envelope anchor when the prior-free scores
+            // are within the precedence margin. The pool spans the fine and
+            // wide sets on the prior-free score — the arrival prior is
+            // exactly what keeps parking the result on the trailing lobe
+            // when the envelope-aligned point falls between two lobes.
+            // Bounded to one period past the anchor: a sub leading by whole
+            // periods is not "up front", it is detached the other way.
+            if (monoChannels != null &&
+                sceneLockToleranceMs == null && onsetAnchorMs == null)
+            {
+                bool subSearched = monoChannels.Contains(channel);
+                bool subNeighbor = secondaryNeighbor == null &&
+                    monoChannels.Contains(neighborChannel);
+                // With the STACK searched, delaying it beyond the anchor
+                // leaves the sub leading (+1); with the SUB searched the
+                // directions swap (-1).
+                double leadSign = subNeighbor ? 1.0 : -1.0;
+                if (subSearched ^ subNeighbor)
+                {
+                    AlignmentCandidate leading = AlignmentSelection.PreferSubLeading(
+                        candidates.Concat(wide),
+                        chosen,
+                        AcousticScore,
+                        anchorMs,
+                        leadSign,
+                        SubPrecedenceMarginDb,
+                        SubPrecedenceSlackMs,
+                        reachMs: 2.0 * halfPeriodMs);
+                    if (leading != chosen)
+                    {
+                        log.AppendLine(
+                            $"  sub precedence: preferred {leading.DelayMs:0.000} ms" +
+                            $"{(leading.InvertPolarity ? " inv" : "")} (the sub " +
+                            $"leads the stack) over {chosen.DelayMs:0.000} ms" +
+                            $"{(chosen.InvertPolarity ? " inv" : "")} — behind by " +
+                            $"{AcousticScore(chosen) - AcousticScore(leading):0.00} dB, " +
+                            $"within the {SubPrecedenceMarginDb:0.00} dB precedence margin.");
+                        chosen = leading;
+                    }
+                }
+            }
+
             double newDelay = chosen.DelayMs;
             if (newDelay < 0)
             {
@@ -1615,10 +1688,11 @@ public static class AutoAlignmentEngine
         var onsetLocks = new Dictionary<AlignmentJunction, OnsetLockState>(
             ReferenceEqualityComparer.Instance);
 
-        // Stage L: the left side, exactly like a mono run.
+        // Stage L: the left side, exactly like a mono run — plus the mono-set
+        // knowledge the sub-precedence preference needs.
         Compute(
             plan.LeftChannelsByBand, plan.LeftPairs, reprocess, alignment, log,
-            onsetLocks, decisions);
+            onsetLocks, decisions, plan.MonoChannels);
 
         // The union of both sides: the scope of every uniform shift from here
         // on. Shifting one side alone would silently break the inter-side
@@ -2272,7 +2346,7 @@ public static class AutoAlignmentEngine
                 channel, neighbor, pair,
                 rightTimeline, allChannels, reprocess, alignment, log,
                 secondary, secondaryPair, crossTarget, sceneLock, inheritedPolarity,
-                rightUntrustedSeeds, onsetLocks, decisions);
+                rightUntrustedSeeds, onsetLocks, decisions, plan.MonoChannels);
         }
         for (int i = bridgeIndex - 1; i >= 0; i--)
         {

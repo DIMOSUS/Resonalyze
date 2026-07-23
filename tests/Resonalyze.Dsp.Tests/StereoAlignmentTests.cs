@@ -816,6 +816,54 @@ public sealed class StereoAlignmentTests
     }
 
     [Fact]
+    public void ComoveMonoChannels_UnmeasurableRightJunction_AbstainsEntirely()
+    {
+        // The right sub junction never faced the walk's structure gate on
+        // its own (the descent certifies a COMBINED band), so the co-move
+        // certifies every junction itself — and with the right woofer only a
+        // -60 dB residue, the whole co-move must abstain rather than move
+        // the sub judged by the healthy left junction alone: that would
+        // merely re-optimize what the walk already settled (review find).
+        var sub = new TestChannel("sub", ImpulseAtMs(10.0));
+        var leftWoof = new TestChannel("L woof", ImpulseAtMs(8.0));
+        var rightWoof = new TestChannel("R woof", ImpulseAtMs(7.5, 0.001));
+        TestChannel[] all = [sub, leftWoof, rightWoof];
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            all.Select(channel =>
+                Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+        List<AlignmentSnapshot> snapshots = all
+            .Select(channel => Snapshot(channel, default))
+            .ToList();
+        var plan = new StereoAlignmentPlan(
+            [snapshots[0], snapshots[1]],
+            [Junction(snapshots[0], snapshots[1], 80)],
+            [snapshots[0], snapshots[2]],
+            [Junction(snapshots[0], snapshots[2], 80)],
+            new HashSet<IAlignmentChannel> { sub },
+            leftWoof,
+            rightWoof,
+            40,
+            160,
+            SceneOffsetMs: 0);
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            [sub] = new(0, false),
+            [leftWoof] = new(1.0, false),
+            [rightWoof] = new(1.0, false)
+        };
+        var log = new StringBuilder();
+
+        AutoAlignmentEngine.ComoveMonoChannels(
+            plan, Reprocess, alignment, log, snapshots);
+
+        Assert.Contains("mono co-move skipped for sub", log.ToString());
+        Assert.DoesNotContain("Co-move sub:", log.ToString());
+        Assert.Equal(0, alignment[sub].DelayMs);
+        Assert.False(alignment[sub].InvertPolarity);
+    }
+
+    [Fact]
     public void ComoveMonoChannels_RefreshesTheStaleDecision()
     {
         // The same system as the invariance test above: both woofers want the

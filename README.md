@@ -166,7 +166,11 @@ just a plot but the DSP settings themselves:
   flatten the summed magnitude (favoring tight, minimally overlapping splits),
   and **Auto delay** aligns each junction's delay and polarity against the
   phase-aware sum — across both stereo sides in one run, holding a
-  configurable L/R scene offset between the sides.
+  configurable L/R scene offset between the sides. The search level-matches
+  each junction internally, so the result does not follow the channel gains;
+  still, set the gains at least approximately first — past ±30 dB of in-band
+  imbalance the correction saturates and the log will ask you to level the
+  gains and re-run.
 - **Practical loudspeaker alignment**
   Time Alignment reports first arrival and strongest peak, each refined to
   sub-sample precision by a GCC-PHAT cross-correlation, plus distance at 20 °C,

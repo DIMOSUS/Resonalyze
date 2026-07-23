@@ -981,6 +981,24 @@ public static class AutoAlignmentEngine
                 .First(item => item.Channel == secondaryNeighbor).ImpulseResponse);
         }
 
+        // The level match saturates at its cap; past it the residual
+        // imbalance shrinks the junction contrast again, so the user should
+        // level the gains and re-run — say so instead of degrading silently.
+        if (VirtualCrossoverAnalysis.MeasureInBandImbalanceDb(
+                variableIr, neighborIrs, channel.SampleRate, bandLowHz, bandHighHz)
+            is { } imbalanceDb &&
+            Math.Abs(imbalanceDb) > VirtualCrossoverAnalysis.LevelMatchCapDb)
+        {
+            log.AppendLine(
+                $"  WARNING: {channel.Name} sits " +
+                $"{Math.Abs(imbalanceDb):0} dB " +
+                $"{(imbalanceDb > 0 ? "under" : "over")} its neighbor(s) in " +
+                $"{bandLowHz:0}-{bandHighHz:0} Hz — past the " +
+                $"{VirtualCrossoverAnalysis.LevelMatchCapDb:0} dB level-match " +
+                "cap; level the channel gains and re-run for a trustworthy " +
+                "junction read.");
+        }
+
         // The onset lock (see the constants block): at a sharp-front junction
         // the search window is pinned to the broadband onset-aligned delay and
         // the arrival-anchored machinery below only polishes inside it. A
@@ -1391,6 +1409,7 @@ public static class AutoAlignmentEngine
                 }
             }
 
+            double? subPrecedenceBehindDb = null;
             // The sub-precedence preference (see SubPrecedenceMarginDb): at a
             // junction with the shared mono sub, a pick that leaves the sub
             // TRAILING the stack yields to the nearest candidate on the
@@ -1424,12 +1443,14 @@ public static class AutoAlignmentEngine
                         reachMs: 2.0 * halfPeriodMs);
                     if (leading != chosen)
                     {
+                        subPrecedenceBehindDb =
+                            AcousticScore(chosen) - AcousticScore(leading);
                         log.AppendLine(
                             $"  sub precedence: preferred {leading.DelayMs:0.000} ms" +
                             $"{(leading.InvertPolarity ? " inv" : "")} (the sub " +
                             $"leads the stack) over {chosen.DelayMs:0.000} ms" +
                             $"{(chosen.InvertPolarity ? " inv" : "")} — behind by " +
-                            $"{AcousticScore(chosen) - AcousticScore(leading):0.00} dB, " +
+                            $"{subPrecedenceBehindDb:0.00} dB, " +
                             $"within the {SubPrecedenceMarginDb:0.00} dB precedence margin.");
                         chosen = leading;
                     }
@@ -1492,6 +1513,17 @@ public static class AutoAlignmentEngine
                     onsetLocked: onsetAnchorMs != null,
                     sceneLocked: sceneLockToleranceMs != null,
                     overlapFraction);
+                if (subPrecedenceBehindDb is { } precedenceBehindDb)
+                {
+                    // The report must say the objective was deliberately
+                    // overridden: without this a negative rival margin reads
+                    // as an algorithm error, not a policy (review find).
+                    AmendDecision(
+                        decisions, channel,
+                        "sub-precedence policy: the sub-leading lobe stands " +
+                        $"{precedenceBehindDb:0.00} dB behind the acoustic " +
+                        "best by design");
+                }
             }
 
             if (onsetAnchorMs is { } settledAnchor)
@@ -2864,7 +2896,8 @@ public static class AutoAlignmentEngine
                         mover.SampleRate,
                         junction.BandLowHz,
                         junction.BandHighHz,
-                        levelMatch: true);
+                        levelMatch: true,
+                        requireDelayEvidence: true);
                 if (evaluator != null)
                 {
                     evaluators.Add(evaluator);
@@ -3093,6 +3126,38 @@ public static class AutoAlignmentEngine
                 continue;
             }
 
+            // Every junction must hold delay EVIDENCE on its own before the
+            // co-move may judge a compromise. The walk certified the LEFT
+            // junction individually, but the right sub junction never faced
+            // the structure gate alone — the descent searches a COMBINED band
+            // whose united fixed sum can hide an evidence-less sub junction
+            // behind a healthy upper one (review find). A co-move judged by
+            // the measurable side alone would merely re-optimize the left
+            // junction the walk already settled, so with any junction
+            // unmeasurable the whole co-move abstains and the walk's
+            // placement stands. Evidence is delay- and polarity-invariant
+            // (it reads magnitudes), so one certification on the current
+            // render covers every probe below.
+            IReadOnlyList<AlignmentSnapshot> certified = reprocess(alignment);
+            AlignmentJunction? unmeasurable = junctions.FirstOrDefault(
+                junction => CellScore(
+                    certified, junction, junction.BandLowHz, junction.BandHighHz,
+                    requireDelayEvidence: true) == null);
+            if (unmeasurable is { } silent)
+            {
+                IAlignmentChannel silentNeighbor =
+                    silent.Lower.Channel == mono
+                        ? silent.Upper.Channel
+                        : silent.Lower.Channel;
+                log.AppendLine(
+                    $"  mono co-move skipped for {mono.Name}: the junction vs " +
+                    $"{silentNeighbor.Name} in " +
+                    $"{silent.BandLowHz:0}-{silent.BandHighHz:0} Hz holds no " +
+                    "delay evidence — a compromise cannot be judged with one " +
+                    "side unmeasurable.");
+                continue;
+            }
+
             AlignmentOverride over = alignment.GetValueOrDefault(mono);
             double halfPeriodMs = junctions.Min(pair => 500.0 / pair.CrossoverHz);
             double reachMs = MonoComoveSearchHalfPeriods * halfPeriodMs;
@@ -3178,8 +3243,11 @@ public static class AutoAlignmentEngine
                 int measured = 0;
                 foreach (AlignmentJunction junction in junctions)
                 {
+                    // Certified upfront to hold evidence at every junction;
+                    // the gate here is belt-and-suspenders on the same
+                    // delay-invariant read.
                     if (CellScore(current, junction, junction.BandLowHz,
-                        junction.BandHighHz, requireDelayEvidence: false)
+                        junction.BandHighHz, requireDelayEvidence: true)
                         is { } cell)
                     {
                         total += cell;

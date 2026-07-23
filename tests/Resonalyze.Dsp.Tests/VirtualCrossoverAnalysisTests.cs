@@ -35,6 +35,33 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void FindAlignmentCandidates_LevelMatch_CandidatesAreGainInvariant()
+    {
+        // The same physical pair at 0, -10 and -20 dB of variable-channel
+        // gain must produce the same lobe choices: the level match rescales
+        // the scoring frame, so within its documented ±30 dB cap the search
+        // cannot follow the playback gains.
+        Complex[] fixedIr = UnitImpulse(4_096, 100);
+        Complex[] reference = UnitImpulse(4_096, 120);
+        double? baselineDelayMs = null;
+        foreach (double gain in new[] { 1.0, 0.316, 0.1 })
+        {
+            Complex[] variable = reference.Select(value => value * gain).ToArray();
+            IReadOnlyList<AlignmentCandidate> candidates =
+                VirtualCrossoverAnalysis.FindAlignmentCandidates(
+                    variable, [fixedIr], SampleRate, 500, 2_000, -2, 2,
+                    levelMatch: true);
+            Assert.NotEmpty(candidates);
+            baselineDelayMs ??= candidates[0].DelayMs;
+            Assert.InRange(
+                candidates[0].DelayMs,
+                baselineDelayMs.Value - 0.005,
+                baselineDelayMs.Value + 0.005);
+            Assert.False(candidates[0].InvertPolarity);
+        }
+    }
+
+    [Fact]
     public void PredictedAverageSumLossDb_AlignedImpulsesSumWithoutLoss()
     {
         Complex[] a = UnitImpulse(4_096, 100);

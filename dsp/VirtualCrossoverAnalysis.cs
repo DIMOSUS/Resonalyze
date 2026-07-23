@@ -1400,12 +1400,56 @@ public static class VirtualCrossoverAnalysis
     // The per-bin spectra inside the frequency window, decimated to a bounded
     // bin count so the search stays fast for long IRs. The fixed channels act
     // as one combined source (superposition).
-    // The widest in-band level correction the search-side level match may
-    // apply, matched to OverlapReliabilityGateDb: a side sitting deeper than
-    // the reliability gate below its partner in the band is roll-off tail or
-    // deconvolution residue, and amplifying residue to parity would let the
-    // delay-evidence gate certify a junction that has no measurable overlap.
-    private const double LevelMatchCapDb = 30;
+    /// <summary>
+    /// The widest in-band level correction the search-side level match may
+    /// apply, matched to <see cref="OverlapReliabilityGateDb"/>: a side
+    /// sitting deeper than the reliability gate below its partner in the
+    /// band is roll-off tail or deconvolution residue, and amplifying
+    /// residue to parity would let the delay-evidence gate certify a
+    /// junction that has no measurable overlap. This bounds the search's
+    /// gain invariance: within ±30 dB of in-band imbalance the lobe choice
+    /// does not follow the channel gains; past the cap the residual
+    /// imbalance shrinks the junction contrast again, so the log tells the
+    /// user to level the gains first (see
+    /// <see cref="MeasureInBandImbalanceDb"/>).
+    /// </summary>
+    public const double LevelMatchCapDb = 30;
+
+    /// <summary>
+    /// The in-band level imbalance (dB) between the combined fixed channels
+    /// and the variable one, weighted exactly like the search-side level
+    /// match (log-frequency): positive when the variable channel is
+    /// quieter. Null when either side holds no in-band content. The
+    /// auto-delay log surfaces it when it exceeds
+    /// <see cref="LevelMatchCapDb"/> — the correction saturates there and
+    /// the junction read degrades, so the gains should be leveled first.
+    /// </summary>
+    public static double? MeasureInBandImbalanceDb(
+        Complex[] variableImpulseResponse,
+        IReadOnlyList<Complex[]> fixedImpulseResponses,
+        int sampleRate,
+        double minFrequencyHz,
+        double maxFrequencyHz)
+    {
+        List<AlignmentBin> bins = BuildAlignmentBins(
+            variableImpulseResponse,
+            fixedImpulseResponses,
+            sampleRate,
+            minFrequencyHz,
+            maxFrequencyHz,
+            minDelayMs: -1,
+            maxDelayMs: 1);
+        double variableLevel = 0;
+        double fixedLevel = 0;
+        foreach (AlignmentBin bin in bins)
+        {
+            variableLevel += bin.RawVariableMagnitude * bin.LogWeight;
+            fixedLevel += bin.FixedSum.Magnitude * bin.LogWeight;
+        }
+        return variableLevel > 0 && fixedLevel > 0
+            ? 20.0 * Math.Log10(fixedLevel / variableLevel)
+            : null;
+    }
 
     private static List<AlignmentBin> BuildAlignmentBins(
         Complex[] variableImpulseResponse,
@@ -2204,7 +2248,8 @@ public static class VirtualCrossoverAnalysis
             int sampleRate,
             double minFrequencyHz,
             double maxFrequencyHz,
-            bool levelMatch = false)
+            bool levelMatch = false,
+            bool requireDelayEvidence = false)
         {
             List<AlignmentBin> bins = BuildAlignmentBins(
                 variableImpulseResponse,
@@ -2215,7 +2260,8 @@ public static class VirtualCrossoverAnalysis
                 minDelayMs: -1,
                 maxDelayMs: 1,
                 levelMatch);
-            if (bins.Count == 0)
+            if (bins.Count == 0 ||
+                (requireDelayEvidence && !HoldsDelayEvidence(bins)))
             {
                 return null;
             }

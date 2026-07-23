@@ -2,6 +2,91 @@ namespace Resonalyze.Dsp.Tests;
 
 public sealed class AlignmentSelectionTests
 {
+    // PreferSubLeading scores through LossDb so the tests control the
+    // prior-free figure directly (the engine passes its dip-penalized
+    // AcousticScore the same way).
+    private static double Score(AlignmentCandidate candidate) => candidate.LossDb;
+
+    [Fact]
+    public void PreferSubLeading_TrailingPickYieldsToLeadingLobeWithinMargin()
+    {
+        // The field shape (an 80 Hz sub junction, leadSign +1: the stack is
+        // searched, larger delay = sub leads): the chosen candidate leaves
+        // the sub trailing by ~1.8 ms and the leading lobe sits 0.7 dB down
+        // — inside the precedence margin, so psychoacoustics decide.
+        var trailing = new AlignmentCandidate(0.1, false, -0.8, LossDb: -0.7);
+        var leading = new AlignmentCandidate(5.8, true, -1.8, LossDb: -1.4);
+
+        AlignmentCandidate chosen = AlignmentSelection.PreferSubLeading(
+            [trailing, leading], trailing, Score,
+            anchorMs: 1.9, leadSign: 1.0,
+            marginDb: 1.0, slackMs: 0.5, reachMs: 12.5);
+
+        Assert.Equal(leading, chosen);
+    }
+
+    [Fact]
+    public void PreferSubLeading_KeepsTheTrailingPickBeyondTheMargin()
+    {
+        var trailing = new AlignmentCandidate(0.1, false, -0.8, LossDb: -0.7);
+        var leading = new AlignmentCandidate(5.8, true, -1.8, LossDb: -2.0);
+
+        AlignmentCandidate chosen = AlignmentSelection.PreferSubLeading(
+            [trailing, leading], trailing, Score,
+            anchorMs: 1.9, leadSign: 1.0,
+            marginDb: 1.0, slackMs: 0.5, reachMs: 12.5);
+
+        Assert.Equal(trailing, chosen);
+    }
+
+    [Fact]
+    public void PreferSubLeading_InertWhenTheChosenAlreadyLeads()
+    {
+        // Already on the leading side (and even inside the slack): nothing
+        // to re-decide, whatever else the pool holds.
+        var chosenLead = new AlignmentCandidate(2.1, false, -0.8, LossDb: -0.9);
+        var deeperLead = new AlignmentCandidate(4.5, false, -0.7, LossDb: -0.5);
+
+        AlignmentCandidate chosen = AlignmentSelection.PreferSubLeading(
+            [chosenLead, deeperLead], chosenLead, Score,
+            anchorMs: 1.9, leadSign: 1.0,
+            marginDb: 1.0, slackMs: 0.5, reachMs: 12.5);
+
+        Assert.Equal(chosenLead, chosen);
+    }
+
+    [Fact]
+    public void PreferSubLeading_IgnoresLeadsBeyondTheReach()
+    {
+        // A sub leading by whole periods is detached the other way: the only
+        // "leading" candidate sits past the reach, so the trailing pick stands.
+        var trailing = new AlignmentCandidate(0.1, false, -0.8, LossDb: -0.7);
+        var farLead = new AlignmentCandidate(16.0, false, -1.0, LossDb: -0.8);
+
+        AlignmentCandidate chosen = AlignmentSelection.PreferSubLeading(
+            [trailing, farLead], trailing, Score,
+            anchorMs: 1.9, leadSign: 1.0,
+            marginDb: 1.0, slackMs: 0.5, reachMs: 12.5);
+
+        Assert.Equal(trailing, chosen);
+    }
+
+    [Fact]
+    public void PreferSubLeading_LeadSignFlipsWhenTheSubItselfIsSearched()
+    {
+        // With the SUB searched (leadSign -1), the sub leads where its OWN
+        // delay is smaller than the anchor.
+        var trailing = new AlignmentCandidate(3.6, false, -0.8, LossDb: -0.7);
+        var leading = new AlignmentCandidate(-2.1, true, -1.8, LossDb: -1.2);
+
+        AlignmentCandidate chosen = AlignmentSelection.PreferSubLeading(
+            [trailing, leading], trailing, Score,
+            anchorMs: 1.9, leadSign: -1.0,
+            marginDb: 1.0, slackMs: 0.5, reachMs: 12.5);
+
+        Assert.Equal(leading, chosen);
+    }
+
     [Fact]
     public void Select_SingleCandidateIsReturned()
     {
@@ -17,6 +102,24 @@ public sealed class AlignmentSelectionTests
     {
         Assert.Throws<ArgumentException>(() =>
             AlignmentSelection.Select(Array.Empty<AlignmentCandidate>(), 0.0));
+    }
+
+    [Fact]
+    public void Select_JudgesPolarityPurityAgainstTheNeighbor()
+    {
+        // With an INVERTED settled neighbor the pure pair is the
+        // equally-inverted candidate: an absolute-flag preference used to
+        // "rescue" the mixed pair here and pay a quarter period of delay for
+        // the cosmetics (the field tweeter that slid off the onset line its
+        // inverted twin sat on).
+        var mixedNormal = new AlignmentCandidate(1.6, false, -0.50);
+        var pureInverted = new AlignmentCandidate(2.0, true, -0.60);
+
+        AlignmentCandidate chosen = AlignmentSelection.Select(
+            [mixedNormal, pureInverted], baseDeltaMs: 2.0,
+            neighborInverted: true);
+
+        Assert.Equal(pureInverted, chosen);
     }
 
     [Fact]

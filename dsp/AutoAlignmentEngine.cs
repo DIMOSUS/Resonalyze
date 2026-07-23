@@ -261,6 +261,30 @@ public static class AutoAlignmentEngine
     // near-tie sends the seed back to the polarity-blind arrival envelope.
     private const double PhatSeedMinDominance = 0.1;
 
+    // The sub-precedence margin: at a junction with the shared mono sub, a
+    // near-tie between the comb lobe that leaves the sub TRAILING the stack
+    // and the one that leaves it LEADING is not acoustically resolvable —
+    // but it is perceptually one-sided. The first wavefront binds the bass
+    // to the localizable midbass transient (precedence effect), so a
+    // slightly leading sub reads as "bass up front" while a trailing one
+    // reads as sluggish, detached bass — the failure owners hand-tune away.
+    // The margin sits deliberately ABOVE the near-tie scale and just under
+    // the ~1.4 dB comb-noise ceiling the promotion margin's field
+    // calibration measured between real lobes: within that ceiling the
+    // summation cannot pick a lobe honestly anyway (an in-room mode can
+    // flatter either side by up to that much), so the psychoacoustics
+    // decide; beyond it the summation stands. Owner-calibrated on the v3
+    // cabin: the leading lobe measured 0.66-0.73 dB under the trailing pick
+    // on the prior-free level-matched score, yet the trailing tune was
+    // rejected by ear ("the bass lags") and the leading one localized the
+    // bass to the front stage.
+    private const double SubPrecedenceMarginDb = 1.0;
+
+    // Candidates within this of the envelope anchor count as neither leading
+    // nor trailing: the preference re-decides genuine lobe choices, not the
+    // sub-millisecond polish around the envelope-aligned point.
+    private const double SubPrecedenceSlackMs = 0.5;
+
     // How much better (in score dB) a wide-window optimum must be before it
     // unseats the arrival-anchored fine pick, at a junction the onset lock
     // does not govern (below its frequency gate, or a smeared front): there
@@ -374,6 +398,44 @@ public static class AutoAlignmentEngine
         Compute(channelsByBand, pairs, reprocess, alignment, log,
             onsetLocks: null, decisions);
         NormalizeAndVerifyFeasibility(channelsByBand.ToList(), alignment, log);
+        NormalizePolarityPresentation(channelsByBand, alignment, log);
+    }
+
+    // Presentation-only normalization: a GLOBAL polarity flip changes no
+    // relation — every junction, the scene and the sum see both of their ends
+    // flipped together — so when a proposal inverts MORE channels than it
+    // keeps, the whole field is flipped and the same physics reads as the
+    // minimal set of Invert switches. The field case: the sub-precedence
+    // lobe put the sub's relation to the stack inverted, which is presented
+    // as ONE inverted sub rather than three inverted stack channels (the
+    // owner's own hand tune of the same physics).
+    private static void NormalizePolarityPresentation(
+        IReadOnlyList<AlignmentSnapshot> scope,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        StringBuilder log)
+    {
+        List<IAlignmentChannel> channels = scope
+            .Select(item => item.Channel)
+            .Distinct()
+            .ToList();
+        int inverted = channels.Count(
+            channel => alignment.GetValueOrDefault(channel).InvertPolarity);
+        if (inverted * 2 <= channels.Count)
+        {
+            return;
+        }
+
+        foreach (IAlignmentChannel channel in channels)
+        {
+            AlignmentOverride over = alignment.GetValueOrDefault(channel);
+            alignment[channel] = over with
+            {
+                InvertPolarity = !over.InvertPolarity
+            };
+        }
+        log.AppendLine(
+            $"  polarity presentation: flipped every channel ({inverted} of " +
+            $"{channels.Count} were inverted) — a global flip changes no relation.");
     }
 
     /// <summary>
@@ -466,7 +528,8 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
         Dictionary<AlignmentJunction, OnsetLockState>? onsetLocks,
-        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
+        IReadOnlyCollection<IAlignmentChannel>? monoChannels = null)
     {
         ArgumentNullException.ThrowIfNull(channelsByBand);
         ArgumentNullException.ThrowIfNull(pairs);
@@ -523,7 +586,8 @@ public static class AutoAlignmentEngine
                 timeline, byBand, reprocess, alignment, log,
                 untrustedSeedJunctions: untrustedSeeds,
                 onsetLocks: onsetLocks,
-                decisions: decisions);
+                decisions: decisions,
+                monoChannels: monoChannels);
         }
         for (int i = referenceIndex + 1; i < byBand.Count; i++)
         {
@@ -532,7 +596,8 @@ public static class AutoAlignmentEngine
                 timeline, byBand, reprocess, alignment, log,
                 untrustedSeedJunctions: untrustedSeeds,
                 onsetLocks: onsetLocks,
-                decisions: decisions);
+                decisions: decisions,
+                monoChannels: monoChannels);
         }
     }
 
@@ -621,6 +686,88 @@ public static class AutoAlignmentEngine
             double lowerArrival = lowerRead.FirstArrivalDelayMilliseconds;
             double upperArrival = upperRead.FirstArrivalDelayMilliseconds;
 
+            // The pair-band arrival honesty probe: the same full-band-vs-upper-
+            // half re-read (ClassifyArrival) the cross-side links, the donor
+            // certificates and the stereo bridge already run. A steep low-pass
+            // can concentrate the pair band's energy below the corner, where a
+            // channel's direct front hides under a late in-room modal build-up
+            // deeper than the envelope search depth — the full-band read then
+            // times the mode, whole periods late (field case: a midbass under
+            // LP 180 Hz/36 dB read 21.96 ms in 90-360 Hz against a 10.99 ms
+            // front in its own upper half — a 9.8 ms latch that seeded the
+            // stage-2 window a full period off and inverted the mids). A
+            // convicted latch does two things below: the pair re-anchors on
+            // the half-band reads where both measure (the same ladder the
+            // cross-side links climb), and the seed-reach veto is lifted — the
+            // reach rule measures the PHAT extremum against the arrival, so
+            // with the arrival convicted it would only enforce the very cycle
+            // skip it exists to prevent. The half-band read is a mushier
+            // anchor than an honest full-band one (an octave of HF mush once
+            // dragged a woofer 6 ms off on the cross-side ladder), so it only
+            // recenters the correlation window and the fallback diff; the
+            // trustworthy PHAT extremum, where present, still wins the seed.
+            double probeLowHz = Math.Sqrt(pair.BandLowHz * pair.BandHighHz);
+            bool arrivalReanchored = false;
+            if (pair.BandHighHz >=
+                probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
+            {
+                TimeAlignmentAnalysisResult lowerProbe =
+                    VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                        pair.Lower.ImpulseResponse,
+                        pair.Lower.Channel.SampleRate,
+                        probeLowHz,
+                        pair.BandHighHz,
+                        pair.Lower.ValidRange);
+                TimeAlignmentAnalysisResult upperProbe =
+                    VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                        pair.Upper.ImpulseResponse,
+                        pair.Upper.Channel.SampleRate,
+                        probeLowHz,
+                        pair.BandHighHz,
+                        pair.Upper.ValidRange);
+                double probeToleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
+                ArrivalCertificate lowerCertificate =
+                    ClassifyArrival(lowerRead, lowerProbe, probeToleranceMs);
+                ArrivalCertificate upperCertificate =
+                    ClassifyArrival(upperRead, upperProbe, probeToleranceMs);
+                bool lowerLatched =
+                    lowerCertificate == ArrivalCertificate.Latched;
+                bool upperLatched =
+                    upperCertificate == ArrivalCertificate.Latched;
+                if (lowerLatched || upperLatched)
+                {
+                    TimeAlignmentAnalysisResult latchedRead =
+                        lowerLatched ? lowerRead : upperRead;
+                    TimeAlignmentAnalysisResult latchedProbe =
+                        lowerLatched ? lowerProbe : upperProbe;
+                    log.AppendLine(
+                        $"  {(lowerLatched ? pair.Lower : pair.Upper).Channel.Name}: " +
+                        $"{latchedRead.FirstArrivalDelayMilliseconds:0.000} ms in " +
+                        $"{pair.BandLowHz:0}-{pair.BandHighHz:0} Hz but " +
+                        $"{latchedProbe.FirstArrivalDelayMilliseconds:0.000} ms in its " +
+                        $"{probeLowHz:0}-{pair.BandHighHz:0} Hz half (modal latch)");
+                    // Re-anchor only when BOTH probes read the same physics —
+                    // judged by the CERTIFICATES, not by bare validity: an
+                    // UNVERIFIED side either failed to measure or its probe
+                    // timed a far LATER feature than its own full band (a
+                    // late reflection the half band mistook for the front),
+                    // and either way its probe read is not the wavefront the
+                    // latched side's probe found. A conviction WITHOUT a
+                    // comparable replacement anchor changes nothing below:
+                    // the corrupted diff keeps centering the window, and the
+                    // reach veto stays armed — lifting it there would trust
+                    // an extremum measured around the very anchor the probe
+                    // just convicted (review finds, first and third cut).
+                    if (lowerCertificate != ArrivalCertificate.Unverified &&
+                        upperCertificate != ArrivalCertificate.Unverified)
+                    {
+                        lowerArrival = lowerProbe.FirstArrivalDelayMilliseconds;
+                        upperArrival = upperProbe.FirstArrivalDelayMilliseconds;
+                        arrivalReanchored = true;
+                    }
+                }
+            }
+
             // Refine the coarse offset with the DOMINANT GCC-PHAT extremum of
             // either sign: at a mid/high junction it lands the stage-2 window
             // on the correct lobe directly, sparing the wide-window recovery.
@@ -691,7 +838,16 @@ public static class AutoAlignmentEngine
                 {
                     return "same-polarity rival near-tie";
                 }
-                if (Math.Abs(seedOffsetMs) > SeedReachMs(pair.CrossoverHz))
+                // The reach veto grades the extremum against the arrival, so
+                // it is lifted only once the pair is RE-ANCHORED on honest
+                // half-band reads: against a convicted-and-replaced anchor it
+                // would enforce the very cycle skip it exists to prevent. A
+                // conviction without a replacement anchor keeps the veto —
+                // the window is still centered on the corrupted diff, and a
+                // strong distant modal peak found there is exactly the skip
+                // candidate the veto guards (see the probe above).
+                if (!arrivalReanchored &&
+                    Math.Abs(seedOffsetMs) > SeedReachMs(pair.CrossoverHz))
                 {
                     return $"{seedLabel} beyond the arrival's reach";
                 }
@@ -766,7 +922,8 @@ public static class AutoAlignmentEngine
         bool? forcedPolarity = null,
         IReadOnlySet<AlignmentJunction>? untrustedSeedJunctions = null,
         Dictionary<AlignmentJunction, OnsetLockState>? onsetLocks = null,
-        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
+        IReadOnlyCollection<IAlignmentChannel>? monoChannels = null)
     {
         // Widen the window when the coarse seed ACROSS this junction (or its
         // secondary, for a joint two-neighbour search) was the untrusted arrival
@@ -822,6 +979,24 @@ public static class AutoAlignmentEngine
         {
             neighborIrs.Add(current
                 .First(item => item.Channel == secondaryNeighbor).ImpulseResponse);
+        }
+
+        // The level match saturates at its cap; past it the residual
+        // imbalance shrinks the junction contrast again, so the user should
+        // level the gains and re-run — say so instead of degrading silently.
+        if (VirtualCrossoverAnalysis.MeasureInBandImbalanceDb(
+                variableIr, neighborIrs, channel.SampleRate, bandLowHz, bandHighHz)
+            is { } imbalanceDb &&
+            Math.Abs(imbalanceDb) > VirtualCrossoverAnalysis.LevelMatchCapDb)
+        {
+            log.AppendLine(
+                $"  WARNING: {channel.Name} sits " +
+                $"{Math.Abs(imbalanceDb):0} dB " +
+                $"{(imbalanceDb > 0 ? "under" : "over")} its neighbor(s) in " +
+                $"{bandLowHz:0}-{bandHighHz:0} Hz — past the " +
+                $"{VirtualCrossoverAnalysis.LevelMatchCapDb:0} dB level-match " +
+                "cap; level the channel gains and re-run for a trustworthy " +
+                "junction read.");
         }
 
         // The onset lock (see the constants block): at a sharp-front junction
@@ -938,6 +1113,9 @@ public static class AutoAlignmentEngine
                     priorDelayMs: anchorMs,
                     priorSigmaMs: (windowHighMs - windowLowMs) / 4.0,
                     forcedPolarity: forcedPolarity,
+                    // Search-side level match: the lobe choice must not depend
+                    // on the channels' playback gains (see BuildAlignmentBins).
+                    levelMatch: true,
                     out IReadOnlyList<AlignmentCandidate> allOptima);
             return (candidates, allOptima, windowLowMs, windowHighMs);
         }
@@ -969,8 +1147,16 @@ public static class AutoAlignmentEngine
                     $"(score {item.ScoreDb:0.00}, avg {item.LossDb:0.00}, " +
                     $"dip {item.DipDb:0.0} dB)")));
 
+            // Polarity purity is judged against the SETTLED primary neighbor:
+            // with an inverted neighbor the pure pair is the equally-inverted
+            // candidate, and an absolute-flag preference would "rescue" a
+            // mixed pair at the cost of a quarter period of delay (the field
+            // tweeter that slid off the onset line its inverted twin sat on).
+            bool neighborInverted =
+                alignment.GetValueOrDefault(neighborChannel).InvertPolarity;
             AlignmentCandidate? selected = candidates.Count > 0
-                ? AlignmentSelection.Select(candidates, anchorMs)
+                ? AlignmentSelection.Select(candidates, anchorMs,
+                    neighborInverted: neighborInverted)
                 : null;
             if (selected is { } fineSelected && fineSelected != candidates[0])
             {
@@ -981,15 +1167,18 @@ public static class AutoAlignmentEngine
                     $"{(candidates[0].InvertPolarity ? " inv" : "")} " +
                     $"(margin {candidates[0].ScoreDb - fineSelected.ScoreDb:0.00} dB)");
             }
-            else if (selected is { InvertPolarity: true } keptInverted &&
-                AlignmentSelection.DeclinedInvertRescue(candidates, anchorMs)
+            else if (selected is { } keptPick &&
+                keptPick.InvertPolarity != neighborInverted &&
+                AlignmentSelection.DeclinedInvertRescue(candidates, anchorMs,
+                    neighborInverted: neighborInverted)
                     is { } rescue)
             {
                 log.AppendLine(
-                    $"  kept {keptInverted.DelayMs:0.000} ms inv: rescue " +
+                    $"  kept {keptPick.DelayMs:0.000} ms" +
+                    $"{(keptPick.InvertPolarity ? " inv" : "")}: rescue " +
                     $"{rescue.DelayMs:0.000} ms " +
-                    $"(margin {keptInverted.ScoreDb - rescue.ScoreDb:0.00} dB) is " +
-                    $"{Math.Abs(rescue.DelayMs - anchorMs) - Math.Abs(keptInverted.DelayMs - anchorMs):0.000} ms " +
+                    $"(margin {keptPick.ScoreDb - rescue.ScoreDb:0.00} dB) is " +
+                    $"{Math.Abs(rescue.DelayMs - anchorMs) - Math.Abs(keptPick.DelayMs - anchorMs):0.000} ms " +
                     "farther from the arrival (reach " +
                     $"{AlignmentSelection.DefaultInvertPreferenceReachMs:0.00} ms)");
             }
@@ -1021,7 +1210,8 @@ public static class AutoAlignmentEngine
             // structure the narrow window missed.
             if (selected == null && wide.Count > 0)
             {
-                selected = AlignmentSelection.Select(wide, anchorMs);
+                selected = AlignmentSelection.Select(wide, anchorMs,
+                    neighborInverted: neighborInverted);
                 log.AppendLine(
                     $"  fine window empty — adopted {selected.DelayMs:0.000} ms" +
                     $"{(selected.InvertPolarity ? " inv" : "")} from the wide sweep");
@@ -1085,7 +1275,8 @@ public static class AutoAlignmentEngine
                     // taking retried[0] raw would let the widened window hand
                     // the result to a (flip + half-period) impostor that the
                     // invert margin and the arrival tie-break exist to reject.
-                    chosen = AlignmentSelection.Select(retried, anchorMs);
+                    chosen = AlignmentSelection.Select(retried, anchorMs,
+                        neighborInverted: neighborInverted);
                 }
 
                 log.AppendLine(
@@ -1107,7 +1298,8 @@ public static class AutoAlignmentEngine
                     halfPeriodMs, MinFineAlignmentRangeMs, MaxFineAlignmentRangeMs);
                 AlignmentCandidate gated = AlignmentSelection.GateWideSeedLobe(
                     candidates, chosen, AcousticScore, anchorMs,
-                    trustedReachMs, WideWindowPromotionMarginDb);
+                    trustedReachMs, WideWindowPromotionMarginDb,
+                    neighborInverted);
                 if (gated != chosen)
                 {
                     log.AppendLine(
@@ -1139,7 +1331,8 @@ public static class AutoAlignmentEngine
                 onsetAnchorMs == null)
             {
                 AlignmentCandidate wideChosen =
-                    AlignmentSelection.Select(wide, anchorMs);
+                    AlignmentSelection.Select(wide, anchorMs,
+                        neighborInverted: neighborInverted);
                 // Only a lobe's reach from the arrival pick: past that the "better"
                 // score is a comb alias the summation cannot distinguish, so the
                 // envelope stays authoritative (see PromotionReachPeriods). Inside
@@ -1216,6 +1409,54 @@ public static class AutoAlignmentEngine
                 }
             }
 
+            double? subPrecedenceBehindDb = null;
+            // The sub-precedence preference (see SubPrecedenceMarginDb): at a
+            // junction with the shared mono sub, a pick that leaves the sub
+            // TRAILING the stack yields to the nearest candidate on the
+            // LEADING side of the envelope anchor when the prior-free scores
+            // are within the precedence margin. The pool spans the fine and
+            // wide sets on the prior-free score — the arrival prior is
+            // exactly what keeps parking the result on the trailing lobe
+            // when the envelope-aligned point falls between two lobes.
+            // Bounded to one period past the anchor: a sub leading by whole
+            // periods is not "up front", it is detached the other way.
+            if (monoChannels != null &&
+                sceneLockToleranceMs == null && onsetAnchorMs == null)
+            {
+                bool subSearched = monoChannels.Contains(channel);
+                bool subNeighbor = secondaryNeighbor == null &&
+                    monoChannels.Contains(neighborChannel);
+                // With the STACK searched, delaying it beyond the anchor
+                // leaves the sub leading (+1); with the SUB searched the
+                // directions swap (-1).
+                double leadSign = subNeighbor ? 1.0 : -1.0;
+                if (subSearched ^ subNeighbor)
+                {
+                    AlignmentCandidate leading = AlignmentSelection.PreferSubLeading(
+                        candidates.Concat(wide),
+                        chosen,
+                        AcousticScore,
+                        anchorMs,
+                        leadSign,
+                        SubPrecedenceMarginDb,
+                        SubPrecedenceSlackMs,
+                        reachMs: 2.0 * halfPeriodMs);
+                    if (leading != chosen)
+                    {
+                        subPrecedenceBehindDb =
+                            AcousticScore(chosen) - AcousticScore(leading);
+                        log.AppendLine(
+                            $"  sub precedence: preferred {leading.DelayMs:0.000} ms" +
+                            $"{(leading.InvertPolarity ? " inv" : "")} (the sub " +
+                            $"leads the stack) over {chosen.DelayMs:0.000} ms" +
+                            $"{(chosen.InvertPolarity ? " inv" : "")} — behind by " +
+                            $"{subPrecedenceBehindDb:0.00} dB, " +
+                            $"within the {SubPrecedenceMarginDb:0.00} dB precedence margin.");
+                        chosen = leading;
+                    }
+                }
+            }
+
             double newDelay = chosen.DelayMs;
             if (newDelay < 0)
             {
@@ -1272,6 +1513,20 @@ public static class AutoAlignmentEngine
                     onsetLocked: onsetAnchorMs != null,
                     sceneLocked: sceneLockToleranceMs != null,
                     overlapFraction);
+                if (subPrecedenceBehindDb is { } precedenceBehindDb)
+                {
+                    // The report must say the objective was deliberately
+                    // overridden: without this a negative rival margin reads
+                    // as an algorithm error, not a policy (review find). The
+                    // figure is relative to the PRE-POLICY pick — itself
+                    // already shaped by the prior and the lobe gates, not
+                    // necessarily the global acoustic best.
+                    AmendDecision(
+                        decisions, channel,
+                        "sub-precedence policy: the sub-leading lobe stands " +
+                        $"{precedenceBehindDb:0.00} dB behind the pre-policy " +
+                        "pick by design");
+                }
             }
 
             if (onsetAnchorMs is { } settledAnchor)
@@ -1521,10 +1776,11 @@ public static class AutoAlignmentEngine
         var onsetLocks = new Dictionary<AlignmentJunction, OnsetLockState>(
             ReferenceEqualityComparer.Instance);
 
-        // Stage L: the left side, exactly like a mono run.
+        // Stage L: the left side, exactly like a mono run — plus the mono-set
+        // knowledge the sub-precedence preference needs.
         Compute(
             plan.LeftChannelsByBand, plan.LeftPairs, reprocess, alignment, log,
-            onsetLocks, decisions);
+            onsetLocks, decisions, plan.MonoChannels);
 
         // The union of both sides: the scope of every uniform shift from here
         // on. Shifting one side alone would silently break the inter-side
@@ -1788,7 +2044,10 @@ public static class AutoAlignmentEngine
             // are still usable but UNVERIFIED, and the caller must not grant
             // them the tight scene lock an honest certificate earns.
             ((TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
-                Reads, bool Latched, bool Verified) MeasureConsistent(
+                Reads, bool Latched, bool Verified,
+                bool LeftLatched, bool RightLatched,
+                (TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
+                    FullReads) MeasureConsistent(
                     double lowHz, double highHz)
             {
                 TimeAlignmentAnalysisResult left =
@@ -1803,14 +2062,14 @@ public static class AutoAlignmentEngine
                     left.SignalToNoiseDecibels < MinimumArrivalSnrDb ||
                     right.SignalToNoiseDecibels < MinimumArrivalSnrDb)
                 {
-                    return (null, false, false);
+                    return (null, false, false, false, false, null);
                 }
 
                 double probeLowHz = Math.Sqrt(lowHz * highHz);
                 if (highHz <
                     probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
                 {
-                    return ((left, right), false, false);
+                    return ((left, right), false, false, false, false, (left, right));
                 }
 
                 TimeAlignmentAnalysisResult leftProbe =
@@ -1842,12 +2101,16 @@ public static class AutoAlignmentEngine
                         $"{(leftLatched ? leftProbe : rightProbe).FirstArrivalDelayMilliseconds:0.000} ms" +
                         $" in its {probeLowHz:0}-{highHz:0} Hz half " +
                         "(modal latch: the sides time different features)");
-                    return (null, true, false);
+                    return (null, true, false,
+                        leftLatched,
+                        rightCertificate == ArrivalCertificate.Latched,
+                        (left, right));
                 }
 
                 return ((left, right), false,
                     leftCertificate == ArrivalCertificate.Verified &&
-                    rightCertificate == ArrivalCertificate.Verified);
+                    rightCertificate == ArrivalCertificate.Verified,
+                    false, false, (left, right));
             }
 
             // The consistency ladder: the pair's own shared band first; when a
@@ -1862,18 +2125,77 @@ public static class AutoAlignmentEngine
             double usedHighHz = bandHighHz;
             bool anyLatch;
             ((TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
-                Reads, bool Latched, bool Verified) measured =
+                Reads, bool Latched, bool Verified,
+                bool LeftLatched, bool RightLatched,
+                (TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
+                    FullReads) measured =
                 MeasureConsistent(bandLowHz, bandHighHz);
             anyLatch = measured.Latched;
+            bool fallbackDiffers =
+                fallbackLowHz != bandLowHz || fallbackHighHz != bandHighHz;
+            // The junction band doubles as the LINK CERTIFICATE'S WITNESS: the
+            // link certificate can self-verify inside the modal region — the
+            // link band's upper half may still sit under the same mode, so
+            // full and probe agree on the mode and Verified is issued for a
+            // latched read (field case: a midbass link read 22.2 ms in
+            // 80-200 Hz, its 126-200 Hz half saw the same hump, and the
+            // fabricated -8.4 ms split — no cabin geometry produces one —
+            // was scene-locked onto the right midbass). The conviction does
+            // NOT transfer wholesale, though: the witness only proves a mode
+            // somewhere below its own probe half, which may lie below the
+            // link band entirely (review find on the first cut). So the
+            // witness convicts the link read only when the SAME-FEATURE test
+            // holds — the latched side's link read timed the very feature the
+            // witness convicted (the two reads agree within the wavefront
+            // tolerance; the bands overlap and both sit on one mode, so
+            // dispersion between them is small). A link read that timed an
+            // earlier, different feature stands: the mode is outside its
+            // band's reach. On conviction the link's split must not reach the
+            // scene lock, and the pair descends the same ladder a latched
+            // link band would.
+            ((TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
+                Reads, bool Latched, bool Verified,
+                bool LeftLatched, bool RightLatched,
+                (TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
+                    FullReads)? junctionRung =
+                fallbackDiffers && (measured.Reads != null || measured.Latched)
+                    ? MeasureConsistent(fallbackLowHz, fallbackHighHz)
+                    : null;
             if (measured.Reads == null && measured.Latched &&
-                (fallbackLowHz != bandLowHz || fallbackHighHz != bandHighHz))
+                junctionRung is { } rung)
             {
-                measured = MeasureConsistent(fallbackLowHz, fallbackHighHz);
-                anyLatch |= measured.Latched;
+                measured = rung;
+                anyLatch |= rung.Latched;
                 if (measured.Reads != null)
                 {
                     usedLowHz = fallbackLowHz;
                     usedHighHz = fallbackHighHz;
+                }
+            }
+            else if (measured.Reads is { } linkReads &&
+                junctionRung is { Latched: true, FullReads: { } witnessReads } witness)
+            {
+                double witnessProbeLowHz = Math.Sqrt(fallbackLowHz * fallbackHighHz);
+                double witnessToleranceMs = Math.Max(1.0, 500.0 / witnessProbeLowHz);
+                bool linkTimedTheConvictedFeature =
+                    (witness.LeftLatched && Math.Abs(
+                        linkReads.Left.FirstArrivalDelayMilliseconds -
+                        witnessReads.Left.FirstArrivalDelayMilliseconds) <=
+                            witnessToleranceMs) ||
+                    (witness.RightLatched && Math.Abs(
+                        linkReads.Right.FirstArrivalDelayMilliseconds -
+                        witnessReads.Right.FirstArrivalDelayMilliseconds) <=
+                            witnessToleranceMs);
+                if (linkTimedTheConvictedFeature)
+                {
+                    log.AppendLine(
+                        $"  cross-side link {rightChannel.Name}: " +
+                        $"{bandLowHz:0}-{bandHighHz:0} Hz read discarded — it timed " +
+                        $"the same feature the junction band " +
+                        $"{fallbackLowHz:0}-{fallbackHighHz:0} Hz convicts as a " +
+                        "modal latch the link band's own probe cannot see");
+                    measured = (null, true, false, false, false, null);
+                    anyLatch = true;
                 }
             }
             if (measured.Reads is not { } arrivals)
@@ -2112,7 +2434,7 @@ public static class AutoAlignmentEngine
                 channel, neighbor, pair,
                 rightTimeline, allChannels, reprocess, alignment, log,
                 secondary, secondaryPair, crossTarget, sceneLock, inheritedPolarity,
-                rightUntrustedSeeds, onsetLocks, decisions);
+                rightUntrustedSeeds, onsetLocks, decisions, plan.MonoChannels);
         }
         for (int i = bridgeIndex - 1; i >= 0; i--)
         {
@@ -2143,6 +2465,8 @@ public static class AutoAlignmentEngine
         // The invariant the user requires of automatic delay: no driver is ever
         // inverted on one side of a pair alone.
         EnforcePolaritySymmetry(plan, alignment, log, decisions);
+
+        NormalizePolarityPresentation(allChannels, alignment, log);
     }
 
     // Final normalization + the single feasibility gate. Normalization: the
@@ -2393,6 +2717,23 @@ public static class AutoAlignmentEngine
     // the plain 0.05 dB threshold still applies.
     private const double MonoComoveLobeHopMarginDb = 0.1;
 
+    // The sub-band deficit that vetoes a mono lobe/polarity hop even after it
+    // cleared the margin above. The full-band mean cannot tell a genuine
+    // recovery from a comb impostor flattered by an in-room mode: a lobe a
+    // whole period off fits the phase only where its period matches the
+    // frequency, and a mode INSIDE the band can put more summed energy behind
+    // exactly that impostor than behind the direct sound. The cross-check
+    // every narrow-band ranging discipline converges on (sub-band GCC,
+    // multi-scale FWI, GPS widelane ambiguity resolution) is consistency
+    // ACROSS sub-bands: the true alignment holds in every half of the
+    // junction band, the impostor wins one half and loses the other. Field
+    // anchors (v3 cabin, 80 Hz sub junctions): the false full-period hop
+    // "gained" 1.43 dB full-band while losing the clean 40-80 Hz half by
+    // 0.29 dB; the genuine two-sided recovery's worst half-band deficit was
+    // 0.02 dB — the co-move's own noise-tie scale. 0.1 sits between, the
+    // same order-of-magnitude split as the hop margin itself.
+    private const double MonoComoveSubBandVetoMarginDb = 0.1;
+
     // The right bridge top inherits the left top's sign (set before the right walk,
     // so the right lowers align against a correctly-signed top). Automatic delay
     // never inverts one side of a pair alone — a driver's polarity is a property of
@@ -2557,7 +2898,9 @@ public static class AutoAlignmentEngine
                         new List<Complex[]> { IrOf(neighbor) },
                         mover.SampleRate,
                         junction.BandLowHz,
-                        junction.BandHighHz);
+                        junction.BandHighHz,
+                        levelMatch: true,
+                        requireDelayEvidence: true);
                 if (evaluator != null)
                 {
                     evaluators.Add(evaluator);
@@ -2786,6 +3129,38 @@ public static class AutoAlignmentEngine
                 continue;
             }
 
+            // Every junction must hold delay EVIDENCE on its own before the
+            // co-move may judge a compromise. The walk certified the LEFT
+            // junction individually, but the right sub junction never faced
+            // the structure gate alone — the descent searches a COMBINED band
+            // whose united fixed sum can hide an evidence-less sub junction
+            // behind a healthy upper one (review find). A co-move judged by
+            // the measurable side alone would merely re-optimize the left
+            // junction the walk already settled, so with any junction
+            // unmeasurable the whole co-move abstains and the walk's
+            // placement stands. Evidence is delay- and polarity-invariant
+            // (it reads magnitudes), so one certification on the current
+            // render covers every probe below.
+            IReadOnlyList<AlignmentSnapshot> certified = reprocess(alignment);
+            AlignmentJunction? unmeasurable = junctions.FirstOrDefault(
+                junction => CellScore(
+                    certified, junction, junction.BandLowHz, junction.BandHighHz,
+                    requireDelayEvidence: true) == null);
+            if (unmeasurable is { } silent)
+            {
+                IAlignmentChannel silentNeighbor =
+                    silent.Lower.Channel == mono
+                        ? silent.Upper.Channel
+                        : silent.Lower.Channel;
+                log.AppendLine(
+                    $"  mono co-move skipped for {mono.Name}: the junction vs " +
+                    $"{silentNeighbor.Name} in " +
+                    $"{silent.BandLowHz:0}-{silent.BandHighHz:0} Hz holds no " +
+                    "delay evidence — a compromise cannot be judged with one " +
+                    "side unmeasurable.");
+                continue;
+            }
+
             AlignmentOverride over = alignment.GetValueOrDefault(mono);
             double halfPeriodMs = junctions.Min(pair => 500.0 / pair.CrossoverHz);
             double reachMs = MonoComoveSearchHalfPeriods * halfPeriodMs;
@@ -2830,42 +3205,66 @@ public static class AutoAlignmentEngine
             }
 
             double framedMonoMs = framed[mono].DelayMs;
-            double Score(double deltaMs, bool flip)
+            IReadOnlyList<AlignmentSnapshot> Rendered(double deltaMs, bool flip) =>
+                reprocess(new Dictionary<IAlignmentChannel, AlignmentOverride>(framed)
+                {
+                    [mono] = new AlignmentOverride(
+                        Math.Round(framedMonoMs + deltaMs, 2),
+                        over.InvertPolarity ^ flip)
+                });
+            double? CellScore(
+                IReadOnlyList<AlignmentSnapshot> current,
+                AlignmentJunction junction,
+                double lowHz,
+                double highHz,
+                bool requireDelayEvidence)
             {
-                var trial =
-                    new Dictionary<IAlignmentChannel, AlignmentOverride>(framed)
-                    {
-                        [mono] = new AlignmentOverride(
-                            Math.Round(framedMonoMs + deltaMs, 2),
-                            over.InvertPolarity ^ flip)
-                    };
-                IReadOnlyList<AlignmentSnapshot> current = reprocess(trial);
                 Complex[] IrOf(IAlignmentChannel channel) =>
                     current.First(item => item.Channel == channel).ImpulseResponse;
+                IAlignmentChannel neighbor = junction.Lower.Channel == mono
+                    ? junction.Upper.Channel
+                    : junction.Lower.Channel;
+                (double LossDb, double DipDb)? loss =
+                    VirtualCrossoverAnalysis.MeasureSumLoss(
+                        IrOf(mono),
+                        new List<Complex[]> { IrOf(neighbor) },
+                        mono.SampleRate,
+                        lowHz,
+                        highHz,
+                        levelMatch: true,
+                        requireDelayEvidence);
+                return loss is { } value
+                    ? value.LossDb +
+                        VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
+                        (value.DipDb - value.LossDb)
+                    : null;
+            }
+            double Score(double deltaMs, bool flip)
+            {
+                IReadOnlyList<AlignmentSnapshot> current = Rendered(deltaMs, flip);
                 double total = 0;
                 int measured = 0;
                 foreach (AlignmentJunction junction in junctions)
                 {
-                    IAlignmentChannel neighbor = junction.Lower.Channel == mono
-                        ? junction.Upper.Channel
-                        : junction.Lower.Channel;
-                    (double LossDb, double DipDb)? loss =
-                        VirtualCrossoverAnalysis.MeasureSumLoss(
-                            IrOf(mono),
-                            new List<Complex[]> { IrOf(neighbor) },
-                            mono.SampleRate,
-                            junction.BandLowHz,
-                            junction.BandHighHz);
-                    if (loss is { } value)
+                    if (CellScore(current, junction, junction.BandLowHz,
+                        junction.BandHighHz, requireDelayEvidence: true)
+                        is { } cell)
                     {
-                        total += value.LossDb +
-                            VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
-                            (value.DipDb - value.LossDb);
+                        total += cell;
                         measured++;
                     }
                 }
 
-                return measured > 0 ? total / measured : double.NegativeInfinity;
+                // FAIL-CLOSED, not an average of the survivors: the upfront
+                // certification ran on one render, but every probe re-gates
+                // the IRs and the direct-sound window shifts with the probed
+                // delay — a borderline junction can drop out mid-sweep, and a
+                // mean over the rest would be exactly the one-sided vote the
+                // certification exists to prevent (review find). A probe that
+                // cannot measure EVERY junction is not a candidate.
+                return measured == junctions.Count
+                    ? total / measured
+                    : double.NegativeInfinity;
             }
 
             double baseline = Score(0, flip: false);
@@ -2946,6 +3345,75 @@ public static class AutoAlignmentEngine
                 bestScore = bestPolishScore;
                 bestDelta = bestPolishDelta;
                 bestFlip = false;
+            }
+            else if (hop)
+            {
+                // The sub-band consistency veto (see
+                // MonoComoveSubBandVetoMarginDb): a hop that cleared the
+                // margin must also HOLD every (junction, half-band) CELL it
+                // can be measured in. Per cell, not per averaged half: a
+                // mean over the junctions would let a deficit on one side
+                // hide behind a surplus on the other (review find). And a
+                // cell casts a vote only where the delay is OBSERVABLE — the
+                // evidence gate refuses halves where one channel is just a
+                // filter tail, whose near-flat loss is noise the level match
+                // amplifies toward parity (review find). Losing a measurable
+                // cell means the full-band gain came from a mode rewarding a
+                // comb impostor, not from a better alignment of the direct
+                // sound.
+                IReadOnlyList<AlignmentSnapshot> hopRender =
+                    Rendered(bestDelta, bestFlip);
+                IReadOnlyList<AlignmentSnapshot> polishRender =
+                    Rendered(bestPolishDelta, false);
+                bool vetoed = false;
+                foreach (AlignmentJunction junction in junctions)
+                {
+                    foreach (bool upperHalf in new[] { false, true })
+                    {
+                        (double lowHz, double highHz) = upperHalf
+                            ? (junction.CrossoverHz, junction.BandHighHz)
+                            : (junction.BandLowHz, junction.CrossoverHz);
+                        double? polishCell = CellScore(
+                            polishRender, junction, lowHz, highHz,
+                            requireDelayEvidence: true);
+                        double? hopCell = CellScore(
+                            hopRender, junction, lowHz, highHz,
+                            requireDelayEvidence: true);
+                        if (polishCell is not { } polishCellScore ||
+                            hopCell is not { } hopCellScore ||
+                            hopCellScore >=
+                                polishCellScore - MonoComoveSubBandVetoMarginDb)
+                        {
+                            continue;
+                        }
+
+                        IAlignmentChannel neighbor =
+                            junction.Lower.Channel == mono
+                                ? junction.Upper.Channel
+                                : junction.Lower.Channel;
+                        log.AppendLine(
+                            $"  mono lobe hop vetoed for {mono.Name}: " +
+                            $"{bestDelta:+0.00;-0.00} ms" +
+                            $"{(bestFlip ? " flipped" : "")} wins the full band " +
+                            $"by {bestScore - bestPolishScore:0.00} dB but loses " +
+                            $"the {lowHz:0}-{highHz:0} Hz half vs " +
+                            $"{neighbor.Name} by " +
+                            $"{polishCellScore - hopCellScore:0.00} dB — a true " +
+                            "lobe holds every measurable sub-band.");
+                        vetoed = true;
+                        break;
+                    }
+                    if (vetoed)
+                    {
+                        break;
+                    }
+                }
+                if (vetoed)
+                {
+                    bestScore = bestPolishScore;
+                    bestDelta = bestPolishDelta;
+                    bestFlip = false;
+                }
             }
 
             if ((bestDelta != 0 || bestFlip) &&

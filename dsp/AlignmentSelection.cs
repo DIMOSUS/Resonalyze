@@ -59,18 +59,27 @@ public static class AlignmentSelection
     /// first): first breaks near-ties of the score by closeness to
     /// <paramref name="baseDeltaMs"/> REGARDLESS of polarity (the envelope
     /// outranks fractions of a dB, and a flip partner is a lobe like any
-    /// other); then prefers a non-inverted candidate over an inverted winner
-    /// within the invert margin — but only one that does not sit more than
+    /// other); then prefers a RELATIVELY non-inverted candidate over a
+    /// relatively inverted winner within the invert margin — but only one
+    /// that does not sit more than
     /// <paramref name="invertPreferenceReachMs"/> farther from
     /// <paramref name="baseDeltaMs"/> than the winner it replaces — and
     /// finally re-breaks near-ties within the chosen polarity.
+    /// "Relatively" is against <paramref name="neighborInverted"/>, the
+    /// settled neighbor's polarity flag: polarity purity is a property of
+    /// the PAIR, not of one flag. With an inverted neighbor the pure choice
+    /// is the equally-inverted candidate — an absolute-flag preference there
+    /// used to "rescue" a mixed pair and pay for the cosmetics with a
+    /// quarter period of delay, dragging the tweeter off the onset line its
+    /// inverted twin sat on.
     /// </summary>
     public static AlignmentCandidate Select(
         IReadOnlyList<AlignmentCandidate> candidates,
         double baseDeltaMs,
         double invertPreferenceMarginDb = DefaultInvertPreferenceMarginDb,
         double invertPreferenceReachMs = DefaultInvertPreferenceReachMs,
-        double delayTieMarginDb = DefaultDelayTieMarginDb)
+        double delayTieMarginDb = DefaultDelayTieMarginDb,
+        bool neighborInverted = false)
     {
         ArgumentNullException.ThrowIfNull(candidates);
         if (candidates.Count == 0)
@@ -84,19 +93,19 @@ public static class AlignmentSelection
             .Where(item => item.ScoreDb >= candidates[0].ScoreDb - delayTieMarginDb)
             .OrderBy(item => Math.Abs(item.DelayMs - baseDeltaMs))
             .First();
-        if (best.InvertPolarity)
+        if (best.InvertPolarity ^ neighborInverted)
         {
             double bestDistanceMs = Math.Abs(best.DelayMs - baseDeltaMs);
-            AlignmentCandidate? bestNormal = candidates
-                .Where(item => !item.InvertPolarity &&
+            AlignmentCandidate? bestPure = candidates
+                .Where(item => item.InvertPolarity == neighborInverted &&
                     Math.Abs(item.DelayMs - baseDeltaMs) - bestDistanceMs <=
                         invertPreferenceReachMs)
                 .OrderByDescending(item => item.ScoreDb)
                 .FirstOrDefault();
-            if (bestNormal != null &&
-                bestNormal.ScoreDb >= best.ScoreDb - invertPreferenceMarginDb)
+            if (bestPure != null &&
+                bestPure.ScoreDb >= best.ScoreDb - invertPreferenceMarginDb)
             {
-                best = bestNormal;
+                best = bestPure;
             }
         }
 
@@ -119,7 +128,8 @@ public static class AlignmentSelection
         double baseDeltaMs,
         double invertPreferenceMarginDb = DefaultInvertPreferenceMarginDb,
         double invertPreferenceReachMs = DefaultInvertPreferenceReachMs,
-        double delayTieMarginDb = DefaultDelayTieMarginDb)
+        double delayTieMarginDb = DefaultDelayTieMarginDb,
+        bool neighborInverted = false)
     {
         ArgumentNullException.ThrowIfNull(candidates);
         if (candidates.Count == 0)
@@ -131,14 +141,14 @@ public static class AlignmentSelection
             .Where(item => item.ScoreDb >= candidates[0].ScoreDb - delayTieMarginDb)
             .OrderBy(item => Math.Abs(item.DelayMs - baseDeltaMs))
             .First();
-        if (!best.InvertPolarity)
+        if (best.InvertPolarity == neighborInverted)
         {
             return null;
         }
 
         double bestDistanceMs = Math.Abs(best.DelayMs - baseDeltaMs);
         List<AlignmentCandidate> inMargin = candidates
-            .Where(item => !item.InvertPolarity &&
+            .Where(item => item.InvertPolarity == neighborInverted &&
                 item.ScoreDb >= best.ScoreDb - invertPreferenceMarginDb)
             .ToList();
         return inMargin.Count == 0 || inMargin.Any(item =>
@@ -146,6 +156,54 @@ public static class AlignmentSelection
                     invertPreferenceReachMs)
             ? null
             : inMargin.OrderByDescending(item => item.ScoreDb).First();
+    }
+
+    /// <summary>
+    /// The sub-precedence preference for a junction with the shared mono
+    /// sub: when <paramref name="chosen"/> leaves the sub TRAILING the rest
+    /// of the stack (its lead, signed by <paramref name="leadSign"/> and
+    /// measured from the envelope anchor, is below
+    /// −<paramref name="slackMs"/>), the nearest candidate on the LEADING
+    /// side whose prior-free score (via <paramref name="acousticScore"/>)
+    /// sits within <paramref name="marginDb"/> of the chosen's — and no
+    /// farther than <paramref name="reachMs"/> past the anchor, a sub
+    /// leading by whole periods being detached the other way — replaces it.
+    /// The psychoacoustics behind the asymmetry: the first wavefront binds
+    /// the bass to the localizable midbass transient (precedence effect), so
+    /// a slightly leading sub reads as "bass up front" while a trailing one
+    /// reads as sluggish, detached bass. Returns <paramref name="chosen"/>
+    /// unchanged when it already leads (or sits within the slack) or no
+    /// eligible leading candidate exists.
+    /// </summary>
+    public static AlignmentCandidate PreferSubLeading(
+        IEnumerable<AlignmentCandidate> pool,
+        AlignmentCandidate chosen,
+        Func<AlignmentCandidate, double> acousticScore,
+        double anchorMs,
+        double leadSign,
+        double marginDb,
+        double slackMs,
+        double reachMs)
+    {
+        ArgumentNullException.ThrowIfNull(pool);
+        ArgumentNullException.ThrowIfNull(chosen);
+        ArgumentNullException.ThrowIfNull(acousticScore);
+        if (leadSign * (chosen.DelayMs - anchorMs) >= -slackMs)
+        {
+            return chosen;
+        }
+
+        double chosenScore = acousticScore(chosen);
+        return pool
+            .Where(item =>
+            {
+                double leadMs = leadSign * (item.DelayMs - anchorMs);
+                return leadMs >= -slackMs && leadMs <= reachMs &&
+                    acousticScore(item) >= chosenScore - marginDb;
+            })
+            .OrderBy(item => Math.Abs(item.DelayMs - anchorMs))
+            .DefaultIfEmpty(chosen)
+            .First();
     }
 
     /// <summary>
@@ -172,7 +230,8 @@ public static class AlignmentSelection
         Func<AlignmentCandidate, double> acousticScore,
         double anchorMs,
         double nearReachMs,
-        double lobeHopMarginDb)
+        double lobeHopMarginDb,
+        bool neighborInverted = false)
     {
         ArgumentNullException.ThrowIfNull(candidates);
         ArgumentNullException.ThrowIfNull(chosen);
@@ -190,7 +249,8 @@ public static class AlignmentSelection
             return chosen;
         }
 
-        AlignmentCandidate nearBest = Select(near, anchorMs);
+        AlignmentCandidate nearBest = Select(
+            near, anchorMs, neighborInverted: neighborInverted);
         return acousticScore(chosen) - acousticScore(nearBest) > lobeHopMarginDb
             ? chosen
             : nearBest;

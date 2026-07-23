@@ -398,6 +398,44 @@ public static class AutoAlignmentEngine
         Compute(channelsByBand, pairs, reprocess, alignment, log,
             onsetLocks: null, decisions);
         NormalizeAndVerifyFeasibility(channelsByBand.ToList(), alignment, log);
+        NormalizePolarityPresentation(channelsByBand, alignment, log);
+    }
+
+    // Presentation-only normalization: a GLOBAL polarity flip changes no
+    // relation — every junction, the scene and the sum see both of their ends
+    // flipped together — so when a proposal inverts MORE channels than it
+    // keeps, the whole field is flipped and the same physics reads as the
+    // minimal set of Invert switches. The field case: the sub-precedence
+    // lobe put the sub's relation to the stack inverted, which is presented
+    // as ONE inverted sub rather than three inverted stack channels (the
+    // owner's own hand tune of the same physics).
+    private static void NormalizePolarityPresentation(
+        IReadOnlyList<AlignmentSnapshot> scope,
+        Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+        StringBuilder log)
+    {
+        List<IAlignmentChannel> channels = scope
+            .Select(item => item.Channel)
+            .Distinct()
+            .ToList();
+        int inverted = channels.Count(
+            channel => alignment.GetValueOrDefault(channel).InvertPolarity);
+        if (inverted * 2 <= channels.Count)
+        {
+            return;
+        }
+
+        foreach (IAlignmentChannel channel in channels)
+        {
+            AlignmentOverride over = alignment.GetValueOrDefault(channel);
+            alignment[channel] = over with
+            {
+                InvertPolarity = !over.InvertPolarity
+            };
+        }
+        log.AppendLine(
+            $"  polarity presentation: flipped every channel ({inverted} of " +
+            $"{channels.Count} were inverted) — a global flip changes no relation.");
     }
 
     /// <summary>
@@ -1091,8 +1129,16 @@ public static class AutoAlignmentEngine
                     $"(score {item.ScoreDb:0.00}, avg {item.LossDb:0.00}, " +
                     $"dip {item.DipDb:0.0} dB)")));
 
+            // Polarity purity is judged against the SETTLED primary neighbor:
+            // with an inverted neighbor the pure pair is the equally-inverted
+            // candidate, and an absolute-flag preference would "rescue" a
+            // mixed pair at the cost of a quarter period of delay (the field
+            // tweeter that slid off the onset line its inverted twin sat on).
+            bool neighborInverted =
+                alignment.GetValueOrDefault(neighborChannel).InvertPolarity;
             AlignmentCandidate? selected = candidates.Count > 0
-                ? AlignmentSelection.Select(candidates, anchorMs)
+                ? AlignmentSelection.Select(candidates, anchorMs,
+                    neighborInverted: neighborInverted)
                 : null;
             if (selected is { } fineSelected && fineSelected != candidates[0])
             {
@@ -1103,15 +1149,18 @@ public static class AutoAlignmentEngine
                     $"{(candidates[0].InvertPolarity ? " inv" : "")} " +
                     $"(margin {candidates[0].ScoreDb - fineSelected.ScoreDb:0.00} dB)");
             }
-            else if (selected is { InvertPolarity: true } keptInverted &&
-                AlignmentSelection.DeclinedInvertRescue(candidates, anchorMs)
+            else if (selected is { } keptPick &&
+                keptPick.InvertPolarity != neighborInverted &&
+                AlignmentSelection.DeclinedInvertRescue(candidates, anchorMs,
+                    neighborInverted: neighborInverted)
                     is { } rescue)
             {
                 log.AppendLine(
-                    $"  kept {keptInverted.DelayMs:0.000} ms inv: rescue " +
+                    $"  kept {keptPick.DelayMs:0.000} ms" +
+                    $"{(keptPick.InvertPolarity ? " inv" : "")}: rescue " +
                     $"{rescue.DelayMs:0.000} ms " +
-                    $"(margin {keptInverted.ScoreDb - rescue.ScoreDb:0.00} dB) is " +
-                    $"{Math.Abs(rescue.DelayMs - anchorMs) - Math.Abs(keptInverted.DelayMs - anchorMs):0.000} ms " +
+                    $"(margin {keptPick.ScoreDb - rescue.ScoreDb:0.00} dB) is " +
+                    $"{Math.Abs(rescue.DelayMs - anchorMs) - Math.Abs(keptPick.DelayMs - anchorMs):0.000} ms " +
                     "farther from the arrival (reach " +
                     $"{AlignmentSelection.DefaultInvertPreferenceReachMs:0.00} ms)");
             }
@@ -1143,7 +1192,8 @@ public static class AutoAlignmentEngine
             // structure the narrow window missed.
             if (selected == null && wide.Count > 0)
             {
-                selected = AlignmentSelection.Select(wide, anchorMs);
+                selected = AlignmentSelection.Select(wide, anchorMs,
+                    neighborInverted: neighborInverted);
                 log.AppendLine(
                     $"  fine window empty — adopted {selected.DelayMs:0.000} ms" +
                     $"{(selected.InvertPolarity ? " inv" : "")} from the wide sweep");
@@ -1207,7 +1257,8 @@ public static class AutoAlignmentEngine
                     // taking retried[0] raw would let the widened window hand
                     // the result to a (flip + half-period) impostor that the
                     // invert margin and the arrival tie-break exist to reject.
-                    chosen = AlignmentSelection.Select(retried, anchorMs);
+                    chosen = AlignmentSelection.Select(retried, anchorMs,
+                        neighborInverted: neighborInverted);
                 }
 
                 log.AppendLine(
@@ -1229,7 +1280,8 @@ public static class AutoAlignmentEngine
                     halfPeriodMs, MinFineAlignmentRangeMs, MaxFineAlignmentRangeMs);
                 AlignmentCandidate gated = AlignmentSelection.GateWideSeedLobe(
                     candidates, chosen, AcousticScore, anchorMs,
-                    trustedReachMs, WideWindowPromotionMarginDb);
+                    trustedReachMs, WideWindowPromotionMarginDb,
+                    neighborInverted);
                 if (gated != chosen)
                 {
                     log.AppendLine(
@@ -1261,7 +1313,8 @@ public static class AutoAlignmentEngine
                 onsetAnchorMs == null)
             {
                 AlignmentCandidate wideChosen =
-                    AlignmentSelection.Select(wide, anchorMs);
+                    AlignmentSelection.Select(wide, anchorMs,
+                        neighborInverted: neighborInverted);
                 // Only a lobe's reach from the arrival pick: past that the "better"
                 // score is a comb alias the summation cannot distinguish, so the
                 // envelope stays authoritative (see PromotionReachPeriods). Inside
@@ -2377,6 +2430,8 @@ public static class AutoAlignmentEngine
         // The invariant the user requires of automatic delay: no driver is ever
         // inverted on one side of a pair alone.
         EnforcePolaritySymmetry(plan, alignment, log, decisions);
+
+        NormalizePolarityPresentation(allChannels, alignment, log);
     }
 
     // Final normalization + the single feasibility gate. Normalization: the

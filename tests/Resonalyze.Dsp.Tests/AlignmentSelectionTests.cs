@@ -105,6 +105,24 @@ public sealed class AlignmentSelectionTests
     }
 
     [Fact]
+    public void Select_JudgesPolarityPurityAgainstTheNeighbor()
+    {
+        // With an INVERTED settled neighbor the pure pair is the
+        // equally-inverted candidate: an absolute-flag preference used to
+        // "rescue" the mixed pair here and pay a quarter period of delay for
+        // the cosmetics (the field tweeter that slid off the onset line its
+        // inverted twin sat on).
+        var mixedNormal = new AlignmentCandidate(1.6, false, -0.50);
+        var pureInverted = new AlignmentCandidate(2.0, true, -0.60);
+
+        AlignmentCandidate chosen = AlignmentSelection.Select(
+            [mixedNormal, pureInverted], baseDeltaMs: 2.0,
+            neighborInverted: true);
+
+        Assert.Equal(pureInverted, chosen);
+    }
+
+    [Fact]
     public void Select_PrefersNonInvertedWithinMargin()
     {
         // The inverted impostor wins by less than the invert margin, so the

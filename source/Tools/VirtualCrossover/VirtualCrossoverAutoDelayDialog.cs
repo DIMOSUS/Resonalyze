@@ -140,6 +140,7 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         bool enabled = stereo && checkBoxGains.Checked;
         labelLevelDifference.Enabled = enabled;
         numericLevelDifference.Enabled = enabled;
+        labelLevelDifferenceHint.Enabled = enabled;
     }
 
     // Once a proposal exists, any input change makes it stale: Apply must
@@ -193,6 +194,7 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         checkBoxGains.Enabled = false;
         labelLevelDifference.Enabled = false;
         numericLevelDifference.Enabled = false;
+        labelLevelDifferenceHint.Enabled = false;
         SetStatus("Aligning…", StatusNeutral);
         UseWaitCursor = true;
         try

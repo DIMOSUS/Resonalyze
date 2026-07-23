@@ -533,8 +533,6 @@ public sealed class Overlay
     private readonly ToolStripItem settingsMenuItem;
     private readonly System.Windows.Forms.Timer longPressTimer;
     private readonly System.Windows.Forms.Timer offsetSaveTimer;
-    private int captureMenuOpenedAt;
-    private bool captureMenuSpuriousCloseGuard;
     private bool longPressTriggered;
 
     private OverlayKind kind = OverlayKind.Captured;
@@ -632,12 +630,7 @@ public sealed class Overlay
             out captureCurveMenuItem,
             out exportDeviationMenuItem,
             out settingsMenuItem);
-        captureMenu.Opened += (_, _) =>
-        {
-            captureMenuOpenedAt = Environment.TickCount;
-            captureMenuSpuriousCloseGuard = true;
-        };
-        captureMenu.Closing += CaptureMenuClosing;
+        DropDownFocusGuard.Attach(captureMenu);
 
         // Holding the button for over half a second jumps straight to the slot's
         // settings; a normal click still opens the capture menu.
@@ -1190,24 +1183,6 @@ public sealed class Overlay
         return menu;
     }
 
-    private void CaptureMenuClosing(object? sender, ToolStripDropDownClosingEventArgs e)
-    {
-        // A borderless custom-chrome window can emit a spurious activation change the
-        // instant the dropdown opens, which closes it immediately — the "button
-        // pressed, no menu" symptom that no show-timing change could fix. Cancel that
-        // single focus-change close if it arrives right after opening, but only once
-        // per open so a genuine later dismissal (e.g. clicking another slot) is not
-        // swallowed too. Clicking elsewhere (AppClicked), Esc (Keyboard), choosing an
-        // item, and programmatic Close (CloseCalled) are all unaffected.
-        if (e.CloseReason == ToolStripDropDownCloseReason.AppFocusChange &&
-            captureMenuSpuriousCloseGuard &&
-            Environment.TickCount - captureMenuOpenedAt < 250)
-        {
-            captureMenuSpuriousCloseGuard = false;
-            e.Cancel = true;
-        }
-    }
-
     internal void CloseCaptureMenu()
     {
         if (captureMenu.Visible)
@@ -1471,6 +1446,24 @@ public sealed class Overlay
         catch (Exception exception)
         {
             ShowStorageError("Overlay could not be imported.", exception);
+            return;
+        }
+
+        // A deviation or EQ-correction file is a difference from a target, not a measured
+        // response. An overlay slot has no way to record that identity, so importing one
+        // would silently strip it and present a difference as a plain captured response —
+        // which a consumer that equalizes curves (the EQ Wizard) would then treat as one.
+        // Refuse it here rather than let that laundering happen through a round trip.
+        if (imported.Metadata.Role is OverlayCurveRole.Deviation or OverlayCurveRole.EqCorrection)
+        {
+            MessageBox.Show(
+                collection.Form,
+                "This file holds a deviation or EQ-correction curve — a difference from a " +
+                "target, not a measured response — so it cannot be imported as an overlay. " +
+                "Import the response it was derived from instead.",
+                "Import from text",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
             return;
         }
 

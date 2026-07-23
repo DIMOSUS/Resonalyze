@@ -33,26 +33,8 @@ internal static class LiveRtaRawCapture
     public static List<SignalPoint> BuildRelativeRaw(
         IReadOnlyList<double> amplitudeSpectrum,
         int fftLength,
-        int sampleRate)
-    {
-        ArgumentNullException.ThrowIfNull(amplitudeSpectrum);
-
-        int binCount = Math.Min(fftLength / 2, amplitudeSpectrum.Count);
-        var points = new List<SignalPoint>(Math.Max(0, binCount - 1));
-        if (fftLength <= 0 || sampleRate <= 0)
-        {
-            return points;
-        }
-
-        // Bin 0 (DC) is skipped: it has no place on a logarithmic frequency axis.
-        for (int i = 1; i < binCount; i++)
-        {
-            double frequency = i * ((double)sampleRate / fftLength);
-            points.Add(new SignalPoint(
-                frequency,
-                DataHelper.AmplitudeToDecibels(amplitudeSpectrum[i])));
-        }
-
-        return points;
-    }
+        int sampleRate) =>
+        // The same bins-to-dB conversion the live magnitude resampler runs before it
+        // smooths onto the display grid, so re-smoothing these reproduces the trace.
+        DataHelper.MagnitudeBinsToDecibels(amplitudeSpectrum, fftLength, sampleRate);
 }

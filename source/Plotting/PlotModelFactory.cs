@@ -1021,20 +1021,11 @@ internal sealed class PlotModelFactory
         double[] magnitude,
         double offsetDb = 0.0)
     {
-        int length = noiseMeasurement.SequenceLength;
-        int binCount = Math.Min(length / 2, magnitude.Length);
-        List<DataPoint> data = new(binCount);
-
-        for (int i = 1; i < binCount; i++)
-        {
-            double frequency =
-                i * ((double)noiseMeasurement.SampleRate / length);
-            double decibels = DataHelper.AmplitudeToDecibels(magnitude[i]) + offsetDb;
-            data.Add(new DataPoint(frequency, decibels));
-        }
+        List<SignalPoint> bins = DataHelper.MagnitudeBinsToDecibels(
+            magnitude, noiseMeasurement.SequenceLength, noiseMeasurement.SampleRate, offsetDb);
 
         return DataHelper.LogarithmicResample(
-            OxyPlotAdapter.ToSignalPoints(data),
+            bins,
             20,
             20000,
             1024,

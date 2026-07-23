@@ -45,8 +45,6 @@ public partial class EqWizardPanel
     private bool sourceCurveDirty = true;
     private int sourceLoadGeneration;
     private ContextMenuStrip? sourceMenu;
-    private int sourceMenuOpenedAt;
-    private bool sourceMenuSpuriousCloseGuard;
 
     private TargetPreset targetPreset = TargetPreset.Flat;
     private TargetCurveSpec targetSpec = TargetCurveSpec.FromPreset(TargetPreset.Flat);
@@ -99,29 +97,8 @@ public partial class EqWizardPanel
 
         sourceMenu?.Dispose();
         sourceMenu = BuildSourceMenu();
-        // A borderless custom-chrome window can emit a spurious activation change the
-        // instant a dropdown opens, which closes it immediately — the "button pressed,
-        // no menu" symptom the overlay capture menu already had to defend against.
-        sourceMenu.Opened += (_, _) =>
-        {
-            sourceMenuOpenedAt = Environment.TickCount;
-            sourceMenuSpuriousCloseGuard = true;
-        };
-        sourceMenu.Closing += SourceMenuClosing;
+        DropDownFocusGuard.Attach(sourceMenu);
         sourceMenu.Show(buttonLoadIr, new Point(0, buttonLoadIr.Height));
-    }
-
-    // Cancels that single focus-change close if it arrives right after opening, but only
-    // once per open, so a genuine later dismissal is not swallowed too.
-    private void SourceMenuClosing(object? sender, ToolStripDropDownClosingEventArgs e)
-    {
-        if (e.CloseReason == ToolStripDropDownCloseReason.AppFocusChange &&
-            sourceMenuSpuriousCloseGuard &&
-            Environment.TickCount - sourceMenuOpenedAt < 250)
-        {
-            sourceMenuSpuriousCloseGuard = false;
-            e.Cancel = true;
-        }
     }
 
     private ContextMenuStrip BuildSourceMenu()
@@ -155,7 +132,7 @@ public partial class EqWizardPanel
 
         foreach (MeasurementHistoryEntry entry in entries)
         {
-            var entryItem = new ToolStripMenuItem(TrimMenuText(entry.FileNameOrDisplayName))
+            var entryItem = new ToolStripMenuItem(MenuText.Trim(entry.FileNameOrDisplayName))
             {
                 Tag = entry.Id,
                 ToolTipText = entry.Metadata.BuildToolTipText(entry.Timestamp)
@@ -184,7 +161,7 @@ public partial class EqWizardPanel
 
         foreach (EqWizardSlotOption slot in slots)
         {
-            var item = new ToolStripMenuItem(TrimMenuText($"{slot.Slot}: {slot.Title}"))
+            var item = new ToolStripMenuItem(MenuText.Trim($"{slot.Slot}: {slot.Title}"))
             {
                 ToolTipText = slot.Description
             };
@@ -192,9 +169,6 @@ public partial class EqWizardPanel
             slotItem.DropDownItems.Add(item);
         }
     }
-
-    private static string TrimMenuText(string text) =>
-        text.Length <= 48 ? text : string.Concat(text.AsSpan(0, 45), "...");
 
     // ------------------------------------------------------------- source loading
 

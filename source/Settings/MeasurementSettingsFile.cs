@@ -559,6 +559,11 @@ internal sealed class MeasurementSettingsFile
         public MicrophoneCalibrationMode CalibrationMode { get; set; } =
             MicrophoneCalibrationMode.Off;
 
+        // The rate the fitted biquads are realized at when the source does not state one
+        // (a foreign text curve). A source that knows its own rate overrides this without
+        // changing it, so the manual choice survives loading such a source.
+        public int ManualSampleRateHz { get; set; } = 48_000;
+
         // Auto Tune only cuts, never boosts. The safe default for a car tune; see
         // EqAutoTuner.Options.CutsOnlyMode.
         public bool CutsOnly { get; set; } = true;

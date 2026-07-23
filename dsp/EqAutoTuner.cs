@@ -106,6 +106,22 @@ public static class EqAutoTuner
     private static readonly double[] CandidateQ =
         { 0.5, 0.7, 1.0, 1.4, 2.0, 2.8, 4.0, 5.6, 8.0, 10.0 };
 
+    // Cuts-only over-correction penalty when choosing a band's Q. Over-cutting pushes a
+    // point BELOW the target, where no later cut can lift it back (only a forbidden boost
+    // could). Each candidate is charged for the over-cut this band ADDS at a point — the
+    // part of its own cut that lands below the target — with the first
+    // CutsOnlyOverCutFreeDb of it free. Charging the band's own contribution (never the
+    // pre-existing depth) matters: a real response weaves below the target all over, and
+    // any penalty that scales with the depth a point ALREADY had makes every wide Q lose
+    // to the narrowest one — that shredded a smooth response into a swarm of Q=10 slivers
+    // whose notch-comb looked worse than no EQ. With the free zone, a moderately wide
+    // skirt grazing a neighbouring dip by up to 1 dB costs nothing, so the residual RMS
+    // alone picks the band width; only a skirt that digs several dB below the target (the
+    // visible gouge) is weighted up and loses to a tighter band. Under-correction (above
+    // target) is always freely fixable and unpenalised.
+    private const double CutsOnlyOverCorrectionWeight = 25.0;
+    private const double CutsOnlyOverCutFreeDb = 1.0;
+
     /// <summary>
     /// Fits an equalization curve so that <paramref name="source"/> + curve best
     /// matches <paramref name="target"/>. Both curves are (Hz, dB) and need not share
@@ -149,6 +165,7 @@ public static class EqAutoTuner
         var valid = new bool[n];
         int validCount = 0;
         double errorSum = 0;
+        double maxError = double.NegativeInfinity;
         for (int i = 0; i < n; i++)
         {
             if (double.IsFinite(sourceDb[i]) && double.IsFinite(targetDb[i]))
@@ -156,6 +173,7 @@ public static class EqAutoTuner
                 error[i] = targetDb[i] - sourceDb[i];
                 valid[i] = true;
                 errorSum += error[i];
+                maxError = Math.Max(maxError, error[i]);
                 validCount++;
             }
         }
@@ -165,11 +183,35 @@ public static class EqAutoTuner
             return new EqualizationCurve(Array.Empty<PeqBand>());
         }
 
-        // The preamp absorbs the broadband level difference; bands fit the shape.
-        double preamp = Clamp(
-            Math.Round(errorSum / validCount),
-            opt.PreampMinDb,
-            opt.PreampMaxDb);
+        // The preamp absorbs the broadband level difference; bands fit the shape. The
+        // right broadband level depends on which way the bands can move the source:
+        //
+        //  - Boosts allowed: bands correct in both directions, so centre the residual on
+        //    the MEAN error and let bands fan out symmetrically.
+        //  - Cuts only: bands can only pull the source DOWN. A preamp below the largest
+        //    error would drop a point beneath the target, where no cut can lift it back —
+        //    it just leaves that point further off. So align to the point where the
+        //    source is LEAST above the target (the maximum error): this absorbs only the
+        //    excess every point shares, and stays at the ceiling whenever any point is
+        //    already at or below the target (nothing there can be pulled down). Rounding
+        //    up keeps every point at or above the aligned target, so it stays cuttable.
+        //
+        // The ceiling is pre-applied here (not only in the post-band clamp) so the bands
+        // fit against the same level the curve is finally realised at; in cuts-only the
+        // band peak is 0, so 0 (a broadband boost) is the ceiling — cuts-only must never
+        // lift the curve, whatever the level difference or an unbounded TotalGainMaxDb.
+        double preamp;
+        if (opt.CutsOnlyMode)
+        {
+            double cutsCeiling = double.IsFinite(opt.TotalGainMaxDb)
+                ? Math.Min(0.0, Math.Min(opt.PreampMaxDb, opt.TotalGainMaxDb))
+                : Math.Min(0.0, opt.PreampMaxDb);
+            preamp = Clamp(Math.Ceiling(maxError), opt.PreampMinDb, cutsCeiling);
+        }
+        else
+        {
+            preamp = Clamp(Math.Round(errorSum / validCount), opt.PreampMinDb, opt.PreampMaxDb);
+        }
 
         var residual = new double[n];
         for (int i = 0; i < n; i++)
@@ -286,8 +328,21 @@ public static class EqAutoTuner
                         spillsIntoForbidden = true;
                     }
 
+                    // In cuts-only, charge the part of this band's own cut that lands
+                    // below the target, past the free zone. See the constants above for
+                    // why the charge is on the band's contribution, never the depth the
+                    // point already had.
                     double r = residual[i] - c;
                     sumSquares += r * r;
+                    if (opt.CutsOnlyMode && c < 0)
+                    {
+                        double added = Math.Min(-c, Math.Max(0, r));
+                        if (added > CutsOnlyOverCutFreeDb)
+                        {
+                            double over = added - CutsOnlyOverCutFreeDb;
+                            sumSquares += CutsOnlyOverCorrectionWeight * over * over;
+                        }
+                    }
                 }
 
                 if (spillsIntoForbidden)

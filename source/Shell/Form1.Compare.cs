@@ -169,16 +169,8 @@ public partial class Form1
                 : BuildCompareButtonToolTip(selection));
     }
 
-    private static string BuildCompareHistoryItemText(MeasurementHistoryEntry entry)
-    {
-        string text = entry.FileNameOrDisplayName;
-        if (text.Length <= 48)
-        {
-            return text;
-        }
-
-        return string.Concat(text.AsSpan(0, 45), "...");
-    }
+    private static string BuildCompareHistoryItemText(MeasurementHistoryEntry entry) =>
+        MenuText.Trim(entry.FileNameOrDisplayName);
 
     private static string BuildCompareButtonToolTip(CompareMeasurementSelection selection)
     {

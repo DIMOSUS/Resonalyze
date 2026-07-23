@@ -33,6 +33,10 @@ public partial class EqWizardPanel : UserControl
     private const int PeqRowCount = 2;
     private const string WizardSeriesTag = "eq-wizard:curve";
     private const string WizardTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.00} dB";
+    // The EQ filter-response curve lives on its own right-hand axis so its gain reads
+    // around 0 dB regardless of the source's level (an absolute dB SPL source puts the
+    // shared left axis tens of dB away from 0, where the filter shape would be clipped).
+    private const string EqGainAxisKey = "eq-wizard:gain";
 
     private const string FrequencyTip = "Band center frequency (Hz).";
     private const string QTip = "Band quality factor (Q) — higher Q is a narrower band.";
@@ -72,6 +76,9 @@ public partial class EqWizardPanel : UserControl
     // Colour of the highlighted single-band contribution curve (semi-transparent).
     private static readonly OxyColor BandCurveColor = OxyColor.FromArgb(150, 255, 170, 40);
 
+    // Right EQ-gain axis furniture: a dim white matching the white EQ filter curve.
+    private static readonly OxyColor EqAxisColor = OxyColor.FromRgb(205, 205, 205);
+
     public EqWizardPanel()
     {
         InitializeComponent();
@@ -80,7 +87,12 @@ public partial class EqWizardPanel : UserControl
         InitializeBandsComboBox();
         InitializeBandsLimitComboBox();
         InitializeSmoothComboBox();
-        buttonLoadIr.Click += (_, _) => LoadIr();
+        InitializeSampleRateComboBox();
+        // Open on Click (which fires after the mouse-up) and defer with BeginInvoke.
+        // Showing a dropdown synchronously inside the mouse message is swallowed by the
+        // focus change, and showing it on mouse-down lets the click's own mouse-up land
+        // outside the just-opened menu and close it again.
+        buttonLoadIr.Click += (_, _) => buttonLoadIr.BeginInvoke(ShowSourceMenu);
         comboBoxCalibration.SelectedIndexChanged += (_, _) => OnCalibrationChanged();
         NumericTargetOffset.ValueChanged += (_, _) => OnTargetOffsetChanged();
         NumericGain.ValueChanged += (_, _) => DrawSelectedCurves();
@@ -189,21 +201,50 @@ public partial class EqWizardPanel : UserControl
             suppressRedraw = false;
         }
 
+        UpdateEqAxisRange();
         RaiseSettingsChanged();
         DrawSelectedCurves();
+    }
+
+    // Sizes the right EQ-gain axis so it reads as the boost/cut budget yet still contains
+    // the drawn filter curve, whose overlapping bands can sum well past a single band's
+    // limit. The curve extent (its actual min/max in dB) extends the budget-based range;
+    // 0/0 means no curve is drawn yet, leaving the budget range alone. See
+    // EqWizardPlotFit.EqGainAxisRange.
+    private void UpdateEqAxisRange(double curveMinDb = 0, double curveMaxDb = 0)
+    {
+        if (plotWizard.Model?.Axes.FirstOrDefault(axis => axis.Key == EqGainAxisKey)
+            is not LinearAxis eqAxis)
+        {
+            return;
+        }
+
+        (double lower, double upper) = EqWizardPlotFit.EqGainAxisRange(
+            (double)numericGainMin.Value,
+            (double)numericGainMax.Value,
+            curveMinDb,
+            curveMaxDb);
+        eqAxis.Minimum = lower;
+        eqAxis.Maximum = upper;
+        eqAxis.AbsoluteMinimum = lower;
+        eqAxis.AbsoluteMaximum = upper;
     }
 
     private void InitializeToolTips()
     {
         SetTip(buttonLoadIr,
-            "Load an impulse response (.json) whose frequency response is equalized " +
-            "toward the target curve.");
+            "Choose the curve to equalize: an impulse response (file or history), " +
+            "a captured overlay slot, or a measured curve from a text file.");
         SetTip(buttonOverlaySettings,
             "Edit the target curve this mode corrects toward (isolated to the EQ " +
             "Wizard; not tied to any overlay).");
         SetTip(labelCalibration, comboBoxCalibration,
-            "Microphone calibration applied when the loaded IR's frequency response " +
-            "is computed.");
+            "Microphone calibration applied to the source curve. \"Own\" re-uses the " +
+            "correction stored with an imported curve; unavailable when the curve " +
+            "carries no uncalibrated reference (its calibration is already baked in).");
+        SetTip(labelSampleRate, comboBoxSampleRate,
+            "Sample rate the fitted filters are realized at, and the rate written into " +
+            "an exported profile. Locked to the source's own rate when it states one.");
         SetTip(labelTargetOffset, NumericTargetOffset,
             "Vertical offset of the target curve (dB).");
         SetTip(labelGain, NumericGain,
@@ -211,8 +252,9 @@ public partial class EqWizardPanel : UserControl
             "headroom for boosts.");
         SetTip(labelBands, darkComboBoxBands, "Number of PEQ bands shown.");
         SetTip(labelSmooth, comboBoxSmooth,
-            "Extra smoothing of the source curve (1/N octave), used for display and " +
-            "Auto Tune.");
+            "Smoothing of the source curve (1/N octave), used for display and Auto " +
+            "Tune. Unavailable for an imported curve that carries no unsmoothed " +
+            "reference, where it would compound the smoothing already applied.");
         SetTip(checkBoxBypass,
             "Show the curves without the EQ applied (Source + EQ equals Source).");
         SetTip(labelGainMin, numericGainMin,
@@ -260,10 +302,12 @@ public partial class EqWizardPanel : UserControl
 
     internal IReadOnlyList<PeqSlotControl> PeqSlots => peqSlots;
 
+    // The selected width, whether or not the selector currently applies. A source with
+    // no unsmoothed reference ignores it (ComputeImportedCurve draws the stored points
+    // as-is) rather than reading it as Off — which would persist Off over the user's
+    // real preference the moment such a curve is loaded.
     private int SourceSmoothingInverseOctaves =>
         comboBoxSmooth.SelectedItem is int value ? value : 0;
-
-    private int EqSampleRate => loadedIr?.SampleRate ?? 48_000;
 
     // Reports the current tuning result (or null when nothing is being tuned) to the
     // results panel. Wired by the host form; null until then.
@@ -409,6 +453,29 @@ public partial class EqWizardPanel : UserControl
             Title = "dB",
         });
 
+        // A dedicated right-hand axis for the EQ filter curve, centred on 0 dB so the
+        // correction shape is readable whatever the source's level. It owns no gridlines
+        // (the left axis draws them) and is a fixed reference, not pannable; its range
+        // follows the boost/cut budget so the curve cannot fall off it. A subtle 0-line
+        // marks unity gain.
+        model.Axes.Add(new LinearAxis
+        {
+            Key = EqGainAxisKey,
+            Position = AxisPosition.Right,
+            MajorStep = 6,
+            MajorGridlineStyle = LineStyle.None,
+            MinorGridlineStyle = LineStyle.None,
+            TextColor = EqAxisColor,
+            TitleColor = EqAxisColor,
+            TicklineColor = EqAxisColor,
+            ExtraGridlines = new[] { 0.0 },
+            ExtraGridlineColor = OxyColor.FromAColor(60, OxyColors.White),
+            ExtraGridlineStyle = LineStyle.Solid,
+            Title = "EQ (dB)",
+            IsPanEnabled = false,
+            IsZoomEnabled = false
+        });
+
         model.Annotations.Add(new PlotWatermarkAnnotation
         {
             Text = "EQ Wizard",
@@ -447,6 +514,7 @@ public partial class EqWizardPanel : UserControl
         rangeFill.MaximumX = toMarker.X;
 
         plotWizard.Model = model;
+        UpdateEqAxisRange();
         PlotInteraction.EnableDoubleClickAxisReset(plotWizard);
 
         // Reuse the main plot's bottom legend so the curve list looks identical.
@@ -695,7 +763,9 @@ public partial class EqWizardPanel : UserControl
             render.Source.Points.Select(point => new SignalPoint(point.X, point.Y)),
             render.Target.Points.Select(point => new SignalPoint(point.X, point.Y)),
             CreateAutoTuneOptions(),
-            sourceCoherence);
+            // Only a loopback-transfer impulse response carries coherence; an imported
+            // curve has none, so boosts fall back to null-detection alone.
+            loadedSource?.Coherence);
 
         // Only the Auto Tune button is disabled while the fit runs — the user
         // can still switch the target, offsets, smoothing, the band limit or
@@ -914,7 +984,10 @@ public partial class EqWizardPanel : UserControl
         }
     }
 
-    private static void AddWizardSeries(PlotModel model, EqWizardCurve curve)
+    private static void AddWizardSeries(
+        PlotModel model,
+        EqWizardCurve curve,
+        string? yAxisKey = null)
     {
         var series = new LineSeries
         {
@@ -925,12 +998,21 @@ public partial class EqWizardPanel : UserControl
             Tag = WizardSeriesTag,
             TrackerFormatString = WizardTrackerFormat
         };
+        // Curves with no key bind to the default (left) axis; only the EQ curve names
+        // the right gain axis.
+        if (!string.IsNullOrEmpty(yAxisKey))
+        {
+            series.YAxisKey = yAxisKey;
+        }
+
         series.Points.AddRange(curve.Points);
         model.Series.Add(series);
     }
 
     // Draws the EQ filter response itself (all bands, without the preamp) as a white
-    // line, sampled on the baseline frequencies. Values are the raw EQ gain in dB.
+    // line, sampled on the baseline frequencies. Values are the raw EQ gain in dB, drawn
+    // on the dedicated right-hand gain axis so the correction shape reads around 0 dB
+    // whatever the source's absolute level.
     private void AddEqCurve(PlotModel model, EqualizationCurve eq, EqWizardCurve? baseline)
     {
         if (baseline is not { Points.Count: >= 2 })
@@ -947,7 +1029,25 @@ public partial class EqWizardPanel : UserControl
             .ToArray();
         AddWizardSeries(
             model,
-            new EqWizardCurve("EQ", OxyColors.White, 1.5, LineStyle.Solid, points));
+            new EqWizardCurve("EQ", OxyColors.White, 1.5, LineStyle.Solid, points),
+            EqGainAxisKey);
+
+        // Fit the right axis to the curve just built (the summed band response), so a
+        // stack of overlapping bands taller than one band's limit is not clipped.
+        double curveMin = 0;
+        double curveMax = 0;
+        foreach (DataPoint point in points)
+        {
+            if (!double.IsFinite(point.Y))
+            {
+                continue;
+            }
+
+            curveMin = Math.Min(curveMin, point.Y);
+            curveMax = Math.Max(curveMax, point.Y);
+        }
+
+        UpdateEqAxisRange(curveMin, curveMax);
     }
 
     // Draws the highlighted band's individual contribution relative to the target

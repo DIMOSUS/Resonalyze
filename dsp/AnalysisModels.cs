@@ -20,7 +20,12 @@ public enum AnalysisCurveKind
     ExcessPhase,
     // The measurement noise floor, shown as its own trace next to the distortion
     // curves (REW-style) rather than fused into a single THD+N number.
-    NoiseFloor
+    NoiseFloor,
+    // The reference-free input spectrum (RTA): the microphone's own spectrum, with
+    // no loopback reference behind it. Unlike a transfer function it carries an
+    // absolute level, which is what makes a moving-microphone RTA average usable as
+    // an equalization source.
+    InputSpectrum
 }
 
 /// <summary>

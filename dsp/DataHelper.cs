@@ -148,6 +148,39 @@ namespace Resonalyze.Dsp
             return Math.Pow(10.0, decibels / 20.0);
         }
 
+        /// <summary>
+        /// Converts the magnitude bins of a real FFT to ascending (Hz, dB) points, skipping
+        /// the DC bin (no place on a logarithmic axis) and stopping below Nyquist.
+        /// <paramref name="offsetDb"/> shifts every level (e.g. a reference offset). The
+        /// result is the UNSMOOTHED spectrum: callers resample it for display or store it as
+        /// a raw reference. A non-positive <paramref name="fftLength"/> or
+        /// <paramref name="sampleRate"/> yields an empty list.
+        /// </summary>
+        public static List<SignalPoint> MagnitudeBinsToDecibels(
+            IReadOnlyList<double> magnitude,
+            int fftLength,
+            int sampleRate,
+            double offsetDb = 0.0)
+        {
+            ArgumentNullException.ThrowIfNull(magnitude);
+
+            int binCount = Math.Min(fftLength / 2, magnitude.Count);
+            var points = new List<SignalPoint>(Math.Max(0, binCount - 1));
+            if (fftLength <= 0 || sampleRate <= 0)
+            {
+                return points;
+            }
+
+            double binWidth = (double)sampleRate / fftLength;
+            for (int i = 1; i < binCount; i++)
+            {
+                points.Add(new SignalPoint(
+                    i * binWidth, AmplitudeToDecibels(magnitude[i]) + offsetDb));
+            }
+
+            return points;
+        }
+
         public static Complex[] ExtractWindow(
             IImpulseMeasurement measurement,
             int start,

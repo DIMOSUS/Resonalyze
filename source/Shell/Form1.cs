@@ -147,11 +147,16 @@ namespace Resonalyze
                     Mode.LiveSpectrum => plotModelFactory.EffectiveLiveSpectrumScale,
                     _ => Dsp.MagnitudeScale.Relative
                 });
+            liveSpectrumController = dependencies.LiveSpectrumController;
             // Lets a captured overlay store the RAW (unsmoothed) reference and seed its
             // own smoothing with the mode's, so lowering the overlay's smoothing to Off
-            // reveals the original curve instead of the mode-smoothed one.
-            overlayCollection.SetRawCurveProvider(plotModelFactory.BuildRawCurve);
-            liveSpectrumController = dependencies.LiveSpectrumController;
+            // reveals the original curve instead of the mode-smoothed one. The live RTA
+            // is served by its controller (which holds the drawn snapshot); every swept
+            // curve by the plot factory. Wired after both are assigned.
+            overlayCollection.SetRawCurveProvider(tag =>
+                tag == LiveSpectrumController.LiveSpectrumInputMagnitudeTag
+                    ? liveSpectrumController.BuildRawRtaCapture()
+                    : plotModelFactory.BuildRawCurve(tag));
             modeController = dependencies.ModeController;
             commandController = dependencies.CommandController;
             timeAlignmentController = dependencies.TimeAlignmentController;
@@ -160,6 +165,7 @@ namespace Resonalyze
             dockedMeasurementSettingsHost = dependencies.DockedMeasurementSettingsHost;
             dockedHistoryHost = dependencies.DockedHistoryHost;
             eqWizardPanel.ResultsChanged = eqResultsPanel.SetResults;
+            eqWizardPanel.HistoryService = measurementHistoryService;
             eqWizardPanel.ApplyPersistedSettings(measurementSettings.EqWizard);
             eqWizardPanel.SettingsChanged += () =>
             {

@@ -16,6 +16,10 @@ namespace Resonalyze
             if (disposing)
             {
                 components?.Dispose();
+                // Rebuilt on every open (see ShowSourceMenu), so the last one is not
+                // owned by the designer container and would otherwise leak its handle.
+                sourceMenu?.Dispose();
+                sourceMenu = null;
             }
 
             base.Dispose(disposing);
@@ -57,6 +61,8 @@ namespace Resonalyze
             labelCalibration = new Label();
             comboBoxSmooth = new DarkComboBox();
             labelSmooth = new Label();
+            comboBoxSampleRate = new DarkComboBox();
+            labelSampleRate = new Label();
             buttonImport = new Button();
             buttonExport = new Button();
             (NumericTargetOffset).BeginInit();
@@ -443,9 +449,31 @@ namespace Resonalyze
             labelSmooth.Size = new Size(50, 15);
             labelSmooth.TabIndex = 56;
             labelSmooth.Text = "Smooth";
-            // 
+            //
+            // comboBoxSampleRate
+            //
+            comboBoxSampleRate.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxSampleRate.ForeColor = Color.White;
+            comboBoxSampleRate.Location = new Point(108, 145);
+            comboBoxSampleRate.MinimumSize = new Size(36, 19);
+            comboBoxSampleRate.Name = "comboBoxSampleRate";
+            comboBoxSampleRate.Size = new Size(80, 19);
+            comboBoxSampleRate.TabIndex = 59;
+            //
+            // labelSampleRate
+            //
+            labelSampleRate.AutoSize = true;
+            labelSampleRate.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            labelSampleRate.ForeColor = Color.FromArgb(210, 214, 222);
+            labelSampleRate.Location = new Point(9, 147);
+            labelSampleRate.Margin = new Padding(3);
+            labelSampleRate.Name = "labelSampleRate";
+            labelSampleRate.Size = new Size(66, 15);
+            labelSampleRate.TabIndex = 60;
+            labelSampleRate.Text = "Rate";
+            //
             // buttonImport
-            // 
+            //
             buttonImport.FlatStyle = FlatStyle.Popup;
             buttonImport.ForeColor = Color.White;
             buttonImport.Location = new Point(2, 221);
@@ -479,6 +507,8 @@ namespace Resonalyze
             Controls.Add(comboBoxCalibration);
             Controls.Add(labelSmooth);
             Controls.Add(comboBoxSmooth);
+            Controls.Add(labelSampleRate);
+            Controls.Add(comboBoxSampleRate);
             Controls.Add(buttonOverlaySettings);
             Controls.Add(panelAutoTune);
             Controls.Add(checkBoxBypass);
@@ -535,6 +565,8 @@ namespace Resonalyze
         private Button buttonOverlaySettings;
         private DarkComboBox comboBoxCalibration;
         private Label labelCalibration;
+        private DarkComboBox comboBoxSampleRate;
+        private Label labelSampleRate;
         private DarkComboBox comboBoxSmooth;
         private Label labelSmooth;
         private Button buttonImport;

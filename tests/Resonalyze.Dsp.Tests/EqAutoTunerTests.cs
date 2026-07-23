@@ -269,6 +269,87 @@ public sealed class EqAutoTunerTests
     }
 
     [Fact]
+    public void Tune_CutsOnly_DoesNotLowerBelowTargetRegionsWithANegativePreamp()
+    {
+        // The source sits a uniform +5 dB above a flat target across the window, EXCEPT a
+        // dip that falls 5 dB BELOW it. Cuts-only can shave the excess but can never lift
+        // the dip. Centring on the mean error would drop the preamp toward -5 to fit the
+        // dominant excess — pushing the already-too-low dip a further 5 dB from the
+        // target, for no gain, since a cut cannot bring it back. The fit must instead
+        // keep the level (preamp ~0) and let cuts alone remove the excess.
+        var dip = new PeqBand(1_000, 3.0, -10.0); // 5 above baseline (+5) → 5 below target
+        IReadOnlyList<SignalPoint> source = Grid(f => 5.0 + dip.MagnitudeDbAt(f));
+        IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
+
+        EqualizationCurve curve = EqAutoTuner.Tune(
+            source, target, new EqAutoTuner.Options { CutsOnlyMode = true });
+
+        // The fix: no broadband drop — the preamp stays at the ceiling, not the mean
+        // error (~ -4). This is the whole discriminator; the old mean-centred preamp
+        // fails it outright.
+        Assert.True(
+            curve.PreampDb >= -0.5,
+            $"Cuts-only lowered the whole curve by {curve.PreampDb:0.0} dB preamp.");
+        // Consequently the below-target dip is not collapsed: with a -4 preamp it would
+        // land near -9, far worse; here it stays close to its own level (a shallow cut
+        // from an adjacent band's skirt is tolerated, a preamp-driven drop is not).
+        double dipCorrected = source.First(p => p.X >= 1_000).Y
+            + curve.MagnitudeDbAt(1_000);
+        Assert.True(
+            dipCorrected is <= 0.5 and >= -8.0,
+            $"The below-target dip was pushed to {dipCorrected:0.0} dB (target 0).");
+        // The +5 dB excess is still corrected down toward the target away from the dip.
+        Assert.True(source.First(p => p.X >= 5_000).Y + curve.MagnitudeDbAt(5_000) < 1.5);
+    }
+
+    [Fact]
+    public void Tune_CutsOnly_DoesNotGougeAShoulderBelowTargetToCutABroadHfPlateau()
+    {
+        // A rising HF excess — near the flat target below ~4 kHz, an ~+11 dB plateau above
+        // ~10 kHz, with a sharp bump at 9.5 kHz. The bump forces a deep cut; a wide peaking
+        // band that also shaved the broad plateau would drag the 4-6 kHz shoulder — barely
+        // above the target — several dB BELOW it, the visible "hole" a moving-mic tune must
+        // not create. The fit must prefer tighter bands, leaving the plateau a little high
+        // rather than gouging the shoulder. Measured on the DIGITAL response the DSP and
+        // the wizard realize, which diverges from the analog one this high in frequency.
+        const double sampleRate = 44_100;
+        var bump = new PeqBand(9_500, 2.5, 5.0);
+        IReadOnlyList<SignalPoint> source = Grid(f =>
+            (11.0 * 0.5 * (1 + Math.Tanh(Math.Log2(f / 6_500.0) / 0.65))) + bump.MagnitudeDbAt(f));
+        IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
+
+        EqualizationCurve curve = EqAutoTuner.Tune(
+            source,
+            target,
+            new EqAutoTuner.Options
+            {
+                CutsOnlyMode = true,
+                SampleRateHz = sampleRate,
+                MinFrequencyHz = 2_000,
+                MaxFrequencyHz = 20_000,
+                BandGainMinDb = -15
+            });
+
+        double worstBelow = 0;
+        double atHz = 0;
+        foreach (double f in EqualizationCurve.LogFrequencyGrid(2_000, 20_000, 400))
+        {
+            // Target is 0; corrected below 0 is a gouge.
+            double corrected = SampleDb(source, f)
+                + DigitalEqualizationResponse.MagnitudeDbAt(curve, f, sampleRate);
+            if (-corrected > worstBelow)
+            {
+                worstBelow = -corrected;
+                atHz = f;
+            }
+        }
+
+        Assert.True(
+            worstBelow <= 2.0,
+            $"Cuts-only gouged {worstBelow:0.0} dB below the target at {atHz:0} Hz.");
+    }
+
+    [Fact]
     public void Tune_BoostsAllowed_SkipsANarrowDeepNull()
     {
         // A narrow deep null at 3 kHz (uncorrectable) and a broad shallow dip at 200 Hz
@@ -426,6 +507,54 @@ public sealed class EqAutoTunerTests
         Assert.True(worstAbove <= 1.0, $"Cluster peak of +{worstAbove:0.0} dB left uncut.");
         // It took more than the ~2 bands the old coarse spacing allowed in one octave.
         Assert.True(curve.Bands.Count >= 3, $"Only {curve.Bands.Count} bands used on the cluster.");
+    }
+
+    [Fact]
+    public void Tune_CutsOnly_SmoothLobeBetweenDipsGetsAWideBandNotASwarmOfSlivers()
+    {
+        // The moving-mic RTA shape that shredded the fit: a smooth ~+3.5 dB lobe around
+        // 10.5 kHz whose neighbours on BOTH sides sit below the target (dips cuts-only
+        // cannot lift). Any over-cut penalty that scales with the depth a point already
+        // had charges every wide candidate for merely grazing those dips, so all bands
+        // collapse to the maximum Q and the smooth lobe comes back as a comb of narrow
+        // notches. The lobe must instead be carried by a band of moderate width.
+        const double sampleRate = 44_100;
+        IReadOnlyList<SignalPoint> source = Grid(f =>
+            3.5 * Math.Exp(-Math.Pow(Math.Log2(f / 10_500.0) / 0.4, 2))
+            + NotchDb(f, 6_800, 4.0, 0.55)
+            + NotchDb(f, 16_500, 3.0, 0.45));
+        IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
+
+        EqualizationCurve curve = EqAutoTuner.Tune(
+            source,
+            target,
+            new EqAutoTuner.Options
+            {
+                CutsOnlyMode = true,
+                SampleRateHz = sampleRate,
+                MinFrequencyHz = 2_000,
+                MaxFrequencyHz = 20_000,
+                BandGainMinDb = -15
+            });
+
+        // The lobe's main correction is one moderately wide band, not a max-Q sliver.
+        PeqBand deepest = curve.Bands.OrderBy(band => band.GainDb).First();
+        Assert.True(
+            deepest.FrequencyHz is >= 8_000 and <= 14_000,
+            $"Deepest cut landed at {deepest.FrequencyHz:0} Hz, outside the lobe.");
+        Assert.True(
+            deepest.Q <= 5.6,
+            $"The smooth lobe was cut with a Q={deepest.Q:0.0} sliver.");
+        // And the corrected lobe reads flat, not combed: on the digital response the
+        // wizard realises, no point inside the lobe pops back above the target by more
+        // than a fraction of the lobe.
+        double worstAbove = EqualizationCurve
+            .LogFrequencyGrid(8_500, 13_000, 200)
+            .Max(f => SampleDb(source, f)
+                + DigitalEqualizationResponse.MagnitudeDbAt(curve, f, sampleRate));
+        Assert.True(
+            worstAbove <= 1.2,
+            $"The corrected lobe still pokes +{worstAbove:0.0} dB above the target.");
     }
 
     private static double SampleDb(IReadOnlyList<SignalPoint> curve, double frequencyHz)

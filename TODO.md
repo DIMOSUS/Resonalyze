@@ -126,10 +126,10 @@ close.
   device is selected again), but applying while a mono/missing device is
   selected persists "None"; after a restart there is nothing to restore. Would
   need the preferred offset persisted separately from the effective one.
-- [ ] **ASIO driver opened twice when the measurement panel opens.** `Init` runs
-  `RefreshSampleRateOptions` and `RefreshAsioDriverInfo`, each instantiating
-  `AsioOut` (a synchronous COM open that can take seconds). Fetch driver info and
-  supported rates in one open, ideally off the UI thread.
+- [ ] **The ASIO driver probe still runs on the UI thread.** `GetDriverInfo` now
+  reads the channels, the buffer figures and the supported rates in a single
+  `AsioOut` open, but that open is a synchronous COM call that can take seconds
+  and still blocks the UI while the measurement panel opens.
 - [ ] **`TukeyWindowControlHelper` clamps are irreversible.** Shrinking the
   window length clamps the fade values (semantically required, visible in the
   controls), but growing it back does not restore them; a shadow-value restore

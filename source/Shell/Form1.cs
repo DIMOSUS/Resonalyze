@@ -95,6 +95,10 @@ namespace Resonalyze
         // blocking device teardown while the OS is waiting for the process to exit.
         private bool shutdownFastClose;
         private bool updateCheckStarted;
+        // Serializes the live applies of the measurement options panel: an edit
+        // arriving while one is in flight is coalesced into a single re-run.
+        private bool applyingSweepSettings;
+        private bool sweepSettingsApplyPending;
         private readonly DebouncedSaver measurementSettingsSaver;
         private readonly StartupAudioWarmup startupAudioWarmup;
         private readonly ButtonLongPressBehavior recordButtonLongPress;

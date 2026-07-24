@@ -11,6 +11,7 @@ public static class AsioDeviceCatalog
         0,
         0,
         false,
+        Array.Empty<int>(),
         null);
 
     public static IReadOnlyList<AsioDeviceInfo> GetDrivers()
@@ -61,9 +62,15 @@ public static class AsioDeviceCatalog
         return -1;
     }
 
+    /// <summary>
+    /// Opens the driver once and reads everything the caller can need from it:
+    /// the channel lists, the buffer/latency figures for
+    /// <paramref name="sampleRate"/>, and the standard rates it accepts.
+    /// </summary>
     public static AsioDriverInfo GetDriverInfo(
         string? driverName,
-        int sampleRate)
+        int sampleRate,
+        int minimumSampleRate = 44_100)
     {
         if (string.IsNullOrWhiteSpace(driverName))
         {
@@ -95,6 +102,9 @@ public static class AsioDeviceCatalog
                 .ToArray();
 
             bool supportsSampleRate = sampleRate > 0 && driver.IsSampleRateSupported(sampleRate);
+            int[] supportedSampleRates = SampleRateCatalog.GetCandidateRates(minimumSampleRate)
+                .Where(driver.IsSampleRateSupported)
+                .ToArray();
             return new AsioDriverInfo(
                 driverName,
                 inputChannels,
@@ -102,6 +112,7 @@ public static class AsioDeviceCatalog
                 SafeInt(() => driver.FramesPerBuffer),
                 SafeInt(() => driver.PlaybackLatency),
                 supportsSampleRate,
+                supportedSampleRates,
                 null);
         }
         catch (Exception exception)
@@ -111,28 +122,6 @@ public static class AsioDeviceCatalog
                 DriverName = driverName,
                 ErrorMessage = exception.Message
             };
-        }
-    }
-
-    public static IReadOnlyList<int> GetSupportedSampleRates(
-        string? driverName,
-        int minimumSampleRate = 44_100)
-    {
-        if (string.IsNullOrWhiteSpace(driverName))
-        {
-            return Array.Empty<int>();
-        }
-
-        try
-        {
-            using var driver = new AsioOut(driverName);
-            return SampleRateCatalog.GetCandidateRates(minimumSampleRate)
-                .Where(driver.IsSampleRateSupported)
-                .ToArray();
-        }
-        catch
-        {
-            return Array.Empty<int>();
         }
     }
 

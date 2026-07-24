@@ -20,6 +20,12 @@ namespace Resonalyze.Options
         // anchor) is selected, captured, or cleared, so the host can apply and
         // persist it immediately instead of only when the panel is applied.
         public event Action<CalibrationSelection>? CalibrationChanged;
+        // Raised whenever a control outside the audio-backend group changes. That
+        // whole group — the backend, the format it opens the device with (sample
+        // rate and bit depth), its device panel and the Apply button — is the only
+        // part of this panel that waits to be applied; everything else takes
+        // effect as it is edited.
+        public event Action? SweepSettingsChanged;
 
         /// <summary>A snapshot of the three calibrations the panel manages.</summary>
         public sealed record CalibrationSelection(
@@ -309,12 +315,15 @@ namespace Resonalyze.Options
             UpdateCalibrationButtons();
             // The button's own refresh happens in the UpdateAudioBackendControls
             // call at the end of Init, once the device/rate selections are settled.
-            RefreshSampleRateOptions(settings.SampleRate);
-            initializing = false;
+            // The driver probe comes first: with ASIO it is what supplies the list
+            // of sample rates, so the rate control cannot be filled before it.
             RefreshAsioDriverInfo(
+                settings.SampleRate,
                 settings.AsioInputChannelOffset,
                 settings.AsioOutputChannelOffset,
                 settings.AsioLoopbackInputChannelOffset);
+            RefreshSampleRateOptions(settings.SampleRate);
+            initializing = false;
             UpdateAudioBackendControls();
             RefreshSweepBandPreview();
         }
@@ -335,17 +344,10 @@ namespace Resonalyze.Options
             // while the control is read-only, so this is a no-op today; it stops
             // silently ignoring the control the day it becomes editable.
             int bits = (int)numericUpDownBits.Value;
-            PlaybackChannel playbackChannel = (PlaybackChannel)comboBoxChannel.SelectedIndex;
+            PlaybackChannel playbackChannel = GetSelectedPlaybackChannel();
             double lowFrequencyHz = (double)numericUpDownLowFrequency.Value;
             double highFrequencyHz = (double)numericUpDownHighFrequency.Value;
-            // The field holds a per-octave pace; expand it to the total sweep length.
-            double perOctaveSeconds = (double)numericUpDownRequestedDuration.Value * 0.001;
-            double requestedDuration = ExponentialSineSweep.TotalDurationForOctavePace(
-                lowFrequencyHz, highFrequencyHz, perOctaveSeconds, sampleRate);
-            if (!(requestedDuration > 0))
-            {
-                requestedDuration = perOctaveSeconds;
-            }
+            double requestedDuration = GetRequestedDurationSeconds(sampleRate);
             AudioBackend audioBackend = (AudioBackend)comboBoxAudioBackend.SelectedIndex;
             int outputDeviceNumber = comboBoxPlaybackDevice.SelectedItem is AudioDeviceInfo playbackDevice
                 ? playbackDevice.DeviceNumber
@@ -502,6 +504,62 @@ namespace Resonalyze.Options
             expSweepMeasurement.SplCalibration = splCalibration;
         }
 
+        /// <summary>
+        /// Writes the immediately-applied half of the panel — the sweep band, its
+        /// pacing, the playback channel and the averaging — into
+        /// <paramref name="settings"/>. The audio backend group is deliberately
+        /// left out: the backend, its format (sample rate and bit depth), its
+        /// device panel and the Apply button all stay pending on the controls
+        /// until <see cref="SetOptions"/> commits them together.
+        /// </summary>
+        /// <remarks>
+        /// Nothing is pushed into the live <see cref="ExpSweepMeasurement"/> here.
+        /// Its <c>Init</c> discards the measured result, and the settings reach it
+        /// anyway right before the next sweep runs, so an edit made while looking
+        /// at a measurement cannot throw that measurement away.
+        /// </remarks>
+        internal void ApplySweepSettings(
+            MeasurementSettingsFile.SweepMeasurementSettings settings)
+        {
+            settings.LowFrequencyHz = (double)numericUpDownLowFrequency.Value;
+            settings.HighFrequencyHz = (double)numericUpDownHighFrequency.Value;
+            // Paced against the APPLIED sample rate, not the one selected in the
+            // backend group: an uncommitted rate must not leak into the sweep. The
+            // total is recomputed against the new rate when Apply commits it.
+            settings.RequestedDurationSeconds = GetRequestedDurationSeconds(settings.SampleRate);
+            settings.PlaybackChannel = GetSelectedPlaybackChannel();
+            settings.AverageRunCount = (int)numericUpDownAverageRunCount.Value;
+            settings.ConfirmEachAverageRun = checkBoxConfirmEachAverageRun.Checked;
+        }
+
+        // The duration field holds a per-octave pace; expand it to the total sweep
+        // length the achieved band needs.
+        private double GetRequestedDurationSeconds(int sampleRate)
+        {
+            double perOctaveSeconds = (double)numericUpDownRequestedDuration.Value * 0.001;
+            double requestedDuration = ExponentialSineSweep.TotalDurationForOctavePace(
+                (double)numericUpDownLowFrequency.Value,
+                (double)numericUpDownHighFrequency.Value,
+                perOctaveSeconds,
+                sampleRate);
+            return requestedDuration > 0 ? requestedDuration : perOctaveSeconds;
+        }
+
+        private PlaybackChannel GetSelectedPlaybackChannel() =>
+            comboBoxChannel.SelectedIndex >= 0
+                ? (PlaybackChannel)comboBoxChannel.SelectedIndex
+                : PlaybackChannel.Mono;
+
+        private void RaiseSweepSettingsChanged()
+        {
+            if (initializing)
+            {
+                return;
+            }
+
+            SweepSettingsChanged?.Invoke();
+        }
+
         private void buttonCalibration0_Click(object? sender, EventArgs e)
         {
             microphoneCalibration0DegreesPath =
@@ -587,9 +645,7 @@ namespace Resonalyze.Options
         private AudioSessionRequest BuildCalibrationCaptureRequest()
         {
             var backend = (AudioBackend)comboBoxAudioBackend.SelectedIndex;
-            PlaybackChannel playbackChannel = comboBoxChannel.SelectedIndex >= 0
-                ? (PlaybackChannel)comboBoxChannel.SelectedIndex
-                : PlaybackChannel.Mono;
+            PlaybackChannel playbackChannel = GetSelectedPlaybackChannel();
             return AudioSessionRequestBuilder.Build(
                 backend,
                 GetSelectedSampleRate(),
@@ -768,7 +824,11 @@ namespace Resonalyze.Options
             }
 
             RefreshSweepBandPreview();
+            RaiseSweepSettingsChanged();
         }
+
+        private void averagingSetting_Changed(object? sender, EventArgs e) =>
+            RaiseSweepSettingsChanged();
 
         // Keeps low < high while the user edits either bound, then refreshes the
         // achieved-range preview. Guarded so the cross-adjustment does not recurse.
@@ -809,6 +869,7 @@ namespace Resonalyze.Options
             }
 
             RefreshSweepBandPreview();
+            RaiseSweepSettingsChanged();
         }
 
         // Fills the read-only Compute Duration field and the achieved-range line
@@ -912,11 +973,14 @@ namespace Resonalyze.Options
             }
 
             UpdateComboBoxToolTip(comboBoxAsioDriver);
-            RefreshSampleRateOptions(GetSelectedSampleRate());
+            // Probe the new driver before rebuilding the rate list: with ASIO the
+            // list comes out of that probe.
             RefreshAsioDriverInfo(
+                GetSelectedSampleRate(),
                 GetSelectedAsioInputChannelOffset(),
                 GetSelectedAsioOutputChannelOffset(),
                 GetSelectedAsioLoopbackInputChannelOffset());
+            RefreshSampleRateOptions(GetSelectedSampleRate());
             UpdateAudioBackendControls();
         }
 
@@ -927,7 +991,10 @@ namespace Resonalyze.Options
                 return;
             }
 
+            // The playback channel count decides which sample rates the device can
+            // open, so the rate list is rebuilt before the change is applied.
             RefreshSampleRateOptions(GetSelectedSampleRate());
+            RaiseSweepSettingsChanged();
         }
 
         private void comboBoxSampleRate_SelectedIndexChanged(object? sender, EventArgs e)
@@ -938,14 +1005,19 @@ namespace Resonalyze.Options
             }
 
             // The achieved band and its cycle-quantized duration depend on the
-            // sample rate, so re-preview on any change (not just for ASIO).
+            // sample rate, so re-preview on any change (not just for ASIO). The
+            // rate itself belongs to the audio backend group and is not applied
+            // until the Apply button commits it — only the preview moves here.
             RefreshSweepBandPreview();
             if (comboBoxAudioBackend.SelectedIndex != (int)AudioBackend.Asio)
             {
                 return;
             }
 
+            // Buffer size and latency are rate-dependent, so the driver is probed
+            // again for the new rate; the rate list itself does not change.
             RefreshAsioDriverInfo(
+                GetSelectedSampleRate(),
                 GetSelectedAsioInputChannelOffset(),
                 GetSelectedAsioOutputChannelOffset(),
                 GetSelectedAsioLoopbackInputChannelOffset());
@@ -1069,11 +1141,14 @@ namespace Resonalyze.Options
                 int preferredOutputOffset = GetSelectedAsioOutputChannelOffset();
                 int? preferredLoopbackOffset = GetSelectedAsioLoopbackInputChannelOffset();
                 AsioDeviceCatalog.ShowControlPanel(asioDriver.DriverName);
-                RefreshSampleRateOptions(preferredSampleRate);
+                // Re-probe first: the control panel may have changed the buffer
+                // size or the rates the driver reports.
                 RefreshAsioDriverInfo(
+                    preferredSampleRate,
                     preferredInputOffset,
                     preferredOutputOffset,
                     preferredLoopbackOffset);
+                RefreshSampleRateOptions(preferredSampleRate);
                 UpdateAudioBackendControls();
             }
             catch (Exception exception)
@@ -1107,7 +1182,11 @@ namespace Resonalyze.Options
             }
         }
 
+        // Opens the selected driver once and caches everything read from it,
+        // including the sample rates GetSupportedSampleRates then serves. The rate
+        // is passed in because Init probes before the rate control exists.
         private void RefreshAsioDriverInfo(
+            int sampleRate,
             int preferredInputOffset,
             int preferredOutputOffset,
             int? preferredLoopbackOffset)
@@ -1115,9 +1194,7 @@ namespace Resonalyze.Options
             string? driverName = comboBoxAsioDriver.SelectedItem is AsioDeviceInfo asioDriver
                 ? asioDriver.DriverName
                 : null;
-            asioDriverInfo = AsioDeviceCatalog.GetDriverInfo(
-                driverName,
-                GetSelectedSampleRate());
+            asioDriverInfo = AsioDeviceCatalog.GetDriverInfo(driverName, sampleRate);
 
             comboBoxAsioInputChannel.Items.Clear();
             comboBoxAsioLoopbackChannel.Items.Clear();
@@ -1722,16 +1799,18 @@ namespace Resonalyze.Options
             PopulateDeviceControlsForSelectedBackend(
                 GetSelectedWaveInputChannelOffset(),
                 GetSelectedWaveLoopbackChannelOffset());
-            RefreshSampleRateOptions(preferredSampleRate);
             if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio)
             {
                 // Opening the ASIO driver is a synchronous COM instantiation
-                // that can take seconds; don't pay it for Wave-side changes.
+                // that can take seconds; don't pay it for Wave-side changes. It
+                // has to happen before the rate list, which ASIO reads off it.
                 RefreshAsioDriverInfo(
+                    preferredSampleRate,
                     GetSelectedAsioInputChannelOffset(),
                     GetSelectedAsioOutputChannelOffset(),
                     GetSelectedAsioLoopbackInputChannelOffset());
             }
+            RefreshSampleRateOptions(preferredSampleRate);
             UpdateAudioBackendControls();
         }
 
@@ -1773,10 +1852,10 @@ namespace Resonalyze.Options
         {
             if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio)
             {
-                return AsioDeviceCatalog.GetSupportedSampleRates(
-                    comboBoxAsioDriver.SelectedItem is AsioDeviceInfo asioDriver
-                        ? asioDriver.DriverName
-                        : null);
+                // From the last driver probe, not a fresh open: RefreshAsioDriverInfo
+                // always runs first, and a second open of the same driver moments
+                // later is what some drivers refuse (leaving an empty rate list).
+                return asioDriverInfo.SupportedSampleRates;
             }
 
             if (IsSelectedWasapiBackend())
@@ -1880,13 +1959,8 @@ namespace Resonalyze.Options
                 : -1;
         }
 
-        private int GetSelectedPlaybackChannelCount()
-        {
-            PlaybackChannel channel = comboBoxChannel.SelectedIndex >= 0
-                ? (PlaybackChannel)comboBoxChannel.SelectedIndex
-                : PlaybackChannel.Mono;
-            return channel == PlaybackChannel.Mono ? 1 : 2;
-        }
+        private int GetSelectedPlaybackChannelCount() =>
+            GetSelectedPlaybackChannel() == PlaybackChannel.Mono ? 1 : 2;
 
         private int GetSelectedWaveRecordingChannelCount()
         {

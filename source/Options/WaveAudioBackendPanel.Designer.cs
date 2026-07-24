@@ -1,4 +1,4 @@
-namespace Resonalyze.Options
+﻿namespace Resonalyze.Options
 {
     partial class WaveAudioBackendPanel
     {
@@ -55,7 +55,7 @@ namespace Resonalyze.Options
             //
             comboBoxPlaybackDevice.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxPlaybackDevice.ForeColor = Color.White;
-            comboBoxPlaybackDevice.Location = new Point(141, 0);
+            comboBoxPlaybackDevice.Location = new Point(137, 0);
             comboBoxPlaybackDevice.Margin = new Padding(0);
             comboBoxPlaybackDevice.MinimumSize = new Size(36, 19);
             comboBoxPlaybackDevice.Name = "comboBoxPlaybackDevice";
@@ -76,7 +76,7 @@ namespace Resonalyze.Options
             //
             comboBoxRecordingDevice.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxRecordingDevice.ForeColor = Color.White;
-            comboBoxRecordingDevice.Location = new Point(141, 29);
+            comboBoxRecordingDevice.Location = new Point(137, 29);
             comboBoxRecordingDevice.Margin = new Padding(0);
             comboBoxRecordingDevice.MinimumSize = new Size(36, 19);
             comboBoxRecordingDevice.Name = "comboBoxRecordingDevice";
@@ -97,7 +97,7 @@ namespace Resonalyze.Options
             //
             comboBoxWaveInputChannel.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxWaveInputChannel.ForeColor = Color.White;
-            comboBoxWaveInputChannel.Location = new Point(141, 58);
+            comboBoxWaveInputChannel.Location = new Point(137, 58);
             comboBoxWaveInputChannel.Margin = new Padding(0);
             comboBoxWaveInputChannel.MinimumSize = new Size(36, 19);
             comboBoxWaveInputChannel.Name = "comboBoxWaveInputChannel";
@@ -118,7 +118,7 @@ namespace Resonalyze.Options
             //
             comboBoxWaveLoopbackChannel.BackColor = Color.FromArgb(55, 60, 72);
             comboBoxWaveLoopbackChannel.ForeColor = Color.White;
-            comboBoxWaveLoopbackChannel.Location = new Point(141, 87);
+            comboBoxWaveLoopbackChannel.Location = new Point(137, 87);
             comboBoxWaveLoopbackChannel.Margin = new Padding(0);
             comboBoxWaveLoopbackChannel.MinimumSize = new Size(36, 19);
             comboBoxWaveLoopbackChannel.Name = "comboBoxWaveLoopbackChannel";
@@ -146,7 +146,7 @@ namespace Resonalyze.Options
             //
             // buttonDeviceSettings
             //
-            buttonDeviceSettings.Location = new Point(141, 177);
+            buttonDeviceSettings.Location = new Point(137, 177);
             buttonDeviceSettings.Name = "buttonDeviceSettings";
             buttonDeviceSettings.Size = new Size(170, 29);
             buttonDeviceSettings.TabIndex = 44;

@@ -6,8 +6,10 @@ namespace Resonalyze;
 /// duration; the generator snaps the endpoints to a whole number of cycles
 /// (<see cref="StartCycles"/>, <see cref="EndCycles"/>) so both ends land on a
 /// zero crossing, which nudges the achieved band outward from the request.
-/// The achieved band therefore always ENCLOSES the requested one, with the
-/// fade-in/out regions living in the guard bands outside it.
+/// The achieved band normally ENCLOSES the requested one, with the fade-in/out
+/// regions living in the guard bands outside it. It cannot when the duration is
+/// too short to fit a whole cycle at the requested low edge — see
+/// <see cref="Covers"/>, which is what the panels warn from.
 /// </summary>
 public readonly record struct ExpSweepSpec(
     double LowFrequencyHz,
@@ -37,6 +39,18 @@ public readonly record struct ExpSweepSpec(
 
     public double ComputedDurationSeconds =>
         SampleRate > 0 ? SampleCount / (double)SampleRate : 0.0;
+
+    /// <summary>
+    /// Whether the sweep actually covers the band that was asked for. Normally it
+    /// does, with room to spare for the fades, but a short sweep cannot: the low
+    /// edge needs a whole cycle to exist at all, so 20 Hz is unreachable in less
+    /// than 50 ms of sweep no matter what the request says. Callers show the
+    /// achieved edges either way; this is what tells them to say so.
+    /// </summary>
+    public bool Covers(double requestedLowHz, double requestedHighHz) =>
+        IsValid &&
+        LowFrequencyHz <= requestedLowHz &&
+        HighFrequencyHz >= requestedHighHz;
 }
 
 /// <summary>
@@ -51,7 +65,8 @@ public readonly record struct ExpSweepSpec(
 /// <c>phi(0) = 2*pi*p</c> and <c>phi(N) = 2*pi*q</c> with integer p, q — both
 /// ends sit on a whole cycle. The requested band is rounded outward to those
 /// whole-cycle endpoints and given guard bands for the fades, so the achieved
-/// band always encloses the request.
+/// band encloses the request whenever the duration allows a whole cycle at the
+/// low edge (<see cref="ExpSweepSpec.Covers"/> reports when it does not).
 /// </remarks>
 public sealed class ExponentialSineSweep : IDisposable
 {
@@ -64,8 +79,15 @@ public sealed class ExponentialSineSweep : IDisposable
     // A floor on the fade length so the excitation never starts or ends on a
     // hard edge when the requested duration is too short to open a guard band
     // (the achieved band then cannot fully enclose the request — the honest,
-    // wider real range is reported through the spec).
+    // narrower real range is reported through the spec).
     private const int MinFadeSamples = 128;
+
+    /// <summary>
+    /// Longest sweep that will be generated. Applied here, in the one place that
+    /// resolves a request into a sweep, so a preview cannot promise a length that
+    /// the run then silently shortens.
+    /// </summary>
+    public const double MaxDurationSeconds = 100.0;
 
     private bool disposed;
     private bool generated;
@@ -149,7 +171,9 @@ public sealed class ExponentialSineSweep : IDisposable
         }
         double userLow = lowFrequencyHz;
 
-        int n = Math.Max(1, (int)Math.Round(sampleRate * requestedDuration));
+        int n = Math.Max(
+            1,
+            (int)Math.Round(sampleRate * Math.Min(requestedDuration, MaxDurationSeconds)));
 
         // Target band: the requested band widened by a guard on each side (so
         // the fades sit outside it), with the top capped just under Nyquist.

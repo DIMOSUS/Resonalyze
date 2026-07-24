@@ -891,6 +891,21 @@ namespace Resonalyze.Options
                 ? $"{spec.LowFrequencyHz:0.#}–{spec.HighFrequencyHz:0} Hz · " +
                     $"{spec.OctaveSpan:0.00} oct · {spec.ComputedDurationSeconds:0.00} s"
                 : "—";
+            // A sweep too short to fit a whole cycle at the requested low edge
+            // cannot reach it — the line already shows the truth, but silently,
+            // so say it out loud rather than let the number be skimmed past.
+            bool covers = spec.Covers(lowHz, highHz);
+            labelActualRangeCaption.ForeColor = covers
+                ? Color.FromArgb(150, 200, 170)
+                : Color.Gold;
+            deviceToolTip.SetToolTip(
+                labelActualRangeCaption,
+                covers
+                    ? "The band the sweep actually covers, at full amplitude, with " +
+                        "the fades outside it."
+                    : $"⚠ Too short to reach {lowHz:0.#} Hz: one cycle there needs " +
+                        $"{1000.0 / Math.Max(lowHz, 1e-9):0} ms of sweep. Raise the " +
+                        "per-octave time to widen the band down to the request.");
         }
 
         private void comboBoxAudioBackend_SelectedIndexChanged(object sender, EventArgs e) =>

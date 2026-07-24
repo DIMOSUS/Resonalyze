@@ -379,7 +379,10 @@ internal sealed class MeasurementSettingsFile
                     highFrequencyHz,
                     sampleRate,
                     Bits is 16 or 24 ? Bits : 24,
-                    Math.Clamp(RequestedDurationSeconds, 0.001, 100.0),
+                    Math.Clamp(
+                        RequestedDurationSeconds,
+                        0.001,
+                        ExponentialSineSweep.MaxDurationSeconds),
                     Enum.IsDefined(PlaybackChannel)
                         ? PlaybackChannel
                         : PlaybackChannel.Mono),

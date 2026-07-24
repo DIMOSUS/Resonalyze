@@ -244,6 +244,76 @@ public partial class Form1
         }
     }
 
+    // Everything in the measurement options except the audio-backend group takes
+    // effect as it is edited — the Apply button is left to the backend alone. The
+    // edits land in the settings only; PrepareSweepMeasurementForRun pushes them
+    // into the measurement before the next sweep, so tweaking the band cannot
+    // discard the measurement currently on screen.
+    private async void ApplySweepSettingsLive(MeasurementOptions dialog)
+    {
+        sweepSettingsApplyPending = true;
+        if (applyingSweepSettings)
+        {
+            // An apply is in flight (it may be reopening the device); the loop
+            // below re-reads the panel once it finishes.
+            return;
+        }
+
+        applyingSweepSettings = true;
+        try
+        {
+            while (sweepSettingsApplyPending && !IsDisposed && !dialog.IsDisposed)
+            {
+                sweepSettingsApplyPending = false;
+                await ApplySweepSettingsAsync(dialog);
+            }
+        }
+        catch (Exception exception)
+        {
+            ShowMeasurementError("Failed to apply the measurement settings.", exception);
+        }
+        finally
+        {
+            applyingSweepSettings = false;
+        }
+    }
+
+    private async Task ApplySweepSettingsAsync(MeasurementOptions dialog)
+    {
+        AudioSessionRequest requestBefore =
+            CreateAudioWarmupRequest(measurementSettings.Measurement);
+        dialog.ApplySweepSettings(measurementSettings.Measurement);
+        // Captures the other option groups and keeps the measurement settings
+        // just edited (they are not read back from expSweepMeasurement here).
+        SaveMeasurementSettings();
+
+        AudioSessionRequest request =
+            CreateAudioWarmupRequest(measurementSettings.Measurement);
+        if (request == requestBefore)
+        {
+            // Only the sweep definition moved; the audio session is unchanged, so
+            // there is nothing to reconfigure and no reason to reopen the device.
+            return;
+        }
+
+        await ApplyMeasurementConfigurationToControllersAsync();
+        if (liveSpectrumController.InProgress || expSweepMeasurement.InProgress)
+        {
+            return;
+        }
+
+        try
+        {
+            await audioSessionFactory.WarmUpAsync(request, CancellationToken.None);
+        }
+        catch
+        {
+            // Best effort, like the startup warm-up: the user edited a sweep
+            // setting, not the device, so a driver that refuses to pre-open must
+            // not interrupt them. Starting a measurement still reports it.
+        }
+    }
+
     private void buttonRecordOpt_Click(object sender, EventArgs e)
     {
         if (dockedMeasurementSettingsHost.IsOpen)
@@ -260,6 +330,7 @@ public partial class Form1
             {
                 var options = new MeasurementOptions(audioSessionFactory);
                 options.CalibrationChanged += PersistCalibration;
+                options.SweepSettingsChanged += () => ApplySweepSettingsLive(options);
                 return options;
             },
             dialog => dialog.Init(expSweepMeasurement, measurementSettings.Measurement),

@@ -4,7 +4,8 @@ internal sealed class MeasurementHistorySnapshotMetadata
 {
     public int SampleRate { get; init; }
     public int Bits { get; init; }
-    public int Octaves { get; init; }
+    public double LowFrequencyHz { get; init; }
+    public double HighFrequencyHz { get; init; }
     public double SweepDurationSeconds { get; init; }
     public PlaybackChannel PlayChannel { get; init; }
     public SweepMeasurementMode MeasurementMode { get; init; }
@@ -17,11 +18,13 @@ internal sealed class MeasurementHistorySnapshotMetadata
     public static MeasurementHistorySnapshotMetadata FromSnapshot(
         MeasurementHistorySnapshot snapshot)
     {
+        (double lowHz, double highHz) = snapshot.ResolveSweepBand();
         return new MeasurementHistorySnapshotMetadata
         {
             SampleRate = snapshot.SampleRate,
             Bits = snapshot.Bits,
-            Octaves = snapshot.Octaves,
+            LowFrequencyHz = lowHz,
+            HighFrequencyHz = highHz,
             SweepDurationSeconds = snapshot.SweepDurationSeconds,
             PlayChannel = snapshot.PlayChannel,
             MeasurementMode = snapshot.MeasurementMode,
@@ -35,13 +38,17 @@ internal sealed class MeasurementHistorySnapshotMetadata
 
     public string BuildToolTipText(DateTimeOffset timestamp)
     {
+        string sweepBand = LowFrequencyHz > 0 && HighFrequencyHz > LowFrequencyHz
+            ? $"Sweep: {LowFrequencyHz:0.#}–{HighFrequencyHz:0} Hz " +
+                $"({Math.Log2(HighFrequencyHz / LowFrequencyHz):0.0} oct)"
+            : "Sweep: —";
         var lines = new List<string>
         {
             $"Time: {TimestampDisplayHelper.Format(timestamp)}",
             $"Mode: {MeasurementMode}",
             $"Sample rate: {SampleRate} Hz",
             $"Bits: {Bits}",
-            $"Octaves: {Octaves}",
+            sweepBand,
             $"Duration: {SweepDurationSeconds:0.###} s",
             $"Channel: {PlayChannel}"
         };

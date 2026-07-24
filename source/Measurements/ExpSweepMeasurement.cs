@@ -57,7 +57,24 @@ namespace Resonalyze
         public bool HasImpulseResponse => SweepDeconvolutionImpulseResponse != null;
         public bool InProgress => inProgress;
         public int SampleRate { get; private set; }
-        public int Octaves { get; private set; }
+        public double LowFrequencyHz { get; private set; }
+        public double HighFrequencyHz { get; private set; }
+        // The band the sweep behind the CURRENT result actually swept, which is
+        // what harmonic geometry reads. For a fresh capture it is the generated
+        // sweep's; for a restored one it is what the file recorded, because a
+        // rebuilt sweep cannot always reproduce it — a pre-band file's low edge
+        // carried less than one whole cycle, which the whole-cycle model the
+        // generator uses today cannot express.
+        public double AchievedLowFrequencyHz { get; private set; }
+        public double AchievedHighFrequencyHz { get; private set; }
+        // Length of that same sweep. Also recorded rather than read back off the
+        // rebuilt one, which caps its generation at MaxDurationSeconds and would
+        // otherwise halve the harmonic offsets of a restored 200-second sweep.
+        public int AchievedSweepSampleCount { get; private set; }
+
+        /// <summary>Length in seconds of the sweep behind the current result.</summary>
+        public double AchievedSweepDurationSeconds =>
+            SampleRate > 0 ? AchievedSweepSampleCount / (double)SampleRate : 0.0;
         public int Bits { get; private set; }
         public PlaybackChannel PlaybackChannel { get; private set; }
         public AudioBackend AudioBackend { get; private set; } = AudioBackend.Wave;
@@ -144,7 +161,8 @@ namespace Resonalyze
                 : PlaybackChannel.Mono;
             SampleRate = signal.SampleRate;
             Bits = signal.Bits;
-            Octaves = signal.Octaves;
+            LowFrequencyHz = signal.LowFrequencyHz;
+            HighFrequencyHz = signal.HighFrequencyHz;
             OutputDeviceNumber = audio.OutputDeviceNumber;
             InputDeviceNumber = audio.InputDeviceNumber;
             WasapiCaptureEndpointId = audio.WasapiCaptureEndpointId;
@@ -191,11 +209,18 @@ namespace Resonalyze
 
             Sweep?.Dispose();
             Sweep = new ExponentialSineSweep();
+            // LowFrequencyHz/HighFrequencyHz keep the REQUESTED band (persisted and
+            // round-trip stable); the achieved, phase-aligned band lives on the
+            // Sweep and is what the harmonic geometry and masking read.
             Sweep.FillData(
-                signal.Octaves,
+                signal.LowFrequencyHz,
+                signal.HighFrequencyHz,
                 signal.RequestedDurationSeconds,
                 signal.Bits,
                 signal.SampleRate);
+            AchievedLowFrequencyHz = Sweep.LowFrequencyHz;
+            AchievedHighFrequencyHz = Sweep.HighFrequencyHz;
+            AchievedSweepSampleCount = Sweep.SweepSamples;
         }
 
         public Task<bool> RunAsync()
@@ -266,15 +291,35 @@ namespace Resonalyze
 
         public double HarmonicIROffset(double harmonic)
         {
-            if (Sweep == null)
+            double achievedRatio = AchievedFrequencyRatio;
+            if (AchievedSweepSampleCount <= 0 || achievedRatio <= 1.0)
             {
                 return 0;
             }
-            return Sweep.SweepSamples * Log(harmonic) / Log(Pow(2, Octaves));
+            return AchievedSweepSampleCount * Log(harmonic) / Log(achievedRatio);
         }
 
+        /// <summary>
+        /// High/low ratio of the sweep behind the current result. Harmonic packets
+        /// sit at <c>SweepSamples * ln(harmonic) / ln(ratio)</c>, so this must be
+        /// the ratio that was actually swept, not the one that was requested.
+        /// </summary>
+        public double AchievedFrequencyRatio =>
+            AchievedLowFrequencyHz > 0 && AchievedHighFrequencyHz > AchievedLowFrequencyHz
+                ? AchievedHighFrequencyHz / AchievedLowFrequencyHz
+                : 0.0;
+
+        /// <summary>
+        /// Reinstates a stored result. <paramref name="achievedLowFrequencyHz"/> /
+        /// <paramref name="achievedHighFrequencyHz"/> are the edges the stored
+        /// sweep actually swept; they pin the harmonic geometry, because
+        /// re-deriving a sweep from the requested band reproduces them only for
+        /// files written by the band-based generator. Left at 0 the rebuilt
+        /// sweep's own band stands in, which is correct only for those files.
+        /// </summary>
         public void RestoreImpulseResponse(
-            int octaves,
+            double lowFrequencyHz,
+            double highFrequencyHz,
             int sampleRate,
             int bits,
             double sweepDurationSeconds,
@@ -286,7 +331,9 @@ namespace Resonalyze
             int? transferPeakIndex = null,
             double[]? transferCoherence = null,
             int averageRunCount = 1,
-            int acceptedAverageRunCount = 1)
+            int acceptedAverageRunCount = 1,
+            double achievedLowFrequencyHz = 0.0,
+            double achievedHighFrequencyHz = 0.0)
         {
             ThrowIfDisposed();
             ArgumentNullException.ThrowIfNull(sweepDeconvolutionImpulseResponse);
@@ -328,7 +375,8 @@ namespace Resonalyze
 
             Init(new SweepMeasurementConfiguration(
                 new SweepSignalConfiguration(
-                    octaves,
+                    lowFrequencyHz,
+                    highFrequencyHz,
                     sampleRate,
                     bits,
                     sweepDurationSeconds,
@@ -351,6 +399,22 @@ namespace Resonalyze
                 new SweepAveragingConfiguration(
                     AverageRunCount,
                     ConfirmEachAverageRun)));
+            // Init just set these from the sweep it regenerated; the recorded
+            // geometry wins, since that sweep is a reconstruction and this result
+            // came from the original one. The length matters as much as the band:
+            // generation is capped at MaxDurationSeconds while a stored sweep may
+            // be minutes long, and the harmonic offsets scale with it.
+            if (achievedLowFrequencyHz > 0 &&
+                achievedHighFrequencyHz > achievedLowFrequencyHz)
+            {
+                AchievedLowFrequencyHz = achievedLowFrequencyHz;
+                AchievedHighFrequencyHz = achievedHighFrequencyHz;
+            }
+            int storedSampleCount = (int)Math.Round(sweepDurationSeconds * sampleRate);
+            if (storedSampleCount > 0)
+            {
+                AchievedSweepSampleCount = storedSampleCount;
+            }
             sweepDeconvolutionResult = new MeasurementImpulseResponse(
                 sweepDeconvolutionImpulseResponse.ToArray(),
                 sweepDeconvolutionPeakIndex);
@@ -405,11 +469,14 @@ namespace Resonalyze
                     return result;
                 }
 
-                // The sweep spans Octaves octaves up to Nyquist, so its low
-                // edge is Nyquist / 2^Octaves — the transfer estimator masks
-                // the never-excited bins below it.
+                // The transfer estimator masks bins by the sweep geometry: zero
+                // weight outside the ACHIEVED band (the sweep never went there),
+                // full weight inside the REQUESTED band, ramps across the fade
+                // guard bands between them. The ramps must sit inside the excited
+                // fades — a ramp below the achieved edge half-passes unexcited
+                // bins, which shows as garbage spikes just under the sweep start.
                 var accumulator = new SweepAverageAccumulator(
-                    Math.Pow(2.0, -sweep.Octaves));
+                    BuildExcitationGate(sweep));
                 var rejections = new List<SweepRunRejection>();
                 int requestedRuns = AverageRunCount;
                 for (int run = 1; run <= requestedRuns; run++)
@@ -542,6 +609,37 @@ namespace Resonalyze
                     averageConfirmation = null;
                 }
             }
+        }
+
+        // The requested band (this.LowFrequencyHz/HighFrequencyHz) is fully
+        // excited; the achieved band (sweep.*) additionally covers the fade
+        // guard bands. Clamps keep the gate ordered even when a short sweep
+        // could not open a guard band on some side.
+        private ExcitationBandGate BuildExcitationGate(ExponentialSineSweep sweep)
+        {
+            double nyquist = SampleRate / 2.0;
+            if (!(nyquist > 0))
+            {
+                return ExcitationBandGate.FullBand;
+            }
+
+            // Where the envelope actually opens and closes, not where it was asked
+            // to: a fade padded to its minimum length keeps rising past the
+            // requested edge, and the ramps have to follow it or they pass bins
+            // the sweep only grazed.
+            ExpSweepSpec spec = sweep.Spec;
+            double lowZero = Math.Clamp(sweep.LowFrequencyHz / nyquist, 0.0, 1.0);
+            double highZero = Math.Clamp(sweep.HighFrequencyHz / nyquist, 0.0, 1.0);
+            double lowFull = Math.Clamp(
+                spec.FullAmplitudeLowFrequencyHz / nyquist, lowZero, 1.0);
+            double highFull = Math.Clamp(
+                spec.FullAmplitudeHighFrequencyHz / nyquist, 0.0, highZero);
+            if (!(highFull > lowFull))
+            {
+                lowFull = lowZero;
+                highFull = highZero;
+            }
+            return new ExcitationBandGate(lowZero, lowFull, highFull, highZero);
         }
 
         private AudioSessionRequest BuildSessionRequest(ExponentialSineSweep sweep) =>
@@ -773,7 +871,7 @@ namespace Resonalyze
 
         private sealed class SweepAverageAccumulator
         {
-            private readonly double excitationLowNyquistFraction;
+            private readonly ExcitationBandGate excitationGate;
             private readonly List<TransferFunctionFrame> transferFrames = new();
             private readonly ChannelLevelAccumulator microphoneLevels = new(fullScaleReference: false);
             private readonly ChannelLevelAccumulator loopbackLevels = new(fullScaleReference: true);
@@ -782,9 +880,9 @@ namespace Resonalyze
             private float[]? lastMicrophoneSamples;
             private float[]? lastLoopbackSamples;
 
-            public SweepAverageAccumulator(double excitationLowNyquistFraction)
+            public SweepAverageAccumulator(ExcitationBandGate excitationGate)
             {
-                this.excitationLowNyquistFraction = excitationLowNyquistFraction;
+                this.excitationGate = excitationGate;
             }
 
             public int AcceptedRuns { get; private set; }
@@ -851,7 +949,7 @@ namespace Resonalyze
                 {
                     TransferEstimateResult transfer = TransferFunction.ComputeAveragedRelativeIr(
                         transferFrames,
-                        excitationLowNyquistFraction);
+                        excitationGate);
                     transferImpulseResponse = Array.ConvertAll(
                         transfer.ImpulseResponse,
                         sample => new Complex(sample, 0.0));

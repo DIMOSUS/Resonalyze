@@ -4,6 +4,44 @@ using MathNet.Numerics.IntegralTransforms;
 namespace Resonalyze.Dsp;
 
 /// <summary>
+/// The spectral validity of a band-limited excitation, as fractions of Nyquist.
+/// Weight is zero outside [LowZero, HighZero] (the achieved sweep edges — nothing
+/// was excited beyond them), unity inside [LowFull, HighFull] (the requested band,
+/// excited at full amplitude), and a raised cosine across the fade guard bands
+/// between them. Placing the ramps INSIDE the excited guard bands matters: a ramp
+/// below the achieved edge half-passes bins the sweep never reached, where
+/// Gxy/Gxx is microphone noise over the reference's leakage skirt — garbage that
+/// shows up as large spikes just outside the sweep band.
+/// </summary>
+public readonly record struct ExcitationBandGate(
+    double LowZeroNyquistFraction,
+    double LowFullNyquistFraction,
+    double HighFullNyquistFraction,
+    double HighZeroNyquistFraction)
+{
+    /// <summary>A gate that passes everything — for full-band excitation.</summary>
+    public static ExcitationBandGate FullBand => new(0.0, 0.0, 1.0, 1.0);
+
+    public void Validate()
+    {
+        if (!double.IsFinite(LowZeroNyquistFraction) ||
+            !double.IsFinite(LowFullNyquistFraction) ||
+            !double.IsFinite(HighFullNyquistFraction) ||
+            !double.IsFinite(HighZeroNyquistFraction) ||
+            LowZeroNyquistFraction < 0.0 ||
+            LowFullNyquistFraction < LowZeroNyquistFraction ||
+            HighFullNyquistFraction <= LowFullNyquistFraction ||
+            HighZeroNyquistFraction < HighFullNyquistFraction ||
+            HighZeroNyquistFraction > 1.0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(ExcitationBandGate),
+                "Excitation gate fractions must satisfy 0 <= lowZero <= lowFull < highFull <= highZero <= 1.");
+        }
+    }
+}
+
+/// <summary>
 /// Estimates relative impulse responses between two captured channels.
 /// </summary>
 public static class TransferFunction
@@ -34,31 +72,60 @@ public static class TransferFunction
     private const double ExcitationGateFloorShare = 0.04;
 
     /// <param name="excitationLowNyquistFraction">
-    /// The excitation's low edge as a fraction of Nyquist (an exponential
-    /// sweep spanning N octaves starts at Nyquist / 2^N). Bins fade out over
-    /// a raised cosine between this frequency and half of it, and stay zero
-    /// below: the sweep never went there, so Gxy/Gxx is microphone rumble
-    /// divided by the reference's leakage skirt — garbage that used to ring
-    /// back through the IFFT across the whole IR. The returned coherence
-    /// carries the same validity: the leakage is deterministic across runs,
-    /// so raw γ² reads ~1 exactly where the estimate is zeroed as unexcited.
-    /// Zero (the default) disables the edge for callers whose excitation
-    /// genuinely covers DC.
+    /// The excitation's low edge as a fraction of Nyquist. LEGACY edge shape:
+    /// bins fade out over a raised cosine between this frequency and half of
+    /// it — i.e. the ramp sits below the edge, in unexcited territory. Callers
+    /// that know the achieved and the requested band should use the
+    /// <see cref="ExcitationBandGate"/> overload, whose ramps live inside the
+    /// excited fade regions. Zero (the default) disables the edge.
+    /// </param>
+    /// <param name="excitationHighNyquistFraction">
+    /// The excitation's high edge as a fraction of Nyquist, mirroring the low
+    /// edge (legacy ramp toward Nyquist). One (the default) disables the edge.
     /// </param>
     public static TransferEstimateResult ComputeAveragedRelativeIr(
         IReadOnlyList<TransferFunctionFrame> frames,
-        double excitationLowNyquistFraction = 0.0)
+        double excitationLowNyquistFraction = 0.0,
+        double excitationHighNyquistFraction = 1.0)
+    {
+        if (!double.IsFinite(excitationLowNyquistFraction) ||
+            excitationLowNyquistFraction is < 0.0 or > 1.0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(excitationLowNyquistFraction));
+        }
+        if (!double.IsFinite(excitationHighNyquistFraction) ||
+            excitationHighNyquistFraction is < 0.0 or > 1.0 ||
+            excitationHighNyquistFraction <= excitationLowNyquistFraction)
+        {
+            throw new ArgumentOutOfRangeException(nameof(excitationHighNyquistFraction));
+        }
+
+        return ComputeAveragedRelativeIr(frames, new ExcitationBandGate(
+            excitationLowNyquistFraction * 0.5,
+            excitationLowNyquistFraction,
+            excitationHighNyquistFraction,
+            0.5 * (excitationHighNyquistFraction + 1.0)));
+    }
+
+    /// <summary>
+    /// H1 estimate of the relative impulse response, with spectral validity
+    /// taken from <paramref name="excitationGate"/>: zero outside the achieved
+    /// sweep band, unity inside the requested band, raised-cosine ramps across
+    /// the fade guard bands between them. The returned coherence carries the
+    /// same validity — the reference's leakage skirts are deterministic across
+    /// runs, so raw γ² reads ~1 exactly where the estimate is zeroed as
+    /// unexcited.
+    /// </summary>
+    public static TransferEstimateResult ComputeAveragedRelativeIr(
+        IReadOnlyList<TransferFunctionFrame> frames,
+        ExcitationBandGate excitationGate)
     {
         ArgumentNullException.ThrowIfNull(frames);
         if (frames.Count == 0)
         {
             throw new ArgumentException("At least one transfer frame is required.", nameof(frames));
         }
-        if (!double.IsFinite(excitationLowNyquistFraction) ||
-            excitationLowNyquistFraction is < 0.0 or > 1.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(excitationLowNyquistFraction));
-        }
+        excitationGate.Validate();
 
         int sampleCount = frames.Min(frame => Math.Min(frame.Reference.Count, frame.Target.Count));
         if (sampleCount == 0)
@@ -91,7 +158,7 @@ public static class TransferFunction
         // trust), which is estimator bias, not information.
         (double[] gateWeights, double regularization) = BuildExcitationGate(
             referencePowerSpectrum,
-            excitationLowNyquistFraction);
+            excitationGate);
 
         double[] coherence = SpectrumAnalysis.DebiasCoherence(
             SpectrumAnalysis
@@ -187,18 +254,24 @@ public static class TransferFunction
     // otherwise fade genuinely excited bins.
     private static (double[] Weights, double Regularization) BuildExcitationGate(
         double[] referencePowerSpectrum,
-        double excitationLowNyquistFraction)
+        ExcitationBandGate gate)
     {
         int fftLength = referencePowerSpectrum.Length;
         int half = fftLength / 2;
         double NyquistFraction(int bin) =>
             Math.Min(bin, fftLength - bin) / (double)half;
 
+        bool hasLowEdge = gate.LowFullNyquistFraction > 0.0;
+        bool hasHighEdge = gate.HighFullNyquistFraction < 1.0;
+
+        // The peak scan only trusts bins at FULL edge weight (see the method
+        // comment) — that is the requested band, not the fade guard bands.
         double maxReferencePower = 0;
         for (int bin = 1; bin < fftLength; bin++)
         {
-            if (excitationLowNyquistFraction <= 0.0 ||
-                NyquistFraction(bin) >= excitationLowNyquistFraction)
+            double fraction = NyquistFraction(bin);
+            if ((!hasLowEdge || fraction >= gate.LowFullNyquistFraction) &&
+                (!hasHighEdge || fraction <= gate.HighFullNyquistFraction))
             {
                 maxReferencePower = Math.Max(maxReferencePower, referencePowerSpectrum[bin]);
             }
@@ -210,12 +283,23 @@ public static class TransferFunction
         for (int bin = 0; bin < fftLength; bin++)
         {
             double weight = SoftGate(referencePowerSpectrum[bin], gateLow, gateHigh);
-            if (excitationLowNyquistFraction > 0.0 && weight > 0)
+            if (weight > 0 && hasLowEdge)
             {
+                // Zero below the achieved low edge (nothing was excited there),
+                // rising to unity where the fade-in completes.
                 weight *= SoftGate(
                     NyquistFraction(bin),
-                    excitationLowNyquistFraction * 0.5,
-                    excitationLowNyquistFraction);
+                    gate.LowZeroNyquistFraction,
+                    gate.LowFullNyquistFraction);
+            }
+            if (weight > 0 && hasHighEdge)
+            {
+                // Mirror: unity where the fade-out starts, zero above the
+                // achieved high edge.
+                weight *= 1.0 - SoftGate(
+                    NyquistFraction(bin),
+                    gate.HighFullNyquistFraction,
+                    gate.HighZeroNyquistFraction);
             }
             weights[bin] = weight;
         }

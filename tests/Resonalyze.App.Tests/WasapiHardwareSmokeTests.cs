@@ -67,7 +67,7 @@ public sealed class WasapiHardwareSmokeTests
         using (var measurement = new ExpSweepMeasurement(Factory))
         {
             measurement.Init(new SweepMeasurementConfiguration(
-                new SweepSignalConfiguration(8, wrongRate, 24, 0.25, PlaybackChannel.Right),
+                new SweepSignalConfiguration(20, 20_000, wrongRate, 24, 0.25, PlaybackChannel.Right),
                 new SweepAudioConfiguration(
                     Backend: AudioBackend.WasapiShared,
                     WaveInputChannelOffset: 0,
@@ -95,7 +95,7 @@ public sealed class WasapiHardwareSmokeTests
         int sampleRate = SharedMixRate(captureId);
         using var measurement = new ExpSweepMeasurement(Factory);
         measurement.Init(new SweepMeasurementConfiguration(
-            new SweepSignalConfiguration(12, sampleRate, 24, 1.0, PlaybackChannel.Right),
+            new SweepSignalConfiguration(20, 20_000, sampleRate, 24, 1.0, PlaybackChannel.Right),
             new SweepAudioConfiguration(
                 Backend: AudioBackend.WasapiShared,
                 WaveInputChannelOffset: 0,
@@ -132,7 +132,7 @@ public sealed class WasapiHardwareSmokeTests
 
         using var measurement = new ExpSweepMeasurement(Factory);
         measurement.Init(new SweepMeasurementConfiguration(
-            new SweepSignalConfiguration(8, sampleRate!.Value, 24, 0.25, PlaybackChannel.Right),
+            new SweepSignalConfiguration(20, 20_000, sampleRate!.Value, 24, 0.25, PlaybackChannel.Right),
             new SweepAudioConfiguration(
                 Backend: AudioBackend.WasapiExclusive,
                 WaveInputChannelOffset: 0,
@@ -160,7 +160,7 @@ public sealed class WasapiHardwareSmokeTests
         using (var measurement = new ExpSweepMeasurement(Factory))
         {
             measurement.Init(new SweepMeasurementConfiguration(
-                new SweepSignalConfiguration(16, sampleRate, 24, 5.0, PlaybackChannel.Right),
+                new SweepSignalConfiguration(20, 20_000, sampleRate, 24, 5.0, PlaybackChannel.Right),
                 new SweepAudioConfiguration(
                     Backend: AudioBackend.WasapiShared,
                     WaveInputChannelOffset: 0,

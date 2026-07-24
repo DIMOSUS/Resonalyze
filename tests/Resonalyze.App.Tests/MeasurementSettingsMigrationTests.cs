@@ -60,7 +60,8 @@ public sealed class MeasurementSettingsMigrationTests
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.Init(new SweepMeasurementConfiguration(
             new SweepSignalConfiguration(
-                12,
+                20,
+                20_000,
                 48_000,
                 24,
                 1.0,
@@ -93,7 +94,8 @@ public sealed class MeasurementSettingsMigrationTests
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.Init(new SweepMeasurementConfiguration(
             new SweepSignalConfiguration(
-                12,
+                20,
+                20_000,
                 48_000,
                 24,
                 1.0,
@@ -110,7 +112,8 @@ public sealed class MeasurementSettingsMigrationTests
             new SweepAveragingConfiguration()));
 
         measurement.RestoreImpulseResponse(
-            12,
+            20,
+            20_000,
             48_000,
             24,
             1.0,
@@ -132,7 +135,8 @@ public sealed class MeasurementSettingsMigrationTests
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.Init(new SweepMeasurementConfiguration(
             new SweepSignalConfiguration(
-                12,
+                20,
+                20_000,
                 48_000,
                 24,
                 1.0,

@@ -13,7 +13,8 @@ public sealed class PlotModelFactoryTests
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         measurement.RestoreImpulseResponse(
-            octaves: 12,
+            lowFrequencyHz: 20,
+            highFrequencyHz: 20_000,
             sampleRate: 44_100,
             bits: 24,
             sweepDurationSeconds: 1.0,
@@ -58,7 +59,8 @@ public sealed class PlotModelFactoryTests
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         measurement.RestoreImpulseResponse(
-            octaves: 12,
+            lowFrequencyHz: 20,
+            highFrequencyHz: 20_000,
             sampleRate: 44_100,
             bits: 24,
             sweepDurationSeconds: 1.0,
@@ -605,7 +607,8 @@ public sealed class PlotModelFactoryTests
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         // The impulse view is now derived from the mandatory loopback transfer IR.
         measurement.RestoreImpulseResponse(
-            octaves: 12, sampleRate: 44_100, bits: 24, sweepDurationSeconds: 1.0,
+            lowFrequencyHz: 20,
+            highFrequencyHz: 20_000, sampleRate: 44_100, bits: 24, sweepDurationSeconds: 1.0,
             playChannel: PlaybackChannel.Mono,
             sweepDeconvolutionImpulseResponse: ir, sweepDeconvolutionPeakIndex: peak,
             measurementMode: SweepMeasurementMode.LoopbackTransfer,
@@ -739,7 +742,8 @@ public sealed class PlotModelFactoryTests
 
         var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.RestoreImpulseResponse(
-            octaves: 12,
+            lowFrequencyHz: 20,
+            highFrequencyHz: 20_000,
             sampleRate: 44_100,
             bits: 24,
             sweepDurationSeconds: 1.0,
@@ -756,7 +760,8 @@ public sealed class PlotModelFactoryTests
 
         var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.RestoreImpulseResponse(
-            octaves: 12,
+            lowFrequencyHz: 20,
+            highFrequencyHz: 20_000,
             sampleRate: 44_100,
             bits: 24,
             sweepDurationSeconds: 1.0,
@@ -778,7 +783,8 @@ public sealed class PlotModelFactoryTests
 
         var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.RestoreImpulseResponse(
-            octaves: 12,
+            lowFrequencyHz: 20,
+            highFrequencyHz: 20_000,
             sampleRate: 44_100,
             bits: 24,
             sweepDurationSeconds: 1.0,

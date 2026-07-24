@@ -10,7 +10,8 @@ public sealed class MeasurementChannelRoutingTests
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
             measurement.Init(new SweepMeasurementConfiguration(
                 new SweepSignalConfiguration(
-                    8,
+                    20,
+                    20_000,
                     48_000,
                     24,
                     0.25,

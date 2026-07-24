@@ -250,7 +250,17 @@ internal sealed class MeasurementSettingsFile
 
     internal sealed class SweepMeasurementSettings
     {
+        // The lowest/highest sweep frequency the user may request; the achieved
+        // band is rounded outward from here for phase alignment.
+        public const double MinSweepFrequencyHz = 20.0;
+        public const double MaxSweepFrequencyHz = 20_000.0;
+
+        // Legacy: the sweep used to be defined by an octave count with the top
+        // pinned to Nyquist. Kept for migration only; the band is now stored in
+        // LowFrequencyHz/HighFrequencyHz (0 = derive from the legacy octave count).
         public int Octaves { get; set; } = 12;
+        public double LowFrequencyHz { get; set; }
+        public double HighFrequencyHz { get; set; }
         public int SampleRate { get; set; } = 44100;
         public int Bits { get; set; } = 24;
         public double RequestedDurationSeconds { get; set; } = 1.0;
@@ -275,7 +285,9 @@ internal sealed class MeasurementSettingsFile
         public int AsioInputChannelOffset { get; set; }
         public int? AsioLoopbackInputChannelOffset { get; set; }
         public int AsioOutputChannelOffset { get; set; }
-        public int AverageRunCount { get; set; } = 1;
+        // Two runs by default: averaging is what the Measurements control offers
+        // (its minimum is 2), and a lone sweep gives nothing to average away.
+        public int AverageRunCount { get; set; } = 2;
         public bool ConfirmEachAverageRun { get; set; }
         public string? MicrophoneCalibration0DegreesPath { get; set; }
         public string? MicrophoneCalibration90DegreesPath { get; set; }
@@ -288,11 +300,41 @@ internal sealed class MeasurementSettingsFile
                 ? AsioLoopbackInputChannelOffset.HasValue
                 : WaveLoopbackInputChannelOffset.HasValue;
 
+        /// <summary>
+        /// Resolves the requested sweep band into the allowed range, migrating
+        /// pre-band settings (only an octave count, with the top pinned to
+        /// Nyquist) — for the historical read-only octave count of 12 this lands
+        /// at the 20 Hz–20 kHz default. <paramref name="sampleRate"/> is the
+        /// already-normalized rate the sweep will run at.
+        /// </summary>
+        public (double LowHz, double HighHz) ResolveBand(int sampleRate)
+        {
+            double low;
+            double high;
+            if (LowFrequencyHz > 0 && HighFrequencyHz > LowFrequencyHz)
+            {
+                low = LowFrequencyHz;
+                high = HighFrequencyHz;
+            }
+            else
+            {
+                double nyquist = sampleRate / 2.0;
+                double span = Octaves > 0 ? Octaves : 12;
+                low = nyquist / Math.Pow(2.0, span);
+                high = nyquist;
+            }
+
+            high = Math.Clamp(high, MinSweepFrequencyHz + 1.0, MaxSweepFrequencyHz);
+            low = Math.Clamp(low, MinSweepFrequencyHz, high - 1.0);
+            return (low, high);
+        }
+
         public static SweepMeasurementSettings Capture(
             ExpSweepMeasurement measurement) =>
             new()
             {
-                Octaves = measurement.Octaves,
+                LowFrequencyHz = measurement.LowFrequencyHz,
+                HighFrequencyHz = measurement.HighFrequencyHz,
                 SampleRate = measurement.SampleRate,
                 Bits = measurement.Bits,
                 RequestedDurationSeconds = measurement.Sweep?.RequestedDuration ?? 1.0,
@@ -330,12 +372,17 @@ internal sealed class MeasurementSettingsFile
                 captureEndpointId,
                 renderEndpointId,
                 Clamp(SampleRate, 44_100, 384_000));
+            (double lowFrequencyHz, double highFrequencyHz) = ResolveBand(sampleRate);
             measurement.Init(new SweepMeasurementConfiguration(
                 new SweepSignalConfiguration(
-                    Clamp(Octaves, 1, 32),
+                    lowFrequencyHz,
+                    highFrequencyHz,
                     sampleRate,
                     Bits is 16 or 24 ? Bits : 24,
-                    Math.Clamp(RequestedDurationSeconds, 0.001, 100.0),
+                    Math.Clamp(
+                        RequestedDurationSeconds,
+                        0.001,
+                        ExponentialSineSweep.MaxDurationSeconds),
                     Enum.IsDefined(PlaybackChannel)
                         ? PlaybackChannel
                         : PlaybackChannel.Mono),

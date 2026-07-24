@@ -164,18 +164,25 @@ internal sealed class MeasurementPlotContext
         SpectrumCurves curves)
     {
         DistortionWarnings = Array.Empty<string>();
+        // The geometry of the sweep behind THIS result: for a restored measurement
+        // that is what the file recorded, not what the sweep rebuilt on load spans
+        // (its generation is length-capped, and legacy edges are unreachable).
         if ((curves & SpectrumCurves.Distortion) == 0 ||
             expSweepMeasurement.SweepDeconvolution is not { } deconvolution ||
-            expSweepMeasurement.Sweep is not { SweepSamples: > 0 } sweep ||
-            expSweepMeasurement.Octaves <= 0)
+            expSweepMeasurement.AchievedSweepSampleCount <= 0 ||
+            !(expSweepMeasurement.AchievedLowFrequencyHz > 0) ||
+            !(expSweepMeasurement.AchievedHighFrequencyHz >
+                expSweepMeasurement.AchievedLowFrequencyHz))
         {
             return Array.Empty<AnalysisCurve>();
         }
 
-        var sweepMetadata = EssSweepMetadata.FromExponentialSweep(
+        var sweepMetadata = new EssSweepMetadata(
+            expSweepMeasurement.AchievedLowFrequencyHz,
+            expSweepMeasurement.AchievedHighFrequencyHz,
+            expSweepMeasurement.AchievedSweepDurationSeconds,
             expSweepMeasurement.SampleRate,
-            expSweepMeasurement.Octaves,
-            sweep.SweepSamples,
+            expSweepMeasurement.AchievedSweepSampleCount,
             deconvolution.PeakIndex);
 
         Complex[] impulse = deconvolution.ImpulseResponse;

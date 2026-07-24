@@ -111,8 +111,11 @@ public partial class Form1
             {
                 ImpulseResponseFile file =
                     await ImpulseResponseFile.LoadAsync(dialog.FileName);
+                (double restoredLowHz, double restoredHighHz) = file.ResolveSweepBand();
+                (double achievedLowHz, double achievedHighHz) = file.ResolveAchievedSweepBand();
                 expSweepMeasurement.RestoreImpulseResponse(
-                    file.Octaves,
+                    restoredLowHz,
+                    restoredHighHz,
                     file.SampleRate,
                     file.Bits,
                     file.SweepDurationSeconds,
@@ -124,7 +127,9 @@ public partial class Form1
                     file.TransferPeakIndex,
                     file.TransferCoherence,
                     file.AverageRunCount,
-                    file.AcceptedAverageRunCount);
+                    file.AcceptedAverageRunCount,
+                    achievedLowHz,
+                    achievedHighHz);
                 expSweepMeasurement.RestoreLevelSnapshot(file.GetMeterSnapshot());
                 // The loaded file's own calibration is this result's snapshot (what
                 // it was measured under), so it can be shown in dB SPL. The configured

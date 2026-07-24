@@ -14,7 +14,8 @@ public sealed class AbstractedMeasurementTests
         var measurement = new ExpSweepMeasurement(factory);
         measurement.Init(new SweepMeasurementConfiguration(
             new SweepSignalConfiguration(
-                4,
+                20,
+                20_000,
                 44_100,
                 24,
                 0.05,

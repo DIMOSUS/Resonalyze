@@ -127,7 +127,9 @@ public sealed class ImpulseResponseFile
             HighFrequencyHz = measurement.HighFrequencyHz,
             AchievedLowFrequencyHz = measurement.AchievedLowFrequencyHz,
             AchievedHighFrequencyHz = measurement.AchievedHighFrequencyHz,
-            SweepDurationSeconds = sweep.ComputedDuration,
+            // The sweep that produced this IR, which for a re-saved measurement is
+            // longer than the one rebuilt on load if it outran the generation cap.
+            SweepDurationSeconds = measurement.AchievedSweepDurationSeconds,
             PlayChannel = measurement.PlaybackChannel,
             MeasurementMode = measurement.MeasurementMode,
             SweepDeconvolutionPeakIndex = sweepDeconvolution.PeakIndex,

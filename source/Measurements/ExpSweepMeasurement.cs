@@ -67,6 +67,14 @@ namespace Resonalyze
         // generator uses today cannot express.
         public double AchievedLowFrequencyHz { get; private set; }
         public double AchievedHighFrequencyHz { get; private set; }
+        // Length of that same sweep. Also recorded rather than read back off the
+        // rebuilt one, which caps its generation at MaxDurationSeconds and would
+        // otherwise halve the harmonic offsets of a restored 200-second sweep.
+        public int AchievedSweepSampleCount { get; private set; }
+
+        /// <summary>Length in seconds of the sweep behind the current result.</summary>
+        public double AchievedSweepDurationSeconds =>
+            SampleRate > 0 ? AchievedSweepSampleCount / (double)SampleRate : 0.0;
         public int Bits { get; private set; }
         public PlaybackChannel PlaybackChannel { get; private set; }
         public AudioBackend AudioBackend { get; private set; } = AudioBackend.Wave;
@@ -212,6 +220,7 @@ namespace Resonalyze
                 signal.SampleRate);
             AchievedLowFrequencyHz = Sweep.LowFrequencyHz;
             AchievedHighFrequencyHz = Sweep.HighFrequencyHz;
+            AchievedSweepSampleCount = Sweep.SweepSamples;
         }
 
         public Task<bool> RunAsync()
@@ -283,11 +292,11 @@ namespace Resonalyze
         public double HarmonicIROffset(double harmonic)
         {
             double achievedRatio = AchievedFrequencyRatio;
-            if (Sweep == null || achievedRatio <= 1.0)
+            if (AchievedSweepSampleCount <= 0 || achievedRatio <= 1.0)
             {
                 return 0;
             }
-            return Sweep.SweepSamples * Log(harmonic) / Log(achievedRatio);
+            return AchievedSweepSampleCount * Log(harmonic) / Log(achievedRatio);
         }
 
         /// <summary>
@@ -391,13 +400,20 @@ namespace Resonalyze
                     AverageRunCount,
                     ConfirmEachAverageRun)));
             // Init just set these from the sweep it regenerated; the recorded
-            // edges win, since that sweep is a reconstruction and this result came
-            // from the original one.
+            // geometry wins, since that sweep is a reconstruction and this result
+            // came from the original one. The length matters as much as the band:
+            // generation is capped at MaxDurationSeconds while a stored sweep may
+            // be minutes long, and the harmonic offsets scale with it.
             if (achievedLowFrequencyHz > 0 &&
                 achievedHighFrequencyHz > achievedLowFrequencyHz)
             {
                 AchievedLowFrequencyHz = achievedLowFrequencyHz;
                 AchievedHighFrequencyHz = achievedHighFrequencyHz;
+            }
+            int storedSampleCount = (int)Math.Round(sweepDurationSeconds * sampleRate);
+            if (storedSampleCount > 0)
+            {
+                AchievedSweepSampleCount = storedSampleCount;
             }
             sweepDeconvolutionResult = new MeasurementImpulseResponse(
                 sweepDeconvolutionImpulseResponse.ToArray(),
@@ -607,10 +623,17 @@ namespace Resonalyze
                 return ExcitationBandGate.FullBand;
             }
 
+            // Where the envelope actually opens and closes, not where it was asked
+            // to: a fade padded to its minimum length keeps rising past the
+            // requested edge, and the ramps have to follow it or they pass bins
+            // the sweep only grazed.
+            ExpSweepSpec spec = sweep.Spec;
             double lowZero = Math.Clamp(sweep.LowFrequencyHz / nyquist, 0.0, 1.0);
             double highZero = Math.Clamp(sweep.HighFrequencyHz / nyquist, 0.0, 1.0);
-            double lowFull = Math.Clamp(LowFrequencyHz / nyquist, lowZero, 1.0);
-            double highFull = Math.Clamp(HighFrequencyHz / nyquist, 0.0, highZero);
+            double lowFull = Math.Clamp(
+                spec.FullAmplitudeLowFrequencyHz / nyquist, lowZero, 1.0);
+            double highFull = Math.Clamp(
+                spec.FullAmplitudeHighFrequencyHz / nyquist, 0.0, highZero);
             if (!(highFull > lowFull))
             {
                 lowFull = lowZero;

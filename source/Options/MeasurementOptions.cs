@@ -891,21 +891,53 @@ namespace Resonalyze.Options
                 ? $"{spec.LowFrequencyHz:0.#}–{spec.HighFrequencyHz:0} Hz · " +
                     $"{spec.OctaveSpan:0.00} oct · {spec.ComputedDurationSeconds:0.00} s"
                 : "—";
-            // A sweep too short to fit a whole cycle at the requested low edge
-            // cannot reach it — the line already shows the truth, but silently,
-            // so say it out loud rather than let the number be skimmed past.
-            bool covers = spec.Covers(lowHz, highHz);
-            labelActualRangeCaption.ForeColor = covers
+            // The line already shows the truth, but silently, so say out loud when
+            // the sweep does not deliver what the fields above ask for.
+            string? warning = DescribeSweepShortfall(spec, lowHz, highHz, totalSeconds);
+            labelActualRangeCaption.ForeColor = warning == null
                 ? Color.FromArgb(150, 200, 170)
                 : Color.Gold;
             deviceToolTip.SetToolTip(
                 labelActualRangeCaption,
-                covers
-                    ? "The band the sweep actually covers, at full amplitude, with " +
-                        "the fades outside it."
-                    : $"⚠ Too short to reach {lowHz:0.#} Hz: one cycle there needs " +
-                        $"{1000.0 / Math.Max(lowHz, 1e-9):0} ms of sweep. Raise the " +
-                        "per-octave time to widen the band down to the request.");
+                warning ??
+                    "The band the sweep covers at full amplitude, with the fades " +
+                    "outside it, and how long it takes.");
+        }
+
+        // Null when the sweep delivers the requested band at full amplitude within
+        // the length limit; otherwise what the user is actually getting instead.
+        private static string? DescribeSweepShortfall(
+            ExpSweepSpec spec,
+            double requestedLowHz,
+            double requestedHighHz,
+            double requestedTotalSeconds)
+        {
+            if (!spec.IsValid)
+            {
+                return null;
+            }
+
+            if (requestedTotalSeconds > ExponentialSineSweep.MaxDurationSeconds &&
+                spec.OctaveSpan > 0)
+            {
+                double effectivePace = spec.ComputedDurationSeconds / spec.OctaveSpan;
+                return $"⚠ Capped at {ExponentialSineSweep.MaxDurationSeconds:0} s " +
+                    $"(asked for {requestedTotalSeconds:0} s), so the sweep really " +
+                    $"paces {effectivePace * 1000.0:0} ms per octave.";
+            }
+
+            if (spec.Covers(requestedLowHz, requestedHighHz))
+            {
+                return null;
+            }
+
+            // Full amplitude needs a whole cycle plus room for the fade, so a short
+            // sweep falls short at the bottom first.
+            return $"⚠ Full amplitude only from {spec.FullAmplitudeLowFrequencyHz:0.#} " +
+                $"to {spec.FullAmplitudeHighFrequencyHz:0} Hz: one cycle at " +
+                $"{requestedLowHz:0.#} Hz already takes " +
+                $"{1000.0 / Math.Max(requestedLowHz, 1e-9):0} ms. Raise the " +
+                "per-octave time to reach the requested band.";
         }
 
         private void comboBoxAudioBackend_SelectedIndexChanged(object sender, EventArgs e) =>

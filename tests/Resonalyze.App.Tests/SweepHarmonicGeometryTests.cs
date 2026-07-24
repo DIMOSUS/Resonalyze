@@ -152,6 +152,66 @@ public sealed class SweepHarmonicGeometryTests
     }
 
     [Fact]
+    public void RestoringASweepLongerThanTheGenerationCap_KeepsItsRealLength()
+    {
+        // The generator will not build a sweep past MaxDurationSeconds, but the
+        // file format stores up to an hour and the harmonic offsets scale with the
+        // length: reading the rebuilt sweep's sample count would halve them for a
+        // 200-second capture.
+        const int sampleRate = 48_000;
+        const double storedDurationSeconds = 200.0;
+        Assert.True(storedDurationSeconds > ExponentialSineSweep.MaxDurationSeconds);
+
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        measurement.RestoreImpulseResponse(
+            20,
+            20_000,
+            sampleRate,
+            24,
+            storedDurationSeconds,
+            PlaybackChannel.Mono,
+            Impulse(2048, 16),
+            16);
+
+        Assert.Equal(
+            (int)Math.Round(storedDurationSeconds * sampleRate),
+            measurement.AchievedSweepSampleCount);
+        Assert.Equal(storedDurationSeconds, measurement.AchievedSweepDurationSeconds, 6);
+        // The rebuilt sweep really is capped, which is why its count cannot be used.
+        Assert.Equal(
+            (int)Math.Round(ExponentialSineSweep.MaxDurationSeconds * sampleRate),
+            measurement.Sweep!.SweepSamples);
+
+        double expected = measurement.AchievedSweepSampleCount * Math.Log(2.0) /
+            Math.Log(measurement.AchievedFrequencyRatio);
+        Assert.Equal(expected, measurement.HarmonicIROffset(2.0), 6);
+        Assert.True(
+            measurement.HarmonicIROffset(2.0) >
+                measurement.Sweep.SweepSamples * Math.Log(2.0) /
+                    Math.Log(measurement.AchievedFrequencyRatio) * 1.5,
+            "the capped sweep would have understated the offset by about half");
+    }
+
+    [Fact]
+    public void ACapturedMeasurement_TakesItsSweepLengthFromTheGeneratedSweep()
+    {
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        measurement.Init(new SweepMeasurementConfiguration(
+            new SweepSignalConfiguration(
+                LowFrequencyHz: 20,
+                HighFrequencyHz: 20_000,
+                SampleRate: 48_000,
+                Bits: 24,
+                RequestedDurationSeconds: 2.0,
+                PlaybackChannel: PlaybackChannel.Mono),
+            new SweepAudioConfiguration(WaveLoopbackInputChannelOffset: 1),
+            new SweepAveragingConfiguration()));
+
+        Assert.Equal(measurement.Sweep!.SweepSamples, measurement.AchievedSweepSampleCount);
+        Assert.Equal(2.0, measurement.AchievedSweepDurationSeconds, 3);
+    }
+
+    [Fact]
     public void AHistorySnapshotOfAStoredFile_ResolvesTheSweptBandNotTheRequest()
     {
         // The path the Virtual DSP wizard reads its distortion curve through.

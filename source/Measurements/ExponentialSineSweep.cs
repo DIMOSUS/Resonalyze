@@ -41,16 +41,55 @@ public readonly record struct ExpSweepSpec(
         SampleRate > 0 ? SampleCount / (double)SampleRate : 0.0;
 
     /// <summary>
-    /// Whether the sweep actually covers the band that was asked for. Normally it
-    /// does, with room to spare for the fades, but a short sweep cannot: the low
-    /// edge needs a whole cycle to exist at all, so 20 Hz is unreachable in less
-    /// than 50 ms of sweep no matter what the request says. Callers show the
-    /// achieved edges either way; this is what tells them to say so.
+    /// Lowest frequency the sweep reaches at FULL amplitude — where the fade-in
+    /// has finished. Normally this is the requested low edge, because the fade is
+    /// sized to span the guard band below it; it lands higher when the fade had to
+    /// be padded to its minimum length, which a short sweep forces.
     /// </summary>
-    public bool Covers(double requestedLowHz, double requestedHighHz) =>
-        IsValid &&
-        LowFrequencyHz <= requestedLowHz &&
-        HighFrequencyHz >= requestedHighHz;
+    public double FullAmplitudeLowFrequencyHz => AmplitudeEdgeHz(FadeInSamples);
+
+    /// <summary>
+    /// Highest frequency the sweep reaches at full amplitude — where the fade-out
+    /// begins. The counterpart of <see cref="FullAmplitudeLowFrequencyHz"/>.
+    /// </summary>
+    public double FullAmplitudeHighFrequencyHz =>
+        AmplitudeEdgeHz(SampleCount - FadeOutSamples);
+
+    /// <summary>
+    /// Whether the sweep excites the whole requested band at full amplitude. It
+    /// is not enough for the frequency trajectory to pass through the band: the
+    /// envelope has to be open while it does. A short sweep fails both ways — its
+    /// low edge needs a whole cycle to exist at all (20 Hz is unreachable in less
+    /// than 50 ms), and its minimum-length fades eat into the band from both
+    /// sides. Callers show the achieved edges either way; this tells them to warn.
+    /// </summary>
+    public bool Covers(double requestedLowHz, double requestedHighHz)
+    {
+        if (!IsValid || !(requestedHighHz > requestedLowHz) || requestedLowHz <= 0)
+        {
+            return false;
+        }
+
+        // The fade lengths are whole samples, so a fade sized to end exactly at the
+        // requested edge lands a rounding step either side of it. One sample of
+        // slack keeps that from reading as a shortfall; a real one is orders of
+        // magnitude larger.
+        double perSample = Math.Exp(Math.Log(FrequencyRatio) / SampleCount);
+        return FullAmplitudeLowFrequencyHz <= requestedLowHz * perSample &&
+            FullAmplitudeHighFrequencyHz >= requestedHighHz / perSample;
+    }
+
+    // The sweep's instantaneous frequency at a sample: low * exp(i/N * ln(ratio)).
+    private double AmplitudeEdgeHz(int sampleIndex)
+    {
+        if (!IsValid)
+        {
+            return 0.0;
+        }
+        double beta = Math.Log(FrequencyRatio);
+        return LowFrequencyHz * Math.Exp(
+            Math.Clamp(sampleIndex, 0, SampleCount) / (double)SampleCount * beta);
+    }
 }
 
 /// <summary>

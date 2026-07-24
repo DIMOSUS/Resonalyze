@@ -326,7 +326,7 @@
             numericUpDownAverageRunCount.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericUpDownAverageRunCount.Location = new Point(154, 152);
             numericUpDownAverageRunCount.Maximum = new decimal(new int[] { 64, 0, 0, 0 });
-            numericUpDownAverageRunCount.Minimum = new decimal(new int[] { 2, 0, 0, 0 });
+            numericUpDownAverageRunCount.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
             numericUpDownAverageRunCount.MinimumSize = new Size(36, 19);
             numericUpDownAverageRunCount.Name = "numericUpDownAverageRunCount";
             numericUpDownAverageRunCount.Size = new Size(170, 19);

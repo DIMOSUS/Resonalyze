@@ -229,7 +229,7 @@ internal sealed class MeasurementHistoryService
             HighFrequencyHz = measurement.HighFrequencyHz,
             AchievedLowFrequencyHz = measurement.AchievedLowFrequencyHz,
             AchievedHighFrequencyHz = measurement.AchievedHighFrequencyHz,
-            SweepDurationSeconds = measurement.Sweep?.ComputedDuration ?? 0.0,
+            SweepDurationSeconds = measurement.AchievedSweepDurationSeconds,
             PlayChannel = measurement.PlaybackChannel,
             MeasurementMode = measurement.MeasurementMode,
             SweepDeconvolutionPeakIndex = sweepDeconvolution.PeakIndex,

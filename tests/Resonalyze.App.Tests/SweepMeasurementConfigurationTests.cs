@@ -8,7 +8,8 @@ public sealed class SweepMeasurementConfigurationTests
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         var configuration = new SweepMeasurementConfiguration(
             new SweepSignalConfiguration(
-                10,
+                30,
+                18_000,
                 96_000,
                 24,
                 0.25,
@@ -23,7 +24,8 @@ public sealed class SweepMeasurementConfigurationTests
 
         measurement.Init(configuration);
 
-        Assert.Equal(10, measurement.Octaves);
+        Assert.Equal(30, measurement.LowFrequencyHz);
+        Assert.Equal(18_000, measurement.HighFrequencyHz);
         Assert.Equal(96_000, measurement.SampleRate);
         Assert.Equal(PlaybackChannel.Right, measurement.PlaybackChannel);
         Assert.Equal(AudioBackend.Asio, measurement.AudioBackend);

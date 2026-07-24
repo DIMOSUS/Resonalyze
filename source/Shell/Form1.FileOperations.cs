@@ -111,8 +111,10 @@ public partial class Form1
             {
                 ImpulseResponseFile file =
                     await ImpulseResponseFile.LoadAsync(dialog.FileName);
+                (double restoredLowHz, double restoredHighHz) = file.ResolveSweepBand();
                 expSweepMeasurement.RestoreImpulseResponse(
-                    file.Octaves,
+                    restoredLowHz,
+                    restoredHighHz,
                     file.SampleRate,
                     file.Bits,
                     file.SweepDurationSeconds,

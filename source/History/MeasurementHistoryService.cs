@@ -225,7 +225,8 @@ internal sealed class MeasurementHistoryService
         {
             SampleRate = measurement.SampleRate,
             Bits = measurement.Bits,
-            Octaves = measurement.Octaves,
+            LowFrequencyHz = measurement.LowFrequencyHz,
+            HighFrequencyHz = measurement.HighFrequencyHz,
             SweepDurationSeconds = measurement.Sweep?.ComputedDuration ?? 0.0,
             PlayChannel = measurement.PlaybackChannel,
             MeasurementMode = measurement.MeasurementMode,
@@ -261,10 +262,13 @@ internal sealed class MeasurementHistoryService
                 transfer,
                 file.TransferPeakIndex);
 
+        (double lowHz, double highHz) = file.ResolveSweepBand();
         return new MeasurementHistorySnapshot
         {
             SampleRate = file.SampleRate,
             Bits = file.Bits,
+            LowFrequencyHz = lowHz,
+            HighFrequencyHz = highHz,
             Octaves = file.Octaves,
             SweepDurationSeconds = file.SweepDurationSeconds,
             PlayChannel = file.PlayChannel,

@@ -6,7 +6,8 @@ public sealed record SweepMeasurementConfiguration(
     SweepAveragingConfiguration Averaging);
 
 public sealed record SweepSignalConfiguration(
-    int Octaves,
+    double LowFrequencyHz,
+    double HighFrequencyHz,
     int SampleRate,
     int Bits,
     double RequestedDurationSeconds,

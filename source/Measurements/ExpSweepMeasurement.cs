@@ -57,7 +57,8 @@ namespace Resonalyze
         public bool HasImpulseResponse => SweepDeconvolutionImpulseResponse != null;
         public bool InProgress => inProgress;
         public int SampleRate { get; private set; }
-        public int Octaves { get; private set; }
+        public double LowFrequencyHz { get; private set; }
+        public double HighFrequencyHz { get; private set; }
         public int Bits { get; private set; }
         public PlaybackChannel PlaybackChannel { get; private set; }
         public AudioBackend AudioBackend { get; private set; } = AudioBackend.Wave;
@@ -144,7 +145,8 @@ namespace Resonalyze
                 : PlaybackChannel.Mono;
             SampleRate = signal.SampleRate;
             Bits = signal.Bits;
-            Octaves = signal.Octaves;
+            LowFrequencyHz = signal.LowFrequencyHz;
+            HighFrequencyHz = signal.HighFrequencyHz;
             OutputDeviceNumber = audio.OutputDeviceNumber;
             InputDeviceNumber = audio.InputDeviceNumber;
             WasapiCaptureEndpointId = audio.WasapiCaptureEndpointId;
@@ -191,8 +193,12 @@ namespace Resonalyze
 
             Sweep?.Dispose();
             Sweep = new ExponentialSineSweep();
+            // LowFrequencyHz/HighFrequencyHz keep the REQUESTED band (persisted and
+            // round-trip stable); the achieved, phase-aligned band lives on the
+            // Sweep and is what the harmonic geometry and masking read.
             Sweep.FillData(
-                signal.Octaves,
+                signal.LowFrequencyHz,
+                signal.HighFrequencyHz,
                 signal.RequestedDurationSeconds,
                 signal.Bits,
                 signal.SampleRate);
@@ -270,11 +276,12 @@ namespace Resonalyze
             {
                 return 0;
             }
-            return Sweep.SweepSamples * Log(harmonic) / Log(Pow(2, Octaves));
+            return Sweep.SweepSamples * Log(harmonic) / Log(Sweep.FrequencyRatio);
         }
 
         public void RestoreImpulseResponse(
-            int octaves,
+            double lowFrequencyHz,
+            double highFrequencyHz,
             int sampleRate,
             int bits,
             double sweepDurationSeconds,
@@ -328,7 +335,8 @@ namespace Resonalyze
 
             Init(new SweepMeasurementConfiguration(
                 new SweepSignalConfiguration(
-                    octaves,
+                    lowFrequencyHz,
+                    highFrequencyHz,
                     sampleRate,
                     bits,
                     sweepDurationSeconds,
@@ -405,11 +413,14 @@ namespace Resonalyze
                     return result;
                 }
 
-                // The sweep spans Octaves octaves up to Nyquist, so its low
-                // edge is Nyquist / 2^Octaves — the transfer estimator masks
-                // the never-excited bins below it.
+                // The transfer estimator masks bins by the sweep geometry: zero
+                // weight outside the ACHIEVED band (the sweep never went there),
+                // full weight inside the REQUESTED band, ramps across the fade
+                // guard bands between them. The ramps must sit inside the excited
+                // fades — a ramp below the achieved edge half-passes unexcited
+                // bins, which shows as garbage spikes just under the sweep start.
                 var accumulator = new SweepAverageAccumulator(
-                    Math.Pow(2.0, -sweep.Octaves));
+                    BuildExcitationGate(sweep));
                 var rejections = new List<SweepRunRejection>();
                 int requestedRuns = AverageRunCount;
                 for (int run = 1; run <= requestedRuns; run++)
@@ -542,6 +553,30 @@ namespace Resonalyze
                     averageConfirmation = null;
                 }
             }
+        }
+
+        // The requested band (this.LowFrequencyHz/HighFrequencyHz) is fully
+        // excited; the achieved band (sweep.*) additionally covers the fade
+        // guard bands. Clamps keep the gate ordered even when a short sweep
+        // could not open a guard band on some side.
+        private ExcitationBandGate BuildExcitationGate(ExponentialSineSweep sweep)
+        {
+            double nyquist = SampleRate / 2.0;
+            if (!(nyquist > 0))
+            {
+                return ExcitationBandGate.FullBand;
+            }
+
+            double lowZero = Math.Clamp(sweep.LowFrequencyHz / nyquist, 0.0, 1.0);
+            double highZero = Math.Clamp(sweep.HighFrequencyHz / nyquist, 0.0, 1.0);
+            double lowFull = Math.Clamp(LowFrequencyHz / nyquist, lowZero, 1.0);
+            double highFull = Math.Clamp(HighFrequencyHz / nyquist, 0.0, highZero);
+            if (!(highFull > lowFull))
+            {
+                lowFull = lowZero;
+                highFull = highZero;
+            }
+            return new ExcitationBandGate(lowZero, lowFull, highFull, highZero);
         }
 
         private AudioSessionRequest BuildSessionRequest(ExponentialSineSweep sweep) =>
@@ -773,7 +808,7 @@ namespace Resonalyze
 
         private sealed class SweepAverageAccumulator
         {
-            private readonly double excitationLowNyquistFraction;
+            private readonly ExcitationBandGate excitationGate;
             private readonly List<TransferFunctionFrame> transferFrames = new();
             private readonly ChannelLevelAccumulator microphoneLevels = new(fullScaleReference: false);
             private readonly ChannelLevelAccumulator loopbackLevels = new(fullScaleReference: true);
@@ -782,9 +817,9 @@ namespace Resonalyze
             private float[]? lastMicrophoneSamples;
             private float[]? lastLoopbackSamples;
 
-            public SweepAverageAccumulator(double excitationLowNyquistFraction)
+            public SweepAverageAccumulator(ExcitationBandGate excitationGate)
             {
-                this.excitationLowNyquistFraction = excitationLowNyquistFraction;
+                this.excitationGate = excitationGate;
             }
 
             public int AcceptedRuns { get; private set; }
@@ -851,7 +886,7 @@ namespace Resonalyze
                 {
                     TransferEstimateResult transfer = TransferFunction.ComputeAveragedRelativeIr(
                         transferFrames,
-                        excitationLowNyquistFraction);
+                        excitationGate);
                     transferImpulseResponse = Array.ConvertAll(
                         transfer.ImpulseResponse,
                         sample => new Complex(sample, 0.0));

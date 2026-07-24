@@ -27,7 +27,12 @@ public sealed class ImpulseResponseFile
     public DateTimeOffset SavedAtUtc { get; set; }
     public int SampleRate { get; set; }
     public int Bits { get; set; }
+    // Legacy field: the sweep used to be defined by an octave count with the top
+    // pinned to Nyquist. Kept ONLY so pre-band files deserialize; the band is now
+    // stored explicitly in LowFrequencyHz/HighFrequencyHz (see ResolveSweepBand).
     public int Octaves { get; set; }
+    public double LowFrequencyHz { get; set; }
+    public double HighFrequencyHz { get; set; }
     public double SweepDurationSeconds { get; set; }
     public PlaybackChannel PlayChannel { get; set; }
     public SweepMeasurementMode MeasurementMode { get; set; } =
@@ -113,7 +118,8 @@ public sealed class ImpulseResponseFile
             SavedAtUtc = DateTimeOffset.UtcNow,
             SampleRate = measurement.SampleRate,
             Bits = measurement.Bits,
-            Octaves = measurement.Octaves,
+            LowFrequencyHz = measurement.LowFrequencyHz,
+            HighFrequencyHz = measurement.HighFrequencyHz,
             SweepDurationSeconds = sweep.ComputedDuration,
             PlayChannel = measurement.PlaybackChannel,
             MeasurementMode = measurement.MeasurementMode,
@@ -215,6 +221,29 @@ public sealed class ImpulseResponseFile
         return file;
     }
 
+    /// <summary>
+    /// The stored sweep band. Pre-band files carry only an octave count, whose
+    /// sweep ran from Nyquist / 2^octaves up to Nyquist — that legacy band is
+    /// derived here so old files keep their exact harmonic geometry.
+    /// </summary>
+    public (double LowHz, double HighHz) ResolveSweepBand() =>
+        ResolveSweepBand(LowFrequencyHz, HighFrequencyHz, Octaves, SampleRate);
+
+    internal static (double LowHz, double HighHz) ResolveSweepBand(
+        double lowFrequencyHz,
+        double highFrequencyHz,
+        int octaves,
+        int sampleRate)
+    {
+        if (lowFrequencyHz > 0 && highFrequencyHz > lowFrequencyHz)
+        {
+            return (lowFrequencyHz, highFrequencyHz);
+        }
+        double nyquist = sampleRate / 2.0;
+        double octaveSpan = octaves > 0 ? octaves : 12;
+        return (nyquist / Math.Pow(2.0, octaveSpan), nyquist);
+    }
+
     public Complex[] GetSweepDeconvolutionImpulseResponse()
     {
         Validate();
@@ -280,7 +309,18 @@ public sealed class ImpulseResponseFile
         {
             throw new InvalidDataException("Only 16-bit and 24-bit measurements are supported.");
         }
-        if (Octaves is < 1 or > 24)
+        if (LowFrequencyHz > 0 || HighFrequencyHz > 0)
+        {
+            if (!double.IsFinite(LowFrequencyHz) ||
+                !double.IsFinite(HighFrequencyHz) ||
+                LowFrequencyHz <= 0 ||
+                HighFrequencyHz <= LowFrequencyHz ||
+                HighFrequencyHz > SampleRate / 2.0 * (1.0 + 1e-3))
+            {
+                throw new InvalidDataException("The sweep frequency band is invalid.");
+            }
+        }
+        else if (Octaves is < 1 or > 24)
         {
             throw new InvalidDataException("The octave count is outside the supported range.");
         }

@@ -50,6 +50,7 @@ namespace Resonalyze.Options
         // device again restores it instead of losing it on the next apply.
         private int? preferredWaveLoopbackChannelOffset;
         private bool updatingWaveLoopbackSelection;
+        private bool updatingSweepBand;
         private string? preferredWasapiCaptureEndpointId;
         private string? preferredWasapiRenderEndpointId;
         private string? preferredWasapiCaptureEndpointName;
@@ -285,14 +286,21 @@ namespace Resonalyze.Options
             // Clamped: the settings file is not normalized against the control
             // ranges, and (int) truncation used to shave a millisecond off
             // durations that are not exactly representable in binary.
+            (double lowFrequencyHz, double highFrequencyHz) = settings.ResolveBand(settings.SampleRate);
+            numericUpDownLowFrequency.Value = numericUpDownLowFrequency.ClampValue(
+                Math.Round(lowFrequencyHz));
+            numericUpDownHighFrequency.Value = numericUpDownHighFrequency.ClampValue(
+                Math.Max((double)numericUpDownLowFrequency.Value + 1.0, Math.Round(highFrequencyHz)));
+            // The duration is entered per octave; show the stored total that way.
+            double perOctaveMs = ExponentialSineSweep.OctavePaceForTotalDuration(
+                lowFrequencyHz,
+                highFrequencyHz,
+                settings.RequestedDurationSeconds,
+                settings.SampleRate) * 1000.0;
             numericUpDownRequestedDuration.Value = numericUpDownRequestedDuration.ClampValue(
-                Math.Round(settings.RequestedDurationSeconds * 1000.0));
-            numericUpDownOctaves.Value = numericUpDownOctaves.ClampValue(settings.Octaves);
-            numericUpDownComputeDuration.Value = numericUpDownComputeDuration.ClampValue(
-                Math.Round(ExponentialSineSweep.CalculateDuration(
-                    settings.Octaves,
-                    settings.RequestedDurationSeconds,
-                    settings.SampleRate) * 1000.0));
+                perOctaveMs > 0 ? Math.Round(perOctaveMs) : 100.0);
+            // Total duration and the achieved-range line are filled by the shared
+            // preview at the end of Init, once the sample-rate control is settled.
             numericUpDownAverageRunCount.Value = Math.Clamp(settings.AverageRunCount, 1, 64);
             checkBoxConfirmEachAverageRun.Checked = settings.ConfirmEachAverageRun;
             microphoneCalibration0DegreesPath = settings.MicrophoneCalibration0DegreesPath;
@@ -308,6 +316,7 @@ namespace Resonalyze.Options
                 settings.AsioOutputChannelOffset,
                 settings.AsioLoopbackInputChannelOffset);
             UpdateAudioBackendControls();
+            RefreshSweepBandPreview();
         }
 
         internal void SetOptions(
@@ -327,8 +336,16 @@ namespace Resonalyze.Options
             // silently ignoring the control the day it becomes editable.
             int bits = (int)numericUpDownBits.Value;
             PlaybackChannel playbackChannel = (PlaybackChannel)comboBoxChannel.SelectedIndex;
-            double requestedDuration = (double)numericUpDownRequestedDuration.Value * 0.001;
-            int octaves = (int)numericUpDownOctaves.Value;
+            double lowFrequencyHz = (double)numericUpDownLowFrequency.Value;
+            double highFrequencyHz = (double)numericUpDownHighFrequency.Value;
+            // The field holds a per-octave pace; expand it to the total sweep length.
+            double perOctaveSeconds = (double)numericUpDownRequestedDuration.Value * 0.001;
+            double requestedDuration = ExponentialSineSweep.TotalDurationForOctavePace(
+                lowFrequencyHz, highFrequencyHz, perOctaveSeconds, sampleRate);
+            if (!(requestedDuration > 0))
+            {
+                requestedDuration = perOctaveSeconds;
+            }
             AudioBackend audioBackend = (AudioBackend)comboBoxAudioBackend.SelectedIndex;
             int outputDeviceNumber = comboBoxPlaybackDevice.SelectedItem is AudioDeviceInfo playbackDevice
                 ? playbackDevice.DeviceNumber
@@ -432,7 +449,8 @@ namespace Resonalyze.Options
 
             expSweepMeasurement.Init(new SweepMeasurementConfiguration(
                 new SweepSignalConfiguration(
-                    octaves,
+                    lowFrequencyHz,
+                    highFrequencyHz,
                     sampleRate,
                     bits,
                     requestedDuration,
@@ -462,6 +480,8 @@ namespace Resonalyze.Options
                     averageRunCount,
                     confirmEachAverageRun)));
 
+            settings.LowFrequencyHz = lowFrequencyHz;
+            settings.HighFrequencyHz = highFrequencyHz;
             settings.WasapiCaptureEndpointId = wasapiCaptureEndpointId;
             settings.WasapiRenderEndpointId = wasapiRenderEndpointId;
             settings.WasapiCaptureEndpointName =
@@ -742,13 +762,74 @@ namespace Resonalyze.Options
 
         private void numericUpDownRequestedDuration_ValueChanged(object sender, EventArgs e)
         {
-            // Computed from the values shown in the panel, not from the last
-            // generated sweep's state (which is stale until the next run).
-            numericUpDownComputeDuration.Value = numericUpDownComputeDuration.ClampValue(
-                Math.Round(ExponentialSineSweep.CalculateDuration(
-                    (int)numericUpDownOctaves.Value,
-                    (double)numericUpDownRequestedDuration.Value * 0.001,
-                    GetSelectedSampleRate()) * 1000.0));
+            if (initializing)
+            {
+                return;
+            }
+
+            RefreshSweepBandPreview();
+        }
+
+        // Keeps low < high while the user edits either bound, then refreshes the
+        // achieved-range preview. Guarded so the cross-adjustment does not recurse.
+        private void numericUpDownSweepBand_ValueChanged(object? sender, EventArgs e)
+        {
+            if (initializing || updatingSweepBand)
+            {
+                return;
+            }
+
+            updatingSweepBand = true;
+            try
+            {
+                if (numericUpDownLowFrequency.Value >= numericUpDownHighFrequency.Value)
+                {
+                    if (sender == numericUpDownHighFrequency)
+                    {
+                        numericUpDownLowFrequency.Value = Math.Max(
+                            numericUpDownLowFrequency.Minimum,
+                            numericUpDownHighFrequency.Value - 1);
+                    }
+                    else
+                    {
+                        numericUpDownHighFrequency.Value = Math.Min(
+                            numericUpDownHighFrequency.Maximum,
+                            numericUpDownLowFrequency.Value + 1);
+                        if (numericUpDownLowFrequency.Value >= numericUpDownHighFrequency.Value)
+                        {
+                            numericUpDownLowFrequency.Value =
+                                numericUpDownHighFrequency.Value - 1;
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                updatingSweepBand = false;
+            }
+
+            RefreshSweepBandPreview();
+        }
+
+        // Fills the read-only Compute Duration field and the achieved-range line
+        // from the values shown in the panel, not from the last generated sweep's
+        // state (which is stale until the next run).
+        private void RefreshSweepBandPreview()
+        {
+            double lowHz = (double)numericUpDownLowFrequency.Value;
+            double highHz = (double)numericUpDownHighFrequency.Value;
+            double perOctaveSeconds = (double)numericUpDownRequestedDuration.Value * 0.001;
+            int sampleRate = GetSelectedSampleRate();
+            double totalSeconds = ExponentialSineSweep.TotalDurationForOctavePace(
+                lowHz, highHz, perOctaveSeconds, sampleRate);
+            ExpSweepSpec spec = ExponentialSineSweep.ComputeSpec(
+                lowHz, highHz, totalSeconds, sampleRate);
+            // The achieved band, its octave span and the resulting total sweep
+            // duration, all in one line (there is no separate duration field).
+            labelActualRangeCaption.Text = spec.IsValid
+                ? $"{spec.LowFrequencyHz:0.#}–{spec.HighFrequencyHz:0} Hz · " +
+                    $"{spec.OctaveSpan:0.00} oct · {spec.ComputedDurationSeconds:0.00} s"
+                : "—";
         }
 
         private void comboBoxAudioBackend_SelectedIndexChanged(object sender, EventArgs e) =>
@@ -851,7 +932,15 @@ namespace Resonalyze.Options
 
         private void comboBoxSampleRate_SelectedIndexChanged(object? sender, EventArgs e)
         {
-            if (initializing || comboBoxAudioBackend.SelectedIndex != (int)AudioBackend.Asio)
+            if (initializing)
+            {
+                return;
+            }
+
+            // The achieved band and its cycle-quantized duration depend on the
+            // sample rate, so re-preview on any change (not just for ASIO).
+            RefreshSweepBandPreview();
+            if (comboBoxAudioBackend.SelectedIndex != (int)AudioBackend.Asio)
             {
                 return;
             }
@@ -1669,6 +1758,15 @@ namespace Resonalyze.Options
                 availableRates,
                 selectedSampleRate);
             initializing = wasInitializing;
+            // A device/backend change can move the selected sample rate under the
+            // initializing guard (so comboBoxSampleRate_SelectedIndexChanged is
+            // suppressed); refresh the achieved-range and Compute Duration preview
+            // here so they never lag the rate. Skipped during Init, which previews
+            // once at the end.
+            if (!initializing)
+            {
+                RefreshSweepBandPreview();
+            }
         }
 
         private IReadOnlyList<int> GetSupportedSampleRates()

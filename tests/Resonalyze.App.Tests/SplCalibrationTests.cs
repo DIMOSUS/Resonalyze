@@ -165,7 +165,8 @@ public sealed class SplCalibrationTests
     {
         var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.RestoreImpulseResponse(
-            octaves: 12,
+            lowFrequencyHz: 20,
+            highFrequencyHz: 20_000,
             sampleRate: 44_100,
             bits: 24,
             sweepDurationSeconds: 1.0,

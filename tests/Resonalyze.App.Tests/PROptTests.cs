@@ -17,7 +17,8 @@ public sealed class PROptTests
 
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.RestoreImpulseResponse(
-            octaves: 12,
+            lowFrequencyHz: 20,
+            highFrequencyHz: 20_000,
             sampleRate,
             bits: 24,
             sweepDurationSeconds: 1.0,

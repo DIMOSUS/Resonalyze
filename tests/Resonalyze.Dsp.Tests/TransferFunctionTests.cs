@@ -311,6 +311,89 @@ public sealed class TransferFunctionTests
     }
 
     [Fact]
+    public void ComputeAveragedRelativeIr_HighExcitationEdgeCutsAboveBandPollution()
+    {
+        // A sweep that ends below Nyquist leaves the bins above its top edge
+        // unexcited, holding only its leakage skirt there — the mirror of the low
+        // edge. A strong target-only tone in that skirt (0.85*Nyquist, above a sweep
+        // that ends at 0.5*Nyquist) rings back through the IR; only the explicit high
+        // edge can cut it, because the skirt keeps the reference power off the floor.
+        const int delay = 25;
+        double[] sweep = MiniSweepBand(4096, lowFraction: 0.125, highFraction: 0.5);
+        double[] reference = AddNoise(sweep, 1e-6, seed: 5);
+        double[] target = AddNoise(Delay(sweep, delay), 1e-5, seed: 6);
+        for (int i = 0; i < reference.Length; i++)
+        {
+            double phase = Math.PI * 0.85 * i; // 0.85*Nyquist, above the sweep end
+            double window = 0.5 - 0.5 * Math.Cos(2.0 * Math.PI * i / reference.Length);
+            reference[i] += 0.0005 * window * Math.Sin(phase);
+            target[i] += 0.05 * window * Math.Sin(phase + 1.0);
+        }
+        var frames = new[] { new TransferFunctionFrame(reference, target) };
+
+        TransferEstimateResult unmasked = TransferFunction.ComputeAveragedRelativeIr(frames);
+        TransferEstimateResult masked = TransferFunction.ComputeAveragedRelativeIr(
+            frames,
+            excitationLowNyquistFraction: 0.0,
+            excitationHighNyquistFraction: 0.5);
+
+        double unmaskedRms = RmsOutsideWindow(unmasked.ImpulseResponse, delay, 256);
+        Assert.True(
+            unmaskedRms > 0.02,
+            "Test setup lost its teeth: the floor gate alone already cut the tone.");
+        Assert.Equal(delay, masked.PeakIndex);
+        Assert.True(
+            RmsOutsideWindow(masked.ImpulseResponse, delay, 256) < 0.5 * unmaskedRms,
+            "Above-excitation tone leaked past the high excitation edge.");
+    }
+
+    [Fact]
+    public void ComputeAveragedRelativeIr_BandGateZeroesTheRampBelowTheAchievedEdge()
+    {
+        // Field failure on band-limited sweeps: the legacy edge shape ramps up
+        // over [edge/2, edge] — entirely BELOW the achieved sweep start, where
+        // the reference holds only its leakage skirt. A strong target-only tone
+        // there (cabin noise) is half-passed and towers over the passband. The
+        // band gate places the ramp inside the excited fade region instead and
+        // zeroes everything below the achieved edge.
+        const int delay = 25;
+        // Sweep excites [0.25, 0.5]·Nyquist; tone at 0.18·Nyquist sits inside
+        // the legacy ramp [0.125, 0.25] but below the achieved edge.
+        double[] sweep = MiniSweepBand(4096, lowFraction: 0.25, highFraction: 0.5);
+        double[] reference = AddNoise(sweep, 1e-6, seed: 5);
+        double[] target = AddNoise(Delay(sweep, delay), 1e-5, seed: 6);
+        for (int i = 0; i < reference.Length; i++)
+        {
+            double phase = Math.PI * 0.18 * i;
+            double window = 0.5 - 0.5 * Math.Cos(2.0 * Math.PI * i / reference.Length);
+            reference[i] += 0.0005 * window * Math.Sin(phase);
+            target[i] += 0.05 * window * Math.Sin(phase + 1.0);
+        }
+        var frames = new[] { new TransferFunctionFrame(reference, target) };
+
+        TransferEstimateResult legacy = TransferFunction.ComputeAveragedRelativeIr(
+            frames,
+            excitationLowNyquistFraction: 0.25,
+            excitationHighNyquistFraction: 0.5);
+        TransferEstimateResult banded = TransferFunction.ComputeAveragedRelativeIr(
+            frames,
+            new ExcitationBandGate(
+                LowZeroNyquistFraction: 0.25,
+                LowFullNyquistFraction: 0.30,
+                HighFullNyquistFraction: 0.45,
+                HighZeroNyquistFraction: 0.5));
+
+        double legacyRms = RmsOutsideWindow(legacy.ImpulseResponse, delay, 256);
+        Assert.True(
+            legacyRms > 0.01,
+            "Test setup lost its teeth: the legacy ramp did not leak the sub-edge tone.");
+        Assert.Equal(delay, banded.PeakIndex);
+        Assert.True(
+            RmsOutsideWindow(banded.ImpulseResponse, delay, 256) < 0.2 * legacyRms,
+            "Sub-edge tone leaked past the band gate.");
+    }
+
+    [Fact]
     public void ComputeAveragedRelativeIr_MaskedBinsDoNotScaleTheGateThresholds()
     {
         // PR-review finding: the peak scan anchoring gateHigh and λ used to
@@ -425,6 +508,25 @@ public sealed class TransferFunctionTests
             double exponentialPosition = Math.Exp(i / (double)length * logarithmicRatio);
             sweep[i] = Math.Sin(phaseFactor * length * exponentialPosition)
                 * Math.Min(i / octaveLength, 1.0);
+        }
+
+        return sweep;
+    }
+
+    // An exponential sweep from lowFraction*Nyquist to highFraction*Nyquist, with
+    // the same first-octave fade as MiniSweep, so the bins outside [low, high] carry
+    // only leakage skirts — the shape the excitation edges see on a band-limited
+    // capture that does not reach Nyquist.
+    private static double[] MiniSweepBand(int length, double lowFraction, double highFraction)
+    {
+        double logRatio = Math.Log(highFraction / lowFraction);
+        double startPhase = lowFraction * Math.PI * length / logRatio;
+        double octaveLength = length / Math.Log2(highFraction / lowFraction);
+        var sweep = new double[length];
+        for (int i = 0; i < length; i++)
+        {
+            double phase = startPhase * Math.Exp(i / (double)length * logRatio);
+            sweep[i] = Math.Sin(phase) * Math.Min(i / octaveLength, 1.0);
         }
 
         return sweep;

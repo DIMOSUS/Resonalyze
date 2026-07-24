@@ -167,14 +167,17 @@ internal sealed class MeasurementPlotContext
         if ((curves & SpectrumCurves.Distortion) == 0 ||
             expSweepMeasurement.SweepDeconvolution is not { } deconvolution ||
             expSweepMeasurement.Sweep is not { SweepSamples: > 0 } sweep ||
-            expSweepMeasurement.Octaves <= 0)
+            !(sweep.LowFrequencyHz > 0) ||
+            !(sweep.HighFrequencyHz > sweep.LowFrequencyHz))
         {
             return Array.Empty<AnalysisCurve>();
         }
 
-        var sweepMetadata = EssSweepMetadata.FromExponentialSweep(
+        var sweepMetadata = new EssSweepMetadata(
+            sweep.LowFrequencyHz,
+            sweep.HighFrequencyHz,
+            sweep.SweepSamples / (double)expSweepMeasurement.SampleRate,
             expSweepMeasurement.SampleRate,
-            expSweepMeasurement.Octaves,
             sweep.SweepSamples,
             deconvolution.PeakIndex);
 

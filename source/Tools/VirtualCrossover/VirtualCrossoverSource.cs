@@ -64,10 +64,19 @@ internal sealed class ResolvedVirtualDspSource
         MeasurementHistorySnapshot snapshot)
     {
         if (snapshot.SweepDeconvolutionImpulseResponse is not { Length: > 0 } ir ||
-            snapshot.Octaves <= 0 ||
             snapshot.SampleRate <= 0 ||
             !double.IsFinite(snapshot.SweepDurationSeconds) ||
-            snapshot.SweepDurationSeconds <= 0)
+            snapshot.SweepDurationSeconds <= 0 ||
+            // No sweep band recorded (neither explicit band nor legacy octaves):
+            // the wizard falls back to the class-based range rather than a
+            // fabricated one.
+            (snapshot.HighFrequencyHz <= 0 && snapshot.Octaves <= 0))
+        {
+            return null;
+        }
+
+        (double lowHz, double highHz) = snapshot.ResolveSweepBand();
+        if (!(lowHz > 0) || !(highHz > lowHz))
         {
             return null;
         }
@@ -75,8 +84,13 @@ internal sealed class ResolvedVirtualDspSource
         try
         {
             int sweepSamples = (int)Math.Round(snapshot.SweepDurationSeconds * snapshot.SampleRate);
-            var sweep = EssSweepMetadata.FromExponentialSweep(
-                snapshot.SampleRate, snapshot.Octaves, sweepSamples, snapshot.SweepDeconvolutionPeakIndex);
+            var sweep = new EssSweepMetadata(
+                lowHz,
+                highHz,
+                snapshot.SweepDurationSeconds,
+                snapshot.SampleRate,
+                sweepSamples,
+                snapshot.SweepDeconvolutionPeakIndex);
 
             double[] real = new double[ir.Length];
             for (int i = 0; i < ir.Length; i++)

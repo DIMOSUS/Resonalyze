@@ -176,7 +176,8 @@ public sealed class ImpulseResponseFileTests
     {
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.RestoreImpulseResponse(
-            octaves: 12,
+            lowFrequencyHz: 20,
+            highFrequencyHz: 20_000,
             sampleRate: 44_100,
             bits: 24,
             sweepDurationSeconds: 1.0,
@@ -191,8 +192,12 @@ public sealed class ImpulseResponseFileTests
 
         ImpulseResponseFile file = ImpulseResponseFile.Capture(measurement);
 
-        Assert.NotEqual(measurement.Sweep!.RequestedDuration, file.SweepDurationSeconds);
-        Assert.Equal(measurement.Sweep.ComputedDuration, file.SweepDurationSeconds);
+        // Capture stores the sweep's actual (sample-quantized) duration, which the
+        // sweep exposes as ComputedDuration = SweepSamples / SampleRate.
+        Assert.Equal(measurement.Sweep!.ComputedDuration, file.SweepDurationSeconds);
+        Assert.Equal(
+            measurement.Sweep.SweepSamples / (double)measurement.SampleRate,
+            file.SweepDurationSeconds);
     }
 
     [Fact]
@@ -200,7 +205,8 @@ public sealed class ImpulseResponseFileTests
     {
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.RestoreImpulseResponse(
-            octaves: 12,
+            lowFrequencyHz: 20,
+            highFrequencyHz: 20_000,
             sampleRate: 44_100,
             bits: 24,
             sweepDurationSeconds: 1.0,

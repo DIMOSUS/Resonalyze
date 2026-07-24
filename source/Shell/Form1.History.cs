@@ -213,8 +213,10 @@ public partial class Form1
         MeasurementHistorySnapshot snapshot,
         string? sourceFilePath)
     {
+        (double restoredLowHz, double restoredHighHz) = snapshot.ResolveSweepBand();
         expSweepMeasurement.RestoreImpulseResponse(
-            snapshot.Octaves,
+            restoredLowHz,
+            restoredHighHz,
             snapshot.SampleRate,
             snapshot.Bits,
             snapshot.SweepDurationSeconds,

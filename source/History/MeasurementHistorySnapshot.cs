@@ -11,11 +11,27 @@ internal sealed class MeasurementHistorySnapshot
     public int Octaves { get; init; }
     public double LowFrequencyHz { get; init; }
     public double HighFrequencyHz { get; init; }
+    // The band actually swept, as opposed to the requested one above. Harmonic
+    // geometry reads this; see ImpulseResponseFile.ResolveAchievedSweepBand.
+    public double AchievedLowFrequencyHz { get; init; }
+    public double AchievedHighFrequencyHz { get; init; }
     public double SweepDurationSeconds { get; init; }
 
+    /// <summary>The band that was requested.</summary>
     public (double LowHz, double HighHz) ResolveSweepBand() =>
         ImpulseResponseFile.ResolveSweepBand(
             LowFrequencyHz, HighFrequencyHz, Octaves, SampleRate);
+
+    /// <summary>The band the sweep actually swept.</summary>
+    public (double LowHz, double HighHz) ResolveAchievedSweepBand() =>
+        ImpulseResponseFile.ResolveAchievedSweepBand(
+            AchievedLowFrequencyHz,
+            AchievedHighFrequencyHz,
+            LowFrequencyHz,
+            HighFrequencyHz,
+            Octaves,
+            SampleRate,
+            SweepDurationSeconds);
     public PlaybackChannel PlayChannel { get; init; }
     public SweepMeasurementMode MeasurementMode { get; init; }
     public int SweepDeconvolutionPeakIndex { get; init; }
@@ -41,6 +57,8 @@ internal sealed class MeasurementHistorySnapshot
             Bits = Bits,
             LowFrequencyHz = LowFrequencyHz,
             HighFrequencyHz = HighFrequencyHz,
+            AchievedLowFrequencyHz = AchievedLowFrequencyHz,
+            AchievedHighFrequencyHz = AchievedHighFrequencyHz,
             Octaves = Octaves,
             SweepDurationSeconds = SweepDurationSeconds,
             PlayChannel = PlayChannel,

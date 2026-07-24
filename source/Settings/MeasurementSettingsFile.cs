@@ -285,7 +285,9 @@ internal sealed class MeasurementSettingsFile
         public int AsioInputChannelOffset { get; set; }
         public int? AsioLoopbackInputChannelOffset { get; set; }
         public int AsioOutputChannelOffset { get; set; }
-        public int AverageRunCount { get; set; } = 1;
+        // Two runs by default: averaging is what the Measurements control offers
+        // (its minimum is 2), and a lone sweep gives nothing to average away.
+        public int AverageRunCount { get; set; } = 2;
         public bool ConfirmEachAverageRun { get; set; }
         public string? MicrophoneCalibration0DegreesPath { get; set; }
         public string? MicrophoneCalibration90DegreesPath { get; set; }

@@ -70,12 +70,17 @@ internal sealed class ResolvedVirtualDspSource
             // No sweep band recorded (neither explicit band nor legacy octaves):
             // the wizard falls back to the class-based range rather than a
             // fabricated one.
-            (snapshot.HighFrequencyHz <= 0 && snapshot.Octaves <= 0))
+            (snapshot.AchievedHighFrequencyHz <= 0 &&
+                snapshot.HighFrequencyHz <= 0 &&
+                snapshot.Octaves <= 0))
         {
             return null;
         }
 
-        (double lowHz, double highHz) = snapshot.ResolveSweepBand();
+        // The ACHIEVED edges: harmonic packets sit at ln(harmonic)/ln(ratio) of
+        // the sweep, so the requested band would place them wrong by the width of
+        // the guard bands.
+        (double lowHz, double highHz) = snapshot.ResolveAchievedSweepBand();
         if (!(lowHz > 0) || !(highHz > lowHz))
         {
             return null;

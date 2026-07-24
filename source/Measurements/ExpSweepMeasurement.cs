@@ -59,6 +59,14 @@ namespace Resonalyze
         public int SampleRate { get; private set; }
         public double LowFrequencyHz { get; private set; }
         public double HighFrequencyHz { get; private set; }
+        // The band the sweep behind the CURRENT result actually swept, which is
+        // what harmonic geometry reads. For a fresh capture it is the generated
+        // sweep's; for a restored one it is what the file recorded, because a
+        // rebuilt sweep cannot always reproduce it — a pre-band file's low edge
+        // carried less than one whole cycle, which the whole-cycle model the
+        // generator uses today cannot express.
+        public double AchievedLowFrequencyHz { get; private set; }
+        public double AchievedHighFrequencyHz { get; private set; }
         public int Bits { get; private set; }
         public PlaybackChannel PlaybackChannel { get; private set; }
         public AudioBackend AudioBackend { get; private set; } = AudioBackend.Wave;
@@ -202,6 +210,8 @@ namespace Resonalyze
                 signal.RequestedDurationSeconds,
                 signal.Bits,
                 signal.SampleRate);
+            AchievedLowFrequencyHz = Sweep.LowFrequencyHz;
+            AchievedHighFrequencyHz = Sweep.HighFrequencyHz;
         }
 
         public Task<bool> RunAsync()
@@ -272,13 +282,32 @@ namespace Resonalyze
 
         public double HarmonicIROffset(double harmonic)
         {
-            if (Sweep == null)
+            double achievedRatio = AchievedFrequencyRatio;
+            if (Sweep == null || achievedRatio <= 1.0)
             {
                 return 0;
             }
-            return Sweep.SweepSamples * Log(harmonic) / Log(Sweep.FrequencyRatio);
+            return Sweep.SweepSamples * Log(harmonic) / Log(achievedRatio);
         }
 
+        /// <summary>
+        /// High/low ratio of the sweep behind the current result. Harmonic packets
+        /// sit at <c>SweepSamples * ln(harmonic) / ln(ratio)</c>, so this must be
+        /// the ratio that was actually swept, not the one that was requested.
+        /// </summary>
+        public double AchievedFrequencyRatio =>
+            AchievedLowFrequencyHz > 0 && AchievedHighFrequencyHz > AchievedLowFrequencyHz
+                ? AchievedHighFrequencyHz / AchievedLowFrequencyHz
+                : 0.0;
+
+        /// <summary>
+        /// Reinstates a stored result. <paramref name="achievedLowFrequencyHz"/> /
+        /// <paramref name="achievedHighFrequencyHz"/> are the edges the stored
+        /// sweep actually swept; they pin the harmonic geometry, because
+        /// re-deriving a sweep from the requested band reproduces them only for
+        /// files written by the band-based generator. Left at 0 the rebuilt
+        /// sweep's own band stands in, which is correct only for those files.
+        /// </summary>
         public void RestoreImpulseResponse(
             double lowFrequencyHz,
             double highFrequencyHz,
@@ -293,7 +322,9 @@ namespace Resonalyze
             int? transferPeakIndex = null,
             double[]? transferCoherence = null,
             int averageRunCount = 1,
-            int acceptedAverageRunCount = 1)
+            int acceptedAverageRunCount = 1,
+            double achievedLowFrequencyHz = 0.0,
+            double achievedHighFrequencyHz = 0.0)
         {
             ThrowIfDisposed();
             ArgumentNullException.ThrowIfNull(sweepDeconvolutionImpulseResponse);
@@ -359,6 +390,15 @@ namespace Resonalyze
                 new SweepAveragingConfiguration(
                     AverageRunCount,
                     ConfirmEachAverageRun)));
+            // Init just set these from the sweep it regenerated; the recorded
+            // edges win, since that sweep is a reconstruction and this result came
+            // from the original one.
+            if (achievedLowFrequencyHz > 0 &&
+                achievedHighFrequencyHz > achievedLowFrequencyHz)
+            {
+                AchievedLowFrequencyHz = achievedLowFrequencyHz;
+                AchievedHighFrequencyHz = achievedHighFrequencyHz;
+            }
             sweepDeconvolutionResult = new MeasurementImpulseResponse(
                 sweepDeconvolutionImpulseResponse.ToArray(),
                 sweepDeconvolutionPeakIndex);

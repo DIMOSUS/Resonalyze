@@ -33,6 +33,11 @@ public sealed class ImpulseResponseFile
     public int Octaves { get; set; }
     public double LowFrequencyHz { get; set; }
     public double HighFrequencyHz { get; set; }
+    // The band the sweep actually swept, which is wider than the requested one
+    // and is what the harmonic geometry of this IR is keyed to. Written since the
+    // band-based generator; absent files fall back through ResolveAchievedSweepBand.
+    public double AchievedLowFrequencyHz { get; set; }
+    public double AchievedHighFrequencyHz { get; set; }
     public double SweepDurationSeconds { get; set; }
     public PlaybackChannel PlayChannel { get; set; }
     public SweepMeasurementMode MeasurementMode { get; set; } =
@@ -120,6 +125,8 @@ public sealed class ImpulseResponseFile
             Bits = measurement.Bits,
             LowFrequencyHz = measurement.LowFrequencyHz,
             HighFrequencyHz = measurement.HighFrequencyHz,
+            AchievedLowFrequencyHz = measurement.AchievedLowFrequencyHz,
+            AchievedHighFrequencyHz = measurement.AchievedHighFrequencyHz,
             SweepDurationSeconds = sweep.ComputedDuration,
             PlayChannel = measurement.PlaybackChannel,
             MeasurementMode = measurement.MeasurementMode,
@@ -222,9 +229,9 @@ public sealed class ImpulseResponseFile
     }
 
     /// <summary>
-    /// The stored sweep band. Pre-band files carry only an octave count, whose
-    /// sweep ran from Nyquist / 2^octaves up to Nyquist — that legacy band is
-    /// derived here so old files keep their exact harmonic geometry.
+    /// The sweep band that was REQUESTED. Pre-band files carry only an octave
+    /// count, whose sweep ran from Nyquist / 2^octaves up to Nyquist; for those
+    /// there was no separate request, so the band they swept is returned.
     /// </summary>
     public (double LowHz, double HighHz) ResolveSweepBand() =>
         ResolveSweepBand(LowFrequencyHz, HighFrequencyHz, Octaves, SampleRate);
@@ -242,6 +249,51 @@ public sealed class ImpulseResponseFile
         double nyquist = sampleRate / 2.0;
         double octaveSpan = octaves > 0 ? octaves : 12;
         return (nyquist / Math.Pow(2.0, octaveSpan), nyquist);
+    }
+
+    /// <summary>
+    /// The band the sweep ACTUALLY swept — the one harmonic geometry is keyed to,
+    /// which is wider than the request by the guard bands the fades live in.
+    /// </summary>
+    public (double LowHz, double HighHz) ResolveAchievedSweepBand() =>
+        ResolveAchievedSweepBand(
+            AchievedLowFrequencyHz,
+            AchievedHighFrequencyHz,
+            LowFrequencyHz,
+            HighFrequencyHz,
+            Octaves,
+            SampleRate,
+            SweepDurationSeconds);
+
+    internal static (double LowHz, double HighHz) ResolveAchievedSweepBand(
+        double achievedLowFrequencyHz,
+        double achievedHighFrequencyHz,
+        double lowFrequencyHz,
+        double highFrequencyHz,
+        int octaves,
+        int sampleRate,
+        double sweepDurationSeconds)
+    {
+        if (achievedLowFrequencyHz > 0 && achievedHighFrequencyHz > achievedLowFrequencyHz)
+        {
+            return (achievedLowFrequencyHz, achievedHighFrequencyHz);
+        }
+        if (lowFrequencyHz > 0 && highFrequencyHz > lowFrequencyHz)
+        {
+            // Written by the band-based generator before the achieved band was
+            // stored: it is deterministic, so re-derive rather than mistake the
+            // request for what was swept.
+            ExpSweepSpec spec = ExponentialSineSweep.ComputeSpec(
+                lowFrequencyHz,
+                highFrequencyHz,
+                sweepDurationSeconds,
+                sampleRate);
+            return spec.IsValid
+                ? (spec.LowFrequencyHz, spec.HighFrequencyHz)
+                : (lowFrequencyHz, highFrequencyHz);
+        }
+        // Pre-band file: the octave count describes the swept band directly.
+        return ResolveSweepBand(lowFrequencyHz, highFrequencyHz, octaves, sampleRate);
     }
 
     public Complex[] GetSweepDeconvolutionImpulseResponse()

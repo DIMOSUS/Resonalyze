@@ -214,6 +214,7 @@ public partial class Form1
         string? sourceFilePath)
     {
         (double restoredLowHz, double restoredHighHz) = snapshot.ResolveSweepBand();
+        (double achievedLowHz, double achievedHighHz) = snapshot.ResolveAchievedSweepBand();
         expSweepMeasurement.RestoreImpulseResponse(
             restoredLowHz,
             restoredHighHz,
@@ -228,7 +229,9 @@ public partial class Form1
             snapshot.TransferPeakIndex,
             snapshot.TransferCoherence,
             snapshot.AverageRunCount,
-            snapshot.AcceptedAverageRunCount);
+            snapshot.AcceptedAverageRunCount,
+            achievedLowHz,
+            achievedHighHz);
         expSweepMeasurement.RestoreLevelSnapshot(snapshot.MeterSnapshot);
 
         if (snapshot.Session != null)

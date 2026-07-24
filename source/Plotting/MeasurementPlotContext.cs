@@ -167,15 +167,19 @@ internal sealed class MeasurementPlotContext
         if ((curves & SpectrumCurves.Distortion) == 0 ||
             expSweepMeasurement.SweepDeconvolution is not { } deconvolution ||
             expSweepMeasurement.Sweep is not { SweepSamples: > 0 } sweep ||
-            !(sweep.LowFrequencyHz > 0) ||
-            !(sweep.HighFrequencyHz > sweep.LowFrequencyHz))
+            // The band the sweep behind THIS result swept, which for a restored
+            // measurement is what the file recorded rather than what the sweep
+            // rebuilt on load happens to span.
+            !(expSweepMeasurement.AchievedLowFrequencyHz > 0) ||
+            !(expSweepMeasurement.AchievedHighFrequencyHz >
+                expSweepMeasurement.AchievedLowFrequencyHz))
         {
             return Array.Empty<AnalysisCurve>();
         }
 
         var sweepMetadata = new EssSweepMetadata(
-            sweep.LowFrequencyHz,
-            sweep.HighFrequencyHz,
+            expSweepMeasurement.AchievedLowFrequencyHz,
+            expSweepMeasurement.AchievedHighFrequencyHz,
             sweep.SweepSamples / (double)expSweepMeasurement.SampleRate,
             expSweepMeasurement.SampleRate,
             sweep.SweepSamples,

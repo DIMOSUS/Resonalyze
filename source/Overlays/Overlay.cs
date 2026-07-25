@@ -19,17 +19,53 @@ namespace Resonalyze;
 /// stores the drawn curve while keeping the metadata, so a consumer outside the
 /// measurement — the EQ Wizard — still knows the rate its filters must be realized at.
 /// </remarks>
+/// <param name="PointsCalibration">
+/// For a capture with NO raw form only: the microphone calibration baked into the drawn
+/// curve. The overlay freezes it per DRAWN point (their frequencies are the only grid such
+/// a capture has), so a consumer can undo it and apply another — exact, because the
+/// correction is applied additively per frequency. Null when the curve has a raw form (the
+/// correction travels with the raw grid instead) or when no calibration was in effect.
+/// </param>
 public readonly record struct RawCurveCapture(
     IReadOnlyList<SignalPoint> Spectrum,
     IReadOnlyList<double> CalibrationCorrectionDb,
     int SmoothingCode,
-    int? SampleRateHz = null);
+    int? SampleRateHz = null,
+    CalibrationFile? PointsCalibration = null);
 
 internal static class RawCurveRenderer
 {
     public const double StartFrequency = 20.0;
     public const double StopFrequency = 20_000.0;
     public const int PointCount = 1024;
+
+    /// <summary>
+    /// Freezes a calibration onto the frequencies of an ALREADY DRAWN curve. A capture with
+    /// no re-smoothable raw form has no other grid, and the correction must line up with
+    /// the very points it was baked into, so it is sampled per point rather than on the
+    /// standard log grid. A null calibration yields zeros — the honest record of "captured
+    /// with no correction", which still lets a consumer apply one later. Always the same
+    /// length as <paramref name="points"/>, so the two cannot drift apart.
+    /// </summary>
+    public static double[] CaptureCalibrationCorrectionAt(
+        CalibrationFile? calibration,
+        IReadOnlyList<DataPoint> points)
+    {
+        ArgumentNullException.ThrowIfNull(points);
+
+        var correction = new double[points.Count];
+        if (calibration == null)
+        {
+            return correction;
+        }
+
+        for (int i = 0; i < correction.Length; i++)
+        {
+            correction[i] = calibration.GetDecibelCorrection(points[i].X);
+        }
+
+        return correction;
+    }
 
     public static double[] CaptureCalibrationCorrection(CalibrationFile? calibration)
     {
@@ -600,6 +636,13 @@ public sealed class Overlay
     // Frozen microphone correction at the 1024 output frequencies. It remains
     // separate because the primary FR smooths first and calibrates afterwards.
     private double[] rawCalibrationCorrectionDb = Array.Empty<double>();
+    // No-raw captures only (dB SPL): the correction baked into sourcePoints, frozen per
+    // point. Empty when the capture has a raw form or never described itself. Only
+    // consumers outside the plot read it — the drawn curve already includes it.
+    private double[] pointsCalibrationCorrectionDb = Array.Empty<double>();
+    // The smoothing baked into sourcePoints (0 = none); null when unknown. Distinct from
+    // smoothingInverseOctaves, this slot's own display smoothing applied on top.
+    private int? capturedSmoothingCode;
     // Sample rate of the captured measurement; null when unknown (imported text,
     // fallback captures, legacy files). Only consumers outside the plot read it.
     private int? capturedSampleRateHz;
@@ -1418,7 +1461,15 @@ public sealed class Overlay
         DataPoint[] points;
         List<SignalPoint>? spectrum;
         double[] calibrationCorrectionDb;
+        double[] pointsCorrectionDb;
         int seedSmoothing;
+        // The smoothing already baked into the captured points, which is NOT the same as
+        // the slot's own display smoothing seeded below: a raw capture renders its points
+        // unsmoothed, a drawn-curve capture inherits whatever its source mode was showing.
+        // Null where the source never described itself (an operation, a legacy mode): the
+        // points may or may not be smoothed, and guessing "none" would invite a consumer
+        // to smooth them twice.
+        int? bakedSmoothing;
         // The rate describes the measurement, not the raw form, so it survives a capture
         // that falls back to the drawn curve (an SPL trace, an operation, a legacy mode).
         int? sampleRateHz = raw?.SampleRateHz;
@@ -1429,7 +1480,10 @@ public sealed class Overlay
             spectrum = rawCapture.Spectrum as List<SignalPoint> ?? rawCapture.Spectrum.ToList();
             calibrationCorrectionDb = rawCapture.CalibrationCorrectionDb.ToArray();
             points = SmoothRawSpectrum(spectrum, calibrationCorrectionDb, 0);
+            // The correction travels on the raw grid; the drawn points need no copy of it.
+            pointsCorrectionDb = Array.Empty<double>();
             seedSmoothing = rawCapture.SmoothingCode;
+            bakedSmoothing = 0;
         }
         else
         {
@@ -1437,7 +1491,19 @@ public sealed class Overlay
             selected.Points.CopyTo(points);
             spectrum = null;
             calibrationCorrectionDb = Array.Empty<double>();
+            // With no raw form the drawn points ARE the reference, so freeze the
+            // correction baked into them per point (zeros when none was applied). Only a
+            // capture that described itself this way gets one; a curve with no raw
+            // capture at all (an operation, a legacy mode) stays unannotated.
+            pointsCorrectionDb = raw is { } describedCapture
+                ? RawCurveRenderer.CaptureCalibrationCorrectionAt(
+                    describedCapture.PointsCalibration, points)
+                : Array.Empty<double>();
+            // The points already carry their source's smoothing, so the slot's own
+            // smoothing starts at Off (applying the source's again would compound it) —
+            // but record what was baked in so a consumer knows whether it may re-smooth.
             seedSmoothing = 0;
+            bakedSmoothing = raw?.SmoothingCode;
         }
 
         string title = $"Overlay {Index}: {selected.Title ?? string.Empty}";
@@ -1449,6 +1515,8 @@ public sealed class Overlay
         sourcePoints = points;
         rawSpectrumPoints = spectrum;
         rawCalibrationCorrectionDb = calibrationCorrectionDb;
+        pointsCalibrationCorrectionDb = pointsCorrectionDb;
+        capturedSmoothingCode = bakedSmoothing;
         capturedSampleRateHz = sampleRateHz;
         // The curve was drawn in the plot's current scale, so it carries that unit.
         capturedMagnitudeScale = collection.CurrentMagnitudeScale;
@@ -1537,9 +1605,12 @@ public sealed class Overlay
         // A file we exported declares what it holds, so a slot → text → slot round trip
         // keeps its identity; a foreign headerless file states nothing and stays unknown.
         capturedCurveKind = imported.Metadata.CurveKind;
-        // Imported points are a display curve, not an oversampled spectrum.
+        // Imported points are a display curve, not an oversampled spectrum, and a text
+        // file states neither the calibration behind it nor the smoothing already in it.
         rawSpectrumPoints = null;
         rawCalibrationCorrectionDb = Array.Empty<double>();
+        pointsCalibrationCorrectionDb = Array.Empty<double>();
+        capturedSmoothingCode = null;
         capturedSampleRateHz = imported.Metadata.SampleRateHz;
         // Believe a declared unit; assume the current view's otherwise.
         capturedMagnitudeScale =
@@ -1626,6 +1697,8 @@ public sealed class Overlay
         capturedCurveKind = null;
         rawSpectrumPoints = null;
         rawCalibrationCorrectionDb = Array.Empty<double>();
+        pointsCalibrationCorrectionDb = Array.Empty<double>();
+        capturedSmoothingCode = null;
     }
 
     private void ExportDeviationToText()
@@ -2181,6 +2254,8 @@ public sealed class Overlay
                 ? file.RawSpectrum.Select(point => new SignalPoint(point.X, point.Y)).ToList()
                 : null;
             rawCalibrationCorrectionDb = file.RawCalibrationCorrectionDb.ToArray();
+            pointsCalibrationCorrectionDb = file.PointsCalibrationCorrectionDb.ToArray();
+            capturedSmoothingCode = file.CapturedSmoothingCode;
             capturedSampleRateHz = file.SampleRateHz;
             capturedYAxisKey = GetCapturedYAxisKey(file);
             UpdateDrawPoints();
@@ -2280,6 +2355,8 @@ public sealed class Overlay
                 ? rawSpectrumPoints.Select(point => new OverlayPoint(point.X, point.Y)).ToArray()
                 : Array.Empty<OverlayPoint>();
             file.RawCalibrationCorrectionDb = rawCalibrationCorrectionDb.ToArray();
+            file.PointsCalibrationCorrectionDb = pointsCalibrationCorrectionDb.ToArray();
+            file.CapturedSmoothingCode = capturedSmoothingCode;
             file.SampleRateHz = capturedSampleRateHz;
             file.CapturedYAxisKey = capturedYAxisKey;
         }
@@ -2577,6 +2654,8 @@ public sealed class Overlay
         capturedCurveKind = null;
         rawSpectrumPoints = null;
         rawCalibrationCorrectionDb = Array.Empty<double>();
+        pointsCalibrationCorrectionDb = Array.Empty<double>();
+        capturedSmoothingCode = null;
         capturedSampleRateHz = null;
         operationConfigured = false;
         sourceSlotA = 0;

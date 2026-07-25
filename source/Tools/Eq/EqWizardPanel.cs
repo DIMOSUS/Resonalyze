@@ -241,7 +241,8 @@ public partial class EqWizardPanel : UserControl
         SetTip(labelCalibration, comboBoxCalibration,
             "Microphone calibration applied to the source curve. \"Own\" re-uses the " +
             "correction stored with an imported curve; unavailable when the curve " +
-            "carries no uncalibrated reference (its calibration is already baked in).");
+            "arrived without one (a text import), where its calibration is already " +
+            "baked in and cannot be undone.");
         SetTip(labelSampleRate, comboBoxSampleRate,
             "Sample rate the fitted filters are realized at, and the rate written into " +
             "an exported profile. Locked to the source's own rate when it states one.");
@@ -253,8 +254,8 @@ public partial class EqWizardPanel : UserControl
         SetTip(labelBands, darkComboBoxBands, "Number of PEQ bands shown.");
         SetTip(labelSmooth, comboBoxSmooth,
             "Smoothing of the source curve (1/N octave), used for display and Auto " +
-            "Tune. Unavailable for an imported curve that carries no unsmoothed " +
-            "reference, where it would compound the smoothing already applied.");
+            "Tune. Unavailable for an imported curve that was already smoothed when it " +
+            "was captured, or that never said — smoothing it again would compound it.");
         SetTip(checkBoxBypass,
             "Show the curves without the EQ applied (Source + EQ equals Source).");
         SetTip(labelGainMin, numericGainMin,

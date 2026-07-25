@@ -175,7 +175,10 @@ internal sealed class PlotModelFactory
         {
             return DescribeWithoutRawForm(
                 (int)Math.Round(frequencyResponseOptions.SmoothingInverseOctaves),
-                expSweepMeasurement.SampleRate);
+                expSweepMeasurement.SampleRate,
+                frequencyResponseOptions.UseCalibration
+                    ? GetCalibration(frequencyResponseOptions)
+                    : null);
         }
 
         CalibrationFile? calibration = GetCalibration(frequencyResponseOptions);
@@ -214,7 +217,12 @@ internal sealed class PlotModelFactory
         int smoothingCode = liveSpectrumOptions.SmoothingInverseOctaves;
         if (EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel)
         {
-            return DescribeWithoutRawForm(smoothingCode, noiseMeasurement.SampleRate);
+            // No raw form, but the SPL trace applies its correction additively per band,
+            // so handing the calibration over lets a consumer swap it exactly later.
+            return DescribeWithoutRawForm(
+                smoothingCode,
+                noiseMeasurement.SampleRate,
+                GetCalibration(liveSpectrumOptions));
         }
 
         List<SignalPoint> spectrum = LiveRtaRawCapture.BuildRelativeRaw(
@@ -223,7 +231,10 @@ internal sealed class PlotModelFactory
             noiseMeasurement.SampleRate);
         if (spectrum.Count < 2)
         {
-            return DescribeWithoutRawForm(smoothingCode, noiseMeasurement.SampleRate);
+            return DescribeWithoutRawForm(
+                smoothingCode,
+                noiseMeasurement.SampleRate,
+                GetCalibration(liveSpectrumOptions));
         }
 
         return new RawCurveCapture(
@@ -234,13 +245,19 @@ internal sealed class PlotModelFactory
             noiseMeasurement.SampleRate > 0 ? noiseMeasurement.SampleRate : null);
     }
 
-    // A capture with no re-smoothable samples: the overlay stores the drawn curve, but
-    // the rate travels with it so a consumer outside the measurement is not left guessing.
-    private static RawCurveCapture DescribeWithoutRawForm(int smoothingCode, int sampleRate) =>
+    // A capture with no re-smoothable samples: the overlay stores the drawn curve, but the
+    // rate, the smoothing baked into it and the calibration behind it travel with it, so a
+    // consumer outside the measurement is not left guessing — and can still undo the
+    // correction, which these modes apply additively per frequency.
+    private static RawCurveCapture DescribeWithoutRawForm(
+        int smoothingCode,
+        int sampleRate,
+        CalibrationFile? calibration) =>
         new(Array.Empty<SignalPoint>(),
             Array.Empty<double>(),
             smoothingCode,
-            sampleRate > 0 ? sampleRate : null);
+            sampleRate > 0 ? sampleRate : null,
+            calibration);
 
     public PlotModel CreateFrequencyResponse(bool includeCurves)
     {

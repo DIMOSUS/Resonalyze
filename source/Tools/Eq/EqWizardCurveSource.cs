@@ -84,6 +84,25 @@ internal sealed record EqWizardCurveSource
     /// </summary>
     public IReadOnlyList<SignalPoint> Points { get; init; } = Array.Empty<SignalPoint>();
 
+    /// <summary>
+    /// For a curve with NO raw form: the microphone correction baked into
+    /// <see cref="Points"/>, one value per point. These modes (a dB SPL RTA or FR) apply
+    /// the correction additively per frequency, so undoing this and applying another is
+    /// exact even without a raw spectrum — which is what lets the calibration selector work
+    /// here. Empty when the curve has a raw form (the correction travels on the raw grid
+    /// instead) or when the source never declared one (a text import, a legacy slot).
+    /// </summary>
+    public IReadOnlyList<double> PointsCalibrationCorrectionDb { get; init; } =
+        Array.Empty<double>();
+
+    /// <summary>
+    /// The display smoothing already baked into <see cref="Points"/>, in the
+    /// <see cref="SpectrumSmoothing"/> encoding; null when the source never declared it.
+    /// Only a curve captured unsmoothed (0) may be smoothed here — re-smoothing an already
+    /// smoothed curve compounds it.
+    /// </summary>
+    public int? CapturedSmoothingCode { get; init; }
+
     /// <summary>The unit the curve is in, which drives the plot's dB axis.</summary>
     public MagnitudeScale Scale { get; init; } = MagnitudeScale.Relative;
 
@@ -98,17 +117,31 @@ internal sealed record EqWizardCurveSource
 
     /// <summary>
     /// Whether the calibration selector applies. An impulse response is calibrated while
-    /// its FR is computed; an imported curve can only be re-calibrated when its
-    /// uncalibrated raw form was stored — otherwise the correction is already baked in
-    /// and applying another would double it.
+    /// its FR is computed; an imported curve can be re-calibrated when its uncalibrated raw
+    /// form was stored, or — for the no-raw modes that correct additively per frequency (a
+    /// dB SPL RTA or FR) — when the correction baked into its points travelled with it.
+    /// Without either, the correction is already fused into the numbers and applying
+    /// another would double it.
     /// </summary>
     public bool SupportsCalibration =>
-        Kind == EqWizardSourceKind.ImpulseResponse || RawSpectrum != null;
+        Kind == EqWizardSourceKind.ImpulseResponse || HasOwnCalibration;
 
     /// <summary>
-    /// Whether the smoothing selector applies. Same rule: smoothing a curve that is
-    /// already smoothed compounds it, so it is offered only where the unsmoothed
-    /// reference exists.
+    /// Whether the curve carries the correction it was captured with, so "own" can
+    /// reproduce it — either on the raw grid or frozen onto its own points.
     /// </summary>
-    public bool SupportsSmoothing => SupportsCalibration;
+    public bool HasOwnCalibration =>
+        RawSpectrum != null || PointsCalibrationCorrectionDb.Count > 0;
+
+    /// <summary>
+    /// Whether the smoothing selector applies: where an unsmoothed reference exists (an
+    /// impulse response, a stored raw spectrum), or where the curve itself was captured
+    /// unsmoothed and so IS one. Smoothing an already smoothed curve compounds it, so a
+    /// curve captured under smoothing — or one that never said (a text import, a legacy
+    /// slot) — is left alone.
+    /// </summary>
+    public bool SupportsSmoothing =>
+        Kind == EqWizardSourceKind.ImpulseResponse ||
+        RawSpectrum != null ||
+        CapturedSmoothingCode == 0;
 }

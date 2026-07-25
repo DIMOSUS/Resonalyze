@@ -114,6 +114,71 @@ public sealed class OverlayFileTests
     }
 
     [Fact]
+    public void SaveThenLoad_RoundTripsANoRawCaptureAnnotation()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var original = new OverlayFile
+            {
+                SavedAtUtc = DateTimeOffset.UtcNow,
+                Mode = Mode.LiveSpectrum,
+                Slot = 3,
+                Title = "SPL RTA",
+                ColorArgb = Color.Green.ToArgb(),
+                CapturedMagnitudeScale = MagnitudeScale.SoundPressureLevel,
+                Points = [new OverlayPoint(100, 80), new OverlayPoint(1_000, 78)],
+                // No raw spectrum: a dB SPL capture stores the drawn curve, plus the
+                // correction frozen onto those very points and the width behind them.
+                PointsCalibrationCorrectionDb = [1.5, -2.0],
+                CapturedSmoothingCode = 0
+            };
+
+            original.Save(root);
+            OverlayFile? loaded = OverlayFile.Load(Mode.LiveSpectrum, 3, root);
+
+            Assert.NotNull(loaded);
+            Assert.Empty(loaded!.RawSpectrum);
+            Assert.Equal([1.5, -2.0], loaded.PointsCalibrationCorrectionDb);
+            Assert.Equal(0, loaded.CapturedSmoothingCode);
+            // Files written before the fields existed say nothing at all.
+            Assert.Empty(new OverlayFile().PointsCalibrationCorrectionDb);
+            Assert.Null(new OverlayFile().CapturedSmoothingCode);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Save_RejectsAPointsCalibrationThatDoesNotMatchThePoints()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var file = new OverlayFile
+            {
+                SavedAtUtc = DateTimeOffset.UtcNow,
+                Mode = Mode.LiveSpectrum,
+                Slot = 2,
+                Title = "Mismatched",
+                ColorArgb = Color.Green.ToArgb(),
+                Points = [new OverlayPoint(100, 80), new OverlayPoint(1_000, 78)],
+                // Frozen per drawn point, so a different length would silently shift the
+                // correction in frequency.
+                PointsCalibrationCorrectionDb = [1.5]
+            };
+
+            Assert.Throws<InvalidDataException>(() => file.Save(root));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void SaveAndLoad_RoundTripsPsychoacousticSmoothingAsAPlainWidthPlusFlag()
     {
         // Same additive-field pattern as CapturedMagnitudeScale: the file keeps

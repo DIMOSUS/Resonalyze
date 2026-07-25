@@ -273,11 +273,17 @@ public partial class VirtualCrossoverChannelControl : UserControl
     }
 
     // The block carries its sizes as designer units; the base scales the bounds and
-    // the size pin, but not the expanded height we parked outside them.
+    // the size pin, but not the expanded height we parked outside them. Container
+    // autoscaling reaches a control through several paths, not all of which touch its
+    // height, so the parked value follows only the calls that actually scale one —
+    // otherwise a folded block would unfold to a height nothing else was scaled to.
     protected override void ScaleControl(SizeF factor, BoundsSpecified specified)
     {
         base.ScaleControl(factor, specified);
-        expandedHeight = (int)Math.Round(expandedHeight * factor.Height);
+        if ((specified & BoundsSpecified.Height) != 0)
+        {
+            expandedHeight = (int)Math.Round(expandedHeight * factor.Height);
+        }
     }
 
     /// <summary>

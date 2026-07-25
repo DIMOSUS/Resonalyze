@@ -83,6 +83,64 @@ public sealed class VirtualCrossoverChannelControlCollapseTests
     }
 
     [Fact]
+    public void ScalingWhileFolded_UnfoldsToAHeightThatStillHoldsEveryRow()
+    {
+        // The block parks its expanded height outside the scaled bounds, so a scale
+        // that lands while it is folded is the one way the two can drift apart: the
+        // rows are scaled up, the parked height is not, and unfolding then clips the
+        // bottom of the chain. Scaled both ways because the block travels between
+        // monitors, not only up from 100%.
+        using var control = new VirtualCrossoverChannelControl();
+        control.Collapsed = true;
+        int foldedAt100 = control.Height;
+
+        control.Scale(new SizeF(1.5f, 1.5f));
+
+        Assert.True(control.Height > foldedAt100);
+        Assert.Equal(control.Height, control.MaximumSize.Height);
+        Assert.True(control.InvertCheckBox.Bottom <= control.ClientSize.Height);
+
+        control.Collapsed = false;
+
+        Assert.Equal(control.Height, control.MaximumSize.Height);
+        Assert.True(control.BypassCheckBox.Bottom <= control.ClientSize.Height);
+        Assert.True(control.ShowProcessedCheckBox.Bottom <= control.ClientSize.Height);
+
+        control.Collapsed = true;
+        control.Scale(new SizeF(1 / 1.5f, 1 / 1.5f));
+        control.Collapsed = false;
+
+        Assert.True(control.BypassCheckBox.Bottom <= control.ClientSize.Height);
+        Assert.Equal(control.Height, control.MaximumSize.Height);
+    }
+
+    [Fact]
+    public void ScalingWhileUnfolded_LeavesTheFoldOnTheSameRow()
+    {
+        using var control = new VirtualCrossoverChannelControl();
+        control.Scale(new SizeF(1.5f, 1.5f));
+
+        control.Collapsed = true;
+
+        // The fold line is read off the scaled rows, so it still cuts above the
+        // crossover row rather than at a stale pixel offset.
+        Assert.True(control.InvertCheckBox.Bottom <= control.ClientSize.Height);
+        Assert.False(control.CrossoverKindComboBox.Visible);
+        Assert.True(control.CrossoverKindComboBox.Bottom > control.ClientSize.Height);
+    }
+
+    [Fact]
+    public void FoldButton_IsReachedWithThePolarityRowRatherThanAfterTheChain()
+    {
+        // It sits at the top of the block, so keyboard focus must not walk the whole
+        // filter chain before coming back up to it.
+        using var control = new VirtualCrossoverChannelControl();
+
+        Assert.True(control.CollapseButton.TabIndex > control.InvertCheckBox.TabIndex);
+        Assert.True(control.CollapseButton.TabIndex < control.CrossoverKindComboBox.TabIndex);
+    }
+
+    [Fact]
     public void FoldingInsideTheChannelList_NeverStacksOneBlockOverAnother()
     {
         // The field bug: with the size pin moved through an unbounded intermediate

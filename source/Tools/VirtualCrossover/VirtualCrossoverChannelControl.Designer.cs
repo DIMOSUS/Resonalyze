@@ -119,7 +119,7 @@ namespace Resonalyze
             buttonCollapse.Location = new Point(8, 54);
             buttonCollapse.Name = "buttonCollapse";
             buttonCollapse.Size = new Size(48, 20);
-            buttonCollapse.TabIndex = 37;
+            buttonCollapse.TabIndex = 8;
             buttonCollapse.Text = "−";
             buttonCollapse.UseCompatibleTextRendering = true;
             buttonCollapse.UseVisualStyleBackColor = true;

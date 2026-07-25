@@ -127,7 +127,7 @@ internal static class VirtualCrossoverSheetPdf
         Table table = AddValueTable(section);
         for (int side = 0; side < 2; side++)
         {
-            Column sideColumn = table.AddColumn(Unit.FromCentimeter(5.5));
+            Column sideColumn = table.AddColumn(SideColumnWidth);
             sideColumn.LeftPadding = Unit.FromMillimeter(2);
         }
 
@@ -139,6 +139,12 @@ internal static class VirtualCrossoverSheetPdf
         AddPairRow(table, "Gain",
             $"{Signed(left.GainDb)} dB",
             $"{Signed(right.GainDb)} dB");
+        if (HasPeqPreamp(left) || HasPeqPreamp(right))
+        {
+            AddPairRow(table, CombinedGainLabel,
+                CombinedGainText(left),
+                CombinedGainText(right));
+        }
         AddPairRow(table, "Delay", DelayText(left), DelayText(right));
         AddPairRow(table, "Polarity", PolarityText(left), PolarityText(right));
         AddPairRow(table, "Crossover",
@@ -168,6 +174,18 @@ internal static class VirtualCrossoverSheetPdf
 
     private static string PolarityText(VirtualCrossoverChannelSettings channel) =>
         channel.InvertPolarity ? "Inverted" : "Normal";
+
+    // Many DSPs have no separate preamp for their equalizer, so the PEQ's preamp has to be
+    // folded into the channel gain when the tune is typed in. Both numbers are printed:
+    // the gain as dialled here, and the single figure such a DSP wants. Only shown when
+    // there IS a preamp — otherwise the row would just repeat the gain.
+    private const string CombinedGainLabel = "Gain + PEQ preamp";
+
+    private static bool HasPeqPreamp(VirtualCrossoverChannelSettings channel) =>
+        channel.PeqPreampDb != 0;
+
+    private static string CombinedGainText(VirtualCrossoverChannelSettings channel) =>
+        $"{Signed(channel.GainDb + channel.PeqPreampDb)} dB";
 
     private static bool HasAllPass(VirtualCrossoverChannelSettings channel) =>
         channel.AllPassType != AllPassType.Off;
@@ -250,10 +268,14 @@ internal static class VirtualCrossoverSheetPdf
             channel.DisplayName);
 
         Table table = AddValueTable(section);
-        Column valueColumn = table.AddColumn(Unit.FromCentimeter(11.0));
+        Column valueColumn = table.AddColumn(SingleValueColumnWidth);
         valueColumn.LeftPadding = Unit.FromMillimeter(2);
 
         AddRow(table, "Gain", $"{Signed(channel.GainDb)} dB");
+        if (HasPeqPreamp(channel))
+        {
+            AddRow(table, CombinedGainLabel, CombinedGainText(channel));
+        }
         AddRow(table, "Delay", DelayText(channel));
         AddRow(table, "Polarity", PolarityText(channel));
         AddRow(table, "Crossover", VirtualCrossoverSheet.DescribeCrossover(channel));
@@ -287,12 +309,19 @@ internal static class VirtualCrossoverSheetPdf
         heading.Format.KeepWithNext = true;
     }
 
+    // The value tables run to the same right edge as the filter-card grid below them
+    // (4 x 4.3 cm), so every block on the sheet lines up instead of the tables stopping
+    // short. A4 less the 1.5 cm margins leaves 18 cm, so this still has room to spare.
+    private static readonly Unit LabelColumnWidth = Unit.FromCentimeter(3.4);
+    private static readonly Unit SideColumnWidth = Unit.FromCentimeter(6.9);
+    private static readonly Unit SingleValueColumnWidth = Unit.FromCentimeter(13.8);
+
     private static Table AddValueTable(Section section)
     {
         Table table = section.AddTable();
         table.Borders.Width = 0.5;
         table.Borders.Color = PdfSheet.CardBorderColor;
-        Column labelColumn = table.AddColumn(Unit.FromCentimeter(3.0));
+        Column labelColumn = table.AddColumn(LabelColumnWidth);
         labelColumn.LeftPadding = Unit.FromMillimeter(2);
         return table;
     }

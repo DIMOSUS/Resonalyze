@@ -40,7 +40,18 @@ internal static class VirtualCrossoverSheet
                 builder.AppendLine();
                 builder.AppendLine(
                     $"Channel {ChannelName(i)}{sideSuffix} — {channel.DisplayName}");
-                builder.AppendLine($"  Gain       {Signed(channel.GainDb)} dB");
+                // Many DSPs have no separate preamp for their equalizer, so the PEQ preamp
+                // has to be folded into the channel gain when the tune is typed in. The
+                // combined figure rides along on the same line, where it cannot be
+                // mistaken for a second, independent gain to enter.
+                string gainLine = $"  Gain       {Signed(channel.GainDb)} dB";
+                if (channel.PeqPreampDb != 0)
+                {
+                    gainLine +=
+                        $"  (with PEQ preamp: {Signed(channel.GainDb + channel.PeqPreampDb)} dB)";
+                }
+
+                builder.AppendLine(gainLine);
                 builder.AppendLine(
                     $"  Delay      {Number(channel.DelayMs, "0.00")} ms" +
                     $"  (= {Number(channel.DelayMs * Acoustics.SpeedOfSoundAt20CMetersPerSecond, "0.#")} mm)");

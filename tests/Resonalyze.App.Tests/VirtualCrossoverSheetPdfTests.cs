@@ -96,6 +96,95 @@ public sealed class VirtualCrossoverSheetPdfTests
     }
 
     [Fact]
+    public void Build_PrintsTheGainWithThePeqPreampFoldedIn()
+    {
+        // Many DSPs have no separate preamp for their equalizer, so the tune has to be
+        // entered as one gain. Both numbers are printed: the gain as dialled, and the sum
+        // such a DSP wants. The right side has no preamp, so its sum is just its gain.
+        var project = new VirtualCrossoverProjectFile();
+        project.Pairs[1].Left.SourceFilePath = "l.json";
+        project.Pairs[1].Left.DisplayName = "L twt";
+        project.Pairs[1].Left.GainDb = -1.5;
+        project.Pairs[1].Left.PeqPreampDb = -5.0;
+        project.Pairs[1].Left.PeqBands.Add(new PeqBand(2_000, 2.0, 6.0));
+        project.Pairs[1].Right.SourceFilePath = "r.json";
+        project.Pairs[1].Right.DisplayName = "R twt";
+        project.Pairs[1].Right.GainDb = -2.0;
+
+        using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(project, null, 48_000);
+        Table pairTable = PairTables(sheet.Document).Single();
+
+        Assert.Contains("-1.5 dB", RowValue(pairTable, "Gain", left: true));
+        Assert.Contains("-6.5 dB", RowValue(pairTable, "Gain + PEQ preamp", left: true));
+        Assert.Contains("-2.0 dB", RowValue(pairTable, "Gain + PEQ preamp", left: false));
+    }
+
+    [Fact]
+    public void Build_WithoutAPeqPreamp_OmitsTheCombinedGainRow()
+    {
+        // With no preamp the row would just repeat the gain.
+        var project = new VirtualCrossoverProjectFile();
+        project.Pairs[1].Left.SourceFilePath = "l.json";
+        project.Pairs[1].Left.DisplayName = "L";
+        project.Pairs[1].Right.SourceFilePath = "r.json";
+        project.Pairs[1].Right.DisplayName = "R";
+
+        using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(project, null, 48_000);
+
+        Assert.DoesNotContain("Gain + PEQ preamp", AllText(sheet.Document));
+    }
+
+    [Fact]
+    public void Build_ValueTables_RunToTheSameWidthAsTheFilterCards()
+    {
+        // The tables used to stop 3 cm short of the card grid below them, leaving the
+        // sheet looking ragged with room to spare. A4 less the 1.5 cm margins is 18 cm.
+        var project = new VirtualCrossoverProjectFile();
+        project.Pairs[0].Mono = true;
+        project.Pairs[0].Left.SourceFilePath = "sub.json";
+        project.Pairs[0].Left.DisplayName = "Sub";
+        project.Pairs[0].Left.PeqBands.Add(new PeqBand(45, 3.0, -4.0));
+        project.Pairs[1].Left.SourceFilePath = "l.json";
+        project.Pairs[1].Left.DisplayName = "L";
+        project.Pairs[1].Right.SourceFilePath = "r.json";
+        project.Pairs[1].Right.DisplayName = "R";
+
+        using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(project, null, 48_000);
+
+        double cards = TableWidthCentimetres(CardTables(sheet.Document).First());
+        foreach (Table table in ValueTables(sheet.Document))
+        {
+            Assert.Equal(cards, TableWidthCentimetres(table), 3);
+        }
+
+        Assert.True(cards <= 18.0, $"The sheet is {cards:0.0} cm wide — past the margins.");
+    }
+
+    private static double TableWidthCentimetres(Table table)
+    {
+        double total = 0;
+        for (int i = 0; i < table.Columns.Count; i++)
+        {
+            total += table.Columns[i].Width.Centimeter;
+        }
+
+        return total;
+    }
+
+    // The label-plus-value tables: one value column (single channel) or two (a pair).
+    private static IEnumerable<Table> ValueTables(Document document)
+    {
+        DocumentElements elements = document.LastSection.Elements;
+        for (int i = 0; i < elements.Count; i++)
+        {
+            if (elements[i] is Table { Columns.Count: 2 or 3 } table)
+            {
+                yield return table;
+            }
+        }
+    }
+
+    [Fact]
     public void Build_PeqCaption_IsARepeatingHeadingRowOfTheCardTable()
     {
         // A full bank is 32 filters — eight card rows — so the grid can break across

@@ -86,10 +86,11 @@ result with fewer blind tuning passes.
   <tr>
     <td width="50%">
       <img src="assets/images/eq_wizard.png" alt="EQ Wizard parametric EQ tuning">
-      <p><strong>EQ Wizard</strong> loads an impulse response and designs an
-      up-to-32-band PEQ toward its own target curve, with microphone calibration,
-      Auto Tune, a vertical fader bank, import/export, and printable tuning
-      sheets.</p>
+      <p><strong>EQ Wizard</strong> equalizes any measured response — an impulse
+      response, a captured overlay curve, or a moving-microphone RTA in dB SPL —
+      designing an up-to-32-band PEQ toward its own target curve, with microphone
+      calibration, Auto Tune, a vertical fader bank, import/export, and printable
+      tuning sheets.</p>
     </td>
     <td width="50%">
       <img src="assets/images/time-alignment.png" alt="Time Alignment delay measurement">
@@ -233,6 +234,11 @@ file is provided with every release.
 ## Highlights
 
 - Exponential sine sweep measurement with impulse-response JSON save/load
+- **Band-defined sweep**: set the low and high frequency the sweep must cover
+  (20 Hz – 20 kHz) and a per-octave pace instead of an octave count pinned to
+  Nyquist. The panel reports the range it can actually deliver, and the transfer
+  estimate is gated to the excited band, so a band-limited sweep no longer shows
+  noise spikes just below its low edge
 - Mandatory loopback-referenced sweep processing: every measurement captures a
   loopback reference, and all analysis is derived from the resulting transfer
   function (harmonics and THD+N stay on the sweep deconvolution)
@@ -290,10 +296,13 @@ file is provided with every release.
   or live plot curves, targets, import/export, and saved per-mode state
 - Live overlay preview: captured, calculated, and target overlay dialogs redraw
   the candidate curve on the plot as you edit, and revert on Cancel
-- EQ Wizard: load an impulse response and design an up-to-32-band parametric EQ
-  toward its own target curve (with selectable microphone calibration), using a
-  vertical fader bank, Auto Tune, a live results read-out, cross-tool PEQ
-  import/export, and a printable tuning-sheet PDF
+- EQ Wizard: equalize any measured frequency response — an impulse response from
+  a file or History, a captured overlay slot, or a curve imported from text —
+  toward its own target curve, designing an up-to-32-band parametric EQ (with
+  selectable microphone calibration), using a vertical fader bank, Auto Tune, a
+  live results read-out, cross-tool PEQ import/export, and a printable
+  tuning-sheet PDF. The car case it was built for is a **moving-microphone RTA in
+  dB SPL**: no coherence, no impulse response, an absolute datum
 - Signal Generator: play pink (periodic and continuous), brown/red, white noise,
   or a sine tone through the configured playback device for level setting and
   channel checks
@@ -566,7 +575,8 @@ real-time analysis without capturing an IR, use the additional
    directly or through a microphone and a suitable interface.
 2. Start Resonalyze and open the measurement settings.
 3. Select the audio backend, sample rate, devices or backend-specific input and
-   loopback channels, sweep duration, playback channel, and analysis
+   loopback channels, the [sweep band and pace](#sweep-band-and-duration),
+   playback channel, and analysis
    parameters. A **loopback reference channel is required** — all analysis is
    derived from the transfer IR it produces, so the settings panel flags an
    unset loopback and the measurement will not start without one. To average
@@ -751,6 +761,38 @@ channel is selected for the active backend; the settings panel flags an unset
 loopback in place. Records loaded from older files that were captured without a
 transfer IR still open, but their transfer-IR views show a "requires loopback
 transfer IR" note instead of a misleading curve.
+
+### Sweep band and duration
+
+The exponential sweep is described by the band it must cover: a **Low frequency
+(Hz)** and a **High frequency (Hz)** anywhere between 20 Hz and 20 kHz, plus a
+**Per octave (ms)** pace that sets the duration. Measuring a tweeter through a
+2 kHz crossover no longer means sweeping from 20 Hz and pinning the top to
+Nyquist — sweep the band the driver actually plays, and spend the whole
+excitation there.
+
+Phase alignment is preserved by rounding the band outward to whole start and end
+cycles, so the achieved range always encloses the one you asked for, and the
+fade-in and fade-out live in the guard bands outside it rather than eating into
+the band under test. The **Actual range** line reports what the current settings
+really deliver: where a short sweep cannot honour the request — one cycle at
+20 Hz alone takes 50 ms — it says so instead of quietly shortening the sweep at
+run time. The duration is capped by one length limit that the preview, the
+generator and the stored settings all resolve through, so the panel cannot
+promise a sweep the measurement then fails to play.
+
+The transfer estimate is gated to the excited band: full weight between the
+points where the sweep envelope is actually open, raised-cosine ramps across the
+fades, zero outside. Outside the swept band the transfer function is microphone
+noise divided by the reference's leakage skirt, which used to surface as +15 dB
+spikes just below the start of a band-limited sweep; those bins are now excluded
+rather than half-passed.
+
+Measurement options apply as you edit them — the band, the pace, the playback
+channel, the averaging — and touch the audio session only when its identity
+actually changed. The audio backend, the format the device is opened with and
+its device panel are the exception: they sit in their own bordered panel and
+commit together with **Apply settings**.
 
 ### Wave
 
@@ -942,7 +984,10 @@ transfer function. Coherence does not apply to it, so it is never dimmed by the
 gain, so switching windows does not shift it. In relative dB it is a single-channel
 level whose vertical position floats with input gain; with the **Scale** set to
 **dB SPL** it becomes calibrated absolute sound pressure (and the only curve —
-see [Sound Pressure Level](#sound-pressure-level-db-spl)).
+see [Sound Pressure Level](#sound-pressure-level-db-spl)). Captured into an
+overlay slot, an RTA trace — typically a microphone moved slowly around the
+listening area — can be equalized directly in the
+[EQ Wizard](#choosing-what-to-equalize).
 
 **Peak Hold** overlays a second curve that retains the maximum level seen on the
 trace until it is reset. **Coherence** (on by default) toggles the γ² curve
@@ -1242,7 +1287,9 @@ Files are saved as indented, human-readable JSON. Each file contains:
 - format and schema version
 - save time in UTC
 - sample rate and bit depth
-- sweep octave count and duration
+- the requested sweep band and the band the sweep achieved, plus its duration
+  and sample count (files written before the band settings carry an octave count
+  instead and are migrated on load)
 - playback channel
 - measurement mode (`SweepDeconvolution` or `LoopbackTransfer`)
 - sweep-deconvolution impulse-response samples and peak index
@@ -1350,6 +1397,14 @@ skipped. **Export to text** writes the slot's current curve in the same format.
 For a Target slot, **Export deviation** writes the deviation or EQ-correction
 curve, which is handy for transferring corrections into an equalizer or another
 tool.
+
+Exported files open with a commented `# resonalyze-curve` metadata header that
+records what the curve is — the analysis it came from, its role (a measured
+response, a deviation, a target), and the sample rate where one applies. Foreign
+files without the header still import exactly as before; the header only lets
+Resonalyze recognize its own curves on the way back in, so that, for example, the
+[EQ Wizard](#eq-wizard) can tell a measured response from an EQ-correction curve
+that must never be equalized as if it were one.
 
 Captured overlay settings include:
 
@@ -1460,10 +1515,36 @@ The **EQ Wizard** (under the **Tools** tab) designs a parametric equalizer — u
 to 32 peaking (PK) bands plus a preamp — that moves a measured response toward a
 target. It builds directly on Target overlays: you can open it from **Tools > EQ
 Wizard** and pick a target, or jump straight in with the **To EQ Wizard** button
-in a Target overlay's settings. Because the wizard needs a real curve to tune
-against, its target must use a captured source (not the live current measurement).
+in a Target overlay's settings.
 
 ![EQ Wizard mode](assets/images/eq_wizard.png)
+
+### Choosing what to equalize
+
+The **Source…** button picks the curve to tune, and it does not have to be an
+impulse response:
+
+- **Impulse response from file…** or **from history** — the loopback-referenced
+  measurement, the same source the analysis views use
+- **Curve from overlay slot** — any captured frequency-response slot, imported
+  as a snapshot with no live link back to the slot
+- **Curve from text file…** — a response exported from Resonalyze or produced
+  elsewhere
+
+The case this was built for is a **moving-microphone RTA in dB SPL**: park the
+Live Spectrum RTA on a car's listening area, capture it into an overlay slot,
+and equalize that. Such a curve has no impulse response and no coherence behind
+it, and its datum is absolute rather than relative — so the wizard treats the RTA
+as a first-class analysis curve rather than something to be reconstructed from an
+IR. Only measured responses can enter: a harmonic, THD, phase, deviation,
+EQ-correction, target or calculated curve is refused, including through a text
+round trip.
+
+Imported curves carry their own **Calibration** choice, independent of the
+microphone-calibration preference used for impulse responses, because a curve
+captured through a calibrated RTA must not be calibrated a second time. The
+filter response is drawn against its own right-hand dB axis, scaled to the summed
+filter curve.
 
 The plot shows, on shared frequency/dB axes:
 
@@ -1570,7 +1651,11 @@ across sides for the channels you tick in a small dialog, and a **Mono**
 checkbox turns a pair into a single shared driver — the typical one-subwoofer
 car layout — that feeds both sides' sums. **Add channel** / **Remove channel**
 grow the setup from two up to eight pairs; the blocks live in a scrolling list,
-so a many-way system stays in one window without crowding the plots. Every
+so a many-way system stays in one window without crowding the plots. The **+/−**
+button in a block folds it down to its header — source, gain, delay, polarity
+stay visible and the filter chain is hidden — so an eight-way setup can show
+only the chain being tuned; folded blocks are remembered with the session and
+nothing about the channel changes while it is folded. Every
 channel in a project must share one sample rate — a measurement recorded at a
 different rate is refused; clear the existing sources first to switch the whole
 project to a new rate.

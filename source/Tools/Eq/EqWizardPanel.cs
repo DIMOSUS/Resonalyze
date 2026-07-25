@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using OxyPlot;
 using OxyPlot.Annotations;
 using OxyPlot.Axes;
@@ -92,7 +92,7 @@ public partial class EqWizardPanel : UserControl
         // Showing a dropdown synchronously inside the mouse message is swallowed by the
         // focus change, and showing it on mouse-down lets the click's own mouse-up land
         // outside the just-opened menu and close it again.
-        buttonLoadIr.Click += (_, _) => buttonLoadIr.BeginInvoke(ShowSourceMenu);
+        buttonSource.Click += (_, _) => buttonSource.BeginInvoke(ShowSourceMenu);
         comboBoxCalibration.SelectedIndexChanged += (_, _) => OnCalibrationChanged();
         NumericTargetOffset.ValueChanged += (_, _) => OnTargetOffsetChanged();
         NumericGain.ValueChanged += (_, _) => DrawSelectedCurves();
@@ -232,7 +232,7 @@ public partial class EqWizardPanel : UserControl
 
     private void InitializeToolTips()
     {
-        SetTip(buttonLoadIr,
+        SetTip(buttonSource,
             "Choose the curve to equalize: an impulse response (file or history), " +
             "a captured overlay slot, or a measured curve from a text file.");
         SetTip(buttonOverlaySettings,

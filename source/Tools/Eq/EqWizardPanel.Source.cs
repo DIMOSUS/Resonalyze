@@ -1,4 +1,4 @@
-using OxyPlot;
+﻿using OxyPlot;
 using Resonalyze.Dsp;
 using Resonalyze.History;
 using Resonalyze.Options;
@@ -98,7 +98,7 @@ public partial class EqWizardPanel
         sourceMenu?.Dispose();
         sourceMenu = BuildSourceMenu();
         DropDownFocusGuard.Attach(sourceMenu);
-        sourceMenu.Show(buttonLoadIr, new Point(0, buttonLoadIr.Height));
+        sourceMenu.Show(buttonSource, new Point(0, buttonSource.Height));
     }
 
     private ContextMenuStrip BuildSourceMenu()
@@ -333,9 +333,9 @@ public partial class EqWizardPanel
             suppressRedraw = false;
         }
 
-        buttonLoadIr.Text = source.DisplayName;
+        buttonSource.Text = source.DisplayName;
         toolTip.SetToolTip(
-            buttonLoadIr,
+            buttonSource,
             $"{source.Description}\r\nClick to load another source.");
 
         RaiseSettingsChanged();

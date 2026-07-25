@@ -1,4 +1,4 @@
-namespace Resonalyze
+﻿namespace Resonalyze
 {
     partial class EqWizardPanel
     {
@@ -36,7 +36,7 @@ namespace Resonalyze
             plotWizard = new OxyPlot.WindowsForms.PlotView();
             panelPEQ = new Panel();
             labelBands = new Label();
-            buttonLoadIr = new Button();
+            buttonSource = new Button();
             darkComboBoxBands = new DarkComboBox();
             NumericTargetOffset = new DarkNumericUpDown();
             labelTargetOffset = new Label();
@@ -109,16 +109,16 @@ namespace Resonalyze
             labelBands.TabIndex = 4;
             labelBands.Text = "EQ Filters";
             // 
-            // buttonLoadIr
+            // buttonSource
             // 
-            buttonLoadIr.FlatStyle = FlatStyle.Popup;
-            buttonLoadIr.ForeColor = Color.White;
-            buttonLoadIr.Location = new Point(6, 12);
-            buttonLoadIr.Name = "buttonLoadIr";
-            buttonLoadIr.Size = new Size(182, 24);
-            buttonLoadIr.TabIndex = 5;
-            buttonLoadIr.Text = "Load IR…";
-            buttonLoadIr.UseVisualStyleBackColor = true;
+            buttonSource.FlatStyle = FlatStyle.Popup;
+            buttonSource.ForeColor = Color.White;
+            buttonSource.Location = new Point(6, 12);
+            buttonSource.Name = "buttonSource";
+            buttonSource.Size = new Size(182, 24);
+            buttonSource.TabIndex = 5;
+            buttonSource.Text = "Source…";
+            buttonSource.UseVisualStyleBackColor = true;
             // 
             // darkComboBoxBands
             // 
@@ -517,7 +517,7 @@ namespace Resonalyze
             Controls.Add(labelTargetOffset);
             Controls.Add(NumericTargetOffset);
             Controls.Add(darkComboBoxBands);
-            Controls.Add(buttonLoadIr);
+            Controls.Add(buttonSource);
             Controls.Add(labelBands);
             Controls.Add(panelPEQ);
             Controls.Add(plotWizard);
@@ -542,7 +542,7 @@ namespace Resonalyze
         private OxyPlot.WindowsForms.PlotView plotWizard;
         private Panel panelPEQ;
         private Label labelBands;
-        private Button buttonLoadIr;
+        private Button buttonSource;
         private DarkComboBox darkComboBoxBands;
         private DarkNumericUpDown NumericTargetOffset;
         private Label labelTargetOffset;

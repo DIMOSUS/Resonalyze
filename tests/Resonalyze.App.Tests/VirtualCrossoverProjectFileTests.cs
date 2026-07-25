@@ -558,6 +558,30 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void SaveToAndLoadFrom_RoundTripTheFoldedBlocksAndOpenOlderFilesExpanded()
+    {
+        string root = CreateTemporaryDirectory();
+        string path = Path.Combine(root, "folded.json");
+        try
+        {
+            var original = new VirtualCrossoverProjectFile();
+            original.Pairs[0].Collapsed = true;
+
+            original.SaveTo(path);
+            VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadFrom(path);
+
+            Assert.True(loaded.Pairs[0].Collapsed);
+            // The flag is additive: a file written before it existed simply has no
+            // such property, and its blocks open the way they always did.
+            Assert.False(loaded.Pairs[1].Collapsed);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void LoadFrom_ThrowsOnABrokenSessionFile()
     {
         string root = CreateTemporaryDirectory();

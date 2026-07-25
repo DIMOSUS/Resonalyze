@@ -24,11 +24,18 @@ public partial class VirtualCrossoverChannelControl : UserControl
     private string channelName = "A";
     private bool suppressChangeEvents;
     private bool muted;
+    private bool collapsed;
     private double sampleRateHz = DefaultSampleRateHz;
+    private int expandedHeight;
 
     public VirtualCrossoverChannelControl()
     {
         InitializeComponent();
+        // The designer pins the block to one size (MinimumSize == MaximumSize) so the
+        // flow list cannot stretch it; collapsing moves that pin, so the expanded
+        // height has to be remembered before the first collapse overwrites it. Read
+        // here in designer units — ScaleControl scales it with the rest of the block.
+        expandedHeight = MaximumSize.Height;
         // The ripple cap is the DSP's single source of truth (above it the Chebyshev
         // pole math is undefined); the designer value is only a default.
         numericHighPassRipple.Maximum = (decimal)CrossoverFilter.MaximumChebyshevRippleDb;
@@ -82,6 +89,13 @@ public partial class VirtualCrossoverChannelControl : UserControl
     /// <summary>Raised when the user clicks Clear next to PEQ.</summary>
     public event EventHandler? PeqClearClicked;
 
+    /// <summary>
+    /// Raised when the user folds or unfolds the block. Separate from
+    /// <see cref="SettingsChanged"/> on purpose: the fold changes nothing the DSP
+    /// chain computes, so the host persists it without recomputing the curves.
+    /// </summary>
+    public event EventHandler? CollapsedChanged;
+
     [DefaultValue("A")]
     public string ChannelName
     {
@@ -112,6 +126,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
     internal DarkNumericUpDown AllPassQInput => numericAllPassQ;
     internal Label MeasuredPolarityLabel => labelMeasuredPolarity;
     internal Button MuteButton => buttonMute;
+    internal Button CollapseButton => buttonCollapse;
     internal Button PeqLoadButton => buttonPeqLoad;
     internal Button PeqClearButton => buttonPeqClear;
     internal Label PeqInfoLabel => labelPeqInfo;
@@ -176,6 +191,102 @@ public partial class VirtualCrossoverChannelControl : UserControl
     }
 
     /// <summary>
+    /// Folded, the block shows only its header rows — source, gain, delay, polarity —
+    /// and everything from the crossover row down is cut off. A tall project is then
+    /// scannable without scrolling past the chains the user is not tuning right now.
+    /// The state is per block and persists with the project.
+    /// </summary>
+    [DefaultValue(false)]
+    public bool Collapsed
+    {
+        get => collapsed;
+        set
+        {
+            if (collapsed == value)
+            {
+                return;
+            }
+
+            collapsed = value;
+            ApplyCollapsedState();
+        }
+    }
+
+    // The fold line: the top of the crossover row, the first row of the filter chain.
+    // Read off the live control rather than hard-coded — the rows are scaled for the
+    // current DPI (AutoScaleMode.Font) and a pixel literal would cut the wrong one.
+    private int FoldLine => comboBoxCrossoverKind.Top;
+
+    private void ApplyCollapsedState()
+    {
+        buttonCollapse.Text = collapsed ? "+" : "−";
+        // The rows below the fold are hidden, not merely clipped: hidden, they also
+        // leave the tab order, so a folded block cannot take focus into a field the
+        // user cannot see.
+        int keptBottom = 0;
+        SuspendLayout();
+        foreach (Control child in Controls)
+        {
+            bool kept = !collapsed || child.Top < FoldLine;
+            child.Visible = kept;
+            if (kept)
+            {
+                keptBottom = Math.Max(keptBottom, child.Bottom);
+            }
+        }
+
+        ResumeLayout(false);
+        // The border sits outside the client area, hence the Height/ClientSize term.
+        int height = collapsed
+            ? keptBottom + (Height - ClientSize.Height)
+            : expandedHeight;
+        // The whole move runs inside one suspended parent layout: each size assignment
+        // below asks the flow list to reflow, and a list laid out against a half-moved
+        // pin stacks the next block over this one.
+        Control? parent = Parent;
+        parent?.SuspendLayout();
+        try
+        {
+            // MinimumSize == MaximumSize pins the block, so the bound in the way has to
+            // move first — the other one would clamp the assignment. Never through zero:
+            // a zero MaximumSize height reads as "no height" to the flow list, which then
+            // places the next block on top of this one.
+            if (height < MinimumSize.Height)
+            {
+                MinimumSize = new Size(MinimumSize.Width, height);
+                MaximumSize = new Size(MaximumSize.Width, height);
+            }
+            else
+            {
+                MaximumSize = new Size(MaximumSize.Width, height);
+                MinimumSize = new Size(MinimumSize.Width, height);
+            }
+
+            Height = height;
+        }
+        finally
+        {
+            parent?.ResumeLayout(performLayout: true);
+        }
+
+        CollapsedChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // The block carries its sizes as designer units; the base scales the bounds and
+    // the size pin, but not the expanded height we parked outside them. Container
+    // autoscaling reaches a control through several paths, not all of which touch its
+    // height, so the parked value follows only the calls that actually scale one —
+    // otherwise a folded block would unfold to a height nothing else was scaled to.
+    protected override void ScaleControl(SizeF factor, BoundsSpecified specified)
+    {
+        base.ScaleControl(factor, specified);
+        if ((specified & BoundsSpecified.Height) != 0)
+        {
+            expandedHeight = (int)Math.Round(expandedHeight * factor.Height);
+        }
+    }
+
+    /// <summary>
     /// Shows the acoustic polarity read from the channel's measured IR — the
     /// as-measured wiring of the driver, independent of the Invert switch. Green
     /// "Normal" for a positive-going arrival, red "Inverted" for a negative-going
@@ -218,6 +329,12 @@ public partial class VirtualCrossoverChannelControl : UserControl
             "Channel delay (ms) — the value you would dial into\r\n" +
             "this DSP channel.\r\n" +
             "The mm readout is the equivalent distance in air.");
+        toolTip.SetToolTip(
+            buttonCollapse,
+            "Fold the block down to its header — source, gain, delay\r\n" +
+            "and polarity stay visible, the filter chain is hidden.\r\n" +
+            "Nothing is bypassed: a folded channel plays and counts\r\n" +
+            "exactly as before.");
         toolTip.SetToolTip(
             buttonMute,
             "Mute the channel: exclude it from the sum, the loss,\r\n" +
@@ -478,6 +595,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
             Muted = !Muted;
             RaiseSettingsChanged();
         };
+        buttonCollapse.Click += (_, _) => Collapsed = !Collapsed;
         buttonPeqLoad.Click += (_, _) => PeqLoadClicked?.Invoke(this, EventArgs.Empty);
         buttonPeqClear.Click += (_, _) => PeqClearClicked?.Invoke(this, EventArgs.Empty);
 

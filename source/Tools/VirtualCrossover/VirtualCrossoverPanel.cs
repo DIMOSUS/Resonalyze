@@ -671,6 +671,7 @@ public partial class VirtualCrossoverPanel : UserControl
         control.SourceClicked += (_, _) => ShowSourceMenu(channel);
         control.PeqLoadClicked += (_, _) => LoadPeq(channel);
         control.PeqClearClicked += (_, _) => ClearPeq(channel);
+        control.CollapsedChanged += (_, _) => OnChannelCollapsedChanged(channel);
         return channel;
     }
 
@@ -800,6 +801,20 @@ public partial class VirtualCrossoverPanel : UserControl
 
         ScheduleSave();
         RedrawAll();
+    }
+
+    // Folding a block only changes how much of it the list shows: the flow layout
+    // reflows the blocks below it on its own, and no curve, sum or metric depends on
+    // it — so this persists the state and stops there, no recompute, no redraw.
+    private void OnChannelCollapsedChanged(VirtualCrossoverChannel channel)
+    {
+        if (suppressProjectEvents)
+        {
+            return;
+        }
+
+        channel.Pair.Collapsed = ControlFor(channel).Collapsed;
+        ScheduleSave();
     }
 
     private void OnChannelSettingsChanged(VirtualCrossoverChannel channel)
@@ -953,6 +968,7 @@ public partial class VirtualCrossoverPanel : UserControl
             control.BypassCheckBox.Checked = settings.Bypass;
             control.MonoCheckBox.Checked = channel.Pair.Mono;
             control.Muted = !settings.Enabled;
+            control.Collapsed = channel.Pair.Collapsed;
         });
 
         UpdateSourceButton(channel);

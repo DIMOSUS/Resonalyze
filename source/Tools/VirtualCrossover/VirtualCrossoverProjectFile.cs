@@ -238,6 +238,15 @@ public sealed class VirtualCrossoverChannelSettings
 public sealed class VirtualCrossoverChannelPairSettings
 {
     public bool Mono { get; set; }
+
+    /// <summary>
+    /// View state: the block is folded to its header in the tool. Both sides share
+    /// it — the fold belongs to the block on screen, not to a measurement — and it
+    /// changes nothing the chain computes. Absent from older files, which therefore
+    /// open expanded.
+    /// </summary>
+    public bool Collapsed { get; set; }
+
     public VirtualCrossoverChannelSettings Left { get; set; } = new();
     public VirtualCrossoverChannelSettings Right { get; set; } = new();
 

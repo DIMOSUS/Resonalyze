@@ -32,6 +32,7 @@ namespace Resonalyze
             labelChannel = new Label();
             buttonSource = new Button();
             labelGain = new Label();
+            buttonCollapse = new Button();
             numericGain = new DarkNumericUpDown();
             labelDelay = new Label();
             numericDelay = new DarkNumericUpDown();
@@ -109,6 +110,19 @@ namespace Resonalyze
             labelGain.Size = new Size(48, 15);
             labelGain.TabIndex = 2;
             labelGain.Text = "Gain dB";
+            // 
+            // buttonCollapse
+            // 
+            buttonCollapse.FlatStyle = FlatStyle.Popup;
+            buttonCollapse.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold, GraphicsUnit.Point, 204);
+            buttonCollapse.ForeColor = Color.White;
+            buttonCollapse.Location = new Point(8, 54);
+            buttonCollapse.Name = "buttonCollapse";
+            buttonCollapse.Size = new Size(48, 20);
+            buttonCollapse.TabIndex = 37;
+            buttonCollapse.Text = "−";
+            buttonCollapse.UseCompatibleTextRendering = true;
+            buttonCollapse.UseVisualStyleBackColor = true;
             // 
             // numericGain
             // 
@@ -520,7 +534,7 @@ namespace Resonalyze
             labelAllpassBand.ForeColor = Color.FromArgb(170, 176, 190);
             labelAllpassBand.Location = new Point(254, 157);
             labelAllpassBand.Name = "labelAllpassBand";
-            labelAllpassBand.Size = new Size(49, 15);
+            labelAllpassBand.Size = new Size(58, 15);
             labelAllpassBand.TabIndex = 36;
             labelAllpassBand.Text = "= 0.00 ms";
             // 
@@ -541,6 +555,7 @@ namespace Resonalyze
             Controls.Add(labelChannel);
             Controls.Add(buttonSource);
             Controls.Add(labelGain);
+            Controls.Add(buttonCollapse);
             Controls.Add(numericGain);
             Controls.Add(labelDelay);
             Controls.Add(numericDelay);
@@ -589,6 +604,7 @@ namespace Resonalyze
         private Label labelChannel;
         private Button buttonSource;
         private Label labelGain;
+        private Button buttonCollapse;
         private DarkNumericUpDown numericGain;
         private Label labelDelay;
         private DarkNumericUpDown numericDelay;

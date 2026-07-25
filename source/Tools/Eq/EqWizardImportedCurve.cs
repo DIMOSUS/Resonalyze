@@ -29,7 +29,8 @@ internal static class EqWizardImportedCurve
         IReadOnlyList<SignalPoint> points,
         IReadOnlyList<double> capturedCorrectionDb,
         IReadOnlyList<double> targetCorrectionDb,
-        int smoothingCode)
+        int smoothingCode,
+        MagnitudeAveraging averaging = MagnitudeAveraging.Power)
     {
         ArgumentNullException.ThrowIfNull(points);
         ArgumentNullException.ThrowIfNull(capturedCorrectionDb);
@@ -63,8 +64,12 @@ internal static class EqWizardImportedCurve
             // The overlay smoother works in place on these very frequencies, so the curve
             // keeps its own band grid. Magnitude semantics: this path only ever carries a
             // magnitude response, which is what the psychoacoustic width is defined for.
+            // The averaging domain is the source analyzer's, not the overlay display's —
+            // averaging dB directly is a geometric mean and would suppress narrow peaks
+            // harder than the mode that drew the curve, feeding Auto Tune a shape the
+            // measurement never had.
             working = OverlayMath.SmoothByOctaves(
-                working, smoothingCode, psychoacousticMagnitude: true);
+                working, smoothingCode, psychoacousticMagnitude: true, averaging);
         }
 
         var result = new SignalPoint[points.Count];

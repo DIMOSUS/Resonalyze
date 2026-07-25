@@ -4,7 +4,6 @@ using OxyPlot.Series;
 using Resonalyze.Dsp;
 using Button = System.Windows.Forms.Button;
 using CheckBox = System.Windows.Forms.CheckBox;
-using ToolTip = System.Windows.Forms.ToolTip;
 
 namespace Resonalyze;
 
@@ -102,7 +101,7 @@ public sealed class OverlayCollection
         Form1 form,
         Panel container,
         OxyPlot.WindowsForms.PlotView plotView,
-        ToolTip toolTip,
+        WrappingToolTip toolTip,
         Action notifyPlotChanged)
     {
         Form = form;
@@ -134,12 +133,18 @@ public sealed class OverlayCollection
             .FirstOrDefault()
             ?? throw new InvalidOperationException(
                 "Overlay template checkbox is missing.");
+        Label templateNameLabel = templatePanel.Controls
+            .OfType<Label>()
+            .FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                "Overlay template name label is missing.");
 
         overlays.Add(new Overlay(
             templatePanel,
             templateCaptureButton,
             templateOffset,
             templateCheckBox,
+            templateNameLabel,
             1,
             toolTip,
             this));
@@ -154,16 +159,19 @@ public sealed class OverlayCollection
             CheckBox checkBox = CreateCheckBox(templateCheckBox, index);
             DarkNumericUpDown offset = CreateOffset(templateOffset, index);
             Button captureButton = CreateCaptureButton(templateCaptureButton, index);
+            Label nameLabel = CreateNameLabel(templateNameLabel, index);
 
             panel.Controls.Add(checkBox);
             panel.Controls.Add(offset);
             panel.Controls.Add(captureButton);
+            panel.Controls.Add(nameLabel);
 
             overlays.Add(new Overlay(
                 panel,
                 captureButton,
                 offset,
                 checkBox,
+                nameLabel,
                 index,
                 toolTip,
                 this));
@@ -495,6 +503,25 @@ public sealed class OverlayCollection
         };
     }
 
+    // Cloned from the designer template so the label inherits the font and the
+    // coordinates the designer already scaled for the current DPI.
+    private static Label CreateNameLabel(Label template, int index)
+    {
+        return new Label
+        {
+            AutoEllipsis = template.AutoEllipsis,
+            AutoSize = template.AutoSize,
+            BackColor = template.BackColor,
+            Font = template.Font,
+            ForeColor = template.ForeColor,
+            Location = template.Location,
+            Name = $"labelOverlay{index}",
+            Size = template.Size,
+            TextAlign = template.TextAlign,
+            UseCompatibleTextRendering = template.UseCompatibleTextRendering
+        };
+    }
+
     private static Button CreateCaptureButton(Button template, int index)
     {
         return new Button
@@ -525,6 +552,8 @@ public sealed class Overlay
     private readonly Button captureButton;
     private readonly DarkNumericUpDown offsetControl;
     private readonly CheckBox checkBox;
+    private readonly Label nameLabel;
+    private readonly WrappingToolTip toolTip;
     private readonly Color defaultColor;
     private readonly decimal defaultOffset;
     private readonly ContextMenuStrip captureMenu;
@@ -535,6 +564,7 @@ public sealed class Overlay
     private readonly System.Windows.Forms.Timer longPressTimer;
     private readonly System.Windows.Forms.Timer offsetSaveTimer;
     private bool longPressTriggered;
+    private string title = "";
 
     private OverlayKind kind = OverlayKind.Captured;
     private bool updatingControls;
@@ -614,14 +644,17 @@ public sealed class Overlay
         Button captureButton,
         DarkNumericUpDown offsetControl,
         CheckBox checkBox,
+        Label nameLabel,
         int index,
-        ToolTip toolTip,
+        WrappingToolTip toolTip,
         OverlayCollection collection)
     {
         this.panel = panel;
         this.captureButton = captureButton;
         this.offsetControl = offsetControl;
         this.checkBox = checkBox;
+        this.nameLabel = nameLabel;
+        this.toolTip = toolTip;
         this.collection = collection;
         defaultColor = panel.BackColor;
         defaultOffset = offsetControl.Value;
@@ -661,7 +694,25 @@ public sealed class Overlay
     }
 
     public int Index { get; }
-    public string Title { get; private set; } = "";
+
+    /// <summary>
+    /// The slot's display name. Assigning it also refreshes the panel's name label,
+    /// so every path that names a slot — capture, import, settings, load, reset —
+    /// keeps the label in step.
+    /// </summary>
+    public string Title
+    {
+        get => title;
+        private set
+        {
+            title = value;
+            nameLabel.Text = OverlaySlotName.Shorten(value, Index);
+            toolTip.SetToolTip(
+                nameLabel,
+                value.Length > 0 ? value : "Empty overlay slot");
+        }
+    }
+
     public Mode SeriesMode { get; private set; }
     public bool Checked => checkBox.Checked;
     public OverlayKind Kind => kind;
@@ -1800,7 +1851,7 @@ public sealed class Overlay
         targetToleranceDb = dialog.ToleranceDb;
         targetDeviationMode = dialog.DeviationMode;
         UpdateKindGlyph();
-        panel.BackColor = dialog.SelectedColor;
+        SetPanelColor(dialog.SelectedColor);
         strokeThickness = dialog.StrokeThickness;
         lineStyle = dialog.LineStyle;
         opacityPercent = dialog.OpacityPercent;
@@ -1855,7 +1906,7 @@ public sealed class Overlay
         bool wasChecked = Checked;
         Hide();
         Title = dialog.OverlayName;
-        panel.BackColor = dialog.SelectedColor;
+        SetPanelColor(dialog.SelectedColor);
         strokeThickness = dialog.StrokeThickness;
         lineStyle = dialog.LineStyle;
         opacityPercent = dialog.OpacityPercent;
@@ -1940,7 +1991,7 @@ public sealed class Overlay
         useAmplitudeSpace = dialog.UseAmplitudeSpace;
         compareDelayMs = dialog.CompareDelayMs;
         compareInvertPolarity = dialog.CompareInvertPolarity;
-        panel.BackColor = dialog.SelectedColor;
+        SetPanelColor(dialog.SelectedColor);
         strokeThickness = dialog.StrokeThickness;
         lineStyle = dialog.LineStyle;
         opacityPercent = dialog.OpacityPercent;
@@ -2078,7 +2129,7 @@ public sealed class Overlay
                 file.Offset,
                 (double)offsetControl.Minimum,
                 (double)offsetControl.Maximum);
-            panel.BackColor = Color.FromArgb(file.ColorArgb);
+            SetPanelColor(Color.FromArgb(file.ColorArgb));
         }
         finally
         {
@@ -2564,7 +2615,7 @@ public sealed class Overlay
         try
         {
             SetChecked(false);
-            panel.BackColor = defaultColor;
+            SetPanelColor(defaultColor);
             offsetControl.Value = defaultOffset;
         }
         finally
@@ -2575,6 +2626,15 @@ public sealed class Overlay
         SetAvailability(false);
         captureButton.Enabled = true;
         UpdateKindGlyph();
+    }
+
+    // The slot colour is the curve colour — random per panel and user-editable — so
+    // the name is drawn in whichever of black / white stays legible on top of it.
+    private void SetPanelColor(Color color)
+    {
+        panel.BackColor = color;
+        double luminance = (0.299 * color.R + 0.587 * color.G + 0.114 * color.B) / 255.0;
+        nameLabel.ForeColor = luminance > 0.55 ? Color.Black : Color.White;
     }
 
     // Shows the slot number plus a compact kind glyph: plain number for a

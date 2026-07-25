@@ -13,7 +13,7 @@ namespace Resonalyze;
 /// </summary>
 internal sealed partial class VirtualCrossoverGateDialog : Form
 {
-    private readonly ToolTip toolTip = new()
+    private readonly WrappingToolTip toolTip = new()
     {
         InitialDelay = 500,
         ReshowDelay = 150,

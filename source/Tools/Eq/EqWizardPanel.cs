@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using OxyPlot;
 using OxyPlot.Annotations;
 using OxyPlot.Axes;
@@ -42,7 +42,7 @@ public partial class EqWizardPanel : UserControl
     private const string QTip = "Band quality factor (Q) — higher Q is a narrower band.";
     private const string GainTip = "Band gain (dB). Positive boosts, negative cuts.";
 
-    private readonly ToolTip toolTip = new()
+    private readonly WrappingToolTip toolTip = new()
     {
         InitialDelay = 500,
         ReshowDelay = 150,

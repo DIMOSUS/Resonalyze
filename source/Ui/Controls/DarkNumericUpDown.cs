@@ -705,7 +705,19 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
             // A dialog's AcceptButton consumes Enter before the editor's KeyDown
             // ever fires; commit here so the accept handler reads the typed text
             // rather than the last committed value.
+            bool hadPendingEdit = HasPendingEditorText;
             CommitEditorText();
+
+            // The Enter that lands a typed number stops here. Letting it through as
+            // well would fire the dialog's default button in the same keystroke —
+            // in the Virtual DSP auto-setup that means running the whole crossover
+            // proposal and closing the window while the user was still filling in a
+            // field. A second Enter, with nothing pending, reaches the accept button
+            // as usual, so the keyboard route to OK survives.
+            if (hadPendingEdit)
+            {
+                return true;
+            }
         }
 
         return base.ProcessCmdKey(ref msg, keyData);
@@ -780,6 +792,14 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
             UpdateEditorText();
         }
     }
+
+    // True while the editor holds text that is not the committed value's own rendering:
+    // a half-typed number, an edited one, or something unparseable. Comparing against
+    // FormatValue is what UpdateEditorText writes, so an untouched field reads false.
+    private bool HasPendingEditorText =>
+        !suppressEditorSync &&
+        editor != null &&
+        !string.Equals(editor.Text, FormatValue(value), StringComparison.Ordinal);
 
     private bool TryParseEditorText(out decimal parsed) =>
         NumericTextParser.TryParse(editor.Text, CultureInfo.CurrentCulture, out parsed);
@@ -995,7 +1015,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     /// Assigns a tooltip to the control and its inner text editor so it shows
     /// regardless of whether the cursor is over the number or the spin buttons.
     /// </summary>
-    public void ApplyToolTip(ToolTip toolTip, string text)
+    public void ApplyToolTip(WrappingToolTip toolTip, string text)
     {
         ArgumentNullException.ThrowIfNull(toolTip);
         toolTip.SetToolTip(this, text);

@@ -15,7 +15,7 @@ namespace Resonalyze.Options
 {
     public partial class MeasurementOptions : Form
     {
-        private readonly ToolTip deviceToolTip = new();
+        private readonly WrappingToolTip deviceToolTip = new();
         // Raised the moment any calibration (microphone 0°/90° file or the SPL
         // anchor) is selected, captured, or cleared, so the host can apply and
         // persist it immediately instead of only when the panel is applied.

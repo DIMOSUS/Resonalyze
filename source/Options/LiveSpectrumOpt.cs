@@ -9,7 +9,7 @@ namespace Resonalyze.Options
             { 256, 512, 1024, 2048, 4096, 8192, 16384 };
         private static readonly int[] OverlapPercents = { 0, 50, 75 };
         private static readonly int[] CoherenceLimits = { 0, 10, 20, 25, 30, 40, 50 };
-        private readonly ToolTip toolTip = new();
+        private readonly WrappingToolTip toolTip = new();
 
         // The user's chosen analysis window and overlap, tracked independently of the
         // combos so they survive the periodic-pink override that forces the window to

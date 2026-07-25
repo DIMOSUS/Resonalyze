@@ -44,7 +44,7 @@ namespace Resonalyze
             opacityValueLabel = new Label();
             cancelButton = new Button();
             saveButton = new Button();
-            toolTip = new ToolTip(components);
+            toolTip = new WrappingToolTip(components);
             numericTimeOffset = new DarkNumericUpDown();
             labelTimeOffset = new Label();
             checkBoxInvPhase = new CheckBox();
@@ -479,7 +479,7 @@ namespace Resonalyze
         private Label opacityValueLabel;
         private Button cancelButton;
         private Button saveButton;
-        private ToolTip toolTip;
+        private WrappingToolTip toolTip;
         private DarkNumericUpDown numericTimeOffset;
         private Label labelTimeOffset;
         private CheckBox checkBoxInvPhase;

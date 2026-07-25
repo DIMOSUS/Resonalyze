@@ -5,7 +5,7 @@ namespace Resonalyze.Options
 {
     public partial class ACOpt : Form
     {
-        private readonly ToolTip toolTip = new();
+        private readonly WrappingToolTip toolTip = new();
 
         public ACOpt()
         {

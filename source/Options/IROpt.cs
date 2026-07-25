@@ -13,7 +13,7 @@ namespace Resonalyze.Options
 {
     public partial class IROpt : Form
     {
-        private readonly ToolTip toolTip = new();
+        private readonly WrappingToolTip toolTip = new();
 
         public IROpt()
         {

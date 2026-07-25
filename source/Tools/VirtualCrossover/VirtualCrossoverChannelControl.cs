@@ -308,7 +308,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
     /// block owns the descriptions of its own sub-controls, so the host no longer
     /// reaches through into each input to set them.
     /// </summary>
-    public void ApplyTooltips(ToolTip toolTip)
+    public void ApplyTooltips(WrappingToolTip toolTip)
     {
         ArgumentNullException.ThrowIfNull(toolTip);
         // The numeric fields register on their inner editor too (via ApplyToolTip) so

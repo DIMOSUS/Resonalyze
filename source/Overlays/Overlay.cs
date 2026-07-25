@@ -706,7 +706,7 @@ public sealed class Overlay
         private set
         {
             title = value;
-            nameLabel.Text = ShortenSlotName(value);
+            nameLabel.Text = OverlaySlotName.Shorten(value, Index);
             toolTip.SetToolTip(
                 nameLabel,
                 value.Length > 0 ? value : "Empty overlay slot");
@@ -2626,42 +2626,6 @@ public sealed class Overlay
         SetAvailability(false);
         captureButton.Enabled = true;
         UpdateKindGlyph();
-    }
-
-    // A captured or imported slot is titled "Overlay {Index}: …", and the panel
-    // already shows the slot number on its capture button, so both the "Overlay"
-    // lead-in and a leading number repeating this slot are dead weight in a label
-    // this narrow. A number that belongs to the name survives: only a whole leading
-    // token equal to this slot's own number is dropped, so slot 4 shortens
-    // "Overlay 4: Input Spectrum" to "Input Spectrum" but keeps "40 Hz notch".
-    private string ShortenSlotName(string title)
-    {
-        const string prefix = "Overlay";
-        string name = title.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-            ? title[prefix.Length..].TrimStart()
-            : title;
-
-        string number = Index.ToString();
-        if (!name.StartsWith(number, StringComparison.Ordinal))
-        {
-            return name;
-        }
-
-        string rest = name[number.Length..];
-        if (rest.Length == 0 || (rest[0] != ':' && !char.IsWhiteSpace(rest[0])))
-        {
-            return name;
-        }
-
-        rest = rest.TrimStart();
-        if (rest.StartsWith(':'))
-        {
-            rest = rest[1..].TrimStart();
-        }
-
-        // A title that is nothing but the slot number keeps it: an empty label
-        // would read as an empty slot.
-        return rest.Length > 0 ? rest : name;
     }
 
     // The slot colour is the curve colour — random per panel and user-editable — so

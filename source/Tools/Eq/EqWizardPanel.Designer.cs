@@ -102,7 +102,7 @@
             labelBands.AutoSize = true;
             labelBands.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelBands.ForeColor = Color.FromArgb(210, 214, 222);
-            labelBands.Location = new Point(9, 147);
+            labelBands.Location = new Point(9, 172);
             labelBands.Margin = new Padding(3);
             labelBands.Name = "labelBands";
             labelBands.Size = new Size(56, 15);
@@ -124,7 +124,7 @@
             // 
             darkComboBoxBands.BackColor = Color.FromArgb(55, 60, 72);
             darkComboBoxBands.ForeColor = Color.White;
-            darkComboBoxBands.Location = new Point(108, 145);
+            darkComboBoxBands.Location = new Point(108, 170);
             darkComboBoxBands.MinimumSize = new Size(36, 19);
             darkComboBoxBands.Name = "darkComboBoxBands";
             darkComboBoxBands.Size = new Size(80, 19);
@@ -166,7 +166,7 @@
             NumericGain.DecimalPlaces = 1;
             NumericGain.ForeColor = Color.White;
             NumericGain.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
-            NumericGain.Location = new Point(108, 170);
+            NumericGain.Location = new Point(108, 195);
             NumericGain.Maximum = new decimal(new int[] { 80, 0, 0, 0 });
             NumericGain.Minimum = new decimal(new int[] { 80, 0, 0, int.MinValue });
             NumericGain.MinimumSize = new Size(36, 19);
@@ -183,7 +183,7 @@
             labelGain.AutoSize = true;
             labelGain.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelGain.ForeColor = Color.FromArgb(210, 214, 222);
-            labelGain.Location = new Point(9, 172);
+            labelGain.Location = new Point(9, 197);
             labelGain.Margin = new Padding(3);
             labelGain.Name = "labelGain";
             labelGain.Size = new Size(48, 15);
@@ -353,7 +353,7 @@
             checkBoxBypass.AutoSize = true;
             checkBoxBypass.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxBypass.ForeColor = Color.FromArgb(210, 214, 222);
-            checkBoxBypass.Location = new Point(13, 195);
+            checkBoxBypass.Location = new Point(13, 220);
             checkBoxBypass.Name = "checkBoxBypass";
             checkBoxBypass.Size = new Size(62, 19);
             checkBoxBypass.TabIndex = 53;
@@ -476,7 +476,7 @@
             //
             buttonImport.FlatStyle = FlatStyle.Popup;
             buttonImport.ForeColor = Color.White;
-            buttonImport.Location = new Point(2, 221);
+            buttonImport.Location = new Point(2, 246);
             buttonImport.Name = "buttonImport";
             buttonImport.Size = new Size(87, 24);
             buttonImport.TabIndex = 57;
@@ -487,7 +487,7 @@
             // 
             buttonExport.FlatStyle = FlatStyle.Popup;
             buttonExport.ForeColor = Color.White;
-            buttonExport.Location = new Point(101, 221);
+            buttonExport.Location = new Point(101, 246);
             buttonExport.Name = "buttonExport";
             buttonExport.Size = new Size(87, 24);
             buttonExport.TabIndex = 58;

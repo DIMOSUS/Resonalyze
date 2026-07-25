@@ -108,6 +108,7 @@ public partial class EqWizardPanel : UserControl
         buttonOverlaySettings.Click += (_, _) => OpenTargetSettings();
         buttonImport.Click += (_, _) => ImportPeq();
         buttonExport.Click += (_, _) => ExportPeq();
+        buttonResetBands.Click += (_, _) => ResetBands();
         numericFromHz.ValueChanged += (_, _) => FrequencyBoundChanged(fromChanged: true);
         numericToHz.ValueChanged += (_, _) => FrequencyBoundChanged(fromChanged: false);
         numericGainMin.ValueChanged += (_, _) => GainBoundChanged(minChanged: true);
@@ -241,7 +242,8 @@ public partial class EqWizardPanel : UserControl
         SetTip(labelCalibration, comboBoxCalibration,
             "Microphone calibration applied to the source curve. \"Own\" re-uses the " +
             "correction stored with an imported curve; unavailable when the curve " +
-            "carries no uncalibrated reference (its calibration is already baked in).");
+            "arrived without one (a text import), where its calibration is already " +
+            "baked in and cannot be undone.");
         SetTip(labelSampleRate, comboBoxSampleRate,
             "Sample rate the fitted filters are realized at, and the rate written into " +
             "an exported profile. Locked to the source's own rate when it states one.");
@@ -251,10 +253,14 @@ public partial class EqWizardPanel : UserControl
             "EQ preamp (dB) applied on top of all bands. Usually negative to leave " +
             "headroom for boosts.");
         SetTip(labelBands, darkComboBoxBands, "Number of PEQ bands shown.");
+        SetTip(buttonResetBands,
+            "Clear the whole filter bank: every band back to its default frequency " +
+            "at Q 1 and 0 dB, preamp 0 dB, one active filter. The source, the target " +
+            "and the Auto Tune settings are kept.");
         SetTip(labelSmooth, comboBoxSmooth,
             "Smoothing of the source curve (1/N octave), used for display and Auto " +
-            "Tune. Unavailable for an imported curve that carries no unsmoothed " +
-            "reference, where it would compound the smoothing already applied.");
+            "Tune. Unavailable for an imported curve that was already smoothed when it " +
+            "was captured, or that never said — smoothing it again would compound it.");
         SetTip(checkBoxBypass,
             "Show the curves without the EQ applied (Source + EQ equals Source).");
         SetTip(labelGainMin, numericGainMin,
@@ -371,6 +377,10 @@ public partial class EqWizardPanel : UserControl
     private static double DefaultBandFrequencyHz(int index) =>
         IsoThirdOctaveCentersHz[
             Math.Clamp(index, 0, IsoThirdOctaveCentersHz.Length - 1)];
+
+    // The neutral Q a strip starts on, matching the designer's initial value for the
+    // field. Reset filters restores it, so the two must agree.
+    private const double DefaultBandQ = 1.0;
 
     // The Bands control sets how many strips are active; the remaining strips stay
     // visible but disabled and are excluded from the EQ curve and the stats.
@@ -844,6 +854,55 @@ public partial class EqWizardPanel : UserControl
         }
 
         return options;
+    }
+
+    // Puts the whole filter bank back to the state the panel starts in: every strip at
+    // its ISO third-octave home frequency, Q 1, gain 0, no preamp, one active band. The
+    // source, the target and the Auto Tune settings are deliberately untouched — this
+    // clears the tune, not the setup it was made against.
+    private void ResetBands()
+    {
+        // A tune can represent a lot of manual work and there is no undo here, so the
+        // one destructive button in the panel asks first.
+        if (MessageBox.Show(
+                FindForm(),
+                "Reset all EQ filters to their defaults?" +
+                Environment.NewLine + Environment.NewLine +
+                "Every band returns to its default frequency with Q 1 and 0 dB gain, " +
+                "the preamp returns to 0 dB, and the filter count returns to 1. The " +
+                "source curve, the target and the Auto Tune settings are kept.",
+                "EQ Wizard",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning) != DialogResult.Yes)
+        {
+            return;
+        }
+
+        suppressRedraw = true;
+        try
+        {
+            for (int index = 0; index < peqSlots.Count; index++)
+            {
+                PeqSlotControl slot = peqSlots[index];
+                slot.FrequencyInput.Value =
+                    slot.FrequencyInput.ClampValue(DefaultBandFrequencyHz(index));
+                slot.QInput.Value = slot.QInput.ClampValue(DefaultBandQ);
+                slot.GainInput.Value = slot.GainInput.ClampValue(0);
+            }
+
+            NumericGain.Value = NumericGain.ClampValue(0);
+            // Setting the selection fires SetActiveBandCount, which also drops a
+            // highlighted band that no longer exists.
+            darkComboBoxBands.SelectedIndex = 0;
+        }
+        finally
+        {
+            suppressRedraw = false;
+        }
+
+        DeselectBand();
+        RaiseSettingsChanged();
+        DrawSelectedCurves();
     }
 
     private void ApplyEqualizationCurve(EqualizationCurve curve)

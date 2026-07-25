@@ -130,8 +130,11 @@ internal sealed class EqWizardSourceResolver
     {
         // The slot's own offset is a display device for pulling curves apart on the plot;
         // equalization needs the level as measured, so it is deliberately not applied.
-        IReadOnlyList<SignalPoint> points = NormalizePoints(
-            file.Points.Select(point => new SignalPoint(point.X, point.Y)));
+        // The points-aligned correction rides along through normalization so it keeps
+        // pointing at the frequencies it was frozen on.
+        (IReadOnlyList<SignalPoint> points, double[] pointsCorrection) = NormalizePoints(
+            file.Points.Select(point => new SignalPoint(point.X, point.Y)),
+            file.PointsCalibrationCorrectionDb);
         IReadOnlyList<SignalPoint>? raw = file.RawSpectrum.Length >= 2
             ? file.RawSpectrum.Select(point => new SignalPoint(point.X, point.Y)).ToArray()
             : null;
@@ -144,6 +147,8 @@ internal sealed class EqWizardSourceResolver
             RawSpectrum = raw,
             OwnCalibrationCorrectionDb = file.RawCalibrationCorrectionDb.ToArray(),
             Points = points,
+            PointsCalibrationCorrectionDb = pointsCorrection,
+            CapturedSmoothingCode = file.CapturedSmoothingCode,
             Scale = file.CapturedMagnitudeScale,
             SampleRateHz = file.SampleRateHz,
             CurveKind = file.CapturedCurveKind
@@ -274,12 +279,33 @@ internal sealed class EqWizardSourceResolver
         IEnumerable<SignalPoint> points)
     {
         ArgumentNullException.ThrowIfNull(points);
+        return NormalizePoints(points, companion: null).Points;
+    }
 
-        var result = new List<SignalPoint>();
-        foreach (SignalPoint point in points
-            .Where(point => double.IsFinite(point.X) && point.X > 0 &&
-                !double.IsInfinity(point.Y))
-            .OrderBy(point => point.X))
+    /// <summary>
+    /// Normalizes the points together with a per-point companion array (the calibration
+    /// correction frozen on those very points), so reordering or dropping a point carries
+    /// its companion value along. Normalizing the two separately would let them shift
+    /// against each other and silently apply a correction at the wrong frequency. A
+    /// companion of a different length is not aligned to these points at all and is
+    /// discarded rather than guessed at.
+    /// </summary>
+    internal static (IReadOnlyList<SignalPoint> Points, double[] Companion) NormalizePoints(
+        IEnumerable<SignalPoint> points,
+        IReadOnlyList<double>? companion)
+    {
+        ArgumentNullException.ThrowIfNull(points);
+
+        List<SignalPoint> source = points as List<SignalPoint> ?? points.ToList();
+        bool hasCompanion = companion is { Count: > 0 } && companion.Count == source.Count;
+
+        var result = new List<SignalPoint>(source.Count);
+        var companionResult = new List<double>(hasCompanion ? source.Count : 0);
+        foreach ((SignalPoint point, int index) in source
+            .Select((point, index) => (point, index))
+            .Where(entry => double.IsFinite(entry.point.X) && entry.point.X > 0 &&
+                !double.IsInfinity(entry.point.Y))
+            .OrderBy(entry => entry.point.X))
         {
             if (result.Count > 0 && result[^1].X == point.X)
             {
@@ -287,9 +313,13 @@ internal sealed class EqWizardSourceResolver
             }
 
             result.Add(point);
+            if (hasCompanion)
+            {
+                companionResult.Add(companion![index]);
+            }
         }
 
-        return result;
+        return (result, companionResult.ToArray());
     }
 
     private static string DescribeSlot(OverlayFile file) =>

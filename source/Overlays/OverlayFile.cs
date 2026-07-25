@@ -120,6 +120,27 @@ public sealed class OverlayFile
     // Empty means no calibration or a legacy raw capture.
     public double[] RawCalibrationCorrectionDb { get; set; } = Array.Empty<double>();
 
+    // No-raw captures only (a dB SPL RTA or FR, which cannot store a re-smoothable raw
+    // spectrum): the microphone correction that was baked into the DRAWN Points, frozen
+    // per drawn point (so its length matches Points). It lets a consumer that equalizes
+    // the curve (the EQ Wizard) switch calibration exactly — the SPL correction is applied
+    // additively per frequency, so removing this and applying another is lossless — even
+    // though there is no raw spectrum. Its presence also marks the capture as one whose
+    // Points may be re-smoothed when it was taken unsmoothed. Empty for raw captures
+    // (which use RawCalibrationCorrectionDb) and for legacy files. Additive, so no file
+    // version bump.
+    public double[] PointsCalibrationCorrectionDb { get; set; } = Array.Empty<double>();
+
+    // The display smoothing already BAKED INTO Points at capture time, in the shared
+    // SpectrumSmoothing encoding (0 = none, N = 1/N octave, negative = psychoacoustic).
+    // Distinct from SmoothingInverseOctaves, which is this slot's own display setting
+    // applied ON TOP of Points. A raw capture renders its Points unsmoothed, so it stores
+    // 0; a no-raw capture (dB SPL) stores whatever its source mode was showing. A consumer
+    // that re-smooths the stored curve (the EQ Wizard) may only do so when this is 0 —
+    // smoothing an already-smoothed curve compounds it. Null in legacy files: unknown, so
+    // consumers must assume the curve may already be smoothed. Additive, no version bump.
+    public int? CapturedSmoothingCode { get; set; }
+
     // Sample rate of the measurement this slot was captured from. Carried so a
     // consumer that equalizes the stored curve (the EQ Wizard) can realize its
     // biquads at the rate the curve was measured at instead of assuming one.
@@ -427,6 +448,24 @@ public sealed class OverlayFile
         {
             throw new InvalidDataException(
                 "The raw calibration correction contains a non-finite value.");
+        }
+        if (PointsCalibrationCorrectionDb == null)
+        {
+            throw new InvalidDataException("The points calibration correction is invalid.");
+        }
+        // Frozen per drawn point, so it is only meaningful alongside the points it was
+        // measured on; a mismatched length would silently shift the correction in
+        // frequency.
+        if (PointsCalibrationCorrectionDb.Length != 0 &&
+            PointsCalibrationCorrectionDb.Length != Points.Length)
+        {
+            throw new InvalidDataException(
+                "The points calibration correction does not match the overlay points.");
+        }
+        if (PointsCalibrationCorrectionDb.Any(value => !double.IsFinite(value)))
+        {
+            throw new InvalidDataException(
+                "The points calibration correction contains a non-finite value.");
         }
         if (SampleRateHz is <= 0)
         {

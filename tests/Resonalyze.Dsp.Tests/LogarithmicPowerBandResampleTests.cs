@@ -396,6 +396,84 @@ public sealed class LogarithmicPowerBandResampleTests
         return accumulated;
     }
 
+    [Theory]
+    [InlineData(1.0 / 6.0, false)]
+    [InlineData(1.0 / 3.0, false)]
+    [InlineData(1.0, false)]
+    [InlineData(SpectrumSmoothing.PsychoacousticBaseInverseOctaves / 6.0, true)]
+    public void SmoothBandLevels_ReplaysExactlyWhatTheResamplerWouldHaveDrawn(
+        double smoothingOctaves,
+        bool psychoacoustic)
+    {
+        // A consumer that stored the FINISHED band levels (a captured dB SPL RTA overlay,
+        // and through it the EQ Wizard) has no raw spectrum left, but smoothing is a second
+        // pass over the band powers rather than part of the integration. Replaying it over
+        // the stored levels must therefore land on exactly the curve the analyzer would
+        // have drawn at that width — not merely something similar, because that curve is
+        // what the EQ is fitted against. This is the guard against the two drifting apart.
+        const int sampleRate = 48_000;
+        const int fftLength = 4_096;
+        var rng = new Random(11);
+        var amplitude = new double[fftLength / 2];
+        for (int i = 0; i < amplitude.Length; i++)
+        {
+            // Scatter plus a couple of narrow peaks, where smoothing differences show up.
+            amplitude[i] = 0.01 + (rng.NextDouble() * 0.02);
+            if (i is 300 or 301 or 900)
+            {
+                amplitude[i] = 0.5;
+            }
+        }
+
+        List<SignalPoint> Resample(double octaves, bool psycho) =>
+            DataHelper.LogarithmicPowerBandResample(
+                amplitude,
+                fftLength,
+                sampleRate,
+                windowEnbwBins: 1.5,
+                windowMainLobeBins: 3.0,
+                start: 20,
+                stop: 20_000,
+                steps: 1024,
+                smoothingOctaves: octaves,
+                psychoacoustic: psycho);
+
+        // What the analyzer draws at this width, versus the unsmoothed levels a capture
+        // stores, re-smoothed afterwards to the same width.
+        List<SignalPoint> drawn = Resample(smoothingOctaves, psychoacoustic);
+        List<SignalPoint> replayed = DataHelper.SmoothBandLevels(
+            Resample(0.0, false), smoothingOctaves, psychoacoustic);
+
+        Assert.Equal(drawn.Count, replayed.Count);
+        double worst = 0;
+        for (int i = 0; i < drawn.Count; i++)
+        {
+            Assert.Equal(drawn[i].X, replayed[i].X, 9);
+            worst = Math.Max(worst, Math.Abs(drawn[i].Y - replayed[i].Y));
+        }
+
+        Assert.True(worst < 1e-9, $"Replayed smoothing differs by up to {worst:0.#####} dB.");
+    }
+
+    [Fact]
+    public void SmoothBandLevels_KeepsUnmeasuredBandsAsGapsAndDoesNotSpreadThem()
+    {
+        var levels = new List<SignalPoint>();
+        for (int i = 0; i < 200; i++)
+        {
+            double f = 100 * Math.Pow(2, i / 40.0);
+            levels.Add(new SignalPoint(f, i == 100 ? double.NaN : 80));
+        }
+
+        List<SignalPoint> smoothed = DataHelper.SmoothBandLevels(levels, 1.0 / 3.0, false);
+
+        Assert.True(double.IsNaN(smoothed[100].Y));
+        // The gap contributes nothing, so its neighbours keep the surrounding level
+        // instead of being dragged toward a floor.
+        Assert.Equal(80, smoothed[99].Y, 6);
+        Assert.Equal(80, smoothed[101].Y, 6);
+    }
+
     private static float[] CreateSine(int length, int bin)
     {
         var samples = new float[length];

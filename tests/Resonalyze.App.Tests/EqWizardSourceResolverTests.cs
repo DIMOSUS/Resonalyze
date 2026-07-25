@@ -304,6 +304,119 @@ public sealed class EqWizardSourceResolverTests
             () => EqWizardSourceResolver.CreateFromTextCurve(curve, "target.txt"));
     }
 
+    // ------------------------------------- no-raw captures (dB SPL calibration/smoothing)
+
+    [Fact]
+    public void CreateFromOverlayFile_NoRawCapture_CarriesItsPointsCalibrationAndSmoothing()
+    {
+        // A dB SPL RTA has no raw spectrum, but the correction frozen onto its points and
+        // the smoothing it was taken under travel with it — which is what lets the wizard
+        // offer the calibration selector, and the smoothing one for an unsmoothed capture.
+        OverlayFile file = CreateCapturedSlot(1);
+        file.CapturedCurveKind = AnalysisCurveKind.InputSpectrum;
+        file.CapturedMagnitudeScale = MagnitudeScale.SoundPressureLevel;
+        file.Points = [new OverlayPoint(100, 80), new OverlayPoint(1_000, 78)];
+        file.PointsCalibrationCorrectionDb = [1.5, -2.0];
+        file.CapturedSmoothingCode = 0;
+
+        EqWizardCurveSource source = EqWizardSourceResolver.CreateFromOverlayFile(file);
+
+        Assert.Null(source.RawSpectrum);
+        Assert.Equal([1.5, -2.0], source.PointsCalibrationCorrectionDb);
+        Assert.True(source.HasOwnCalibration);
+        Assert.True(source.SupportsCalibration);
+        Assert.True(source.SupportsSmoothing);
+    }
+
+    [Fact]
+    public void CreateFromOverlayFile_NoRawCaptureTakenSmoothed_DoesNotOfferSmoothing()
+    {
+        // Its points already carry 1/6-octave smoothing; smoothing them again compounds it.
+        OverlayFile file = CreateCapturedSlot(1);
+        file.CapturedCurveKind = AnalysisCurveKind.InputSpectrum;
+        file.Points = [new OverlayPoint(100, 80), new OverlayPoint(1_000, 78)];
+        file.PointsCalibrationCorrectionDb = [0, 0];
+        file.CapturedSmoothingCode = 6;
+
+        EqWizardCurveSource source = EqWizardSourceResolver.CreateFromOverlayFile(file);
+
+        Assert.True(source.SupportsCalibration);
+        Assert.False(source.SupportsSmoothing);
+    }
+
+    [Fact]
+    public void CreateFromOverlayFile_UnsmoothedSplSweep_OffersCalibrationButNotSmoothing()
+    {
+        // A dB SPL SWEEP has no raw form here either, and its calibration can still be
+        // swapped. But its smoothing happens inside a Lanczos resample of linear
+        // amplitude, which cannot be replayed from the finished curve — so it is left
+        // unsmoothable rather than smoothed by a near-enough algorithm, which would feed
+        // Auto Tune a shape the measurement never had. Only the RTA's smoothing is a
+        // replayable second pass over stored band levels.
+        OverlayFile file = CreateCapturedSlot(1);
+        file.CapturedCurveKind = AnalysisCurveKind.Primary;
+        file.CapturedMagnitudeScale = MagnitudeScale.SoundPressureLevel;
+        file.Points = [new OverlayPoint(100, 80), new OverlayPoint(1_000, 78)];
+        file.PointsCalibrationCorrectionDb = [1.0, -1.0];
+        file.CapturedSmoothingCode = 0;
+
+        EqWizardCurveSource source = EqWizardSourceResolver.CreateFromOverlayFile(file);
+
+        Assert.True(source.SupportsCalibration);
+        Assert.False(source.SupportsSmoothing);
+    }
+
+    [Fact]
+    public void CreateFromOverlayFile_LegacyCaptureWithoutAnnotations_OffersNeither()
+    {
+        // A slot from before these fields existed says nothing: its calibration cannot be
+        // undone and its points may already be smoothed, so both selectors stay closed.
+        OverlayFile file = CreateCapturedSlot(1);
+        file.Points = [new OverlayPoint(100, 80), new OverlayPoint(1_000, 78)];
+
+        EqWizardCurveSource source = EqWizardSourceResolver.CreateFromOverlayFile(file);
+
+        Assert.False(source.HasOwnCalibration);
+        Assert.False(source.SupportsCalibration);
+        Assert.False(source.SupportsSmoothing);
+    }
+
+    [Fact]
+    public void CreateFromOverlayFile_DroppedPointsTakeTheirCorrectionWithThem()
+    {
+        // Normalization reorders and drops points (a duplicate frequency here). If the
+        // correction were normalized separately it would shift by one and be applied at
+        // the wrong frequencies — a silent mis-calibration.
+        OverlayFile file = CreateCapturedSlot(1);
+        file.Points =
+        [
+            new OverlayPoint(1_000, 78),
+            new OverlayPoint(100, 80),
+            new OverlayPoint(100, 99)   // duplicate frequency: dropped
+        ];
+        file.PointsCalibrationCorrectionDb = [3.0, 1.0, 9.0];
+
+        EqWizardCurveSource source = EqWizardSourceResolver.CreateFromOverlayFile(file);
+
+        Assert.Equal([100, 1_000], source.Points.Select(point => point.X));
+        // 100 Hz keeps ITS correction (1.0) and 1 kHz keeps its own (3.0).
+        Assert.Equal([1.0, 3.0], source.PointsCalibrationCorrectionDb);
+    }
+
+    [Fact]
+    public void CreateFromOverlayFile_MismatchedCorrectionIsDiscarded()
+    {
+        // Not aligned to these points, so it cannot be trusted to name their frequencies.
+        OverlayFile file = CreateCapturedSlot(1);
+        file.Points = [new OverlayPoint(100, 80), new OverlayPoint(1_000, 78)];
+        file.PointsCalibrationCorrectionDb = [1.0];
+
+        EqWizardCurveSource source = EqWizardSourceResolver.CreateFromOverlayFile(file);
+
+        Assert.Empty(source.PointsCalibrationCorrectionDb);
+        Assert.False(source.SupportsCalibration);
+    }
+
     // ------------------------------------------------------------- point hygiene
 
     [Fact]

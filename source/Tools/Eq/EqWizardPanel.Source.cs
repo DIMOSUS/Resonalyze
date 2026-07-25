@@ -351,7 +351,7 @@ public partial class EqWizardPanel
     //  - a curve with no uncalibrated reference cannot be re-calibrated at all (Off).
     private EqWizardCalibrationMode ChooseCalibrationMode(EqWizardCurveSource source)
     {
-        if (source.RawSpectrum != null)
+        if (source.HasOwnCalibration)
         {
             return EqWizardCalibrationMode.Own;
         }
@@ -421,13 +421,19 @@ public partial class EqWizardPanel
     // An imported curve is already a finished response. When its uncalibrated reference
     // was stored it is re-rendered exactly the way the mode it came from would — same
     // resampler, so the mode's smoothing reproduces the on-screen reference. Without that
-    // reference (a dB SPL RTA, a text curve) the stored display points are the only
-    // truth and are used as-is.
+    // reference (a dB SPL capture) the curve's own points are the reference: the
+    // correction frozen onto them comes back out, the width applies on their own grid, and
+    // the chosen correction goes on instead. A curve that declared neither (a text import,
+    // a legacy slot) has nothing to undo and is drawn as stored.
     private IReadOnlyList<SignalPoint> ComputeImportedCurve(EqWizardCurveSource source)
     {
         if (source.RawSpectrum is not { Count: >= 2 } raw)
         {
-            return source.Points;
+            return EqWizardImportedCurve.Render(
+                source.Points,
+                source.PointsCalibrationCorrectionDb,
+                ResolvePointsCalibrationCorrection(source),
+                source.SupportsSmoothing ? SourceSmoothingInverseOctaves : 0);
         }
 
         return RawCurveRenderer.Render(
@@ -435,6 +441,20 @@ public partial class EqWizardPanel
             ResolveCurveCalibrationCorrection(source),
             SourceSmoothingInverseOctaves);
     }
+
+    // The same choice as ResolveCurveCalibrationCorrection, but frozen on the curve's own
+    // points instead of the raw output grid — the only frequencies a no-raw capture has.
+    private IReadOnlyList<double> ResolvePointsCalibrationCorrection(
+        EqWizardCurveSource source) => calibrationMode switch
+        {
+            EqWizardCalibrationMode.Own => source.PointsCalibrationCorrectionDb,
+            EqWizardCalibrationMode.Degrees0 or EqWizardCalibrationMode.Degrees90 =>
+                EqWizardImportedCurve.SampleCorrection(
+                    calibrationResolver?.Invoke(
+                        EqWizardCalibration.ToMicrophoneMode(calibrationMode)),
+                    source.Points),
+            _ => Array.Empty<double>()
+        };
 
     // The correction subtracted after smoothing: none, the one frozen at capture, or a
     // configured profile re-frozen on the same output grid.
@@ -750,7 +770,7 @@ public partial class EqWizardPanel
             new(EqWizardCalibrationMode.Off, "Off")
         };
 
-        if (loadedSource is { RawSpectrum: not null })
+        if (loadedSource is { HasOwnCalibration: true })
         {
             options.Add(new EqWizardCalibrationOption(
                 EqWizardCalibrationMode.Own, "Own (as captured)"));

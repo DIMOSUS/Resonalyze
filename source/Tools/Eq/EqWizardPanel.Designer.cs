@@ -65,6 +65,7 @@
             labelSampleRate = new Label();
             buttonImport = new Button();
             buttonExport = new Button();
+            buttonResetBands = new Button();
             (NumericTargetOffset).BeginInit();
             (NumericGain).BeginInit();
             (numericToHz).BeginInit();
@@ -493,14 +494,26 @@
             buttonExport.TabIndex = 58;
             buttonExport.Text = "Export";
             buttonExport.UseVisualStyleBackColor = true;
-            // 
+            //
+            // buttonResetBands
+            //
+            buttonResetBands.FlatStyle = FlatStyle.Popup;
+            buttonResetBands.ForeColor = Color.White;
+            buttonResetBands.Location = new Point(2, 275);
+            buttonResetBands.Name = "buttonResetBands";
+            buttonResetBands.Size = new Size(186, 24);
+            buttonResetBands.TabIndex = 59;
+            buttonResetBands.Text = "Reset filters";
+            buttonResetBands.UseVisualStyleBackColor = true;
+            //
             // EqWizardPanel
-            // 
+            //
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             AutoScroll = true;
             BackColor = Color.FromArgb(40, 44, 54);
             BorderStyle = BorderStyle.FixedSingle;
+            Controls.Add(buttonResetBands);
             Controls.Add(buttonExport);
             Controls.Add(buttonImport);
             Controls.Add(labelCalibration);
@@ -571,5 +584,6 @@
         private Label labelSmooth;
         private Button buttonImport;
         private Button buttonExport;
+        private Button buttonResetBands;
     }
 }

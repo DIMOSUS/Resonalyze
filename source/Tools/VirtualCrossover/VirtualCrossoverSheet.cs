@@ -77,18 +77,26 @@ internal static class VirtualCrossoverSheet
     /// "(mono)" section, a stereo pair prints its left and right sides
     /// separately.
     /// </summary>
+    // The side suffixes a section heading carries. Spelled out rather than "L"/"R":
+    // a printed sheet is read in a car, often upside down on a phone. Named constants
+    // because consumers switch on the suffix, and a literal would silently stop matching
+    // the moment the wording changed.
+    internal const string LeftSuffix = " Left";
+    internal const string RightSuffix = " Right";
+    internal const string MonoSuffix = " (mono)";
+
     internal static IEnumerable<(VirtualCrossoverChannelSettings Settings, string SideSuffix)>
         SideSections(VirtualCrossoverChannelPairSettings pair)
     {
         ArgumentNullException.ThrowIfNull(pair);
         if (pair.Mono)
         {
-            yield return (pair.Left, " (mono)");
+            yield return (pair.Left, MonoSuffix);
             yield break;
         }
 
-        yield return (pair.Left, " L");
-        yield return (pair.Right, " R");
+        yield return (pair.Left, LeftSuffix);
+        yield return (pair.Right, RightSuffix);
     }
 
     /// <summary>

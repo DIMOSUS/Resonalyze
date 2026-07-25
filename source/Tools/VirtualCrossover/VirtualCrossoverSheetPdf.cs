@@ -208,14 +208,10 @@ internal static class VirtualCrossoverSheetPdf
             return;
         }
 
-        Paragraph paragraph = sheet.Section.AddParagraph(caption);
-        paragraph.Format.Font.Bold = true;
-        paragraph.Format.Font.Size = 12;
-        paragraph.Format.SpaceBefore = Unit.FromMillimeter(2);
-        // A caption stranded at the foot of a page would leave its cards looking like
-        // they belong to the channel above.
-        paragraph.Format.KeepWithNext = true;
-        sheet.AddFilterCards(channel.PeqBands);
+        // The caption goes INSIDE the card table as its heading row, so it repeats when a
+        // long bank breaks across pages; a paragraph above the table would name only the
+        // first page and leave the rest looking like the previous channel's filters.
+        sheet.AddFilterCards(channel.PeqBands, caption);
     }
 
     // Binds a value table into one block so a page break cannot strand the crossover and

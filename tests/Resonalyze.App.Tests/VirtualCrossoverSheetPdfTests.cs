@@ -96,6 +96,49 @@ public sealed class VirtualCrossoverSheetPdfTests
     }
 
     [Fact]
+    public void Build_PeqCaption_IsARepeatingHeadingRowOfTheCardTable()
+    {
+        // A full bank is 32 filters — eight card rows — so the grid can break across
+        // pages. A caption in a paragraph above the table would name only the first page
+        // and leave the rest looking like the previous channel's filters. Only a heading
+        // row is repeated by MigraDoc on every page a table spans, so the caption must
+        // live INSIDE the card table as one.
+        var project = new VirtualCrossoverProjectFile();
+        project.Pairs[0].Mono = true;
+        project.Pairs[0].Left.SourceFilePath = "sub.json";
+        project.Pairs[0].Left.DisplayName = "Sub";
+        for (int i = 0; i < EqualizationCurve.MaxBandCount; i++)
+        {
+            project.Pairs[0].Left.PeqBands.Add(new PeqBand(100 + (i * 100), 2.0, -1.0));
+        }
+
+        using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(project, null, 48_000);
+
+        Table cardTable = CardTables(sheet.Document).Single();
+        Row caption = cardTable.Rows[0];
+        Assert.Contains("Channel A (mono) — PEQ", CellText(caption.Cells[0]));
+        Assert.True(caption.HeadingFormat, "The caption row does not repeat across pages.");
+        // Spans the whole grid, and cannot be left stranded above its first cards.
+        Assert.Equal(cardTable.Columns.Count - 1, caption.Cells[0].MergeRight);
+        Assert.True(caption.KeepWith >= 1);
+        // The bank really is long enough to break: eight card rows plus the caption.
+        Assert.Equal(9, cardTable.Rows.Count);
+    }
+
+    // The filter-card grid is the four-column table; the value tables are one or three.
+    private static IEnumerable<Table> CardTables(Document document)
+    {
+        DocumentElements elements = document.LastSection.Elements;
+        for (int i = 0; i < elements.Count; i++)
+        {
+            if (elements[i] is Table { Columns.Count: 4 } table)
+            {
+                yield return table;
+            }
+        }
+    }
+
+    [Fact]
     public void Build_SingleChannelSection_CaptionsItsPeqCards()
     {
         // The one-sided layout used to drop the filter cards straight after the table

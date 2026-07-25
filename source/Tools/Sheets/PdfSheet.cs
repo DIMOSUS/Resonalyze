@@ -77,7 +77,15 @@ internal sealed class PdfSheet : IDisposable
         image.LockAspectRatio = true;
     }
 
-    public void AddFilterCards(IReadOnlyList<PeqBand> bands)
+    /// <summary>
+    /// Lays the bands out as a grid of filter cards. An optional
+    /// <paramref name="caption"/> is added as the table's HEADING row rather than as a
+    /// paragraph above it: a full bank is 32 filters — eight rows — so the grid really can
+    /// break across pages, and only a heading row is repeated on each of them. A caption
+    /// left outside the table would name the first page and leave the rest anonymous,
+    /// which on a sheet holding several channels reads as the wrong channel's filters.
+    /// </summary>
+    public void AddFilterCards(IReadOnlyList<PeqBand> bands, string? caption = null)
     {
         if (bands.Count == 0)
         {
@@ -90,6 +98,20 @@ internal sealed class PdfSheet : IDisposable
             Column cardColumn = table.AddColumn(Unit.FromCentimeter(4.3));
             cardColumn.LeftPadding = Unit.FromMillimeter(2.5);
             cardColumn.RightPadding = Unit.FromMillimeter(2.5);
+        }
+
+        if (!string.IsNullOrWhiteSpace(caption))
+        {
+            Row captionRow = table.AddRow();
+            captionRow.HeadingFormat = true;
+            // Never leave the caption alone at the foot of a page.
+            captionRow.KeepWith = 1;
+            captionRow.TopPadding = Unit.FromMillimeter(2);
+            captionRow.Cells[0].MergeRight = FilterCardColumns - 1;
+
+            Paragraph captionParagraph = captionRow.Cells[0].AddParagraph(caption);
+            captionParagraph.Format.Font.Bold = true;
+            captionParagraph.Format.Font.Size = 12;
         }
 
         Row? row = null;

@@ -75,7 +75,8 @@ internal static class VirtualCrossoverSheetPdf
                 if (channel.HasSource)
                 {
                     participating.Add(
-                        (i, sideSuffix, sideSuffix == " R", channel));
+                        (i, sideSuffix,
+                         sideSuffix == VirtualCrossoverSheet.RightSuffix, channel));
                 }
             }
         }
@@ -131,8 +132,8 @@ internal static class VirtualCrossoverSheetPdf
         }
 
         Row header = table.AddRow();
-        header.Cells[1].AddParagraph("L").Format.Font.Bold = true;
-        header.Cells[2].AddParagraph("R").Format.Font.Bold = true;
+        header.Cells[1].AddParagraph("Left").Format.Font.Bold = true;
+        header.Cells[2].AddParagraph("Right").Format.Font.Bold = true;
 
         AddPairRow(table, "Source", left.DisplayName, right.DisplayName);
         AddPairRow(table, "Gain",
@@ -143,15 +144,20 @@ internal static class VirtualCrossoverSheetPdf
         AddPairRow(table, "Crossover",
             VirtualCrossoverSheet.DescribeCrossover(left),
             VirtualCrossoverSheet.DescribeCrossover(right));
+        if (HasAllPass(left) || HasAllPass(right))
+        {
+            AddPairRow(table, "All-pass", AllPassText(left), AllPassText(right));
+        }
         if (HasPeq(left) || HasPeq(right))
         {
             AddPairRow(table, "PEQ", PeqSummary(left), PeqSummary(right));
         }
 
-        AddPeqCards(
-            sheet, $"PEQ {VirtualCrossoverSheet.ChannelName(index)} L", left);
-        AddPeqCards(
-            sheet, $"PEQ {VirtualCrossoverSheet.ChannelName(index)} R", right);
+        KeepTogether(table);
+
+        string channelName = VirtualCrossoverSheet.ChannelName(index);
+        AddPeqCards(sheet, $"Channel {channelName} Left — PEQ", left);
+        AddPeqCards(sheet, $"Channel {channelName} Right — PEQ", right);
     }
 
     // The value strings shared by the pair table and the single-channel
@@ -163,14 +169,32 @@ internal static class VirtualCrossoverSheetPdf
     private static string PolarityText(VirtualCrossoverChannelSettings channel) =>
         channel.InvertPolarity ? "Inverted" : "Normal";
 
+    private static bool HasAllPass(VirtualCrossoverChannelSettings channel) =>
+        channel.AllPassType != AllPassType.Off;
+
+    private static string AllPassText(VirtualCrossoverChannelSettings channel) =>
+        HasAllPass(channel)
+            ? VirtualCrossoverSheet.DescribeAllPass(channel)
+            : "—";
+
     private static bool HasPeq(VirtualCrossoverChannelSettings channel) =>
         channel.PeqBands.Count > 0 || channel.PeqPreampDb != 0;
 
-    private static string PeqSummary(VirtualCrossoverChannelSettings channel) =>
-        HasPeq(channel)
-            ? $"{channel.PeqSourceName ?? "custom"}, " +
-              $"preamp {Signed(channel.PeqPreampDb)} dB"
-            : "—";
+    // Names the profile, how many filters it holds and its preamp — the three things
+    // needed to check a channel against the DSP being typed into, without counting cards.
+    private static string PeqSummary(VirtualCrossoverChannelSettings channel)
+    {
+        if (!HasPeq(channel))
+        {
+            return "—";
+        }
+
+        string filters = channel.PeqBands.Count == 1
+            ? "1 filter"
+            : $"{channel.PeqBands.Count} filters";
+        return $"{channel.PeqSourceName ?? "custom"} · {filters} · " +
+            $"preamp {Signed(channel.PeqPreampDb)} dB";
+    }
 
     // The pair table names each side's PEQ in one summary row; the band cards
     // print below it per side, captioned, so the two sides cannot be mixed up.
@@ -188,7 +212,20 @@ internal static class VirtualCrossoverSheetPdf
         paragraph.Format.Font.Bold = true;
         paragraph.Format.Font.Size = 12;
         paragraph.Format.SpaceBefore = Unit.FromMillimeter(2);
+        // A caption stranded at the foot of a page would leave its cards looking like
+        // they belong to the channel above.
+        paragraph.Format.KeepWithNext = true;
         sheet.AddFilterCards(channel.PeqBands);
+    }
+
+    // Binds a value table into one block so a page break cannot strand the crossover and
+    // PEQ rows on the next page, away from the channel heading that names them.
+    private static void KeepTogether(Table table)
+    {
+        if (table.Rows.Count > 1)
+        {
+            table.Rows[0].KeepWith = table.Rows.Count - 1;
+        }
     }
 
     private static void AddPairRow(
@@ -224,12 +261,21 @@ internal static class VirtualCrossoverSheetPdf
         AddRow(table, "Delay", DelayText(channel));
         AddRow(table, "Polarity", PolarityText(channel));
         AddRow(table, "Crossover", VirtualCrossoverSheet.DescribeCrossover(channel));
+        if (HasAllPass(channel))
+        {
+            AddRow(table, "All-pass", AllPassText(channel));
+        }
         if (HasPeq(channel))
         {
             AddRow(table, "PEQ", PeqSummary(channel));
         }
 
-        sheet.AddFilterCards(channel.PeqBands);
+        KeepTogether(table);
+        // Captioned like the pair layout, so a page of cards always says whose they are.
+        AddPeqCards(
+            sheet,
+            $"Channel {VirtualCrossoverSheet.ChannelName(index)}{sideSuffix} — PEQ",
+            channel);
     }
 
     // The section heading and the label-column value table shared by the pair
@@ -241,6 +287,8 @@ internal static class VirtualCrossoverSheetPdf
         heading.Format.Font.Size = 15;
         heading.Format.SpaceBefore = Unit.FromMillimeter(5);
         heading.Format.SpaceAfter = Unit.FromMillimeter(1);
+        // Never break between a channel heading and the values it introduces.
+        heading.Format.KeepWithNext = true;
     }
 
     private static Table AddValueTable(Section section)

@@ -56,8 +56,16 @@ public sealed class VirtualCrossoverSheetTests
         Assert.Contains("woofer-peq.txt, preamp -1.5 dB", text);
         Assert.Contains("Filter 1: ON PK Fc 120 Hz Gain -4.0 dB Q 2.0", text);
 
-        Assert.Contains("Channel B L — tweeter.json", text);
-        Assert.Contains("Channel B R — tweeter R.json", text);
+        Assert.Contains("Channel B Left — tweeter.json", text);
+        Assert.Contains("Channel B Right — tweeter R.json", text);
+        // The suffixes are constants because the PDF matches on them to decide which
+        // graph traces are dashed; a literal would stop matching if the wording changed.
+        Assert.Equal(
+            VirtualCrossoverSheet.RightSuffix,
+            VirtualCrossoverSheet
+                .SideSections(new VirtualCrossoverChannelPairSettings())
+                .Last()
+                .SideSuffix);
         Assert.Contains("0.68 ms", text);
         Assert.Contains("High-pass Butterworth 18 dB/oct @ 2000 Hz", text);
         Assert.Contains("Normal", text);

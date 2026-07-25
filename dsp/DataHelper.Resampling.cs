@@ -453,39 +453,142 @@ namespace Resonalyze.Dsp
                 return output;
             }
 
-            var prefix = new double[steps + 1];
+            double[] smoothedAmplitudes = SmoothBandPowersToAmplitudes(
+                bandPowers, frequencies, octavesPerStep, smoothingHalfSteps, psychoacoustic);
             for (int i = 0; i < steps; i++)
             {
-                prefix[i + 1] = prefix[i] + bandPowers[i];
+                output.Add(new SignalPoint(
+                    frequencies[i],
+                    AmplitudeToDecibels(smoothedAmplitudes[i])));
+            }
+
+            return output;
+        }
+
+        /// <summary>
+        /// Re-applies this analyzer's display smoothing to band levels it already produced
+        /// — the finished dB curve of a dB SPL RTA, on the very grid it was drawn on.
+        /// </summary>
+        /// <remarks>
+        /// A consumer that stores such a curve (an overlay slot, and through it the EQ
+        /// Wizard) has no raw spectrum to go back to, but the smoothing is a SECOND PASS
+        /// over the band powers, not part of the integration — so it can be replayed
+        /// exactly. It shares its core with <see cref="LogarithmicPowerBandResample"/>,
+        /// which is the point: a level-preserving mean of linear POWER, not of decibels,
+        /// with the same window and the same psychoacoustic cubic mean, so "1/6 octave"
+        /// means the same thing in both places and cannot drift apart later.
+        /// A non-finite level marks a band the analyzer could not measure: it is passed
+        /// through and excluded from its neighbours' means, so gaps neither spread nor fill.
+        /// Points must be ascending and logarithmically spaced, as that grid is.
+        /// </remarks>
+        public static List<SignalPoint> SmoothBandLevels(
+            IReadOnlyList<SignalPoint> bandLevelsDb,
+            double smoothingOctaves,
+            bool psychoacoustic)
+        {
+            ArgumentNullException.ThrowIfNull(bandLevelsDb);
+
+            int steps = bandLevelsDb.Count;
+            var result = new List<SignalPoint>(steps);
+            if (steps < 2 || bandLevelsDb[0].X <= 0 || bandLevelsDb[^1].X <= bandLevelsDb[0].X)
+            {
+                result.AddRange(bandLevelsDb);
+                return result;
+            }
+
+            double octavesPerStep =
+                Math.Log2(bandLevelsDb[^1].X / bandLevelsDb[0].X) / (steps - 1);
+            int smoothingHalfSteps = smoothingOctaves > 0.0 && octavesPerStep > 0.0
+                ? (int)Math.Round(smoothingOctaves * 0.5 / octavesPerStep)
+                : 0;
+            // Matches the resampler, which also leaves the levels alone when the requested
+            // width does not reach a whole grid step.
+            if (smoothingHalfSteps <= 0)
+            {
+                result.AddRange(bandLevelsDb);
+                return result;
+            }
+
+            var bandPowers = new double[steps];
+            var frequencies = new double[steps];
+            for (int i = 0; i < steps; i++)
+            {
+                frequencies[i] = bandLevelsDb[i].X;
+                // 10^(dB/10) is the power a level of that many decibels stands for; a gap
+                // stays a gap.
+                bandPowers[i] = double.IsFinite(bandLevelsDb[i].Y)
+                    ? Math.Pow(10.0, bandLevelsDb[i].Y / 10.0)
+                    : double.NaN;
+            }
+
+            double[] smoothedAmplitudes = SmoothBandPowersToAmplitudes(
+                bandPowers, frequencies, octavesPerStep, smoothingHalfSteps, psychoacoustic);
+            for (int i = 0; i < steps; i++)
+            {
+                result.Add(new SignalPoint(
+                    frequencies[i],
+                    double.IsFinite(smoothedAmplitudes[i])
+                        ? AmplitudeToDecibels(smoothedAmplitudes[i])
+                        : double.NaN));
+            }
+
+            return result;
+        }
+
+        // The display smoothing itself: a level-preserving mean of band POWERS returned as
+        // amplitudes. Shared so the live resampler and a replay over stored levels are the
+        // same algorithm by construction. Bands with a non-finite power are excluded from
+        // every mean and stay non-finite in the result.
+        private static double[] SmoothBandPowersToAmplitudes(
+            double[] bandPowers,
+            double[] frequencies,
+            double octavesPerStep,
+            int smoothingHalfSteps,
+            bool psychoacoustic)
+        {
+            int steps = bandPowers.Length;
+            var result = new double[steps];
+
+            // Prefix sums carry a COUNT as well as a total, so a gap simply does not
+            // contribute; with no gaps the count is the plain window width and the mean is
+            // identical to a straight prefix-sum average.
+            var powerPrefix = new double[steps + 1];
+            var countPrefix = new int[steps + 1];
+            for (int i = 0; i < steps; i++)
+            {
+                bool measured = double.IsFinite(bandPowers[i]);
+                powerPrefix[i + 1] = powerPrefix[i] + (measured ? bandPowers[i] : 0.0);
+                countPrefix[i + 1] = countPrefix[i] + (measured ? 1 : 0);
             }
 
             for (int i = 0; i < steps; i++)
             {
-                double smoothedAmplitude;
+                if (!double.IsFinite(bandPowers[i]))
+                {
+                    result[i] = double.NaN;
+                    continue;
+                }
+
                 if (psychoacoustic)
                 {
-                    smoothedAmplitude = PsychoacousticPowerCubicMean(
+                    result[i] = PsychoacousticPowerCubicMean(
                         bandPowers,
                         i,
                         SpectrumSmoothing.PsychoacousticOctaves(frequencies[i]),
                         octavesPerStep);
-                }
-                else
-                {
-                    int lowIndex = Math.Max(0, i - smoothingHalfSteps);
-                    int highIndex = Math.Min(steps - 1, i + smoothingHalfSteps);
-                    double mean =
-                        (prefix[highIndex + 1] - prefix[lowIndex]) /
-                        (highIndex - lowIndex + 1);
-                    smoothedAmplitude = Math.Sqrt(mean);
+                    continue;
                 }
 
-                output.Add(new SignalPoint(
-                    frequencies[i],
-                    AmplitudeToDecibels(smoothedAmplitude)));
+                int lowIndex = Math.Max(0, i - smoothingHalfSteps);
+                int highIndex = Math.Min(steps - 1, i + smoothingHalfSteps);
+                int count = countPrefix[highIndex + 1] - countPrefix[lowIndex];
+                double mean = count > 0
+                    ? (powerPrefix[highIndex + 1] - powerPrefix[lowIndex]) / count
+                    : bandPowers[i];
+                result[i] = Math.Sqrt(mean);
             }
 
-            return output;
+            return result;
         }
 
         private static double PsychoacousticPowerCubicMean(
@@ -508,6 +611,13 @@ namespace Resonalyze.Dsp
             double weightedCubeSum = 0.0;
             for (int index = firstIndex; index <= lastIndex; index++)
             {
+                // A band the analyzer could not measure contributes nothing rather than
+                // poisoning the mean; a live resample never has one.
+                if (!double.IsFinite(bandPowers[index]))
+                {
+                    continue;
+                }
+
                 double normalized = (index - centerIndex) / sigmaSteps;
                 double absoluteNormalized = Math.Abs(normalized);
                 if (absoluteNormalized >= GaussianRadiusSigma)

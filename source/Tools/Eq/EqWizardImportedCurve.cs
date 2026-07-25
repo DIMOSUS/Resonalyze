@@ -3,17 +3,23 @@ using Resonalyze.Dsp;
 namespace Resonalyze;
 
 /// <summary>
-/// Re-renders an imported curve that has NO raw form — a dB SPL RTA or frequency response,
-/// whose band levels cannot be re-gridded back to a raw spectrum without inventing data.
+/// Re-renders an imported curve that has NO raw form — a dB SPL capture, whose band levels
+/// cannot be re-gridded back to a raw spectrum without inventing data.
 /// </summary>
 /// <remarks>
 /// Such a curve is not a dead end: these modes apply the microphone correction ADDITIVELY
 /// per frequency, so the correction frozen at capture can be subtracted back out exactly
 /// and another applied in its place. The order mirrors the primary frequency-response path
-/// — uncalibrate, smooth, then calibrate — so a curve re-smoothed here matches what the
-/// measuring mode would have drawn at that width. Everything happens on the curve's OWN
+/// — uncalibrate, smooth, then calibrate. Everything happens on the curve's OWN
 /// frequencies: no resampling, so the display range is never extrapolated beyond the bands
 /// the analyzer actually resolved.
+/// <para>
+/// Smoothing is delegated to <see cref="DataHelper.SmoothBandLevels"/>, which shares its
+/// core with the RTA's own resampler. Re-smoothing with a merely similar window would not
+/// do: this curve goes into Auto Tune, and a mean taken in the wrong domain or over the
+/// wrong window suppresses narrow peaks differently from the analyzer, so the fit would
+/// chase a shape the measurement never had at that width.
+/// </para>
 /// </remarks>
 internal static class EqWizardImportedCurve
 {
@@ -29,8 +35,7 @@ internal static class EqWizardImportedCurve
         IReadOnlyList<SignalPoint> points,
         IReadOnlyList<double> capturedCorrectionDb,
         IReadOnlyList<double> targetCorrectionDb,
-        int smoothingCode,
-        MagnitudeAveraging averaging = MagnitudeAveraging.Power)
+        int smoothingCode)
     {
         ArgumentNullException.ThrowIfNull(points);
         ArgumentNullException.ThrowIfNull(capturedCorrectionDb);
@@ -47,7 +52,7 @@ internal static class EqWizardImportedCurve
         // Back to the uncalibrated level the analyzer measured. A NaN (a band below the
         // measurement threshold) stays NaN through every step, so gaps are neither filled
         // nor spread.
-        var working = new OverlayPoint[points.Count];
+        var working = new SignalPoint[points.Count];
         for (int i = 0; i < working.Length; i++)
         {
             double value = points[i].Y;
@@ -56,32 +61,28 @@ internal static class EqWizardImportedCurve
                 value += capturedCorrectionDb[i];
             }
 
-            working[i] = new OverlayPoint(points[i].X, value);
+            working[i] = new SignalPoint(points[i].X, value);
         }
 
-        if (smooths)
-        {
-            // The overlay smoother works in place on these very frequencies, so the curve
-            // keeps its own band grid. Magnitude semantics: this path only ever carries a
-            // magnitude response, which is what the psychoacoustic width is defined for.
-            // The averaging domain is the source analyzer's, not the overlay display's —
-            // averaging dB directly is a geometric mean and would suppress narrow peaks
-            // harder than the mode that drew the curve, feeding Auto Tune a shape the
-            // measurement never had.
-            working = OverlayMath.SmoothByOctaves(
-                working, smoothingCode, psychoacousticMagnitude: true, averaging);
-        }
+        IReadOnlyList<SignalPoint> smoothed = smooths
+            // The analyzer's own second pass, replayed over its own band levels on their
+            // own grid — same window, same power-domain mean, same psychoacoustic form.
+            ? DataHelper.SmoothBandLevels(
+                working,
+                SpectrumSmoothing.SmoothingOctaves(smoothingCode),
+                SpectrumSmoothing.IsPsychoacoustic(smoothingCode))
+            : working;
 
         var result = new SignalPoint[points.Count];
         for (int i = 0; i < result.Length; i++)
         {
-            double value = working[i].Y;
+            double value = smoothed[i].Y;
             if (hasTarget)
             {
                 value -= targetCorrectionDb[i];
             }
 
-            result[i] = new SignalPoint(working[i].X, value);
+            result[i] = new SignalPoint(smoothed[i].X, value);
         }
 
         return result;

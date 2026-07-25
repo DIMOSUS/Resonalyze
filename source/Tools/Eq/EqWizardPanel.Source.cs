@@ -433,8 +433,7 @@ public partial class EqWizardPanel
                 source.Points,
                 source.PointsCalibrationCorrectionDb,
                 ResolvePointsCalibrationCorrection(source),
-                source.SupportsSmoothing ? SourceSmoothingInverseOctaves : 0,
-                SourceAveragingDomain(source));
+                source.SupportsSmoothing ? SourceSmoothingInverseOctaves : 0);
         }
 
         return RawCurveRenderer.Render(
@@ -442,15 +441,6 @@ public partial class EqWizardPanel
             ResolveCurveCalibrationCorrection(source),
             SourceSmoothingInverseOctaves);
     }
-
-    // The domain the mode that DREW this curve averages magnitudes in, so re-smoothing it
-    // here reproduces that mode's shape rather than the overlay display's. An RTA band
-    // level is a power integral; a swept response is smoothed as linear amplitude. An
-    // undeclared curve (a text import) is never re-smoothed, so its value is moot.
-    private static MagnitudeAveraging SourceAveragingDomain(EqWizardCurveSource source) =>
-        source.CurveKind == AnalysisCurveKind.InputSpectrum
-            ? MagnitudeAveraging.Power
-            : MagnitudeAveraging.Amplitude;
 
     // The same choice as ResolveCurveCalibrationCorrection, but frozen on the curve's own
     // points instead of the raw output grid — the only frequencies a no-raw capture has.

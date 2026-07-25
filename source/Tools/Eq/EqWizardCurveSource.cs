@@ -140,8 +140,17 @@ internal sealed record EqWizardCurveSource
     /// curve captured under smoothing — or one that never said (a text import, a legacy
     /// slot) — is left alone.
     /// </summary>
+    /// <remarks>
+    /// A no-raw curve additionally has to be an RTA. Re-smoothing must reproduce the
+    /// analyzer that drew the curve, not merely look similar, because the result feeds Auto
+    /// Tune; only the RTA's smoothing is a replayable second pass over the band levels it
+    /// stored (see <see cref="DataHelper.SmoothBandLevels"/>). A dB SPL SWEEP smooths
+    /// linear amplitude inside its Lanczos resampling, which cannot be replayed from the
+    /// finished curve — that one needs its raw spectrum kept, so it stays unsmoothable here
+    /// rather than being smoothed by a near-enough algorithm.
+    /// </remarks>
     public bool SupportsSmoothing =>
         Kind == EqWizardSourceKind.ImpulseResponse ||
         RawSpectrum != null ||
-        CapturedSmoothingCode == 0;
+        (CapturedSmoothingCode == 0 && CurveKind == AnalysisCurveKind.InputSpectrum);
 }

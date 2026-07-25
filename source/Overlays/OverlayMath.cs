@@ -3,35 +3,6 @@ using Resonalyze.Dsp;
 namespace Resonalyze;
 
 /// <summary>
-/// The domain a plain fractional-octave width averages magnitudes in. Averaging dB values
-/// directly is a GEOMETRIC mean of the underlying signal: it flattens narrow peaks harder
-/// and fills dips more than the analyzers do, so a curve re-smoothed that way no longer
-/// matches what the measuring mode would have drawn at the same width. A consumer that
-/// re-smooths a stored curve therefore states the domain its source used.
-/// </summary>
-public enum MagnitudeAveraging
-{
-    /// <summary>
-    /// Averages the dB values themselves — the overlay display convention, kept as the
-    /// default so existing curves render exactly as before.
-    /// </summary>
-    Decibel,
-
-    /// <summary>
-    /// Averages linear amplitude, matching <see cref="DataHelper.LogarithmicResample"/>
-    /// with its dB unpacking — the swept frequency response and the relative RTA.
-    /// </summary>
-    Amplitude,
-
-    /// <summary>
-    /// Averages linear power, matching
-    /// <see cref="DataHelper.LogarithmicPowerBandResample"/> — the dB SPL RTA, whose band
-    /// levels are power integrals.
-    /// </summary>
-    Power
-}
-
-/// <summary>
 /// Contains plotting-independent calculations used by overlay comparisons.
 /// </summary>
 public static class OverlayMath
@@ -53,8 +24,7 @@ public static class OverlayMath
     public static OverlayPoint[] SmoothByOctaves(
         IReadOnlyList<OverlayPoint> points,
         int inverseOctaves,
-        bool psychoacousticMagnitude = true,
-        MagnitudeAveraging averaging = MagnitudeAveraging.Decibel)
+        bool psychoacousticMagnitude = true)
     {
         ArgumentNullException.ThrowIfNull(points);
         if (points.Count < 2 || inverseOctaves == 0)
@@ -138,36 +108,19 @@ public static class OverlayMath
                 {
                     weight = 0.5 *
                         (1 + Math.Cos(Math.PI * distance / halfWidth));
-                    sampleValue = averaging switch
-                    {
-                        MagnitudeAveraging.Amplitude =>
-                            Math.Pow(10.0, points[sample].Y / 20.0),
-                        MagnitudeAveraging.Power =>
-                            Math.Pow(10.0, points[sample].Y / 10.0),
-                        _ => points[sample].Y
-                    };
+                    sampleValue = points[sample].Y;
                 }
 
                 weightedSum += sampleValue * weight;
                 weightSum += weight;
             }
 
-            bool averaged = weightSum > 1e-12;
-            double value = averaged ? weightedSum / weightSum : centerPoint.Y;
+            double value = weightSum > 1e-12
+                ? weightedSum / weightSum
+                : centerPoint.Y;
             if (psychoacoustic)
             {
                 value = 20.0 * Math.Log10(Math.Cbrt(value));
-            }
-            else if (averaged)
-            {
-                // Only convert back what was converted going in; the fallback above is
-                // already the centre point's dB.
-                value = averaging switch
-                {
-                    MagnitudeAveraging.Amplitude => 20.0 * Math.Log10(value),
-                    MagnitudeAveraging.Power => 10.0 * Math.Log10(value),
-                    _ => value
-                };
             }
 
             result[center] = new OverlayPoint(centerPoint.X, value);

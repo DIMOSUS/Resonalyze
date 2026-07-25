@@ -83,12 +83,14 @@ public sealed class EqWizardImportedCurveTests
             points.Add(new SignalPoint(f, 80 + (i % 2 == 0 ? 5 : -5)));
         }
 
+        // A third of an octave spans plenty of these steps, so the alternation averages
+        // out rather than leaving a residue that depends on the window landing odd or even.
         IReadOnlyList<SignalPoint> result = EqWizardImportedCurve.Render(
-            points, Array.Empty<double>(), Array.Empty<double>(), 6);
+            points, Array.Empty<double>(), Array.Empty<double>(), 3);
 
         Assert.Equal(points.Select(point => point.X), result.Select(point => point.X));
 
-        // The jagged ±5 dB collapses to a nearly flat line...
+        // The jagged 10 dB peak-to-peak collapses to a nearly flat line...
         double[] band = result.Skip(20).Take(160).Select(point => point.Y).ToArray();
         double swing = band.Max() - band.Min();
         Assert.True(swing < 1.0, $"Ripple only fell to a {swing:0.0} dB swing.");
@@ -102,15 +104,14 @@ public sealed class EqWizardImportedCurveTests
     }
 
     [Fact]
-    public void Render_SmoothsInTheSourceAnalyzersDomainNotInDecibels()
+    public void Render_SmoothingIsTheAnalyzersOwnAndNotADecibelMean()
     {
         // Averaging dB values is a GEOMETRIC mean: it pulls a narrow peak down much harder
-        // than the analyzers, which average linear power (the SPL RTA's band integrals) or
-        // linear amplitude (a swept response). A curve smoothed the wrong way feeds Auto
-        // Tune a peak the measurement never had at that width.
+        // than the analyzer, which averages linear band POWER. A curve smoothed that way
+        // feeds Auto Tune a peak the measurement never had at this width.
         //
-        // One 20 dB spike on an otherwise flat 80 dB curve, smoothed a full octave: the
-        // energy-preserving means keep noticeably more of it than a dB mean would.
+        // One 20 dB spike on an otherwise flat 80 dB curve. The power mean must keep
+        // clearly more of it than the dB mean of the same window would.
         var points = new List<SignalPoint>();
         for (int i = 0; i < 121; i++)
         {
@@ -118,21 +119,15 @@ public sealed class EqWizardImportedCurveTests
             points.Add(new SignalPoint(f, i == 60 ? 100 : 80));
         }
 
-        double PeakOf(MagnitudeAveraging averaging) =>
-            EqWizardImportedCurve.Render(
-                points, Array.Empty<double>(), Array.Empty<double>(), 1, averaging)[60].Y;
+        double peak = EqWizardImportedCurve.Render(
+            points, Array.Empty<double>(), Array.Empty<double>(), 1)[60].Y;
 
-        double power = PeakOf(MagnitudeAveraging.Power);
-        double amplitude = PeakOf(MagnitudeAveraging.Amplitude);
-        double decibel = PeakOf(MagnitudeAveraging.Decibel);
-
-        // The linear-domain means retain the spike; the dB mean nearly erases it.
+        // A one-octave window here spans 21 points, so a dB mean would read
+        // (20 * 80 + 100) / 21 ≈ 81.0 dB, while the power mean keeps ~10*log10((20 + 100)/21)
+        // above the floor ≈ 87.6 dB.
         Assert.True(
-            power > decibel + 3,
-            $"Power mean {power:0.0} dB is not meaningfully above the dB mean {decibel:0.0} dB.");
-        Assert.True(amplitude > decibel + 1);
-        // Power weights the peak at least as heavily as amplitude does.
-        Assert.True(power >= amplitude);
+            peak > 86.0,
+            $"Peak read {peak:0.0} dB — that is a decibel mean, not the analyzer's power one.");
     }
 
     [Fact]

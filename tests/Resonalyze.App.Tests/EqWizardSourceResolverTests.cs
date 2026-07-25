@@ -333,9 +333,32 @@ public sealed class EqWizardSourceResolverTests
     {
         // Its points already carry 1/6-octave smoothing; smoothing them again compounds it.
         OverlayFile file = CreateCapturedSlot(1);
+        file.CapturedCurveKind = AnalysisCurveKind.InputSpectrum;
         file.Points = [new OverlayPoint(100, 80), new OverlayPoint(1_000, 78)];
         file.PointsCalibrationCorrectionDb = [0, 0];
         file.CapturedSmoothingCode = 6;
+
+        EqWizardCurveSource source = EqWizardSourceResolver.CreateFromOverlayFile(file);
+
+        Assert.True(source.SupportsCalibration);
+        Assert.False(source.SupportsSmoothing);
+    }
+
+    [Fact]
+    public void CreateFromOverlayFile_UnsmoothedSplSweep_OffersCalibrationButNotSmoothing()
+    {
+        // A dB SPL SWEEP has no raw form here either, and its calibration can still be
+        // swapped. But its smoothing happens inside a Lanczos resample of linear
+        // amplitude, which cannot be replayed from the finished curve — so it is left
+        // unsmoothable rather than smoothed by a near-enough algorithm, which would feed
+        // Auto Tune a shape the measurement never had. Only the RTA's smoothing is a
+        // replayable second pass over stored band levels.
+        OverlayFile file = CreateCapturedSlot(1);
+        file.CapturedCurveKind = AnalysisCurveKind.Primary;
+        file.CapturedMagnitudeScale = MagnitudeScale.SoundPressureLevel;
+        file.Points = [new OverlayPoint(100, 80), new OverlayPoint(1_000, 78)];
+        file.PointsCalibrationCorrectionDb = [1.0, -1.0];
+        file.CapturedSmoothingCode = 0;
 
         EqWizardCurveSource source = EqWizardSourceResolver.CreateFromOverlayFile(file);
 

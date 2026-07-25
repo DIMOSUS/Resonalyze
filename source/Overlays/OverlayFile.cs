@@ -360,7 +360,7 @@ public sealed class OverlayFile
 
     private void ValidateTarget()
     {
-        if (Mode is not (Mode.FrequencyResponse or Mode.LiveSpectrum))
+        if (!OverlayTargets.SupportsMode(Mode))
         {
             throw new InvalidDataException(
                 "Target overlays are only supported in frequency-based modes.");
@@ -656,6 +656,21 @@ public sealed record TargetCurveResult(
     OverlayPoint[] Deviation,
     OverlayPoint[] ToleranceUpper,
     OverlayPoint[] ToleranceLower);
+
+public static class OverlayTargets
+{
+    /// <summary>
+    /// Modes a Target overlay can be defined in. A target is a magnitude shape in
+    /// dB — a tilt with shelves — so it only means something on a dB-over-frequency
+    /// axis. On the phase (degrees), group delay (ms), impulse and autocorrelation
+    /// axes it would be a curve in the wrong unit, so targets are not offered there.
+    /// Takes the canonical overlay mode (see OverlayCollection.OverlayModeFor).
+    /// </summary>
+    public static bool SupportsMode(Mode mode)
+    {
+        return mode is Mode.FrequencyResponse or Mode.LiveSpectrum;
+    }
+}
 
 public static class OverlaySmoothing
 {

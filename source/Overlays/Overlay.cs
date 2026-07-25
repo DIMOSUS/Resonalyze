@@ -530,6 +530,7 @@ public sealed class Overlay
     private readonly ContextMenuStrip captureMenu;
     private readonly ToolStripMenuItem captureCurveMenuItem;
     private readonly ToolStripItem exportDeviationMenuItem;
+    private readonly ToolStripItem targetMenuItem;
     private readonly ToolStripItem settingsMenuItem;
     private readonly System.Windows.Forms.Timer longPressTimer;
     private readonly System.Windows.Forms.Timer offsetSaveTimer;
@@ -629,6 +630,7 @@ public sealed class Overlay
         captureMenu = BuildCaptureMenu(
             out captureCurveMenuItem,
             out exportDeviationMenuItem,
+            out targetMenuItem,
             out settingsMenuItem);
         DropDownFocusGuard.Attach(captureMenu);
 
@@ -1156,6 +1158,7 @@ public sealed class Overlay
     private ContextMenuStrip BuildCaptureMenu(
         out ToolStripMenuItem captureCurveItem,
         out ToolStripItem exportDeviationItem,
+        out ToolStripItem targetItem,
         out ToolStripItem settingsItem)
     {
         var menu = new ContextMenuStrip();
@@ -1174,7 +1177,10 @@ public sealed class Overlay
             "\u0192  Calculated overlay…", // \u0192 f
             null,
             (_, _) => ConfigureOperation());
-        menu.Items.Add("\u25B3  Target…", null, (_, _) => ConfigureTarget()); // \u25B3 triangle
+        targetItem = menu.Items.Add(
+            "\u25B3  Target…", // \u25B3 triangle
+            null,
+            (_, _) => ConfigureTarget());
         menu.Items.Add(new ToolStripSeparator());
         settingsItem = menu.Items.Add(
             "\u2699  Settings\u2026", // \u2699 gear
@@ -1270,6 +1276,9 @@ public sealed class Overlay
             targetDeviationMode == TargetDeviationMode.Correction
                 ? "Export EQ correction…"
                 : "Export deviation…";
+        // A target is a dB magnitude shape, so it is meaningless on the phase,
+        // group delay and time axes; do not offer it there at all.
+        targetMenuItem.Visible = OverlayTargets.SupportsMode(CurrentOverlayMode);
         settingsMenuItem.Enabled =
             SeriesMode == CurrentOverlayMode && HasConfiguredContent();
         captureMenu.Show(captureButton, new Point(0, captureButton.Height));
@@ -1717,7 +1726,7 @@ public sealed class Overlay
 
     private void ConfigureTarget()
     {
-        if (SeriesMode is not (Mode.FrequencyResponse or Mode.LiveSpectrum))
+        if (!OverlayTargets.SupportsMode(SeriesMode))
         {
             System.Media.SystemSounds.Beep.Play();
             return;

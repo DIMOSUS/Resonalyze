@@ -638,15 +638,19 @@ public sealed class OverlayFileTests
         }
     }
 
-    [Fact]
-    public void Save_RejectsTargetInTimeMode()
+    [Theory]
+    [InlineData(Mode.ImpulseResponse)]
+    [InlineData(Mode.Autocorrelation)]
+    [InlineData(Mode.PhaseResponse)]
+    [InlineData(Mode.GroupDelay)]
+    public void Save_RejectsTargetOutsideMagnitudeModes(Mode mode)
     {
         string root = CreateTemporaryDirectory();
         try
         {
             var file = new OverlayFile
             {
-                Mode = Mode.ImpulseResponse,
+                Mode = mode,
                 Slot = 11,
                 Kind = OverlayKind.Target,
                 Title = "Bad target",

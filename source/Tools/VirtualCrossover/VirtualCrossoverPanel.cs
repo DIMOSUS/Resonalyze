@@ -65,7 +65,7 @@ public partial class VirtualCrossoverPanel : UserControl
         channelControls = new();
     private readonly VirtualCrossoverProcessingCoordinator processingCoordinator = new();
     private readonly VirtualCrossoverMetrics metrics;
-    private readonly ToolTip toolTip = new()
+    private readonly WrappingToolTip toolTip = new()
     {
         InitialDelay = 500,
         ReshowDelay = 150,

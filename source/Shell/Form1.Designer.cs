@@ -36,12 +36,13 @@ namespace Resonalyze
             overlays = new Panel();
             overlayPanel1 = new Panel();
             buttonSaveOverlay = new Button();
+            labelOverlay1 = new Label();
             numericUpDown1 = new DarkNumericUpDown();
             checkBox1 = new CheckBox();
             buttonRecordOpt = new Button();
             buttonSave = new Button();
             buttonLoad = new Button();
-            toolTip1 = new ToolTip(components);
+            toolTip1 = new WrappingToolTip(components);
             buttonOverlayShowAll = new Button();
             buttonOverlayHideAll = new Button();
             buttonCurrentModeSettings = new Button();
@@ -107,6 +108,7 @@ namespace Resonalyze
             // 
             overlayPanel1.BackColor = Color.OrangeRed;
             overlayPanel1.Controls.Add(buttonSaveOverlay);
+            overlayPanel1.Controls.Add(labelOverlay1);
             overlayPanel1.Controls.Add(numericUpDown1);
             overlayPanel1.Controls.Add(checkBox1);
             overlayPanel1.Location = new Point(3, 3);
@@ -126,7 +128,21 @@ namespace Resonalyze
             buttonSaveOverlay.Text = "1";
             buttonSaveOverlay.UseCompatibleTextRendering = true;
             buttonSaveOverlay.UseVisualStyleBackColor = false;
-            // 
+            //
+            // labelOverlay1
+            //
+            labelOverlay1.AutoEllipsis = true;
+            labelOverlay1.AutoSize = false;
+            labelOverlay1.BackColor = Color.Transparent;
+            labelOverlay1.Font = new Font("Segoe UI", 7.5F);
+            labelOverlay1.ForeColor = Color.Black;
+            labelOverlay1.Location = new Point(64, 5);
+            labelOverlay1.Name = "labelOverlay1";
+            labelOverlay1.Size = new Size(78, 15);
+            labelOverlay1.TabIndex = 3;
+            labelOverlay1.TextAlign = ContentAlignment.MiddleLeft;
+            labelOverlay1.UseCompatibleTextRendering = true;
+            //
             // numericUpDown1
             // 
             numericUpDown1.BackColor = Color.FromArgb(50, 55, 80);
@@ -448,12 +464,13 @@ namespace Resonalyze
         private OxyPlot.WindowsForms.PlotView plotView1;
         private Panel overlays;
         private Button buttonSaveOverlay;
+        private Label labelOverlay1;
         private CheckBox checkBox1;
         private Panel overlayPanel1;
         private Button buttonRecordOpt;
         private Button buttonSave;
         private Button buttonLoad;
-        private ToolTip toolTip1;
+        private WrappingToolTip toolTip1;
         private Button buttonOverlayShowAll;
         private Button buttonCurrentModeSettings;
         private Button buttonOverlayHideAll;

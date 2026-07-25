@@ -60,7 +60,7 @@ namespace Resonalyze
             previewPlot = new OxyPlot.WindowsForms.PlotView();
             cancelButton = new Button();
             saveButton = new Button();
-            toolTip = new ToolTip(components);
+            toolTip = new WrappingToolTip(components);
             (toleranceInput).BeginInit();
             (tiltInput).BeginInit();
             (bassGainInput).BeginInit();
@@ -718,6 +718,6 @@ namespace Resonalyze
         private OxyPlot.WindowsForms.PlotView previewPlot;
         private Button cancelButton;
         private Button saveButton;
-        private ToolTip toolTip;
+        private WrappingToolTip toolTip;
     }
 }

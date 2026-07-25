@@ -35,7 +35,7 @@ namespace Resonalyze
             clearButton = new Button();
             cancelButton = new Button();
             saveButton = new Button();
-            toolTip = new ToolTip(components);
+            toolTip = new WrappingToolTip(components);
             (thicknessInput).BeginInit();
             (opacityTrackBar).BeginInit();
             SuspendLayout();
@@ -273,6 +273,6 @@ namespace Resonalyze
         private Button clearButton;
         private Button cancelButton;
         private Button saveButton;
-        private ToolTip toolTip;
+        private WrappingToolTip toolTip;
     }
 }

@@ -163,7 +163,9 @@ public partial class EqWizardPanel
         {
             var item = new ToolStripMenuItem(MenuText.Trim($"{slot.Slot}: {slot.Title}"))
             {
-                ToolTipText = slot.Description
+                // A menu item's tooltip is drawn by the ToolStrip, not by the app's
+                // wrapping tooltip, and a slot description can carry a full file path.
+                ToolTipText = ToolTipTextWrapper.Wrap(slot.Description)
             };
             item.Click += (_, _) => LoadCurveFromSlot(slot.Slot);
             slotItem.DropDownItems.Add(item);

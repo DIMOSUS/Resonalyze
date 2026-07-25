@@ -10,7 +10,7 @@ internal partial class MeasurementHistoryWindow : Form
 {
     private readonly List<Guid> rowEntryIds = [];
     private readonly Font activeEntryFont;
-    private readonly ToolTip historyToolTip = new() { ShowAlways = true };
+    private readonly WrappingToolTip historyToolTip = new() { ShowAlways = true };
     private Guid? activeEntryId;
     private bool suppressSelectionEvents;
 

@@ -23,7 +23,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         Label BandLabel,
         DarkComboBox TypeComboBox);
 
-    private readonly ToolTip toolTip = new()
+    private readonly WrappingToolTip toolTip = new()
     {
         InitialDelay = 500,
         ReshowDelay = 150,

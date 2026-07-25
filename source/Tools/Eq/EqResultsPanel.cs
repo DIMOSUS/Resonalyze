@@ -19,7 +19,7 @@ public sealed partial class EqResultsPanel : UserControl
     private static readonly Color BadColor = Color.FromArgb(232, 86, 76);
     private static readonly Color InfoColor = Color.FromArgb(0, 209, 255);
 
-    private readonly ToolTip toolTip = new()
+    private readonly WrappingToolTip toolTip = new()
     {
         InitialDelay = 500,
         ReshowDelay = 150,

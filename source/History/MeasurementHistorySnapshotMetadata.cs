@@ -78,6 +78,8 @@ internal sealed class MeasurementHistorySnapshotMetadata
                 $"Loopback: peak {MeterSnapshot.Loopback.PeakDbFs:0.0} dBFS, RMS {MeterSnapshot.Loopback.RmsDbFs:0.0} dBFS");
         }
 
-        return string.Join(Environment.NewLine, lines);
+        // These land on ToolStrip items and grid cells, which do not go through the
+        // app's wrapping tooltip, so the wrap happens here instead.
+        return ToolTipTextWrapper.Wrap(string.Join(Environment.NewLine, lines));
     }
 }

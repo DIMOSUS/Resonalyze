@@ -14,7 +14,7 @@ namespace Resonalyze.Options;
 /// </summary>
 public class ImpulsePreviewOptionsForm : Form
 {
-    protected readonly ToolTip toolTip = new();
+    protected readonly WrappingToolTip toolTip = new();
     private bool initializingControls;
 
     public ImpulsePreviewOptionsForm()

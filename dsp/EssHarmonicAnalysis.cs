@@ -88,6 +88,8 @@ public sealed record HarmonicWindowDefinition(
     int FadeInSamples,
     int FadeOutSamples)
 {
+    /// <summary>The window's inclusive length in samples.</summary>
+    /// <remarks>Reserve API: no caller in the solution today (see AGENTS.md).</remarks>
     public int NominalLength => EndSample - StartSample + 1;
 }
 

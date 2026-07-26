@@ -145,6 +145,11 @@ public static class AsioDeviceCatalog
         return -1;
     }
 
+    /// <summary>
+    /// True when the channel names itself as a loopback, so a UI can offer it as
+    /// the reference channel without the user hunting for it.
+    /// </summary>
+    /// <remarks>Reserve API: no caller in the solution today (see AGENTS.md).</remarks>
     public static bool IsLoopbackChannel(AsioChannelInfo channel)
     {
         return channel.Name.Contains(

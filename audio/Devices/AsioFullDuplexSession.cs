@@ -26,7 +26,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
     private TaskCompletionSource<bool>? playbackStopped;
     // Remembered so a sample waiter registered after the driver stopped (e.g. a
     // later averaged run) faults immediately instead of hanging. Cleared only by
-    // a real StartAsync, never by ResetCapture/PauseCapture between runs.
+    // a real StartAsync, never by ResetCapture between runs.
     private Exception? terminalException;
     private bool disposed;
 
@@ -158,24 +158,6 @@ internal sealed class AsioFullDuplexSession : IDisposable
         ThrowIfDisposed();
         this.expectedTotalSamples = expectedTotalSamples;
         ResetBuffers();
-    }
-
-    /// <summary>
-    /// Stops accumulating samples while the driver keeps running (and keeps
-    /// raising level meters) — used between averaging runs, where minutes of a
-    /// confirmation pause would otherwise grow the capture buffer with
-    /// silence. <see cref="ResetCapture"/> starts the next run's capture.
-    /// </summary>
-    public void PauseCapture()
-    {
-        ThrowIfDisposed();
-        lock (sync)
-        {
-            int newGeneration = ++captureGeneration;
-            accumulator = null;
-            sampleWaiters.CancelAll();
-            capturePump.Reset(newGeneration);
-        }
     }
 
     public Task WaitForSamplesAsync(int sampleCount, CancellationToken cancellationToken)

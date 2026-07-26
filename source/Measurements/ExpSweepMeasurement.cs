@@ -173,10 +173,10 @@ namespace Resonalyze
             LastAudioSessionDiagnostics = null;
             AudioBackend = audio.Backend;
             AsioDriverName = audio.AsioDriverName;
-            int normalizedWaveInputChannelOffset = IsWasapiBackend(audio.Backend)
+            int normalizedWaveInputChannelOffset = audio.Backend.IsWasapi()
                 ? Math.Max(0, audio.WaveInputChannelOffset)
                 : Math.Clamp(audio.WaveInputChannelOffset, 0, 1);
-            int? normalizedWaveLoopbackInputChannelOffset = IsWasapiBackend(audio.Backend)
+            int? normalizedWaveLoopbackInputChannelOffset = audio.Backend.IsWasapi()
                 ? NormalizeOptionalWasapiChannel(audio.WaveLoopbackInputChannelOffset)
                 : NormalizeOptionalWaveChannel(audio.WaveLoopbackInputChannelOffset);
             if (audio.Backend != AudioBackend.Asio &&
@@ -715,7 +715,7 @@ namespace Resonalyze
                     sampleChannels,
                     captured.MicrophoneChannel,
                     validationLoopbackIndex,
-                    IsWasapiBackend(AudioBackend)
+                    AudioBackend.IsWasapi()
                         ? "WASAPI measurement"
                         : "Wave measurement");
             }
@@ -1021,9 +1021,6 @@ namespace Resonalyze
 
         private static int? NormalizeOptionalWasapiChannel(int? offset) =>
             offset.HasValue ? Math.Max(0, offset.Value) : null;
-
-        private static bool IsWasapiBackend(AudioBackend backend) =>
-            backend is AudioBackend.WasapiShared or AudioBackend.WasapiExclusive;
 
         private static void Publish(Action? handlers)
         {

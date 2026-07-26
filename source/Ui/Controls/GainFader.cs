@@ -17,11 +17,14 @@ internal sealed class GainFader : Control
     // for the dB scale labels; everything else is derived from the client size.
     private const float TrackCenterFraction = 0.62f;
 
+    // PageUp/PageDown step. Fixed: unlike Increment (which follows the paired
+    // numeric field), nothing configures a per-fader page size.
+    private const double PageIncrement = 1.0;
+
     private double minimum = -15;
     private double maximum = 6;
     private double value;
     private double increment = 0.1;
-    private double pageIncrement = 1.0;
     private bool hovered;
     private bool dragging;
     private bool wasActiveOnPress;
@@ -100,14 +103,6 @@ internal sealed class GainFader : Control
     {
         get => increment;
         set => increment = value <= 0 ? 0.1 : value;
-    }
-
-    [Browsable(false)]
-    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public double PageIncrement
-    {
-        get => pageIncrement;
-        set => pageIncrement = value <= 0 ? 1.0 : value;
     }
 
     [Browsable(false)]
@@ -395,11 +390,11 @@ internal sealed class GainFader : Control
                 e.Handled = true;
                 break;
             case Keys.PageUp:
-                Value = value + pageIncrement;
+                Value = value + PageIncrement;
                 e.Handled = true;
                 break;
             case Keys.PageDown:
-                Value = value - pageIncrement;
+                Value = value - PageIncrement;
                 e.Handled = true;
                 break;
         }

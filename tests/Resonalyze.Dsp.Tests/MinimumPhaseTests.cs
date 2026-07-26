@@ -129,6 +129,47 @@ public sealed class MinimumPhaseTests
         Assert.All(phase, value => Assert.True(double.IsFinite(value)));
     }
 
+    // FromSpectrum is a reserve API with no caller in the app yet, so these two
+    // are its only consumer — without them nothing would notice the overload
+    // drifting away from the FromMagnitude it delegates to.
+    [Fact]
+    public void FromSpectrum_MatchesFromMagnitudeOfTheSameSpectrum()
+    {
+        Complex[] spectrum = TransferFunction(impulse: [1.0, -0.6]);
+        double[] magnitude = spectrum.Select(value => value.Magnitude).ToArray();
+
+        double[] fromSpectrum = MinimumPhase.FromSpectrum(spectrum);
+        double[] fromMagnitude = MinimumPhase.FromMagnitude(magnitude);
+
+        Assert.Equal(fromMagnitude.Length, fromSpectrum.Length);
+        for (int bin = 0; bin < fromMagnitude.Length; bin++)
+        {
+            Assert.Equal(fromMagnitude[bin], fromSpectrum[bin], 12);
+        }
+    }
+
+    [Fact]
+    public void FromSpectrum_IgnoresTheSpectrumsOwnPhase()
+    {
+        // The whole point of the overload: it reads magnitude only, so rotating
+        // every bin must not move the result.
+        Complex[] spectrum = TransferFunction(impulse: [1.0, -0.6]);
+        Complex rotation = Complex.FromPolarCoordinates(1.0, 0.7);
+        Complex[] rotated = spectrum.Select(value => value * rotation).ToArray();
+
+        double[] original = MinimumPhase.FromSpectrum(spectrum);
+        double[] afterRotation = MinimumPhase.FromSpectrum(rotated);
+
+        for (int bin = 0; bin < original.Length; bin++)
+        {
+            // Not bit-exact: |z * r| differs from |z| in the last bits even for
+            // |r| = 1, and the log/FFT/IFFT round trip carries that through
+            // (~5e-13 observed). A genuine phase dependency would show up orders
+            // of magnitude above this.
+            Assert.Equal(original[bin], afterRotation[bin], 10);
+        }
+    }
+
     private static Complex[] TransferFunction(double[] impulse)
     {
         var buffer = new Complex[Length];

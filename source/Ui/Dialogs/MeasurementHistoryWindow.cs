@@ -70,7 +70,7 @@ internal partial class MeasurementHistoryWindow : Form
                 row.Cells[0].ToolTipText = entry.IsFileBacked
                     ? "Saved IR file remembered across sessions."
                     : "In-memory snapshot from this session only.";
-                row.Cells[1].ToolTipText = entry.Metadata.BuildToolTipText(entry.Timestamp);
+                row.Cells[1].ToolTipText = MeasurementHistoryToolTip.Build(entry.Metadata, entry.Timestamp);
                 row.Cells[2].ToolTipText = entry.CanSave
                     ? "Save this measurement snapshot to an IR JSON file."
                     : "This history entry is already backed by a file.";

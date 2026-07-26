@@ -139,7 +139,7 @@ public partial class EqWizardPanel
             var entryItem = new ToolStripMenuItem(MenuText.Trim(entry.FileNameOrDisplayName))
             {
                 Tag = entry.Id,
-                ToolTipText = entry.Metadata.BuildToolTipText(entry.Timestamp)
+                ToolTipText = MeasurementHistoryToolTip.Build(entry.Metadata, entry.Timestamp)
             };
             entryItem.Click += (_, _) =>
             {

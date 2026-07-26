@@ -47,7 +47,7 @@ public partial class Form1
             ToolStripMenuItem entryItem = new(BuildCompareHistoryItemText(entry))
             {
                 Tag = entry.Id,
-                ToolTipText = entry.Metadata.BuildToolTipText(entry.Timestamp)
+                ToolTipText = MeasurementHistoryToolTip.Build(entry.Metadata, entry.Timestamp)
             };
             entryItem.Click += async (_, _) =>
             {

@@ -153,10 +153,10 @@ namespace Resonalyze
             AsioInputChannelOffset = asioInputChannelOffset;
             AsioLoopbackInputChannelOffset = asioLoopbackInputChannelOffset;
             AsioOutputChannelOffset = asioOutputChannelOffset;
-            int normalizedWaveInputChannelOffset = IsWasapiBackend(audioBackend)
+            int normalizedWaveInputChannelOffset = audioBackend.IsWasapi()
                 ? Math.Max(0, waveInputChannelOffset)
                 : Math.Clamp(waveInputChannelOffset, 0, 1);
-            int? normalizedWaveLoopbackInputChannelOffset = IsWasapiBackend(audioBackend)
+            int? normalizedWaveLoopbackInputChannelOffset = audioBackend.IsWasapi()
                 ? NormalizeOptionalWasapiChannel(waveLoopbackInputChannelOffset)
                 : NormalizeOptionalWaveChannel(waveLoopbackInputChannelOffset);
             if (audioBackend != AudioBackend.Asio &&
@@ -803,9 +803,6 @@ namespace Resonalyze
 
         private static int? NormalizeOptionalWasapiChannel(int? channel) =>
             channel.HasValue ? Math.Max(0, channel.Value) : null;
-
-        private static bool IsWasapiBackend(AudioBackend backend) =>
-            backend is AudioBackend.WasapiShared or AudioBackend.WasapiExclusive;
 
         private void ThrowIfDisposed()
         {

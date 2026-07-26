@@ -149,7 +149,6 @@ namespace Resonalyze.Options
             numericWindow.TextAlign = HorizontalAlignment.Right;
             numericWindow.ThousandsSeparator = false;
             numericWindow.Value = new decimal(new int[] { 4096, 0, 0, 0 });
-            numericWindow.ValueChanged += numericWindow_ValueChanged;
             // 
             // numericSampleRate
             // 

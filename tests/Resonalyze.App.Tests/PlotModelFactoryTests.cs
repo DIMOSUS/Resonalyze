@@ -819,16 +819,17 @@ public sealed class PlotModelFactoryTests
             measurement,
             noiseMeasurement,
             mode => calibration ?? new CalibrationFile(calibrationPath),
-            frequencyResponseOptions ?? new FrequencyResponseOptions(),
-            phaseResponseOptions ?? new FrequencyResponseOptions(),
-            groupDelayOptions ?? new FrequencyResponseOptions(),
-            frequencyResponseVisibility ?? new CurveVisibilityOptions(),
-            phaseResponseVisibility ?? new CurveVisibilityOptions(),
-            groupDelayVisibility ?? new CurveVisibilityOptions(),
-            impulseOptions ?? new ImpulseResponseOptions(),
-            liveSpectrumOptions ?? new LiveSpectrumOptions(),
-            new WaterfallGenerateOptions(),
-            new WaterfallGenerateOptions());
+            new PlotPresentationOptions(
+                FrequencyResponse: frequencyResponseOptions ?? new FrequencyResponseOptions(),
+                PhaseResponse: phaseResponseOptions ?? new FrequencyResponseOptions(),
+                GroupDelay: groupDelayOptions ?? new FrequencyResponseOptions(),
+                FrequencyResponseVisibility: frequencyResponseVisibility ?? new CurveVisibilityOptions(),
+                PhaseResponseVisibility: phaseResponseVisibility ?? new CurveVisibilityOptions(),
+                GroupDelayVisibility: groupDelayVisibility ?? new CurveVisibilityOptions(),
+                ImpulseResponse: impulseOptions ?? new ImpulseResponseOptions(),
+                LiveSpectrum: liveSpectrumOptions ?? new LiveSpectrumOptions(),
+                Waterfall: new WaterfallGenerateOptions(),
+                BurstDecay: new WaterfallGenerateOptions()));
     }
 
     // A live analyzer configured for the default Wave input, so it produces a

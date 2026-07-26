@@ -92,6 +92,7 @@ public static class MinimumPhase
     /// Computes the minimum-phase response (radians) from a complex spectrum,
     /// using only its magnitude.
     /// </summary>
+    /// <remarks>Reserve API: no caller in the solution today (see AGENTS.md).</remarks>
     public static double[] FromSpectrum(
         IReadOnlyList<Complex> spectrum,
         double magnitudeFloor = DefaultMagnitudeFloor)

@@ -15,8 +15,12 @@ namespace Resonalyze.Options
         public BDOpt()
         {
             InitializeComponent();
-            numericLeftWindow.ValueChanged += TukeyWindow_ValueChanged;
-            numericRightWindow.ValueChanged += TukeyWindow_ValueChanged;
+            BindTukeyWindowControls(
+                numericWindow,
+                numericLeftWindow,
+                numericRightWindow,
+                afterWindowChanged: () =>
+                    numericCaptureTime.Value = (decimal)CalcCapturedTime);
             // Width presets only: burst decay integrates per-frequency energy
             // envelopes, and its pipeline has no magnitude grid to apply the
             // psychoacoustic magnitude weighting to — offering the mode here would be
@@ -47,7 +51,7 @@ namespace Resonalyze.Options
                 numericOffset.Value = burstDecayGenOptions.Offset;
 
                 numericPeriods.Value = (int)burstDecayGenOptions.Periods;
-                UpdateTukeyWindowLimits();
+                RefreshTukeyWindowLimits();
             });
             UpdateIrPreview();
         }
@@ -81,27 +85,6 @@ namespace Resonalyze.Options
                     ? (double)numericWindow.Value / sampleRate * 1000.0
                     : 0;
             }
-        }
-
-        private void numericWindow_ValueChanged(object sender, EventArgs e)
-        {
-            UpdateTukeyWindowLimits();
-            numericCaptureTime.Value = (decimal)CalcCapturedTime;
-            UpdateIrPreview();
-        }
-
-        private void TukeyWindow_ValueChanged(object? sender, EventArgs e)
-        {
-            UpdateTukeyWindowLimits();
-            UpdateIrPreview();
-        }
-
-        private void UpdateTukeyWindowLimits()
-        {
-            TukeyWindowControlHelper.ClampAndUpdateLimits(
-                numericWindow,
-                numericLeftWindow,
-                numericRightWindow);
         }
 
         protected override void RenderIrPreview()

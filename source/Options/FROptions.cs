@@ -17,8 +17,7 @@ namespace Resonalyze.Options
         public FROptions()
         {
             InitializeComponent();
-            numericLeftWindow.ValueChanged += TukeyWindow_ValueChanged;
-            numericRightWindow.ValueChanged += TukeyWindow_ValueChanged;
+            BindTukeyWindowControls(numericWindow, numericLeftWindow, numericRightWindow);
             SmoothingPresetOptions.Configure(
                 comboSmoothingInverseOctaves, includePsychoacoustic: true);
             InitializeToolTips();
@@ -60,7 +59,7 @@ namespace Resonalyze.Options
                     && splAvailable;
                 radioMagnitudeSpl.Checked = spl;
                 radioMagnitudeRelative.Checked = !spl;
-                UpdateTukeyWindowLimits();
+                RefreshTukeyWindowLimits();
             });
             UpdateIrPreview();
         }
@@ -123,26 +122,6 @@ namespace Resonalyze.Options
             {
                 radioMagnitudeRelative.Checked = true;
             }
-        }
-
-        private void numericWindow_ValueChanged(object sender, EventArgs e)
-        {
-            UpdateTukeyWindowLimits();
-            UpdateIrPreview();
-        }
-
-        private void TukeyWindow_ValueChanged(object? sender, EventArgs e)
-        {
-            UpdateTukeyWindowLimits();
-            UpdateIrPreview();
-        }
-
-        private void UpdateTukeyWindowLimits()
-        {
-            TukeyWindowControlHelper.ClampAndUpdateLimits(
-                numericWindow,
-                numericLeftWindow,
-                numericRightWindow);
         }
 
         protected override void RenderIrPreview()

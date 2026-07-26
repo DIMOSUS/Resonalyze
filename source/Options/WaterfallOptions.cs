@@ -16,8 +16,7 @@ namespace Resonalyze.Options
         public WaterfallOptions()
         {
             InitializeComponent();
-            numericLeftWindow.ValueChanged += TukeyWindow_ValueChanged;
-            numericRightWindow.ValueChanged += TukeyWindow_ValueChanged;
+            BindTukeyWindowControls(numericWindow, numericLeftWindow, numericRightWindow);
             SmoothingPresetOptions.Configure(
                 comboSmoothingInverseOctaves, includePsychoacoustic: true);
             InitializeToolTips();
@@ -47,7 +46,7 @@ namespace Resonalyze.Options
                     SmoothingPresetOptions.Normalize(waterfallGenerateOptions.SmoothingInverseOctaves);
 
                 numericOffset.Value = numericOffset.ClampValue(waterfallGenerateOptions.Offset);
-                UpdateTukeyWindowLimits();
+                RefreshTukeyWindowLimits();
             });
             UpdateIrPreview();
         }
@@ -98,26 +97,6 @@ namespace Resonalyze.Options
 
             lastNonZeroStep = numericStep.Value;
             numericCaptureTime.Value = (decimal)CalcCapturedTime;
-        }
-
-        private void numericWindow_ValueChanged(object sender, EventArgs e)
-        {
-            UpdateTukeyWindowLimits();
-            UpdateIrPreview();
-        }
-
-        private void TukeyWindow_ValueChanged(object? sender, EventArgs e)
-        {
-            UpdateTukeyWindowLimits();
-            UpdateIrPreview();
-        }
-
-        private void UpdateTukeyWindowLimits()
-        {
-            TukeyWindowControlHelper.ClampAndUpdateLimits(
-                numericWindow,
-                numericLeftWindow,
-                numericRightWindow);
         }
 
         protected override void RenderIrPreview()

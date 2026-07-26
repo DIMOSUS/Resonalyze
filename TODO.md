@@ -6,7 +6,13 @@ item describing work already done keeps only the residual. Grouped by area,
 highest-value items marked ★. `[✗]` marks a settled decision kept on purpose, so
 the same idea does not get re-proposed — those are not open work.
 
-Last audited against the code on 2026-07-22 (tip `255de70`). That pass dropped
+Last audited against the code on 2026-07-26. That pass ran a duplication /
+dead-code sweep and landed the mechanical half of it (dead `UiStyle` factories,
+five clamp helpers collapsed into `ClampValue`, the options-panel gate/Tukey
+boilerplate hoisted into `ImpulsePreviewOptionsForm`, four `IsWasapiBackend`
+copies replaced by `AudioBackend.IsWasapi()`, and the two capture pumps put on a
+shared `CapturePump<TSlot, TBlock>`). The two structural findings it did NOT
+land are filed below, marked ★. That pass dropped
 the "Windows live-checks pending" section: every item in it shipped in v0.5.3,
 and only the person with the car and the microphone can tick them, so they
 belong in the next field session rather than in a register nobody else can
@@ -79,6 +85,14 @@ close.
   its own kept pick. Remaining: derive the threshold from comb statistics of the
   junction. (`MaxInterSideDirectPathMs` is gone — the cross-side work replaced it
   with the donor-corroborated geometry in #47.)
+- [ ] ★ **`AutoAlignmentEngine.ComputeStereo` is 744 lines**, and it nests a
+  **343-line local function** (`CrossSideTargetMs`) plus an 88-line `AlignRight`.
+  The method has five clear phases (validate → left cascade → bridge fit → right
+  cascade → rebalance/mono/normalize/polarity), but a local function that long
+  closes over every local in the method, so the cross-side target logic cannot be
+  tested on its own — the thing most worth testing after the #52 saga. Lift
+  `CrossSideTargetMs` into a type carrying the state it needs. Do it on its own
+  branch against the frozen validated session, not alongside other work.
 - [ ] **Time Alignment analysis is not cached** — `RefreshAnalysis`
   (`TimeAlignmentPanelController`) recomputes Hilbert + GCC-PHAT on every tab
   show even when inputs are unchanged. Needs a live-app check to avoid stale
@@ -153,6 +167,13 @@ close.
 
 ## Overlays
 
+- [ ] ★ **`Overlay` is a God object** — ~2230 lines, ~95 members in one class:
+  runtime control creation, the capture menu and its long-press behaviour, text
+  import/export, three settings dialogs, persistence, preview/restore and the
+  plot series. The render-path caching and the pure-math extraction are done;
+  what remains is a real split (capture-menu behaviour, text import/export and
+  the dialog orchestration are each separable without touching the draw path).
+  Bigger than one sitting — it wants its own branch.
 - [ ] **Introduce an `OverlaySlotState` record** to replace the triple
   field-mapping between overlay, slot file and UI state (the render-path caching
   and the pure-math extraction from `Overlay.cs` are done; this structural half
@@ -163,6 +184,22 @@ close.
 
 ## Plotting
 
+- [ ] ★ **Snapshot read-model instead of the two live measurement objects in
+  `PlotModelFactory`.** The factory and `MeasurementPlotContext` are constructed
+  with `ExpSweepMeasurement` and `NoiseMeasurement` themselves and read 22
+  members between them, two of which (`InProgress`, `CurrentLevels`) mutate
+  during capture — so the replacement must be a read-model interface re-read per
+  plot build, NOT a value snapshot taken at construction, or Live Spectrum and
+  the in-progress guards change behaviour. This was the extraction audit's
+  top finding (2026-07-26): it is what a "plotting layer" split was really
+  after, and it needs no new project.
+  The reason it is not done yet is honest scope: the payoff — plot tests no
+  longer needing `FakeAudioSessionFactory` — only lands if the ~1030-line
+  `PlotModelFactoryTests` is rewritten too, because it builds state through
+  `measurement.RestoreImpulseResponse(...)` and therefore needs a live
+  measurement regardless of what the factory accepts. Interface + adapter
+  without that rewrite is pure addition. Do it as one piece, its own branch.
+  (The 13-argument constructor half is DONE — `PlotPresentationOptions`.)
 - [ ] **`LogarithmicClipAxis` label trim.** Edge tick labels can be trimmed at
   the plot boundary. Purely visual; needs a Windows render to reproduce.
 - [ ] **Waterfall renders nothing silently below 8 slices** (`RawSlices.Count <

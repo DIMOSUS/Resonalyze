@@ -54,7 +54,7 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
             numericGateOffset.Enabled = !checkAutoOffset.Checked;
             if (checkAutoOffset.Checked)
             {
-                numericGateOffset.Value = Clamp(numericGateOffset, fitOffsetMs);
+                numericGateOffset.Value = numericGateOffset.ClampValue(fitOffsetMs);
             }
         };
         buttonTauSlope.Click += (_, _) => ApplyEstimatedTau(useSlope: true);
@@ -112,16 +112,16 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         sampleRate = previewSampleRate;
         fitOffsetMs = fitToMs;
 
-        numericGateOffset.Value = Clamp(numericGateOffset, gateOffsetMs);
+        numericGateOffset.Value = numericGateOffset.ClampValue(gateOffsetMs);
         // After the offset: a false -> true transition re-snaps the value to
         // fitOffsetMs (already seeded) and disables the field; false -> false
         // never fires CheckedChanged, so sync the enabled state explicitly.
         checkAutoOffset.Checked = autoOffset;
         numericGateOffset.Enabled = !autoOffset;
-        numericLeft.Value = Clamp(numericLeft, leftMs);
-        numericPlateau.Value = Clamp(numericPlateau, plateauMs);
-        numericRight.Value = Clamp(numericRight, rightMs);
-        numericTau.Value = Clamp(numericTau, detrendMs);
+        numericLeft.Value = numericLeft.ClampValue(leftMs);
+        numericPlateau.Value = numericPlateau.ClampValue(plateauMs);
+        numericRight.Value = numericRight.ClampValue(rightMs);
+        numericTau.Value = numericTau.ClampValue(detrendMs);
         comboWindowMode.SelectedIndex = windowMode == PhaseWindowMode.Fixed ? 0 : 1;
         comboFdwCycles.SelectedItem = fdwCycles is 4 or 6 or 8
             ? fdwCycles
@@ -153,7 +153,7 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
             WindowMode, FdwCycles, PhaseDetrendMode.Auto, DetrendMs,
             GateOffsetMs, LeftMs, PlateauMs, RightMs, Unwrap: false, 0.0);
         (double slopeMs, double peakMs) = DataHelper.EstimatePhaseDetrend(view, settings);
-        numericTau.Value = Clamp(numericTau, useSlope ? slopeMs : peakMs);
+        numericTau.Value = numericTau.ClampValue(useSlope ? slopeMs : peakMs);
     }
 
     private void OnGateChanged()
@@ -258,9 +258,6 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
             input.CommitText();
         }
     }
-
-    private static decimal Clamp(DarkNumericUpDown control, double value) =>
-        control.ClampValue(value);
 
     private void InitializeToolTips()
     {

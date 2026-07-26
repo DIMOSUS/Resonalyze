@@ -1,4 +1,4 @@
-namespace Resonalyze.History;
+﻿namespace Resonalyze.History;
 
 internal sealed class MeasurementHistorySnapshotMetadata
 {
@@ -34,52 +34,5 @@ internal sealed class MeasurementHistorySnapshotMetadata
             AcceptedAverageRunCount = snapshot.AcceptedAverageRunCount,
             MeterSnapshot = snapshot.MeterSnapshot
         };
-    }
-
-    public string BuildToolTipText(DateTimeOffset timestamp)
-    {
-        string sweepBand = LowFrequencyHz > 0 && HighFrequencyHz > LowFrequencyHz
-            ? $"Sweep: {LowFrequencyHz:0.#}–{HighFrequencyHz:0} Hz " +
-                $"({Math.Log2(HighFrequencyHz / LowFrequencyHz):0.0} oct)"
-            : "Sweep: —";
-        var lines = new List<string>
-        {
-            $"Time: {TimestampDisplayHelper.Format(timestamp)}",
-            $"Mode: {MeasurementMode}",
-            $"Sample rate: {SampleRate} Hz",
-            $"Bits: {Bits}",
-            sweepBand,
-            $"Duration: {SweepDurationSeconds:0.###} s",
-            $"Channel: {PlayChannel}"
-        };
-        if (AverageRunCount > 1 || AcceptedAverageRunCount > 1)
-        {
-            lines.Add($"Averaging: {AcceptedAverageRunCount}/{AverageRunCount} runs");
-        }
-
-        if (MeasurementMode == SweepMeasurementMode.LoopbackTransfer &&
-            TransferPeakIndex.HasValue)
-        {
-            lines.Add($"Transfer peak index: {TransferPeakIndex.Value}");
-        }
-        else
-        {
-            lines.Add($"Sweep peak index: {SweepDeconvolutionPeakIndex}");
-        }
-
-        if (MeterSnapshot.Microphone.Available)
-        {
-            lines.Add(
-                $"Mic: peak {MeterSnapshot.Microphone.PeakDbFs:0.0} dBFS, RMS {MeterSnapshot.Microphone.RmsDbFs:0.0} dBFS");
-        }
-        if (MeterSnapshot.Loopback.Available)
-        {
-            lines.Add(
-                $"Loopback: peak {MeterSnapshot.Loopback.PeakDbFs:0.0} dBFS, RMS {MeterSnapshot.Loopback.RmsDbFs:0.0} dBFS");
-        }
-
-        // These land on ToolStrip items and grid cells, which do not go through the
-        // app's wrapping tooltip, so the wrap happens here instead.
-        return ToolTipTextWrapper.Wrap(string.Join(Environment.NewLine, lines));
     }
 }

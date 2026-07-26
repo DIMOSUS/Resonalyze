@@ -4,85 +4,44 @@ using NAudio.Wave.Asio;
 namespace Resonalyze.Audio;
 
 /// <summary>
-/// Moves ASIO input processing off the driver's buffer-switch callback. Slots and
-/// channel buffers are prepared before playback starts; the callback only copies
-/// into the fixed pool. Reset, completion and disposal drop queued packets;
-/// completion preserves a terminal generation failure for the caller.
+/// Moves ASIO input processing off the driver's buffer-switch callback via the
+/// bounded slot pool of <see cref="CapturePump{TSlot,TBlock}"/>. Unlike the PCM
+/// pump, the pool cannot be sized at construction: the buffer size only becomes
+/// known when the driver opens, so <see cref="Prepare"/> allocates the slots and
+/// their per-channel buffers before playback starts and the callback then only
+/// copies into that fixed pool.
 /// </summary>
-internal sealed class AsioCapturePump : IDisposable
+internal sealed class AsioCapturePump : CapturePump<AsioCapturePump.Slot, AsioCaptureBlock>
 {
     private const int SlotCount = 8;
 
-    private readonly object sync = new();
     private readonly int channelCount;
-    private readonly Action<AsioCaptureBlock> processBlock;
-    private readonly Action<int, Exception> reportFailure;
-    private readonly InvalidOperationException overflowException = new(
-        "ASIO capture processing could not keep up with the driver; input buffers were not recorded.");
-    private readonly Thread worker;
-    private readonly Queue<int> pendingSlots = new(SlotCount);
-    private readonly Stack<int> freeSlots = new(SlotCount);
-    private Slot[] slots = Array.Empty<Slot>();
     private int preparedByteCapacity;
-    private int generation;
-    private int failureGeneration;
-    private Exception? failureException;
-    private int acceptedFrames;
-    private int inFlightCount;
-    private bool failurePending;
-    private bool stopping;
-    private bool failed;
 
     public AsioCapturePump(
         int channelCount,
         Action<AsioCaptureBlock> processBlock,
         Action<int, Exception> reportFailure)
+        : base(
+            SlotCount,
+            "ASIO",
+            "ASIO capture processing could not keep up with the driver; input buffers were not recorded.",
+            processBlock,
+            reportFailure)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(channelCount);
         this.channelCount = channelCount;
-        this.processBlock = processBlock ?? throw new ArgumentNullException(nameof(processBlock));
-        this.reportFailure = reportFailure ?? throw new ArgumentNullException(nameof(reportFailure));
-        worker = new Thread(Run)
-        {
-            IsBackground = true,
-            Name = "Resonalyze ASIO capture"
-        };
-        worker.Start();
-    }
-
-    internal bool IsStopping
-    {
-        get
-        {
-            lock (sync)
-            {
-                return stopping;
-            }
-        }
-    }
-
-    public int AcceptedFrames
-    {
-        get
-        {
-            lock (sync)
-            {
-                return acceptedFrames;
-            }
-        }
+        StartWorker();
     }
 
     /// <summary>Allocates the complete callback buffer pool before the driver starts.</summary>
     public void Prepare(int maximumByteCount)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumByteCount);
-        lock (sync)
+        lock (Sync)
         {
-            while (inFlightCount > 0)
-            {
-                Monitor.Wait(sync);
-            }
-            if (pendingSlots.Count != 0)
+            WaitForIdle();
+            if (HasPendingSlots)
             {
                 throw new InvalidOperationException("Reset the ASIO capture pump before preparing it.");
             }
@@ -91,59 +50,8 @@ internal sealed class AsioCapturePump : IDisposable
                 return;
             }
 
-            slots = new Slot[SlotCount];
-            freeSlots.Clear();
-            for (int slotIndex = 0; slotIndex < slots.Length; slotIndex++)
-            {
-                slots[slotIndex] = new Slot(channelCount, maximumByteCount);
-                freeSlots.Push(slotIndex);
-            }
+            AllocateSlots(() => new Slot(channelCount, maximumByteCount));
             preparedByteCapacity = maximumByteCount;
-        }
-    }
-
-    public void Reset(int newGeneration)
-    {
-        lock (sync)
-        {
-            ResetCore(newGeneration);
-        }
-    }
-
-    public Exception? CompleteGeneration(int completedGeneration, int newGeneration)
-    {
-        lock (sync)
-        {
-            if (generation != completedGeneration)
-            {
-                throw new InvalidOperationException(
-                    $"Cannot complete ASIO capture generation {completedGeneration}; current generation is {generation}.");
-            }
-            Exception? failure = failed && failureGeneration == completedGeneration
-                ? failureException
-                : null;
-            ResetCore(newGeneration);
-            return failure;
-        }
-    }
-
-    /// <summary>
-    /// Waits until every block accepted before the callback source stopped has
-    /// finished processing. Callers must prevent new enqueues before entering.
-    /// </summary>
-    public void Drain()
-    {
-        if (Thread.CurrentThread == worker)
-        {
-            throw new InvalidOperationException("The ASIO capture worker cannot drain itself.");
-        }
-
-        lock (sync)
-        {
-            while (pendingSlots.Count > 0 || inFlightCount > 0)
-            {
-                Monitor.Wait(sync);
-            }
         }
     }
 
@@ -156,13 +64,13 @@ internal sealed class AsioCapturePump : IDisposable
         int bytesPerSample = AsioSampleConverter.BytesPerSample(sampleType);
         int byteCount = checked(frameCount * bytesPerSample);
 
-        lock (sync)
+        lock (Sync)
         {
-            if (stopping || failed)
+            if (IsStoppedOrFailed)
             {
                 return false;
             }
-            if (slots.Length == 0)
+            if (!HasSlots)
             {
                 throw new InvalidOperationException("ASIO capture buffers were not prepared before playback.");
             }
@@ -171,20 +79,11 @@ internal sealed class AsioCapturePump : IDisposable
                 throw new InvalidOperationException(
                     $"ASIO packet size {byteCount} exceeds the prepared capacity {preparedByteCapacity}.");
             }
-            if (freeSlots.Count == 0)
+            if (!TryTakeSlot(frameCount, out int slotIndex, out Slot slot))
             {
-                failed = true;
-                failurePending = true;
-                failureGeneration = generation;
-                failureException = overflowException;
-                Monitor.Pulse(sync);
                 return false;
             }
 
-            int newAcceptedFrames = checked(acceptedFrames + frameCount);
-
-            int slotIndex = freeSlots.Pop();
-            Slot slot = slots[slotIndex];
             for (int channel = 0; channel < channelCount; channel++)
             {
                 Marshal.Copy(
@@ -196,125 +95,18 @@ internal sealed class AsioCapturePump : IDisposable
 
             slot.FrameCount = frameCount;
             slot.SampleType = sampleType;
-            slot.Generation = generation;
-            acceptedFrames = newAcceptedFrames;
-            pendingSlots.Enqueue(slotIndex);
-            Monitor.Pulse(sync);
+            PublishSlot(slotIndex, frameCount);
             return true;
         }
     }
 
-    public void Dispose()
-    {
-        lock (sync)
-        {
-            stopping = true;
-            failurePending = false;
-            while (pendingSlots.Count > 0)
-            {
-                freeSlots.Push(pendingSlots.Dequeue());
-            }
-            Monitor.PulseAll(sync);
-        }
+    protected override AsioCaptureBlock CreateBlock(Slot slot) => new(
+        slot.Channels,
+        slot.SampleType,
+        slot.FrameCount,
+        slot.Generation);
 
-        if (Thread.CurrentThread != worker)
-        {
-            worker.Join();
-        }
-    }
-
-    private void Run()
-    {
-        while (true)
-        {
-            int slotIndex = -1;
-            int blockGeneration = 0;
-            Exception? failure = null;
-            lock (sync)
-            {
-                while (pendingSlots.Count == 0 && !failurePending && !stopping)
-                {
-                    Monitor.Wait(sync);
-                }
-
-                if (failurePending)
-                {
-                    failurePending = false;
-                    failure = overflowException;
-                    blockGeneration = failureGeneration;
-                }
-                else if (pendingSlots.Count > 0)
-                {
-                    slotIndex = pendingSlots.Dequeue();
-                    inFlightCount++;
-                }
-                else if (stopping)
-                {
-                    return;
-                }
-            }
-
-            if (failure != null)
-            {
-                reportFailure(blockGeneration, failure);
-                continue;
-            }
-
-            try
-            {
-                Slot slot = slots[slotIndex];
-                blockGeneration = slot.Generation;
-                processBlock(new AsioCaptureBlock(
-                    slot.Channels,
-                    slot.SampleType,
-                    slot.FrameCount,
-                    slot.Generation));
-            }
-            catch (Exception exception)
-            {
-                bool report;
-                lock (sync)
-                {
-                    report = blockGeneration == generation;
-                    if (report)
-                    {
-                        failed = true;
-                        failureGeneration = blockGeneration;
-                        failureException = exception;
-                    }
-                }
-                if (report)
-                {
-                    reportFailure(blockGeneration, exception);
-                }
-            }
-            finally
-            {
-                lock (sync)
-                {
-                    inFlightCount--;
-                    freeSlots.Push(slotIndex);
-                    Monitor.PulseAll(sync);
-                }
-            }
-        }
-    }
-
-    private void ResetCore(int newGeneration)
-    {
-        generation = newGeneration;
-        failed = false;
-        failurePending = false;
-        failureException = null;
-        acceptedFrames = 0;
-        while (pendingSlots.Count > 0)
-        {
-            freeSlots.Push(pendingSlots.Dequeue());
-        }
-        Monitor.PulseAll(sync);
-    }
-
-    private sealed class Slot
+    internal sealed class Slot : ICapturePumpSlot
     {
         public Slot(int channelCount, int maximumByteCount)
         {

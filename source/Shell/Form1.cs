@@ -5,23 +5,6 @@ using Resonalyze.Options;
 
 namespace Resonalyze
 {
-    public enum Mode : int
-    {
-        None = 0,
-        ImpulseResponse,
-        FrequencyResponse,
-        PhaseResponse,
-        GroupDelay,
-        CumulativeSpectrumDecay,
-        BurstDecay,
-        LiveSpectrum,
-        Autocorrelation,
-        TimeAlignment,
-        EqWizard,
-        SignalGenerator,
-        VirtualCrossover
-    }
-
     public partial class Form1 : Form
     {
         private const string PeakInfoAnnotationTag = "PeakInfoAnnotation";

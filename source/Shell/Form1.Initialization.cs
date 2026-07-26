@@ -35,16 +35,17 @@ public partial class Form1
             expSweepMeasurement,
             noiseMeasurement,
             microphoneCalibration.Get,
-            frequencyResponseOptions,
-            phaseResponseOptions,
-            groupDelayOptions,
-            frequencyResponseVisibility,
-            phaseResponseVisibility,
-            groupDelayVisibility,
-            impulseResponseOptions,
-            liveSpectrumOptions,
-            waterfallGenOptions,
-            burstDecayGenOptions);
+            new PlotPresentationOptions(
+                FrequencyResponse: frequencyResponseOptions,
+                PhaseResponse: phaseResponseOptions,
+                GroupDelay: groupDelayOptions,
+                FrequencyResponseVisibility: frequencyResponseVisibility,
+                PhaseResponseVisibility: phaseResponseVisibility,
+                GroupDelayVisibility: groupDelayVisibility,
+                ImpulseResponse: impulseResponseOptions,
+                LiveSpectrum: liveSpectrumOptions,
+                Waterfall: waterfallGenOptions,
+                BurstDecay: burstDecayGenOptions));
         createdPlotModelFactory.SetCompareSourceProvider(compareSelection.GetAnalysisSource);
         LiveSpectrumController createdLiveSpectrumController = new(
             this,

@@ -184,6 +184,22 @@ close.
 
 ## Plotting
 
+- [ ] ★ **Snapshot read-model instead of the two live measurement objects in
+  `PlotModelFactory`.** The factory and `MeasurementPlotContext` are constructed
+  with `ExpSweepMeasurement` and `NoiseMeasurement` themselves and read 22
+  members between them, two of which (`InProgress`, `CurrentLevels`) mutate
+  during capture — so the replacement must be a read-model interface re-read per
+  plot build, NOT a value snapshot taken at construction, or Live Spectrum and
+  the in-progress guards change behaviour. This was the extraction audit's
+  top finding (2026-07-26): it is what a "plotting layer" split was really
+  after, and it needs no new project.
+  The reason it is not done yet is honest scope: the payoff — plot tests no
+  longer needing `FakeAudioSessionFactory` — only lands if the ~1030-line
+  `PlotModelFactoryTests` is rewritten too, because it builds state through
+  `measurement.RestoreImpulseResponse(...)` and therefore needs a live
+  measurement regardless of what the factory accepts. Interface + adapter
+  without that rewrite is pure addition. Do it as one piece, its own branch.
+  (The 13-argument constructor half is DONE — `PlotPresentationOptions`.)
 - [ ] **`LogarithmicClipAxis` label trim.** Edge tick labels can be trimmed at
   the plot boundary. Purely visual; needs a Windows render to reproduce.
 - [ ] **Waterfall renders nothing silently below 8 slices** (`RawSlices.Count <

@@ -41,31 +41,25 @@ internal sealed class PlotModelFactory
         ExpSweepMeasurement expSweepMeasurement,
         NoiseMeasurement noiseMeasurement,
         Func<MicrophoneCalibrationMode, CalibrationFile?> getCalibration,
-        FrequencyResponseOptions frequencyResponseOptions,
-        FrequencyResponseOptions phaseResponseOptions,
-        FrequencyResponseOptions groupDelayOptions,
-        CurveVisibilityOptions frequencyResponseVisibility,
-        CurveVisibilityOptions phaseResponseVisibility,
-        CurveVisibilityOptions groupDelayVisibility,
-        ImpulseResponseOptions impulseResponseOptions,
-        LiveSpectrumOptions liveSpectrumOptions,
-        WaterfallGenerateOptions waterfallGenOptions,
-        WaterfallGenerateOptions burstDecayGenOptions)
+        PlotPresentationOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
         this.expSweepMeasurement = expSweepMeasurement;
         this.noiseMeasurement = noiseMeasurement;
         this.getCalibration = getCalibration;
         measurementContext = new MeasurementPlotContext(expSweepMeasurement);
-        this.frequencyResponseOptions = frequencyResponseOptions;
-        this.phaseResponseOptions = phaseResponseOptions;
-        this.groupDelayOptions = groupDelayOptions;
-        this.frequencyResponseVisibility = frequencyResponseVisibility;
-        this.phaseResponseVisibility = phaseResponseVisibility;
-        this.groupDelayVisibility = groupDelayVisibility;
-        this.impulseResponseOptions = impulseResponseOptions;
-        this.liveSpectrumOptions = liveSpectrumOptions;
-        this.waterfallGenOptions = waterfallGenOptions;
-        this.burstDecayGenOptions = burstDecayGenOptions;
+        // Unpacked into fields so the 1600 lines below keep reading one name per
+        // setting; the record is the constructor's shape, not the class's.
+        frequencyResponseOptions = options.FrequencyResponse;
+        phaseResponseOptions = options.PhaseResponse;
+        groupDelayOptions = options.GroupDelay;
+        frequencyResponseVisibility = options.FrequencyResponseVisibility;
+        phaseResponseVisibility = options.PhaseResponseVisibility;
+        groupDelayVisibility = options.GroupDelayVisibility;
+        impulseResponseOptions = options.ImpulseResponse;
+        liveSpectrumOptions = options.LiveSpectrum;
+        waterfallGenOptions = options.Waterfall;
+        burstDecayGenOptions = options.BurstDecay;
     }
 
     public void SetImpulseResponseFileName(string? fileName)

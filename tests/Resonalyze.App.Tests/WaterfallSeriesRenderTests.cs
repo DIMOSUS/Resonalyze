@@ -81,16 +81,17 @@ public sealed class WaterfallSeriesRenderTests
             measurement,
             noiseMeasurement,
             mode => new CalibrationFile(calibrationPath),
-            new FrequencyResponseOptions(),
-            new FrequencyResponseOptions(),
-            new FrequencyResponseOptions(),
-            new CurveVisibilityOptions(),
-            new CurveVisibilityOptions(),
-            new CurveVisibilityOptions(),
-            new ImpulseResponseOptions(),
-            new LiveSpectrumOptions(),
-            new WaterfallGenerateOptions(),
-            new WaterfallGenerateOptions { WaterfallMode = WaterfallMode.BurstDecay });
+            new PlotPresentationOptions(
+                FrequencyResponse: new FrequencyResponseOptions(),
+                PhaseResponse: new FrequencyResponseOptions(),
+                GroupDelay: new FrequencyResponseOptions(),
+                FrequencyResponseVisibility: new CurveVisibilityOptions(),
+                PhaseResponseVisibility: new CurveVisibilityOptions(),
+                GroupDelayVisibility: new CurveVisibilityOptions(),
+                ImpulseResponse: new ImpulseResponseOptions(),
+                LiveSpectrum: new LiveSpectrumOptions(),
+                Waterfall: new WaterfallGenerateOptions(),
+                BurstDecay: new WaterfallGenerateOptions { WaterfallMode = WaterfallMode.BurstDecay }));
     }
 
     /// <summary>

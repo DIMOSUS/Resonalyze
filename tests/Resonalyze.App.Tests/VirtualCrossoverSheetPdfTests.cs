@@ -185,13 +185,13 @@ public sealed class VirtualCrossoverSheetPdfTests
     }
 
     [Fact]
-    public void Build_PeqCaption_IsARepeatingHeadingRowOfTheCardTable()
+    public void Build_PeqCaption_IsARepeatingHeadingRowOfEveryBlock()
     {
-        // A full bank is 32 filters — eight card rows — so the grid can break across
-        // pages. A caption in a paragraph above the table would name only the first page
-        // and leave the rest looking like the previous channel's filters. Only a heading
-        // row is repeated by MigraDoc on every page a table spans, so the caption must
-        // live INSIDE the card table as one.
+        // A full bank is 32 filters, so it runs to four blocks and can break across pages.
+        // A caption in a paragraph above the table would name only the first page and
+        // leave the rest looking like the previous channel's filters. Only a heading row
+        // is repeated by MigraDoc on every page a table spans, so the caption must live
+        // INSIDE each block as one.
         var project = new VirtualCrossoverProjectFile();
         project.Pairs[0].Mono = true;
         project.Pairs[0].Left.SourceFilePath = "sub.json";
@@ -203,24 +203,74 @@ public sealed class VirtualCrossoverSheetPdfTests
 
         using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(project, null, 48_000);
 
-        Table cardTable = CardTables(sheet.Document).Single();
-        Row caption = cardTable.Rows[0];
-        Assert.Contains("Channel A (mono) — PEQ", CellText(caption.Cells[0]));
-        Assert.True(caption.HeadingFormat, "The caption row does not repeat across pages.");
-        // Spans the whole grid, and cannot be left stranded above its first cards.
-        Assert.Equal(cardTable.Columns.Count - 1, caption.Cells[0].MergeRight);
-        Assert.True(caption.KeepWith >= 1);
-        // The bank really is long enough to break: eight card rows plus the caption.
-        Assert.Equal(9, cardTable.Rows.Count);
+        Table[] blocks = CardTables(sheet.Document).ToArray();
+        Assert.Equal(4, blocks.Length);
+
+        foreach (Table block in blocks)
+        {
+            Row caption = block.Rows[0];
+            Assert.Contains("Channel A (mono) — PEQ", CellText(caption.Cells[0]));
+            Assert.True(
+                caption.HeadingFormat, "The caption row does not repeat across pages.");
+            // Spans the whole block, and cannot be left stranded above its own filters.
+            Assert.Equal(block.Columns.Count - 1, caption.Cells[0].MergeRight);
+            Assert.True(caption.KeepWith >= 1);
+            // Caption, the numbers, then gain / F / Q.
+            Assert.Equal(5, block.Rows.Count);
+        }
+
+        // A continuation is marked as one, so a block landing alone on a page is not read
+        // as a second, separate bank for the same channel.
+        Assert.DoesNotContain("(cont.)", CellText(blocks[0].Rows[0].Cells[0]));
+        Assert.Contains("(cont.)", CellText(blocks[1].Rows[0].Cells[0]));
     }
 
-    // The filter-card grid is the four-column table; the value tables are one or three.
+    // The bank reads down its columns: filter numbers across the top, then gain, F and Q.
+    [Fact]
+    public void Build_FilterTable_IsFourRowsWithOneColumnPerFilter()
+    {
+        var project = new VirtualCrossoverProjectFile();
+        project.Pairs[0].Mono = true;
+        project.Pairs[0].Left.SourceFilePath = "sub.json";
+        project.Pairs[0].Left.DisplayName = "Sub";
+        project.Pairs[0].Left.PeqBands.Add(new PeqBand(45, 3.0, -4.0));
+        project.Pairs[0].Left.PeqBands.Add(new PeqBand(1_250, 6.0, 2.5));
+
+        using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(project, null, 48_000);
+        Table block = CardTables(sheet.Document).Single();
+
+        // Caption, numbers, gain, F, Q — and no row per filter.
+        Assert.Equal(5, block.Rows.Count);
+        Assert.Equal("PK", CellText(block.Rows[1].Cells[0]));
+        Assert.Equal("1", CellText(block.Rows[1].Cells[1]));
+        Assert.Equal("2", CellText(block.Rows[1].Cells[2]));
+
+        Assert.Equal("Gain, dB", CellText(block.Rows[2].Cells[0]));
+        Assert.Equal("-4.0", CellText(block.Rows[2].Cells[1]));
+        Assert.Equal("+2.5", CellText(block.Rows[2].Cells[2]));
+
+        Assert.Equal("F, Hz", CellText(block.Rows[3].Cells[0]));
+        Assert.Equal("45", CellText(block.Rows[3].Cells[1]));
+        Assert.Equal("1250", CellText(block.Rows[3].Cells[2]));
+
+        Assert.Equal("Q · RBJ", CellText(block.Rows[4].Cells[0]));
+        Assert.Equal("3.0", CellText(block.Rows[4].Cells[1]));
+        Assert.Equal("6.0", CellText(block.Rows[4].Cells[2]));
+
+        // The slots past the bank stay blank rather than shrinking the block: every block
+        // declares the full column set so a continuation lines up under the first.
+        Assert.Equal(string.Empty, CellText(block.Rows[3].Cells[3]));
+    }
+
+    // The PEQ table is the wide one — a label column plus a column per filter slot; the
+    // value tables are two or three columns.
     private static IEnumerable<Table> CardTables(Document document)
     {
         DocumentElements elements = document.LastSection.Elements;
         for (int i = 0; i < elements.Count; i++)
         {
-            if (elements[i] is Table { Columns.Count: 4 } table)
+            if (elements[i] is Table table &&
+                table.Columns.Count == PdfSheet.FiltersPerTableBlock + 1)
             {
                 yield return table;
             }
@@ -241,6 +291,38 @@ public sealed class VirtualCrossoverSheetPdfTests
         using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(project, null, 48_000);
 
         Assert.Contains("Channel A (mono) — PEQ", AllText(sheet.Document));
+    }
+
+    // The filter card is what gets typed into the DSP, so its Q must be the target's.
+    // 45 Hz Q 3.0 -4 dB restates to 3.0 * 10^(4/40) = 3.775 under Symmetric and to
+    // 3.0 * 10^(-4/40) = 2.384 under Classic — a cut moves them opposite ways.
+    [Theory]
+    [InlineData(PeqQConvention.Rbj, "Q · RBJ", "3.0")]
+    [InlineData(PeqQConvention.Symmetric, "Q · Symmetric", "3.78")]
+    [InlineData(PeqQConvention.Classic, "Q · Classic", "2.38")]
+    public void Build_FilterTable_RestatesQInTheTargetDspConvention(
+        PeqQConvention convention,
+        string expectedLabel,
+        string expectedQ)
+    {
+        var project = new VirtualCrossoverProjectFile();
+        project.Pairs[0].Mono = true;
+        project.Pairs[0].Left.SourceFilePath = "sub.json";
+        project.Pairs[0].Left.DisplayName = "Sub";
+        project.Pairs[0].Left.PeqBands.Add(new PeqBand(45, 3.0, -4.0));
+
+        using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(
+            project, null, 48_000, convention);
+        Table block = CardTables(sheet.Document).Single();
+
+        // The Q row names its own convention: a bank runs to several blocks and pages,
+        // and the subtitle carrying it is only on the first.
+        Assert.Equal(expectedLabel, CellText(block.Rows[4].Cells[0]));
+        Assert.Equal(expectedQ, CellText(block.Rows[4].Cells[1]));
+
+        // Only Q moves — frequency and gain mean the same thing on every device.
+        Assert.Equal("45", CellText(block.Rows[3].Cells[1]));
+        Assert.Equal("-4.0", CellText(block.Rows[2].Cells[1]));
     }
 
     // Every caption and cell in the sheet, flattened, so a test can assert that a piece

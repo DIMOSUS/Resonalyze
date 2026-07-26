@@ -1613,6 +1613,46 @@ car or speaker: the product banner, a title from the file name, the date and fit
 range, a small EQ preview graph with the fit window shaded, the tuning statistics,
 the preamp, and one large card per filter.
 
+### DSP Q convention
+
+Processors do not agree on what the **Q** of a peaking band means, and the
+disagreement is invisible until you cut deep. Every convention states the
+bandwidth between the half-gain points as `BW = m · Fc / Q` and differs only in
+the multiplier, so the same three numbers produce different filters:
+
+| Convention | Bandwidth at half gain | Behaviour | Seen on |
+| --- | --- | --- | --- |
+| **RBJ** | `Fc / Q` | Independent of gain | Equalizer APO, REW, CamillaDSP, Audison/Hertz, Mosconi |
+| **Symmetric** (Zölzer/DAFX) | `sqrt(\|gain\|) · Fc / Q` | Widens as the band deepens, boost and cut alike | Many embedded and automotive DSPs; AMP Panacea |
+| **Classic** | `sqrt(gain) · Fc / Q` | Asymmetric — boost wider, cut *narrower* | JL Audio TwK-88, Rockford Fosgate 3Sixty.3, Behringer DCX2496, Hypex, rePhase |
+
+Resonalyze fits, plots and exports RBJ filters throughout. Hand a Q of 5.8 at
+−15 dB to a Symmetric processor and it realizes a band over twice as wide — an
+EQ that measures much broader than it was designed, over-correcting its
+neighbours.
+
+The **DSP Q** selector in the EQ Wizard states which convention the processor
+being tuned uses. It moves the Q printed on the tuning sheets — the EQ Wizard's
+PDF and the Virtual DSP sheet, both of which name the convention they were
+written for — and nothing else: the fit, the curve on screen and the exported
+profile files stay RBJ. The conventions are exactly reconcilable, being one
+filter family reached through different Q scales, so a restated band reproduces
+the designed response on the device rather than approximating it:
+
+```
+Q_symmetric = Q_rbj × 10^( |gain| / 40)     ±3 dB ×1.19   ±12 dB ×2.00   ±15 dB ×2.37
+Q_classic   = Q_rbj × 10^(  gain  / 40)     +12 dB ×2.00   −12 dB ×0.50
+```
+
+Note that these are conventions of a **model**, not of a manufacturer or a chip:
+JL Audio's TwK-88 and VXi disagree with each other behind the same tuning
+software, and a SHARC or SigmaDSP part is handed finished coefficients, so it
+implies nothing about Q. If your processor is not listed above, measure it: set
+one band to Fc 1 kHz and Q 4, at +12 dB and then at −12 dB, and read the
+bandwidth between the ±6 dB points off a sweep. RBJ gives ~250 Hz both times,
+Symmetric ~499 Hz both times, Classic ~499 Hz and ~125 Hz. The spread is far too
+large to confuse with measurement error.
+
 ## Signal Generator
 
 The **Signal Generator** (under the **Tools** tab) plays a continuous test signal

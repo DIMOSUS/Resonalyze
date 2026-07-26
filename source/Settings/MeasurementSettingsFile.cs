@@ -25,6 +25,14 @@ internal sealed class MeasurementSettingsFile
     public LiveSpectrumSettings LiveSpectrum { get; set; } = new();
     public TimeAlignmentSettings TimeAlignment { get; set; } = new();
     public EqWizardSettings EqWizard { get; set; } = new();
+
+    // How the DSP the user is tuning reads the Q of a peaking band. A property of the
+    // hardware rather than of any one mode, so it lives at the top level and every
+    // tuning sheet — EQ Wizard and Virtual DSP alike — prints its Q column for it.
+    // Defaults to RBJ, which is what the fitting and the previews realize, so an
+    // existing settings file keeps behaving exactly as before.
+    public PeqQConvention TargetDspQConvention { get; set; } = PeqQConvention.Rbj;
+
     public string? LastImpulseResponseDirectory { get; set; }
 
     // True when loading reset a loopback configuration that pointed at the

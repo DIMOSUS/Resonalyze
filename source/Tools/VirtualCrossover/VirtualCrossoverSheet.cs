@@ -14,7 +14,8 @@ internal static class VirtualCrossoverSheet
 
     public static string FormatText(
         VirtualCrossoverProjectFile project,
-        string? metricLine)
+        string? metricLine,
+        PeqQConvention qConvention = PeqQConvention.Rbj)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -22,6 +23,10 @@ internal static class VirtualCrossoverSheet
         builder.AppendLine("Resonalyze — Virtual DSP tuning sheet");
         builder.AppendLine(
             $"Generated {DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}");
+        // Named on every sheet, not only when it deviates: a sheet that stays silent
+        // about its Q convention is exactly how a tune ends up measuring wider than it
+        // was designed, and the reader cannot tell a silent sheet from an RBJ one.
+        builder.AppendLine($"PEQ Q convention: {PeqQConventions.Describe(qConvention)}");
         if (!string.IsNullOrWhiteSpace(metricLine))
         {
             builder.AppendLine(metricLine);
@@ -69,7 +74,8 @@ internal static class VirtualCrossoverSheet
                         $"preamp {Signed(channel.PeqPreampDb)} dB");
                     for (int band = 0; band < channel.PeqBands.Count; band++)
                     {
-                        PeqBand peq = channel.PeqBands[band];
+                        PeqBand peq = PeqQConventions.ToConvention(
+                            channel.PeqBands[band], qConvention);
                         builder.AppendLine(
                             $"    Filter {band + 1}: ON PK Fc {Number(peq.FrequencyHz, "0.###")} Hz " +
                             $"Gain {Signed(peq.GainDb)} dB Q {Number(peq.Q, "0.0#")}");

@@ -29,14 +29,17 @@ internal static class TuningSheetPdf
         double fitMinHz,
         double fitMaxHz,
         double sampleRateHz,
-        EqTuneStats? stats)
+        EqTuneStats? stats,
+        PeqQConvention qConvention = PeqQConvention.Rbj)
     {
         ArgumentNullException.ThrowIfNull(curve);
 
         using var sheet = new PdfSheet(
             string.IsNullOrWhiteSpace(title) ? "Tuning sheet" : title,
             $"Generated {DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}" +
-            $"   ·   Fit range {Number(fitMinHz, "0")}–{Number(fitMaxHz, "0")} Hz");
+            $"   ·   Fit range {Number(fitMinHz, "0")}–{Number(fitMaxHz, "0")} Hz" +
+            $"   ·   Q: {PeqQConventions.Describe(qConvention)}",
+            qConvention);
         Section section = sheet.Section;
 
         sheet.AddImage(
@@ -54,7 +57,7 @@ internal static class TuningSheetPdf
         preamp.AddFormattedText("Preamp   ", TextFormat.NotBold);
         preamp.AddFormattedText($"{Signed(curve.PreampDb)} dB", TextFormat.Bold);
 
-        sheet.AddFilterCards(curve.Bands);
+        sheet.AddFilterTable(curve.Bands);
 
         sheet.Save(filePath);
     }

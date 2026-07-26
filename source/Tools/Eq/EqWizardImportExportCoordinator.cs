@@ -27,7 +27,8 @@ internal sealed class EqWizardImportExportCoordinator
                 request.MinHz,
                 request.MaxHz,
                 request.SampleRate,
-                request.Stats))
+                request.Stats,
+                request.QConvention))
     {
     }
 
@@ -98,7 +99,8 @@ internal sealed class EqWizardImportExportCoordinator
                     request.MinHz,
                     request.MaxHz,
                     request.SampleRate,
-                    request.Stats));
+                    request.Stats,
+                    request.QConvention));
             }
             else
             {
@@ -197,7 +199,10 @@ internal sealed record EqWizardExportRequest(
     string Title,
     double MinHz,
     double MaxHz,
-    EqTuneStats? Stats);
+    EqTuneStats? Stats,
+    // Only the tuning sheet honours this: the profile formats are read back by
+    // software that defines Q the RBJ way, so restating theirs would corrupt them.
+    PeqQConvention QConvention = PeqQConvention.Rbj);
 
 internal sealed record EqWizardTuningSheetRequest(
     string Path,
@@ -206,7 +211,8 @@ internal sealed record EqWizardTuningSheetRequest(
     double MinHz,
     double MaxHz,
     double SampleRate,
-    EqTuneStats? Stats);
+    EqTuneStats? Stats,
+    PeqQConvention QConvention = PeqQConvention.Rbj);
 
 internal sealed record EqWizardFileResult(bool Success, Exception? Exception)
 {

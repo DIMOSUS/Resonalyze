@@ -47,6 +47,7 @@ internal abstract class CapturePump<TSlot, TBlock> : IDisposable
     private bool failurePending;
     private bool stopping;
     private bool failed;
+    private bool workerStarted;
 
     protected CapturePump(
         int slotCount,
@@ -64,12 +65,45 @@ internal abstract class CapturePump<TSlot, TBlock> : IDisposable
         pendingSlots = new Queue<int>(slotCount);
         freeSlots = new Stack<int>(slotCount);
 
+        // Created, NOT started: a derived constructor still has to validate its
+        // own arguments and lay out its slots, and anything it throws leaves the
+        // object unreachable — a worker already running at that point could
+        // never be disposed and would sit on Monitor.Wait for the process
+        // lifetime. Every derived constructor ends with StartWorker().
         worker = new Thread(Run)
         {
             IsBackground = true,
             Name = $"Resonalyze {backendName} capture"
         };
-        worker.Start();
+    }
+
+    /// <summary>
+    /// Starts the background worker. The last statement of a derived
+    /// constructor, once its arguments are validated and its slots are laid
+    /// out — see the note in the base constructor.
+    /// </summary>
+    protected void StartWorker()
+    {
+        // Both under the lock so a concurrent Dispose cannot observe the flag
+        // and the thread state out of step. Run() blocks on Sync until this
+        // returns.
+        lock (Sync)
+        {
+            worker.Start();
+            workerStarted = true;
+        }
+    }
+
+    /// <summary>Test seam: pins that the base constructor leaves the worker unstarted.</summary>
+    internal bool WorkerStarted
+    {
+        get
+        {
+            lock (Sync)
+            {
+                return workerStarted;
+            }
+        }
     }
 
     /// <summary>The lock guarding every field below; a derived enqueue holds it.</summary>
@@ -146,8 +180,10 @@ internal abstract class CapturePump<TSlot, TBlock> : IDisposable
 
     public void Dispose()
     {
+        bool started;
         lock (Sync)
         {
+            started = workerStarted;
             stopping = true;
             failurePending = false;
             while (pendingSlots.Count > 0)
@@ -157,7 +193,10 @@ internal abstract class CapturePump<TSlot, TBlock> : IDisposable
             Monitor.PulseAll(Sync);
         }
 
-        if (Thread.CurrentThread != worker)
+        // Joining a thread that was never started throws ThreadStateException,
+        // so a pump whose derived constructor failed before StartWorker still
+        // disposes cleanly.
+        if (started && Thread.CurrentThread != worker)
         {
             worker.Join();
         }

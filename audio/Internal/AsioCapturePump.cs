@@ -31,6 +31,7 @@ internal sealed class AsioCapturePump : CapturePump<AsioCapturePump.Slot, AsioCa
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(channelCount);
         this.channelCount = channelCount;
+        StartWorker();
     }
 
     /// <summary>Allocates the complete callback buffer pool before the driver starts.</summary>

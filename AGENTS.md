@@ -46,6 +46,27 @@ Key structural points:
 - **`Overlays/`** manages persistent overlay slots and calculated (math) overlays; **`History/`** persists measurement snapshots with per-entry working state.
 - Update checking uses NetSparkle + `Settings/GitHubReleaseChecker`.
 
+### Accessibility is not an external contract
+
+`Resonalyze.Dsp` and `Resonalyze.Audio` are separate assemblies for the sake of
+the dependency boundaries above, **not** because they are distributed. Nothing
+packs them: `release.yml` only runs `dotnet publish source/Resonalyze.csproj`,
+and the DLLs ship inside the app's installer. There is no supported external
+API and no downstream consumer to deprecate for.
+
+So `public` on a member of those assemblies means "reachable from the app or its
+tests", not "part of a contract". An unreferenced member is dead code and is
+deleted outright — no `[Obsolete]` cycle. Judge deadness across the whole
+solution (the tests count as a consumer), and prefer `internal` for anything a
+new member does not need to expose beyond its own assembly; both projects grant
+`InternalsVisibleTo` to their test project, so `internal` costs no coverage.
+
+Two caveats when sweeping for dead code: `override` members and interface
+implementations are called by the framework, not by name (`WaterfallSeries.
+GetNearestPoint` is OxyPlot's tracker, `WindowsAudioEndpointService.OnDevice*`
+is `IMMNotificationClient`), and a static class holding only extension methods
+is never referenced by its own name.
+
 ### Numeric precision (float vs double)
 
 Raw and real-time audio samples stay `float`: capture/playback buffers, the

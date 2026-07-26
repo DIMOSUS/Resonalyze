@@ -26,6 +26,8 @@ internal sealed class PcmCapturePump : CapturePump<PcmCapturePump.Slot, PcmCaptu
         {
             AllocateSlots(() => new Slot(maximumPacketBytes));
         }
+
+        StartWorker();
     }
 
     public bool TryEnqueue(AudioCapturePacket packet)

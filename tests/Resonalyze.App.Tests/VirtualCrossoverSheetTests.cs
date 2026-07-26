@@ -40,6 +40,37 @@ public sealed class VirtualCrossoverSheetTests
         return project;
     }
 
+    // A sheet is transcribed into the DSP, so its Q column has to be the one that DSP
+    // reads. The band is 120 Hz Q 2.0 -4 dB, a CUT — the case where the two proportional
+    // conventions move Q in opposite directions: Symmetric to 2.0 * 10^(4/40) = 2.517,
+    // Classic to 2.0 * 10^(-4/40) = 1.589.
+    [Theory]
+    [InlineData(PeqQConvention.Rbj, "Q 2")]
+    [InlineData(PeqQConvention.Symmetric, "Q 2.52")]
+    [InlineData(PeqQConvention.Classic, "Q 1.59")]
+    public void FormatText_RestatesQInTheTargetDspConvention(
+        PeqQConvention convention,
+        string expectedQ)
+    {
+        string text = VirtualCrossoverSheet.FormatText(CreateProject(), null, convention);
+
+        // Only Q moves: a mismatched convention never shifts a band or its gain.
+        Assert.Contains($"Fc 120 Hz Gain -4.0 dB {expectedQ}", text);
+    }
+
+    // Named on every sheet, including the default one — a sheet that does not say which
+    // convention its Q belongs to is unreadable a month later.
+    [Theory]
+    [InlineData(PeqQConvention.Rbj, "RBJ Q — cookbook (constant)")]
+    [InlineData(PeqQConvention.Symmetric, "Symmetric Q — Zölzer/DAFX (proportional)")]
+    [InlineData(PeqQConvention.Classic, "Classic Q (asymmetric: boost wider, cut narrower)")]
+    public void FormatText_NamesTheQConvention(PeqQConvention convention, string expected)
+    {
+        string text = VirtualCrossoverSheet.FormatText(CreateProject(), null, convention);
+
+        Assert.Contains($"PEQ Q convention: {expected}", text);
+    }
+
     [Fact]
     public void FormatText_ListsEveryDspSettingOfParticipatingChannels()
     {

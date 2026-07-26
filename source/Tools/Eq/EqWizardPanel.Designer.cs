@@ -66,6 +66,8 @@
             buttonImport = new Button();
             buttonExport = new Button();
             buttonResetBands = new Button();
+            comboBoxQConvention = new DarkComboBox();
+            labelQConvention = new Label();
             (NumericTargetOffset).BeginInit();
             (NumericGain).BeginInit();
             (numericToHz).BeginInit();
@@ -506,6 +508,28 @@
             buttonResetBands.Text = "Reset filters";
             buttonResetBands.UseVisualStyleBackColor = true;
             //
+            // comboBoxQConvention
+            //
+            comboBoxQConvention.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxQConvention.ForeColor = Color.White;
+            comboBoxQConvention.Location = new Point(108, 307);
+            comboBoxQConvention.MinimumSize = new Size(36, 19);
+            comboBoxQConvention.Name = "comboBoxQConvention";
+            comboBoxQConvention.Size = new Size(80, 19);
+            comboBoxQConvention.TabIndex = 60;
+            //
+            // labelQConvention
+            //
+            labelQConvention.AutoSize = true;
+            labelQConvention.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            labelQConvention.ForeColor = Color.FromArgb(210, 214, 222);
+            labelQConvention.Location = new Point(9, 309);
+            labelQConvention.Margin = new Padding(3);
+            labelQConvention.Name = "labelQConvention";
+            labelQConvention.Size = new Size(66, 15);
+            labelQConvention.TabIndex = 61;
+            labelQConvention.Text = "DSP Q";
+            //
             // EqWizardPanel
             //
             AutoScaleDimensions = new SizeF(7F, 15F);
@@ -513,6 +537,8 @@
             AutoScroll = true;
             BackColor = Color.FromArgb(40, 44, 54);
             BorderStyle = BorderStyle.FixedSingle;
+            Controls.Add(labelQConvention);
+            Controls.Add(comboBoxQConvention);
             Controls.Add(buttonResetBands);
             Controls.Add(buttonExport);
             Controls.Add(buttonImport);
@@ -585,5 +611,7 @@
         private Button buttonImport;
         private Button buttonExport;
         private Button buttonResetBands;
+        private DarkComboBox comboBoxQConvention;
+        private Label labelQConvention;
     }
 }

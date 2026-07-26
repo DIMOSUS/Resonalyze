@@ -88,6 +88,7 @@ public partial class EqWizardPanel : UserControl
         InitializeBandsLimitComboBox();
         InitializeSmoothComboBox();
         InitializeSampleRateComboBox();
+        InitializeQConventionComboBox();
         // Open on Click (which fires after the mouse-up) and defer with BeginInvoke.
         // Showing a dropdown synchronously inside the mouse message is swallowed by the
         // focus change, and showing it on mouse-down lets the click's own mouse-up land
@@ -287,6 +288,19 @@ public partial class EqWizardPanel : UserControl
             "Import a PEQ profile (Equalizer APO, REW, CSV, EasyEffects, CamillaDSP).");
         SetTip(buttonExport,
             "Export the PEQ as a profile file or a printable tuning-sheet PDF.");
+        SetTip(labelQConvention, comboBoxQConvention,
+            "How the DSP you are tuning defines Q, named as REW names it. RBJ " +
+            "(bandwidth = Fc/Q) is the cookbook convention, independent of gain, used " +
+            "by Equalizer APO, CamillaDSP, REW Generic/Extended, Audiotec Fischer " +
+            "(HELIX/MATCH/BRAX), Audison/Hertz, Mosconi and miniDSP. Symmetric " +
+            "(Zölzer/DAFX) widens a band as it deepens, boost and cut alike — over " +
+            "twice as wide at 15 dB; used by AMP Panacea, Behringer DCX2496, Rockford " +
+            "Fosgate 3Sixty.3, Hypex and rePhase. Classic widens a boost the same way " +
+            "but narrows a cut instead, and is rare — the JL Audio TwK-88 is the one " +
+            "processor documented for it. Only the tuning sheets are restated; the " +
+            "fit, the curve on screen and the exported profile files stay RBJ. If you " +
+            "do not know your DSP's convention, measure it: one band at +12 and again " +
+            "at -12 dB, and compare the two bandwidths.");
     }
 
     private void SetTip(Control label, Control control, string text)
@@ -985,7 +999,8 @@ public partial class EqWizardPanel : UserControl
                 System.IO.Path.GetFileNameWithoutExtension(dialog.FileName),
                 minHz,
                 maxHz,
-                lastStats));
+                lastStats,
+                TargetDspQConvention));
         if (!result.Success)
         {
             ShowFileError("PEQ could not be exported.", result.Exception!);

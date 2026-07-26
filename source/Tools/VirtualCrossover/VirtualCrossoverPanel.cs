@@ -155,6 +155,17 @@ public partial class VirtualCrossoverPanel : UserControl
     internal MeasurementHistoryService? HistoryService { get; set; }
 
     /// <summary>
+    /// How the DSP being tuned defines Q, mirrored here from the application settings
+    /// (the EQ Wizard owns the selector). Read only when a tuning sheet is exported —
+    /// the simulated chain itself is always the RBJ realization, so this cannot change
+    /// what the panel plots or what a project file holds.
+    /// </summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal PeqQConvention TargetDspQConvention { get; set; } = PeqQConvention.Rbj;
+
+    /// <summary>
     /// Microphone calibration applied to the magnitude curves, resolved from the
     /// panel's own <see cref="comboBoxCalibration"/> selection (Off / 0° / 90°).
     /// Null when calibration is off or unavailable.
@@ -3712,13 +3723,14 @@ public partial class VirtualCrossoverPanel : UserControl
             if (dialog.FilterIndex == 1)
             {
                 VirtualCrossoverSheetPdf.Export(
-                    dialog.FileName, project, metricLine, sampleRate);
+                    dialog.FileName, project, metricLine, sampleRate, TargetDspQConvention);
             }
             else
             {
                 File.WriteAllText(
                     dialog.FileName,
-                    VirtualCrossoverSheet.FormatText(project, metricLine));
+                    VirtualCrossoverSheet.FormatText(
+                        project, metricLine, TargetDspQConvention));
             }
         }
         catch (Exception exception)

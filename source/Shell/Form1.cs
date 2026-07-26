@@ -171,14 +171,23 @@ namespace Resonalyze
             eqWizardPanel.ResultsChanged = eqResultsPanel.SetResults;
             eqWizardPanel.HistoryService = measurementHistoryService;
             eqWizardPanel.ApplyPersistedSettings(measurementSettings.EqWizard);
+            // The Q convention is a property of the DSP being tuned, not of one mode, so
+            // it lives at the top level of the settings and both tuning-sheet exporters
+            // read it. The EQ Wizard owns the selector; Virtual DSP follows it.
+            eqWizardPanel.TargetDspQConvention = measurementSettings.TargetDspQConvention;
             eqWizardPanel.SettingsChanged += () =>
             {
                 measurementSettings.EqWizard = eqWizardPanel.CaptureSettings();
+                measurementSettings.TargetDspQConvention = eqWizardPanel.TargetDspQConvention;
+                virtualCrossoverPanel.TargetDspQConvention =
+                    eqWizardPanel.TargetDspQConvention;
                 ScheduleMeasurementSettingsSave();
             };
             signalGeneratorPanel.PlaybackSettingsProvider = CreateSignalGeneratorPlaybackSettings;
             signalGeneratorPanel.AudioSessionFactory = audioSessionFactory;
             virtualCrossoverPanel.HistoryService = measurementHistoryService;
+            virtualCrossoverPanel.TargetDspQConvention =
+                measurementSettings.TargetDspQConvention;
             RefreshCalibrationConsumers();
             virtualCrossoverPanel.OverlayCaptureRequested = SaveVirtualCrossoverOverlay;
             virtualCrossoverPanel.MetricChanged = (text, detail) =>

@@ -24,6 +24,9 @@ public partial class EqWizardPanel
     private static readonly int[] SelectableSampleRatesHz =
         { 44_100, 48_000, 88_200, 96_000, 176_400, 192_000 };
 
+    private static readonly PeqQConvention[] SelectableQConventions =
+        { PeqQConvention.Rbj, PeqQConvention.Symmetric, PeqQConvention.Classic };
+
     private const string NoSourceHint =
         "Load a source to equalize — an impulse response,\n" +
         "or a measured curve from an overlay slot or a text file.\n" +
@@ -66,6 +69,7 @@ public partial class EqWizardPanel
     private MicrophoneCalibrationMode preferredIrCalibrationMode = MicrophoneCalibrationMode.Off;
     private bool suppressCalibrationEvents;
     private bool suppressSampleRateEvents;
+    private bool suppressQConventionEvents;
     private bool suppressSettingsSave;
     // The rate used when the source does not state one; persisted, unlike the source.
     private int manualSampleRateHz = DefaultSampleRateHz;
@@ -840,6 +844,61 @@ public partial class EqWizardPanel
                 ? selected
                 : manualSampleRateHz;
         }
+    }
+
+    /// <summary>
+    /// How the DSP being tuned defines the Q of a peaking band. This moves the numbers
+    /// on the tuning sheet ONLY: the fit, the on-screen curve and the profile-file
+    /// exports all stay in the RBJ convention the library realizes, so switching it
+    /// never changes the tune that was designed — just how it has to be typed in for
+    /// the hardware to reproduce it.
+    /// </summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal PeqQConvention TargetDspQConvention
+    {
+        get => comboBoxQConvention.SelectedItem is PeqQConvention convention
+            ? convention
+            : PeqQConvention.Rbj;
+        set
+        {
+            suppressQConventionEvents = true;
+            try
+            {
+                comboBoxQConvention.SelectedItem = value;
+            }
+            finally
+            {
+                suppressQConventionEvents = false;
+            }
+        }
+    }
+
+    private void InitializeQConventionComboBox()
+    {
+        comboBoxQConvention.Format += (_, args) =>
+        {
+            if (args.ListItem is PeqQConvention convention)
+            {
+                args.Value = PeqQConventions.DescribeShort(convention);
+            }
+        };
+        foreach (PeqQConvention convention in SelectableQConventions)
+        {
+            comboBoxQConvention.Items.Add(convention);
+        }
+
+        // Selected before the handler is attached, so building the panel does not look
+        // like the user changing the setting.
+        comboBoxQConvention.SelectedItem = PeqQConvention.Rbj;
+        comboBoxQConvention.SelectedIndexChanged += (_, _) =>
+        {
+            if (!suppressQConventionEvents)
+            {
+                RaiseSettingsChanged();
+            }
+        };
     }
 
     private void InitializeSampleRateComboBox()

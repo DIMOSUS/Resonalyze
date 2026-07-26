@@ -36,9 +36,10 @@ internal static class VirtualCrossoverSheetPdf
         string filePath,
         VirtualCrossoverProjectFile project,
         string? metricLine,
-        int sampleRate)
+        int sampleRate,
+        PeqQConvention qConvention = PeqQConvention.Rbj)
     {
-        using PdfSheet sheet = Build(project, metricLine, sampleRate);
+        using PdfSheet sheet = Build(project, metricLine, sampleRate, qConvention);
         sheet.Save(filePath);
     }
 
@@ -49,18 +50,20 @@ internal static class VirtualCrossoverSheetPdf
     internal static PdfSheet Build(
         VirtualCrossoverProjectFile project,
         string? metricLine,
-        int sampleRate)
+        int sampleRate,
+        PeqQConvention qConvention = PeqQConvention.Rbj)
     {
         ArgumentNullException.ThrowIfNull(project);
 
         string subtitleText =
             $"Generated {DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}";
+        subtitleText += $"   ·   Q: {PeqQConventions.Describe(qConvention)}";
         if (!string.IsNullOrWhiteSpace(metricLine))
         {
             subtitleText += $"   ·   {metricLine}";
         }
 
-        var sheet = new PdfSheet("Virtual DSP", subtitleText);
+        var sheet = new PdfSheet("Virtual DSP", subtitleText, qConvention);
 
         // Both sides of every pair print in one sheet; a mono pair prints
         // once. On the graph the right side reuses the pair's hue dashed.
@@ -229,7 +232,7 @@ internal static class VirtualCrossoverSheetPdf
         // The caption goes INSIDE the card table as its heading row, so it repeats when a
         // long bank breaks across pages; a paragraph above the table would name only the
         // first page and leave the rest looking like the previous channel's filters.
-        sheet.AddFilterCards(channel.PeqBands, caption);
+        sheet.AddFilterTable(channel.PeqBands, caption);
     }
 
     // Binds a value table into one block so a page break cannot strand the crossover and

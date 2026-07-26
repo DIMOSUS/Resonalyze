@@ -51,4 +51,10 @@ public enum AudioBackendCapabilities
 public sealed record AudioBackendDescriptor(
     AudioBackend Id,
     string DisplayName,
-    AudioBackendCapabilities Capabilities);
+    AudioBackendCapabilities Capabilities)
+{
+    /// <summary>True when the backend declares every flag in <paramref name="capability"/>.</summary>
+    /// <remarks>Reserve API: no caller in the solution today (see AGENTS.md).</remarks>
+    public bool Supports(AudioBackendCapabilities capability) =>
+        (Capabilities & capability) == capability;
+}

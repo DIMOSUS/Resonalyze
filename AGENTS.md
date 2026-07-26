@@ -56,10 +56,30 @@ API and no downstream consumer to deprecate for.
 
 So `public` on a member of those assemblies means "reachable from the app or its
 tests", not "part of a contract". An unreferenced member is dead code and is
-deleted outright — no `[Obsolete]` cycle. Judge deadness across the whole
-solution (the tests count as a consumer), and prefer `internal` for anything a
-new member does not need to expose beyond its own assembly; both projects grant
-`InternalsVisibleTo` to their test project, so `internal` costs no coverage.
+deleted outright — no `[Obsolete]` cycle, because there is nobody to deprecate
+for. Judge deadness across the whole solution (the tests count as a consumer),
+and prefer `internal` for anything a new member does not need to expose beyond
+its own assembly; both projects grant `InternalsVisibleTo` to their test
+project, so `internal` costs no coverage.
+
+**The exception is a deliberate reserve.** `Resonalyze.Dsp` and
+`Resonalyze.Audio` are libraries in shape even if not in distribution, and a
+small, self-contained primitive may be worth keeping for work that is coming
+(`MinimumPhase.FromSpectrum`, `HarmonicWindowDefinition.NominalLength`,
+`AudioBackendDescriptor.Supports`, `AsioDeviceCatalog.IsLoopbackChannel`). Such
+a member is kept on two conditions, both required:
+
+- its doc comment carries the line
+  `/// <remarks>Reserve API: no caller in the solution today (see AGENTS.md).</remarks>`,
+  so a dead-code sweep can tell "kept on purpose" from "nobody noticed"; and
+- it has tests. A reserve member whose only consumer is the compiler drifts
+  silently — the tests are what keep it honest, and they are why it no longer
+  reads as unreferenced.
+
+A member that earns neither is still deleted. This exception does not extend to
+`source/`: the app is not a library, and an unused control factory or dialog
+helper there is just dead weight (the removed `UiStyle.Create*` helpers also
+hard-coded absolute 96-DPI coordinates, which the WinForms note below forbids).
 
 Two caveats when sweeping for dead code: `override` members and interface
 implementations are called by the framework, not by name (`WaterfallSeries.

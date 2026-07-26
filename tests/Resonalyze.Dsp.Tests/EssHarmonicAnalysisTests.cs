@@ -214,4 +214,27 @@ public sealed class EssHarmonicAnalysisTests
         double loud = ImpulseMagnitude(0.5, 2_000, 1_024, 1_024, 40);
         Assert.Equal(6.0206, 20.0 * Math.Log10(loud / quiet), 3);
     }
+
+    // NominalLength is a reserve API with no caller in the app yet; this is its
+    // only consumer, and it pins the inclusive convention (Start and End are both
+    // inside the window, so a single-sample window has length 1, not 0).
+    [Theory]
+    [InlineData(100, 199, 100)]
+    [InlineData(100, 100, 1)]
+    [InlineData(0, 4095, 4096)]
+    public void HarmonicWindowDefinition_NominalLengthCountsBothEdges(
+        int startSample,
+        int endSample,
+        int expected)
+    {
+        var window = new HarmonicWindowDefinition(
+            Order: 2,
+            PeakSample: (startSample + endSample) / 2,
+            StartSample: startSample,
+            EndSample: endSample,
+            FadeInSamples: 8,
+            FadeOutSamples: 8);
+
+        Assert.Equal(expected, window.NominalLength);
+    }
 }

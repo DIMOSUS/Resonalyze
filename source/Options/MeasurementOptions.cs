@@ -411,7 +411,7 @@ namespace Resonalyze.Options
                 comboBoxPlaybackDevice.SelectedItem is AudioEndpointDescriptor renderSelection
                     ? renderSelection.Id
                     : preferredWasapiRenderEndpointId;
-            if (IsWasapiBackend(audioBackend))
+            if (audioBackend.IsWasapi())
             {
                 using var endpointService = new WindowsAudioEndpointService();
                 AudioEndpointDescriptor captureEndpoint = SelectWasapiEndpoint(
@@ -1981,9 +1981,6 @@ namespace Resonalyze.Options
         private bool IsSelectedWasapiBackend() =>
             comboBoxAudioBackend.SelectedIndex is
                 (int)AudioBackend.WasapiShared or (int)AudioBackend.WasapiExclusive;
-
-        private static bool IsWasapiBackend(AudioBackend backend) =>
-            backend is AudioBackend.WasapiShared or AudioBackend.WasapiExclusive;
 
         private int GetSelectedSampleRate()
         {

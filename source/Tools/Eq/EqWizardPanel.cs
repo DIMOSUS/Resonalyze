@@ -320,8 +320,6 @@ public partial class EqWizardPanel : UserControl
         }
     }
 
-    internal IReadOnlyList<PeqSlotControl> PeqSlots => peqSlots;
-
     // The selected width, whether or not the selector currently applies. A source with
     // no unsmoothed reference ignores it (ComputeImportedCurve draws the stored points
     // as-is) rather than reading it as Off — which would persist Off over the user's

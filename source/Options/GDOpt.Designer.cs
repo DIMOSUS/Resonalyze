@@ -194,7 +194,6 @@ namespace Resonalyze.Options
             numericWindow.TextAlign = HorizontalAlignment.Right;
             numericWindow.ThousandsSeparator = false;
             numericWindow.Value = new decimal(new int[] { 1000, 0, 0, 131072 });
-            numericWindow.ValueChanged += numericWindow_ValueChanged;
             // 
             // label1
             // 

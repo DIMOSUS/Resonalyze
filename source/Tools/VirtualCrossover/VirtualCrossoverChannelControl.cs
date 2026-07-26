@@ -124,11 +124,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
     internal DarkComboBox AllPassTypeComboBox => comboAllPassType;
     internal DarkNumericUpDown AllPassFrequencyInput => numericAllPassFreq;
     internal DarkNumericUpDown AllPassQInput => numericAllPassQ;
-    internal Label MeasuredPolarityLabel => labelMeasuredPolarity;
     internal Button MuteButton => buttonMute;
     internal Button CollapseButton => buttonCollapse;
-    internal Button PeqLoadButton => buttonPeqLoad;
-    internal Button PeqClearButton => buttonPeqClear;
     internal Label PeqInfoLabel => labelPeqInfo;
     internal CheckBox ShowRawCheckBox => checkBoxShowRaw;
     internal CheckBox ShowProcessedCheckBox => checkBoxShowProcessed;

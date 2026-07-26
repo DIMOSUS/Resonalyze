@@ -370,11 +370,11 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         bandModeAutoRadio.Checked = options.BandMode == TimeAlignmentBandMode.AutoBand;
         bandModeManualRadio.Checked = options.BandMode == TimeAlignmentBandMode.ManualBand;
         bandpassCenterNumeric.Value =
-            ClampDecimal(options.BandpassCenterHz, bandpassCenterNumeric);
+            bandpassCenterNumeric.ClampValue(options.BandpassCenterHz);
         bandpassPassOctavesNumeric.Value =
-            ClampDecimal(options.BandpassPassOctaves, bandpassPassOctavesNumeric);
+            bandpassPassOctavesNumeric.ClampValue(options.BandpassPassOctaves);
         bandpassFadeOctavesNumeric.Value =
-            ClampDecimal(options.BandpassFadeOctaves, bandpassFadeOctavesNumeric);
+            bandpassFadeOctavesNumeric.ClampValue(options.BandpassFadeOctaves);
         UpdateBandpassControlStates();
     }
 
@@ -645,7 +645,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         double localMinDb = minDb;
         void AddPoint(int offset)
         {
-            int index = WrapIndex(result.EnvelopePeakIndex + offset, envelope.Length);
+            int index = DspMath.WrapIndex(result.EnvelopePeakIndex + offset, envelope.Length);
             double milliseconds = offset * 1000.0 / sampleRate + xOffsetMilliseconds;
             double relativeAmplitude = envelope[index] / result.EnvelopePeak;
             double decibels = DataHelper.AmplitudeToDecibels(relativeAmplitude);
@@ -668,7 +668,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             for (int offset = bucketStart; offset <= bucketEnd; offset++)
             {
                 double value = envelope[
-                    WrapIndex(result.EnvelopePeakIndex + offset, envelope.Length)];
+                    DspMath.WrapIndex(result.EnvelopePeakIndex + offset, envelope.Length)];
                 if (value < minValue)
                 {
                     minValue = value;
@@ -1408,13 +1408,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         axis.TextColor = OxyColors.White;
         axis.TicklineColor = OxyColors.White;
     }
-
-    private static decimal ClampDecimal(double value, DarkNumericUpDown numeric) =>
-        numeric.ClampValue(value);
-
-    private static int WrapIndex(int index, int length) =>
-        Resonalyze.Dsp.DspMath.WrapIndex(index, length);
-
 
 }
 

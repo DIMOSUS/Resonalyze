@@ -402,10 +402,10 @@ internal sealed class MeasurementSettingsFile
                     InputDeviceNumber: NormalizeDeviceNumber(
                         AudioDeviceCatalog.GetRecordingDevices(),
                         InputDeviceNumber),
-                    WaveInputChannelOffset: IsWasapiBackend(backend)
+                    WaveInputChannelOffset: backend.IsWasapi()
                         ? Math.Max(0, WaveInputChannelOffset)
                         : NormalizeWaveChannelOffset(WaveInputChannelOffset),
-                    WaveLoopbackInputChannelOffset: IsWasapiBackend(backend)
+                    WaveLoopbackInputChannelOffset: backend.IsWasapi()
                         ? NormalizeOptionalWasapiChannelOffset(WaveLoopbackInputChannelOffset)
                         : NormalizeOptionalWaveChannelOffset(WaveLoopbackInputChannelOffset),
                     AsioDriverName: NormalizeAsioDriverName(AsioDriverName),
@@ -1001,9 +1001,6 @@ internal sealed class MeasurementSettingsFile
 
     private static int? NormalizeOptionalWasapiChannelOffset(int? offset) =>
         offset.HasValue ? Math.Max(0, offset.Value) : null;
-
-    private static bool IsWasapiBackend(AudioBackend backend) =>
-        backend is AudioBackend.WasapiShared or AudioBackend.WasapiExclusive;
 
     private static int? NormalizeOptionalAsioChannelOffset(
         string? asioDriverName,

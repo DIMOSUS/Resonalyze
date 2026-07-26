@@ -89,25 +89,6 @@ public static class MinimumPhase
     }
 
     /// <summary>
-    /// Computes the minimum-phase response (radians) from a complex spectrum,
-    /// using only its magnitude.
-    /// </summary>
-    public static double[] FromSpectrum(
-        IReadOnlyList<Complex> spectrum,
-        double magnitudeFloor = DefaultMagnitudeFloor)
-    {
-        ArgumentNullException.ThrowIfNull(spectrum);
-
-        double[] magnitude = new double[spectrum.Count];
-        for (int i = 0; i < spectrum.Count; i++)
-        {
-            magnitude[i] = spectrum[i].Magnitude;
-        }
-
-        return FromMagnitude(magnitude, magnitudeFloor);
-    }
-
-    /// <summary>
     /// Reconstructs the full complex minimum-phase spectrum
     /// <c>|H| · e^{jφ_min}</c> from a linear magnitude spectrum.
     /// </summary>

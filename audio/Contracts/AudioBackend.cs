@@ -15,6 +15,18 @@ public enum AudioBackend
     WasapiExclusive = 3
 }
 
+public static class AudioBackendExtensions
+{
+    /// <summary>
+    /// True for both WASAPI modes. The two share the channel-offset semantics
+    /// the measurement layer, the options panel and the settings file all
+    /// normalize against, which is why the family — not the individual value —
+    /// is what callers ask about.
+    /// </summary>
+    public static bool IsWasapi(this AudioBackend backend) =>
+        backend is AudioBackend.WasapiShared or AudioBackend.WasapiExclusive;
+}
+
 /// <summary>
 /// What a backend can do, so the UI (and callers) can ask about a capability
 /// instead of comparing against specific <see cref="AudioBackend"/> values.
@@ -39,8 +51,4 @@ public enum AudioBackendCapabilities
 public sealed record AudioBackendDescriptor(
     AudioBackend Id,
     string DisplayName,
-    AudioBackendCapabilities Capabilities)
-{
-    public bool Supports(AudioBackendCapabilities capability) =>
-        (Capabilities & capability) == capability;
-}
+    AudioBackendCapabilities Capabilities);

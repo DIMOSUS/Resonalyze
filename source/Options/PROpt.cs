@@ -16,10 +16,13 @@ namespace Resonalyze.Options
             comboWindowMode.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
             comboFdwCycles.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
             comboDetrendMode.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
-            numericLeftWindow.ValueChanged += Gate_ValueChanged;
-            numericRightWindow.ValueChanged += Gate_ValueChanged;
-            numericGateOffset.ValueChanged += (_, _) => UpdateIrPreview();
-            checkAutoFit.CheckedChanged += (_, _) => AutoFitChanged();
+            BindGateControls(
+                numericGateOffset,
+                checkAutoFit,
+                numericLeftWindow,
+                numericWindow,
+                numericRightWindow,
+                labelMinFrequency);
             buttonTauSlope.Click += (_, _) => ApplyEstimatedTau(useSlope: true);
             buttonTauPeak.Click += (_, _) => ApplyEstimatedTau(useSlope: false);
             numericOffset.ValueChanged += (_, _) =>
@@ -46,15 +49,15 @@ namespace Resonalyze.Options
             manualDetrendMilliseconds = opt.PhaseDetrendMs;
             InitializeControls(() =>
             {
-                numericGateOffset.Value = ClampToControl(numericGateOffset, opt.PhaseGateOffsetMs);
+                numericGateOffset.Value = numericGateOffset.ClampValue(opt.PhaseGateOffsetMs);
                 checkAutoFit.Checked = opt.PhaseGateAutoFit;
-                numericWindow.Value = ClampToControl(numericWindow, opt.PhasePlateauMs);
-                numericLeftWindow.Value = ClampToControl(numericLeftWindow, opt.PhaseLeftMs);
-                numericRightWindow.Value = ClampToControl(numericRightWindow, opt.PhaseRightMs);
+                numericWindow.Value = numericWindow.ClampValue(opt.PhasePlateauMs);
+                numericLeftWindow.Value = numericLeftWindow.ClampValue(opt.PhaseLeftMs);
+                numericRightWindow.Value = numericRightWindow.ClampValue(opt.PhaseRightMs);
                 comboSmoothingInverseOctaves.SelectedItem =
                     SmoothingPresetOptions.Normalize(
                     opt.SmoothingInverseOctaves, includePsychoacoustic: false);
-                numericOffset.Value = ClampToControl(numericOffset, opt.PhaseDetrendMs);
+                numericOffset.Value = numericOffset.ClampValue(opt.PhaseDetrendMs);
                 comboWindowMode.SelectedIndex = opt.PhaseWindowMode == PhaseWindowMode.Fixed ? 0 : 1;
                 comboFdwCycles.SelectedItem = opt.PhaseFdwCycles is 4 or 6 or 8
                     ? opt.PhaseFdwCycles
@@ -68,9 +71,7 @@ namespace Resonalyze.Options
             });
             UpdateMinFrequencyLabel();
             UpdatePhaseControlState();
-            // CheckedChanged only fires on a transition, so sync the offset
-            // field's enabled state for a false -> false init too.
-            numericGateOffset.Enabled = !checkAutoFit.Checked;
+            SyncGateOffsetEnabled();
             UpdateIrPreview();
         }
 
@@ -128,7 +129,7 @@ namespace Resonalyze.Options
             updatingDetrendDisplay = true;
             try
             {
-                numericOffset.Value = ClampToControl(numericOffset, displayed);
+                numericOffset.Value = numericOffset.ClampValue(displayed);
             }
             finally
             {
@@ -216,8 +217,7 @@ namespace Resonalyze.Options
                 IImpulseMeasurement impulse =
                     new MeasurementPlotContext(measurement).CreatePrimaryMeasurement();
                 (double slopeMs, double peakMs) = EstimateCurrentPhaseDetrend(impulse);
-                numericOffset.Value = ClampToControl(
-                    numericOffset,
+                numericOffset.Value = numericOffset.ClampValue(
                     useSlope ? slopeMs : peakMs);
                 manualDetrendMilliseconds = (double)numericOffset.Value;
             }
@@ -227,102 +227,22 @@ namespace Resonalyze.Options
             }
         }
 
-        // Auto pressed: the offset field turns read-only and follows the
-        // estimated IR start; released: the field unlocks keeping the last
-        // value as the manual starting point.
-        private void AutoFitChanged()
+        // Auto detrend resolves tau from the gate, so the read-only tau display
+        // has to be recomputed whenever the gate moves.
+        protected override void OnGatePreviewRendering()
         {
-            numericGateOffset.Enabled = !checkAutoFit.Checked;
-            if (checkAutoFit.Checked)
-            {
-                ApplyAutoGateOffset();
-            }
-        }
-
-        // Snaps the gate offset to the estimated IR start (band-limited
-        // first-arrival front, memoized per IR in TransferIrStartCache).
-        private void ApplyAutoGateOffset()
-        {
-            if (Measurement is { } measurement &&
-                TransferIrStartCache.ResolveStartMs(measurement) is { } startMs)
-            {
-                numericGateOffset.Value = ClampToControl(numericGateOffset, startMs);
-            }
-        }
-
-        private void numericWindow_ValueChanged(object sender, EventArgs e)
-        {
-            UpdateMinFrequencyLabel();
-            UpdateIrPreview();
-        }
-
-        private void Gate_ValueChanged(object? sender, EventArgs e)
-        {
-            UpdateMinFrequencyLabel();
-            UpdateIrPreview();
-        }
-
-        private void UpdateMinFrequencyLabel()
-        {
-            double hz = FrequencyResponseOptions.GateMinReliableFrequencyHz(
-                (double)numericLeftWindow.Value,
-                (double)numericWindow.Value,
-                (double)numericRightWindow.Value);
-            labelMinFrequency.Text = hz > 0
-                ? $"Reliable from ≈ {hz:0}+ Hz"
-                : "Reliable from ≈ — Hz";
-        }
-
-        // Re-draws the preview after the Compare selection changes while docked.
-        public void RefreshComparePreview() => UpdateIrPreview();
-
-        protected override void RenderIrPreview()
-        {
-            // Auto mode re-snaps the offset whenever the preview refreshes —
-            // which includes every ImpulseResponseChanged of the measurement.
-            if (checkAutoFit.Checked)
-            {
-                ApplyAutoGateOffset();
-            }
-
             if (comboDetrendMode.SelectedIndex == (int)PhaseDetrendMode.Auto)
             {
                 UpdateDetrendDisplay();
             }
-
-            if (Measurement == null || Measurement.SampleRate <= 0)
-            {
-                return;
-            }
-
-            ImpulseWindowPreview.UpdateGated(
-                irPlotView,
-                Measurement,
-                (double)numericGateOffset.Value,
-                (double)numericLeftWindow.Value,
-                (double)numericWindow.Value,
-                (double)numericRightWindow.Value,
-                IrPreviewSource.Primary,
-                getCompare?.Invoke());
         }
+
+        protected override void RenderIrPreview() =>
+            RenderGatedIrPreview(irPlotView, getCompare?.Invoke());
 
         private void InitializeToolTips()
         {
-            numericGateOffset.ApplyToolTip(
-                toolTip,
-                "Gate position: time from the IR start to the end of the left Tukey shoulder. Auto keeps it snapped to the detected IR start.");
-            toolTip.SetToolTip(
-                checkAutoFit,
-                "Keep the gate offset snapped to the detected IR start (band-limited first-arrival front), following every new measurement. Release to set the offset manually.");
-            numericWindow.ApplyToolTip(
-                toolTip,
-                "Flat (weight 1) part of the gate after the peak, in milliseconds.");
-            numericLeftWindow.ApplyToolTip(
-                toolTip,
-                "Tukey fade-in before the peak, in milliseconds. Keep short.");
-            numericRightWindow.ApplyToolTip(
-                toolTip,
-                "Tukey fade-out gate after the plateau, in milliseconds. End it before the first reflection.");
+            ApplyGateToolTips();
             toolTip.SetToolTip(
                 comboSmoothingInverseOctaves,
                 "Applies octave smoothing to the phase traces.");
@@ -350,9 +270,6 @@ namespace Resonalyze.Options
             toolTip.SetToolTip(
                 checkBoxShowCoherence,
                 "Shows the measurement coherence (\u03B3\u00B2) curve when the IR was captured with 2+ averaged runs.");
-            toolTip.SetToolTip(
-                labelMinFrequency,
-                "Lowest frequency the current gate can resolve (≈ 1 / gate length). Below it the curve is not reliable.");
             toolTip.SetToolTip(
                 irPlotView,
                 "Preview of the impulse response and the gate window used for phase calculation. FDW phase uses shorter high-frequency windows; Group Delay remains fixed-gate and is not its exact integral.");

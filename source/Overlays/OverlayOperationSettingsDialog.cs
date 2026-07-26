@@ -516,19 +516,4 @@ internal static class OverlayOperationLabels
         };
     }
 
-    public static string GetCompactLabel(OverlayOperation operation)
-    {
-        return operation switch
-        {
-            OverlayOperation.AMinusB => "A-B",
-            OverlayOperation.BMinusA => "B-A",
-            OverlayOperation.Sum => "A+B",
-            OverlayOperation.Average => "AVG",
-            OverlayOperation.AbsoluteDifference => "|A-B|",
-            OverlayOperation.Blend => "XOVR",
-            OverlayOperation.ComplexSum => "M⊕C", // ⊕ circled plus
-            OverlayOperation.ComplexSumLoss => "LOSS",
-            _ => "--"
-        };
-    }
 }

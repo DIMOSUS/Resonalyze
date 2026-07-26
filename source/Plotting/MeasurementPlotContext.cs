@@ -114,18 +114,6 @@ internal sealed class MeasurementPlotContext
         FrequencyResponseOptions options) =>
         DataHelper.GetOversampledPrimarySpectrum(measurement, options);
 
-    public IImpulseMeasurement CreateSweepDeconvolutionMeasurement()
-    {
-        MeasurementImpulseResponse sweepDeconvolution = expSweepMeasurement.SweepDeconvolution
-            ?? throw new InvalidOperationException(
-                "Sweep deconvolution impulse response is not available.");
-        return new ImpulseMeasurementView(
-            sweepDeconvolution.ImpulseResponse,
-            sweepDeconvolution.PeakIndex,
-            expSweepMeasurement.SampleRate,
-            expSweepMeasurement.HarmonicIROffset);
-    }
-
     // Magnitude comes from the transfer IR (referenced by loopback, free of DAC/amp
     // colouration); harmonic distortion comes from the sweep deconvolution, whose
     // linear packet is the denominator every HDn/THD ratio is measured against.

@@ -1,5 +1,4 @@
 using System.Runtime.CompilerServices;
-using OxyPlot.WindowsForms;
 
 namespace Resonalyze.Ui;
 
@@ -122,7 +121,7 @@ internal static class UiStyle
         return button;
     }
 
-    public static void ApplySurfaceInput(Control control, Point location, Size size)
+    private static void ApplySurfaceInput(Control control, Point location, Size size)
     {
         control.BackColor = UiPalette.InputSurface;
         control.ForeColor = UiPalette.TextPrimary;
@@ -154,101 +153,14 @@ internal static class UiStyle
         button.FlatAppearance.BorderSize = 1;
     }
 
-    public static void ApplyComboBox(DarkComboBox comboBox, Point location, Size size, bool dropDownList = true)
-    {
-        ApplySurfaceInput(comboBox, location, size);
-        comboBox.DropDownStyle = dropDownList
-            ? ComboBoxStyle.DropDownList
-            : ComboBoxStyle.DropDown;
-        comboBox.FormattingEnabled = true;
-    }
-
     public static void ApplyTextBox(TextBoxBase textBox, Point location, Size size)
     {
         ApplySurfaceInput(textBox, location, size);
         textBox.BorderStyle = BorderStyle.FixedSingle;
     }
 
-    public static void ApplyNumericUpDown(NumericUpDown input, Point location, Size size)
-    {
-        ApplySurfaceInput(input, location, size);
-        input.BorderStyle = BorderStyle.FixedSingle;
-    }
-
     public static void ApplyNumericUpDown(DarkNumericUpDown input, Point location, Size size)
     {
         ApplySurfaceInput(input, location, size);
     }
-
-    public static Label CreateTitleLabel(string text, Point location) =>
-        CreateLabel(text, location, UiPalette.TextPrimary, new Font("Segoe UI", 9F, FontStyle.Bold));
-
-    public static Label CreateInfoLabel(string text, Point location) =>
-        CreateLabel(text, location, UiPalette.TextHighlight, new Font("Segoe UI", 9F));
-
-    public static DarkComboBox CreateDarkComboBox(Point location, Size size) =>
-        new()
-        {
-            BackColor = UiPalette.ControlSurface,
-            DropDownStyle = ComboBoxStyle.DropDownList,
-            ForeColor = UiPalette.TextPrimary,
-            FormattingEnabled = true,
-            Location = location,
-            Size = size
-        };
-
-    public static DarkNumericUpDown CreateDarkNumericUpDown(
-        Point location,
-        Size size,
-        decimal minimum,
-        decimal maximum,
-        decimal value,
-        decimal increment)
-    {
-        return new DarkNumericUpDown
-        {
-            BackColor = UiPalette.ControlSurface,
-            DecimalPlaces = increment < 1 ? 1 : 0,
-            ForeColor = UiPalette.TextPrimary,
-            Increment = increment,
-            Location = location,
-            Maximum = maximum,
-            Minimum = minimum,
-            Size = size,
-            Value = value
-        };
-    }
-
-    public static CheckBox CreateDarkCheckBox(string text, Point location)
-    {
-        return new CheckBox
-        {
-            AutoSize = true,
-            BackColor = Color.Transparent,
-            ForeColor = UiPalette.TextHighlight,
-            Location = location,
-            Text = text
-        };
-    }
-
-    public static PlotView CreateDarkPreviewPlotView(Point location, Size size) =>
-        new()
-        {
-            BackColor = UiPalette.DialogSurfaceAlt,
-            Location = location,
-            Size = size,
-            Visible = false
-        };
-
-    public static Button CreateDarkActionButton(string text, Point location, Size size) =>
-        new()
-        {
-            BackColor = UiPalette.ButtonBackground,
-            FlatStyle = FlatStyle.Popup,
-            ForeColor = UiPalette.TextPrimary,
-            Location = location,
-            Size = size,
-            Text = text,
-            UseVisualStyleBackColor = false
-        };
 }

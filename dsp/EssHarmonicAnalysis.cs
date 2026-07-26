@@ -86,10 +86,7 @@ public sealed record HarmonicWindowDefinition(
     int StartSample,
     int EndSample,
     int FadeInSamples,
-    int FadeOutSamples)
-{
-    public int NominalLength => EndSample - StartSample + 1;
-}
+    int FadeOutSamples);
 
 /// <summary>
 /// A harmonic packet's complex spectrum. A packet is a CONTAINED impulse response

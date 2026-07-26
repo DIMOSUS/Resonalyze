@@ -1,6 +1,9 @@
 using Resonalyze.Dsp;
 
-namespace Resonalyze.Options
+// Lives beside the measurement that owns it rather than in Options/, which holds
+// the WinForms settings panels: NoiseMeasurement takes this object by reference
+// and reads it on the analysis path, so it is measurement state, not panel state.
+namespace Resonalyze
 {
     /// <summary>
     /// Spectral colour of the excitation signal played during a live measurement.

@@ -80,6 +80,53 @@ public class PeqQConventionTests
         Assert.Equal(expectedBandwidthHz, HalfGainBandwidthHz(realized), 1);
     }
 
+    // Generalises the rows above off the hardcoded figures: for every convention, the
+    // band a device realizes from a dialled-in Q must have the half-gain bandwidth that
+    // convention DEFINES. The multiplier here is written the way REW writes it — the
+    // square root of the LINEAR gain — rather than as the exponent PeqQConventions uses,
+    // so the test checks the reading of the definition and not just its arithmetic. This
+    // is what covers Classic at the realized-response level, where Symmetric has an
+    // independent section to compare against and Classic has none.
+    [Fact]
+    public void ToRbj_RealizesTheBandwidthEachConventionDefines()
+    {
+        foreach (PeqQConvention convention in
+                 new[] { PeqQConvention.Rbj, PeqQConvention.Symmetric, PeqQConvention.Classic })
+        {
+            foreach (double gainDb in new[] { -15.0, -12.0, -6.0, 6.0, 12.0 })
+            {
+                foreach (double deviceQ in new[] { 1.0, 4.0, 8.0 })
+                {
+                    PeqBand realized = PeqQConventions.ToRbj(
+                        new PeqBand(1_000, deviceQ, gainDb), convention);
+
+                    double expected =
+                        RewBandwidthMultiplier(convention, gainDb) * 1_000 / deviceQ;
+                    double actual = HalfGainBandwidthHz(realized);
+
+                    Assert.Equal(
+                        expected,
+                        actual,
+                        // Loosen with the width itself: a 4 kHz-wide band cannot be
+                        // pinned to the same absolute hertz as a 60 Hz one.
+                        Math.Max(0.05, expected * 1e-3));
+                }
+            }
+        }
+    }
+
+    // REW states each convention's half-gain bandwidth as a multiple of Fc/Q:
+    //   RBJ Q        centre frequency/Q
+    //   Classic Q    sqrt(gain)*centre frequency/Q          — the signed linear gain
+    //   Symmetric Q  sqrt(absgain)*centre frequency/Q       — "always >= 1"
+    private static double RewBandwidthMultiplier(PeqQConvention convention, double gainDb) =>
+        convention switch
+        {
+            PeqQConvention.Symmetric => Math.Sqrt(Math.Pow(10.0, Math.Abs(gainDb) / 20.0)),
+            PeqQConvention.Classic => Math.Sqrt(Math.Pow(10.0, gainDb / 20.0)),
+            _ => 1.0
+        };
+
     // The two proportional conventions agree on boosts and disagree on cuts, so a build
     // that treated Classic as an alias of Symmetric would still pass the boost rows above.
     [Fact]

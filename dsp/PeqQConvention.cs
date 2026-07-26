@@ -16,25 +16,29 @@ public enum PeqQConvention
     /// <summary>
     /// RBJ Audio EQ Cookbook, what <see cref="PeakingBiquad"/> realizes: <c>BW = f0 / Q</c>,
     /// so the bandwidth does not depend on how deep the band cuts or boosts ("constant
-    /// Q"). Equalizer APO, REW and CamillaDSP read Q this way, as do Audison/Hertz and
-    /// Mosconi processors.
+    /// Q"). Equalizer APO, CamillaDSP and REW's own Generic/Extended equalisers read Q
+    /// this way, as do Audiotec Fischer (HELIX / MATCH / BRAX), Audison/Hertz, Mosconi,
+    /// miniDSP, QSC DSP-30 and StormAudio.
     /// </summary>
     Rbj,
 
     /// <summary>
     /// Symmetric Q, equivalently the Zölzer / DAFX peak filter: <c>BW = sqrt(|gain|) · f0 / Q</c>,
     /// so a band widens as it deepens ("proportional Q") and boost and cut of the same
-    /// depth are mirror images. Common in embedded and automotive DSPs; confirmed on
-    /// AMP Panacea (Cirrus Logic CS47048C). At small gains it is nearly indistinguishable
-    /// from <see cref="Rbj"/>; at 15 dB the same Q number is over twice as wide.
+    /// depth are mirror images. Used by Behringer DCX2496, Rockford Fosgate 3Sixty.3,
+    /// Hypex Input EQ, rePhase, Crown USM810 and DSPeaker Anti-Mode Dual Core; confirmed
+    /// on AMP Panacea (Cirrus Logic CS47048C). At small gains it is nearly
+    /// indistinguishable from <see cref="Rbj"/>; at 15 dB the same Q number is over twice
+    /// as wide.
     /// </summary>
     Symmetric,
 
     /// <summary>
     /// Classic Q: <c>BW = sqrt(gain) · f0 / Q</c> with the SIGNED gain, so the multiplier
     /// falls below 1 for a cut. Unlike the other two this is asymmetric — at one Q number
-    /// a boost comes out wider than RBJ and a cut narrower. Used by JL Audio TwK-88,
-    /// Rockford Fosgate 3Sixty.3, Behringer DCX2496, Hypex and rePhase.
+    /// a boost comes out wider than RBJ and a cut narrower. Rare: the JL Audio TwK-88 is
+    /// the one processor REW documents for it, and JL's own VXi does not match it, so
+    /// this is a property of the model rather than of the maker.
     /// </summary>
     Classic
 }

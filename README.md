@@ -1622,9 +1622,9 @@ the multiplier, so the same three numbers produce different filters:
 
 | Convention | Bandwidth at half gain | Behaviour | Seen on |
 | --- | --- | --- | --- |
-| **RBJ** | `Fc / Q` | Independent of gain | Equalizer APO, REW, CamillaDSP, Audison/Hertz, Mosconi |
-| **Symmetric** (Zölzer/DAFX) | `sqrt(\|gain\|) · Fc / Q` | Widens as the band deepens, boost and cut alike | Many embedded and automotive DSPs; AMP Panacea |
-| **Classic** | `sqrt(gain) · Fc / Q` | Asymmetric — boost wider, cut *narrower* | JL Audio TwK-88, Rockford Fosgate 3Sixty.3, Behringer DCX2496, Hypex, rePhase |
+| **RBJ** | `Fc / Q` | Independent of gain | Equalizer APO, CamillaDSP, REW Generic/Extended, Audiotec Fischer (HELIX / MATCH / BRAX), Audison/Hertz, Mosconi, miniDSP |
+| **Symmetric** (Zölzer/DAFX) | `sqrt(\|gain\|) · Fc / Q` | Widens as the band deepens, boost and cut alike | AMP Panacea, Behringer DCX2496, Rockford Fosgate 3Sixty.3, Hypex Input EQ, rePhase, Crown USM810 |
+| **Classic** | `sqrt(gain) · Fc / Q` | Asymmetric — boost wider, cut *narrower* | JL Audio TwK-88 |
 
 Resonalyze fits, plots and exports RBJ filters throughout. Hand a Q of 5.8 at
 −15 dB to a Symmetric processor and it realizes a band over twice as wide — an
@@ -1644,10 +1644,13 @@ Q_symmetric = Q_rbj × 10^( |gain| / 40)     ±3 dB ×1.19   ±12 dB ×2.00   ±
 Q_classic   = Q_rbj × 10^(  gain  / 40)     +12 dB ×2.00   −12 dB ×0.50
 ```
 
-Note that these are conventions of a **model**, not of a manufacturer or a chip:
-JL Audio's TwK-88 and VXi disagree with each other behind the same tuning
-software, and a SHARC or SigmaDSP part is handed finished coefficients, so it
-implies nothing about Q. If your processor is not listed above, measure it: set
+The lists above follow [REW's equaliser
+reference](https://www.roomeqwizard.com/help/help_en-GB/html/equaliser.html),
+which states each supported processor's half-gain bandwidth formula. Note that
+these are conventions of a **model**, not of a manufacturer or a chip: JL Audio's
+TwK-88 and VXi disagree with each other behind the same tuning software, and a
+SHARC or SigmaDSP part is handed finished coefficients, so it implies nothing
+about Q. If your processor is not listed above, measure it: set
 one band to Fc 1 kHz and Q 4, at +12 dB and then at −12 dB, and read the
 bandwidth between the ±6 dB points off a sweep. RBJ gives ~250 Hz both times,
 Symmetric ~499 Hz both times, Classic ~499 Hz and ~125 Hz. The spread is far too

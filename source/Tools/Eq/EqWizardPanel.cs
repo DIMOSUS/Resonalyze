@@ -291,14 +291,16 @@ public partial class EqWizardPanel : UserControl
         SetTip(labelQConvention, comboBoxQConvention,
             "How the DSP you are tuning defines Q, named as REW names it. RBJ " +
             "(bandwidth = Fc/Q) is the cookbook convention, independent of gain, used " +
-            "by Equalizer APO, REW, CamillaDSP, Audison/Hertz and Mosconi. Symmetric " +
+            "by Equalizer APO, CamillaDSP, REW Generic/Extended, Audiotec Fischer " +
+            "(HELIX/MATCH/BRAX), Audison/Hertz, Mosconi and miniDSP. Symmetric " +
             "(Zölzer/DAFX) widens a band as it deepens, boost and cut alike — over " +
-            "twice as wide at 15 dB. Classic does the same for a boost but the " +
-            "opposite for a cut, narrowing it; used by JL Audio TwK-88, Rockford " +
-            "Fosgate 3Sixty.3 and Behringer DCX2496. Only the tuning-sheet PDF is " +
-            "restated; the fit, the curve on screen and the exported profile files " +
-            "stay RBJ. If you do not know your DSP's convention, measure it: one band " +
-            "at +12 and again at -12 dB, and compare the two bandwidths.");
+            "twice as wide at 15 dB; used by AMP Panacea, Behringer DCX2496, Rockford " +
+            "Fosgate 3Sixty.3, Hypex and rePhase. Classic widens a boost the same way " +
+            "but narrows a cut instead, and is rare — the JL Audio TwK-88 is the one " +
+            "processor documented for it. Only the tuning sheets are restated; the " +
+            "fit, the curve on screen and the exported profile files stay RBJ. If you " +
+            "do not know your DSP's convention, measure it: one band at +12 and again " +
+            "at -12 dB, and compare the two bandwidths.");
     }
 
     private void SetTip(Control label, Control control, string text)

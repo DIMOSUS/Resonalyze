@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
@@ -20,6 +20,11 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <Using Include="Resonalyze.Audio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Shared by both hardware suites; see the file for why it exists. -->
+    <Compile Include="..\HardwareFact.cs" Link="HardwareFact.cs" />
   </ItemGroup>
 
 </Project>

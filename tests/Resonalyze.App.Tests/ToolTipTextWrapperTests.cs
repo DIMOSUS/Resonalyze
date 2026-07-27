@@ -1,4 +1,4 @@
-using System.Windows.Forms;
+﻿using System.Windows.Forms;
 
 namespace Resonalyze.App.Tests;
 
@@ -139,7 +139,7 @@ public sealed class ToolTipTextWrapperTests
             "Sets the FFT block size. Longer sequences give finer frequency " +
             "resolution but slower visual updates.");
 
-        string stored = toolTip.GetToolTip(control);
+        string stored = Assert.IsType<string>(toolTip.GetToolTip(control));
         Assert.Contains("\r\n", stored);
         Assert.All(Lines(stored), line => Assert.True(
             line.Length <= ToolTipTextWrapper.DefaultLineLength,

@@ -57,11 +57,65 @@ jobs:
       - name: Build
         run: dotnet build source/Resonalyze.sln --configuration Release --no-restore -p:Version="${{ steps.version.outputs.version }}" -p:InformationalVersion="${{ steps.version.outputs.version }}"
 
+      # Every suite filters Category!=Hardware. The hardware tests skip
+      # themselves without endpoint environment variables, but excluding them
+      # here keeps a runner with no audio devices from listing nine skips on
+      # every run.
       - name: Test App
-        run: dotnet test tests/Resonalyze.App.Tests/Resonalyze.App.Tests.csproj --configuration Release --no-build --no-restore
+        run: dotnet test tests/Resonalyze.App.Tests/Resonalyze.App.Tests.csproj --configuration Release --no-build --no-restore --filter "Category!=Hardware"
 
       - name: Test Audio
         run: dotnet test tests/Resonalyze.Audio.Tests/Resonalyze.Audio.Tests.csproj --configuration Release --no-build --no-restore --filter "Category!=Hardware"
 
       - name: Test DSP
-        run: dotnet test tests/Resonalyze.Dsp.Tests/Resonalyze.Dsp.Tests.csproj --configuration Release --no-build --no-restore
+        run: dotnet test tests/Resonalyze.Dsp.Tests/Resonalyze.Dsp.Tests.csproj --configuration Release --no-build --no-restore --filter "Category!=Hardware"
+
+      # The single-file publish and the installer script are exercised here so a
+      # break shows up on the PR. Until this step existed they were first run by
+      # the release job, which holds the appcast signing key — a bad place to
+      # discover that Resonalyze.iss no longer compiles.
+      - name: Publish (single file)
+        id: publish
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $publishDirectory = Join-Path $env:RUNNER_TEMP "publish-check"
+
+          # Mirrors the release publish, minus the signing key: this step exists to
+          # prove the single-file publish still works, not to produce an artifact.
+          dotnet publish source/Resonalyze.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            --output $publishDirectory `
+            -p:Version=$version `
+            -p:InformationalVersion=$version `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false
+
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+          "publish_directory=$publishDirectory" >> $env:GITHUB_OUTPUT
+
+      - name: Compile installer
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            installer\Resonalyze.iss `
+            "/DAppVersion=${{ steps.version.outputs.version }}" `
+            "/DSourceDir=${{ steps.publish.outputs.publish_directory }}" `
+            "/DOutputDir=$(Join-Path $env:RUNNER_TEMP 'installer-check')" `
+            "/DOutputBaseFilename=Resonalyze-Setup-check"
+
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }

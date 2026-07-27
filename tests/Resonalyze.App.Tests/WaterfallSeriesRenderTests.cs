@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using OxyPlot;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
@@ -131,7 +131,7 @@ public sealed class WaterfallSeriesRenderTests
 
         public void DrawLine(
             IList<ScreenPoint> points, OxyColor stroke, double thickness,
-            EdgeRenderingMode edgeRenderingMode, double[] dashArray, LineJoin lineJoin)
+            EdgeRenderingMode edgeRenderingMode, double[]? dashArray, LineJoin lineJoin)
         {
             LineCount++;
             foreach (ScreenPoint point in points)
@@ -142,7 +142,7 @@ public sealed class WaterfallSeriesRenderTests
 
         public void DrawLineSegments(
             IList<ScreenPoint> points, OxyColor stroke, double thickness,
-            EdgeRenderingMode edgeRenderingMode, double[] dashArray, LineJoin lineJoin)
+            EdgeRenderingMode edgeRenderingMode, double[]? dashArray, LineJoin lineJoin)
         {
             foreach (ScreenPoint point in points)
             {
@@ -152,7 +152,7 @@ public sealed class WaterfallSeriesRenderTests
 
         public void DrawPolygon(
             IList<ScreenPoint> points, OxyColor fill, OxyColor stroke, double thickness,
-            EdgeRenderingMode edgeRenderingMode, double[] dashArray, LineJoin lineJoin)
+            EdgeRenderingMode edgeRenderingMode, double[]? dashArray, LineJoin lineJoin)
         {
             foreach (ScreenPoint point in points)
             {
@@ -162,7 +162,7 @@ public sealed class WaterfallSeriesRenderTests
 
         public void DrawPolygons(
             IList<IList<ScreenPoint>> polygons, OxyColor fill, OxyColor stroke, double thickness,
-            EdgeRenderingMode edgeRenderingMode, double[] dashArray, LineJoin lineJoin)
+            EdgeRenderingMode edgeRenderingMode, double[]? dashArray, LineJoin lineJoin)
         {
             foreach (IList<ScreenPoint> polygon in polygons)
             {
@@ -202,13 +202,13 @@ public sealed class WaterfallSeriesRenderTests
         }
 
         public void DrawText(
-            ScreenPoint p, string text, OxyColor fill, string fontFamily, double fontSize,
+            ScreenPoint p, string text, OxyColor fill, string? fontFamily, double fontSize,
             double fontWeight, double rotation, HorizontalAlignment horizontalAlignment,
             VerticalAlignment verticalAlignment, OxySize? maxSize)
         {
         }
 
-        public OxySize MeasureText(string text, string fontFamily, double fontSize, double fontWeight) =>
+        public OxySize MeasureText(string text, string? fontFamily, double fontSize, double fontWeight) =>
             new((text?.Length ?? 0) * fontSize * 0.6, fontSize * 1.2);
 
         public void DrawImage(

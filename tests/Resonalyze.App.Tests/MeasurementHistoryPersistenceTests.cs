@@ -121,6 +121,53 @@ public sealed class MeasurementHistoryPersistenceTests : IDisposable
         Assert.Null(third.LoadWarning);
     }
 
+    /// <summary>
+    /// The drive comes back mid-session and the user opens one of its files. The
+    /// service looks the path up in the LIVE list, cannot see the hidden entry,
+    /// and creates a fresh one with a new id — so the retained copy must be
+    /// matched by path too, or the measurement shows up twice after a restart.
+    /// </summary>
+    [Fact]
+    public void Save_WhenAHiddenFileIsReopenedUnderANewId_DoesNotDuplicateIt()
+    {
+        string sourcePath = Path.Combine(directory, "on-external-drive.json");
+        File.WriteAllText(sourcePath, "{}");
+        var first = new MeasurementHistoryPersistence(storePath);
+        first.Save(new[] { CreateEntry(sourcePath) });
+
+        File.Delete(sourcePath);
+        var second = new MeasurementHistoryPersistence(storePath);
+        Assert.Empty(second.Load());
+
+        // Drive back; the service re-adds the same file as a brand new entry.
+        File.WriteAllText(sourcePath, "{}");
+        MeasurementHistoryEntry reopened = CreateEntry(sourcePath);
+        second.Save(new[] { reopened });
+
+        var third = new MeasurementHistoryPersistence(storePath);
+        MeasurementHistoryEntry only = Assert.Single(third.Load());
+        Assert.Equal(reopened.Id, only.Id);
+    }
+
+    [Fact]
+    public void Save_WhenAHiddenFileIsReopened_MatchesThePathCaseInsensitively()
+    {
+        string sourcePath = Path.Combine(directory, "Mixed Case.json");
+        File.WriteAllText(sourcePath, "{}");
+        var first = new MeasurementHistoryPersistence(storePath);
+        first.Save(new[] { CreateEntry(sourcePath) });
+
+        File.Delete(sourcePath);
+        var second = new MeasurementHistoryPersistence(storePath);
+        second.Load();
+
+        File.WriteAllText(sourcePath, "{}");
+        second.Save(new[] { CreateEntry(sourcePath.ToUpperInvariant()) });
+
+        var third = new MeasurementHistoryPersistence(storePath);
+        Assert.Single(third.Load());
+    }
+
     [Fact]
     public void Save_DoesNotResurrectAnEntryDeletedWhileItWasReachable()
     {

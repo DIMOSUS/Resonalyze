@@ -150,13 +150,28 @@ internal sealed class MeasurementHistoryPersistence
             })
             .ToList();
 
-        // Carry the entries hidden at load back into the file. An Id that came
-        // back (the drive was reconnected mid-session and the measurement was
-        // re-added) is written from the live entry, not from the stale copy.
+        // Carry the entries hidden at load back into the file, minus any that the
+        // live list already covers.
+        //
+        // Matching on Id alone is not enough. If the drive comes back mid-session
+        // and the user opens one of its measurements, the service looks the file
+        // up in the LIVE list — which cannot see the hidden entry — and creates a
+        // fresh one with a new Guid. Keeping the stale copy too would then show
+        // the same measurement twice after the next restart. So the path counts
+        // as identity as well, compared exactly as
+        // MeasurementHistoryService.FindBySourceFilePath compares it, so the two
+        // layers cannot disagree about what "the same file" means.
         if (unreachableEntries.Count > 0)
         {
-            HashSet<Guid> live = persisted.Select(entry => entry.Id).ToHashSet();
-            persisted.AddRange(unreachableEntries.Where(entry => !live.Contains(entry.Id)));
+            HashSet<Guid> liveIds = persisted.Select(entry => entry.Id).ToHashSet();
+            HashSet<string> livePaths = persisted
+                .Select(entry => entry.SourceFilePath)
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            persisted.AddRange(unreachableEntries.Where(entry =>
+                !liveIds.Contains(entry.Id) &&
+                !livePaths.Contains(entry.SourceFilePath)));
             // Newest first, matching how the service orders the live list.
             persisted = persisted.OrderByDescending(entry => entry.Timestamp).ToList();
         }

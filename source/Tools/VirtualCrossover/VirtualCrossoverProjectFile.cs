@@ -555,8 +555,7 @@ public sealed class VirtualCrossoverProjectFile
     {
         Validate();
         SavedAtUtc = DateTimeOffset.UtcNow;
-        using FileStream stream = File.Create(path);
-        JsonSerializer.Serialize(stream, this, SerializerOptions);
+        AtomicFile.Write(path, stream => JsonSerializer.Serialize(stream, this, SerializerOptions));
     }
 
     /// <summary>

@@ -19,7 +19,7 @@ internal sealed class EqWizardImportExportCoordinator
             EqProfileFormats.Importable,
             EqProfileFormats.Exportable,
             File.ReadAllText,
-            File.WriteAllText,
+            AtomicFile.WriteAllText,
             request => TuningSheetPdf.Export(
                 request.Path,
                 request.Title,
@@ -75,8 +75,24 @@ internal sealed class EqWizardImportExportCoordinator
         try
         {
             string text = readAllText(request.Path);
-            return EqWizardFileResult<EqualizationCurve>.Succeeded(
-                request.Target.Format.Import(text));
+            EqualizationCurve curve = request.Target.Format.Import(text);
+
+            // The parsers are readers, not validators: by their pinned contract
+            // an unrecognized file yields an EMPTY curve rather than throwing
+            // (EqProfileFormatsTests). Calling that a successful import is what
+            // made picking the wrong filter destructive — the panel cleared
+            // bypass and applied the empty curve, zeroing every band the user
+            // had just tuned. Nobody imports a file to get no bands, so an empty
+            // result is treated as the parse failure it actually is.
+            if (curve.Bands.Count == 0)
+            {
+                return EqWizardFileResult<EqualizationCurve>.Failed(
+                    new InvalidDataException(
+                        "No filter bands were found. Check that the file really is a " +
+                        $"{request.Target.Name} profile."));
+            }
+
+            return EqWizardFileResult<EqualizationCurve>.Succeeded(curve);
         }
         catch (Exception exception)
         {

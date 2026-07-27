@@ -93,6 +93,9 @@ public partial class VirtualCrossoverPanel : UserControl
     private Task? redrawTask;
     private bool redrawPending;
     private bool savePending;
+    // Save runs on a debounce; the failure notice is shown once per session and
+    // re-armed by the next successful save.
+    private bool reportedSaveFailure;
     private bool loadingProject;
     private int pendingSourceLoads;
 
@@ -226,8 +229,18 @@ public partial class VirtualCrossoverPanel : UserControl
         }
         catch (Exception exception)
         {
+            // The tool still opens on defaults, but the user's stored crossover
+            // is not what they are looking at — saying nothing invites them to
+            // re-tune on top of a silently discarded project.
             System.Diagnostics.Debug.WriteLine(
                 $"Virtual DSP project load failed: {exception}");
+            if (!IsDisposed && IsHandleCreated)
+            {
+                ShowError(
+                    "The saved Virtual DSP project could not be loaded, so the tool " +
+                    "opened with defaults. The file on disk has not been changed.",
+                    exception.Message);
+            }
         }
     }
 
@@ -426,13 +439,26 @@ public partial class VirtualCrossoverPanel : UserControl
         try
         {
             project.Save();
+            reportedSaveFailure = false;
         }
         catch (Exception exception)
         {
-            // The project file is a convenience; failing to save it must never
-            // break the tool (e.g. a read-only install directory).
+            // Still must not break the tool (a read-only install directory used
+            // to be the motivating case) — but it cannot stay silent either.
+            // This runs on a debounce, so every crossover edit was quietly
+            // failing to persist and the user only found out on the next launch,
+            // when the whole tuning session was gone. Reported once per session
+            // so the message does not fire on every keystroke.
             System.Diagnostics.Debug.WriteLine(
                 $"Virtual DSP project save failed: {exception}");
+            if (!reportedSaveFailure && !IsDisposed && IsHandleCreated)
+            {
+                reportedSaveFailure = true;
+                ShowError(
+                    "Virtual DSP settings are not being saved. Changes will be lost when " +
+                    "the application closes.",
+                    exception.Message);
+            }
         }
     }
 
@@ -3097,9 +3123,8 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         try
         {
-            string path = ApplicationDataPaths.Current.VirtualDspAlignmentLogFile;
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, text);
+            AtomicFile.WriteAllText(
+                ApplicationDataPaths.Current.VirtualDspAlignmentLogFile, text);
         }
         catch
         {
@@ -3780,7 +3805,7 @@ public partial class VirtualCrossoverPanel : UserControl
             }
             else
             {
-                File.WriteAllText(
+                AtomicFile.WriteAllText(
                     dialog.FileName,
                     VirtualCrossoverSheet.FormatText(
                         project, metricLine, TargetDspQConvention));

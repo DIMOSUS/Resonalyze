@@ -72,7 +72,7 @@ public sealed class MeasurementHistoryPersistenceTests : IDisposable
     }
 
     [Fact]
-    public void Load_DropsEntriesWhoseSourceFileIsMissing()
+    public void Load_HidesEntriesWhoseSourceFileIsMissing_AndSaysSo()
     {
         string sourcePath = Path.Combine(directory, "deleted.json");
         File.WriteAllText(sourcePath, "{}");
@@ -81,6 +81,67 @@ public sealed class MeasurementHistoryPersistenceTests : IDisposable
         File.Delete(sourcePath);
 
         Assert.Empty(persistence.Load());
+        Assert.NotNull(persistence.LoadWarning);
+    }
+
+    /// <summary>
+    /// The field case this guards: an external drive is not mounted at startup,
+    /// so the measurements on it vanish from the list — and then any ordinary
+    /// window close writes the truncated list back, deleting them for good.
+    /// </summary>
+    [Fact]
+    public void Save_AfterAnUnreachableFileWasHidden_DoesNotDropItFromTheStore()
+    {
+        string reachablePath = Path.Combine(directory, "reachable.json");
+        string unreachablePath = Path.Combine(directory, "on-external-drive.json");
+        File.WriteAllText(reachablePath, "{}");
+        File.WriteAllText(unreachablePath, "{}");
+
+        MeasurementHistoryEntry reachable = CreateEntry(reachablePath);
+        MeasurementHistoryEntry unreachable = CreateEntry(unreachablePath);
+        var first = new MeasurementHistoryPersistence(storePath);
+        first.Save(new[] { reachable, unreachable });
+
+        // The drive goes away, the app restarts, and the user does anything at
+        // all that saves — here, the still-visible entry alone is written back.
+        File.Delete(unreachablePath);
+        var second = new MeasurementHistoryPersistence(storePath);
+        IReadOnlyList<MeasurementHistoryEntry> visible = second.Load();
+        Assert.Equal(reachable.Id, Assert.Single(visible).Id);
+        second.Save(visible);
+
+        // The drive comes back.
+        File.WriteAllText(unreachablePath, "{}");
+        var third = new MeasurementHistoryPersistence(storePath);
+        IReadOnlyList<Guid> restored = third.Load().Select(entry => entry.Id).ToList();
+
+        Assert.Equal(2, restored.Count);
+        Assert.Contains(unreachable.Id, restored);
+        Assert.Contains(reachable.Id, restored);
+        Assert.Null(third.LoadWarning);
+    }
+
+    [Fact]
+    public void Save_DoesNotResurrectAnEntryDeletedWhileItWasReachable()
+    {
+        string keptPath = Path.Combine(directory, "kept.json");
+        string removedPath = Path.Combine(directory, "removed.json");
+        File.WriteAllText(keptPath, "{}");
+        File.WriteAllText(removedPath, "{}");
+
+        MeasurementHistoryEntry kept = CreateEntry(keptPath);
+        MeasurementHistoryEntry removed = CreateEntry(removedPath);
+        var persistence = new MeasurementHistoryPersistence(storePath);
+        persistence.Save(new[] { kept, removed });
+
+        // Both files are present, so nothing is retained; dropping an entry from
+        // the list is a real delete and must stick.
+        var reopened = new MeasurementHistoryPersistence(storePath);
+        Assert.Equal(2, reopened.Load().Count);
+        reopened.Save(new[] { kept });
+
+        var third = new MeasurementHistoryPersistence(storePath);
+        Assert.Equal(kept.Id, Assert.Single(third.Load()).Id);
     }
 
     [Fact]

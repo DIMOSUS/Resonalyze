@@ -1,7 +1,8 @@
 # Third-Party Notices
 
-Resonalyze is distributed under the MIT License. It uses the following third-party
-packages, each under its own license. All are MIT-licensed.
+Resonalyze is distributed under the MIT License. The packages below ship inside
+the released application, each under its own license. All of them are
+MIT-licensed.
 
 | Package | Version | License | Authors |
 |---------|---------|---------|---------|
@@ -13,6 +14,16 @@ packages, each under its own license. All are MIT-licensed.
 | OxyPlot.WindowsForms | 2.2.0 | MIT | OxyPlot |
 | YamlDotNet | 16.2.1 | MIT | Antoine Aubry |
 | PDFsharp-MigraDoc-GDI (incl. PDFsharp, MigraDoc) | 6.2.4 | MIT | PDFsharp Team (empira Software GmbH) |
+
+## Build-only dependency
+
+`Tracy-CSharp` 0.13.1 is referenced **only** by the `Tracy` build configuration,
+which exists for profiling (see `AGENTS.md`). Releases are built in `Release`, so
+it is not part of any distributed binary and is listed separately because its
+licensing is not MIT throughout: the C# bindings are MIT (Tracy, the package
+author), while the native `TracyClient` library they bundle is the Tracy profiler
+by Bartosz Taudul, under the **BSD 3-Clause** license. Anyone redistributing a
+`Tracy`-configuration build has to carry that notice as well.
 
 ## MIT License
 

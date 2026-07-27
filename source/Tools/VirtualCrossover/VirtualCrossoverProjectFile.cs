@@ -337,11 +337,26 @@ public sealed class VirtualCrossoverProjectFile
     // unless a negative offset says otherwise.
     public bool StereoRightHandDrive { get; set; }
 
+    // RHD with a ZERO offset still needs its layout on the wire — the sign
+    // IS the layout for pre-flag builds, IEEE -0.0 neither compares below
+    // zero nor survives a decimal round-trip, and the explicit flag does not
+    // survive an old build's resave. So a zero RHD magnitude serializes as
+    // this tiny negative marker instead: a tenth of the UI's 0.01 ms grid
+    // and a twentieth of a sample at 48 kHz, i.e. exactly zero to every
+    // consumer (old builds apply it as an inaudible scene offset and
+    // preserve it on resave), and the magnitude accessor reads it back as
+    // zero. The UI cannot produce a genuine 0.001 ms offset, so the marker
+    // is unambiguous.
+    private const double RhdZeroOffsetMarkerMs = 0.001;
+
     /// <summary>The scene offset as the UI edits it: a layout-neutral,
-    /// non-negative magnitude (the sign on the wire belongs to the layout,
-    /// see <see cref="StereoSceneOffsetMs"/>).</summary>
+    /// non-negative magnitude (the sign on the wire belongs to the layout —
+    /// see <see cref="StereoSceneOffsetMs"/> and the zero-marker note).</summary>
     [JsonIgnore]
-    public double StereoSceneOffsetMagnitudeMs => Math.Abs(StereoSceneOffsetMs);
+    public double StereoSceneOffsetMagnitudeMs =>
+        Math.Abs(StereoSceneOffsetMs) <= RhdZeroOffsetMarkerMs
+            ? 0
+            : Math.Abs(StereoSceneOffsetMs);
 
     /// <summary>
     /// The one writer of the stereo scene: keeps the wire sign and the
@@ -351,7 +366,7 @@ public sealed class VirtualCrossoverProjectFile
     {
         StereoRightHandDrive = rightHandDrive;
         StereoSceneOffsetMs = rightHandDrive
-            ? -Math.Abs(offsetMagnitudeMs)
+            ? -Math.Max(Math.Abs(offsetMagnitudeMs), RhdZeroOffsetMarkerMs)
             : Math.Abs(offsetMagnitudeMs);
     }
 

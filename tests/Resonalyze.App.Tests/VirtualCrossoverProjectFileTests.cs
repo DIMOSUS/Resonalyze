@@ -198,6 +198,39 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void LoadOrDefault_RhdWithZeroOffsetSurvivesAnOldBuildResave()
+    {
+        // The edge of the signed wire format: a zero magnitude has no sign
+        // to carry the layout (IEEE -0.0 neither compares below zero nor
+        // survives a decimal round-trip), so RHD+0 serializes as a tiny
+        // negative marker the runtime reads back as zero. Without it, an
+        // old build's resave — which drops the unknown flag — would
+        // silently flip the session to LHD.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile();
+            saved.SetStereoScene(0, rightHandDrive: true);
+            saved.Save(root);
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonObject file = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            Assert.True((double)file["stereoSceneOffsetMs"]! < 0);
+            file.Remove("stereoRightHandDrive");
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.True(loaded.StereoRightHandDrive);
+            Assert.Equal(0, loaded.StereoSceneOffsetMagnitudeMs);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void AllPass_RoundTripsThroughTheProjectFile()
     {
         string root = CreateTemporaryDirectory();

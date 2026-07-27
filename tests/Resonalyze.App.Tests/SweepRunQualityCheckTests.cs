@@ -62,31 +62,17 @@ public sealed class SweepRunQualityCheckTests
         Assert.Contains("the loopback reference signal is silent", issues);
     }
 
-    // The field case behind the check: a whole session captured with the
-    // loopback peaking tens of dB below full scale (bleed into a mis-routed
-    // input, not the wire) passed the silence check and produced garbage
-    // transfer IRs on every channel. -41 dBFS is one of those captures.
+    // Quiet-but-present is ACCEPTED per run, however far down it sits:
+    // transfer estimation is scale-invariant, so a cleanly attenuated wire
+    // (the readme itself says to turn the playback level well down) measures
+    // fine. Whether the reference was USABLE is judged by the transfer IR's
+    // shape after the runs — a bleed-fed capture cannot pass that gate.
     [Fact]
-    public void Assess_QuietLoopbackIsRejectedWithItsLevel()
+    public void Assess_QuietButPresentLoopbackIsAccepted()
     {
         IReadOnlyList<string> issues = SweepRunQualityCheck.Assess(
             Tone(SweepSamples, 0.5f),
             Tone(SweepSamples, 0.0089f),
-            SweepSamples);
-
-        string issue = Assert.Single(issues);
-        Assert.StartsWith("the loopback reference is too quiet", issue);
-        Assert.Contains("-41.0 dBFS", issue);
-    }
-
-    // Quiet-but-plausible stays accepted: the threshold separates "not a
-    // wired reference at all" from merely conservative gain staging.
-    [Fact]
-    public void Assess_ModeratelyLowLoopbackIsAccepted()
-    {
-        IReadOnlyList<string> issues = SweepRunQualityCheck.Assess(
-            Tone(SweepSamples, 0.5f),
-            Tone(SweepSamples, 0.1f),
             SweepSamples);
 
         Assert.Empty(issues);

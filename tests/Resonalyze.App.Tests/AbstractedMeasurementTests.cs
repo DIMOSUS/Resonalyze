@@ -102,27 +102,48 @@ public sealed class AbstractedMeasurementTests
         Assert.NotNull(measurement.QualityReport);
     }
 
-    // The field case behind the reference-level check: the "loopback" is
-    // playback bleed into a mis-routed input (~-41 dBFS), so every run and
-    // its retry fail, and the MEASUREMENT must fail naming the reason —
-    // not complete into a garbage transfer function.
+    // A cleanly attenuated wire at ~-41 dBFS must MEASURE: transfer
+    // estimation is scale-invariant, and the readme itself tells the user to
+    // turn the playback level well down. Level alone is no verdict — the
+    // shape gate below owns the usable/garbage distinction.
     [Fact]
-    public async Task QuietLoopbackFailsTheMeasurementWithTheReason()
+    public async Task QuietCleanLoopbackStillMeasures()
     {
         var factory = new FakeAudioSessionFactory(
             duplexFactory: (_, signal) => new RecordingDuplexSession(
                 signal, (_, s, tail, _) => Task.FromResult(
-                    SyntheticCapture.QuietLoopback(s, tail))));
+                    SyntheticCapture.QuietCleanLoopback(s, tail))));
+        using ExpSweepMeasurement measurement = CreateSweep(factory);
+
+        bool success = await measurement.RunAsync();
+
+        Assert.True(success, measurement.LastError?.ToString());
+        Assert.True(measurement.HasImpulseResponse);
+    }
+
+    // The field failure behind the shape gate: the "loopback" input picked
+    // up bleed (~-41 dBFS of content uncorrelated with the sweep), every
+    // per-run check passes, and the measurement must fail naming both the
+    // non-compact shape and the suspicious reference level.
+    [Fact]
+    public async Task BleedLoopbackFailsNamingTheLevel()
+    {
+        var factory = new FakeAudioSessionFactory(
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal, (_, s, tail, _) => Task.FromResult(
+                    SyntheticCapture.BleedLoopback(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory);
 
         bool success = await measurement.RunAsync();
 
         Assert.False(success);
-        Assert.Equal(0, measurement.AcceptedAverageRunCount);
+        Assert.False(measurement.HasImpulseResponse);
         Assert.NotNull(measurement.LastError);
-        Assert.Contains("Every sweep run failed", measurement.LastError!.Message);
         Assert.Contains(
-            "the loopback reference is too quiet", measurement.LastError.Message);
+            "transfer function did not form a credible impulse response",
+            measurement.LastError!.Message);
+        Assert.Contains("bleed instead of the wire", measurement.LastError.Message);
+        Assert.Contains("dBFS", measurement.LastError.Message);
     }
 
     // The second garbage class: every level check passes (mic and loopback

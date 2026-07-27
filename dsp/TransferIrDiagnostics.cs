@@ -97,9 +97,10 @@ public static class TransferIrDiagnostics
     /// short or silent to judge. The verdict rests on energy geometry only —
     /// deliberately no peak-position rule, so an electrical chain
     /// measurement (mic input wired to a processor output, peak at ~0 ms)
-    /// passes on its clean shape.
+    /// passes on its clean shape. Internal: the app holds transfer IRs in
+    /// their FFT form and calls the <see cref="Complex"/> overload.
     /// </summary>
-    public static TransferIrCompactness? MeasureCompactness(
+    internal static TransferIrCompactness? MeasureCompactness(
         IReadOnlyList<double> impulseResponse,
         int sampleRate)
     {

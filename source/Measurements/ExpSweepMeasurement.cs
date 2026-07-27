@@ -768,13 +768,23 @@ namespace Resonalyze
                 finalLevels);
         }
 
+        // A loopback whose peak sits this far down flags the LIKELY CULPRIT
+        // in the shape-gate message (a wired reference is metered near full
+        // scale; the field garbage set peaked at -33..-49 dBFS). Diagnosis
+        // text only, never a rejection of its own: transfer estimation is
+        // scale-invariant, so a cleanly attenuated wire — the readme itself
+        // says to turn the playback level well down — measures fine and must
+        // not be refused on level alone.
+        private const double SuspiciouslyQuietLoopbackDbFs = -30;
+
         // The averaged transfer IR must LOOK like an impulse response before
-        // anything is published: per-run level checks catch the reference
-        // being quiet, but a level-plausible capture can still divide into
-        // stationary noise (field case: a session whose "loopback" was
-        // playback bleed produced IRs with energy smeared over the whole
-        // buffer). The shape gate is the honest refusal for that class —
-        // the user gets the reason instead of a garbage measurement.
+        // anything is published: a genuine measurement is a localized event,
+        // while a capture whose reference was unusable (field case: a
+        // session whose "loopback" was playback bleed instead of the wire)
+        // divides into stationary noise smeared over the whole buffer. The
+        // shape gate is the honest refusal for that class — scale-invariant,
+        // so it cannot punish a legitimately quiet capture — and the user
+        // gets the reason instead of a garbage measurement.
         private void RequireCredibleTransferIr(SweepAverageResult result)
         {
             if (result.TransferImpulseResponse is not { } transfer)
@@ -787,8 +797,15 @@ namespace Resonalyze
             if (compactness is { } measured &&
                 measured.InsideOutsideDb < TransferIrDiagnostics.MinimumCompactnessDb)
             {
+                InputLevelMeterEntry loopback = result.Levels.Loopback;
+                string levelDiagnosis =
+                    loopback.Available &&
+                    loopback.PeakDbFs < SuspiciouslyQuietLoopbackDbFs
+                        ? FormattableString.Invariant(
+                            $" The loopback peaked at {loopback.PeakDbFs:0.0} dBFS while a wired reference sits near full scale — the input likely picked up bleed instead of the wire.")
+                        : "";
                 throw new InvalidOperationException(FormattableString.Invariant(
-                    $"The transfer function did not form a credible impulse response: the energy around its peak is only {measured.InsideOutsideDb:0.0} dB above the rest of the capture (a real measurement reads 30-50 dB; an unusable reference divides into noise at ~11-16 dB). Check the microphone and loopback wiring and levels, then measure again."));
+                    $"The transfer function did not form a credible impulse response: the energy around its peak is only {measured.InsideOutsideDb:0.0} dB above the rest of the capture (a real measurement reads 30-50 dB; an unusable reference divides into noise at ~11-16 dB).{levelDiagnosis} Check the microphone and loopback wiring and levels, then measure again."));
             }
         }
 

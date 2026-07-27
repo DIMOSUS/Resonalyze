@@ -36,6 +36,31 @@ internal sealed record AutoDelayChannelOutcome(
 internal sealed record AutoDelaySumLossForecast(double BeforeDb, double AfterDb);
 
 /// <summary>
+/// The inputs of one Auto delay run as the dialog collected them: the scene
+/// offset magnitude (ms, non-negative — the far side leads by this much),
+/// the steering layout that decides which side is the far one (LHD: the
+/// right side leads; RHD: the left side leads, the right lags), the gain
+/// balance opt-in, and the near-side cut it aims for (dB, non-negative —
+/// how much quieter the driver's side plays than the far one). Both
+/// magnitudes are layout-neutral: the layout toggle, not the user, owns
+/// every sign.
+/// </summary>
+internal sealed record AutoDelayRunRequest(
+    double SceneOffsetMs,
+    bool RightHandDrive,
+    bool AdjustGains,
+    double NearSideCutDb)
+{
+    /// <summary>
+    /// The tilt in the gain engine's LEFT-minus-RIGHT convention: the near
+    /// side is the left one on LHD (left quieter, negative) and the right
+    /// one on RHD (left louder, positive).
+    /// </summary>
+    public double LevelDifferenceDb =>
+        RightHandDrive ? NearSideCutDb : -NearSideCutDb;
+}
+
+/// <summary>
 /// A completed (not yet applied) Auto delay run: the per-channel outcomes,
 /// the run mode and inputs, the formatted report the dialog shows, and the
 /// diagnostic log the Apply step closes with the resulting metric.
@@ -43,9 +68,7 @@ internal sealed record AutoDelaySumLossForecast(double BeforeDb, double AfterDb)
 internal sealed record AutoDelayRunResult(
     IReadOnlyList<AutoDelayChannelOutcome> Outcomes,
     bool Stereo,
-    double SceneOffsetMs,
-    bool GainsRequested,
-    double LevelDifferenceDb,
+    AutoDelayRunRequest Request,
     string ReportText,
     StringBuilder Log);
 
@@ -59,9 +82,7 @@ internal static class VirtualCrossoverAutoDelayReport
     public static string Format(
         IReadOnlyList<AutoDelayChannelOutcome> outcomes,
         bool stereo,
-        double sceneOffsetMs,
-        bool gainsRequested,
-        double levelDifferenceDb,
+        AutoDelayRunRequest request,
         AutoDelaySumLossForecast? leftSumLoss = null,
         AutoDelaySumLossForecast? rightSumLoss = null)
     {
@@ -74,15 +95,16 @@ internal static class VirtualCrossoverAutoDelayReport
         if (stereo)
         {
             text.AppendLine(FormattableString.Invariant(
-                $"Scene offset {sceneOffsetMs:+0.00;-0.00;0.00} ms ") +
-                "(positive: right side leads)" +
-                (gainsRequested
+                $"Scene offset {request.SceneOffsetMs:0.00} ms ") +
+                (request.RightHandDrive
+                    ? "(RHD: left side leads)"
+                    : "(LHD: right side leads)") +
+                (request.AdjustGains
                     ? FormattableString.Invariant(
-                        $", L-R level {GainBalanceEngine.LevelDifferenceDb(levelDifferenceDb):+0.0;-0.0;0.0} dB") +
-                      " (positive: left side louder)"
+                        $", near-side cut {Math.Abs(GainBalanceEngine.LevelDifferenceDb(request.LevelDifferenceDb)):0.0} dB")
                     : ""));
         }
-        if (!gainsRequested)
+        if (!request.AdjustGains)
         {
             text.AppendLine("Gains not adjusted (checkbox off).");
         }

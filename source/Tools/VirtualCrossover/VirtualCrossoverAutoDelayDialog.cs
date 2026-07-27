@@ -1,7 +1,8 @@
 namespace Resonalyze;
 
 /// <summary>
-/// The Auto delay dialog: the stereo scene offset and the gain-balance
+/// The Auto delay dialog: the steering layout (LHD/RHD), the stereo scene
+/// offset and the gain-balance
 /// opt-in, a Run command that computes a PROPOSAL (delays, polarities and
 /// optionally gains) without touching the channels, the before/after report
 /// with per-channel confidence, and Apply/Discard. Nothing is written until
@@ -25,7 +26,7 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
     private static readonly Color StatusWarning = Color.FromArgb(230, 184, 0);
     private static readonly Color StatusError = Color.FromArgb(240, 100, 110);
 
-    private Func<double, bool, double, Task<AutoDelayRunResult>>? runner;
+    private Func<AutoDelayRunRequest, Task<AutoDelayRunResult>>? runner;
     private bool stereo;
     private bool running;
 
@@ -35,20 +36,32 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         CancelButton = buttonCancel;
         buttonApply.Enabled = false;
         buttonRun.Click += async (_, _) => await RunAsync();
+        // One handler covers both radios: any LHD<->RHD toggle flips RHD's
+        // own Checked, so LHD needs no listener of its own.
+        radioRightHandDrive.CheckedChanged += (_, _) => InvalidateResult();
         numericSceneOffset.ValueChanged += (_, _) => InvalidateResult();
-        numericLevelDifference.ValueChanged += (_, _) => InvalidateResult();
+        numericNearSideCut.ValueChanged += (_, _) => InvalidateResult();
         checkBoxGains.CheckedChanged += (_, _) =>
         {
-            UpdateLevelDifferenceEnabled();
+            UpdateNearSideCutEnabled();
             InvalidateResult();
         };
+        string layoutTip =
+            "The steering position. The driver's side is the timing\r\n" +
+            "reference: it aligns first and the far side is fitted to it,\r\n" +
+            "leading by the scene offset.\r\n" +
+            "LHD: the left side is the reference, the right side leads.\r\n" +
+            "RHD: the right side is the reference, the left side leads\r\n" +
+            "(the right lags by the offset).";
+        toolTip.SetToolTip(radioLeftHandDrive, layoutTip);
+        toolTip.SetToolTip(radioRightHandDrive, layoutTip);
         toolTip.SetToolTip(
             numericSceneOffset,
             "Stereo scene offset (ms).\r\n" +
-            "Positive: the RIGHT side arrives earlier by this much,\r\n" +
-            "pulling the image from the driver's axis toward the\r\n" +
-            "dash center on a left-hand-drive car. Typical: 0.2–0.3 ms.\r\n" +
-            "Right-hand drive: enter a negative value.\r\n" +
+            "The far side arrives earlier by this much, pulling the image\r\n" +
+            "from the driver's axis toward the dash center: on LHD the\r\n" +
+            "right side leads, on RHD the left side does.\r\n" +
+            "Typical: 0.2–0.3 ms.\r\n" +
             "0 = image centered on the measurement position.");
         toolTip.SetToolTip(
             checkBoxGains,
@@ -58,17 +71,14 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
             "right offset by the L-R level below. Subwoofers, mono channels\r\n" +
             "and channels without a crossover keep their gain. This is a\r\n" +
             "starting balance, not a final tonal decision.");
-        numericLevelDifference.ApplyToolTip(
+        numericNearSideCut.ApplyToolTip(
             toolTip,
-            "The intentional level difference (dB) the balance aims for,\r\n" +
-            "read as LEFT minus RIGHT.\r\n" +
-            "Negative: the left side plays quieter by this much, pulling\r\n" +
-            "the image away from the driver's axis toward the dash center\r\n" +
-            "on a left-hand-drive car — the same placement as the offset\r\n" +
-            "above, traded as level instead of time. Typical: -1 to -2 dB.\r\n" +
-            "Right-hand drive: a positive value.\r\n" +
+            "How much quieter the NEAR (driver's) side plays than the far\r\n" +
+            "side (dB) — the level twin of the scene offset, pulling the\r\n" +
+            "image from the driver's axis toward the dash center. Which\r\n" +
+            "side is near comes from the LHD/RHD switch. Typical: 1–2 dB.\r\n" +
             "0 = both sides levelled to the same target.\r\n" +
-            "Cut-only: the tilt is produced by attenuating the near side.");
+            "Cut-only: produced by attenuating the near side's channels.");
         // The designer's Dispose releases the tooltip; no Disposed handler.
     }
 
@@ -77,39 +87,45 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
 
     /// <summary>
     /// Seeds the dialog: the run mode (a single-side run has no L/R relation
-    /// to honor), the persisted scene offset and L-R level difference, and the
-    /// panel's compute delegate (scene offset ms, balance gains, L-R level
-    /// difference dB) -> proposal.
+    /// to honor), the persisted steering layout, scene offset and near-side
+    /// cut, and the panel's compute delegate (run inputs) -> proposal.
     /// <paramref name="polarityWarning"/> is a non-empty red heads-up shown at
     /// launch when a driver's left and right measured polarities disagree.
     /// </summary>
     public void Init(
         bool stereo,
         double sceneOffsetMs,
-        double levelDifferenceDb,
-        Func<double, bool, double, Task<AutoDelayRunResult>> runner,
+        bool rightHandDrive,
+        double nearSideCutDb,
+        Func<AutoDelayRunRequest, Task<AutoDelayRunResult>> runner,
         string? polarityWarning = null)
     {
         this.stereo = stereo;
         this.runner = runner;
+        radioLeftHandDrive.Checked = !rightHandDrive;
+        radioRightHandDrive.Checked = rightHandDrive;
         numericSceneOffset.Value = Math.Clamp(
             (decimal)sceneOffsetMs,
             numericSceneOffset.Minimum,
             numericSceneOffset.Maximum);
-        numericLevelDifference.Value = Math.Clamp(
-            (decimal)levelDifferenceDb,
-            numericLevelDifference.Minimum,
-            numericLevelDifference.Maximum);
-        UpdateLevelDifferenceEnabled();
+        numericNearSideCut.Value = Math.Clamp(
+            (decimal)nearSideCutDb,
+            numericNearSideCut.Minimum,
+            numericNearSideCut.Maximum);
+        UpdateNearSideCutEnabled();
         if (!stereo)
         {
+            string singleSideTip =
+                "Only one side is measured, so this run aligns a single\r\n" +
+                "side and the L/R scene offset does not apply.";
+            radioLeftHandDrive.Enabled = false;
+            radioRightHandDrive.Enabled = false;
             labelSceneOffset.Enabled = false;
             numericSceneOffset.Enabled = false;
-            toolTip.SetToolTip(
-                numericSceneOffset,
-                "Only one side is measured, so this run aligns a single\r\n" +
-                "side and the L/R scene offset does not apply.");
-            numericLevelDifference.ApplyToolTip(
+            toolTip.SetToolTip(radioLeftHandDrive, singleSideTip);
+            toolTip.SetToolTip(radioRightHandDrive, singleSideTip);
+            toolTip.SetToolTip(numericSceneOffset, singleSideTip);
+            numericNearSideCut.ApplyToolTip(
                 toolTip,
                 "Only one side is measured, so there is no L/R relation to\r\n" +
                 "tilt: the gain balance levels this side's board alone.");
@@ -117,9 +133,9 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
 
         textBoxReport.Text =
             (stereo
-                ? "Stereo run: the left side aligns first, the right top is " +
-                  "timed to the left one honoring the scene offset, and the " +
-                  "right side descends from it."
+                ? "Stereo run: the driver's side aligns first, the far top " +
+                  "is timed to it honoring the scene offset, and the far " +
+                  "side descends from it."
                 : "Single-side run: the displayed side's channels align " +
                   "against each other.") +
             Environment.NewLine + Environment.NewLine +
@@ -131,16 +147,16 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         }
     }
 
-    // The L-R level difference is an input to the gain balance only: with the
+    // The near-side cut is an input to the gain balance only: with the
     // checkbox off no gain is written at all, and a single-side run has no L/R
     // relation to tilt. Kept visible-but-disabled either way, so the value the
     // next stereo run would use stays readable.
-    private void UpdateLevelDifferenceEnabled()
+    private void UpdateNearSideCutEnabled()
     {
         bool enabled = stereo && checkBoxGains.Checked;
-        labelLevelDifference.Enabled = enabled;
-        numericLevelDifference.Enabled = enabled;
-        labelLevelDifferenceHint.Enabled = enabled;
+        labelNearSideCut.Enabled = enabled;
+        numericNearSideCut.Enabled = enabled;
+        labelNearSideCutHint.Enabled = enabled;
     }
 
     // Once a proposal exists, any input change makes it stale: Apply must
@@ -190,19 +206,22 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         buttonRun.Enabled = false;
         buttonApply.Enabled = false;
         buttonCancel.Enabled = false;
+        radioLeftHandDrive.Enabled = false;
+        radioRightHandDrive.Enabled = false;
         numericSceneOffset.Enabled = false;
         checkBoxGains.Enabled = false;
-        labelLevelDifference.Enabled = false;
-        numericLevelDifference.Enabled = false;
-        labelLevelDifferenceHint.Enabled = false;
+        labelNearSideCut.Enabled = false;
+        numericNearSideCut.Enabled = false;
+        labelNearSideCutHint.Enabled = false;
         SetStatus("Aligning…", StatusNeutral);
         UseWaitCursor = true;
         try
         {
-            AutoDelayRunResult result = await runner(
+            AutoDelayRunResult result = await runner(new AutoDelayRunRequest(
                 (double)numericSceneOffset.Value,
+                radioRightHandDrive.Checked,
                 checkBoxGains.Checked,
-                (double)numericLevelDifference.Value);
+                (double)numericNearSideCut.Value));
             if (IsDisposed)
             {
                 return;
@@ -235,9 +254,11 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
                 running = false;
                 buttonRun.Enabled = true;
                 buttonCancel.Enabled = true;
+                radioLeftHandDrive.Enabled = stereo;
+                radioRightHandDrive.Enabled = stereo;
                 numericSceneOffset.Enabled = stereo;
                 checkBoxGains.Enabled = true;
-                UpdateLevelDifferenceEnabled();
+                UpdateNearSideCutEnabled();
                 UseWaitCursor = false;
             }
         }

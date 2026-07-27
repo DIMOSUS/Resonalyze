@@ -27,6 +27,66 @@ internal static class SyntheticCapture
             AudioCaptureAnomalies.None, Diagnostics: null);
     }
 
+    // A CLEANLY attenuated loopback wire at ~-41 dBFS (the readme's
+    // "playback level well down" workflow taken far): still an exact copy of
+    // the sweep, so the scale-invariant transfer estimate is perfectly
+    // usable and the measurement must succeed.
+    public static AudioCaptureResult QuietCleanLoopback(AudioPlaybackSignal signal, int tailSamples)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.0089f);
+        return new AudioCaptureResult(
+            [mic, loop], 0, 1, StereoSeparationExpected: true,
+            AudioCaptureAnomalies.None, Diagnostics: null);
+    }
+
+    // The field failure: the "loopback" input picked up bleed, not the wire
+    // — uncorrelated content at ~-41 dBFS (deterministic LCG noise). Every
+    // per-run check passes, but the transfer function divides the microphone
+    // by garbage and the shape gate must refuse it, naming the level.
+    public static AudioCaptureResult BleedLoopback(AudioPlaybackSignal signal, int tailSamples)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.0f);
+        uint state = 555_555_555u;
+        for (int i = 0; i < loop.Length; i++)
+        {
+            state = state * 1_664_525u + 1_013_904_223u;
+            loop[i] = (float)((state / 4_294_967_296.0 - 0.5) * 2 * 0.0089);
+        }
+        return new AudioCaptureResult(
+            [mic, loop], 0, 1, StereoSeparationExpected: true,
+            AudioCaptureAnomalies.None, Diagnostics: null);
+    }
+
+    // A capture poisoned by one non-finite sample: NaN slips every level
+    // comparison, the transfer IR comes out NaN, and only the fail-closed
+    // shape gate stands between it and a published measurement.
+    public static AudioCaptureResult NaNMicrophone(AudioPlaybackSignal signal, int tailSamples)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.25f);
+        mic[100] = float.NaN;
+        return new AudioCaptureResult(
+            [mic, loop], 0, 1, StereoSeparationExpected: true,
+            AudioCaptureAnomalies.None, Diagnostics: null);
+    }
+
+    // A level-plausible capture whose microphone recorded only noise
+    // uncorrelated with the sweep (deterministic LCG): every per-run level
+    // check passes, but the transfer function divides into stationary noise
+    // — the shape gate's case.
+    public static AudioCaptureResult NoiseMicrophone(AudioPlaybackSignal signal, int tailSamples)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.0f, 0.25f);
+        uint state = 987_654_321u;
+        for (int i = 0; i < mic.Length; i++)
+        {
+            state = state * 1_664_525u + 1_013_904_223u;
+            mic[i] = (float)(state / 4_294_967_296.0 - 0.5) * 0.5f;
+        }
+        return new AudioCaptureResult(
+            [mic, loop], 0, 1, StereoSeparationExpected: true,
+            AudioCaptureAnomalies.None, Diagnostics: null);
+    }
+
     private static (float[] Microphone, float[] Loopback) BuildChannels(
         AudioPlaybackSignal signal, int tailSamples, float micScale, float loopScale)
     {

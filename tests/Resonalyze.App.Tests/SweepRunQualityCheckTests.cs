@@ -62,6 +62,22 @@ public sealed class SweepRunQualityCheckTests
         Assert.Contains("the loopback reference signal is silent", issues);
     }
 
+    // Quiet-but-present is ACCEPTED per run, however far down it sits:
+    // transfer estimation is scale-invariant, so a cleanly attenuated wire
+    // (the readme itself says to turn the playback level well down) measures
+    // fine. Whether the reference was USABLE is judged by the transfer IR's
+    // shape after the runs — a bleed-fed capture cannot pass that gate.
+    [Fact]
+    public void Assess_QuietButPresentLoopbackIsAccepted()
+    {
+        IReadOnlyList<string> issues = SweepRunQualityCheck.Assess(
+            Tone(SweepSamples, 0.5f),
+            Tone(SweepSamples, 0.0089f),
+            SweepSamples);
+
+        Assert.Empty(issues);
+    }
+
     [Fact]
     public void Assess_MissingLoopbackSkipsTheLoopbackCheck()
     {

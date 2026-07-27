@@ -9,6 +9,11 @@ namespace Resonalyze;
 /// dead signal, an undersized capture): statistical outlier checks
 /// (peak-delay vs median, IR correlation against a reference run) need
 /// thresholds calibrated on real multi-run captures and are a later phase.
+/// A quiet-but-present loopback is deliberately NOT a failure here: transfer
+/// estimation is scale-invariant, so a cleanly attenuated wire (the readme
+/// itself says to turn the playback level well down) measures fine — whether
+/// a reference was usable is judged by the transfer IR's SHAPE after the
+/// runs (see ExpSweepMeasurement.RequireCredibleTransferIr).
 /// </summary>
 internal static class SweepRunQualityCheck
 {

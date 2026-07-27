@@ -348,32 +348,63 @@ public partial class VirtualCrossoverPanel : UserControl
 
         RefreshCalibrationCombo();
 
-        foreach (VirtualCrossoverChannel channel in channels)
-        {
-            // BOTH physical slots are wiped first — through the effective
-            // accessor a mono pair's real right slot is unreachable, and a
-            // stale measurement from the previous project would otherwise
-            // resurface the moment the pair stops being mono. Then both sides
-            // resolve up front (the stereo Auto delay needs them together); a
-            // mono pair resolves its single slot once.
-            channel.PhysicalSideState(false).Clear();
-            channel.PhysicalSideState(true).Clear();
-            foreach (bool rightSide in new[] { false, true })
+        await RestoreProjectSourcesAsync(
+            channels,
+            channel => channel.Pair.Mono,
+            channel =>
             {
-                if (channel.Pair.Mono && rightSide)
-                {
-                    continue;
-                }
-
-                await ResolveSourceAsync(channel, rightSide, showErrors: false);
-            }
-
-            UpdateSourceButton(channel);
-        }
+                channel.PhysicalSideState(false).Clear();
+                channel.PhysicalSideState(true).Clear();
+            },
+            (channel, rightSide) =>
+                ResolveSourceAsync(channel, rightSide, showErrors: false),
+            UpdateSourceButton);
 
         UpdateSideRadioTexts();
         // The final redraw is issued by ApplyProjectAsync after the loading
         // state clears, so it draws the real plot instead of the loading note.
+    }
+
+    // The restore ORDER is the cross-rate import contract: BOTH physical
+    // slots of EVERY channel are wiped before the first source resolves.
+    // Per slot, because through the effective accessor a mono pair's real
+    // right slot is unreachable, and a stale measurement from the previous
+    // project would otherwise resurface the moment the pair stops being
+    // mono. Across ALL channels up front, because the rate guard in
+    // TryAssignSource scans every still-resolved side: cleared one channel
+    // at a time, an imported session at a different sample rate would lose
+    // that vote against the previous project's channels — each source
+    // silently refused against the not-yet-replaced rest, leaving only the
+    // last channel resolved (field bug). Then both sides of each channel
+    // resolve up front (the stereo Auto delay needs them together); a mono
+    // pair resolves its single slot once. Static and delegate-fed so the
+    // order itself is unit-testable.
+    internal static async Task RestoreProjectSourcesAsync<TChannel>(
+        IReadOnlyList<TChannel> channels,
+        Func<TChannel, bool> isMono,
+        Action<TChannel> clearBothSlots,
+        Func<TChannel, bool, Task> resolveSide,
+        Action<TChannel> channelRestored)
+    {
+        foreach (TChannel channel in channels)
+        {
+            clearBothSlots(channel);
+        }
+
+        foreach (TChannel channel in channels)
+        {
+            foreach (bool rightSide in new[] { false, true })
+            {
+                if (isMono(channel) && rightSide)
+                {
+                    continue;
+                }
+
+                await resolveSide(channel, rightSide);
+            }
+
+            channelRestored(channel);
+        }
     }
 
     private void ScheduleSave()
@@ -2216,10 +2247,11 @@ public partial class VirtualCrossoverPanel : UserControl
         using var dialog = new VirtualCrossoverAutoDelayDialog();
         dialog.Init(
             stereo: false,
-            project.StereoSceneOffsetMs,
-            project.StereoLevelDifferenceDb,
-            (_, adjustGains, _) => RunSingleSideProposalAsync(
-                participants, minHz, maxHz, adjustGains));
+            project.StereoSceneOffsetMagnitudeMs,
+            project.StereoRightHandDrive,
+            Math.Abs(project.StereoLevelDifferenceDb),
+            request => RunSingleSideProposalAsync(
+                participants, minHz, maxHz, request));
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
             dialog.Result is not { } result ||
             IsDisposed)
@@ -2281,8 +2313,9 @@ public partial class VirtualCrossoverPanel : UserControl
         List<VirtualCrossoverChannel> participants,
         double windowMinHz,
         double windowMaxHz,
-        bool adjustGains)
+        AutoDelayRunRequest request)
     {
+        bool adjustGains = request.AdjustGains;
         var log = new System.Text.StringBuilder();
         log.AppendLine($"Auto delay {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         log.AppendLine($"Crossover window: {windowMinHz:0} - {windowMaxHz:0} Hz");
@@ -2333,15 +2366,12 @@ public partial class VirtualCrossoverPanel : UserControl
                 channel.Name)),
             alignment, decisions, gains);
         string report = VirtualCrossoverAutoDelayReport.Format(
-            outcomes, stereo: false, sceneOffsetMs: 0, adjustGains,
-            levelDifferenceDb: 0, sumLoss);
+            outcomes, stereo: false, request, sumLoss);
         // The diagnostic trace is written already at the proposal stage, so a
         // discarded (or failed-looking) run can still be shared and analyzed;
         // Apply rewrites it with the results and the outcome metric appended.
         WriteAlignmentLog(log.ToString());
-        return new AutoDelayRunResult(
-            outcomes, Stereo: false, project.StereoSceneOffsetMs,
-            adjustGains, project.StereoLevelDifferenceDb, report, log);
+        return new AutoDelayRunResult(outcomes, Stereo: false, request, report, log);
     }
 
     // Bridges the run's channels to the dsp GainBalanceEngine: bands from the
@@ -2507,9 +2537,13 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             // The inputs the proposal was computed with become the persisted
             // values only now, so a discarded experiment does not overwrite
-            // them.
-            project.StereoSceneOffsetMs = result.SceneOffsetMs;
-            project.StereoLevelDifferenceDb = result.LevelDifferenceDb;
+            // them. Both figures are stored with the layout in their signs
+            // (the scene offset via SetStereoScene, the tilt via the L-R
+            // convention LevelDifferenceDb restates), keeping the file
+            // readable — and safely resavable — by older builds.
+            project.SetStereoScene(
+                result.Request.SceneOffsetMs, result.Request.RightHandDrive);
+            project.StereoLevelDifferenceDb = result.Request.LevelDifferenceDb;
         }
 
         ScheduleSave();
@@ -2674,10 +2708,11 @@ public partial class VirtualCrossoverPanel : UserControl
         return (left, right);
     }
 
-    // The stereo Auto delay: left side first, then the L/R bridge at the top
-    // pair honoring the scene offset, then the right-side descent — the
-    // cascade itself lives in AutoAlignmentEngine.ComputeStereo (dsp,
-    // unit-tested on synthetic systems and real car measurements).
+    // The stereo Auto delay: the driver's side first (left on LHD, right on
+    // RHD), then the L/R bridge at the top pair honoring the scene offset,
+    // then the far side's descent — the cascade itself lives in
+    // AutoAlignmentEngine.ComputeStereo (dsp, unit-tested on synthetic
+    // systems and real car measurements), fed a mirrored plan for RHD.
     private async Task AutoAlignStereoAsync(
         List<VirtualCrossoverSideAlignmentChannel> leftSide,
         List<VirtualCrossoverSideAlignmentChannel> rightSide,
@@ -2755,14 +2790,19 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         using var dialog = new VirtualCrossoverAutoDelayDialog();
+        // The dialog edits both tuning figures as layout-neutral magnitudes;
+        // the project stores each with the layout in its sign (the scene
+        // offset's wire format, the gain engine's L-R convention), so older
+        // builds read the same file — hence the magnitudes here and the
+        // layout-signed write-back in CommitAutoDelayResult.
         dialog.Init(
             stereo: true,
-            project.StereoSceneOffsetMs,
-            project.StereoLevelDifferenceDb,
-            (sceneOffsetMs, adjustGains, levelDifferenceDb) => RunStereoProposalAsync(
+            project.StereoSceneOffsetMagnitudeMs,
+            project.StereoRightHandDrive,
+            Math.Abs(project.StereoLevelDifferenceDb),
+            request => RunStereoProposalAsync(
                 leftSide, rightSide, union, bridgeLeft, bridgeRight,
-                bridgeBandLowHz, bridgeBandHighHz, sceneOffsetMs, adjustGains,
-                levelDifferenceDb),
+                bridgeBandLowHz, bridgeBandHighHz, request),
             DescribeLeftRightPolarityMismatch(leftSide, rightSide));
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
             dialog.Result is not { } result ||
@@ -2832,16 +2872,23 @@ public partial class VirtualCrossoverPanel : UserControl
         VirtualCrossoverSideAlignmentChannel bridgeRight,
         double bridgeBandLowHz,
         double bridgeBandHighHz,
-        double sceneOffsetMs,
-        bool adjustGains,
-        double levelDifferenceDb)
+        AutoDelayRunRequest request)
     {
         var log = new System.Text.StringBuilder();
         log.AppendLine($"Auto delay (stereo) {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         log.AppendLine(
-            $"Scene offset {sceneOffsetMs:+0.00;-0.00} ms (positive: right side leads); " +
-            $"bridge {bridgeLeft.Name} -> {bridgeRight.Name} " +
+            $"Layout {(request.RightHandDrive ? "RHD" : "LHD")}: scene offset " +
+            $"{request.SceneOffsetMs:0.00} ms, the " +
+            $"{(request.RightHandDrive ? "left" : "right")} side leads; " +
+            $"bridge {(request.RightHandDrive ? bridgeRight : bridgeLeft).Name} -> " +
+            $"{(request.RightHandDrive ? bridgeLeft : bridgeRight).Name} " +
             $"in {bridgeBandLowHz:0}-{bridgeBandHighHz:0} Hz");
+        if (request.RightHandDrive)
+        {
+            log.AppendLine(
+                "RHD run: the engine trace below reads in mirrored " +
+                "coordinates (ref = the right side, far = the left).");
+        }
         log.AppendLine("Previous delay / polarity settings ignored for this run.");
 
         var engineAlignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
@@ -2853,8 +2900,8 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             AlignmentReprocessor reprocessor = ComputeStereoAlignment(
                 leftSide, rightSide, union, bridgeLeft, bridgeRight,
-                bridgeBandLowHz, bridgeBandHighHz, sceneOffsetMs,
-                engineAlignment, decisions, log);
+                bridgeBandLowHz, bridgeBandHighHz, request.SceneOffsetMs,
+                request.RightHandDrive, engineAlignment, decisions, log);
             // The "before" snapshots carry the CURRENT delays and polarities —
             // the alignment itself deliberately ignores them, so they exist
             // only for the report's before/after sum-loss forecast.
@@ -2863,8 +2910,10 @@ public partial class VirtualCrossoverPanel : UserControl
                     side => (IAlignmentChannel)side,
                     side => new AlignmentOverride(
                         side.Settings.DelayMs, side.Settings.InvertPolarity)));
-            if (adjustGains)
+            if (request.AdjustGains)
             {
+                // request.LevelDifferenceDb: the near-side cut restated in
+                // the gain engine's signed L-R convention per the layout.
                 gains = ComputeGainBalance(
                     union.Select(side => (
                         (IAlignmentChannel)side,
@@ -2875,7 +2924,7 @@ public partial class VirtualCrossoverPanel : UserControl
                             ? leftSide.FirstOrDefault(left =>
                                 left.Runtime == side.Runtime && !left.RightSide)
                             : null))),
-                    reprocessor, engineAlignment, levelDifferenceDb, log);
+                    reprocessor, engineAlignment, request.LevelDifferenceDb, log);
             }
 
             IReadOnlyList<AlignmentSnapshot> afterSnapshots =
@@ -2911,14 +2960,11 @@ public partial class VirtualCrossoverPanel : UserControl
                     side.Name)),
             engineAlignment, decisions, gains);
         string report = VirtualCrossoverAutoDelayReport.Format(
-            outcomes, stereo: true, sceneOffsetMs, adjustGains,
-            levelDifferenceDb, leftSumLoss, rightSumLoss);
+            outcomes, stereo: true, request, leftSumLoss, rightSumLoss);
         // Written already at the proposal stage, so a discarded run can still
         // be shared and analyzed; Apply rewrites it with the outcome metric.
         WriteAlignmentLog(log.ToString());
-        return new AutoDelayRunResult(
-            outcomes, Stereo: true, sceneOffsetMs, adjustGains,
-            levelDifferenceDb, report, log);
+        return new AutoDelayRunResult(outcomes, Stereo: true, request, report, log);
     }
 
     // Bridges the pair/side model to the stereo engine on a background thread,
@@ -2933,6 +2979,7 @@ public partial class VirtualCrossoverPanel : UserControl
         double bridgeBandLowHz,
         double bridgeBandHighHz,
         double sceneOffsetMs,
+        bool rightHandDrive,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         Dictionary<IAlignmentChannel, AlignmentDecision> decisions,
         System.Text.StringBuilder log)
@@ -2979,9 +3026,17 @@ public partial class VirtualCrossoverPanel : UserControl
             return pairs;
         }
 
+        // The engine's plan is written in reference/far ROLES: plan-left is
+        // the driver's side the cascade settles first, plan-right the far
+        // side fitted to it, and a positive scene offset makes the far side
+        // lead. LHD maps the cabin sides onto the roles directly. RHD hands
+        // the plan MIRRORED — the right side anchors, the left one is fitted
+        // — so the same non-negative offset makes the left side lead (the
+        // right lags by it), the dash-center image for a right-seated driver.
         // The L/R pair links (the shared playing band of each stereo pair)
         // aim the descent's gentle prior at the cross-side-consistent delay —
-        // the same Δ the metric panel verifies afterwards.
+        // the same Δ the metric panel verifies afterwards; their first member
+        // is the settled reference-side channel, mirrored alike.
         var pairLinks = new List<StereoPairLink>();
         foreach (VirtualCrossoverSideAlignmentChannel right in rightSide.Where(side => side.RightSide))
         {
@@ -3003,23 +3058,27 @@ public partial class VirtualCrossoverPanel : UserControl
             // too-narrow intersection, so such a link could never measure.
             if (highHz >= lowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
             {
-                pairLinks.Add(new StereoPairLink(left, right, lowHz, highHz));
+                pairLinks.Add(rightHandDrive
+                    ? new StereoPairLink(right, left, lowHz, highHz)
+                    : new StereoPairLink(left, right, lowHz, highHz));
             }
         }
 
-        List<AlignmentSnapshot> leftByBand = ByBand(leftSide);
-        List<AlignmentSnapshot> rightByBand = ByBand(rightSide);
+        List<AlignmentSnapshot> referenceByBand =
+            ByBand(rightHandDrive ? rightSide : leftSide);
+        List<AlignmentSnapshot> farByBand =
+            ByBand(rightHandDrive ? leftSide : rightSide);
         AutoAlignmentEngine.ComputeStereo(
             new StereoAlignmentPlan(
-                leftByBand,
-                Pairs(leftByBand),
-                rightByBand,
-                Pairs(rightByBand),
+                referenceByBand,
+                Pairs(referenceByBand),
+                farByBand,
+                Pairs(farByBand),
                 union.Where(side => side.Runtime.Pair.Mono)
                     .Cast<IAlignmentChannel>()
                     .ToList(),
-                bridgeLeft,
-                bridgeRight,
+                rightHandDrive ? bridgeRight : bridgeLeft,
+                rightHandDrive ? bridgeLeft : bridgeRight,
                 bridgeBandLowHz,
                 bridgeBandHighHz,
                 sceneOffsetMs,

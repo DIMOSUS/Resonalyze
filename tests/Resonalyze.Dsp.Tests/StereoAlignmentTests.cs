@@ -6,11 +6,13 @@ using System.Text.RegularExpressions;
 namespace Resonalyze.Dsp.Tests;
 
 /// <summary>
-/// The stereo alignment cascade: left side first, then the top-pair arrival
-/// bridge with the scene offset (positive = the right side leads), then the
-/// right-side descent that must not touch mono channels. The synthetic
-/// systems place impulses at known positions, so every stage's contribution
-/// is verifiable arithmetic.
+/// The stereo alignment cascade: the plan's reference (left-role) side
+/// first, then the top-pair arrival bridge with the scene offset (positive
+/// = the plan's right-role side, the far one, leads), then the far-side
+/// descent that must not touch mono channels. A right-hand-drive caller
+/// hands the plan mirrored — the mirrored-plan test pins that shape. The
+/// synthetic systems place impulses at known positions, so every stage's
+/// contribution is verifiable arithmetic.
 /// </summary>
 public sealed class StereoAlignmentTests
 {
@@ -87,7 +89,8 @@ public sealed class StereoAlignmentTests
             double leftLateMs = 0,
             double rightMidAmplitude = 1.0,
             int[]? reprocessCount = null,
-            double globalLateMs = 0)
+            double globalLateMs = 0,
+            bool mirrorPlan = false)
     {
         var sub = new TestChannel(
             "sub", ImpulseAtMs(2.0 + leftLateMs + globalLateMs));
@@ -127,9 +130,15 @@ public sealed class StereoAlignmentTests
             {
                 if (linkBands[i] is { } band)
                 {
-                    pairLinks.Add(new StereoPairLink(
-                        linkChannels[i].Left, linkChannels[i].Right,
-                        band.LowHz, band.HighHz));
+                    // The link's first member is the settled reference-side
+                    // channel, so a mirrored plan swaps the pair too.
+                    pairLinks.Add(mirrorPlan
+                        ? new StereoPairLink(
+                            linkChannels[i].Right, linkChannels[i].Left,
+                            band.LowHz, band.HighHz)
+                        : new StereoPairLink(
+                            linkChannels[i].Left, linkChannels[i].Right,
+                            band.LowHz, band.HighHz));
                 }
             }
         }
@@ -168,13 +177,13 @@ public sealed class StereoAlignmentTests
         var log = new StringBuilder();
         AutoAlignmentEngine.ComputeStereo(
             new StereoAlignmentPlan(
-                leftSnapshots,
-                leftPairs,
-                rightSnapshots,
-                rightPairs,
+                mirrorPlan ? rightSnapshots : leftSnapshots,
+                mirrorPlan ? rightPairs : leftPairs,
+                mirrorPlan ? leftSnapshots : rightSnapshots,
+                mirrorPlan ? leftPairs : rightPairs,
                 new HashSet<IAlignmentChannel> { sub },
-                leftTwr,
-                rightTwr,
+                mirrorPlan ? rightTwr : leftTwr,
+                mirrorPlan ? leftTwr : rightTwr,
                 BridgeBandLowHz: 2_500,
                 BridgeBandHighHz: 12_000,
                 SceneOffsetMs: sceneOffsetMs,
@@ -220,6 +229,46 @@ public sealed class StereoAlignmentTests
         double leftTop = FinalArrivalMs(left[2], 0.0, alignment);
         double rightTop = FinalArrivalMs(right[2], 1.5, alignment);
         Assert.InRange(leftTop - rightTop, -0.30, -0.20);
+    }
+
+    [Fact]
+    public void ComputeStereo_MirroredPlanMakesTheLeftSideLead()
+    {
+        // The right-hand-drive shape: the caller mirrors the plan (the right
+        // side is the reference the cascade settles first, the left one is
+        // fitted to it), and the same POSITIVE offset now makes the left
+        // side lead — the right top's final arrival is 0.25 ms LATER.
+        (TestChannel sub, TestChannel[] left, TestChannel[] right,
+            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+            RunStereo(sceneOffsetMs: 0.25, mirrorPlan: true);
+
+        double leftTop = FinalArrivalMs(left[2], 0.0, alignment);
+        double rightTop = FinalArrivalMs(right[2], 1.5, alignment);
+        Assert.InRange(rightTop - leftTop, 0.20, 0.30);
+
+        // Both sides must still cohere internally: the reference walk now
+        // runs on the right side (tuning the shared sub along the way) and
+        // the descent on the left, whose woofer sits between TWO settled
+        // references (the mono sub and its mid) — hence the wider tolerance
+        // mirroring the LHD test's fitted side.
+        double[] naturals = [1.0, 0.4, 0.0];
+        for (int i = 0; i < 2; i++)
+        {
+            Assert.InRange(
+                Math.Abs(
+                    FinalArrivalMs(right[i], naturals[i] + 1.5, alignment) -
+                    FinalArrivalMs(right[i + 1], naturals[i + 1] + 1.5, alignment)),
+                0, 0.1);
+            Assert.InRange(
+                Math.Abs(
+                    FinalArrivalMs(left[i], naturals[i], alignment) -
+                    FinalArrivalMs(left[i + 1], naturals[i + 1], alignment)),
+                0, 0.2);
+        }
+
+        double minimum = new[] { sub, left[0], left[1], left[2], right[0], right[1], right[2] }
+            .Min(channel => alignment.GetValueOrDefault(channel).DelayMs);
+        Assert.InRange(minimum, 0, 0.011);
     }
 
     [Fact]
@@ -302,8 +351,10 @@ public sealed class StereoAlignmentTests
             - monoAlignment.GetValueOrDefault(woof).DelayMs;
         Assert.InRange(Math.Abs(stereoRelative - monoRelative), 0, 0.011);
 
-        // The right pass reports the pinned junction instead of tuning it.
-        Assert.Contains("mono, timed by the left side", log.ToString());
+        // The far pass reports the pinned junction instead of tuning it
+        // (role-based wording: on a mirrored RHD plan the reference side is
+        // physically the right one).
+        Assert.Contains("mono, timed by the reference side", log.ToString());
     }
 
     [Fact]

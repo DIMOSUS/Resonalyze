@@ -535,7 +535,9 @@ namespace Resonalyze
                         ". Check the input levels and the loopback wiring, then measure again.");
                 }
 
-                ApplyAverageResult(accumulator.BuildResult());
+                SweepAverageResult averageResult = accumulator.BuildResult();
+                RequireCredibleTransferIr(averageResult);
+                ApplyAverageResult(averageResult);
                 success = true;
             }
             catch (OperationCanceledException)
@@ -764,6 +766,59 @@ namespace Resonalyze
                 captured.MicrophoneChannel,
                 captured.LoopbackChannel,
                 finalLevels);
+        }
+
+        // A loopback whose peak sits this far down flags the LIKELY CULPRIT
+        // in the shape-gate message (a wired reference is metered near full
+        // scale; the field garbage set peaked at -33..-49 dBFS). Diagnosis
+        // text only, never a rejection of its own: transfer estimation is
+        // scale-invariant, so a cleanly attenuated wire — the readme itself
+        // says to turn the playback level well down — measures fine and must
+        // not be refused on level alone.
+        private const double SuspiciouslyQuietLoopbackDbFs = -30;
+
+        // The averaged transfer IR must LOOK like an impulse response before
+        // anything is published: a genuine measurement is a localized event,
+        // while a capture whose reference was unusable (field case: a
+        // session whose "loopback" was playback bleed instead of the wire)
+        // divides into stationary noise smeared over the whole buffer. The
+        // shape gate is the honest refusal for that class — scale-invariant,
+        // so it cannot punish a legitimately quiet capture — and the user
+        // gets the reason instead of a garbage measurement.
+        private void RequireCredibleTransferIr(SweepAverageResult result)
+        {
+            if (result.TransferImpulseResponse is not { } transfer)
+            {
+                return;
+            }
+
+            // FAIL-CLOSED: a shape that cannot be measured at all (null —
+            // degenerate or non-finite content) is a refusal, not a pass. A
+            // NaN anywhere in the capture would otherwise sail through every
+            // comparison and publish an unusable measurement.
+            TransferIrCompactness? compactness =
+                TransferIrDiagnostics.MeasureCompactness(transfer, SampleRate);
+            if (compactness is { } measured &&
+                double.IsFinite(measured.InsideOutsideDb) &&
+                measured.InsideOutsideDb >= TransferIrDiagnostics.MinimumCompactnessDb)
+            {
+                return;
+            }
+
+            InputLevelMeterEntry loopback = result.Levels.Loopback;
+            string levelDiagnosis =
+                loopback.Available &&
+                loopback.PeakDbFs < SuspiciouslyQuietLoopbackDbFs
+                    ? FormattableString.Invariant(
+                        $" The loopback peaked at {loopback.PeakDbFs:0.0} dBFS while a wired reference sits near full scale — the input likely picked up bleed instead of the wire.")
+                    : "";
+            string shapeDiagnosis =
+                compactness is { } value && double.IsFinite(value.InsideOutsideDb)
+                    ? FormattableString.Invariant(
+                        $"the energy around its peak is only {value.InsideOutsideDb:0.0} dB above the rest of the capture (a real measurement reads 29-49 dB; an unusable reference divides into noise well below {TransferIrDiagnostics.MinimumCompactnessDb:0} dB)")
+                    : "its shape could not be measured at all (the capture is degenerate or carries non-finite samples)";
+            throw new InvalidOperationException(
+                $"The transfer function did not form a credible impulse response: {shapeDiagnosis}.{levelDiagnosis} Check the microphone and loopback wiring and levels, then measure again.");
         }
 
         private void ApplyAverageResult(SweepAverageResult result)

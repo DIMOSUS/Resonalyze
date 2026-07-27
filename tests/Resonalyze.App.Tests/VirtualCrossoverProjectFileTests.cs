@@ -138,6 +138,99 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void LoadOrDefault_LegacyNegativeSceneOffset_BecomesRightHandDrive()
+    {
+        // The wire format carries the steering layout in the offset's SIGN
+        // (negative = right-seated driver). A pre-flag payload must open as
+        // an RHD project with the equivalent magnitude.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            new VirtualCrossoverProjectFile().Save(root);
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonObject file = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            file["stereoSceneOffsetMs"] = -0.4;
+            file.Remove("stereoRightHandDrive");
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.True(loaded.StereoRightHandDrive);
+            Assert.Equal(0.4, loaded.StereoSceneOffsetMagnitudeMs);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_RhdSurvivesAnOldBuildResaveThatDropsTheFlag()
+    {
+        // An older build knows nothing of stereoRightHandDrive: it reads the
+        // layout from the offset's sign (the wire keeps the pre-flag
+        // format exactly for this) and a resave DROPS the unknown flag. The
+        // sign must carry the layout back in — without it the resave would
+        // silently and permanently flip an RHD session to LHD.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile();
+            saved.SetStereoScene(0.25, rightHandDrive: true);
+            saved.Save(root);
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonObject file = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            Assert.Equal(-0.25, (double)file["stereoSceneOffsetMs"]!);
+            file.Remove("stereoRightHandDrive");
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.True(loaded.StereoRightHandDrive);
+            Assert.Equal(0.25, loaded.StereoSceneOffsetMagnitudeMs);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_RhdWithZeroOffsetSurvivesAnOldBuildResave()
+    {
+        // The edge of the signed wire format: a zero magnitude has no sign
+        // to carry the layout (IEEE -0.0 neither compares below zero nor
+        // survives a decimal round-trip), so RHD+0 serializes as a tiny
+        // negative marker the runtime reads back as zero. Without it, an
+        // old build's resave — which drops the unknown flag — would
+        // silently flip the session to LHD.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile();
+            saved.SetStereoScene(0, rightHandDrive: true);
+            saved.Save(root);
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonObject file = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            Assert.True((double)file["stereoSceneOffsetMs"]! < 0);
+            file.Remove("stereoRightHandDrive");
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.True(loaded.StereoRightHandDrive);
+            Assert.Equal(0, loaded.StereoSceneOffsetMagnitudeMs);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void AllPass_RoundTripsThroughTheProjectFile()
     {
         string root = CreateTemporaryDirectory();
@@ -235,7 +328,7 @@ public sealed class VirtualCrossoverProjectFileTests
                 PhaseFdwCycles = 8,
                 PhaseDetrendMode = PhaseDetrendMode.Manual
             };
-            original.StereoSceneOffsetMs = -0.4;
+            original.SetStereoScene(0.4, rightHandDrive: true);
             original.StereoLevelDifferenceDb = -1.5;
             original.ActiveSideRight = true;
             original.Pairs[0].Mono = true;
@@ -282,6 +375,8 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.Equal(original.PhaseFdwCycles, loaded.PhaseFdwCycles);
             Assert.Equal(original.PhaseDetrendMode, loaded.PhaseDetrendMode);
             Assert.Equal(original.StereoSceneOffsetMs, loaded.StereoSceneOffsetMs);
+            Assert.Equal(
+                original.StereoRightHandDrive, loaded.StereoRightHandDrive);
             Assert.Equal(
                 original.StereoLevelDifferenceDb, loaded.StereoLevelDifferenceDb);
             Assert.Equal(original.ActiveSideRight, loaded.ActiveSideRight);

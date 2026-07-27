@@ -140,10 +140,9 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_LegacyNegativeSceneOffset_BecomesRightHandDrive()
     {
-        // The steering layout used to live in the scene offset's SIGN
-        // (negative = right-seated driver). Such a payload must open as an
-        // RHD project carrying the equivalent magnitude — not trip the
-        // non-negative validation and cost the user their session.
+        // The wire format carries the steering layout in the offset's SIGN
+        // (negative = right-seated driver). A pre-flag payload must open as
+        // an RHD project with the equivalent magnitude.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -158,7 +157,39 @@ public sealed class VirtualCrossoverProjectFileTests
                 VirtualCrossoverProjectFile.LoadOrDefault(root);
 
             Assert.True(loaded.StereoRightHandDrive);
-            Assert.Equal(0.4, loaded.StereoSceneOffsetMs);
+            Assert.Equal(0.4, loaded.StereoSceneOffsetMagnitudeMs);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadOrDefault_RhdSurvivesAnOldBuildResaveThatDropsTheFlag()
+    {
+        // An older build knows nothing of stereoRightHandDrive: it reads the
+        // layout from the offset's sign (the wire keeps the pre-flag
+        // format exactly for this) and a resave DROPS the unknown flag. The
+        // sign must carry the layout back in — without it the resave would
+        // silently and permanently flip an RHD session to LHD.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile();
+            saved.SetStereoScene(0.25, rightHandDrive: true);
+            saved.Save(root);
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonObject file = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            Assert.Equal(-0.25, (double)file["stereoSceneOffsetMs"]!);
+            file.Remove("stereoRightHandDrive");
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.True(loaded.StereoRightHandDrive);
+            Assert.Equal(0.25, loaded.StereoSceneOffsetMagnitudeMs);
         }
         finally
         {
@@ -264,8 +295,7 @@ public sealed class VirtualCrossoverProjectFileTests
                 PhaseFdwCycles = 8,
                 PhaseDetrendMode = PhaseDetrendMode.Manual
             };
-            original.StereoSceneOffsetMs = 0.4;
-            original.StereoRightHandDrive = true;
+            original.SetStereoScene(0.4, rightHandDrive: true);
             original.StereoLevelDifferenceDb = -1.5;
             original.ActiveSideRight = true;
             original.Pairs[0].Mono = true;
@@ -520,15 +550,6 @@ public sealed class VirtualCrossoverProjectFileTests
                 VirtualCrossoverProjectFile.MaximumSceneOffsetMs + 1
         };
         Assert.Throws<InvalidDataException>(() => badSceneOffset.Validate());
-
-        // The offset is a magnitude now — the layout lives in its own flag,
-        // and a negative value can only be a legacy payload, which Migrate
-        // normalizes before validation ever sees it.
-        var negativeSceneOffset = new VirtualCrossoverProjectFile
-        {
-            StereoSceneOffsetMs = -0.25
-        };
-        Assert.Throws<InvalidDataException>(() => negativeSceneOffset.Validate());
 
         var badLevelDifference = new VirtualCrossoverProjectFile
         {

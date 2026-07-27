@@ -348,42 +348,63 @@ public partial class VirtualCrossoverPanel : UserControl
 
         RefreshCalibrationCombo();
 
-        // BOTH physical slots of EVERY channel are wiped before anything
-        // resolves. Per slot, because through the effective accessor a mono
-        // pair's real right slot is unreachable, and a stale measurement from
-        // the previous project would otherwise resurface the moment the pair
-        // stops being mono. Across ALL channels up front, because the rate
-        // guard in TryAssignSource scans every still-resolved side: cleared
-        // one channel at a time, an imported session at a different sample
-        // rate would lose that vote against the previous project's channels
-        // — each source silently refused against the not-yet-replaced rest,
-        // leaving only the last channel resolved.
-        foreach (VirtualCrossoverChannel channel in channels)
-        {
-            channel.PhysicalSideState(false).Clear();
-            channel.PhysicalSideState(true).Clear();
-        }
-
-        foreach (VirtualCrossoverChannel channel in channels)
-        {
-            // Both sides resolve up front (the stereo Auto delay needs them
-            // together); a mono pair resolves its single slot once.
-            foreach (bool rightSide in new[] { false, true })
+        await RestoreProjectSourcesAsync(
+            channels,
+            channel => channel.Pair.Mono,
+            channel =>
             {
-                if (channel.Pair.Mono && rightSide)
-                {
-                    continue;
-                }
-
-                await ResolveSourceAsync(channel, rightSide, showErrors: false);
-            }
-
-            UpdateSourceButton(channel);
-        }
+                channel.PhysicalSideState(false).Clear();
+                channel.PhysicalSideState(true).Clear();
+            },
+            (channel, rightSide) =>
+                ResolveSourceAsync(channel, rightSide, showErrors: false),
+            UpdateSourceButton);
 
         UpdateSideRadioTexts();
         // The final redraw is issued by ApplyProjectAsync after the loading
         // state clears, so it draws the real plot instead of the loading note.
+    }
+
+    // The restore ORDER is the cross-rate import contract: BOTH physical
+    // slots of EVERY channel are wiped before the first source resolves.
+    // Per slot, because through the effective accessor a mono pair's real
+    // right slot is unreachable, and a stale measurement from the previous
+    // project would otherwise resurface the moment the pair stops being
+    // mono. Across ALL channels up front, because the rate guard in
+    // TryAssignSource scans every still-resolved side: cleared one channel
+    // at a time, an imported session at a different sample rate would lose
+    // that vote against the previous project's channels — each source
+    // silently refused against the not-yet-replaced rest, leaving only the
+    // last channel resolved (field bug). Then both sides of each channel
+    // resolve up front (the stereo Auto delay needs them together); a mono
+    // pair resolves its single slot once. Static and delegate-fed so the
+    // order itself is unit-testable.
+    internal static async Task RestoreProjectSourcesAsync<TChannel>(
+        IReadOnlyList<TChannel> channels,
+        Func<TChannel, bool> isMono,
+        Action<TChannel> clearBothSlots,
+        Func<TChannel, bool, Task> resolveSide,
+        Action<TChannel> channelRestored)
+    {
+        foreach (TChannel channel in channels)
+        {
+            clearBothSlots(channel);
+        }
+
+        foreach (TChannel channel in channels)
+        {
+            foreach (bool rightSide in new[] { false, true })
+            {
+                if (isMono(channel) && rightSide)
+                {
+                    continue;
+                }
+
+                await resolveSide(channel, rightSide);
+            }
+
+            channelRestored(channel);
+        }
     }
 
     private void ScheduleSave()
@@ -2226,7 +2247,7 @@ public partial class VirtualCrossoverPanel : UserControl
         using var dialog = new VirtualCrossoverAutoDelayDialog();
         dialog.Init(
             stereo: false,
-            project.StereoSceneOffsetMs,
+            project.StereoSceneOffsetMagnitudeMs,
             project.StereoRightHandDrive,
             Math.Abs(project.StereoLevelDifferenceDb),
             request => RunSingleSideProposalAsync(
@@ -2516,11 +2537,12 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             // The inputs the proposal was computed with become the persisted
             // values only now, so a discarded experiment does not overwrite
-            // them. The tilt is stored in the signed L-R convention
-            // (LevelDifferenceDb restates the near-side cut per the layout),
-            // keeping the file readable by older builds.
-            project.StereoSceneOffsetMs = result.Request.SceneOffsetMs;
-            project.StereoRightHandDrive = result.Request.RightHandDrive;
+            // them. Both figures are stored with the layout in their signs
+            // (the scene offset via SetStereoScene, the tilt via the L-R
+            // convention LevelDifferenceDb restates), keeping the file
+            // readable — and safely resavable — by older builds.
+            project.SetStereoScene(
+                result.Request.SceneOffsetMs, result.Request.RightHandDrive);
             project.StereoLevelDifferenceDb = result.Request.LevelDifferenceDb;
         }
 
@@ -2768,13 +2790,14 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         using var dialog = new VirtualCrossoverAutoDelayDialog();
-        // The dialog edits the tilt as a layout-neutral NEAR-SIDE CUT; the
-        // project stores it in the gain engine's signed L-R convention (so
-        // older builds read the same file), hence the magnitude here and the
+        // The dialog edits both tuning figures as layout-neutral magnitudes;
+        // the project stores each with the layout in its sign (the scene
+        // offset's wire format, the gain engine's L-R convention), so older
+        // builds read the same file — hence the magnitudes here and the
         // layout-signed write-back in CommitAutoDelayResult.
         dialog.Init(
             stereo: true,
-            project.StereoSceneOffsetMs,
+            project.StereoSceneOffsetMagnitudeMs,
             project.StereoRightHandDrive,
             Math.Abs(project.StereoLevelDifferenceDb),
             request => RunStereoProposalAsync(

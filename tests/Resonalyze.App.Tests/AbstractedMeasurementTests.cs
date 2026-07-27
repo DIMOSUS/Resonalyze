@@ -146,6 +146,29 @@ public sealed class AbstractedMeasurementTests
         Assert.Contains("dBFS", measurement.LastError.Message);
     }
 
+    // The fail-closed side of the shape gate: one NaN in the capture slips
+    // every level comparison and poisons the transfer IR into NaN, where
+    // "compactness < threshold" would be false. An UNMEASURABLE shape must
+    // refuse the measurement, not publish it.
+    [Fact]
+    public async Task NaNCaptureFailsClosed()
+    {
+        var factory = new FakeAudioSessionFactory(
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal, (_, s, tail, _) => Task.FromResult(
+                    SyntheticCapture.NaNMicrophone(s, tail))));
+        using ExpSweepMeasurement measurement = CreateSweep(factory);
+
+        bool success = await measurement.RunAsync();
+
+        Assert.False(success);
+        Assert.False(measurement.HasImpulseResponse);
+        Assert.NotNull(measurement.LastError);
+        Assert.Contains(
+            "its shape could not be measured at all",
+            measurement.LastError!.Message);
+    }
+
     // The second garbage class: every level check passes (mic and loopback
     // both carry plausible signal), but the microphone recorded noise
     // uncorrelated with the sweep, so the transfer function divides into

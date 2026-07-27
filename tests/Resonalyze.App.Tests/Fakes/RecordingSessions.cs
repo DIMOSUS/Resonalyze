@@ -57,6 +57,18 @@ internal static class SyntheticCapture
             AudioCaptureAnomalies.None, Diagnostics: null);
     }
 
+    // A capture poisoned by one non-finite sample: NaN slips every level
+    // comparison, the transfer IR comes out NaN, and only the fail-closed
+    // shape gate stands between it and a published measurement.
+    public static AudioCaptureResult NaNMicrophone(AudioPlaybackSignal signal, int tailSamples)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.25f);
+        mic[100] = float.NaN;
+        return new AudioCaptureResult(
+            [mic, loop], 0, 1, StereoSeparationExpected: true,
+            AudioCaptureAnomalies.None, Diagnostics: null);
+    }
+
     // A level-plausible capture whose microphone recorded only noise
     // uncorrelated with the sweep (deterministic LCG): every per-run level
     // check passes, but the transfer function divides into stationary noise

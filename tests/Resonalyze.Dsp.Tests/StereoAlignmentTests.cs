@@ -351,8 +351,10 @@ public sealed class StereoAlignmentTests
             - monoAlignment.GetValueOrDefault(woof).DelayMs;
         Assert.InRange(Math.Abs(stereoRelative - monoRelative), 0, 0.011);
 
-        // The right pass reports the pinned junction instead of tuning it.
-        Assert.Contains("mono, timed by the left side", log.ToString());
+        // The far pass reports the pinned junction instead of tuning it
+        // (role-based wording: on a mirrored RHD plan the reference side is
+        // physically the right one).
+        Assert.Contains("mono, timed by the reference side", log.ToString());
     }
 
     [Fact]

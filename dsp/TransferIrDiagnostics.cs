@@ -72,22 +72,28 @@ public static class TransferIrDiagnostics
 {
     /// <summary>
     /// The compactness floor below which a transfer IR is not a credible
-    /// impulse response. Field calibration (14 records, two cabins): genuine
-    /// measurements — including band-limited subwoofer records — read
-    /// 29.5-48.9 dB, while a whole session whose loopback was playback bleed
-    /// instead of the wire read 11.2-15.7 dB (energy smeared over the full
-    /// 5.5 s buffer, peak at sample 2 or wrapped into negative time). 20 dB
-    /// sits 4 dB above the worst garbage and 9 dB below the weakest genuine
-    /// record — deliberately closer to the garbage side, so a noisy but real
-    /// capture is not refused.
+    /// impulse response. Calibration at the 100 ms/500 ms window, field sets
+    /// (14 records, two cabins) plus synthetic transfers pushed through the
+    /// production excitation gate: genuine measurements read 28.8-48.6 dB,
+    /// ideal band-limited transfers (even a 20-50 Hz band sweep) 42.9+ dB,
+    /// while a session whose loopback was playback bleed instead of the wire
+    /// read 11.2-18.7 dB and gated uncorrelated noise ~0 dB. 22 dB sits
+    /// 3.3 dB above the worst field garbage and 6.8 dB below the weakest
+    /// genuine record — deliberately closer to the garbage side, so a noisy
+    /// but real capture is not refused.
     /// </summary>
-    public const double MinimumCompactnessDb = 20.0;
+    public const double MinimumCompactnessDb = 22.0;
 
-    // The compactness window around the peak: 10 ms ahead (window pre-ring)
-    // and 500 ms behind (any cabin decay plus processing latency fits well
-    // inside). Both shrink on short records so the outside stays the
-    // majority of the buffer and the ratio keeps its meaning.
-    private const double CompactnessPreSeconds = 0.010;
+    // The compactness window around the peak, CIRCULAR because the window
+    // must follow the buffer's topology: a zero-phase excitation gate turns
+    // even an ideal H(f)=1 into a symmetric band-limited kernel whose
+    // pre-ringing lives in negative time, i.e. at the buffer's far end. The
+    // pre side is sized for that ringing at the lowest supported band edges
+    // (10 ms cut a 20-50 Hz band sweep's ideal kernel down to 19.9 dB —
+    // a false rejection; 100 ms reads it at 42.9 dB) and the post side for
+    // any cabin decay plus processing latency. Both shrink on short records
+    // so the outside stays the majority of the buffer.
+    private const double CompactnessPreSeconds = 0.100;
     private const double CompactnessPostSeconds = 0.500;
     private const int CompactnessMinimumSamples = 256;
 
@@ -124,7 +130,10 @@ public static class TransferIrDiagnostics
                 peakIndex = i;
             }
         }
-        if (total <= 0)
+        // Null covers "nothing to measure" AND "not a number to measure":
+        // a single NaN/Infinity poisons every energy sum, and the caller
+        // treats an unmeasurable shape as a refusal, never a pass.
+        if (!double.IsFinite(total) || total <= 0)
         {
             return null;
         }

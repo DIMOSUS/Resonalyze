@@ -317,19 +317,43 @@ public sealed class VirtualCrossoverProjectFile
         new VirtualCrossoverChannelPairSettings()
     ];
 
-    // The stereo Auto delay scene offset (ms), a non-negative magnitude: the
-    // far side leads (arrives earlier) by this much, pulling the image toward
-    // the dash center. Which side is "far" comes from StereoRightHandDrive.
-    // Legacy files carried the layout in this value's sign (negative meant a
-    // right-seated driver); Migrate normalizes them.
+    // The stereo Auto delay scene offset (ms) ON THE WIRE: the magnitude
+    // with the steering layout in its SIGN (negative = right-hand drive) —
+    // deliberately the exact pre-flag format. A build from before
+    // StereoRightHandDrive existed reads an RHD session correctly and even
+    // RESAVES it without silently flipping it to LHD: the unknown flag would
+    // not survive such a resave, the sign does. In-app code reads the
+    // magnitude via StereoSceneOffsetMagnitudeMs and the layout via the
+    // flag, and writes both through SetStereoScene so they never disagree.
     public double StereoSceneOffsetMs { get; set; } = 0.25;
 
     // The steering position the stereo Auto delay aligns for: false = LHD
     // (the left side is the timing reference and the right side leads by the
     // scene offset), true = RHD (mirrored — the right side is the reference
-    // and lags the left by the offset). Additive: older files lack it and
-    // open as LHD unless a negative legacy offset says otherwise (Migrate).
+    // and lags the left by the offset). Kept explicit despite the sign
+    // above carrying the same fact, so a zero offset still remembers the
+    // layout; Migrate re-aligns the pair when a legacy or foreign file has
+    // only one of them. Additive: older files lack it and open as LHD
+    // unless a negative offset says otherwise.
     public bool StereoRightHandDrive { get; set; }
+
+    /// <summary>The scene offset as the UI edits it: a layout-neutral,
+    /// non-negative magnitude (the sign on the wire belongs to the layout,
+    /// see <see cref="StereoSceneOffsetMs"/>).</summary>
+    [JsonIgnore]
+    public double StereoSceneOffsetMagnitudeMs => Math.Abs(StereoSceneOffsetMs);
+
+    /// <summary>
+    /// The one writer of the stereo scene: keeps the wire sign and the
+    /// layout flag consistent (see <see cref="StereoSceneOffsetMs"/>).
+    /// </summary>
+    public void SetStereoScene(double offsetMagnitudeMs, bool rightHandDrive)
+    {
+        StereoRightHandDrive = rightHandDrive;
+        StereoSceneOffsetMs = rightHandDrive
+            ? -Math.Abs(offsetMagnitudeMs)
+            : Math.Abs(offsetMagnitudeMs);
+    }
 
     // The intentional level difference (dB) the Auto delay gain balance aims
     // for, stored as LEFT minus RIGHT: the default asks for the left side
@@ -594,15 +618,19 @@ public sealed class VirtualCrossoverProjectFile
             file.Version = 5;
         }
 
-        // The steering layout used to live in the scene offset's SIGN
-        // (negative = right-hand drive). It is its own flag now and the
-        // offset a magnitude, so a legacy negative value converts here. No
-        // version bump: this build never writes a negative offset, and an
-        // older build opening a new RHD file falls back to LHD semantics the
-        // same way it ignores any other additive flag.
+        // The scene offset's wire SIGN and the layout flag state one fact
+        // (see the properties): re-align them here for files that carry only
+        // one — a pre-flag file (sign only, possibly resaved by an older
+        // build that dropped the flag) or a hand-edited one. The sign is the
+        // wider channel (every build honors it), so it wins over a missing
+        // flag; a set flag over a positive offset wins the other way, so a
+        // zero-or-positive RHD file keeps its layout.
         if (file.StereoSceneOffsetMs < 0)
         {
             file.StereoRightHandDrive = true;
+        }
+        else if (file.StereoRightHandDrive)
+        {
             file.StereoSceneOffsetMs = -file.StereoSceneOffsetMs;
         }
     }
@@ -693,10 +721,10 @@ public sealed class VirtualCrossoverProjectFile
             throw new InvalidDataException(
                 "The virtual crossover channel count is invalid.");
         }
-        // Non-negative by construction: the UI only produces magnitudes and
-        // Migrate normalizes legacy sign-carrying files before validation.
+        // Signed on the wire (the sign is the layout); only the magnitude is
+        // bounded.
         if (!double.IsFinite(StereoSceneOffsetMs) ||
-            StereoSceneOffsetMs is < 0 or > MaximumSceneOffsetMs)
+            Math.Abs(StereoSceneOffsetMs) > MaximumSceneOffsetMs)
         {
             throw new InvalidDataException("The stereo scene offset is invalid.");
         }

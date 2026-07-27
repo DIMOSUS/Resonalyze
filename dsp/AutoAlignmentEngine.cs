@@ -1899,7 +1899,7 @@ public static class AutoAlignmentEngine
                             $"{probe.FirstArrivalDelayMilliseconds:0.000} ms in its " +
                             $"{bridgeProbeLowHz:0}-{plan.BridgeBandHighHz:0} Hz half. " +
                             "The arrival is not a clean direct front, so timing the " +
-                            "whole right side from it would be unreliable. Check the " +
+                            "whole far side from it would be unreliable. Check the " +
                             "top pair's measurements for early reflections.");
                     case ArrivalCertificate.Unverified:
                         bridgeVerified = false;
@@ -3522,7 +3522,7 @@ public static class AutoAlignmentEngine
 
         log.AppendLine(
             $"Junction {monoChannel.Name}/{otherChannel.Name} " +
-            $"(mono, timed by the left side): avg {measured.LossDb:0.00} dB, " +
+            $"(mono, timed by the reference side): avg {measured.LossDb:0.00} dB, " +
             $"dip {measured.DipDb:0.0} dB " +
             $"in {pair.BandLowHz:0}-{pair.BandHighHz:0} Hz" +
             (measured.LossDb < -1.0 || measured.DipDb < -6.0

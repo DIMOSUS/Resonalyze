@@ -535,7 +535,9 @@ namespace Resonalyze
                         ". Check the input levels and the loopback wiring, then measure again.");
                 }
 
-                ApplyAverageResult(accumulator.BuildResult());
+                SweepAverageResult averageResult = accumulator.BuildResult();
+                RequireCredibleTransferIr(averageResult);
+                ApplyAverageResult(averageResult);
                 success = true;
             }
             catch (OperationCanceledException)
@@ -764,6 +766,30 @@ namespace Resonalyze
                 captured.MicrophoneChannel,
                 captured.LoopbackChannel,
                 finalLevels);
+        }
+
+        // The averaged transfer IR must LOOK like an impulse response before
+        // anything is published: per-run level checks catch the reference
+        // being quiet, but a level-plausible capture can still divide into
+        // stationary noise (field case: a session whose "loopback" was
+        // playback bleed produced IRs with energy smeared over the whole
+        // buffer). The shape gate is the honest refusal for that class —
+        // the user gets the reason instead of a garbage measurement.
+        private void RequireCredibleTransferIr(SweepAverageResult result)
+        {
+            if (result.TransferImpulseResponse is not { } transfer)
+            {
+                return;
+            }
+
+            TransferIrCompactness? compactness =
+                TransferIrDiagnostics.MeasureCompactness(transfer, SampleRate);
+            if (compactness is { } measured &&
+                measured.InsideOutsideDb < TransferIrDiagnostics.MinimumCompactnessDb)
+            {
+                throw new InvalidOperationException(FormattableString.Invariant(
+                    $"The transfer function did not form a credible impulse response: the energy around its peak is only {measured.InsideOutsideDb:0.0} dB above the rest of the capture (a real measurement reads 30-50 dB; an unusable reference divides into noise at ~11-16 dB). Check the microphone and loopback wiring and levels, then measure again."));
+            }
         }
 
         private void ApplyAverageResult(SweepAverageResult result)

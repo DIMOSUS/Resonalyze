@@ -102,6 +102,53 @@ public sealed class AbstractedMeasurementTests
         Assert.NotNull(measurement.QualityReport);
     }
 
+    // The field case behind the reference-level check: the "loopback" is
+    // playback bleed into a mis-routed input (~-41 dBFS), so every run and
+    // its retry fail, and the MEASUREMENT must fail naming the reason —
+    // not complete into a garbage transfer function.
+    [Fact]
+    public async Task QuietLoopbackFailsTheMeasurementWithTheReason()
+    {
+        var factory = new FakeAudioSessionFactory(
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal, (_, s, tail, _) => Task.FromResult(
+                    SyntheticCapture.QuietLoopback(s, tail))));
+        using ExpSweepMeasurement measurement = CreateSweep(factory);
+
+        bool success = await measurement.RunAsync();
+
+        Assert.False(success);
+        Assert.Equal(0, measurement.AcceptedAverageRunCount);
+        Assert.NotNull(measurement.LastError);
+        Assert.Contains("Every sweep run failed", measurement.LastError!.Message);
+        Assert.Contains(
+            "the loopback reference is too quiet", measurement.LastError.Message);
+    }
+
+    // The second garbage class: every level check passes (mic and loopback
+    // both carry plausible signal), but the microphone recorded noise
+    // uncorrelated with the sweep, so the transfer function divides into
+    // stationary noise. The shape gate must fail the measurement with the
+    // reason instead of publishing a garbage transfer IR.
+    [Fact]
+    public async Task NoiseTransferFailsTheMeasurementWithTheReason()
+    {
+        var factory = new FakeAudioSessionFactory(
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal, (_, s, tail, _) => Task.FromResult(
+                    SyntheticCapture.NoiseMicrophone(s, tail))));
+        using ExpSweepMeasurement measurement = CreateSweep(factory);
+
+        bool success = await measurement.RunAsync();
+
+        Assert.False(success);
+        Assert.False(measurement.HasImpulseResponse);
+        Assert.NotNull(measurement.LastError);
+        Assert.Contains(
+            "transfer function did not form a credible impulse response",
+            measurement.LastError!.Message);
+    }
+
     [Fact]
     public async Task CancellationDisposesTheSession()
     {

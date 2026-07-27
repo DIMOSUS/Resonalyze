@@ -1,4 +1,5 @@
 using System.Text;
+using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
@@ -6,8 +7,8 @@ namespace Resonalyze;
 /// Acceptance checks for one captured sweep run, evaluated BEFORE the run is
 /// added to the average, so one bad capture can no longer contaminate it
 /// irreversibly. Deliberately limited to unambiguous failures (clipping, a
-/// dead signal, an undersized capture): statistical outlier checks
-/// (peak-delay vs median, IR correlation against a reference run) need
+/// dead or far-too-quiet signal, an undersized capture): statistical outlier
+/// checks (peak-delay vs median, IR correlation against a reference run) need
 /// thresholds calibrated on real multi-run captures and are a later phase.
 /// </summary>
 internal static class SweepRunQualityCheck
@@ -19,6 +20,20 @@ internal static class SweepRunQualityCheck
     /// never rejected.
     /// </summary>
     public const double SilentPeakThreshold = 1e-4;
+
+    /// <summary>
+    /// Loopback peak below which the reference is rejected as too quiet
+    /// (~-30 dBFS). A wired loopback is an electrical reference and sits
+    /// near full scale on any sane gain staging; a "reference" tens of dB
+    /// down is in practice not the wire but playback bleed into an open or
+    /// mis-routed input, and the transfer function would divide the
+    /// microphone response by that noise. Field case: a whole session
+    /// captured with loopback peaks at -33..-49 dBFS passed the silence
+    /// check and produced garbage transfer IRs on every channel. Sits far
+    /// above <see cref="SilentPeakThreshold"/> and far below any real wired
+    /// reference, so neither neighbor is ever misclassified.
+    /// </summary>
+    public const double QuietLoopbackPeakThreshold = 0.0316;
 
     /// <summary>
     /// Issues found in the captured run; empty means the run is accepted.
@@ -54,9 +69,19 @@ internal static class SweepRunQualityCheck
             issues.Add("the microphone signal is silent");
         }
 
-        if (loopback != null && Peak(loopback) < SilentPeakThreshold)
+        if (loopback != null)
         {
-            issues.Add("the loopback reference signal is silent");
+            double loopbackPeak = Peak(loopback);
+            if (loopbackPeak < SilentPeakThreshold)
+            {
+                issues.Add("the loopback reference signal is silent");
+            }
+            else if (loopbackPeak < QuietLoopbackPeakThreshold)
+            {
+                double loopbackPeakDb = DataHelper.AmplitudeToDecibels(loopbackPeak);
+                issues.Add(FormattableString.Invariant(
+                    $"the loopback reference is too quiet to trust (peak {loopbackPeakDb:0.0} dBFS; a wired loopback sits near full scale)"));
+            }
         }
 
         return issues;

@@ -289,6 +289,135 @@ public sealed class TransferIrDiagnosticsTests
             impulseResponse, SampleRate));
     }
 
+    // Deterministic LCG noise, the same generator the noise-only estimate
+    // test uses — the compactness tests must never flake either.
+    private static double[] StationaryNoise(int length, uint seed)
+    {
+        var samples = new double[length];
+        uint state = seed;
+        for (int i = 0; i < samples.Length; i++)
+        {
+            state = state * 1_664_525u + 1_013_904_223u;
+            samples[i] = state / 4_294_967_296.0 - 0.5;
+        }
+        return samples;
+    }
+
+    [Fact]
+    public void MeasureCompactness_GenuineDecayReadsHigh()
+    {
+        // A CAUSAL arrival — fast attack, exponential decay — over a
+        // realistic noise floor, in a buffer many times the compactness
+        // window: the good-measurement shape (field records read
+        // 29.5-48.9 dB). Deliberately not the symmetric Hann burst of the
+        // crosstalk tests: half of that burst's energy precedes its peak,
+        // which no real transfer IR does, and the 10 ms pre-window would
+        // rightly count it as spread.
+        double[] impulseResponse = StationaryNoise(131_072, seed: 7);
+        for (int i = 0; i < impulseResponse.Length; i++)
+        {
+            impulseResponse[i] *= 0.001;
+        }
+        int start = (int)(0.010 * SampleRate);
+        double decaySamples = 0.050 * SampleRate;
+        for (int i = 0; i < (int)(0.500 * SampleRate); i++)
+        {
+            impulseResponse[start + i] +=
+                Math.Exp(-i / decaySamples) *
+                Math.Sin(Math.Tau * 300 * i / SampleRate);
+        }
+
+        TransferIrCompactness? compactness =
+            TransferIrDiagnostics.MeasureCompactness(impulseResponse, SampleRate);
+
+        Assert.NotNull(compactness);
+        Assert.True(
+            compactness.Value.InsideOutsideDb >=
+                TransferIrDiagnostics.MinimumCompactnessDb + 10,
+            $"genuine shape read {compactness.Value.InsideOutsideDb:0.0} dB");
+        // The envelope peaks at the first sine crest right after the onset.
+        Assert.InRange(compactness.Value.PeakDelayMs, 5, 30);
+    }
+
+    // The field shape of a transfer built from an unusable reference (a
+    // loopback that was playback bleed): stationary division noise across
+    // the whole buffer with giant spikes at the circular wrap point — peak
+    // at sample ~2 or wrapped into negative time, energy everywhere. The
+    // real set read 11.2-15.7 dB.
+    [Fact]
+    public void MeasureCompactness_StationaryNoiseWithWrapSpikesReadsLow()
+    {
+        double[] impulseResponse = StationaryNoise(262_144, seed: 42);
+        impulseResponse[1] = 300;
+        impulseResponse[^2] = -240;
+
+        TransferIrCompactness? compactness =
+            TransferIrDiagnostics.MeasureCompactness(impulseResponse, SampleRate);
+
+        Assert.NotNull(compactness);
+        Assert.True(
+            compactness.Value.InsideOutsideDb <
+                TransferIrDiagnostics.MinimumCompactnessDb,
+            $"garbage shape read {compactness.Value.InsideOutsideDb:0.0} dB");
+    }
+
+    [Fact]
+    public void MeasureCompactness_PureNoiseReadsNearZero()
+    {
+        TransferIrCompactness? compactness = TransferIrDiagnostics.MeasureCompactness(
+            StationaryNoise(262_144, seed: 9), SampleRate);
+
+        Assert.NotNull(compactness);
+        Assert.InRange(compactness.Value.InsideOutsideDb, -3, 3);
+    }
+
+    // No peak-position rule, by design: an electrical chain measurement
+    // (mic input wired straight to a processor output) legitimately peaks
+    // at zero delay and must pass on its clean shape alone.
+    [Fact]
+    public void MeasureCompactness_ElectricalDeltaAtZeroPasses()
+    {
+        var impulseResponse = new double[65_536];
+        impulseResponse[0] = 1.0;
+
+        TransferIrCompactness? compactness =
+            TransferIrDiagnostics.MeasureCompactness(impulseResponse, SampleRate);
+
+        Assert.NotNull(compactness);
+        Assert.True(
+            compactness.Value.InsideOutsideDb >=
+                TransferIrDiagnostics.MinimumCompactnessDb);
+        Assert.Equal(0, compactness.Value.PeakDelayMs);
+    }
+
+    [Fact]
+    public void MeasureCompactness_RefusesDegenerateInput()
+    {
+        // Too short to carve a meaningful window, or nothing to measure.
+        Assert.Null(TransferIrDiagnostics.MeasureCompactness(
+            new double[100], SampleRate));
+        Assert.Null(TransferIrDiagnostics.MeasureCompactness(
+            new double[65_536], SampleRate));
+        Assert.Null(TransferIrDiagnostics.MeasureCompactness(
+            StationaryNoise(65_536, seed: 3), sampleRate: 0));
+    }
+
+    [Fact]
+    public void MeasureCompactness_ComplexTwinMatchesTheRealPath()
+    {
+        double[] impulseResponse = StationaryNoise(65_536, seed: 11);
+        AddToneBurst(impulseResponse, startMs: 15.0, frequencyHz: 500, periods: 20, amplitude: 3.0);
+        var complexIr = new System.Numerics.Complex[impulseResponse.Length];
+        for (int i = 0; i < impulseResponse.Length; i++)
+        {
+            complexIr[i] = impulseResponse[i];
+        }
+
+        Assert.Equal(
+            TransferIrDiagnostics.MeasureCompactness(impulseResponse, SampleRate),
+            TransferIrDiagnostics.MeasureCompactness(complexIr, SampleRate));
+    }
+
     [Fact]
     public void CleanCrosstalkHead_ZerosTheHeadAndKeepsTheRest()
     {

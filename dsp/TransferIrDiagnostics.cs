@@ -43,6 +43,22 @@ public readonly record struct IrStartEstimate(
     bool DominantBandLimited);
 
 /// <summary>
+/// The time-compactness of a transfer IR: how far (dB) the per-sample energy
+/// of a short circular window around the strongest peak sits above the
+/// per-sample energy of everything outside it. A genuine impulse response is
+/// a localized event — the direct sound plus a cabin decay of at most a few
+/// hundred milliseconds — while the "IR" built from an unusable reference
+/// (a loopback that was bleed instead of the wire) is stationary division
+/// noise across the whole capture. <see cref="PeakDelayMs"/> is the peak's
+/// circular delay, signed: a peak past the buffer midpoint reads as negative
+/// (acausal) time — a diagnostic, not a verdict, because a purely electrical
+/// chain measurement legitimately peaks at zero.
+/// </summary>
+public readonly record struct TransferIrCompactness(
+    double InsideOutsideDb,
+    double PeakDelayMs);
+
+/// <summary>
 /// Record-hygiene diagnostics shared by the manual Time Alignment mode and
 /// the auto-delay launcher: where the driver's energy actually lives in
 /// frequency, and whether the record's head carries a playback-crosstalk
@@ -54,6 +70,106 @@ public readonly record struct IrStartEstimate(
 /// </summary>
 public static class TransferIrDiagnostics
 {
+    /// <summary>
+    /// The compactness floor below which a transfer IR is not a credible
+    /// impulse response. Field calibration (14 records, two cabins): genuine
+    /// measurements — including band-limited subwoofer records — read
+    /// 29.5-48.9 dB, while a whole session whose loopback was playback bleed
+    /// instead of the wire read 11.2-15.7 dB (energy smeared over the full
+    /// 5.5 s buffer, peak at sample 2 or wrapped into negative time). 20 dB
+    /// sits 4 dB above the worst garbage and 9 dB below the weakest genuine
+    /// record — deliberately closer to the garbage side, so a noisy but real
+    /// capture is not refused.
+    /// </summary>
+    public const double MinimumCompactnessDb = 20.0;
+
+    // The compactness window around the peak: 10 ms ahead (window pre-ring)
+    // and 500 ms behind (any cabin decay plus processing latency fits well
+    // inside). Both shrink on short records so the outside stays the
+    // majority of the buffer and the ratio keeps its meaning.
+    private const double CompactnessPreSeconds = 0.010;
+    private const double CompactnessPostSeconds = 0.500;
+    private const int CompactnessMinimumSamples = 256;
+
+    /// <summary>
+    /// Measures the time-compactness of a transfer IR (see
+    /// <see cref="TransferIrCompactness"/>). Null when the record is too
+    /// short or silent to judge. The verdict rests on energy geometry only —
+    /// deliberately no peak-position rule, so an electrical chain
+    /// measurement (mic input wired to a processor output, peak at ~0 ms)
+    /// passes on its clean shape.
+    /// </summary>
+    public static TransferIrCompactness? MeasureCompactness(
+        IReadOnlyList<double> impulseResponse,
+        int sampleRate)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponse);
+        int length = impulseResponse.Count;
+        if (length < CompactnessMinimumSamples || sampleRate <= 0)
+        {
+            return null;
+        }
+
+        double total = 0;
+        double peak = 0;
+        int peakIndex = 0;
+        for (int i = 0; i < length; i++)
+        {
+            double sample = impulseResponse[i];
+            total += sample * sample;
+            if (Math.Abs(sample) > peak)
+            {
+                peak = Math.Abs(sample);
+                peakIndex = i;
+            }
+        }
+        if (total <= 0)
+        {
+            return null;
+        }
+
+        int pre = Math.Min((int)(CompactnessPreSeconds * sampleRate), length / 16);
+        int post = Math.Min((int)(CompactnessPostSeconds * sampleRate), length / 4);
+        double windowed = 0;
+        for (int k = -pre; k <= post; k++)
+        {
+            int index = ((peakIndex + k) % length + length) % length;
+            double sample = impulseResponse[index];
+            windowed += sample * sample;
+        }
+
+        int windowLength = pre + post + 1;
+        int outsideLength = length - windowLength;
+        double insidePerSample = windowed / windowLength;
+        // A perfectly clean record (synthetic delta) has zero energy outside
+        // the window; the floor caps the ratio instead of dividing by zero.
+        double outsidePerSample = Math.Max(
+            insidePerSample * 1e-12, (total - windowed) / outsideLength);
+        double peakDelayMs = peakIndex <= length / 2
+            ? peakIndex * 1000.0 / sampleRate
+            : (peakIndex - length) * 1000.0 / sampleRate;
+        return new TransferIrCompactness(
+            10 * Math.Log10(insidePerSample / outsidePerSample),
+            peakDelayMs);
+    }
+
+    /// <summary>
+    /// The <see cref="Complex"/> twin of the compactness measure, for
+    /// callers holding the transfer IR in its FFT form.
+    /// </summary>
+    public static TransferIrCompactness? MeasureCompactness(
+        IReadOnlyList<Complex> impulseResponse,
+        int sampleRate)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponse);
+        var samples = new double[impulseResponse.Count];
+        for (int i = 0; i < samples.Length; i++)
+        {
+            samples[i] = impulseResponse[i].Real;
+        }
+        return MeasureCompactness(samples, sampleRate);
+    }
+
     /// <summary>
     /// How far below the smoothed spectrum's peak the dominant band extends.
     /// Field calibration (v3 cabin, 7 records, threshold sweep 10/12/15/20):

@@ -27,6 +27,35 @@ internal static class SyntheticCapture
             AudioCaptureAnomalies.None, Diagnostics: null);
     }
 
+    // A loopback that carries signal but sits ~-41 dBFS (the field-observed
+    // bleed-instead-of-wire level): the quality check rejects the run as an
+    // untrustworthy reference.
+    public static AudioCaptureResult QuietLoopback(AudioPlaybackSignal signal, int tailSamples)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.0089f);
+        return new AudioCaptureResult(
+            [mic, loop], 0, 1, StereoSeparationExpected: true,
+            AudioCaptureAnomalies.None, Diagnostics: null);
+    }
+
+    // A level-plausible capture whose microphone recorded only noise
+    // uncorrelated with the sweep (deterministic LCG): every per-run level
+    // check passes, but the transfer function divides into stationary noise
+    // — the shape gate's case.
+    public static AudioCaptureResult NoiseMicrophone(AudioPlaybackSignal signal, int tailSamples)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.0f, 0.25f);
+        uint state = 987_654_321u;
+        for (int i = 0; i < mic.Length; i++)
+        {
+            state = state * 1_664_525u + 1_013_904_223u;
+            mic[i] = (float)(state / 4_294_967_296.0 - 0.5) * 0.5f;
+        }
+        return new AudioCaptureResult(
+            [mic, loop], 0, 1, StereoSeparationExpected: true,
+            AudioCaptureAnomalies.None, Diagnostics: null);
+    }
+
     private static (float[] Microphone, float[] Loopback) BuildChannels(
         AudioPlaybackSignal signal, int tailSamples, float micScale, float loopScale)
     {

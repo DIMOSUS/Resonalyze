@@ -57,17 +57,19 @@ public sealed class VirtualCrossoverAutoDelayReportTests
                     delayKind: AlignmentDecisionKind.Locked)
             ],
             stereo: true,
-            sceneOffsetMs: 0.27,
-            gainsRequested: true,
-            levelDifferenceDb: -1.5,
+            new AutoDelayRunRequest(
+                SceneOffsetMs: 0.27,
+                RightHandDrive: false,
+                AdjustGains: true,
+                NearSideCutDb: 1.5),
             leftSumLoss: new AutoDelaySumLossForecast(-2.0, -0.6),
             rightSumLoss: new AutoDelaySumLossForecast(-2.4, -0.8));
 
         Assert.Contains("stereo", report);
-        Assert.Contains("Scene offset +0.27 ms", report);
-        // The tilt is the entered figure, independent of the scene offset, and
-        // signed LEFT minus RIGHT.
-        Assert.Contains("L-R level -1.5 dB (positive: left side louder)", report);
+        // Both figures are layout-neutral magnitudes; the layout names the
+        // sides they act on.
+        Assert.Contains("Scene offset 0.27 ms (LHD: right side leads)", report);
+        Assert.Contains("near-side cut 1.5 dB", report);
         // The at-a-glance summary: change counts, the predicted sum-loss
         // improvement per side, and one warning line per LOW-confidence call.
         Assert.Contains("Changes: 3 delays, 1 polarities, 1 gains", report);
@@ -97,6 +99,40 @@ public sealed class VirtualCrossoverAutoDelayReportTests
     }
 
     [Fact]
+    public void Format_RightHandDriveNamesTheLeftSideAsLeading()
+    {
+        string report = VirtualCrossoverAutoDelayReport.Format(
+            [Outcome("A L", 0.0, 1.25)],
+            stereo: true,
+            new AutoDelayRunRequest(
+                SceneOffsetMs: 0.25,
+                RightHandDrive: true,
+                AdjustGains: false,
+                NearSideCutDb: 0));
+
+        // RHD mirrors the reference: the right side is fitted to lag, so the
+        // LEFT side is the one the offset makes lead.
+        Assert.Contains("Scene offset 0.25 ms (RHD: left side leads)", report);
+    }
+
+    // The user enters the tilt as a layout-neutral near-side cut; the sign
+    // of the gain engine's L-R figure comes from the layout alone (near =
+    // left on LHD, right on RHD) — switching LHD/RHD must never require
+    // re-entering a sign, exactly like the scene offset.
+    [Fact]
+    public void RunRequest_SignsTheNearSideCutByTheLayout()
+    {
+        Assert.Equal(
+            -1.5,
+            new AutoDelayRunRequest(0.25, RightHandDrive: false, true, 1.5)
+                .LevelDifferenceDb);
+        Assert.Equal(
+            1.5,
+            new AutoDelayRunRequest(0.25, RightHandDrive: true, true, 1.5)
+                .LevelDifferenceDb);
+    }
+
+    [Fact]
     public void Format_SingleSideWithoutGains()
     {
         string report = VirtualCrossoverAutoDelayReport.Format(
@@ -105,9 +141,11 @@ public sealed class VirtualCrossoverAutoDelayReportTests
                 delayKind: AlignmentDecisionKind.Reference,
                 delayDetail: "reference (others align to it)")],
             stereo: false,
-            sceneOffsetMs: 0,
-            gainsRequested: false,
-            levelDifferenceDb: 0,
+            new AutoDelayRunRequest(
+                SceneOffsetMs: 0,
+                RightHandDrive: false,
+                AdjustGains: false,
+                NearSideCutDb: 0),
             leftSumLoss: new AutoDelaySumLossForecast(-1.5, -0.3));
 
         Assert.Contains("single side", report);

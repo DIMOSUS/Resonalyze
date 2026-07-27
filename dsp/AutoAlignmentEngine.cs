@@ -97,10 +97,13 @@ public sealed record AlignmentJunction(
 /// BOTH by-band lists as the same <see cref="IAlignmentChannel"/> instance and
 /// are tuned once, by the left pass. The bridge is the highest-frequency pair
 /// with sources on both sides; its band is the top channels' own playing band.
-/// <see cref="SceneOffsetMs"/> is positive when the right side should LEAD
+/// Left and Right are ROLES, not cabin sides: Left is the reference (the
+/// driver's side, settled first), Right the far side fitted to it, and
+/// <see cref="SceneOffsetMs"/> is positive when that far side should LEAD
 /// (arrive earlier at the microphone) by that much — the "image toward the
-/// dash center" convention for a left-seated listener; negative for a
-/// right-seated one.
+/// dash center" convention. A left-hand-drive cabin maps its sides onto the
+/// roles directly; a right-hand-drive one hands the plan MIRRORED (its right
+/// side as Left), so the same positive offset makes its left side lead.
 /// </summary>
 public sealed record StereoAlignmentPlan(
     IReadOnlyList<AlignmentSnapshot> LeftChannelsByBand,
@@ -1800,9 +1803,10 @@ public static class AutoAlignmentEngine
         // frequencies is lobe-ambiguous noise (probed on real car
         // measurements: r ~0.3, dominance ~0.01), while the envelope arrival
         // is the quantity the stereo image follows up there. A positive scene
-        // offset makes the right side LEAD (arrive earlier), pulling the image
-        // toward the right — the dash-center convention for a left-seated
-        // driver; a right-seated driver enters a negative offset.
+        // offset makes the plan's right side — the far side — LEAD (arrive
+        // earlier), pulling the image toward the dash center; a right-hand-
+        // drive caller hands the plan mirrored, so the same rule makes its
+        // actual left side lead.
         IReadOnlyList<AlignmentSnapshot> settled = reprocess(alignment);
         AlignmentSnapshot leftBridgeSnapshot =
             settled.First(item => item.Channel == plan.BridgeLeft);
@@ -1916,11 +1920,11 @@ public static class AutoAlignmentEngine
         log.AppendLine(
             $"Bridge {plan.BridgeLeft.Name} -> {plan.BridgeRight.Name}: " +
             $"band {plan.BridgeBandLowHz:0}-{plan.BridgeBandHighHz:0} Hz, " +
-            $"arrivals L {leftArrival:0.000} / R {rightArrival:0.000} ms " +
+            $"arrivals ref {leftArrival:0.000} / far {rightArrival:0.000} ms " +
             $"(SNR {leftBridge.SignalToNoiseDecibels:0.0} / " +
             $"{rightBridge.SignalToNoiseDecibels:0.0} dB), " +
             $"scene offset {plan.SceneOffsetMs:+0.000;-0.000} ms " +
-            $"(positive: right leads) -> right delay {bridgeDelay:0.000} ms");
+            $"(positive: the far side leads) -> far-top delay {bridgeDelay:0.000} ms");
         if (bridgeDelay < 0)
         {
             // The right top must be ADVANCED — typical when the right side is

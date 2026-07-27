@@ -138,6 +138,35 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void LoadOrDefault_LegacyNegativeSceneOffset_BecomesRightHandDrive()
+    {
+        // The steering layout used to live in the scene offset's SIGN
+        // (negative = right-seated driver). Such a payload must open as an
+        // RHD project carrying the equivalent magnitude — not trip the
+        // non-negative validation and cost the user their session.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            new VirtualCrossoverProjectFile().Save(root);
+            string path = VirtualCrossoverProjectFile.GetPath(root);
+            JsonObject file = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            file["stereoSceneOffsetMs"] = -0.4;
+            file.Remove("stereoRightHandDrive");
+            File.WriteAllText(path, file.ToJsonString());
+
+            VirtualCrossoverProjectFile loaded =
+                VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.True(loaded.StereoRightHandDrive);
+            Assert.Equal(0.4, loaded.StereoSceneOffsetMs);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void AllPass_RoundTripsThroughTheProjectFile()
     {
         string root = CreateTemporaryDirectory();
@@ -235,7 +264,8 @@ public sealed class VirtualCrossoverProjectFileTests
                 PhaseFdwCycles = 8,
                 PhaseDetrendMode = PhaseDetrendMode.Manual
             };
-            original.StereoSceneOffsetMs = -0.4;
+            original.StereoSceneOffsetMs = 0.4;
+            original.StereoRightHandDrive = true;
             original.StereoLevelDifferenceDb = -1.5;
             original.ActiveSideRight = true;
             original.Pairs[0].Mono = true;
@@ -282,6 +312,8 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.Equal(original.PhaseFdwCycles, loaded.PhaseFdwCycles);
             Assert.Equal(original.PhaseDetrendMode, loaded.PhaseDetrendMode);
             Assert.Equal(original.StereoSceneOffsetMs, loaded.StereoSceneOffsetMs);
+            Assert.Equal(
+                original.StereoRightHandDrive, loaded.StereoRightHandDrive);
             Assert.Equal(
                 original.StereoLevelDifferenceDb, loaded.StereoLevelDifferenceDb);
             Assert.Equal(original.ActiveSideRight, loaded.ActiveSideRight);
@@ -488,6 +520,15 @@ public sealed class VirtualCrossoverProjectFileTests
                 VirtualCrossoverProjectFile.MaximumSceneOffsetMs + 1
         };
         Assert.Throws<InvalidDataException>(() => badSceneOffset.Validate());
+
+        // The offset is a magnitude now — the layout lives in its own flag,
+        // and a negative value can only be a legacy payload, which Migrate
+        // normalizes before validation ever sees it.
+        var negativeSceneOffset = new VirtualCrossoverProjectFile
+        {
+            StereoSceneOffsetMs = -0.25
+        };
+        Assert.Throws<InvalidDataException>(() => negativeSceneOffset.Validate());
 
         var badLevelDifference = new VirtualCrossoverProjectFile
         {

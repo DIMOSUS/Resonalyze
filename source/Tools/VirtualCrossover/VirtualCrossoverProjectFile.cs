@@ -317,16 +317,29 @@ public sealed class VirtualCrossoverProjectFile
         new VirtualCrossoverChannelPairSettings()
     ];
 
-    // The stereo Auto delay scene offset (ms): positive makes the right side
-    // LEAD (arrive earlier), pulling the image toward the dash center for a
-    // left-seated driver; right-seated drivers use a negative value.
+    // The stereo Auto delay scene offset (ms), a non-negative magnitude: the
+    // far side leads (arrives earlier) by this much, pulling the image toward
+    // the dash center. Which side is "far" comes from StereoRightHandDrive.
+    // Legacy files carried the layout in this value's sign (negative meant a
+    // right-seated driver); Migrate normalizes them.
     public double StereoSceneOffsetMs { get; set; } = 0.25;
 
+    // The steering position the stereo Auto delay aligns for: false = LHD
+    // (the left side is the timing reference and the right side leads by the
+    // scene offset), true = RHD (mirrored — the right side is the reference
+    // and lags the left by the offset). Additive: older files lack it and
+    // open as LHD unless a negative legacy offset says otherwise (Migrate).
+    public bool StereoRightHandDrive { get; set; }
+
     // The intentional level difference (dB) the Auto delay gain balance aims
-    // for, read as LEFT minus RIGHT: the default asks for the left side 1 dB
-    // BELOW the right, the same image direction as the scene offset traded as
-    // level instead of time. The tuner's own figure, not a value derived from
-    // the offset. Additive: older files lack it and open on this default.
+    // for, stored as LEFT minus RIGHT: the default asks for the left side
+    // 1 dB BELOW the right, the same image direction as the scene offset
+    // traded as level instead of time. The tuner's own figure, not a value
+    // derived from the offset. The UI edits it as a layout-neutral,
+    // non-negative NEAR-SIDE CUT; the sign written here follows
+    // StereoRightHandDrive (LHD: negative, RHD: positive), so older builds
+    // read the same file unchanged. Additive: older files lack it and open
+    // on this default.
     public double StereoLevelDifferenceDb { get; set; } = -1.0;
 
     // Which side the tool currently displays and edits (view state).
@@ -580,6 +593,18 @@ public sealed class VirtualCrossoverProjectFile
             file.LegacyPhaseDetrendMs = null;
             file.Version = 5;
         }
+
+        // The steering layout used to live in the scene offset's SIGN
+        // (negative = right-hand drive). It is its own flag now and the
+        // offset a magnitude, so a legacy negative value converts here. No
+        // version bump: this build never writes a negative offset, and an
+        // older build opening a new RHD file falls back to LHD semantics the
+        // same way it ignores any other additive flag.
+        if (file.StereoSceneOffsetMs < 0)
+        {
+            file.StereoRightHandDrive = true;
+            file.StereoSceneOffsetMs = -file.StereoSceneOffsetMs;
+        }
     }
 
     /// <summary>
@@ -668,8 +693,10 @@ public sealed class VirtualCrossoverProjectFile
             throw new InvalidDataException(
                 "The virtual crossover channel count is invalid.");
         }
+        // Non-negative by construction: the UI only produces magnitudes and
+        // Migrate normalizes legacy sign-carrying files before validation.
         if (!double.IsFinite(StereoSceneOffsetMs) ||
-            Math.Abs(StereoSceneOffsetMs) > MaximumSceneOffsetMs)
+            StereoSceneOffsetMs is < 0 or > MaximumSceneOffsetMs)
         {
             throw new InvalidDataException("The stereo scene offset is invalid.");
         }

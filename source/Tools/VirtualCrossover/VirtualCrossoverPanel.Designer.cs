@@ -304,7 +304,7 @@ namespace Resonalyze
             buttonAutoDelay.Name = "buttonAutoDelay";
             buttonAutoDelay.Size = new Size(125, 24);
             buttonAutoDelay.TabIndex = 12;
-            buttonAutoDelay.Text = "Auto delay";
+            buttonAutoDelay.Text = "Auto delay...";
             buttonAutoDelay.UseVisualStyleBackColor = false;
             // 
             // buttonAutoSetup

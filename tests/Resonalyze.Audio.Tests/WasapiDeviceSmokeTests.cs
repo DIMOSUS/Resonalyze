@@ -1,3 +1,4 @@
+﻿using Resonalyze.Testing;
 using NAudio.Wave;
 
 namespace Resonalyze.Audio.Tests;
@@ -9,23 +10,11 @@ namespace Resonalyze.Audio.Tests;
 /// </summary>
 public sealed class WasapiDeviceSmokeTests
 {
-    private static (string Capture, string Render)? Endpoints()
-    {
-        string? capture = Environment.GetEnvironmentVariable("RESONALYZE_WASAPI_CAPTURE_ENDPOINT_ID");
-        string? render = Environment.GetEnvironmentVariable("RESONALYZE_WASAPI_RENDER_ENDPOINT_ID");
-        return string.IsNullOrWhiteSpace(capture) || string.IsNullOrWhiteSpace(render)
-            ? null
-            : (capture, render);
-    }
-
-    [Fact]
+    [HardwareFact]
     [Trait("Category", "Hardware")]
     public async Task SelectedEndpointsCanBeReopenedAfterEnumeration()
     {
-        if (Endpoints() is not var (captureId, renderId) || captureId is null)
-        {
-            return;
-        }
+        (string captureId, string renderId) = HardwareFactAttribute.Endpoints();
 
         // Enumerate first to reproduce the UI path. Explicitly releasing the
         // returned MMDevice wrappers used to disconnect the cached COM RCW and
@@ -40,40 +29,34 @@ public sealed class WasapiDeviceSmokeTests
         GC.Collect();
 
         await using var capture = new WasapiCaptureDevice(captureId, 100);
-        await using var render = new WasapiPlaybackDevice(renderId!, 100);
+        await using var render = new WasapiPlaybackDevice(renderId, 100);
         Assert.True(capture.ChannelCount > 0);
         Assert.True(render.PlaybackFormat.SampleRate > 0);
     }
 
-    [Fact]
+    [HardwareFact]
     [Trait("Category", "Hardware")]
     public async Task FailedDeviceConstructionReleasesComResources()
     {
-        if (Endpoints() is not var (captureId, renderId) || captureId is null)
-        {
-            return;
-        }
+        (string captureId, string renderId) = HardwareFactAttribute.Endpoints();
 
-        Assert.Throws<ArgumentException>(() => new WasapiCaptureDevice(renderId!));
+        Assert.Throws<ArgumentException>(() => new WasapiCaptureDevice(renderId));
         Assert.Throws<ArgumentException>(() => new WasapiPlaybackDevice(captureId));
 
         await using var capture = new WasapiCaptureDevice(captureId, 100);
-        await using var render = new WasapiPlaybackDevice(renderId!, 100);
+        await using var render = new WasapiPlaybackDevice(renderId, 100);
         Assert.True(capture.ChannelCount > 0);
         Assert.True(render.PlaybackFormat.SampleRate > 0);
     }
 
-    [Fact]
+    [HardwareFact]
     [Trait("Category", "Hardware")]
     public async Task SelectedEndpointsSupportTwoCapturePlaybackRuns()
     {
-        if (Endpoints() is not var (captureId, renderId) || captureId is null)
-        {
-            return;
-        }
+        (string captureId, string renderId) = HardwareFactAttribute.Endpoints();
 
         await using var captureDevice = new WasapiCaptureDevice(captureId, 100);
-        await using var playbackDevice = new WasapiPlaybackDevice(renderId!, 100);
+        await using var playbackDevice = new WasapiPlaybackDevice(renderId, 100);
         await using var captureSession = new PcmCaptureSession(captureDevice);
         long? lastDevicePosition = null;
         long? lastQpcPosition = null;

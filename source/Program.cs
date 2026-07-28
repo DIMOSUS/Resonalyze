@@ -27,6 +27,24 @@ internal static class Program
         };
 
         ApplicationConfiguration.Initialize();
+
+        // Before anything reads the user's files: a second instance would load
+        // them, and whichever copy closed last would write its own view back
+        // over the other's.
+        using SingleInstanceGuard? instance =
+            SingleInstanceGuard.TryAcquire(ApplicationDataPaths.Current.RootDirectory);
+        if (instance == null)
+        {
+            MessageBox.Show(
+                "Resonalyze is already running.\r\n\r\n" +
+                "Only one copy can use the same settings and measurement history: " +
+                "two would overwrite each other's session.",
+                "Resonalyze",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
         IReadOnlyList<string> dataWarnings = ApplicationDataPaths.Current.Prepare();
         if (dataWarnings.Count > 0)
         {

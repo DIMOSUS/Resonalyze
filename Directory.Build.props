@@ -1,0 +1,17 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- The solution builds with zero warnings and no suppressions anywhere (no
+         #pragma warning disable, no NoWarn). That was true by discipline only;
+         this makes the build enforce it, so the next nullability or obsolete-API
+         warning has to be dealt with rather than scrolled past. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- Except the NuGet audit warnings. Those appear when an advisory is
+         published against an already-referenced package, which would break
+         unrelated pull requests through no change of theirs. They stay visible
+         as warnings and are handled deliberately. -->
+    <WarningsNotAsErrors>NU1901;NU1902;NU1903;NU1904</WarningsNotAsErrors>
+  </PropertyGroup>
+
+</Project>

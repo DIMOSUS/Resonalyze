@@ -312,6 +312,14 @@ Car / CarMild / XCurve presets cover it), and HP/LP filter types (crossover tool
 
 ## History
 
+- [ ] **An unreachable entry cannot be forgotten.** Entries whose measurement
+  file is missing are hidden from `MeasurementHistoryService` and written back
+  on every save, which is what stops an unmounted drive from truncating the
+  history. The cost is that a file the user deleted or moved away for good stays
+  in the JSON forever, warns on every launch, and cannot be removed through the
+  UI — `Delete` only sees the visible list. Options: an action on the warning
+  ("Forget missing entries"), or listing them disabled but deletable. Not
+  urgent; the alternative was losing them silently.
 - [ ] **History entries reference LIVE overlay slots** (`ActiveOverlaySlots`
   numbers into mutable global storage): restoring an old session shows whatever
   the slots hold TODAY. Store immutable overlay snapshots (content-addressed

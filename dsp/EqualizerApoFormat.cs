@@ -1,4 +1,4 @@
-namespace Resonalyze.Dsp;
+﻿namespace Resonalyze.Dsp;
 
 /// <summary>Equalizer APO config text (also produced by many REW/AutoEQ exports).</summary>
 public sealed class EqualizerApoFormat : IEqProfileFormat
@@ -10,5 +10,6 @@ public sealed class EqualizerApoFormat : IEqProfileFormat
 
     public string Export(EqualizationCurve curve) => PeqTextFile.Format(curve);
 
-    public EqualizationCurve Import(string text) => PeqTextFile.Parse(text);
+    public bool TryImport(string text, out EqualizationCurve curve) =>
+        PeqTextFile.TryParse(text, out curve);
 }

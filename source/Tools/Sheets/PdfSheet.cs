@@ -226,7 +226,14 @@ internal sealed class PdfSheet : IDisposable
     {
         var renderer = new PdfDocumentRenderer { Document = document };
         renderer.RenderDocument();
-        renderer.PdfDocument.Save(filePath);
+
+        // Through AtomicFile like every other export: PdfDocument.Save(path)
+        // truncates the destination on open, so overwriting an existing sheet
+        // and failing partway left a broken PDF where a good one had been.
+        // closeStream: false — AtomicFile owns the stream's lifetime.
+        AtomicFile.Write(
+            filePath,
+            stream => renderer.PdfDocument.Save(stream, closeStream: false));
     }
 
     public void Dispose()

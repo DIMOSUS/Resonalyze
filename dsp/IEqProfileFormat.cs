@@ -20,6 +20,24 @@ public interface IEqProfileFormat
     /// <summary>Serialises the curve. Only valid when <see cref="CanExport"/>.</summary>
     string Export(EqualizationCurve curve);
 
-    /// <summary>Parses a curve defensively. Only valid when <see cref="CanImport"/>.</summary>
-    EqualizationCurve Import(string text);
+    /// <summary>
+    /// Parses defensively and reports whether the text was recognised as this
+    /// format at all. Only valid when <see cref="CanImport"/>.
+    /// </summary>
+    /// <remarks>
+    /// An empty curve is NOT a failure signal: a recognised profile may
+    /// legitimately carry no bands — an Equalizer APO file holding only a
+    /// <c>Preamp:</c> line is a valid neutral profile. Callers that must tell a
+    /// real profile from an unrecognised file have to use the return value.
+    /// </remarks>
+    bool TryImport(string text, out EqualizationCurve curve);
+
+    /// <summary>
+    /// Parses a curve defensively, yielding an empty curve for input this format
+    /// does not recognise. Only valid when <see cref="CanImport"/>.
+    /// </summary>
+    EqualizationCurve Import(string text) =>
+        TryImport(text, out EqualizationCurve curve)
+            ? curve
+            : new EqualizationCurve(Array.Empty<PeqBand>());
 }

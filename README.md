@@ -219,10 +219,16 @@ Download the latest ready-to-run build from
 - `Resonalyze-vX.Y.Z-win-x64.zip` — for most Windows computers
 - `Resonalyze-vX.Y.Z-win-arm64.zip` — for Windows on ARM
 
-The `.zip` builds are self-contained portable packages and do not require a
-separate .NET installation. The installer adds shortcuts, uninstall support,
-and automatic in-app updates for the installed x64 build. A SHA-256 checksum
-file is provided with every release.
+The `.zip` builds are self-contained and do not require a separate .NET
+installation. The installer adds shortcuts, uninstall support, and automatic
+in-app updates for the installed x64 build. A SHA-256 checksum file is provided
+with every release.
+
+Note that "self-contained" refers to the runtime, not to your data: by default
+every build keeps settings, history, overlays, Virtual DSP state and logs in
+`%LocalAppData%\Resonalyze`. To make a `.zip` build fully portable — data beside
+the executable, nothing left on the machine — create an empty file named
+`portable.flag` next to `Resonalyze.exe`.
 
 > **Windows SmartScreen note:** the builds are not code-signed (signing
 > certificates are expensive for a free open-source project), so the first
@@ -280,7 +286,8 @@ file is provided with every release.
   headphone track audition (your own music rendered through the tune to a WAV),
   sessions, and tuning-sheet export
 - Live Spectrum: real-time loopback transfer function with selectable excitation
-  (leakage-free periodic pink, pink, brown/red, white noise) and coherence
+  (leakage-free periodic pink, pink, brown/red, white noise) and coherence, plus
+  a Silent mode that measures the ambient room with no excitation at all
 - Frequency response, phase, group delay, waterfall, Burst Decay, and
   autocorrelation
 - Compare a second measurement (from a file or History) against the current one
@@ -309,8 +316,9 @@ file is provided with every release.
 - Measurement History with in-memory snapshots, saved-file recall, FR previews,
   per-entry working state (mode, settings, active overlays), and a one-click
   new-session reset
-- Windows Wave and ASIO backends with device-aware sample-rate selection and
-  backend-specific channel routing
+- Four audio backends — MME Compatibility, ASIO, WASAPI Shared, and WASAPI
+  Exclusive — with device-aware sample-rate selection and backend-specific
+  channel routing
 - Compact Mic/Loop input level meter with Peak, RMS, Peak Hold, and stored
   measurement levels
 - Docked, non-modal settings panels with live previews and instant graph
@@ -414,7 +422,9 @@ The self-contained release archives include the required .NET runtime.
 To build Resonalyze from source:
 
 - Windows 10 or later
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) — `global.json`
+  pins the exact version (`rollForward: latestPatch`), so an older feature band
+  fails restore even though it is also .NET 10
 - Visual Studio 2026 with the **.NET desktop development** workload, or the
   .NET CLI
 
@@ -530,8 +540,16 @@ dotnet run --project source/Resonalyze.csproj
 Run all application and deterministic DSP tests with:
 
 ```powershell
-dotnet test source/Resonalyze.sln -c Release
+dotnet test source/Resonalyze.sln -c Release --filter "Category!=Hardware"
 ```
+
+That covers three test projects: `Resonalyze.Dsp.Tests` (deterministic and
+synthetic), `Resonalyze.App.Tests` (file formats and non-UI application logic
+against a fake audio factory) and `Resonalyze.Audio.Tests` (audio internals —
+PCM decoding, capture sessions, WASAPI configuration). The filter drops the
+hardware smoke tests, which need real WASAPI endpoints named through the
+`RESONALYZE_WASAPI_CAPTURE_ENDPOINT_ID` and `RESONALYZE_WASAPI_RENDER_ENDPOINT_ID`
+environment variables; without those they report as skipped rather than passed.
 
 For local performance profiling, build the dedicated Tracy configuration:
 
@@ -560,8 +578,11 @@ Tagged GitHub releases also produce:
 - an x64 `Setup.exe` installer with uninstall support
 - NetSparkle appcast files that the installed build uses for automatic updates
 
-The `build.yml` workflow runs both the application test project and the DSP
-test project on every push to `main` and on every pull request.
+The `build.yml` workflow runs on every push to `main` and every pull request. It
+builds the solution, runs all three test projects — application, audio and DSP —
+each with `--filter "Category!=Hardware"`, then proves the release path still
+works by producing the single-file self-contained publish and compiling
+`installer/Resonalyze.iss`. Warnings are errors, so a new one fails the build.
 
 ## Measurement Workflow
 
@@ -656,8 +677,14 @@ loopback is required instead of showing a misleading curve.
 
 Both modes use a millisecond-based fixed gate built from a left Tukey fade, a
 flat plateau, and a right Tukey fade. A **Gate offset** positions the end of the
-left fade inside the analysis frame, and **Fit** snaps it to the transfer-IR
-peak. The docked preview draws the impulse response, the fixed gate, and a
+left fade inside the analysis frame, and the **Auto** checkbox beside it keeps
+that offset snapped to the detected start of the impulse response — the
+band-limited first-arrival front, not the peak — re-snapping on every new
+measurement and making the field read-only while it is checked. It is on by
+default; release it to place the gate by hand. (When the detector cannot get a
+trustworthy reading from a record it falls back to the transfer-IR peak, which
+is what older releases always used.) The docked preview draws the impulse
+response, the fixed gate, and a
 marker at the gate offset. A read-only readout shows its lowest reliable
 frequency (≈ 1 / gate length), so it is clear where the gated curve stops being
 trustworthy.
@@ -673,13 +700,15 @@ detail. Every bank spectrum is referenced to the same absolute sample origin
 before interpolation, so changing cycle count does not create an artificial
 time shift.
 
-The Phase view can show three independently toggled curves:
+The Phase view can show four independently toggled curves:
 
 - **Measured phase** — the raw response, including delay and reflections.
 - **Minimum phase** — the part tied to the magnitude (correctable with EQ),
   reconstructed with a real-cepstrum method.
 - **Excess phase** — measured minus minimum: the all-pass part (pure delay and
   reflections) that an equalizer cannot fix.
+- **Coherence (γ²)** — drawn when the impulse response was captured with two or
+  more averaged runs, to show which frequencies the phase traces can be trusted at.
 
 **Detrend** removes one constant delay before phase unwrapping:
 
@@ -731,8 +760,20 @@ mathematically compatible phase/group-delay pair.
 
 ## Audio Backends
 
-Resonalyze can run measurements through the standard Windows Wave backend or
-through an ASIO driver.
+Resonalyze can run measurements through four backends, chosen in the
+measurement settings dialog:
+
+| Backend | Use it for |
+|---------|------------|
+| **MME Compatibility** | Ordinary Windows playback and recording devices. The most compatible option and the fallback when nothing else works. |
+| **ASIO** | Audio interfaces with a native ASIO driver: lowest latency and arbitrary multi-channel routing. |
+| **WASAPI Shared** | Windows endpoints without an ASIO driver, while other applications keep using the device. The endpoint's own mix format applies, so Windows may resample. |
+| **WASAPI Exclusive** | The same endpoints taken exclusively: no Windows mixer in the path, and the requested sample rate and bit depth reach the hardware unresampled. Nothing else can play while a measurement runs. |
+
+Both WASAPI modes address devices by endpoint id rather than by index, so a
+chosen device survives reboots and device reordering. The two subsections below
+cover the MME and ASIO settings in detail; the WASAPI modes use the same
+microphone and loopback channel selection as MME.
 
 ![Measurement settings](assets/images/measurement-options.png)
 
@@ -794,10 +835,11 @@ actually changed. The audio backend, the format the device is opened with and
 its device panel are the exception: they sit in their own bordered panel and
 commit together with **Apply settings**.
 
-### Wave
+### MME Compatibility
 
-Use **Wave** for ordinary Windows playback and recording devices. The
-measurement settings dialog lets you choose:
+Use **MME Compatibility** for ordinary Windows playback and recording devices.
+(Older releases and the settings file call this backend `Wave`; the dropdown
+entry is "MME Compatibility".) The measurement settings dialog lets you choose:
 
 - playback device
 - recording device (microphone)
@@ -836,9 +878,8 @@ ASIO output routing works as follows:
 - `Stereo` sends the signal to both channels of the pair
 
 Before applying ASIO settings, Resonalyze checks whether the selected driver
-supports the current sample rate. The dialog also shows available driver
-diagnostics such as playback latency and, when the driver exposes it, frames
-per buffer.
+supports the current sample rate: the dialog shows the driver's playback latency
+in samples and a "supported / not supported" line for the chosen rate.
 
 Click **ASIO Control Panel** to open the driver's native control panel. Use it
 to configure driver-level settings such as buffer size, clock source, or sample
@@ -891,10 +932,14 @@ is referenced to wall-clock time, so the response stays consistent regardless of
 the chosen overlap and sequence length, and the display refreshes at roughly 30
 frames per second.
 
-Live Spectrum requires a configured loopback input in **Record Settings**. It
-works with either Wave or ASIO, as long as the microphone and loopback are routed
-to separate channels. If loopback is not configured, Resonalyze blocks the start
-and explains what needs to be fixed.
+Live Spectrum works with any backend. Configure a loopback input in **Record
+Settings**, on a separate channel from the microphone, to get the full
+loopback-referenced transfer function with coherence.
+
+Without a loopback it still runs, as a single-channel RTA: the microphone's own
+spectrum, with no transfer function and no coherence. That is the mode the car
+workflow actually wants — a moving-microphone average in dB SPL, where there is
+no reference signal to divide by.
 
 In practice, referencing to loopback is far more stable than viewing the raw
 microphone spectrum when the room or measurement chain contains unrelated noise.
@@ -907,9 +952,12 @@ live input). In dB SPL the transfer function is hidden — a dimensionless ratio
 no absolute level under noise excitation — and the whole plot becomes the
 microphone **RTA** on a true dB SPL axis. That RTA level is integrated as power
 per fractional-octave band, so the absolute reading is independent of the FFT size
-*above* the analysis resolution limit; the low-frequency region where a single FFT
-cannot resolve that band is shaded to flag that its level there is
-resolution-limited (a longer FFT resolves lower). Because dB SPL needs no
+*above* the analysis resolution limit. Below it — where a single FFT can no longer
+resolve that band — the integration band is floored to the window's main lobe,
+which does narrow as the FFT lengthens, so a broadband level there reads roughly
+3 dB lower per doubling of the FFT size. That is the unavoidable resolution limit
+of a single FFT, shared by every FFT RTA; use a longer FFT to push it lower.
+Because dB SPL needs no
 excitation, it also unlocks a **Silent** signal type — an ambient RTA that plays
 nothing and simply measures what the microphone hears — while the periodic pink
 noise, which exists only to converge the transfer function, is dropped from the
@@ -945,12 +993,12 @@ displayed curve, using the same presets as the Frequency Response mode.
 
 Every magnitude-smoothing selector (Frequency Response, Live Spectrum,
 Fourier Waterfall, Virtual DSP, EQ Wizard, magnitude overlays) also offers
-**Psychoacoustic**: 1/6-octave smoothing where each point is additionally floored
-at its window's median, so an interference dip narrower than half the window
-drops out of the drawn curve entirely — the ear largely ignores such notches,
-and no EQ or delay move can genuinely fill them — while a narrow peak (an
-audible resonance) keeps exactly its plain-smoothed height and anything wider
-than the window passes through unchanged. It shapes magnitude curves only:
+**Psychoacoustic**: smoothing whose width follows frequency instead of staying
+constant — 1/3 octave at and below 100 Hz, narrowing smoothly to 1/6 octave from
+1 kHz upward. That is roughly how hearing resolution varies: broad in the bass,
+where room modes dominate and fine structure is neither audible nor fixable, and
+finer in the midrange and treble, where real resonances live and are worth
+seeing. It shapes magnitude curves only:
 phase, group-delay and coherence traces (including captured overlays of them)
 and the harmonic widths fall back to the plain 1/6-octave width, Burst Decay
 does not offer the mode at all (its per-band envelope pipeline has no
@@ -1331,8 +1379,10 @@ from the settings dialog):
   transfer IRs in Frequency Response (see below).
 - **Target** — a parametric target curve compared against a source.
 
-Overlay slots are stored automatically as human-readable JSON beside the
-executable:
+Overlay slots are stored automatically as human-readable JSON under the
+application data directory — `%LocalAppData%\Resonalyze` for an installed
+build, or beside the executable in a portable one (see
+[Download](#download)):
 
 ```text
 overlays/<AnalysisMode>/overlay-01.json
@@ -1340,8 +1390,9 @@ overlays/<AnalysisMode>/overlay-01.json
 
 The numbered button opens a menu to **Capture curve**, **Import from text**,
 **Export to text**, or switch the slot to a **Calculated overlay** or **Target**.
-The checkbox shows or hides the slot, the numeric control applies a vertical
-offset, and `...` opens the settings dialog. A Target slot references a captured
+The checkbox shows or hides the slot and the numeric control applies a vertical
+offset; the slot's settings dialog opens from **⚙ Settings…** in the same
+numbered-button menu. A Target slot references a captured
 slot or the current measurement; an Operation slot references two operands that
 are each a live plot curve or a captured slot. A live-curve operand re-reads the
 plot on every rebuild, so a calculation over it — for example the difference
@@ -1513,9 +1564,10 @@ overlay for the current mode at once, without deleting any saved JSON file.
 
 The **EQ Wizard** (under the **Tools** tab) designs a parametric equalizer — up
 to 32 peaking (PK) bands plus a preamp — that moves a measured response toward a
-target. It builds directly on Target overlays: you can open it from **Tools > EQ
-Wizard** and pick a target, or jump straight in with the **To EQ Wizard** button
-in a Target overlay's settings.
+target. Open it from the **Tools** tab. It owns its own target curve, edited
+through the same dialog the Target overlays use but stored with the wizard's own
+settings — so tuning here never disturbs your overlay slots, and changing an
+overlay never moves the wizard's target.
 
 ![EQ Wizard mode](assets/images/eq_wizard.png)
 
@@ -1549,7 +1601,8 @@ filter curve.
 The plot shows, on shared frequency/dB axes:
 
 - **Source** — the captured reference measurement (with optional extra smoothing)
-- **Target** — the parametric target shape (always drawn in a fixed blue)
+- **Target** — the parametric target shape (colour, thickness and line style are
+  yours to set in the target dialog)
 - **Source + EQ** — the source with the current EQ applied
 - **EQ** — the filter response itself (all bands, without the preamp) in white
 - a shaded **error fill** between Source + EQ and Target, so the remaining
@@ -1678,9 +1731,10 @@ amplitude. **Play** starts playback and **Stop** ends it; a status line reports
 whether the generator is `Ready`, `Playing`, or shows any playback error.
 
 The generator reuses the audio configuration from **Record Settings** — backend
-(Wave or ASIO), sample rate, bit depth, playback channel, and output device or
-ASIO output channel pair — and displays the resolved settings so you can confirm
-where the signal is going before pressing **Play**.
+(MME, ASIO, WASAPI Shared or WASAPI Exclusive), sample rate, bit depth, playback
+channel, and the output device, WASAPI render endpoint or ASIO output channel
+pair — and displays the resolved settings so you can confirm where the signal is
+going before pressing **Play**.
 
 ## Virtual DSP
 
@@ -1891,10 +1945,10 @@ it defaults to Off because the measurements are loopback-referenced.
   not the frequency, so the same steep slope is fine at a 250 Hz woofer/mid
   handover (~5 ms) but excluded at a 75 Hz sub/woofer one (~17 ms), and a
   low-group-delay family (Bessel) can go steeper down low than a Linkwitz-Riley
-  can. The budget caps how much steeper than the 24 dB/oct floor the search may
-  go; the floor itself is always kept, since a gentler crossover would break the
-  overlap rule, so at a very low junction the floor's larger group delay is
-  inherent to crossing there. Group delay is identical for the low-pass and
+  can. The budget caps how much steeper than the practical floor the search may
+  go; the floor itself — 12 dB/oct, the gentlest slope every family offers — is
+  always kept, since anything gentler would break the overlap rule, so at a very
+  low junction the floor's larger group delay is inherent to crossing there. Group delay is identical for the low-pass and
   high-pass sides, so with matched slopes a driver is held to the gentler of its
   two junctions; a steep woofer low-pass paired with a gentle high-pass needs
   independent slopes on.
@@ -1907,8 +1961,10 @@ it defaults to Off because the measurements are loopback-referenced.
   the subwoofer, which is nudged UP toward the ~80 Hz localization limit rather
   than pulled low. So a capable tweeter is crossed down toward its 1.7 kHz
   sensible floor (out of the ear band) when its measured band supports it, and
-  a low tweeter handover is held to at least 24 dB/oct so the tweeter is not
-  driven too far down. The same low-handover logic applies below: a midrange
+  a low tweeter handover has to earn its slope against the driver's resonance:
+  the high-pass must give at least 22 dB of attenuation at the tweeter's
+  estimated Fs, so the closer the crossover sits to that resonance, the steeper
+  the filter the wizard demands. The same low-handover logic applies below: a midrange
   with headroom down to its 200 Hz sensible floor lets the woofer/midbass hand
   over early, before its cone-breakup region, so the wide woofer/mid overlap
   does not linger up where it interferes badly. In a stereo system both sides of a driver get the same
@@ -1962,17 +2018,20 @@ it defaults to Off because the measurements are loopback-referenced.
   crossover has excessive group delay (a narrow or steep low-frequency band-pass)
   — a banner flags the lagging driver so you can soften its filter instead of
   dialing in an absurd bulk delay.
-  With stereo pairs, Auto delay tunes **both sides in one run**: the left side
-  aligns first, the top pair is bridged by band-limited envelope arrivals
-  honoring the **L/R offset** field — positive makes the right side lead,
-  pulling the image toward the dash center for a left-seated listener (the
-  field's tooltip carries the sign cheat-sheet) — with the right top's polarity
-  matched to the left's, and the right side then descends junction by junction
-  from the bridged top. Pairs whose shared band reaches the localization region
-  are pinned to the scene: their right channel lands exactly the offset behind
-  its left counterpart (±0.05 ms of junction fine-tuning), because the stereo
-  image outranks the handover there, while pure low-frequency pairs keep the
-  free junction search with the cross-side timing as a gentle prior only. A
+  With stereo pairs, Auto delay tunes **both sides in one run**, and an
+  **LHD / RHD** toggle says which seat you are tuning for. The driver's side is
+  the reference: it aligns first, the top pair is bridged to it by band-limited
+  envelope arrivals, its polarity is matched, and the far side then descends
+  junction by junction from that bridge. On LHD that reference is the left side
+  and the right leads; on RHD it is mirrored. The **scene offset** is entered as
+  a non-negative magnitude — how far the far side leads — so switching LHD/RHD
+  never means re-entering a sign, and the level tilt is entered the same way, as
+  a cut on the near side. Pairs whose shared band reaches the localization
+  region are pinned to the scene: the far channel lands exactly the offset ahead
+  of its near counterpart (±0.05 ms of junction fine-tuning), because the stereo
+  image outranks the handover there. Pairs living entirely below that region are
+  pinned too, but only loosely — to the arrival's lobe — and fall back to a free
+  junction search when no reliable cross-side arrival exists. A
   final scene-preserving pass may then shift BOTH sides of a pair by one shared
   delta — which cannot touch the image — to recover junction summation the pin
   cost. A **Mono** channel (the shared subwoofer) is walked by the left pass;
@@ -2035,7 +2094,11 @@ all handled.
 
 In the **Frequency Response** and **Live Spectrum** settings a calibration
 selector picks which profile to apply — **Off**, **0 degrees**, or
-**90 degrees** — listing only the profiles that actually have a file configured.
+**90 degrees**. A profile is offered once a file exists for it, with one
+deliberate exception: **90 degrees** is also offered when only a 0° file is
+configured, in which case the 90° curve is *approximated* from the 0° one rather
+than measured. The selector does not currently distinguish the two cases, so if
+you never supplied a 90° file, treat that entry as an estimate.
 The selected mode is saved with the measurement settings, and every plot is
 routed through the matching file.
 
@@ -2086,29 +2149,46 @@ impulse response, so a saved measurement keeps its absolute reference.
 
 ```text
 Resonalyze/
-|-- source/                 WinForms application and measurement orchestration
-|   |-- Options/            Measurement and visualization settings
+|-- source/                 WinForms application: composition root, measurement
+|   |                       lifecycle, and plot presentation
+|   |-- Diagnostics/        Profiling hooks (Tracy build configuration)
+|   |-- History/            Measurement history snapshots and persistence
+|   |-- LiveSpectrum/       Live analyzer orchestration
+|   |-- Measurements/       Sweep/noise orchestration, signal generation, IR files
+|   |-- ModeSwitching/      The analysis-mode catalogue and tab controller
+|   |-- Options/            Measurement and visualization settings panels
 |   |-- Overlays/           Persistent overlay slots and calculated overlays
 |   |-- Plotting/           OxyPlot model creation, annotations, and adapters
+|   |-- Settings/           Settings file, schema migrations, update checking
 |   |-- Shell/              Main form, title bar, commands, and docked settings
+|   |-- Storage/            Application data paths and safe file writing
 |   |-- TimeAlignment/      Loopback delay measurement UI and orchestration
 |   |-- Tools/              EQ Wizard, Signal Generator, Virtual DSP, PEQ import/export, tuning sheets
 |   |-- Ui/                 Reusable WinForms controls and dialogs
 |   `-- Resonalyze.csproj
-|-- dsp/                    Reusable signal-processing library
+|-- dsp/                    Reusable signal-processing library (no UI, no audio)
 |   `-- Resonalyze.Dsp.csproj
+|-- audio/                  Audio drivers and device access (NAudio lives here)
+|   `-- Resonalyze.Audio.csproj
 |-- tests/
-|   |-- Resonalyze.App.Tests/  File-format and application tests
-|   `-- Resonalyze.Dsp.Tests/  Synthetic DSP tests
+|   |-- Resonalyze.App.Tests/    File-format and application tests
+|   |-- Resonalyze.Audio.Tests/  Audio internals: PCM decoding, sessions, WASAPI
+|   `-- Resonalyze.Dsp.Tests/    Synthetic DSP tests
+|-- installer/              Inno Setup script for the Windows installer
+|-- assets/                 Images used by the README and the application
 |-- .github/workflows/      CI builds and automated tagged releases
 |-- global.json             Pinned .NET SDK version
 `-- README.md
 ```
 
-The UI project handles audio-device interaction, the measurement lifecycle, and
-plot presentation. `Resonalyze.Dsp` contains reusable DSP operations such as FFT
-analysis, windowing, calibration, smoothing, logarithmic resampling, impulse
-processing, phase analysis, and group-delay calculation.
+The three projects have deliberate boundaries. `Resonalyze.Audio` owns every
+audio driver — MME, ASIO and both WASAPI modes — along with device enumeration,
+format negotiation and capture lifecycle; NAudio is confined to it and is not
+even referenceable from the application at compile time. `Resonalyze.Dsp` is
+pure signal processing with no UI and no audio dependency: FFT analysis,
+windowing, calibration, smoothing, logarithmic resampling, impulse processing,
+phase analysis, group delay, crossover and EQ design. The application project
+wires the two together and owns the measurement lifecycle and plot presentation.
 
 ## Technology
 
@@ -2118,6 +2198,7 @@ processing, phase analysis, and group-delay calculation.
 - [NAudio.Asio](https://www.nuget.org/packages/NAudio.Asio)
 - [Math.NET Numerics](https://numerics.mathdotnet.com/)
 - [OxyPlot](https://oxyplot.github.io/)
+- [NetSparkle](https://github.com/NetSparkleUpdater/NetSparkle) — in-app updates
 - [YamlDotNet](https://github.com/aaubry/YamlDotNet) — CamillaDSP profile import/export
 - [PDFsharp / MigraDoc](https://github.com/empira/PDFsharp) — tuning-sheet PDF export
 
@@ -2138,7 +2219,9 @@ When reporting a measurement issue, include:
 - relevant analysis settings
 - expected and actual behavior
 - a screenshot or exception stack trace — unexpected errors are appended to
-  `crash.log` next to `Resonalyze.exe`, so check there for the full stack trace
+  `crash.log` in the application data directory (`%LocalAppData%\Resonalyze`,
+  or beside the executable in a portable build), so check there for the full
+  stack trace
 
 ## License
 

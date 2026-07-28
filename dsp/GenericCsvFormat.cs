@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 
 namespace Resonalyze.Dsp;
@@ -44,11 +44,12 @@ public sealed class GenericCsvFormat : IEqProfileFormat
         return builder.ToString();
     }
 
-    public EqualizationCurve Import(string text)
+    public bool TryImport(string text, out EqualizationCurve curve)
     {
         ArgumentNullException.ThrowIfNull(text);
 
         double preampDb = 0;
+        bool recognized = false;
         var bands = new List<PeqBand>();
 
         foreach (string rawLine in text.Split('\n'))
@@ -74,6 +75,7 @@ public sealed class GenericCsvFormat : IEqProfileFormat
                     if (EqTextNumbers.TryParse(field, out double gain))
                     {
                         preampDb = gain;
+                        recognized = true;
                         break;
                     }
                 }
@@ -120,8 +122,10 @@ public sealed class GenericCsvFormat : IEqProfileFormat
             }
 
             bands.Add(new PeqBand(frequencyHz, q, gainDb));
+            recognized = true;
         }
 
-        return new EqualizationCurve(bands, preampDb);
+        curve = new EqualizationCurve(bands, preampDb);
+        return recognized;
     }
 }

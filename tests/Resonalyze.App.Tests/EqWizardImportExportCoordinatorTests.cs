@@ -128,6 +128,61 @@ public sealed class EqWizardImportExportCoordinatorTests
         Assert.DoesNotContain("Tuning sheet", coordinator.ImportFilter);
     }
 
+    /// <summary>
+    /// The field case: pick the wrong filter in the import dialog, the parser
+    /// returns an empty curve by its pinned contract, and the panel used to take
+    /// that as success — clearing bypass and applying zero bands over a finished
+    /// tuning session, with no error shown.
+    /// </summary>
+    [Theory]
+    [InlineData("not a profile at all")]
+    [InlineData("{ \"something\": 1 }")]
+    [InlineData("")]
+    public void Import_AnUnrecognisedFile_FailsInsteadOfReturningAnEmptyCurve(string text)
+    {
+        EqWizardImportExportCoordinator coordinator = CreateCoordinator(readAllText: _ => text);
+
+        EqWizardFileResult<EqualizationCurve> result = coordinator.Import(
+            new EqWizardImportRequest("profile.json", coordinator.ResolveImportTarget(1)));
+
+        Assert.False(result.Success);
+        Assert.IsType<InvalidDataException>(result.Exception);
+    }
+
+    /// <summary>
+    /// A preamp-only profile is valid Equalizer APO and carries no bands, so
+    /// band count cannot be the failure signal — the format's own recognition
+    /// result is. A neutral "Preamp: 0 dB" counts too.
+    /// </summary>
+    [Theory]
+    [InlineData("Preamp: -6.0 dB", -6.0)]
+    [InlineData("Preamp: 0 dB", 0.0)]
+    public void Import_APreampOnlyProfile_Succeeds(string text, double expectedPreampDb)
+    {
+        EqWizardImportExportCoordinator coordinator = CreateCoordinator(readAllText: _ => text);
+
+        EqWizardFileResult<EqualizationCurve> result = coordinator.Import(
+            new EqWizardImportRequest("profile.txt", coordinator.ResolveImportTarget(1)));
+
+        Assert.True(result.Success, result.Exception?.Message);
+        Assert.Empty(result.Value!.Bands);
+        Assert.Equal(expectedPreampDb, result.Value.PreampDb, 4);
+    }
+
+    [Fact]
+    public void Import_AProfileWithBands_StillSucceeds()
+    {
+        // Equalizer APO is the first importable format, so filter index 1.
+        EqWizardImportExportCoordinator coordinator = CreateCoordinator(
+            readAllText: _ => "Preamp: -3.0 dB\nFilter 1: ON PK Fc 1000 Hz Gain -3.0 dB Q 1.00");
+
+        EqWizardFileResult<EqualizationCurve> result = coordinator.Import(
+            new EqWizardImportRequest("profile.txt", coordinator.ResolveImportTarget(1)));
+
+        Assert.True(result.Success, result.Exception?.Message);
+        Assert.NotEmpty(result.Value!.Bands);
+    }
+
     private static EqWizardImportExportCoordinator CreateCoordinator(
         Func<string, string>? readAllText = null,
         Action<string, string>? writeAllText = null,

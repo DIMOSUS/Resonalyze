@@ -39,6 +39,42 @@ public sealed class TuningSheetPdfTests
         }
     }
 
+    /// <summary>
+    /// The PDF exporters used to hand the destination path straight to
+    /// PdfDocument.Save, which truncates on open — so overwriting an existing
+    /// sheet destroyed it before the new one was complete. Both exporters share
+    /// PdfSheet.Save, so this covers the Virtual DSP sheet too.
+    /// </summary>
+    [Fact]
+    public void Export_OverAnExistingFile_NeverLeavesItTruncated()
+    {
+        var curve = new EqualizationCurve(
+            new[] { new PeqBand(1000, 1.0, 3.0) }, preampDb: -3.0);
+        string path = Path.Combine(Path.GetTempPath(), $"tuning_{Guid.NewGuid():N}.pdf");
+        try
+        {
+            TuningSheetPdf.Export(path, "First", curve, 20, 20_000, 48_000, null);
+            long firstLength = new FileInfo(path).Length;
+
+            TuningSheetPdf.Export(path, "Second", curve, 20, 20_000, 48_000, null);
+
+            // A real PDF, not a zero-length or half-written stub, and no
+            // temporary file left beside it.
+            byte[] bytes = File.ReadAllBytes(path);
+            Assert.True(bytes.Length > 0);
+            Assert.Equal("%PDF"u8.ToArray(), bytes.Take(4).ToArray());
+            Assert.True(firstLength > 0);
+            Assert.False(File.Exists(path + ".tmp"));
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+    }
+
     [Fact]
     public void Export_HandlesEmptyCurve()
     {

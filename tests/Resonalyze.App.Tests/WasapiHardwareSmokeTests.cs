@@ -1,3 +1,4 @@
+﻿using Resonalyze.Testing;
 using Resonalyze.Audio;
 
 namespace Resonalyze.App.Tests;
@@ -12,15 +13,6 @@ public sealed class WasapiHardwareSmokeTests
 {
     private static readonly IAudioSessionFactory Factory =
         new AudioSessionFactory(AudioBackendRegistry.CreateDefault());
-
-    private static (string Capture, string Render)? Endpoints()
-    {
-        string? capture = Environment.GetEnvironmentVariable("RESONALYZE_WASAPI_CAPTURE_ENDPOINT_ID");
-        string? render = Environment.GetEnvironmentVariable("RESONALYZE_WASAPI_RENDER_ENDPOINT_ID");
-        return string.IsNullOrWhiteSpace(capture) || string.IsNullOrWhiteSpace(render)
-            ? null
-            : (capture, render);
-    }
 
     private static int SharedMixRate(string captureId)
     {
@@ -53,14 +45,11 @@ public sealed class WasapiHardwareSmokeTests
         Assert.NotNull(session);
     }
 
-    [Fact]
+    [HardwareFact]
     [Trait("Category", "Hardware")]
     public async Task FailedDuplexValidationSurfacesAndReleasesEndpoints()
     {
-        if (Endpoints() is not var (captureId, renderId) || captureId is null)
-        {
-            return;
-        }
+        (string captureId, string renderId) = HardwareFactAttribute.Endpoints();
 
         int mixRate = SharedMixRate(captureId);
         int wrongRate = mixRate == 48_000 ? 44_100 : 48_000;
@@ -80,17 +69,14 @@ public sealed class WasapiHardwareSmokeTests
             Assert.NotNull(measurement.LastError);
         }
 
-        await AssertEndpointsReusableAsync(captureId, renderId!, mixRate);
+        await AssertEndpointsReusableAsync(captureId, renderId, mixRate);
     }
 
-    [Fact]
+    [HardwareFact]
     [Trait("Category", "Hardware")]
     public async Task FullSweepMeasurementSupportsEightRuns()
     {
-        if (Endpoints() is not var (captureId, renderId) || captureId is null)
-        {
-            return;
-        }
+        (string captureId, string renderId) = HardwareFactAttribute.Endpoints();
 
         int sampleRate = SharedMixRate(captureId);
         using var measurement = new ExpSweepMeasurement(Factory);
@@ -118,21 +104,17 @@ public sealed class WasapiHardwareSmokeTests
         Assert.Equal(0, measurement.LastAudioSessionDiagnostics.RenderUnderruns);
     }
 
-    [Fact]
+    [HardwareFact]
     [Trait("Category", "Hardware")]
     public async Task ExclusiveSweepRunsOnAReportedDuplexFormat()
     {
-        if (Endpoints() is not var (captureId, renderId) || captureId is null)
-        {
-            return;
-        }
+        (string captureId, string renderId) = HardwareFactAttribute.Endpoints();
 
-        int? sampleRate = FirstExclusiveRate(captureId, renderId!);
-        Assert.NotNull(sampleRate);
+        int sampleRate = RequireExclusiveRate(captureId, renderId);
 
         using var measurement = new ExpSweepMeasurement(Factory);
         measurement.Init(new SweepMeasurementConfiguration(
-            new SweepSignalConfiguration(20, 20_000, sampleRate!.Value, 24, 0.25, PlaybackChannel.Right),
+            new SweepSignalConfiguration(20, 20_000, sampleRate, 24, 0.25, PlaybackChannel.Right),
             new SweepAudioConfiguration(
                 Backend: AudioBackend.WasapiExclusive,
                 WaveInputChannelOffset: 0,
@@ -147,14 +129,11 @@ public sealed class WasapiHardwareSmokeTests
         Assert.True(succeeded, measurement.LastError?.ToString());
     }
 
-    [Fact]
+    [HardwareFact]
     [Trait("Category", "Hardware")]
     public async Task AbortedSweepReleasesEndpointsForImmediateReuse()
     {
-        if (Endpoints() is not var (captureId, renderId) || captureId is null)
-        {
-            return;
-        }
+        (string captureId, string renderId) = HardwareFactAttribute.Endpoints();
 
         int sampleRate = SharedMixRate(captureId);
         using (var measurement = new ExpSweepMeasurement(Factory))
@@ -179,22 +158,19 @@ public sealed class WasapiHardwareSmokeTests
             Assert.False(measurement.InProgress);
         }
 
-        await AssertEndpointsReusableAsync(captureId, renderId!, sampleRate);
+        await AssertEndpointsReusableAsync(captureId, renderId, sampleRate);
     }
 
-    [Theory]
+    [HardwareTheory]
     [InlineData(AudioBackend.WasapiShared)]
     [InlineData(AudioBackend.WasapiExclusive)]
     [Trait("Category", "Hardware")]
     public async Task LiveNoiseProducesSpectrum(AudioBackend backend)
     {
-        if (Endpoints() is not var (captureId, renderId) || captureId is null)
-        {
-            return;
-        }
+        (string captureId, string renderId) = HardwareFactAttribute.Endpoints();
 
         int sampleRate = backend == AudioBackend.WasapiExclusive
-            ? FirstExclusiveRate(captureId, renderId!) ?? throw SkipNoExclusive()
+            ? RequireExclusiveRate(captureId, renderId)
             : SharedMixRate(captureId);
 
         using var measurement = new NoiseMeasurement(Factory);
@@ -214,19 +190,16 @@ public sealed class WasapiHardwareSmokeTests
         Assert.NotNull(measurement.GetAccumulatedSpectrumSnapshot());
     }
 
-    [Theory]
+    [HardwareTheory]
     [InlineData(AudioBackend.WasapiShared)]
     [InlineData(AudioBackend.WasapiExclusive)]
     [Trait("Category", "Hardware")]
     public async Task AudioWarmupCompletes(AudioBackend backend)
     {
-        if (Endpoints() is not var (captureId, renderId) || captureId is null)
-        {
-            return;
-        }
+        (string captureId, string renderId) = HardwareFactAttribute.Endpoints();
 
         int sampleRate = backend == AudioBackend.WasapiExclusive
-            ? FirstExclusiveRate(captureId, renderId!) ?? throw SkipNoExclusive()
+            ? RequireExclusiveRate(captureId, renderId)
             : SharedMixRate(captureId);
 
         AudioSessionRequest request = AudioSessionRequestBuilder.Build(
@@ -240,6 +213,12 @@ public sealed class WasapiHardwareSmokeTests
         await Factory.WarmUpAsync(request, CancellationToken.None);
     }
 
-    private static Exception SkipNoExclusive() =>
-        new InvalidOperationException("No exclusive duplex format is supported by the endpoints.");
+    // Deliberately a failure, not a skip: the endpoint variables are set, so the
+    // caller asserted hardware is present. Hardware that cannot negotiate an
+    // exclusive duplex format is a real result worth surfacing, and xUnit v2 has
+    // no runtime skip to express it more softly.
+    private static int RequireExclusiveRate(string captureId, string renderId) =>
+        FirstExclusiveRate(captureId, renderId)
+        ?? throw new InvalidOperationException(
+            "No exclusive duplex format is supported by the configured endpoints.");
 }

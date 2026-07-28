@@ -19,7 +19,7 @@ internal sealed class EqWizardImportExportCoordinator
             EqProfileFormats.Importable,
             EqProfileFormats.Exportable,
             File.ReadAllText,
-            File.WriteAllText,
+            AtomicFile.WriteAllText,
             request => TuningSheetPdf.Export(
                 request.Path,
                 request.Title,
@@ -75,8 +75,22 @@ internal sealed class EqWizardImportExportCoordinator
         try
         {
             string text = readAllText(request.Path);
-            return EqWizardFileResult<EqualizationCurve>.Succeeded(
-                request.Target.Format.Import(text));
+
+            // The parsers are readers, not validators, and do not throw on
+            // rubbish — so the format has to say whether it recognised the file.
+            // Band count cannot stand in for that: a profile carrying only a
+            // "Preamp:" line is valid and has none. Treating it as failure used
+            // to be the destructive path, since the panel cleared bypass and
+            // applied the empty curve over whatever the user had just tuned.
+            if (!request.Target.Format.TryImport(text, out EqualizationCurve curve))
+            {
+                return EqWizardFileResult<EqualizationCurve>.Failed(
+                    new InvalidDataException(
+                        "No equalizer settings were found. Check that the file really is a " +
+                        $"{request.Target.Name} profile."));
+            }
+
+            return EqWizardFileResult<EqualizationCurve>.Succeeded(curve);
         }
         catch (Exception exception)
         {

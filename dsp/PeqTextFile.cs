@@ -55,11 +55,22 @@ public static class PeqTextFile
         return builder.ToString();
     }
 
-    public static EqualizationCurve Parse(string text)
+    public static EqualizationCurve Parse(string text) =>
+        TryParse(text, out EqualizationCurve curve)
+            ? curve
+            : new EqualizationCurve(Array.Empty<PeqBand>());
+
+    /// <summary>
+    /// Parses and reports whether anything was recognised — a <c>Preamp:</c> or a
+    /// well-formed <c>Filter</c> line. A file with only a preamp is a valid
+    /// neutral profile, so band count cannot stand in for this.
+    /// </summary>
+    public static bool TryParse(string text, out EqualizationCurve curve)
     {
         ArgumentNullException.ThrowIfNull(text);
 
         double preampDb = 0;
+        bool recognized = false;
         var bands = new List<PeqBand>();
 
         foreach (string rawLine in text.Split('\n'))
@@ -88,6 +99,7 @@ public static class PeqTextFile
                     if (EqTextNumbers.TryParse(token, out double gain))
                     {
                         preampDb = gain;
+                        recognized = true;
                         break;
                     }
                 }
@@ -99,10 +111,12 @@ public static class PeqTextFile
                 TryParseFilter(tokens, out PeqBand band))
             {
                 bands.Add(band);
+                recognized = true;
             }
         }
 
-        return new EqualizationCurve(bands, preampDb);
+        curve = new EqualizationCurve(bands, preampDb);
+        return recognized;
     }
 
     // Reads a "Filter N: ON PK Fc F Hz Gain G dB Q Q" line. Disabled (OFF) and

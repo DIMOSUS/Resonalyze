@@ -41,6 +41,11 @@ internal sealed class MeasurementHistoryPersistence
     public IReadOnlyList<MeasurementHistoryEntry> Load()
     {
         LoadWarning = null;
+        // Retention describes the file as it was just read. Clearing it up front
+        // means a second Load on the same instance, or one that throws before
+        // the entries are partitioned, cannot leak the previous read's rows into
+        // the next Save.
+        unreachableEntries = [];
         try
         {
             if (!File.Exists(pathOnDisk))
@@ -161,6 +166,7 @@ internal sealed class MeasurementHistoryPersistence
         // as identity as well, compared exactly as
         // MeasurementHistoryService.FindBySourceFilePath compares it, so the two
         // layers cannot disagree about what "the same file" means.
+        List<PersistedEntry> stillUnreachable = [];
         if (unreachableEntries.Count > 0)
         {
             HashSet<Guid> liveIds = persisted.Select(entry => entry.Id).ToHashSet();
@@ -169,9 +175,13 @@ internal sealed class MeasurementHistoryPersistence
                 .Where(path => !string.IsNullOrWhiteSpace(path))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            persisted.AddRange(unreachableEntries.Where(entry =>
-                !liveIds.Contains(entry.Id) &&
-                !livePaths.Contains(entry.SourceFilePath)));
+            stillUnreachable = unreachableEntries
+                .Where(entry =>
+                    !liveIds.Contains(entry.Id) &&
+                    !livePaths.Contains(entry.SourceFilePath))
+                .ToList();
+
+            persisted.AddRange(stillUnreachable);
             // Newest first, matching how the service orders the live list.
             persisted = persisted.OrderByDescending(entry => entry.Timestamp).ToList();
         }
@@ -186,6 +196,12 @@ internal sealed class MeasurementHistoryPersistence
         AtomicFile.Write(
             pathOnDisk,
             stream => JsonSerializer.Serialize(stream, file, SerializerOptions));
+
+        // Only now, and only to what was actually written. An entry superseded
+        // by a live one is gone from the file, so it must be gone from retention
+        // too — otherwise deleting the live entry (which saves immediately)
+        // would write the stale copy straight back and resurrect it.
+        unreachableEntries = stillUnreachable;
     }
 
     private BackupResult BackupUnusableFile()

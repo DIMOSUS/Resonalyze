@@ -168,6 +168,57 @@ public sealed class MeasurementHistoryPersistenceTests : IDisposable
         Assert.Single(third.Load());
     }
 
+    /// <summary>
+    /// Continues from the reopen case: once the retained copy has been super-
+    /// seded by a live entry, deleting that live entry must not bring the old
+    /// one back. Deleting saves immediately, so the retained set has to be
+    /// updated by the save that dropped it, not left holding a stale row.
+    /// </summary>
+    [Fact]
+    public void Save_AfterAHiddenEntryWasSuperseded_DoesNotResurrectItOnDelete()
+    {
+        string sourcePath = Path.Combine(directory, "on-external-drive.json");
+        File.WriteAllText(sourcePath, "{}");
+        var first = new MeasurementHistoryPersistence(storePath);
+        first.Save(new[] { CreateEntry(sourcePath) });
+
+        // Drive gone: the entry is hidden and retained.
+        File.Delete(sourcePath);
+        var second = new MeasurementHistoryPersistence(storePath);
+        Assert.Empty(second.Load());
+
+        // Drive back, file reopened as a new entry, then deleted by the user.
+        File.WriteAllText(sourcePath, "{}");
+        second.Save(new[] { CreateEntry(sourcePath) });
+        second.Save(Array.Empty<MeasurementHistoryEntry>());
+
+        var third = new MeasurementHistoryPersistence(storePath);
+        Assert.Empty(third.Load());
+    }
+
+    [Fact]
+    public void Load_ClearsRetentionFromAnEarlierLoadOnTheSameInstance()
+    {
+        string sourcePath = Path.Combine(directory, "transient.json");
+        File.WriteAllText(sourcePath, "{}");
+        var persistence = new MeasurementHistoryPersistence(storePath);
+        persistence.Save(new[] { CreateEntry(sourcePath) });
+
+        File.Delete(sourcePath);
+        Assert.Empty(persistence.Load());
+        Assert.NotNull(persistence.LoadWarning);
+
+        // A second Load of a store that no longer mentions the file must not
+        // carry the previous load's retention into the next Save.
+        File.WriteAllText(storePath, "{\"schemaVersion\":1,\"entries\":[]}");
+        Assert.Empty(persistence.Load());
+        persistence.Save(Array.Empty<MeasurementHistoryEntry>());
+
+        var reopened = new MeasurementHistoryPersistence(storePath);
+        Assert.Empty(reopened.Load());
+        Assert.Null(reopened.LoadWarning);
+    }
+
     [Fact]
     public void Save_DoesNotResurrectAnEntryDeletedWhileItWasReachable()
     {

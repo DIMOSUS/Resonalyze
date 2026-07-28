@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 
 namespace Resonalyze.Dsp;
 
@@ -56,7 +56,7 @@ public sealed class MiniDspFormat : IEqProfileFormat
         return builder.ToString();
     }
 
-    public EqualizationCurve Import(string text) =>
+    public bool TryImport(string text, out EqualizationCurve curve) =>
         throw new NotSupportedException("miniDSP biquad files cannot be imported.");
 
     private static void AppendBiquad(StringBuilder builder, int index, BiquadCoefficients c)

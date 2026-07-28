@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using YamlDotNet.Serialization;
 
 namespace Resonalyze.Dsp;
@@ -73,9 +73,10 @@ public sealed class CamillaDspYamlFormat : IEqProfileFormat
         return new SerializerBuilder().Build().Serialize(root);
     }
 
-    public EqualizationCurve Import(string text)
+    public bool TryImport(string text, out EqualizationCurve curve)
     {
         ArgumentNullException.ThrowIfNull(text);
+        curve = new EqualizationCurve(Array.Empty<PeqBand>());
 
         object? graph;
         try
@@ -84,13 +85,14 @@ public sealed class CamillaDspYamlFormat : IEqProfileFormat
         }
         catch (YamlDotNet.Core.YamlException)
         {
-            return new EqualizationCurve(Array.Empty<PeqBand>());
+            return false;
         }
 
+        // Valid YAML without a "filters" map is not a CamillaDSP config.
         if (graph is not IDictionary<object, object> root ||
             GetMap(root, "filters") is not { } filters)
         {
-            return new EqualizationCurve(Array.Empty<PeqBand>());
+            return false;
         }
 
         double preampDb = 0;
@@ -142,7 +144,8 @@ public sealed class CamillaDspYamlFormat : IEqProfileFormat
             }
         }
 
-        return new EqualizationCurve(bands, preampDb);
+        curve = new EqualizationCurve(bands, preampDb);
+        return true;
     }
 
     private static IDictionary<object, object>? GetMap(IDictionary<object, object> map, string key) =>

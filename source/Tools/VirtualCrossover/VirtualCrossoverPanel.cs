@@ -1480,7 +1480,17 @@ public partial class VirtualCrossoverPanel : UserControl
         EqualizationCurve curve;
         try
         {
-            curve = chosen.Import(File.ReadAllText(dialog.FileName));
+            // An unrecognised file must not reach the channel: the assignment
+            // below replaces its bands and preamp outright, so a wrong pick in
+            // the file dialog used to silently clear the channel's PEQ.
+            if (!chosen.TryImport(File.ReadAllText(dialog.FileName), out curve))
+            {
+                ShowError(
+                    "PEQ could not be imported.",
+                    $"No equalizer settings were found. Check that the file really is a " +
+                    $"{chosen.Name} profile.");
+                return;
+            }
         }
         catch (Exception exception)
         {

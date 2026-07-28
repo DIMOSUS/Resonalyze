@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 
 namespace Resonalyze.Dsp;
 
@@ -58,17 +58,19 @@ public sealed class EasyEffectsFormat : IEqProfileFormat
         return JsonSerializer.Serialize(root, new JsonSerializerOptions { WriteIndented = true });
     }
 
-    public EqualizationCurve Import(string text)
+    public bool TryImport(string text, out EqualizationCurve curve)
     {
         ArgumentNullException.ThrowIfNull(text);
+        curve = new EqualizationCurve(Array.Empty<PeqBand>());
 
         try
         {
             // All JsonElement access must happen before the document is disposed.
             using JsonDocument document = JsonDocument.Parse(text);
+            // Valid JSON that carries no equalizer is not an EasyEffects preset.
             if (!TryFindEqualizer(document.RootElement, out JsonElement equalizer))
             {
-                return new EqualizationCurve(Array.Empty<PeqBand>());
+                return false;
             }
 
             double preampDb = ReadDouble(equalizer, "output-gain", 0);
@@ -102,11 +104,12 @@ public sealed class EasyEffectsFormat : IEqProfileFormat
                 }
             }
 
-            return new EqualizationCurve(bands, preampDb);
+            curve = new EqualizationCurve(bands, preampDb);
+            return true;
         }
         catch (JsonException)
         {
-            return new EqualizationCurve(Array.Empty<PeqBand>());
+            return false;
         }
     }
 

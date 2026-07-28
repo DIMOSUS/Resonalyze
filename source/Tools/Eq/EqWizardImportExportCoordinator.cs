@@ -75,20 +75,18 @@ internal sealed class EqWizardImportExportCoordinator
         try
         {
             string text = readAllText(request.Path);
-            EqualizationCurve curve = request.Target.Format.Import(text);
 
-            // The parsers are readers, not validators: by their pinned contract
-            // an unrecognized file yields an EMPTY curve rather than throwing
-            // (EqProfileFormatsTests). Calling that a successful import is what
-            // made picking the wrong filter destructive — the panel cleared
-            // bypass and applied the empty curve, zeroing every band the user
-            // had just tuned. Nobody imports a file to get no bands, so an empty
-            // result is treated as the parse failure it actually is.
-            if (curve.Bands.Count == 0)
+            // The parsers are readers, not validators, and do not throw on
+            // rubbish — so the format has to say whether it recognised the file.
+            // Band count cannot stand in for that: a profile carrying only a
+            // "Preamp:" line is valid and has none. Treating it as failure used
+            // to be the destructive path, since the panel cleared bypass and
+            // applied the empty curve over whatever the user had just tuned.
+            if (!request.Target.Format.TryImport(text, out EqualizationCurve curve))
             {
                 return EqWizardFileResult<EqualizationCurve>.Failed(
                     new InvalidDataException(
-                        "No filter bands were found. Check that the file really is a " +
+                        "No equalizer settings were found. Check that the file really is a " +
                         $"{request.Target.Name} profile."));
             }
 

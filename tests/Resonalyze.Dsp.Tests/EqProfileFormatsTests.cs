@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 
 namespace Resonalyze.Dsp.Tests;
 
@@ -67,7 +67,7 @@ public sealed class EqProfileFormatsTests
             " \"band1\": { \"type\": \"Lo-shelf\", \"frequency\": 100, \"gain\": 3, \"q\": 1 }," +
             " \"band2\": { \"type\": \"Bell\", \"frequency\": 4000, \"gain\": -3, \"q\": 2 } } } } }";
 
-        EqualizationCurve curve = new EasyEffectsFormat().Import(json);
+        EqualizationCurve curve = Import(new EasyEffectsFormat(), json);
 
         Assert.Equal(-3, curve.PreampDb, 4);
         Assert.Equal(2, curve.Bands.Count);
@@ -76,10 +76,9 @@ public sealed class EqProfileFormatsTests
     }
 
     [Fact]
-    public void EasyEffects_InvalidJson_ReturnsEmptyCurve()
+    public void EasyEffects_InvalidJson_IsNotRecognised()
     {
-        EqualizationCurve curve = new EasyEffectsFormat().Import("{ not valid json");
-
+        Assert.False(new EasyEffectsFormat().TryImport("{ not valid json", out EqualizationCurve curve));
         Assert.Empty(curve.Bands);
     }
 
@@ -92,7 +91,7 @@ public sealed class EqProfileFormatsTests
             "{ \"num-bands\": 1, \"output-gain\": -2," +
             " \"band0\": { \"type\": \"Bell\", \"frequency\": 1000, \"gain\": 6, \"q\": 1 } }";
 
-        EqualizationCurve curve = new EasyEffectsFormat().Import(json);
+        EqualizationCurve curve = Import(new EasyEffectsFormat(), json);
 
         Assert.Equal(-2, curve.PreampDb, 4);
         Assert.Single(curve.Bands);
@@ -100,10 +99,10 @@ public sealed class EqProfileFormatsTests
     }
 
     [Fact]
-    public void EasyEffects_ValidJsonThatIsNotAPreset_ReturnsEmptyCurve()
+    public void EasyEffects_ValidJsonThatIsNotAPreset_IsNotRecognised()
     {
-        EqualizationCurve curve = new EasyEffectsFormat().Import("{ \"something\": 1, \"else\": true }");
-
+        Assert.False(new EasyEffectsFormat().TryImport(
+            "{ \"something\": 1, \"else\": true }", out EqualizationCurve curve));
         Assert.Empty(curve.Bands);
     }
 
@@ -118,7 +117,7 @@ public sealed class EqProfileFormatsTests
             " \"band1\": { \"type\": \"Bell\", \"frequency\": -100, \"gain\": 3, \"q\": 1 }," +
             " \"band2\": { \"type\": \"Bell\", \"frequency\": 4000, \"gain\": -3, \"q\": 2 } } } } }";
 
-        EqualizationCurve curve = new EasyEffectsFormat().Import(json);
+        EqualizationCurve curve = Import(new EasyEffectsFormat(), json);
 
         Assert.Single(curve.Bands);
         Assert.Equal(4000, curve.Bands[0].FrequencyHz, 4);
@@ -157,7 +156,7 @@ public sealed class EqProfileFormatsTests
             "      q: 1.0\n" +
             "      gain: 6.0\n";
 
-        EqualizationCurve curve = new CamillaDspYamlFormat().Import(yaml);
+        EqualizationCurve curve = Import(new CamillaDspYamlFormat(), yaml);
 
         Assert.Equal(-4.0, curve.PreampDb, 4);
         Assert.Single(curve.Bands);
@@ -282,7 +281,7 @@ public sealed class EqProfileFormatsTests
             "Filter  1: ON  PK       Fc     600 Hz  Gain   6.00 dB  Q  4.00\n" +
             "Filter  2: ON  PK       Fc    5582 Hz  Gain   4.90 dB  Q  2.00\n";
 
-        EqualizationCurve curve = new RewFilterFormat().Import(text);
+        EqualizationCurve curve = Import(new RewFilterFormat(), text);
 
         Assert.Equal(2, curve.Bands.Count);
         Assert.Equal(600, curve.Bands[0].FrequencyHz, 4);
@@ -309,7 +308,7 @@ public sealed class EqProfileFormatsTests
             "600,6,4\n" +
             "5582,4.9,2\n";
 
-        EqualizationCurve curve = new GenericCsvFormat().Import(text);
+        EqualizationCurve curve = Import(new GenericCsvFormat(), text);
 
         Assert.Equal(-2.0, curve.PreampDb, 4);
         Assert.Equal(2, curve.Bands.Count);
@@ -326,10 +325,15 @@ public sealed class EqProfileFormatsTests
             "3,2000,5,0\n" +          // Q = 0 -> skipped
             "4,4000,-3,2\n";
 
-        EqualizationCurve curve = new GenericCsvFormat().Import(text);
+        EqualizationCurve curve = Import(new GenericCsvFormat(), text);
 
         Assert.Equal(2, curve.Bands.Count);
         Assert.Equal(600, curve.Bands[0].FrequencyHz, 4);
         Assert.Equal(4000, curve.Bands[1].FrequencyHz, 4);
     }
+
+    // The formats implement TryImport; Import is a default interface member and
+    // is therefore only reachable through the interface.
+    private static EqualizationCurve Import(IEqProfileFormat format, string text) =>
+        format.Import(text);
 }

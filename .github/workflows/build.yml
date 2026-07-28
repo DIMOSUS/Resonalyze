@@ -8,16 +8,17 @@ on:
     branches:
       - main
 
-# One run per branch. Pushing several commits to a pull request supersedes the
-# earlier runs, so only the state that will actually be reviewed and merged is
-# built — which matters more now that a run also publishes and compiles the
-# installer.
+# One run per pull request: pushing several commits supersedes the earlier runs,
+# so only the state that will actually be reviewed and merged is built — which
+# matters more now that a run also publishes and compiles the installer.
 #
-# Deliberately NOT cancelled on main: every commit there is a merged, releasable
-# state and has to keep its own verdict. Cancelling would let a quick series of
-# merges leave commits with no build result at all.
+# Pushes to main deliberately get a group of their own (run_id is unique), so
+# they never queue behind each other. Sharing one group and merely setting
+# cancel-in-progress: false is NOT enough: a concurrency group holds at most one
+# running plus one pending run, so a third push evicts the pending one and a
+# quick series of merges would leave a commit with no build result at all.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:

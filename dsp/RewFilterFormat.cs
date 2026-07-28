@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 
 namespace Resonalyze.Dsp;
 
@@ -29,5 +29,6 @@ public sealed class RewFilterFormat : IEqProfileFormat
         return builder.ToString();
     }
 
-    public EqualizationCurve Import(string text) => PeqTextFile.Parse(text);
+    public bool TryImport(string text, out EqualizationCurve curve) =>
+        PeqTextFile.TryParse(text, out curve);
 }

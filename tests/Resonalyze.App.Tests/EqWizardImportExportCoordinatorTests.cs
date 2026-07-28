@@ -138,7 +138,7 @@ public sealed class EqWizardImportExportCoordinatorTests
     [InlineData("not a profile at all")]
     [InlineData("{ \"something\": 1 }")]
     [InlineData("")]
-    public void Import_AFileWithNoBands_FailsInsteadOfReturningAnEmptyCurve(string text)
+    public void Import_AnUnrecognisedFile_FailsInsteadOfReturningAnEmptyCurve(string text)
     {
         EqWizardImportExportCoordinator coordinator = CreateCoordinator(readAllText: _ => text);
 
@@ -147,6 +147,26 @@ public sealed class EqWizardImportExportCoordinatorTests
 
         Assert.False(result.Success);
         Assert.IsType<InvalidDataException>(result.Exception);
+    }
+
+    /// <summary>
+    /// A preamp-only profile is valid Equalizer APO and carries no bands, so
+    /// band count cannot be the failure signal — the format's own recognition
+    /// result is. A neutral "Preamp: 0 dB" counts too.
+    /// </summary>
+    [Theory]
+    [InlineData("Preamp: -6.0 dB", -6.0)]
+    [InlineData("Preamp: 0 dB", 0.0)]
+    public void Import_APreampOnlyProfile_Succeeds(string text, double expectedPreampDb)
+    {
+        EqWizardImportExportCoordinator coordinator = CreateCoordinator(readAllText: _ => text);
+
+        EqWizardFileResult<EqualizationCurve> result = coordinator.Import(
+            new EqWizardImportRequest("profile.txt", coordinator.ResolveImportTarget(1)));
+
+        Assert.True(result.Success, result.Exception?.Message);
+        Assert.Empty(result.Value!.Bands);
+        Assert.Equal(expectedPreampDb, result.Value.PreampDb, 4);
     }
 
     [Fact]

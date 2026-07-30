@@ -28,6 +28,10 @@ namespace Resonalyze.Options
         /// </summary>
         private void InitializeComponent()
         {
+            labelWindowMode = new Label();
+            comboWindowMode = new DarkComboBox();
+            labelFdwCycles = new Label();
+            comboFdwCycles = new DarkComboBox();
             label1 = new Label();
             numericWindow = new DarkNumericUpDown();
             numericRightWindow = new DarkNumericUpDown();
@@ -55,11 +59,55 @@ namespace Resonalyze.Options
             (numericLeftWindow).BeginInit();
             SuspendLayout();
             //
+            // labelWindowMode
+            //
+            labelWindowMode.AutoSize = true;
+            labelWindowMode.ForeColor = SystemColors.ControlLight;
+            labelWindowMode.Location = new Point(12, 14);
+            labelWindowMode.Name = "labelWindowMode";
+            labelWindowMode.Size = new Size(83, 15);
+            labelWindowMode.TabIndex = 58;
+            labelWindowMode.Text = "Window mode";
+            //
+            // comboWindowMode
+            //
+            comboWindowMode.BackColor = Color.FromArgb(55, 60, 72);
+            comboWindowMode.DropDownStyle = ComboBoxStyle.DropDownList;
+            comboWindowMode.ForeColor = Color.White;
+            comboWindowMode.Items.AddRange(new object[] { "Fixed", "FDW" });
+            comboWindowMode.Location = new Point(153, 13);
+            comboWindowMode.MinimumSize = new Size(36, 19);
+            comboWindowMode.Name = "comboWindowMode";
+            comboWindowMode.Size = new Size(100, 23);
+            comboWindowMode.TabIndex = 59;
+            //
+            // labelFdwCycles
+            //
+            labelFdwCycles.AutoSize = true;
+            labelFdwCycles.ForeColor = SystemColors.ControlLight;
+            labelFdwCycles.Location = new Point(12, 39);
+            labelFdwCycles.Name = "labelFdwCycles";
+            labelFdwCycles.Size = new Size(67, 15);
+            labelFdwCycles.TabIndex = 60;
+            labelFdwCycles.Text = "FDW cycles";
+            //
+            // comboFdwCycles
+            //
+            comboFdwCycles.BackColor = Color.FromArgb(55, 60, 72);
+            comboFdwCycles.DropDownStyle = ComboBoxStyle.DropDownList;
+            comboFdwCycles.ForeColor = Color.White;
+            comboFdwCycles.Items.AddRange(new object[] { 4, 6, 8 });
+            comboFdwCycles.Location = new Point(153, 38);
+            comboFdwCycles.MinimumSize = new Size(36, 19);
+            comboFdwCycles.Name = "comboFdwCycles";
+            comboFdwCycles.Size = new Size(100, 23);
+            comboFdwCycles.TabIndex = 61;
+            //
             // label1
             //
             label1.AutoSize = true;
             label1.ForeColor = SystemColors.ControlLight;
-            label1.Location = new Point(12, 14);
+            label1.Location = new Point(12, 64);
             label1.Name = "label1";
             label1.Size = new Size(51, 15);
             label1.TabIndex = 16;
@@ -71,7 +119,7 @@ namespace Resonalyze.Options
             numericWindow.DecimalPlaces = 0;
             numericWindow.ForeColor = Color.White;
             numericWindow.Increment = new decimal(new int[] { 1, 0, 0, 0 });
-            numericWindow.Location = new Point(153, 12);
+            numericWindow.Location = new Point(153, 62);
             numericWindow.Maximum = new decimal(new int[] { 32768, 0, 0, 0 });
             numericWindow.Minimum = new decimal(new int[] { 4, 0, 0, 0 });
             numericWindow.MinimumSize = new Size(36, 19);
@@ -88,7 +136,7 @@ namespace Resonalyze.Options
             numericRightWindow.DecimalPlaces = 0;
             numericRightWindow.ForeColor = Color.White;
             numericRightWindow.Increment = new decimal(new int[] { 1, 0, 0, 0 });
-            numericRightWindow.Location = new Point(153, 61);
+            numericRightWindow.Location = new Point(153, 111);
             numericRightWindow.Maximum = new decimal(new int[] { 16384, 0, 0, 0 });
             numericRightWindow.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
             numericRightWindow.MinimumSize = new Size(36, 19);
@@ -105,7 +153,7 @@ namespace Resonalyze.Options
             numericLeftWindow.DecimalPlaces = 0;
             numericLeftWindow.ForeColor = Color.White;
             numericLeftWindow.Increment = new decimal(new int[] { 1, 0, 0, 0 });
-            numericLeftWindow.Location = new Point(153, 36);
+            numericLeftWindow.Location = new Point(153, 86);
             numericLeftWindow.Maximum = new decimal(new int[] { 16384, 0, 0, 0 });
             numericLeftWindow.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
             numericLeftWindow.MinimumSize = new Size(36, 19);
@@ -120,7 +168,7 @@ namespace Resonalyze.Options
             //
             label5.AutoSize = true;
             label5.ForeColor = SystemColors.ControlLight;
-            label5.Location = new Point(12, 60);
+            label5.Location = new Point(12, 110);
             label5.Name = "label5";
             label5.Size = new Size(117, 15);
             label5.TabIndex = 19;
@@ -130,7 +178,7 @@ namespace Resonalyze.Options
             //
             label4.AutoSize = true;
             label4.ForeColor = SystemColors.ControlLight;
-            label4.Location = new Point(12, 35);
+            label4.Location = new Point(12, 85);
             label4.Name = "label4";
             label4.Size = new Size(109, 15);
             label4.TabIndex = 18;
@@ -140,7 +188,7 @@ namespace Resonalyze.Options
             //
             label9.AutoSize = true;
             label9.ForeColor = SystemColors.ControlLight;
-            label9.Location = new Point(12, 85);
+            label9.Location = new Point(12, 135);
             label9.Name = "label9";
             label9.Size = new Size(117, 15);
             label9.TabIndex = 29;
@@ -150,7 +198,7 @@ namespace Resonalyze.Options
             //
             comboSmoothingInverseOctaves.BackColor = Color.FromArgb(55, 60, 72);
             comboSmoothingInverseOctaves.ForeColor = Color.White;
-            comboSmoothingInverseOctaves.Location = new Point(153, 84);
+            comboSmoothingInverseOctaves.Location = new Point(153, 134);
             comboSmoothingInverseOctaves.Margin = new Padding(0);
             comboSmoothingInverseOctaves.MinimumSize = new Size(36, 19);
             comboSmoothingInverseOctaves.Name = "comboSmoothingInverseOctaves";
@@ -161,7 +209,7 @@ namespace Resonalyze.Options
             //
             comboCalibration.BackColor = Color.FromArgb(55, 60, 72);
             comboCalibration.ForeColor = Color.White;
-            comboCalibration.Location = new Point(153, 108);
+            comboCalibration.Location = new Point(153, 158);
             comboCalibration.Margin = new Padding(0);
             comboCalibration.MinimumSize = new Size(36, 19);
             comboCalibration.Name = "comboCalibration";
@@ -172,7 +220,7 @@ namespace Resonalyze.Options
             //
             label2.AutoSize = true;
             label2.ForeColor = SystemColors.ControlLight;
-            label2.Location = new Point(12, 110);
+            label2.Location = new Point(12, 160);
             label2.Name = "label2";
             label2.Size = new Size(65, 15);
             label2.TabIndex = 46;
@@ -182,7 +230,7 @@ namespace Resonalyze.Options
             //
             labelScale.AutoSize = true;
             labelScale.ForeColor = SystemColors.ControlLight;
-            labelScale.Location = new Point(12, 137);
+            labelScale.Location = new Point(12, 187);
             labelScale.Name = "labelScale";
             labelScale.Size = new Size(35, 15);
             labelScale.TabIndex = 55;
@@ -193,7 +241,7 @@ namespace Resonalyze.Options
             radioMagnitudeRelative.AutoSize = true;
             radioMagnitudeRelative.Checked = true;
             radioMagnitudeRelative.ForeColor = SystemColors.ControlLight;
-            radioMagnitudeRelative.Location = new Point(72, 135);
+            radioMagnitudeRelative.Location = new Point(72, 185);
             radioMagnitudeRelative.Name = "radioMagnitudeRelative";
             radioMagnitudeRelative.Size = new Size(72, 19);
             radioMagnitudeRelative.TabIndex = 56;
@@ -205,7 +253,7 @@ namespace Resonalyze.Options
             //
             radioMagnitudeSpl.AutoSize = true;
             radioMagnitudeSpl.ForeColor = SystemColors.ControlLight;
-            radioMagnitudeSpl.Location = new Point(153, 135);
+            radioMagnitudeSpl.Location = new Point(153, 185);
             radioMagnitudeSpl.Name = "radioMagnitudeSpl";
             radioMagnitudeSpl.Size = new Size(66, 19);
             radioMagnitudeSpl.TabIndex = 57;
@@ -216,7 +264,7 @@ namespace Resonalyze.Options
             //
             labelCurves.AutoSize = true;
             labelCurves.ForeColor = Color.FromArgb(150, 170, 205);
-            labelCurves.Location = new Point(12, 165);
+            labelCurves.Location = new Point(12, 215);
             labelCurves.Name = "labelCurves";
             labelCurves.Size = new Size(46, 15);
             labelCurves.TabIndex = 53;
@@ -226,7 +274,7 @@ namespace Resonalyze.Options
             //
             checkBoxShowPrimary.AutoSize = true;
             checkBoxShowPrimary.ForeColor = SystemColors.ControlLight;
-            checkBoxShowPrimary.Location = new Point(12, 187);
+            checkBoxShowPrimary.Location = new Point(12, 237);
             checkBoxShowPrimary.Name = "checkBoxShowPrimary";
             checkBoxShowPrimary.Size = new Size(161, 19);
             checkBoxShowPrimary.TabIndex = 48;
@@ -237,7 +285,7 @@ namespace Resonalyze.Options
             //
             checkBoxShowCoherence.AutoSize = true;
             checkBoxShowCoherence.ForeColor = SystemColors.ControlLight;
-            checkBoxShowCoherence.Location = new Point(12, 319);
+            checkBoxShowCoherence.Location = new Point(12, 369);
             checkBoxShowCoherence.Name = "checkBoxShowCoherence";
             checkBoxShowCoherence.Size = new Size(134, 19);
             checkBoxShowCoherence.TabIndex = 54;
@@ -248,7 +296,7 @@ namespace Resonalyze.Options
             //
             checkBoxShowHd2.AutoSize = true;
             checkBoxShowHd2.ForeColor = SystemColors.ControlLight;
-            checkBoxShowHd2.Location = new Point(12, 209);
+            checkBoxShowHd2.Location = new Point(12, 259);
             checkBoxShowHd2.Name = "checkBoxShowHd2";
             checkBoxShowHd2.Size = new Size(81, 19);
             checkBoxShowHd2.TabIndex = 49;
@@ -259,7 +307,7 @@ namespace Resonalyze.Options
             //
             checkBoxShowHd3.AutoSize = true;
             checkBoxShowHd3.ForeColor = SystemColors.ControlLight;
-            checkBoxShowHd3.Location = new Point(12, 231);
+            checkBoxShowHd3.Location = new Point(12, 281);
             checkBoxShowHd3.Name = "checkBoxShowHd3";
             checkBoxShowHd3.Size = new Size(81, 19);
             checkBoxShowHd3.TabIndex = 50;
@@ -270,7 +318,7 @@ namespace Resonalyze.Options
             //
             checkBoxShowHd4.AutoSize = true;
             checkBoxShowHd4.ForeColor = SystemColors.ControlLight;
-            checkBoxShowHd4.Location = new Point(12, 253);
+            checkBoxShowHd4.Location = new Point(12, 303);
             checkBoxShowHd4.Name = "checkBoxShowHd4";
             checkBoxShowHd4.Size = new Size(81, 19);
             checkBoxShowHd4.TabIndex = 51;
@@ -281,7 +329,7 @@ namespace Resonalyze.Options
             //
             checkBoxShowThdPlusNoise.AutoSize = true;
             checkBoxShowThdPlusNoise.ForeColor = SystemColors.ControlLight;
-            checkBoxShowThdPlusNoise.Location = new Point(12, 275);
+            checkBoxShowThdPlusNoise.Location = new Point(12, 325);
             checkBoxShowThdPlusNoise.Name = "checkBoxShowThdPlusNoise";
             checkBoxShowThdPlusNoise.Size = new Size(82, 19);
             checkBoxShowThdPlusNoise.TabIndex = 52;
@@ -292,7 +340,7 @@ namespace Resonalyze.Options
             //
             checkBoxShowNoiseFloor.AutoSize = true;
             checkBoxShowNoiseFloor.ForeColor = SystemColors.ControlLight;
-            checkBoxShowNoiseFloor.Location = new Point(12, 297);
+            checkBoxShowNoiseFloor.Location = new Point(12, 347);
             checkBoxShowNoiseFloor.Name = "checkBoxShowNoiseFloor";
             checkBoxShowNoiseFloor.Size = new Size(114, 19);
             checkBoxShowNoiseFloor.TabIndex = 53;
@@ -302,7 +350,7 @@ namespace Resonalyze.Options
             // irPlotView
             //
             irPlotView.BackColor = Color.FromArgb(32, 36, 46);
-            irPlotView.Location = new Point(12, 345);
+            irPlotView.Location = new Point(12, 395);
             irPlotView.Name = "irPlotView";
             irPlotView.PanCursor = Cursors.Hand;
             irPlotView.Size = new Size(241, 300);
@@ -317,7 +365,11 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 652);
+            ClientSize = new Size(265, 702);
+            Controls.Add(labelWindowMode);
+            Controls.Add(comboWindowMode);
+            Controls.Add(labelFdwCycles);
+            Controls.Add(comboFdwCycles);
             Controls.Add(irPlotView);
             Controls.Add(labelScale);
             Controls.Add(radioMagnitudeRelative);
@@ -355,6 +407,10 @@ namespace Resonalyze.Options
         }
 
         #endregion
+        private Label labelWindowMode;
+        private DarkComboBox comboWindowMode;
+        private Label labelFdwCycles;
+        private DarkComboBox comboFdwCycles;
         private Label label1;
         private DarkNumericUpDown numericWindow;
         private DarkNumericUpDown numericRightWindow;

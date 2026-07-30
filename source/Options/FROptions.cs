@@ -18,6 +18,8 @@ namespace Resonalyze.Options
         {
             InitializeComponent();
             BindTukeyWindowControls(numericWindow, numericLeftWindow, numericRightWindow);
+            comboWindowMode.SelectedIndexChanged +=
+                (_, _) => UpdateMagnitudeWindowControlState();
             SmoothingPresetOptions.Configure(
                 comboSmoothingInverseOctaves, includePsychoacoustic: true);
             InitializeToolTips();
@@ -33,6 +35,14 @@ namespace Resonalyze.Options
             AttachMeasurement(expSweepMeasurement);
             InitializeControls(() =>
             {
+                comboWindowMode.SelectedIndex =
+                    frequencyResponseOptions.MagnitudeWindowMode == PhaseWindowMode.Fixed
+                        ? 0
+                        : 1;
+                comboFdwCycles.SelectedItem =
+                    frequencyResponseOptions.MagnitudeFdwCycles is 4 or 6 or 8
+                        ? frequencyResponseOptions.MagnitudeFdwCycles
+                        : PhaseAnalysisSettings.DefaultFdwCycles;
                 numericWindow.Value = frequencyResponseOptions.Window;
                 numericLeftWindow.Value = frequencyResponseOptions.LeftTukeyWindow;
                 numericRightWindow.Value = frequencyResponseOptions.RightTukeyWindow;
@@ -61,6 +71,7 @@ namespace Resonalyze.Options
                 radioMagnitudeRelative.Checked = !spl;
                 RefreshTukeyWindowLimits();
             });
+            UpdateMagnitudeWindowControlState();
             UpdateIrPreview();
         }
 
@@ -68,6 +79,13 @@ namespace Resonalyze.Options
             FrequencyResponseOptions frequencyResponseOptions,
             CurveVisibilityOptions visibility)
         {
+            frequencyResponseOptions.MagnitudeWindowMode = comboWindowMode.SelectedIndex == 0
+                ? PhaseWindowMode.Fixed
+                : PhaseWindowMode.FrequencyDependent;
+            frequencyResponseOptions.MagnitudeFdwCycles =
+                comboFdwCycles.SelectedItem is int cycles
+                    ? cycles
+                    : PhaseAnalysisSettings.DefaultFdwCycles;
             frequencyResponseOptions.Window = (int)numericWindow.Value;
             frequencyResponseOptions.LeftTukeyWindow = (int)numericLeftWindow.Value;
             frequencyResponseOptions.RightTukeyWindow = (int)numericRightWindow.Value;
@@ -89,6 +107,12 @@ namespace Resonalyze.Options
                 : MagnitudeScale.Relative;
             UpdateIrPreview();
         }
+
+        // The cycles choice only participates in FDW mode; the window fields stay
+        // active either way because in FDW mode they define the outer gate that
+        // the frequency-dependent windows never exceed.
+        private void UpdateMagnitudeWindowControlState() =>
+            comboFdwCycles.Enabled = comboWindowMode.SelectedIndex == 1;
 
         // SPL is offerable exactly when the plot can render it — mirror
         // MeasurementPlotContext.SplOffsetDb: this measurement's own (snapshot)
@@ -144,6 +168,16 @@ namespace Resonalyze.Options
 
         private void InitializeToolTips()
         {
+            toolTip.SetToolTip(
+                comboWindowMode,
+                "Fixed uses one time window for the entire spectrum (the steady-state " +
+                "in-room response). FDW shortens the analysis window as frequency rises " +
+                "to suppress late cabin reflections (a quasi-anechoic response).");
+            toolTip.SetToolTip(
+                comboFdwCycles,
+                "Periods retained by FDW: 4 suppresses reflections most, 6 is " +
+                "recommended, and 8 retains more reflected detail. The Tukey window " +
+                "below remains the outer gate FDW never exceeds.");
             numericWindow.ApplyToolTip(
                 toolTip,
                 "Sets the FFT window length used to calculate the frequency response.");
@@ -195,8 +229,9 @@ namespace Resonalyze.Options
             toolTip.SetToolTip(
                 irPlotView,
                 "Preview of the transfer impulse response and the analysis window used " +
-                "for the primary curve. The harmonic curves window the sweep-deconvolution " +
-                "IR with automatically derived windows.");
+                "for the primary curve. In FDW mode this window is the outer gate; " +
+                "higher frequencies use shorter windows inside it. The harmonic curves " +
+                "window the sweep-deconvolution IR with automatically derived windows.");
         }
     }
 }

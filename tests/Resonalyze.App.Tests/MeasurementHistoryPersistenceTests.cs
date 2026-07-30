@@ -72,7 +72,7 @@ public sealed class MeasurementHistoryPersistenceTests : IDisposable
     }
 
     [Fact]
-    public void Load_HidesEntriesWhoseSourceFileIsMissing_AndSaysSo()
+    public void Load_RemovesEntriesWhoseSourceFileIsMissing_AndSaysSo()
     {
         string sourcePath = Path.Combine(directory, "deleted.json");
         File.WriteAllText(sourcePath, "{}");
@@ -81,119 +81,41 @@ public sealed class MeasurementHistoryPersistenceTests : IDisposable
         File.Delete(sourcePath);
 
         Assert.Empty(persistence.Load());
-        Assert.NotNull(persistence.LoadWarning);
+        Assert.Contains("removed", persistence.LoadWarning);
     }
 
     /// <summary>
-    /// The field case this guards: an external drive is not mounted at startup,
-    /// so the measurements on it vanish from the list — and then any ordinary
-    /// window close writes the truncated list back, deleting them for good.
+    /// The owner's policy: a history row whose measurement file is gone is dead
+    /// weight and is dropped AT LOAD, with the store rewritten immediately — a
+    /// session without history mutations never saves, and the removal (and its
+    /// one-time message) must not depend on one. The previous design retained
+    /// such rows for the unplugged-drive case, which greeted every launch with
+    /// the same warning.
     /// </summary>
     [Fact]
-    public void Save_AfterAnUnreachableFileWasHidden_DoesNotDropItFromTheStore()
+    public void Load_RemovesUnreachableEntriesFromTheStoreImmediately()
     {
         string reachablePath = Path.Combine(directory, "reachable.json");
-        string unreachablePath = Path.Combine(directory, "on-external-drive.json");
+        string unreachablePath = Path.Combine(directory, "deleted.json");
         File.WriteAllText(reachablePath, "{}");
         File.WriteAllText(unreachablePath, "{}");
-
         MeasurementHistoryEntry reachable = CreateEntry(reachablePath);
-        MeasurementHistoryEntry unreachable = CreateEntry(unreachablePath);
         var first = new MeasurementHistoryPersistence(storePath);
-        first.Save(new[] { reachable, unreachable });
+        first.Save(new[] { reachable, CreateEntry(unreachablePath) });
 
-        // The drive goes away, the app restarts, and the user does anything at
-        // all that saves — here, the still-visible entry alone is written back.
+        // The file disappears; the next launch removes its row at load, with
+        // no Save in between.
         File.Delete(unreachablePath);
         var second = new MeasurementHistoryPersistence(storePath);
-        IReadOnlyList<MeasurementHistoryEntry> visible = second.Load();
-        Assert.Equal(reachable.Id, Assert.Single(visible).Id);
-        second.Save(visible);
+        Assert.Equal(reachable.Id, Assert.Single(second.Load()).Id);
+        Assert.NotNull(second.LoadWarning);
 
-        // The drive comes back.
+        // Even with the file back, the row is gone for good and the following
+        // launch is quiet.
         File.WriteAllText(unreachablePath, "{}");
         var third = new MeasurementHistoryPersistence(storePath);
-        IReadOnlyList<Guid> restored = third.Load().Select(entry => entry.Id).ToList();
-
-        Assert.Equal(2, restored.Count);
-        Assert.Contains(unreachable.Id, restored);
-        Assert.Contains(reachable.Id, restored);
+        Assert.Equal(reachable.Id, Assert.Single(third.Load()).Id);
         Assert.Null(third.LoadWarning);
-    }
-
-    /// <summary>
-    /// The drive comes back mid-session and the user opens one of its files. The
-    /// service looks the path up in the LIVE list, cannot see the hidden entry,
-    /// and creates a fresh one with a new id — so the retained copy must be
-    /// matched by path too, or the measurement shows up twice after a restart.
-    /// </summary>
-    [Fact]
-    public void Save_WhenAHiddenFileIsReopenedUnderANewId_DoesNotDuplicateIt()
-    {
-        string sourcePath = Path.Combine(directory, "on-external-drive.json");
-        File.WriteAllText(sourcePath, "{}");
-        var first = new MeasurementHistoryPersistence(storePath);
-        first.Save(new[] { CreateEntry(sourcePath) });
-
-        File.Delete(sourcePath);
-        var second = new MeasurementHistoryPersistence(storePath);
-        Assert.Empty(second.Load());
-
-        // Drive back; the service re-adds the same file as a brand new entry.
-        File.WriteAllText(sourcePath, "{}");
-        MeasurementHistoryEntry reopened = CreateEntry(sourcePath);
-        second.Save(new[] { reopened });
-
-        var third = new MeasurementHistoryPersistence(storePath);
-        MeasurementHistoryEntry only = Assert.Single(third.Load());
-        Assert.Equal(reopened.Id, only.Id);
-    }
-
-    [Fact]
-    public void Save_WhenAHiddenFileIsReopened_MatchesThePathCaseInsensitively()
-    {
-        string sourcePath = Path.Combine(directory, "Mixed Case.json");
-        File.WriteAllText(sourcePath, "{}");
-        var first = new MeasurementHistoryPersistence(storePath);
-        first.Save(new[] { CreateEntry(sourcePath) });
-
-        File.Delete(sourcePath);
-        var second = new MeasurementHistoryPersistence(storePath);
-        second.Load();
-
-        File.WriteAllText(sourcePath, "{}");
-        second.Save(new[] { CreateEntry(sourcePath.ToUpperInvariant()) });
-
-        var third = new MeasurementHistoryPersistence(storePath);
-        Assert.Single(third.Load());
-    }
-
-    /// <summary>
-    /// Continues from the reopen case: once the retained copy has been super-
-    /// seded by a live entry, deleting that live entry must not bring the old
-    /// one back. Deleting saves immediately, so the retained set has to be
-    /// updated by the save that dropped it, not left holding a stale row.
-    /// </summary>
-    [Fact]
-    public void Save_AfterAHiddenEntryWasSuperseded_DoesNotResurrectItOnDelete()
-    {
-        string sourcePath = Path.Combine(directory, "on-external-drive.json");
-        File.WriteAllText(sourcePath, "{}");
-        var first = new MeasurementHistoryPersistence(storePath);
-        first.Save(new[] { CreateEntry(sourcePath) });
-
-        // Drive gone: the entry is hidden and retained.
-        File.Delete(sourcePath);
-        var second = new MeasurementHistoryPersistence(storePath);
-        Assert.Empty(second.Load());
-
-        // Drive back, file reopened as a new entry, then deleted by the user.
-        File.WriteAllText(sourcePath, "{}");
-        second.Save(new[] { CreateEntry(sourcePath) });
-        second.Save(Array.Empty<MeasurementHistoryEntry>());
-
-        var third = new MeasurementHistoryPersistence(storePath);
-        Assert.Empty(third.Load());
     }
 
     [Fact]

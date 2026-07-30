@@ -247,6 +247,37 @@ public sealed class DataHelperResampleTests
         Assert.InRange(output[0].Y, 1.0, 19.0);
     }
 
+    [Theory]
+    [InlineData(23.4375)] // 192 kHz / 8192: two bins ≈ 47 Hz, mid-display
+    [InlineData(46.875)] // 192 kHz / 4096: two bins ≈ 94 Hz
+    public void LogarithmicResample_PsychoacousticStaysLocalNearTwoBinsOnACoarseGrid(
+        double stepHz)
+    {
+        // A quiet low end against a loud midrange, on a grid coarse enough that
+        // the two-bin resolution floor lands INSIDE the display range. The
+        // lower octave radius of the Gaussian floor used to diverge just above
+        // two bins from DC: the kernel swallowed the whole spectrum and the
+        // cubic mean drew the midrange level as a spike on the low-frequency
+        // floor (field case: a 192 kHz measurement with a 2048-sample window
+        // spiked +33 dB at 47 Hz). Every point in the formerly diverging zone
+        // must stay at the local floor.
+        var input = new List<SignalPoint>();
+        for (double f = stepHz; f <= 24_000; f += stepHz)
+        {
+            input.Add(new SignalPoint(f, f < 500 ? -50.0 : -15.0));
+        }
+
+        List<SignalPoint> psycho = DataHelper.LogarithmicResample(
+            input, 20, 20_000, 1024,
+            smoothingOctaves: 1.0 / 6.0,
+            psychoacoustic: true);
+
+        Assert.All(
+            psycho.Where(point => point.X > 2.0 * stepHz && point.X < 3.5 * stepHz),
+            point => Assert.True(point.Y < -45.0,
+                $"{point.Y:0.##} dB at {point.X:0.##} Hz on a -50 dB floor."));
+    }
+
     [Fact]
     public void LogarithmicPowerBandResample_PsychoacousticDoesNotClipANarrowDip()
     {

@@ -29,6 +29,18 @@ namespace Resonalyze.Dsp
         public int Window { get; set; } = 4096;
         public int LeftTukeyWindow { get; set; } = 256;
         public int RightTukeyWindow { get; set; } = 256;
+
+        // Windowing mode for the primary magnitude curve. Fixed applies the one
+        // Tukey window above; FrequencyDependent (REW-style FDW) keeps that
+        // window as the outer gate but shortens the analysis window past the
+        // peak to MagnitudeFdwCycles periods of each frequency, so late cabin
+        // reflections drop out of the treble while the bass keeps the full
+        // window. Defaults to Fixed — the steady-state curve is the canonical
+        // magnitude reading (and what in-car SPL targets are stated against);
+        // FDW is the opt-in quasi-anechoic view. Phase below deliberately
+        // defaults the other way: an ungated in-car phase trace is unreadable.
+        public PhaseWindowMode MagnitudeWindowMode { get; set; } = PhaseWindowMode.Fixed;
+        public int MagnitudeFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
         public double SmoothingInverseOctaves { get; set; } = 6;
         public int Offset { get; set; }
         public bool Unwrap { get; set; } = true;

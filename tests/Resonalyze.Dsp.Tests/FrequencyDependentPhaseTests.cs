@@ -135,6 +135,154 @@ public sealed class FrequencyDependentPhaseTests
     }
 
     [Fact]
+    public void PerCurveGates_WithACommonReference_PreserveRelativePhase()
+    {
+        // The Virtual DSP Auto gate places each channel's WINDOW on its own
+        // arrival (so FDW keeps a late channel's treble) while every curve
+        // shares one absolute τ. The relative phase must survive exactly as
+        // with a shared window: BuildMeasuredPhase re-references each
+        // extraction to the absolute τ, so where the window sits must not
+        // matter — only what it contains.
+        SyntheticMeasurement first = DelayedImpulse(480); // 10 ms
+        SyntheticMeasurement second = DelayedImpulse(576); // 12 ms
+        PhaseAnalysisSettings sharedReference = Settings(
+            PhaseWindowMode.FrequencyDependent,
+            6,
+            PhaseDetrendMode.Manual,
+            manualMs: 10.0,
+            gateOffsetMs: 10.0);
+        PhaseAnalysisSettings ownWindow = sharedReference with
+        {
+            GateOffsetMs = 12.0
+        };
+
+        List<SignalPoint> firstPhase = DataHelper.GetGatedPhaseData(
+            first, sharedReference);
+        List<SignalPoint> secondPhase = DataHelper.GetGatedPhaseData(
+            second, ownWindow);
+
+        foreach ((SignalPoint a, SignalPoint b) in firstPhase.Zip(secondPhase)
+                     .Where(pair => pair.First.X is >= 200 and <= 10_000))
+        {
+            double expected = -Math.Tau * a.X * 96 / SampleRate;
+            double actual = Math.IEEERemainder(b.Y - a.Y, Math.Tau);
+            double error = Math.IEEERemainder(actual - expected, Math.Tau);
+            Assert.True(Math.Abs(error) < 1e-5,
+                $"Relative-phase error {error:e} at {a.X:0.#} Hz with per-curve gates.");
+        }
+    }
+
+    [Fact]
+    public void SumGatedSpectra_ReReferencesEachPartBeforeAdding()
+    {
+        // One delta seen through two window POSITIONS (both plateaus contain
+        // it): the windowed content is identical up to the extraction shift,
+        // so re-referenced to one start the two spectra must coincide and
+        // their sum must equal exactly twice the directly extracted one —
+        // pinning the rotation's sign and scale, which the Virtual DSP Sum
+        // (the vector sum of individually gated channels) rests on.
+        SyntheticMeasurement measurement = DelayedImpulse(960); // 20 ms
+        PhaseAnalysisSettings at20 = Settings(
+            PhaseWindowMode.Fixed, 6, PhaseDetrendMode.Manual, gateOffsetMs: 20.0);
+        PhaseAnalysisSettings at18 = at20 with { GateOffsetMs = 18.0 };
+
+        Complex[] a = DataHelper.GetPhaseAnalysisSpectrum(
+            measurement, at20, out int startA);
+        Complex[] b = DataHelper.GetPhaseAnalysisSpectrum(
+            measurement, at18, out int startB);
+        Assert.NotEqual(startA, startB);
+
+        Complex[] combined = DataHelper.SumGatedSpectra(
+            [(a, startA), (b, startB)], startA);
+
+        for (int bin = 1; bin < combined.Length / 2; bin++)
+        {
+            Complex expected = 2.0 * a[bin];
+            double error = (combined[bin] - expected).Magnitude;
+            Assert.True(error <= 1e-9 * (1.0 + expected.Magnitude),
+                $"Re-reference broken by {error:e} at bin {bin} " +
+                $"({bin * (double)SampleRate / combined.Length:0.#} Hz).");
+        }
+    }
+
+    [Fact]
+    public void SumOfOwnGatedSpectra_KeepsTheLateChannelsTreble()
+    {
+        // The property the Virtual DSP Sum rests on, end to end: two unit
+        // arrivals 3 ms apart, each FDW-gated at its OWN arrival, summed as
+        // spectra. At high frequencies each window keeps its arrival, so the
+        // band-averaged summed POWER reads both (~2; the interference cross
+        // term averages out across the band). The old construction — one
+        // summed IR through a single window anchored at the earliest arrival —
+        // reads only the early channel (~1): the FDW window there is far
+        // shorter than the 3 ms spread.
+        var early = new Complex[8_192];
+        early[480] = Complex.One; // 10 ms
+        var late = new Complex[8_192];
+        late[624] = Complex.One; // 13 ms
+        PhaseAnalysisSettings atEarly = Settings(
+            PhaseWindowMode.FrequencyDependent, 6, PhaseDetrendMode.Manual,
+            gateOffsetMs: 10.0);
+        PhaseAnalysisSettings atLate = atEarly with { GateOffsetMs = 13.0 };
+
+        Complex[] a = DataHelper.GetPhaseAnalysisSpectrum(
+            new SyntheticMeasurement(early, SampleRate, 480), atEarly, out int startA);
+        Complex[] b = DataHelper.GetPhaseAnalysisSpectrum(
+            new SyntheticMeasurement(late, SampleRate, 624), atLate, out int startB);
+        Complex[] combined = DataHelper.SumGatedSpectra(
+            [(a, startA), (b, startB)], Math.Min(startA, startB));
+
+        var summedIr = new Complex[8_192];
+        for (int i = 0; i < summedIr.Length; i++)
+        {
+            summedIr[i] = early[i] + late[i];
+        }
+        Complex[] gatedSummedIr = DataHelper.GetPhaseAnalysisSpectrum(
+            new SyntheticMeasurement(summedIr, SampleRate, 480), atEarly, out _);
+
+        double combinedPower = BandPower(combined, 8_000, 15_000);
+        double gatedSumPower = BandPower(gatedSummedIr, 8_000, 15_000);
+        Assert.InRange(combinedPower, 1.7, 2.3);
+        Assert.InRange(gatedSumPower, 0.7, 1.3);
+
+        static double BandPower(Complex[] spectrum, double lowHz, double highHz)
+        {
+            double binWidth = (double)SampleRate / spectrum.Length;
+            int lowBin = (int)(lowHz / binWidth);
+            int highBin = (int)(highHz / binWidth);
+            double sum = 0.0;
+            for (int bin = lowBin; bin <= highBin; bin++)
+            {
+                sum += spectrum[bin].Magnitude * spectrum[bin].Magnitude;
+            }
+
+            return sum / (highBin - lowBin + 1);
+        }
+    }
+
+    [Fact]
+    public void GatedPhaseData_FromSpectrum_MatchesTheMeasurementPath()
+    {
+        SyntheticMeasurement measurement = ReflectedImpulse();
+        PhaseAnalysisSettings settings = Settings(
+            PhaseWindowMode.FrequencyDependent, 6, PhaseDetrendMode.Manual,
+            manualMs: 10.0);
+
+        List<SignalPoint> viaMeasurement = DataHelper.GetGatedPhaseData(
+            measurement, settings);
+        Complex[] spectrum = DataHelper.GetPhaseAnalysisSpectrum(
+            measurement, settings, out int extractionStart);
+        List<SignalPoint> viaSpectrum = DataHelper.GetGatedPhaseData(
+            spectrum,
+            extractionStart,
+            referenceSamples: 10.0 * SampleRate / 1_000.0,
+            SampleRate,
+            unwrap: false);
+
+        Assert.Equal(viaMeasurement, viaSpectrum);
+    }
+
+    [Fact]
     public void CommonAutoDetrend_DoesNotIndependentlyFlattenOtherChannels()
     {
         SyntheticMeasurement anchor = DelayedImpulse(480);

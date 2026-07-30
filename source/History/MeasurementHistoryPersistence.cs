@@ -23,12 +23,6 @@ internal sealed class MeasurementHistoryPersistence
     // History operations save immediately, so a transient load/access failure
     // must not turn the empty recovery view into the persisted source of truth.
     private bool preserveExistingFileBeforeSave;
-    // Entries whose measurement file was not reachable at load. They are hidden
-    // from the caller — nothing can be done with a snapshot whose file is gone —
-    // but they are written back out on every Save. Without this an unmounted
-    // external drive at startup silently truncated the history, and the next
-    // ordinary window close persisted the truncation permanently.
-    private List<PersistedEntry> unreachableEntries = [];
 
     public string? LoadWarning { get; private set; }
 
@@ -41,11 +35,6 @@ internal sealed class MeasurementHistoryPersistence
     public IReadOnlyList<MeasurementHistoryEntry> Load()
     {
         LoadWarning = null;
-        // Retention describes the file as it was just read. Clearing it up front
-        // means a second Load on the same instance, or one that throws before
-        // the entries are partitioned, cannot leak the previous read's rows into
-        // the next Save.
-        unreachableEntries = [];
         try
         {
             if (!File.Exists(pathOnDisk))
@@ -54,8 +43,15 @@ internal sealed class MeasurementHistoryPersistence
                 return Array.Empty<MeasurementHistoryEntry>();
             }
 
-            using FileStream stream = File.OpenRead(pathOnDisk);
-            StoreFile? file = JsonSerializer.Deserialize<StoreFile>(stream, SerializerOptions);
+            // A block, not a using declaration: the read stream must be closed
+            // before the removal rewrite below, or the atomic replace fails
+            // against our own open handle.
+            StoreFile? file;
+            using (FileStream stream = File.OpenRead(pathOnDisk))
+            {
+                file = JsonSerializer.Deserialize<StoreFile>(stream, SerializerOptions);
+            }
+
             if (file == null)
             {
                 throw new InvalidDataException("The history file is empty.");
@@ -72,22 +68,29 @@ internal sealed class MeasurementHistoryPersistence
             file.SchemaVersion = CurrentSchemaVersion;
 
             var reachable = new List<MeasurementHistoryEntry>(file.Entries.Count);
-            var unreachable = new List<PersistedEntry>();
+            var retained = new List<PersistedEntry>(file.Entries.Count);
+            int removedCount = 0;
+            bool storeChanged = false;
             foreach (PersistedEntry entry in file.Entries)
             {
                 if (string.IsNullOrWhiteSpace(entry.SourceFilePath))
                 {
-                    // No path at all is a broken record, not an absent drive:
-                    // there is nothing to come back for, so it is dropped.
+                    // No path at all is a broken record: dropped like a missing
+                    // file — silently, it never counted as a measurement — but
+                    // it still marks the store dirty, or it would sit in the
+                    // JSON forever without ever tripping the removal message.
+                    storeChanged = true;
                     continue;
                 }
 
                 if (!File.Exists(entry.SourceFilePath))
                 {
-                    unreachable.Add(entry);
+                    removedCount++;
+                    storeChanged = true;
                     continue;
                 }
 
+                retained.Add(entry);
                 reachable.Add(new MeasurementHistoryEntry
                 {
                     Id = entry.Id,
@@ -101,14 +104,33 @@ internal sealed class MeasurementHistoryPersistence
                 });
             }
 
-            unreachableEntries = unreachable;
-            if (unreachable.Count > 0)
+            if (storeChanged)
+            {
+                // A row whose file is gone is dead weight: it can do nothing but
+                // repeat a warning on every launch — which is exactly what the
+                // previous design did by retaining such rows for the
+                // unplugged-drive case. Drop it from the store NOW, not at the
+                // next mutation's Save: a session without history changes never
+                // saves, and the warning would survive it. Best effort — if the
+                // store cannot be rewritten this launch, the in-memory list is
+                // already clean and the next launch repeats the removal.
+                try
+                {
+                    WriteStore(retained);
+                }
+                catch (Exception exception)
+                    when (exception is IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+
+            if (removedCount > 0)
             {
                 LoadWarning =
-                    $"{unreachable.Count} measurement(s) are not listed because their files " +
-                    "could not be found — a disconnected drive or a moved folder does this.\r\n\r\n" +
-                    "They are kept in the history file and reappear once the files are " +
-                    "reachable again; nothing has been deleted.";
+                    $"{removedCount} measurement(s) were removed from the history " +
+                    "because their files no longer exist (deleted, or a moved " +
+                    "folder).\r\n\r\nOpening a measurement file adds it back to " +
+                    "the history.";
             }
 
             preserveExistingFileBeforeSave = false;
@@ -155,53 +177,21 @@ internal sealed class MeasurementHistoryPersistence
             })
             .ToList();
 
-        // Carry the entries hidden at load back into the file, minus any that the
-        // live list already covers.
-        //
-        // Matching on Id alone is not enough. If the drive comes back mid-session
-        // and the user opens one of its measurements, the service looks the file
-        // up in the LIVE list — which cannot see the hidden entry — and creates a
-        // fresh one with a new Guid. Keeping the stale copy too would then show
-        // the same measurement twice after the next restart. So the path counts
-        // as identity as well, compared exactly as
-        // MeasurementHistoryService.FindBySourceFilePath compares it, so the two
-        // layers cannot disagree about what "the same file" means.
-        List<PersistedEntry> stillUnreachable = [];
-        if (unreachableEntries.Count > 0)
-        {
-            HashSet<Guid> liveIds = persisted.Select(entry => entry.Id).ToHashSet();
-            HashSet<string> livePaths = persisted
-                .Select(entry => entry.SourceFilePath)
-                .Where(path => !string.IsNullOrWhiteSpace(path))
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        WriteStore(persisted);
+    }
 
-            stillUnreachable = unreachableEntries
-                .Where(entry =>
-                    !liveIds.Contains(entry.Id) &&
-                    !livePaths.Contains(entry.SourceFilePath))
-                .ToList();
-
-            persisted.AddRange(stillUnreachable);
-            // Newest first, matching how the service orders the live list.
-            persisted = persisted.OrderByDescending(entry => entry.Timestamp).ToList();
-        }
-
+    private void WriteStore(List<PersistedEntry> entries)
+    {
         StoreFile file = new()
         {
             SchemaVersion = CurrentSchemaVersion,
-            Entries = persisted
+            Entries = entries
         };
 
         // Temp file + move keeps the store intact if the write is interrupted.
         AtomicFile.Write(
             pathOnDisk,
             stream => JsonSerializer.Serialize(stream, file, SerializerOptions));
-
-        // Only now, and only to what was actually written. An entry superseded
-        // by a live one is gone from the file, so it must be gone from retention
-        // too — otherwise deleting the live entry (which saves immediately)
-        // would write the stale copy straight back and resurrect it.
-        unreachableEntries = stillUnreachable;
     }
 
     private BackupResult BackupUnusableFile()

@@ -197,6 +197,11 @@ internal sealed partial class MeasurementSettingsFile
         public int Window { get; set; } = 4096;
         public int LeftTukeyWindow { get; set; } = 256;
         public int RightTukeyWindow { get; set; } = 256;
+        // Magnitude FDW ships with a Fixed default, so a file without these
+        // fields keeps its meaning without a migration case.
+        public PhaseWindowMode? MagnitudeWindowMode { get; set; } =
+            Resonalyze.Dsp.PhaseWindowMode.Fixed;
+        public int MagnitudeFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
         public double SmoothingInverseOctaves { get; set; } = 6;
         public int Offset { get; set; }
         public bool Unwrap { get; set; } = true;
@@ -243,6 +248,8 @@ internal sealed partial class MeasurementSettingsFile
                 Window = options.Window,
                 LeftTukeyWindow = options.LeftTukeyWindow,
                 RightTukeyWindow = options.RightTukeyWindow,
+                MagnitudeWindowMode = options.MagnitudeWindowMode,
+                MagnitudeFdwCycles = options.MagnitudeFdwCycles,
                 SmoothingInverseOctaves = options.SmoothingInverseOctaves,
                 Offset = options.Offset,
                 Unwrap = options.Unwrap,
@@ -284,6 +291,13 @@ internal sealed partial class MeasurementSettingsFile
             options.Window = window;
             (options.LeftTukeyWindow, options.RightTukeyWindow) =
                 ClampTukeyWindows(LeftTukeyWindow, RightTukeyWindow, window);
+            options.MagnitudeWindowMode = MagnitudeWindowMode is { } magnitudeWindowMode &&
+                Enum.IsDefined(magnitudeWindowMode)
+                    ? magnitudeWindowMode
+                    : Resonalyze.Dsp.PhaseWindowMode.Fixed;
+            options.MagnitudeFdwCycles = MagnitudeFdwCycles is 4 or 6 or 8
+                ? MagnitudeFdwCycles
+                : PhaseAnalysisSettings.DefaultFdwCycles;
             options.SmoothingInverseOctaves =
                 SmoothingPresetOptions.Normalize(SmoothingInverseOctaves);
             options.Offset = Clamp(Offset, -32768, 32768);

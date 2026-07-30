@@ -209,6 +209,54 @@ public sealed class MeasurementSettingsMigrationTests
         Assert.True(options.GroupDelayGateAutoFit);
     }
 
+    // A pre-FDW-magnitude file has no MagnitudeWindowMode/MagnitudeFdwCycles
+    // fields; its magnitude must keep reading through the fixed window. Real
+    // JSON again, for the same missing-property reason as the gate tests above.
+    [Fact]
+    public void PreFdwMagnitudeFileStaysFixed()
+    {
+        MeasurementSettingsFile.FrequencyResponseSettings settings =
+            DeserializeFrequencyResponse("""{"Window": 2048}""");
+        var options = new FrequencyResponseOptions
+        {
+            MagnitudeWindowMode = PhaseWindowMode.FrequencyDependent,
+            MagnitudeFdwCycles = 8
+        };
+
+        settings.ApplyTo(options, new CurveVisibilityOptions());
+
+        Assert.Equal(PhaseWindowMode.Fixed, options.MagnitudeWindowMode);
+        Assert.Equal(
+            PhaseAnalysisSettings.DefaultFdwCycles, options.MagnitudeFdwCycles);
+    }
+
+    [Fact]
+    public void MagnitudeFdwRoundTripsAndValidatesCycles()
+    {
+        var stored = new FrequencyResponseOptions
+        {
+            MagnitudeWindowMode = PhaseWindowMode.FrequencyDependent,
+            MagnitudeFdwCycles = 8
+        };
+        var restored = new FrequencyResponseOptions();
+
+        MeasurementSettingsFile.FrequencyResponseSettings.Capture(
+                stored, new CurveVisibilityOptions())
+            .ApplyTo(restored, new CurveVisibilityOptions());
+
+        Assert.Equal(PhaseWindowMode.FrequencyDependent, restored.MagnitudeWindowMode);
+        Assert.Equal(8, restored.MagnitudeFdwCycles);
+
+        MeasurementSettingsFile.FrequencyResponseSettings settings =
+            DeserializeFrequencyResponse("""{"MagnitudeFdwCycles": 123}""");
+        var options = new FrequencyResponseOptions();
+
+        settings.ApplyTo(options, new CurveVisibilityOptions());
+
+        Assert.Equal(
+            PhaseAnalysisSettings.DefaultFdwCycles, options.MagnitudeFdwCycles);
+    }
+
     private static MeasurementSettingsFile.FrequencyResponseSettings
         DeserializeFrequencyResponse(string json) =>
         System.Text.Json.JsonSerializer

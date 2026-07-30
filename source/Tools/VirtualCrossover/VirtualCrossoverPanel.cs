@@ -59,10 +59,25 @@ public partial class VirtualCrossoverPanel : UserControl
     // offset is a placeholder; each build stamps its own (see
     // BuildMagnitudeCurve). The initial value only bridges construction: every
     // curve is built after the first unsuppressed redraw refreshed it.
-    private sealed record MagnitudeGateSnapshot(
+    // Internal (with the resolver) so the per-side pin choice is pinned by a
+    // unit test without constructing the panel.
+    internal sealed record MagnitudeGateSnapshot(
         PhaseAnalysisSettings Template,
         double? PinnedOffsetMs,
-        int SmoothingInverseOctaves);
+        double? OppositePinnedOffsetMs,
+        int SmoothingInverseOctaves)
+    {
+        // The one place the pinned-vs-anchor choice lives. The two sides'
+        // arrivals sit at different times and the project stores their pinned
+        // offsets separately — the active side's pin must never window the
+        // OPPOSITE side's sum (its own pin, or its own anchor when unpinned).
+        internal double ResolveGateOffsetMs(
+            bool oppositeSide,
+            int anchorPeakIndex,
+            int sampleRate) =>
+            (oppositeSide ? OppositePinnedOffsetMs : PinnedOffsetMs)
+                ?? anchorPeakIndex * 1_000.0 / sampleRate;
+    }
 
     private MagnitudeGateSnapshot magnitudeGate = new(
         new PhaseAnalysisSettings(
@@ -77,6 +92,7 @@ public partial class VirtualCrossoverPanel : UserControl
             Unwrap: false,
             SmoothingInverseOctaves: 0.0),
         PinnedOffsetMs: null,
+        OppositePinnedOffsetMs: null,
         SmoothingInverseOctaves: 12);
 
     private readonly List<VirtualCrossoverChannel> channels = new();
@@ -1805,6 +1821,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 WindowMode = PhaseWindowMode.Fixed
             },
             PinnedGateOffsetMs,
+            project.PhaseGateFor(!project.ActiveSideRight).OffsetMs,
             comboBoxSmoothing.SelectedItem is int smoothing ? smoothing : 12);
 
         // Every settings/source/view change invalidates the captured render
@@ -1966,11 +1983,19 @@ public partial class VirtualCrossoverPanel : UserControl
         // free. Same staleness rule as above.
         List<VirtualCrossoverMetric.StereoDelta> stereoDeltas =
             await metrics.ComputeStereoDeltasAsync(channels, revision);
-        AnalysisCurve? oppositeSum =
-            checkBoxShowSum.Checked && radioViewMagnitude.Checked
-                ? await metrics.ComputeOppositeSumCurveAsync(
-                    channels, !project.ActiveSideRight, revision)
-                : null;
+        // The side sum comes from metrics (shared coordinator cache); the CURVE
+        // is built here so it windows through the OPPOSITE side's gate
+        // placement — the active side's pin must not gate the other side.
+        AnalysisCurve? oppositeSum = null;
+        if (checkBoxShowSum.Checked && radioViewMagnitude.Checked)
+        {
+            VirtualCrossoverSideSum? oppositeSide = await metrics.ComputeSideSumAsync(
+                channels, !project.ActiveSideRight, revision, minimumChannels: 2);
+            if (oppositeSide != null)
+            {
+                oppositeSum = BuildOppositeMagnitudeCurve(oppositeSide);
+            }
+        }
         if (mainPlotView.IsDisposed || !processingCoordinator.IsCurrent(revision))
         {
             return;
@@ -3201,7 +3226,22 @@ public partial class VirtualCrossoverPanel : UserControl
             impulseResponse,
             peakIndex,
             sampleRate,
-            snapshot.PinnedOffsetMs ?? peakIndex * 1_000.0 / sampleRate);
+            snapshot.ResolveGateOffsetMs(oppositeSide: false, peakIndex, sampleRate));
+    }
+
+    // The opposite side's sum window: its OWN pinned offset (or its own
+    // earliest-arrival anchor when unpinned) — never the active side's pin,
+    // whose placement belongs to different arrival times.
+    private AnalysisCurve BuildOppositeMagnitudeCurve(VirtualCrossoverSideSum side)
+    {
+        MagnitudeGateSnapshot snapshot = magnitudeGate;
+        return BuildGatedMagnitudeCurve(
+            snapshot,
+            side.ImpulseResponse,
+            side.AnchorIndex,
+            side.SampleRate,
+            snapshot.ResolveGateOffsetMs(
+                oppositeSide: true, side.AnchorIndex, side.SampleRate));
     }
 
     // A RAW channel curve lives in its own time: its arrival predates the

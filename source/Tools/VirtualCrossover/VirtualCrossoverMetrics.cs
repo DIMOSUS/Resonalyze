@@ -445,28 +445,6 @@ internal sealed class VirtualCrossoverMetrics
     }
 
     /// <summary>
-    /// The complex-sum magnitude of the OPPOSITE side (dashed and translucent
-    /// on the plot), so the two sides' tunes compare at a glance without
-    /// flipping back and forth. Mono channels contribute their single response
-    /// to both sides' sums, exactly as they do physically. Null when the
-    /// opposite side has fewer than two participating channels — a "sum" of
-    /// one driver is just that driver. Uses the coordinator cache, so it shares
-    /// processed responses and staleness handling with the main redraw.
-    /// </summary>
-    public async Task<AnalysisCurve?> ComputeOppositeSumCurveAsync(
-        IReadOnlyList<VirtualCrossoverChannel> channels,
-        bool oppositeRight,
-        long revision)
-    {
-        VirtualCrossoverSideSum? side = await ComputeSideSumAsync(
-            channels, oppositeRight, revision, minimumChannels: 2);
-        return side == null
-            ? null
-            : buildMagnitudeCurve(
-                side.ImpulseResponse, side.AnchorIndex, side.SampleRate);
-    }
-
-    /// <summary>
     /// The complex sum of one side's participating channels, processed through
     /// their chains. Mono channels contribute their single response to both
     /// sides, exactly as they do physically. Null when the side has fewer than

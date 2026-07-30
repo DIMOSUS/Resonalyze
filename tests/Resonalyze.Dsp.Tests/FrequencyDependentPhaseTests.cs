@@ -206,6 +206,61 @@ public sealed class FrequencyDependentPhaseTests
     }
 
     [Fact]
+    public void SumOfOwnGatedSpectra_KeepsTheLateChannelsTreble()
+    {
+        // The property the Virtual DSP Sum rests on, end to end: two unit
+        // arrivals 3 ms apart, each FDW-gated at its OWN arrival, summed as
+        // spectra. At high frequencies each window keeps its arrival, so the
+        // band-averaged summed POWER reads both (~2; the interference cross
+        // term averages out across the band). The old construction — one
+        // summed IR through a single window anchored at the earliest arrival —
+        // reads only the early channel (~1): the FDW window there is far
+        // shorter than the 3 ms spread.
+        var early = new Complex[8_192];
+        early[480] = Complex.One; // 10 ms
+        var late = new Complex[8_192];
+        late[624] = Complex.One; // 13 ms
+        PhaseAnalysisSettings atEarly = Settings(
+            PhaseWindowMode.FrequencyDependent, 6, PhaseDetrendMode.Manual,
+            gateOffsetMs: 10.0);
+        PhaseAnalysisSettings atLate = atEarly with { GateOffsetMs = 13.0 };
+
+        Complex[] a = DataHelper.GetPhaseAnalysisSpectrum(
+            new SyntheticMeasurement(early, SampleRate, 480), atEarly, out int startA);
+        Complex[] b = DataHelper.GetPhaseAnalysisSpectrum(
+            new SyntheticMeasurement(late, SampleRate, 624), atLate, out int startB);
+        Complex[] combined = DataHelper.SumGatedSpectra(
+            [(a, startA), (b, startB)], Math.Min(startA, startB));
+
+        var summedIr = new Complex[8_192];
+        for (int i = 0; i < summedIr.Length; i++)
+        {
+            summedIr[i] = early[i] + late[i];
+        }
+        Complex[] gatedSummedIr = DataHelper.GetPhaseAnalysisSpectrum(
+            new SyntheticMeasurement(summedIr, SampleRate, 480), atEarly, out _);
+
+        double combinedPower = BandPower(combined, 8_000, 15_000);
+        double gatedSumPower = BandPower(gatedSummedIr, 8_000, 15_000);
+        Assert.InRange(combinedPower, 1.7, 2.3);
+        Assert.InRange(gatedSumPower, 0.7, 1.3);
+
+        static double BandPower(Complex[] spectrum, double lowHz, double highHz)
+        {
+            double binWidth = (double)SampleRate / spectrum.Length;
+            int lowBin = (int)(lowHz / binWidth);
+            int highBin = (int)(highHz / binWidth);
+            double sum = 0.0;
+            for (int bin = lowBin; bin <= highBin; bin++)
+            {
+                sum += spectrum[bin].Magnitude * spectrum[bin].Magnitude;
+            }
+
+            return sum / (highBin - lowBin + 1);
+        }
+    }
+
+    [Fact]
     public void GatedPhaseData_FromSpectrum_MatchesTheMeasurementPath()
     {
         SyntheticMeasurement measurement = ReflectedImpulse();

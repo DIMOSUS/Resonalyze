@@ -50,10 +50,34 @@ public partial class VirtualCrossoverPanel : UserControl
         Interval = SaveDebounceMilliseconds
     };
 
-    // The tool renders through the standard FR pipeline (window around the peak,
-    // log grid, smoothing) with its own options instance, so the FR mode's
-    // settings stay untouched.
-    private readonly FrequencyResponseOptions frequencyResponseOptions = new();
+    // The magnitude view reads through the SAME gate as the phase and impulse
+    // views (the gate dialog's offset, shoulders and Fixed/FDW mode), so the
+    // three views describe one time window. One immutable record, refreshed on
+    // the UI thread by RequestRedraw and read by reference from the PLINQ
+    // magnitude builds on worker threads — a single atomic reference, never
+    // the live controls, the project or the gate-preview tuple. The template's
+    // offset is a placeholder; each build stamps its own (see
+    // BuildMagnitudeCurve). The initial value only bridges construction: every
+    // curve is built after the first unsuppressed redraw refreshed it.
+    private sealed record MagnitudeGateSnapshot(
+        PhaseAnalysisSettings Template,
+        double? PinnedOffsetMs,
+        int SmoothingInverseOctaves);
+
+    private MagnitudeGateSnapshot magnitudeGate = new(
+        new PhaseAnalysisSettings(
+            PhaseWindowMode.Fixed,
+            PhaseAnalysisSettings.DefaultFdwCycles,
+            PhaseDetrendMode.Off,
+            ManualDetrendMilliseconds: 0.0,
+            GateOffsetMs: 0.0,
+            LeftMs: FrequencyResponseOptions.DefaultPhaseLeftMs,
+            PlateauMs: FrequencyResponseOptions.DefaultPhasePlateauMs,
+            RightMs: FrequencyResponseOptions.DefaultPhaseRightMs,
+            Unwrap: false,
+            SmoothingInverseOctaves: 0.0),
+        PinnedOffsetMs: null,
+        SmoothingInverseOctaves: 12);
 
     private readonly List<VirtualCrossoverChannel> channels = new();
 
@@ -75,12 +99,15 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private VirtualCrossoverProjectFile project = new();
 
-    // Candidate gate values while the gate dialog is open, so the phase plot
-    // tracks the dialog live; null once it closes (Save committed them to the
-    // project, Cancel reverts by simply dropping them).
-    private (double OffsetMs, double LeftMs, double PlateauMs, double RightMs,
-        PhaseWindowMode WindowMode, int FdwCycles, PhaseDetrendMode DetrendMode,
-        double DetrendMs)? gatePreview;
+    // Candidate gate values while the gate dialog is open, so the gated plots
+    // track the dialog live; null once it closes (Save committed them to the
+    // project, Cancel reverts by simply dropping them). AutoOffset mirrors the
+    // dialog's Auto button: the preview must gate per-curve exactly as Save
+    // will, while OffsetMs still shows where the dialog's window sits (the
+    // impulse overlays draw it).
+    private (double OffsetMs, bool AutoOffset, double LeftMs, double PlateauMs,
+        double RightMs, PhaseWindowMode WindowMode, int FdwCycles,
+        PhaseDetrendMode DetrendMode, double DetrendMs)? gatePreview;
     private VirtualCrossoverAcousticPlot acousticPlot = null!;
     private VirtualCrossoverDspChainPlot dspChainPlot = null!;
     private bool initialized;
@@ -331,7 +358,6 @@ public partial class VirtualCrossoverPanel : UserControl
             radioSideRight.Checked = project.ActiveSideRight;
             radioSideLeft.Checked = !project.ActiveSideRight;
             acousticPlot.ConfigureForView(CurrentAcousticView());
-            UpdateGateButtonAvailability();
             comboBoxSmoothing.SelectedItem =
                 OverlaySmoothing.IsValid(project.SmoothingCode)
                     ? project.SmoothingCode
@@ -971,17 +997,11 @@ public partial class VirtualCrossoverPanel : UserControl
     private void OnViewModeChanged()
     {
         acousticPlot.ConfigureForView(CurrentAcousticView());
-        UpdateGateButtonAvailability();
         // Fractional-octave smoothing shapes only the frequency-domain curves;
         // grey it out in the impulse view where it has no effect.
         comboBoxSmoothing.Enabled = !radioViewImpulse.Checked;
         OnViewChanged();
     }
-
-    // The gate shapes the phase and impulse views; grey the button out on the
-    // magnitude view so it does not suggest an effect on those curves.
-    private void UpdateGateButtonAvailability() =>
-        buttonPhaseGate.Enabled = !radioViewMagnitude.Checked;
 
     private void OnViewChanged()
     {
@@ -1712,8 +1732,8 @@ public partial class VirtualCrossoverPanel : UserControl
             "Run Auto delay afterward to phase-align the result.");
         toolTip.SetToolTip(
             buttonPhaseGate,
-            "Configure the gate for the phase and impulse views:\r\n" +
-            "offset and Tukey fades, with an IR preview — cut the\r\n" +
+            "Configure the gate for the magnitude, phase and impulse\r\n" +
+            "views: offset and Tukey fades, with an IR preview — cut the\r\n" +
             "window before the first reflection for clean traces.\r\n" +
             "Where the gate SITS — its offset and the detrend τ — belongs\r\n" +
             "to the side you are viewing (L or R): their drivers arrive at\r\n" +
@@ -1758,9 +1778,6 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        frequencyResponseOptions.SmoothingInverseOctaves =
-            comboBoxSmoothing.SelectedItem is int smoothing ? smoothing : 12;
-
         RequestRedraw();
     }
 
@@ -1769,6 +1786,27 @@ public partial class VirtualCrossoverPanel : UserControl
     // the UI thread, so the flag and the task handle need no synchronization.
     private void RequestRedraw()
     {
+        // Every redraw path funnels through here on the UI thread, so this is
+        // the one place the magnitude-gate snapshot can be refreshed without
+        // the worker-thread builds ever touching live state.
+        magnitudeGate = new MagnitudeGateSnapshot(
+            CreateVirtualPhaseSettings(
+                gateOffsetMs: 0.0,
+                PhaseDetrendMode.Off,
+                manualDetrendMilliseconds: 0.0) with
+            {
+                // The magnitude always reads the FIXED gate. FDW cannot hold
+                // the summed response: its high-frequency windows are shorter
+                // than the channels' arrival spread, so no single window keeps
+                // every channel's treble inside the one summed IR, and the
+                // drawn Sum and the loss read-out collapse. The dialog's
+                // Window mode and FDW cycles therefore shape the PHASE view
+                // only.
+                WindowMode = PhaseWindowMode.Fixed
+            },
+            PinnedGateOffsetMs,
+            comboBoxSmoothing.SelectedItem is int smoothing ? smoothing : 12);
+
         // Every settings/source/view change invalidates the captured render
         // snapshot, not only side switches. A running FFT may finish, but the
         // coordinator will neither cache nor publish its stale result.
@@ -2022,7 +2060,7 @@ public partial class VirtualCrossoverPanel : UserControl
             ProcessedChannel item = processed[i];
             if (item.Channel.Settings.ShowRawCurve)
             {
-                AnalysisCurve raw = BuildMagnitudeCurve(
+                AnalysisCurve raw = BuildRawMagnitudeCurve(
                     item.Channel.TransferImpulseResponse!,
                     item.Channel.TransferPeakIndex,
                     item.Channel.SampleRate);
@@ -3142,15 +3180,63 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
+    // The gate-driven magnitude shared by the processed channels, the sums and
+    // the metrics — always through the FIXED gate (see the snapshot refresh:
+    // FDW is phase-only, it cannot hold a multi-arrival sum). A pinned (or
+    // pinned-previewed) offset is one absolute window for every curve;
+    // unpinned (Auto), the window anchors at the peak the CALLER passes — the
+    // shared earliest arrival for channels and sums (one window is what keeps
+    // the drawn Sum the exact vector sum of the drawn channels and the
+    // sum-loss under its 0 dB ceiling; see VirtualCrossoverMetrics.BuildCurves)
+    // and the raw curve's own peak. Runs on PLINQ worker threads: reads only
+    // the immutable snapshot RequestRedraw refreshed.
     private AnalysisCurve BuildMagnitudeCurve(
         Complex[] impulseResponse,
         int peakIndex,
         int sampleRate)
     {
-        return DataHelper.GetPrimarySpectrum(
+        MagnitudeGateSnapshot snapshot = magnitudeGate;
+        return BuildGatedMagnitudeCurve(
+            snapshot,
+            impulseResponse,
+            peakIndex,
+            sampleRate,
+            snapshot.PinnedOffsetMs ?? peakIndex * 1_000.0 / sampleRate);
+    }
+
+    // A RAW channel curve lives in its own time: its arrival predates the
+    // processed gate by the channel's delay, so even a pinned processed-view
+    // offset would clip it into the left fade. Same gate durations and window
+    // mode, always anchored on the raw response's own peak.
+    private AnalysisCurve BuildRawMagnitudeCurve(
+        Complex[] impulseResponse,
+        int peakIndex,
+        int sampleRate)
+    {
+        return BuildGatedMagnitudeCurve(
+            magnitudeGate,
+            impulseResponse,
+            peakIndex,
+            sampleRate,
+            peakIndex * 1_000.0 / sampleRate);
+    }
+
+    private AnalysisCurve BuildGatedMagnitudeCurve(
+        MagnitudeGateSnapshot snapshot,
+        Complex[] impulseResponse,
+        int peakIndex,
+        int sampleRate,
+        double gateOffsetMs)
+    {
+        PhaseAnalysisSettings gate = snapshot.Template with
+        {
+            GateOffsetMs = gateOffsetMs
+        };
+        return DataHelper.GetGatedPrimarySpectrum(
             new ImpulseMeasurementView(impulseResponse, peakIndex, sampleRate),
-            frequencyResponseOptions,
-            Calibration);
+            gate,
+            Calibration,
+            snapshot.SmoothingInverseOctaves);
     }
 
     private List<AcousticCurve> BuildPhaseCurves(List<ProcessedChannel> processed)
@@ -3158,39 +3244,58 @@ public partial class VirtualCrossoverPanel : UserControl
         // The gate's own path: every shown channel is gated and FFT'd here, one
         // after another, plus one more for the sum.
         using var _ = AppProfiler.Zone("VirtualDSP.BuildPhaseCurves");
-        // One shared absolute reference (the earliest arrival) keeps the curves'
-        // relative phase intact — that relative alignment through the crossover
-        // region is exactly what this view is for.
+        // One shared absolute τ reference (the earliest arrival) keeps the
+        // curves' relative phase intact — that relative alignment through the
+        // crossover region is exactly what this view is for. The WINDOWS need
+        // not share a position for that: BuildMeasuredPhase re-references every
+        // extraction to the common absolute τ.
         int sampleRate = processed[0].Channel.SampleRate;
-        double gateOffsetMs = gatePreview?.OffsetMs
+        double referenceOffsetMs = gatePreview?.OffsetMs
             ?? ResolveGateOffsetMs(processed, sampleRate);
-        double detrendMs = ResolveCommonDetrendMs(processed, gateOffsetMs, sampleRate);
+        double detrendMs = ResolveCommonDetrendMs(
+            processed, referenceOffsetMs, sampleRate);
 
-        // Read the gate and project state ONCE, here on the UI thread: every curve gets
-        // the identical settings anyway, and the workers below must not reach back into
+        // Read the gate and project state ONCE, here on the UI thread —
+        // including each curve's own gate placement: pinned, every curve
+        // shares one absolute window; unpinned (Auto), each IR gates at its
+        // own arrival PEAK, so FDW's short high-frequency windows keep a late
+        // channel's treble instead of silently excluding it. The peak, not the
+        // estimated IR start: the start estimator is unvalidated on virtually
+        // crossovered responses and can place the window off the energy (see
+        // BuildMagnitudeCurve). The workers below must not reach back into
         // gatePreview or project.
-        PhaseAnalysisSettings settings = CreateVirtualPhaseSettings(
-            gateOffsetMs,
-            PhaseDetrendMode.Manual,
-            detrendMs);
+        double? pinnedOffsetMs = PinnedGateOffsetMs;
+        PhaseAnalysisSettings SettingsFor(int ownPeak) =>
+            CreateVirtualPhaseSettings(
+                pinnedOffsetMs ?? ownPeak * 1_000.0 / sampleRate,
+                PhaseDetrendMode.Manual,
+                detrendMs);
 
-        var jobs = new List<(string Title, Complex[] Ir, OxyColor Color, double Thickness)>();
+        var jobs = new List<(string Title, Complex[] Ir, OxyColor Color,
+            double Thickness, PhaseAnalysisSettings Settings)>();
         foreach (ProcessedChannel item in processed)
         {
             if (item.Channel.Settings.ShowProcessedCurve)
             {
-                jobs.Add((item.Channel.Name, item.ImpulseResponse, item.Color, 1.8));
+                jobs.Add((
+                    item.Channel.Name,
+                    item.ImpulseResponse,
+                    item.Color,
+                    1.8,
+                    SettingsFor(item.PeakIndex)));
             }
         }
 
         if (processed.Count >= 2 && checkBoxShowSum.Checked)
         {
+            Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
+                processed.Select(item => item.ImpulseResponse).ToList());
             jobs.Add((
                 "Sum",
-                VirtualCrossoverAnalysis.SumImpulseResponses(
-                    processed.Select(item => item.ImpulseResponse).ToList()),
+                sum,
                 SumColor,
-                2.4));
+                2.4,
+                SettingsFor(processed.Min(item => item.PeakIndex))));
         }
 
         // One gated FFT per curve, and they are independent: GetGatedPhaseData allocates
@@ -3203,7 +3308,7 @@ public partial class VirtualCrossoverPanel : UserControl
             .SelectMany(job =>
             {
                 (List<SignalPoint> points, List<SignalPoint> wrapSegments) =
-                    BuildPhasePoints(job.Ir, sampleRate, settings);
+                    BuildPhasePoints(job.Ir, sampleRate, job.Settings);
                 var curves = new List<AcousticCurve>(2);
                 // The ±360° wrap verticals: the channel's color faded and
                 // thinned well below the curve, dashed, drawn first (i.e.
@@ -3273,6 +3378,20 @@ public partial class VirtualCrossoverPanel : UserControl
     // fitting the gate on one no longer throws the other off.
     private VirtualCrossoverPhaseGateSettings ActiveGate =>
         project.PhaseGateFor(project.ActiveSideRight);
+
+    // The one pinned absolute gate offset, or null when the gate is unpinned
+    // (Auto) — in the dialog preview and in the committed state alike. Null
+    // means automatic placement, which differs by view: the magnitude anchors
+    // ONE shared window at the earliest processed arrival (keeping the drawn
+    // Sum the exact vector sum of the drawn channels), while each PHASE curve
+    // gates at its own arrival peak — FDW's high-frequency windows are
+    // shorter than the channels' arrival spread, and a shared window silently
+    // excluded late channels' treble. The phase stays comparable because its
+    // τ reference is common and absolute regardless of where each extraction
+    // started.
+    private double? PinnedGateOffsetMs => gatePreview is { } preview
+        ? preview.AutoOffset ? null : preview.OffsetMs
+        : ActiveGate.OffsetMs;
 
     // A stored gate offset is used as-is; an unconfigured side (Auto) follows
     // the earliest ESTIMATED IR START of the processed channels — the
@@ -3439,11 +3558,11 @@ public partial class VirtualCrossoverPanel : UserControl
         // The callback is wired after Init so seeding the controls does not
         // trigger a redundant redraw; from here every dialog change repaints the
         // phase plot immediately.
-        dialog.PreviewChanged = (offsetMs, leftMs, plateauMs, rightMs, windowMode,
-            fdwCycles, detrendMode, detrendMs) =>
+        dialog.PreviewChanged = (offsetMs, autoOffset, leftMs, plateauMs, rightMs,
+            windowMode, fdwCycles, detrendMode, detrendMs) =>
         {
-            gatePreview = (offsetMs, leftMs, plateauMs, rightMs, windowMode,
-                fdwCycles, detrendMode, detrendMs);
+            gatePreview = (offsetMs, autoOffset, leftMs, plateauMs, rightMs,
+                windowMode, fdwCycles, detrendMode, detrendMs);
             RequestRedraw();
         };
 

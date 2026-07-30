@@ -76,7 +76,9 @@ public sealed class VirtualCrossoverMetricsTests
         Assert.NotNull(magnitudes);
         Assert.Equal(2, magnitudes.Count);
         Assert.NotNull(sum);
-        // Two channel spectra + one sum spectrum, all anchored to the earliest peak.
+        // Two channel spectra + one sum spectrum, all anchored to the earliest
+        // peak: one shared window is what keeps the drawn Sum the vector sum
+        // of the drawn channels and the loss under its 0 dB ceiling.
         Assert.Equal(3, captured.Count);
         Assert.All(captured, entry => Assert.Equal(2, entry.Peak));
         // One of the calls built the complex sum of the two responses.

@@ -37,16 +37,22 @@ internal sealed class VirtualCrossoverMetrics
             return (null, null);
         }
 
-        // Every curve — the channels AND the sum — shares one window anchor (the
-        // earliest arrival): with per-channel anchors the gates capture slightly
-        // different room content and the loss can poke above its 0 dB ceiling.
-        // The summed envelope peak can sit between the arrivals or vanish under
-        // cancellation, so the anchor is the earliest arrival, not the sum peak.
+        // Every curve — the channels AND the sum — shares one window anchor
+        // (the earliest arrival): with per-channel anchors the gates capture
+        // slightly different room content, the drawn Sum stops being the
+        // vector sum of the drawn channels, and the loss can poke above its
+        // 0 dB ceiling. The summed envelope peak can sit between the arrivals
+        // or vanish under cancellation, so the anchor is the earliest arrival,
+        // not the sum peak. (With the gate pinned in the dialog the offset is
+        // absolute and shared by construction; the anchor is the
+        // Auto-placement fallback. The magnitude always reads the FIXED gate —
+        // FDW would need per-channel windows here, exactly what the shared
+        // window exists to prevent — so FDW shapes the phase view only.)
         int anchor = processed.Min(item => item.PeakIndex);
-        // One windowed FFT + resample per channel; GetPrimarySpectrum allocates
-        // its own buffers and reads only the (redraw-stable) options and
-        // calibration, so the channels' spectra compute across cores. AsOrdered
-        // keeps the result aligned with the channel list.
+        // One gated build + resample per channel; the panel's magnitude builder
+        // reads only its immutable UI-thread snapshots and the calibration, so
+        // the channels' spectra compute across cores. AsOrdered keeps the
+        // result aligned with the channel list.
         List<AnalysisCurve> magnitudes = processed
             .AsParallel()
             .AsOrdered()

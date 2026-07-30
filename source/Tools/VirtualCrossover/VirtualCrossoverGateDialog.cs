@@ -5,11 +5,12 @@ using Resonalyze.Options;
 namespace Resonalyze;
 
 /// <summary>
-/// Manual phase-gate settings for the Virtual DSP phase view, mirroring
-/// the Phase mode gate: offset + left/plateau/right Tukey shoulders in
-/// milliseconds, with a live preview of every channel's processed impulse
-/// response and the window shape, so reflections can be gated out visually.
-/// Nothing is committed until Save; the caller reads the properties afterward.
+/// Manual gate settings for the Virtual DSP magnitude, phase and impulse
+/// views, mirroring the Phase mode gate: offset + left/plateau/right Tukey
+/// shoulders in milliseconds, with a live preview of every channel's processed
+/// impulse response and the window shape, so reflections can be gated out
+/// visually. Nothing is committed until Save; the caller reads the properties
+/// afterward.
 /// </summary>
 internal sealed partial class VirtualCrossoverGateDialog : Form
 {
@@ -28,14 +29,17 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
 
     /// <summary>
     /// Live preview: fired with the candidate gate values (offset, left,
-    /// plateau, right, τ — all ms) on every control change, so the host can
-    /// redraw the phase plot immediately. Nothing is committed until Save; the
-    /// caller reverts to its stored values on Cancel.
+    /// plateau, right, τ — all ms; plus whether the offset is unpinned) on
+    /// every control change, so the host can redraw the gated plots
+    /// immediately. The Auto flag must travel with the preview: an unpinned
+    /// gate places each curve's window on its own arrival, and the preview has
+    /// to show exactly what Save will produce. Nothing is committed until
+    /// Save; the caller reverts to its stored values on Cancel.
     /// </summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    public Action<double, double, double, double, PhaseWindowMode, int,
+    public Action<double, bool, double, double, double, PhaseWindowMode, int,
         PhaseDetrendMode, double>? PreviewChanged { get; set; }
 
     public VirtualCrossoverGateDialog()
@@ -56,6 +60,11 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
             {
                 numericGateOffset.Value = numericGateOffset.ClampValue(fitOffsetMs);
             }
+
+            // The snap above only fires ValueChanged when the value actually
+            // moves; the Auto flag itself changes the gating (per-curve vs
+            // pinned), so the preview must always hear about it.
+            OnGateChanged();
         };
         buttonTauSlope.Click += (_, _) => ApplyEstimatedTau(useSlope: true);
         buttonTauPeak.Click += (_, _) => ApplyEstimatedTau(useSlope: false);
@@ -167,8 +176,8 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         UpdatePreview();
         UpdatePhaseControlState();
         PreviewChanged?.Invoke(
-            GateOffsetMs, LeftMs, PlateauMs, RightMs, WindowMode, FdwCycles,
-            DetrendMode, DetrendMs);
+            GateOffsetMs, AutoOffset, LeftMs, PlateauMs, RightMs, WindowMode,
+            FdwCycles, DetrendMode, DetrendMs);
     }
 
     private void UpdatePhaseControlState()
@@ -264,13 +273,17 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         numericGateOffset.ApplyToolTip(
             toolTip,
             "Gate position: time from the IR start to the end\r\n" +
-            "of the left Tukey shoulder.\r\n" +
-            "Auto keeps it on the earliest channel IR start.");
+            "of the left Tukey shoulder. Pinned, it is one absolute\r\n" +
+            "window for every curve; the field shows the earliest\r\n" +
+            "channel's placement while Auto is pressed.");
         toolTip.SetToolTip(
             checkAutoOffset,
-            "Keep the gate offset on the earliest processed channel's\r\n" +
-            "detected IR start, following source and delay changes.\r\n" +
-            "Release to pin the offset manually.");
+            "Auto places the gate automatically, following source and\r\n" +
+            "delay changes: the magnitude uses ONE window at the earliest\r\n" +
+            "arrival (so the Sum stays the exact sum of the drawn curves),\r\n" +
+            "while each phase curve is gated at its own arrival (so FDW\r\n" +
+            "keeps every channel's treble) with one common time reference.\r\n" +
+            "Release to pin one absolute window for everything instead.");
         numericLeft.ApplyToolTip(
             toolTip,
             "Tukey fade-in before the arrival, in milliseconds.\r\n" +
@@ -305,9 +318,12 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         toolTip.SetToolTip(
             irPlotView,
             "Preview of every channel's processed impulse response\r\n" +
-            "and the gate window used for the phase view.");
+            "and the gate window used for the magnitude and phase views.");
         toolTip.SetToolTip(comboWindowMode,
-            "Fixed uses one gate. FDW shortens the window as frequency rises.");
+            "Fixed uses one gate. FDW shortens the window as frequency\r\n" +
+            "rises — it shapes the PHASE view only; the magnitude always\r\n" +
+            "reads the fixed gate (no single frequency-dependent window\r\n" +
+            "can hold the summed response's spread arrivals).");
         toolTip.SetToolTip(comboFdwCycles,
             "4 cycles suppresses reflections most; 6 is recommended; 8 retains more detail.");
         toolTip.SetToolTip(comboDetrendMode,

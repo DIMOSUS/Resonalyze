@@ -135,6 +135,44 @@ public sealed class FrequencyDependentPhaseTests
     }
 
     [Fact]
+    public void PerCurveGates_WithACommonReference_PreserveRelativePhase()
+    {
+        // The Virtual DSP Auto gate places each channel's WINDOW on its own
+        // arrival (so FDW keeps a late channel's treble) while every curve
+        // shares one absolute τ. The relative phase must survive exactly as
+        // with a shared window: BuildMeasuredPhase re-references each
+        // extraction to the absolute τ, so where the window sits must not
+        // matter — only what it contains.
+        SyntheticMeasurement first = DelayedImpulse(480); // 10 ms
+        SyntheticMeasurement second = DelayedImpulse(576); // 12 ms
+        PhaseAnalysisSettings sharedReference = Settings(
+            PhaseWindowMode.FrequencyDependent,
+            6,
+            PhaseDetrendMode.Manual,
+            manualMs: 10.0,
+            gateOffsetMs: 10.0);
+        PhaseAnalysisSettings ownWindow = sharedReference with
+        {
+            GateOffsetMs = 12.0
+        };
+
+        List<SignalPoint> firstPhase = DataHelper.GetGatedPhaseData(
+            first, sharedReference);
+        List<SignalPoint> secondPhase = DataHelper.GetGatedPhaseData(
+            second, ownWindow);
+
+        foreach ((SignalPoint a, SignalPoint b) in firstPhase.Zip(secondPhase)
+                     .Where(pair => pair.First.X is >= 200 and <= 10_000))
+        {
+            double expected = -Math.Tau * a.X * 96 / SampleRate;
+            double actual = Math.IEEERemainder(b.Y - a.Y, Math.Tau);
+            double error = Math.IEEERemainder(actual - expected, Math.Tau);
+            Assert.True(Math.Abs(error) < 1e-5,
+                $"Relative-phase error {error:e} at {a.X:0.#} Hz with per-curve gates.");
+        }
+    }
+
+    [Fact]
     public void CommonAutoDetrend_DoesNotIndependentlyFlattenOtherChannels()
     {
         SyntheticMeasurement anchor = DelayedImpulse(480);

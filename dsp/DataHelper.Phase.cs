@@ -664,6 +664,84 @@ namespace Resonalyze.Dsp
                 coherence);
         }
 
+        /// <summary>
+        /// The same phase construction over an ALREADY BUILT gated analysis
+        /// spectrum (<see cref="GetPhaseAnalysisSpectrum"/> or
+        /// <see cref="SumGatedSpectra"/>), referenced to an absolute sample
+        /// position — for callers that combine spectra before reading phase
+        /// (the Virtual DSP Sum).
+        /// </summary>
+        public static List<SignalPoint> GetGatedPhaseData(
+            Complex[] spectrum,
+            int extractionStart,
+            double referenceSamples,
+            int sampleRate,
+            bool unwrap,
+            IReadOnlyList<double>? coherence = null) =>
+            BuildMeasuredPhase(
+                spectrum,
+                extractionStart,
+                referenceSamples,
+                sampleRate,
+                unwrap,
+                coherence);
+
+        /// <summary>
+        /// The complex sum of gated analysis spectra whose extractions started
+        /// at different absolute positions: each is re-referenced to
+        /// <paramref name="targetExtractionStart"/> (a pure per-bin phase
+        /// rotation; the integer shifts keep the conjugate symmetry of a real
+        /// signal's spectrum) and accumulated, so the result reads exactly like
+        /// one spectrum extracted there. This is how a multi-channel Sum stays
+        /// the vector sum of individually gated channels when their windows do
+        /// not share a position (the Virtual DSP Auto gate). The inputs are not
+        /// modified and must share one FFT length.
+        /// </summary>
+        public static Complex[] SumGatedSpectra(
+            IReadOnlyList<(Complex[] Spectrum, int ExtractionStart)> spectra,
+            int targetExtractionStart)
+        {
+            ArgumentNullException.ThrowIfNull(spectra);
+            if (spectra.Count == 0)
+            {
+                throw new ArgumentException(
+                    "At least one spectrum is required.", nameof(spectra));
+            }
+
+            int length = spectra[0].Spectrum.Length;
+            var combined = new Complex[length];
+            foreach ((Complex[] spectrum, int extractionStart) in spectra)
+            {
+                if (spectrum.Length != length)
+                {
+                    throw new ArgumentException(
+                        "All spectra must share one FFT length.", nameof(spectra));
+                }
+
+                double shift = targetExtractionStart - extractionStart;
+                if (shift == 0.0)
+                {
+                    for (int bin = 0; bin < length; bin++)
+                    {
+                        combined[bin] += spectrum[bin];
+                    }
+
+                    continue;
+                }
+
+                // The same re-reference ApplyTimeReference performs, applied on
+                // the fly so the caller's arrays stay untouched.
+                for (int bin = 0; bin < length; bin++)
+                {
+                    combined[bin] += spectrum[bin] * Complex.FromPolarCoordinates(
+                        1.0,
+                        Math.Tau * bin * shift / length);
+                }
+            }
+
+            return combined;
+        }
+
         public static double ResolvePhaseDetrendMilliseconds(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings)

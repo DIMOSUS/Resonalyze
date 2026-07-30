@@ -3270,32 +3270,45 @@ public partial class VirtualCrossoverPanel : UserControl
                 pinnedOffsetMs ?? ownPeak * 1_000.0 / sampleRate,
                 PhaseDetrendMode.Manual,
                 detrendMs);
+        double referenceSamples = detrendMs * sampleRate / 1_000.0;
 
-        var jobs = new List<(string Title, Complex[] Ir, OxyColor Color,
-            double Thickness, PhaseAnalysisSettings Settings)>();
+        var jobs = new List<(string Title, OxyColor Color, double Thickness,
+            Func<(List<SignalPoint> Points, List<SignalPoint> WrapSegments)> Build)>();
         foreach (ProcessedChannel item in processed)
         {
             if (item.Channel.Settings.ShowProcessedCurve)
             {
+                Complex[] impulseResponse = item.ImpulseResponse;
+                PhaseAnalysisSettings settings = SettingsFor(item.PeakIndex);
                 jobs.Add((
                     item.Channel.Name,
-                    item.ImpulseResponse,
                     item.Color,
                     1.8,
-                    SettingsFor(item.PeakIndex)));
+                    () => BuildPhasePoints(impulseResponse, sampleRate, settings)));
             }
         }
 
         if (processed.Count >= 2 && checkBoxShowSum.Checked)
         {
-            Complex[] sum = VirtualCrossoverAnalysis.SumImpulseResponses(
-                processed.Select(item => item.ImpulseResponse).ToList());
+            // The Sum is the vector sum of the individually gated channel
+            // SPECTRA, not a gated summed IR: with per-curve Auto windows a
+            // single window over the summed IR would exclude late channels'
+            // treble that their own traces keep (FDW windows at high
+            // frequencies are shorter than the arrival spread), and the drawn
+            // Sum would silently stop being the sum of the drawn channels.
+            // Building it from the channels' own gated spectra keeps
+            // superposition exact by construction, reuses the bank cache the
+            // channel curves already fill, and with a pinned gate reduces to
+            // the gated summed IR by linearity. Every processed channel
+            // contributes, hidden or not, matching the magnitude Sum.
+            List<(Complex[] Ir, PhaseAnalysisSettings Settings)> parts = processed
+                .Select(item => (item.ImpulseResponse, SettingsFor(item.PeakIndex)))
+                .ToList();
             jobs.Add((
                 "Sum",
-                sum,
                 SumColor,
                 2.4,
-                SettingsFor(processed.Min(item => item.PeakIndex))));
+                () => BuildSumPhasePoints(parts, referenceSamples, sampleRate)));
         }
 
         // One gated FFT per curve, and they are independent: GetGatedPhaseData allocates
@@ -3308,7 +3321,7 @@ public partial class VirtualCrossoverPanel : UserControl
             .SelectMany(job =>
             {
                 (List<SignalPoint> points, List<SignalPoint> wrapSegments) =
-                    BuildPhasePoints(job.Ir, sampleRate, job.Settings);
+                    job.Build();
                 var curves = new List<AcousticCurve>(2);
                 // The ±360° wrap verticals: the channel's color faded and
                 // thinned well below the curve, dashed, drawn first (i.e.
@@ -3475,13 +3488,48 @@ public partial class VirtualCrossoverPanel : UserControl
         // fractional-sample phase reference; every curve built with the same τ
         // is directly comparable regardless of where its gate sits.
         var view = new ImpulseMeasurementView(impulseResponse, 0, sampleRate);
-        List<SignalPoint> phase = DataHelper.GetGatedPhaseData(view, settings);
+        return SplitWrapSegments(DataHelper.GetGatedPhaseData(view, settings));
+    }
 
-        // Wrapped phase jumps from +180° to −180° between adjacent bins. The
-        // main curve breaks at the wrap (NaN) so the jump does not read as a
-        // real phase transition drawn at full stroke; the jump itself goes
-        // into WrapSegments — NaN-separated two-point verticals the caller
-        // draws as a thinner dashed twin, keeping the wrap visible.
+    // The Sum's twin of BuildPhasePoints: each channel's own gated spectrum,
+    // re-referenced to one extraction start and summed in the complex domain,
+    // then read as phase against the same absolute τ as every channel curve.
+    // Static for the same reason as BuildPhasePoints: everything it reads
+    // arrives as arguments captured on the UI thread.
+    private static (List<SignalPoint> Points, List<SignalPoint> WrapSegments)
+        BuildSumPhasePoints(
+            IReadOnlyList<(Complex[] Ir, PhaseAnalysisSettings Settings)> parts,
+            double referenceSamples,
+            int sampleRate)
+    {
+        var spectra = new List<(Complex[] Spectrum, int ExtractionStart)>(parts.Count);
+        foreach ((Complex[] impulseResponse, PhaseAnalysisSettings settings) in parts)
+        {
+            Complex[] spectrum = DataHelper.GetPhaseAnalysisSpectrum(
+                new ImpulseMeasurementView(impulseResponse, 0, sampleRate),
+                settings,
+                out int extractionStart);
+            spectra.Add((spectrum, extractionStart));
+        }
+
+        int targetExtractionStart = spectra.Min(part => part.ExtractionStart);
+        Complex[] combined = DataHelper.SumGatedSpectra(spectra, targetExtractionStart);
+        return SplitWrapSegments(DataHelper.GetGatedPhaseData(
+            combined,
+            targetExtractionStart,
+            referenceSamples,
+            sampleRate,
+            unwrap: false));
+    }
+
+    // Wrapped phase jumps from +180° to −180° between adjacent bins. The
+    // main curve breaks at the wrap (NaN) so the jump does not read as a
+    // real phase transition drawn at full stroke; the jump itself goes
+    // into WrapSegments — NaN-separated two-point verticals the caller
+    // draws as a thinner dashed twin, keeping the wrap visible.
+    private static (List<SignalPoint> Points, List<SignalPoint> WrapSegments)
+        SplitWrapSegments(List<SignalPoint> phase)
+    {
         var points = new List<SignalPoint>(phase.Count);
         var wrapSegments = new List<SignalPoint>();
         SignalPoint? previous = null;

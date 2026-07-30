@@ -70,18 +70,23 @@ internal sealed class MeasurementHistoryPersistence
             var reachable = new List<MeasurementHistoryEntry>(file.Entries.Count);
             var retained = new List<PersistedEntry>(file.Entries.Count);
             int removedCount = 0;
+            bool storeChanged = false;
             foreach (PersistedEntry entry in file.Entries)
             {
                 if (string.IsNullOrWhiteSpace(entry.SourceFilePath))
                 {
                     // No path at all is a broken record: dropped like a missing
-                    // file, it just never counted as a measurement.
+                    // file — silently, it never counted as a measurement — but
+                    // it still marks the store dirty, or it would sit in the
+                    // JSON forever without ever tripping the removal message.
+                    storeChanged = true;
                     continue;
                 }
 
                 if (!File.Exists(entry.SourceFilePath))
                 {
                     removedCount++;
+                    storeChanged = true;
                     continue;
                 }
 
@@ -99,7 +104,7 @@ internal sealed class MeasurementHistoryPersistence
                 });
             }
 
-            if (removedCount > 0)
+            if (storeChanged)
             {
                 // A row whose file is gone is dead weight: it can do nothing but
                 // repeat a warning on every launch — which is exactly what the
@@ -117,7 +122,10 @@ internal sealed class MeasurementHistoryPersistence
                     when (exception is IOException or UnauthorizedAccessException)
                 {
                 }
+            }
 
+            if (removedCount > 0)
+            {
                 LoadWarning =
                     $"{removedCount} measurement(s) were removed from the history " +
                     "because their files no longer exist (deleted, or a moved " +

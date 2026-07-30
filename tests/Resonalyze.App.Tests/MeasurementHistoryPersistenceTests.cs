@@ -84,6 +84,26 @@ public sealed class MeasurementHistoryPersistenceTests : IDisposable
         Assert.Contains("removed", persistence.LoadWarning);
     }
 
+    [Fact]
+    public void Load_CleansPathlessRowsOutOfTheStore_Silently()
+    {
+        // A broken row with no path never counted as a measurement: no warning
+        // for it — but the store must still be rewritten, or the row would sit
+        // in the JSON forever without ever tripping the missing-file removal.
+        File.WriteAllText(
+            storePath,
+            """
+            {"schemaVersion":1,"entries":[{"id":"00000000-0000-0000-0000-000000000001",
+            "displayName":"broken","timestamp":"2026-07-30T00:00:00+00:00",
+            "sourceFilePath":"   "}]}
+            """);
+        var persistence = new MeasurementHistoryPersistence(storePath);
+
+        Assert.Empty(persistence.Load());
+        Assert.Null(persistence.LoadWarning);
+        Assert.DoesNotContain("sourceFilePath", File.ReadAllText(storePath));
+    }
+
     /// <summary>
     /// The owner's policy: a history row whose measurement file is gone is dead
     /// weight and is dropped AT LOAD, with the store rewritten immediately — a

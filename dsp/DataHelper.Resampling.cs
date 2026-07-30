@@ -254,14 +254,21 @@ namespace Resonalyze.Dsp
 
             // Match the ordinary resampler's minimum half-width of two FFT bins.
             // On a log axis equal Hz distances are asymmetric, so use whichever
-            // side requires the larger octave radius. Below two bins only the
-            // upper distance is defined; DC bounds the available lower side.
+            // side requires the larger octave radius. The lower side is bounded
+            // by the input grid itself: the spectrum's first sample sits one bin
+            // above DC, so the kernel is never asked to reach below it. Without
+            // that bound the lower octave distance diverges as the centre
+            // approaches two bins from DC — the Gaussian then covered the whole
+            // spectrum and the cubic mean drew the (loud) midrange level as a
+            // spike at ~2 bins, mid-display on coarse grids (a 192 kHz
+            // measurement with a 2048-sample window spiked +33 dB at 47 Hz).
             double minimumRadiusHz = 2.0 * inputStep;
             double upperRadiusOctaves = Math.Log2(
                 (centerFrequency + minimumRadiusHz) / centerFrequency);
-            double lowerRadiusOctaves = centerFrequency > minimumRadiusHz
-                ? Math.Log2(
-                    centerFrequency / (centerFrequency - minimumRadiusHz))
+            double lowerEdgeHz = Math.Max(
+                centerFrequency - minimumRadiusHz, inputStep);
+            double lowerRadiusOctaves = centerFrequency > lowerEdgeHz
+                ? Math.Log2(centerFrequency / lowerEdgeHz)
                 : upperRadiusOctaves;
             double minimumRadiusOctaves =
                 Math.Max(upperRadiusOctaves, lowerRadiusOctaves);

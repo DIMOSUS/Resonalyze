@@ -128,6 +128,25 @@ public sealed class ExponentialSineSweep : IDisposable
     /// </summary>
     public const double MaxDurationSeconds = 100.0;
 
+    /// <summary>
+    /// Peak amplitude of the generated sweep as a fraction of full scale: the
+    /// excitation deliberately keeps 6 dB of headroom (0.5 = -6.02 dBFS) instead
+    /// of playing at 0 dBFS. Two reasons, both field-driven. It is the level the
+    /// Signal Generator's default (50 %) and the live-spectrum noise already play
+    /// at, so an output level set with either of those tools survives the switch
+    /// to a measurement — a full-scale sweep was 6 dB hotter than the tone it was
+    /// set up with and clipped the interface. And a full-scale sine sweep clips on
+    /// reconstruction even when no sample exceeds full scale, because the analog
+    /// waveform between the samples overshoots them (inter-sample overs).
+    /// <para>
+    /// The inverse filter carries the reciprocal scale, so the deconvolved impulse
+    /// response is independent of the excitation amplitude and the transfer
+    /// function (microphone / loopback) is scale-invariant to begin with: the
+    /// headroom costs signal-to-noise ratio, not the level results are reported at.
+    /// </para>
+    /// </summary>
+    public const double PlaybackAmplitude = 0.5;
+
     private bool disposed;
     private bool generated;
     private float[] sweepData = Array.Empty<float>();
@@ -416,15 +435,23 @@ public sealed class ExponentialSineSweep : IDisposable
             {
                 envelope = (sampleCount - 1 - i) / (double)fadeOut;
             }
-            sweepData[i] = (float)Math.Sin(phase) * (float)envelope;
+            sweepData[i] = (float)(Math.Sin(phase) * envelope * PlaybackAmplitude);
         }
 
         // Time reversal performs the deconvolution. The exponential envelope
         // compensates for the sweep spending progressively less time per hertz
         // at high frequencies. Expressed through the octave span so it matches
-        // the (possibly fractional) achieved band.
+        // the (possibly fractional) achieved band. PlaybackAmplitude is divided
+        // out TWICE, and both factors are needed: one cancels the headroom already
+        // baked into the reversed sweep sample this filter is built from, the
+        // other inverts the attenuated excitation the microphone actually hears.
+        // Together they keep the deconvolved impulse response at the level a
+        // full-scale sweep would have produced — drop either and every result
+        // steps down by 6 dB.
         double octaveSpan = beta / Math.Log(2.0);
-        double inverseScale = beta / (1.0 - Math.Pow(2.0, -octaveSpan));
+        double inverseScale = beta /
+            (1.0 - Math.Pow(2.0, -octaveSpan)) /
+            (PlaybackAmplitude * PlaybackAmplitude);
         double perSampleDecay = Math.Pow(2.0, octaveSpan / sampleCount);
         for (int i = 0; i < sampleCount; i++)
         {

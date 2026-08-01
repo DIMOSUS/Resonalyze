@@ -829,6 +829,24 @@ noise divided by the reference's leakage skirt, which used to surface as +15 dB
 spikes just below the start of a band-limited sweep; those bins are now excluded
 rather than half-passed.
 
+The excitation plays at a fixed **−6 dBFS**, not at full scale, and there is no
+control for it. That is the level the [Signal Generator](#signal-generator) at
+its default **Level, %** of `50` and the [Live Spectrum](#live-spectrum) noise
+already play at, so an output level dialled in with either of those still holds
+when the sweep runs — a full-scale sweep was 6 dB hotter than the tone used to
+set it and clipped the interface's output stage. A full-scale sine sweep is also
+the worst case for the converter itself: the analog waveform overshoots the
+samples between them, so it can clip on reconstruction even when no sample
+exceeds full scale.
+
+The headroom costs 6 dB of signal-to-noise ratio and nothing else. The inverse
+filter carries the reciprocal scale, so the deconvolved impulse response comes
+back at the level a full-scale excitation would have produced, and the transfer
+function the analysis is built on (microphone ÷ loopback) is scale-invariant to
+begin with. Absolute [dB SPL](#sound-pressure-level-db-spl) readings follow the
+real acoustic output as they always have: it is genuinely 6 dB lower until you
+turn the playback level up — which is now the headroom you have to spend.
+
 Measurement options apply as you edit them — the band, the pace, the playback
 channel, the averaging — and touch the audio session only when its identity
 actually changed. The audio backend, the format the device is opened with and
@@ -908,6 +926,36 @@ loopback, or validating a completed measurement — without opening extra dialog
 
 This makes it easy to spot missing loopback, a weak microphone level, overload,
 or an unexpectedly hot reference path before you start analyzing the curves.
+
+What a level meter **cannot** show is analog distortion: an input stage driven
+past its limit distorts long before its digital level reaches full scale, so a
+loopback reading a comfortable −15 dBFS can still be delivering a badly
+misshapen copy of the sweep. That matters more for the reference than for
+anything else, because every analysis is the microphone divided by it — a
+nonlinear reference produces a wrong answer, not a noisy one, and coherence
+stays high while it happens (the distortion is deterministic, so it repeats
+identically run to run).
+
+Resonalyze therefore measures each channel's own harmonic content when a
+measurement is refused. The sweep's inverse filter sorts harmonic distortion
+into packets that sit ahead of the direct arrival in time, so the level of those
+packets is read directly per channel, and the refusal names the offender:
+
+> The LOOPBACK REFERENCE is distorting: its harmonic packets read −8.1 dB
+> relative to the direct one, where the microphone reads −40.6 dB, and it peaked
+> at only −18.1 dBFS, so the input meter had nothing to show.
+
+The fix for that case is to attenuate what reaches the loopback **input** — a
+line input instead of an instrument one where the interface offers both, a pad
+in the loopback cable, or a lower playback level. Attenuate only as far as it
+takes to leave the input's linear region: the transfer estimate is
+scale-invariant, so a moderately padded reference measures as well as a hot one
+— but a pad attenuates the signal, not the input's own noise, so a reference
+driven far down toward the noise floor pays for it in coherence (the estimate's
+denominator gets noisier, and its reference-power gate and regularization exist
+precisely because that matters). Keeping the playback level down to protect the
+reference is the costliest option, because it spends the whole measurement's
+signal-to-noise ratio.
 
 ## Live Spectrum
 
@@ -1727,8 +1775,12 @@ loudspeaker, or feeding an external analyzer.
   type.
 
 **Duration, s** sets how long the signal plays, and **Level, %** scales its
-amplitude. **Play** starts playback and **Stop** ends it; a status line reports
-whether the generator is `Ready`, `Playing`, or shows any playback error.
+amplitude against full scale — the default `50` is −6 dBFS, which is exactly the
+level a [measurement sweep](#sweep-band-and-duration) plays at. Setting the
+output level with the generator therefore transfers to the measurement: what you
+hear here is what the sweep will deliver. **Play** starts playback and **Stop**
+ends it; a status line reports whether the generator is `Ready`, `Playing`, or
+shows any playback error.
 
 The generator reuses the audio configuration from **Record Settings** — backend
 (MME, ASIO, WASAPI Shared or WASAPI Exclusive), sample rate, bit depth, playback

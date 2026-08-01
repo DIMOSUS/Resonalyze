@@ -708,8 +708,8 @@ public sealed class PlotModelFactoryTests
         var dbAxis = (OxyPlot.Axes.LinearAxis)model.Axes.First(
             axis => axis.Key == PlotModelFactory.DecibelAxisKey);
         Assert.Equal("dB SPL", dbAxis.Title);
-        // Curves sit near 40–110 dB, so the axis must reach well above the dBr
-        // ceiling of 10 or the plot would be blank.
+        // Curves sit near 40–110 dB, so the axis must reach well above the
+        // relative one's ceiling or the plot would be blank.
         Assert.Equal(PlotModelStyle.SplDecibelMaximum, dbAxis.Maximum);
         Assert.Equal(PlotModelStyle.SplDecibelAbsoluteMaximum, dbAxis.AbsoluteMaximum);
     }
@@ -733,6 +733,70 @@ public sealed class PlotModelFactoryTests
             axis => axis.Key == PlotModelFactory.DecibelAxisKey);
         Assert.Equal("dBr/dBc", dbAxis.Title);
         Assert.Equal(PlotModelStyle.RelativeDecibelMaximum, dbAxis.Maximum);
+        // The relative axis is a ratio to the reference, so attenuating the
+        // loopback — which is the recommended fix for an overdriven reference
+        // input — lifts the whole curve by the pad. The clamp has to leave room
+        // for that instead of pinning the view just above unity.
+        Assert.True(
+            dbAxis.AbsoluteMaximum >= 40,
+            $"the dBr ceiling of {dbAxis.AbsoluteMaximum} dB cannot show a padded loopback");
+    }
+
+    // Raising the CLAMP made a padded response pannable; the default view must
+    // also open on it. A transfer IR with 20 dB of gain (a 20 dB pad in the
+    // loopback) draws near +20 dBr — the initial window has to rise to show
+    // it, while a normal response keeps the familiar -90..0 view.
+    [Fact]
+    public void CreateFrequencyResponse_OpensTheViewOnAPaddedResponse()
+    {
+        var transferImpulse = new Complex[2048];
+        transferImpulse[64] = new Complex(10.0, 0.0);
+        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        measurement.RestoreImpulseResponse(
+            lowFrequencyHz: 20,
+            highFrequencyHz: 20_000,
+            sampleRate: 44_100,
+            bits: 24,
+            sweepDurationSeconds: 1.0,
+            playChannel: PlaybackChannel.Mono,
+            sweepDeconvolutionImpulseResponse: transferImpulse,
+            sweepDeconvolutionPeakIndex: 64,
+            measurementMode: SweepMeasurementMode.LoopbackTransfer,
+            transferImpulseResponse: transferImpulse,
+            transferPeakIndex: 64);
+        using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
+
+        OxyPlot.PlotModel padded = CreateFactory(measurement, noise)
+            .CreateFrequencyResponse(includeCurves: true);
+        var paddedAxis = (OxyPlot.Axes.LinearAxis)padded.Axes.First(
+            axis => axis.Key == PlotModelFactory.DecibelAxisKey);
+        // ~+20 dBr data raised to the next grid line with at least 5 dB of
+        // headroom.
+        Assert.Equal(30, paddedAxis.Maximum);
+
+        OxyPlot.PlotModel normal = CreateFactory(CreateTransferMeasurement(), noise)
+            .CreateFrequencyResponse(includeCurves: true);
+        var normalAxis = (OxyPlot.Axes.LinearAxis)normal.Axes.First(
+            axis => axis.Key == PlotModelFactory.DecibelAxisKey);
+        // A unity response opens on the familiar window, exactly as before.
+        Assert.Equal(PlotModelStyle.RelativeDecibelMaximum, normalAxis.Maximum);
+    }
+
+    // The same headroom on the live analyzer's native dB axis: it is the same
+    // loopback-referenced ratio, measured on the same wiring.
+    [Fact]
+    public void CreateLiveSpectrum_RelativeAxis_ClearsAPaddedLoopback()
+    {
+        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using NoiseMeasurement noise = CreateLiveAnalyzer();
+        PlotModelFactory factory = CreateFactory(measurement, noise);
+
+        var dbAxis = (OxyPlot.Axes.LinearAxis)factory.CreateLiveSpectrum().Axes.First(
+            axis => axis.Key == PlotModelFactory.DecibelAxisKey);
+
+        Assert.True(
+            dbAxis.AbsoluteMaximum >= 40,
+            $"the live dB ceiling of {dbAxis.AbsoluteMaximum} dB cannot show a padded loopback");
     }
 
     private static ExpSweepMeasurement CreateSweepOnlyMeasurement()

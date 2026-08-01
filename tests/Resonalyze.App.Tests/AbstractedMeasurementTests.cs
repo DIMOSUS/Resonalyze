@@ -1,4 +1,5 @@
 using Resonalyze.Audio;
+using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
@@ -144,6 +145,239 @@ public sealed class AbstractedMeasurementTests
             measurement.LastError!.Message);
         Assert.Contains("bleed instead of the wire", measurement.LastError.Message);
         Assert.Contains("dBFS", measurement.LastError.Message);
+    }
+
+    // The field session that cost an evening: correct wiring, a loopback at a
+    // perfectly normal -14.6 dBFS, and a refusal that said "check the wiring and
+    // levels". The capture that actually causes it must be named — an overdriven
+    // loopback INPUT, with the fix (attenuate what reaches it) — and the generic
+    // advice must step aside when there is a real culprit to report.
+    [Fact]
+    public async Task DistortingLoopbackFailsNamingTheReference()
+    {
+        var factory = new FakeAudioSessionFactory(
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal, (_, s, tail, _) => Task.FromResult(
+                    SyntheticCapture.DistortingLoopback(s, tail))));
+        using ExpSweepMeasurement measurement = CreateSweep(factory);
+
+        bool success = await measurement.RunAsync();
+
+        Assert.False(success);
+        Assert.False(measurement.HasImpulseResponse);
+        Assert.NotNull(measurement.LastError);
+        string message = measurement.LastError!.Message;
+        Assert.Contains("LOOPBACK REFERENCE is distorting", message);
+        Assert.Contains("driven past its limit", message);
+        Assert.Contains("Attenuate what reaches the loopback input", message);
+        // The reference never came near full scale, which is the whole reason
+        // the level checks and the meter missed it.
+        Assert.Contains("peaked at only", message);
+        Assert.DoesNotContain("Check the microphone and loopback wiring and levels", message);
+    }
+
+    // The refusal is about the AVERAGE, so the diagnosis has to be about the
+    // same runs. Reading the distortion off one stored capture would describe
+    // whichever run happened to be last: it would miss a bad first run entirely,
+    // or report a bad last run as though the whole average carried it. The
+    // reading is per run, and the message says how many runs it applies to.
+    [Fact]
+    public async Task DistortionDiagnosisCountsTheAffectedRuns()
+    {
+        // A mixed average: one run's loopback was overdriven, the other's
+        // microphone recorded noise. Both are real failure modes and the second
+        // is what sinks the average here — the message must still say how much
+        // of the average the distortion actually accounts for rather than
+        // implying every run carried it.
+        var factory = new FakeAudioSessionFactory(
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal, (attempt, s, tail, _) => Task.FromResult(attempt == 1
+                    ? SyntheticCapture.DistortingLoopback(s, tail)
+                    : SyntheticCapture.NoiseMicrophone(s, tail))));
+        using ExpSweepMeasurement measurement = CreateSweep(factory, runs: 2);
+
+        bool success = await measurement.RunAsync();
+
+        Assert.False(success);
+        Assert.NotNull(measurement.LastError);
+        string message = measurement.LastError!.Message;
+        Assert.Contains("LOOPBACK REFERENCE is distorting", message);
+        Assert.Contains("on 1 of the 2 averaged runs", message);
+    }
+
+    // A run whose loopback reading could not be taken is not a clean run, and
+    // the verdict must not be stretched over it: run 1's loopback is
+    // overdriven, run 2's is poisoned by a non-finite sample — accepted by
+    // every level check, judged by nothing. The message has to scope the
+    // verdict to the runs it actually read.
+    [Fact]
+    public async Task DistortionDiagnosisSeparatesJudgedRunsFromAveragedOnes()
+    {
+        var factory = new FakeAudioSessionFactory(
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal, (attempt, s, tail, _) => Task.FromResult(attempt == 1
+                    ? SyntheticCapture.DistortingLoopback(s, tail)
+                    : SyntheticCapture.NaNLoopback(s, tail))));
+        using ExpSweepMeasurement measurement = CreateSweep(factory, runs: 2);
+
+        bool success = await measurement.RunAsync();
+
+        Assert.False(success);
+        Assert.NotNull(measurement.LastError);
+        string message = measurement.LastError!.Message;
+        Assert.Contains("LOOPBACK REFERENCE is distorting", message);
+        Assert.Contains("on 1 of the 1 judged runs (2 were averaged)", message);
+    }
+
+    // The loopback diagnosis deconvolution is skipped above a size bound — it
+    // exists only to phrase a refusal, and a hint must not add FFT-sized
+    // allocations to every run of a long sweep. Pin the arithmetic: a field
+    // sweep fits with orders of magnitude to spare; a long sweep does not, and
+    // absurd lengths must read as "does not fit" rather than overflow.
+    [Theory]
+    [InlineData(396_000, 300_000, true)]           // ~3 s sweep at 96 kHz with tail
+    [InlineData(2_100_000, 2_097_153, false)]      // just past the 2^22 bound
+    [InlineData(int.MaxValue, int.MaxValue, false)] // must not overflow into a throw
+    public void LoopbackDiagnosisFits_BoundsTheDiagnosisFft(
+        int recordedSamples,
+        int inverseSamples,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            ExpSweepMeasurement.LoopbackDiagnosisFits(recordedSamples, inverseSamples));
+    }
+
+    // The tally's "judged" must mean the diagnosis could have confirmed OR
+    // excluded a threshold-level fault. The third case is the reviewer's
+    // counter-example: nothing detected, but the floors are high enough to
+    // hide a harmonic well above the accusation threshold — certifying that
+    // run clean is the bug, and it must read as no verdict. (A Fact, not a
+    // Theory: the verdict enum is internal and cannot appear in a public
+    // test signature.)
+    [Fact]
+    public void ClassifyDistortionReading_RequiresTheCeilingForACleanVerdict()
+    {
+        // A detection over the threshold accuses regardless of the ceiling.
+        Assert.Equal(
+            ExpSweepMeasurement.DistortionVerdict.Distorting,
+            ExpSweepMeasurement.ClassifyDistortionReading(
+                new EssHarmonicEnergy(-8.1, -8.0, CompleteCoverage: true)));
+        // ...and regardless of coverage: what was found was found, and the
+        // unread orders could only add to it. This is what keeps the
+        // diagnosis alive on narrow-band sweeps whose high orders do not fit.
+        Assert.Equal(
+            ExpSweepMeasurement.DistortionVerdict.Distorting,
+            ExpSweepMeasurement.ClassifyDistortionReading(
+                new EssHarmonicEnergy(-8.1, -8.0, CompleteCoverage: false)));
+        // An electrical wire: nothing detected, floors that could hide
+        // nothing of consequence, every order read — the genuinely
+        // certified-clean run.
+        Assert.Equal(
+            ExpSweepMeasurement.DistortionVerdict.JudgedClean,
+            ExpSweepMeasurement.ClassifyDistortionReading(
+                new EssHarmonicEnergy(null, -80.0, CompleteCoverage: true)));
+        // Nothing detected, but a -15 dB harmonic could hide under these
+        // floors: no verdict, never a clean certificate.
+        Assert.Equal(
+            ExpSweepMeasurement.DistortionVerdict.Unjudged,
+            ExpSweepMeasurement.ClassifyDistortionReading(
+                new EssHarmonicEnergy(null, -9.5, CompleteCoverage: true)));
+        // A small detection does not certify either when the ceiling says a
+        // threshold-level fault could still be hiding.
+        Assert.Equal(
+            ExpSweepMeasurement.DistortionVerdict.Unjudged,
+            ExpSweepMeasurement.ClassifyDistortionReading(
+                new EssHarmonicEnergy(-40.0, -20.0, CompleteCoverage: true)));
+        // The review's partial-geometry hole: a spotless ceiling that covers
+        // only some of the orders certifies nothing — an unread order can
+        // hide anything.
+        Assert.Equal(
+            ExpSweepMeasurement.DistortionVerdict.Unjudged,
+            ExpSweepMeasurement.ClassifyDistortionReading(
+                new EssHarmonicEnergy(null, double.NegativeInfinity, CompleteCoverage: false)));
+    }
+
+    // The refusal quotes companion facts next to the worst distortion figure —
+    // the run's microphone reading and its loopback peak. Those must all come
+    // from the SAME run: the aggregate loopback peak is a maximum over runs,
+    // and here it belongs to the loud CLEAN run (-0.9 dBFS), not to the
+    // distorting one (-18 dBFS). Quoting the aggregate would juxtapose facts
+    // no single capture showed — and would drop the "the meter had nothing to
+    // show" note exactly when it applies.
+    [Fact]
+    public async Task DistortionDiagnosisQuotesTheLevelsOfTheWorstRun()
+    {
+        var factory = new FakeAudioSessionFactory(
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal, (attempt, s, tail, _) => Task.FromResult(attempt == 1
+                    ? SyntheticCapture.DistortingLoopback(s, tail)
+                    : SyntheticCapture.NoiseMicrophoneLoudLoopback(s, tail))));
+        using ExpSweepMeasurement measurement = CreateSweep(factory, runs: 2);
+
+        bool success = await measurement.RunAsync();
+
+        Assert.False(success);
+        Assert.NotNull(measurement.LastError);
+        string message = measurement.LastError!.Message;
+        Assert.Contains("LOOPBACK REFERENCE is distorting", message);
+        Assert.Contains("on that run it peaked at only -18", message);
+    }
+
+    // When both inputs are overdriven the refusal leads with the reference —
+    // every analysis is divided by it — but it must not stay silent about the
+    // microphone having crossed the threshold too.
+    [Fact]
+    public async Task DistortionDiagnosisNamesBothChannelsWhenBothAreOverdriven()
+    {
+        var factory = new FakeAudioSessionFactory(
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal, (_, s, tail, _) => Task.FromResult(
+                    SyntheticCapture.DistortingBothInputs(s, tail))));
+        using ExpSweepMeasurement measurement = CreateSweep(factory);
+
+        bool success = await measurement.RunAsync();
+
+        Assert.False(success);
+        Assert.NotNull(measurement.LastError);
+        string message = measurement.LastError!.Message;
+        Assert.Contains("LOOPBACK REFERENCE is distorting", message);
+        Assert.Contains("microphone path crossed the distortion threshold as well", message);
+    }
+
+    // Every run overdriven: the same wording without the qualifier reading as a
+    // partial fault, and the tally counting all of them.
+    [Fact]
+    public async Task DistortionDiagnosisCoversEveryRunWhenAllAreOverdriven()
+    {
+        var factory = new FakeAudioSessionFactory(
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal, (_, s, tail, _) => Task.FromResult(
+                    SyntheticCapture.DistortingLoopback(s, tail))));
+        using ExpSweepMeasurement measurement = CreateSweep(factory, runs: 2);
+
+        bool success = await measurement.RunAsync();
+
+        Assert.False(success);
+        Assert.Contains("on 2 of the 2 averaged runs", measurement.LastError!.Message);
+    }
+
+    // The mirror image: a clean reference and a distorting acoustic path must
+    // not be blamed on the loopback.
+    [Fact]
+    public async Task CleanLoopbackIsNotAccusedOfDistortion()
+    {
+        var factory = new FakeAudioSessionFactory(
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal, (_, s, tail, _) => Task.FromResult(
+                    SyntheticCapture.NoiseMicrophone(s, tail))));
+        using ExpSweepMeasurement measurement = CreateSweep(factory);
+
+        bool success = await measurement.RunAsync();
+
+        Assert.False(success);
+        Assert.NotNull(measurement.LastError);
+        Assert.DoesNotContain("is distorting", measurement.LastError!.Message);
     }
 
     // The fail-closed side of the shape gate: one NaN in the capture slips

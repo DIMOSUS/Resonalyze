@@ -738,6 +738,31 @@ namespace Resonalyze
                 sweepResult.ImpulseResponse,
                 x => new Complex(x, 0.0));
 
+            // Read the harmonic content HERE, while this run's microphone
+            // deconvolution is already in hand, so the refusal path never has
+            // to deconvolve anything: by then the averaged IRs AND every run's
+            // retained transfer frame are still alive, which is exactly the
+            // wrong moment for FFT-sized allocations. Per-run readings are
+            // also what the verdict needs — the refusal judges the average,
+            // and the average is built from these same runs.
+            float[]? loopbackSamples = captured.LoopbackChannel is int loopbackIndex &&
+                (uint)loopbackIndex < (uint)sampleChannels.Length
+                    ? sampleChannels[loopbackIndex]
+                    : null;
+            EssHarmonicEnergy? microphoneDistortion = MeasureDistortion(() => sweepResult);
+            // The loopback's own deconvolution exists ONLY for this diagnosis
+            // — the microphone's is the measurement's own, reused for free —
+            // so its cost stays bounded: above the size bound the hint is
+            // skipped rather than adding FFT-sized scratch to every run of a
+            // long sweep (see MaxLoopbackDiagnosisFftLength for the numbers).
+            EssHarmonicEnergy? loopbackDistortion = loopbackSamples == null ||
+                !LoopbackDiagnosisFits(loopbackSamples.Length, sweep.InverseFilter.Length)
+                    ? null
+                    : MeasureDistortion(() => SweepAnalysis.DeconvolveWithInverseFilter(
+                        loopbackSamples,
+                        sweep.InverseFilter,
+                        2.0 / sweep.InverseFilter.Length));
+
             TransferFunctionFrame? transferFrame = null;
             if (TryBuildTransferFrame(
                 sampleChannels,
@@ -765,7 +790,41 @@ namespace Resonalyze
                 sampleChannels,
                 captured.MicrophoneChannel,
                 captured.LoopbackChannel,
-                finalLevels);
+                finalLevels,
+                microphoneDistortion,
+                loopbackDistortion);
+        }
+
+        /// <summary>
+        /// The harmonic reading of one channel, or null when it cannot be read.
+        /// Never throws, and that is why the deconvolution is passed as a thunk
+        /// rather than a value: for the loopback it is work done for the
+        /// diagnosis alone, so a failure inside it must cost the user a hint,
+        /// never the measurement itself. The microphone's is already computed
+        /// and simply handed through.
+        /// </summary>
+        private EssHarmonicEnergy? MeasureDistortion(Func<SweepDeconvolutionResult> deconvolve)
+        {
+            try
+            {
+                SweepDeconvolutionResult deconvolved = deconvolve();
+                // The geometry that places the packets is the sweep that
+                // actually ran, not the requested band — the same rule the
+                // harmonic views follow (see AchievedLowFrequencyHz).
+                return EssHarmonicAnalysis.MeasureHarmonicEnergy(
+                    deconvolved.ImpulseResponse,
+                    new EssSweepMetadata(
+                        AchievedLowFrequencyHz,
+                        AchievedHighFrequencyHz,
+                        AchievedSweepDurationSeconds,
+                        SampleRate,
+                        AchievedSweepSampleCount,
+                        deconvolved.PeakIndex));
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         // A loopback whose peak sits this far down flags the LIKELY CULPRIT
@@ -776,6 +835,42 @@ namespace Resonalyze
         // says to turn the playback level well down — measures fine and must
         // not be refused on level alone.
         private const double SuspiciouslyQuietLoopbackDbFs = -30;
+
+        // Harmonic content (packets 2..5 against the linear one) above which a
+        // channel is named as distorting in the refusal. A wired loopback reads
+        // far below -40 dB and a loudspeaker measured through the air tens of dB
+        // down, so -26 dB (5 %) accuses nothing healthy. The field case it was
+        // written for: an overdriven loopback input carried 25 % second harmonic
+        // (-12 dB) while the microphone in front of the speaker read 0.24 %
+        // (-52 dB) — and the loopback peaked at -14.6 dBFS, so every level check
+        // and the input meter saw a perfectly normal reference.
+        private const double DistortingChannelDb = -26.0;
+
+        // Ceiling on the FFT the loopback's diagnosis deconvolution may take:
+        // 2^22 complex bins are two 67 MB spectra plus a 34 MB result (~170 MB
+        // of transient scratch per run), reached around a 21-second sweep at
+        // 96 kHz (10 s at 192 kHz, 43 s at 48 kHz) — several times past any
+        // field sweep to date (3.2 s). That cost is real, not negligible; it
+        // is accepted below the bound because the measurement's own microphone
+        // deconvolution is the same size and has always run per run. The
+        // loopback's exists only to phrase a refusal, so above the bound the
+        // reading is skipped and a refusal falls back to the level heuristic
+        // and the microphone reading (which reuses the measurement's own
+        // deconvolution and is never skipped).
+        internal const int MaxLoopbackDiagnosisFftLength = 1 << 22;
+
+        internal static bool LoopbackDiagnosisFits(
+            int recordedSamples,
+            int inverseFilterSamples)
+        {
+            // Summed in long: an absurd configuration must read as "does not
+            // fit", not overflow into an exception that would fail the whole
+            // measurement for the sake of its own optional diagnosis.
+            long convolutionLength = (long)recordedSamples + inverseFilterSamples - 1;
+            return convolutionLength <= MaxLoopbackDiagnosisFftLength &&
+                DspMath.NextPowerOfTwo((int)convolutionLength) <=
+                    MaxLoopbackDiagnosisFftLength;
+        }
 
         // The averaged transfer IR must LOOK like an impulse response before
         // anything is published: a genuine measurement is a localized event,
@@ -817,8 +912,82 @@ namespace Resonalyze
                     ? FormattableString.Invariant(
                         $"the energy around its peak is only {value.InsideOutsideDb:0.0} dB above the rest of the capture (a real measurement reads 29-49 dB; an unusable reference divides into noise well below {TransferIrDiagnostics.MinimumCompactnessDb:0} dB)")
                     : "its shape could not be measured at all (the capture is degenerate or carries non-finite samples)";
+            // A named culprit replaces the generic advice; the two never both
+            // apply, and the generic line is what left the field session
+            // checking wiring that was correct all along.
+            string distortionDiagnosis = DescribeDistortion(result);
+            string advice = distortionDiagnosis.Length > 0
+                ? distortionDiagnosis
+                : " Check the microphone and loopback wiring and levels, then measure again.";
             throw new InvalidOperationException(
-                $"The transfer function did not form a credible impulse response: {shapeDiagnosis}.{levelDiagnosis} Check the microphone and loopback wiring and levels, then measure again.");
+                $"The transfer function did not form a credible impulse response: {shapeDiagnosis}.{levelDiagnosis}{advice}");
+        }
+
+        /// <summary>
+        /// Names the channel whose own signal is distorting, when one is. The
+        /// H1 estimate divides the microphone by the reference and so believes
+        /// whatever the reference says was played: a reference driven past its
+        /// input stage's limit produces a garbage transfer function while every
+        /// level check passes, because analog distortion does not need full
+        /// scale to happen. The figures come from the per-run readings, so what
+        /// is reported covers the same runs the refused average was built from.
+        /// Empty when neither channel is distorting or no run could be judged.
+        /// </summary>
+        private string DescribeDistortion(SweepAverageResult result)
+        {
+            if (result.LoopbackDistortion is { AffectedRuns: > 0 } reference)
+            {
+                // Every quoted companion fact comes from the run that produced
+                // the worst figure, not from the aggregates: the aggregate
+                // level is a maximum over runs, and juxtaposing it with a
+                // different run's distortion would join facts no single
+                // capture ever showed.
+                WorstLoopbackRun worstRun = result.LoopbackWorstRun ??
+                    new WorstLoopbackRun(null, InputLevelMeterEntry.Unavailable);
+                string comparison = worstRun.MicrophoneDetectedDb is { } microphone
+                    ? FormattableString.Invariant(
+                        $", where the same run's microphone reads {microphone:0.0} dB")
+                    : "";
+                string meterNote = worstRun.LoopbackLevel.Available &&
+                    worstRun.LoopbackLevel.PeakDbFs < -1.0
+                        ? FormattableString.Invariant(
+                            $", and on that run it peaked at only {worstRun.LoopbackLevel.PeakDbFs:0.0} dBFS, so the input meter had nothing to show")
+                        : "";
+                string microphoneToo = result.MicrophoneDistortion is { AffectedRuns: > 0 } acousticToo
+                    ? FormattableString.Invariant(
+                        $" The microphone path crossed the distortion threshold as well ({acousticToo.WorstDb:0.0} dB at worst) — fix the reference first: every analysis is divided by it.")
+                    : "";
+                return FormattableString.Invariant(
+                    $" The LOOPBACK REFERENCE is distorting: its harmonic packets read {reference.WorstDb:0.0} dB relative to the direct one{DescribeSpread(reference, result.AcceptedRunCount)}{comparison}{meterNote}. That is what an input driven past its limit does, and the transfer function divides the microphone by it.{microphoneToo} Attenuate what reaches the loopback input — a line input instead of an instrument one, a pad in the loopback cable, or a lower playback level — and measure again. Attenuate only as far as it takes to leave the input's linear region: the transfer estimate is scale-invariant, but a reference driven down toward the input's own noise floor pays for it in coherence.");
+            }
+
+            if (result.MicrophoneDistortion is { AffectedRuns: > 0 } acoustic)
+            {
+                return FormattableString.Invariant(
+                    $" The MICROPHONE PATH is distorting: its harmonic packets read {acoustic.WorstDb:0.0} dB relative to the direct one{DescribeSpread(acoustic, result.AcceptedRunCount)}, so the playback level is driving the loudspeaker, its amplifier or the microphone's own input past its limit. Turn the playback level down and measure again.");
+            }
+
+            return "";
+        }
+
+        // How the reading is distributed over an averaged measurement. A single
+        // run needs no qualifier; several do, because the refusal is about their
+        // average and the figure quoted is the worst one in it — "the loopback
+        // distorts" reads very differently when it was one run out of eight.
+        // When some runs produced no reading at all, the verdict must not be
+        // stretched over them: it covers the judged runs, and the message says
+        // how many of the averaged runs that was.
+        private static string DescribeSpread(DistortionTally tally, int acceptedRuns)
+        {
+            if (acceptedRuns <= 1)
+            {
+                return "";
+            }
+            return tally.JudgedRuns == acceptedRuns
+                ? FormattableString.Invariant(
+                    $" at worst, on {tally.AffectedRuns} of the {acceptedRuns} averaged runs")
+                : FormattableString.Invariant(
+                    $" at worst, on {tally.AffectedRuns} of the {tally.JudgedRuns} judged runs ({acceptedRuns} were averaged)");
         }
 
         private void ApplyAverageResult(SweepAverageResult result)
@@ -911,7 +1080,129 @@ namespace Resonalyze
             float[][] SampleChannels,
             int MicrophoneIndex,
             int? LoopbackIndex,
-            InputLevelMeterSnapshot Levels);
+            InputLevelMeterSnapshot Levels,
+            EssHarmonicEnergy? MicrophoneDistortion,
+            EssHarmonicEnergy? LoopbackDistortion);
+
+        /// <summary>What one run's harmonic reading amounts to for the tally.</summary>
+        internal enum DistortionVerdict
+        {
+            // No reading, or floors too high to confirm or exclude a
+            // DistortingChannelDb-level fault — the run is not judged.
+            Unjudged,
+            // The reading could have found a threshold-level fault and found
+            // none: every requested order was readable AND the ceiling — the
+            // total energy at the packet positions — sits below the threshold.
+            JudgedClean,
+            Distorting
+        }
+
+        /// <summary>
+        /// Classifies one run's reading against
+        /// <see cref="DistortingChannelDb"/>. "Judged" means exactly that the
+        /// diagnosis could have confirmed OR excluded a fault of that size:
+        /// nothing detected over a loud record is no verdict, because an
+        /// undetected packet can be harmonic in its entirety — the floors
+        /// bound the background beside the packets, not inside them, so up to
+        /// <c>floor * 10^0.6</c> of energy hides without leaving a detection.
+        /// </summary>
+        internal static DistortionVerdict ClassifyDistortionReading(
+            EssHarmonicEnergy reading)
+        {
+            if (double.IsNaN(reading.CeilingDb))
+            {
+                return DistortionVerdict.Unjudged;
+            }
+            if (reading.DetectedDb is { } detected && detected >= DistortingChannelDb)
+            {
+                // What was found was found: an accusation stands on any
+                // coverage, since the unread orders could only add to it.
+                return DistortionVerdict.Distorting;
+            }
+            // A clean certificate needs the whole story: every requested
+            // order read AND their total below the threshold. A reading that
+            // could not reach the higher orders may accuse but never certify
+            // — an unread order can hide anything, including a packet that
+            // sits inside the record while its outer flank does not.
+            return reading.CompleteCoverage && reading.CeilingDb < DistortingChannelDb
+                ? DistortionVerdict.JudgedClean
+                : DistortionVerdict.Unjudged;
+        }
+
+        /// <summary>
+        /// One channel's harmonic readings over the accepted runs:
+        /// <see cref="WorstDb"/> is the loudest detection,
+        /// <see cref="AffectedRuns"/> how many runs crossed
+        /// <see cref="DistortingChannelDb"/>, and <see cref="JudgedRuns"/> how
+        /// many the diagnosis could confirm OR exclude such a fault on (see
+        /// <see cref="ClassifyDistortionReading"/> — a floor too high to rule
+        /// one out judges nothing). All three are needed to describe an
+        /// averaged measurement honestly: a single bad run out of eight is a
+        /// different story from all eight, and "the other seven read clean" is
+        /// a different story from "the other seven could not be read".
+        /// </summary>
+        private readonly record struct DistortionTally(
+            double WorstDb,
+            int AffectedRuns,
+            int JudgedRuns);
+
+        /// <summary>
+        /// The facts of the single run that produced the loopback tally's
+        /// <see cref="DistortionTally.WorstDb"/>: that run's own microphone
+        /// reading and its own loopback level. The refusal quotes these next
+        /// to the worst figure, and they must all describe the SAME capture —
+        /// the aggregate levels take the maximum over runs, so quoting them
+        /// would juxtapose facts from different captures.
+        /// </summary>
+        private readonly record struct WorstLoopbackRun(
+            double? MicrophoneDetectedDb,
+            InputLevelMeterEntry LoopbackLevel);
+
+        private sealed class DistortionAccumulator
+        {
+            private double worstDb = double.NegativeInfinity;
+            private int affectedRuns;
+            private int judgedRuns;
+
+            /// <summary>
+            /// Folds one run's reading in; true when this run now holds the
+            /// worst DETECTION, so the caller can capture that run's context.
+            /// </summary>
+            public bool Add(EssHarmonicEnergy? reading)
+            {
+                if (reading is not { } value)
+                {
+                    return false;
+                }
+
+                switch (ClassifyDistortionReading(value))
+                {
+                    case DistortionVerdict.Distorting:
+                        judgedRuns++;
+                        affectedRuns++;
+                        if (value.DetectedDb!.Value > worstDb)
+                        {
+                            worstDb = value.DetectedDb.Value;
+                            return true;
+                        }
+                        break;
+                    case DistortionVerdict.JudgedClean:
+                        judgedRuns++;
+                        worstDb = Math.Max(
+                            worstDb,
+                            value.DetectedDb ?? double.NegativeInfinity);
+                        break;
+                }
+                return false;
+            }
+
+            // Null when no run could be judged at all, which is not the same as
+            // every run reading clean.
+            public DistortionTally? ToTally() =>
+                judgedRuns == 0
+                    ? null
+                    : new DistortionTally(worstDb, affectedRuns, judgedRuns);
+        }
 
         private sealed record SweepAverageResult(
             Complex[] SweepImpulseResponse,
@@ -922,7 +1213,10 @@ namespace Resonalyze
             float[]? MicrophoneRecordedSamples,
             float[]? LoopbackRecordedSamples,
             InputLevelMeterSnapshot Levels,
-            int AcceptedRunCount);
+            int AcceptedRunCount,
+            DistortionTally? MicrophoneDistortion,
+            DistortionTally? LoopbackDistortion,
+            WorstLoopbackRun? LoopbackWorstRun);
 
         private sealed class SweepAverageAccumulator
         {
@@ -930,6 +1224,9 @@ namespace Resonalyze
             private readonly List<TransferFunctionFrame> transferFrames = new();
             private readonly ChannelLevelAccumulator microphoneLevels = new(fullScaleReference: false);
             private readonly ChannelLevelAccumulator loopbackLevels = new(fullScaleReference: true);
+            private readonly DistortionAccumulator microphoneDistortion = new();
+            private readonly DistortionAccumulator loopbackDistortion = new();
+            private WorstLoopbackRun? loopbackWorstRun;
             private Complex[]? sweepSum;
             private int referencePeakIndex;
             private float[]? lastMicrophoneSamples;
@@ -980,6 +1277,17 @@ namespace Resonalyze
                     lastLoopbackSamples = samples.ToArray();
                 }
 
+                microphoneDistortion.Add(run.MicrophoneDistortion);
+                if (loopbackDistortion.Add(run.LoopbackDistortion))
+                {
+                    // This run now holds the worst loopback detection; freeze
+                    // ITS microphone reading and ITS loopback level, so the
+                    // refusal's side-by-side quotes all describe one capture.
+                    loopbackWorstRun = new WorstLoopbackRun(
+                        run.MicrophoneDistortion?.DetectedDb,
+                        run.Levels.Loopback);
+                }
+
                 AcceptedRuns++;
             }
 
@@ -1023,7 +1331,10 @@ namespace Resonalyze
                     new InputLevelMeterSnapshot(
                         microphoneLevels.ToEntry(),
                         loopbackLevels.ToEntry()),
-                    AcceptedRuns);
+                    AcceptedRuns,
+                    microphoneDistortion.ToTally(),
+                    loopbackDistortion.ToTally(),
+                    loopbackWorstRun);
             }
         }
 

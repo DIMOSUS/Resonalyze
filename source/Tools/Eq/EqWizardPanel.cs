@@ -462,14 +462,19 @@ public partial class EqWizardPanel : UserControl
         // plots: a logarithmic 20 Hz - 20 kHz frequency axis and a dB axis.
         PlotModel model = new PlotModel();
         PlotModelStyle.AddFrequencyAxis(model);
+        // The starting bounds ARE the impulse-response ones, not a copy of their
+        // numbers: an IR is what the wizard opens on, and a second set of
+        // literals here is a set that can drift away from the one a loaded
+        // source re-arms the axis with.
+        EqWizardAxisRange initialRange = EqWizardPlotFit.ImpulseResponseRange;
         model.Axes.Add(new LinearAxis
         {
             Position = AxisPosition.Left,
-            AbsoluteMinimum = -90,
-            AbsoluteMaximum = 20,
+            AbsoluteMinimum = initialRange.AbsoluteMinimum,
+            AbsoluteMaximum = initialRange.AbsoluteMaximum,
             MajorStep = 10,
-            Minimum = -80,
-            Maximum = 10,
+            Minimum = initialRange.Minimum,
+            Maximum = initialRange.Maximum,
             MajorGridlineStyle = LineStyle.Solid,
             MinorGridlineStyle = LineStyle.Dot,
             Title = "dB",

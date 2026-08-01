@@ -350,6 +350,9 @@ internal sealed class PlotModelFactory
         {
             PlotModelStyle.AddDecibelAxis(model, "dBr/dBc");
         }
+        // A response measured through a padded loopback sits above 0 dBr; open
+        // the view on it instead of on an empty frame.
+        PlotModelStyle.FitDecibelViewToPrimaryCurves(model);
 
         return model;
     }

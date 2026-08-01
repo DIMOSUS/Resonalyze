@@ -153,7 +153,10 @@ internal sealed class VirtualCrossoverAcousticPlot
         {
             valueAxis.Title = "dB";
             valueAxis.AbsoluteMinimum = -90;
-            valueAxis.AbsoluteMaximum = 20;
+            // These traces are the measured, loopback-referenced magnitudes, so
+            // the pan ceiling is the shared one: attenuating the reference lifts
+            // every curve here by the same amount (see PlotModelStyle).
+            valueAxis.AbsoluteMaximum = PlotModelStyle.RelativeDecibelAbsoluteMaximum;
             valueAxis.Minimum = double.NaN;
             valueAxis.Maximum = double.NaN;
             valueAxis.MajorStep = double.NaN;

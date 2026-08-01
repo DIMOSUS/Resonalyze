@@ -17,8 +17,14 @@ internal readonly record struct EqWizardAxisRange(
 /// </summary>
 internal static class EqWizardPlotFit
 {
-    /// <summary>Bounds used for an impulse-response source (relative dB around zero).</summary>
-    public static readonly EqWizardAxisRange ImpulseResponseRange = new(-80, 10, -90, 20);
+    /// <summary>
+    /// Bounds used for an impulse-response source (relative dB around zero). The
+    /// pan ceiling is the one the Frequency Response and Live Spectrum plots use,
+    /// because it is the same loopback-referenced quantity and rises with any
+    /// attenuation of the reference (see <see cref="PlotModelStyle"/>).
+    /// </summary>
+    public static readonly EqWizardAxisRange ImpulseResponseRange =
+        new(-80, 10, -90, PlotModelStyle.RelativeDecibelAbsoluteMaximum);
 
     // Rounding the view to whole tens keeps the gridlines on the familiar 10 dB step,
     // and the margin leaves room for the target and the corrected curve around the data.

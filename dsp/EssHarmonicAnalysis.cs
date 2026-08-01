@@ -179,6 +179,36 @@ public sealed record EssHarmonicDecomposition(
     HarmonicValidity Validity);
 
 /// <summary>
+/// One channel's harmonic-content reading from
+/// <see cref="EssHarmonicAnalysis.MeasureHarmonicEnergy"/>.
+/// <see cref="DetectedDb"/> is the energy that stood above the local floors,
+/// relative to the linear packet (null when nothing did).
+/// <see cref="CeilingDb"/> is the upper bound on the harmonic content of the
+/// orders that were JUDGED: the summed energy of their whole isolation windows
+/// (the geometric-mean-bounded regions the ESS model confines each order's
+/// energy to), relative to the linear packet. The full window, because a
+/// harmonic impulse response has time extent and its energy can sit anywhere
+/// inside it — a probe-sized ceiling missed a harmonic one sample past the
+/// probe. And no floor subtracted, because the flanks bound the background
+/// beside a packet, never inside it. For a perfectly quiet record the ceiling
+/// is negative infinity.
+/// <para>
+/// <see cref="CompleteCoverage"/> says whether that was every requested order.
+/// When false — the probes of some order ran off the record's front — the
+/// ceiling speaks only for the orders it covers, and a caller must not certify
+/// cleanliness from it: an unread order can hide anything, including a packet
+/// that sits inside the record while its outer flank does not. A detection
+/// needs no such qualifier — what was found was found. "Nothing detected" is
+/// therefore never "clean" by itself: certifying takes a below-threshold
+/// ceiling AND complete coverage.
+/// </para>
+/// </summary>
+public readonly record struct EssHarmonicEnergy(
+    double? DetectedDb,
+    double CeilingDb,
+    bool CompleteCoverage);
+
+/// <summary>
 /// Tuning for <see cref="EssHarmonicAnalysis.AnalyzeEssHarmonics"/>.
 /// </summary>
 public sealed record HarmonicAnalysisOptions(
@@ -264,6 +294,200 @@ public static class EssHarmonicAnalysis
             sweep.SweepSampleCount * Math.Log(harmonicOrder) /
             Math.Log(sweep.FrequencyRatio);
         return (int)Math.Round(offsetSamples);
+    }
+
+    // Probe radius around a packet centre. A millisecond holds a packet's core
+    // at any supported rate; the spacing cap below keeps a probe from reaching
+    // into its own neighbours, which close in as the order rises.
+    private const double PacketProbeSeconds = 0.001;
+
+    // Share of the tightest packet-to-boundary spacing a probe may occupy, so a
+    // packet probe and the two floor probes flanking it never overlap.
+    private const int ProbeSpacingDivisor = 3;
+
+    // How far a harmonic packet must stand above the between-packet floor to
+    // be read as a packet at all, rather than as the record's own noise. The
+    // threshold serves DETECTION only — it bounds nothing about what an
+    // undetected packet may contain, because the floor is read on the flanks
+    // and the packet's interior background can sit anywhere below it.
+    private const double PacketAboveFloorDb = 6.0;
+
+    /// <summary>
+    /// The harmonic content of one deconvolved sweep record: the energy of its
+    /// harmonic packets, summed, relative to the linear packet, in dB. A wired
+    /// electrical path reads far below -40 dB; a loudspeaker measured through
+    /// the air reads tens of dB below the linear packet; an input stage being
+    /// driven past its limit reads within ~15 dB of it.
+    /// <para>
+    /// Equal-width probes at the packet centres, each judged against the floor
+    /// read on BOTH sides of it (at the half orders, the packet boundaries,
+    /// where no harmonic can live), so a record that is simply noisy reports
+    /// nothing instead of reporting its noise as distortion. The floor is local
+    /// to each order and taken as the louder of the two flanks: the residue
+    /// between packets is not stationary — leakage and packet tails vary along
+    /// the record — so one quiet stretch must not license every other order.
+    /// </para>
+    /// <para>
+    /// Null means the record could not be judged at all: a geometry where even
+    /// the second order's probes do not fit inside the record (the
+    /// deconvolution is a LINEAR convolution, so there is nothing before index
+    /// 0 to read and a packet placed there is absent, not wrapped), or a
+    /// non-finite or empty linear packet. Null is never a synonym for "clean"
+    /// — only for "no verdict". Anything else carries what was found, the
+    /// ceiling over the orders that were judged, and whether that was all of
+    /// them; see <see cref="EssHarmonicEnergy"/> for why a caller must not
+    /// read "nothing detected" — or an incompletely covered ceiling — as
+    /// "clean".
+    /// </para>
+    /// </summary>
+    public static EssHarmonicEnergy? MeasureHarmonicEnergy(
+        IReadOnlyList<double> impulseResponse,
+        EssSweepMetadata sweep,
+        int maxHarmonic = 5)
+    {
+        ArgumentNullException.ThrowIfNull(impulseResponse);
+        ArgumentNullException.ThrowIfNull(sweep);
+        if (maxHarmonic < 2)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxHarmonic));
+        }
+
+        if (impulseResponse.Count < 64 ||
+            sweep.SampleRateHz <= 0 ||
+            sweep.SweepSampleCount <= 0 ||
+            !(sweep.FrequencyRatio > 1.0))
+        {
+            return null;
+        }
+        int peakIndex = sweep.DeconvolutionPeakIndex;
+        if ((uint)peakIndex >= (uint)impulseResponse.Count)
+        {
+            return null;
+        }
+
+        // One radius for every probe — the ratio only means something when the
+        // packet and the floor it is measured against are read over the same
+        // width. It is sized by the TIGHTEST spacing in play, which is between
+        // the highest order and its upper boundary; the orders below have more
+        // room than they need.
+        int spacing = HarmonicOffsetSamples(sweep, maxHarmonic + 0.5) -
+            HarmonicOffsetSamples(sweep, maxHarmonic);
+        int radius = Math.Min(
+            (int)Math.Round(PacketProbeSeconds * sweep.SampleRateHz),
+            spacing / ProbeSpacingDivisor);
+        if (radius < 1)
+        {
+            return null;
+        }
+
+        if (PacketEnergy(impulseResponse, peakIndex, radius) is not { } linear || linear <= 0)
+        {
+            return null;
+        }
+
+        double aboveFloor = Math.Pow(10.0, PacketAboveFloorDb / 10.0);
+        double detectedEnergy = 0;
+        double ceilingEnergy = 0;
+        bool judged = false;
+        bool completeCoverage = true;
+        for (int order = 2; order <= maxHarmonic; order++)
+        {
+            // The upper boundary is the farthest of the three from the peak, so
+            // once it runs off the front of the record no higher order fits
+            // either — and an order without both flanks has no floor to stand
+            // against, which is a missing measurement, not a quiet one. The
+            // coverage flag records the cut: the orders past it were NOT read
+            // (one of them may even have its packet inside the record), and
+            // the result must say so or a partial read would pass for a
+            // certificate of the whole.
+            if (Probe(impulseResponse, sweep, peakIndex, order, radius) is not { } packet ||
+                Probe(impulseResponse, sweep, peakIndex, order - 0.5, radius) is not { } lower ||
+                Probe(impulseResponse, sweep, peakIndex, order + 0.5, radius) is not { } upper)
+            {
+                completeCoverage = false;
+                break;
+            }
+
+            judged = true;
+            double floor = Math.Max(lower, upper);
+            // The ceiling term is the energy of the order's WHOLE isolation
+            // window — the same geometric-mean-bounded region AnalyzeEssHarmonics
+            // isolates packets with — not the probe's. A harmonic impulse
+            // response has time extent (ringing, band-limiting, an off-centre
+            // peak), and a probe-sized ceiling certified clean a -20 dB
+            // harmonic sitting ONE SAMPLE past the probe's edge while still
+            // deep inside its order's window. Nothing is subtracted from the
+            // window energy either: the flanks bound the background beside a
+            // packet, never inside it.
+            HarmonicWindowDefinition window = BuildWindow(sweep, order, fadeFraction: 0.0);
+            if (RangeEnergy(impulseResponse, window.StartSample, window.EndSample)
+                is not { } windowEnergy)
+            {
+                completeCoverage = false;
+                break;
+            }
+            ceilingEnergy += windowEnergy;
+            if (packet > floor * aboveFloor)
+            {
+                detectedEnergy += packet - floor;
+            }
+        }
+
+        if (!judged)
+        {
+            return null;
+        }
+        // The ceiling is what a caller may certify against — together with the
+        // coverage flag: the total energy measured at the packet positions
+        // bounds the harmonic content of the JUDGED orders from above wherever
+        // the packets' interior background actually sits. For a perfectly
+        // quiet, fully covered record it honestly reads as negative infinity.
+        return new EssHarmonicEnergy(
+            detectedEnergy > 0 ? 10.0 * Math.Log10(detectedEnergy / linear) : null,
+            10.0 * Math.Log10(ceilingEnergy / linear),
+            completeCoverage);
+    }
+
+    private static double? Probe(
+        IReadOnlyList<double> impulseResponse,
+        EssSweepMetadata sweep,
+        int peakIndex,
+        double order,
+        int radius) =>
+        PacketEnergy(
+            impulseResponse,
+            peakIndex - HarmonicOffsetSamples(sweep, order),
+            radius);
+
+    // Energy in a probe centred on a packet, or null when the probe does not fit
+    // inside the record.
+    private static double? PacketEnergy(
+        IReadOnlyList<double> impulseResponse,
+        int centre,
+        int radius) =>
+        RangeEnergy(impulseResponse, centre - radius, centre + radius);
+
+    // Energy over an inclusive sample range, or null when the range does not
+    // fit inside the record or the content is non-finite. Deliberately NOT
+    // circular: the deconvolution returns a linear convolution, so an index
+    // outside it addresses unrelated samples rather than the other end of a
+    // ring.
+    private static double? RangeEnergy(
+        IReadOnlyList<double> impulseResponse,
+        int start,
+        int end)
+    {
+        if (start < 0 || end >= impulseResponse.Count)
+        {
+            return null;
+        }
+
+        double energy = 0;
+        for (int i = start; i <= end; i++)
+        {
+            energy += impulseResponse[i] * impulseResponse[i];
+        }
+        return double.IsFinite(energy) ? energy : null;
     }
 
     /// <summary>

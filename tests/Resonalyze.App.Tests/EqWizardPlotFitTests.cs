@@ -55,6 +55,22 @@ public sealed class EqWizardPlotFitTests
         });
     }
 
+    // An impulse-response source is loopback-referenced, so its whole curve
+    // rises by whatever the reference is attenuated by — and attenuating the
+    // reference is the readme's fix for an overdriven loopback input. The pan
+    // ceiling has to clear that, and it is the same one the Frequency Response
+    // and Live Spectrum plots use, so the three cannot drift apart.
+    [Fact]
+    public void ImpulseResponseRange_ClearsAPaddedLoopback()
+    {
+        EqWizardAxisRange range = EqWizardPlotFit.ImpulseResponseRange;
+
+        Assert.Equal(PlotModelStyle.RelativeDecibelAbsoluteMaximum, range.AbsoluteMaximum);
+        Assert.True(
+            range.AbsoluteMaximum >= 40,
+            $"the wizard's dB ceiling of {range.AbsoluteMaximum} dB cannot show a padded loopback");
+    }
+
     [Fact]
     public void ForCurve_IgnoresUnmeasuredBandsWhenFitting()
     {

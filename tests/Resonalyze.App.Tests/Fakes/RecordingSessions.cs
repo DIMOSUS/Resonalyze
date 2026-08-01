@@ -57,6 +57,63 @@ internal static class SyntheticCapture
             AudioCaptureAnomalies.None, Diagnostics: null);
     }
 
+    // The field failure this whole diagnosis exists for: the loopback wire is
+    // connected and carries the sweep, but the input stage it feeds is being
+    // driven past its limit, so what comes back is an asymmetrically saturated
+    // copy. Every per-run check passes — it is neither silent nor clipped, and
+    // it peaks well below full scale, exactly as the real one did at
+    // -14.6 dBFS — while the transfer function divides a clean microphone by a
+    // nonlinear reference.
+    public static AudioCaptureResult DistortingLoopback(
+        AudioPlaybackSignal signal,
+        int tailSamples)
+    {
+        int length = signal.SampleCount + Math.Max(0, tailSamples);
+        var mic = new float[length];
+        var loop = new float[length];
+        uint state = 24_680u;
+        double NextNoise()
+        {
+            state = state * 1_664_525u + 1_013_904_223u;
+            return state / 4_294_967_296.0 - 0.5;
+        }
+
+        for (int i = 0; i < signal.SampleCount; i++)
+        {
+            // Asymmetric saturation: the positive half compresses into a knee
+            // and the negative one passes, which is what a single-ended input
+            // driven past its limit does — and why the field record carried
+            // even harmonics (H2 and H4) with almost no odd ones. The knee
+            // depth was measured, not guessed: it puts this capture at ~-8 dB
+            // of harmonic content and ~10 dB of transfer compactness, the same
+            // class as the field one (-12 dB and 15.4 dB) with margin under the
+            // gate's 22 dB.
+            double sample = signal.MonoSamples[i] * 0.25;
+            loop[i] = (float)(sample > 0 ? 0.01 * Math.Tanh(sample / 0.01) : sample);
+
+            // The microphone is a real arrival: delayed, with a short decay and
+            // a noise floor, so the refusal is not an artifact of feeding the
+            // estimator a mathematically exact copy of the excitation.
+            for (int echo = 0; echo <= 3; echo++)
+            {
+                int at = i + 40 + echo * 137;
+                if (at < length)
+                {
+                    mic[at] += signal.MonoSamples[i] * 0.5f * (float)Math.Pow(0.45, echo);
+                }
+            }
+        }
+        for (int i = 0; i < length; i++)
+        {
+            mic[i] += (float)(NextNoise() * 0.002);
+            loop[i] += (float)(NextNoise() * 0.0002);
+        }
+
+        return new AudioCaptureResult(
+            [mic, loop], 0, 1, StereoSeparationExpected: true,
+            AudioCaptureAnomalies.None, Diagnostics: null);
+    }
+
     // A capture poisoned by one non-finite sample: NaN slips every level
     // comparison, the transfer IR comes out NaN, and only the fail-closed
     // shape gate stands between it and a published measurement.
@@ -64,6 +121,85 @@ internal static class SyntheticCapture
     {
         (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.25f);
         mic[100] = float.NaN;
+        return new AudioCaptureResult(
+            [mic, loop], 0, 1, StereoSeparationExpected: true,
+            AudioCaptureAnomalies.None, Diagnostics: null);
+    }
+
+    // NoiseMicrophone with a LOUD clean loopback. Pairs with a distorting run
+    // whose loopback is quiet: the aggregate loopback peak (a maximum over
+    // runs) then comes from THIS run, while the distortion came from the
+    // other — the refusal must quote the levels of the run that carried the
+    // fault, not the fleet-wide maximum.
+    public static AudioCaptureResult NoiseMicrophoneLoudLoopback(
+        AudioPlaybackSignal signal,
+        int tailSamples)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.0f, 0.9f);
+        uint state = 987_654_321u;
+        for (int i = 0; i < mic.Length; i++)
+        {
+            state = state * 1_664_525u + 1_013_904_223u;
+            mic[i] = (float)(state / 4_294_967_296.0 - 0.5) * 0.5f;
+        }
+        return new AudioCaptureResult(
+            [mic, loop], 0, 1, StereoSeparationExpected: true,
+            AudioCaptureAnomalies.None, Diagnostics: null);
+    }
+
+    // Both inputs driven past their limit: the loopback exactly as in
+    // DistortingLoopback, and the microphone a delayed copy saturated the same
+    // asymmetric way. The refusal leads with the reference (everything is
+    // divided by it) but must say the microphone crossed the threshold too.
+    public static AudioCaptureResult DistortingBothInputs(
+        AudioPlaybackSignal signal,
+        int tailSamples)
+    {
+        int length = signal.SampleCount + Math.Max(0, tailSamples);
+        var mic = new float[length];
+        var loop = new float[length];
+        uint state = 24_680u;
+        double NextNoise()
+        {
+            state = state * 1_664_525u + 1_013_904_223u;
+            return state / 4_294_967_296.0 - 0.5;
+        }
+
+        for (int i = 0; i < signal.SampleCount; i++)
+        {
+            double sample = signal.MonoSamples[i] * 0.25;
+            loop[i] = (float)(sample > 0 ? 0.01 * Math.Tanh(sample / 0.01) : sample);
+            double micSample = signal.MonoSamples[i] * 0.5;
+            if (i + 40 < length)
+            {
+                // The OPPOSITE half from the loopback's knee: two matching
+                // nonlinearities partially cancel in the mic/loop ratio and
+                // the shape gate can pass the average; opposing halves cannot.
+                mic[i + 40] = (float)(micSample < 0
+                    ? -0.02 * Math.Tanh(-micSample / 0.02)
+                    : micSample);
+            }
+        }
+        for (int i = 0; i < length; i++)
+        {
+            mic[i] += (float)(NextNoise() * 0.002);
+            loop[i] += (float)(NextNoise() * 0.0002);
+        }
+
+        return new AudioCaptureResult(
+            [mic, loop], 0, 1, StereoSeparationExpected: true,
+            AudioCaptureAnomalies.None, Diagnostics: null);
+    }
+
+    // The loopback twin of NaNMicrophone. The run is accepted (NaN compares
+    // false against every level threshold) and the averaged transfer fails
+    // closed — and this run's loopback distortion reading is a MISSING
+    // measurement (the NaN smears over the whole deconvolution), not a clean
+    // one, which is what the judged-run count in the refusal must reflect.
+    public static AudioCaptureResult NaNLoopback(AudioPlaybackSignal signal, int tailSamples)
+    {
+        (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.25f);
+        loop[100] = float.NaN;
         return new AudioCaptureResult(
             [mic, loop], 0, 1, StereoSeparationExpected: true,
             AudioCaptureAnomalies.None, Diagnostics: null);

@@ -178,4 +178,87 @@ public sealed class ExponentialSineSweepTests
         Assert.True(peak > 0);
         Assert.True(peak / rms > 5.0, $"peak/rms = {peak / rms:0.0}");
     }
+
+    [Fact]
+    public void SweepData_KeepsSixDecibelsOfExcitationHeadroom()
+    {
+        using var sweep = new ExponentialSineSweep();
+        sweep.FillData(30, 18_000, 1.0, 24, 48_000);
+
+        double peak = 0.0;
+        foreach (float sample in sweep.SweepData)
+        {
+            peak = Math.Max(peak, Math.Abs(sample));
+        }
+
+        // The sweep must never leave the interface less than the headroom it was
+        // given: a full-scale excitation clipped the output stage of the field rig
+        // at a level the Signal Generator's own tone (-6 dBFS) played cleanly.
+        Assert.True(
+            peak <= ExponentialSineSweep.PlaybackAmplitude,
+            $"peak {peak:0.####} exceeded {ExponentialSineSweep.PlaybackAmplitude:0.####}");
+        // ...and it does reach it — the crest of a sweep this long lands on a
+        // sample, so a silently attenuated excitation is caught too.
+        Assert.True(
+            peak > ExponentialSineSweep.PlaybackAmplitude * 0.999,
+            $"peak {peak:0.####} fell short of {ExponentialSineSweep.PlaybackAmplitude:0.####}");
+    }
+
+    [Fact]
+    public void Deconvolution_RecoversUnityGain_DespiteTheExcitationHeadroom()
+    {
+        using var sweep = new ExponentialSineSweep();
+        sweep.FillData(30, 18_000, 1.0, 24, 48_000);
+        float[] samples = sweep.SweepData;
+        float[] inverse = sweep.InverseFilter;
+
+        // Playing the attenuated sweep through a unity ("wire") system records the
+        // attenuated sweep itself; its own inverse filter must still hand back a
+        // 0 dB impulse response, because the filter inverts the excitation that is
+        // actually played. Without the reciprocal scale the whole result would sit
+        // 6 dB low and every stored measurement would step down with this change.
+        SweepDeconvolutionResult result = SweepAnalysis.DeconvolveWithInverseFilter(
+            samples, inverse, 2.0 / inverse.Length);
+
+        double meanInBandDb = MeanInBandMagnitudeDb(
+            result.ImpulseResponse,
+            48_000,
+            sweep.LowFrequencyHz * 4.0,
+            sweep.HighFrequencyHz * 0.5);
+
+        Assert.InRange(meanInBandDb, -1.0, 1.0);
+    }
+
+    // Mean magnitude (dB) over the reliable interior of the swept band. Mirrors
+    // SweepDeconvolutionFlatnessTests, which pins the same unity round trip
+    // against a locally regenerated sweep; this one runs the real generator.
+    private static double MeanInBandMagnitudeDb(
+        double[] impulseResponse,
+        int sampleRate,
+        double lowHz,
+        double highHz)
+    {
+        int fftLength = DspMath.NextPowerOfTwo(impulseResponse.Length);
+        var spectrum = new System.Numerics.Complex[fftLength];
+        for (int i = 0; i < impulseResponse.Length; i++)
+        {
+            spectrum[i] = new System.Numerics.Complex(impulseResponse[i], 0.0);
+        }
+        MathNet.Numerics.IntegralTransforms.Fourier.Forward(
+            spectrum, MathNet.Numerics.IntegralTransforms.FourierOptions.Matlab);
+
+        double binToHz = sampleRate / (double)fftLength;
+        var inBand = new List<double>();
+        for (int bin = 1; bin <= fftLength / 2; bin++)
+        {
+            double frequency = bin * binToHz;
+            if (frequency >= lowHz && frequency <= highHz)
+            {
+                inBand.Add(20.0 * Math.Log10(Math.Max(spectrum[bin].Magnitude, 1e-12)));
+            }
+        }
+
+        Assert.NotEmpty(inBand);
+        return inBand.Average();
+    }
 }

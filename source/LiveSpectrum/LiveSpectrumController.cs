@@ -403,6 +403,7 @@ internal sealed class LiveSpectrumController : IDisposable
         {
             lastSnapshot = snapshot;
             AddLiveSpectrumSeries(model, snapshot);
+            PlotModelStyle.RaiseDecibelViewCeiling(model, LiveDisplayMaxDb());
         }
 
         plotView.Model = model;
@@ -460,6 +461,7 @@ internal sealed class LiveSpectrumController : IDisposable
         if (finalSnapshot != null)
         {
             AddLiveSpectrumSeries(model, finalSnapshot);
+            PlotModelStyle.RaiseDecibelViewCeiling(model, LiveDisplayMaxDb());
         }
 
         plotView.Model = model;
@@ -493,6 +495,10 @@ internal sealed class LiveSpectrumController : IDisposable
             lastSnapshot = snapshot;
             RemoveLiveSpectrumSeries(model);
             AddLiveSpectrumSeries(model, snapshot);
+            // A live transfer through a padded loopback sits above 0 dB;
+            // raise the default view to it (expand-only — a user zoom keeps
+            // its own view state) so the trace is not drawn above the frame.
+            PlotModelStyle.RaiseDecibelViewCeiling(model, LiveDisplayMaxDb());
             // Keep target overlays that track the current measurement in sync with
             // the freshly drawn live trace.
             overlayCollection.RefreshCurrentMeasurementTargets();
@@ -504,6 +510,32 @@ internal sealed class LiveSpectrumController : IDisposable
         {
             redrawInProgress = false;
         }
+    }
+
+    // The loudest displayed point across the live series this controller owns.
+    // Deliberately NOT a scan of the whole model: overlay series live in the
+    // same model and must not steer the measurement view.
+    private double LiveDisplayMaxDb()
+    {
+        double maxDb = double.NegativeInfinity;
+        foreach (LineSeries? series in new[]
+        {
+            mainSeries, trustedSeries, untrustedSeries, inputMagnitudeSeries, peakHoldSeries
+        })
+        {
+            if (series == null)
+            {
+                continue;
+            }
+            foreach (DataPoint point in series.Points)
+            {
+                if (double.IsFinite(point.Y))
+                {
+                    maxDb = Math.Max(maxDb, point.Y);
+                }
+            }
+        }
+        return maxDb;
     }
 
     private void AddLiveSpectrumSeries(PlotModel model, LiveSpectrumSnapshot snapshot)

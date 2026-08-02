@@ -172,6 +172,37 @@ public sealed class PlotModelFactoryTests
     }
 
     [Fact]
+    public void GroupDelay_AxisAutoFit_ReadsTheMeasuredCurveOnly()
+    {
+        // Near the sweep-band edges the minimum/excess pair legitimately swings
+        // by tens of ms (the cepstral reconstruction of the magnitude rolloff),
+        // and folding that into the auto-fit would flatten a 2–5 ms measured
+        // curve onto a huge scale. The axis range must be identical whether the
+        // pair is shown or not; off-scale pair points just clip.
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+
+        OxyPlot.Axes.Axis AxisOf(bool showPair)
+        {
+            var visibility = new CurveVisibilityOptions
+            {
+                ShowGroupDelay = true,
+                ShowMinimumPhaseGroupDelay = showPair,
+                ShowExcessGroupDelay = showPair
+            };
+            PlotModelFactory factory = CreateFactory(
+                measurement, noiseMeasurement, groupDelayVisibility: visibility);
+            return factory.CreateGroupDelay(includeCurves: true).Axes
+                .First(axis => axis.Key == PlotModelFactory.GroupDelayAxisKey);
+        }
+
+        OxyPlot.Axes.Axis withPair = AxisOf(showPair: true);
+        OxyPlot.Axes.Axis measuredOnly = AxisOf(showPair: false);
+        Assert.Equal(measuredOnly.Minimum, withPair.Minimum, precision: 9);
+        Assert.Equal(measuredOnly.Maximum, withPair.Maximum, precision: 9);
+    }
+
+    [Fact]
     public void GroupDelay_CompareSource_GetsMinimumAndExcessCurvesToo()
     {
         using var measurement = CreateTransferMeasurement();

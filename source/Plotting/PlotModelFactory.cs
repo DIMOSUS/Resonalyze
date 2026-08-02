@@ -635,6 +635,15 @@ internal sealed class PlotModelFactory
                     UpdateGroupDelayRange(
                         curves.Measured, ref minimum, ref maximum, ref hasValidData);
                 }
+                // The Y auto-fit reads the MEASURED curve only. Near the sweep-band
+                // edges the magnitude rolls off steeply, the cepstral reconstruction
+                // legitimately turns that slope into tens of ms of minimum-phase
+                // group delay (~1/f at the low edge), and the excess mirrors it with
+                // the opposite sign — the validity gate keeps those bins because the
+                // rolloff tracks its own local envelope down to the −60 dB backstop.
+                // Folding them into the fit would flatten a useful 2–5 ms measured
+                // curve onto a ±30 ms scale; off-scale minimum/excess points simply
+                // clip, like any overlay.
                 if (groupDelayVisibility.ShowMinimumPhaseGroupDelay &&
                     curves.Minimum is { } minimumCurve)
                 {
@@ -644,8 +653,6 @@ internal sealed class PlotModelFactory
                         groupDelayTrackerFormat,
                         Mode.GroupDelay,
                         GroupDelayAxisKey);
-                    UpdateGroupDelayRange(
-                        minimumCurve, ref minimum, ref maximum, ref hasValidData);
                 }
                 if (groupDelayVisibility.ShowExcessGroupDelay &&
                     curves.Excess is { } excessCurve)
@@ -656,8 +663,6 @@ internal sealed class PlotModelFactory
                         groupDelayTrackerFormat,
                         Mode.GroupDelay,
                         GroupDelayAxisKey);
-                    UpdateGroupDelayRange(
-                        excessCurve, ref minimum, ref maximum, ref hasValidData);
                 }
 
                 // Overlay the Compare measurement with the identical gate
@@ -683,10 +688,12 @@ internal sealed class PlotModelFactory
                         GroupDelayMagnitudeGateDb,
                         includeMinimumPhase);
                     // Draw the Compare curves as overlays but keep the Y-axis auto-fit
-                    // driven by the main measurement only. The Compare group delay is
-                    // gated at the same offset, so as the gate moves its extremes swing
-                    // widely; folding them into the range makes the scale jump on every
-                    // edit. Off-scale Compare points are simply clipped, like any overlay.
+                    // driven by the main measured curve only. The Compare group delay
+                    // shares the gate LENGTH and smoothing (its placement is per-curve
+                    // under Auto, resolved above), so as the gate settings move its
+                    // extremes swing widely; folding them into the range makes the
+                    // scale jump on every edit. Off-scale Compare points are simply
+                    // clipped, like any overlay.
                     if (groupDelayVisibility.ShowGroupDelay)
                     {
                         AddCompareLineSeries(

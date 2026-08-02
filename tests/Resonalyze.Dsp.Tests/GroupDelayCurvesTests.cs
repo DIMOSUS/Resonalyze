@@ -141,6 +141,94 @@ public sealed class GroupDelayCurvesTests
     }
 
     [Fact]
+    public void BulkDelayedMinimumPhaseSystem_SplitsDelayFromDispersion()
+    {
+        // The app's typical geometry: a propagation delay in front of a
+        // minimum-phase driver response, the auto gate offset landing on the
+        // arrival, and a non-zero left Tukey shoulder (so extractionStart ≠ 0).
+        // The split must be clean: the minimum curve reads the one-pole's own
+        // dispersion with NO bulk delay in it, and the excess reads the full
+        // 5 ms bulk delay, flat across the band.
+        const int delaySamples = 240; // 5 ms at 48 kHz.
+        var response = new Complex[TransformLength];
+        for (int i = 0; i < 600; i++)
+        {
+            response[delaySamples + i] = new Complex(Math.Pow(0.9, i), 0);
+        }
+        var measurement = new SyntheticMeasurement(
+            response,
+            SampleRate,
+            maxMagnitudeIndex: delaySamples);
+
+        GroupDelayCurveSet curves = DataHelper.GetGroupDelayCurves(
+            measurement,
+            gateOffsetMs: delaySamples * 1000.0 / SampleRate,
+            leftMs: 2.0,
+            plateauMs: 20.0,
+            rightMs: 5.0,
+            smoothingInverseOctaves: 96,
+            includeMinimumPhase: true);
+
+        double bulkDelayMilliseconds = delaySamples * 1000.0 / SampleRate;
+        List<int> band = AnalysisBandIndices(curves.Measured, 100, 18_000);
+        Assert.NotEmpty(band);
+        Assert.All(band, i => Assert.InRange(
+            curves.Excess!.Points[i].Y,
+            bulkDelayMilliseconds - 0.02,
+            bulkDelayMilliseconds + 0.02));
+
+        // The dispersion stays in the minimum curve: the one-pole's group delay
+        // reaches ~0.19 ms toward DC and near-zero at the top of the band.
+        double minimumLow = InterpolateY(curves.Minimum!, 100.0);
+        double minimumHigh = InterpolateY(curves.Minimum!, 10_000.0);
+        Assert.True(
+            minimumLow - minimumHigh > 0.1,
+            $"the one-pole dispersion never reached the minimum curve " +
+            $"({minimumLow:0.000} ms at 100 Hz vs {minimumHigh:0.000} ms at 10 kHz)");
+    }
+
+    [Fact]
+    public void WrapGate_LeftShoulderBeforeIrStart_KeepsTheSplit()
+    {
+        // A peak near the IR start with a left shoulder longer than the offset:
+        // extractionStart goes negative and the gate reads the cyclic tail (the
+        // same wrap path GroupDelay_WrapsWhenLeftShoulderPrecedesIrStart pins for
+        // the measured curve). The time re-reference must not leak into the
+        // minimum curve: measured and excess read the true absolute arrival,
+        // minimum stays at zero.
+        const int peakSample = 5;
+        var response = new Complex[TransformLength];
+        response[peakSample] = Complex.One;
+        var measurement = new SyntheticMeasurement(
+            response,
+            SampleRate,
+            maxMagnitudeIndex: peakSample);
+
+        GroupDelayCurveSet curves = DataHelper.GetGroupDelayCurves(
+            measurement,
+            gateOffsetMs: peakSample * 1000.0 / SampleRate,
+            leftMs: 48 * 1000.0 / SampleRate, // 48 samples > peak → wrap.
+            plateauMs: 256 * 1000.0 / SampleRate,
+            rightMs: 64 * 1000.0 / SampleRate,
+            smoothingInverseOctaves: 96,
+            includeMinimumPhase: true);
+
+        double arrivalMilliseconds = peakSample * 1000.0 / SampleRate;
+        List<int> band = AnalysisBandIndices(curves.Measured, 1_000, 18_000);
+        Assert.NotEmpty(band);
+        Assert.All(band, i => Assert.InRange(
+            curves.Measured.Points[i].Y,
+            arrivalMilliseconds - 1e-6,
+            arrivalMilliseconds + 1e-6));
+        Assert.All(band, i => Assert.InRange(
+            curves.Minimum!.Points[i].Y, -1e-6, 1e-6));
+        Assert.All(band, i => Assert.InRange(
+            curves.Excess!.Points[i].Y,
+            arrivalMilliseconds - 1e-6,
+            arrivalMilliseconds + 1e-6));
+    }
+
+    [Fact]
     public void ValidityGate_BlanksTheSameBinsInEveryCurve()
     {
         // A differencer's low end falls below the −60 dB global backstop, so

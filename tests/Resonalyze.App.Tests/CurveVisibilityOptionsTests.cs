@@ -47,6 +47,8 @@ public sealed class CurveVisibilityOptionsTests
         visibility.ShowMinimumPhase = true;
         visibility.ShowExcessPhase = true;
         visibility.ShowGroupDelay = true;
+        visibility.ShowMinimumPhaseGroupDelay = true;
+        visibility.ShowExcessGroupDelay = true;
         visibility.ShowCoherence = true;
 
         Assert.Equal(SpectrumCurves.None, visibility.ToSpectrumCurves());
@@ -64,6 +66,8 @@ public sealed class CurveVisibilityOptionsTests
         ShowMinimumPhase = false,
         ShowExcessPhase = false,
         ShowGroupDelay = false,
+        ShowMinimumPhaseGroupDelay = false,
+        ShowExcessGroupDelay = false,
         ShowCoherence = false
     };
 

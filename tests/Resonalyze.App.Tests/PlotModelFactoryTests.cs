@@ -116,7 +116,12 @@ public sealed class PlotModelFactoryTests
     {
         using var measurement = CreateTransferMeasurement();
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
-        var groupDelayVisibility = new CurveVisibilityOptions { ShowGroupDelay = false };
+        var groupDelayVisibility = new CurveVisibilityOptions
+        {
+            ShowGroupDelay = false,
+            ShowMinimumPhaseGroupDelay = false,
+            ShowExcessGroupDelay = false
+        };
         PlotModelFactory factory =
             CreateFactory(measurement, noiseMeasurement, groupDelayVisibility: groupDelayVisibility);
 
@@ -124,6 +129,77 @@ public sealed class PlotModelFactoryTests
 
         groupDelayVisibility.ShowGroupDelay = true;
         Assert.NotEmpty(factory.CreateGroupDelay(includeCurves: true).Series);
+    }
+
+    [Fact]
+    public void GroupDelay_MinimumAndExcessCurves_FollowTheirFlags()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        var groupDelayVisibility = new CurveVisibilityOptions
+        {
+            ShowGroupDelay = true,
+            ShowMinimumPhaseGroupDelay = true,
+            ShowExcessGroupDelay = true
+        };
+        PlotModelFactory factory =
+            CreateFactory(measurement, noiseMeasurement, groupDelayVisibility: groupDelayVisibility);
+
+        List<CurveTag> tags = factory.CreateGroupDelay(includeCurves: true).Series
+            .OfType<LineSeries>()
+            .Select(series => series.Tag)
+            .OfType<CurveTag>()
+            .ToList();
+        Assert.Contains(tags, tag => tag.Kind == AnalysisCurveKind.Primary);
+        Assert.Contains(
+            tags, tag => tag.Kind == AnalysisCurveKind.MinimumPhaseGroupDelay);
+        Assert.Contains(tags, tag => tag.Kind == AnalysisCurveKind.ExcessGroupDelay);
+
+        // Each curve follows its own flag: hiding the measured curve must not
+        // take the minimum/excess pair down with it, and vice versa.
+        groupDelayVisibility.ShowGroupDelay = false;
+        groupDelayVisibility.ShowExcessGroupDelay = false;
+        tags = factory.CreateGroupDelay(includeCurves: true).Series
+            .OfType<LineSeries>()
+            .Select(series => series.Tag)
+            .OfType<CurveTag>()
+            .ToList();
+        Assert.DoesNotContain(tags, tag => tag.Kind == AnalysisCurveKind.Primary);
+        Assert.Contains(
+            tags, tag => tag.Kind == AnalysisCurveKind.MinimumPhaseGroupDelay);
+        Assert.DoesNotContain(
+            tags, tag => tag.Kind == AnalysisCurveKind.ExcessGroupDelay);
+    }
+
+    [Fact]
+    public void GroupDelay_CompareSource_GetsMinimumAndExcessCurvesToo()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
+
+        var compareIr = new Complex[2048];
+        compareIr[64] = Complex.One;
+        factory.SetCompareSourceProvider(
+            () => new CompareAnalysisSource(
+                "Reference",
+                44_100,
+                compareIr,
+                64));
+
+        List<CurveTag> tags = factory.CreateGroupDelay(includeCurves: true).Series
+            .OfType<LineSeries>()
+            .Select(series => series.Tag)
+            .OfType<CurveTag>()
+            .ToList();
+        Assert.Contains(
+            tags,
+            tag => tag.Source == CurveSource.Compare &&
+                tag.Kind == AnalysisCurveKind.MinimumPhaseGroupDelay);
+        Assert.Contains(
+            tags,
+            tag => tag.Source == CurveSource.Compare &&
+                tag.Kind == AnalysisCurveKind.ExcessGroupDelay);
     }
 
     [Fact]

@@ -29,6 +29,11 @@ public sealed class CurveTagTests
     [InlineData(Mode.PhaseResponse, AnalysisCurveKind.Primary, "Measured phase")]
     [InlineData(Mode.PhaseResponse, AnalysisCurveKind.MinimumPhase, "Minimum phase")]
     [InlineData(Mode.GroupDelay, AnalysisCurveKind.Primary, "Group delay")]
+    [InlineData(
+        Mode.GroupDelay,
+        AnalysisCurveKind.MinimumPhaseGroupDelay,
+        "Minimum-phase group delay")]
+    [InlineData(Mode.GroupDelay, AnalysisCurveKind.ExcessGroupDelay, "Excess group delay")]
     [InlineData(Mode.ImpulseResponse, AnalysisCurveKind.Primary, "Impulse")]
     public void Label_DescribesMainCurve(Mode mode, AnalysisCurveKind kind, string expected)
     {

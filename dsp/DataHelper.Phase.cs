@@ -1057,7 +1057,37 @@ namespace Resonalyze.Dsp
             double plateauMs,
             double rightMs,
             double smoothingInverseOctaves,
-            double magnitudeGateDb = -30.0)
+            double magnitudeGateDb = -30.0) =>
+            GetGroupDelayCurves(
+                measurement,
+                gateOffsetMs,
+                leftMs,
+                plateauMs,
+                rightMs,
+                smoothingInverseOctaves,
+                magnitudeGateDb,
+                includeMinimumPhase: false).Measured;
+
+        /// <summary>
+        /// The Group Delay mode's curve family over ONE gate extraction: the
+        /// measured group delay and, when requested, the minimum-phase group
+        /// delay (from the gated magnitude via the Bode relation) plus the
+        /// excess (measured − minimum). All curves run through the same
+        /// energy-weighted τ evaluation and smoothing and share one validity
+        /// gate, so the subtraction is bin-exact. The measured and excess
+        /// curves are absolute (referenced to the IR start); the minimum-phase
+        /// curve carries no bulk delay by construction, so the excess reads as
+        /// the frequency-dependent arrival time of the all-pass part.
+        /// </summary>
+        public static GroupDelayCurveSet GetGroupDelayCurves(
+            IImpulseMeasurement measurement,
+            double gateOffsetMs,
+            double leftMs,
+            double plateauMs,
+            double rightMs,
+            double smoothingInverseOctaves,
+            double magnitudeGateDb = -30.0,
+            bool includeMinimumPhase = false)
         {
             // Same gate as the phase mode: the left shoulder ends at the gate offset.
             // Wrap handles a gate that runs into negative indices and must read the
@@ -1105,6 +1135,13 @@ namespace Resonalyze.Dsp
                 energy[i] = h.Real * h.Real + h.Imaginary * h.Imaginary;
             }
 
+            // The minimum-phase reconstruction preserves |H| exactly, so the measured
+            // energy array doubles as this curve's denominator and one validity gate
+            // covers every curve.
+            double[]? minimumNumerator = includeMinimumPhase
+                ? ComputeMinimumPhaseGroupDelayNumerator(spectrum, invSampleRate)
+                : null;
+
             double decodedOctaves =
                 SpectrumSmoothing.SmoothingOctaves(smoothingInverseOctaves);
             double smoothingOctaves = decodedOctaves > 0.0
@@ -1123,6 +1160,10 @@ namespace Resonalyze.Dsp
                 SmoothBinsHann(numerator, smoothingOctaves, binWidthHz, minHalfWidthHz);
             double[] smoothedEnergy =
                 SmoothBinsHann(energy, smoothingOctaves, binWidthHz, minHalfWidthHz);
+            double[]? smoothedMinimumNumerator = minimumNumerator == null
+                ? null
+                : SmoothBinsHann(
+                    minimumNumerator, smoothingOctaves, binWidthHz, minHalfWidthHz);
 
             double maxEnergy = 0.0;
             for (int i = 1; i < halfLength; i++)
@@ -1132,7 +1173,10 @@ namespace Resonalyze.Dsp
 
             if (maxEnergy <= 0.0)
             {
-                return new AnalysisCurve("Group Delay", new List<SignalPoint>());
+                return BuildGroupDelayCurveSet(
+                    new List<SignalPoint>(),
+                    includeMinimumPhase ? new List<SignalPoint>() : null,
+                    includeMinimumPhase ? new List<SignalPoint>() : null);
             }
 
             // The validity gate reads against a LOCAL octave-smoothed energy
@@ -1149,6 +1193,10 @@ namespace Resonalyze.Dsp
             double localGateRatio = Math.Pow(10.0, magnitudeGateDb / 10.0);
 
             List<SignalPoint> data = new(halfLength);
+            List<SignalPoint>? minimumData =
+                smoothedMinimumNumerator == null ? null : new(halfLength);
+            List<SignalPoint>? excessData =
+                smoothedMinimumNumerator == null ? null : new(halfLength);
 
             // The gate buffer starts at extractionStart; adding it back makes the group
             // delay absolute (referenced to the IR start), so a peak well into the IR
@@ -1168,14 +1216,87 @@ namespace Resonalyze.Dsp
                 if (smoothedEnergy[i] < minEnergy)
                 {
                     data.Add(new SignalPoint(f, double.NaN));
+                    minimumData?.Add(new SignalPoint(f, double.NaN));
+                    excessData?.Add(new SignalPoint(f, double.NaN));
                     continue;
                 }
 
                 double delaySeconds = smoothedNumerator[i] / smoothedEnergy[i];
-                data.Add(new SignalPoint(f, (delaySeconds + absoluteStartTime) * 1000.0));
+                double measuredMilliseconds =
+                    (delaySeconds + absoluteStartTime) * 1000.0;
+                data.Add(new SignalPoint(f, measuredMilliseconds));
+
+                if (smoothedMinimumNumerator != null)
+                {
+                    double minimumMilliseconds =
+                        smoothedMinimumNumerator[i] / smoothedEnergy[i] * 1000.0;
+                    minimumData!.Add(new SignalPoint(f, minimumMilliseconds));
+                    excessData!.Add(new SignalPoint(
+                        f, measuredMilliseconds - minimumMilliseconds));
+                }
             }
 
-            return new AnalysisCurve("Group Delay", data);
+            return BuildGroupDelayCurveSet(data, minimumData, excessData);
+        }
+
+        private static GroupDelayCurveSet BuildGroupDelayCurveSet(
+            List<SignalPoint> measured,
+            List<SignalPoint>? minimum,
+            List<SignalPoint>? excess) =>
+            new(
+                new AnalysisCurve("Group Delay", measured),
+                minimum == null
+                    ? null
+                    : new AnalysisCurve(
+                        "Minimum Phase GD",
+                        minimum,
+                        AnalysisCurveKind.MinimumPhaseGroupDelay),
+                excess == null
+                    ? null
+                    : new AnalysisCurve(
+                        "Excess GD",
+                        excess,
+                        AnalysisCurveKind.ExcessGroupDelay));
+
+        // Per-bin τ numerator Re[T·conj(H_min)] of the minimum-phase counterpart:
+        // reconstruct |H|·e^{jφ_min} from the measured magnitude, return to the
+        // time domain and time-weight it — the same construction the measured
+        // curve uses, so both divide by the same |H|² and inherit identical
+        // smoothing semantics. h_min is real by construction (log|H| is even, so
+        // φ_min is odd and the spectrum stays conjugate-symmetric); the finite
+        // FFT's imaginary residue is dropped rather than folded into the τ.
+        private static double[] ComputeMinimumPhaseGroupDelayNumerator(
+            Complex[] spectrum,
+            double invSampleRate)
+        {
+            int n = spectrum.Length;
+            double[] magnitude = new double[n];
+            for (int i = 0; i < n; i++)
+            {
+                magnitude[i] = spectrum[i].Magnitude;
+            }
+
+            Complex[] minimumSpectrum = MinimumPhase.Reconstruct(magnitude);
+
+            Complex[] buffer = new Complex[n];
+            Array.Copy(minimumSpectrum, buffer, n);
+            Fourier.Inverse(buffer, FourierOptions.Matlab);
+            for (int i = 0; i < n; i++)
+            {
+                buffer[i] = new Complex(buffer[i].Real * (i * invSampleRate), 0.0);
+            }
+            Fourier.Forward(buffer, FourierOptions.Matlab);
+
+            int halfLength = n / 2;
+            double[] numerator = new double[halfLength];
+            for (int i = 1; i < halfLength; i++)
+            {
+                Complex h = minimumSpectrum[i];
+                Complex t = buffer[i];
+                numerator[i] = t.Real * h.Real + t.Imaginary * h.Imaginary;
+            }
+
+            return numerator;
         }
 
         // The SEED grid: how many anchors span one kernel width before refinement. Not

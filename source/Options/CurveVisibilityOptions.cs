@@ -27,6 +27,8 @@ public sealed class CurveVisibilityOptions
 
     // Group-delay mode.
     public bool ShowGroupDelay { get; set; } = true;
+    public bool ShowMinimumPhaseGroupDelay { get; set; } = true;
+    public bool ShowExcessGroupDelay { get; set; } = true;
 
     // Shared coherence curve, shown in all three modes.
     public bool ShowCoherence { get; set; } = true;

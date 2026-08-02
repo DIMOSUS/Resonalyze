@@ -43,6 +43,8 @@ public sealed record CurveTag(
         AnalysisCurveKind.NoiseFloor => "Noise floor",
         AnalysisCurveKind.MinimumPhase => "Minimum phase",
         AnalysisCurveKind.ExcessPhase => "Excess phase",
+        AnalysisCurveKind.MinimumPhaseGroupDelay => "Minimum-phase group delay",
+        AnalysisCurveKind.ExcessGroupDelay => "Excess group delay",
         AnalysisCurveKind.InputSpectrum => "Input Spectrum (RTA)",
         _ => mode switch
         {

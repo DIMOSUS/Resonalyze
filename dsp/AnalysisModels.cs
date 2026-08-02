@@ -25,7 +25,13 @@ public enum AnalysisCurveKind
     // no loopback reference behind it. Unlike a transfer function it carries an
     // absolute level, which is what makes a moving-microphone RTA average usable as
     // an equalization source.
-    InputSpectrum
+    InputSpectrum,
+    // The group-delay counterparts of MinimumPhase/ExcessPhase: the delay the
+    // gated magnitude alone implies (Bode relation), and the all-pass remainder
+    // measured − minimum that no minimum-phase equalizer can move. Appended at
+    // the end: the kind is persisted in overlay files.
+    MinimumPhaseGroupDelay,
+    ExcessGroupDelay
 }
 
 /// <summary>
@@ -60,3 +66,16 @@ public sealed record AnalysisCurve(
     string Name,
     IReadOnlyList<SignalPoint> Points,
     AnalysisCurveKind Kind = AnalysisCurveKind.Primary);
+
+/// <summary>
+/// The Group Delay mode's curve family, computed in one pass over one gate
+/// extraction: the measured group delay plus, when requested, the minimum-phase
+/// group delay implied by the gated magnitude alone and the excess
+/// (measured − minimum). The optional curves are null when the caller did not
+/// ask for the minimum-phase work. All present curves share one frequency grid
+/// and one validity gate: a bin is finite in every curve or NaN in every curve.
+/// </summary>
+public sealed record GroupDelayCurveSet(
+    AnalysisCurve Measured,
+    AnalysisCurve? Minimum,
+    AnalysisCurve? Excess);

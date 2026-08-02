@@ -42,6 +42,8 @@ namespace Resonalyze.Options
             label1 = new Label();
             labelCurves = new Label();
             checkBoxShowGroupDelay = new CheckBox();
+            checkBoxShowMinimumPhaseGroupDelay = new CheckBox();
+            checkBoxShowExcessGroupDelay = new CheckBox();
             checkBoxShowCoherence = new CheckBox();
             irPlotView = new OxyPlot.WindowsForms.PlotView();
             (numericGateOffset).BeginInit();
@@ -225,22 +227,44 @@ namespace Resonalyze.Options
             checkBoxShowGroupDelay.TabIndex = 64;
             checkBoxShowGroupDelay.Text = "Show group delay";
             checkBoxShowGroupDelay.UseVisualStyleBackColor = true;
-            // 
+            //
+            // checkBoxShowMinimumPhaseGroupDelay
+            //
+            checkBoxShowMinimumPhaseGroupDelay.AutoSize = true;
+            checkBoxShowMinimumPhaseGroupDelay.ForeColor = SystemColors.ControlLight;
+            checkBoxShowMinimumPhaseGroupDelay.Location = new Point(12, 205);
+            checkBoxShowMinimumPhaseGroupDelay.Name = "checkBoxShowMinimumPhaseGroupDelay";
+            checkBoxShowMinimumPhaseGroupDelay.Size = new Size(159, 19);
+            checkBoxShowMinimumPhaseGroupDelay.TabIndex = 65;
+            checkBoxShowMinimumPhaseGroupDelay.Text = "Show minimum-phase GD";
+            checkBoxShowMinimumPhaseGroupDelay.UseVisualStyleBackColor = true;
+            //
+            // checkBoxShowExcessGroupDelay
+            //
+            checkBoxShowExcessGroupDelay.AutoSize = true;
+            checkBoxShowExcessGroupDelay.ForeColor = SystemColors.ControlLight;
+            checkBoxShowExcessGroupDelay.Location = new Point(12, 227);
+            checkBoxShowExcessGroupDelay.Name = "checkBoxShowExcessGroupDelay";
+            checkBoxShowExcessGroupDelay.Size = new Size(110, 19);
+            checkBoxShowExcessGroupDelay.TabIndex = 66;
+            checkBoxShowExcessGroupDelay.Text = "Show excess GD";
+            checkBoxShowExcessGroupDelay.UseVisualStyleBackColor = true;
+            //
             // checkBoxShowCoherence
-            // 
+            //
             checkBoxShowCoherence.AutoSize = true;
             checkBoxShowCoherence.ForeColor = SystemColors.ControlLight;
-            checkBoxShowCoherence.Location = new Point(12, 205);
+            checkBoxShowCoherence.Location = new Point(12, 249);
             checkBoxShowCoherence.Name = "checkBoxShowCoherence";
             checkBoxShowCoherence.Size = new Size(134, 19);
-            checkBoxShowCoherence.TabIndex = 65;
+            checkBoxShowCoherence.TabIndex = 67;
             checkBoxShowCoherence.Text = "Show γ² (coherence)";
             checkBoxShowCoherence.UseVisualStyleBackColor = true;
-            // 
+            //
             // irPlotView
-            // 
+            //
             irPlotView.BackColor = Color.FromArgb(32, 36, 46);
-            irPlotView.Location = new Point(12, 231);
+            irPlotView.Location = new Point(12, 275);
             irPlotView.Name = "irPlotView";
             irPlotView.PanCursor = Cursors.Hand;
             irPlotView.Size = new Size(241, 300);
@@ -255,9 +279,11 @@ namespace Resonalyze.Options
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(45, 50, 60);
-            ClientSize = new Size(265, 538);
+            ClientSize = new Size(265, 582);
             Controls.Add(irPlotView);
             Controls.Add(checkBoxShowCoherence);
+            Controls.Add(checkBoxShowExcessGroupDelay);
+            Controls.Add(checkBoxShowMinimumPhaseGroupDelay);
             Controls.Add(checkBoxShowGroupDelay);
             Controls.Add(labelCurves);
             Controls.Add(numericGateOffset);
@@ -303,6 +329,8 @@ namespace Resonalyze.Options
         private Label label1;
         private Label labelCurves;
         private CheckBox checkBoxShowGroupDelay;
+        private CheckBox checkBoxShowMinimumPhaseGroupDelay;
+        private CheckBox checkBoxShowExcessGroupDelay;
         private CheckBox checkBoxShowCoherence;
         private OxyPlot.WindowsForms.PlotView irPlotView;
     }

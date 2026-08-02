@@ -43,6 +43,9 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
                 SmoothingPresetOptions.Normalize(
                     opt.SmoothingInverseOctaves, includePsychoacoustic: false);
             checkBoxShowGroupDelay.Checked = visibility.ShowGroupDelay;
+            checkBoxShowMinimumPhaseGroupDelay.Checked =
+                visibility.ShowMinimumPhaseGroupDelay;
+            checkBoxShowExcessGroupDelay.Checked = visibility.ShowExcessGroupDelay;
             checkBoxShowCoherence.Checked = visibility.ShowCoherence;
         });
 
@@ -63,6 +66,9 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
                 ? inverseOctaves
                 : SmoothingPresetOptions.SupportedInverseOctaves[0];
         visibility.ShowGroupDelay = checkBoxShowGroupDelay.Checked;
+        visibility.ShowMinimumPhaseGroupDelay =
+            checkBoxShowMinimumPhaseGroupDelay.Checked;
+        visibility.ShowExcessGroupDelay = checkBoxShowExcessGroupDelay.Checked;
         visibility.ShowCoherence = checkBoxShowCoherence.Checked;
         UpdateIrPreview();
     }
@@ -91,6 +97,15 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
         toolTip.SetToolTip(
             checkBoxShowGroupDelay,
             "Shows the group-delay curve.");
+        toolTip.SetToolTip(
+            checkBoxShowMinimumPhaseGroupDelay,
+            "Shows the minimum-phase group delay implied by the gated magnitude " +
+            "response alone (Bode relation) — the part a minimum-phase EQ could correct.");
+        toolTip.SetToolTip(
+            checkBoxShowExcessGroupDelay,
+            "Shows measured minus minimum-phase group delay: the all-pass remainder " +
+            "(bulk delay, crossovers, reflections) that magnitude EQ cannot move. " +
+            "A flat excess curve is a pure delay.");
         toolTip.SetToolTip(
             checkBoxShowCoherence,
             "Shows the measurement coherence (\u03B3\u00B2) curve when the IR was captured with 2+ averaged runs.");

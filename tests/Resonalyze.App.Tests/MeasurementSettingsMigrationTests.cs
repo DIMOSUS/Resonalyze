@@ -257,6 +257,38 @@ public sealed class MeasurementSettingsMigrationTests
             PhaseAnalysisSettings.DefaultFdwCycles, options.MagnitudeFdwCycles);
     }
 
+    // A pre-excess-GD file has no ShowMinimumPhaseGroupDelay /
+    // ShowExcessGroupDelay fields; the new curves default ON (real JSON for
+    // the same missing-property reason as the gate tests above). A stored
+    // false must survive the roundtrip, or the checkboxes would re-arm on
+    // every restart.
+    [Fact]
+    public void GroupDelayCurveFlags_DefaultOnForOldFilesAndRoundTripWhenOff()
+    {
+        MeasurementSettingsFile.FrequencyResponseSettings legacy =
+            DeserializeFrequencyResponse("""{"ShowGroupDelay": false}""");
+        var visibility = new CurveVisibilityOptions();
+
+        legacy.ApplyTo(new FrequencyResponseOptions(), visibility);
+
+        Assert.False(visibility.ShowGroupDelay);
+        Assert.True(visibility.ShowMinimumPhaseGroupDelay);
+        Assert.True(visibility.ShowExcessGroupDelay);
+
+        var stored = new CurveVisibilityOptions
+        {
+            ShowMinimumPhaseGroupDelay = false,
+            ShowExcessGroupDelay = false
+        };
+        var restored = new CurveVisibilityOptions();
+        MeasurementSettingsFile.FrequencyResponseSettings.Capture(
+                new FrequencyResponseOptions(), stored)
+            .ApplyTo(new FrequencyResponseOptions(), restored);
+
+        Assert.False(restored.ShowMinimumPhaseGroupDelay);
+        Assert.False(restored.ShowExcessGroupDelay);
+    }
+
     private static MeasurementSettingsFile.FrequencyResponseSettings
         DeserializeFrequencyResponse(string json) =>
         System.Text.Json.JsonSerializer

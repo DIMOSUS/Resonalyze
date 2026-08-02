@@ -588,10 +588,19 @@ internal sealed class PlotModelFactory
         double minimum = +1000;
         double maximum = -1000;
         bool hasValidData = false;
+        bool showAnyGroupDelayCurve =
+            groupDelayVisibility.ShowGroupDelay ||
+            groupDelayVisibility.ShowMinimumPhaseGroupDelay ||
+            groupDelayVisibility.ShowExcessGroupDelay;
+        // The minimum-phase reconstruction is computed only when a curve
+        // built on it is actually shown.
+        bool includeMinimumPhase =
+            groupDelayVisibility.ShowMinimumPhaseGroupDelay ||
+            groupDelayVisibility.ShowExcessGroupDelay;
         // Group delay is only meaningful with a transfer IR (loopback timing).
         if (measurementContext.CanIncludeCurves(includeCurves) &&
             measurementContext.HasTransferImpulseResponse &&
-            (groupDelayVisibility.ShowGroupDelay || groupDelayVisibility.ShowCoherence))
+            (showAnyGroupDelayCurve || groupDelayVisibility.ShowCoherence))
         {
             const string groupDelayTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.000} ms";
             // Auto gate: same contract as the phase plot — re-snap the offset
@@ -601,21 +610,75 @@ internal sealed class PlotModelFactory
             {
                 groupDelayOptions.GroupDelayGateOffsetMs = gdStartMs;
             }
-            if (groupDelayVisibility.ShowGroupDelay)
+            if (showAnyGroupDelayCurve)
             {
                 // The gate is positioned by its Gate offset (left-shoulder-end) within the
                 // transfer IR; the group delay reads absolute, referenced to the IR start.
                 IImpulseMeasurement measurement = measurementContext.CreatePrimaryMeasurement();
-                AnalysisCurve curve = DataHelper.GetGroupDelay(
+                GroupDelayCurveSet curves = DataHelper.GetGroupDelayCurves(
                     measurement,
                     groupDelayOptions.GroupDelayGateOffsetMs,
                     groupDelayOptions.GroupDelayLeftMs,
                     groupDelayOptions.GroupDelayPlateauMs,
                     groupDelayOptions.GroupDelayRightMs,
                     groupDelayOptions.SmoothingInverseOctaves,
-                    GroupDelayMagnitudeGateDb);
-                AddLineSeries(model, curve, groupDelayTrackerFormat, Mode.GroupDelay, GroupDelayAxisKey);
-                UpdateGroupDelayRange(curve, ref minimum, ref maximum, ref hasValidData);
+                    GroupDelayMagnitudeGateDb,
+                    includeMinimumPhase);
+                if (groupDelayVisibility.ShowGroupDelay)
+                {
+                    AddLineSeries(
+                        model,
+                        curves.Measured,
+                        groupDelayTrackerFormat,
+                        Mode.GroupDelay,
+                        GroupDelayAxisKey);
+                }
+                // The Y auto-fit never reads the minimum/excess POINT VALUES. Near
+                // the sweep-band edges the magnitude rolls off steeply, the cepstral
+                // reconstruction legitimately turns that slope into tens of ms of
+                // minimum-phase group delay (~1/f at the low edge), and the excess
+                // mirrors it with the opposite sign — the validity gate keeps those
+                // bins because the rolloff tracks its own local envelope down to the
+                // −60 dB backstop. Folding them in would flatten a useful 2–5 ms
+                // measured curve onto a ±30 ms scale; off-scale points simply clip.
+                //
+                // The measured extremes still drive the fit when only the excess is
+                // shown: in band the excess tracks the measured absolute level
+                // (their difference is the minimum curve, ≈ 0 away from the
+                // rolloffs), so the measured range is the spike-free proxy for
+                // where the excess lives. The minimum curve lives around zero
+                // instead — showing it extends the fitted range to include zero.
+                if (groupDelayVisibility.ShowGroupDelay ||
+                    groupDelayVisibility.ShowExcessGroupDelay)
+                {
+                    UpdateGroupDelayRange(
+                        curves.Measured, ref minimum, ref maximum, ref hasValidData);
+                }
+                if (groupDelayVisibility.ShowMinimumPhaseGroupDelay &&
+                    curves.Minimum is { } minimumCurve)
+                {
+                    AddLineSeries(
+                        model,
+                        minimumCurve,
+                        groupDelayTrackerFormat,
+                        Mode.GroupDelay,
+                        GroupDelayAxisKey);
+                    if (hasValidData)
+                    {
+                        minimum = Math.Min(minimum, 0.0);
+                        maximum = Math.Max(maximum, 0.0);
+                    }
+                }
+                if (groupDelayVisibility.ShowExcessGroupDelay &&
+                    curves.Excess is { } excessCurve)
+                {
+                    AddLineSeries(
+                        model,
+                        excessCurve,
+                        groupDelayTrackerFormat,
+                        Mode.GroupDelay,
+                        GroupDelayAxisKey);
+                }
 
                 // Overlay the Compare measurement with the identical gate
                 // length / smoothing. Under Auto the gate PLACEMENT is
@@ -630,25 +693,51 @@ internal sealed class PlotModelFactory
                             is { } compareStartMs
                             ? compareStartMs
                             : groupDelayOptions.GroupDelayGateOffsetMs;
-                    AnalysisCurve compareCurve = DataHelper.GetGroupDelay(
+                    GroupDelayCurveSet compareCurves = DataHelper.GetGroupDelayCurves(
                         compare.Measurement,
                         compareGateOffsetMs,
                         groupDelayOptions.GroupDelayLeftMs,
                         groupDelayOptions.GroupDelayPlateauMs,
                         groupDelayOptions.GroupDelayRightMs,
                         groupDelayOptions.SmoothingInverseOctaves,
-                        GroupDelayMagnitudeGateDb);
-                    // Draw the Compare curve as an overlay but keep the Y-axis auto-fit
-                    // driven by the main measurement only. The Compare group delay is
-                    // gated at the same offset, so as the gate moves its extremes swing
-                    // widely; folding them into the range makes the scale jump on every
-                    // edit. Off-scale Compare points are simply clipped, like any overlay.
-                    AddCompareLineSeries(
-                        model,
-                        compareCurve,
-                        groupDelayTrackerFormat,
-                        compare.DisplayName,
-                        Mode.GroupDelay);
+                        GroupDelayMagnitudeGateDb,
+                        includeMinimumPhase);
+                    // Draw the Compare curves as overlays but keep the Y-axis auto-fit
+                    // driven by the main measured curve only. The Compare group delay
+                    // shares the gate LENGTH and smoothing (its placement is per-curve
+                    // under Auto, resolved above), so as the gate settings move its
+                    // extremes swing widely; folding them into the range makes the
+                    // scale jump on every edit. Off-scale Compare points are simply
+                    // clipped, like any overlay.
+                    if (groupDelayVisibility.ShowGroupDelay)
+                    {
+                        AddCompareLineSeries(
+                            model,
+                            compareCurves.Measured,
+                            groupDelayTrackerFormat,
+                            compare.DisplayName,
+                            Mode.GroupDelay);
+                    }
+                    if (groupDelayVisibility.ShowMinimumPhaseGroupDelay &&
+                        compareCurves.Minimum is { } compareMinimumCurve)
+                    {
+                        AddCompareLineSeries(
+                            model,
+                            compareMinimumCurve,
+                            groupDelayTrackerFormat,
+                            compare.DisplayName,
+                            Mode.GroupDelay);
+                    }
+                    if (groupDelayVisibility.ShowExcessGroupDelay &&
+                        compareCurves.Excess is { } compareExcessCurve)
+                    {
+                        AddCompareLineSeries(
+                            model,
+                            compareExcessCurve,
+                            groupDelayTrackerFormat,
+                            compare.DisplayName,
+                            Mode.GroupDelay);
+                    }
                 }
             }
 
@@ -659,7 +748,7 @@ internal sealed class PlotModelFactory
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
                  !measurementContext.HasTransferImpulseResponse &&
-                 groupDelayVisibility.ShowGroupDelay)
+                 showAnyGroupDelayCurve)
         {
             AddRequiresTransferIrAnnotation(model);
         }

@@ -116,7 +116,12 @@ public sealed class PlotModelFactoryTests
     {
         using var measurement = CreateTransferMeasurement();
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
-        var groupDelayVisibility = new CurveVisibilityOptions { ShowGroupDelay = false };
+        var groupDelayVisibility = new CurveVisibilityOptions
+        {
+            ShowGroupDelay = false,
+            ShowMinimumPhaseGroupDelay = false,
+            ShowExcessGroupDelay = false
+        };
         PlotModelFactory factory =
             CreateFactory(measurement, noiseMeasurement, groupDelayVisibility: groupDelayVisibility);
 
@@ -124,6 +129,141 @@ public sealed class PlotModelFactoryTests
 
         groupDelayVisibility.ShowGroupDelay = true;
         Assert.NotEmpty(factory.CreateGroupDelay(includeCurves: true).Series);
+    }
+
+    [Fact]
+    public void GroupDelay_MinimumAndExcessCurves_FollowTheirFlags()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        var groupDelayVisibility = new CurveVisibilityOptions
+        {
+            ShowGroupDelay = true,
+            ShowMinimumPhaseGroupDelay = true,
+            ShowExcessGroupDelay = true
+        };
+        PlotModelFactory factory =
+            CreateFactory(measurement, noiseMeasurement, groupDelayVisibility: groupDelayVisibility);
+
+        List<CurveTag> tags = factory.CreateGroupDelay(includeCurves: true).Series
+            .OfType<LineSeries>()
+            .Select(series => series.Tag)
+            .OfType<CurveTag>()
+            .ToList();
+        Assert.Contains(tags, tag => tag.Kind == AnalysisCurveKind.Primary);
+        Assert.Contains(
+            tags, tag => tag.Kind == AnalysisCurveKind.MinimumPhaseGroupDelay);
+        Assert.Contains(tags, tag => tag.Kind == AnalysisCurveKind.ExcessGroupDelay);
+
+        // Each curve follows its own flag: hiding the measured curve must not
+        // take the minimum/excess pair down with it, and vice versa.
+        groupDelayVisibility.ShowGroupDelay = false;
+        groupDelayVisibility.ShowExcessGroupDelay = false;
+        tags = factory.CreateGroupDelay(includeCurves: true).Series
+            .OfType<LineSeries>()
+            .Select(series => series.Tag)
+            .OfType<CurveTag>()
+            .ToList();
+        Assert.DoesNotContain(tags, tag => tag.Kind == AnalysisCurveKind.Primary);
+        Assert.Contains(
+            tags, tag => tag.Kind == AnalysisCurveKind.MinimumPhaseGroupDelay);
+        Assert.DoesNotContain(
+            tags, tag => tag.Kind == AnalysisCurveKind.ExcessGroupDelay);
+    }
+
+    [Fact]
+    public void GroupDelay_AxisAutoFit_FollowsMeasuredAndPinsZeroForMinimum()
+    {
+        // A ~5.4 ms arrival — the typical car-audio scale, where the measured
+        // range (±2 ms pad) no longer straddles zero on its own. The fit must
+        // follow the measured absolute level even when only the excess is shown
+        // (in band the excess tracks it), must extend to zero when the minimum
+        // curve is shown (it lives at ≈ 0), and must never read the pair's own
+        // point values (their band-edge cepstral swings would wreck the scale).
+        using var measurement = CreateTransferMeasurement(peakSample: 240);
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+
+        OxyPlot.Axes.Axis AxisOf(bool showMeasured, bool showMinimum, bool showExcess)
+        {
+            var visibility = new CurveVisibilityOptions
+            {
+                ShowGroupDelay = showMeasured,
+                ShowMinimumPhaseGroupDelay = showMinimum,
+                ShowExcessGroupDelay = showExcess
+            };
+            PlotModelFactory factory = CreateFactory(
+                measurement, noiseMeasurement, groupDelayVisibility: visibility);
+            return factory.CreateGroupDelay(includeCurves: true).Axes
+                .First(axis => axis.Key == PlotModelFactory.GroupDelayAxisKey);
+        }
+
+        // All three curves: the ~5.4 ms measured level AND the ≈ 0 minimum
+        // curve must both land inside the fitted range.
+        OxyPlot.Axes.Axis allThree = AxisOf(
+            showMeasured: true, showMinimum: true, showExcess: true);
+        Assert.True(
+            allThree.Minimum < 0.2,
+            $"the minimum curve is clipped out (axis starts at {allThree.Minimum:0.00} ms)");
+        Assert.True(
+            allThree.Maximum > 5.0,
+            $"the measured level is clipped out (axis ends at {allThree.Maximum:0.00} ms)");
+
+        // Excess only (measured hidden): the axis still follows the measured
+        // absolute level, where the in-band excess actually lives — not the
+        // −5…+5 default that would push an 8–10 ms system off screen.
+        OxyPlot.Axes.Axis excessOnly = AxisOf(
+            showMeasured: false, showMinimum: false, showExcess: true);
+        Assert.True(
+            excessOnly.Maximum > 5.0,
+            $"the excess curve is clipped out (axis ends at {excessOnly.Maximum:0.00} ms)");
+        Assert.True(
+            excessOnly.Minimum < 5.0,
+            $"the excess curve is clipped out (axis starts at {excessOnly.Minimum:0.00} ms)");
+
+        // Measured + excess without the minimum curve: no zero extension — the
+        // range stays tight around the arrival.
+        OxyPlot.Axes.Axis withoutMinimum = AxisOf(
+            showMeasured: true, showMinimum: false, showExcess: true);
+        Assert.True(
+            withoutMinimum.Minimum > 2.0,
+            $"zero was pinned with no minimum curve shown ({withoutMinimum.Minimum:0.00} ms)");
+
+        // Minimum alone: the default −5…+5 window already contains the curve.
+        OxyPlot.Axes.Axis minimumOnly = AxisOf(
+            showMeasured: false, showMinimum: true, showExcess: false);
+        Assert.Equal(-5.0, minimumOnly.Minimum);
+        Assert.Equal(5.0, minimumOnly.Maximum);
+    }
+
+    [Fact]
+    public void GroupDelay_CompareSource_GetsMinimumAndExcessCurvesToo()
+    {
+        using var measurement = CreateTransferMeasurement();
+        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
+        PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
+
+        var compareIr = new Complex[2048];
+        compareIr[64] = Complex.One;
+        factory.SetCompareSourceProvider(
+            () => new CompareAnalysisSource(
+                "Reference",
+                44_100,
+                compareIr,
+                64));
+
+        List<CurveTag> tags = factory.CreateGroupDelay(includeCurves: true).Series
+            .OfType<LineSeries>()
+            .Select(series => series.Tag)
+            .OfType<CurveTag>()
+            .ToList();
+        Assert.Contains(
+            tags,
+            tag => tag.Source == CurveSource.Compare &&
+                tag.Kind == AnalysisCurveKind.MinimumPhaseGroupDelay);
+        Assert.Contains(
+            tags,
+            tag => tag.Source == CurveSource.Compare &&
+                tag.Kind == AnalysisCurveKind.ExcessGroupDelay);
     }
 
     [Fact]
@@ -817,10 +957,10 @@ public sealed class PlotModelFactoryTests
         return measurement;
     }
 
-    private static ExpSweepMeasurement CreateTransferMeasurement()
+    private static ExpSweepMeasurement CreateTransferMeasurement(int peakSample = 64)
     {
         var transferImpulse = new Complex[2048];
-        transferImpulse[64] = Complex.One;
+        transferImpulse[peakSample] = Complex.One;
 
         var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.RestoreImpulseResponse(
@@ -831,10 +971,10 @@ public sealed class PlotModelFactoryTests
             sweepDurationSeconds: 1.0,
             playChannel: PlaybackChannel.Mono,
             sweepDeconvolutionImpulseResponse: transferImpulse,
-            sweepDeconvolutionPeakIndex: 64,
+            sweepDeconvolutionPeakIndex: peakSample,
             measurementMode: SweepMeasurementMode.LoopbackTransfer,
             transferImpulseResponse: transferImpulse,
-            transferPeakIndex: 64);
+            transferPeakIndex: peakSample);
         return measurement;
     }
 

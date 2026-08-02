@@ -219,6 +219,8 @@ internal sealed partial class MeasurementSettingsFile
         public bool ShowThdPlusNoise { get; set; } = true;
         public bool ShowNoiseFloor { get; set; } = true;
         public bool ShowGroupDelay { get; set; } = true;
+        public bool ShowMinimumPhaseGroupDelay { get; set; } = true;
+        public bool ShowExcessGroupDelay { get; set; } = true;
         // Nullable and deliberately WITHOUT an initializer: System.Text.Json
         // never assigns a missing property, so an initializer value would
         // survive deserialization and a pre-Auto file (v <= 9, field absent)
@@ -267,6 +269,8 @@ internal sealed partial class MeasurementSettingsFile
                 ShowThdPlusNoise = visibility.ShowThdPlusNoise,
                 ShowNoiseFloor = visibility.ShowNoiseFloor,
                 ShowGroupDelay = visibility.ShowGroupDelay,
+                ShowMinimumPhaseGroupDelay = visibility.ShowMinimumPhaseGroupDelay,
+                ShowExcessGroupDelay = visibility.ShowExcessGroupDelay,
                 PhaseGateAutoFit = options.PhaseGateAutoFit,
                 PhaseGateOffsetMs = options.PhaseGateOffsetMs,
                 PhaseLeftMs = options.PhaseLeftMs,
@@ -317,6 +321,8 @@ internal sealed partial class MeasurementSettingsFile
             visibility.ShowThdPlusNoise = ShowThdPlusNoise;
             visibility.ShowNoiseFloor = ShowNoiseFloor;
             visibility.ShowGroupDelay = ShowGroupDelay;
+            visibility.ShowMinimumPhaseGroupDelay = ShowMinimumPhaseGroupDelay;
+            visibility.ShowExcessGroupDelay = ShowExcessGroupDelay;
             // Absent in a pre-Auto file: enable Auto only when the stored
             // offset is the untouched default. A deliberately fitted/typed
             // gate must stay manual — the Auto re-snap would silently

@@ -51,6 +51,10 @@ internal static class OxyPlotAdapter
             AnalysisCurveKind.NoiseFloor => OxyColor.FromRgb(128, 128, 128),
             AnalysisCurveKind.MinimumPhase => OxyColor.FromRgb(0, 200, 255),
             AnalysisCurveKind.ExcessPhase => OxyColor.FromRgb(130, 220, 90),
+            // The GD counterparts reuse the phase pair's hues so "minimum = cyan,
+            // excess = green" reads the same across modes.
+            AnalysisCurveKind.MinimumPhaseGroupDelay => OxyColor.FromRgb(0, 200, 255),
+            AnalysisCurveKind.ExcessGroupDelay => OxyColor.FromRgb(130, 220, 90),
             _ => OxyColor.FromRgb(255, 127, 0)
         };
     }

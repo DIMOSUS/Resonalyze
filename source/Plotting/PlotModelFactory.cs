@@ -632,18 +632,28 @@ internal sealed class PlotModelFactory
                         groupDelayTrackerFormat,
                         Mode.GroupDelay,
                         GroupDelayAxisKey);
+                }
+                // The Y auto-fit never reads the minimum/excess POINT VALUES. Near
+                // the sweep-band edges the magnitude rolls off steeply, the cepstral
+                // reconstruction legitimately turns that slope into tens of ms of
+                // minimum-phase group delay (~1/f at the low edge), and the excess
+                // mirrors it with the opposite sign — the validity gate keeps those
+                // bins because the rolloff tracks its own local envelope down to the
+                // −60 dB backstop. Folding them in would flatten a useful 2–5 ms
+                // measured curve onto a ±30 ms scale; off-scale points simply clip.
+                //
+                // The measured extremes still drive the fit when only the excess is
+                // shown: in band the excess tracks the measured absolute level
+                // (their difference is the minimum curve, ≈ 0 away from the
+                // rolloffs), so the measured range is the spike-free proxy for
+                // where the excess lives. The minimum curve lives around zero
+                // instead — showing it extends the fitted range to include zero.
+                if (groupDelayVisibility.ShowGroupDelay ||
+                    groupDelayVisibility.ShowExcessGroupDelay)
+                {
                     UpdateGroupDelayRange(
                         curves.Measured, ref minimum, ref maximum, ref hasValidData);
                 }
-                // The Y auto-fit reads the MEASURED curve only. Near the sweep-band
-                // edges the magnitude rolls off steeply, the cepstral reconstruction
-                // legitimately turns that slope into tens of ms of minimum-phase
-                // group delay (~1/f at the low edge), and the excess mirrors it with
-                // the opposite sign — the validity gate keeps those bins because the
-                // rolloff tracks its own local envelope down to the −60 dB backstop.
-                // Folding them into the fit would flatten a useful 2–5 ms measured
-                // curve onto a ±30 ms scale; off-scale minimum/excess points simply
-                // clip, like any overlay.
                 if (groupDelayVisibility.ShowMinimumPhaseGroupDelay &&
                     curves.Minimum is { } minimumCurve)
                 {
@@ -653,6 +663,11 @@ internal sealed class PlotModelFactory
                         groupDelayTrackerFormat,
                         Mode.GroupDelay,
                         GroupDelayAxisKey);
+                    if (hasValidData)
+                    {
+                        minimum = Math.Min(minimum, 0.0);
+                        maximum = Math.Max(maximum, 0.0);
+                    }
                 }
                 if (groupDelayVisibility.ShowExcessGroupDelay &&
                     curves.Excess is { } excessCurve)

@@ -837,26 +837,38 @@ public partial class EqWizardPanel : UserControl
 
         (double minHz, double maxHz) = GetFrequencyWindow();
 
+        // The preamp policy differs by mode. Cuts-only: the auto preamp may move
+        // within the control's range — it aligns to the least-excess point and can
+        // only lower the curve — and the 0 dB total-gain ceiling keeps the profile
+        // clip-free. Boosts allowed: the preamp belongs to the user. Auto-centring
+        // it would put broadband gain where the Target Level datum belongs, and the
+        // ceiling would then "compensate" fitted boosts by dropping the preamp
+        // AFTER the fit — bands placed against one level but realised far lower, so
+        // the whole curve fell by the peak boost instead of the window rising to
+        // the target. Pinning min = max = the current value collapses every preamp
+        // decision in the tuner to a no-op: bands carry the full correction within
+        // Max Gain, and any positive total gain is the user's explicit choice,
+        // reported by the headroom read-out.
+        bool cutsOnly = checkBoxCutsOnly.Checked;
+        double pinnedPreampDb = (double)NumericGain.Value;
+
         var options = new EqAutoTuner.Options
         {
             MaxBands = Math.Clamp(bandLimit, 1, MaxPeqSlotCount),
             MinFrequencyHz = minHz,
             MaxFrequencyHz = maxHz,
-            PreampMinDb = (double)NumericGain.Minimum,
-            PreampMaxDb = (double)NumericGain.Maximum,
+            PreampMinDb = cutsOnly ? (double)NumericGain.Minimum : pinnedPreampDb,
+            PreampMaxDb = cutsOnly ? (double)NumericGain.Maximum : pinnedPreampDb,
             // Per-band gain is bounded by the Min/Max Gain fields, exactly like the
             // manual faders, so Auto Tune never proposes a gain the strips reject.
             BandGainMinDb = (double)numericGainMin.Value,
             BandGainMaxDb = (double)numericGainMax.Value,
-            // The wizard's output is a profile for a real DSP: the total gain
-            // (preamp + bands) must not exceed 0 dB anywhere, or the profile
-            // clips before the user ever sees the headroom read-out.
-            TotalGainMaxDb = 0,
+            TotalGainMaxDb = cutsOnly ? 0 : double.PositiveInfinity,
             SampleRateHz = EqSampleRate,
             // Cuts-only is the safe default for a car tune: never boost an
             // interference null. Unchecking it allows boosts, still gated to
             // reliable regions (high coherence, not inside a narrow deep null).
-            CutsOnlyMode = checkBoxCutsOnly.Checked
+            CutsOnlyMode = cutsOnly
         };
 
         // Q has no panel-level range control, so take its bounds from a band field.

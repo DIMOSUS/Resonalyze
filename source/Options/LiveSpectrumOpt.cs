@@ -1,3 +1,4 @@
+using System.Drawing;
 using Resonalyze.Dsp;
 using Resonalyze.Ui;
 
@@ -29,6 +30,10 @@ namespace Resonalyze.Options
         // SPL-only; the plain Pink/Brown/White excitations are shared.
         private NoiseColor userSignalType = NoiseColor.PinkPeriodic;
 
+        // The designer's normal dB SPL text colour, restored when the choice leaves
+        // the amber view-only state.
+        private readonly Color splChoiceReadyForeColor;
+
         /// <summary>
         /// Raised when the user clicks Reset Average. Handled live (without an
         /// Apply / restart) so the Infinite averaging preset can be cleared.
@@ -38,6 +43,7 @@ namespace Resonalyze.Options
         public LiveSpectrumOpt()
         {
             InitializeComponent();
+            splChoiceReadyForeColor = radioMagnitudeSpl.ForeColor;
             SmoothingPresetOptions.Configure(
                 comboSmoothingInverseOctaves, includePsychoacoustic: true);
             buttonResetAverage.Click += (_, _) => ResetAverageRequested?.Invoke();
@@ -117,13 +123,11 @@ namespace Resonalyze.Options
             checkPeakHold.Checked = options.PeakHold;
             checkCoherence.Checked = options.ShowCoherence;
 
-            // SPL shows the microphone (RTA) spectrum in absolute dB SPL; it is
-            // offerable only when a matching SPL calibration is configured for the
-            // live input. A stale/absent calibration mutes the choice (kept Enabled so
-            // the dark theme's muted colour is used, not the near-black system grey).
-            UiStyle.SetTextEnabledLook(radioMagnitudeSpl, isSplAvailable, interactive: true);
-            bool spl = options.MagnitudeScale == MagnitudeScale.SoundPressureLevel
-                && isSplAvailable;
+            // The selection follows the options verbatim: dB SPL is choosable even
+            // without a matching calibration (view-only, amber), so it must not be
+            // silently rewritten to relative here.
+            RefreshSplAvailability(isSplAvailable);
+            bool spl = options.MagnitudeScale == MagnitudeScale.SoundPressureLevel;
             radioMagnitudeSpl.Checked = spl;
             radioMagnitudeRelative.Checked = !spl;
             UpdateScaleDependentControls();
@@ -134,6 +138,43 @@ namespace Resonalyze.Options
                 hasZeroDegreeCalibration,
                 hasNinetyDegreeCalibration);
         }
+
+        /// <summary>
+        /// Recolours the dB SPL choice for the given availability, in both directions,
+        /// without disturbing the selection: the scale stays selectable either way and
+        /// is merely view-only (overlays, no live curves) until a matching SPL
+        /// calibration exists for the live input. The host calls this when the
+        /// configured calibration changes while the panel is open.
+        /// </summary>
+        public void RefreshSplAvailability(bool isSplAvailable)
+        {
+            // The choice is never locked: without a calibration the dB SPL axis is
+            // still useful for VIEWING overlays captured in SPL, so it stays clickable
+            // and turns amber to say live curves will not be drawn. (It used to be
+            // muted and non-interactive, which made SPL unreachable until calibrated.)
+            radioMagnitudeSpl.ForeColor = isSplAvailable
+                ? splChoiceReadyForeColor
+                : UiPalette.WarningAmber;
+            toolTip.SetToolTip(
+                radioMagnitudeSpl,
+                isSplAvailable
+                    ? "Absolute dB SPL. Shows the microphone (RTA) spectrum from the "
+                      + "SPL calibration; the transfer function is a dimensionless "
+                      + "ratio with no scalar SPL under noise, so it is hidden."
+                    : "Absolute dB SPL. View-only right now: no SPL calibration is "
+                      + "configured for the live input (or it was captured on a "
+                      + "different input), so only overlays captured in dB SPL are "
+                      + "shown. Configure it in Measurement Options — Calibration; "
+                      + "starting the analyzer in this state switches the display "
+                      + "back to relative.");
+        }
+
+        /// <summary>
+        /// Drops the scale selection back to relative. The host calls this when the
+        /// analyzer starts (or loses its calibration mid-run) while the display is
+        /// view-only SPL; switching back to SPL afterwards stays available.
+        /// </summary>
+        public void ForceRelativeScale() => radioMagnitudeRelative.Checked = true;
 
         public void SetOptions(LiveSpectrumOptions options)
         {
@@ -496,12 +537,8 @@ namespace Resonalyze.Options
             toolTip.SetToolTip(
                 radioMagnitudeRelative,
                 "Native scale: the transfer function and RTA in relative dB.");
-            toolTip.SetToolTip(
-                radioMagnitudeSpl,
-                "Absolute dB SPL. Shows the microphone (RTA) spectrum from the SPL "
-                + "calibration; the transfer function is a dimensionless ratio with no "
-                + "scalar SPL under noise, so it is hidden. Available only when a matching "
-                + "SPL calibration is configured for the live input.");
+            // radioMagnitudeSpl's tooltip is owned by RefreshSplAvailability: it
+            // names the current availability state, which a static line here cannot.
         }
     }
 }

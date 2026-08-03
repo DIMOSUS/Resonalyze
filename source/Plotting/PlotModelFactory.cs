@@ -123,16 +123,15 @@ internal sealed class PlotModelFactory
     }
 
     /// <summary>
-    /// The scale the Live Spectrum plot actually renders in — SPL only when it is
-    /// both selected and available. The live controller and overlays gate on this,
-    /// not on the requested scale, so a missing/mismatched calibration falls back to
-    /// the native dB view instead of an empty SPL plot.
+    /// The scale the Live Spectrum plot renders in — simply the selected one, like
+    /// the Frequency Response scale. Without a matching SPL calibration the plot no
+    /// longer falls back to the native dB view: it keeps the dB SPL axis in a
+    /// view-only state — overlays captured in dB SPL show, live curves are not drawn
+    /// (see LiveSpectrumController) — and the record button drops the display back
+    /// to relative before an actual run starts.
     /// </summary>
     public MagnitudeScale EffectiveLiveSpectrumScale =>
-        liveSpectrumOptions.MagnitudeScale == MagnitudeScale.SoundPressureLevel &&
-        LiveSplOffsetDb.HasValue
-            ? MagnitudeScale.SoundPressureLevel
-            : MagnitudeScale.Relative;
+        liveSpectrumOptions.MagnitudeScale;
 
     // The dB offset applied to the live RTA / peak-hold curves when the plot is in
     // SPL mode; zero in the native (relative) view. The transfer function is never

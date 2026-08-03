@@ -162,10 +162,14 @@ namespace Resonalyze.Options
                 available
                     ? "Absolute dB SPL from the microphone SPL calibration."
                     : "Absolute dB SPL from the microphone SPL calibration.\r\n" +
-                      "View-only right now: this measurement has no valid SPL " +
-                      "calibration or captured loopback level, so only overlays " +
-                      "captured in dB SPL are shown. Starting a measurement " +
-                      "switches the display back to dBr/dBc.");
+                      "View-only right now: the measurement on screen carries no SPL " +
+                      "anchor. The anchor is stamped into a measurement WHEN IT RUNS — " +
+                      "from the SPL calibration configured in Measurement Options plus " +
+                      "the run's captured loopback level — so a configured calibration " +
+                      "alone is not enough. Run a measurement (or load one carrying an " +
+                      "anchor) to activate dB SPL; until then only overlays captured " +
+                      "in dB SPL are shown, and starting a run in this state returns " +
+                      "the display to dBr/dBc.");
         }
 
         protected override void RenderIrPreview()

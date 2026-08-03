@@ -1138,20 +1138,25 @@ public sealed class PlotModelFactoryTests
         PlotModelFactory factory =
             CreateFactory(measurement, noise, liveSpectrumOptions: options);
 
-        // No configured calibration: SPL requested but unavailable, stay on native dB.
+        // No configured calibration: the offset is unavailable, but the scale (and so
+        // the axis and the overlay gate) follows the SELECTION — the view-only state
+        // that lets overlays captured in dB SPL be seen. The controller suppresses
+        // live curves there, and the record button resets the scale before a run.
         Assert.Null(factory.LiveSplOffsetDb);
-        Assert.Equal(MagnitudeScale.Relative, factory.EffectiveLiveSpectrumScale);
+        Assert.Equal(
+            MagnitudeScale.SoundPressureLevel, factory.EffectiveLiveSpectrumScale);
         var dbAxis = (OxyPlot.Axes.LinearAxis)factory.CreateLiveSpectrum().Axes.First(
             axis => axis.Key == PlotModelFactory.DecibelAxisKey);
-        Assert.Equal("dB", dbAxis.Title);
+        Assert.Equal("dB SPL", dbAxis.Title);
 
         // A calibration captured on a different digital input (sample rate) does not
-        // apply to this live input.
+        // apply to this live input either: still no offset, still view-only.
         SplCalibration mismatched = LiveAnchorMatching(noise, 94, -16);
         mismatched.SampleRate = 48_000;
         measurement.SplCalibration = mismatched;
         Assert.Null(factory.LiveSplOffsetDb);
-        Assert.Equal(MagnitudeScale.Relative, factory.EffectiveLiveSpectrumScale);
+        Assert.Equal(
+            MagnitudeScale.SoundPressureLevel, factory.EffectiveLiveSpectrumScale);
     }
 
     [Fact]

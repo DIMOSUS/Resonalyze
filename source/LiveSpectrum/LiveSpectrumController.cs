@@ -98,11 +98,20 @@ internal sealed class LiveSpectrumController : IDisposable
     public RawCurveCapture? BuildRawRtaCapture() =>
         plotModelFactory.BuildRawRtaCurve(lastSnapshot?.InputMagnitude);
 
-    // Whether the plot is currently rendering the absolute dB SPL (RTA) view. SPL is
-    // only effective when it is both selected and backed by a matching calibration,
-    // so this reflects what will actually be drawn — never a stale-calibration request.
+    // Whether the plot is in the absolute dB SPL (RTA) view. This follows the
+    // SELECTION: without a matching calibration the view still shows the SPL axis,
+    // but view-only (see SplViewOnly) — live curves are suppressed rather than the
+    // scale silently falling back to relative.
     private bool RenderingSpl =>
         plotModelFactory.EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel;
+
+    // dB SPL selected with no matching calibration: the axis and the SPL overlays
+    // show, but live curves have no absolute level to be lifted to and are not
+    // drawn. The record button resets the scale to relative before an actual run,
+    // so this covers idle redraws of a stale snapshot (a scale switch after a stop)
+    // and the moment a running analyzer loses its calibration.
+    private bool SplViewOnly =>
+        RenderingSpl && plotModelFactory.LiveSplOffsetDb == null;
 
     // The plot shows only the reference-free RTA (no transfer function or coherence)
     // when the SPL view is active OR the capture has no loopback reference at all.
@@ -547,6 +556,13 @@ internal sealed class LiveSpectrumController : IDisposable
             RemoveLiveSpectrumSeries(attachedModel);
         }
         attachedModel = model;
+
+        // A view-only SPL plot draws no live curves: at raw (un-lifted) dBFS on the
+        // absolute axis they would read as absurd sound-pressure levels.
+        if (SplViewOnly)
+        {
+            return;
+        }
 
         // The plot is the reference-free microphone (RTA) spectrum whenever the SPL
         // view is active (the transfer function has no scalar SPL under noise) or the

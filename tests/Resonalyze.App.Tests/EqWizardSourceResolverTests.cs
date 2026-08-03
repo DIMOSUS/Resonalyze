@@ -42,6 +42,19 @@ public sealed class EqWizardSourceResolverTests
         Assert.False(EqWizardSourceResolver.IsEligible(file));
     }
 
+    [Fact]
+    public void IsEligible_AcceptsASweepCaptureOnTheNamedDecibelAxis()
+    {
+        OverlayFile file = CreateCapturedSlot(1);
+        // Sweep modes attach every curve to the dB axis BY KEY, so a Frequency Response
+        // capture records that key rather than null. It is still the plot's own level
+        // axis — reading it as "a secondary axis" hid every sweep capture from the
+        // wizard while the RTA (whose series carries no key) sailed through.
+        file.CapturedYAxisKey = PlotModelFactory.DecibelAxisKey;
+
+        Assert.True(EqWizardSourceResolver.IsEligible(file));
+    }
+
     [Theory]
     [InlineData(OverlayKind.Operation)]
     [InlineData(OverlayKind.Target)]
@@ -59,7 +72,11 @@ public sealed class EqWizardSourceResolverTests
         string root = CreateTemporaryDirectory();
         try
         {
-            Save(CreateCapturedSlot(3), root);
+            OverlayFile sweep = CreateCapturedSlot(3);
+            // A sweep FR capture stores the named dB axis key; the file round trip must
+            // still surface it — this is the path the live slot menu takes.
+            sweep.CapturedYAxisKey = PlotModelFactory.DecibelAxisKey;
+            Save(sweep, root);
             Save(CreateCapturedSlot(1), root);
 
             OverlayFile ineligible = CreateCapturedSlot(2);

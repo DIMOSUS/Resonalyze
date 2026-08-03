@@ -161,8 +161,10 @@ public partial class Form1
                 return;
             }
 
-            ResetSplViewOnlyDisplayForRun();
             PrepareSweepMeasurementForRun();
+            // After Prepare, so the anchor prediction reads the input configuration
+            // this run will actually use.
+            ResetSplViewOnlyDisplayForRun();
             EnterMeasurementRunningState();
             _ = expSweepMeasurement.RunAsync();
         }
@@ -189,15 +191,17 @@ public partial class Form1
             panel => panel.ForceRelativeScale());
     }
 
-    // A sweep started while Frequency Response displays dB SPL WITHOUT a valid
-    // calibration (the view-only state that shows overlays only) would come up with
-    // its fresh curves hidden. Drop the DISPLAY back to dBr/dBc at start — nothing
-    // else: switching to SPL again stays available at any time.
+    // A sweep started in dB SPL only stays there when the RUN AHEAD can supply SPL —
+    // i.e. an SPL calibration is configured for the input it will use, so the fresh
+    // measurement comes up in dB SPL directly. Without one the new curves would be
+    // born hidden (view-only shows overlays only), so the display drops to dBr/dBc.
+    // Deliberately NOT gated on the previous measurement's anchor: that one is
+    // irrelevant the moment a new run starts.
     private void ResetSplViewOnlyDisplayForRun()
     {
         if (frequencyResponseOptions.MagnitudeScale !=
                 Dsp.MagnitudeScale.SoundPressureLevel ||
-            plotModelFactory.FrequencyResponseSplOffsetDb.HasValue)
+            expSweepMeasurement.NextRunHasSplAnchor)
         {
             return;
         }

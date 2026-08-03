@@ -148,28 +148,46 @@ namespace Resonalyze.Options
 
         // The scale choice is never locked: without a valid SPL calibration the dB SPL
         // axis is still useful for VIEWING overlays captured in SPL, so the choice
-        // stays clickable and turns amber to say the measurement's own curves will be
-        // hidden. (It used to be muted and non-interactive, which made SPL unreachable
-        // before the first run.)
+        // stays clickable. Amber flags a REAL conflict only — a measurement is on
+        // screen whose curves cannot be rendered in SPL, so choosing SPL hides them.
+        // Before any measurement there is nothing to hide and nothing to warn about:
+        // the choice keeps its normal colour, and with an SPL calibration configured
+        // the first run simply comes up in dB SPL.
         private void UpdateSplChoiceLook()
         {
             bool available = IsSplAvailable();
-            radioMagnitudeSpl.ForeColor = available
-                ? splChoiceReadyForeColor
-                : UiPalette.WarningAmber;
-            toolTip.SetToolTip(
-                radioMagnitudeSpl,
-                available
-                    ? "Absolute dB SPL from the microphone SPL calibration."
-                    : "Absolute dB SPL from the microphone SPL calibration.\r\n" +
-                      "View-only right now: the measurement on screen carries no SPL " +
-                      "anchor. The anchor is stamped into a measurement WHEN IT RUNS — " +
-                      "from the SPL calibration configured in Measurement Options plus " +
-                      "the run's captured loopback level — so a configured calibration " +
-                      "alone is not enough. Run a measurement (or load one carrying an " +
-                      "anchor) to activate dB SPL; until then only overlays captured " +
-                      "in dB SPL are shown, and starting a run in this state returns " +
-                      "the display to dBr/dBc.");
+            bool measurementOnScreen = Measurement is { HasImpulseResponse: true };
+            bool viewOnlyConflict = !available && measurementOnScreen;
+            radioMagnitudeSpl.ForeColor = viewOnlyConflict
+                ? UiPalette.WarningAmber
+                : splChoiceReadyForeColor;
+            toolTip.SetToolTip(radioMagnitudeSpl, DescribeSplChoice(available, viewOnlyConflict));
+        }
+
+        private static string DescribeSplChoice(bool available, bool viewOnlyConflict)
+        {
+            const string Base = "Absolute dB SPL from the microphone SPL calibration.";
+            if (available)
+            {
+                return Base;
+            }
+
+            if (viewOnlyConflict)
+            {
+                return Base + "\r\n" +
+                    "View-only: the measurement on screen carries no SPL anchor (it " +
+                    "is stamped at run time from the configured calibration plus the " +
+                    "run's loopback level), so its curves cannot be shown in dB SPL — " +
+                    "only overlays captured in dB SPL are. A new measurement with an " +
+                    "SPL calibration configured comes up in dB SPL; starting one " +
+                    "without returns the display to dBr/dBc.";
+            }
+
+            return Base + "\r\n" +
+                "No measurement yet. With an SPL calibration configured in " +
+                "Measurement Options, the first run comes up in dB SPL; without one, " +
+                "starting a run switches the display back to dBr/dBc. Overlays " +
+                "captured in dB SPL are shown either way.";
         }
 
         protected override void RenderIrPreview()

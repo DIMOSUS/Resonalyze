@@ -85,14 +85,6 @@ internal sealed class PlotModelFactory
         frequencyResponseOptions.MagnitudeScale;
 
     /// <summary>
-    /// The sweep measurement's SPL anchor (see
-    /// <see cref="MeasurementPlotContext.SplOffsetDb"/>); null when dB SPL can only
-    /// be viewed, not rendered from this measurement. The shell reads this to drop a
-    /// view-only SPL display back to dBr/dBc when a run starts.
-    /// </summary>
-    public double? FrequencyResponseSplOffsetDb => measurementContext.SplOffsetDb;
-
-    /// <summary>
     /// The offset that turns the reference-free live RTA magnitude (raw microphone
     /// dBFS) into dB SPL: <c>SPL = mic + calibration.OffsetDb</c>. Unlike the swept
     /// frequency response there is NO loopback term — the RTA is already the plain

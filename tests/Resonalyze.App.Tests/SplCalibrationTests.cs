@@ -66,6 +66,36 @@ public sealed class SplCalibrationTests
     }
 
     [Fact]
+    public void NextRunHasSplAnchor_PredictsFromTheConfiguredCalibrationAndInput()
+    {
+        // The record button decides BEFORE a sweep whether the display may stay in
+        // dB SPL: only when the run ahead will carry an anchor. The previous
+        // measurement's anchor is irrelevant — it dies the moment the run starts.
+        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        Assert.False(measurement.NextRunHasSplAnchor);
+
+        MeasurementInputIdentity identity = measurement.CurrentInputIdentity();
+        var anchor = new SplCalibration
+        {
+            ReferenceLevelDbSpl = 94,
+            MeasuredLevelDbFs = -20,
+            Backend = identity.Backend,
+            SampleRate = identity.SampleRate,
+            Bits = identity.Bits,
+            MicrophoneChannelOffset = identity.MicrophoneChannelOffset,
+            InputDeviceNumber = identity.InputDeviceNumber,
+            WasapiCaptureEndpointId = identity.WasapiCaptureEndpointId,
+            AsioDriverName = identity.AsioDriverName
+        };
+        measurement.SplCalibration = anchor;
+        Assert.True(measurement.NextRunHasSplAnchor);
+
+        // A calibration from a different digital input does not light SPL up.
+        anchor.SampleRate = identity.SampleRate + 1;
+        Assert.False(measurement.NextRunHasSplAnchor);
+    }
+
+    [Fact]
     public async Task ImpulseResponseFile_RoundTripsTheAnchor()
     {
         string path = Path.Combine(Path.GetTempPath(), $"resonalyze-ir-{Guid.NewGuid():N}.json");

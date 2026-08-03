@@ -855,7 +855,7 @@ public sealed class PlotModelFactoryTests
     }
 
     [Fact]
-    public void CreateFrequencyResponse_WithoutCalibration_StaysOnTheRelativeAxis()
+    public void CreateFrequencyResponse_SplWithoutCalibration_IsViewOnly()
     {
         ExpSweepMeasurement measurement = CreateTransferMeasurement();
         using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
@@ -864,11 +864,37 @@ public sealed class PlotModelFactoryTests
             MagnitudeScale = MagnitudeScale.SoundPressureLevel
         };
 
-        OxyPlot.PlotModel model = CreateFactory(
-                measurement, noise, frequencyResponseOptions: splOptions)
+        PlotModelFactory factory = CreateFactory(
+            measurement, noise, frequencyResponseOptions: splOptions);
+        OxyPlot.PlotModel model = factory.CreateFrequencyResponse(includeCurves: true);
+
+        // SPL was requested without a calibration. The axis used to fall back to
+        // dBr/dBc, which made SPL unreachable before the first calibrated run; now
+        // it stays SPL so overlays captured in dB SPL can at least be viewed...
+        var dbAxis = (OxyPlot.Axes.LinearAxis)model.Axes.First(
+            axis => axis.Key == PlotModelFactory.DecibelAxisKey);
+        Assert.Equal("dB SPL", dbAxis.Title);
+        Assert.Equal(PlotModelStyle.SplDecibelMaximum, dbAxis.Maximum);
+        // ...and the overlay gate follows the axis, or those overlays stay hidden...
+        Assert.Equal(
+            MagnitudeScale.SoundPressureLevel,
+            factory.EffectiveFrequencyResponseScale);
+        // ...while the measurement's own curves are omitted — their dBr shapes would
+        // read as absolute levels — replaced by the explanatory annotation.
+        Assert.Empty(model.Series);
+        var note = Assert.Single(model.Annotations.OfType<OverlayTextAnnotation>());
+        Assert.Contains("overlays only", note.Text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void CreateFrequencyResponse_InRelativeMode_LeavesRoomForAPaddedLoopback()
+    {
+        ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
+
+        OxyPlot.PlotModel model = CreateFactory(measurement, noise)
             .CreateFrequencyResponse(includeCurves: true);
 
-        // SPL was requested but no calibration is available: fall back to dBr/dBc.
         var dbAxis = (OxyPlot.Axes.LinearAxis)model.Axes.First(
             axis => axis.Key == PlotModelFactory.DecibelAxisKey);
         Assert.Equal("dBr/dBc", dbAxis.Title);

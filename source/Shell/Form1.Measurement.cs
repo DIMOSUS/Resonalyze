@@ -160,10 +160,32 @@ public partial class Form1
                 return;
             }
 
+            ResetSplViewOnlyDisplayForRun();
             PrepareSweepMeasurementForRun();
             EnterMeasurementRunningState();
             _ = expSweepMeasurement.RunAsync();
         }
+    }
+
+    // A sweep started while Frequency Response displays dB SPL WITHOUT a valid
+    // calibration (the view-only state that shows overlays only) would come up with
+    // its fresh curves hidden. Drop the DISPLAY back to dBr/dBc at start — nothing
+    // else: switching to SPL again stays available at any time.
+    private void ResetSplViewOnlyDisplayForRun()
+    {
+        if (frequencyResponseOptions.MagnitudeScale !=
+                Dsp.MagnitudeScale.SoundPressureLevel ||
+            plotModelFactory.FrequencyResponseSplOffsetDb.HasValue)
+        {
+            return;
+        }
+
+        frequencyResponseOptions.MagnitudeScale = Dsp.MagnitudeScale.Relative;
+        SaveMeasurementSettings();
+        // An open panel must follow the reset, or its next apply-on-change would
+        // write SPL right back into the options.
+        dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
+            panel => panel.ForceRelativeScale());
     }
 
     // One-time notice after loading a settings file written by a version that

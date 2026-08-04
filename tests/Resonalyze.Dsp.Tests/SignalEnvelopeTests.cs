@@ -134,6 +134,37 @@ public sealed class SignalEnvelopeTests
     }
 
     [Fact]
+    public void FindPeak_ReAnchorsPastALoudSeamResidue()
+    {
+        // The 3RC head shape: the acausal residue wrapped across the buffer
+        // seam decays from sample 0, sitting tens of dB above the noise
+        // floor yet more than the search depth below the real peak — loud
+        // residue is still residue, and the window re-anchors past it.
+        var envelope = new double[48_000];
+        Array.Fill(envelope, 1e-6);
+        for (int i = 0; i < 200; i++)
+        {
+            envelope[i] = Math.Max(1e-6, 0.02 * Math.Exp(-i / 12.0));
+        }
+        envelope[19_999] = 0.6;
+        envelope[20_000] = 1.0;
+        envelope[20_001] = 0.6;
+
+        PeakSearchResult result = SignalEnvelope.FindPeak(
+            envelope,
+            sampleRate: 48_000,
+            new PeakSearchOptions
+            {
+                Mode = PeakSearchMode.FirstArrival,
+                SearchWindowMilliseconds = 80
+            });
+
+        Assert.Equal(20_000, result.StrongestIndex);
+        Assert.Equal(20_000, result.SelectedIndex);
+        Assert.NotEqual(0, result.SearchRotation);
+    }
+
+    [Fact]
     public void FindPeak_KeepsTheStartAnchoredWindowWhenItHoldsReachableContent()
     {
         // The re-anchor gate is conservative: content inside the start-anchored

@@ -1725,14 +1725,22 @@ internal sealed class PlotModelFactory
 
     private static void AddSplViewOnlyAnnotation(PlotModel model)
     {
-        model.Annotations.Add(new OverlayTextAnnotation
-        {
-            Text = "No SPL calibration for this measurement — showing dB SPL overlays only",
-            TextPosition = new DataPoint(0.5, 3),
-            TextFlowDirection = TextFlowDirection.TopDown,
-            FontSize = 12,
-            TextColor = OxyColor.FromRgb(255, 170, 0),
-            TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
-        });
+        model.Annotations.Add(CreateSplViewOnlyAnnotation(
+            "No SPL calibration for this measurement — showing dB SPL overlays only"));
     }
+
+    /// <summary>
+    /// The "showing dB SPL overlays only" notice, shared by the Frequency Response
+    /// model above and the live controller (which manages its instance itself: a live
+    /// model persists across ticks, so the notice must be addable and removable).
+    /// </summary>
+    internal static OverlayTextAnnotation CreateSplViewOnlyAnnotation(string text) => new()
+    {
+        Text = text,
+        TextPosition = new DataPoint(0.5, 3),
+        TextFlowDirection = TextFlowDirection.TopDown,
+        FontSize = 12,
+        TextColor = OxyColor.FromRgb(255, 170, 0),
+        TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
+    };
 }

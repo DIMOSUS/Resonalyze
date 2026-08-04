@@ -271,7 +271,8 @@ public partial class Form1
         }
         dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
             panel => panel.RefreshSplAvailability(
-                plotModelFactory.LiveSplOffsetDb.HasValue));
+                plotModelFactory.LiveSplOffsetDb.HasValue,
+                liveSpectrumController.HasDisplayableCurve));
         // Persist the calibration itself up front so it survives even if the redraw
         // below fails; the normalized live options are re-saved afterwards.
         ScheduleMeasurementSettingsSave();

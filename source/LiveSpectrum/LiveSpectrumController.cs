@@ -55,6 +55,9 @@ internal sealed class LiveSpectrumController : IDisposable
     private LineSeries? coherenceSeries;
     private LineSeries? inputMagnitudeSeries;
     private PlotModel? attachedModel;
+    // The "showing dB SPL overlays only" notice, kept as one instance so the live
+    // redraw can add it exactly once and take it down when view-only ends.
+    private OverlayTextAnnotation? splViewOnlyAnnotation;
 
     public LiveSpectrumController(
         Form owner,
@@ -88,6 +91,14 @@ internal sealed class LiveSpectrumController : IDisposable
 
     public bool InProgress => measurement.InProgress;
     public bool TimerEnabled => timer.Enabled;
+
+    /// <summary>
+    /// Whether the live plot currently has a curve to show — a running capture or a
+    /// kept last snapshot — i.e. whether a view-only SPL scale would actually hide
+    /// something. The options panel colours its dB SPL choice amber by this, so the
+    /// warning marks a real conflict and not a freshly started application.
+    /// </summary>
+    public bool HasDisplayableCurve => measurement.InProgress || lastSnapshot != null;
 
     /// <summary>
     /// The raw form of the RTA trace as last drawn, for an overlay capturing it. The
@@ -558,10 +569,27 @@ internal sealed class LiveSpectrumController : IDisposable
         attachedModel = model;
 
         // A view-only SPL plot draws no live curves: at raw (un-lifted) dBFS on the
-        // absolute axis they would read as absurd sound-pressure levels.
+        // absolute axis they would read as absurd sound-pressure levels. Say WHY the
+        // curve is absent instead of leaving a silently empty plot. The notice is
+        // managed here rather than at model creation so it appears only when a curve
+        // really was suppressed (never on a plot that has nothing to show anyway),
+        // and the Contains guard keeps a live tick from stacking duplicates.
         if (SplViewOnly)
         {
+            splViewOnlyAnnotation ??= PlotModelFactory.CreateSplViewOnlyAnnotation(
+                "No SPL calibration for the live input — showing dB SPL overlays only");
+            if (!model.Annotations.Contains(splViewOnlyAnnotation))
+            {
+                model.Annotations.Add(splViewOnlyAnnotation);
+            }
+
             return;
+        }
+
+        // Leaving view-only reuses the same model on live ticks; take the notice down.
+        if (splViewOnlyAnnotation != null)
+        {
+            model.Annotations.Remove(splViewOnlyAnnotation);
         }
 
         // The plot is the reference-free microphone (RTA) spectrum whenever the SPL

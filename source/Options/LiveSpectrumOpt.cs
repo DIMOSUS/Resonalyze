@@ -64,7 +64,8 @@ namespace Resonalyze.Options
             LiveSpectrumOptions options,
             bool hasZeroDegreeCalibration,
             bool hasNinetyDegreeCalibration,
-            bool isSplAvailable)
+            bool isSplAvailable,
+            bool hasLiveCurve)
         {
             // The signal list is populated per scale in UpdateScaleDependentControls
             // below; remember the stored signal so it survives a scale round-trip.
@@ -124,9 +125,9 @@ namespace Resonalyze.Options
             checkCoherence.Checked = options.ShowCoherence;
 
             // The selection follows the options verbatim: dB SPL is choosable even
-            // without a matching calibration (view-only, amber), so it must not be
+            // without a matching calibration (view-only), so it must not be
             // silently rewritten to relative here.
-            RefreshSplAvailability(isSplAvailable);
+            RefreshSplAvailability(isSplAvailable, hasLiveCurve);
             bool spl = options.MagnitudeScale == MagnitudeScale.SoundPressureLevel;
             radioMagnitudeSpl.Checked = spl;
             radioMagnitudeRelative.Checked = !spl;
@@ -140,33 +141,56 @@ namespace Resonalyze.Options
         }
 
         /// <summary>
-        /// Recolours the dB SPL choice for the given availability, in both directions,
-        /// without disturbing the selection: the scale stays selectable either way and
-        /// is merely view-only (overlays, no live curves) until a matching SPL
-        /// calibration exists for the live input. The host calls this when the
-        /// configured calibration changes while the panel is open.
+        /// Recolours the dB SPL choice, in both directions, without disturbing the
+        /// selection: the scale stays selectable either way and is merely view-only
+        /// (overlays, no live curves) until a matching SPL calibration exists for the
+        /// live input. The host calls this when the configured calibration changes
+        /// while the panel is open.
         /// </summary>
-        public void RefreshSplAvailability(bool isSplAvailable)
+        public void RefreshSplAvailability(bool isSplAvailable, bool hasLiveCurve)
         {
             // The choice is never locked: without a calibration the dB SPL axis is
-            // still useful for VIEWING overlays captured in SPL, so it stays clickable
-            // and turns amber to say live curves will not be drawn. (It used to be
-            // muted and non-interactive, which made SPL unreachable until calibrated.)
-            radioMagnitudeSpl.ForeColor = isSplAvailable
-                ? splChoiceReadyForeColor
-                : UiPalette.WarningAmber;
+            // still useful for VIEWING overlays captured in SPL, so it stays
+            // clickable. Amber flags a REAL conflict only — a live curve exists that
+            // the view-only state would hide. On a freshly started application there
+            // is nothing to hide and nothing to warn about, so the choice keeps its
+            // normal colour and the tooltip does the explaining.
+            bool viewOnlyConflict = !isSplAvailable && hasLiveCurve;
+            radioMagnitudeSpl.ForeColor = viewOnlyConflict
+                ? UiPalette.WarningAmber
+                : splChoiceReadyForeColor;
             toolTip.SetToolTip(
                 radioMagnitudeSpl,
-                isSplAvailable
-                    ? "Absolute dB SPL. Shows the microphone (RTA) spectrum from the "
-                      + "SPL calibration; the transfer function is a dimensionless "
-                      + "ratio with no scalar SPL under noise, so it is hidden."
-                    : "Absolute dB SPL. View-only right now: no SPL calibration is "
-                      + "configured for the live input (or it was captured on a "
-                      + "different input), so only overlays captured in dB SPL are "
-                      + "shown. Configure it in Measurement Options — Calibration; "
-                      + "starting the analyzer in this state switches the display "
-                      + "back to relative.");
+                DescribeSplChoice(isSplAvailable, viewOnlyConflict));
+        }
+
+        private static string DescribeSplChoice(bool isSplAvailable, bool viewOnlyConflict)
+        {
+            const string Base =
+                "Absolute dB SPL. Shows the microphone (RTA) spectrum from the SPL " +
+                "calibration; the transfer function is a dimensionless ratio with no " +
+                "scalar SPL under noise, so it is hidden.";
+            if (isSplAvailable)
+            {
+                return Base;
+            }
+
+            if (viewOnlyConflict)
+            {
+                return Base + "\r\n" +
+                    "View-only right now: no SPL calibration is configured for the " +
+                    "live input (or it was captured on a different input), so the " +
+                    "live curve is hidden — only overlays captured in dB SPL are " +
+                    "shown. Configure it in Measurement Options — Calibration; " +
+                    "starting the analyzer in this state switches the display back " +
+                    "to relative.";
+            }
+
+            return Base + "\r\n" +
+                "No SPL calibration is configured for the live input (Measurement " +
+                "Options — Calibration). Starting the analyzer without one switches " +
+                "the display back to relative; overlays captured in dB SPL are " +
+                "shown either way.";
         }
 
         /// <summary>

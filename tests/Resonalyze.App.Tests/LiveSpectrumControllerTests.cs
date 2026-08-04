@@ -102,4 +102,67 @@ public sealed class LiveSpectrumControllerTests
 
         Assert.Null(peakHoldField.GetValue(controller));
     }
+
+    [Fact]
+    public void ViewOnlySpl_ExplainsTheSuppressedCurveInsteadOfAnEmptyPlot()
+    {
+        // dB SPL selected with no calibration configured: the snapshot's curves are
+        // suppressed (raw dBFS on an absolute axis would be garbage), and the model
+        // must say why instead of silently showing an empty plot. The notice is added
+        // by the series path, so it appears only when a curve really was suppressed.
+        using var sweep = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
+        var controller = (LiveSpectrumController)RuntimeHelpers.GetUninitializedObject(
+            typeof(LiveSpectrumController));
+        SetField(controller, "measurement", noise);
+        SetField(controller, "liveSpectrumOptions", new LiveSpectrumOptions());
+        SetField(controller, "plotModelFactory", new PlotModelFactory(
+            sweep,
+            noise,
+            _ => null,
+            new PlotPresentationOptions(
+                FrequencyResponse: new FrequencyResponseOptions(),
+                PhaseResponse: new FrequencyResponseOptions(),
+                GroupDelay: new FrequencyResponseOptions(),
+                FrequencyResponseVisibility: new CurveVisibilityOptions(),
+                PhaseResponseVisibility: new CurveVisibilityOptions(),
+                GroupDelayVisibility: new CurveVisibilityOptions(),
+                ImpulseResponse: new ImpulseResponseOptions(),
+                LiveSpectrum: new LiveSpectrumOptions
+                {
+                    MagnitudeScale = MagnitudeScale.SoundPressureLevel
+                },
+                Waterfall: new WaterfallGenerateOptions(),
+                BurstDecay: new WaterfallGenerateOptions())));
+
+        var model = new OxyPlot.PlotModel();
+        var snapshot = new LiveSpectrumSnapshot(
+            [-30.0, -32.0], Coherence: null, InputMagnitude: [-30.0, -32.0]);
+        AddLiveSpectrumSeries(controller, model, snapshot);
+
+        Assert.Empty(model.Series);
+        OverlayTextAnnotation note =
+            Assert.Single(model.Annotations.OfType<OverlayTextAnnotation>());
+        Assert.Contains("overlays only", note.Text, StringComparison.OrdinalIgnoreCase);
+
+        // A live tick re-adds the series into the SAME model: the notice must not
+        // stack up into duplicates.
+        AddLiveSpectrumSeries(controller, model, snapshot);
+        Assert.Single(model.Annotations.OfType<OverlayTextAnnotation>());
+    }
+
+    private static void SetField(object target, string name, object value) =>
+        typeof(LiveSpectrumController)
+            .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(target, value);
+
+    private static void AddLiveSpectrumSeries(
+        LiveSpectrumController controller,
+        OxyPlot.PlotModel model,
+        LiveSpectrumSnapshot snapshot) =>
+        typeof(LiveSpectrumController)
+            .GetMethod(
+                "AddLiveSpectrumSeries",
+                BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(controller, [model, snapshot]);
 }

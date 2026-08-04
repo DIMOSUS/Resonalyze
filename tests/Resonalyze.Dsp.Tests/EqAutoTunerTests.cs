@@ -53,6 +53,44 @@ public sealed class EqAutoTunerTests
     }
 
     [Fact]
+    public void Tune_PinnedPreamp_RaisesAWindowBelowTargetInsteadOfLoweringTheCurve()
+    {
+        // The wizard's boost mode pins the preamp to the user's value (min = max)
+        // and applies no total-gain ceiling. The source sits 5 dB below the target
+        // inside the fit window: the correction must come from boost bands, with
+        // the preamp untouched. The old wizard options (a free preamp plus a 0 dB
+        // ceiling) mean-centred the preamp UP, fitted the bands against that level,
+        // then the ceiling slammed the preamp to -(peak boost) AFTER the fit — the
+        // realised curve dropped by the peak boost instead of the window rising.
+        IReadOnlyList<SignalPoint> source = Grid(_ => -5.0);
+        IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
+
+        EqualizationCurve curve = EqAutoTuner.Tune(
+            source,
+            target,
+            new EqAutoTuner.Options
+            {
+                MinFrequencyHz = 20,
+                MaxFrequencyHz = 300,
+                PreampMinDb = 0,
+                PreampMaxDb = 0,
+                BandGainMaxDb = 6
+            });
+
+        Assert.Equal(0, curve.PreampDb, 9);
+        Assert.NotEmpty(curve.Bands);
+        // The window is lifted towards the target...
+        Assert.True(
+            curve.MagnitudeDbAt(100) > 3.0,
+            $"the window got {curve.MagnitudeDbAt(100):0.0} dB of the needed +5.");
+        // ...and nothing anywhere is pulled down — the failure mode being pinned.
+        double minGain = EqualizationCurve
+            .LogFrequencyGrid(20, 20_000, 400)
+            .Min(curve.MagnitudeDbAt);
+        Assert.True(minGain >= -0.5, $"the curve was lowered by {minGain:0.0} dB.");
+    }
+
+    [Fact]
     public void Tune_ConstantLevelDifference_UsesPreampAndNoBands()
     {
         IReadOnlyList<SignalPoint> source = Grid(_ => -40);

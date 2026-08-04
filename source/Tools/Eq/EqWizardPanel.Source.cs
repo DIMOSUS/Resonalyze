@@ -332,7 +332,7 @@ public partial class EqWizardPanel
             InvalidateSourceCurve();
 
             ApplyAxisForSource();
-            SuggestTargetOffset();
+            SuggestTargetOffsetUnlessTargetVisible();
         }
         finally
         {
@@ -582,11 +582,7 @@ public partial class EqWizardPanel
             Measurement: null,
             Scale: MagnitudeScale.SoundPressureLevel
         };
-        EqWizardAxisRange range = loadedSource is { Measurement: null }
-            ? EqWizardPlotFit.ForCurve(
-                GetSourceCurve()?.Points.Select(point => new SignalPoint(point.X, point.Y))
-                    ?? Enumerable.Empty<SignalPoint>())
-            : EqWizardPlotFit.ImpulseResponseRange;
+        EqWizardAxisRange range = ComputeAxisRangeForSource();
 
         // Widen the absolute bounds before the view, so setting the view can never be
         // clipped by limits left over from the previous source.
@@ -600,10 +596,49 @@ public partial class EqWizardPanel
         axis.Reset();
     }
 
-    // Lands the target on the freshly loaded source's own level. Most important for an
-    // absolute (SPL) curve, which starts tens of dB from a relative target — but every
-    // source needs it: it also clears the previous source's offset, so switching from an
-    // 80 dB SPL curve back to a near-0 dB impulse response cannot strand the target high.
+    // The default view the plot gets for the current source — and the yardstick for
+    // whether the target is still visible after a source switch.
+    private EqWizardAxisRange ComputeAxisRangeForSource() =>
+        loadedSource is { Measurement: null }
+            ? EqWizardPlotFit.ForCurve(
+                GetSourceCurve()?.Points.Select(point => new SignalPoint(point.X, point.Y))
+                    ?? Enumerable.Empty<SignalPoint>())
+            : EqWizardPlotFit.ImpulseResponseRange;
+
+    // Landing the target on a fresh source is a RESCUE, not a policy: when the target
+    // at its current offset is still at least partially inside the new source's
+    // default view, the user's placement survives the switch — two sources at similar
+    // levels must not reset a deliberately moved target. Only a target entirely
+    // off-screen (typically a relative ↔ SPL datum change of tens of dB, in either
+    // direction) is landed on the new source, which also un-strands an offset left
+    // over from the previous one.
+    private void SuggestTargetOffsetUnlessTargetVisible()
+    {
+        if (EqWizardPlotFit.IsCurveVisible(
+                CurrentTargetPoints(), ComputeAxisRangeForSource()))
+        {
+            return;
+        }
+
+        SuggestTargetOffset();
+    }
+
+    // The target as it would be drawn right now: the current spec and offset on the
+    // grid the plot uses — the source's frequencies, or the default 20 Hz .. 20 kHz
+    // grid when the source has no usable curve.
+    private IEnumerable<SignalPoint> CurrentTargetPoints()
+    {
+        double offset = (double)NumericTargetOffset.Value;
+        IEnumerable<double> frequencies = GetSourceCurve() is { Points.Count: >= 2 } source
+            ? source.Points.Select(point => point.X)
+            : DefaultTargetGrid;
+        return frequencies.Select(
+            frequency => new SignalPoint(frequency, targetSpec.Evaluate(frequency) + offset));
+    }
+
+    // Lands the target on the freshly loaded source's own level: the gap between their
+    // mean levels inside the tuning window, most important for an absolute (SPL) curve,
+    // which starts tens of dB from a relative target.
     private void SuggestTargetOffset()
     {
         if (GetSourceCurve() is not { Points.Count: >= 2 } source)

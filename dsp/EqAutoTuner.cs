@@ -36,7 +36,12 @@ public static class EqAutoTuner
         /// the curve honestly sits below an unreachable target instead.
         /// Unbounded by default: as a pure curve fit the preamp legitimately
         /// carries the level difference between arbitrarily referenced source
-        /// and target; a caller producing a profile for a real DSP passes 0.
+        /// and target; a caller producing a clip-safe cuts-only profile passes 0.
+        /// With boosts allowed, prefer pinning the preamp instead
+        /// (<see cref="PreampMinDb"/> == <see cref="PreampMaxDb"/>): this cap is
+        /// applied AFTER the bands are placed, so under it a fit that boosts is
+        /// realised below the level its bands were placed against — the whole
+        /// curve drops by the peak boost.
         /// </summary>
         public double TotalGainMaxDb { get; init; } = double.PositiveInfinity;
 

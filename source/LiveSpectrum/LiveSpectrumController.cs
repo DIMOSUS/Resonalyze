@@ -36,6 +36,7 @@ internal sealed class LiveSpectrumController : IDisposable
     private const string LiveSpectrumCoherenceTag = "live-spectrum:coherence";
     private const string LiveSpectrumPeakHoldTag = "live-spectrum:peak-hold";
     private const string OverloadAnnotationTag = "live-spectrum:overload";
+    private const string SplViewOnlyAnnotationTag = "live-spectrum:spl-view-only";
     private const long PeakHoldSuppressionMs = 1000;
     private bool disposed;
     private bool redrawInProgress;
@@ -90,6 +91,14 @@ internal sealed class LiveSpectrumController : IDisposable
     public bool TimerEnabled => timer.Enabled;
 
     /// <summary>
+    /// Whether the live plot currently has a curve to show — a running capture or a
+    /// kept last snapshot — i.e. whether a view-only SPL scale would actually hide
+    /// something. The options panel colours its dB SPL choice amber by this, so the
+    /// warning marks a real conflict and not a freshly started application.
+    /// </summary>
+    public bool HasDisplayableCurve => measurement.InProgress || lastSnapshot != null;
+
+    /// <summary>
     /// The raw form of the RTA trace as last drawn, for an overlay capturing it. The
     /// controller owns this because the RTA data lives in the drawn snapshot, not in the
     /// plot factory; the factory turns the samples into the scale-appropriate raw curve.
@@ -98,11 +107,20 @@ internal sealed class LiveSpectrumController : IDisposable
     public RawCurveCapture? BuildRawRtaCapture() =>
         plotModelFactory.BuildRawRtaCurve(lastSnapshot?.InputMagnitude);
 
-    // Whether the plot is currently rendering the absolute dB SPL (RTA) view. SPL is
-    // only effective when it is both selected and backed by a matching calibration,
-    // so this reflects what will actually be drawn — never a stale-calibration request.
+    // Whether the plot is in the absolute dB SPL (RTA) view. This follows the
+    // SELECTION: without a matching calibration the view still shows the SPL axis,
+    // but view-only (see SplViewOnly) — live curves are suppressed rather than the
+    // scale silently falling back to relative.
     private bool RenderingSpl =>
         plotModelFactory.EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel;
+
+    // dB SPL selected with no matching calibration: the axis and the SPL overlays
+    // show, but live curves have no absolute level to be lifted to and are not
+    // drawn. The record button resets the scale to relative before an actual run,
+    // so this covers idle redraws of a stale snapshot (a scale switch after a stop)
+    // and the moment a running analyzer loses its calibration.
+    private bool SplViewOnly =>
+        RenderingSpl && plotModelFactory.LiveSplOffsetDb == null;
 
     // The plot shows only the reference-free RTA (no transfer function or coherence)
     // when the SPL view is active OR the capture has no loopback reference at all.
@@ -548,6 +566,26 @@ internal sealed class LiveSpectrumController : IDisposable
         }
         attachedModel = model;
 
+        // A view-only SPL plot draws no live curves: at raw (un-lifted) dBFS on the
+        // absolute axis they would read as absurd sound-pressure levels. Say WHY the
+        // curve is absent instead of leaving a silently empty plot. The notice is
+        // managed here rather than at model creation so it appears only when a curve
+        // really was suppressed (never on a plot that has nothing to show anyway).
+        // Like the overload annotation, the instance is created per model and tracked
+        // by Tag: an OxyPlot element belongs to ONE PlotModel, so a cached instance
+        // would throw the moment a rebuilt model tried to adopt it while the
+        // discarded model still held it. Remove-then-add keeps a live tick from
+        // stacking duplicates and takes the notice down when view-only ends.
+        RemoveSplViewOnlyAnnotation(model);
+        if (SplViewOnly)
+        {
+            OverlayTextAnnotation notice = PlotModelFactory.CreateSplViewOnlyAnnotation(
+                "No SPL calibration for the live input — showing dB SPL overlays only");
+            notice.Tag = SplViewOnlyAnnotationTag;
+            model.Annotations.Add(notice);
+            return;
+        }
+
         // The plot is the reference-free microphone (RTA) spectrum whenever the SPL
         // view is active (the transfer function has no scalar SPL under noise) or the
         // capture has no loopback at all (there is no transfer function to draw). In
@@ -714,6 +752,20 @@ internal sealed class LiveSpectrumController : IDisposable
             TextColor = OxyColor.FromRgb(255, 170, 0),
             TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
         });
+    }
+
+    private static void RemoveSplViewOnlyAnnotation(PlotModel model)
+    {
+        for (int index = model.Annotations.Count - 1; index >= 0; index--)
+        {
+            if (model.Annotations[index] is OverlayTextAnnotation
+                {
+                    Tag: SplViewOnlyAnnotationTag
+                })
+            {
+                model.Annotations.RemoveAt(index);
+            }
+        }
     }
 
     private static void RemoveOverloadAnnotation(PlotModel? model)

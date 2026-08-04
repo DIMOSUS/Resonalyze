@@ -73,6 +73,33 @@ internal static class EqWizardPlotFit
             maximum + PanMarginDb);
     }
 
+    /// <summary>
+    /// Whether a drawn curve is at least partially visible in the given default view:
+    /// some finite level falls inside [Minimum, Maximum]. Loading a new source keeps
+    /// the user's target level when the target passes this test — re-suggesting would
+    /// discard a deliberately placed target that can still be seen; only a target
+    /// entirely off-screen (typically a relative ↔ SPL datum change of tens of dB)
+    /// gets landed on the new source.
+    /// </summary>
+    public static bool IsCurveVisible(
+        IEnumerable<SignalPoint> points,
+        EqWizardAxisRange range)
+    {
+        ArgumentNullException.ThrowIfNull(points);
+
+        foreach (SignalPoint point in points)
+        {
+            if (double.IsFinite(point.Y) &&
+                point.Y >= range.Minimum &&
+                point.Y <= range.Maximum)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>The major-step the right EQ-gain axis snaps its bounds to.</summary>
     private const double EqGainAxisStepDb = 6;
 

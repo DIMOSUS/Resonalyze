@@ -14,9 +14,14 @@ namespace Resonalyze.Options
 {
     public partial class FROptions : ImpulsePreviewOptionsForm
     {
+        // The designer's normal dB SPL text colour, restored when the choice leaves
+        // the amber view-only state.
+        private readonly Color splChoiceReadyForeColor;
+
         public FROptions()
         {
             InitializeComponent();
+            splChoiceReadyForeColor = radioMagnitudeSpl.ForeColor;
             BindTukeyWindowControls(numericWindow, numericLeftWindow, numericRightWindow);
             comboWindowMode.SelectedIndexChanged +=
                 (_, _) => UpdateMagnitudeWindowControlState();
@@ -60,13 +65,12 @@ namespace Resonalyze.Options
                 checkBoxShowHd4.Checked = visibility.ShowHd4;
                 checkBoxShowThdPlusNoise.Checked = visibility.ShowThdPlusNoise;
                 checkBoxShowNoiseFloor.Checked = visibility.ShowNoiseFloor;
-                // Keep the radio Enabled and mute it instead, so a disabled SPL choice
-                // renders in the theme's muted colour rather than the near-black system
-                // grey that WinForms would paint on the dark background.
-                bool splAvailable = IsSplAvailable();
-                UiStyle.SetTextEnabledLook(radioMagnitudeSpl, splAvailable, interactive: true);
-                bool spl = frequencyResponseOptions.MagnitudeScale == MagnitudeScale.SoundPressureLevel
-                    && splAvailable;
+                // The selection follows the options verbatim: dB SPL is choosable even
+                // without a valid calibration (view-only, amber), so it must not be
+                // silently rewritten to relative here.
+                UpdateSplChoiceLook();
+                bool spl = frequencyResponseOptions.MagnitudeScale ==
+                    MagnitudeScale.SoundPressureLevel;
                 radioMagnitudeSpl.Checked = spl;
                 radioMagnitudeRelative.Checked = !spl;
                 RefreshTukeyWindowLimits();
@@ -127,25 +131,63 @@ namespace Resonalyze.Options
             measurement.InputMatches(calibration);
 
         /// <summary>
-        /// Re-evaluates whether dB SPL can be offered, without disturbing the current
-        /// selection. The panel can open before a measurement runs (no captured
-        /// loopback level yet), so the choice starts disabled; the host calls this once
-        /// a measurement or a loaded file provides the level, so the user can switch to
-        /// SPL without reopening the panel.
+        /// Re-evaluates whether this measurement can supply dB SPL and recolours the
+        /// choice accordingly, in both directions, without disturbing the selection:
+        /// the scale stays selectable either way and is merely view-only (overlays,
+        /// no measurement curves) until a valid calibration and loopback level exist.
+        /// The host calls this after every run completion and file load.
         /// </summary>
-        public void RefreshSplAvailability()
+        public void RefreshSplAvailability() => UpdateSplChoiceLook();
+
+        /// <summary>
+        /// Drops the scale selection back to dBr/dBc. The host calls this when a run
+        /// starts while the display is view-only SPL, so the fresh measurement is not
+        /// born hidden; switching back to SPL afterwards stays available.
+        /// </summary>
+        public void ForceRelativeScale() => radioMagnitudeRelative.Checked = true;
+
+        // The scale choice is never locked: without a valid SPL calibration the dB SPL
+        // axis is still useful for VIEWING overlays captured in SPL, so the choice
+        // stays clickable. Amber flags a REAL conflict only — a measurement is on
+        // screen whose curves cannot be rendered in SPL, so choosing SPL hides them.
+        // Before any measurement there is nothing to hide and nothing to warn about:
+        // the choice keeps its normal colour, and with an SPL calibration configured
+        // the first run simply comes up in dB SPL.
+        private void UpdateSplChoiceLook()
         {
             bool available = IsSplAvailable();
-            UiStyle.SetTextEnabledLook(radioMagnitudeSpl, available, interactive: true);
+            bool measurementOnScreen = Measurement is { HasImpulseResponse: true };
+            bool viewOnlyConflict = !available && measurementOnScreen;
+            radioMagnitudeSpl.ForeColor = viewOnlyConflict
+                ? UiPalette.WarningAmber
+                : splChoiceReadyForeColor;
+            toolTip.SetToolTip(radioMagnitudeSpl, DescribeSplChoice(available, viewOnlyConflict));
+        }
 
-            // If SPL was the chosen scale but is no longer available (a run failed, or a
-            // file without a usable anchor was loaded), the plot already fell back to
-            // relative — move the selection with it so the checked radio does not
-            // contradict the axis.
-            if (!available && radioMagnitudeSpl.Checked)
+        private static string DescribeSplChoice(bool available, bool viewOnlyConflict)
+        {
+            const string Base = "Absolute dB SPL from the microphone SPL calibration.";
+            if (available)
             {
-                radioMagnitudeRelative.Checked = true;
+                return Base;
             }
+
+            if (viewOnlyConflict)
+            {
+                return Base + "\r\n" +
+                    "View-only: the measurement on screen carries no SPL anchor (it " +
+                    "is stamped at run time from the configured calibration plus the " +
+                    "run's loopback level), so its curves cannot be shown in dB SPL — " +
+                    "only overlays captured in dB SPL are. A new measurement with an " +
+                    "SPL calibration configured comes up in dB SPL; starting one " +
+                    "without returns the display to dBr/dBc.";
+            }
+
+            return Base + "\r\n" +
+                "No measurement yet. With an SPL calibration configured in " +
+                "Measurement Options, the first run comes up in dB SPL; without one, " +
+                "starting a run switches the display back to dBr/dBc. Overlays " +
+                "captured in dB SPL are shown either way.";
         }
 
         protected override void RenderIrPreview()
@@ -200,10 +242,8 @@ namespace Resonalyze.Options
                 radioMagnitudeRelative,
                 "Native scale: the response in dBr (relative to the loopback reference), " +
                 "distortion and noise in dBc (relative to the fundamental).");
-            toolTip.SetToolTip(
-                radioMagnitudeSpl,
-                "Absolute dB SPL from the microphone SPL calibration. Available only when this " +
-                "measurement has a valid calibration and a captured loopback level.");
+            // radioMagnitudeSpl's tooltip is owned by UpdateSplChoiceLook: it names
+            // the current availability state, which a static line here cannot.
             toolTip.SetToolTip(
                 checkBoxShowPrimary,
                 "Shows the primary frequency-response curve.");

@@ -75,17 +75,14 @@ internal sealed class PlotModelFactory
         getCompareSource = provider;
 
     /// <summary>
-    /// The scale the Frequency Response plot actually renders in — SPL only when it
-    /// is both selected and available, matching <c>renderSpl</c> in
-    /// <see cref="CreateFrequencyResponse"/>. Overlays gate on this, not on the
-    /// requested scale, so a stale-calibration fallback to dBr does not mis-tag or
-    /// mis-show overlays.
+    /// The scale the Frequency Response plot renders in — simply the selected one.
+    /// Without a valid SPL anchor the plot no longer falls back to dBr: it keeps the
+    /// dB SPL axis in a view-only state (overlays shown, measurement curves omitted,
+    /// see <see cref="CreateFrequencyResponse"/>), so overlays gate on the selection
+    /// and follow the axis exactly.
     /// </summary>
     public MagnitudeScale EffectiveFrequencyResponseScale =>
-        frequencyResponseOptions.MagnitudeScale == MagnitudeScale.SoundPressureLevel &&
-        measurementContext.SplOffsetDb.HasValue
-            ? MagnitudeScale.SoundPressureLevel
-            : MagnitudeScale.Relative;
+        frequencyResponseOptions.MagnitudeScale;
 
     /// <summary>
     /// The offset that turns the reference-free live RTA magnitude (raw microphone
@@ -118,16 +115,15 @@ internal sealed class PlotModelFactory
     }
 
     /// <summary>
-    /// The scale the Live Spectrum plot actually renders in — SPL only when it is
-    /// both selected and available. The live controller and overlays gate on this,
-    /// not on the requested scale, so a missing/mismatched calibration falls back to
-    /// the native dB view instead of an empty SPL plot.
+    /// The scale the Live Spectrum plot renders in — simply the selected one, like
+    /// the Frequency Response scale. Without a matching SPL calibration the plot no
+    /// longer falls back to the native dB view: it keeps the dB SPL axis in a
+    /// view-only state — overlays captured in dB SPL show, live curves are not drawn
+    /// (see LiveSpectrumController) — and the record button drops the display back
+    /// to relative before an actual run starts.
     /// </summary>
     public MagnitudeScale EffectiveLiveSpectrumScale =>
-        liveSpectrumOptions.MagnitudeScale == MagnitudeScale.SoundPressureLevel &&
-        LiveSplOffsetDb.HasValue
-            ? MagnitudeScale.SoundPressureLevel
-            : MagnitudeScale.Relative;
+        liveSpectrumOptions.MagnitudeScale;
 
     // The dB offset applied to the live RTA / peak-hold curves when the plot is in
     // SPL mode; zero in the native (relative) view. The transfer function is never
@@ -258,15 +254,29 @@ internal sealed class PlotModelFactory
         PlotModel model = PlotModelStyle.CreateTitledModel(
             measurementContext.CreateTitle("Frequency Response"));
 
-        // dB SPL is available only with a valid calibration and loopback level for
-        // this measurement; otherwise the plot stays in native loopback-referenced dB.
+        // dB SPL follows the SELECTION. Converting the curves additionally needs a
+        // valid calibration and loopback level for this measurement; without them the
+        // axis still goes SPL but view-only — the measurement's own dBr shapes would
+        // be lies on an absolute axis and are omitted, while overlays captured in
+        // dB SPL (gated by EffectiveFrequencyResponseScale) remain visible. Starting
+        // a run in that state drops the display back to dBr/dBc (Form1), so a fresh
+        // measurement is never born hidden.
         bool splRequested =
             frequencyResponseOptions.MagnitudeScale == MagnitudeScale.SoundPressureLevel;
         double? splOffset = splRequested ? measurementContext.SplOffsetDb : null;
         bool renderSpl = splOffset.HasValue;
+        bool splViewOnly = splRequested && !renderSpl;
 
         // Magnitude is derived from the loopback transfer IR, which is required.
-        if (measurementContext.CanIncludeCurves(includeCurves) &&
+        if (splViewOnly &&
+            measurementContext.CanIncludeCurves(includeCurves) &&
+            measurementContext.HasTransferImpulseResponse)
+        {
+            // This measurement cannot supply SPL (no calibration, no loopback level,
+            // or a calibration from another input): say why its curves are absent.
+            AddSplViewOnlyAnnotation(model);
+        }
+        else if (measurementContext.CanIncludeCurves(includeCurves) &&
             measurementContext.HasTransferImpulseResponse)
         {
             IReadOnlyList<AnalysisCurve> curves = measurementContext.CreateFrequencyResponseCurves(
@@ -316,13 +326,6 @@ internal sealed class PlotModelFactory
                 frequencyResponseVisibility.ShowCoherence);
 
             AddHiddenHarmonicAnnotation(model, curves);
-
-            // The user asked for SPL but this measurement cannot supply it (no
-            // calibration, no loopback level, or a calibration from another input).
-            if (splRequested && !renderSpl)
-            {
-                AddSplUnavailableAnnotation(model);
-            }
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
                  !measurementContext.HasTransferImpulseResponse)
@@ -333,10 +336,11 @@ internal sealed class PlotModelFactory
         PlotModelStyle.AddFrequencyAxis(model);
         // In SPL mode the whole plot is absolute dB SPL, which needs a different
         // default window and clamps (curves sit near 40–110 dB, far above the dBr
-        // ceiling). Otherwise the primary is the loopback-referenced transfer
-        // magnitude (dBr) and the harmonic / THD / noise curves are ratios to the
-        // fundamental (dBc); the axis names both.
-        if (renderSpl)
+        // ceiling). The axis follows the SELECTION — a view-only SPL plot keeps the
+        // SPL axis for its overlays. Otherwise the primary is the loopback-referenced
+        // transfer magnitude (dBr) and the harmonic / THD / noise curves are ratios
+        // to the fundamental (dBc); the axis names both.
+        if (splRequested)
         {
             PlotModelStyle.AddDecibelAxis(
                 model,
@@ -1719,16 +1723,24 @@ internal sealed class PlotModelFactory
         });
     }
 
-    private static void AddSplUnavailableAnnotation(PlotModel model)
+    private static void AddSplViewOnlyAnnotation(PlotModel model)
     {
-        model.Annotations.Add(new OverlayTextAnnotation
-        {
-            Text = "No SPL calibration for this measurement — showing dBr/dBc",
-            TextPosition = new DataPoint(0.5, 3),
-            TextFlowDirection = TextFlowDirection.TopDown,
-            FontSize = 12,
-            TextColor = OxyColor.FromRgb(255, 170, 0),
-            TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
-        });
+        model.Annotations.Add(CreateSplViewOnlyAnnotation(
+            "No SPL calibration for this measurement — showing dB SPL overlays only"));
     }
+
+    /// <summary>
+    /// The "showing dB SPL overlays only" notice, shared by the Frequency Response
+    /// model above and the live controller (which manages its instance itself: a live
+    /// model persists across ticks, so the notice must be addable and removable).
+    /// </summary>
+    internal static OverlayTextAnnotation CreateSplViewOnlyAnnotation(string text) => new()
+    {
+        Text = text,
+        TextPosition = new DataPoint(0.5, 3),
+        TextFlowDirection = TextFlowDirection.TopDown,
+        FontSize = 12,
+        TextColor = OxyColor.FromRgb(255, 170, 0),
+        TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
+    };
 }

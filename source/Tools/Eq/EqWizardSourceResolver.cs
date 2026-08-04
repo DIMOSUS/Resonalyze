@@ -76,8 +76,12 @@ internal sealed class EqWizardSourceResolver
     /// </summary>
     internal static bool IsEligible(OverlayFile file)
     {
+        // The plot's own dB axis shows up in a capture in two spellings: no key at all
+        // (a Live Spectrum series carries none) or the named dB axis key — sweep modes
+        // attach every curve to their dB axis BY KEY. Both are the level axis; only a
+        // genuinely different axis (coherence) disqualifies.
         return file.Kind == OverlayKind.Captured &&
-            file.CapturedYAxisKey == null &&
+            file.CapturedYAxisKey is null or PlotModelFactory.DecibelAxisKey &&
             file.CapturedCurveKind is not null &&
             IsEqualizableResponse(role: null, file.CapturedCurveKind) &&
             file.Points.Length >= 2;

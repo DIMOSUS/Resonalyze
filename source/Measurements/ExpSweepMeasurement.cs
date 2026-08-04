@@ -124,7 +124,18 @@ namespace Resonalyze
             return MeasurementInput is { } identity && calibration.MatchesInput(identity);
         }
 
-        private MeasurementInputIdentity CurrentInputIdentity() => new(
+        /// <summary>
+        /// Whether the NEXT run will carry a usable SPL anchor: an SPL calibration is
+        /// configured and was captured on the input this measurement is configured to
+        /// run on. Mirrors exactly what <see cref="RunAsync"/> freezes onto the result
+        /// (the configured calibration plus the current input identity), so the shell
+        /// can predict dB SPL availability before starting a sweep.
+        /// </summary>
+        public bool NextRunHasSplAnchor =>
+            SplCalibration is { } calibration &&
+            calibration.MatchesInput(CurrentInputIdentity());
+
+        internal MeasurementInputIdentity CurrentInputIdentity() => new(
             AudioBackend,
             SampleRate,
             Bits,

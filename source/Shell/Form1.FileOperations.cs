@@ -142,7 +142,8 @@ public partial class Form1
                 ApplyLoadedImpulseResponseState(dialog.FileName);
                 sessionTracker.MarkLoadedFile(dialog.FileName, file);
                 // A loaded file carries its own SPL calibration and loopback level, so
-                // an open Frequency Response panel can now offer dB SPL for it.
+                // an open Frequency Response panel can now show dB SPL as fully
+                // available (not just view-only) for it.
                 dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
                     panel => panel.RefreshSplAvailability());
             }

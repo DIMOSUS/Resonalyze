@@ -112,6 +112,7 @@ public partial class Form1
         {
             if (!liveSpectrumController.InProgress)
             {
+                ResetLiveSplViewOnlyDisplayForRun();
                 await startupAudioWarmup.WaitAsync();
             }
 
@@ -161,9 +162,56 @@ public partial class Form1
             }
 
             PrepareSweepMeasurementForRun();
+            // After Prepare, so the anchor prediction reads the input configuration
+            // this run will actually use.
+            ResetSplViewOnlyDisplayForRun();
             EnterMeasurementRunningState();
             _ = expSweepMeasurement.RunAsync();
         }
+    }
+
+    // The Live Spectrum mirror of ResetSplViewOnlyDisplayForRun below: an analyzer
+    // started while the display is view-only SPL would draw no curves at all, so
+    // drop the display to relative first (StartAsync then normalizes a Silent
+    // signal into a real excitation for the relative scale). Also called when a
+    // RUNNING analyzer loses its calibration, where staying in SPL would blank it.
+    private void ResetLiveSplViewOnlyDisplayForRun()
+    {
+        if (liveSpectrumOptions.MagnitudeScale != Dsp.MagnitudeScale.SoundPressureLevel ||
+            plotModelFactory.LiveSplOffsetDb.HasValue)
+        {
+            return;
+        }
+
+        liveSpectrumOptions.MagnitudeScale = Dsp.MagnitudeScale.Relative;
+        SaveMeasurementSettings();
+        // An open panel must follow the reset, or its next apply-on-change would
+        // write SPL right back into the options.
+        dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
+            panel => panel.ForceRelativeScale());
+    }
+
+    // A sweep started in dB SPL only stays there when the RUN AHEAD can supply SPL —
+    // i.e. an SPL calibration is configured for the input it will use, so the fresh
+    // measurement comes up in dB SPL directly. Without one the new curves would be
+    // born hidden (view-only shows overlays only), so the display drops to dBr/dBc.
+    // Deliberately NOT gated on the previous measurement's anchor: that one is
+    // irrelevant the moment a new run starts.
+    private void ResetSplViewOnlyDisplayForRun()
+    {
+        if (frequencyResponseOptions.MagnitudeScale !=
+                Dsp.MagnitudeScale.SoundPressureLevel ||
+            expSweepMeasurement.NextRunHasSplAnchor)
+        {
+            return;
+        }
+
+        frequencyResponseOptions.MagnitudeScale = Dsp.MagnitudeScale.Relative;
+        SaveMeasurementSettings();
+        // An open panel must follow the reset, or its next apply-on-change would
+        // write SPL right back into the options.
+        dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
+            panel => panel.ForceRelativeScale());
     }
 
     // One-time notice after loading a settings file written by a version that
@@ -211,6 +259,20 @@ public partial class Form1
         measurementSettings.Measurement.SplCalibration = selection.SplCalibration;
         expSweepMeasurement.SplCalibration = selection.SplCalibration;
         RefreshCalibrationConsumers();
+        // Losing the SPL anchor while the analyzer RUNS in dB SPL would leave it
+        // drawing nothing (view-only suppresses live curves), so drop the display to
+        // relative first — the calibration refresh below then restarts the capture on
+        // a scale its signal fits. An IDLE view-only SPL display is legitimate (it
+        // shows overlays) and is left alone. The open live panel's amber state
+        // follows the new calibration either way.
+        if (liveSpectrumController.InProgress)
+        {
+            ResetLiveSplViewOnlyDisplayForRun();
+        }
+        dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
+            panel => panel.RefreshSplAvailability(
+                plotModelFactory.LiveSplOffsetDb.HasValue,
+                liveSpectrumController.HasDisplayableCurve));
         // Persist the calibration itself up front so it survives even if the redraw
         // below fails; the normalized live options are re-saved afterwards.
         ScheduleMeasurementSettingsSave();

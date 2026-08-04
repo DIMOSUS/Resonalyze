@@ -112,6 +112,38 @@ public sealed class EqWizardPlotFitTests
     }
 
     [Fact]
+    public void IsCurveVisible_TrueWhenAnyPointFallsInsideTheView()
+    {
+        var range = new EqWizardAxisRange(-30, 0, -70, 40);
+
+        // Mostly above the view, but the tail dips into it: still (partially) visible,
+        // so a source switch must keep the user's target level rather than re-land it.
+        Assert.True(EqWizardPlotFit.IsCurveVisible(
+        [
+            new SignalPoint(100, 25),
+            new SignalPoint(1_000, 12),
+            new SignalPoint(10_000, -4)
+        ], range));
+    }
+
+    [Fact]
+    public void IsCurveVisible_FalseWhenTheCurveIsEntirelyOffScreen()
+    {
+        var range = new EqWizardAxisRange(-30, 0, -70, 40);
+
+        // An SPL-level target over a relative source's view: nothing of it can be
+        // seen, which is the one case where the wizard re-lands the target.
+        Assert.False(EqWizardPlotFit.IsCurveVisible(
+        [
+            new SignalPoint(100, 75),
+            new SignalPoint(10_000, 68)
+        ], range));
+        // An unmeasured band is not a visible point.
+        Assert.False(EqWizardPlotFit.IsCurveVisible(
+            [new SignalPoint(100, double.NaN)], range));
+    }
+
+    [Fact]
     public void SuggestTargetOffsetDb_LandsAFlatTargetOnTheSourceMean()
     {
         SignalPoint[] points =

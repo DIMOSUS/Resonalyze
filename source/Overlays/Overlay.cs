@@ -597,6 +597,7 @@ public sealed class Overlay
     private readonly ToolStripItem exportDeviationMenuItem;
     private readonly ToolStripItem targetMenuItem;
     private readonly ToolStripItem settingsMenuItem;
+    private readonly ToolStripItem clearSlotMenuItem;
     private readonly System.Windows.Forms.Timer longPressTimer;
     private readonly System.Windows.Forms.Timer offsetSaveTimer;
     private bool longPressTriggered;
@@ -707,7 +708,8 @@ public sealed class Overlay
             out captureCurveMenuItem,
             out exportDeviationMenuItem,
             out targetMenuItem,
-            out settingsMenuItem);
+            out settingsMenuItem,
+            out clearSlotMenuItem);
         DropDownFocusGuard.Attach(captureMenu);
 
         // Holding the button for over half a second jumps straight to the slot's
@@ -1253,7 +1255,8 @@ public sealed class Overlay
         out ToolStripMenuItem captureCurveItem,
         out ToolStripItem exportDeviationItem,
         out ToolStripItem targetItem,
-        out ToolStripItem settingsItem)
+        out ToolStripItem settingsItem,
+        out ToolStripItem clearSlotItem)
     {
         var menu = new ContextMenuStrip();
         captureCurveItem = new ToolStripMenuItem("Capture curve…");
@@ -1280,7 +1283,49 @@ public sealed class Overlay
             "\u2699  Settings\u2026", // \u2699 gear
             null,
             (_, _) => OpenSettings());
+        clearSlotItem = menu.Items.Add(
+            "\u2715  Clear slot", // \u2715 multiplication x
+            null,
+            (_, _) => ClearSlot());
         return menu;
+    }
+
+    // Empties the slot: the saved file goes, the row returns to its virgin state,
+    // and everything reading captured slots (calculated overlays, target sources,
+    // the EQ Wizard's slot menu) sees it gone. A curve saved into the cleared slot
+    // later gets the automatic name again, exactly like a never-used slot.
+    private void ClearSlot()
+    {
+        Mode mode = CurrentOverlayMode;
+        if (mode == Mode.None)
+        {
+            return;
+        }
+
+        try
+        {
+            OverlayFile.Delete(mode, Index);
+            // A debounced offset save still in flight is moot for a slot that is
+            // going away — but only once the delete succeeded: stopping it earlier
+            // would silently drop the user's offset when the delete fails and the
+            // slot lives on. (A tick landing after the reset below is a no-op:
+            // TrySaveCurrentState declines an empty slot.)
+            offsetSaveTimer.Stop();
+        }
+        catch (Exception exception)
+        {
+            ShowStorageError("Overlay slot could not be cleared.", exception);
+            return;
+        }
+
+        Hide();
+        ResetState();
+        collection.NotifyCapturedOverlayChanged();
+        // Hide() already refreshed the shell, but that ran BEFORE the reset, with
+        // the slot still counting as occupied. Re-notify with the cleared state, or
+        // the bulk Show/Hide All buttons and the labels panel stay stale after the
+        // last slot is cleared.
+        collection.NotifyPlotChanged();
     }
 
     internal void CloseCaptureMenu()
@@ -1375,6 +1420,9 @@ public sealed class Overlay
         targetMenuItem.Visible = OverlayTargets.SupportsMode(CurrentOverlayMode);
         settingsMenuItem.Enabled =
             SeriesMode == CurrentOverlayMode && HasConfiguredContent();
+        // Clearing only applies to a slot that holds content, under the same
+        // mode-ownership rule as Settings.
+        clearSlotMenuItem.Enabled = settingsMenuItem.Enabled;
         captureMenu.Show(captureButton, new Point(0, captureButton.Height));
     }
 
@@ -1506,7 +1554,12 @@ public sealed class Overlay
             bakedSmoothing = raw?.SmoothingCode;
         }
 
-        string title = $"Overlay {Index}: {selected.Title ?? string.Empty}";
+        // An occupied slot keeps its name across a re-capture — the user may have
+        // renamed it, and a re-measure updates the curve, not the label. Only an
+        // empty (never used or cleared) slot gets the automatic name. Evaluated
+        // before the state below is overwritten.
+        string title = OverlaySlotName.ForSave(
+            HasConfiguredContent(), Title, Index, selected.Title ?? string.Empty);
         Mode mode = CurrentOverlayMode;
 
         Hide();
@@ -1596,6 +1649,14 @@ public sealed class Overlay
             return;
         }
 
+        // Same rule as a capture: an occupied slot keeps its name, only an empty one
+        // is named after the file. Evaluated before the state below is overwritten.
+        string importedTitle = OverlaySlotName.ForSave(
+            HasConfiguredContent(),
+            Title,
+            Index,
+            System.IO.Path.GetFileNameWithoutExtension(dialog.FileName));
+
         Hide();
         kind = OverlayKind.Captured;
         operationConfigured = false;
@@ -1620,8 +1681,7 @@ public sealed class Overlay
             .Select(point => new DataPoint(point.X, point.Y))
             .ToArray();
         SeriesMode = mode;
-        Title = $"Overlay {Index}: " +
-            System.IO.Path.GetFileNameWithoutExtension(dialog.FileName);
+        Title = importedTitle;
         UpdateKindGlyph();
         UpdateDrawPoints();
 

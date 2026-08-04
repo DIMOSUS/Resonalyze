@@ -13,6 +13,19 @@ namespace Resonalyze;
 /// </remarks>
 internal static class OverlaySlotName
 {
+    /// <summary>
+    /// The name a slot takes when a curve is saved into it. An occupied slot keeps
+    /// its current name — the user may have renamed it, and a re-capture updates the
+    /// curve, not the label — while an empty (never used or cleared) slot gets the
+    /// automatic "Overlay {slot}: {source}" form.
+    /// </summary>
+    public static string ForSave(
+        bool slotOccupied,
+        string currentTitle,
+        int slot,
+        string sourceName) =>
+        slotOccupied ? currentTitle : $"Overlay {slot}: {sourceName}";
+
     public static string Shorten(string title, int slot)
     {
         ArgumentNullException.ThrowIfNull(title);

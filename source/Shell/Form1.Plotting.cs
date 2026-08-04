@@ -222,6 +222,14 @@ public partial class Form1
         }
 
         buttonRecord.Text = liveSpectrumController.InProgress ? "Stop" : "Start";
+        // The controller calls this on every start/stop/completion — exactly when a
+        // live curve appears or settles, i.e. when an uncalibrated dB SPL choice
+        // becomes (or stops being) a real conflict. Follow it on the open panel, so
+        // the amber state is not frozen at whatever was true when the panel opened.
+        dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
+            panel => panel.RefreshSplAvailability(
+                plotModelFactory.LiveSplOffsetDb.HasValue,
+                liveSpectrumController.HasDisplayableCurve));
     }
 
     private void UpdatePlotLabelsPanel()

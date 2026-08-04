@@ -74,4 +74,32 @@ public sealed class OverlaySlotNameTests
     {
         Assert.Equal(title, OverlaySlotName.Shorten(title, slot));
     }
+
+    [Fact]
+    public void ForSave_AnOccupiedSlotKeepsItsName()
+    {
+        // Re-capturing into a named slot updates the curve, not the label: the name
+        // may be the user's own ("Left tweeter") and must survive a re-measure.
+        Assert.Equal(
+            "Left tweeter",
+            OverlaySlotName.ForSave(
+                slotOccupied: true,
+                "Left tweeter",
+                slot: 4,
+                "Frequency Response"));
+    }
+
+    [Fact]
+    public void ForSave_AnEmptySlotGetsTheAutomaticName()
+    {
+        // A never-used or cleared slot is named after what was captured, exactly as
+        // before the keep-the-name rule existed.
+        Assert.Equal(
+            "Overlay 4: Frequency Response",
+            OverlaySlotName.ForSave(
+                slotOccupied: false,
+                "",
+                slot: 4,
+                "Frequency Response"));
+    }
 }

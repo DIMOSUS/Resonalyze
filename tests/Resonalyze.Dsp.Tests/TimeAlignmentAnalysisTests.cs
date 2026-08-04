@@ -117,6 +117,28 @@ public sealed class TimeAlignmentAnalysisTests
     }
 
     [Fact]
+    public void Analyze_FindsADirectArrivalAFullWindowAheadOfTheStrongestPeak()
+    {
+        // The review counter-example for the re-anchored window's placement:
+        // a weak direct arrival 55 ms ahead of a stronger room mode, with
+        // the start-anchored window empty (chain latency). Centring the
+        // window on the mode would leave only 40 ms of pre-history and lose
+        // the direct sound; anchored at the window's far edge, almost the
+        // full 80 ms ahead of the mode stays searchable.
+        var impulseResponse = new double[131_072];
+        impulseResponse[7_680] = 0.3;  // direct arrival, 160 ms at 48 kHz
+        impulseResponse[10_320] = 1.0; // stronger room mode, 215 ms
+
+        TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, new TimeAlignmentAnalysisOptions());
+
+        Assert.InRange(result.FirstArrivalDelayMilliseconds, 159.5, 160.5);
+        Assert.InRange(result.StrongestDelayMilliseconds, 214.5, 215.5);
+        Assert.True(result.StrongestPeakIsSeparateArrival);
+        Assert.InRange(result.StrongestPeakSeparationMilliseconds, 54.5, 55.5);
+    }
+
+    [Fact]
     public void Analyze_KeepsTheTwoPeakTrapGeometryUnderChainLatency()
     {
         // The weak-direct/strong-mode pair of the classic trap, shifted whole

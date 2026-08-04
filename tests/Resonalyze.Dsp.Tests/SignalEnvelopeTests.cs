@@ -165,6 +165,35 @@ public sealed class SignalEnvelopeTests
     }
 
     [Fact]
+    public void FindPeak_ReAnchorsWhenTheWindowHoldsOnlySubNoiseContent()
+    {
+        // A near-noise record with a weak but real event beyond the window:
+        // the window's noise sits within the 25 dB search depth of that weak
+        // global peak, but below the noise gate — depth alone would keep the
+        // start-anchored window, whose content then fails the first-arrival
+        // threshold and the fallback returns a noise sample. Sub-noise
+        // content must not block the re-anchor.
+        var envelope = new double[48_000];
+        Array.Fill(envelope, 0.01);
+        envelope[19_999] = 0.06;
+        envelope[20_000] = 0.1; // the only real event, beyond the window
+        envelope[20_001] = 0.06;
+
+        PeakSearchResult result = SignalEnvelope.FindPeak(
+            envelope,
+            sampleRate: 48_000,
+            new PeakSearchOptions
+            {
+                Mode = PeakSearchMode.FirstArrival,
+                SearchWindowMilliseconds = 80
+            });
+
+        Assert.Equal(20_000, result.StrongestIndex);
+        Assert.Equal(20_000, result.SelectedIndex);
+        Assert.NotEqual(0, result.SearchRotation);
+    }
+
+    [Fact]
     public void FindPeak_KeepsTheStartAnchoredWindowWhenItHoldsReachableContent()
     {
         // The re-anchor gate is conservative: content inside the start-anchored

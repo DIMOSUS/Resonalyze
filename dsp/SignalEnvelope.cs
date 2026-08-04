@@ -103,8 +103,16 @@ public static class SignalEnvelope
             envelope.Count,
             sampleRate,
             options.SearchWindowMilliseconds);
+        // The noise floor is order-invariant (a sorted quantile), so the one
+        // estimate serves both the anchor decision and the first-arrival
+        // threshold below, before and after any rotation.
+        double noiseRms = EstimateEnvelopeNoiseRms(envelope);
         int rotation = FindSearchAnchorRotation(
-            envelope, searchEnd, options.FirstPeakThresholdBelowMaxDb);
+            envelope,
+            searchEnd,
+            options.FirstPeakThresholdBelowMaxDb,
+            options.FirstPeakMinimumSnrDb,
+            noiseRms);
         IReadOnlyList<double> view = rotation == 0
             ? envelope
             : RotateView(envelope, rotation);
@@ -126,7 +134,6 @@ public static class SignalEnvelope
                 rotation);
         }
 
-        double noiseRms = EstimateEnvelopeNoiseRms(view);
         double thresholdFromMax = strongestPeak *
             Math.Pow(10.0, -Math.Abs(options.FirstPeakThresholdBelowMaxDb) / 20.0);
         double thresholdFromNoise = noiseRms *
@@ -174,20 +181,31 @@ public static class SignalEnvelope
     // reach, and the "strongest peak" that window can offer is whatever
     // residue happens to lead the buffer: the analysis then reports a
     // confident zero. When that happens the window re-anchors on the
-    // envelope's global maximum — centred, so the first-arrival walk keeps
-    // half a window of pre-context — and the search runs on a rotated view
-    // of the circular buffer (indices are mapped back before returning).
-    // The re-anchor is deliberately conservative: it fires only when NOTHING
-    // in the start-anchored window sits within the first-arrival search
-    // depth of the global peak, i.e. when by the tool's own physics the true
-    // arrival cannot be inside that window. Every record whose front IS
-    // within reach — including the field-validated modal cabins, where a
-    // room mode may out-ring the direct front — keeps the start-anchored
-    // geometry bit for bit.
+    // envelope's global maximum and the search runs on a rotated view of
+    // the circular buffer (indices are mapped back before returning). The
+    // peak is placed at the window's far usable index, not its centre: all
+    // but two samples of the window become pre-history, so a direct
+    // arrival up to a full window ahead of a stronger room mode stays
+    // findable — centring would halve that reach for nothing, because the
+    // first-arrival walk only ever looks BEFORE the strongest peak, and the
+    // post-peak data the mirror/sidelobe checks read stays available
+    // through the full rotated view regardless of the window edge.
+    // The re-anchor is deliberately conservative: it fires only when
+    // NOTHING in the start-anchored window sits within the first-arrival
+    // search depth of the global peak AND above the noise gate — i.e. when
+    // by the tool's own physics the true arrival cannot be inside that
+    // window. (Depth alone is not enough: on a near-noise record the
+    // window's noise bumps can sit within the depth of a weak global peak,
+    // and keeping the window would hand the fallback that noise.) Every
+    // record whose front IS within reach — including the field-validated
+    // modal cabins, where a room mode may out-ring the direct front —
+    // keeps the start-anchored geometry bit for bit.
     private static int FindSearchAnchorRotation(
         IReadOnlyList<double> envelope,
         int searchEnd,
-        double firstPeakThresholdBelowMaxDb)
+        double firstPeakThresholdBelowMaxDb,
+        double firstPeakMinimumSnrDb,
+        double noiseRms)
     {
         int globalIndex = 0;
         double windowMax = 0.0;
@@ -210,7 +228,11 @@ public static class SignalEnvelope
 
         double reachFloor = envelope[globalIndex] *
             Math.Pow(10.0, -Math.Abs(firstPeakThresholdBelowMaxDb) / 20.0);
-        return windowMax >= reachFloor ? 0 : globalIndex - searchEnd / 2;
+        double noiseFloor = noiseRms *
+            Math.Pow(10.0, Math.Max(0, firstPeakMinimumSnrDb) / 20.0);
+        return windowMax >= reachFloor && windowMax >= noiseFloor
+            ? 0
+            : globalIndex - (searchEnd - 2);
     }
 
     private static double[] RotateView(IReadOnlyList<double> envelope, int rotation)

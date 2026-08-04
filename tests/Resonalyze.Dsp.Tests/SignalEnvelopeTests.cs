@@ -107,6 +107,63 @@ public sealed class SignalEnvelopeTests
     }
 
     [Fact]
+    public void FindPeak_ReAnchorsOnAGlobalPeakBeyondAnEmptyWindow()
+    {
+        // A chain latency parks the whole IR beyond the search window: the
+        // start-anchored window holds only residue far below the first-arrival
+        // search depth, so the search re-anchors on the global envelope
+        // maximum and reports it in the envelope's own coordinates.
+        var envelope = new double[48_000];
+        Array.Fill(envelope, 1e-6);
+        envelope[19_999] = 0.6;
+        envelope[20_000] = 1.0; // ~417 ms, far beyond the 80 ms window
+        envelope[20_001] = 0.6;
+
+        PeakSearchResult result = SignalEnvelope.FindPeak(
+            envelope,
+            sampleRate: 48_000,
+            new PeakSearchOptions
+            {
+                Mode = PeakSearchMode.FirstArrival,
+                SearchWindowMilliseconds = 80
+            });
+
+        Assert.Equal(20_000, result.StrongestIndex);
+        Assert.Equal(20_000, result.SelectedIndex);
+        Assert.NotEqual(0, result.SearchRotation);
+    }
+
+    [Fact]
+    public void FindPeak_KeepsTheStartAnchoredWindowWhenItHoldsReachableContent()
+    {
+        // The re-anchor gate is conservative: content inside the start-anchored
+        // window within the first-arrival search depth of the global peak means
+        // the true front may live there (the modal-cabin geometry, where a room
+        // mode out-rings the direct front), so the legacy window must stay.
+        var envelope = new double[48_000];
+        Array.Fill(envelope, 1e-6);
+        envelope[499] = 0.12;
+        envelope[500] = 0.2; // in-window, -14 dB re the far global peak
+        envelope[501] = 0.12;
+        envelope[19_999] = 0.6;
+        envelope[20_000] = 1.0; // global maximum beyond the window
+        envelope[20_001] = 0.6;
+
+        PeakSearchResult result = SignalEnvelope.FindPeak(
+            envelope,
+            sampleRate: 48_000,
+            new PeakSearchOptions
+            {
+                Mode = PeakSearchMode.FirstArrival,
+                SearchWindowMilliseconds = 80
+            });
+
+        Assert.Equal(500, result.StrongestIndex);
+        Assert.Equal(500, result.SelectedIndex);
+        Assert.Equal(0, result.SearchRotation);
+    }
+
+    [Fact]
     public void FindFractionalPeakOffset_ClampsToHalfSample()
     {
         double offset = SignalEnvelope.FindFractionalPeakOffset(

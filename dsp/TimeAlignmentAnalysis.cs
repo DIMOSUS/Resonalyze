@@ -165,10 +165,19 @@ public static class TimeAlignmentAnalysis
         // events — unless the valley between them is deep enough to prove the
         // events resolved anyway (destructive interference can resolve faster
         // than the nominal 1/BW).
+        // Distances are measured in the SEARCH WINDOW's frame: when the window
+        // re-anchored on a far peak (chain latency beyond its reach), the two
+        // indices may straddle the circular buffer's seam, and their raw
+        // difference would read as a buffer-length gap.
+        int searchRotation = peakSearchResult.SearchRotation;
+        int relativeFirst = RelativeToSearchWindow(
+            envelopePeakIndex, searchRotation, envelope.Length);
+        int relativeStrongest = RelativeToSearchWindow(
+            strongestPeakIndex, searchRotation, envelope.Length);
         double separationMilliseconds =
-            (strongestPeakIndex - envelopePeakIndex) * 1000.0 / sampleRate;
+            (relativeStrongest - relativeFirst) * 1000.0 / sampleRate;
         double valleyDepthDb = ValleyDepthDb(
-            envelope, envelopePeakIndex, strongestPeakIndex);
+            envelope, relativeFirst, relativeStrongest, searchRotation);
         double blurMilliseconds = SeparateArrivalThresholdMilliseconds;
         if (options.UseBandpassWindow)
         {
@@ -300,22 +309,34 @@ public static class TimeAlignmentAnalysis
     // destructive interference nulls faster than the envelope's rise time.
     private const double SeparateArrivalResolvedValleyDb = 20.0;
 
+    // A peak position expressed in the search window's frame: its offset from
+    // the window's start, which for a re-anchored (rotated) window is where
+    // the contiguous around-the-peak geometry lives. With no rotation this is
+    // the index itself.
+    private static int RelativeToSearchWindow(int index, int rotation, int length) =>
+        ((index - rotation) % length + length) % length;
+
     // The envelope dip between the two peaks, in dB below the LOWER of them
-    // (>= 0; 0 when the envelope never dips).
+    // (>= 0; 0 when the envelope never dips). Peak positions arrive in the
+    // search window's frame; envelope reads map back through the rotation, so
+    // the walk follows the window's contiguous geometry across the buffer seam.
     private static double ValleyDepthDb(
         IReadOnlyList<double> envelope,
-        int firstIndex,
-        int secondIndex)
+        int relativeFirstIndex,
+        int relativeSecondIndex,
+        int rotation)
     {
-        int from = Math.Min(firstIndex, secondIndex);
-        int to = Math.Max(firstIndex, secondIndex);
+        int from = Math.Min(relativeFirstIndex, relativeSecondIndex);
+        int to = Math.Max(relativeFirstIndex, relativeSecondIndex);
         double valley = double.MaxValue;
         for (int i = from; i <= to; i++)
         {
-            valley = Math.Min(valley, envelope[i]);
+            valley = Math.Min(valley, envelope[(i + rotation) % envelope.Count]);
         }
 
-        double reference = Math.Min(envelope[firstIndex], envelope[secondIndex]);
+        double reference = Math.Min(
+            envelope[(relativeFirstIndex + rotation) % envelope.Count],
+            envelope[(relativeSecondIndex + rotation) % envelope.Count]);
         if (reference <= 0.0 || valley <= 0.0)
         {
             return valley <= 0.0 && reference > 0.0 ? double.PositiveInfinity : 0.0;

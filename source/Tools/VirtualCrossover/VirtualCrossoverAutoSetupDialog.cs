@@ -242,9 +242,10 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             "slopes — the textbook crossover.");
         toolTip.SetToolTip(
             subElevation,
-            "How far the lowest driver sits above the levelled midrange/tweeter.\r\n" +
-            "Starts at (and is capped by) the measured elevation — the sub at its\r\n" +
-            "own level; lower it to flatten the bottom. The midrange/tweeter are\r\n" +
+            "How far the lowest driver (the sub, or the woofer/midbass when no\r\n" +
+            "sub is present) sits above the levelled midrange/tweeter. Starts at\r\n" +
+            "(and is capped by) the measured elevation — the bass at its own\r\n" +
+            "level; lower it to flatten the bottom. The midrange/tweeter are\r\n" +
             "levelled to each other and the remaining drivers are only cut, never\r\n" +
             "boosted, onto the resulting target.");
     }
@@ -366,7 +367,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             .ToList();
         double span = window.Count > 0 ? window.Max() - window.Min() : 0;
         string elevation = subElevationInitialized
-            ? $"  ·  sub +{(double)subElevation.Value:0.0} dB over mid/treble"
+            ? $"  ·  bass +{(double)subElevation.Value:0.0} dB over mid/treble"
             : string.Empty;
         return $"Predicted sum spans {span:0.0} dB over " +
             $"{FormatHz(low.LowHz)}–{FormatHz(high.HighHz)}{elevation}";

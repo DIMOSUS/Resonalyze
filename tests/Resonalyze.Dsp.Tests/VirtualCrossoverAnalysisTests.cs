@@ -1130,6 +1130,24 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void AnalyzeBandLimitedArrival_FindsAnArrivalParkedBeyondTheSearchWindowByChainLatency()
+    {
+        // Field case (3RC): a DSP/amplifier chain buffers the playback for
+        // ~160 ms — far beyond the 80 ms peak-search window. The Virtual DSP
+        // arrival reads (delay suggestions, gate placement) must find the
+        // real front there instead of the buffer-seam residue at zero.
+        Complex[] ir = UnitImpulse(131_072, 7_680); // 160 ms at 48 kHz
+
+        TimeAlignmentAnalysisResult result =
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                ir, SampleRate, 500, 2_000);
+
+        Assert.True(result.IsValid);
+        Assert.InRange(result.FirstArrivalDelayMilliseconds, 159.0, 161.0);
+        Assert.InRange(result.StrongestDelayMilliseconds, 159.0, 161.0);
+    }
+
+    [Fact]
     public void AnalyzeBandLimitedArrival_AcceptsExactlyAThirdOctave()
     {
         Complex[] ir = UnitImpulse(8_192, 480);

@@ -99,24 +99,41 @@ public static class SignalEnvelope
             throw new ArgumentOutOfRangeException(nameof(sampleRate));
         }
 
-        (int strongestIndex, double strongestPeak) = FindStrongestPeak(
+        int searchEnd = GetSearchEndIndex(
+            envelope.Count,
+            sampleRate,
+            options.SearchWindowMilliseconds);
+        // The noise floor is order-invariant (a sorted quantile), so the one
+        // estimate serves both the anchor decision and the first-arrival
+        // threshold below, before and after any rotation.
+        double noiseRms = EstimateEnvelopeNoiseRms(envelope);
+        int rotation = FindSearchAnchorRotation(
             envelope,
+            searchEnd,
+            options.FirstPeakThresholdBelowMaxDb,
+            options.FirstPeakMinimumSnrDb,
+            noiseRms);
+        IReadOnlyList<double> view = rotation == 0
+            ? envelope
+            : RotateView(envelope, rotation);
+        int Original(int viewIndex) => rotation == 0
+            ? viewIndex
+            : (viewIndex + rotation) % envelope.Count;
+
+        (int strongestIndex, double strongestPeak) = FindStrongestPeak(
+            view,
             sampleRate,
             options.SearchWindowMilliseconds);
         if (options.Mode == PeakSearchMode.StrongestPeak)
         {
             return new PeakSearchResult(
-                strongestIndex,
-                strongestIndex,
+                Original(strongestIndex),
+                Original(strongestIndex),
                 strongestPeak,
-                false);
+                false,
+                rotation);
         }
 
-        int searchEnd = GetSearchEndIndex(
-            envelope.Count,
-            sampleRate,
-            options.SearchWindowMilliseconds);
-        double noiseRms = EstimateEnvelopeNoiseRms(envelope);
         double thresholdFromMax = strongestPeak *
             Math.Pow(10.0, -Math.Abs(options.FirstPeakThresholdBelowMaxDb) / 20.0);
         double thresholdFromNoise = noiseRms *
@@ -126,16 +143,16 @@ public static class SignalEnvelope
         var candidates = new List<int>();
         for (int i = 1; i < searchEnd - 1; i++)
         {
-            if (envelope[i] >= threshold &&
-                envelope[i] >= envelope[i - 1] &&
-                envelope[i] >= envelope[i + 1])
+            if (view[i] >= threshold &&
+                view[i] >= view[i - 1] &&
+                view[i] >= view[i + 1])
             {
                 candidates.Add(i);
             }
         }
 
         int firstArrivalIndex = EliminatePreRingingSidelobes(
-            envelope,
+            view,
             candidates,
             options.AnalysisKernelEnvelope,
             threshold,
@@ -143,17 +160,90 @@ public static class SignalEnvelope
         if (firstArrivalIndex >= 0)
         {
             return new PeakSearchResult(
-                firstArrivalIndex,
-                strongestIndex,
+                Original(firstArrivalIndex),
+                Original(strongestIndex),
                 strongestPeak,
-                false);
+                false,
+                rotation);
         }
 
         return new PeakSearchResult(
-            strongestIndex,
-            strongestIndex,
+            Original(strongestIndex),
+            Original(strongestIndex),
             strongestPeak,
-            true);
+            true,
+            rotation);
+    }
+
+    // A measurement chain with real processing latency (a DSP or amplifier
+    // buffering the playback longer than the search window — field case: a
+    // ~163 ms chain) parks the whole IR beyond the start-anchored window's
+    // reach, and the "strongest peak" that window can offer is whatever
+    // residue happens to lead the buffer: the analysis then reports a
+    // confident zero. When that happens the window re-anchors on the
+    // envelope's global maximum and the search runs on a rotated view of
+    // the circular buffer (indices are mapped back before returning). The
+    // peak is placed at the window's far usable index, not its centre: all
+    // but two samples of the window become pre-history, so a direct
+    // arrival up to a full window ahead of a stronger room mode stays
+    // findable — centring would halve that reach for nothing, because the
+    // first-arrival walk only ever looks BEFORE the strongest peak, and the
+    // post-peak data the mirror/sidelobe checks read stays available
+    // through the full rotated view regardless of the window edge.
+    // The re-anchor is deliberately conservative: it fires only when
+    // NOTHING in the start-anchored window sits within the first-arrival
+    // search depth of the global peak AND above the noise gate — i.e. when
+    // by the tool's own physics the true arrival cannot be inside that
+    // window. (Depth alone is not enough: on a near-noise record the
+    // window's noise bumps can sit within the depth of a weak global peak,
+    // and keeping the window would hand the fallback that noise.) Every
+    // record whose front IS within reach — including the field-validated
+    // modal cabins, where a room mode may out-ring the direct front —
+    // keeps the start-anchored geometry bit for bit.
+    private static int FindSearchAnchorRotation(
+        IReadOnlyList<double> envelope,
+        int searchEnd,
+        double firstPeakThresholdBelowMaxDb,
+        double firstPeakMinimumSnrDb,
+        double noiseRms)
+    {
+        int globalIndex = 0;
+        double windowMax = 0.0;
+        for (int i = 0; i < envelope.Count; i++)
+        {
+            if (envelope[i] > envelope[globalIndex])
+            {
+                globalIndex = i;
+            }
+            if (i < searchEnd && envelope[i] > windowMax)
+            {
+                windowMax = envelope[i];
+            }
+        }
+
+        if (globalIndex < searchEnd)
+        {
+            return 0;
+        }
+
+        double reachFloor = envelope[globalIndex] *
+            Math.Pow(10.0, -Math.Abs(firstPeakThresholdBelowMaxDb) / 20.0);
+        double noiseFloor = noiseRms *
+            Math.Pow(10.0, Math.Max(0, firstPeakMinimumSnrDb) / 20.0);
+        return windowMax >= reachFloor && windowMax >= noiseFloor
+            ? 0
+            : globalIndex - (searchEnd - 2);
+    }
+
+    private static double[] RotateView(IReadOnlyList<double> envelope, int rotation)
+    {
+        var view = new double[envelope.Count];
+        for (int i = 0; i < view.Length; i++)
+        {
+            view[i] = envelope[(i + rotation) % envelope.Count];
+        }
+
+        return view;
     }
 
     // For stationary Gaussian noise the Hilbert envelope is Rayleigh-
@@ -425,8 +515,18 @@ public sealed class PeakSearchOptions
     public IReadOnlyList<double>? AnalysisKernelEnvelope { get; init; }
 }
 
+/// <summary>
+/// Indices are in the envelope's own coordinates. <see cref="SearchRotation"/>
+/// is non-zero when the search window re-anchored on the envelope's global
+/// maximum (a chain latency beyond the window's reach): the window then covered
+/// [SearchRotation, SearchRotation + window) circularly, and a consumer
+/// measuring distances between the returned indices must measure them in that
+/// window's frame — <c>(index - SearchRotation) mod length</c> — or a pair
+/// straddling the buffer seam reads as a buffer-length separation.
+/// </summary>
 public readonly record struct PeakSearchResult(
     int SelectedIndex,
     int StrongestIndex,
     double StrongestPeak,
-    bool FallbackUsed);
+    bool FallbackUsed,
+    int SearchRotation = 0);

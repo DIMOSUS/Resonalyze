@@ -78,6 +78,87 @@ public sealed class TimeAlignmentAnalysisTests
     }
 
     [Fact]
+    public void Analyze_FindsAnArrivalParkedBeyondTheSearchWindowByChainLatency()
+    {
+        // Field case (3RC): a DSP/amplifier chain buffers the playback for
+        // ~160 ms, so the whole transfer IR sits beyond the 80 ms peak-search
+        // window and the start-anchored search used to report a confident
+        // zero (the strongest thing it could reach was the buffer-seam
+        // residue at sample 0).
+        var impulseResponse = new double[131_072];
+        impulseResponse[7_680] = 1.0; // 160 ms at 48 kHz
+
+        TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate,
+            new TimeAlignmentAnalysisOptions { WrapPeakPositions = true });
+
+        Assert.Equal(7_680, result.StrongestEnvelopePeakIndex);
+        Assert.InRange(result.StrongestDelayMilliseconds, 159.9, 160.1);
+        Assert.InRange(result.FirstArrivalDelayMilliseconds, 159.9, 160.1);
+        Assert.False(result.StrongestPeakIsSeparateArrival);
+    }
+
+    [Fact]
+    public void Analyze_ReportsALeadingArrivalBeyondTheWindowAsANegativeDelay()
+    {
+        // An IR whose energy leads the reference wraps to the buffer's far
+        // end — unreachable for the start-anchored window; the re-anchored
+        // search finds it there and the wrap maps it to the negative delay
+        // it is.
+        var impulseResponse = new double[131_072];
+        impulseResponse[131_072 - 480] = 1.0; // -10 ms at 48 kHz
+
+        TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate,
+            new TimeAlignmentAnalysisOptions { WrapPeakPositions = true });
+
+        Assert.InRange(result.StrongestDelayMilliseconds, -10.1, -9.9);
+        Assert.InRange(result.FirstArrivalDelayMilliseconds, -10.1, -9.9);
+    }
+
+    [Fact]
+    public void Analyze_FindsADirectArrivalAFullWindowAheadOfTheStrongestPeak()
+    {
+        // The review counter-example for the re-anchored window's placement:
+        // a weak direct arrival 55 ms ahead of a stronger room mode, with
+        // the start-anchored window empty (chain latency). Centring the
+        // window on the mode would leave only 40 ms of pre-history and lose
+        // the direct sound; anchored at the window's far edge, almost the
+        // full 80 ms ahead of the mode stays searchable.
+        var impulseResponse = new double[131_072];
+        impulseResponse[7_680] = 0.3;  // direct arrival, 160 ms at 48 kHz
+        impulseResponse[10_320] = 1.0; // stronger room mode, 215 ms
+
+        TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, new TimeAlignmentAnalysisOptions());
+
+        Assert.InRange(result.FirstArrivalDelayMilliseconds, 159.5, 160.5);
+        Assert.InRange(result.StrongestDelayMilliseconds, 214.5, 215.5);
+        Assert.True(result.StrongestPeakIsSeparateArrival);
+        Assert.InRange(result.StrongestPeakSeparationMilliseconds, 54.5, 55.5);
+    }
+
+    [Fact]
+    public void Analyze_KeepsTheTwoPeakTrapGeometryUnderChainLatency()
+    {
+        // The weak-direct/strong-mode pair of the classic trap, shifted whole
+        // by a 160 ms chain latency: the separation and the separate-arrival
+        // flag must read exactly as they do at the buffer start, measured in
+        // the re-anchored window's frame.
+        var impulseResponse = new double[131_072];
+        impulseResponse[7_680] = 0.3; // weak direct arrival
+        impulseResponse[8_080] = 1.0; // strong late arrival (room mode)
+
+        TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
+            impulseResponse, SampleRate, new TimeAlignmentAnalysisOptions());
+
+        Assert.Equal(8_080, result.StrongestEnvelopePeakIndex);
+        Assert.InRange(result.FirstArrivalPeakSample, 7_670.0, 7_690.0);
+        Assert.True(result.StrongestPeakIsSeparateArrival);
+        Assert.InRange(result.StrongestPeakSeparationMilliseconds, 8.0, 8.7);
+    }
+
+    [Fact]
     public void Analyze_WrapPeakPositionsLeavesASubHalfArrivalUnchanged()
     {
         // The peak search is capped at length/2, so a real arrival always lands in

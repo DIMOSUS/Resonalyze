@@ -39,6 +39,25 @@ public sealed class BroadbandOnsetTests
     }
 
     [Fact]
+    public void EstimateBroadbandOnset_FindsAFrontParkedBeyondTheSearchWindowByChainLatency()
+    {
+        // Field case (3RC): a DSP/amplifier chain buffers the playback for
+        // ~160 ms, beyond the 80 ms peak-search window — the onset must land
+        // on the real front there, not on the buffer-seam residue at zero.
+        Complex[] impulseResponse = Silence(131_072);
+        const int DeltaIndex = 7_680; // 160 ms at 48 kHz
+        impulseResponse[DeltaIndex] = Complex.One;
+
+        BroadbandOnsetEstimate estimate =
+            VirtualCrossoverAnalysis.EstimateBroadbandOnset(impulseResponse, Rate);
+
+        double deltaMs = DeltaIndex * 1_000.0 / Rate;
+        double sampleMs = 1_000.0 / Rate;
+        Assert.True(estimate.IsValid);
+        Assert.InRange(estimate.OnsetMs, deltaMs - 4 * sampleMs, deltaMs + sampleMs);
+    }
+
+    [Fact]
     public void EstimateBroadbandOnset_CrossingsAreMonotonicInTheThreshold()
     {
         // A slow Hann-windowed tone burst: the envelope rises over many samples,

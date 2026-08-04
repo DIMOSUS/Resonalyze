@@ -107,6 +107,123 @@ public sealed class SignalEnvelopeTests
     }
 
     [Fact]
+    public void FindPeak_ReAnchorsOnAGlobalPeakBeyondAnEmptyWindow()
+    {
+        // A chain latency parks the whole IR beyond the search window: the
+        // start-anchored window holds only residue far below the first-arrival
+        // search depth, so the search re-anchors on the global envelope
+        // maximum and reports it in the envelope's own coordinates.
+        var envelope = new double[48_000];
+        Array.Fill(envelope, 1e-6);
+        envelope[19_999] = 0.6;
+        envelope[20_000] = 1.0; // ~417 ms, far beyond the 80 ms window
+        envelope[20_001] = 0.6;
+
+        PeakSearchResult result = SignalEnvelope.FindPeak(
+            envelope,
+            sampleRate: 48_000,
+            new PeakSearchOptions
+            {
+                Mode = PeakSearchMode.FirstArrival,
+                SearchWindowMilliseconds = 80
+            });
+
+        Assert.Equal(20_000, result.StrongestIndex);
+        Assert.Equal(20_000, result.SelectedIndex);
+        Assert.NotEqual(0, result.SearchRotation);
+    }
+
+    [Fact]
+    public void FindPeak_ReAnchorsPastALoudSeamResidue()
+    {
+        // The 3RC head shape: the acausal residue wrapped across the buffer
+        // seam decays from sample 0, sitting tens of dB above the noise
+        // floor yet more than the search depth below the real peak — loud
+        // residue is still residue, and the window re-anchors past it.
+        var envelope = new double[48_000];
+        Array.Fill(envelope, 1e-6);
+        for (int i = 0; i < 200; i++)
+        {
+            envelope[i] = Math.Max(1e-6, 0.02 * Math.Exp(-i / 12.0));
+        }
+        envelope[19_999] = 0.6;
+        envelope[20_000] = 1.0;
+        envelope[20_001] = 0.6;
+
+        PeakSearchResult result = SignalEnvelope.FindPeak(
+            envelope,
+            sampleRate: 48_000,
+            new PeakSearchOptions
+            {
+                Mode = PeakSearchMode.FirstArrival,
+                SearchWindowMilliseconds = 80
+            });
+
+        Assert.Equal(20_000, result.StrongestIndex);
+        Assert.Equal(20_000, result.SelectedIndex);
+        Assert.NotEqual(0, result.SearchRotation);
+    }
+
+    [Fact]
+    public void FindPeak_ReAnchorsWhenTheWindowHoldsOnlySubNoiseContent()
+    {
+        // A near-noise record with a weak but real event beyond the window:
+        // the window's noise sits within the 25 dB search depth of that weak
+        // global peak, but below the noise gate — depth alone would keep the
+        // start-anchored window, whose content then fails the first-arrival
+        // threshold and the fallback returns a noise sample. Sub-noise
+        // content must not block the re-anchor.
+        var envelope = new double[48_000];
+        Array.Fill(envelope, 0.01);
+        envelope[19_999] = 0.06;
+        envelope[20_000] = 0.1; // the only real event, beyond the window
+        envelope[20_001] = 0.06;
+
+        PeakSearchResult result = SignalEnvelope.FindPeak(
+            envelope,
+            sampleRate: 48_000,
+            new PeakSearchOptions
+            {
+                Mode = PeakSearchMode.FirstArrival,
+                SearchWindowMilliseconds = 80
+            });
+
+        Assert.Equal(20_000, result.StrongestIndex);
+        Assert.Equal(20_000, result.SelectedIndex);
+        Assert.NotEqual(0, result.SearchRotation);
+    }
+
+    [Fact]
+    public void FindPeak_KeepsTheStartAnchoredWindowWhenItHoldsReachableContent()
+    {
+        // The re-anchor gate is conservative: content inside the start-anchored
+        // window within the first-arrival search depth of the global peak means
+        // the true front may live there (the modal-cabin geometry, where a room
+        // mode out-rings the direct front), so the legacy window must stay.
+        var envelope = new double[48_000];
+        Array.Fill(envelope, 1e-6);
+        envelope[499] = 0.12;
+        envelope[500] = 0.2; // in-window, -14 dB re the far global peak
+        envelope[501] = 0.12;
+        envelope[19_999] = 0.6;
+        envelope[20_000] = 1.0; // global maximum beyond the window
+        envelope[20_001] = 0.6;
+
+        PeakSearchResult result = SignalEnvelope.FindPeak(
+            envelope,
+            sampleRate: 48_000,
+            new PeakSearchOptions
+            {
+                Mode = PeakSearchMode.FirstArrival,
+                SearchWindowMilliseconds = 80
+            });
+
+        Assert.Equal(500, result.StrongestIndex);
+        Assert.Equal(500, result.SelectedIndex);
+        Assert.Equal(0, result.SearchRotation);
+    }
+
+    [Fact]
     public void FindFractionalPeakOffset_ClampsToHalfSample()
     {
         double offset = SignalEnvelope.FindFractionalPeakOffset(

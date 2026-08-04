@@ -198,7 +198,7 @@ namespace Resonalyze
             labelSubElevation.Name = "labelSubElevation";
             labelSubElevation.Size = new Size(160, 15);
             labelSubElevation.TabIndex = 20;
-            labelSubElevation.Text = "Sub level over mid/treble:";
+            labelSubElevation.Text = "Bass level over mid/treble:";
             //
             // subElevation
             //

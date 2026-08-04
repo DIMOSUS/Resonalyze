@@ -516,6 +516,68 @@ public sealed class CrossoverRankedProposalTests
         Assert.All(over, p => Assert.True(p.GainDb <= 0.0 + 1e-9));
     }
 
+    // The field case behind the woofer anchor: a 3-way with no subwoofer,
+    // whose woofer carries real cabin gain. The woofer must anchor the bass
+    // exactly as a sub would — kept at its raw level by default, trimmable
+    // through the elevation control — instead of being cut all the way down
+    // to the mid/tweeter reference (−24 dB on the field system).
+    [Fact]
+    public void ApplyTargetCurveGains_WithoutASubTheWooferAnchorsTheBass()
+    {
+        List<SignalPoint> Shelf(double lowHz, double highHz, double levelDb) =>
+            BandCurve(lowHz, highHz).Select(p => new SignalPoint(p.X, p.Y + levelDb)).ToList();
+        var sources = new List<AutoSetupSource>
+        {
+            new(Shelf(30, 260, 12), DriverType.Woofer),
+            new(Shelf(200, 5_000, 0), DriverType.Midrange),
+            new(Shelf(2_000, 20_000, 2), DriverType.Tweeter),
+        };
+        IReadOnlyList<CrossoverProposal> proposals =
+            CrossoverAutoSetup.Propose(sources, Options());
+
+        // The hot woofer keeps its raw level by default (the measured
+        // elevation), the louder tweeter is levelled to the midrange, and
+        // every gain stays a cut.
+        double measured = CrossoverAutoSetup.MeasuredSubElevationDb(
+            sources, proposals, SampleRate);
+        Assert.True(measured > 8, $"measured elevation {measured} unexpectedly small");
+        Assert.True(Math.Abs(proposals[0].GainDb) < 1.0, $"woofer moved {proposals[0].GainDb} dB");
+        Assert.Equal(0.0, proposals[1].GainDb, precision: 6);
+        Assert.True(proposals[2].GainDb < -0.5, $"tweeter {proposals[2].GainDb} not attenuated");
+        Assert.All(proposals, p => Assert.True(p.GainDb <= 1e-9));
+
+        // Trimming the elevation to zero flattens the bottom: only then is the
+        // woofer cut down toward the reference.
+        IReadOnlyList<CrossoverProposal> flat = CrossoverAutoSetup.ApplyTargetCurveGains(
+            sources, proposals, SampleRate, subElevationDb: 0);
+        Assert.True(flat[0].GainDb < -8, $"flat woofer {flat[0].GainDb} not cut");
+        Assert.Equal(proposals[1].GainDb, flat[1].GainDb, precision: 6);
+    }
+
+    // The conservative side of the woofer anchor: a bass driver QUIETER than
+    // the mid/treble has no elevation to preserve (cut-only gains cannot lift
+    // it), so the system still levels down to it — the pre-anchor behavior.
+    [Fact]
+    public void ApplyTargetCurveGains_AQuietWooferWithoutASubStaysLevelMatched()
+    {
+        List<SignalPoint> Shelf(double lowHz, double highHz, double levelDb) =>
+            BandCurve(lowHz, highHz).Select(p => new SignalPoint(p.X, p.Y + levelDb)).ToList();
+        var sources = new List<AutoSetupSource>
+        {
+            new(Shelf(40, 2_000, -6), DriverType.Woofer),
+            new(Shelf(1_000, 20_000, 0), DriverType.Tweeter),
+        };
+        IReadOnlyList<CrossoverProposal> proposals =
+            CrossoverAutoSetup.Propose(sources, Options());
+
+        double measured = CrossoverAutoSetup.MeasuredSubElevationDb(
+            sources, proposals, SampleRate);
+        Assert.Equal(0.0, measured, precision: 6);
+        // The quiet woofer stays put; the louder tweeter is cut down to it.
+        Assert.True(Math.Abs(proposals[0].GainDb) < 0.5, $"woofer moved {proposals[0].GainDb} dB");
+        Assert.True(proposals[1].GainDb < proposals[0].GainDb, "tweeter not cut to the woofer");
+    }
+
     // With ideal impulse drivers a matched LR24 handover is losslessly
     // alignable, so the post-check must hand the win to the conventional
     // candidate with a near-zero penalty.

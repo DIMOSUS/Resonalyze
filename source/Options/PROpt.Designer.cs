@@ -82,9 +82,9 @@ namespace Resonalyze.Options
             checkAutoFit.FlatAppearance.CheckedBackColor = Color.FromArgb(80, 100, 140);
             checkAutoFit.FlatStyle = FlatStyle.Flat;
             checkAutoFit.ForeColor = Color.White;
-            checkAutoFit.Location = new Point(110, 103);
+            checkAutoFit.Location = new Point(104, 103);
             checkAutoFit.Name = "checkAutoFit";
-            checkAutoFit.Size = new Size(40, 21);
+            checkAutoFit.Size = new Size(46, 21);
             checkAutoFit.TabIndex = 61;
             checkAutoFit.Text = "Auto";
             checkAutoFit.TextAlign = ContentAlignment.MiddleCenter;

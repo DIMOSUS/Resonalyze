@@ -824,18 +824,35 @@ public static class CrossoverAutoSetup
             reference.Add(tweeter);
         }
 
-        // Only a subwoofer is the elevated bass anchor. A woofer/midbass that
-        // happens to be the lowest driver (a 2-way without a sub) is a normal
-        // driver levelled into the system, not a hot sub to lift.
+        // The bass anchor: the subwoofer when present, else the lowest
+        // woofer/midbass. A sub-less system's bass driver carries the cabin's
+        // low-end elevation just the same, and the elevation control must
+        // reach it — anchoring only a subwoofer left such a system with a
+        // flat target at the mid/tweeter reference, cutting a woofer with
+        // real cabin gain all the way down to the tweeter (field case:
+        // −24 dB) while the control sat dead at zero.
         int bass = Find(DriverType.Subwoofer);
+        bool subAnchor = bass >= 0;
+        if (bass < 0)
+        {
+            bass = Find(DriverType.Woofer);
+        }
+        if (bass < 0)
+        {
+            bass = Find(DriverType.Midbass);
+        }
 
         // The reference (flat-top) level is the quietest driver apart from the
         // sub, so the whole system is cut to it and the sub is lifted on top.
-        // With the sub excluded, a hot woofer never drags the reference up.
+        // Only a SUBWOOFER anchor is excluded: it is a separately amped,
+        // lifted way, and a quiet one must not drag the whole flat-top down.
+        // A woofer/midbass anchor stays a member of the levelled system, so
+        // when it measures QUIETER than the mid/tweeter the system is still
+        // cut down to it (its measured elevation is then simply zero).
         double referenceLevel = double.PositiveInfinity;
         for (int i = 0; i < n; i++)
         {
-            if (i != bass && levels[i] < referenceLevel)
+            if ((i != bass || !subAnchor) && levels[i] < referenceLevel)
             {
                 referenceLevel = levels[i];
             }

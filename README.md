@@ -1983,9 +1983,10 @@ it defaults to Off because the measurements are loopback-referenced.
   split rather than shallow filters that only look flat by overlapping widely.
   The gains, though, follow a car target curve rather than a flat sum: the
   midrange and tweeter are levelled to each other (the louder attenuated), and
-  the subwoofer anchors the bass at a chosen elevation over that reference —
-  the **Sub level over mid/treble** field defaults to (and is capped at) the
-  measured elevation, so out of the box the sub keeps its own level and you
+  the lowest bass driver — the subwoofer, or the woofer/midbass in a system
+  without one — anchors the bass at a chosen elevation over that reference —
+  the **Bass level over mid/treble** field defaults to (and is capped at) the
+  measured elevation, so out of the box the bass keeps its own level and you
   only trim the field down if you want less bass. The remaining drivers are fit
   onto the resulting slope cut-only (a driver already below the target keeps
   its level — no measured dip is boosted), and every gain is a cut, so the

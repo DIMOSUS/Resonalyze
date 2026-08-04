@@ -149,6 +149,14 @@ public sealed class LiveSpectrumControllerTests
         // stack up into duplicates.
         AddLiveSpectrumSeries(controller, model, snapshot);
         Assert.Single(model.Annotations.OfType<OverlayTextAnnotation>());
+
+        // RebuildModel (a smoothing change, leaving and re-entering the mode)
+        // creates a NEW model while the old one still holds its notice. An OxyPlot
+        // element belongs to one PlotModel, so the notice must be created per model
+        // — reusing the first instance threw InvalidOperationException here.
+        var rebuilt = new OxyPlot.PlotModel();
+        AddLiveSpectrumSeries(controller, rebuilt, snapshot);
+        Assert.Single(rebuilt.Annotations.OfType<OverlayTextAnnotation>());
     }
 
     private static void SetField(object target, string name, object value) =>

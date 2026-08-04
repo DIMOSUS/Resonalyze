@@ -36,6 +36,7 @@ internal sealed class LiveSpectrumController : IDisposable
     private const string LiveSpectrumCoherenceTag = "live-spectrum:coherence";
     private const string LiveSpectrumPeakHoldTag = "live-spectrum:peak-hold";
     private const string OverloadAnnotationTag = "live-spectrum:overload";
+    private const string SplViewOnlyAnnotationTag = "live-spectrum:spl-view-only";
     private const long PeakHoldSuppressionMs = 1000;
     private bool disposed;
     private bool redrawInProgress;
@@ -55,9 +56,6 @@ internal sealed class LiveSpectrumController : IDisposable
     private LineSeries? coherenceSeries;
     private LineSeries? inputMagnitudeSeries;
     private PlotModel? attachedModel;
-    // The "showing dB SPL overlays only" notice, kept as one instance so the live
-    // redraw can add it exactly once and take it down when view-only ends.
-    private OverlayTextAnnotation? splViewOnlyAnnotation;
 
     public LiveSpectrumController(
         Form owner,
@@ -572,24 +570,20 @@ internal sealed class LiveSpectrumController : IDisposable
         // absolute axis they would read as absurd sound-pressure levels. Say WHY the
         // curve is absent instead of leaving a silently empty plot. The notice is
         // managed here rather than at model creation so it appears only when a curve
-        // really was suppressed (never on a plot that has nothing to show anyway),
-        // and the Contains guard keeps a live tick from stacking duplicates.
+        // really was suppressed (never on a plot that has nothing to show anyway).
+        // Like the overload annotation, the instance is created per model and tracked
+        // by Tag: an OxyPlot element belongs to ONE PlotModel, so a cached instance
+        // would throw the moment a rebuilt model tried to adopt it while the
+        // discarded model still held it. Remove-then-add keeps a live tick from
+        // stacking duplicates and takes the notice down when view-only ends.
+        RemoveSplViewOnlyAnnotation(model);
         if (SplViewOnly)
         {
-            splViewOnlyAnnotation ??= PlotModelFactory.CreateSplViewOnlyAnnotation(
+            OverlayTextAnnotation notice = PlotModelFactory.CreateSplViewOnlyAnnotation(
                 "No SPL calibration for the live input — showing dB SPL overlays only");
-            if (!model.Annotations.Contains(splViewOnlyAnnotation))
-            {
-                model.Annotations.Add(splViewOnlyAnnotation);
-            }
-
+            notice.Tag = SplViewOnlyAnnotationTag;
+            model.Annotations.Add(notice);
             return;
-        }
-
-        // Leaving view-only reuses the same model on live ticks; take the notice down.
-        if (splViewOnlyAnnotation != null)
-        {
-            model.Annotations.Remove(splViewOnlyAnnotation);
         }
 
         // The plot is the reference-free microphone (RTA) spectrum whenever the SPL
@@ -758,6 +752,20 @@ internal sealed class LiveSpectrumController : IDisposable
             TextColor = OxyColor.FromRgb(255, 170, 0),
             TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
         });
+    }
+
+    private static void RemoveSplViewOnlyAnnotation(PlotModel model)
+    {
+        for (int index = model.Annotations.Count - 1; index >= 0; index--)
+        {
+            if (model.Annotations[index] is OverlayTextAnnotation
+                {
+                    Tag: SplViewOnlyAnnotationTag
+                })
+            {
+                model.Annotations.RemoveAt(index);
+            }
+        }
     }
 
     private static void RemoveOverloadAnnotation(PlotModel? model)

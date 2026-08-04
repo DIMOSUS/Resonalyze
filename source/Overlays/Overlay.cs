@@ -1302,13 +1302,15 @@ public sealed class Overlay
             return;
         }
 
-        // A debounced offset save still in flight would re-create the file right
-        // after the delete below; the slot is going away, so the write is moot.
-        offsetSaveTimer.Stop();
-
         try
         {
             OverlayFile.Delete(mode, Index);
+            // A debounced offset save still in flight is moot for a slot that is
+            // going away — but only once the delete succeeded: stopping it earlier
+            // would silently drop the user's offset when the delete fails and the
+            // slot lives on. (A tick landing after the reset below is a no-op:
+            // TrySaveCurrentState declines an empty slot.)
+            offsetSaveTimer.Stop();
         }
         catch (Exception exception)
         {
@@ -1319,6 +1321,11 @@ public sealed class Overlay
         Hide();
         ResetState();
         collection.NotifyCapturedOverlayChanged();
+        // Hide() already refreshed the shell, but that ran BEFORE the reset, with
+        // the slot still counting as occupied. Re-notify with the cleared state, or
+        // the bulk Show/Hide All buttons and the labels panel stay stale after the
+        // last slot is cleared.
+        collection.NotifyPlotChanged();
     }
 
     internal void CloseCaptureMenu()

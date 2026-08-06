@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp;
@@ -80,6 +80,15 @@ public sealed record CorrelationDelayCandidate(
 /// deepest OTHER negative local minimum outside the trough's own lobe. A
 /// caller seeding from a dominant trough owes it the same rival scrutiny a
 /// dominant peak gets.
+/// <see cref="PositiveOppositeNeighbor"/> is the NEAREST local minimum on
+/// either side of the positive peak, and
+/// <see cref="NegativeOppositeNeighbor"/> the nearest local maximum beside
+/// the trough. Unlike the peak and trough themselves — which are the window's
+/// strongest extrema and may sit several lobes apart — these are adjacency
+/// facts, which is what a caller reasoning about comb geometry needs: the
+/// distance to the neighbouring opposite-polarity lobe is the only spacing
+/// that bounds a cycle-skip. Null when no separated opposite-sign structure
+/// exists on either side.
 /// </summary>
 public sealed record CorrelationAlignmentResult(
     double CenterFrequencyHz,
@@ -89,7 +98,9 @@ public sealed record CorrelationAlignmentResult(
     CorrelationDelayCandidate PositivePeak,
     CorrelationDelayCandidate NegativeTrough,
     CorrelationDelayCandidate? PositiveRival = null,
-    CorrelationDelayCandidate? NegativeRival = null)
+    CorrelationDelayCandidate? NegativeRival = null,
+    CorrelationDelayCandidate? PositiveOppositeNeighbor = null,
+    CorrelationDelayCandidate? NegativeOppositeNeighbor = null)
 {
     public CorrelationDelayCandidate BestByMagnitude =>
         Math.Abs(NegativeTrough.Coefficient) > Math.Abs(PositivePeak.Coefficient)
@@ -926,6 +937,13 @@ public static class VirtualCrossoverAnalysis
             correlation, centerLag, rangeSamples, negativeLag, normalizer,
             sampleRate, findMaximum: false);
 
+        CorrelationDelayCandidate? positiveNeighbor = FindNearestOppositeExtremum(
+            correlation, centerLag, rangeSamples, positiveLag, normalizer,
+            sampleRate, mainIsMaximum: true);
+        CorrelationDelayCandidate? negativeNeighbor = FindNearestOppositeExtremum(
+            correlation, centerLag, rangeSamples, negativeLag, normalizer,
+            sampleRate, mainIsMaximum: false);
+
         return new CorrelationAlignmentResult(
             centerFrequencyHz,
             lowHz,
@@ -934,7 +952,9 @@ public static class VirtualCrossoverAnalysis
             positive,
             negative,
             positiveRival,
-            negativeRival);
+            negativeRival,
+            positiveNeighbor,
+            negativeNeighbor);
     }
 
     // The shared core of the band-limited correlation searches and curves: the
@@ -1210,6 +1230,73 @@ public static class VirtualCrossoverAnalysis
     // the main lobe never qualify, so the extremum's own slope cannot
     // masquerade as a rival. Null when the window holds no separated same-sign
     // structure.
+    // The NEAREST opposite-sign local extremum beside a main one: walking out
+    // from the main lag in both directions, the first lobe of the other
+    // polarity, whichever side it is closer on. This is an adjacency fact,
+    // not a strength ranking — the window's strongest opposite extremum can
+    // sit several lobes away, and a caller bounding a cycle-skip needs the
+    // distance to the NEIGHBOUR. Null when neither side holds one.
+    private static CorrelationDelayCandidate? FindNearestOppositeExtremum(
+        double[] correlation,
+        int centerLag,
+        int rangeSamples,
+        int mainLag,
+        double normalizer,
+        int sampleRate,
+        bool mainIsMaximum)
+    {
+        int fftLength = correlation.Length;
+        // Positive where the OPPOSITE polarity's lobes are.
+        double sign = mainIsMaximum ? -1.0 : 1.0;
+        double Value(int lag) =>
+            sign * correlation[TransferFunction.WrapIndex(lag, fftLength)];
+
+        int windowLow = centerLag - rangeSamples;
+        int windowHigh = centerLag + rangeSamples;
+        int? FirstLocalMaximum(int step)
+        {
+            for (int lag = mainLag + step;
+                lag > windowLow && lag < windowHigh;
+                lag += step)
+            {
+                if (Value(lag) > 0 &&
+                    Value(lag) >= Value(lag - 1) &&
+                    Value(lag) >= Value(lag + 1))
+                {
+                    return lag;
+                }
+            }
+
+            return null;
+        }
+
+        int? left = FirstLocalMaximum(-1);
+        int? right = FirstLocalMaximum(1);
+        int? nearest = (left, right) switch
+        {
+            (null, null) => null,
+            (null, { } r) => r,
+            ({ } l, null) => l,
+            ({ } l, { } r) =>
+                Math.Abs(l - mainLag) <= Math.Abs(r - mainLag) ? l : r
+        };
+        if (nearest is not { } bestLag)
+        {
+            return null;
+        }
+
+        int edgeGuard = Math.Min(CorrelationEdgeGuardSamples, rangeSamples - 1);
+        bool edgePinned = Math.Abs(bestLag - centerLag) >= rangeSamples - edgeGuard;
+        double refinedLag = edgePinned
+            ? bestLag
+            : TransferFunction.RefinePeakLag(correlation, bestLag, fftLength, sign);
+        return new CorrelationDelayCandidate(
+            refinedLag * 1000.0 / sampleRate,
+            normalizer > 0 ? sign * Value(bestLag) / normalizer : 0,
+            InvertPolarity: !mainIsMaximum,
+            edgePinned);
+    }
+
     private static CorrelationDelayCandidate? FindSameSignRival(
         double[] correlation,
         int centerLag,

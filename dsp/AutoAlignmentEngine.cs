@@ -543,9 +543,18 @@ public static class AutoAlignmentEngine
             return null;
         }
 
+        // The reference impulse is as long as the MEASURED content, not as
+        // long as the padded bypassed array: that array is itself an
+        // ApplyChain output, so its length is already double the crop, and
+        // handing that length on would run the shift through a window twice
+        // the one the real reads use (review find). At this length ApplyChain
+        // pads and reports exactly the ranges production sees.
+        int contentLength = side.BypassedValidRange.IsKnown
+            ? side.BypassedValidRange.EndSample - side.BypassedValidRange.StartSample
+            : bypassed.Length;
         return bare.FirstArrivalDelayMilliseconds +
             ChainArrivalShiftMs(chain, sampleRate, bandLowHz, bandHighHz,
-                bypassed.Length, side.PeakIndex);
+                contentLength, side.PeakIndex);
     }
 
     // How much later the band-limited arrival detector reads a signal once
@@ -642,14 +651,15 @@ public static class AutoAlignmentEngine
         // uncredited 4 ms skew is a latch and a fully credited one is not
         // (review find). A LATCHED side earns nothing either — its own read
         // is the thing under suspicion.
+        // Both predictions come back through the grading's out parameter —
+        // each one costs an ApplyChain, an FFT and an arrival analysis, and
+        // asking for them twice bought nothing.
         if (GradeAgainstPrediction(
-                side, measuredMs, bandLowHz, bandHighHz, out _) !=
+                side, measuredMs, bandLowHz, bandHighHz, out double full) !=
             PredictionState.Verified ||
             GradeAgainstPrediction(
-                side, probeMeasuredMs, probeLowHz, bandHighHz, out _) !=
-            PredictionState.Verified ||
-            PredictedFrontArrivalMs(side, bandLowHz, bandHighHz) is not { } full ||
-            PredictedFrontArrivalMs(side, probeLowHz, bandHighHz) is not { } probe)
+                side, probeMeasuredMs, probeLowHz, bandHighHz,
+                out double probe) != PredictionState.Verified)
         {
             return toleranceMs;
         }
@@ -1277,11 +1287,23 @@ public static class AutoAlignmentEngine
                 // window at all. Both are known non-edge-pinned here — the
                 // edge test above returned already — so the distance is a
                 // real spacing rather than an artifact of the window bound.
-                double lobeSpacingMs = Math.Abs(
-                    phat.PositivePeak.DelayMs - phat.NegativeTrough.DelayMs);
-                double lobeBoundaryMs = lobeSpacingMs / 2.0;
+                // ADJACENCY, not strength. The window's strongest peak and
+                // trough can sit several lobes apart, and a distance spanning
+                // several half periods would widen the reach instead of
+                // bounding it (review find), so the spacing comes from the
+                // extremum NEIGHBOURING the seed — the first opposite-polarity
+                // lobe walking out from it. Without one, or with one pinned to
+                // the window edge (its position an artifact of where the
+                // window ended), adjacency is not established and the
+                // tightened reach is not applied at all.
+                CorrelationDelayCandidate? neighbor = seed.InvertPolarity
+                    ? phat.NegativeOppositeNeighbor
+                    : phat.PositiveOppositeNeighbor;
+                double lobeBoundaryMs = neighbor is { EdgePinned: false } adjacent
+                    ? Math.Abs(adjacent.DelayMs - seed.DelayMs) / 2.0
+                    : 0;
                 if (anchorPredictionVerified &&
-                    (!(lobeSpacingMs > 0) ||
+                    (!(lobeBoundaryMs > 0) ||
                         anchorUncertaintyMs >= lobeBoundaryMs))
                 {
                     return "arrival uncertain past the lobe boundary";

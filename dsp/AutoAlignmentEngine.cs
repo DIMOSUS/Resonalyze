@@ -481,11 +481,26 @@ public static class AutoAlignmentEngine
     }
 
     /// <summary>
-    /// Where this channel's PROCESSED arrival must land if it timed the
-    /// direct front: its arrival read off the BYPASSED (chain-free) response,
-    /// plus the shift its own chain applies to that reading. Null when the
-    /// caller supplied no bypassed response or no chain, or when the bypassed
-    /// read is unmeasurable.
+    /// An ESTIMATE of where this channel's processed arrival should land if
+    /// it timed the direct front: its arrival read off the BYPASSED
+    /// (chain-free) response, plus the shift its own chain applies to a flat
+    /// reference impulse in the same band. Null when the caller supplied no
+    /// bypassed response or no chain, or when the bypassed read is
+    /// unmeasurable.
+    ///
+    /// An estimate, not an identity. The arrival detector is a nonlinear
+    /// envelope search, so a chain's shift measured on an impulse does not
+    /// transfer exactly to a shaped front: measured across a source matrix,
+    /// the error stays inside a quarter of the conviction threshold for
+    /// realistic driver roll-offs but reaches 1.2 allowances where the source
+    /// has strong structure INSIDE the band — a steep low-pass leaving the
+    /// channel barely radiating there, or an all-pass twisting its phase.
+    /// That is why nothing here convicts on its own: see
+    /// <see cref="PredictedArrivalConvictionFactor"/>, which keeps a shaping
+    /// error out of the LATCHED verdict, and
+    /// <see cref="PredictionState.Inconsistent"/>, which withdraws a pair
+    /// from the predictor rather than trusting a disagreement it cannot
+    /// explain.
     ///
     /// The bypassed read is what makes this see through a modal latch. A
     /// steep crossover leaves a junction band's energy concentrated in the
@@ -500,8 +515,11 @@ public static class AutoAlignmentEngine
     ///
     /// The chain term is MEASURED, not derived: a reference impulse is pushed
     /// through the real ApplyChain and read with the real detector (see
-    /// ChainArrivalShiftMs). Adding an analytic band-averaged group delay
-    /// instead is what an earlier cut of this did, and it does not hold. A band-averaged group delay is not the envelope's
+    /// ChainArrivalShiftMs). An analytic band-averaged group delay — what an
+    /// earlier cut used — is worse in kind, not merely in degree: it misses
+    /// by 3.8 ms on a steep 80 Hz high-pass and 2.3 ms on a 330 Hz all-pass,
+    /// and its error is not common-mode across a junction, so it injects a
+    /// differential error into the very difference the timeline stores. A band-averaged group delay is not the envelope's
     /// first peak, and the gap is neither small nor uniform: measured against
     /// the real detector, a mean-group-delay estimate overshoots by 3.8 ms on
     /// a steep 80 Hz high-pass, 2.3 ms on a 330 Hz all-pass and 1.4 ms on a
@@ -613,10 +631,22 @@ public static class AutoAlignmentEngine
     {
         ArgumentNullException.ThrowIfNull(side);
         double toleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
-        return PredictedFrontArrivalMs(side, bandLowHz, bandHighHz) is { } full &&
-            PredictedFrontArrivalMs(side, probeLowHz, bandHighHz) is { } probe
-            ? toleranceMs + Math.Max(0, full - probe)
-            : toleranceMs;
+        if (PredictedFrontArrivalMs(side, bandLowHz, bandHighHz) is not { } full ||
+            PredictedFrontArrivalMs(side, probeLowHz, bandHighHz) is not { } probe)
+        {
+            return toleranceMs;
+        }
+
+        // Capped at the generic allowance, so the ESTIMATE can at most double
+        // the physics. Uncapped, the credit is whatever the difference of two
+        // predictions happens to be — and both predictions read a bypassed
+        // response that may itself carry the mode, so the credit grows with
+        // exactly the feature the probe is trying to convict. Measured
+        // uncapped: a 220 Hz all-pass source earned 7.79 ms against an honest
+        // skew of 0.04 ms, and on a realistic driver front a genuine late
+        // mode was swallowed whole (review find — the credit is added to the
+        // tolerance directly and no conviction factor guards it).
+        return toleranceMs + Math.Clamp(full - probe, 0, toleranceMs);
     }
 
     /// <summary>
@@ -678,7 +708,7 @@ public static class AutoAlignmentEngine
 
     /// <summary>
     /// Grades one side's processed arrival against what its own front,
-    /// refiltered through its own chain, says it must be. The test is
+    /// read through its own chain, estimates it must be. The test is
     /// two-sided on purpose: a read EARLIER than the prediction is not a modal
     /// latch, but it is not a confirmation either, and treating it as one
     /// would hand a tightened seed reach to an anchor that nothing verified
@@ -962,8 +992,8 @@ public static class AutoAlignmentEngine
             //
             // BOTH sides must be gradeable for it to speak at all. The
             // timeline stores a DIFFERENCE, and the two estimators do not read
-            // the same thing to the same precision — the prediction refilters
-            // a gated front, the measurement reads the processed response — so
+            // the same thing to the same precision — the prediction estimates
+            // a front, the measurement reads the processed response — so
             // their residuals cancel between two predictions and between two
             // measurements, never between one of each. Mixing them injects the
             // residual as a real delay (the v4 cabin's 160 Hz corner, where
@@ -979,7 +1009,7 @@ public static class AutoAlignmentEngine
                 out double upperPrediction);
             //
             // INCONSISTENT counts as ungradeable too. A read sitting far
-            // EARLIER than its own refiltered front is not a latch, but it
+            // EARLIER than its own predicted front is not a latch, but it
             // does mean the two disagree in a way the prediction cannot
             // explain (a truncated front, a mis-captured bypassed response) —
             // and a prediction that cannot explain the read it is graded
@@ -998,7 +1028,7 @@ public static class AutoAlignmentEngine
                     log.AppendLine(
                         $"  {side.Channel.Name}: {measuredMs:0.000} ms in " +
                         $"{pair.BandLowHz:0}-{pair.BandHighHz:0} Hz but its " +
-                        $"un-crossovered front, refiltered through its own " +
+                        $"un-crossovered front, read through its own " +
                         $"chain, predicts {predictedMs:0.000} ms there (modal " +
                         $"latch behind the crossover; " +
                         $"{(measuredMs - predictedMs) / PredictedArrivalAllowanceMs(pair.BandLowHz, pair.BandHighHz):0.0} " +
@@ -1036,7 +1066,7 @@ public static class AutoAlignmentEngine
 
             // The anchor counts as independently confirmed exactly when the
             // pair was gradeable: every side then either AGREED with its own
-            // refiltered front or was replaced by it. A merely AVAILABLE
+            // predicted front or was replaced by it. A merely AVAILABLE
             // prediction would prove nothing — the conviction test is
             // one-sided, so a read sitting far EARLIER than its prediction
             // would pass for confirmation and earn a tightened seed reach it
@@ -1193,46 +1223,40 @@ public static class AutoAlignmentEngine
                 // candidate the veto guards (see the probe above).
                 // With BOTH arrivals prediction-verified (measured and the
                 // un-crossovered prediction agree, or the prediction replaced
-                // a convicted read), the anchor is no longer the weak link
-                // the generous reach exists to accommodate — and the generous
-                // reach is genuinely too generous: at half a period sits the
-                // comb's ADJACENT lobe, so a rule that admits an extremum out
-                // to half a period (or the 3 ms floor, which exceeds it above
-                // ~167 Hz) admits the neighbour by construction. Against a
-                // verified anchor the meaningful question is "the same lobe,
-                // refined?", and a quarter period answers it. The v4 cabin's
-                // 180 Hz corner: a whitened trough 2.892 ms out — half a
-                // period is 2.778 — cleared the 3 ms floor by a tenth of a
-                // millisecond and seeded the flip impostor.
-                // Two bounds, and the reach is the tighter of them. The
-                // ADJACENT-LOBE bound is what this rule is for: the comb's
-                // neighbour sits at exactly half a period, so an extremum
-                // admitted out to half a period (or to the 3 ms floor, which
-                // exceeds half a period above ~167 Hz) is the neighbour by
-                // construction — the v4 cabin's 180 Hz corner, where a
-                // whitened trough 2.54 ms out with half a period at 2.78
-                // cleared the floor and seeded the flip impostor. The
-                // UNCERTAINTY bound keeps the rule honest in the other
-                // direction: a reach far narrower than what the anchor is
-                // known to within would refuse an extremum that could
-                // legitimately be the same lobe seen through the anchor's own
-                // error. A quarter period is the floor of the first bound —
-                // halfway to the neighbour — and the second can only widen it,
-                // never past what the untightened rule already allowed.
-                // 400/fc is four fifths of a half period: comfortably short
-                // of the neighbour, with room for the anchor to be a little
-                // off without the rule reading the neighbour as the same
-                // lobe. The uncertainty may widen the reach up to that cap
-                // and no further — past it the two are indistinguishable, and
-                // this engine's standing answer to that is the envelope.
+                // a convicted read), the reach becomes a question of comb
+                // geometry, and the geometry is exact. The neighbouring
+                // (opposite-polarity) lobe sits one HALF PERIOD H from the
+                // true one. With the anchor off by U toward the neighbour,
+                // the true lobe lies U from the anchor and the neighbour
+                // H - U, so a reach R admits the true lobe and excludes the
+                // neighbour only while U <= R < H - U — which has a solution
+                // only when U < H/2, a QUARTER period. Past that the
+                // neighbour can sit CLOSER to the anchor than the truth does,
+                // and no window separates them: widening the reach then does
+                // not buy tolerance, it just lets the impostor in (review
+                // find — the previous cut capped the reach at four fifths of
+                // a half period and claimed that excluded the neighbour,
+                // which is false for U above H/2).
+                //
+                // So there are only two honest outcomes. Inside the quarter
+                // period the reach IS the quarter period — wide enough for
+                // any error the anchor is known to within, narrow enough to
+                // exclude the neighbour outright. Outside it the seed carries
+                // no information the envelope does not already carry better,
+                // and it is refused rather than accommodated.
+                double lobeBoundaryMs = 250.0 / pair.CrossoverHz;
+                if (anchorPredictionVerified &&
+                    anchorUncertaintyMs >= lobeBoundaryMs)
+                {
+                    return "arrival uncertain past the lobe boundary";
+                }
+
                 double reachMs = anchorPredictionVerified
-                    ? Math.Min(
-                        SeedReachMs(pair.CrossoverHz),
-                        Math.Max(
-                            250.0 / pair.CrossoverHz,
-                            Math.Min(anchorUncertaintyMs, 400.0 / pair.CrossoverHz)))
+                    ? lobeBoundaryMs
                     : SeedReachMs(pair.CrossoverHz);
-                if (!arrivalReanchored && Math.Abs(seedOffsetMs) > reachMs)
+                // At the boundary itself the two lobes are equidistant, so
+                // the extremum is refused rather than admitted.
+                if (!arrivalReanchored && Math.Abs(seedOffsetMs) >= reachMs)
                 {
                     return $"{seedLabel} beyond the arrival's reach";
                 }

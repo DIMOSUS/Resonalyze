@@ -160,6 +160,170 @@ public sealed class ShapedFrontProbe
                 snapshot, measuredMs, 40, 160, out _));
     }
 
+    public static TheoryData<string> ToleranceSources()
+    {
+        var data = new TheoryData<string>();
+        foreach (string name in new[]
+        {
+            "driver HP 60", "driver HP 120", "BW24 LP 80", "BW48 LP 80",
+            "BP 40-200", "all-pass 150 Q2", "all-pass 220 Q6"
+        })
+        {
+            data.Add(name);
+        }
+
+        return data;
+    }
+
+    private static DspChannelChain SourceNamed(string name) => name switch
+    {
+        "driver HP 60" => HighPass(60, 12),
+        "driver HP 120" => HighPass(120, 12),
+        "BW24 LP 80" => LowPass(80, 24),
+        "BW48 LP 80" => LowPass(80, 48),
+        "BP 40-200" => BandPass(40, 200, 24),
+        "all-pass 150 Q2" => new DspChannelChain(
+            AllPass: new AllPassSpec(AllPassType.SecondOrder, 150, 2.0)),
+        "all-pass 220 Q6" => new DspChannelChain(
+            AllPass: new AllPassSpec(AllPassType.SecondOrder, 220, 6.0)),
+        _ => throw new ArgumentOutOfRangeException(nameof(name))
+    };
+
+    // The upper-half probe's allowance is built from the SAME estimator and
+    // is NOT protected by the conviction factor — the credited skew is added
+    // to the tolerance directly, so whatever it over-credits is room a real
+    // modal latch could hide in (review find).
+    //
+    // What this pins is the size of that room. The credit may never exceed
+    // the skew the clean front honestly shows by more than one base
+    // allowance, whatever the source does — so the window this PR opens is
+    // bounded by the physics it is meant to cover, not by the estimator's
+    // luck. Held across sources the estimator handles well and sources it
+    // handles badly alike.
+    [Theory]
+    [MemberData(nameof(ToleranceSources))]
+    public void ArrivalProbeTolerance_NeverCreditsMoreThanTheHonestSkew(
+        string sourceName)
+    {
+        foreach ((DspChannelChain chain, double lowHz, double highHz) in
+            ToleranceCases())
+        {
+            (double honestSkewMs, double toleranceMs, double baseToleranceMs) =
+                MeasureTolerance(sourceName, chain, lowHz, highHz);
+            double creditMs = toleranceMs - baseToleranceMs;
+
+            Assert.True(creditMs <= Math.Max(0, honestSkewMs) + baseToleranceMs,
+                $"{sourceName} in {lowHz:0}-{highHz:0} Hz: credited " +
+                $"{creditMs:0.000} ms against an honest skew of " +
+                $"{honestSkewMs:0.000} ms (base {baseToleranceMs:0.000} ms)");
+        }
+    }
+
+    // And for a front the estimator DOES handle — a driver's own roll-off —
+    // the allowance must actually cover the skew, or the probe convicts a
+    // channel for its own crossover. That is the defect this PR started
+    // from, restated against a shaped front rather than an impulse.
+    [Theory]
+    [InlineData("driver HP 60")]
+    [InlineData("driver HP 120")]
+    public void ArrivalProbeTolerance_CoversARealisticShapedSkew(string sourceName)
+    {
+        foreach ((DspChannelChain chain, double lowHz, double highHz) in
+            ToleranceCases())
+        {
+            (double honestSkewMs, double toleranceMs, _) =
+                MeasureTolerance(sourceName, chain, lowHz, highHz);
+
+            Assert.True(honestSkewMs <= toleranceMs,
+                $"{sourceName} in {lowHz:0}-{highHz:0} Hz: honest skew " +
+                $"{honestSkewMs:0.000} ms exceeds the allowance " +
+                $"{toleranceMs:0.000} ms");
+        }
+    }
+
+    private static IEnumerable<(DspChannelChain Chain, double LowHz, double HighHz)>
+        ToleranceCases()
+    {
+        yield return (BandPass(70, 200, 36), 100.0, 400.0);
+        yield return (BandPass(180, 1_500, 36), 100.0, 400.0);
+        yield return (
+            HighPass(80, 48, CrossoverFilterFamily.LinkwitzRiley), 40.0, 160.0);
+    }
+
+    private static (double HonestSkewMs, double ToleranceMs, double BaseToleranceMs)
+        MeasureTolerance(
+            string sourceName, DspChannelChain chain, double lowHz, double highHz)
+    {
+        double probeLowHz = Math.Sqrt(lowHz * highHz);
+        (AlignmentSnapshot clean, double fullMs) = Shaped(
+            SourceNamed(sourceName), chain, lowHz, highHz);
+        double probeMs = VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+            clean.ImpulseResponse, SampleRate, probeLowHz, highHz)
+            .FirstArrivalDelayMilliseconds;
+        return (
+            fullMs - probeMs,
+            AutoAlignmentEngine.ArrivalProbeToleranceMs(
+                clean, lowHz, probeLowHz, highHz),
+            Math.Max(1.0, 500.0 / probeLowHz));
+    }
+
+    // A real late mode on a shaped front must still be convicted by the
+    // upper-half probe, credited allowance and all — the credit exists to
+    // excuse a channel's own dispersion, never a room's.
+    [Theory]
+    [InlineData("driver HP 60")]
+    [InlineData("driver HP 120")]
+    public void ArrivalProbeTolerance_StillConvictsALateModeOnAShapedFront(
+        string sourceName)
+    {
+        const double LowHz = 100;
+        const double HighHz = 400;
+        double probeLowHz = Math.Sqrt(LowHz * HighHz);
+        DspChannelChain chain = BandPass(70, 200, 36);
+
+        var impulse = new Complex[Length];
+        impulse[Position] = Complex.One;
+        Complex[] front = VirtualCrossoverAnalysis.ApplyChain(
+            impulse, SourceNamed(sourceName), SampleRate);
+        Complex[] withMode = (Complex[])front.Clone();
+        int start = Position + (int)(0.012 * SampleRate);
+        double peak = front.Max(sample => sample.Magnitude);
+        for (int i = start; i < withMode.Length; i++)
+        {
+            double t = (i - start) / (double)SampleRate;
+            withMode[i] += 0.8 * peak *
+                (1 - Math.Exp(-t / 0.008)) * Math.Exp(-t / 0.1) *
+                Math.Sin(2 * Math.PI * 120 * t);
+        }
+
+        Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+            withMode, chain, SampleRate);
+        var snapshot = new AlignmentSnapshot(
+            new Channel(), processed,
+            VirtualCrossoverAnalysis.FindPeakIndex(processed),
+            default, chain, withMode);
+        TimeAlignmentAnalysisResult full =
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                processed, SampleRate, LowHz, HighHz);
+        TimeAlignmentAnalysisResult probe =
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                processed, SampleRate, probeLowHz, HighHz);
+
+        // The fixture has to latch before the assertion means anything.
+        Assert.True(
+            full.FirstArrivalDelayMilliseconds -
+                probe.FirstArrivalDelayMilliseconds > 5.0,
+            $"{sourceName}: the fixture did not latch (full " +
+            $"{full.FirstArrivalDelayMilliseconds:0.000}, probe " +
+            $"{probe.FirstArrivalDelayMilliseconds:0.000} ms)");
+        Assert.Equal(
+            AutoAlignmentEngine.ArrivalCertificate.Latched,
+            AutoAlignmentEngine.ClassifyArrival(
+                full, probe,
+                AutoAlignmentEngine.ArrivalProbeToleranceMs(
+                    snapshot, LowHz, probeLowHz, HighHz)));
+    }
+
     // Two shaped fronts through two DIFFERENT chains — the junction case.
     // Each side may be VERIFIED on its own while their residuals differ, and
     // it is the DIFFERENCE that the timeline stores; the pair anchor is only

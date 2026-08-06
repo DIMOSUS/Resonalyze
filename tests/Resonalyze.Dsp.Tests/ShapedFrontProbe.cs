@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 
 namespace Resonalyze.Dsp.Tests;
 
@@ -69,8 +69,10 @@ public sealed class ShapedFrontProbe
             chain,
             bypassed,
             bypassedRange);
+        // Analyzed with the range production carries, not without it.
         double measuredMs = VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-            processed, SampleRate, lowHz, highHz).FirstArrivalDelayMilliseconds;
+            processed, SampleRate, lowHz, highHz, processedRange)
+            .FirstArrivalDelayMilliseconds;
         return (snapshot, measuredMs);
     }
 
@@ -417,8 +419,8 @@ public sealed class ShapedFrontProbe
         (AlignmentSnapshot clean, double fullMs) = Shaped(
             SourceNamed(sourceName), chain, lowHz, highHz);
         double probeMs = VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-            clean.ImpulseResponse, SampleRate, probeLowHz, highHz)
-            .FirstArrivalDelayMilliseconds;
+            clean.ImpulseResponse, SampleRate, probeLowHz, highHz,
+            clean.ValidRange).FirstArrivalDelayMilliseconds;
         return (
             fullMs - probeMs,
             AutoAlignmentEngine.ArrivalProbeToleranceMs(

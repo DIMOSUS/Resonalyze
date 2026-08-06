@@ -1253,25 +1253,40 @@ public static class VirtualCrossoverAnalysis
 
         int windowLow = centerLag - rangeSamples;
         int windowHigh = centerLag + rangeSamples;
-        int? FirstLocalMaximum(int step)
+        // The first contiguous opposite-sign REGION past the zero crossing,
+        // and its extremum — not the first local extremum encountered. A real
+        // whitened correlation is not a clean sinc: a shoulder, ripple from
+        // partial spectral overlap, or a reflection's own bump inside that
+        // first lobe would each satisfy a local-maximum test and hand back a
+        // spacing far shorter than the lobe's, which is a spacing the caller
+        // would then use to refuse a perfectly good seed (review find).
+        int? LobeCrestOnSide(int step)
         {
-            for (int lag = mainLag + step;
-                lag > windowLow && lag < windowHigh;
-                lag += step)
+            int lag = mainLag + step;
+            while (lag > windowLow && lag < windowHigh && Value(lag) <= 0)
             {
-                if (Value(lag) > 0 &&
-                    Value(lag) >= Value(lag - 1) &&
-                    Value(lag) >= Value(lag + 1))
-                {
-                    return lag;
-                }
+                lag += step;
+            }
+            if (lag <= windowLow || lag >= windowHigh)
+            {
+                return null;
             }
 
-            return null;
+            int crest = lag;
+            while (lag > windowLow && lag < windowHigh && Value(lag) > 0)
+            {
+                if (Value(lag) > Value(crest))
+                {
+                    crest = lag;
+                }
+                lag += step;
+            }
+
+            return crest;
         }
 
-        int? left = FirstLocalMaximum(-1);
-        int? right = FirstLocalMaximum(1);
+        int? left = LobeCrestOnSide(-1);
+        int? right = LobeCrestOnSide(1);
         int? nearest = (left, right) switch
         {
             (null, null) => null,

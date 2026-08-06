@@ -1225,6 +1225,43 @@ public sealed class VirtualCrossoverAnalysisTests
         Assert.InRange(neighborDistanceMs, 0.2, 0.8);
     }
 
+    // A real whitened correlation is not a clean sinc — a shoulder or a
+    // reflection's bump can sit INSIDE the first opposite-sign lobe. The
+    // neighbour must be that lobe's crest, not the first local extremum met
+    // on the way to it, or the spacing it reports is far shorter than the
+    // lobe's and would refuse a good seed. A reflection at a fraction of the
+    // direct level puts exactly such a bump into the correlation.
+    [Fact]
+    public void FindBandLimitedCorrelationDelay_NeighborIsTheLobeCrestNotARipple()
+    {
+        Complex[] first = UnitImpulse(8_192, 2_000);
+        var second = new Complex[8_192];
+        second[1_952] = Complex.One;
+        second[1_952 + 61] = 0.45;   // ~1.27 ms later: a reflection.
+        second[1_952 + 149] = 0.3;   // and a second one.
+
+        CorrelationAlignmentResult result =
+            VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
+                first,
+                second,
+                SampleRate,
+                centerFrequencyHz: 1_000,
+                passOctaves: 2,
+                searchRangeMs: 3,
+                phaseTransform: true);
+
+        CorrelationDelayCandidate besidePeak =
+            Assert.IsType<CorrelationDelayCandidate>(result.PositiveOppositeNeighbor);
+        double spacingMs = Math.Abs(besidePeak.DelayMs - result.PositivePeak.DelayMs);
+
+        // The crest of the adjacent lobe sits about half a period out at
+        // 1 kHz; a ripple inside that lobe would report a fraction of it.
+        Assert.InRange(spacingMs, 0.25, 0.9);
+        // And it is the region's extremum: no sample of the same sign inside
+        // that lobe is deeper than the one reported.
+        Assert.True(besidePeak.Coefficient < 0);
+    }
+
     [Fact]
     public void FindBandLimitedCorrelationDelay_PhaseTransformFindsTheSameDelay()
     {

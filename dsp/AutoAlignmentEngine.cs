@@ -1076,17 +1076,28 @@ public static class AutoAlignmentEngine
                 upperArrival = upperPrediction;
             }
 
-            // What the pair anchor could still be off by. Where BOTH sides
-            // were merely VERIFIED the residuals are known, and only their
-            // DIFFERENCE matters — the timeline stores a difference, so two
-            // sides erring the same way cost nothing. Where a side was
-            // convicted and replaced its residual is unknowable by
-            // construction, and the honest stand-in is the per-side
-            // allowance (review find: "prediction agrees within 2.5 ms" is
-            // not by itself a licence for a much narrower seed reach).
+            // How much the pair anchor DISAGREES with its own prediction. Read
+            // what this is not: it is not a bound on the anchor's error. The
+            // measurement and the prediction are not independent — one
+            // nonlinear envelope detector, one room, and the prediction starts
+            // from the arrival of the same bypassed response — so a bias
+            // common to both leaves this figure at zero while the true error
+            // is whatever the bias is (review find). It is used ONLY to decide
+            // whether to apply an EXTRA restriction below, never to certify
+            // one; nothing here can make the seed gate more permissive than it
+            // was without it.
+            //
+            // Where both sides merely VERIFIED, the residuals are known and
+            // only their DIFFERENCE enters, since the timeline stores a
+            // difference and two sides erring alike cost it nothing. Where a
+            // side was convicted and replaced, its residual is unknowable by
+            // construction — its prediction was never confirmed against
+            // anything — so the stand-in is TWICE the per-side allowance: two
+            // sides each within A bound their difference by 2A, not by A.
             double anchorUncertaintyMs =
                 lowerLatchedByPrediction || upperLatchedByPrediction
-                    ? PredictedArrivalAllowanceMs(pair.BandLowHz, pair.BandHighHz)
+                    ? 2.0 * PredictedArrivalAllowanceMs(
+                        pair.BandLowHz, pair.BandHighHz)
                     : Math.Abs(
                         (lowerArrival - lowerPrediction) -
                         (upperArrival - upperPrediction));
@@ -1302,15 +1313,29 @@ public static class AutoAlignmentEngine
                 double lobeBoundaryMs = neighbor is { EdgePinned: false } adjacent
                     ? Math.Abs(adjacent.DelayMs - seed.DelayMs) / 2.0
                     : 0;
-                if (anchorPredictionVerified &&
+                //
+                // Gated on !arrivalReanchored like the offset test below it:
+                // once the upper-half probe has thrown the full-band arrivals
+                // away and re-anchored on its own reads, the uncertainty
+                // measured against the DISCARDED anchor describes nothing —
+                // refusing the seed on it would veto by a number that no
+                // longer refers to anything (review find).
+                if (!arrivalReanchored && anchorPredictionVerified &&
                     (!(lobeBoundaryMs > 0) ||
                         anchorUncertaintyMs >= lobeBoundaryMs))
                 {
                     return "arrival uncertain past the lobe boundary";
                 }
 
+                // Only ever TIGHTER than the standing rule. The disagreement
+                // figure above is not a proven bound (see there), so it may
+                // decide to restrict the seed further but never to license a
+                // reach the conservative rule would not already have allowed
+                // — otherwise a mis-measured spacing, or a bias shared by the
+                // measurement and the prediction, would loosen the gate on
+                // the strength of an agreement that proves nothing.
                 double reachMs = anchorPredictionVerified
-                    ? lobeBoundaryMs
+                    ? Math.Min(SeedReachMs(pair.CrossoverHz), lobeBoundaryMs)
                     : SeedReachMs(pair.CrossoverHz);
                 // At the boundary itself the two lobes are equidistant, so
                 // the extremum is refused rather than admitted.

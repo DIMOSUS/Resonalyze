@@ -869,9 +869,24 @@ public static class AutoAlignmentEngine
                 PredictedArrivalMs(pair.Lower, pair.BandLowHz, pair.BandHighHz);
             double? upperPrediction =
                 PredictedArrivalMs(pair.Upper, pair.BandLowHz, pair.BandHighHz);
+            // BOTH sides must be predictable for the predictor to speak at
+            // all. The timeline stores a DIFFERENCE, and the two estimators
+            // do not measure the same thing to the same precision: the
+            // prediction adds a band-AVERAGED group delay to a detected
+            // front, the measurement reads the front directly. Their offsets
+            // cancel between two predictions and between two measurements,
+            // never between one of each — mixing them injects the offset as a
+            // real delay (the v4 cabin's 160 Hz corner, where exactly that
+            // mix put the base 2.45 ms out and held the mid on the flip
+            // impostor). So a pair with one unpredictable side falls through
+            // to the upper-half probe entirely, which then still gets to
+            // examine BOTH sides rather than leaving the unpredicted one
+            // unchecked (review find).
+            bool pairPredictable =
+                lowerPrediction != null && upperPrediction != null;
             bool ConvictedAgainstPrediction(double measuredMs, double? predictedMs) =>
-                predictedMs is { } predicted &&
-                measuredMs - predicted > predictionAllowanceMs;
+                pairPredictable &&
+                measuredMs - predictedMs!.Value > predictionAllowanceMs;
             bool lowerOffPrediction =
                 ConvictedAgainstPrediction(lowerArrival, lowerPrediction);
             bool upperOffPrediction =
@@ -896,20 +911,11 @@ public static class AutoAlignmentEngine
                 }
 
                 // Both sides move to the prediction, not just the convicted
-                // one. The predictor reads a front off the full-range driver
-                // and adds a band-AVERAGED group delay, so it carries a small
-                // systematic offset (under a millisecond, measured); that
-                // offset is common-mode and cancels in the junction
-                // difference the timeline actually stores. Mixing one
-                // predicted arrival with one measured one injects it instead
-                // as a real delay — at the v4 cabin's 160 Hz corner exactly
-                // that mix put the base 2.45 ms out and handed the mid to the
-                // flip impostor. A side with no prediction (no bypassed
-                // response, or an unmeasurable one) keeps its measured read:
-                // half a correction still beats none where the other side is
-                // provably timing a mode.
-                lowerArrival = lowerPrediction ?? lowerArrival;
-                upperArrival = upperPrediction ?? upperArrival;
+                // one — see the estimator-mixing note above. Non-null here by
+                // construction: a conviction requires the whole pair to be
+                // predictable.
+                lowerArrival = lowerPrediction!.Value;
+                upperArrival = upperPrediction!.Value;
             }
 
             double probeLowHz = Math.Sqrt(pair.BandLowHz * pair.BandHighHz);
@@ -1072,7 +1078,7 @@ public static class AutoAlignmentEngine
                 // 180 Hz corner: a whitened trough 2.892 ms out — half a
                 // period is 2.778 — cleared the 3 ms floor by a tenth of a
                 // millisecond and seeded the flip impostor.
-                double reachMs = lowerPrediction != null && upperPrediction != null
+                double reachMs = pairPredictable
                     ? 250.0 / pair.CrossoverHz
                     : SeedReachMs(pair.CrossoverHz);
                 if (!arrivalReanchored && Math.Abs(seedOffsetMs) > reachMs)

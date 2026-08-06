@@ -88,7 +88,7 @@ public sealed record DspChannelChain(
     /// differencing — it is exactly linear phase, and a large one would wrap
     /// the phase step — and added back in closed form.
     /// </summary>
-    public double WeightedMeanGroupDelayMs(
+    internal double WeightedMeanGroupDelayMs(
         double lowHz,
         double highHz,
         double sampleRateHz)

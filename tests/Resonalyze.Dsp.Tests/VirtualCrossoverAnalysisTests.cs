@@ -1181,6 +1181,93 @@ public sealed class VirtualCrossoverAnalysisTests
         Assert.True(result.BestByMagnitude.Coefficient > 0.95);
     }
 
+    // The opposite-polarity NEIGHBOUR, which is an adjacency fact rather than
+    // a strength ranking: a caller bounding a cycle-skip needs the distance to
+    // the lobe next door, and the window's strongest opposite extremum can sit
+    // several lobes away. Each side's neighbour carries the polarity opposite
+    // to its own — a minimum beside the peak, a maximum beside the trough.
+    [Fact]
+    public void FindBandLimitedCorrelationDelay_ReportsTheAdjacentOppositeLobe()
+    {
+        Complex[] first = UnitImpulse(8_192, 2_000);
+        Complex[] second = UnitImpulse(8_192, 1_952);
+
+        CorrelationAlignmentResult result =
+            VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
+                first,
+                second,
+                SampleRate,
+                centerFrequencyHz: 1_000,
+                passOctaves: 1,
+                searchRangeMs: 3);
+
+        CorrelationDelayCandidate besidePeak =
+            Assert.IsType<CorrelationDelayCandidate>(result.PositiveOppositeNeighbor);
+        CorrelationDelayCandidate besideTrough =
+            Assert.IsType<CorrelationDelayCandidate>(result.NegativeOppositeNeighbor);
+
+        // Polarity is the main extremum's opposite, not its copy.
+        Assert.True(besidePeak.InvertPolarity);
+        Assert.True(besidePeak.Coefficient < 0);
+        Assert.False(besideTrough.InvertPolarity);
+        Assert.True(besideTrough.Coefficient > 0);
+
+        // Adjacent, not strongest: the neighbour is no farther from the peak
+        // than the window's deepest trough is.
+        double neighborDistanceMs =
+            Math.Abs(besidePeak.DelayMs - result.PositivePeak.DelayMs);
+        double strongestDistanceMs =
+            Math.Abs(result.NegativeTrough.DelayMs - result.PositivePeak.DelayMs);
+        Assert.True(neighborDistanceMs <= strongestDistanceMs + 1e-9,
+            $"neighbour {neighborDistanceMs:0.000} ms is farther than the " +
+            $"strongest opposite extremum {strongestDistanceMs:0.000} ms");
+        // A 1 kHz correlation puts the adjacent lobe about half a period out.
+        Assert.InRange(neighborDistanceMs, 0.2, 0.8);
+    }
+
+    // A real whitened correlation is not a clean sinc — a shoulder or a
+    // reflection's bump can sit INSIDE the first opposite-sign lobe. The
+    // neighbour must be that lobe's crest, not the first local extremum met
+    // on the way to it, or the spacing it reports is far shorter than the
+    // lobe's and would refuse a good seed. A reflection at a fraction of the
+    // direct level puts exactly such a bump into the correlation.
+    [Fact]
+    public void FindBandLimitedCorrelationDelay_NeighborIsTheLobeCrestNotARipple()
+    {
+        Complex[] first = UnitImpulse(8_192, 2_000);
+        var second = new Complex[8_192];
+        second[1_952] = Complex.One;
+        second[1_952 + 10] = 0.2;
+        second[1_952 + 20] = 0.4;
+        second[1_952 + 70] = 0.7;
+
+        CorrelationAlignmentResult result =
+            VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
+                first,
+                second,
+                SampleRate,
+                centerFrequencyHz: 1_000,
+                passOctaves: 2,
+                searchRangeMs: 3,
+                phaseTransform: true);
+
+        CorrelationDelayCandidate besidePeak =
+            Assert.IsType<CorrelationDelayCandidate>(result.PositiveOppositeNeighbor);
+
+        // These reflections put a weak bump on the EARLY side of the peak,
+        // shallower than the real lobe crest on the late side. Taking the
+        // first local extremum met — what the search did before — returns
+        // that bump: the wrong direction and a fraction of the depth. Both
+        // assertions therefore fail on the previous implementation, which is
+        // what makes this a regression rather than a restatement.
+        Assert.True(besidePeak.DelayMs > result.PositivePeak.DelayMs,
+            $"neighbour at {besidePeak.DelayMs:0.000} ms is on the wrong side " +
+            $"of the peak at {result.PositivePeak.DelayMs:0.000} ms");
+        Assert.True(besidePeak.Coefficient < -0.6,
+            $"neighbour depth {besidePeak.Coefficient:0.000} is a ripple, not " +
+            "the lobe's crest");
+    }
+
     [Fact]
     public void FindBandLimitedCorrelationDelay_PhaseTransformFindsTheSameDelay()
     {

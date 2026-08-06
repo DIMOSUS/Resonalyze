@@ -35,6 +35,8 @@ internal sealed class AlignmentReprocessor
     private readonly int[] sampleRates;
     private readonly DspChannelChain[] baseChains;
     private readonly Dictionary<IAlignmentChannel, CacheEntry> cache = new();
+    private readonly Complex[]?[] bypassedImpulseResponses;
+    private readonly ValidSampleRange[] bypassedValidRanges;
 
     public AlignmentReprocessor(
         IReadOnlyList<AlignmentReprocessInput> inputs,
@@ -52,6 +54,22 @@ internal sealed class AlignmentReprocessor
             inputs.Select(input => input.MeasuredImpulseResponse).ToList(),
             cropLength,
             cropPrePeakSamples);
+        // The chain-free response of each channel, computed once: the
+        // engine's predicted-arrival honesty probe reads it to tell a
+        // crossover's own smear from a room mode the crossover steered the
+        // band into (see AlignmentSnapshot.BypassedImpulseResponse). It never
+        // changes with the overrides, so it stays out of the per-round cache.
+        bypassedImpulseResponses = new Complex[croppedImpulseResponses.Length][];
+        bypassedValidRanges = new ValidSampleRange[croppedImpulseResponses.Length];
+        Parallel.For(0, croppedImpulseResponses.Length, i =>
+        {
+            bypassedImpulseResponses[i] = VirtualCrossoverAnalysis.ApplyChain(
+                croppedImpulseResponses[i],
+                DspChannelChain.Identity,
+                sampleRates[i],
+                out ValidSampleRange bypassedRange);
+            bypassedValidRanges[i] = bypassedRange;
+        });
     }
 
     /// <summary>The channels in input (and result) order.</summary>
@@ -112,7 +130,13 @@ internal sealed class AlignmentReprocessor
                 channel,
                 results[i].ImpulseResponse,
                 results[i].PeakIndex,
-                results[i].ValidRange))
+                results[i].ValidRange,
+                // The chain CAPTURED at construction, never the live model:
+                // the engine's predicted-arrival probe reads it on a
+                // background thread while the user may be editing the panel.
+                baseChains[i],
+                bypassedImpulseResponses[i],
+                bypassedValidRanges[i]))
             .ToList();
     }
 

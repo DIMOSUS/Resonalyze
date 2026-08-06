@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Text;
 
 namespace Resonalyze.Dsp;
@@ -71,12 +71,28 @@ public interface IAlignmentChannel
 /// overload reports — so envelope/SNR analyses skip both the delay prefix
 /// and the manufactured tail. The default (empty) range means unknown: the
 /// analyses then fall back to the padding-signature heuristic.
+///
+/// <see cref="BypassedImpulseResponse"/> is the SAME measurement with no
+/// chain at all (the bare driver in the room) and
+/// <see cref="ProcessingChain"/> is the chain that turns one into the other.
+/// Together they let the engine RE-DERIVE what this channel's front must look
+/// like after its own processing (see
+/// <see cref="AutoAlignmentEngine.PredictedFrontArrivalMs"/>): a steep crossover
+/// concentrates a junction band's energy in the room's modal region and makes
+/// the PROCESSED arrival latch onto a mode, while the same band read off the
+/// full-range driver still finds the front. Both are captured with the
+/// response itself and are immutable for the run — the search may not read
+/// live model state — and both are null when the caller has none, which
+/// degrades every path to the upper-half probe alone.
 /// </summary>
 public sealed record AlignmentSnapshot(
     IAlignmentChannel Channel,
     Complex[] ImpulseResponse,
     int PeakIndex,
-    ValidSampleRange ValidRange = default);
+    ValidSampleRange ValidRange = default,
+    DspChannelChain? ProcessingChain = null,
+    Complex[]? BypassedImpulseResponse = null,
+    ValidSampleRange BypassedValidRange = default);
 
 /// <summary>
 /// Adjacent channels along the spectrum with their shared junction: the pair
@@ -464,6 +480,294 @@ public static class AutoAlignmentEngine
         Verified
     }
 
+    /// <summary>
+    /// An ESTIMATE of where this channel's processed arrival should land if
+    /// it timed the direct front: its arrival read off the BYPASSED
+    /// (chain-free) response, plus the shift its own chain applies to a flat
+    /// reference impulse in the same band. Null when the caller supplied no
+    /// bypassed response or no chain, or when the bypassed read is
+    /// unmeasurable.
+    ///
+    /// An estimate, not an identity. The arrival detector is a nonlinear
+    /// envelope search, so a chain's shift measured on an impulse does not
+    /// transfer exactly to a shaped front: measured across a source matrix,
+    /// the error stays inside a quarter of the conviction threshold for
+    /// realistic driver roll-offs but reaches 1.2 allowances where the source
+    /// has strong structure INSIDE the band — a steep low-pass leaving the
+    /// channel barely radiating there, or an all-pass twisting its phase.
+    /// That is why nothing here convicts on its own: see
+    /// <see cref="PredictedArrivalConvictionFactor"/>, which keeps a shaping
+    /// error out of the LATCHED verdict, and
+    /// <see cref="PredictionState.Inconsistent"/>, which withdraws a pair
+    /// from the predictor rather than trusting a disagreement it cannot
+    /// explain.
+    ///
+    /// The bypassed read is what makes this see through a modal latch. A
+    /// steep crossover leaves a junction band's energy concentrated in the
+    /// room's modal region, so the PROCESSED envelope can front on a mode;
+    /// off the full-range driver the same band still finds the real front,
+    /// because nothing has boosted the mode's share of it. Note that the
+    /// bypassed response is NOT gated: at a low junction one period is
+    /// 6-12 ms, so any gate short enough to exclude a mode 10 ms out also
+    /// truncates the driver's own front and biases the read by milliseconds
+    /// (measured: 2.5 ms on the archived midbass, enough to hand the junction
+    /// to the flip impostor).
+    ///
+    /// The chain term is MEASURED, not derived: a reference impulse is pushed
+    /// through the real ApplyChain and read with the real detector (see
+    /// ChainArrivalShiftMs). An analytic band-averaged group delay — what an
+    /// earlier cut used — is worse in kind, not merely in degree: it misses
+    /// by 3.8 ms on a steep 80 Hz high-pass and 2.3 ms on a 330 Hz all-pass,
+    /// and its error is not common-mode across a junction, so it injects a
+    /// differential error into the very difference the timeline stores.
+    /// </summary>
+    internal static double? PredictedFrontArrivalMs(
+        AlignmentSnapshot side,
+        double bandLowHz,
+        double bandHighHz)
+    {
+        ArgumentNullException.ThrowIfNull(side);
+        if (side.BypassedImpulseResponse is not { } bypassed ||
+            side.ProcessingChain is not { } chain)
+        {
+            return null;
+        }
+
+        int sampleRate = side.Channel.SampleRate;
+        TimeAlignmentAnalysisResult bare =
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                bypassed, sampleRate, bandLowHz, bandHighHz,
+                side.BypassedValidRange);
+        if (!bare.IsValid || bare.SignalToNoiseDecibels < MinimumArrivalSnrDb)
+        {
+            return null;
+        }
+
+        // The reference impulse is as long as the MEASURED content, not as
+        // long as the padded bypassed array: that array is itself an
+        // ApplyChain output, so its length is already double the crop, and
+        // handing that length on would run the shift through a window twice
+        // the one the real reads use (review find). At this length ApplyChain
+        // pads and reports exactly the ranges production sees.
+        int contentLength = side.BypassedValidRange.IsKnown
+            ? side.BypassedValidRange.EndSample - side.BypassedValidRange.StartSample
+            : bypassed.Length;
+        return bare.FirstArrivalDelayMilliseconds +
+            ChainArrivalShiftMs(chain, sampleRate, bandLowHz, bandHighHz,
+                contentLength, side.PeakIndex);
+    }
+
+    // How much later the band-limited arrival detector reads a signal once
+    // this chain is applied — measured by pushing a reference impulse through
+    // the REAL ApplyChain and reading it with the REAL detector, exactly as
+    // the processed response is read. The chain WITHOUT its bulk delay and
+    // polarity: the snapshots the timeline reads are the override-free
+    // reprocess, where both are neutral, and neither moves an envelope
+    // arrival anyway.
+    private static double ChainArrivalShiftMs(
+        DspChannelChain chain,
+        int sampleRate,
+        double bandLowHz,
+        double bandHighHz,
+        int length,
+        int peakIndex)
+    {
+        var impulse = new Complex[length];
+        impulse[Math.Clamp(peakIndex, 0, length - 1)] = Complex.One;
+        // BOTH reads go through ApplyChain and carry the ValidSampleRange it
+        // reports, exactly as the measured bypassed and processed responses
+        // do. Analyzing the bare impulse raw instead would hand the detector
+        // a different window — it crops to the reported range when given one
+        // and falls back to a padding heuristic when not — so the two ends of
+        // this subtraction would not be measured alike (review find).
+        Complex[] bareResponse = VirtualCrossoverAnalysis.ApplyChain(
+            impulse, DspChannelChain.Identity, sampleRate,
+            out ValidSampleRange bareRange);
+        Complex[] filteredResponse = VirtualCrossoverAnalysis.ApplyChain(
+            impulse,
+            chain with { DelayMs = 0, InvertPolarity = false },
+            sampleRate,
+            out ValidSampleRange filteredRange);
+        double bare = VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+            bareResponse, sampleRate, bandLowHz, bandHighHz, bareRange)
+            .FirstArrivalDelayMilliseconds;
+        double filtered = VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+            filteredResponse, sampleRate, bandLowHz, bandHighHz, filteredRange)
+            .FirstArrivalDelayMilliseconds;
+        return filtered - bare;
+    }
+
+    /// <summary>
+    /// The arrival honesty probe's dispersion allowance for ONE side: how much
+    /// later than its own upper-half read the full-band read may sit before
+    /// <see cref="ClassifyArrival"/> convicts it of a modal latch.
+    ///
+    /// Two terms. The first is generic physics — half a period at the probe's
+    /// lower edge, never tighter than 1 ms: the smear one wavefront can show
+    /// across the band. The second is the channel's OWN chain, and it is what
+    /// the probe used to miss: a steep low-pass puts the full band's energy
+    /// BELOW its corner, where the chain runs milliseconds slower than in the
+    /// probe band above it, and the two envelope fronts then differ with no
+    /// room mode anywhere. The field failure that pinned this: a midbass under
+    /// LP 200 Hz/36 read 13.04 ms in 100-400 Hz against 10.16 ms in its
+    /// 200-400 Hz half — a 2.88 ms skew the flat 2.5 ms allowance convicted,
+    /// which re-anchored the pair 2.9 ms early and handed the mid to a
+    /// mixed-polarity comb lobe.
+    ///
+    /// The second term is the PREDICTED SKEW, not the chain's contribution
+    /// alone: it is the difference of two <see cref="PredictedFrontArrivalMs"/>
+    /// readings, so it credits how much later the full band should read than
+    /// its upper half for BOTH reasons — the chain's dispersion and the
+    /// driver's own band-dependence (a woofer reads later at 100-200 Hz than
+    /// at 200-400 Hz on its own account). That is the right quantity: the
+    /// probe's question is how much later the full band should read absent a
+    /// mode, and the driver is part of the answer. Deriving it from an
+    /// averaged group delay instead — the chain term alone, analytically —
+    /// over-credits an HP- or PEQ-fed channel by more than a millisecond, and
+    /// over-crediting an allowance is how a real latch slips through.
+    /// Clamped at zero: a response that is FASTER in the full band than in
+    /// the probe band earns no credit, it just cannot tighten the floor.
+    /// </summary>
+    internal static double ArrivalProbeToleranceMs(
+        AlignmentSnapshot side,
+        double measuredMs,
+        double probeMeasuredMs,
+        double bandLowHz,
+        double probeLowHz,
+        double bandHighHz)
+    {
+        ArgumentNullException.ThrowIfNull(side);
+        double toleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
+        // The credit is a DIFFERENCE of two predictions, so both of them have
+        // to have earned it against their own measured read — in the full
+        // band and in the probe band alike. Grading only one leaves the other
+        // free to be arbitrarily wrong while the difference still looks
+        // plausible: a 220 Hz all-pass source verified in 40-160 Hz and still
+        // earned the whole clamped credit against an honest skew of 0.04 ms.
+        //
+        // A side graded INCONSISTENT is withdrawn from the predictor for
+        // anchoring, and it must be withdrawn here too or the fallback is not
+        // independent of the estimator it fell back from: at 100-400 Hz an
+        // uncredited 4 ms skew is a latch and a fully credited one is not
+        // (review find). A LATCHED side earns nothing either — its own read
+        // is the thing under suspicion.
+        // Both predictions come back through the grading's out parameter —
+        // each one costs an ApplyChain, an FFT and an arrival analysis, and
+        // asking for them twice bought nothing.
+        if (GradeAgainstPrediction(
+                side, measuredMs, bandLowHz, bandHighHz, out double full) !=
+            PredictionState.Verified ||
+            GradeAgainstPrediction(
+                side, probeMeasuredMs, probeLowHz, bandHighHz,
+                out double probe) != PredictionState.Verified)
+        {
+            return toleranceMs;
+        }
+
+        // Capped at the generic allowance, so the ESTIMATE can at most double
+        // the physics. Uncapped, the credit is whatever the difference of two
+        // predictions happens to be — and both predictions read a bypassed
+        // response that may itself carry the mode, so the credit grows with
+        // exactly the feature the probe is trying to convict. Measured
+        // uncapped: a 220 Hz all-pass source earned 7.79 ms against an honest
+        // skew of 0.04 ms, and on a realistic driver front a genuine late
+        // mode was swallowed whole (review find — the credit is added to the
+        // tolerance directly and no conviction factor guards it).
+        return toleranceMs + Math.Clamp(full - probe, 0, toleranceMs);
+    }
+
+    /// <summary>
+    /// What the predicted-arrival probe concluded about one side.
+    /// UNAVAILABLE — no prediction could be formed (no bypassed response, no
+    /// chain, or an unmeasurable read), so the side carries no certificate at
+    /// all. LATCHED — the processed read sits LATER than the prediction by
+    /// more than the allowance: it is timing something the direct front cannot
+    /// explain. INCONSISTENT — the read is EARLIER than the prediction by more
+    /// than the allowance, which the prediction cannot account for either (a
+    /// truncated front, a mis-captured bypassed response); the read is not
+    /// convicted, but neither is it certified. VERIFIED — the two agree, and
+    /// only then does the anchor count as independently confirmed.
+    /// </summary>
+    internal enum PredictionState { Unavailable, Verified, Latched, Inconsistent }
+
+    /// <summary>
+    /// The prediction's own accuracy floor (ms) — the disagreement an honest
+    /// read may still show, from the estimator's imperfect transfer to a
+    /// shaped front and from the detector's own resolution. Measured across
+    /// two cabins, honest reads land well inside it while the field latches
+    /// run 6.7 ms and up.
+    /// </summary>
+    private const double PredictedArrivalAccuracyMs = 2.5;
+
+    /// <summary>
+    /// How far PAST the allowance a read must sit before the prediction may
+    /// convict it. The prediction measures the chain's contribution on a flat
+    /// reference impulse, but a driver worked well below its own passband
+    /// does not present the chain with a flat input — a midbass playing a
+    /// 40-160 Hz junction band sits past its own rolloff, and its high-pass
+    /// then costs several milliseconds more than the same filter costs an
+    /// impulse. The error is systematic, one-signed (the prediction reads
+    /// early) and it does not vanish with a better estimator, so a marginal
+    /// exceedance is not evidence of anything.
+    ///
+    /// The field separates cleanly on this: across both cabins and every
+    /// crossover corner, the FALSE convictions at the sub/midbass junction
+    /// all landed between 1.01 and 1.17 allowances, and every true modal
+    /// latch between 2.49 and 3.89. Two allowances sits in that gap with room
+    /// on both sides — the same "plainly, not marginally" standard the lobe
+    /// gates apply. A read in between is INCONSISTENT: not convicted, but not
+    /// trusted to certify an anchor either.
+    /// </summary>
+    private const double PredictedArrivalConvictionFactor = 2.0;
+
+    /// <summary>
+    /// How far a processed read may sit from
+    /// <see cref="PredictedFrontArrivalMs"/> before the side loses its
+    /// certificate: half a period at the band's geometric center — one
+    /// wavefront's dispersion, stated where the band's energy actually is —
+    /// never below the prediction's own accuracy.
+    /// </summary>
+    internal static double PredictedArrivalAllowanceMs(
+        double bandLowHz, double bandHighHz) =>
+        Math.Max(
+            PredictedArrivalAccuracyMs,
+            500.0 / Math.Sqrt(bandLowHz * bandHighHz));
+
+    /// <summary>
+    /// Grades one side's processed arrival against what its own front,
+    /// read through its own chain, estimates it must be. The test is
+    /// two-sided on purpose: a read EARLIER than the prediction is not a modal
+    /// latch, but it is not a confirmation either, and treating it as one
+    /// would hand a tightened seed reach to an anchor that nothing verified
+    /// (review find).
+    /// </summary>
+    internal static PredictionState GradeAgainstPrediction(
+        AlignmentSnapshot side,
+        double measuredMs,
+        double bandLowHz,
+        double bandHighHz,
+        out double predictedMs)
+    {
+        predictedMs = double.NaN;
+        if (PredictedFrontArrivalMs(side, bandLowHz, bandHighHz)
+            is not { } predicted)
+        {
+            return PredictionState.Unavailable;
+        }
+
+        predictedMs = predicted;
+        double errorMs = measuredMs - predicted;
+        double allowanceMs = PredictedArrivalAllowanceMs(bandLowHz, bandHighHz);
+        if (errorMs > allowanceMs * PredictedArrivalConvictionFactor)
+        {
+            return PredictionState.Latched;
+        }
+
+        return Math.Abs(errorMs) <= allowanceMs
+            ? PredictionState.Verified
+            : PredictionState.Inconsistent;
+    }
+
     internal static ArrivalCertificate ClassifyArrival(
         TimeAlignmentAnalysisResult full,
         TimeAlignmentAnalysisResult probe,
@@ -670,19 +974,19 @@ public static class AutoAlignmentEngine
                         ? "unmeasurable"
                         : $"near-noise (SNR {read.SignalToNoiseDecibels:0.0} dB, " +
                           $"minimum {MinimumArrivalSnrDb:0})";
-                string lowerState = Describe(lowerRead);
-                string upperState = Describe(upperRead);
+                string lowerDescription = Describe(lowerRead);
+                string upperDescription = Describe(upperRead);
                 log.AppendLine(
                     $"Pair {pair.Lower.Channel.Name}/" +
                     $"{pair.Upper.Channel.Name}: " +
                     $"band {pair.BandLowHz:0}-{pair.BandHighHz:0} Hz, " +
-                    $"arrivals {lowerState} / {upperState} — refusing the run");
+                    $"arrivals {lowerDescription} / {upperDescription} — refusing the run");
                 throw new InvalidOperationException(
                     $"No junction evidence between {pair.Lower.Channel.Name} " +
                     $"and {pair.Upper.Channel.Name} in " +
                     $"{pair.BandLowHz:0}-{pair.BandHighHz:0} Hz: " +
-                    $"{pair.Lower.Channel.Name} is {lowerState}, " +
-                    $"{pair.Upper.Channel.Name} is {upperState}. " +
+                    $"{pair.Lower.Channel.Name} is {lowerDescription}, " +
+                    $"{pair.Upper.Channel.Name} is {upperDescription}. " +
                     "Check the channels' sources and crossover settings.");
             }
 
@@ -709,9 +1013,112 @@ public static class AutoAlignmentEngine
             // dragged a woofer 6 ms off on the cross-side ladder), so it only
             // recenters the correlation window and the fallback diff; the
             // trustworthy PHAT extremum, where present, still wins the seed.
+            // The predicted-arrival probe first (see PredictedFrontArrivalMs):
+            // it convicts the latches the upper-half probe cannot see, and its
+            // replacement anchor is stated in the junction's own band.
+            //
+            // BOTH sides must be gradeable for it to speak at all. The
+            // timeline stores a DIFFERENCE, and the two estimators do not read
+            // the same thing to the same precision — the prediction estimates
+            // a front, the measurement reads the processed response — so
+            // their residuals cancel between two predictions and between two
+            // measurements, never between one of each. Mixing them injects the
+            // residual as a real delay (the v4 cabin's 160 Hz corner, where
+            // exactly that mix put the base 2.45 ms out and held the mid on
+            // the flip impostor). A pair with one ungradeable side therefore
+            // falls through to the upper-half probe entirely, which then still
+            // gets to examine BOTH sides rather than leaving one unchecked.
+            PredictionState lowerState = GradeAgainstPrediction(
+                pair.Lower, lowerArrival, pair.BandLowHz, pair.BandHighHz,
+                out double lowerPrediction);
+            PredictionState upperState = GradeAgainstPrediction(
+                pair.Upper, upperArrival, pair.BandLowHz, pair.BandHighHz,
+                out double upperPrediction);
+            //
+            // INCONSISTENT counts as ungradeable too. A read sitting far
+            // EARLIER than its own predicted front is not a latch, but it
+            // does mean the two disagree in a way the prediction cannot
+            // explain (a truncated front, a mis-captured bypassed response) —
+            // and a prediction that cannot explain the read it is graded
+            // against has no business replacing it.
+            static bool Gradeable(PredictionState state) =>
+                state is PredictionState.Verified or PredictionState.Latched;
+            bool pairGradeable = Gradeable(lowerState) && Gradeable(upperState);
+            bool lowerLatchedByPrediction =
+                pairGradeable && lowerState == PredictionState.Latched;
+            bool upperLatchedByPrediction =
+                pairGradeable && upperState == PredictionState.Latched;
+            if (lowerLatchedByPrediction || upperLatchedByPrediction)
+            {
+                void LogConviction(
+                    AlignmentSnapshot side, double measuredMs, double predictedMs) =>
+                    log.AppendLine(
+                        $"  {side.Channel.Name}: {measuredMs:0.000} ms in " +
+                        $"{pair.BandLowHz:0}-{pair.BandHighHz:0} Hz but its " +
+                        $"un-crossovered front, read through its own " +
+                        $"chain, predicts {predictedMs:0.000} ms there (modal " +
+                        $"latch behind the crossover; " +
+                        $"{(measuredMs - predictedMs) / PredictedArrivalAllowanceMs(pair.BandLowHz, pair.BandHighHz):0.0} " +
+                        $"allowances, conviction needs " +
+                        $"{PredictedArrivalConvictionFactor:0.0}) — re-anchored");
+                if (lowerLatchedByPrediction)
+                {
+                    LogConviction(pair.Lower, lowerArrival, lowerPrediction);
+                }
+                if (upperLatchedByPrediction)
+                {
+                    LogConviction(pair.Upper, upperArrival, upperPrediction);
+                }
+
+                // Both sides move to the prediction, not just the convicted
+                // one — see the estimator-mixing note above.
+                lowerArrival = lowerPrediction;
+                upperArrival = upperPrediction;
+            }
+
+            // How much the pair anchor DISAGREES with its own prediction.
+            // NOT a bound on the anchor's error, and nothing downstream may
+            // treat it as one. The
+            // measurement and the prediction are not independent — one
+            // nonlinear envelope detector, one room, and the prediction starts
+            // from the arrival of the same bypassed response — so a bias
+            // common to both leaves this figure at zero while the true error
+            // is whatever the bias is (review find). It is used ONLY to decide
+            // whether to apply an EXTRA restriction below, never to certify
+            // one; nothing here can make the seed gate more permissive than it
+            // was without it.
+            //
+            // Where both sides merely VERIFIED, the residuals are known and
+            // only their DIFFERENCE enters, since the timeline stores a
+            // difference and two sides erring alike cost it nothing. Where a
+            // side was convicted and replaced, its residual is unknowable by
+            // construction — its prediction was never confirmed against
+            // anything — so the stand-in is TWICE the per-side allowance: two
+            // sides each within A bound their difference by 2A, not by A.
+            double predictionDisagreementMs =
+                lowerLatchedByPrediction || upperLatchedByPrediction
+                    ? 2.0 * PredictedArrivalAllowanceMs(
+                        pair.BandLowHz, pair.BandHighHz)
+                    : Math.Abs(
+                        (lowerArrival - lowerPrediction) -
+                        (upperArrival - upperPrediction));
+
+            // Whether the pair can be GRADED against its prediction at all —
+            // not whether the anchor is confirmed by it. Nothing here confirms
+            // an anchor: the prediction and the measurement share a detector,
+            // a room and a starting read, so their agreement is not evidence
+            // of accuracy (see the disagreement figure above). Gradeable means
+            // every side either agreed with its own predicted front or was
+            // replaced by it — a merely AVAILABLE prediction proves even less,
+            // since the conviction test is one-sided and a read far EARLIER
+            // than its prediction would sail through it. That case is
+            // INCONSISTENT and excluded above.
+            bool pairPredictionGradeable = pairGradeable;
+
             double probeLowHz = Math.Sqrt(pair.BandLowHz * pair.BandHighHz);
             bool arrivalReanchored = false;
-            if (pair.BandHighHz >=
+            if (!lowerLatchedByPrediction && !upperLatchedByPrediction &&
+                pair.BandHighHz >=
                 probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
             {
                 TimeAlignmentAnalysisResult lowerProbe =
@@ -728,11 +1135,21 @@ public static class AutoAlignmentEngine
                         probeLowHz,
                         pair.BandHighHz,
                         pair.Upper.ValidRange);
-                double probeToleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
-                ArrivalCertificate lowerCertificate =
-                    ClassifyArrival(lowerRead, lowerProbe, probeToleranceMs);
-                ArrivalCertificate upperCertificate =
-                    ClassifyArrival(upperRead, upperProbe, probeToleranceMs);
+                // Per channel, not per junction: the two sides of a junction
+                // run different filters, so the smear each one's own chain
+                // explains differs (see ArrivalProbeToleranceMs).
+                ArrivalCertificate lowerCertificate = ClassifyArrival(
+                    lowerRead, lowerProbe,
+                    ArrivalProbeToleranceMs(
+                        pair.Lower, lowerArrival,
+                        lowerProbe.FirstArrivalDelayMilliseconds,
+                        pair.BandLowHz, probeLowHz, pair.BandHighHz));
+                ArrivalCertificate upperCertificate = ClassifyArrival(
+                    upperRead, upperProbe,
+                    ArrivalProbeToleranceMs(
+                        pair.Upper, upperArrival,
+                        upperProbe.FirstArrivalDelayMilliseconds,
+                        pair.BandLowHz, probeLowHz, pair.BandHighHz));
                 bool lowerLatched =
                     lowerCertificate == ArrivalCertificate.Latched;
                 bool upperLatched =
@@ -849,8 +1266,72 @@ public static class AutoAlignmentEngine
                 // the window is still centered on the corrupted diff, and a
                 // strong distant modal peak found there is exactly the skip
                 // candidate the veto guards (see the probe above).
-                if (!arrivalReanchored &&
-                    Math.Abs(seedOffsetMs) > SeedReachMs(pair.CrossoverHz))
+                // Where the pair can be GRADED against its prediction, an
+                // extra restriction applies on top of the rule above. It is
+                // only ever a restriction: the disagreement figure it keys on
+                // is not a bound (see there), so it may narrow the reach and
+                // never widen it, and the clamp below enforces exactly that.
+                //
+                // What it narrows toward is comb geometry. The neighbouring
+                // opposite-polarity lobe sits a half spacing H away; with the
+                // anchor off by U toward it the true lobe lies U from the
+                // anchor and the neighbour H - U, so a reach R admits the true
+                // lobe and excludes the neighbour only while U <= R < H - U —
+                // solvable only for U < H/2. Past that the neighbour can sit
+                // CLOSER to the anchor than the truth does and no window
+                // separates them, so the seed is refused rather than
+                // accommodated by a wider one.
+                //
+                // H itself is MEASURED, not assumed. Half a period at fc
+                // describes a monochromatic comb; this correlation runs over a
+                // two-octave band of two real responses, and its extrema do
+                // not sit where that idealization says — at the v4 cabin's
+                // 180 Hz corner the whitened peak and trough are 2.665 ms
+                // apart against a nominal half period of 2.778, and against
+                // 2.537 for a flat two-octave window. No constant describes
+                // it, which is why the distance comes off the extrema the
+                // search actually found.
+                //
+                // ADJACENCY, not strength: the window's strongest peak and
+                // trough can sit several lobes apart, so the spacing is taken
+                // to the extremum NEIGHBOURING the seed. Without one, or with
+                // one pinned to the window edge — its position then an
+                // artifact of where the window ended — there is no spacing to
+                // reason from, and a gradeable pair refuses the seed rather
+                // than guessing at one.
+                CorrelationDelayCandidate? neighbor = seed.InvertPolarity
+                    ? phat.NegativeOppositeNeighbor
+                    : phat.PositiveOppositeNeighbor;
+                double lobeBoundaryMs = neighbor is { EdgePinned: false } adjacent
+                    ? Math.Abs(adjacent.DelayMs - seed.DelayMs) / 2.0
+                    : 0;
+                //
+                // Gated on !arrivalReanchored like the offset test below it:
+                // once the upper-half probe has thrown the full-band arrivals
+                // away and re-anchored on its own reads, the uncertainty
+                // measured against the DISCARDED anchor describes nothing —
+                // refusing the seed on it would veto by a number that no
+                // longer refers to anything (review find).
+                if (!arrivalReanchored && pairPredictionGradeable &&
+                    (!(lobeBoundaryMs > 0) ||
+                        predictionDisagreementMs >= lobeBoundaryMs))
+                {
+                    return "arrival uncertain past the lobe boundary";
+                }
+
+                // Only ever TIGHTER than the standing rule. The disagreement
+                // figure above is not a proven bound (see there), so it may
+                // decide to restrict the seed further but never to license a
+                // reach the conservative rule would not already have allowed
+                // — otherwise a mis-measured spacing, or a bias shared by the
+                // measurement and the prediction, would loosen the gate on
+                // the strength of an agreement that proves nothing.
+                double reachMs = pairPredictionGradeable
+                    ? Math.Min(SeedReachMs(pair.CrossoverHz), lobeBoundaryMs)
+                    : SeedReachMs(pair.CrossoverHz);
+                // At the boundary itself the two lobes are equidistant, so
+                // the extremum is refused rather than admitted.
+                if (!arrivalReanchored && Math.Abs(seedOffsetMs) >= reachMs)
                 {
                     return $"{seedLabel} beyond the arrival's reach";
                 }
@@ -1881,13 +2362,17 @@ public static class AutoAlignmentEngine
                     bridgeProbeLowHz,
                     plan.BridgeBandHighHz,
                     rightBridgeSnapshot.ValidRange);
-            double bridgeToleranceMs = Math.Max(1.0, 500.0 / bridgeProbeLowHz);
             void Certify(
                 TimeAlignmentAnalysisResult full,
                 TimeAlignmentAnalysisResult probe,
-                IAlignmentChannel channel)
+                AlignmentSnapshot snapshot)
             {
-                switch (ClassifyArrival(full, probe, bridgeToleranceMs))
+                IAlignmentChannel channel = snapshot.Channel;
+                switch (ClassifyArrival(full, probe, ArrivalProbeToleranceMs(
+                    snapshot, full.FirstArrivalDelayMilliseconds,
+                    probe.FirstArrivalDelayMilliseconds,
+                    plan.BridgeBandLowHz, bridgeProbeLowHz,
+                    plan.BridgeBandHighHz)))
                 {
                     case ArrivalCertificate.Latched:
                         // The full band times a LATER feature than its own
@@ -1906,8 +2391,8 @@ public static class AutoAlignmentEngine
                         break;
                 }
             }
-            Certify(leftBridge, leftProbe, plan.BridgeLeft);
-            Certify(rightBridge, rightProbe, plan.BridgeRight);
+            Certify(leftBridge, leftProbe, leftBridgeSnapshot);
+            Certify(rightBridge, rightProbe, rightBridgeSnapshot);
         }
         else
         {
@@ -2088,11 +2573,18 @@ public static class AutoAlignmentEngine
                 // See ClassifyArrival for the direction semantics: LATCHED
                 // poisons the read (ladder/donors), UNVERIFIED keeps it usable
                 // without the certificate, VERIFIED on both sides earns it.
-                double toleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
-                ArrivalCertificate leftCertificate =
-                    ClassifyArrival(left, leftProbe, toleranceMs);
-                ArrivalCertificate rightCertificate =
-                    ClassifyArrival(right, rightProbe, toleranceMs);
+                ArrivalCertificate leftCertificate = ClassifyArrival(
+                    left, leftProbe,
+                    ArrivalProbeToleranceMs(
+                        leftSnapshot, left.FirstArrivalDelayMilliseconds,
+                        leftProbe.FirstArrivalDelayMilliseconds,
+                        lowHz, probeLowHz, highHz));
+                ArrivalCertificate rightCertificate = ClassifyArrival(
+                    right, rightProbe,
+                    ArrivalProbeToleranceMs(
+                        rightSnapshot, right.FirstArrivalDelayMilliseconds,
+                        rightProbe.FirstArrivalDelayMilliseconds,
+                        lowHz, probeLowHz, highHz));
                 if (leftCertificate == ArrivalCertificate.Latched ||
                     rightCertificate == ArrivalCertificate.Latched)
                 {
@@ -2267,11 +2759,14 @@ public static class AutoAlignmentEngine
                         // valid, SNR-qualified, and agreeing. Absence of a proven
                         // latch is NOT proof of a direct read: an unmeasurable or
                         // low-SNR upper half leaves the split unverified, so skip.
-                        double tolerance2 = Math.Max(1.0, 500.0 / probeLow2);
                         bool CleanDirect(AlignmentSnapshot side, out double rawMs)
                         {
                             TimeAlignmentAnalysisResult full = Read(side, lowHz2, highHz2);
                             TimeAlignmentAnalysisResult probe = Read(side, probeLow2, highHz2);
+                            double tolerance2 = ArrivalProbeToleranceMs(
+                                side, full.FirstArrivalDelayMilliseconds,
+                                probe.FirstArrivalDelayMilliseconds,
+                                lowHz2, probeLow2, highHz2);
                             rawMs = full.FirstArrivalDelayMilliseconds
                                 - alignment.GetValueOrDefault(side.Channel).DelayMs;
                             // A donor must be POSITIVELY clean: only a VERIFIED

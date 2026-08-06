@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Text;
 
 namespace Resonalyze.Dsp.Tests;
@@ -30,6 +30,23 @@ public sealed class AutoAlignmentEngineTests
         public int SampleRate => AutoAlignmentEngineTests.SampleRate;
         public Complex[] InitialIr { get; }
         public Complex[] ReprocessIr { get; }
+    }
+
+    // A snapshot carrying everything the predicted-arrival probe reads: the
+    // PROCESSED response the timeline would time, plus the chain-free
+    // response and the chain that turns one into the other.
+    private static AlignmentSnapshot PredictableSnapshot(
+        string name, Complex[] bypassed, DspChannelChain chain)
+    {
+        Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+            bypassed, chain, SampleRate, out ValidSampleRange processedRange);
+        return new AlignmentSnapshot(
+            new TestChannel(name, processed),
+            processed,
+            VirtualCrossoverAnalysis.FindPeakIndex(processed),
+            processedRange,
+            chain,
+            bypassed);
     }
 
     private static Complex[] UnitImpulse(int position)
@@ -901,6 +918,220 @@ public sealed class AutoAlignmentEngineTests
             AutoAlignmentEngine.ArrivalCertificate.Unverified,
             AutoAlignmentEngine.ClassifyArrival(
                 Read(10.0, snrDb: 5.0), Read(10.2), toleranceMs: 2.0));
+    }
+
+    // The physical claim the predictor rests on, across the filter families a
+    // real system uses: refiltering the chain-free front through the channel's
+    // own chain reproduces where its PROCESSED arrival actually lands. A
+    // response holding only a direct front must therefore verify against
+    // itself — this is what an analytic band-averaged group delay could not do
+    // (it overshoots by 3.8 ms on the steep high-pass below, and by 2.3 ms on
+    // the all-pass).
+    [Theory]
+    [InlineData("LR48 HP 80", 40, 160)]
+    [InlineData("BW36 BP 70-200", 100, 400)]
+    [InlineData("BW12 LP 200", 100, 400)]
+    [InlineData("LR24 LP 2000", 750, 3000)]
+    [InlineData("BW48 HP 1700", 750, 3000)]
+    [InlineData("AllPass 330", 100, 400)]
+    [InlineData("PEQ 120 Q8", 100, 400)]
+    public void PredictedArrival_ReproducesTheProcessedFront(
+        string chainName, double lowHz, double highHz)
+    {
+        AlignmentSnapshot snapshot = PredictableSnapshot(
+            chainName, UnitImpulse(BasePosition), NamedChain(chainName));
+
+        double measuredMs = VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+            snapshot.ImpulseResponse, SampleRate, lowHz, highHz,
+            snapshot.ValidRange).FirstArrivalDelayMilliseconds;
+        AutoAlignmentEngine.PredictionState state =
+            AutoAlignmentEngine.GradeAgainstPrediction(
+                snapshot, measuredMs, lowHz, highHz, out double predictedMs);
+
+        Assert.Equal(AutoAlignmentEngine.PredictionState.Verified, state);
+        // Well inside the 2.5 ms allowance, not merely within it: the whole
+        // point is that the prediction reproduces the front rather than
+        // approximating it (the analytic group delay it replaced missed by
+        // 3.8 ms on the steep high-pass here, and by 2.3 ms on the all-pass).
+        Assert.True(Math.Abs(measuredMs - predictedMs) < 0.5,
+            $"{chainName}: predicted {predictedMs:0.000} ms against a " +
+            $"measured {measuredMs:0.000} ms");
+    }
+
+    private static DspChannelChain NamedChain(string name) => name switch
+    {
+        "LR48 HP 80" => new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.HighPass,
+            HighPassEdge: new CrossoverEdge(
+                CrossoverFilterFamily.LinkwitzRiley, 80, 48))),
+        "BW36 BP 70-200" => new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.BandPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 200, 36),
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 70, 36))),
+        "BW12 LP 200" => new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.LowPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 200, 12))),
+        "LR24 LP 2000" => new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.LowPass,
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_000, 24))),
+        "BW48 HP 1700" => new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.HighPass,
+            HighPassEdge: new CrossoverEdge(
+                CrossoverFilterFamily.Butterworth, 1_700, 48))),
+        "AllPass 330" => new DspChannelChain(
+            AllPass: new AllPassSpec(AllPassType.SecondOrder, 330, 3.5)),
+        "PEQ 120 Q8" => new DspChannelChain(
+            Peq: new EqualizationCurve([new PeqBand(120, 8.0, 6.0)])),
+        _ => throw new ArgumentOutOfRangeException(nameof(name))
+    };
+
+    // The failure the probe exists for: a steep low-pass leaves the junction
+    // band's energy in the room's modal region, the PROCESSED arrival times
+    // the mode instead of the front, and the prediction — built from the
+    // chain-free front — exposes it. The same channel without the mode must
+    // pass, so the conviction is the mode's doing and not the filter's.
+    [Fact]
+    public void PredictedArrival_ConvictsALateModeAndClearsThePlainFront()
+    {
+        var chain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.BandPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 200, 36),
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 70, 36)));
+        // The BYPASSED response is the driver in the room: a front, and the
+        // room's later build-up riding on it. The processed response is that
+        // same measurement through the steep chain, which is what pushes the
+        // detector onto the mode. Both reads below come from the real
+        // detector — nothing is nudged by hand (review find).
+        Complex[] front = FrontUnderLateMode(0.0, 12.0, 0.0);
+        Complex[] withMode = FrontUnderLateMode(0.0, 12.0, 0.6);
+
+        AlignmentSnapshot clean = PredictableSnapshot("clean", front, chain);
+        AlignmentSnapshot latched = PredictableSnapshot("latched", withMode, chain);
+
+        double Read(AlignmentSnapshot side) =>
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                side.ImpulseResponse, SampleRate, 100, 400, side.ValidRange)
+                .FirstArrivalDelayMilliseconds;
+
+        double cleanMs = Read(clean);
+        double latchedMs = Read(latched);
+        // The fixture only means anything if the mode actually moved the
+        // detector: assert that before asserting what the probe makes of it.
+        Assert.True(latchedMs - cleanMs > 5.0,
+            $"the fixture did not latch: clean {cleanMs:0.000}, " +
+            $"with mode {latchedMs:0.000} ms");
+
+        Assert.Equal(
+            AutoAlignmentEngine.PredictionState.Verified,
+            AutoAlignmentEngine.GradeAgainstPrediction(
+                clean, cleanMs, 100, 400, out _));
+        Assert.Equal(
+            AutoAlignmentEngine.PredictionState.Latched,
+            AutoAlignmentEngine.GradeAgainstPrediction(
+                latched, latchedMs, 100, 400, out _));
+    }
+
+    [Fact]
+    public void PredictedArrival_GradesEveryState()
+    {
+        var chain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.LowPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 200, 36)));
+        AlignmentSnapshot snapshot = PredictableSnapshot(
+            "graded", UnitImpulse(BasePosition), chain);
+        double measuredMs = VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+            snapshot.ImpulseResponse, SampleRate, 100, 400, snapshot.ValidRange)
+            .FirstArrivalDelayMilliseconds;
+
+        // Far LATER than the prediction: a latch. The allowance here is
+        // 2.5 ms and a conviction needs twice that.
+        Assert.Equal(
+            AutoAlignmentEngine.PredictionState.Latched,
+            AutoAlignmentEngine.GradeAgainstPrediction(
+                snapshot, measuredMs + 9.0, 100, 400, out _));
+        // Only MARGINALLY later: not a conviction. A driver worked below its
+        // own passband costs its chain several ms more than the reference
+        // impulse the shift is measured on, and the field's false convictions
+        // all sat within 1.2 allowances while every true latch cleared 2.5 —
+        // so a marginal exceedance is INCONSISTENT, which neither convicts
+        // the read nor lets it certify the anchor.
+        Assert.Equal(
+            AutoAlignmentEngine.PredictionState.Inconsistent,
+            AutoAlignmentEngine.GradeAgainstPrediction(
+                snapshot, measuredMs + 3.0, 100, 400, out _));
+        // Far EARLIER: not a latch, but nothing the prediction can explain —
+        // and specifically NOT a confirmation (review find).
+        Assert.Equal(
+            AutoAlignmentEngine.PredictionState.Inconsistent,
+            AutoAlignmentEngine.GradeAgainstPrediction(
+                snapshot, measuredMs - 9.0, 100, 400, out _));
+        // No bypassed response, and no chain: nothing to grade against.
+        Assert.Equal(
+            AutoAlignmentEngine.PredictionState.Unavailable,
+            AutoAlignmentEngine.GradeAgainstPrediction(
+                snapshot with { BypassedImpulseResponse = null },
+                measuredMs, 100, 400, out _));
+        Assert.Equal(
+            AutoAlignmentEngine.PredictionState.Unavailable,
+            AutoAlignmentEngine.GradeAgainstPrediction(
+                snapshot with { ProcessingChain = null },
+                measuredMs, 100, 400, out _));
+    }
+
+    // The upper-half probe's allowance must still credit a chain's own smear
+    // — the original defect — but now measured the same way the prediction is.
+    [Fact]
+    public void ArrivalProbeTolerance_CreditsTheChannelsOwnCrossoverSmear()
+    {
+        AlignmentSnapshot filtered = PredictableSnapshot(
+            "midbass", UnitImpulse(BasePosition), NamedChain("BW36 BP 70-200"));
+        var chainless = new AlignmentSnapshot(
+            new TestChannel("bare", UnitImpulse(BasePosition)),
+            UnitImpulse(BasePosition),
+            BasePosition);
+
+        // The credit is only offered to a read the predictor VERIFIES, so
+        // both sides are graded against their own measured arrival.
+        double MeasuredMs(AlignmentSnapshot side, double lowHz) =>
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                side.ImpulseResponse, SampleRate, lowHz, 400, side.ValidRange)
+                .FirstArrivalDelayMilliseconds;
+        double bare = AutoAlignmentEngine.ArrivalProbeToleranceMs(
+            chainless, MeasuredMs(chainless, 100), MeasuredMs(chainless, 200),
+            100, 200, 400);
+        double credited = AutoAlignmentEngine.ArrivalProbeToleranceMs(
+            filtered, MeasuredMs(filtered, 100), MeasuredMs(filtered, 200),
+            100, 200, 400);
+
+        // Without a chain to credit, the generic half period at the probe's
+        // lower edge: 200 Hz -> 2.5 ms.
+        Assert.Equal(2.5, bare, 6);
+        // The field skew (2.88 ms) must sit INSIDE the credited allowance,
+        // while a real latch (the v3 cabin's 10.97 ms) stays outside it.
+        Assert.True(credited > 2.88,
+            $"expected the filter smear to be credited past 2.88 ms; got {credited:0.000}");
+        Assert.True(credited < 10.97,
+            $"expected a real modal latch to stay convicted; got {credited:0.000}");
+    }
+
+    [Fact]
+    public void ArrivalProbeTolerance_NeverTightensBelowTheGenericFloor()
+    {
+        AlignmentSnapshot highPassed = PredictableSnapshot(
+            "tweeter", UnitImpulse(BasePosition), NamedChain("BW48 HP 1700"));
+
+        double tolerance = AutoAlignmentEngine.ArrivalProbeToleranceMs(
+            highPassed,
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                highPassed.ImpulseResponse, SampleRate, 750, 3_000,
+                highPassed.ValidRange).FirstArrivalDelayMilliseconds,
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                highPassed.ImpulseResponse, SampleRate, 1_500, 3_000,
+                highPassed.ValidRange).FirstArrivalDelayMilliseconds,
+            750, 1_500, 3_000);
+
+        Assert.True(tolerance >= Math.Max(1.0, 500.0 / 1_500),
+            $"the generic floor must hold; got {tolerance:0.000}");
     }
 
     [Fact]

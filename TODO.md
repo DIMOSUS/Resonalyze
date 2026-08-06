@@ -72,6 +72,23 @@ close.
   bandwidth, no excessively narrow resonance or phase rotation — rather than
   relying on the margin alone. Derive the threshold from field data, not from
   a guess.
+  Two formulations were built and measured (2026-08-06), both rejected — do
+  not re-try them blind. (a) *The bypassed front must BE its strongest
+  feature.* The hazard needs two comparable components, so the absence of a
+  second one would be a real precondition; but a woofer in a cabin ALWAYS has
+  its strongest envelope peak well after its front, so this refuses 100% of
+  field channels and reverts the branch to its pre-PR behaviour outright
+  (v4 mid back to 6.92, matrix back to 14.82/3.09/8.09/2.70/2.57). It is a
+  blanket disable, not a discriminator. (b) *Nested-band stability of the
+  bypassed arrival.* Correct in principle — reweighting two components needs
+  them to differ spectrally, which makes the bypassed read band-dependent —
+  and it preserves every field conviction. But the nested band the analysis
+  admission ratio allows is only ~12% narrower than the full one, which is
+  too little to detect the ambiguity: no fixture could be built that it
+  refuses. Widening the inner band far enough collides with the upper-half
+  probe's own band, where disagreement is the modal-latch SIGNAL rather than
+  a disqualification. A workable gate therefore needs a different observable
+  than either, or a way to separate those two meanings.
 - [ ] **No integration test drives the predictor through the real
   `AlignmentReprocessor`.** The DSP tests now reproduce the production
   padding/range semantics by hand (`ShapedFrontProbe`, and a dedicated

@@ -1076,8 +1076,9 @@ public static class AutoAlignmentEngine
                 upperArrival = upperPrediction;
             }
 
-            // How much the pair anchor DISAGREES with its own prediction. Read
-            // what this is not: it is not a bound on the anchor's error. The
+            // How much the pair anchor DISAGREES with its own prediction.
+            // NOT a bound on the anchor's error, and nothing downstream may
+            // treat it as one. The
             // measurement and the prediction are not independent — one
             // nonlinear envelope detector, one room, and the prediction starts
             // from the arrival of the same bypassed response — so a bias
@@ -1094,7 +1095,7 @@ public static class AutoAlignmentEngine
             // construction — its prediction was never confirmed against
             // anything — so the stand-in is TWICE the per-side allowance: two
             // sides each within A bound their difference by 2A, not by A.
-            double anchorUncertaintyMs =
+            double predictionDisagreementMs =
                 lowerLatchedByPrediction || upperLatchedByPrediction
                     ? 2.0 * PredictedArrivalAllowanceMs(
                         pair.BandLowHz, pair.BandHighHz)
@@ -1102,15 +1103,17 @@ public static class AutoAlignmentEngine
                         (lowerArrival - lowerPrediction) -
                         (upperArrival - upperPrediction));
 
-            // The anchor counts as independently confirmed exactly when the
-            // pair was gradeable: every side then either AGREED with its own
-            // predicted front or was replaced by it. A merely AVAILABLE
-            // prediction would prove nothing — the conviction test is
-            // one-sided, so a read sitting far EARLIER than its prediction
-            // would pass for confirmation and earn a tightened seed reach it
-            // has not earned (review find); that case is INCONSISTENT and is
-            // excluded above.
-            bool anchorPredictionVerified = pairGradeable;
+            // Whether the pair can be GRADED against its prediction at all —
+            // not whether the anchor is confirmed by it. Nothing here confirms
+            // an anchor: the prediction and the measurement share a detector,
+            // a room and a starting read, so their agreement is not evidence
+            // of accuracy (see the disagreement figure above). Gradeable means
+            // every side either agreed with its own predicted front or was
+            // replaced by it — a merely AVAILABLE prediction proves even less,
+            // since the conviction test is one-sided and a read far EARLIER
+            // than its prediction would sail through it. That case is
+            // INCONSISTENT and excluded above.
+            bool pairPredictionGradeable = pairGradeable;
 
             double probeLowHz = Math.Sqrt(pair.BandLowHz * pair.BandHighHz);
             bool arrivalReanchored = false;
@@ -1263,50 +1266,39 @@ public static class AutoAlignmentEngine
                 // the window is still centered on the corrupted diff, and a
                 // strong distant modal peak found there is exactly the skip
                 // candidate the veto guards (see the probe above).
-                // With BOTH arrivals prediction-verified (measured and the
-                // un-crossovered prediction agree, or the prediction replaced
-                // a convicted read), the reach becomes a question of comb
-                // geometry, and the geometry is exact. The neighbouring
-                // (opposite-polarity) lobe sits one HALF PERIOD H from the
-                // true one. With the anchor off by U toward the neighbour,
-                // the true lobe lies U from the anchor and the neighbour
-                // H - U, so a reach R admits the true lobe and excludes the
-                // neighbour only while U <= R < H - U — which has a solution
-                // only when U < H/2, a QUARTER period. Past that the
-                // neighbour can sit CLOSER to the anchor than the truth does,
-                // and no window separates them: widening the reach then does
-                // not buy tolerance, it just lets the impostor in (review
-                // find — the previous cut capped the reach at four fifths of
-                // a half period and claimed that excluded the neighbour,
-                // which is false for U above H/2).
+                // Where the pair can be GRADED against its prediction, an
+                // extra restriction applies on top of the rule above. It is
+                // only ever a restriction: the disagreement figure it keys on
+                // is not a bound (see there), so it may narrow the reach and
+                // never widen it, and the clamp below enforces exactly that.
                 //
-                // So there are only two honest outcomes. Inside the quarter
-                // period the reach IS the quarter period — wide enough for
-                // any error the anchor is known to within, narrow enough to
-                // exclude the neighbour outright. Outside it the seed carries
-                // no information the envelope does not already carry better,
-                // and it is refused rather than accommodated.
-                // The spacing is MEASURED, not assumed. Half a period at fc
-                // describes a monochromatic comb; this correlation runs over
-                // a two-octave band of two real responses, so its extrema do
+                // What it narrows toward is comb geometry. The neighbouring
+                // opposite-polarity lobe sits a half spacing H away; with the
+                // anchor off by U toward it the true lobe lies U from the
+                // anchor and the neighbour H - U, so a reach R admits the true
+                // lobe and excludes the neighbour only while U <= R < H - U —
+                // solvable only for U < H/2. Past that the neighbour can sit
+                // CLOSER to the anchor than the truth does and no window
+                // separates them, so the seed is refused rather than
+                // accommodated by a wider one.
+                //
+                // H itself is MEASURED, not assumed. Half a period at fc
+                // describes a monochromatic comb; this correlation runs over a
+                // two-octave band of two real responses, and its extrema do
                 // not sit where that idealization says — at the v4 cabin's
                 // 180 Hz corner the whitened peak and trough are 2.665 ms
-                // apart against a nominal half period of 2.778 (and against
-                // 2.537 for a flat two-octave window: no constant describes
-                // it, which is the point). Reading the distance off the
-                // extrema the search actually found needs no model of the
-                // window at all. Both are known non-edge-pinned here — the
-                // edge test above returned already — so the distance is a
-                // real spacing rather than an artifact of the window bound.
-                // ADJACENCY, not strength. The window's strongest peak and
-                // trough can sit several lobes apart, and a distance spanning
-                // several half periods would widen the reach instead of
-                // bounding it (review find), so the spacing comes from the
-                // extremum NEIGHBOURING the seed — the first opposite-polarity
-                // lobe walking out from it. Without one, or with one pinned to
-                // the window edge (its position an artifact of where the
-                // window ended), adjacency is not established and the
-                // tightened reach is not applied at all.
+                // apart against a nominal half period of 2.778, and against
+                // 2.537 for a flat two-octave window. No constant describes
+                // it, which is why the distance comes off the extrema the
+                // search actually found.
+                //
+                // ADJACENCY, not strength: the window's strongest peak and
+                // trough can sit several lobes apart, so the spacing is taken
+                // to the extremum NEIGHBOURING the seed. Without one, or with
+                // one pinned to the window edge — its position then an
+                // artifact of where the window ended — there is no spacing to
+                // reason from, and a gradeable pair refuses the seed rather
+                // than guessing at one.
                 CorrelationDelayCandidate? neighbor = seed.InvertPolarity
                     ? phat.NegativeOppositeNeighbor
                     : phat.PositiveOppositeNeighbor;
@@ -1320,9 +1312,9 @@ public static class AutoAlignmentEngine
                 // measured against the DISCARDED anchor describes nothing —
                 // refusing the seed on it would veto by a number that no
                 // longer refers to anything (review find).
-                if (!arrivalReanchored && anchorPredictionVerified &&
+                if (!arrivalReanchored && pairPredictionGradeable &&
                     (!(lobeBoundaryMs > 0) ||
-                        anchorUncertaintyMs >= lobeBoundaryMs))
+                        predictionDisagreementMs >= lobeBoundaryMs))
                 {
                     return "arrival uncertain past the lobe boundary";
                 }
@@ -1334,7 +1326,7 @@ public static class AutoAlignmentEngine
                 // — otherwise a mis-measured spacing, or a bias shared by the
                 // measurement and the prediction, would loosen the gate on
                 // the strength of an agreement that proves nothing.
-                double reachMs = anchorPredictionVerified
+                double reachMs = pairPredictionGradeable
                     ? Math.Min(SeedReachMs(pair.CrossoverHz), lobeBoundaryMs)
                     : SeedReachMs(pair.CrossoverHz);
                 // At the boundary itself the two lobes are equidistant, so

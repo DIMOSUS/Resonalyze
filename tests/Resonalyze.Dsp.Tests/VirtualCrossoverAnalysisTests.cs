@@ -1237,8 +1237,9 @@ public sealed class VirtualCrossoverAnalysisTests
         Complex[] first = UnitImpulse(8_192, 2_000);
         var second = new Complex[8_192];
         second[1_952] = Complex.One;
-        second[1_952 + 61] = 0.45;   // ~1.27 ms later: a reflection.
-        second[1_952 + 149] = 0.3;   // and a second one.
+        second[1_952 + 10] = 0.2;
+        second[1_952 + 20] = 0.4;
+        second[1_952 + 70] = 0.7;
 
         CorrelationAlignmentResult result =
             VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
@@ -1252,14 +1253,19 @@ public sealed class VirtualCrossoverAnalysisTests
 
         CorrelationDelayCandidate besidePeak =
             Assert.IsType<CorrelationDelayCandidate>(result.PositiveOppositeNeighbor);
-        double spacingMs = Math.Abs(besidePeak.DelayMs - result.PositivePeak.DelayMs);
 
-        // The crest of the adjacent lobe sits about half a period out at
-        // 1 kHz; a ripple inside that lobe would report a fraction of it.
-        Assert.InRange(spacingMs, 0.25, 0.9);
-        // And it is the region's extremum: no sample of the same sign inside
-        // that lobe is deeper than the one reported.
-        Assert.True(besidePeak.Coefficient < 0);
+        // These reflections put a weak bump on the EARLY side of the peak,
+        // shallower than the real lobe crest on the late side. Taking the
+        // first local extremum met — what the search did before — returns
+        // that bump: the wrong direction and a fraction of the depth. Both
+        // assertions therefore fail on the previous implementation, which is
+        // what makes this a regression rather than a restatement.
+        Assert.True(besidePeak.DelayMs > result.PositivePeak.DelayMs,
+            $"neighbour at {besidePeak.DelayMs:0.000} ms is on the wrong side " +
+            $"of the peak at {result.PositivePeak.DelayMs:0.000} ms");
+        Assert.True(besidePeak.Coefficient < -0.6,
+            $"neighbour depth {besidePeak.Coefficient:0.000} is a ripple, not " +
+            "the lobe's crest");
     }
 
     [Fact]

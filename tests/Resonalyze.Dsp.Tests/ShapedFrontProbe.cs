@@ -274,10 +274,13 @@ public sealed class ShapedFrontProbe
     }
 
     // The window between the base allowance and the clamped ceiling is where
-    // a credited tolerance could hide a latch, and no test reached it while
+    // a credited tolerance decides the verdict, and no test reached it while
     // the mode fixtures only produced skews past both (review find). This
-    // sweeps the mode's delay and level so the resulting skew lands inside
-    // that window, and requires the probe to convict throughout it.
+    // sweeps the build-up's delay and level so the resulting skew lands
+    // inside that window, and pins the POLICY there: the probe declines to
+    // convict, because a 200-400 Hz comparison cannot attribute energy that
+    // close behind the front — see the body for why, and for the ceiling
+    // that keeps declining bounded.
     [Fact]
     public void ArrivalProbeTolerance_DoesNotConvictInsideTheCreditedWindow()
     {

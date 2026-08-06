@@ -565,15 +565,25 @@ public static class AutoAlignmentEngine
     {
         var impulse = new Complex[length];
         impulse[Math.Clamp(peakIndex, 0, length - 1)] = Complex.One;
+        // BOTH reads go through ApplyChain and carry the ValidSampleRange it
+        // reports, exactly as the measured bypassed and processed responses
+        // do. Analyzing the bare impulse raw instead would hand the detector
+        // a different window — it crops to the reported range when given one
+        // and falls back to a padding heuristic when not — so the two ends of
+        // this subtraction would not be measured alike (review find).
+        Complex[] bareResponse = VirtualCrossoverAnalysis.ApplyChain(
+            impulse, DspChannelChain.Identity, sampleRate,
+            out ValidSampleRange bareRange);
+        Complex[] filteredResponse = VirtualCrossoverAnalysis.ApplyChain(
+            impulse,
+            chain with { DelayMs = 0, InvertPolarity = false },
+            sampleRate,
+            out ValidSampleRange filteredRange);
         double bare = VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-            impulse, sampleRate, bandLowHz, bandHighHz)
+            bareResponse, sampleRate, bandLowHz, bandHighHz, bareRange)
             .FirstArrivalDelayMilliseconds;
         double filtered = VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
-            VirtualCrossoverAnalysis.ApplyChain(
-                impulse,
-                chain with { DelayMs = 0, InvertPolarity = false },
-                sampleRate),
-            sampleRate, bandLowHz, bandHighHz)
+            filteredResponse, sampleRate, bandLowHz, bandHighHz, filteredRange)
             .FirstArrivalDelayMilliseconds;
         return filtered - bare;
     }
@@ -611,13 +621,34 @@ public static class AutoAlignmentEngine
     /// </summary>
     internal static double ArrivalProbeToleranceMs(
         AlignmentSnapshot side,
+        double measuredMs,
+        double probeMeasuredMs,
         double bandLowHz,
         double probeLowHz,
         double bandHighHz)
     {
         ArgumentNullException.ThrowIfNull(side);
         double toleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
-        if (PredictedFrontArrivalMs(side, bandLowHz, bandHighHz) is not { } full ||
+        // The credit is a DIFFERENCE of two predictions, so both of them have
+        // to have earned it against their own measured read — in the full
+        // band and in the probe band alike. Grading only one leaves the other
+        // free to be arbitrarily wrong while the difference still looks
+        // plausible: a 220 Hz all-pass source verified in 40-160 Hz and still
+        // earned the whole clamped credit against an honest skew of 0.04 ms.
+        //
+        // A side graded INCONSISTENT is withdrawn from the predictor for
+        // anchoring, and it must be withdrawn here too or the fallback is not
+        // independent of the estimator it fell back from: at 100-400 Hz an
+        // uncredited 4 ms skew is a latch and a fully credited one is not
+        // (review find). A LATCHED side earns nothing either — its own read
+        // is the thing under suspicion.
+        if (GradeAgainstPrediction(
+                side, measuredMs, bandLowHz, bandHighHz, out _) !=
+            PredictionState.Verified ||
+            GradeAgainstPrediction(
+                side, probeMeasuredMs, probeLowHz, bandHighHz, out _) !=
+            PredictionState.Verified ||
+            PredictedFrontArrivalMs(side, bandLowHz, bandHighHz) is not { } full ||
             PredictedFrontArrivalMs(side, probeLowHz, bandHighHz) is not { } probe)
         {
             return toleranceMs;
@@ -1086,11 +1117,15 @@ public static class AutoAlignmentEngine
                 ArrivalCertificate lowerCertificate = ClassifyArrival(
                     lowerRead, lowerProbe,
                     ArrivalProbeToleranceMs(
-                        pair.Lower, pair.BandLowHz, probeLowHz, pair.BandHighHz));
+                        pair.Lower, lowerArrival,
+                        lowerProbe.FirstArrivalDelayMilliseconds,
+                        pair.BandLowHz, probeLowHz, pair.BandHighHz));
                 ArrivalCertificate upperCertificate = ClassifyArrival(
                     upperRead, upperProbe,
                     ArrivalProbeToleranceMs(
-                        pair.Upper, pair.BandLowHz, probeLowHz, pair.BandHighHz));
+                        pair.Upper, upperArrival,
+                        upperProbe.FirstArrivalDelayMilliseconds,
+                        pair.BandLowHz, probeLowHz, pair.BandHighHz));
                 bool lowerLatched =
                     lowerCertificate == ArrivalCertificate.Latched;
                 bool upperLatched =
@@ -1230,9 +1265,24 @@ public static class AutoAlignmentEngine
                 // exclude the neighbour outright. Outside it the seed carries
                 // no information the envelope does not already carry better,
                 // and it is refused rather than accommodated.
-                double lobeBoundaryMs = 250.0 / pair.CrossoverHz;
+                // The spacing is MEASURED, not assumed. Half a period at fc
+                // describes a monochromatic comb; this correlation runs over
+                // a two-octave band of two real responses, so its extrema do
+                // not sit where that idealization says — at the v4 cabin's
+                // 180 Hz corner the whitened peak and trough are 2.665 ms
+                // apart against a nominal half period of 2.778 (and against
+                // 2.537 for a flat two-octave window: no constant describes
+                // it, which is the point). Reading the distance off the
+                // extrema the search actually found needs no model of the
+                // window at all. Both are known non-edge-pinned here — the
+                // edge test above returned already — so the distance is a
+                // real spacing rather than an artifact of the window bound.
+                double lobeSpacingMs = Math.Abs(
+                    phat.PositivePeak.DelayMs - phat.NegativeTrough.DelayMs);
+                double lobeBoundaryMs = lobeSpacingMs / 2.0;
                 if (anchorPredictionVerified &&
-                    anchorUncertaintyMs >= lobeBoundaryMs)
+                    (!(lobeSpacingMs > 0) ||
+                        anchorUncertaintyMs >= lobeBoundaryMs))
                 {
                     return "arrival uncertain past the lobe boundary";
                 }
@@ -2280,7 +2330,9 @@ public static class AutoAlignmentEngine
             {
                 IAlignmentChannel channel = snapshot.Channel;
                 switch (ClassifyArrival(full, probe, ArrivalProbeToleranceMs(
-                    snapshot, plan.BridgeBandLowHz, bridgeProbeLowHz,
+                    snapshot, full.FirstArrivalDelayMilliseconds,
+                    probe.FirstArrivalDelayMilliseconds,
+                    plan.BridgeBandLowHz, bridgeProbeLowHz,
                     plan.BridgeBandHighHz)))
                 {
                     case ArrivalCertificate.Latched:
@@ -2484,10 +2536,16 @@ public static class AutoAlignmentEngine
                 // without the certificate, VERIFIED on both sides earns it.
                 ArrivalCertificate leftCertificate = ClassifyArrival(
                     left, leftProbe,
-                    ArrivalProbeToleranceMs(leftSnapshot, lowHz, probeLowHz, highHz));
+                    ArrivalProbeToleranceMs(
+                        leftSnapshot, left.FirstArrivalDelayMilliseconds,
+                        leftProbe.FirstArrivalDelayMilliseconds,
+                        lowHz, probeLowHz, highHz));
                 ArrivalCertificate rightCertificate = ClassifyArrival(
                     right, rightProbe,
-                    ArrivalProbeToleranceMs(rightSnapshot, lowHz, probeLowHz, highHz));
+                    ArrivalProbeToleranceMs(
+                        rightSnapshot, right.FirstArrivalDelayMilliseconds,
+                        rightProbe.FirstArrivalDelayMilliseconds,
+                        lowHz, probeLowHz, highHz));
                 if (leftCertificate == ArrivalCertificate.Latched ||
                     rightCertificate == ArrivalCertificate.Latched)
                 {
@@ -2667,7 +2725,9 @@ public static class AutoAlignmentEngine
                             TimeAlignmentAnalysisResult full = Read(side, lowHz2, highHz2);
                             TimeAlignmentAnalysisResult probe = Read(side, probeLow2, highHz2);
                             double tolerance2 = ArrivalProbeToleranceMs(
-                                side, lowHz2, probeLow2, highHz2);
+                                side, full.FirstArrivalDelayMilliseconds,
+                                probe.FirstArrivalDelayMilliseconds,
+                                lowHz2, probeLow2, highHz2);
                             rawMs = full.FirstArrivalDelayMilliseconds
                                 - alignment.GetValueOrDefault(side.Channel).DelayMs;
                             // A donor must be POSITIVELY clean: only a VERIFIED

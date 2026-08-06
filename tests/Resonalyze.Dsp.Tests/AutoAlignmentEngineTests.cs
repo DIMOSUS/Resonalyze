@@ -1090,10 +1090,18 @@ public sealed class AutoAlignmentEngineTests
             UnitImpulse(BasePosition),
             BasePosition);
 
+        // The credit is only offered to a read the predictor VERIFIES, so
+        // both sides are graded against their own measured arrival.
+        double MeasuredMs(AlignmentSnapshot side, double lowHz) =>
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                side.ImpulseResponse, SampleRate, lowHz, 400, side.ValidRange)
+                .FirstArrivalDelayMilliseconds;
         double bare = AutoAlignmentEngine.ArrivalProbeToleranceMs(
-            chainless, 100, 200, 400);
+            chainless, MeasuredMs(chainless, 100), MeasuredMs(chainless, 200),
+            100, 200, 400);
         double credited = AutoAlignmentEngine.ArrivalProbeToleranceMs(
-            filtered, 100, 200, 400);
+            filtered, MeasuredMs(filtered, 100), MeasuredMs(filtered, 200),
+            100, 200, 400);
 
         // Without a chain to credit, the generic half period at the probe's
         // lower edge: 200 Hz -> 2.5 ms.
@@ -1113,7 +1121,14 @@ public sealed class AutoAlignmentEngineTests
             "tweeter", UnitImpulse(BasePosition), NamedChain("BW48 HP 1700"));
 
         double tolerance = AutoAlignmentEngine.ArrivalProbeToleranceMs(
-            highPassed, 750, 1_500, 3_000);
+            highPassed,
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                highPassed.ImpulseResponse, SampleRate, 750, 3_000,
+                highPassed.ValidRange).FirstArrivalDelayMilliseconds,
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                highPassed.ImpulseResponse, SampleRate, 1_500, 3_000,
+                highPassed.ValidRange).FirstArrivalDelayMilliseconds,
+            750, 1_500, 3_000);
 
         Assert.True(tolerance >= Math.Max(1.0, 500.0 / 1_500),
             $"the generic floor must hold; got {tolerance:0.000}");

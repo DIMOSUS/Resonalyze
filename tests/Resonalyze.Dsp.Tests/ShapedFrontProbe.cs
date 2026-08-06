@@ -202,7 +202,7 @@ public sealed class ShapedFrontProbe
     // handles badly alike.
     [Theory]
     [MemberData(nameof(ToleranceSources))]
-    public void ArrivalProbeTolerance_NeverCreditsMoreThanTheHonestSkew(
+    public void ArrivalProbeTolerance_OverCreditsNoSourceByMoreThanHalfTheBase(
         string sourceName)
     {
         foreach ((DspChannelChain chain, double lowHz, double highHz) in
@@ -210,13 +210,82 @@ public sealed class ShapedFrontProbe
         {
             (double honestSkewMs, double toleranceMs, double baseToleranceMs) =
                 MeasureTolerance(sourceName, chain, lowHz, highHz);
-            double creditMs = toleranceMs - baseToleranceMs;
+            double overCreditMs =
+                toleranceMs - baseToleranceMs - Math.Max(0, honestSkewMs);
 
-            Assert.True(creditMs <= Math.Max(0, honestSkewMs) + baseToleranceMs,
-                $"{sourceName} in {lowHz:0}-{highHz:0} Hz: credited " +
-                $"{creditMs:0.000} ms against an honest skew of " +
-                $"{honestSkewMs:0.000} ms (base {baseToleranceMs:0.000} ms)");
+            // The bound has to bite: asserting against the clamp's own
+            // ceiling would hold for any finite skew and prove nothing
+            // (review find). Half a base allowance is well inside the clamp,
+            // so this fails if the credit stops tracking the honest skew.
+            Assert.True(overCreditMs < 0.5 * baseToleranceMs,
+                $"{sourceName} in {lowHz:0}-{highHz:0} Hz: over-credited " +
+                $"{overCreditMs:0.000} ms (tolerance {toleranceMs:0.000}, " +
+                $"base {baseToleranceMs:0.000}, honest skew {honestSkewMs:0.000} ms)");
         }
+    }
+
+    // The window between the base allowance and the clamped ceiling is where
+    // a credited tolerance could hide a latch, and no test reached it while
+    // the mode fixtures only produced skews past both (review find). This
+    // sweeps the mode's delay and level so the resulting skew lands inside
+    // that window, and requires the probe to convict throughout it.
+    [Theory]
+    [InlineData(9.0, 0.5)]
+    [InlineData(11.0, 0.6)]
+    [InlineData(13.0, 0.7)]
+    [InlineData(15.0, 0.9)]
+    public void ArrivalProbeTolerance_ConvictsInsideTheCreditedWindow(
+        double modeDelayMs, double modeLevel)
+    {
+        const double LowHz = 100;
+        const double HighHz = 400;
+        double probeLowHz = Math.Sqrt(LowHz * HighHz);
+        double baseToleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
+        DspChannelChain chain = BandPass(70, 200, 36);
+
+        var impulse = new Complex[Length];
+        impulse[Position] = Complex.One;
+        Complex[] bypassed = VirtualCrossoverAnalysis.ApplyChain(
+            impulse, HighPass(60, 12), SampleRate);
+        int start = Position + (int)(modeDelayMs / 1_000.0 * SampleRate);
+        double peak = bypassed.Max(sample => sample.Magnitude);
+        for (int i = start; i < bypassed.Length; i++)
+        {
+            double t = (i - start) / (double)SampleRate;
+            bypassed[i] += modeLevel * peak *
+                (1 - Math.Exp(-t / 0.008)) * Math.Exp(-t / 0.1) *
+                Math.Sin(2 * Math.PI * 120 * t);
+        }
+
+        Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+            bypassed, chain, SampleRate, out ValidSampleRange processedRange);
+        var snapshot = new AlignmentSnapshot(
+            new Channel(), processed,
+            VirtualCrossoverAnalysis.FindPeakIndex(processed),
+            processedRange, chain, bypassed);
+        TimeAlignmentAnalysisResult full =
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                processed, SampleRate, LowHz, HighHz, processedRange);
+        TimeAlignmentAnalysisResult probe =
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                processed, SampleRate, probeLowHz, HighHz, processedRange);
+        double skewMs = full.FirstArrivalDelayMilliseconds -
+            probe.FirstArrivalDelayMilliseconds;
+
+        // Only a skew inside the credited window exercises the hazard.
+        if (skewMs <= baseToleranceMs || skewMs >= 2.0 * baseToleranceMs)
+        {
+            return;
+        }
+
+        Assert.Equal(
+            AutoAlignmentEngine.ArrivalCertificate.Latched,
+            AutoAlignmentEngine.ClassifyArrival(
+                full, probe,
+                AutoAlignmentEngine.ArrivalProbeToleranceMs(
+                    snapshot, full.FirstArrivalDelayMilliseconds,
+                    probe.FirstArrivalDelayMilliseconds,
+                    LowHz, probeLowHz, HighHz)));
     }
 
     // And for a front the estimator DOES handle — a driver's own roll-off —
@@ -263,7 +332,7 @@ public sealed class ShapedFrontProbe
         return (
             fullMs - probeMs,
             AutoAlignmentEngine.ArrivalProbeToleranceMs(
-                clean, lowHz, probeLowHz, highHz),
+                clean, fullMs, probeMs, lowHz, probeLowHz, highHz),
             Math.Max(1.0, 500.0 / probeLowHz));
     }
 
@@ -321,7 +390,9 @@ public sealed class ShapedFrontProbe
             AutoAlignmentEngine.ClassifyArrival(
                 full, probe,
                 AutoAlignmentEngine.ArrivalProbeToleranceMs(
-                    snapshot, LowHz, probeLowHz, HighHz)));
+                    snapshot, full.FirstArrivalDelayMilliseconds,
+                    probe.FirstArrivalDelayMilliseconds,
+                    LowHz, probeLowHz, HighHz)));
     }
 
     // Two shaped fronts through two DIFFERENT chains — the junction case.

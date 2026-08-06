@@ -50,6 +50,38 @@ close.
   final cascade state: the two sides want OPPOSITE corrections (left +0.53,
   right −1.84 ms), so no scene-preserving pair move satisfies it on both sides.
   At most surface the per-candidate residual GD as a log diagnostic.
+  Re-refuted independently on the v4 cabin (2026-08-06, PR #69) after the owner
+  proposed it again with FDW gating: measured at 4 and 6 cycles, with the DFT
+  taken exactly at each centre rather than at the nearest bin, the slope
+  prefers the half-period FLIP PARTNER (~11.9 ms non-inverted, RMS 12.3°)
+  over the correct lobe (9.47 inverted, 18.0°) — it cannot break precisely the
+  ambiguity it would be asked to break. FDW 6 cycles does not discriminate at
+  all (30-33° across every candidate).
+- [ ] ★ **The predicted-arrival probe has no applicability gate.** Its chain
+  term is measured on a flat reference impulse, so it transfers only while the
+  source still radiates the junction band: measured across a source matrix
+  (PR #69) the error stays inside 0.24 allowances for realistic driver
+  roll-offs but reaches 1.20 where the source has strong structure INSIDE the
+  band — a steep low-pass leaving the channel barely present, or an all-pass
+  twisting its phase. Today the only guard is the margin: a conviction needs
+  2.0 allowances and shaping error has not reached it, so shaping pushes a read
+  to `Inconsistent` (which withdraws the pair) rather than to `Latched`. That
+  is a measured bound over a finite matrix, not a proof for an arbitrary source
+  response. The review's suggestion, and the right shape: gate applicability on
+  a measured property of the bypassed band — enough genuinely radiated
+  bandwidth, no excessively narrow resonance or phase rotation — rather than
+  relying on the margin alone. Derive the threshold from field data, not from
+  a guess.
+- [ ] **No integration test drives the predictor through the real
+  `AlignmentReprocessor`.** The DSP tests now reproduce the production
+  padding/range semantics by hand (`ShapedFrontProbe`, and a dedicated
+  regression asserting the bypassed array is longer than its content range),
+  which is what caught the window mismatch. What is still unexercised is the
+  app-side assembly of those snapshots — `AlignmentReprocessor` fills the
+  chain, the bypassed response and both ranges, and only its ordering and cache
+  are covered. Needs a seam, since `Resonalyze.App.Tests` cannot see DSP
+  internals; low value against the hand-built equivalent, so it is filed rather
+  than blocked on.
 - [ ] **Nothing judges the per-band stereo Δ.** The read-out exists
   (`ComputeStereoDeltasAsync` + the metric panel's Δ L−R and level columns), but
   the numbers are only presented: no warning when a band's Δ walks off the top

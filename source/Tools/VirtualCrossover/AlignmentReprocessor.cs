@@ -131,6 +131,10 @@ internal sealed class AlignmentReprocessor
                 results[i].ImpulseResponse,
                 results[i].PeakIndex,
                 results[i].ValidRange,
+                // The chain CAPTURED at construction, never the live model:
+                // the engine's predicted-arrival probe reads it on a
+                // background thread while the user may be editing the panel.
+                baseChains[i],
                 bypassedImpulseResponses[i],
                 bypassedValidRanges[i]))
             .ToList();

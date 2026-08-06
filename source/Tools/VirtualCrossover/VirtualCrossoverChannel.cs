@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -57,11 +57,6 @@ internal sealed class VirtualCrossoverChannel : IAlignmentChannel
     private VirtualCrossoverChannelState Active => SideState(ActiveRight);
 
     public VirtualCrossoverChannelSettings Settings => Pair.SideFor(ActiveRight);
-
-    // The active side's filters, so the engine's arrival honesty probe can
-    // tell this channel's crossover smear from a room mode (see
-    // IAlignmentChannel.ProcessingChain).
-    public DspChannelChain? ProcessingChain => Settings.ToChain();
     public Complex[]? TransferImpulseResponse
     {
         get => Active.TransferImpulseResponse;

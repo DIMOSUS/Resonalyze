@@ -1,4 +1,4 @@
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
@@ -26,10 +26,4 @@ internal sealed class VirtualCrossoverSideAlignmentChannel : IAlignmentChannel
         ? $"{Runtime.Name} (mono)"
         : $"{Runtime.Name} {(RightSide ? "R" : "L")}";
     public int SampleRate => State.SampleRate;
-
-    // The side's own filters, so the engine's arrival honesty probe can tell
-    // this channel's crossover smear from a room mode. Delay and polarity are
-    // supplied per search step as overrides, and neither changes a group
-    // delay difference, so the base chain is the right thing to hand over.
-    public DspChannelChain? ProcessingChain => Settings.ToChain();
 }

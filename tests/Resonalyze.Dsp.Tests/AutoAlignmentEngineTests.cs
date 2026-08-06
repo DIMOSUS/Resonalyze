@@ -1034,11 +1034,22 @@ public sealed class AutoAlignmentEngineTests
             snapshot.ImpulseResponse, SampleRate, 100, 400, snapshot.ValidRange)
             .FirstArrivalDelayMilliseconds;
 
-        // Far LATER than the prediction: a latch.
+        // Far LATER than the prediction: a latch. The allowance here is
+        // 2.5 ms and a conviction needs twice that.
         Assert.Equal(
             AutoAlignmentEngine.PredictionState.Latched,
             AutoAlignmentEngine.GradeAgainstPrediction(
                 snapshot, measuredMs + 9.0, 100, 400, out _));
+        // Only MARGINALLY later: not a conviction. A driver worked below its
+        // own passband costs its chain several ms more than the reference
+        // impulse the shift is measured on, and the field's false convictions
+        // all sat within 1.2 allowances while every true latch cleared 2.5 —
+        // so a marginal exceedance is INCONSISTENT, which neither convicts
+        // the read nor lets it certify the anchor.
+        Assert.Equal(
+            AutoAlignmentEngine.PredictionState.Inconsistent,
+            AutoAlignmentEngine.GradeAgainstPrediction(
+                snapshot, measuredMs + 3.0, 100, 400, out _));
         // Far EARLIER: not a latch, but nothing the prediction can explain —
         // and specifically NOT a confirmation (review find).
         Assert.Equal(

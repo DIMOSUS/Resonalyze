@@ -637,6 +637,27 @@ public static class AutoAlignmentEngine
     private const double PredictedArrivalAccuracyMs = 2.5;
 
     /// <summary>
+    /// How far PAST the allowance a read must sit before the prediction may
+    /// convict it. The prediction measures the chain's contribution on a flat
+    /// reference impulse, but a driver worked well below its own passband
+    /// does not present the chain with a flat input — a midbass playing a
+    /// 40-160 Hz junction band sits past its own rolloff, and its high-pass
+    /// then costs several milliseconds more than the same filter costs an
+    /// impulse. The error is systematic, one-signed (the prediction reads
+    /// early) and it does not vanish with a better estimator, so a marginal
+    /// exceedance is not evidence of anything.
+    ///
+    /// The field separates cleanly on this: across both cabins and every
+    /// crossover corner, the FALSE convictions at the sub/midbass junction
+    /// all landed between 1.01 and 1.17 allowances, and every true modal
+    /// latch between 2.49 and 3.89. Two allowances sits in that gap with room
+    /// on both sides — the same "plainly, not marginally" standard the lobe
+    /// gates apply. A read in between is INCONSISTENT: not convicted, but not
+    /// trusted to certify an anchor either.
+    /// </summary>
+    private const double PredictedArrivalConvictionFactor = 2.0;
+
+    /// <summary>
     /// How far a processed read may sit from
     /// <see cref="PredictedFrontArrivalMs"/> before the side loses its
     /// certificate: half a period at the band's geometric center — one
@@ -674,12 +695,12 @@ public static class AutoAlignmentEngine
         predictedMs = predicted;
         double errorMs = measuredMs - predicted;
         double allowanceMs = PredictedArrivalAllowanceMs(bandLowHz, bandHighHz);
-        if (errorMs > allowanceMs)
+        if (errorMs > allowanceMs * PredictedArrivalConvictionFactor)
         {
             return PredictionState.Latched;
         }
 
-        return errorMs >= -allowanceMs
+        return Math.Abs(errorMs) <= allowanceMs
             ? PredictionState.Verified
             : PredictionState.Inconsistent;
     }
@@ -973,9 +994,10 @@ public static class AutoAlignmentEngine
                         $"{pair.BandLowHz:0}-{pair.BandHighHz:0} Hz but its " +
                         $"un-crossovered front, refiltered through its own " +
                         $"chain, predicts {predictedMs:0.000} ms there (modal " +
-                        $"latch behind the crossover; allowance " +
-                        $"{PredictedArrivalAllowanceMs(pair.BandLowHz, pair.BandHighHz):0.000} ms) " +
-                        "— re-anchored");
+                        $"latch behind the crossover; " +
+                        $"{(measuredMs - predictedMs) / PredictedArrivalAllowanceMs(pair.BandLowHz, pair.BandHighHz):0.0} " +
+                        $"allowances, conviction needs " +
+                        $"{PredictedArrivalConvictionFactor:0.0}) — re-anchored");
                 if (lowerLatchedByPrediction)
                 {
                     LogConviction(pair.Lower, lowerArrival, lowerPrediction);

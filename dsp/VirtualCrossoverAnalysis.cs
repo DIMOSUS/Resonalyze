@@ -1293,7 +1293,10 @@ public static class VirtualCrossoverAnalysis
         return new CorrelationDelayCandidate(
             refinedLag * 1000.0 / sampleRate,
             normalizer > 0 ? sign * Value(bestLag) / normalizer : 0,
-            InvertPolarity: !mainIsMaximum,
+            // The neighbour has the OPPOSITE polarity of the main extremum:
+            // beside a maximum it is a minimum (inverted), beside a minimum a
+            // maximum (not).
+            InvertPolarity: mainIsMaximum,
             edgePinned);
     }
 

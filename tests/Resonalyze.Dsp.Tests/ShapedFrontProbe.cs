@@ -54,17 +54,21 @@ public sealed class ShapedFrontProbe
     {
         var impulse = new Complex[Length];
         impulse[Position] = Complex.One;
+        // Built the way production builds it: the bypassed response carries
+        // the ValidSampleRange ApplyChain reports, so the predictor sees the
+        // measured-content length rather than the padded array's.
         Complex[] bypassed = VirtualCrossoverAnalysis.ApplyChain(
-            impulse, source, SampleRate);
+            impulse, source, SampleRate, out ValidSampleRange bypassedRange);
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
-            bypassed, chain, SampleRate);
+            bypassed, chain, SampleRate, out ValidSampleRange processedRange);
         var snapshot = new AlignmentSnapshot(
             new Channel(),
             processed,
             VirtualCrossoverAnalysis.FindPeakIndex(processed),
-            default,
+            processedRange,
             chain,
-            bypassed);
+            bypassed,
+            bypassedRange);
         double measuredMs = VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
             processed, SampleRate, lowHz, highHz).FirstArrivalDelayMilliseconds;
         return (snapshot, measuredMs);
@@ -160,6 +164,51 @@ public sealed class ShapedFrontProbe
                 snapshot, measuredMs, 40, 160, out _));
     }
 
+    // The production window, pinned. A bypassed response is itself an
+    // ApplyChain output, so its ARRAY is twice the measured content; taking
+    // the array's length instead of the reported range ran the chain-shift
+    // measurement through a window twice the one the real reads use. This
+    // asserts the precondition (array longer than range) before asserting the
+    // prediction, so the case cannot quietly stop covering the branch.
+    [Theory]
+    [InlineData("driver HP 60", 100, 400)]
+    [InlineData("driver HP 120", 40, 160)]
+    public void PredictedArrival_UsesTheMeasuredContentWindow(
+        string sourceName, double lowHz, double highHz)
+    {
+        var raw = new Complex[Length];
+        raw[Position] = Complex.One;
+        Complex[] bypassed = VirtualCrossoverAnalysis.ApplyChain(
+            raw, SourceNamed(sourceName), SampleRate,
+            out ValidSampleRange bypassedRange);
+        DspChannelChain chain = BandPass(70, 200, 36);
+        Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
+            bypassed, chain, SampleRate, out ValidSampleRange processedRange);
+
+        int contentLength = bypassedRange.EndSample - bypassedRange.StartSample;
+        Assert.True(bypassedRange.IsKnown, "the fixture must carry a known range");
+        Assert.True(bypassed.Length > contentLength,
+            $"the fixture must exercise the padded/content gap: array " +
+            $"{bypassed.Length}, content {contentLength}");
+
+        var snapshot = new AlignmentSnapshot(
+            new Channel(), processed,
+            VirtualCrossoverAnalysis.FindPeakIndex(processed),
+            processedRange, chain, bypassed, bypassedRange);
+        double measuredMs = VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+            processed, SampleRate, lowHz, highHz, processedRange)
+            .FirstArrivalDelayMilliseconds;
+
+        AutoAlignmentEngine.PredictionState state =
+            AutoAlignmentEngine.GradeAgainstPrediction(
+                snapshot, measuredMs, lowHz, highHz, out double predictedMs);
+
+        Assert.Equal(AutoAlignmentEngine.PredictionState.Verified, state);
+        Assert.True(Math.Abs(measuredMs - predictedMs) < 1.0,
+            $"{sourceName} in {lowHz:0}-{highHz:0} Hz: predicted " +
+            $"{predictedMs:0.000} against a measured {measuredMs:0.000} ms");
+    }
+
     public static TheoryData<string> ToleranceSources()
     {
         var data = new TheoryData<string>();
@@ -230,7 +279,7 @@ public sealed class ShapedFrontProbe
     // sweeps the mode's delay and level so the resulting skew lands inside
     // that window, and requires the probe to convict throughout it.
     [Fact]
-    public void ArrivalProbeTolerance_ConvictsInsideTheCreditedWindow()
+    public void ArrivalProbeTolerance_DoesNotConvictInsideTheCreditedWindow()
     {
         const double LowHz = 100;
         const double HighHz = 400;
@@ -261,24 +310,28 @@ public sealed class ShapedFrontProbe
                 }
 
                 landed.Add((modeDelayMs, level, skewMs));
-                // Inside this window the probe does NOT convict, and it
-                // should not: the base allowance is half a period at the
-                // probe's lower edge and the clamped one is a full period,
-                // so a skew here is a build-up less than one cycle behind
-                // the front — dispersion and a separate feature are not
-                // distinguishable there, and every field modal latch runs
-                // 7 ms and up. What has to hold is the CEILING: the credit
-                // may never carry the tolerance past one period, or the
-                // estimator would start excusing genuinely separated
-                // features.
+                // The POLICY: inside this window the probe declines to
+                // convict. A 200-400 Hz probe resolves features about
+                // 1/(400-200) = 5 ms apart, so energy 3-4 ms behind the front
+                // is not something this comparison can attribute — it may be
+                // a dispersion-stretched front or an early reflection, and
+                // convicting it would fire on real crossover dispersion.
+                // Field modal latches run 7 ms and up, clear of the ceiling.
                 double toleranceMs = AutoAlignmentEngine.ArrivalProbeToleranceMs(
                     snapshot, full.FirstArrivalDelayMilliseconds,
                     probe.FirstArrivalDelayMilliseconds,
                     LowHz, probeLowHz, HighHz);
+                Assert.Equal(
+                    AutoAlignmentEngine.ArrivalCertificate.Verified,
+                    AutoAlignmentEngine.ClassifyArrival(full, probe, toleranceMs));
+                // And the ceiling that makes the policy bounded: the credit
+                // may never carry the tolerance past the probe's resolution,
+                // or the estimator would start excusing separated features
+                // too.
                 Assert.True(toleranceMs <= 1000.0 / probeLowHz,
                     $"mode {modeDelayMs:0.0} ms at {level:0.00}: tolerance " +
-                    $"{toleranceMs:0.000} ms exceeds one period at the " +
-                    $"probe edge ({1000.0 / probeLowHz:0.000} ms)");
+                    $"{toleranceMs:0.000} ms exceeds the probe's resolution " +
+                    $"({1000.0 / probeLowHz:0.000} ms)");
             }
         }
 

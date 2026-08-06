@@ -519,21 +519,7 @@ public static class AutoAlignmentEngine
     /// earlier cut used — is worse in kind, not merely in degree: it misses
     /// by 3.8 ms on a steep 80 Hz high-pass and 2.3 ms on a 330 Hz all-pass,
     /// and its error is not common-mode across a junction, so it injects a
-    /// differential error into the very difference the timeline stores. A band-averaged group delay is not the envelope's
-    /// first peak, and the gap is neither small nor uniform: measured against
-    /// the real detector, a mean-group-delay estimate overshoots by 3.8 ms on
-    /// a steep 80 Hz high-pass, 2.3 ms on a 330 Hz all-pass and 1.4 ms on a
-    /// high-Q PEQ, while erring only 0.2-0.4 ms on the low-pass-dominated
-    /// chains it was first validated against (review find). The error is also
-    /// NOT common-mode across a junction, so such an estimate would inject
-    /// about a millisecond of DIFFERENTIAL error between an LP-fed lower
-    /// channel and an HP-fed upper one — straight into the quantity the
-    /// timeline stores. Going through
-    /// <see cref="VirtualCrossoverAnalysis.ApplyChain"/> and
-    /// <see cref="VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival"/>
-    /// instead reproduces the driver's own spectrum and phase, the crossover,
-    /// the all-pass and PEQ stages, the analysis window and the detector's own
-    /// behaviour; on synthetic chains of every family it is exact.
+    /// differential error into the very difference the timeline stores.
     /// </summary>
     internal static double? PredictedFrontArrivalMs(
         AlignmentSnapshot side,
@@ -664,11 +650,11 @@ public static class AutoAlignmentEngine
     internal enum PredictionState { Unavailable, Verified, Latched, Inconsistent }
 
     /// <summary>
-    /// The prediction's own accuracy floor (ms) — the residual disagreement
-    /// that survives even an exact predictor, from the gate's effect on the
-    /// front and the detector's own resolution. Measured across two cabins,
-    /// honest reads land well inside it while the field latches run 6.7 ms
-    /// and up.
+    /// The prediction's own accuracy floor (ms) — the disagreement an honest
+    /// read may still show, from the estimator's imperfect transfer to a
+    /// shaped front and from the detector's own resolution. Measured across
+    /// two cabins, honest reads land well inside it while the field latches
+    /// run 6.7 ms and up.
     /// </summary>
     private const double PredictedArrivalAccuracyMs = 2.5;
 

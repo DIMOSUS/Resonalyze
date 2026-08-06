@@ -72,4 +72,70 @@ public sealed record DspChannelChain(
 
         return response;
     }
+
+    /// <summary>
+    /// The |H|²-weighted mean group delay (milliseconds) this chain applies
+    /// across a band: the bulk <see cref="DelayMs"/> plus the filters' own
+    /// dispersion, weighted by where the chain actually passes energy. The
+    /// weighting is what makes the figure honest at a crossover corner — a
+    /// steep low-pass's stopband carries the chain's fastest group delay and
+    /// almost none of its output, so an unweighted mean would report a
+    /// dispersion the channel never radiates.
+    ///
+    /// Read from <see cref="Response"/> by central differences of its phase,
+    /// so every stage (crossover, all-pass, PEQ) counts and a stage added
+    /// later counts automatically. The bulk delay is excluded from the
+    /// differencing — it is exactly linear phase, and a large one would wrap
+    /// the phase step — and added back in closed form.
+    /// </summary>
+    public double WeightedMeanGroupDelayMs(
+        double lowHz,
+        double highHz,
+        double sampleRateHz)
+    {
+        if (!(lowHz > 0))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(lowHz), "The band's lower edge must be positive.");
+        }
+        if (!(highHz > lowHz))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(highHz), "The band's upper edge must exceed its lower edge.");
+        }
+        if (sampleRateHz <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleRateHz));
+        }
+
+        DspChannelChain filters = this with { DelayMs = 0 };
+        const int steps = 400;
+        double weightSum = 0;
+        double weightedDelaySum = 0;
+        for (int i = 0; i <= steps; i++)
+        {
+            double frequency = lowHz * Math.Pow(highHz / lowHz, (double)i / steps);
+            double delta = frequency * 1e-3;
+            double phaseStep =
+                filters.Response(frequency + delta, sampleRateHz).Phase -
+                filters.Response(frequency - delta, sampleRateHz).Phase;
+            while (phaseStep > Math.PI)
+            {
+                phaseStep -= Math.Tau;
+            }
+            while (phaseStep < -Math.PI)
+            {
+                phaseStep += Math.Tau;
+            }
+
+            double magnitude = filters.Response(frequency, sampleRateHz).Magnitude;
+            double weight = magnitude * magnitude;
+            weightSum += weight;
+            weightedDelaySum += weight * -phaseStep / (Math.Tau * 2.0 * delta);
+        }
+
+        return weightSum > 0
+            ? DelayMs + weightedDelaySum / weightSum * 1_000.0
+            : DelayMs;
+    }
 }

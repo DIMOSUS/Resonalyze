@@ -60,6 +60,19 @@ public interface IAlignmentChannel
 {
     string Name { get; }
     int SampleRate { get; }
+
+    /// <summary>
+    /// The channel's linear processing chain, when the caller applies one
+    /// before the driver (the Virtual DSP crossover, all-pass and PEQ). Read
+    /// ONLY for its group delay across a band — see
+    /// <see cref="AutoAlignmentEngine.ArrivalProbeToleranceMs"/>, whose
+    /// dispersion allowance must not convict a channel of a room mode for
+    /// the smear its own filters apply. Null (the default) means "no
+    /// processing to account for": a caller that hands the engine already
+    /// final responses loses nothing, since a chain-free channel's skew is
+    /// zero anyway.
+    /// </summary>
+    DspChannelChain? ProcessingChain => null;
 }
 
 /// <summary>
@@ -71,12 +84,23 @@ public interface IAlignmentChannel
 /// overload reports — so envelope/SNR analyses skip both the delay prefix
 /// and the manufactured tail. The default (empty) range means unknown: the
 /// analyses then fall back to the padding-signature heuristic.
+///
+/// <see cref="BypassedImpulseResponse"/> is the SAME measurement with no
+/// chain at all (the bare driver in the room), supplied once per channel by
+/// callers that can produce it. It exists for the predicted-arrival honesty
+/// probe (see <see cref="AutoAlignmentEngine.PredictedArrivalMs"/>): a steep
+/// crossover concentrates a junction band's energy in the room's modal
+/// region and makes the PROCESSED arrival latch onto a mode, while the same
+/// band read off the full-range driver still finds the front. Null when the
+/// caller has none, and every path degrades to the upper-half probe alone.
 /// </summary>
 public sealed record AlignmentSnapshot(
     IAlignmentChannel Channel,
     Complex[] ImpulseResponse,
     int PeakIndex,
-    ValidSampleRange ValidRange = default);
+    ValidSampleRange ValidRange = default,
+    Complex[]? BypassedImpulseResponse = null,
+    ValidSampleRange BypassedValidRange = default);
 
 /// <summary>
 /// Adjacent channels along the spectrum with their shared junction: the pair
@@ -464,6 +488,127 @@ public static class AutoAlignmentEngine
         Verified
     }
 
+    /// <summary>
+    /// The arrival honesty probe's dispersion allowance for ONE channel: how
+    /// much later than its own upper-half read the full-band read may sit
+    /// before <see cref="ClassifyArrival"/> convicts it of a modal latch.
+    ///
+    /// Two terms. The first is generic physics — half a period at the probe's
+    /// lower edge, never tighter than 1 ms: the smear one wavefront can show
+    /// across the band. The second is the channel's OWN chain, and it is what
+    /// the probe used to miss: a steep low-pass puts the full band's energy
+    /// BELOW its corner, where the chain's group delay runs several ms longer
+    /// than in the probe band above it, so the two envelope fronts differ by
+    /// that much with no room mode anywhere. The field failure that pinned
+    /// this: a midbass under LP 200 Hz/36 read 13.04 ms in 100-400 Hz against
+    /// 10.16 ms in its 200-400 Hz half — a 2.88 ms skew the flat 2.5 ms
+    /// allowance convicted, while its filters alone explain 1.67 ms of it.
+    /// The false conviction re-anchored the pair 2.9 ms early and the whole
+    /// envelope-first cascade then defended the wrong comb lobe, proposing a
+    /// mixed-polarity mid 2.5 ms off the owner's measured optimum.
+    ///
+    /// The chain term is exact and known (it is the DSP the user dialed in),
+    /// so crediting it costs no honesty: a REAL latch clears both terms by
+    /// far — the v3 cabin's convicted midbass reads skew 10.97 ms against an
+    /// allowance of 5.00 — while a filter artifact clears neither.
+    /// Clamped at zero: a chain that is FASTER in the full band than in the
+    /// probe band earns no credit, it just cannot tighten the generic floor.
+    /// </summary>
+    internal static double ArrivalProbeToleranceMs(
+        IAlignmentChannel channel,
+        double bandLowHz,
+        double probeLowHz,
+        double bandHighHz)
+    {
+        ArgumentNullException.ThrowIfNull(channel);
+        double toleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
+        if (channel.ProcessingChain is not { } chain)
+        {
+            return toleranceMs;
+        }
+
+        double chainSkewMs =
+            chain.WeightedMeanGroupDelayMs(bandLowHz, bandHighHz, channel.SampleRate) -
+            chain.WeightedMeanGroupDelayMs(probeLowHz, bandHighHz, channel.SampleRate);
+        return toleranceMs + Math.Max(0, chainSkewMs);
+    }
+
+    /// <summary>
+    /// Where a channel's PROCESSED arrival must land if it timed the direct
+    /// front: its BYPASSED arrival in the same band plus the group delay its
+    /// own chain applies there. Null when the caller supplied no bypassed
+    /// response or no chain, or when the bypassed read is itself unmeasurable.
+    ///
+    /// This is the honesty probe that still works where the upper-half one is
+    /// blind. A steep low-pass leaves a junction band's energy concentrated
+    /// below its corner, in the room's modal region — and when the mode
+    /// captures the upper half TOO, the full-band and half-band reads agree
+    /// on the same wrong feature and certify each other. The bypassed read
+    /// has no such bias: the driver is full-range there, so the band's energy
+    /// sits where the driver radiates it and the envelope still finds the
+    /// front. Measured on the v4 cabin across six low-pass corners, the
+    /// processed read ran 6.7-7.8 ms late at every corner that broke and
+    /// within 0.1 ms of this prediction at every corner that worked.
+    ///
+    /// The prediction doubles as the replacement anchor, and a better one
+    /// than the upper-half re-read: it is stated in the junction's OWN band,
+    /// so it carries no cross-band group-delay bias to correct for.
+    /// </summary>
+    internal static double? PredictedArrivalMs(
+        AlignmentSnapshot side,
+        double bandLowHz,
+        double bandHighHz)
+    {
+        ArgumentNullException.ThrowIfNull(side);
+        if (side.BypassedImpulseResponse is not { } bypassed ||
+            side.Channel.ProcessingChain is not { } chain)
+        {
+            return null;
+        }
+
+        TimeAlignmentAnalysisResult read =
+            VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                bypassed, side.Channel.SampleRate, bandLowHz, bandHighHz,
+                side.BypassedValidRange);
+        if (!read.IsValid || read.SignalToNoiseDecibels < MinimumArrivalSnrDb)
+        {
+            return null;
+        }
+
+        // The chain WITHOUT its bulk delay: the snapshots the timeline reads
+        // are the override-free reprocess, where the delay is zero.
+        return read.FirstArrivalDelayMilliseconds +
+            (chain with { DelayMs = 0 }).WeightedMeanGroupDelayMs(
+                bandLowHz, bandHighHz, side.Channel.SampleRate);
+    }
+
+    /// <summary>
+    /// The prediction's own accuracy floor (ms). The predicted arrival adds a
+    /// band-AVERAGED group delay to a front the envelope detector places, so
+    /// it estimates the front rather than reproducing it: measured across two
+    /// cabins and eight junctions, honest reads landed between 1.3 ms early
+    /// and 0.1 ms late of their prediction. A tighter allowance turns that
+    /// spread into false convictions — at 1.0 ms a v3 mid/tweeter junction
+    /// (650-2600 Hz, where a modal latch is not even plausible) was convicted
+    /// by 0.17 ms and re-anchored off a validated alignment.
+    /// </summary>
+    private const double PredictedArrivalAccuracyMs = 2.5;
+
+    /// <summary>
+    /// How much later than <see cref="PredictedArrivalMs"/> a processed read
+    /// may sit before it is convicted: half a period at the band's geometric
+    /// center — one wavefront's dispersion, stated where the band's energy
+    /// actually is — never below the prediction's own accuracy. The field
+    /// separation it has to make is not close: the broken v4 corners ran
+    /// 6.7-7.8 ms late, the v3 cabin's convicted midbass 7.7 ms, and every
+    /// honest read came in within the accuracy floor.
+    /// </summary>
+    private static double PredictedArrivalAllowanceMs(
+        double bandLowHz, double bandHighHz) =>
+        Math.Max(
+            PredictedArrivalAccuracyMs,
+            500.0 / Math.Sqrt(bandLowHz * bandHighHz));
+
     internal static ArrivalCertificate ClassifyArrival(
         TimeAlignmentAnalysisResult full,
         TimeAlignmentAnalysisResult probe,
@@ -709,9 +854,68 @@ public static class AutoAlignmentEngine
             // dragged a woofer 6 ms off on the cross-side ladder), so it only
             // recenters the correlation window and the fallback diff; the
             // trustworthy PHAT extremum, where present, still wins the seed.
+            // The predicted-arrival probe first (see PredictedArrivalMs): it
+            // convicts the latches the upper-half probe cannot see, and its
+            // replacement anchor is stated in the junction's own band. The
+            // reach veto below stays ARMED when it fires — unlike the mushy
+            // half-band re-read, this anchor is trustworthy, so a PHAT
+            // extremum far from it is exactly the cycle skip the veto exists
+            // to refuse (at the v4 cabin's 180 Hz corner the whitened trough
+            // sat on the half-period flip impostor and was dominant enough to
+            // be trusted).
+            double predictionAllowanceMs =
+                PredictedArrivalAllowanceMs(pair.BandLowHz, pair.BandHighHz);
+            double? lowerPrediction =
+                PredictedArrivalMs(pair.Lower, pair.BandLowHz, pair.BandHighHz);
+            double? upperPrediction =
+                PredictedArrivalMs(pair.Upper, pair.BandLowHz, pair.BandHighHz);
+            bool ConvictedAgainstPrediction(double measuredMs, double? predictedMs) =>
+                predictedMs is { } predicted &&
+                measuredMs - predicted > predictionAllowanceMs;
+            bool lowerOffPrediction =
+                ConvictedAgainstPrediction(lowerArrival, lowerPrediction);
+            bool upperOffPrediction =
+                ConvictedAgainstPrediction(upperArrival, upperPrediction);
+            if (lowerOffPrediction || upperOffPrediction)
+            {
+                void LogConviction(
+                    AlignmentSnapshot side, double measuredMs, double predictedMs) =>
+                    log.AppendLine(
+                        $"  {side.Channel.Name}: {measuredMs:0.000} ms in " +
+                        $"{pair.BandLowHz:0}-{pair.BandHighHz:0} Hz but its " +
+                        $"un-crossovered response predicts {predictedMs:0.000} ms " +
+                        $"there (modal latch behind the crossover; allowance " +
+                        $"{predictionAllowanceMs:0.000} ms) — re-anchored");
+                if (lowerOffPrediction)
+                {
+                    LogConviction(pair.Lower, lowerArrival, lowerPrediction!.Value);
+                }
+                if (upperOffPrediction)
+                {
+                    LogConviction(pair.Upper, upperArrival, upperPrediction!.Value);
+                }
+
+                // Both sides move to the prediction, not just the convicted
+                // one. The predictor reads a front off the full-range driver
+                // and adds a band-AVERAGED group delay, so it carries a small
+                // systematic offset (under a millisecond, measured); that
+                // offset is common-mode and cancels in the junction
+                // difference the timeline actually stores. Mixing one
+                // predicted arrival with one measured one injects it instead
+                // as a real delay — at the v4 cabin's 160 Hz corner exactly
+                // that mix put the base 2.45 ms out and handed the mid to the
+                // flip impostor. A side with no prediction (no bypassed
+                // response, or an unmeasurable one) keeps its measured read:
+                // half a correction still beats none where the other side is
+                // provably timing a mode.
+                lowerArrival = lowerPrediction ?? lowerArrival;
+                upperArrival = upperPrediction ?? upperArrival;
+            }
+
             double probeLowHz = Math.Sqrt(pair.BandLowHz * pair.BandHighHz);
             bool arrivalReanchored = false;
-            if (pair.BandHighHz >=
+            if (!lowerOffPrediction && !upperOffPrediction &&
+                pair.BandHighHz >=
                 probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
             {
                 TimeAlignmentAnalysisResult lowerProbe =
@@ -728,11 +932,17 @@ public static class AutoAlignmentEngine
                         probeLowHz,
                         pair.BandHighHz,
                         pair.Upper.ValidRange);
-                double probeToleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
-                ArrivalCertificate lowerCertificate =
-                    ClassifyArrival(lowerRead, lowerProbe, probeToleranceMs);
-                ArrivalCertificate upperCertificate =
-                    ClassifyArrival(upperRead, upperProbe, probeToleranceMs);
+                // Per channel, not per junction: the two sides of a junction
+                // run different filters, so the smear each one's own chain
+                // explains differs (see ArrivalProbeToleranceMs).
+                ArrivalCertificate lowerCertificate = ClassifyArrival(
+                    lowerRead, lowerProbe,
+                    ArrivalProbeToleranceMs(
+                        pair.Lower.Channel, pair.BandLowHz, probeLowHz, pair.BandHighHz));
+                ArrivalCertificate upperCertificate = ClassifyArrival(
+                    upperRead, upperProbe,
+                    ArrivalProbeToleranceMs(
+                        pair.Upper.Channel, pair.BandLowHz, probeLowHz, pair.BandHighHz));
                 bool lowerLatched =
                     lowerCertificate == ArrivalCertificate.Latched;
                 bool upperLatched =
@@ -849,8 +1059,23 @@ public static class AutoAlignmentEngine
                 // the window is still centered on the corrupted diff, and a
                 // strong distant modal peak found there is exactly the skip
                 // candidate the veto guards (see the probe above).
-                if (!arrivalReanchored &&
-                    Math.Abs(seedOffsetMs) > SeedReachMs(pair.CrossoverHz))
+                // With BOTH arrivals prediction-verified (measured and the
+                // un-crossovered prediction agree, or the prediction replaced
+                // a convicted read), the anchor is no longer the weak link
+                // the generous reach exists to accommodate — and the generous
+                // reach is genuinely too generous: at half a period sits the
+                // comb's ADJACENT lobe, so a rule that admits an extremum out
+                // to half a period (or the 3 ms floor, which exceeds it above
+                // ~167 Hz) admits the neighbour by construction. Against a
+                // verified anchor the meaningful question is "the same lobe,
+                // refined?", and a quarter period answers it. The v4 cabin's
+                // 180 Hz corner: a whitened trough 2.892 ms out — half a
+                // period is 2.778 — cleared the 3 ms floor by a tenth of a
+                // millisecond and seeded the flip impostor.
+                double reachMs = lowerPrediction != null && upperPrediction != null
+                    ? 250.0 / pair.CrossoverHz
+                    : SeedReachMs(pair.CrossoverHz);
+                if (!arrivalReanchored && Math.Abs(seedOffsetMs) > reachMs)
                 {
                     return $"{seedLabel} beyond the arrival's reach";
                 }
@@ -1881,13 +2106,14 @@ public static class AutoAlignmentEngine
                     bridgeProbeLowHz,
                     plan.BridgeBandHighHz,
                     rightBridgeSnapshot.ValidRange);
-            double bridgeToleranceMs = Math.Max(1.0, 500.0 / bridgeProbeLowHz);
             void Certify(
                 TimeAlignmentAnalysisResult full,
                 TimeAlignmentAnalysisResult probe,
                 IAlignmentChannel channel)
             {
-                switch (ClassifyArrival(full, probe, bridgeToleranceMs))
+                switch (ClassifyArrival(full, probe, ArrivalProbeToleranceMs(
+                    channel, plan.BridgeBandLowHz, bridgeProbeLowHz,
+                    plan.BridgeBandHighHz)))
                 {
                     case ArrivalCertificate.Latched:
                         // The full band times a LATER feature than its own
@@ -2088,11 +2314,12 @@ public static class AutoAlignmentEngine
                 // See ClassifyArrival for the direction semantics: LATCHED
                 // poisons the read (ladder/donors), UNVERIFIED keeps it usable
                 // without the certificate, VERIFIED on both sides earns it.
-                double toleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
-                ArrivalCertificate leftCertificate =
-                    ClassifyArrival(left, leftProbe, toleranceMs);
-                ArrivalCertificate rightCertificate =
-                    ClassifyArrival(right, rightProbe, toleranceMs);
+                ArrivalCertificate leftCertificate = ClassifyArrival(
+                    left, leftProbe,
+                    ArrivalProbeToleranceMs(link.Left, lowHz, probeLowHz, highHz));
+                ArrivalCertificate rightCertificate = ClassifyArrival(
+                    right, rightProbe,
+                    ArrivalProbeToleranceMs(rightChannel, lowHz, probeLowHz, highHz));
                 if (leftCertificate == ArrivalCertificate.Latched ||
                     rightCertificate == ArrivalCertificate.Latched)
                 {
@@ -2267,11 +2494,12 @@ public static class AutoAlignmentEngine
                         // valid, SNR-qualified, and agreeing. Absence of a proven
                         // latch is NOT proof of a direct read: an unmeasurable or
                         // low-SNR upper half leaves the split unverified, so skip.
-                        double tolerance2 = Math.Max(1.0, 500.0 / probeLow2);
                         bool CleanDirect(AlignmentSnapshot side, out double rawMs)
                         {
                             TimeAlignmentAnalysisResult full = Read(side, lowHz2, highHz2);
                             TimeAlignmentAnalysisResult probe = Read(side, probeLow2, highHz2);
+                            double tolerance2 = ArrivalProbeToleranceMs(
+                                side.Channel, lowHz2, probeLow2, highHz2);
                             rawMs = full.FirstArrivalDelayMilliseconds
                                 - alignment.GetValueOrDefault(side.Channel).DelayMs;
                             // A donor must be POSITIVELY clean: only a VERIFIED

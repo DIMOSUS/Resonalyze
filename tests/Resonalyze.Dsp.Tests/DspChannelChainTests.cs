@@ -140,4 +140,68 @@ public sealed class DspChannelChainTests
         Assert.Equal(expected.Real, actual.Real, 10);
         Assert.Equal(expected.Imaginary, actual.Imaginary, 10);
     }
+
+    [Fact]
+    public void WeightedMeanGroupDelay_OfAPureDelayIsThatDelay()
+    {
+        var chain = new DspChannelChain(DelayMs: 3.5);
+
+        Assert.Equal(
+            3.5, chain.WeightedMeanGroupDelayMs(100, 400, SampleRate), 6);
+    }
+
+    [Fact]
+    public void WeightedMeanGroupDelay_IgnoresGainAndPolarity()
+    {
+        var plain = new DspChannelChain(
+            Crossover: new CrossoverSpec(
+                CrossoverKind.LowPass,
+                LowPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.Butterworth, 200, 36)));
+        DspChannelChain loudAndFlipped =
+            plain with { GainDb = -9.0, InvertPolarity = true };
+
+        Assert.Equal(
+            plain.WeightedMeanGroupDelayMs(100, 400, SampleRate),
+            loudAndFlipped.WeightedMeanGroupDelayMs(100, 400, SampleRate),
+            9);
+    }
+
+    // The quantity the arrival honesty probe credits: a steep low-pass runs
+    // several milliseconds slower BELOW its corner than above it, so a band
+    // straddling the corner reads later than its own upper half with no room
+    // mode involved. The |H|² weighting is what keeps the figure honest —
+    // the stopband above the corner holds the chain's fastest group delay
+    // and almost none of its output.
+    [Fact]
+    public void WeightedMeanGroupDelay_FallsAcrossASteepLowPassCorner()
+    {
+        var chain = new DspChannelChain(
+            Crossover: new CrossoverSpec(
+                CrossoverKind.BandPass,
+                LowPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.Butterworth, 200, 36),
+                HighPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.Butterworth, 70, 36)));
+
+        double full = chain.WeightedMeanGroupDelayMs(100, 400, SampleRate);
+        double upperHalf = chain.WeightedMeanGroupDelayMs(200, 400, SampleRate);
+
+        Assert.True(full - upperHalf > 1.0,
+            $"expected the corner-straddling band to run over 1 ms slower " +
+            $"than its upper half; got {full:0.000} vs {upperHalf:0.000} ms");
+    }
+
+    [Fact]
+    public void WeightedMeanGroupDelay_RefusesADegenerateBand()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => DspChannelChain.Identity.WeightedMeanGroupDelayMs(
+                0, 400, SampleRate));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => DspChannelChain.Identity.WeightedMeanGroupDelayMs(
+                400, 400, SampleRate));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => DspChannelChain.Identity.WeightedMeanGroupDelayMs(100, 400, 0));
+    }
 }

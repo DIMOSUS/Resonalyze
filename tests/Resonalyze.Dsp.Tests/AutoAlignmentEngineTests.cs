@@ -32,6 +32,15 @@ public sealed class AutoAlignmentEngineTests
         public Complex[] ReprocessIr { get; }
     }
 
+    // A channel that reports a processing chain, for the arrival probe's
+    // filter-smear allowance (the IRs play no part there).
+    private sealed record ChainedChannel(string Name, DspChannelChain Chain)
+        : IAlignmentChannel
+    {
+        public int SampleRate => AutoAlignmentEngineTests.SampleRate;
+        public DspChannelChain? ProcessingChain => Chain;
+    }
+
     private static Complex[] UnitImpulse(int position)
     {
         var ir = new Complex[IrLength];
@@ -901,6 +910,115 @@ public sealed class AutoAlignmentEngineTests
             AutoAlignmentEngine.ArrivalCertificate.Unverified,
             AutoAlignmentEngine.ClassifyArrival(
                 Read(10.0, snrDb: 5.0), Read(10.2), toleranceMs: 2.0));
+    }
+
+    // The probe's dispersion allowance must credit the channel's OWN filters:
+    // a steep low-pass puts a junction band's energy below its corner, where
+    // the chain runs milliseconds slower than in the probe band above it, and
+    // the two envelope fronts then differ with no room mode anywhere. The
+    // field case: a midbass under LP 200 Hz/36 read 2.88 ms later in
+    // 100-400 Hz than in its 200-400 Hz half — convicted by the flat 2.5 ms
+    // allowance, which re-anchored the pair 2.9 ms early and handed the mid
+    // to a mixed-polarity comb lobe.
+    [Fact]
+    public void ArrivalProbeTolerance_CreditsTheChannelsOwnCrossoverSmear()
+    {
+        var chainless = new TestChannel("bare", UnitImpulse(BasePosition));
+        var filtered = new ChainedChannel(
+            "midbass",
+            new DspChannelChain(
+                Crossover: new CrossoverSpec(
+                    CrossoverKind.BandPass,
+                    LowPassEdge: new CrossoverEdge(
+                        CrossoverFilterFamily.Butterworth, 200, 36),
+                    HighPassEdge: new CrossoverEdge(
+                        CrossoverFilterFamily.Butterworth, 70, 36))));
+
+        double bare = AutoAlignmentEngine.ArrivalProbeToleranceMs(
+            chainless, 100, 200, 400);
+        double credited = AutoAlignmentEngine.ArrivalProbeToleranceMs(
+            filtered, 100, 200, 400);
+
+        // Without a chain the allowance is the generic half period at the
+        // probe's lower edge; 200 Hz -> 2.5 ms.
+        Assert.Equal(2.5, bare, 6);
+        // The field skew (2.88 ms) must now sit INSIDE the allowance, while a
+        // real latch (the v3 cabin's 10.97 ms) stays far outside it.
+        Assert.True(credited > 2.88,
+            $"expected the filter smear to be credited past 2.88 ms; got {credited:0.000}");
+        Assert.True(credited < 10.97,
+            $"expected a real modal latch to stay convicted; got {credited:0.000}");
+    }
+
+    // The predicted-arrival probe: a channel's processed read must land where
+    // its un-crossovered response plus its own chain group delay says. Here
+    // the bypassed response is a clean impulse at 5 ms and the chain is a
+    // steep low-pass, so the prediction is 5 ms plus that chain's smear — and
+    // a processed read parked on a room mode many ms later is convicted
+    // however well it agrees with its own upper half.
+    [Fact]
+    public void PredictedArrival_IsTheBypassedFrontPlusTheChainsOwnSmear()
+    {
+        var chain = new DspChannelChain(
+            Crossover: new CrossoverSpec(
+                CrossoverKind.LowPass,
+                LowPassEdge: new CrossoverEdge(
+                    CrossoverFilterFamily.Butterworth, 200, 36)));
+        var channel = new ChainedChannel("midbass", chain);
+        Complex[] bypassed = DelayedImpulse(5.0);
+        var snapshot = new AlignmentSnapshot(
+            channel, bypassed, BasePosition, default, bypassed);
+
+        double? predicted = AutoAlignmentEngine.PredictedArrivalMs(
+            snapshot, 100, 400);
+
+        Assert.NotNull(predicted);
+        double expectedSmearMs =
+            chain.WeightedMeanGroupDelayMs(100, 400, SampleRate);
+        Assert.True(expectedSmearMs > 1.0,
+            "the fixture needs a chain that actually smears");
+        // The bypassed impulse sits at the base position; the probe reads its
+        // arrival there and adds the chain term, so the two must differ by
+        // exactly the smear.
+        double bareArrival = VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+            bypassed, SampleRate, 100, 400).FirstArrivalDelayMilliseconds;
+        Assert.Equal(bareArrival + expectedSmearMs, predicted!.Value, 6);
+    }
+
+    [Fact]
+    public void PredictedArrival_IsNullWithoutABypassedResponseOrAChain()
+    {
+        Complex[] ir = DelayedImpulse(5.0);
+        var withoutChain = new AlignmentSnapshot(
+            new TestChannel("bare", ir), ir, BasePosition, default, ir);
+        var withoutBypassed = new AlignmentSnapshot(
+            new ChainedChannel("filtered", DspChannelChain.Identity),
+            ir, BasePosition);
+
+        Assert.Null(AutoAlignmentEngine.PredictedArrivalMs(withoutChain, 100, 400));
+        Assert.Null(
+            AutoAlignmentEngine.PredictedArrivalMs(withoutBypassed, 100, 400));
+    }
+
+    [Fact]
+    public void ArrivalProbeTolerance_NeverTightensBelowTheGenericFloor()
+    {
+        // A chain that is FASTER in the full band than in the probe band (a
+        // high-pass well below the band contributes almost no dispersion
+        // difference) earns no credit and must not tighten the floor.
+        var highPassed = new ChainedChannel(
+            "tweeter",
+            new DspChannelChain(
+                Crossover: new CrossoverSpec(
+                    CrossoverKind.HighPass,
+                    HighPassEdge: new CrossoverEdge(
+                        CrossoverFilterFamily.Butterworth, 1_700, 48))));
+
+        double tolerance = AutoAlignmentEngine.ArrivalProbeToleranceMs(
+            highPassed, 750, 1_500, 3_000);
+
+        Assert.True(tolerance >= Math.Max(1.0, 500.0 / 1_500),
+            $"the generic floor must hold; got {tolerance:0.000}");
     }
 
     [Fact]

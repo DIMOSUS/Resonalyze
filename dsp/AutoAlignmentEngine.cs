@@ -77,7 +77,7 @@ public interface IAlignmentChannel
 /// <see cref="ProcessingChain"/> is the chain that turns one into the other.
 /// Together they let the engine RE-DERIVE what this channel's front must look
 /// like after its own processing (see
-/// <see cref="AutoAlignmentEngine.PredictedArrivalMs"/>): a steep crossover
+/// <see cref="AutoAlignmentEngine.PredictedFrontArrivalMs"/>): a steep crossover
 /// concentrates a junction band's energy in the room's modal region and makes
 /// the PROCESSED arrival latch onto a mode, while the same band read off the
 /// full-range driver still finds the front. Both are captured with the
@@ -591,13 +591,19 @@ public static class AutoAlignmentEngine
     /// which re-anchored the pair 2.9 ms early and handed the mid to a
     /// mixed-polarity comb lobe.
     ///
-    /// The chain term is MEASURED the way the prediction is (refilter the
-    /// gated front, read both bands with the real detector) rather than
-    /// derived from an averaged group delay: that shortcut over-credits an
-    /// HP- or PEQ-fed channel by more than a millisecond, and over-crediting
-    /// an allowance is how a real latch slips through. Clamped at zero — a
-    /// chain that is FASTER in the full band than in the probe band earns no
-    /// credit, it just cannot tighten the generic floor.
+    /// The second term is the PREDICTED SKEW, not the chain's contribution
+    /// alone: it is the difference of two <see cref="PredictedFrontArrivalMs"/>
+    /// readings, so it credits how much later the full band should read than
+    /// its upper half for BOTH reasons — the chain's dispersion and the
+    /// driver's own band-dependence (a woofer reads later at 100-200 Hz than
+    /// at 200-400 Hz on its own account). That is the right quantity: the
+    /// probe's question is how much later the full band should read absent a
+    /// mode, and the driver is part of the answer. Deriving it from an
+    /// averaged group delay instead — the chain term alone, analytically —
+    /// over-credits an HP- or PEQ-fed channel by more than a millisecond, and
+    /// over-crediting an allowance is how a real latch slips through.
+    /// Clamped at zero: a response that is FASTER in the full band than in
+    /// the probe band earns no credit, it just cannot tighten the floor.
     /// </summary>
     internal static double ArrivalProbeToleranceMs(
         AlignmentSnapshot side,
@@ -1013,6 +1019,21 @@ public static class AutoAlignmentEngine
                 upperArrival = upperPrediction;
             }
 
+            // What the pair anchor could still be off by. Where BOTH sides
+            // were merely VERIFIED the residuals are known, and only their
+            // DIFFERENCE matters — the timeline stores a difference, so two
+            // sides erring the same way cost nothing. Where a side was
+            // convicted and replaced its residual is unknowable by
+            // construction, and the honest stand-in is the per-side
+            // allowance (review find: "prediction agrees within 2.5 ms" is
+            // not by itself a licence for a much narrower seed reach).
+            double anchorUncertaintyMs =
+                lowerLatchedByPrediction || upperLatchedByPrediction
+                    ? PredictedArrivalAllowanceMs(pair.BandLowHz, pair.BandHighHz)
+                    : Math.Abs(
+                        (lowerArrival - lowerPrediction) -
+                        (upperArrival - upperPrediction));
+
             // The anchor counts as independently confirmed exactly when the
             // pair was gradeable: every side then either AGREED with its own
             // refiltered front or was replaced by it. A merely AVAILABLE
@@ -1183,8 +1204,33 @@ public static class AutoAlignmentEngine
                 // 180 Hz corner: a whitened trough 2.892 ms out — half a
                 // period is 2.778 — cleared the 3 ms floor by a tenth of a
                 // millisecond and seeded the flip impostor.
+                // Two bounds, and the reach is the tighter of them. The
+                // ADJACENT-LOBE bound is what this rule is for: the comb's
+                // neighbour sits at exactly half a period, so an extremum
+                // admitted out to half a period (or to the 3 ms floor, which
+                // exceeds half a period above ~167 Hz) is the neighbour by
+                // construction — the v4 cabin's 180 Hz corner, where a
+                // whitened trough 2.54 ms out with half a period at 2.78
+                // cleared the floor and seeded the flip impostor. The
+                // UNCERTAINTY bound keeps the rule honest in the other
+                // direction: a reach far narrower than what the anchor is
+                // known to within would refuse an extremum that could
+                // legitimately be the same lobe seen through the anchor's own
+                // error. A quarter period is the floor of the first bound —
+                // halfway to the neighbour — and the second can only widen it,
+                // never past what the untightened rule already allowed.
+                // 400/fc is four fifths of a half period: comfortably short
+                // of the neighbour, with room for the anchor to be a little
+                // off without the rule reading the neighbour as the same
+                // lobe. The uncertainty may widen the reach up to that cap
+                // and no further — past it the two are indistinguishable, and
+                // this engine's standing answer to that is the envelope.
                 double reachMs = anchorPredictionVerified
-                    ? 250.0 / pair.CrossoverHz
+                    ? Math.Min(
+                        SeedReachMs(pair.CrossoverHz),
+                        Math.Max(
+                            250.0 / pair.CrossoverHz,
+                            Math.Min(anchorUncertaintyMs, 400.0 / pair.CrossoverHz)))
                     : SeedReachMs(pair.CrossoverHz);
                 if (!arrivalReanchored && Math.Abs(seedOffsetMs) > reachMs)
                 {

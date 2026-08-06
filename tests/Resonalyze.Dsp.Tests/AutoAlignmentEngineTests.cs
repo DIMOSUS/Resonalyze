@@ -997,29 +997,38 @@ public sealed class AutoAlignmentEngineTests
             CrossoverKind.BandPass,
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 200, 36),
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 70, 36)));
-        Complex[] front = UnitImpulse(BasePosition);
-        // The mode rides on the BYPASSED response, as a room mode does: the
-        // predictor must gate it out rather than be fooled by it.
-        Complex[] withMode = FrontUnderLateMode(0.0, 12.0, 0.35);
+        // The BYPASSED response is the driver in the room: a front, and the
+        // room's later build-up riding on it. The processed response is that
+        // same measurement through the steep chain, which is what pushes the
+        // detector onto the mode. Both reads below come from the real
+        // detector — nothing is nudged by hand (review find).
+        Complex[] front = FrontUnderLateMode(0.0, 12.0, 0.0);
+        Complex[] withMode = FrontUnderLateMode(0.0, 12.0, 0.6);
 
         AlignmentSnapshot clean = PredictableSnapshot("clean", front, chain);
         AlignmentSnapshot latched = PredictableSnapshot("latched", withMode, chain);
 
-        double CleanRead(AlignmentSnapshot side) =>
+        double Read(AlignmentSnapshot side) =>
             VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
                 side.ImpulseResponse, SampleRate, 100, 400, side.ValidRange)
                 .FirstArrivalDelayMilliseconds;
 
+        double cleanMs = Read(clean);
+        double latchedMs = Read(latched);
+        // The fixture only means anything if the mode actually moved the
+        // detector: assert that before asserting what the probe makes of it.
+        Assert.True(latchedMs - cleanMs > 5.0,
+            $"the fixture did not latch: clean {cleanMs:0.000}, " +
+            $"with mode {latchedMs:0.000} ms");
+
         Assert.Equal(
             AutoAlignmentEngine.PredictionState.Verified,
             AutoAlignmentEngine.GradeAgainstPrediction(
-                clean, CleanRead(clean), 100, 400, out _));
-        // A read parked a mode's distance late is convicted whatever the
-        // upper-half probe would have said about it.
+                clean, cleanMs, 100, 400, out _));
         Assert.Equal(
             AutoAlignmentEngine.PredictionState.Latched,
             AutoAlignmentEngine.GradeAgainstPrediction(
-                latched, CleanRead(latched) + 8.0, 100, 400, out _));
+                latched, latchedMs, 100, 400, out _));
     }
 
     [Fact]

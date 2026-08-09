@@ -94,6 +94,11 @@ public partial class Form1
 
     private void FlushMeasurementSettings()
     {
+        // The EQ Wizard turns band edits into a settings change only once the bank
+        // goes quiet, so it is asked to land anything still in flight BEFORE the
+        // saver runs. Without this, closing the window within that pause writes the
+        // state from before the last edit and the tune silently rolls back.
+        eqWizardPanel.CommitPendingBankEdit();
         measurementSettingsSaver.Flush();
     }
 

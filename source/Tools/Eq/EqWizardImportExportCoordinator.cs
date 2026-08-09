@@ -153,7 +153,7 @@ internal sealed class EqWizardImportExportCoordinator
 
         return target.SupportsShelvingFilters
             ? 0
-            : curve.Bands.Count(band => band.Type != PeqBandType.Peaking);
+            : curve.Bands.Count(band => band.Type.IsShelving());
     }
 
     internal static EqualizationCurve WithoutShelvingBands(EqualizationCurve curve)
@@ -161,7 +161,7 @@ internal sealed class EqWizardImportExportCoordinator
         ArgumentNullException.ThrowIfNull(curve);
 
         return new EqualizationCurve(
-            curve.Bands.Where(band => band.Type == PeqBandType.Peaking),
+            curve.Bands.Where(band => !band.Type.IsShelving()),
             curve.PreampDb);
     }
 

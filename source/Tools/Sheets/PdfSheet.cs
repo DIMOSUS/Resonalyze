@@ -140,8 +140,8 @@ internal sealed class PdfSheet : IDisposable
             .Select((band, index) => new NumberedBand(index + 1, band))
             .ToList();
         return (
-            numbered.Where(entry => entry.Band.Type == PeqBandType.Peaking).ToList(),
-            numbered.Where(entry => entry.Band.Type != PeqBandType.Peaking).ToList());
+            numbered.Where(entry => !entry.Band.Type.IsShelving()).ToList(),
+            numbered.Where(entry => entry.Band.Type.IsShelving()).ToList());
     }
 
     private void AddBandTable(

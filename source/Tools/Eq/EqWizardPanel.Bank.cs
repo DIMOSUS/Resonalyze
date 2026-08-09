@@ -540,6 +540,13 @@ public partial class EqWizardPanel
         RaiseSettingsChanged();
     }
 
+    /// <summary>
+    /// Lands an edit that is still inside the coalescing pause, so a caller about
+    /// to persist the panel's settings reads the bank the user can see rather than
+    /// the one from before their last keystroke.
+    /// </summary>
+    internal void CommitPendingBankEdit() => CommitBankChange();
+
     // Adopts the current bank as the baseline with no history behind it — the
     // starting point after settings are restored, which is not an edit anyone
     // should be able to undo into.
@@ -572,7 +579,12 @@ public partial class EqWizardPanel
     private void ApplyHistoryState(PeqBankState state)
     {
         SetBank(state);
-        committedBankState = state;
+        // What the strips ended up holding, not what was asked for. A gain range
+        // narrowed since the step was recorded clamps the restored values, and
+        // adopting the unclamped state as the baseline would make the very next
+        // commit see a change nobody made — recording a phantom step and throwing
+        // the redo trail away with it.
+        committedBankState = CaptureBankState();
         UpdateUndoRedoButtons();
     }
 
@@ -769,7 +781,15 @@ public partial class EqWizardPanel
         IEnumerable<PeqBand> bands = settings.Bands != null
             ? settings.Bands
                 .Take(MaxPeqSlotCount)
-                .Select(band => new PeqBand(band.FrequencyHz, band.Q, band.GainDb, band.Type))
+                .Select(band => new PeqBand(
+                    band.FrequencyHz,
+                    band.Q,
+                    band.GainDb,
+                    // The enum converter accepts a number no member matches, and a
+                    // shape nothing recognises must become a bell HERE — the one
+                    // place it enters the app — rather than at each of the places
+                    // that later ask what it is.
+                    Enum.IsDefined(band.Type) ? band.Type : PeqBandType.Peaking))
             : Enumerable
                 .Range(0, Math.Clamp(settings.BandCount, 0, MaxPeqSlotCount))
                 .Select(index => new PeqBand(DefaultBandFrequencyHz(index), DefaultBandQ, 0));

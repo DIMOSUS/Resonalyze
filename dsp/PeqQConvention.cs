@@ -114,7 +114,7 @@ public static class PeqQConventions
     // where the designed one does not, so a shelf's Q goes to the sheet as it is.
     private static double Scale(PeqBand band, PeqQConvention convention)
     {
-        if (band.IsTransparent || band.Type != PeqBandType.Peaking)
+        if (band.IsTransparent || band.Type.IsShelving())
         {
             return 1.0;
         }

@@ -100,6 +100,34 @@ public sealed class EqWizardShelfExportTests
         Assert.Equal(PeqBandType.HighShelf, shelving[1].Band.Type);
     }
 
+    // A settings or project file can carry a number no enum member matches. Whatever
+    // the app decides it is, it has to decide the SAME thing everywhere: the filter
+    // that gets realized, the profile that gets exported and the table it is printed
+    // in must not disagree about whether it is a shelf.
+    [Fact]
+    public void AnUnknownShapeIsABellToEveryConsumerAlike()
+    {
+        var unknown = new PeqBand(1_000, 2, 3, (PeqBandType)99);
+        var curve = new EqualizationCurve(new[] { unknown });
+
+        Assert.False(unknown.Type.IsShelving());
+        // Realized as a bell rather than throwing out of the audio path...
+        Assert.Equal(
+            PeakingBiquad.Compute(unknown, 48_000),
+            PeqBiquad.Compute(unknown, 48_000));
+        // ...kept by an export that drops shelves...
+        Assert.Equal(
+            0,
+            EqWizardImportExportCoordinator.CountShelvingBandsDroppedBy(
+                TargetFor(new EasyEffectsFormat()), curve));
+        Assert.Single(EqWizardImportExportCoordinator.WithoutShelvingBands(curve).Bands);
+        // ...and printed in the bell table, not labelled as a shelf.
+        (IReadOnlyList<PdfSheet.NumberedBand> peaking,
+            IReadOnlyList<PdfSheet.NumberedBand> shelving) = PdfSheet.SplitByShape(curve.Bands);
+        Assert.Single(peaking);
+        Assert.Empty(shelving);
+    }
+
     [Fact]
     public void ASheetWithBothKindsOfFilterStillWrites()
     {

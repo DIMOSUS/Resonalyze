@@ -68,9 +68,13 @@ public static class PeqTextFile
         return builder.ToString();
     }
 
-    // The shelves are written as LSC/HSC — the variant that carries a Q — rather
-    // than as plain LS/HS, whose slope the reader would have to assume.
-    private static string TypeToken(PeqBandType type) => type switch
+    /// <summary>
+    /// The Equalizer APO keyword for a band shape. The shelves are written as
+    /// LSC/HSC — the variant that carries a Q — rather than as plain LS/HS, whose
+    /// slope the reader would have to assume. Shared with the Virtual DSP text
+    /// sheet, which prints the same filter lines for a human to type in.
+    /// </summary>
+    public static string TypeToken(PeqBandType type) => type switch
     {
         PeqBandType.LowShelf => "LSC",
         PeqBandType.HighShelf => "HSC",

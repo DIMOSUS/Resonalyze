@@ -1,3 +1,6 @@
+using Resonalyze.Dsp;
+using PeqBandSettings = Resonalyze.MeasurementSettingsFile.PeqBandSettings;
+
 namespace Resonalyze.App.Tests;
 
 // The EQ Wizard's filter bank is user-curated — the filters, and the order they
@@ -54,6 +57,27 @@ public sealed class EqWizardBankPersistenceTests : IDisposable
 
         Assert.NotNull(reloaded.EqWizard.Bands);
         Assert.Empty(reloaded.EqWizard.Bands!);
+    }
+
+    [Fact]
+    public void AShapeNoMemberMatchesIsAcceptedByTheFileAndNormalisedOnLoad()
+    {
+        // The enum converter takes a number outside the enum, so the settings file
+        // can hold one. The panel normalises it to a bell when it rebuilds the bank
+        // (ApplyPersistedBank); this pins the half the file layer owns — that such a
+        // file loads at all instead of failing the whole settings read.
+        string path = NewSettingsPath();
+        File.WriteAllText(
+            path,
+            "{ \"SchemaVersion\": 10, \"EqWizard\": { \"Bands\": [ " +
+            "{ \"FrequencyHz\": 1000, \"Q\": 2, \"GainDb\": 3, \"Type\": 99 } ] } }");
+
+        MeasurementSettingsFile settings = MeasurementSettingsFile.LoadOrDefault(path);
+
+        Assert.Null(settings.LoadWarning);
+        PeqBandSettings band = Assert.Single(settings.EqWizard.Bands!);
+        Assert.False(Enum.IsDefined(band.Type));
+        Assert.False(band.Type.IsShelving());
     }
 
     [Fact]

@@ -14,7 +14,7 @@ public static class PeqBiquad
     /// file must degrade to the default shape, not throw out of the audio path.
     /// </remarks>
     public static BiquadCoefficients Compute(PeqBand band, double sampleRateHz) =>
-        band.Type is PeqBandType.LowShelf or PeqBandType.HighShelf
+        band.Type.IsShelving()
             ? ShelvingBiquad.Compute(band, sampleRateHz)
             : PeakingBiquad.Compute(band, sampleRateHz);
 }

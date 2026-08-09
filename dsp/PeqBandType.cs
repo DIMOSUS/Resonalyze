@@ -25,3 +25,20 @@ public enum PeqBandType
     /// <summary>High shelf: everything above the band is lifted or lowered.</summary>
     HighShelf
 }
+
+/// <summary>Shape questions asked of a <see cref="PeqBandType"/>.</summary>
+public static class PeqBandTypes
+{
+    /// <summary>
+    /// True only for the two shelves. Everything else — the bell, and a value no
+    /// member matches — is a bell, which is what the realization, the header and
+    /// every profile writer already fall back to.
+    /// </summary>
+    /// <remarks>
+    /// Asked through this rather than by testing <c>!= Peaking</c>, so a settings
+    /// file carrying an out-of-range number cannot be a bell to the filter and a
+    /// shelf to the tuning sheet at the same time.
+    /// </remarks>
+    public static bool IsShelving(this PeqBandType type) =>
+        type is PeqBandType.LowShelf or PeqBandType.HighShelf;
+}

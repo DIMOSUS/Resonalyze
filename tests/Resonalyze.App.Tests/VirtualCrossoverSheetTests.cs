@@ -58,6 +58,48 @@ public sealed class VirtualCrossoverSheetTests
         Assert.Contains($"Fc 120 Hz Gain -4.0 dB {expectedQ}", text);
     }
 
+    // The text sheet is an instruction to type filters into a DSP, so it has to name
+    // the shape as well as the numbers. A shelf printed as PK sends the tuner to the
+    // wrong filter type with the right frequency — the shape reads plausible and the
+    // curve is wrong. LSC/HSC are the Equalizer APO keywords that carry a Q, which is
+    // what the sheet prints beside them.
+    [Fact]
+    public void FormatText_NamesTheFilterShapeOfEveryBand()
+    {
+        VirtualCrossoverProjectFile project = CreateProject();
+        project.Pairs[0].Left!.PeqBands =
+        [
+            new PeqBand(120, 2.0, -4.0),
+            new PeqBand(80, 0.7, 4.5, PeqBandType.LowShelf),
+            new PeqBand(6_300, 1.1, -3.5, PeqBandType.HighShelf)
+        ];
+
+        string text = VirtualCrossoverSheet.FormatText(project, null);
+
+        Assert.Contains("Filter 1: ON PK Fc 120 Hz Gain -4.0 dB Q 2", text);
+        Assert.Contains("Filter 2: ON LSC Fc 80 Hz Gain +4.5 dB Q 0.7", text);
+        Assert.Contains("Filter 3: ON HSC Fc 6300 Hz Gain -3.5 dB Q 1.1", text);
+    }
+
+    // A shelf's Q is a knee, not a bandwidth, so no convention restates it — while the
+    // bell beside it is restated as usual.
+    [Fact]
+    public void FormatText_LeavesAShelfQAloneUnderAProportionalConvention()
+    {
+        VirtualCrossoverProjectFile project = CreateProject();
+        project.Pairs[0].Left!.PeqBands =
+        [
+            new PeqBand(120, 2.0, -4.0),
+            new PeqBand(80, 0.7, 12.0, PeqBandType.LowShelf)
+        ];
+
+        string text = VirtualCrossoverSheet.FormatText(
+            project, null, PeqQConvention.Symmetric);
+
+        Assert.Contains("Fc 120 Hz Gain -4.0 dB Q 2.52", text);
+        Assert.Contains("Fc 80 Hz Gain +12.0 dB Q 0.7", text);
+    }
+
     // Named on every sheet, including the default one — a sheet that does not say which
     // convention its Q belongs to is unreadable a month later.
     [Theory]

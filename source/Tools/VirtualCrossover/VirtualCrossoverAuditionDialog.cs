@@ -677,9 +677,8 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
     }
 
     // Through a temporary file beside the target: a cancel or a failure part-way
-    // through a multi-hundred-megabyte write must not leave a truncated WAV
-    // where the user's chosen file — possibly one they asked to overwrite —
-    // used to be.
+    // through a multi-hundred-megabyte write must not leave a truncated WAV in
+    // place of the user's chosen file, which they may have asked to overwrite.
     private static void WriteRenderedTrack(
         string targetPath,
         AuralizationResult result,

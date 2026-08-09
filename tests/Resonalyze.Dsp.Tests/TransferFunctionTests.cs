@@ -396,8 +396,8 @@ public sealed class TransferFunctionTests
     [Fact]
     public void ComputeAveragedRelativeIr_MaskedBinsDoNotScaleTheGateThresholds()
     {
-        // PR-review finding: the peak scan anchoring gateHigh and λ used to
-        // include bins the excitation edge later zeroes or attenuates. A loud
+        // The peak scan anchoring gateHigh and λ must not include bins the
+        // excitation edge later zeroes or attenuates. A loud
         // sub-edge reference component (hum below — or in the ramp of — a
         // narrow sweep's start) then scaled the power gate from an artifact
         // excluded from the estimate, fading the genuinely excited bins. The
@@ -431,7 +431,7 @@ public sealed class TransferFunctionTests
     [Fact]
     public void ComputeAveragedRelativeIr_CoherenceIsUntrustedWhereTheEstimateIsMasked()
     {
-        // PR-review finding: coherence used to be returned unmasked. Below
+        // Coherence must not be returned unmasked. Below
         // the sweep start the sweep's own leakage — and any stationary rumble
         // — is deterministic across runs, so raw γ² reads ~1 exactly where
         // the estimate zeroes the bins as unexcited, and the consumers that

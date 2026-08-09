@@ -4,8 +4,8 @@ namespace Resonalyze;
 
 /// <summary>
 /// Acceptance checks for one captured sweep run, evaluated BEFORE the run is
-/// added to the average, so one bad capture can no longer contaminate it
-/// irreversibly. Deliberately limited to unambiguous failures (clipping, a
+/// added to the average, so one bad capture cannot contaminate it irreversibly.
+/// Deliberately limited to unambiguous failures (clipping, a
 /// dead signal, an undersized capture): statistical outlier checks
 /// (peak-delay vs median, IR correlation against a reference run) need
 /// thresholds calibrated on real multi-run captures and are a later phase.

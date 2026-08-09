@@ -13,8 +13,6 @@ internal static class VirtualCrossoverMetric
     /// <summary>
     /// One sum-loss read-out: a junction pair (or the total across the crossover
     /// window), its average and dip in dB, and the band it was measured over.
-    /// (The polarity-flip null depth used to be a third column; it proved
-    /// uninformative in practice and was dropped along with its computation.)
     /// </summary>
     internal readonly record struct Entry(
         string Junction,

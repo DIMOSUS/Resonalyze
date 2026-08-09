@@ -874,7 +874,7 @@ public sealed class StereoAlignmentTests
         // certifies every junction itself — and with the right woofer only a
         // -60 dB residue, the whole co-move must abstain rather than move
         // the sub judged by the healthy left junction alone: that would
-        // merely re-optimize what the walk already settled (review find).
+        // merely re-optimize what the walk already settled.
         var sub = new TestChannel("sub", ImpulseAtMs(10.0));
         var leftWoof = new TestChannel("L woof", ImpulseAtMs(8.0));
         var rightWoof = new TestChannel("R woof", ImpulseAtMs(7.5, 0.001));

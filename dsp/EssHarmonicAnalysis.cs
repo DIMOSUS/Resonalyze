@@ -237,8 +237,8 @@ public sealed record HarmonicAnalysisOptions(
 /// Separates a deconvolved exponential-sweep impulse response into its linear and
 /// harmonic packets. Each harmonic order gets its OWN time window (bracketed by
 /// the geometric-mean boundaries to its neighbours), rather than one shared
-/// window spanning HD2..HD5 — that shared window is what made the old THD sum the
-/// packets complex-wise and depend on their relative phase.
+/// window spanning HD2..HD5: a shared window forces the THD sum to combine the
+/// packets complex-wise, making it depend on their relative phase.
 /// </summary>
 public static class EssHarmonicAnalysis
 {

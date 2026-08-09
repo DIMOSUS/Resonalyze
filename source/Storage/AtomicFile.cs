@@ -5,12 +5,12 @@ namespace Resonalyze;
 /// before: the content goes to a sibling temporary file first and only replaces
 /// the target once it is complete.
 ///
-/// The application's own stores (settings, history) already did this inline. The
-/// files the USER exports and shares — tuning sheets, PEQ profiles, Virtual DSP
-/// projects — did not: they opened the destination with <c>File.Create</c>, which
-/// truncates on open, so a crash or a full disk mid-write left a zero-length or
-/// half-written file where a good one used to be. Overwriting an existing export
-/// is exactly when that matters.
+/// The application's own stores (settings, history) do this inline; this exists
+/// for the files the USER exports and shares — tuning sheets, PEQ profiles,
+/// Virtual DSP projects. Writing them through <c>File.Create</c> truncates the
+/// destination on open, so a crash or a full disk mid-write leaves a
+/// zero-length or half-written file in place of a good one, and overwriting an
+/// existing export is exactly when that matters.
 /// </summary>
 internal static class AtomicFile
 {

@@ -10,8 +10,8 @@ namespace Resonalyze;
 /// consume it: <see cref="TransferIrDiagnostics.EstimateIrStart"/>, memoized
 /// per IR array so the dialogs and the plot factory read one figure computed
 /// once per measurement instead of re-running the band-limited analysis on
-/// every control change. Falls back to the transfer peak (the old Fit figure)
-/// when the estimator refuses the record, so Auto is never worse than Fit was.
+/// every control change. Falls back to the transfer peak — the Fit figure —
+/// when the estimator refuses the record, so Auto is never worse than Fit.
 /// </summary>
 internal static class TransferIrStartCache
 {

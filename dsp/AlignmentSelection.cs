@@ -68,10 +68,10 @@ public static class AlignmentSelection
     /// "Relatively" is against <paramref name="neighborInverted"/>, the
     /// settled neighbor's polarity flag: polarity purity is a property of
     /// the PAIR, not of one flag. With an inverted neighbor the pure choice
-    /// is the equally-inverted candidate — an absolute-flag preference there
-    /// used to "rescue" a mixed pair and pay for the cosmetics with a
-    /// quarter period of delay, dragging the tweeter off the onset line its
-    /// inverted twin sat on.
+    /// is the equally-inverted candidate; an absolute-flag preference there
+    /// "rescues" a mixed pair and pays for the cosmetics with a quarter period
+    /// of delay, dragging the tweeter off the onset line its inverted twin
+    /// sits on.
     /// </summary>
     public static AlignmentCandidate Select(
         IReadOnlyList<AlignmentCandidate> candidates,

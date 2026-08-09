@@ -3,8 +3,8 @@ using Resonalyze.Dsp;
 namespace Resonalyze;
 
 /// <summary>
-/// Owns the microphone-calibration state that used to live on <c>Form1</c>:
-/// resolves the configured 0°/90° paths (including the legacy
+/// Owns the microphone-calibration state: resolves the configured 0°/90° paths
+/// (including the legacy
 /// <c>calibration.txt</c> fallback and the 90°-from-0° approximation), caches
 /// loaded files, and reports each unusable path at most once per session
 /// through the callback. <see cref="Get"/> runs on <c>Task.Run</c> plot-build
@@ -100,8 +100,8 @@ internal sealed class MicrophoneCalibrationService
         return calibrationFile;
     }
 
-    // ResolvePath maps a configured-but-deleted file to null, which used to
-    // silently disable the correction for every plot.
+    // ResolvePath maps a configured-but-deleted file to null, which would
+    // otherwise silently disable the correction for every plot.
     private void WarnIfConfiguredMissing(MicrophoneCalibrationMode mode)
     {
         string? configured = getConfiguredPath(mode);

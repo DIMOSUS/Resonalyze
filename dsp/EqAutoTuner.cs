@@ -36,10 +36,10 @@ public static class EqAutoTuner
         /// <summary>
         /// Ceiling on the TOTAL EQ gain (preamp + summed bands) at any
         /// frequency. A positive preamp stacked under boost bands is a
-        /// clipping DSP profile — the fit used to hand one out and let the UI
-        /// report the damage as a negative headroom afterwards. The preamp is
-        /// capped after the bands are placed, so the fitted shape stays and
-        /// the curve honestly sits below an unreachable target instead.
+        /// clipping DSP profile, and handing one out leaves the UI reporting the
+        /// damage as negative headroom afterwards. The preamp is capped after
+        /// the bands are placed, so the fitted shape stays and the curve
+        /// honestly sits below an unreachable target instead.
         /// Unbounded by default: as a pure curve fit the preamp legitimately
         /// carries the level difference between arbitrarily referenced source
         /// and target; a caller producing a clip-safe cuts-only profile passes 0.

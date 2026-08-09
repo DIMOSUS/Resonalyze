@@ -166,10 +166,10 @@ public sealed class PreparedDspResponse
     /// scalar gain — including the constant π a polarity flip contributes — has no
     /// frequency dependence and so adds nothing.
     /// <para>
-    /// This used to secant the complex response and read -Im(H'/H). That never wrapped,
-    /// but it approximates H rather than φ, so it flattened exactly the sharp peaks worth
-    /// seeing: a Q-20 all-pass near Nyquist read 1.4 ms against a true 127 ms. The closed
-    /// form removes both the error and any chance of this disagreeing with the readouts
+    /// Closed form rather than a secant of the complex response reading -Im(H'/H):
+    /// that never wraps, but it approximates H rather than φ and so flattens exactly
+    /// the sharp peaks worth seeing — a Q-20 all-pass near Nyquist reads 1.4 ms
+    /// against a true 127 ms. It would also be free to disagree with the readouts
     /// that share the helper.
     /// </para>
     /// </summary>

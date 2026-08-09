@@ -421,8 +421,8 @@ public sealed class TransferIrDiagnosticsTests
     // PRODUCTION estimator with the production gate shape (full band plus
     // fade guard bands): the ideal transfer must clear the floor with
     // margin, gated uncorrelated noise must stay far below it. A 10 ms
-    // pre-window failed the 20-50 Hz case at 19.9 dB — the review find
-    // behind this test.
+    // pre-window fails the 20-50 Hz case at 19.9 dB, which is what this
+    // test pins.
     [Theory]
     [InlineData(20.0, 50.0)]
     [InlineData(20.0, 80.0)]

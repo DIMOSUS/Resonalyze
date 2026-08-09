@@ -373,8 +373,8 @@ internal sealed partial class MeasurementSettingsFile
         public PeqBandType Type { get; set; } = PeqBandType.Peaking;
     }
 
-    // Self-contained EQ Wizard state (the mode no longer derives anything from
-    // overlays or the current measurement): the isolated target curve, the filter
+    // Self-contained EQ Wizard state — the mode derives nothing from overlays or
+    // the current measurement: the isolated target curve, the filter
     // bank and its gain range, source smoothing and the microphone calibration
     // applied to the loaded IR. The loaded IR itself is not persisted.
     internal sealed class EqWizardSettings

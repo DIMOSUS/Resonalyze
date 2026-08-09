@@ -2,10 +2,9 @@ namespace Resonalyze;
 
 /// <summary>
 /// The pure source-compatibility policy of the Virtual DSP tool: whether a
-/// candidate measurement can drive a channel. The rule was previously hand-rolled
-/// in two places (interactive assignment and silent project reload) as mutually
-/// inverse predicates that could drift; this is the single decision both share.
-/// Kept UI-free so it is unit-testable.
+/// candidate measurement can drive a channel. One decision shared by interactive
+/// assignment and silent project reload, which would otherwise hold mutually
+/// inverse predicates free to drift apart. Kept UI-free so it is unit-testable.
 /// </summary>
 internal static class VirtualCrossoverSourceRules
 {

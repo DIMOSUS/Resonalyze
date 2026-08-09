@@ -9,8 +9,9 @@ namespace Resonalyze;
 /// transfer IR plus the derived data every side needs. Built once from a
 /// measurement snapshot — a picked file, a history entry, or a persisted
 /// reference on restore — then written into a channel side's runtime state.
-/// The single <see cref="FromSnapshot"/>/<see cref="ApplyTo"/> pair replaces the
-/// per-path copies the file, history and restore flows used to each hand-roll.
+/// One <see cref="FromSnapshot"/>/<see cref="ApplyTo"/> pair for all three
+/// paths, so the file, history and restore flows share the conversion instead of
+/// each hand-rolling a copy of it.
 /// </summary>
 internal sealed class ResolvedVirtualDspSource
 {

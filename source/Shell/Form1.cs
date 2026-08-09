@@ -234,8 +234,8 @@ namespace Resonalyze
             }
         }
 
-        // Measurement failures used to surface only as an "Error" record button;
-        // the stored exception text was never shown to the user.
+        // Surfaces the stored exception text: an "Error" record button alone
+        // leaves the user with no idea what actually failed.
         private void ShowMeasurementError(string summary, Exception? error)
         {
             if (error == null || closingInProgress)

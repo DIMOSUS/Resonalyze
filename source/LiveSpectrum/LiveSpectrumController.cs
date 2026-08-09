@@ -817,7 +817,7 @@ internal sealed class LiveSpectrumController : IDisposable
                 updatePlotLabels();
                 // A user stop cancels the capture and reports success; reaching
                 // here with an error means the device or driver failed mid-run,
-                // which used to reset the UI silently.
+                // which must not reset the UI silently.
                 if (!success &&
                     measurement.LastError is Exception error &&
                     !owner.IsDisposed &&

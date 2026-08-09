@@ -186,12 +186,12 @@ namespace Resonalyze
             signal = new NoiseSignal();
             // Periodic pink repeats one FFT-length period exactly, and both
             // playback paths loop the stream seamlessly — so ONE period is the
-            // whole signal. Materializing the full requested duration used to
-            // allocate ~35 MB of LOH arrays (60 s mono floats + the stereo
-            // playback copy) at the start of a live session, for a visible
-            // memory spike and cold-start page-commit work right next to the
-            // first audio callbacks. Non-periodic colours still need the full
-            // length (a short loop of aperiodic noise would seam audibly).
+            // whole signal. Materializing the full requested duration instead
+            // allocates ~35 MB of LOH arrays (60 s mono floats + the stereo
+            // playback copy) at the start of a live session: a visible memory
+            // spike and cold-start page-commit work right next to the first
+            // audio callbacks. Non-periodic colours still need the full length —
+            // a short loop of aperiodic noise seams audibly.
             double signalDuration =
                 LiveSpectrumOptions.NoiseColor is NoiseColor.PinkPeriodic or NoiseColor.Silent
                     ? SequenceLength / (double)SampleRate

@@ -243,7 +243,7 @@ public sealed class ShapedFrontProbe
     // The upper-half probe's allowance is built from the SAME estimator and
     // is NOT protected by the conviction factor — the credited skew is added
     // to the tolerance directly, so whatever it over-credits is room a real
-    // modal latch could hide in (review find).
+    // modal latch could hide in.
     //
     // What this pins is the size of that room. The credit may never exceed
     // the skew the clean front honestly shows by more than one base
@@ -266,7 +266,7 @@ public sealed class ShapedFrontProbe
 
             // The bound has to bite: asserting against the clamp's own
             // ceiling would hold for any finite skew and prove nothing
-            // (review find). Half a base allowance is well inside the clamp,
+            // Half a base allowance is well inside the clamp,
             // so this fails if the credit stops tracking the honest skew.
             Assert.True(overCreditMs < 0.5 * baseToleranceMs,
                 $"{sourceName} in {lowHz:0}-{highHz:0} Hz: over-credited " +
@@ -277,7 +277,7 @@ public sealed class ShapedFrontProbe
 
     // The window between the base allowance and the clamped ceiling is where
     // a credited tolerance decides the verdict, and no test reached it while
-    // the mode fixtures only produced skews past both (review find). This
+    // the mode fixtures only produced skews past both. This
     // sweeps the build-up's delay and level so the resulting skew lands
     // inside that window, and pins the POLICY there: the probe declines to
     // convict, because a 200-400 Hz comparison cannot attribute energy that
@@ -297,7 +297,7 @@ public sealed class ShapedFrontProbe
         // only ever produces a skew far past the window however its level is
         // scaled. Both the delay and the level are therefore swept, and the
         // sweep itself is asserted — a run that lands nothing fails rather
-        // than passing silently (review find).
+        // than passing silently.
         var landed = new List<(double DelayMs, double Level, double SkewMs)>();
         for (double modeDelayMs = 2.0; modeDelayMs <= 9.0; modeDelayMs += 0.5)
         {
@@ -490,7 +490,7 @@ public sealed class ShapedFrontProbe
     // Two shaped fronts through two DIFFERENT chains — the junction case.
     // Each side may be VERIFIED on its own while their residuals differ, and
     // it is the DIFFERENCE that the timeline stores; the pair anchor is only
-    // as good as that difference (review find).
+    // as good as that difference.
     [Fact]
     public void PredictionResiduals_AreWhatTheJunctionAnchorInherits()
     {

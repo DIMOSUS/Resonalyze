@@ -49,8 +49,8 @@ public enum SpectrumCurves
     ThirdHarmonic = 1 << 2,
     FourthHarmonic = 1 << 3,
     ThdPlusNoise = 1 << 4,
-    // The measurement noise floor, selectable on its own (it is not a harmonic and
-    // no longer rides on the THD flag).
+    // The measurement noise floor, selectable on its own: it is not a harmonic,
+    // so it does not ride on the THD flag.
     NoiseFloor = 1 << 5,
     Harmonics = SecondHarmonic | ThirdHarmonic | FourthHarmonic | ThdPlusNoise,
     // Everything derived from the sweep deconvolution — harmonics AND the noise

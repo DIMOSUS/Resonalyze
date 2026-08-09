@@ -171,8 +171,8 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
     /// Stops appending captured samples while the device keeps running (and keeps
     /// raising level meters) — used between averaged sweep runs, where a long
     /// confirmation pause would otherwise grow the capture buffer without bound.
-    /// The old Wave path stopped the device between runs; WASAPI cannot be
-    /// restarted, so it drops packets instead. <see cref="Reset"/> resumes.
+    /// Stopping the device between runs is not an option — WASAPI cannot be
+    /// restarted — so packets are dropped instead. <see cref="Reset"/> resumes.
     /// </summary>
     public void Pause()
     {

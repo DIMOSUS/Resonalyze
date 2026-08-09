@@ -87,8 +87,8 @@ namespace Resonalyze.Dsp
         // gate for both, and phase must stay the mathematical integral of the
         // group delay. A gate whose left shoulder runs before the IR start
         // (offset < left fade) reads the cyclic tail — the transfer IR is
-        // circular by construction, so its negative-time content lives there —
-        // where zero-padding used to silently feed phase and GD two different
+        // circular by construction, so its negative-time content lives there.
+        // Zero-padding instead would silently feed phase and GD two different
         // signals.
         private static Complex[] BuildPhaseSpectrum(
             IImpulseMeasurement measurement,

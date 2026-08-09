@@ -11,10 +11,9 @@ namespace Resonalyze.Dsp;
 /// All figures read the steady-state response (a long analysis window over the
 /// full processed IR, room decay included) because that is what sustained
 /// program material sums to at the listening position — the same regime the
-/// sum-loss metric measures. Direct-sound (frequency-dependent-windowed)
-/// phase systematically disagrees with it by several ms at subwoofer
-/// frequencies (the room's own group delay), so it is deliberately NOT used
-/// here.
+/// sum-loss metric measures. Direct-sound (frequency-dependent-windowed) phase
+/// is deliberately NOT used: it disagrees systematically by several ms at
+/// subwoofer frequencies, which is the room's own group delay.
 /// </remarks>
 /// <param name="CurrentScore">
 /// Energy-weighted in-phase score Σw·cos(Δφ)/Σw at the CURRENT settings:
@@ -24,15 +23,14 @@ namespace Resonalyze.Dsp;
 /// </param>
 /// <param name="PhaseAtCrossoverDeg">
 /// The phase of lower minus upper AT the crossover, wrapped to ±180°: the
-/// weighted circular mean over a narrow window around fc — deliberately a
-/// local measurement, not the straight-line fit's intercept. The intercept
-/// extrapolates through whatever interference notches and spectral gaps bend
-/// the band's phase; on a real mid/tweeter junction it read +158° where the
-/// handover itself stood near −15°. Near 0° the junction is phase-aligned.
-/// A φ near ±180° does NOT by itself settle polarity — an inverted channel
-/// and a half-period delay are identical at fc — so the flip decision comes
-/// from <paramref name="BestInvert"/> (a whole-band score comparison), not
-/// from this angle.
+/// weighted circular mean over a narrow window around fc — deliberately local,
+/// not the straight-line fit's intercept, which extrapolates through whatever
+/// interference notches and spectral gaps bend the band's phase (on a real
+/// mid/tweeter junction it read +158° where the handover stood near −15°).
+/// Near 0° the junction is phase-aligned. A φ near ±180° does NOT settle
+/// polarity on its own — an inverted channel and a half-period delay are
+/// identical at fc — so the flip decision comes from
+/// <paramref name="BestInvert"/>, a whole-band score comparison.
 /// </param>
 /// <param name="PhaseConsistency">
 /// The mean resultant length R (0..1) of that circular mean: how much the
@@ -59,13 +57,12 @@ namespace Resonalyze.Dsp;
 /// </param>
 /// <param name="BestScore">The phase score at that optimum.</param>
 /// <param name="OppositePolarityScore">
-/// The best score the OTHER polarity reaches over the sweep. The flip decision
-/// is <paramref name="BestInvert"/> = this beats the kept polarity by a clear
-/// margin; when the two are close, the polarity is genuinely ambiguous (a
-/// low-frequency inversion and a half-period delay sum almost alike), so the
-/// read-out keeps the current polarity — the non-disruptive default — rather
-/// than recommending a flip on a coin toss. Exposed so the tooltip can show
-/// how close the alternative sits.
+/// The best score the OTHER polarity reaches over the sweep.
+/// <paramref name="BestInvert"/> is set when this beats the kept polarity by a
+/// clear margin; when the two are close the polarity is genuinely ambiguous (a
+/// low-frequency inversion and a half-period delay sum almost alike) and the
+/// read-out keeps the current polarity rather than flipping on a coin toss.
+/// Exposed so the tooltip can show how close the alternative sits.
 /// </param>
 /// <param name="RivalExtraDelayMs">
 /// The nearest same-polarity rival lobe (the best local optimum at least a

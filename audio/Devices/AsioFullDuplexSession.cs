@@ -413,8 +413,9 @@ internal sealed class AsioFullDuplexSession : IDisposable
             playbackStopped?.TrySetResult(true);
         }
 
-        // No more samples are coming: a waiter blocked on a sample count the
-        // stopped driver will never deliver used to hang until a manual Abort.
+        // No more samples are coming, so fault the waiters: one blocked on a
+        // sample count the stopped driver will never deliver would otherwise
+        // hang until a manual Abort.
         Exception failure = args.Exception ??
             new InvalidOperationException(
                 "ASIO playback stopped before the requested samples arrived.");

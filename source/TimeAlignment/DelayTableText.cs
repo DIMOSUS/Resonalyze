@@ -9,8 +9,8 @@ namespace Resonalyze;
 internal static class DelayTableText
 {
     public const int FirstColumn = 18;
-    // Widened past the old 34 so a Compare cell "value (Δ)" fits without touching
-    // the Strongest Peak column.
+    // Wide enough for a Compare cell's "value (Δ)" without touching the
+    // Strongest Peak column.
     public const int SecondColumn = 37;
 
     public static string FormatLine(

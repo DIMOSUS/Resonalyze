@@ -76,7 +76,7 @@ internal sealed class PlotModelFactory
 
     /// <summary>
     /// The scale the Frequency Response plot renders in — simply the selected one.
-    /// Without a valid SPL anchor the plot no longer falls back to dBr: it keeps the
+    /// Without a valid SPL anchor the plot does NOT fall back to dBr: it keeps the
     /// dB SPL axis in a view-only state (overlays shown, measurement curves omitted,
     /// see <see cref="CreateFrequencyResponse"/>), so overlays gate on the selection
     /// and follow the axis exactly.

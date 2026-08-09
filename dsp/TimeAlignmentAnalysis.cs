@@ -30,8 +30,8 @@ public readonly record struct TimeAlignmentAnalysisResult(
     // strongest peak, <= 0 dB (0 when they coincide). A low value means the
     // pick sits on a broad leading edge — physically normal for band-limited
     // low-frequency drivers — so its exact position carries less certainty,
-    // however clean the recording. This is what used to be folded into a
-    // single "quality" figure and misread great woofer measurements as fair.
+    // however clean the recording. Kept apart from the SNR above: folding the
+    // two into one "quality" figure misreads great woofer measurements as fair.
     double FirstArrivalProminenceDecibels,
     double FirstArrivalPeakSample,
     double FirstArrivalDelayMilliseconds,
@@ -347,9 +347,9 @@ public static class TimeAlignmentAnalysis
 
     // A short refinement window (~0.1 ms) around the envelope peak: wide enough to
     // absorb the envelope's sub-sample bias, narrow enough not to slide onto a
-    // neighbouring reflection. The cap is in samples only as a backstop — at
-    // 32 it no longer shrinks the window in TIME at high sample rates the way
-    // the old cap of 8 did (192 kHz used to get ±0.04 ms instead of ~0.1 ms).
+    // neighbouring reflection. The cap is in samples only as a backstop: at 32 it
+    // does not shrink the window in TIME at high rates the way a tighter cap
+    // would (a cap of 8 gives 192 kHz ±0.04 ms instead of ~0.1 ms).
     private const double PhatSearchRadiusSeconds = 0.0001;
 
     private static int ComputePhatSearchRadius(int sampleRate) =>

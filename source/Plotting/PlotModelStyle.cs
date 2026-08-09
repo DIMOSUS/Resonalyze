@@ -36,8 +36,8 @@ internal static class PlotModelStyle
     // readme recommends when its input is being overdriven. A padded loopback
     // lifts a perfectly normal response to +10..+30 dBr, so the ceiling has to
     // clear realistic pads with margin rather than clip the curve out of the
-    // view (the default VIEW still opens at -90..0; FitDecibelViewToSeries
-    // raises it when the data actually sits above).
+    // view (the default VIEW still opens at -90..0;
+    // FitDecibelViewToPrimaryCurves raises it when the data actually sits above).
     public const double RelativeDecibelMinimum = -90;
     public const double RelativeDecibelMaximum = 0;
     public const double RelativeDecibelAbsoluteMinimum = -120;

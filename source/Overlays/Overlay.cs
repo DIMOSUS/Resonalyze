@@ -798,9 +798,9 @@ public sealed class Overlay
         }
     }
 
-    // A slot file that fails to load used to present as an empty slot and the
-    // next capture silently overwrote it. Setting it aside keeps the damaged
-    // data recoverable and makes each broken file warn exactly once.
+    // Left in place, a slot file that fails to load presents as an empty slot
+    // and the next capture silently overwrites it. Setting it aside keeps the
+    // damaged data recoverable and makes each broken file warn exactly once.
     private void QuarantineCorruptSlot(Mode mode, Exception error)
     {
         try
@@ -1503,8 +1503,8 @@ public sealed class Overlay
         // the user can lower to Off to see the original curve — starts from the true
         // data, seeded with the mode's current smoothing so the fresh overlay matches
         // what is on screen. Curves with no raw form (imported text, operations, modes
-        // that do not octave-smooth) fall back to capturing the drawn curve as-is at
-        // smoothing Off, preserving the old behaviour.
+        // that do not octave-smooth) fall back to capturing the drawn curve as-is
+        // at smoothing Off.
         RawCurveCapture? raw = tag != null ? collection.TryGetRawCapture(tag) : null;
         DataPoint[] points;
         List<SignalPoint>? spectrum;

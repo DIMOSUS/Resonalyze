@@ -106,8 +106,8 @@ public partial class EqWizardPanel : UserControl
         checkBoxBypass.CheckedChanged += (_, _) => DrawSelectedCurves();
         checkBoxCutsOnly.CheckedChanged += (_, _) =>
         {
-            // Only the next fit reads it, but orphan any in-flight one so a result
-            // computed under the old setting cannot land.
+            // Only the next fit reads it, but orphan any in-flight one so a
+            // result computed under the previous setting cannot land.
             autoTuneOrchestrator.Invalidate();
             RaiseSettingsChanged();
         };

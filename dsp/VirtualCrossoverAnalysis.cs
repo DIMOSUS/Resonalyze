@@ -154,11 +154,10 @@ public static class VirtualCrossoverAnalysis
     // Zero padding appended before the FFT so the chain's delay shift and the
     // filter ringing tails stay linear instead of wrapping around. The floor
     // (8192 samples ≈ 170 ms at 48 kHz) covers every crossover; the actual pad
-    // follows the chain's slowest pole, because a low-frequency high-Q PEQ
-    // rings far longer — a 20 Hz / Q 10 boost decays only ~9 dB over the old
-    // fixed pad, and the rest wrapped circularly into the early IR, phase and
-    // the alignment sums. The cap bounds the FFT growth for pathological
-    // settings.
+    // follows the chain's slowest pole, because a low-frequency high-Q PEQ rings
+    // far longer — a 20 Hz / Q 10 boost decays only ~9 dB over the floor, and
+    // the rest would wrap circularly into the early IR, phase and alignment
+    // sums. The cap bounds FFT growth for pathological settings.
     private const int MinFilterTailPadding = 8192;
     private const int MaxFilterTailPadding = 262_144;
     private const double FilterTailDecayDb = 120.0;
@@ -460,22 +459,6 @@ public static class VirtualCrossoverAnalysis
     /// </summary>
     private const double MinEvidenceOctaves = 1.0 / 6.0;
 
-    // The delay-evidence STRUCTURE gate: a delay is only OBSERVABLE where both
-    // sides genuinely radiate over a usable width. With one side silent (or
-    // buried tens of dB under its partner everywhere — deconvolution residue)
-    // the loss |F+V|/(|F|+|V|) is flat at 0 dB for EVERY delay and polarity,
-    // so the search objective degenerates to the arrival prior alone and would
-    // manufacture a confident "candidate" at the anchor out of nothing.
-    // Evidence bins need (a) the weaker side within the reliability gate of
-    // the STRONGER SIDE IN THAT BIN — a per-bin balance, judged locally like
-    // the sum-loss level gate, because one global reference would let a
-    // subwoofer's cabin-gain peak veto a perfectly healthy hand-over region
-    // sitting 30 dB below it — and (b) the bin above the in-band level floor;
-    // their integrated width must reach MinEvidenceOctaves. This grades
-    // spectral STRUCTURE relative to the record itself: it cannot tell true
-    // noise from signal (two comparable noise floors pass a level test by
-    // construction) — the engine's arrival-SNR refusal, which knows each
-    // record's own noise floor, owns that judgement upstream.
     /// <summary>
     /// How many CONSECUTIVE evidence bins a qualifying run must hold besides
     /// the octave width: at a low junction one coarse FFT cell can span a
@@ -484,13 +467,27 @@ public static class VirtualCrossoverAnalysis
     /// </summary>
     private const int MinEvidenceBins = 3;
 
+    // The delay-evidence STRUCTURE gate: a delay is only OBSERVABLE where both
+    // sides genuinely radiate over a usable width. With one side silent (or
+    // buried tens of dB under its partner everywhere — deconvolution residue)
+    // the loss |F+V|/(|F|+|V|) is flat at 0 dB for EVERY delay and polarity, so
+    // the search objective degenerates to the arrival prior alone and would
+    // manufacture a confident "candidate" at the anchor out of nothing. Evidence
+    // bins need (a) the weaker side within the reliability gate of the STRONGER
+    // SIDE IN THAT BIN — a per-bin balance, since one global reference would let
+    // a subwoofer's cabin-gain peak veto a healthy hand-over region 30 dB below
+    // it — and (b) the bin above the in-band level floor; their integrated width
+    // must reach MinEvidenceOctaves. This grades spectral STRUCTURE relative to
+    // the record itself and cannot tell true noise from signal (two comparable
+    // noise floors pass a level test by construction); the engine's arrival-SNR
+    // refusal owns that judgement upstream.
     private static bool HoldsDelayEvidence(List<AlignmentBin> bins)
     {
-        // Observability is judged on the RAW magnitudes, before the
-        // search-side level match: the match may rescale the scoring frame,
-        // but it cannot manufacture a measurable overlap — a -60 dB filter
-        // tail amplified by the capped match would land exactly on the
-        // reliability gate and pass as "evidence" otherwise (review find).
+        // Observability is judged on the RAW magnitudes, before the search-side
+        // level match: the match may rescale the scoring frame, but it cannot
+        // manufacture a measurable overlap. Judged after it, a -60 dB filter
+        // tail amplified by the capped match lands exactly on the reliability
+        // gate and passes as "evidence".
         double signalPeak = 0;
         foreach (AlignmentBin bin in bins)
         {
@@ -626,11 +623,11 @@ public static class VirtualCrossoverAnalysis
 
         // Gentle spectral fades keep the zero-phase bandpass ringing tame, and
         // the kernel-envelope sidelobe rejection inside the peak search tells
-        // that ringing from a genuine early arrival by physics, so the search
-        // depth matches the analyzer's default 25 dB. The old, shallower 15 dB
-        // missed a soft direct rise sitting under a strong in-room modal
-        // build-up (the under-seat midbass in its 80-200 Hz pair band) and
-        // latched the arrival onto the mode, milliseconds late.
+        // that ringing from a genuine early arrival by physics — so the search
+        // depth is the analyzer's full default 25 dB. A shallower one misses a
+        // soft direct rise sitting under a strong in-room modal build-up (an
+        // under-seat midbass in its 80-200 Hz pair band) and latches the arrival
+        // onto the mode, milliseconds late.
         TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
             samples,
             sampleRate,
@@ -664,34 +661,32 @@ public static class VirtualCrossoverAnalysis
     }
 
     /// <summary>
-    /// The broadband leading-edge onset of a processed channel IR: the
-    /// crossings of the Hilbert envelope at 10 / 25 / 50 % of the FIRST
-    /// CREDIBLE ARRIVAL's own peak level, found by walking backward down that
-    /// peak's rising front (sub-sample). The arrival peak comes from the same
-    /// first-arrival search the Time Alignment detector runs (25 dB depth
-    /// below the strongest peak, noise-gated, with the physical rejection of
-    /// the Hilbert transform's own symmetric pre-ringing) — thresholds
-    /// measured against the whole crop's global maximum would let a stronger
-    /// late reflection usurp all three crossings while leaving their spread
-    /// deceptively tight, and the backward walk pins every crossing to the
-    /// rising front immediately preceding the chosen arrival. A direct sound
-    /// weaker than the 25 dB search depth times the dominant arrival instead —
-    /// the same convention as every other arrival in the tool.
-    /// This is a different observable from
-    /// <see cref="FindBandLimitedArrivalMs"/>, which marks the first PEAK of an
-    /// octave-band envelope around a junction: two drivers meeting at a
-    /// crossover occupy opposite halves of that shared band, so their
-    /// envelope-peak times lag their fronts by different rise times (narrower
-    /// sub-band → later peak) and the arrival DIFFERENCE carries a systematic
-    /// ~1/bandwidth bias — measured at ~0.3-0.4 ms (0.45-0.8 periods) on real
+    /// The broadband leading-edge onset of a processed channel IR: the crossings
+    /// of the Hilbert envelope at 10 / 25 / 50 % of the FIRST CREDIBLE
+    /// ARRIVAL's own peak level, found by walking backward down that peak's
+    /// rising front (sub-sample). The arrival peak comes from the same
+    /// first-arrival search the Time Alignment detector runs (25 dB depth below
+    /// the strongest peak, noise-gated, rejecting the Hilbert transform's own
+    /// symmetric pre-ringing): thresholds taken against the whole crop's global
+    /// maximum would let a stronger late reflection usurp all three crossings
+    /// while leaving their spread deceptively tight, and the backward walk pins
+    /// every crossing to the rising front immediately preceding the chosen
+    /// arrival. A direct sound weaker than the search depth times the dominant
+    /// arrival instead, as everywhere else in the tool.
+    ///
+    /// A different observable from <see cref="FindBandLimitedArrivalMs"/>, which
+    /// marks the first PEAK of an octave-band envelope around a junction: two
+    /// drivers meeting at a crossover occupy opposite halves of that shared
+    /// band, so their envelope-peak times lag their fronts by different rise
+    /// times (narrower sub-band → later peak) and the arrival DIFFERENCE carries
+    /// a systematic ~1/bandwidth bias — ~0.3-0.4 ms (0.45-0.8 periods) on real
     /// mid/tweeter junctions. The threshold onset marks the front itself, which
     /// is what a human validates on the IR plot, and is bias-free where the
-    /// front is sharp (high junctions). At low frequencies the front smears
-    /// into modal build-up and the crossing wanders with the threshold — the
-    /// 10-vs-50 % spread is one honesty figure callers must gate on;
-    /// <see cref="BroadbandOnsetEstimate.SnrDb"/> (the record's envelope
-    /// peak-to-noise grade) is the other, refusing noise-only records whose
-    /// random crossings can otherwise look stable.
+    /// front is sharp. At low frequencies the front smears into modal build-up
+    /// and the crossing wanders with the threshold — the 10-vs-50 % spread is
+    /// one honesty figure callers must gate on;
+    /// <see cref="BroadbandOnsetEstimate.SnrDb"/> is the other, refusing
+    /// noise-only records whose random crossings can look stable.
     /// </summary>
     public static BroadbandOnsetEstimate EstimateBroadbandOnset(
         Complex[] impulseResponse,
@@ -1126,21 +1121,20 @@ public static class VirtualCrossoverAnalysis
 
     /// <summary>
     /// The junction summation loss as a function of an EXTRA delay applied to
-    /// the variable channel — the prior-free acoustic surface of one
-    /// junction, as a drawable curve. Each probe is HONEST: the variable
-    /// response is delayed by rotating its FULL spectrum (an exact fractional
-    /// delay of the whole record) and the direct-sound gates are re-anchored
-    /// on the delayed response by <see cref="MeasureSumLoss"/> — unlike the
+    /// the variable channel — the prior-free acoustic surface of one junction,
+    /// as a drawable curve. Each probe is HONEST: the variable response is
+    /// delayed by rotating its FULL spectrum (an exact fractional delay of the
+    /// whole record) and the direct-sound gates are re-anchored on the delayed
+    /// response by <see cref="MeasureSumLoss"/>, unlike the
     /// <see cref="SumLossEvaluator"/> rotation probe, whose gates stay pinned
-    /// where the responses originally sat and which misgrades
-    /// multi-millisecond deltas by whole dB. Both responses are placed into a
-    /// guard-padded frame before the rotation — a shared silent prefix and
-    /// suffix covering the sweep window — so no probed delay can wrap record
-    /// content circularly: without the prefix, a negative delay on an
-    /// early-peaked record carried the direct sound to the END of the array,
-    /// the shared gate (anchored at the remaining, fixed channel) lost the
-    /// variable channel entirely, and the "loss" of a one-channel sum read as
-    /// a fake perfect 0 dB.
+    /// where the responses originally sat and which misgrades multi-millisecond
+    /// deltas by whole dB. Both responses go into a guard-padded frame before
+    /// the rotation — a shared silent prefix and suffix covering the sweep
+    /// window — so no probed delay wraps record content circularly. Without the
+    /// prefix a negative delay on an early-peaked record carries the direct
+    /// sound to the END of the array, the shared gate (anchored at the fixed
+    /// channel) loses the variable channel entirely, and the "loss" of a
+    /// one-channel sum reads as a fake perfect 0 dB.
     /// </summary>
     public static List<JunctionSweepPoint> JunctionLossSweep(
         Complex[] variableImpulseResponse,
@@ -1221,21 +1215,12 @@ public static class VirtualCrossoverAnalysis
         return points;
     }
 
-    // The strongest local extremum OF THE MAIN EXTREMUM'S SIGN outside its own
-    // lobe — the contiguous same-sign region around it — i.e. the same-polarity
-    // rival one period over (positive rivals for the peak, negative for the
-    // trough). A window boundary lag also qualifies when an opposite-sign gap
-    // separates it from the main lobe: a rival cut by the window still
-    // testifies, with its truncated value as a bound. Lags still connected to
-    // the main lobe never qualify, so the extremum's own slope cannot
-    // masquerade as a rival. Null when the window holds no separated same-sign
-    // structure.
     // The NEAREST opposite-sign local extremum beside a main one: walking out
     // from the main lag in both directions, the first lobe of the other
-    // polarity, whichever side it is closer on. This is an adjacency fact,
-    // not a strength ranking — the window's strongest opposite extremum can
-    // sit several lobes away, and a caller bounding a cycle-skip needs the
-    // distance to the NEIGHBOUR. Null when neither side holds one.
+    // polarity, whichever side it is closer on. An adjacency fact, not a
+    // strength ranking — the window's strongest opposite extremum can sit
+    // several lobes away, and a caller bounding a cycle-skip needs the distance
+    // to the NEIGHBOUR. Null when neither side holds one.
     private static CorrelationDelayCandidate? FindNearestOppositeExtremum(
         double[] correlation,
         int centerLag,
@@ -1253,13 +1238,13 @@ public static class VirtualCrossoverAnalysis
 
         int windowLow = centerLag - rangeSamples;
         int windowHigh = centerLag + rangeSamples;
-        // The first contiguous opposite-sign REGION past the zero crossing,
-        // and its extremum — not the first local extremum encountered. A real
+        // The first contiguous opposite-sign REGION past the zero crossing and
+        // its extremum — not the first local extremum encountered. A real
         // whitened correlation is not a clean sinc: a shoulder, ripple from
-        // partial spectral overlap, or a reflection's own bump inside that
-        // first lobe would each satisfy a local-maximum test and hand back a
-        // spacing far shorter than the lobe's, which is a spacing the caller
-        // would then use to refuse a perfectly good seed (review find).
+        // partial spectral overlap, or a reflection's own bump inside that first
+        // lobe each satisfies a local-maximum test and hands back a spacing far
+        // shorter than the lobe's, which the caller would then use to refuse a
+        // perfectly good seed.
         int? LobeCrestOnSide(int step)
         {
             int lag = mainLag + step;
@@ -1315,6 +1300,15 @@ public static class VirtualCrossoverAnalysis
             edgePinned);
     }
 
+    // The strongest local extremum OF THE MAIN EXTREMUM'S SIGN outside its own
+    // lobe — the contiguous same-sign region around it — i.e. the same-polarity
+    // rival one period over (positive rivals for the peak, negative for the
+    // trough). A window boundary lag also qualifies when an opposite-sign gap
+    // separates it from the main lobe: a rival cut by the window still
+    // testifies, with its truncated value as a bound. Lags still connected to
+    // the main lobe never qualify, so the extremum's own slope cannot
+    // masquerade as a rival. Null when the window holds no separated same-sign
+    // structure.
     private static CorrelationDelayCandidate? FindSameSignRival(
         double[] correlation,
         int centerLag,
@@ -1461,12 +1455,12 @@ public static class VirtualCrossoverAnalysis
         // sampled bins from a gap where zero-magnitude bins were dropped —
         // the evidence-width gate must not credit a gap to a lone bin.
         int FftBin,
-        // The variable channel's magnitude BEFORE the search-side level
-        // match. Observability is a property of the measurement, not of the
-        // scoring frame: the delay-evidence gate must judge the raw balance,
-        // or a -60 dB filter tail amplified by the (capped) level match
-        // lands exactly on the reliability gate and votes as "evidence"
-        // (review find). FixedSum is never scaled, so it needs no raw twin.
+        // The variable channel's magnitude BEFORE the search-side level match.
+        // Observability is a property of the measurement, not of the scoring
+        // frame: the delay-evidence gate must judge the raw balance, or a
+        // -60 dB filter tail amplified by the (capped) level match lands exactly
+        // on the reliability gate and votes as "evidence". FixedSum is never
+        // scaled, so it needs no raw twin.
         double RawVariableMagnitude);
 
     // The direct-sound gate applied to every response before the alignment
@@ -1478,17 +1472,16 @@ public static class VirtualCrossoverAnalysis
     // displays the gated direct sound. One gate shared by all channels, like
     // the metric's shared anchor, so the loss keeps its 0 dB ceiling.
     //
-    // The window is sized in TIME, not samples: historically it was a fixed
-    // 4096 samples, which is ~85 ms at 48 kHz but only 43 ms at 96 kHz and
-    // 21 ms at 192 kHz — the higher the rate, the shorter the physical window.
-    // The delay estimate is flat for any window past ~40 ms and drifts only
-    // below it, so a sample-fixed gate quietly changes the answer at high rates;
-    // pinning the duration (and the fade) keeps every rate on that plateau. The
-    // reference figures reproduce the historical 4096-sample / 256-fade window
-    // EXACTLY at 48 kHz. The analyzed span is then zero-padded to a power-of-two
-    // FFT length sized per rate — window and FFT length kept separate so the
-    // physical window cannot jump across a power-of-two boundary (the same split
-    // as JunctionPhaseAlignment's analysis window).
+    // The window is sized in TIME, not samples. A fixed 4096 samples is ~85 ms
+    // at 48 kHz but only 43 ms at 96 kHz and 21 ms at 192 kHz — the higher the
+    // rate, the shorter the physical window — and the delay estimate is flat for
+    // any window past ~40 ms while drifting below it, so a sample-fixed gate
+    // quietly changes the answer at high rates. Pinning the duration (and the
+    // fade) keeps every rate on that plateau; the reference figures reproduce
+    // the 4096-sample / 256-fade window EXACTLY at 48 kHz. The analyzed span is
+    // then zero-padded to a per-rate power-of-two FFT length — window and FFT
+    // length kept separate so the physical window cannot jump across a
+    // power-of-two boundary (the same split as JunctionPhaseAlignment's).
     private const int AlignmentGateReferenceRate = 48_000;
     private const int AlignmentGateReferenceSamples = 4096;
     private const int AlignmentGateReferenceFadeSamples = 256;
@@ -1502,20 +1495,16 @@ public static class VirtualCrossoverAnalysis
     private static int AlignmentFftLength(int sampleRate) =>
         DspMath.NextPowerOfTwo(AlignmentGateSamples(sampleRate));
 
-    // The per-bin spectra inside the frequency window, decimated to a bounded
-    // bin count so the search stays fast for long IRs. The fixed channels act
-    // as one combined source (superposition).
     /// <summary>
     /// The widest in-band level correction the search-side level match may
-    /// apply, matched to <see cref="OverlapReliabilityGateDb"/>: a side
-    /// sitting deeper than the reliability gate below its partner in the
-    /// band is roll-off tail or deconvolution residue, and amplifying
-    /// residue to parity would let the delay-evidence gate certify a
-    /// junction that has no measurable overlap. This bounds the search's
-    /// gain invariance: within ±30 dB of in-band imbalance the lobe choice
-    /// does not follow the channel gains; past the cap the residual
-    /// imbalance shrinks the junction contrast again, so the log tells the
-    /// user to level the gains first (see
+    /// apply, matched to <see cref="OverlapReliabilityGateDb"/>: a side sitting
+    /// deeper than the reliability gate below its partner in the band is
+    /// roll-off tail or deconvolution residue, and amplifying residue to parity
+    /// would let the delay-evidence gate certify a junction with no measurable
+    /// overlap. This bounds the search's gain invariance: within ±30 dB of
+    /// in-band imbalance the lobe choice does not follow the channel gains; past
+    /// the cap the residual imbalance shrinks the junction contrast again, so
+    /// the log tells the user to level the gains first (see
     /// <see cref="MeasureInBandImbalanceDb"/>).
     /// </summary>
     public const double LevelMatchCapDb = 30;
@@ -1556,6 +1545,9 @@ public static class VirtualCrossoverAnalysis
             : null;
     }
 
+    // The per-bin spectra inside the frequency window, decimated to at most
+    // 4096 bins so the search stays fast for long IRs. The fixed channels act as
+    // one combined source (superposition).
     private static List<AlignmentBin> BuildAlignmentBins(
         Complex[] variableImpulseResponse,
         IReadOnlyList<Complex[]> fixedImpulseResponses,
@@ -1704,15 +1696,13 @@ public static class VirtualCrossoverAnalysis
     /// measures the width of the region that actually informs the delay, not the
     /// nominal band. It measures LEVEL BALANCE, not measurement reliability in
     /// the coherence/SNR sense (the alignment spectra carry neither), so two
-    /// channels sitting TOGETHER in the noise floor would still read as overlap:
+    /// channels sitting TOGETHER in the noise floor still read as overlap:
     /// callers gate trust on it, but it is a coarse figure.
     /// <para>
-    /// This is a confidence read-out, NOT a search weight. The fine selection
+    /// A confidence read-out, NOT a search weight. The fine selection
     /// (<see cref="SearchAlignmentCandidatesByLoss"/>) scores each bin's
     /// amplitude-NORMALIZED loss weighted only by 1/f, so it is not itself
-    /// amplitude-weighted — applying a per-bin reliability weight inside that
-    /// objective is a separate, unmeasured change, deliberately out of scope
-    /// here.
+    /// amplitude-weighted.
     /// </para>
     /// </summary>
     public static double EffectiveOverlapOctaves(
@@ -2313,8 +2303,8 @@ public static class VirtualCrossoverAnalysis
             weightSum += weight;
         }
 
-        // Convert the mean power back to dB once, at the end. The 1e-24 floor
-        // mirrors the old per-bin 1e-12 magnitude floor (-240 dB).
+        // Convert the mean power back to dB once, at the end. The 1e-24 floor is
+        // the power equivalent of a 1e-12 magnitude floor (-240 dB).
         return weightSum > 0
             ? 10.0 * Math.Log10(Math.Max(total / weightSum, 1e-24))
             : null;

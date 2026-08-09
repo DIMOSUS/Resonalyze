@@ -572,8 +572,8 @@ public sealed class AutoAlignmentEngineTests
         // reflection far behind its own full-band front. The two probes then
         // time DIFFERENT physical events, so the pair must not re-anchor on
         // them — the Pair line keeps the full-band arrivals and the reach
-        // veto stays armed (re-anchoring on incomparable probes was the
-        // review find on the second cut).
+        // veto stays armed: re-anchoring on incomparable probes is exactly
+        // what must not happen.
         var midbass = new TestChannel("B", FrontUnderLateMode(5.0, 15.0, 2.0));
         var mid = new TestChannel("C", FrontWithLateHighReflection(0.0, 8.0, 8));
         var log = new StringBuilder();
@@ -1001,7 +1001,7 @@ public sealed class AutoAlignmentEngineTests
         // room's later build-up riding on it. The processed response is that
         // same measurement through the steep chain, which is what pushes the
         // detector onto the mode. Both reads below come from the real
-        // detector — nothing is nudged by hand (review find).
+        // detector — nothing is nudged by hand.
         Complex[] front = FrontUnderLateMode(0.0, 12.0, 0.0);
         Complex[] withMode = FrontUnderLateMode(0.0, 12.0, 0.6);
 
@@ -1060,7 +1060,7 @@ public sealed class AutoAlignmentEngineTests
             AutoAlignmentEngine.GradeAgainstPrediction(
                 snapshot, measuredMs + 3.0, 100, 400, out _));
         // Far EARLIER: not a latch, but nothing the prediction can explain —
-        // and specifically NOT a confirmation (review find).
+        // and specifically NOT a confirmation.
         Assert.Equal(
             AutoAlignmentEngine.PredictionState.Inconsistent,
             AutoAlignmentEngine.GradeAgainstPrediction(

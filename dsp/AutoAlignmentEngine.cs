@@ -63,27 +63,25 @@ public interface IAlignmentChannel
 }
 
 /// <summary>
-/// One channel's processed impulse response for an alignment round: the full
-/// DSP chain applied, ready for arrival detection and correlation.
+/// One channel's processed impulse response for an alignment round, ready for
+/// arrival detection and correlation.
 /// <see cref="ValidRange"/> is where the MEASURED content sits inside the
 /// (delay-shifted, FFT-length-padded) record — the range the
 /// <see cref="VirtualCrossoverAnalysis.ApplyChain(System.Numerics.Complex[], DspChannelChain, int, out ValidSampleRange)"/>
-/// overload reports — so envelope/SNR analyses skip both the delay prefix
-/// and the manufactured tail. The default (empty) range means unknown: the
-/// analyses then fall back to the padding-signature heuristic.
+/// overload reports — so envelope/SNR analyses skip both the delay prefix and
+/// the manufactured tail. Empty means unknown: the analyses then fall back to
+/// the padding-signature heuristic.
 ///
-/// <see cref="BypassedImpulseResponse"/> is the SAME measurement with no
-/// chain at all (the bare driver in the room) and
-/// <see cref="ProcessingChain"/> is the chain that turns one into the other.
-/// Together they let the engine RE-DERIVE what this channel's front must look
-/// like after its own processing (see
-/// <see cref="AutoAlignmentEngine.PredictedFrontArrivalMs"/>): a steep crossover
-/// concentrates a junction band's energy in the room's modal region and makes
-/// the PROCESSED arrival latch onto a mode, while the same band read off the
-/// full-range driver still finds the front. Both are captured with the
-/// response itself and are immutable for the run — the search may not read
-/// live model state — and both are null when the caller has none, which
-/// degrades every path to the upper-half probe alone.
+/// <see cref="BypassedImpulseResponse"/> is the SAME measurement with no chain
+/// (the bare driver in the room) and <see cref="ProcessingChain"/> turns one
+/// into the other, so the engine can RE-DERIVE what this channel's front must
+/// look like after its own processing (see
+/// <see cref="AutoAlignmentEngine.PredictedFrontArrivalMs"/>): a steep
+/// crossover concentrates a junction band's energy in the room's modal region
+/// and makes the PROCESSED arrival latch onto a mode, while the same band read
+/// off the full-range driver still finds the front. Both are immutable for the
+/// run — the search may not read live model state — and null when the caller
+/// has none, which degrades every path to the upper-half probe alone.
 /// </summary>
 public sealed record AlignmentSnapshot(
     IAlignmentChannel Channel,
@@ -176,39 +174,33 @@ public static class AutoAlignmentEngine
 {
     // Bounds of the stage-2 fine-search span. The span scales with the
     // crossover frequency (half its period) because the coarse arrival error
-    // grows with the period — but it never drops below half a millisecond:
-    // arrival estimates carry a floor of error (filter group-delay asymmetry,
-    // driver rise time) that does not shrink with the junction period, so at a
-    // high split half a period would regularly miss the true optimum. The
-    // extra lobes a wide window admits are handled by the candidate list, the
-    // arrival prior, and the physical tie-break in AlignmentSelection.
+    // grows with the period, but never drops below half a millisecond: arrival
+    // estimates carry a floor of error (filter group-delay asymmetry, driver
+    // rise time) that does not shrink with the junction period, so at a high
+    // split half a period would regularly miss the true optimum. The extra
+    // lobes a wide window admits are handled by the candidate list, the arrival
+    // prior, and the physical tie-break in AlignmentSelection.
     private const double MinFineAlignmentRangeMs = 0.5;
-    // The fixed span suffices at short-period (mid/high) junctions. At a LOW
-    // junction the period is long, and a whitened correlation with too few
-    // in-band periods can seed the window a half period off — parking it on a
-    // (flip + half-period) impostor whose true, opposite-polarity partner then
-    // sits a half period away, beyond this fixed reach. So the effective cap is
-    // lifted toward a half period at low junctions (see LowJunctionReachFraction)
-    // to admit that partner for AlignmentSelection's invert preference to pick;
-    // staying just under a half period keeps the window short of the next
-    // SAME-polarity lobe a full period out.
+    // The fixed cap suffices at short-period (mid/high) junctions. At a LOW
+    // junction a whitened correlation with too few in-band periods can seed the
+    // window a half period off, parking it on a (flip + half-period) impostor
+    // whose true opposite-polarity partner then sits beyond this reach — hence
+    // LowJunctionReachFraction lifts the effective cap there.
     private const double MaxFineAlignmentRangeMs = 2.5;
 
     // The fraction of a half period the fine window may reach at a low junction
     // (where a half period exceeds the fixed cap). Just under 1 so the window
-    // captures the half-period-away flip partner of an impostor seed without
-    // spanning the full-period same-polarity lobe on the far side; the residual
-    // ambiguity between those two is resolved by the arrival prior and the
-    // AlignmentSelection tie-breaks, exactly as for any other admitted lobe.
+    // captures the half-period-away flip partner without spanning the
+    // full-period same-polarity lobe on the far side; the arrival prior and the
+    // AlignmentSelection tie-breaks resolve what remains.
     private const double LowJunctionReachFraction = 0.97;
 
-    // The delay ceiling an AUTO DELAY proposal may reach. Deliberately tighter
-    // than the manual UI range (100 ms — the Virtual DSP may model whatever
-    // hardware the user owns): car processors cap per-channel delay in the tens
-    // of milliseconds (~17 m of path here), so an automatic proposal past this
-    // could never be transferred to a device. Real cabin spans run well under
-    // 10 ms; the ceiling exists for the feasibility gate, not as an operating
-    // region.
+    // The delay ceiling an AUTO DELAY proposal may reach — tighter than the
+    // manual UI range (100 ms, since the Virtual DSP may model any hardware).
+    // Car processors cap per-channel delay in the tens of milliseconds (~17 m
+    // of path here), so a proposal past this could never be transferred to a
+    // device. Real cabin spans run well under 10 ms: this is the feasibility
+    // gate, not an operating region.
     private const double MaxDelayMs = 50;
 
     // A deliberately wide fine-search window (many periods at a high crossover,
@@ -221,22 +213,19 @@ public static class AutoAlignmentEngine
     // The wide diagnostic sweep must reach past the flip partner half a period
     // out even at a LOW junction, where the fixed millisecond span above is
     // sub-period — otherwise the [diag] line (and the promotion pool at
-    // un-locked junctions) simply cannot contain the true optimum it exists to
-    // surface. 1.25 half periods clears that partner with margin; mid/high
-    // junctions keep the fixed span, already many periods there.
+    // un-locked junctions) cannot contain the optimum it exists to surface.
+    // 1.25 half periods clears that partner with margin; mid/high junctions
+    // keep the fixed span, already many periods there.
     private const double DiagnosticFineReachHalfPeriods = 1.25;
 
     // The stage-1 correlation window in periods of the pair crossover. The
-    // peak-vs-trough dominance gate below is only meaningful when BOTH
-    // polarity partners are complete lobes inside the window, and the arrival
-    // estimate the window centers on can itself sit up to a half period off at
-    // a low junction — so the window must hold at least a full period to each
-    // side. Under the fixed ±3 ms window a field 85 Hz junction had its
-    // non-inverted rival lobe cut by the window edge: the truncated value
-    // understated the rival, the dominance gate passed on the corrupted
-    // number, and the timeline was seeded from the cut — a 3.6 ms miss the
-    // fine search could no longer reach. Mid/high junctions stay on the fixed
-    // floor (±3 ms already spans several periods there).
+    // peak-vs-trough dominance gate below is only meaningful when BOTH polarity
+    // partners are complete lobes inside the window, and the arrival estimate
+    // the window centers on can itself sit up to a half period off at a low
+    // junction — so the window must hold at least a full period to each side. A
+    // window edge that cuts the rival lobe understates it, and the dominance
+    // gate then passes on a truncated number. Mid/high junctions stay on the
+    // fixed floor (±3 ms already spans several periods there).
     private const double SeedCorrelationWindowPeriods = 1.25;
 
     // The stage-1 / diagnostic correlation half-window for a junction: the
@@ -247,56 +236,48 @@ public static class AutoAlignmentEngine
             DiagnosticCorrelationRangeMs,
             SeedCorrelationWindowPeriods * 1000.0 / crossoverHz);
 
-    // How far from the arrival estimate a trusted seed extremum may sit: half
-    // a period — the next same-polarity lobe is a full period out, so half a
-    // period is the no-cycle-skip bound — floored at the FIXED window span.
-    // The floor is deliberately the fixed ±3 ms, not the grown window: at a
-    // mid/high junction it keeps exactly the reach the fixed window used to
-    // enforce by construction, and at a low junction the grown window may SEE
-    // farther lobes but must never hand one to the timeline.
+    // How far from the arrival estimate a trusted seed extremum may sit: half a
+    // period — the next same-polarity lobe is a full period out, so that is the
+    // no-cycle-skip bound — floored at the FIXED ±3 ms span rather than the
+    // grown window. At a low junction the grown window may SEE farther lobes
+    // but must never hand one to the timeline.
     private static double SeedReachMs(double crossoverHz) =>
         Math.Max(DiagnosticCorrelationRangeMs, 500.0 / crossoverHz);
 
     // The minimum |r| of the dominant PHAT extremum (peak or trough — the seed
     // uses only its POSITION, polarity stays with the loss search) for it to
     // seed the stage-2 window instead of the arrival envelope. Below it the
-    // extremum is noise (a low-frequency junction with too few in-band
-    // periods), and the arrival estimate stands. Deliberately low: even a
-    // modest genuine extremum beats the arrival envelope, and a seed that
-    // still lands a little off is recovered downstream — by the onset lock at
-    // sharp junctions, by the loss search and the wide-window promotion below
-    // it.
+    // extremum is noise (a low junction with too few in-band periods) and the
+    // arrival estimate stands. Deliberately low: even a modest genuine extremum
+    // beats the arrival envelope, and a seed that lands a little off is
+    // recovered downstream — by the onset lock at sharp junctions, by the loss
+    // search and the wide-window promotion below it.
     private const double PhatSeedMinCoefficient = 0.15;
 
     // The minimum dominance (Confidence: |best extremum| minus |its rival|) the
     // PHAT correlation must show before its extremum position is trusted as the
-    // seed.
-    // A junction whose corners leave a spectral gap (e.g. LP 1300 / HP 1800)
-    // narrows the effective overlap, and the whitened correlation degenerates
-    // into a comb of near-equal lobes: the peak coefficient still looks healthy,
-    // but which lobe it sits on is decided by noise — trusting it can move the
-    // seed whole periods off the arrival estimate (a cycle skip the prior then
-    // cements). Peak-vs-trough closeness is exactly that lobe ambiguity, so a
-    // near-tie sends the seed back to the polarity-blind arrival envelope.
+    // seed. A junction whose corners leave a spectral gap (e.g. LP 1300 /
+    // HP 1800) narrows the effective overlap and the whitened correlation
+    // degenerates into a comb of near-equal lobes: the peak coefficient still
+    // looks healthy, but which lobe it sits on is decided by noise — trusting
+    // it can move the seed whole periods off the arrival estimate (a cycle skip
+    // the prior then cements). Peak-vs-trough closeness is exactly that lobe
+    // ambiguity, so a near-tie sends the seed back to the polarity-blind
+    // arrival envelope.
     private const double PhatSeedMinDominance = 0.1;
 
     // The sub-precedence margin: at a junction with the shared mono sub, a
-    // near-tie between the comb lobe that leaves the sub TRAILING the stack
-    // and the one that leaves it LEADING is not acoustically resolvable —
-    // but it is perceptually one-sided. The first wavefront binds the bass
-    // to the localizable midbass transient (precedence effect), so a
-    // slightly leading sub reads as "bass up front" while a trailing one
-    // reads as sluggish, detached bass — the failure owners hand-tune away.
-    // The margin sits deliberately ABOVE the near-tie scale and just under
-    // the ~1.4 dB comb-noise ceiling the promotion margin's field
-    // calibration measured between real lobes: within that ceiling the
-    // summation cannot pick a lobe honestly anyway (an in-room mode can
-    // flatter either side by up to that much), so the psychoacoustics
-    // decide; beyond it the summation stands. Owner-calibrated on the v3
-    // cabin: the leading lobe measured 0.66-0.73 dB under the trailing pick
-    // on the prior-free level-matched score, yet the trailing tune was
-    // rejected by ear ("the bass lags") and the leading one localized the
-    // bass to the front stage.
+    // near-tie between the comb lobe that leaves the sub TRAILING the stack and
+    // the one that leaves it LEADING is not acoustically resolvable, but it is
+    // perceptually one-sided. The first wavefront binds the bass to the
+    // localizable midbass transient (precedence effect), so a slightly leading
+    // sub reads as "bass up front" while a trailing one reads as sluggish and
+    // detached. The margin sits above the near-tie scale and just under the
+    // ~1.4 dB comb-noise ceiling measured between real lobes: within that
+    // ceiling an in-room mode can flatter either side by as much, so the
+    // psychoacoustics decide; beyond it the summation stands. Owner-calibrated
+    // on the v3 cabin, where the leading lobe scored 0.66-0.73 dB under the
+    // trailing pick yet was the one that localized the bass to the front stage.
     private const double SubPrecedenceMarginDb = 1.0;
 
     // Candidates within this of the envelope anchor count as neither leading
@@ -305,18 +286,15 @@ public static class AutoAlignmentEngine
     private const double SubPrecedenceSlackMs = 0.5;
 
     // How much better (in score dB) a wide-window optimum must be before it
-    // unseats the arrival-anchored fine pick, at a junction the onset lock
-    // does not govern (below its frequency gate, or a smeared front): there
-    // the window is still centered on the coarse arrival, which can sit a
-    // whole lobe off, and the promotion recovers that lobe while the margin
-    // keeps the physically-minimal arrival pick unless a distinctly better
-    // summation exists elsewhere. Calibrated on two pre-lock field runs of
-    // the same cabin (2.3 kHz mid/tweeter junctions, since taken over by the
-    // lock — the physics transfers): a FALSE hop offered 1.40 dB, a GENUINE
-    // lobe recovery offered 1.91 dB — comb noise between real lobes runs up
-    // to ~1.4 dB, a real envelope error shows as ~2 dB across the whole
-    // basin. A distance-scaled ramp cannot separate those two points at any
-    // slope; this flat threshold does.
+    // unseats the arrival-anchored fine pick, at a junction the onset lock does
+    // not govern (below its frequency gate, or a smeared front): there the
+    // window is still centered on the coarse arrival, which can sit a whole
+    // lobe off. The margin keeps the physically-minimal arrival pick unless a
+    // distinctly better summation exists elsewhere. Field-calibrated: comb noise
+    // between real lobes runs up to ~1.4 dB (a false hop offered 1.40 dB) while
+    // a real envelope error shows as ~2 dB across the whole basin (a genuine
+    // recovery offered 1.91 dB). A distance-scaled ramp cannot separate those
+    // two points at any slope; this flat threshold does.
     private const double WideWindowPromotionMarginDb = 1.6;
 
     // The gain above which a declined promotion is worth a log line: below it
@@ -324,20 +302,16 @@ public static class AutoAlignmentEngine
     private const double PromotionNoteworthyGainDb = 0.2;
 
     // How far (in crossover periods) the promotion may move the pick away from
-    // the arrival-anchored fine result. The promotion exists to recover a coarse
-    // arrival that landed a lobe or two off at a degenerate junction (a spectral
-    // gap between the corners degrades the whitened correlation into near-equal
-    // lobes) — real data needs up to ~2 periods of reach for that. Beyond it
-    // the summation surface is a comb of near-equal minima spaced one period
-    // apart: which lobe is physically correct is set by the arrival, NOT by the
-    // sum (they differ by fractions of a dB). Without a cap the ±3 ms
-    // diagnostic window let a marginally-better comb ALIAS unseat the envelope
-    // — the pre-lock field failure where the tweeter walked ~1.7 ms
-    // (~3.9 periods) off its mid for a 0.25 dB "gain"; that junction class is
-    // now onset-locked, and this cap guards the remaining, un-locked domain.
-    // 2.5 periods clears the legitimate ~1.8-period recovery and rejects the
-    // ~3.9-period alias. The wide window also scores under a weaker arrival
-    // prior, which inflates far aliases; the reach cap bounds that too.
+    // the arrival-anchored fine result. It exists to recover a coarse arrival
+    // that landed a lobe or two off at a degenerate junction (a spectral gap
+    // between the corners degrades the whitened correlation into near-equal
+    // lobes), which needs up to ~2 periods of reach. Beyond that the summation
+    // surface is a comb of near-equal minima one period apart, differing by
+    // fractions of a dB: which lobe is physically correct is set by the arrival,
+    // NOT by the sum, and an uncapped window lets a marginally-better ALIAS
+    // ~3.9 periods out win on a 0.25 dB "gain". 2.5 periods clears the
+    // legitimate recovery and rejects the alias. It also bounds the far-alias
+    // inflation from the wide window's weaker arrival prior.
     private const double PromotionReachPeriods = 2.5;
 
     // ---- The onset lock -----------------------------------------------------
@@ -424,10 +398,8 @@ public static class AutoAlignmentEngine
     // relation — every junction, the scene and the sum see both of their ends
     // flipped together — so when a proposal inverts MORE channels than it
     // keeps, the whole field is flipped and the same physics reads as the
-    // minimal set of Invert switches. The field case: the sub-precedence
-    // lobe put the sub's relation to the stack inverted, which is presented
-    // as ONE inverted sub rather than three inverted stack channels (the
-    // owner's own hand tune of the same physics).
+    // minimal set of Invert switches. An inverted sub/stack relation is thus
+    // presented as ONE inverted sub, not three inverted stack channels.
     private static void NormalizePolarityPresentation(
         IReadOnlyList<AlignmentSnapshot> scope,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
@@ -459,18 +431,16 @@ public static class AutoAlignmentEngine
 
     /// <summary>
     /// The verdict of the arrival honesty probe: a full-band read judged
-    /// against the same record's upper-half read. LATCHED — the full band
-    /// times a feature far LATER than its own upper half (the proven modal
-    /// latch): the read times the wrong feature and is garbage. UNVERIFIED —
-    /// no certificate either way: the full read itself (or the probe) is
-    /// unmeasurable/low-SNR, or the PROBE timed some far LATER feature than
-    /// the full band's front (weak in-band HF leaves it blind to the front) —
-    /// the full read stays usable but earns no certificate (no tight scene
-    /// lock). VERIFIED — the two agree within the dispersion one wavefront
-    /// can show. One classification shared by the cross-side links, the donor
-    /// certificates and the stereo bridge, so the three cannot drift apart.
-    /// Public because the manual Time Alignment mode surfaces the same
-    /// verdict on its bandpass-windowed reads (see
+    /// against the same record's upper-half read. LATCHED — the full band times
+    /// a feature far LATER than its own upper half (a modal latch), so the read
+    /// is garbage. UNVERIFIED — no certificate either way: a read is
+    /// unmeasurable/low-SNR, or the PROBE itself timed a far later feature
+    /// (weak in-band HF leaves it blind to the front); the full read stays
+    /// usable but earns no tight scene lock. VERIFIED — the two agree within
+    /// the dispersion one wavefront can show. One classification shared by the
+    /// cross-side links, the donor certificates and the stereo bridge, so the
+    /// three cannot drift apart. Public because the manual Time Alignment mode
+    /// surfaces the same verdict on its bandpass-windowed reads (see
     /// <see cref="TimeAlignmentAnalysis.ProbeArrivalHonesty"/>).
     /// </summary>
     public enum ArrivalCertificate
@@ -490,35 +460,32 @@ public static class AutoAlignmentEngine
     ///
     /// An estimate, not an identity. The arrival detector is a nonlinear
     /// envelope search, so a chain's shift measured on an impulse does not
-    /// transfer exactly to a shaped front: measured across a source matrix,
-    /// the error stays inside a quarter of the conviction threshold for
-    /// realistic driver roll-offs but reaches 1.2 allowances where the source
-    /// has strong structure INSIDE the band — a steep low-pass leaving the
-    /// channel barely radiating there, or an all-pass twisting its phase.
-    /// That is why nothing here convicts on its own: see
+    /// transfer exactly to a shaped front: across a source matrix the error
+    /// stays inside a quarter of the conviction threshold for realistic driver
+    /// roll-offs but reaches 1.2 allowances where the source has strong
+    /// structure INSIDE the band — a steep low-pass leaving the channel barely
+    /// radiating there, or an all-pass twisting its phase. That is why nothing
+    /// here convicts on its own: see
     /// <see cref="PredictedArrivalConvictionFactor"/>, which keeps a shaping
     /// error out of the LATCHED verdict, and
-    /// <see cref="PredictionState.Inconsistent"/>, which withdraws a pair
-    /// from the predictor rather than trusting a disagreement it cannot
-    /// explain.
+    /// <see cref="PredictionState.Inconsistent"/>, which withdraws a pair from
+    /// the predictor rather than trusting a disagreement it cannot explain.
     ///
-    /// The bypassed read is what makes this see through a modal latch. A
-    /// steep crossover leaves a junction band's energy concentrated in the
-    /// room's modal region, so the PROCESSED envelope can front on a mode;
-    /// off the full-range driver the same band still finds the real front,
-    /// because nothing has boosted the mode's share of it. Note that the
-    /// bypassed response is NOT gated: at a low junction one period is
+    /// The bypassed read is what makes this see through a modal latch. A steep
+    /// crossover leaves a junction band's energy concentrated in the room's
+    /// modal region, so the PROCESSED envelope can front on a mode; off the
+    /// full-range driver the same band still finds the real front. The bypassed
+    /// response is deliberately NOT gated: at a low junction one period is
     /// 6-12 ms, so any gate short enough to exclude a mode 10 ms out also
     /// truncates the driver's own front and biases the read by milliseconds
-    /// (measured: 2.5 ms on the archived midbass, enough to hand the junction
+    /// (measured 2.5 ms on the archived midbass — enough to hand the junction
     /// to the flip impostor).
     ///
     /// The chain term is MEASURED, not derived: a reference impulse is pushed
     /// through the real ApplyChain and read with the real detector (see
-    /// ChainArrivalShiftMs). An analytic band-averaged group delay — what an
-    /// earlier cut used — is worse in kind, not merely in degree: it misses
-    /// by 3.8 ms on a steep 80 Hz high-pass and 2.3 ms on a 330 Hz all-pass,
-    /// and its error is not common-mode across a junction, so it injects a
+    /// ChainArrivalShiftMs). An analytic band-averaged group delay misses by
+    /// 3.8 ms on a steep 80 Hz high-pass and 2.3 ms on a 330 Hz all-pass, and
+    /// its error is not common-mode across a junction, so it would inject a
     /// differential error into the very difference the timeline stores.
     /// </summary>
     internal static double? PredictedFrontArrivalMs(
@@ -543,12 +510,12 @@ public static class AutoAlignmentEngine
             return null;
         }
 
-        // The reference impulse is as long as the MEASURED content, not as
-        // long as the padded bypassed array: that array is itself an
-        // ApplyChain output, so its length is already double the crop, and
-        // handing that length on would run the shift through a window twice
-        // the one the real reads use (review find). At this length ApplyChain
-        // pads and reports exactly the ranges production sees.
+        // The reference impulse is as long as the MEASURED content, not as long
+        // as the padded bypassed array: that array is itself an ApplyChain
+        // output, so its length is already double the crop, and handing it on
+        // would run the shift through a window twice the one the real reads
+        // use. At this length ApplyChain reports exactly the ranges production
+        // sees.
         int contentLength = side.BypassedValidRange.IsKnown
             ? side.BypassedValidRange.EndSample - side.BypassedValidRange.StartSample
             : bypassed.Length;
@@ -575,11 +542,11 @@ public static class AutoAlignmentEngine
         var impulse = new Complex[length];
         impulse[Math.Clamp(peakIndex, 0, length - 1)] = Complex.One;
         // BOTH reads go through ApplyChain and carry the ValidSampleRange it
-        // reports, exactly as the measured bypassed and processed responses
-        // do. Analyzing the bare impulse raw instead would hand the detector
-        // a different window — it crops to the reported range when given one
-        // and falls back to a padding heuristic when not — so the two ends of
-        // this subtraction would not be measured alike (review find).
+        // reports, exactly as the measured responses do. Analyzing the bare
+        // impulse raw would hand the detector a different window — it crops to
+        // the reported range when given one and falls back to a padding
+        // heuristic when not — so the two ends of this subtraction would not be
+        // measured alike.
         Complex[] bareResponse = VirtualCrossoverAnalysis.ApplyChain(
             impulse, DspChannelChain.Identity, sampleRate,
             out ValidSampleRange bareRange);
@@ -604,29 +571,24 @@ public static class AutoAlignmentEngine
     ///
     /// Two terms. The first is generic physics — half a period at the probe's
     /// lower edge, never tighter than 1 ms: the smear one wavefront can show
-    /// across the band. The second is the channel's OWN chain, and it is what
-    /// the probe used to miss: a steep low-pass puts the full band's energy
-    /// BELOW its corner, where the chain runs milliseconds slower than in the
-    /// probe band above it, and the two envelope fronts then differ with no
-    /// room mode anywhere. The field failure that pinned this: a midbass under
+    /// across the band. The second is the channel's OWN chain: a steep low-pass
+    /// puts the full band's energy BELOW its corner, where the chain runs
+    /// milliseconds slower than in the probe band above it, so the two envelope
+    /// fronts differ with no room mode anywhere. A field midbass under
     /// LP 200 Hz/36 read 13.04 ms in 100-400 Hz against 10.16 ms in its
-    /// 200-400 Hz half — a 2.88 ms skew the flat 2.5 ms allowance convicted,
-    /// which re-anchored the pair 2.9 ms early and handed the mid to a
-    /// mixed-polarity comb lobe.
+    /// 200-400 Hz half — a 2.88 ms skew a flat 2.5 ms allowance would convict.
     ///
-    /// The second term is the PREDICTED SKEW, not the chain's contribution
-    /// alone: it is the difference of two <see cref="PredictedFrontArrivalMs"/>
-    /// readings, so it credits how much later the full band should read than
-    /// its upper half for BOTH reasons — the chain's dispersion and the
-    /// driver's own band-dependence (a woofer reads later at 100-200 Hz than
-    /// at 200-400 Hz on its own account). That is the right quantity: the
-    /// probe's question is how much later the full band should read absent a
-    /// mode, and the driver is part of the answer. Deriving it from an
-    /// averaged group delay instead — the chain term alone, analytically —
-    /// over-credits an HP- or PEQ-fed channel by more than a millisecond, and
-    /// over-crediting an allowance is how a real latch slips through.
-    /// Clamped at zero: a response that is FASTER in the full band than in
-    /// the probe band earns no credit, it just cannot tighten the floor.
+    /// That second term is the PREDICTED SKEW, the difference of two
+    /// <see cref="PredictedFrontArrivalMs"/> readings, so it credits how much
+    /// later the full band should read for BOTH reasons — the chain's
+    /// dispersion and the driver's own band-dependence (a woofer reads later at
+    /// 100-200 Hz than at 200-400 Hz on its own account). The probe's question
+    /// is how much later the full band should read absent a mode, and the
+    /// driver is part of the answer; an averaged group delay (the chain term
+    /// alone) over-credits an HP- or PEQ-fed channel by more than a
+    /// millisecond, and over-crediting an allowance is how a real latch slips
+    /// through. Clamped at zero: a response FASTER in the full band than in the
+    /// probe band earns no credit, it just cannot tighten the floor.
     /// </summary>
     internal static double ArrivalProbeToleranceMs(
         AlignmentSnapshot side,
@@ -638,22 +600,18 @@ public static class AutoAlignmentEngine
     {
         ArgumentNullException.ThrowIfNull(side);
         double toleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
-        // The credit is a DIFFERENCE of two predictions, so both of them have
-        // to have earned it against their own measured read — in the full
-        // band and in the probe band alike. Grading only one leaves the other
-        // free to be arbitrarily wrong while the difference still looks
-        // plausible: a 220 Hz all-pass source verified in 40-160 Hz and still
-        // earned the whole clamped credit against an honest skew of 0.04 ms.
-        //
+        // The credit is a DIFFERENCE of two predictions, so BOTH have to have
+        // earned it against their own measured read. Grading only one leaves
+        // the other free to be arbitrarily wrong while the difference still
+        // looks plausible: a 220 Hz all-pass source verified in 40-160 Hz and
+        // still earned the whole clamped credit against an honest 0.04 ms skew.
         // A side graded INCONSISTENT is withdrawn from the predictor for
-        // anchoring, and it must be withdrawn here too or the fallback is not
-        // independent of the estimator it fell back from: at 100-400 Hz an
-        // uncredited 4 ms skew is a latch and a fully credited one is not
-        // (review find). A LATCHED side earns nothing either — its own read
-        // is the thing under suspicion.
-        // Both predictions come back through the grading's out parameter —
-        // each one costs an ApplyChain, an FFT and an arrival analysis, and
-        // asking for them twice bought nothing.
+        // anchoring and must be withdrawn here too, or the fallback is not
+        // independent of the estimator it fell back from — at 100-400 Hz an
+        // uncredited 4 ms skew is a latch and a fully credited one is not. A
+        // LATCHED side earns nothing either: its own read is under suspicion.
+        // Both predictions come back through the out parameter — each costs an
+        // ApplyChain, an FFT and an arrival analysis.
         if (GradeAgainstPrediction(
                 side, measuredMs, bandLowHz, bandHighHz, out double full) !=
             PredictionState.Verified ||
@@ -665,14 +623,12 @@ public static class AutoAlignmentEngine
         }
 
         // Capped at the generic allowance, so the ESTIMATE can at most double
-        // the physics. Uncapped, the credit is whatever the difference of two
-        // predictions happens to be — and both predictions read a bypassed
-        // response that may itself carry the mode, so the credit grows with
-        // exactly the feature the probe is trying to convict. Measured
-        // uncapped: a 220 Hz all-pass source earned 7.79 ms against an honest
-        // skew of 0.04 ms, and on a realistic driver front a genuine late
-        // mode was swallowed whole (review find — the credit is added to the
-        // tolerance directly and no conviction factor guards it).
+        // the physics. Both predictions read a bypassed response that may itself
+        // carry the mode, so an uncapped credit grows with exactly the feature
+        // the probe is trying to convict — measured uncapped, a 220 Hz all-pass
+        // source earned 7.79 ms against an honest skew of 0.04 ms and swallowed
+        // a genuine late mode whole. Nothing else guards this: the credit is
+        // added to the tolerance directly, with no conviction factor.
         return toleranceMs + Math.Clamp(full - probe, 0, toleranceMs);
     }
 
@@ -702,21 +658,19 @@ public static class AutoAlignmentEngine
     /// <summary>
     /// How far PAST the allowance a read must sit before the prediction may
     /// convict it. The prediction measures the chain's contribution on a flat
-    /// reference impulse, but a driver worked well below its own passband
-    /// does not present the chain with a flat input — a midbass playing a
-    /// 40-160 Hz junction band sits past its own rolloff, and its high-pass
-    /// then costs several milliseconds more than the same filter costs an
-    /// impulse. The error is systematic, one-signed (the prediction reads
-    /// early) and it does not vanish with a better estimator, so a marginal
-    /// exceedance is not evidence of anything.
+    /// reference impulse, but a driver worked well below its own passband does
+    /// not present the chain with a flat input — a midbass playing a 40-160 Hz
+    /// junction band sits past its own rolloff, and its high-pass then costs
+    /// several milliseconds more than the same filter costs an impulse. The
+    /// error is systematic, one-signed (the prediction reads early) and does not
+    /// vanish with a better estimator, so a marginal exceedance is not evidence.
     ///
-    /// The field separates cleanly on this: across both cabins and every
-    /// crossover corner, the FALSE convictions at the sub/midbass junction
-    /// all landed between 1.01 and 1.17 allowances, and every true modal
-    /// latch between 2.49 and 3.89. Two allowances sits in that gap with room
-    /// on both sides — the same "plainly, not marginally" standard the lobe
-    /// gates apply. A read in between is INCONSISTENT: not convicted, but not
-    /// trusted to certify an anchor either.
+    /// The field separates cleanly: across both cabins and every crossover
+    /// corner the FALSE convictions landed between 1.01 and 1.17 allowances and
+    /// every true modal latch between 2.49 and 3.89. Two allowances sits in that
+    /// gap with room on both sides — the same "plainly, not marginally" standard
+    /// the lobe gates apply. A read in between is INCONSISTENT: not convicted,
+    /// but not trusted to certify an anchor either.
     /// </summary>
     private const double PredictedArrivalConvictionFactor = 2.0;
 
@@ -734,12 +688,11 @@ public static class AutoAlignmentEngine
             500.0 / Math.Sqrt(bandLowHz * bandHighHz));
 
     /// <summary>
-    /// Grades one side's processed arrival against what its own front,
-    /// read through its own chain, estimates it must be. The test is
-    /// two-sided on purpose: a read EARLIER than the prediction is not a modal
-    /// latch, but it is not a confirmation either, and treating it as one
-    /// would hand a tightened seed reach to an anchor that nothing verified
-    /// (review find).
+    /// Grades one side's processed arrival against what its own front, read
+    /// through its own chain, estimates it must be. Two-sided on purpose: a read
+    /// EARLIER than the prediction is not a modal latch, but it is not a
+    /// confirmation either, and treating it as one would hand a tightened seed
+    /// reach to an anchor that nothing verified.
     /// </summary>
     internal static PredictionState GradeAgainstPrediction(
         AlignmentSnapshot side,
@@ -926,10 +879,10 @@ public static class AutoAlignmentEngine
         // the PHAT peak was untrusted (a low junction with too few in-band
         // periods): the coarse offset ACROSS such a junction can be a half period
         // off, so aligning its two channels is allowed a half-period window (see
-        // LowJunctionReach) to admit the true lobe. Keyed by junction, not channel:
-        // the uncertainty is a property of the lower<->upper RELATION, so the wider
-        // window fires the same whether the walk reaches the junction from below or
-        // above, and never leaks onto a channel's OTHER, phat-trusted junction.
+        // LowJunctionReachFraction) to admit the true lobe. Keyed by junction,
+        // not channel — the uncertainty is a property of the lower/upper
+        // RELATION, so the wider window fires whichever side the walk arrives
+        // from and never leaks onto a channel's OTHER, phat-trusted junction.
         untrustedSeedJunctions =
             new HashSet<AlignmentJunction>(ReferenceEqualityComparer.Instance);
         var timeline = new Dictionary<IAlignmentChannel, double>
@@ -998,49 +951,45 @@ public static class AutoAlignmentEngine
             // certificates and the stereo bridge already run. A steep low-pass
             // can concentrate the pair band's energy below the corner, where a
             // channel's direct front hides under a late in-room modal build-up
-            // deeper than the envelope search depth — the full-band read then
-            // times the mode, whole periods late (field case: a midbass under
-            // LP 180 Hz/36 dB read 21.96 ms in 90-360 Hz against a 10.99 ms
-            // front in its own upper half — a 9.8 ms latch that seeded the
-            // stage-2 window a full period off and inverted the mids). A
-            // convicted latch does two things below: the pair re-anchors on
-            // the half-band reads where both measure (the same ladder the
-            // cross-side links climb), and the seed-reach veto is lifted — the
-            // reach rule measures the PHAT extremum against the arrival, so
-            // with the arrival convicted it would only enforce the very cycle
-            // skip it exists to prevent. The half-band read is a mushier
-            // anchor than an honest full-band one (an octave of HF mush once
-            // dragged a woofer 6 ms off on the cross-side ladder), so it only
-            // recenters the correlation window and the fallback diff; the
-            // trustworthy PHAT extremum, where present, still wins the seed.
-            // The predicted-arrival probe first (see PredictedFrontArrivalMs):
+            // deeper than the envelope search depth, and the full-band read then
+            // times the mode whole periods late (a field midbass under
+            // LP 180 Hz/36 read 21.96 ms in 90-360 Hz against a 10.99 ms front
+            // in its own upper half). A convicted latch does two things below:
+            // the pair re-anchors on the half-band reads where both measure (the
+            // same ladder the cross-side links climb), and the seed-reach veto
+            // is lifted — the reach rule measures the PHAT extremum against the
+            // arrival, so with the arrival convicted it would only enforce the
+            // very cycle skip it exists to prevent. The half-band read is a
+            // mushier anchor than an honest full-band one (an octave of HF mush
+            // can drag a woofer 6 ms off on the cross-side ladder), so it only
+            // recenters the correlation window and the fallback diff; a
+            // trustworthy PHAT extremum still wins the seed. The
+            // predicted-arrival probe runs first (see PredictedFrontArrivalMs):
             // it convicts the latches the upper-half probe cannot see, and its
             // replacement anchor is stated in the junction's own band.
             //
-            // BOTH sides must be gradeable for it to speak at all. The
-            // timeline stores a DIFFERENCE, and the two estimators do not read
-            // the same thing to the same precision — the prediction estimates
-            // a front, the measurement reads the processed response — so
-            // their residuals cancel between two predictions and between two
-            // measurements, never between one of each. Mixing them injects the
-            // residual as a real delay (the v4 cabin's 160 Hz corner, where
-            // exactly that mix put the base 2.45 ms out and held the mid on
-            // the flip impostor). A pair with one ungradeable side therefore
-            // falls through to the upper-half probe entirely, which then still
-            // gets to examine BOTH sides rather than leaving one unchecked.
+            // BOTH sides must be gradeable for it to speak at all. The timeline
+            // stores a DIFFERENCE, and the two estimators do not read the same
+            // thing to the same precision — the prediction estimates a front,
+            // the measurement reads the processed response — so their residuals
+            // cancel between two predictions and between two measurements, never
+            // between one of each. Mixing them injects the residual as a real
+            // delay (the v4 cabin's 160 Hz corner: 2.45 ms of base error that
+            // held the mid on the flip impostor). A pair with one ungradeable
+            // side therefore falls through to the upper-half probe entirely,
+            // which then still examines BOTH sides rather than leaving one
+            // unchecked.
             PredictionState lowerState = GradeAgainstPrediction(
                 pair.Lower, lowerArrival, pair.BandLowHz, pair.BandHighHz,
                 out double lowerPrediction);
             PredictionState upperState = GradeAgainstPrediction(
                 pair.Upper, upperArrival, pair.BandLowHz, pair.BandHighHz,
                 out double upperPrediction);
-            //
-            // INCONSISTENT counts as ungradeable too. A read sitting far
-            // EARLIER than its own predicted front is not a latch, but it
-            // does mean the two disagree in a way the prediction cannot
-            // explain (a truncated front, a mis-captured bypassed response) —
-            // and a prediction that cannot explain the read it is graded
-            // against has no business replacing it.
+            // INCONSISTENT counts as ungradeable too. A read sitting far EARLIER
+            // than its own predicted front is not a latch, but the two disagree
+            // in a way the prediction cannot explain (a truncated front, a
+            // mis-captured bypassed response) — and a prediction that cannot
+            // explain the read it is graded against may not replace it.
             static bool Gradeable(PredictionState state) =>
                 state is PredictionState.Verified or PredictionState.Latched;
             bool pairGradeable = Gradeable(lowerState) && Gradeable(upperState);
@@ -1076,25 +1025,21 @@ public static class AutoAlignmentEngine
                 upperArrival = upperPrediction;
             }
 
-            // How much the pair anchor DISAGREES with its own prediction.
-            // NOT a bound on the anchor's error, and nothing downstream may
-            // treat it as one. The
-            // measurement and the prediction are not independent — one
-            // nonlinear envelope detector, one room, and the prediction starts
-            // from the arrival of the same bypassed response — so a bias
-            // common to both leaves this figure at zero while the true error
-            // is whatever the bias is (review find). It is used ONLY to decide
-            // whether to apply an EXTRA restriction below, never to certify
-            // one; nothing here can make the seed gate more permissive than it
-            // was without it.
+            // How much the pair anchor DISAGREES with its own prediction. NOT a
+            // bound on the anchor's error, and nothing downstream may treat it
+            // as one: the measurement and the prediction share a nonlinear
+            // envelope detector, a room, and the same bypassed response, so a
+            // bias common to both leaves this figure at zero while the true
+            // error is whatever the bias is. It only decides whether to apply an
+            // EXTRA restriction below, never to certify one — nothing here can
+            // make the seed gate more permissive than it was without it.
             //
-            // Where both sides merely VERIFIED, the residuals are known and
-            // only their DIFFERENCE enters, since the timeline stores a
-            // difference and two sides erring alike cost it nothing. Where a
-            // side was convicted and replaced, its residual is unknowable by
-            // construction — its prediction was never confirmed against
-            // anything — so the stand-in is TWICE the per-side allowance: two
-            // sides each within A bound their difference by 2A, not by A.
+            // Where both sides merely VERIFIED, only the DIFFERENCE of the
+            // residuals enters, since the timeline stores a difference and two
+            // sides erring alike cost it nothing. Where a side was convicted and
+            // replaced, its residual is unknowable by construction, so the
+            // stand-in is TWICE the per-side allowance: two sides each within A
+            // bound their difference by 2A, not by A.
             double predictionDisagreementMs =
                 lowerLatchedByPrediction || upperLatchedByPrediction
                     ? 2.0 * PredictedArrivalAllowanceMs(
@@ -1103,16 +1048,14 @@ public static class AutoAlignmentEngine
                         (lowerArrival - lowerPrediction) -
                         (upperArrival - upperPrediction));
 
-            // Whether the pair can be GRADED against its prediction at all —
-            // not whether the anchor is confirmed by it. Nothing here confirms
-            // an anchor: the prediction and the measurement share a detector,
-            // a room and a starting read, so their agreement is not evidence
-            // of accuracy (see the disagreement figure above). Gradeable means
-            // every side either agreed with its own predicted front or was
-            // replaced by it — a merely AVAILABLE prediction proves even less,
-            // since the conviction test is one-sided and a read far EARLIER
-            // than its prediction would sail through it. That case is
-            // INCONSISTENT and excluded above.
+            // Whether the pair can be GRADED against its prediction at all — not
+            // whether the anchor is confirmed by it. Their agreement is not
+            // evidence of accuracy (see the disagreement figure above).
+            // Gradeable means every side either agreed with its own predicted
+            // front or was replaced by it; a merely AVAILABLE prediction proves
+            // less, since the conviction test is one-sided and a read far
+            // EARLIER than its prediction would sail through it (INCONSISTENT,
+            // excluded above).
             bool pairPredictionGradeable = pairGradeable;
 
             double probeLowHz = Math.Sqrt(pair.BandLowHz * pair.BandHighHz);
@@ -1169,15 +1112,14 @@ public static class AutoAlignmentEngine
                     // Re-anchor only when BOTH probes read the same physics —
                     // judged by the CERTIFICATES, not by bare validity: an
                     // UNVERIFIED side either failed to measure or its probe
-                    // timed a far LATER feature than its own full band (a
-                    // late reflection the half band mistook for the front),
-                    // and either way its probe read is not the wavefront the
-                    // latched side's probe found. A conviction WITHOUT a
-                    // comparable replacement anchor changes nothing below:
-                    // the corrupted diff keeps centering the window, and the
-                    // reach veto stays armed — lifting it there would trust
-                    // an extremum measured around the very anchor the probe
-                    // just convicted (review finds, first and third cut).
+                    // timed a far LATER feature than its own full band (a late
+                    // reflection the half band mistook for the front), and
+                    // either way its probe read is not the wavefront the latched
+                    // side's probe found. A conviction WITHOUT a comparable
+                    // replacement anchor changes nothing below: the corrupted
+                    // diff keeps centering the window and the reach veto stays
+                    // armed, since lifting it would trust an extremum measured
+                    // around the very anchor the probe just convicted.
                     if (lowerCertificate != ArrivalCertificate.Unverified &&
                         upperCertificate != ArrivalCertificate.Unverified)
                     {
@@ -1189,38 +1131,30 @@ public static class AutoAlignmentEngine
             }
 
             // Refine the coarse offset with the DOMINANT GCC-PHAT extremum of
-            // either sign: at a mid/high junction it lands the stage-2 window
-            // on the correct lobe directly, sparing the wide-window recovery.
-            // Only the extremum's POSITION is used (polarity and the final
-            // lobe stay with the loss search), and only when it is the honest
-            // winner of its window — otherwise the arrival envelope stands.
-            // Seeding from a dominant TROUGH matters as much as from a peak:
-            // a junction whose true relation is inverted (the cabin sub/woofer
-            // junction, whitened trough r −0.97) used to be sent to the
-            // arrival fallback plus a period-wide window, where the true lobe
-            // and a non-inverted lobe a third of a period out competed within
-            // fractions of a dB — a coin flip that parked the sub 3.5-5 ms off
-            // the woofer's attack in two of three field crossover configs. The
-            // trough position pins that window to the measured physics
-            // instead. Each distrust rule guards a distinct failure, checked
-            // in the order the earlier ones corrupt the later ones' inputs:
-            //  - an EDGE-PINNED extremum is a lobe cut by the window boundary,
-            //    so its position and magnitude (and hence every comparison
-            //    below) are artifacts of where the window ended;
-            //  - a WEAK or BARELY-DOMINANT extremum is lobe ambiguity, decided
-            //    by noise (see the two constants);
-            //  - a near-tie against the SAME-SIGN rival one period over (a
-            //    lobe Confidence, peak-vs-trough, cannot see) means the choice
-            //    of lobe — and with it a whole-period cycle skip — would be
-            //    decided by which reflection ran slightly hotter;
-            //  - an extremum FARTHER FROM THE ARRIVAL than half a period (or
-            //    the fixed window floor, whichever is larger — the reach the
-            //    fixed window used to enforce by construction) is a cycle-skip
-            //    candidate the now period-wide window must not hand to the
-            //    timeline.
+            // either sign — position only; polarity and the final lobe stay with
+            // the loss search. At a mid/high junction it lands the stage-2
+            // window on the correct lobe directly, sparing the wide-window
+            // recovery; where the extremum is not the honest winner of its
+            // window, the arrival envelope stands. A trough seed matters as much
+            // as a peak: at an inverted junction (the cabin sub/woofer pair,
+            // whitened trough r −0.97) the arrival fallback plus a period-wide
+            // window leaves the true lobe and a non-inverted rival a third of a
+            // period out competing within fractions of a dB — a coin flip worth
+            // 3.5-5 ms of sub misalignment. Distrust rules, ordered because each
+            // corrupts the next one's inputs:
+            //  - EDGE-PINNED: a lobe cut by the window boundary, so its position
+            //    and magnitude (and every comparison below) are artifacts;
+            //  - WEAK or BARELY-DOMINANT: lobe ambiguity decided by noise (see
+            //    the two constants);
+            //  - near-tie against the SAME-SIGN rival one period over (which
+            //    Confidence, being peak-vs-trough, cannot see): the lobe choice,
+            //    and with it a whole-period cycle skip, would fall to whichever
+            //    reflection ran slightly hotter;
+            //  - FARTHER FROM THE ARRIVAL than max(half period, fixed window
+            //    floor): a cycle-skip candidate the period-wide window must not
+            //    hand to the timeline.
             // The timeline stores arrivals as (upper - lower); the extremum is
-            // the delay to add to the upper channel, i.e. the same quantity
-            // negated.
+            // the delay to add to the upper channel, i.e. that quantity negated.
             double passOctaves = Math.Log2(pair.BandHighHz / pair.BandLowHz);
             double centerLagMs = lowerArrival - upperArrival;
             CorrelationAlignmentResult phat =
@@ -1258,47 +1192,42 @@ public static class AutoAlignmentEngine
                 {
                     return "same-polarity rival near-tie";
                 }
-                // The reach veto grades the extremum against the arrival, so
-                // it is lifted only once the pair is RE-ANCHORED on honest
+                // The reach veto grades the extremum against the arrival, so it
+                // is lifted only once the pair is RE-ANCHORED on honest
                 // half-band reads: against a convicted-and-replaced anchor it
                 // would enforce the very cycle skip it exists to prevent. A
-                // conviction without a replacement anchor keeps the veto —
-                // the window is still centered on the corrupted diff, and a
-                // strong distant modal peak found there is exactly the skip
-                // candidate the veto guards (see the probe above).
-                // Where the pair can be GRADED against its prediction, an
-                // extra restriction applies on top of the rule above. It is
-                // only ever a restriction: the disagreement figure it keys on
-                // is not a bound (see there), so it may narrow the reach and
-                // never widen it, and the clamp below enforces exactly that.
+                // conviction without a replacement anchor keeps the veto — the
+                // window is still centered on the corrupted diff, and a strong
+                // distant modal peak found there is exactly the skip candidate
+                // the veto guards.
                 //
-                // What it narrows toward is comb geometry. The neighbouring
+                // Where the pair can be GRADED against its prediction, an extra
+                // restriction applies on top. Only ever a restriction: the
+                // disagreement figure it keys on is not a bound (see there), so
+                // the clamp below lets it narrow the reach and never widen it.
+                //
+                // It narrows toward comb geometry. The neighbouring
                 // opposite-polarity lobe sits a half spacing H away; with the
-                // anchor off by U toward it the true lobe lies U from the
-                // anchor and the neighbour H - U, so a reach R admits the true
-                // lobe and excludes the neighbour only while U <= R < H - U —
-                // solvable only for U < H/2. Past that the neighbour can sit
-                // CLOSER to the anchor than the truth does and no window
-                // separates them, so the seed is refused rather than
-                // accommodated by a wider one.
+                // anchor off by U toward it the true lobe lies U away and the
+                // neighbour H - U, so a reach R admits the true lobe and
+                // excludes the neighbour only while U <= R < H - U — solvable
+                // only for U < H/2. Past that the neighbour can sit CLOSER to
+                // the anchor than the truth does and no window separates them,
+                // so the seed is refused rather than given a wider one.
                 //
-                // H itself is MEASURED, not assumed. Half a period at fc
-                // describes a monochromatic comb; this correlation runs over a
-                // two-octave band of two real responses, and its extrema do
-                // not sit where that idealization says — at the v4 cabin's
-                // 180 Hz corner the whitened peak and trough are 2.665 ms
-                // apart against a nominal half period of 2.778, and against
-                // 2.537 for a flat two-octave window. No constant describes
-                // it, which is why the distance comes off the extrema the
-                // search actually found.
+                // H is MEASURED, not assumed. Half a period at fc describes a
+                // monochromatic comb, but this correlation runs over two octaves
+                // of two real responses and its extrema do not sit where that
+                // idealization says — at the v4 cabin's 180 Hz corner the
+                // whitened peak and trough are 2.665 ms apart against a nominal
+                // half period of 2.778 (2.537 for a flat two-octave window).
                 //
                 // ADJACENCY, not strength: the window's strongest peak and
-                // trough can sit several lobes apart, so the spacing is taken
-                // to the extremum NEIGHBOURING the seed. Without one, or with
-                // one pinned to the window edge — its position then an
-                // artifact of where the window ended — there is no spacing to
-                // reason from, and a gradeable pair refuses the seed rather
-                // than guessing at one.
+                // trough can sit several lobes apart, so the spacing is taken to
+                // the extremum NEIGHBOURING the seed. Without one, or with one
+                // pinned to the window edge (its position then an artifact),
+                // there is no spacing to reason from and a gradeable pair
+                // refuses the seed rather than guessing at one.
                 CorrelationDelayCandidate? neighbor = seed.InvertPolarity
                     ? phat.NegativeOppositeNeighbor
                     : phat.PositiveOppositeNeighbor;
@@ -1308,10 +1237,9 @@ public static class AutoAlignmentEngine
                 //
                 // Gated on !arrivalReanchored like the offset test below it:
                 // once the upper-half probe has thrown the full-band arrivals
-                // away and re-anchored on its own reads, the uncertainty
-                // measured against the DISCARDED anchor describes nothing —
-                // refusing the seed on it would veto by a number that no
-                // longer refers to anything (review find).
+                // away, the uncertainty measured against the DISCARDED anchor
+                // describes nothing, and vetoing on it would veto by a number
+                // that refers to nothing.
                 if (!arrivalReanchored && pairPredictionGradeable &&
                     (!(lobeBoundaryMs > 0) ||
                         predictionDisagreementMs >= lobeBoundaryMs))
@@ -1319,13 +1247,13 @@ public static class AutoAlignmentEngine
                     return "arrival uncertain past the lobe boundary";
                 }
 
-                // Only ever TIGHTER than the standing rule. The disagreement
-                // figure above is not a proven bound (see there), so it may
-                // decide to restrict the seed further but never to license a
-                // reach the conservative rule would not already have allowed
-                // — otherwise a mis-measured spacing, or a bias shared by the
-                // measurement and the prediction, would loosen the gate on
-                // the strength of an agreement that proves nothing.
+                // Only ever TIGHTER than the standing rule: the disagreement
+                // figure above is not a proven bound, so it may restrict the
+                // seed further but never license a reach the conservative rule
+                // would not already have allowed. Otherwise a mis-measured
+                // spacing, or a bias shared by the measurement and the
+                // prediction, would loosen the gate on an agreement that proves
+                // nothing.
                 double reachMs = pairPredictionGradeable
                     ? Math.Min(SeedReachMs(pair.CrossoverHz), lobeBoundaryMs)
                     : SeedReachMs(pair.CrossoverHz);
@@ -1436,16 +1364,15 @@ public static class AutoAlignmentEngine
         // both junctions constrain the channel.
         double anchorMs = priorOverrideMs ?? (primaryBase + secondaryBase) / 2.0;
 
-        // Reprocess so the settled neighbors participate with their new
-        // delays and polarities. The searched channel is dropped from the
-        // override map so its response is the raw, undelayed IR — the search
-        // provides the delay, and chosen.DelayMs is then the absolute delay
-        // to assign. Without this reset, a uniform shift applied earlier to
-        // a not-yet-searched channel (the negative-delay branch below) would
-        // bake a stray offset into variableIr that the reported delay does
-        // not account for, mis-aligning that channel by the shift. Hoisted out
-        // of SearchJunction: the fine, wide and retry searches all run on the
-        // same settled state, and the onset lock reads the same IRs.
+        // Reprocess so the settled neighbors participate with their new delays
+        // and polarities. The searched channel is dropped from the override map
+        // so its response is the raw, undelayed IR — the search provides the
+        // delay, and chosen.DelayMs is then the absolute delay to assign.
+        // Without this reset, a uniform shift applied earlier to a
+        // not-yet-searched channel (the negative-delay branch below) would bake
+        // a stray offset into variableIr that the reported delay does not
+        // account for. Hoisted out of SearchJunction so the fine, wide and retry
+        // searches and the onset lock all read the same settled state.
         var searchAlignment =
             new Dictionary<IAlignmentChannel, AlignmentOverride>(alignment);
         searchAlignment.Remove(channel);
@@ -1633,9 +1560,9 @@ public static class AutoAlignmentEngine
 
             // Polarity purity is judged against the SETTLED primary neighbor:
             // with an inverted neighbor the pure pair is the equally-inverted
-            // candidate, and an absolute-flag preference would "rescue" a
-            // mixed pair at the cost of a quarter period of delay (the field
-            // tweeter that slid off the onset line its inverted twin sat on).
+            // candidate. An absolute-flag preference would "rescue" a mixed pair
+            // at the cost of a quarter period of delay, sliding a tweeter off
+            // the onset line its inverted twin sits on.
             bool neighborInverted =
                 alignment.GetValueOrDefault(neighborChannel).InvertPolarity;
             AlignmentCandidate? selected = candidates.Count > 0
@@ -1703,16 +1630,15 @@ public static class AutoAlignmentEngine
 
             // NO usable junction evidence at all (a channel silent or buried in
             // the band — the evidence gate returned no candidates in either
-            // window). The engine used to fabricate a candidate at the coarse
-            // anchor here — a delay built on an unmeasured or even invalid
-            // arrival, applied as if it were a result. A partial "skip this
-            // channel" is no better: earlier uniform shifts may already have
-            // written a delay into its override, later passes would shift it
-            // again, and the walk would align further channels against an
-            // unaligned neighbor. The only honest outcome is refusing the RUN,
-            // with the reason: an unmeasurable channel needs the user's
-            // attention (a dead driver, a wrong source, a mis-set crossover),
-            // not a proposal that quietly pretends it was aligned.
+            // window). Fabricating a candidate at the coarse anchor would apply
+            // a delay built on an unmeasured or invalid arrival as if it were a
+            // result, and a partial "skip this channel" is no better: earlier
+            // uniform shifts may already have written a delay into its override,
+            // later passes would shift it again, and the walk would align
+            // further channels against an unaligned neighbor. The only honest
+            // outcome is refusing the RUN with the reason — an unmeasurable
+            // channel needs the user's attention (a dead driver, a wrong source,
+            // a mis-set crossover), not a proposal that pretends.
             if (selected == null)
             {
                 log.AppendLine(
@@ -1844,15 +1770,12 @@ public static class AutoAlignmentEngine
                     // of a dB, and the deepest sum is not necessarily the
                     // physically correct cycle — the arrival is (the same
                     // envelope-first rule as the fine tie-break, one comb over).
-                    // The pre-lock field failure that pinned this: at a 1500 Hz
-                    // mid/tweeter split TWO adjacent same-polarity lobes both
-                    // cleared the gate and the 0.14 dB-deeper one sat a full
-                    // period past the user's correct alignment. That junction
-                    // class is onset-locked now, but the same comb physics
-                    // holds wherever the promotion still runs. Snap to the
-                    // arrival-nearest lobe that still clears the gate;
-                    // wideChosen itself qualifies, so this only ever pulls the
-                    // pick closer to the arrival, never onto a declined junction.
+                    // At a 1500 Hz mid/tweeter split two adjacent same-polarity
+                    // lobes both cleared the gate and the 0.14 dB-deeper one sat
+                    // a full period past the correct alignment. So snap to the
+                    // arrival-nearest lobe that still clears the gate; wideChosen
+                    // itself qualifies, so this only pulls the pick closer to the
+                    // arrival, never onto a declined junction.
                     AlignmentCandidate promotedPick = AlignmentSelection.SelectPromotionLobe(
                         wide,
                         wideChosen,
@@ -1962,19 +1885,19 @@ public static class AutoAlignmentEngine
                 string versus = neighborChannel.Name +
                     (secondaryNeighbor != null ? $" + {secondaryNeighbor.Name}" : "");
                 // The rival pool is the UNCAPPED optimum sets: the selection
-                // lists are truncated (six candidates, 1.5 dB gap, judged on
-                // the prior-laden score), so a margin computed over them
-                // could read "unrivaled" only because the rival was cut
-                // before the comparison.
-                // Confidence overlap: the WEAKER of the per-neighbor overlaps
-                // (a two-neighbor search's good overlap with one settled
-                // neighbor must not mask near-none with the other; summing the
-                // fixed IRs would also let them cancel in-band). Each neighbor is
-                // measured in ITS OWN junction band and normalized to that band's
-                // width — not the union both searches span — so a low-junction
-                // partner (say 50-150 Hz) is not judged over five octaves it
-                // never overlaps. A fraction, not an octave count, so the
-                // threshold means the same across narrow and wide bands.
+                // lists are truncated (six candidates, 1.5 dB gap, judged on the
+                // prior-laden score), so a margin over them could read
+                // "unrivaled" only because the rival was cut first.
+                //
+                // Confidence overlap: the WEAKER of the per-neighbor overlaps (a
+                // two-neighbor search's good overlap with one settled neighbor
+                // must not mask near-none with the other; summing the fixed IRs
+                // would also let them cancel in-band). Each neighbor is measured
+                // in ITS OWN junction band and normalized to that band's width —
+                // not the union both searches span — so a low-junction partner
+                // (say 50-150 Hz) is not judged over five octaves it never
+                // overlaps. A fraction, not an octave count, so the threshold
+                // means the same across narrow and wide bands.
                 double OverlapFractionAgainst(AlignmentJunction junction, Complex[] neighborIr)
                 {
                     double nominal = Math.Log2(junction.BandHighHz / junction.BandLowHz);
@@ -2000,11 +1923,10 @@ public static class AutoAlignmentEngine
                 if (subPrecedenceBehindDb is { } precedenceBehindDb)
                 {
                     // The report must say the objective was deliberately
-                    // overridden: without this a negative rival margin reads
-                    // as an algorithm error, not a policy (review find). The
-                    // figure is relative to the PRE-POLICY pick — itself
-                    // already shaped by the prior and the lobe gates, not
-                    // necessarily the global acoustic best.
+                    // overridden, or a negative rival margin reads as an
+                    // algorithm error rather than a policy. The figure is
+                    // relative to the PRE-POLICY pick — itself already shaped by
+                    // the prior and the lobe gates, not the global acoustic best.
                     AmendDecision(
                         decisions, channel,
                         "sub-precedence policy: the sub-leading lobe stands " +
@@ -2475,23 +2397,22 @@ public static class AutoAlignmentEngine
                 rightByBand, plan.RightPairs, log,
                 out HashSet<AlignmentJunction> rightUntrustedSeeds);
 
-        // The delay that would land this right channel's arrival exactly the
-        // scene offset ahead of its settled left counterpart's, measured by
-        // envelope arrivals in the given band. Used as the search prior: a
-        // gentle, polarity-blind pull toward the other side's timing that
-        // breaks near-ties between lobes the junction sum cannot distinguish
-        // — and as the pin of a scene lock, which measures the LOCALIZATION
-        // sub-band of the pair's shared band (the part the scene actually
-        // follows) rather than the full intersection. Unmeasurable (silent
-        // band, low SNR) falls back to null and the search keeps its own-side
-        // anchor.
-        // Returns the delay that Δ-aligns the right channel to its left
-        // counterpart, whether the target is COARSE (good to a fraction of a
-        // millisecond — it may pin a lobe but never the tight scene tolerance),
-        // and whether it earns a TIGHT (quarter-period) lock — set only by the
-        // last rung when the pair's own arrivals were unmeasurable and CORROBO-
-        // RATED donor geometry replaced them, so the mode-shaped junction sum
-        // gets less in-lobe authority. Null when no target could be trusted.
+        // The delay that Δ-aligns this right channel to its settled left
+        // counterpart — landing its arrival exactly the scene offset ahead,
+        // measured by envelope arrivals in the given band. Used as the search
+        // prior (a gentle, polarity-blind pull toward the other side's timing
+        // that breaks near-ties between lobes the junction sum cannot
+        // distinguish) and as the pin of a scene lock, which measures the
+        // LOCALIZATION sub-band of the pair's shared band rather than the full
+        // intersection.
+        //
+        // COARSE means good only to a fraction of a millisecond: it may pin a
+        // lobe but never the tight scene tolerance. TIGHTLOCK (quarter-period)
+        // is set only by the last rung, when the pair's own arrivals were
+        // unmeasurable and CORROBORATED donor geometry replaced them, so the
+        // mode-shaped junction sum gets less in-lobe authority. Null when no
+        // target could be trusted (silent band, low SNR) and the search keeps
+        // its own-side anchor.
         (double TargetMs, bool Coarse, bool TightLock)? CrossSideTargetMs(
             IAlignmentChannel rightChannel,
             StereoPairLink link,
@@ -2511,27 +2432,26 @@ public static class AutoAlignmentEngine
             Complex[] leftIr = leftSnapshot.ImpulseResponse;
             Complex[] rightIr = rightSnapshot.ImpulseResponse;
 
-            // Both sides measured in one band, with a modal-latch guard: the
+            // Both sides measured in one band, with a modal-latch guard. The
             // Latched flag separates "one side timed the wrong feature" (worth
             // retrying one band up) from "the band cannot be measured at all"
-            // (silence or a too-narrow intersection — the link stays without a
-            // target, exactly as before the ladder existed).
-            // SAME driver measured in the band's upper half must agree with
-            // the full-band read to within the dispersion one direct wave
-            // packet can show (half a period at the probe's low edge). A
-            // full-band read landing far BEHIND its own upper-half read means
-            // the detector latched that side onto the in-room modal build-up
-            // instead of the direct rise (the under-seat midbass case:
-            // 21.2 ms in 80-200 Hz vs 13.9 ms one band up); one landing far
-            // AHEAD means the upper half timed some later feature, so the two
-            // bands are not looking at one wavefront either — both directions
-            // fail the certification. The narrow upper half itself is NOT a
-            // substitute (at a low band it is an octave of mush that once
-            // dragged a woofer 6 ms off) — it only votes on the full band's
-            // honesty. Verified is the positive certificate: reads whose probe
-            // was unmeasurable (too-narrow band, silent or low-SNR upper half)
-            // are still usable but UNVERIFIED, and the caller must not grant
-            // them the tight scene lock an honest certificate earns.
+            // (silence or a too-narrow intersection — the link then stays
+            // without a target).
+            //
+            // The SAME driver measured in the band's upper half must agree with
+            // the full-band read to within the dispersion one direct wave packet
+            // can show (half a period at the probe's low edge). A full-band read
+            // landing far BEHIND its own upper-half read means the detector
+            // latched that side onto the in-room modal build-up instead of the
+            // direct rise (an under-seat midbass: 21.2 ms in 80-200 Hz against
+            // 13.9 ms one band up); one landing far AHEAD means the upper half
+            // timed some later feature — either way the two bands are not
+            // looking at one wavefront and the certification fails. The narrow
+            // upper half is NOT a substitute (at a low band it is an octave of
+            // mush that can drag a woofer 6 ms off); it only votes on the full
+            // band's honesty. Verified is the positive certificate: reads whose
+            // probe was unmeasurable stay usable but UNVERIFIED, and the caller
+            // must not grant them the tight scene lock.
             ((TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
                 Reads, bool Latched, bool Verified,
                 bool LeftLatched, bool RightLatched,
@@ -2611,12 +2531,12 @@ public static class AutoAlignmentEngine
 
             // The consistency ladder: the pair's own shared band first; when a
             // side LATCHED there, the channel's junction band — the engine
-            // already trusts it for junction work, and the direct rise that
-            // hid under a mode in the low link band is usually plain one
-            // octave up. An unmeasurable link band (silence, too narrow) does
-            // NOT ladder: the link was inadmissible, not mis-read. Only when
-            // both bands are poisoned is the prior withdrawn and the search
-            // keeps its own-side junction anchor.
+            // already trusts it for junction work, and the direct rise that hid
+            // under a mode in the low link band is usually plain one octave up.
+            // An unmeasurable link band (silence, too narrow) does NOT ladder:
+            // the link was inadmissible, not mis-read. Only when both bands are
+            // poisoned is the prior withdrawn and the search keeps its own-side
+            // junction anchor.
             double usedLowHz = bandLowHz;
             double usedHighHz = bandHighHz;
             bool anyLatch;
@@ -2629,26 +2549,24 @@ public static class AutoAlignmentEngine
             anyLatch = measured.Latched;
             bool fallbackDiffers =
                 fallbackLowHz != bandLowHz || fallbackHighHz != bandHighHz;
-            // The junction band doubles as the LINK CERTIFICATE'S WITNESS: the
-            // link certificate can self-verify inside the modal region — the
-            // link band's upper half may still sit under the same mode, so
+            // The junction band doubles as the LINK CERTIFICATE'S WITNESS,
+            // because the link certificate can self-verify inside the modal
+            // region: the link band's upper half may sit under the same mode, so
             // full and probe agree on the mode and Verified is issued for a
-            // latched read (field case: a midbass link read 22.2 ms in
-            // 80-200 Hz, its 126-200 Hz half saw the same hump, and the
-            // fabricated -8.4 ms split — no cabin geometry produces one —
-            // was scene-locked onto the right midbass). The conviction does
-            // NOT transfer wholesale, though: the witness only proves a mode
-            // somewhere below its own probe half, which may lie below the
-            // link band entirely (review find on the first cut). So the
-            // witness convicts the link read only when the SAME-FEATURE test
-            // holds — the latched side's link read timed the very feature the
-            // witness convicted (the two reads agree within the wavefront
-            // tolerance; the bands overlap and both sit on one mode, so
-            // dispersion between them is small). A link read that timed an
-            // earlier, different feature stands: the mode is outside its
-            // band's reach. On conviction the link's split must not reach the
-            // scene lock, and the pair descends the same ladder a latched
-            // link band would.
+            // latched read (a midbass link read 22.2 ms in 80-200 Hz, its
+            // 126-200 Hz half saw the same hump, and the resulting -8.4 ms split
+            // — no cabin geometry produces one — was scene-locked onto the right
+            // midbass). The conviction does not transfer wholesale: the witness
+            // only proves a mode somewhere below its own probe half, which may
+            // lie below the link band entirely. So it convicts the link read
+            // only when the SAME-FEATURE test holds — the latched side's link
+            // read timed the very feature the witness convicted (the two reads
+            // agree within the wavefront tolerance; the bands overlap and both
+            // sit on one mode, so dispersion between them is small). A link read
+            // that timed an earlier, different feature stands: the mode is
+            // outside its band's reach. On conviction the link's split must not
+            // reach the scene lock, and the pair descends the same ladder a
+            // latched link band would.
             ((TimeAlignmentAnalysisResult Left, TimeAlignmentAnalysisResult Right)?
                 Reads, bool Latched, bool Verified,
                 bool LeftLatched, bool RightLatched,
@@ -2699,30 +2617,27 @@ public static class AutoAlignmentEngine
                 if (!anyLatch)
                 {
                     // The link band itself was inadmissible (silent or too
-                    // narrow): no target, exactly as before the ladder.
+                    // narrow): no target.
                     return null;
                 }
 
-                // The ladder's last rung: no band read both DIRECT rises, so this
-                // pair's direct arrivals are UNMEASURABLE (a latch on at least
-                // one side under a room mode). This rung once used the processed
-                // IRs' energy-peak difference, trusting that the dominant packet
-                // is the same physical feature on both sides — but a field case
-                // (bad_plus: peaks 23.5 vs 17.9 ms, a 5.6 ms "path" no cabin
-                // geometry produces) showed the sides latching onto DIFFERENT
-                // modes and the fabricated target dragging the right midbass past
-                // the scene onto a junction notch. The pair is poisoned, but the
-                // cabin's L/R GEOMETRY is often measurable on OTHER linked pairs:
-                // each pair whose both sides read a clean direct arrival gives an
-                // L/R split, and where several agree (bad_plus: mids +1.37 ms,
-                // tweeters +1.41 — corroborated) that split is the cabin's L/R
-                // offset, so aim the right delay at the settled left twin's minus
-                // it and the scene. NOT clean geometry in isolation: each split
-                // also carries that donor pair's own L/R filter/driver asymmetry,
-                // which is why corroboration across pairs (not one nearest
+                // The ladder's last rung: no band read both DIRECT rises, so
+                // this pair's direct arrivals are UNMEASURABLE (a latch on at
+                // least one side under a room mode). Neither side's energy peak
+                // substitutes — the two can latch onto DIFFERENT modes and
+                // fabricate a path no cabin geometry produces (measured 23.5 vs
+                // 17.9 ms, a 5.6 ms "split" that dragged the right midbass past
+                // the scene onto a junction notch). The pair is poisoned, but
+                // the cabin's L/R GEOMETRY is often measurable on OTHER linked
+                // pairs: each pair whose both sides read a clean direct arrival
+                // gives an L/R split, and where several agree (mids +1.37 ms,
+                // tweeters +1.41) that split is the cabin's L/R offset, so aim
+                // the right delay at the settled left twin's minus it and the
+                // scene. Not clean geometry in isolation, though — each split
+                // also carries that donor pair's own L/R filter/driver asymmetry
+                // — which is why corroboration across pairs (not one nearest
                 // donor) earns the tight lock, a lone donor only a soft one, and
-                // no agreement no pin at all — a fabricated split hard-locked is
-                // the very failure this rung exists to avoid.
+                // no agreement no pin at all.
                 var donorSplits = new List<(double SplitMs, string Names)>();
                 if (plan.PairLinks != null)
                 {
@@ -2874,17 +2789,16 @@ public static class AutoAlignmentEngine
             }
 
             // The scene mandate: pairs reaching the localization region are
-            // pinned to the cross-side target, which is then measured in the
-            // localization sub-band alone — the low end of a wide shared band
-            // (soft envelopes, no localization) must not smear the pin. A
-            // pure low-frequency pair is pinned too, but only to the LOBE: an
+            // pinned to the cross-side target, measured in the localization
+            // sub-band alone — the low end of a wide shared band (soft
+            // envelopes, no localization) must not smear the pin. A pure
+            // low-frequency pair is pinned too, but only to the LOBE: an
             // identical L/R driver pair's delay split is physical (path
-            // difference), and a junction comb whose lobes differ by a dB
-            // must not choose it — the field failure put one under-seat
-            // midbass at 0 and the other at 10.85 ms for exactly that. The
-            // lock tolerance is half the period of the tightest junction the
-            // channel searches against, so the sum keeps full authority
-            // inside the arrival's lobe and none across lobes.
+            // difference), and a junction comb whose lobes differ by a dB must
+            // not choose it — left unchecked it put one under-seat midbass at 0
+            // and the other at 10.85 ms. The lock tolerance is half the period
+            // of the tightest junction the channel searches against, so the sum
+            // keeps full authority inside the arrival's lobe and none across.
             StereoPairLink? channelLink = plan.PairLinks?.FirstOrDefault(
                 item => item.Right == channel);
             bool lockable = channelLink != null && IsSceneLockable(channelLink);
@@ -2902,12 +2816,12 @@ public static class AutoAlignmentEngine
             double? crossTarget = cross?.TargetMs;
             // A corroborated-geometry latched target (TightLock) gets a QUARTER-
             // period lock instead of the usual half: the in-lobe authority the
-            // wide lock grants the junction sum assumes the sum measures direct-
-            // field summation, but where the pair's own direct arrivals were
-            // unmeasurable the same room modes shape the sum too — on bad_plus
+            // wide lock grants the junction sum assumes the sum measures
+            // direct-field summation, but where the pair's own direct arrivals
+            // were unmeasurable the same room modes shape the sum too (measured:
             // its in-band optimum sat 0.6 ms past every geometry-consistent
-            // point. There the multi-donor geometry deserves the larger say; the
-            // sum still fine-tunes inside ±T/4. A lone (uncorroborated) donor
+            // point). There the multi-donor geometry deserves the larger say and
+            // the sum still fine-tunes inside ±T/4. A lone (uncorroborated) donor
             // keeps the ordinary ±T/2.
             double? sceneLock = cross is not { } resolved
                 ? null
@@ -3191,55 +3105,51 @@ public static class AutoAlignmentEngine
     private const double PairComoveMinimumGainDb = 0.05;
 
     // The mono-channel co-move (see ComoveMonoChannels): the search spans a
-    // full half period of the mono channel's tightest junction to each side,
-    // in BOTH polarities. Unlike the pair co-move this deliberately reaches
-    // other comb lobes: a mono channel is timed by the left pass alone, so
-    // the walk's lobe choice never heard the right junction's vote — the
-    // field failure that pinned this had the sub/midbass junctions near-tied
-    // on the left while the right junction clearly preferred the flip partner
-    // a third of a period away, and only a hand-tuned compromise served both
-    // sides. With the polarity dimension the half-period window covers every
-    // lobe family exactly once, judged by the mean of the two junctions.
+    // full half period of the mono channel's tightest junction to each side, in
+    // BOTH polarities. Unlike the pair co-move this deliberately reaches other
+    // comb lobes, because a mono channel is timed by the left pass alone and the
+    // walk's lobe choice never heard the right junction's vote — in the field
+    // the sub/midbass junctions were near-tied on the left while the right
+    // junction clearly preferred the flip partner a third of a period away. With
+    // the polarity dimension the half-period window covers every lobe family
+    // exactly once, judged by the mean of the two junctions.
     private const double MonoComoveSearchHalfPeriods = 1.0;
 
     // A mono lobe/polarity hop must be plainly better than the best IN-LOBE
-    // polish: the window above deliberately opens the neighboring lobe
-    // family, and the pair co-move's 0.05 dB application threshold is noise
-    // scale for that decision — a false hop at a sub junction costs up to
-    // half a period (~6 ms at 80 Hz) of bass attack, the audible failure this
-    // engine keeps fighting. Field anchors: near-tied co-moves measure
-    // 0.01-0.02 dB of "gain"; the two genuine two-sided lobe recoveries
-    // measured 0.20 dB (the v3 BW36 cabin, matching the user's hand-tuned
-    // compromise) and 1.36 dB (the v2 cabin). 0.1 sits an order of magnitude
-    // above the noise ties and half the smallest genuine recovery. Within the
-    // current lobe (same polarity, inside the pair co-move's polish reach)
-    // the plain 0.05 dB threshold still applies.
+    // polish: the window above deliberately opens the neighboring lobe family,
+    // and the pair co-move's 0.05 dB application threshold is noise scale for
+    // that decision — a false hop at a sub junction costs up to half a period
+    // (~6 ms at 80 Hz) of bass attack. Field anchors: near-tied co-moves measure
+    // 0.01-0.02 dB of "gain", while the two genuine two-sided lobe recoveries
+    // measured 0.20 dB (v3 BW36, matching the owner's hand-tuned compromise) and
+    // 1.36 dB (v2). 0.1 sits an order of magnitude above the noise ties and half
+    // the smallest genuine recovery. Within the current lobe (same polarity,
+    // inside the pair co-move's polish reach) the plain 0.05 dB still applies.
     private const double MonoComoveLobeHopMarginDb = 0.1;
 
     // The sub-band deficit that vetoes a mono lobe/polarity hop even after it
     // cleared the margin above. The full-band mean cannot tell a genuine
-    // recovery from a comb impostor flattered by an in-room mode: a lobe a
-    // whole period off fits the phase only where its period matches the
-    // frequency, and a mode INSIDE the band can put more summed energy behind
-    // exactly that impostor than behind the direct sound. The cross-check
-    // every narrow-band ranging discipline converges on (sub-band GCC,
-    // multi-scale FWI, GPS widelane ambiguity resolution) is consistency
-    // ACROSS sub-bands: the true alignment holds in every half of the
-    // junction band, the impostor wins one half and loses the other. Field
-    // anchors (v3 cabin, 80 Hz sub junctions): the false full-period hop
-    // "gained" 1.43 dB full-band while losing the clean 40-80 Hz half by
-    // 0.29 dB; the genuine two-sided recovery's worst half-band deficit was
-    // 0.02 dB — the co-move's own noise-tie scale. 0.1 sits between, the
-    // same order-of-magnitude split as the hop margin itself.
+    // recovery from a comb impostor flattered by an in-room mode: a lobe a whole
+    // period off fits the phase only where its period matches the frequency, and
+    // a mode INSIDE the band can put more summed energy behind that impostor
+    // than behind the direct sound. The cross-check every narrow-band ranging
+    // discipline converges on (sub-band GCC, multi-scale FWI, GPS widelane
+    // ambiguity resolution) is consistency ACROSS sub-bands: the true alignment
+    // holds in every half of the junction band, the impostor wins one half and
+    // loses the other. Field anchors (v3, 80 Hz sub junctions): the false
+    // full-period hop "gained" 1.43 dB full-band while losing the clean
+    // 40-80 Hz half by 0.29 dB; the genuine recovery's worst half-band deficit
+    // was 0.02 dB, the co-move's own noise-tie scale. 0.1 sits between.
     private const double MonoComoveSubBandVetoMarginDb = 0.1;
 
-    // The right bridge top inherits the left top's sign (set before the right walk,
-    // so the right lowers align against a correctly-signed top). Automatic delay
-    // never inverts one side of a pair alone — a driver's polarity is a property of
-    // the driver, decided once on the left and mirrored to the right; the sum-loss /
-    // first-lobe "which polarity fits better" guess is gone, because at high
-    // frequencies two spatially-separated tops comb-filter and the guess is
-    // noise-driven (it used to invert an identical off-axis right tweeter alone).
+    // The right bridge top inherits the left top's sign (set before the right
+    // walk, so the right lowers align against a correctly-signed top). Automatic
+    // delay never inverts one side of a pair alone: a driver's polarity is a
+    // property of the driver, decided once on the left and mirrored to the
+    // right. There is deliberately no sum-loss "which polarity fits better"
+    // guess — at high frequencies two spatially-separated tops comb-filter, and
+    // the guess is noise-driven enough to invert an identical off-axis right
+    // tweeter alone.
     private static void InheritBridgePolarity(
         StereoAlignmentPlan plan,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
@@ -3433,15 +3343,15 @@ public static class AutoAlignmentEngine
             // period OF THE NEIGHBOR'S ALREADY-APPLIED co-move delta: within
             // half a period the junction sums are single-lobed, so the search
             // can only polish the alignment the arrival-anchored walk chose.
-            // Past that lies the next comb lobe — and fractions of a dB of mean
+            // Past that lies the next comb lobe, and fractions of a dB of mean
             // junction loss cannot choose a lobe (the same physics as the
             // wide-window promotion reach cap). Centering on the neighbor's
             // delta (0 for a channel that never co-moves — a mono/fixed
             // neighbor) is what keeps the RELATIVE shift across the junction
-            // bounded even when the neighbor pair already moved; a flat ±half
-            // period around zero let two adjacent pairs drift a full period
-            // apart, and the flat window alone let a 0.1-0.2 dB "gain" walk the
-            // tweeter pair a whole period off its mid at a 2.3 kHz junction.
+            // bounded once the neighbor pair has moved: a flat ±half period
+            // around zero lets two adjacent pairs drift a full period apart, and
+            // a 0.1-0.2 dB "gain" walk the tweeter pair a whole period off its
+            // mid at a 2.3 kHz junction.
             double lobeLowMs = -PairComoveSearchRangeMs;
             double lobeHighMs = PairComoveSearchRangeMs;
             foreach (AlignmentJunction junction in adjacent)
@@ -3630,16 +3540,15 @@ public static class AutoAlignmentEngine
 
             // Every junction must hold delay EVIDENCE on its own before the
             // co-move may judge a compromise. The walk certified the LEFT
-            // junction individually, but the right sub junction never faced
-            // the structure gate alone — the descent searches a COMBINED band
-            // whose united fixed sum can hide an evidence-less sub junction
-            // behind a healthy upper one (review find). A co-move judged by
-            // the measurable side alone would merely re-optimize the left
-            // junction the walk already settled, so with any junction
-            // unmeasurable the whole co-move abstains and the walk's
-            // placement stands. Evidence is delay- and polarity-invariant
-            // (it reads magnitudes), so one certification on the current
-            // render covers every probe below.
+            // junction individually, but the right sub junction never faced the
+            // structure gate alone — the descent searches a COMBINED band whose
+            // united fixed sum can hide an evidence-less sub junction behind a
+            // healthy upper one. A co-move judged by the measurable side alone
+            // would merely re-optimize the left junction the walk already
+            // settled, so with any junction unmeasurable the whole co-move
+            // abstains and the walk's placement stands. Evidence is delay- and
+            // polarity-invariant (it reads magnitudes), so one certification on
+            // the current render covers every probe below.
             IReadOnlyList<AlignmentSnapshot> certified = reprocess(alignment);
             AlignmentJunction? unmeasurable = junctions.FirstOrDefault(
                 junction => CellScore(
@@ -3755,12 +3664,12 @@ public static class AutoAlignmentEngine
                 }
 
                 // FAIL-CLOSED, not an average of the survivors: the upfront
-                // certification ran on one render, but every probe re-gates
-                // the IRs and the direct-sound window shifts with the probed
-                // delay — a borderline junction can drop out mid-sweep, and a
-                // mean over the rest would be exactly the one-sided vote the
-                // certification exists to prevent (review find). A probe that
-                // cannot measure EVERY junction is not a candidate.
+                // certification ran on one render, but every probe re-gates the
+                // IRs and the direct-sound window shifts with the probed delay,
+                // so a borderline junction can drop out mid-sweep and a mean over
+                // the rest would be the one-sided vote the certification exists
+                // to prevent. A probe that cannot measure EVERY junction is not
+                // a candidate.
                 return measured == junctions.Count
                     ? total / measured
                     : double.NegativeInfinity;
@@ -3848,18 +3757,16 @@ public static class AutoAlignmentEngine
             else if (hop)
             {
                 // The sub-band consistency veto (see
-                // MonoComoveSubBandVetoMarginDb): a hop that cleared the
-                // margin must also HOLD every (junction, half-band) CELL it
-                // can be measured in. Per cell, not per averaged half: a
-                // mean over the junctions would let a deficit on one side
-                // hide behind a surplus on the other (review find). And a
-                // cell casts a vote only where the delay is OBSERVABLE — the
-                // evidence gate refuses halves where one channel is just a
-                // filter tail, whose near-flat loss is noise the level match
-                // amplifies toward parity (review find). Losing a measurable
-                // cell means the full-band gain came from a mode rewarding a
-                // comb impostor, not from a better alignment of the direct
-                // sound.
+                // MonoComoveSubBandVetoMarginDb): a hop that cleared the margin
+                // must also HOLD every (junction, half-band) CELL it can be
+                // measured in. Per cell, not per averaged half, or a deficit on
+                // one side hides behind a surplus on the other. A cell votes
+                // only where the delay is OBSERVABLE — the evidence gate refuses
+                // halves where one channel is just a filter tail, whose
+                // near-flat loss is noise the level match amplifies toward
+                // parity. Losing a measurable cell means the full-band gain came
+                // from a mode rewarding a comb impostor, not from a better
+                // alignment of the direct sound.
                 IReadOnlyList<AlignmentSnapshot> hopRender =
                     Rendered(bestDelta, bestFlip);
                 IReadOnlyList<AlignmentSnapshot> polishRender =
@@ -3945,9 +3852,9 @@ public static class AutoAlignmentEngine
                     "cannot touch the scene)");
                 if (decisions != null)
                 {
-                    // The walk's decision (typically "reference") no longer
-                    // describes this channel: the co-move re-decided it from
-                    // BOTH sides' junctions. Its confidence maps the applied
+                    // The co-move re-decided this channel from BOTH sides'
+                    // junctions, so the walk's decision (typically "reference")
+                    // no longer describes it. The confidence maps the applied
                     // gain onto the co-move's own field-calibrated scale —
                     // genuine two-sided recoveries measured 0.20 and 1.36 dB
                     // (see MonoComoveLobeHopMarginDb), an order of magnitude

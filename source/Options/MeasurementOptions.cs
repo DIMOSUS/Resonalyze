@@ -289,8 +289,8 @@ namespace Resonalyze.Options
                 UpdateComboBoxToolTip(comboBoxAsioDriver);
             }
 
-            // Clamped: the settings file is not normalized against the control
-            // ranges, and (int) truncation used to shave a millisecond off
+            // Clamped and rounded: the settings file is not normalized against
+            // the control ranges, and (int) truncation shaves a millisecond off
             // durations that are not exactly representable in binary.
             (double lowFrequencyHz, double highFrequencyHz) = settings.ResolveBand(settings.SampleRate);
             numericUpDownLowFrequency.Value = numericUpDownLowFrequency.ClampValue(

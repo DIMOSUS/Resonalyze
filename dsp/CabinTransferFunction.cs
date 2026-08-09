@@ -28,6 +28,7 @@ public enum CabinBodyStyle
 /// (<see cref="MaximumSubtractionDb"/>) rather than run to the tens of dB the
 /// slope would reach at DC — that region is unmeasured, and an unbounded notch
 /// there only buys the correction FIR deep, long infrasonic ringing.
+/// </para>
 /// <para>
 /// Most presets are the two-parameter pressure-zone shape (corner + slope with
 /// a soft knee). A trunk coupled through an opening does not fit it — the

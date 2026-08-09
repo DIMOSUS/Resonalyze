@@ -282,34 +282,33 @@ namespace Resonalyze.Dsp
         /// FFT resolution limit. Where <see cref="LogarithmicResample"/> interpolates and
         /// averages AMPLITUDE (correct for a relative / transfer trace), this integrates
         /// POWER over each display band, so a broadband level does not shift with the FFT
-        /// length: the summed bin power in a fixed frequency band is invariant to N (at
-        /// higher N there are more, narrower bins, each carrying proportionally less
-        /// power). The summed power is divided by the window's equivalent noise bandwidth
-        /// so a noise band reads its true power rather than the coherent-gain (tone)
-        /// over-estimate, while a bin-centred full-scale tone under a rectangular
-        /// window still reads its calibrated level. Each bin contributes only the fraction
-        /// of its power overlapping the band, and no band is narrower than the window's
-        /// spectral main lobe, so the level is continuous (no jump as a bin centre crosses
-        /// a band edge), never sub-bin, and a tone keeps its whole main lobe.
+        /// length: summed bin power in a fixed frequency band is invariant to N. The sum
+        /// is divided by the window's equivalent noise bandwidth so a noise band reads its
+        /// true power rather than the coherent-gain (tone) over-estimate, while a
+        /// bin-centred full-scale tone under a rectangular window still reads its
+        /// calibrated level. Each bin contributes only the fraction of its power
+        /// overlapping the band, and no band is narrower than the window's spectral main
+        /// lobe, so the level is continuous (no jump as a bin centre crosses a band edge),
+        /// never sub-bin, and a tone keeps its whole main lobe.
         /// <para>
         /// The N-invariance holds only where the fixed <c>1/12</c>-octave reference band is
         /// WIDER than that main lobe. Below the crossover (a low frequency, a long window
         /// such as Flat Top, or a short FFT) the band is floored to the main lobe, whose
         /// width in Hz — <c>mainLobeBins·Fs/N</c> — DOES shrink with N, so a broadband
-        /// level there drops ~3 dB per doubling of N. This is the unavoidable resolution
-        /// limit of a single FFT (the <c>1/12</c>-octave band is simply finer than the FFT
-        /// resolves), shared by every FFT RTA, and it is the deliberate cost of the
-        /// main-lobe floor: without it a coherent tone in that region would read low. Use a
-        /// longer FFT for finer low-frequency resolution.
+        /// level there drops ~3 dB per doubling of N. That is the resolution limit of a
+        /// single FFT, shared by every FFT RTA, and the deliberate cost of the main-lobe
+        /// floor: without it a coherent tone in that region would read low. Use a longer
+        /// FFT for finer low-frequency resolution.
         /// </para>
-        /// The
-        /// integration band is a FIXED reference resolution, NOT the display smoothing:
-        /// because band power grows with bandwidth, tying it to smoothing would lift a
-        /// quiet spectrum by many dB. <paramref name="smoothingOctaves"/> instead applies
+        /// <para>
+        /// The integration band is a FIXED reference resolution, NOT the display
+        /// smoothing: band power grows with bandwidth, so tying it to smoothing would lift
+        /// a quiet spectrum by many dB. <paramref name="smoothingOctaves"/> applies
         /// afterwards as a level-preserving dB average that only smooths scatter. The grid
-        /// is bounded so every emitted band fits WHOLE inside the resolved range: none
-        /// straddles Nyquist or DC (a half-empty band would show a false roll-off on a flat
-        /// input), and nothing above the last bin is synthesized from it.
+        /// is bounded so every emitted band fits WHOLE inside the resolved range — none
+        /// straddles Nyquist or DC (a half-empty band would show a false roll-off on a
+        /// flat input), and nothing above the last bin is synthesized from it.
+        /// </para>
         /// <para>
         /// Returns RELATIVE band levels in dB (<c>10·log10</c> of the band power); the
         /// caller adds any microphone-calibration correction and the SPL offset.

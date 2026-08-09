@@ -364,29 +364,33 @@ public static class TransferIrDiagnostics
     }
 
     /// <summary>
-    /// Estimates where the IR's honest acoustic content starts: the rising-
-    /// front crossings of the first credible arrival's Hilbert envelope, read
-    /// inside the record's DOMINANT band. The band-pass is what makes the
-    /// figure robust on real cabin records — a playback-crosstalk click or
-    /// other broadband head garbage carries almost no energy inside a
-    /// band-limited driver's working band, so the in-band envelope never sees
-    /// it, without any head-cleaning pass (field data, v3 cabin: the click at
-    /// ~0.5 ms poisons every full-band read of the midbass and subwoofer
-    /// records — 0.46-3.3 ms against fronts at 4.5-9 ms — while the in-band
-    /// read lands on the front on all seven records). The arrival itself is
-    /// the shared first-arrival physics (25 dB depth, noise gate, pre-ringing
-    /// rejection), so a stronger modal build-up peak seconds later cannot
-    /// usurp the front. Falls back to the full-band envelope when the
-    /// dominant-band read is invalid (then a head artifact CAN poison it —
-    /// <see cref="IrStartEstimate.DominantBandLimited"/> reports which path
-    /// answered); null when no credible arrival exists at all — empty, too
-    /// short or silent records, and noise-only records, which the envelope
-    /// SNR floor refuses (a noise envelope still has a "strongest peak" the
-    /// first-arrival search would fall back to, and only the peak-to-noise
-    /// grade exposes it). The caller keeps whatever figure it used before.
+    /// Estimates where the IR's honest acoustic content starts: the rising-front
+    /// crossings of the first credible arrival's Hilbert envelope, read inside
+    /// the record's DOMINANT band. The band-pass is what makes the figure robust
+    /// on real cabin records — a playback-crosstalk click or other broadband head
+    /// garbage carries almost no energy inside a band-limited driver's working
+    /// band, so the in-band envelope never sees it and no head-cleaning pass is
+    /// needed (v3 field data: a click at ~0.5 ms poisons every full-band read of
+    /// the midbass and subwoofer records, 0.46-3.3 ms against fronts at 4.5-9 ms,
+    /// while the in-band read lands on the front on all seven). The arrival
+    /// itself is the shared first-arrival physics (25 dB depth, noise gate,
+    /// pre-ringing rejection), so a stronger modal build-up peak later cannot
+    /// usurp the front.
+    /// <para>
+    /// Falls back to the full-band envelope when the dominant-band read is
+    /// invalid — a head artifact CAN poison that path, and
+    /// <see cref="IrStartEstimate.DominantBandLimited"/> reports which one
+    /// answered. Null when no credible arrival exists at all: empty, too short or
+    /// silent records, and noise-only records, which the envelope SNR floor
+    /// refuses (a noise envelope still has a "strongest peak" the first-arrival
+    /// search would fall back to, and only the peak-to-noise grade exposes it).
+    /// The caller keeps whatever figure it used before.
+    /// </para>
+    /// <para>
     /// Analysis is capped to the record's first <see cref="MaxAnalysisSamples"/>
     /// samples: the front lives there, and the cap keeps the per-refresh cost
     /// flat, the same convention as <see cref="DetectCrosstalkHead"/>.
+    /// </para>
     /// </summary>
     public static IrStartEstimate? EstimateIrStart(
         IReadOnlyList<double> impulseResponse,

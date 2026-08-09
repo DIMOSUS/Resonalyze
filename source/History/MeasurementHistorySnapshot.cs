@@ -45,7 +45,7 @@ internal sealed class MeasurementHistorySnapshot
     public required InputLevelMeterSnapshot MeterSnapshot { get; init; }
     /// <summary>
     /// The SPL anchor frozen onto the result this snapshot holds, validated against
-    /// its own input when it was captured (see <c>ImpulseResponseFile.FromMeasurement</c>).
+    /// its own input when it was captured (see <c>ImpulseResponseFile.Capture</c>).
     /// Together with <see cref="MeterSnapshot"/>'s loopback level it is the whole
     /// recipe for dB SPL, so restoring the entry — or comparing against it — keeps
     /// the absolute axis the original measurement had. Null when there was none.

@@ -288,7 +288,7 @@ public partial class VirtualCrossoverPanel : UserControl
     }
 
     // Tell the user, once, when their unreadable session file was moved aside so
-    // they know a .backup exists to recover from (previously a silent rename).
+    // they know a .backup exists to recover from.
     private void NotifyIfProjectBackedUp(string? backupPath)
     {
         if (backupPath == null || IsDisposed)
@@ -1518,7 +1518,7 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             // An unrecognised file must not reach the channel: the assignment
             // below replaces its bands and preamp outright, so a wrong pick in
-            // the file dialog used to silently clear the channel's PEQ.
+            // the file dialog would silently clear the channel's PEQ.
             if (!chosen.TryImport(File.ReadAllText(dialog.FileName), out curve))
             {
                 ShowError(

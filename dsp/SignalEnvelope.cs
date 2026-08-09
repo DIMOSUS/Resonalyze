@@ -176,30 +176,29 @@ public static class SignalEnvelope
     }
 
     // A measurement chain with real processing latency (a DSP or amplifier
-    // buffering the playback longer than the search window — field case: a
-    // ~163 ms chain) parks the whole IR beyond the start-anchored window's
-    // reach, and the "strongest peak" that window can offer is whatever
-    // residue happens to lead the buffer: the analysis then reports a
-    // confident zero. When that happens the window re-anchors on the
-    // envelope's global maximum and the search runs on a rotated view of
-    // the circular buffer (indices are mapped back before returning). The
-    // peak is placed at the window's far usable index, not its centre: all
-    // but two samples of the window become pre-history, so a direct
-    // arrival up to a full window ahead of a stronger room mode stays
-    // findable — centring would halve that reach for nothing, because the
-    // first-arrival walk only ever looks BEFORE the strongest peak, and the
-    // post-peak data the mirror/sidelobe checks read stays available
-    // through the full rotated view regardless of the window edge.
-    // The re-anchor is deliberately conservative: it fires only when
-    // NOTHING in the start-anchored window sits within the first-arrival
-    // search depth of the global peak AND above the noise gate — i.e. when
-    // by the tool's own physics the true arrival cannot be inside that
-    // window. (Depth alone is not enough: on a near-noise record the
-    // window's noise bumps can sit within the depth of a weak global peak,
-    // and keeping the window would hand the fallback that noise.) Every
-    // record whose front IS within reach — including the field-validated
-    // modal cabins, where a room mode may out-ring the direct front —
-    // keeps the start-anchored geometry bit for bit.
+    // buffering the playback longer than the search window — a field chain ran
+    // ~163 ms) parks the whole IR beyond the start-anchored window's reach, and
+    // the "strongest peak" that window can offer is whatever residue leads the
+    // buffer: the analysis then reports a confident zero. So the window
+    // re-anchors on the envelope's global maximum and the search runs on a
+    // rotated view of the circular buffer (indices are mapped back before
+    // returning).
+    //
+    // The peak goes at the window's far usable index, not its centre, making all
+    // but two samples pre-history, so a direct arrival up to a full window ahead
+    // of a stronger room mode stays findable. Centring would halve that reach for
+    // nothing: the first-arrival walk only looks BEFORE the strongest peak, and
+    // the post-peak data the mirror/sidelobe checks read stays available through
+    // the rotated view regardless of the window edge.
+    //
+    // The re-anchor is deliberately conservative — it fires only when NOTHING in
+    // the start-anchored window sits within the first-arrival search depth of the
+    // global peak AND above the noise gate, i.e. when by the tool's own physics
+    // the true arrival cannot be inside that window. Depth alone is not enough:
+    // on a near-noise record the window's noise bumps can sit within the depth of
+    // a weak global peak, and keeping the window would hand the fallback that
+    // noise. Every record whose front IS within reach keeps the start-anchored
+    // geometry bit for bit, modal cabins included.
     private static int FindSearchAnchorRotation(
         IReadOnlyList<double> envelope,
         int searchEnd,

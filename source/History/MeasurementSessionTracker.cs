@@ -1,12 +1,12 @@
 namespace Resonalyze.History;
 
 /// <summary>
-/// Owns the "current measurement" identity that used to live as two raw
-/// fields on <c>Form1</c>: which history entry the loaded impulse response
-/// belongs to, and whether an impulse response is loaded at all. Every
-/// transition that pairs those flags with a history-service call (finished
-/// sweep, loaded/saved file, restored or deleted entry, fresh session) goes
-/// through here, so the invariants live in one place. UI-thread only.
+/// Owns the "current measurement" identity: which history entry the loaded
+/// impulse response belongs to, and whether an impulse response is loaded at
+/// all. Every transition that pairs those flags with a history-service call
+/// (finished sweep, loaded/saved file, restored or deleted entry, fresh
+/// session) goes through here, so the invariants live in one place rather than
+/// as raw fields on <c>Form1</c>. UI-thread only.
 /// </summary>
 internal sealed class MeasurementSessionTracker
 {

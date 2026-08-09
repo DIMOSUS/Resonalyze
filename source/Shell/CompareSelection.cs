@@ -4,9 +4,8 @@ using Resonalyze.History;
 namespace Resonalyze;
 
 /// <summary>
-/// Owns the Compare measurement selection that used to live as a raw field on
-/// <c>Form1</c>. Written on the UI thread (choose file / history entry /
-/// clear); read by <c>Task.Run</c> plot builds through
+/// Owns the Compare measurement selection. Written on the UI thread (choose
+/// file / history entry / clear); read by <c>Task.Run</c> plot builds through
 /// <see cref="GetAnalysisSource"/>, so the reference is volatile and every
 /// reader snapshots it once — the selection itself is immutable.
 /// </summary>

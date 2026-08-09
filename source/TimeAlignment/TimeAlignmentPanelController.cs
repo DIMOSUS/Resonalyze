@@ -1052,13 +1052,12 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             UiPalette.WarningAmber);
     }
 
-    // Two separate figures that a single "quality" number used to conflate:
-    // the recording's SNR (strongest envelope peak vs the rest of the record)
-    // grades the measurement, while the first-arrival prominence (its level
-    // relative to the strongest peak) grades how sharply defined the pick is.
-    // A woofer's broad leading edge gives a low prominence on an excellent
-    // recording — that is physics, not a bad measurement, and it must not
-    // drag the signal grade down.
+    // Two figures, deliberately not conflated into one "quality" number: the
+    // recording's SNR (strongest envelope peak vs the rest of the record) grades
+    // the measurement, while the first-arrival prominence (its level relative to
+    // the strongest peak) grades how sharply defined the pick is. A woofer's
+    // broad leading edge gives a low prominence on an excellent recording —
+    // physics, not a bad measurement — and must not drag the signal grade down.
     private void AppendSignalQuality(string title, TimeAlignmentAnalysisResult result)
     {
         AppendStatusText($"{title} Signal: ", UiPalette.TextPrimarySoft);

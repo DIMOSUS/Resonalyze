@@ -2,10 +2,10 @@ namespace Resonalyze;
 
 /// <summary>
 /// Owns the one-shot, best-effort audio warm-up started when the shell is
-/// first shown. The cancellation source and task used to live as raw fields
-/// on <c>Form1</c>, cancelled from three different close paths; the pair is
-/// managed in one place now. The warm-up body itself is injected so this
-/// class stays free of device and UI concerns.
+/// first shown: the cancellation source and its task are managed here, in one
+/// place, rather than as raw <c>Form1</c> fields cancelled from three different
+/// close paths. The warm-up body itself is injected so this class stays free of
+/// device and UI concerns.
 /// </summary>
 internal sealed class StartupAudioWarmup : IDisposable
 {

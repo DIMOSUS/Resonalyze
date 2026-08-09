@@ -233,6 +233,13 @@ public partial class Form1
             achievedLowHz,
             achievedHighHz);
         expSweepMeasurement.RestoreLevelSnapshot(snapshot.MeterSnapshot);
+        // Restore the anchor with the levels, exactly as opening the file would
+        // (Form1.FileOperations): both halves of K travel with the entry, so a
+        // restored measurement keeps the dB SPL axis it was measured on. The stored
+        // anchor was matched against its own input, so its capture identity stands
+        // in for the result's.
+        expSweepMeasurement.MeasurementSplCalibration = snapshot.SplCalibration;
+        expSweepMeasurement.MeasurementInput = snapshot.SplCalibration?.CaptureIdentity;
 
         if (snapshot.Session != null)
         {
@@ -243,6 +250,11 @@ public partial class Form1
         SetImpulseResponseSourceFile(sourceFilePath);
         sessionTracker.SetImpulseResponseAvailable(true);
         UpdatePeakInfo();
+        // The restored entry brings its own anchor, so whether dB SPL is fully
+        // available just changed — keep an open panel's warning in step, as loading
+        // a file does.
+        dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
+            panel => panel.RefreshSplAvailability());
 
         if (snapshot.Session != null)
         {

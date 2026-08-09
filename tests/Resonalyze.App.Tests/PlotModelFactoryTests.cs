@@ -886,6 +886,129 @@ public sealed class PlotModelFactoryTests
         Assert.Contains("overlays only", note.Text, StringComparison.OrdinalIgnoreCase);
     }
 
+    // The Compare curve used to vanish the moment the plot went to dB SPL. It has
+    // its own K (own loopback level, own anchor), so it belongs on the absolute
+    // axis — placed by that K, not by the main measurement's.
+    [Fact]
+    public void CreateFrequencyResponse_InSplMode_DrawsCompareWithItsOwnOffset()
+    {
+        const int peakSample = 64;
+        ExpSweepMeasurement measurement = CreateSplTransferMeasurement(
+            peakSample, loopbackPeakDbFs: -6, referenceLevelDbSpl: 94, measuredLevelDbFs: -20);
+        // K_main = -6 + (94 - -20) = 108 dB at 0 dBr.
+        using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
+
+        PlotModelFactory factory = CreateFactory(
+            measurement,
+            noise,
+            frequencyResponseOptions: new FrequencyResponseOptions
+            {
+                MagnitudeScale = MagnitudeScale.SoundPressureLevel
+            });
+        // The same impulse on the Compare side, so the two dBr shapes are identical
+        // and the only thing separating the curves on screen is K_compare - K_main.
+        var compareImpulse = new Complex[2048];
+        compareImpulse[peakSample] = Complex.One;
+        factory.SetCompareSourceProvider(() => new CompareAnalysisSource(
+            "quieter.json", 44_100, compareImpulse, peakSample, SplOffsetDb: 96.0));
+
+        List<LineSeries> series = factory.CreateFrequencyResponse(includeCurves: true)
+            .Series.OfType<LineSeries>().ToList();
+        LineSeries main = series.Single(item => item.Tag is CurveTag
+        {
+            Kind: AnalysisCurveKind.Primary,
+            Source: CurveSource.Main
+        });
+        LineSeries compare = series.Single(item => item.Tag is CurveTag
+        {
+            Kind: AnalysisCurveKind.Primary,
+            Source: CurveSource.Compare
+        });
+
+        Assert.Contains("quieter.json", compare.Title);
+        Assert.Contains("dB SPL", compare.TrackerFormatString);
+        Assert.Equal(main.Points.Count, compare.Points.Count);
+        for (int i = 0; i < main.Points.Count; i++)
+        {
+            Assert.Equal(main.Points[i].X, compare.Points[i].X, tolerance: 1e-9);
+            Assert.Equal(main.Points[i].Y - 12.0, compare.Points[i].Y, tolerance: 1e-9);
+        }
+    }
+
+    // Without an anchor of its own the compared measurement has no absolute level;
+    // drawing its dBr shape on a dB SPL axis would be a lie, so it stays out — but
+    // the plot has to name it, or the curve just silently disappears (which is how
+    // this was reported).
+    [Fact]
+    public void CreateFrequencyResponse_InSplMode_OmitsAnUncalibratedCompareAndSaysSo()
+    {
+        ExpSweepMeasurement measurement = CreateSplTransferMeasurement(
+            peakSample: 64, loopbackPeakDbFs: -6, referenceLevelDbSpl: 94,
+            measuredLevelDbFs: -20);
+        using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
+
+        PlotModelFactory factory = CreateFactory(
+            measurement,
+            noise,
+            frequencyResponseOptions: new FrequencyResponseOptions
+            {
+                MagnitudeScale = MagnitudeScale.SoundPressureLevel
+            });
+        var compareImpulse = new Complex[2048];
+        compareImpulse[64] = Complex.One;
+        factory.SetCompareSourceProvider(() => new CompareAnalysisSource(
+            "uncalibrated.json", 44_100, compareImpulse, 64));
+
+        OxyPlot.PlotModel model = factory.CreateFrequencyResponse(includeCurves: true);
+
+        Assert.DoesNotContain(
+            model.Series.OfType<LineSeries>(),
+            item => item.Tag is CurveTag { Source: CurveSource.Compare });
+        OverlayTextAnnotation note =
+            Assert.Single(model.Annotations.OfType<OverlayTextAnnotation>());
+        Assert.Contains("uncalibrated.json", note.Text);
+    }
+
+    // Mirrors the overlay rule: an SPL-capable source stays visible even when the
+    // measurement itself cannot supply SPL, so the view-only plot is not empty when
+    // there is something honest to show.
+    [Fact]
+    public void CreateFrequencyResponse_SplViewOnly_StillDrawsACalibratedCompare()
+    {
+        ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
+
+        PlotModelFactory factory = CreateFactory(
+            measurement,
+            noise,
+            frequencyResponseOptions: new FrequencyResponseOptions
+            {
+                MagnitudeScale = MagnitudeScale.SoundPressureLevel
+            });
+        var compareImpulse = new Complex[2048];
+        compareImpulse[64] = Complex.One;
+        factory.SetCompareSourceProvider(() => new CompareAnalysisSource(
+            "calibrated.json", 44_100, compareImpulse, 64, SplOffsetDb: 100.0));
+
+        OxyPlot.PlotModel model = factory.CreateFrequencyResponse(includeCurves: true);
+
+        // The measurement's own curves stay out, with the notice explaining why...
+        Assert.DoesNotContain(
+            model.Series.OfType<LineSeries>(),
+            item => item.Tag is CurveTag { Source: CurveSource.Main });
+        OverlayTextAnnotation note =
+            Assert.Single(model.Annotations.OfType<OverlayTextAnnotation>());
+        Assert.Contains("overlays only", note.Text, StringComparison.OrdinalIgnoreCase);
+        // ...while the compared measurement, which does carry an anchor, is drawn.
+        LineSeries compare = Assert.Single(
+            model.Series.OfType<LineSeries>(),
+            item => item.Tag is CurveTag { Source: CurveSource.Compare });
+        // A unit impulse is 0 dBr at every frequency, so the trace sits at K.
+        Assert.All(
+            compare.Points,
+            point => Assert.Equal(100.0, point.Y, tolerance: 1e-6));
+    }
+
     [Fact]
     public void CreateFrequencyResponse_InRelativeMode_LeavesRoomForAPaddedLoopback()
     {
@@ -1001,6 +1124,35 @@ public sealed class PlotModelFactoryTests
             measurementMode: SweepMeasurementMode.LoopbackTransfer,
             transferImpulseResponse: transferImpulse,
             transferPeakIndex: peakSample);
+        return measurement;
+    }
+
+    // A transfer measurement carrying the whole SPL recipe: an anchor frozen onto
+    // the result and pinned to the input it ran on, plus a captured loopback level.
+    // K = loopbackPeakDbFs + (referenceLevelDbSpl - measuredLevelDbFs).
+    private static ExpSweepMeasurement CreateSplTransferMeasurement(
+        int peakSample,
+        double loopbackPeakDbFs,
+        double referenceLevelDbSpl,
+        double measuredLevelDbFs)
+    {
+        ExpSweepMeasurement measurement = CreateTransferMeasurement(peakSample);
+        var anchor = new SplCalibration
+        {
+            ReferenceLevelDbSpl = referenceLevelDbSpl,
+            MeasuredLevelDbFs = measuredLevelDbFs,
+            Backend = Resonalyze.Audio.AudioBackend.Wave,
+            SampleRate = 44_100,
+            Bits = 24,
+            MicrophoneChannelOffset = 0,
+            InputDeviceNumber = -1
+        };
+        measurement.MeasurementSplCalibration = anchor;
+        measurement.MeasurementInput = anchor.CaptureIdentity;
+        measurement.RestoreLevelSnapshot(new InputLevelMeterSnapshot(
+            new InputLevelMeterEntry(true, -3, -6, false, false),
+            new InputLevelMeterEntry(
+                true, loopbackPeakDbFs, loopbackPeakDbFs - 3, false, false)));
         return measurement;
     }
 

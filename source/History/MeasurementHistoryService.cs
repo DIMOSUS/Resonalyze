@@ -244,6 +244,14 @@ internal sealed class MeasurementHistoryService
             TransferImpulseResponse = transfer,
             TransferCoherence = measurement.TransferCoherence?.ToArray(),
             MeterSnapshot = measurement.CurrentLevels,
+            // Same rule as saving to disk: keep the calibration frozen onto THIS
+            // result, and only when it belongs to the input the result ran on — a
+            // leftover anchor from another device would be trusted on restore.
+            SplCalibration =
+                measurement.MeasurementSplCalibration is { } anchor &&
+                measurement.InputMatches(anchor)
+                    ? anchor
+                    : null,
             Preview = preview,
             Session = session
         };
@@ -287,6 +295,8 @@ internal sealed class MeasurementHistoryService
             TransferImpulseResponse = transfer,
             TransferCoherence = file.TransferCoherence?.ToArray(),
             MeterSnapshot = file.GetMeterSnapshot(),
+            // The file's anchor was validated against its own input when written.
+            SplCalibration = file.SplCalibration,
             Preview = preview,
             Session = session
         };

@@ -61,6 +61,50 @@ public sealed class CompareSelectionTests
         Assert.Same(coherence, source.Value.TransferCoherence);
     }
 
+    // The Compare curve is drawn on the absolute axis with its OWN K, so the
+    // selection has to carry it: loopback peak (-6 dBFS) + anchor offset
+    // (94 - -20 = 114) = 108 dB SPL at 0 dBr.
+    [Fact]
+    public void GetAnalysisSource_CarriesTheComparedMeasurementsSplOffset()
+    {
+        var selection = new CompareSelection();
+        selection.Set("a.json", null, CreateSnapshot(
+            transferIr: [new(0.25, 0)],
+            calibration: new SplCalibration
+            {
+                ReferenceLevelDbSpl = 94,
+                MeasuredLevelDbFs = -20
+            },
+            meterSnapshot: new InputLevelMeterSnapshot(
+                new InputLevelMeterEntry(true, -3, -6, false, false),
+                new InputLevelMeterEntry(true, -6, -9, false, false))));
+
+        CompareAnalysisSource? source = selection.GetAnalysisSource();
+
+        Assert.Equal(108.0, source!.Value.SplOffsetDb!.Value, tolerance: 1e-9);
+    }
+
+    // Half a recipe is no recipe: an anchor without the measurement's loopback
+    // level cannot place the curve absolutely, and neither can a level alone.
+    [Fact]
+    public void GetAnalysisSource_HasNoSplOffsetWithoutBothHalves()
+    {
+        var anchor = new SplCalibration { ReferenceLevelDbSpl = 94, MeasuredLevelDbFs = -20 };
+        var levels = new InputLevelMeterSnapshot(
+            new InputLevelMeterEntry(true, -3, -6, false, false),
+            new InputLevelMeterEntry(true, -6, -9, false, false));
+
+        var withoutLevels = new CompareSelection();
+        withoutLevels.Set("a.json", null, CreateSnapshot(
+            transferIr: [new(0.25, 0)], calibration: anchor));
+        Assert.Null(withoutLevels.GetAnalysisSource()!.Value.SplOffsetDb);
+
+        var withoutAnchor = new CompareSelection();
+        withoutAnchor.Set("a.json", null, CreateSnapshot(
+            transferIr: [new(0.25, 0)], meterSnapshot: levels));
+        Assert.Null(withoutAnchor.GetAnalysisSource()!.Value.SplOffsetDb);
+    }
+
     [Fact]
     public void GetAnalysisSource_ReturnsNullWithoutATransferIr()
     {
@@ -75,7 +119,9 @@ public sealed class CompareSelectionTests
         Complex[]? sweepIr = null,
         Complex[]? transferIr = null,
         int? transferPeakIndex = null,
-        double[]? coherence = null) =>
+        double[]? coherence = null,
+        SplCalibration? calibration = null,
+        InputLevelMeterSnapshot? meterSnapshot = null) =>
         new()
         {
             SampleRate = 48_000,
@@ -84,7 +130,8 @@ public sealed class CompareSelectionTests
             TransferImpulseResponse = transferIr,
             TransferPeakIndex = transferPeakIndex,
             TransferCoherence = coherence,
-            MeterSnapshot = InputLevelMeterSnapshot.Empty,
+            MeterSnapshot = meterSnapshot ?? InputLevelMeterSnapshot.Empty,
+            SplCalibration = calibration,
             Preview = new MeasurementHistoryPreview()
         };
 }

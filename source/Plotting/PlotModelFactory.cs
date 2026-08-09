@@ -257,8 +257,9 @@ internal sealed class PlotModelFactory
         // dB SPL follows the SELECTION. Converting the curves additionally needs a
         // valid calibration and loopback level for this measurement; without them the
         // axis still goes SPL but view-only — the measurement's own dBr shapes would
-        // be lies on an absolute axis and are omitted, while overlays captured in
-        // dB SPL (gated by EffectiveFrequencyResponseScale) remain visible. Starting
+        // be lies on an absolute axis and are omitted, while what carries its own
+        // absolute reference stays visible: overlays captured in dB SPL (gated by
+        // EffectiveFrequencyResponseScale) and a Compare with an anchor. Starting
         // a run in that state drops the display back to dBr/dBc (Form1), so a fresh
         // measurement is never born hidden.
         bool splRequested =
@@ -268,64 +269,52 @@ internal sealed class PlotModelFactory
         bool splViewOnly = splRequested && !renderSpl;
 
         // Magnitude is derived from the loopback transfer IR, which is required.
-        if (splViewOnly &&
-            measurementContext.CanIncludeCurves(includeCurves) &&
+        if (measurementContext.CanIncludeCurves(includeCurves) &&
             measurementContext.HasTransferImpulseResponse)
         {
-            // This measurement cannot supply SPL (no calibration, no loopback level,
-            // or a calibration from another input): say why its curves are absent.
-            AddSplViewOnlyAnnotation(model);
-        }
-        else if (measurementContext.CanIncludeCurves(includeCurves) &&
-            measurementContext.HasTransferImpulseResponse)
-        {
-            IReadOnlyList<AnalysisCurve> curves = measurementContext.CreateFrequencyResponseCurves(
-                frequencyResponseOptions,
-                GetCalibration(frequencyResponseOptions),
-                frequencyResponseVisibility.ToSpectrumCurves());
-            if (renderSpl)
+            IReadOnlyList<AnalysisCurve> curves = Array.Empty<AnalysisCurve>();
+            if (splViewOnly)
             {
-                curves = SplConversion.ToSoundPressureLevel(curves, splOffset!.Value);
+                // This measurement cannot supply SPL (no calibration, no loopback
+                // level, or a calibration from another input): say why its curves are
+                // absent. The Compare curve below is judged on its own anchor, so a
+                // calibrated comparison stays visible next to the notice, exactly as
+                // an SPL-captured overlay does.
+                AddSplViewOnlyAnnotation(model);
             }
-
-            foreach (AnalysisCurve curve in curves)
+            else
             {
-                AddLineSeries(
-                    model,
-                    curve,
-                    renderSpl ? SplTrackerFormat : DistortionTrackerFormat(curve.Kind),
-                    Mode.FrequencyResponse,
-                    DecibelAxisKey);
-            }
-
-            // Overlay the Compare magnitude (primary only; harmonics stay Main-only to
-            // keep the plot readable), computed with the identical options/calibration.
-            // The Compare source carries no loopback level or calibration, so it has no
-            // absolute reference; it is omitted in SPL mode rather than drawn as dBr.
-            if (!renderSpl && TryCreateCompareMeasurement() is { } compare)
-            {
-                IReadOnlyList<AnalysisCurve> compareCurves = DataHelper.GetSpectrum(
-                    compare.Measurement,
+                curves = measurementContext.CreateFrequencyResponseCurves(
                     frequencyResponseOptions,
                     GetCalibration(frequencyResponseOptions),
-                    frequencyResponseVisibility.ToSpectrumCurves() & SpectrumCurves.Primary);
-                foreach (AnalysisCurve curve in compareCurves)
+                    frequencyResponseVisibility.ToSpectrumCurves());
+                if (renderSpl)
                 {
-                    AddCompareLineSeries(
+                    curves = SplConversion.ToSoundPressureLevel(curves, splOffset!.Value);
+                }
+
+                foreach (AnalysisCurve curve in curves)
+                {
+                    AddLineSeries(
                         model,
                         curve,
-                        DistortionTrackerFormat(curve.Kind),
-                        compare.DisplayName,
-                        Mode.FrequencyResponse);
+                        renderSpl ? SplTrackerFormat : DistortionTrackerFormat(curve.Kind),
+                        Mode.FrequencyResponse,
+                        DecibelAxisKey);
                 }
             }
 
-            AddMeasurementCoherenceIfAvailable(
-                model,
-                frequencyResponseOptions,
-                frequencyResponseVisibility.ShowCoherence);
+            AddCompareFrequencyResponse(model, splRequested, splViewOnly);
 
-            AddHiddenHarmonicAnnotation(model, curves);
+            if (!splViewOnly)
+            {
+                AddMeasurementCoherenceIfAvailable(
+                    model,
+                    frequencyResponseOptions,
+                    frequencyResponseVisibility.ShowCoherence);
+
+                AddHiddenHarmonicAnnotation(model, curves);
+            }
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
                  !measurementContext.HasTransferImpulseResponse)
@@ -337,7 +326,8 @@ internal sealed class PlotModelFactory
         // In SPL mode the whole plot is absolute dB SPL, which needs a different
         // default window and clamps (curves sit near 40–110 dB, far above the dBr
         // ceiling). The axis follows the SELECTION — a view-only SPL plot keeps the
-        // SPL axis for its overlays. Otherwise the primary is the loopback-referenced
+        // SPL axis for whatever can still be drawn on it (overlays, a calibrated
+        // Compare). Otherwise the primary is the loopback-referenced
         // transfer magnitude (dBr) and the harmonic / THD / noise curves are ratios
         // to the fundamental (dBc); the axis names both.
         if (splRequested)
@@ -372,6 +362,75 @@ internal sealed class PlotModelFactory
         kind == AnalysisCurveKind.Primary
             ? "{0}\n{2:0.0} Hz\n{4:0.00} dBr (vs reference)"
             : "{0}\n{2:0.0} Hz\n{4:0.00} dBc (vs fundamental)";
+
+    /// <summary>
+    /// Overlays the Compare magnitude on the Frequency Response plot (primary only;
+    /// harmonics stay Main-only to keep the plot readable), computed with the
+    /// identical options/calibration.
+    /// <para>
+    /// On the absolute axis the Compare curve is converted with <em>its own</em> K:
+    /// the two measurements carry their own loopback levels, so borrowing the main
+    /// measurement's offset would misplace it (they agree only when both were
+    /// captured in one session). A Compare without an anchor has no absolute
+    /// reference at all — it is omitted rather than drawn as dBr on a dB SPL scale,
+    /// and the plot says which measurement is missing instead of leaving the curve
+    /// silently absent.
+    /// </para>
+    /// </summary>
+    private void AddCompareFrequencyResponse(
+        PlotModel model,
+        bool splRequested,
+        bool splViewOnly)
+    {
+        if (TryCreateCompareMeasurement() is not { } compare)
+        {
+            return;
+        }
+
+        double? compareOffset = splRequested ? compare.SplOffsetDb : null;
+        if (splRequested && compareOffset is null)
+        {
+            model.Annotations.Add(CreateCompareWithoutSplAnnotation(
+                compare.DisplayName, splViewOnly));
+            return;
+        }
+
+        IReadOnlyList<AnalysisCurve> compareCurves = DataHelper.GetSpectrum(
+            compare.Measurement,
+            frequencyResponseOptions,
+            GetCalibration(frequencyResponseOptions),
+            frequencyResponseVisibility.ToSpectrumCurves() & SpectrumCurves.Primary);
+        if (compareOffset is { } offsetDb)
+        {
+            compareCurves = SplConversion.ToSoundPressureLevel(compareCurves, offsetDb);
+        }
+
+        foreach (AnalysisCurve curve in compareCurves)
+        {
+            AddCompareLineSeries(
+                model,
+                curve,
+                compareOffset.HasValue ? SplTrackerFormat : DistortionTrackerFormat(curve.Kind),
+                compare.DisplayName,
+                Mode.FrequencyResponse);
+        }
+    }
+
+    // Sits a line below the main measurement's view-only notice when both are
+    // shown, so the two explanations do not overprint each other.
+    private static OverlayTextAnnotation CreateCompareWithoutSplAnnotation(
+        string compareName,
+        bool splViewOnly)
+    {
+        OverlayTextAnnotation note = CreateSplViewOnlyAnnotation(
+            $"No SPL calibration for {compareName} — the compared curve is hidden in dB SPL");
+        if (splViewOnly)
+        {
+            note.TextPosition = new DataPoint(note.TextPosition.X, note.TextPosition.Y + 1);
+        }
+
+        return note;
+    }
 
     public PlotModel CreatePhaseResponse(bool includeCurves)
     {
@@ -1511,7 +1570,10 @@ internal sealed class PlotModelFactory
     // built from the transfer IR — loopback is mandatory for every measurement).
     // Requires a matching sample rate, otherwise the gate (in ms) and the
     // frequency axis would not align with the main measurement.
-    private (IImpulseMeasurement Measurement, string DisplayName, double[]? Coherence)?
+    private (IImpulseMeasurement Measurement,
+        string DisplayName,
+        double[]? Coherence,
+        double? SplOffsetDb)?
         TryCreateCompareMeasurement()
     {
         if (getCompareSource?.Invoke() is not { } compare)
@@ -1529,7 +1591,8 @@ internal sealed class PlotModelFactory
         return (
             new ImpulseMeasurementView(transferIr, peakIndex, compare.SampleRate),
             compare.DisplayName,
-            compare.TransferCoherence);
+            compare.TransferCoherence,
+            compare.SplOffsetDb);
     }
 
     // The complex (vector) sum of the Main and Compare transfer responses, i.e.

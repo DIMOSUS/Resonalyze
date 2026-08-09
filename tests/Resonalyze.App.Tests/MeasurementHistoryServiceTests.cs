@@ -75,6 +75,36 @@ public sealed class MeasurementHistoryServiceTests : IDisposable
         Assert.NotEmpty(snapshot.SweepDeconvolutionImpulseResponse);
     }
 
+    // Both halves of K used to be split up by the history: the loopback level rode
+    // along in the meter snapshot while the anchor was dropped, so a restored entry
+    // — or a Compare picked from history — could not be shown in dB SPL, and saving
+    // the entry back to disk wrote a file with no calibration at all.
+    [Fact]
+    public void Snapshot_CarriesTheSplAnchorFromTheFileAndBackToIt()
+    {
+        ImpulseResponseFile file = ImpulseResponseFileAtomicSaveTests.CreateFile(
+            sampleValue: 1.0);
+        file.SplCalibration = new SplCalibration
+        {
+            ReferenceLevelDbSpl = 94,
+            MeasuredLevelDbFs = -20,
+            Backend = Resonalyze.Audio.AudioBackend.Wave,
+            SampleRate = 48_000,
+            Bits = 24
+        };
+        file.LoopbackLevels = new ImpulseResponseFile.LevelSnapshotFileEntry
+        {
+            PeakDbFs = -6,
+            RmsDbFs = -9
+        };
+
+        MeasurementHistorySnapshot snapshot = MeasurementHistoryService.CreateSnapshot(file);
+
+        Assert.Same(file.SplCalibration, snapshot.SplCalibration);
+        Assert.Equal(108.0, snapshot.SplOffsetDb!.Value, tolerance: 1e-9);
+        Assert.Same(file.SplCalibration, snapshot.ToImpulseResponseFile().SplCalibration);
+    }
+
     private MeasurementHistoryService CreateService() =>
         new(new MeasurementHistoryPersistence(
             Path.Combine(directory, "measurement-history.json")));

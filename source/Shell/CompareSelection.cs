@@ -51,7 +51,10 @@ internal sealed class CompareSelection
             selection.Snapshot.SampleRate,
             transferIr,
             selection.Snapshot.TransferPeakIndex ?? 0,
-            selection.Snapshot.TransferCoherence);
+            selection.Snapshot.TransferCoherence,
+            // Its OWN K, not the main measurement's: the two were captured at
+            // different loopback levels unless they share a session.
+            selection.Snapshot.SplOffsetDb);
     }
 
     public TimeAlignmentCompareMeasurement? GetTimeAlignmentMeasurement() =>
@@ -70,9 +73,15 @@ internal sealed record CompareMeasurementSelection(
 // The Compare measurement's transfer IR used by the mode plots (Frequency Response
 // magnitude, Phase / Group Delay and the gated IR preview). Matching sample rate is
 // validated by the consumers.
+//
+// SplOffsetDb is this measurement's own K (loopback level + calibration offset), so
+// the Compare magnitude can be drawn on the absolute axis beside the main curve;
+// null when the compared measurement carries no SPL anchor, and then Frequency
+// Response omits it in dB SPL rather than drawing dBr on an absolute scale.
 public readonly record struct CompareAnalysisSource(
     string DisplayName,
     int SampleRate,
     Complex[] TransferImpulseResponse,
     int TransferPeakIndex,
-    double[]? TransferCoherence = null);
+    double[]? TransferCoherence = null,
+    double? SplOffsetDb = null);

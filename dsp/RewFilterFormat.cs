@@ -4,8 +4,9 @@ namespace Resonalyze.Dsp;
 
 /// <summary>
 /// REW "Filter Settings" text. The filter lines are identical to Equalizer APO
-/// (Filter N: ON PK Fc ... Gain ... dB Q ...), so parsing is shared; export adds
-/// REW's header and a preamp line so the value round-trips.
+/// (Filter N: ON PK Fc ... Gain ... dB Q ..., and LSC/HSC for the shelves), so
+/// parsing is shared; export adds REW's header and a preamp line so the value
+/// round-trips.
 /// </summary>
 public sealed class RewFilterFormat : IEqProfileFormat
 {

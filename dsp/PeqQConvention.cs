@@ -107,9 +107,14 @@ public static class PeqQConventions
     // Transparent bands carry no gain and no meaningful Q, so they are left exactly as
     // they are rather than pushed through a scale that would still round-trip their
     // placeholder Q.
+    //
+    // Shelves are left alone for a stronger reason: the conventions restate a
+    // BANDWIDTH between half-gain points, and a shelf has none — its Q sets the knee
+    // (see PeqBandType). Scaling it by the gain would print a shelf that overshoots
+    // where the designed one does not, so a shelf's Q goes to the sheet as it is.
     private static double Scale(PeqBand band, PeqQConvention convention)
     {
-        if (band.IsTransparent)
+        if (band.IsTransparent || band.Type.IsShelving())
         {
             return 1.0;
         }

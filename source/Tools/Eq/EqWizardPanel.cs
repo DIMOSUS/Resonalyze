@@ -38,9 +38,17 @@ public partial class EqWizardPanel : UserControl
     // shared left axis tens of dB away from 0, where the filter shape would be clipped).
     private const string EqGainAxisKey = "eq-wizard:gain";
 
-    private const string FrequencyTip = "Band center frequency (Hz).";
-    private const string QTip = "Band quality factor (Q) — higher Q is a narrower band.";
-    private const string GainTip = "Band gain (dB). Positive boosts, negative cuts.";
+    private const string FrequencyTip =
+        "Band center frequency (Hz). On a shelf this is the middle of the " +
+        "transition, where the response has reached half the shelf's gain — not " +
+        "the corner where it flattens out.";
+    private const string QTip =
+        "Band quality factor (Q). On a bell, higher Q is a narrower band. On a " +
+        "shelf it is the knee instead: 0.7 is the steepest shelf that still rises " +
+        "evenly, and above that the response overshoots before settling.";
+    private const string GainTip =
+        "Band gain (dB). Positive boosts, negative cuts. A shelf reaches this gain " +
+        "beyond its transition and half of it at the center frequency.";
 
     private readonly WrappingToolTip toolTip = new()
     {
@@ -50,17 +58,13 @@ public partial class EqWizardPanel : UserControl
         ShowAlways = true
     };
 
-    private readonly List<PeqSlotControl> peqSlots = new();
     private readonly EqWizardAutoTuneOrchestrator autoTuneOrchestrator = new();
     private readonly EqWizardImportExportCoordinator importExportCoordinator = new();
-    private TableLayoutPanel peqSlotTable = null!;
     private PlotLabelsPanelController plotLabels = null!;
     private PlotWatermarkAnnotation hintAnnotation = null!;
     private LineAnnotation fromMarker = null!;
     private LineAnnotation toMarker = null!;
     private RectangleAnnotation rangeFill = null!;
-    private int selectedBandIndex = -1;
-    private int activeBandCount;
     private EqTuneStats? lastStats;
     private bool suppressRedraw;
     private bool suppressWindowClamp;
@@ -96,7 +100,9 @@ public partial class EqWizardPanel : UserControl
         buttonSource.Click += (_, _) => buttonSource.BeginInvoke(ShowSourceMenu);
         comboBoxCalibration.SelectedIndexChanged += (_, _) => OnCalibrationChanged();
         NumericTargetOffset.ValueChanged += (_, _) => OnTargetOffsetChanged();
-        NumericGain.ValueChanged += (_, _) => DrawSelectedCurves();
+        // The preamp is part of the filter bank's undo state, so it goes through
+        // the same coalescing path as a band field.
+        NumericGain.ValueChanged += BankValueChanged;
         checkBoxBypass.CheckedChanged += (_, _) => DrawSelectedCurves();
         checkBoxCutsOnly.CheckedChanged += (_, _) =>
         {
@@ -110,6 +116,8 @@ public partial class EqWizardPanel : UserControl
         buttonImport.Click += (_, _) => ImportPeq();
         buttonExport.Click += (_, _) => ExportPeq();
         buttonResetBands.Click += (_, _) => ResetBands();
+        buttonUndo.Click += (_, _) => UndoBankChange();
+        buttonRedo.Click += (_, _) => RedoBankChange();
         numericFromHz.ValueChanged += (_, _) => FrequencyBoundChanged(fromChanged: true);
         numericToHz.ValueChanged += (_, _) => FrequencyBoundChanged(fromChanged: false);
         numericGainMin.ValueChanged += (_, _) => GainBoundChanged(minChanged: true);
@@ -253,11 +261,18 @@ public partial class EqWizardPanel : UserControl
         SetTip(labelGain, NumericGain,
             "EQ preamp (dB) applied on top of all bands. Usually negative to leave " +
             "headroom for boosts.");
-        SetTip(labelBands, darkComboBoxBands, "Number of PEQ bands shown.");
+        SetTip(labelBands, darkComboBoxBands,
+            "How many PEQ filters the bank holds. Picking a number creates or trims " +
+            "the whole bank at once, spreading new filters over the ISO third-octave " +
+            "centres; the + tile adds them one at a time instead.");
         SetTip(buttonResetBands,
-            "Clear the whole filter bank: every band back to its default frequency " +
-            "at Q 1 and 0 dB, preamp 0 dB, one active filter. The source, the target " +
-            "and the Auto Tune settings are kept.");
+            "Clear the whole filter bank: no filters, preamp 0 dB. The source, the " +
+            "target and the Auto Tune settings are kept.");
+        SetTip(buttonUndo,
+            "Undo the last change to the filter bank — a band edit, an added or " +
+            "removed filter, a reorder, an import or an Auto Tune (Ctrl+Z). The " +
+            "source, the target and the Auto Tune settings are not part of it.");
+        SetTip(buttonRedo, "Redo the last undone change to the filter bank (Ctrl+Y).");
         SetTip(labelSmooth, comboBoxSmooth,
             "Smoothing of the source curve (1/N octave), used for display and Auto " +
             "Tune. Unavailable for an imported curve that was already smoothed when it " +
@@ -332,129 +347,6 @@ public partial class EqWizardPanel : UserControl
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal Action<EqTuneStats?>? ResultsChanged { get; set; }
-
-    // Builds all 32 band strips once. Hiding unused strips would waste the fader
-    // bank, so the whole 16x2 grid is always shown; the Bands control only chooses
-    // how many are active (SetActiveBandCount), the rest stay visible but greyed.
-    private void CreatePeqSlots()
-    {
-        peqSlotTable.SuspendLayout();
-        suppressRedraw = true;
-        try
-        {
-            for (int index = 0; index < MaxPeqSlotCount; index++)
-            {
-                var slot = new PeqSlotControl
-                {
-                    Dock = DockStyle.Fill,
-                    Margin = new Padding(1),
-                    SlotNumber = index + 1
-                };
-                // Row-major: bands 1..16 fill the top row left to right, 17..32
-                // the bottom row, matching how the fader bank reads.
-                int row = index / PeqColumnCount;
-                int column = index % PeqColumnCount;
-                slot.FrequencyInput.Value =
-                    slot.FrequencyInput.ClampValue(DefaultBandFrequencyHz(index));
-                slot.FrequencyInput.ValueChanged += PeqBandValueChanged;
-                slot.QInput.ValueChanged += PeqBandValueChanged;
-                slot.GainInput.ValueChanged += PeqBandValueChanged;
-                SetTip(slot.FrequencyInput, FrequencyTip);
-                SetTip(slot.QInput, QTip);
-                SetTip(slot.GainInput, GainTip);
-                slot.Activated += (sender, _) => SelectBand((PeqSlotControl)sender!);
-                peqSlots.Add(slot);
-                peqSlotTable.Controls.Add(slot, column, row);
-            }
-        }
-        finally
-        {
-            suppressRedraw = false;
-            peqSlotTable.ResumeLayout();
-        }
-    }
-
-    // ISO 266 preferred 1/3-octave centre frequencies, the ones a 31/32-band
-    // graphic EQ is built on. 32 values (16 Hz .. 20 kHz) match the 32 strips
-    // exactly: the standard 31-band 20 Hz..20 kHz set plus 16 Hz below it.
-    private static readonly double[] IsoThirdOctaveCentersHz =
-    {
-        16, 20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500,
-        630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000,
-        10000, 12500, 16000, 20000
-    };
-
-    // Default band centre for a strip: its ISO 1/3-octave frequency (audiophile
-    // graphic-EQ default) instead of every band starting at 1 kHz.
-    private static double DefaultBandFrequencyHz(int index) =>
-        IsoThirdOctaveCentersHz[
-            Math.Clamp(index, 0, IsoThirdOctaveCentersHz.Length - 1)];
-
-    // The neutral Q a strip starts on, matching the designer's initial value for the
-    // field. Reset filters restores it, so the two must agree.
-    private const double DefaultBandQ = 1.0;
-
-    // The Bands control sets how many strips are active; the remaining strips stay
-    // visible but disabled and are excluded from the EQ curve and the stats.
-    private void SetActiveBandCount(int count)
-    {
-        activeBandCount = Math.Clamp(count, 1, MaxPeqSlotCount);
-        for (int index = 0; index < peqSlots.Count; index++)
-        {
-            peqSlots[index].Enabled = index < activeBandCount;
-        }
-
-        // A band that just became inactive must not stay selected/highlighted.
-        if (selectedBandIndex >= activeBandCount)
-        {
-            DeselectBand();
-        }
-
-        // Changing the active count changes the EQ curve, so redraw.
-        RaiseSettingsChanged();
-        DrawSelectedCurves();
-    }
-
-    // The active band strips (the leading prefix of the always-present 32).
-    private IEnumerable<PeqSlotControl> ActiveSlots => peqSlots.Take(activeBandCount);
-
-    private void PeqBandValueChanged(object? sender, EventArgs e) => DrawSelectedCurves();
-
-    // Selects a band so its individual contribution is highlighted on the plot.
-    // Selecting another band replaces the previous highlight.
-    private void SelectBand(PeqSlotControl slot)
-    {
-        int index = peqSlots.IndexOf(slot);
-        if (index < 0 || index == selectedBandIndex)
-        {
-            return;
-        }
-
-        selectedBandIndex = index;
-        for (int i = 0; i < peqSlots.Count; i++)
-        {
-            peqSlots[i].SetSelected(i == index);
-        }
-
-        DrawSelectedCurves();
-    }
-
-    // Clears the single-band highlight and removes its curve from the plot.
-    private void DeselectBand()
-    {
-        if (selectedBandIndex < 0)
-        {
-            return;
-        }
-
-        selectedBandIndex = -1;
-        foreach (PeqSlotControl slot in peqSlots)
-        {
-            slot.SetSelected(false);
-        }
-
-        DrawSelectedCurves();
-    }
 
     private void InitializePlotWizard()
     {
@@ -702,16 +594,10 @@ public partial class EqWizardPanel : UserControl
         model.InvalidatePlot(true);
     }
 
-    // Reads the active PEQ slots and the preamp control into a logical EQ curve.
-    // Inactive strips (beyond the chosen band count) are excluded.
-    private EqualizationCurve BuildEqualizationCurve()
-    {
-        IEnumerable<PeqBand> bands = ActiveSlots.Select(slot => new PeqBand(
-            (double)slot.FrequencyInput.Value,
-            (double)slot.QInput.Value,
-            (double)slot.GainInput.Value));
-        return new EqualizationCurve(bands, (double)NumericGain.Value);
-    }
+    // Reads the PEQ strips and the preamp control into a logical EQ curve. Every
+    // strip in the bank is a filter — an unwanted one is removed, not parked.
+    private EqualizationCurve BuildEqualizationCurve() =>
+        new(peqSlots.Select(ReadBand), (double)NumericGain.Value);
 
     // Computes the tuning read-out for the results panel: how well Source + EQ
     // matches the target, plus the EQ's own boost/cut extents and headroom.
@@ -752,7 +638,7 @@ public partial class EqWizardPanel : UserControl
         }
 
         double rms = valid > 0 ? Math.Sqrt(sumSquares / valid) : 0;
-        int filtersUsed = ActiveSlots.Count(
+        int filtersUsed = peqSlots.Count(
             slot => Math.Abs((double)slot.GainInput.Value) >= 0.05);
 
         double peakBoost = double.NegativeInfinity;
@@ -852,7 +738,7 @@ public partial class EqWizardPanel : UserControl
         bool cutsOnly = checkBoxCutsOnly.Checked;
         double pinnedPreampDb = (double)NumericGain.Value;
 
-        var options = new EqAutoTuner.Options
+        return new EqAutoTuner.Options
         {
             MaxBands = Math.Clamp(bandLimit, 1, MaxPeqSlotCount),
             MinFrequencyHz = minHz,
@@ -868,105 +754,13 @@ public partial class EqWizardPanel : UserControl
             // Cuts-only is the safe default for a car tune: never boost an
             // interference null. Unchecking it allows boosts, still gated to
             // reliable regions (high coherence, not inside a narrow deep null).
-            CutsOnlyMode = cutsOnly
+            CutsOnlyMode = cutsOnly,
+            // Q has no panel-level range control; the strips' own limits are the
+            // range, and reading them from the control class rather than from a
+            // strip keeps them available when the bank is empty.
+            QMin = PeqSlotControl.MinimumQ,
+            QMax = PeqSlotControl.MaximumQ
         };
-
-        // Q has no panel-level range control, so take its bounds from a band field.
-        if (peqSlots.Count > 0)
-        {
-            PeqSlotControl slot = peqSlots[0];
-            options = options with
-            {
-                QMin = (double)slot.QInput.Minimum,
-                QMax = (double)slot.QInput.Maximum
-            };
-        }
-
-        return options;
-    }
-
-    // Puts the whole filter bank back to the state the panel starts in: every strip at
-    // its ISO third-octave home frequency, Q 1, gain 0, no preamp, one active band. The
-    // source, the target and the Auto Tune settings are deliberately untouched — this
-    // clears the tune, not the setup it was made against.
-    private void ResetBands()
-    {
-        // A tune can represent a lot of manual work and there is no undo here, so the
-        // one destructive button in the panel asks first.
-        if (MessageBox.Show(
-                FindForm(),
-                "Reset all EQ filters to their defaults?" +
-                Environment.NewLine + Environment.NewLine +
-                "Every band returns to its default frequency with Q 1 and 0 dB gain, " +
-                "the preamp returns to 0 dB, and the filter count returns to 1. The " +
-                "source curve, the target and the Auto Tune settings are kept.",
-                "EQ Wizard",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Warning) != DialogResult.Yes)
-        {
-            return;
-        }
-
-        suppressRedraw = true;
-        try
-        {
-            for (int index = 0; index < peqSlots.Count; index++)
-            {
-                PeqSlotControl slot = peqSlots[index];
-                slot.FrequencyInput.Value =
-                    slot.FrequencyInput.ClampValue(DefaultBandFrequencyHz(index));
-                slot.QInput.Value = slot.QInput.ClampValue(DefaultBandQ);
-                slot.GainInput.Value = slot.GainInput.ClampValue(0);
-            }
-
-            NumericGain.Value = NumericGain.ClampValue(0);
-            // Setting the selection fires SetActiveBandCount, which also drops a
-            // highlighted band that no longer exists.
-            darkComboBoxBands.SelectedIndex = 0;
-        }
-        finally
-        {
-            suppressRedraw = false;
-        }
-
-        DeselectBand();
-        RaiseSettingsChanged();
-        DrawSelectedCurves();
-    }
-
-    private void ApplyEqualizationCurve(EqualizationCurve curve)
-    {
-        suppressRedraw = true;
-        try
-        {
-            int bandCount = Math.Clamp(curve.Bands.Count, 1, MaxPeqSlotCount);
-            darkComboBoxBands.SelectedIndex = bandCount - 1;
-
-            for (int i = 0; i < peqSlots.Count; i++)
-            {
-                PeqSlotControl slot = peqSlots[i];
-                if (i < curve.Bands.Count)
-                {
-                    PeqBand band = curve.Bands[i];
-                    slot.FrequencyInput.Value = slot.FrequencyInput.ClampValue(band.FrequencyHz);
-                    slot.QInput.Value = slot.QInput.ClampValue(band.Q);
-                    slot.GainInput.Value = slot.GainInput.ClampValue(band.GainDb);
-                }
-                else
-                {
-                    // No band for this slot: leave it transparent.
-                    slot.GainInput.Value = slot.GainInput.ClampValue(0);
-                }
-            }
-
-            NumericGain.Value = NumericGain.ClampValue(curve.PreampDb);
-        }
-        finally
-        {
-            suppressRedraw = false;
-        }
-
-        DrawSelectedCurves();
     }
 
     // The user-defined Auto Tune frequency window (From/To). Bounds are ordered and
@@ -1004,11 +798,18 @@ public partial class EqWizardPanel : UserControl
         }
 
         EqualizationCurve curve = BuildEqualizationCurve();
+        EqWizardExportTarget target =
+            importExportCoordinator.ResolveExportTarget(dialog.FilterIndex);
+        if (!ConfirmShelvingBandsDropped(target, curve))
+        {
+            return;
+        }
+
         (double minHz, double maxHz) = GetFrequencyWindow();
         EqWizardFileResult result = importExportCoordinator.Export(
             new EqWizardExportRequest(
                 dialog.FileName,
-                importExportCoordinator.ResolveExportTarget(dialog.FilterIndex),
+                target,
                 curve,
                 EqSampleRate,
                 System.IO.Path.GetFileNameWithoutExtension(dialog.FileName),
@@ -1020,6 +821,33 @@ public partial class EqWizardPanel : UserControl
         {
             ShowFileError("PEQ could not be exported.", result.Exception!);
         }
+    }
+
+    // A format that cannot state our shelves would otherwise export a file that is
+    // quietly not the tune on screen. The user is told exactly what would be left
+    // out and decides; the coordinator drops them either way.
+    private bool ConfirmShelvingBandsDropped(
+        EqWizardExportTarget target,
+        EqualizationCurve curve)
+    {
+        int dropped = EqWizardImportExportCoordinator.CountShelvingBandsDroppedBy(
+            target, curve);
+        if (dropped == 0)
+        {
+            return true;
+        }
+
+        string filters = dropped == 1 ? "shelving filter" : $"{dropped} shelving filters";
+        return MessageBox.Show(
+            FindForm(),
+            $"{target.Name} cannot carry a shelving filter the way this EQ defines " +
+            $"one, so the {filters} would be left out." +
+            Environment.NewLine + Environment.NewLine +
+            "The exported profile will hold the peaking filters and the preamp only, " +
+            "and will not match the curve on screen. Export anyway?",
+            "EQ Wizard",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning) == DialogResult.Yes;
     }
 
     // Loads a PEQ using the format chosen in the dialog and applies it. Parsing
@@ -1144,19 +972,18 @@ public partial class EqWizardPanel : UserControl
     // stand out against where the response should land.
     private void AddSelectedBandCurve(PlotModel model, EqWizardCurve? baseline)
     {
-        if (selectedBandIndex < 0 ||
-            selectedBandIndex >= peqSlots.Count ||
-            baseline is not { Points.Count: >= 2 })
+        if (selectedSlot == null || baseline is not { Points.Count: >= 2 })
         {
             return;
         }
 
-        PeqSlotControl slot = peqSlots[selectedBandIndex];
-        var band = new PeqBand(
-            (double)slot.FrequencyInput.Value,
-            (double)slot.QInput.Value,
-            (double)slot.GainInput.Value);
+        int slotNumber = peqSlots.IndexOf(selectedSlot) + 1;
+        if (slotNumber < 1)
+        {
+            return;
+        }
 
+        PeqBand band = ReadBand(selectedSlot);
         var points = baseline.Points
             .Select(point => new DataPoint(
                 point.X,
@@ -1166,7 +993,7 @@ public partial class EqWizardPanel : UserControl
         AddWizardSeries(
             model,
             new EqWizardCurve(
-                $"Band {selectedBandIndex + 1}",
+                $"Band {slotNumber}",
                 BandCurveColor,
                 2,
                 LineStyle.Dash,
@@ -1265,44 +1092,6 @@ public partial class EqWizardPanel : UserControl
         return x0 + f * (x1 - x0);
     }
 
-    private void InitializePeqSlotTable()
-    {
-        peqSlotTable = new TableLayoutPanel
-        {
-            BackColor = panelPEQ.BackColor,
-            ColumnCount = PeqColumnCount,
-            Dock = DockStyle.Fill,
-            Margin = Padding.Empty,
-            Padding = new Padding(2),
-            RowCount = PeqRowCount
-        };
-
-        for (int column = 0; column < PeqColumnCount; column++)
-        {
-            peqSlotTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / PeqColumnCount));
-        }
-        for (int row = 0; row < PeqRowCount; row++)
-        {
-            peqSlotTable.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / PeqRowCount));
-        }
-
-        peqSlotTable.Click += (_, _) => DeselectBand();
-        panelPEQ.Controls.Add(peqSlotTable);
-        CreatePeqSlots();
-    }
-
-    private void InitializeBandsComboBox()
-    {
-        darkComboBoxBands.Items.Clear();
-        for (int count = 1; count <= MaxPeqSlotCount; count++)
-        {
-            darkComboBoxBands.Items.Add(count);
-        }
-
-        darkComboBoxBands.SelectedIndexChanged += DarkComboBoxBandsSelectedIndexChanged;
-        darkComboBoxBands.SelectedIndex = 0;
-    }
-
     // The band limit caps how many bands Auto Tune may create (4..32, default 4).
     private void InitializeBandsLimitComboBox()
     {
@@ -1338,13 +1127,5 @@ public partial class EqWizardPanel : UserControl
             DrawSelectedCurves();
         };
         comboBoxSmooth.SelectedIndex = 0;
-    }
-
-    private void DarkComboBoxBandsSelectedIndexChanged(object? sender, EventArgs e)
-    {
-        int slotCount = darkComboBoxBands.SelectedItem is int selectedCount
-            ? selectedCount
-            : 1;
-        SetActiveBandCount(slotCount);
     }
 }

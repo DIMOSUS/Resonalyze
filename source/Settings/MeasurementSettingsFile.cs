@@ -7,7 +7,7 @@ namespace Resonalyze;
 
 internal sealed partial class MeasurementSettingsFile
 {
-    private const int CurrentSchemaVersion = 9;
+    private const int CurrentSchemaVersion = 10;
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
@@ -85,6 +85,9 @@ internal sealed partial class MeasurementSettingsFile
                     PhaseAnalysisSettings.DefaultFdwCycles;
             }
 
+            // Version 10 persists the EQ Wizard's filter bank; 7..9 files carry
+            // only its filter count and rebuild a default spread from it.
+            //
             // Version 9 added the SPL calibration; 7 and 8 files simply carry none.
             // A structurally broken anchor drops to null rather than failing the
             // whole settings load — the measurement configuration is the value here.

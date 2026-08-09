@@ -122,7 +122,14 @@ internal sealed class EqWizardImportExportCoordinator
                 IEqProfileFormat effectiveFormat = format is GraphicEqFormat
                     ? new GraphicEqFormat(request.SampleRate)
                     : format;
-                writeAllText(request.Path, effectiveFormat.Export(request.Curve));
+                // Dropping the shelves here as well as in the UI is deliberate: the
+                // warning is the user's decision, this is the guarantee. A format
+                // that cannot state our shelf must never receive one written as
+                // something its reader would realize differently.
+                EqualizationCurve curve = request.Target.SupportsShelvingFilters
+                    ? request.Curve
+                    : WithoutShelvingBands(request.Curve);
+                writeAllText(request.Path, effectiveFormat.Export(curve));
             }
             return EqWizardFileResult.Succeeded();
         }
@@ -130,6 +137,32 @@ internal sealed class EqWizardImportExportCoordinator
         {
             return EqWizardFileResult.Failed(exception);
         }
+    }
+
+    /// <summary>
+    /// How many shelving filters an export to <paramref name="target"/> would have
+    /// to leave out. Zero when the format carries them, or when there are none —
+    /// the panel asks only when the answer is going to cost the user something.
+    /// </summary>
+    internal static int CountShelvingBandsDroppedBy(
+        EqWizardExportTarget target,
+        EqualizationCurve curve)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(curve);
+
+        return target.SupportsShelvingFilters
+            ? 0
+            : curve.Bands.Count(band => band.Type.IsShelving());
+    }
+
+    internal static EqualizationCurve WithoutShelvingBands(EqualizationCurve curve)
+    {
+        ArgumentNullException.ThrowIfNull(curve);
+
+        return new EqualizationCurve(
+            curve.Bands.Where(band => !band.Type.IsShelving()),
+            curve.PreampDb);
     }
 
     private static string BuildFilter<TTarget>(IReadOnlyList<TTarget> targets)
@@ -196,6 +229,9 @@ internal sealed class EqWizardExportTarget : IEqWizardFileTarget
     public string Name { get; }
     public string Extension { get; }
     public bool IsTuningSheet => Format == null;
+
+    // The tuning sheet prints shelves in a table of their own, so it carries them.
+    internal bool SupportsShelvingFilters => Format?.SupportsShelvingFilters ?? true;
 
     internal static EqWizardExportTarget TuningSheet() =>
         new(null, "Tuning sheet (PDF)", "pdf");

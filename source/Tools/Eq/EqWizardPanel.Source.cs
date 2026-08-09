@@ -1044,8 +1044,7 @@ public partial class EqWizardPanel
             numericGainMax.Value = numericGainMax.ClampValue(settings.GainMaxDb);
             checkBoxCutsOnly.Checked = settings.CutsOnly;
             SetSourceSmoothing(settings.SourceSmoothingInverseOctaves);
-            darkComboBoxBands.SelectedIndex =
-                Math.Clamp(settings.BandCount, 1, MaxPeqSlotCount) - 1;
+            ApplyPersistedBank(settings);
 
             InvalidateSourceCurve();
             ApplyGainRange();
@@ -1081,7 +1080,9 @@ public partial class EqWizardPanel
         TargetOffsetDb = (double)NumericTargetOffset.Value,
         GainMinDb = (double)numericGainMin.Value,
         GainMaxDb = (double)numericGainMax.Value,
-        BandCount = Math.Clamp(activeBandCount, 1, MaxPeqSlotCount),
+        Bands = CaptureBands(),
+        PreampDb = (double)NumericGain.Value,
+        BandCount = peqSlots.Count,
         SourceSmoothingInverseOctaves = SourceSmoothingInverseOctaves,
         CalibrationMode = preferredIrCalibrationMode,
         ManualSampleRateHz = manualSampleRateHz,

@@ -50,7 +50,7 @@ public sealed class MiniDspFormat : IEqProfileFormat
 
         foreach (PeqBand band in curve.Bands)
         {
-            AppendBiquad(builder, index++, PeakingBiquad.Compute(band, sampleRateHz));
+            AppendBiquad(builder, index++, PeqBiquad.Compute(band, sampleRateHz));
         }
 
         return builder.ToString();

@@ -1009,6 +1009,77 @@ public sealed class PlotModelFactoryTests
             point => Assert.Equal(100.0, point.Y, tolerance: 1e-6));
     }
 
+    // Unchecking the primary used to take HD2/HD3/THD/noise with it on the absolute
+    // axis: the lift reads the fundamental's level out of the curve set, so with the
+    // primary never computed the harmonics silently stayed in dBc — tens of dB below
+    // the SPL window, i.e. gone. The reference is computed either way now; only the
+    // drawing follows the checkbox.
+    [Fact]
+    public void CreateFrequencyResponse_InSplMode_LiftsHarmonicsWithThePrimaryHidden()
+    {
+        using ExpSweepMeasurement measurement = CreateSplSweepWithSecondHarmonic();
+        using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
+
+        LineSeries SecondHarmonic(bool showPrimary)
+        {
+            OxyPlot.PlotModel model = CreateFactory(
+                    measurement,
+                    noise,
+                    frequencyResponseVisibility: new CurveVisibilityOptions
+                    {
+                        ShowPrimary = showPrimary,
+                        ShowHd3 = false,
+                        ShowHd4 = false,
+                        ShowThdPlusNoise = false,
+                        ShowNoiseFloor = false,
+                        ShowCoherence = false
+                    },
+                    frequencyResponseOptions: new FrequencyResponseOptions
+                    {
+                        MagnitudeScale = MagnitudeScale.SoundPressureLevel
+                    })
+                .CreateFrequencyResponse(includeCurves: true);
+
+            // Computed as the anchor is not drawn as a curve: hidden stays hidden.
+            Assert.Equal(
+                showPrimary,
+                model.Series.OfType<LineSeries>().Any(
+                    item => item.Tag is CurveTag { Kind: AnalysisCurveKind.Primary }));
+            return Assert.Single(
+                model.Series.OfType<LineSeries>(),
+                item => item.Tag is CurveTag { Kind: AnalysisCurveKind.SecondHarmonic });
+        }
+
+        LineSeries shown = SecondHarmonic(showPrimary: true);
+        LineSeries hidden = SecondHarmonic(showPrimary: false);
+
+        Assert.NotEmpty(hidden.Points);
+        Assert.Equal(shown.Points.Count, hidden.Points.Count);
+        bool anyFinite = false;
+        for (int i = 0; i < shown.Points.Count; i++)
+        {
+            Assert.Equal(shown.Points[i].X, hidden.Points[i].X, tolerance: 1e-9);
+            if (double.IsNaN(shown.Points[i].Y))
+            {
+                // Above Nyquist/2 the harmonic is unobservable in both plots.
+                Assert.True(double.IsNaN(hidden.Points[i].Y));
+                continue;
+            }
+
+            anyFinite = true;
+            Assert.Equal(shown.Points[i].Y, hidden.Points[i].Y, tolerance: 1e-9);
+            // The unit impulse makes the primary 0 dBr, so the lifted HD2 sits at
+            // K + its dBc value: well inside the SPL window, where the bare dBc
+            // value it used to keep (about -34 dB here) is far below the floor.
+            Assert.True(
+                hidden.Points[i].Y > PlotModelStyle.SplDecibelMinimum,
+                $"HD2 at {hidden.Points[i].X:0.#} Hz reads {hidden.Points[i].Y:0.0}, " +
+                "which is not an absolute level");
+        }
+
+        Assert.True(anyFinite, "the synthetic HD2 packet produced no usable points");
+    }
+
     [Fact]
     public void CreateFrequencyResponse_InRelativeMode_LeavesRoomForAPaddedLoopback()
     {
@@ -1153,6 +1224,62 @@ public sealed class PlotModelFactoryTests
             new InputLevelMeterEntry(true, -3, -6, false, false),
             new InputLevelMeterEntry(
                 true, loopbackPeakDbFs, loopbackPeakDbFs - 3, false, false)));
+        return measurement;
+    }
+
+    // A calibrated result carrying a REAL second-harmonic packet: the delta at the
+    // sweep peak makes |H1| flat, the delta at the H2 packet position makes HD2 a
+    // flat -34 dBc, and the separate transfer impulse makes the primary 0 dBr — so
+    // every level on the SPL plot is K (= -6 + 94 + 20 = 108 dB) plus the curve's
+    // own dB value.
+    private static ExpSweepMeasurement CreateSplSweepWithSecondHarmonic()
+    {
+        const int sampleRate = 48_000;
+        const int octaves = 10;
+        const int sweepSamples = 200_000;
+        const int peakIndex = 150_000;
+        const int transferPeak = 64;
+        EssSweepMetadata sweep = EssSweepMetadata.FromExponentialSweep(
+            sampleRate, octaves, sweepSamples, peakIndex);
+
+        var deconvolution = new Complex[sweepSamples];
+        deconvolution[peakIndex] = Complex.One;
+        deconvolution[peakIndex - EssHarmonicAnalysis.HarmonicOffsetSamples(sweep, 2)] =
+            new Complex(0.02, 0.0);
+        var transferImpulse = new Complex[2048];
+        transferImpulse[transferPeak] = Complex.One;
+
+        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        measurement.RestoreImpulseResponse(
+            lowFrequencyHz: sweep.StartFrequencyHz,
+            highFrequencyHz: sweep.EndFrequencyHz,
+            sampleRate: sampleRate,
+            bits: 24,
+            sweepDurationSeconds: sweepSamples / (double)sampleRate,
+            playChannel: PlaybackChannel.Mono,
+            sweepDeconvolutionImpulseResponse: deconvolution,
+            sweepDeconvolutionPeakIndex: peakIndex,
+            measurementMode: SweepMeasurementMode.LoopbackTransfer,
+            transferImpulseResponse: transferImpulse,
+            transferPeakIndex: transferPeak,
+            achievedLowFrequencyHz: sweep.StartFrequencyHz,
+            achievedHighFrequencyHz: sweep.EndFrequencyHz);
+
+        var anchor = new SplCalibration
+        {
+            ReferenceLevelDbSpl = 94,
+            MeasuredLevelDbFs = -20,
+            Backend = Resonalyze.Audio.AudioBackend.Wave,
+            SampleRate = sampleRate,
+            Bits = 24,
+            MicrophoneChannelOffset = 0,
+            InputDeviceNumber = -1
+        };
+        measurement.MeasurementSplCalibration = anchor;
+        measurement.MeasurementInput = anchor.CaptureIdentity;
+        measurement.RestoreLevelSnapshot(new InputLevelMeterSnapshot(
+            new InputLevelMeterEntry(true, -3, -6, false, false),
+            new InputLevelMeterEntry(true, -6, -9, false, false)));
         return measurement;
     }
 

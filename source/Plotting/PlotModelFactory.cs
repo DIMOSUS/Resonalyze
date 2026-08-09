@@ -284,13 +284,30 @@ internal sealed class PlotModelFactory
             }
             else
             {
+                SpectrumCurves requested = frequencyResponseVisibility.ToSpectrumCurves();
+                // On the absolute axis every fundamental-relative curve (HDn / THD /
+                // noise) is lifted by the primary's own level, so the primary has to be
+                // COMPUTED even when the user hid it — without the reference those
+                // curves would stay in dBc and drop far below the SPL window, so
+                // unchecking the primary made them vanish. It is computed as the
+                // anchor, then removed before drawing: hidden still means hidden.
+                bool anchorsHiddenPrimary = renderSpl &&
+                    (requested & SpectrumCurves.Primary) == 0 &&
+                    (requested & SpectrumCurves.Distortion) != 0;
                 curves = measurementContext.CreateFrequencyResponseCurves(
                     frequencyResponseOptions,
                     GetCalibration(frequencyResponseOptions),
-                    frequencyResponseVisibility.ToSpectrumCurves());
+                    anchorsHiddenPrimary ? requested | SpectrumCurves.Primary : requested);
                 if (renderSpl)
                 {
                     curves = SplConversion.ToSoundPressureLevel(curves, splOffset!.Value);
+                }
+
+                if (anchorsHiddenPrimary)
+                {
+                    curves = curves
+                        .Where(curve => curve.Kind != AnalysisCurveKind.Primary)
+                        .ToList();
                 }
 
                 foreach (AnalysisCurve curve in curves)
